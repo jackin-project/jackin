@@ -32,8 +32,8 @@ use super::attach::{
     HostAttachTransportPlan, attach_proxy_exec_args, select_host_attach_transport,
 };
 use super::host_clipboard::{
-    is_image_paste_trigger, read_image_for_paste_trigger, read_image_from_clipboard,
-    read_image_from_clipboard_text_path, read_image_from_pasted_path,
+    is_image_paste_trigger, paste_surrounding_bytes, read_image_for_paste_trigger,
+    read_image_from_clipboard, read_image_from_clipboard_text_path, read_image_from_pasted_path,
 };
 use super::host_desktop::{open_host_file, open_host_url, reveal_host_file};
 
@@ -407,68 +407,94 @@ where
                 // Ctrl+V is the explicit clipboard trigger, while the pasted-path
                 // probe only matches a bracketed paste (never the lone Ctrl+V
                 // byte). Branch on the trigger so that exclusivity is structural.
-                let image = if is_image_paste_trigger(input) {
-                    log_clipboard_image_paste_trigger();
-                    match read_image_for_paste_trigger(input).await {
-                        Ok(Some(image)) => {
-                            jackin_diagnostics::debug_log!(
-                                "attach",
-                                "host clipboard image paste: format={:?} bytes={}",
-                                image.format,
-                                image.bytes.len()
-                            );
-                            Some(image)
+                // The two image sources are mutually exclusive by construction:
+                // Ctrl+V is the lone trigger byte (no surrounding bytes); the
+                // pasted-path probe matches a bracketed paste and carries any
+                // bytes that shared the read around the paste body, which must
+                // still be forwarded so a coincident keystroke/mouse report is
+                // not dropped when the body is consumed as an image.
+                let staged: Option<(ClipboardImage, &[u8], &[u8])> =
+                    if is_image_paste_trigger(input) {
+                        log_clipboard_image_paste_trigger();
+                        match read_image_for_paste_trigger(input).await {
+                            Ok(Some(image)) => {
+                                jackin_diagnostics::debug_log!(
+                                    "attach",
+                                    "host clipboard image paste: format={:?} bytes={}",
+                                    image.format,
+                                    image.bytes.len()
+                                );
+                                Some((image, &[][..], &[][..]))
+                            }
+                            Ok(None) => {
+                                log_clipboard_image_no_image_forwarded();
+                                None
+                            }
+                            Err(err) => {
+                                jackin_diagnostics::debug_log!(
+                                    "attach",
+                                    "host clipboard image paste probe failed: {err:#}"
+                                );
+                                log_clipboard_image_no_image_forwarded();
+                                None
+                            }
                         }
-                        Ok(None) => {
-                            log_clipboard_image_no_image_forwarded();
-                            None
+                    } else {
+                        // Cmd+V parity: a bracketed paste whose body is a real host
+                        // image file is auto-staged as an image frame instead of
+                        // forwarding the raw path text (the container path is
+                        // substituted downstream). Everything else forwards as text.
+                        match read_image_from_pasted_path(input).await {
+                            Ok(Some(image)) => {
+                                jackin_diagnostics::debug_log!(
+                                    "attach",
+                                    "host pasted-path image: format={:?} bytes={}",
+                                    image.format,
+                                    image.bytes.len()
+                                );
+                                log_clipboard_image_pasted_path_staged();
+                                let (prefix, suffix) = paste_surrounding_bytes(input);
+                                Some((image, prefix, suffix))
+                            }
+                            Ok(None) => None,
+                            Err(err) => {
+                                jackin_diagnostics::debug_log!(
+                                    "attach",
+                                    "host pasted-path image probe failed: {err:#}"
+                                );
+                                None
+                            }
+                        }
+                    };
+                if let Some((image, prefix, suffix)) = staged {
+                    match write_clipboard_image_frames(&mut server_writer, image).await {
+                        Ok(()) => {
+                            // Forward any bytes that shared the read but were not
+                            // the paste body, so they are not dropped.
+                            for extra in [prefix, suffix] {
+                                if extra.is_empty() {
+                                    continue;
+                                }
+                                let msg = encode_client(ClientFrame::Input(extra.to_vec()))
+                                    .context("encoding surrounding Input frame")?;
+                                server_writer
+                                    .write_all(&msg)
+                                    .await
+                                    .context("attach socket write failed (surrounding input)")?;
+                            }
                         }
                         Err(err) => {
                             jackin_diagnostics::debug_log!(
                                 "attach",
-                                "host clipboard image paste probe failed: {err:#}"
+                                "host clipboard image frame rejected; forwarding original input: {err:#}"
                             );
-                            log_clipboard_image_no_image_forwarded();
-                            None
+                            let msg = encode_client(ClientFrame::Input(input.to_vec()))
+                                .context("encoding fallback Input frame")?;
+                            server_writer
+                                .write_all(&msg)
+                                .await
+                                .context("attach socket write failed (input fallback)")?;
                         }
-                    }
-                } else {
-                    // Cmd+V parity: a bracketed paste whose sole content is a real
-                    // host image file is auto-staged, and the staged container path
-                    // replaces the raw host path. Everything else forwards as text.
-                    match read_image_from_pasted_path(input).await {
-                        Ok(Some(staged)) => {
-                            jackin_diagnostics::debug_log!(
-                                "attach",
-                                "host pasted-path image: format={:?} bytes={}",
-                                staged.format,
-                                staged.bytes.len()
-                            );
-                            log_clipboard_image_pasted_path_staged();
-                            Some(staged)
-                        }
-                        Ok(None) => None,
-                        Err(err) => {
-                            jackin_diagnostics::debug_log!(
-                                "attach",
-                                "host pasted-path image probe failed: {err:#}"
-                            );
-                            None
-                        }
-                    }
-                };
-                if let Some(image) = image {
-                    if let Err(err) = write_clipboard_image_frames(&mut server_writer, image).await {
-                        jackin_diagnostics::debug_log!(
-                            "attach",
-                            "host clipboard image frame rejected; forwarding original input: {err:#}"
-                        );
-                        let msg = encode_client(ClientFrame::Input(input.to_vec()))
-                            .context("encoding fallback Input frame")?;
-                        server_writer
-                            .write_all(&msg)
-                            .await
-                            .context("attach socket write failed (input fallback)")?;
                     }
                 } else {
                     let msg = encode_client(ClientFrame::Input(input.to_vec()))
@@ -1950,6 +1976,75 @@ mod tests {
             }
             other => panic!("expected staged ClipboardImage frame, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn attach_protocol_forwards_bytes_around_a_staged_paste() {
+        let temp = tempfile::tempdir().unwrap();
+        let image_path = temp.path().join("shot.png");
+        fs::write(&image_path, b"\x89PNG\r\n\x1a\npayload").unwrap();
+
+        let (client, mut server) = duplex(4096);
+        let (client_reader, client_writer) = tokio::io::split(client);
+        let request = HostAttachRequest {
+            spawn_request: None,
+            focus_session: None,
+            env: Vec::new(),
+            terminal: ClientTerminal::default(),
+            export_subdir: "jk-agent-smith".to_owned(),
+            diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
+        };
+        // A mouse report shares the read after the paste end marker.
+        let mut raw_input = b"\x1b[200~".to_vec();
+        raw_input.extend_from_slice(image_path.display().to_string().as_bytes());
+        raw_input.extend_from_slice(b"\x1b[201~\x1b[<0;1;1M");
+
+        let server_task = tokio::spawn(async move {
+            let mut tag = [0u8; 1];
+            server.read_exact(&mut tag).await.unwrap();
+            let _hello = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server.read_exact(&mut tag).await.unwrap();
+            let image = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server.read_exact(&mut tag).await.unwrap();
+            let trailing = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server
+                .write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
+                .await
+                .unwrap();
+            (image, trailing)
+        });
+
+        let (mut input_writer, input_reader) = duplex(128);
+        input_writer.write_all(&raw_input).await.unwrap();
+        let winch = signal(SignalKind::window_change()).unwrap();
+        run_attach_protocol(
+            client_reader,
+            client_writer,
+            input_reader,
+            Cursor::new(Vec::<u8>::new()),
+            24,
+            80,
+            request,
+            Vec::new(),
+            winch,
+        )
+        .await
+        .unwrap();
+
+        // The image stages, and the coincident mouse report is forwarded rather
+        // than dropped with the consumed paste body.
+        let (image, trailing) = server_task.await.unwrap();
+        assert!(matches!(image, ClientFrame::ClipboardImage(_)));
+        assert_eq!(trailing, ClientFrame::Input(b"\x1b[<0;1;1M".to_vec()));
     }
 
     #[tokio::test]

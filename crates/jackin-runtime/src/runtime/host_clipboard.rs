@@ -55,20 +55,26 @@ const IMAGE_PATH_EXTENSIONS: &[&str] = &[".png", ".jpg", ".jpeg", ".gif", ".webp
 /// Auto-staging of a `Cmd+V`-pasted host image path (the `CleanShot` flow: tools
 /// that copy a *file path* to the clipboard, which the terminal pastes as
 /// bracketed-paste text). On by default whenever host attach is active; set
-/// `JACKIN_PASTE_IMAGE_PATHS` to `0`/`false`/`no`/`off` to keep every paste as
-/// ordinary terminal text. Resolved once — the value is fixed for the process.
+/// `JACKIN_PASTE_IMAGE_PATHS` to `0`/`false`/`no`/`off` (or empty) to keep every
+/// paste as ordinary terminal text. Resolved once — the value is fixed for the
+/// process.
 #[must_use]
 pub(super) fn paste_image_paths_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var_os(PASTE_IMAGE_PATHS_ENV)
-            .is_none_or(|value| super::universe::env_flag_enabled(Some(value)))
-    })
+    *ENABLED.get_or_init(|| paste_image_paths_enabled_for(std::env::var_os(PASTE_IMAGE_PATHS_ENV)))
+}
+
+/// The opt-out decision, split out from the process-wide cache so it is unit
+/// testable: unset → enabled; otherwise the shared truthy/falsy parse.
+fn paste_image_paths_enabled_for(value: Option<std::ffi::OsString>) -> bool {
+    value.is_none_or(|value| super::universe::env_flag_enabled(Some(value)))
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() {
-        // `windows(0)` panics; a shorter haystack already yields no windows.
+        // `windows(0)` panics, so the empty needle needs this guard. A needle
+        // longer than the haystack needs none: `windows` yields nothing and
+        // `position` returns `None`.
         return None;
     }
     haystack
@@ -100,6 +106,23 @@ fn paste_body(input: &[u8]) -> Option<&[u8]> {
         Some(end) => &after[..end],
         None => after,
     })
+}
+
+/// The bytes of `input` outside the bracketed paste whose body was staged:
+/// anything before `ESC[200~` and anything after the matching `ESC[201~`. When
+/// the paste body is consumed as an image, these still have to reach the agent
+/// so a coincident keystroke or mouse report sharing the read is not dropped.
+pub(super) fn paste_surrounding_bytes(input: &[u8]) -> (&[u8], &[u8]) {
+    let Some(start) = find_subsequence(input, BRACKETED_PASTE_START) else {
+        return (input, &[]);
+    };
+    let prefix = &input[..start];
+    let after = &input[start + BRACKETED_PASTE_START.len()..];
+    let suffix = match find_subsequence(after, BRACKETED_PASTE_END) {
+        Some(end) => &after[end + BRACKETED_PASTE_END.len()..],
+        None => &[],
+    };
+    (prefix, suffix)
 }
 
 /// Cheap pre-check: does the pasted text look like a single absolute image-file
@@ -146,10 +169,12 @@ fn unescape_shell_path(text: &str) -> String {
     out
 }
 
-/// Auto-stage path for `Cmd+V` parity: if `input` is a single bracketed paste
-/// whose content is a real, magic-validated host image file, return that image
-/// so the caller stages it and inserts the container path instead of the raw
-/// host path. Anything else returns `None` and is forwarded as ordinary text.
+/// Auto-stage path for `Cmd+V` parity: if `input` carries a bracketed-paste
+/// start marker (leading/trailing bytes and a missing end marker are tolerated)
+/// and the paste body is a single real, magic-validated host image file, return
+/// that image so the caller stages it and inserts the container path instead of
+/// the raw host path. Anything else returns `None` and is forwarded as ordinary
+/// text.
 pub(super) async fn read_image_from_pasted_path(input: &[u8]) -> Result<Option<ClipboardImage>> {
     if !paste_image_paths_enabled() {
         return Ok(None);
@@ -172,7 +197,7 @@ pub(super) async fn read_image_from_pasted_path(input: &[u8]) -> Result<Option<C
         text.escape_default()
     );
     let owned = text.to_owned();
-    tokio::task::spawn_blocking(move || -> Result<Option<ClipboardImage>> {
+    let resolved = tokio::task::spawn_blocking(move || -> Result<Option<ClipboardImage>> {
         if let Some(image) = image_from_path_text(&owned)? {
             return Ok(Some(image));
         }
@@ -184,7 +209,18 @@ pub(super) async fn read_image_from_pasted_path(input: &[u8]) -> Result<Option<C
         Ok(None)
     })
     .await
-    .map_err(|err| anyhow::anyhow!("joining pasted-path image reader: {err}"))?
+    .map_err(|err| anyhow::anyhow!("joining pasted-path image reader: {err}"))?;
+    // A recognized candidate that did not resolve (missing file, unreadable, not
+    // an image) is rare, so logging it is not firehose. It still forwards as
+    // ordinary text rather than nagging — the implicit paste did not ask to
+    // stage — but a `--debug` run can now see why nothing staged.
+    if matches!(resolved, Ok(None)) {
+        jackin_diagnostics::debug_log!(
+            "clipboard-image",
+            "pasted-path candidate did not resolve to a readable image"
+        );
+    }
+    resolved
 }
 
 #[cfg(target_os = "macos")]
@@ -793,6 +829,73 @@ mod tests {
             .unwrap()
             .expect("shell-escaped image path should resolve");
         assert_eq!(staged.format, ClipboardImageFormat::Png);
+    }
+
+    #[tokio::test]
+    async fn pasted_path_rejects_image_extension_with_non_image_content() {
+        // The extension gate is cheap; magic bytes are the real authority. A
+        // `.png` whose bytes are not an image must not stage.
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("spoof.png");
+        std::fs::write(&path, b"this is plain text, not an image").unwrap();
+
+        assert!(
+            read_image_from_pasted_path(&bracketed(&path.display().to_string()))
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn pasted_path_stages_file_url_image() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("copied image.png");
+        std::fs::write(&path, b"\x89PNG\r\n\x1a\npayload").unwrap();
+        let url = url::Url::from_file_path(&path).expect("temp path should map to file URL");
+
+        let staged = read_image_from_pasted_path(&bracketed(url.as_str()))
+            .await
+            .unwrap()
+            .expect("bracketed file:// image URL should stage");
+        assert_eq!(staged.format, ClipboardImageFormat::Png);
+    }
+
+    #[test]
+    fn paste_surrounding_bytes_splits_around_the_paste() {
+        // A coincident mouse report after the end marker is the suffix.
+        let mut input = bracketed("/tmp/x.png");
+        input.extend_from_slice(b"\x1b[<0;1;1M");
+        assert_eq!(
+            paste_surrounding_bytes(&input),
+            (b"".as_slice(), b"\x1b[<0;1;1M".as_slice())
+        );
+        // Leading typed bytes before the start marker are the prefix.
+        let mut leading = b"ab".to_vec();
+        leading.extend_from_slice(&bracketed("/tmp/x.png"));
+        assert_eq!(
+            paste_surrounding_bytes(&leading),
+            (b"ab".as_slice(), b"".as_slice())
+        );
+        // No start marker (cannot happen on a stage) — treat all as prefix.
+        assert_eq!(
+            paste_surrounding_bytes(b"plain"),
+            (b"plain".as_slice(), b"".as_slice())
+        );
+    }
+
+    #[test]
+    fn paste_image_paths_enabled_for_honors_opt_out() {
+        use std::ffi::OsString;
+        assert!(paste_image_paths_enabled_for(None));
+        assert!(paste_image_paths_enabled_for(Some(OsString::from("1"))));
+        assert!(paste_image_paths_enabled_for(Some(OsString::from("yes"))));
+        for off in ["0", "false", "no", "off", ""] {
+            assert!(
+                !paste_image_paths_enabled_for(Some(OsString::from(off))),
+                "{off:?} should disable"
+            );
+        }
     }
 
     #[test]
