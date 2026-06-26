@@ -657,16 +657,21 @@ pub(super) async fn launch_role_runtime(
             ),
         );
     }
-    let apparmor_info = runner
-        .capture(
-            "docker",
-            &["info", "--format", "{{.SecurityOptions}}"],
-            None,
-        )
-        .await
-        .unwrap_or_default();
-    let (apparmor_available, apparmor_layer) =
-        crate::runtime::docker_profile::parse_apparmor_from_docker_info(&apparmor_info);
+    // AppArmor only feeds the `--debug` telemetry + session contract, so skip the
+    // `docker info` round-trip on the common non-debug launch.
+    let (apparmor_available, apparmor_layer) = if *debug {
+        let apparmor_info = runner
+            .capture(
+                "docker",
+                &["info", "--format", "{{.SecurityOptions}}"],
+                None,
+            )
+            .await
+            .unwrap_or_default();
+        crate::runtime::docker_profile::parse_apparmor_from_docker_info(&apparmor_info)
+    } else {
+        (false, "host")
+    };
 
     let docker_run_opts = RunOptions {
         quiet: !debug,
@@ -785,13 +790,6 @@ pub(super) async fn launch_role_runtime(
     // `--debug` run shows exactly what was enforced. The session contract
     // (emitted below, once credential state is known) is the human-readable
     // summary of the same data.
-    let dind_mode = if !dind_enabled {
-        "none"
-    } else if crate::runtime::docker_profile::dind_privileged(grants) {
-        "privileged"
-    } else {
-        "rootless"
-    };
     let yn = |enabled: bool| if enabled { "yes" } else { "no" };
     jackin_diagnostics::debug_log!(
         "launch",
@@ -838,7 +836,7 @@ pub(super) async fn launch_role_runtime(
             jackin_diagnostics::debug_log!("launch", "resource_limit kind={kind} value={value}");
         }
     }
-    jackin_diagnostics::debug_log!("launch", "dind enabled={dind_enabled} mode={dind_mode}");
+    jackin_diagnostics::debug_log!("launch", "dind enabled={dind_enabled} mode={}", grants.dind);
     // Host Docker socket is never mounted into a role container (hard rule);
     // guarded by `role_container_never_mounts_host_docker_socket` in tests.
     jackin_diagnostics::debug_log!("launch", "host_socket_check passed=yes");
@@ -1045,32 +1043,34 @@ pub(super) async fn launch_role_runtime(
             crate::runtime::docker_profile::network_enforcement_label(grants)
         ));
     }
-    // WP3: render the session contract now that credential state is known.
-    // Coarse `agent_auth_mode` reflects whether the selected agent's auth was
-    // provisioned; the richer credential posture is owned by WP7.
-    let agent_auth_mode = match agent.slug() {
-        "claude" => state.auth.claude.is_some(),
-        "codex" => state.auth.codex.is_some(),
-        "amp" => state.auth.amp.is_some(),
-        "kimi" => state.auth.kimi.is_some(),
-        "opencode" => state.auth.opencode.is_some(),
-        _ => false,
-    };
-    let session_contract = crate::runtime::docker_profile::format_session_contract(
-        *profile,
-        &profile_source.to_string(),
-        grants,
-        apparmor_available,
-        apparmor_layer,
-        cgroup_version,
-        if agent_auth_mode {
-            "provisioned"
-        } else {
-            "none"
-        },
-        gh_token.is_some(),
-    );
-    jackin_diagnostics::debug_log!("launch", "session_contract\n{session_contract}");
+    // WP3: render the session contract under `--debug` only (its sole consumer
+    // is the debug_log below). Coarse `agent_auth_mode` reflects whether the
+    // selected agent's auth was provisioned; richer posture is owned by WP7.
+    if *debug {
+        let agent_auth_mode = match agent.slug() {
+            "claude" => state.auth.claude.is_some(),
+            "codex" => state.auth.codex.is_some(),
+            "amp" => state.auth.amp.is_some(),
+            "kimi" => state.auth.kimi.is_some(),
+            "opencode" => state.auth.opencode.is_some(),
+            _ => false,
+        };
+        let session_contract = crate::runtime::docker_profile::format_session_contract(
+            *profile,
+            &profile_source.to_string(),
+            grants,
+            apparmor_available,
+            apparmor_layer,
+            cgroup_version,
+            if agent_auth_mode {
+                "provisioned"
+            } else {
+                "none"
+            },
+            gh_token.is_some(),
+        );
+        jackin_diagnostics::debug_log!("launch", "session_contract\n{session_contract}");
+    }
     push_env_if_present(
         &mut env_strings,
         jackin_core::env_model::GITHUB_TOKEN_ENV_NAME,

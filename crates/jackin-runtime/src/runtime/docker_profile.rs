@@ -196,6 +196,31 @@ fn format_bytes(bytes: u64) -> String {
 ///
 /// Called at launch time before any container is started. A non-empty error
 /// list aborts the launch with clear, actionable messages.
+/// Parse a `--memory`-style size grant and range-check it for the Docker/Bollard
+/// `i64` boundary, pushing the matching validation error on failure. Returns the
+/// parsed bytes (even when out of range) so cross-field comparisons can proceed.
+fn parse_size_field(
+    errors: &mut Vec<GrantValidationError>,
+    field: &'static str,
+    value: Option<&str>,
+) -> Option<u64> {
+    let raw = value?;
+    let Some(bytes) = parse_memory_bytes(raw) else {
+        errors.push(GrantValidationError::UnparsableSize {
+            field,
+            value: raw.to_owned(),
+        });
+        return None;
+    };
+    if bytes > i64::MAX as u64 {
+        errors.push(GrantValidationError::ValueOutOfRange {
+            field,
+            reason: "exceeds i64::MAX (≈ 8 EiB); use a value ≤ 8 EiB",
+        });
+    }
+    Some(bytes)
+}
+
 pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
     let mut errors = Vec::new();
 
@@ -212,28 +237,16 @@ pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
         }
     }
 
-    // Parse and validate memory sizes — call parse_memory_bytes once per field.
-    let memory_bytes = grants.memory.as_deref().and_then(|s| {
-        let v = parse_memory_bytes(s);
-        if v.is_none() {
-            errors.push(GrantValidationError::UnparsableSize {
-                field: "memory",
-                value: s.to_owned(),
-            });
-        }
-        v
-    });
-
-    let reservation_bytes = grants.memory_reservation.as_deref().and_then(|s| {
-        let v = parse_memory_bytes(s);
-        if v.is_none() {
-            errors.push(GrantValidationError::UnparsableSize {
-                field: "memory_reservation",
-                value: s.to_owned(),
-            });
-        }
-        v
-    });
+    // Parse + range-check the two memory size fields (identical rules: a parse
+    // failure records UnparsableSize; a value over i64::MAX records ValueOutOfRange
+    // for the Bollard/Docker API boundary). Returns the parsed value either way so
+    // the reservation-vs-memory comparison below still runs.
+    let memory_bytes = parse_size_field(&mut errors, "memory", grants.memory.as_deref());
+    let reservation_bytes = parse_size_field(
+        &mut errors,
+        "memory_reservation",
+        grants.memory_reservation.as_deref(),
+    );
 
     if let (Some(res), Some(mem)) = (reservation_bytes, memory_bytes)
         && res > mem
@@ -241,24 +254,6 @@ pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
         errors.push(GrantValidationError::MemoryReservationExceedsMemory {
             reservation: res,
             memory: mem,
-        });
-    }
-
-    // Memory values must fit in i64 for the Bollard/Docker API boundary.
-    if let Some(bytes) = memory_bytes
-        && bytes > i64::MAX as u64
-    {
-        errors.push(GrantValidationError::ValueOutOfRange {
-            field: "memory",
-            reason: "exceeds i64::MAX (≈ 8 EiB); use a value ≤ 8 EiB",
-        });
-    }
-    if let Some(bytes) = reservation_bytes
-        && bytes > i64::MAX as u64
-    {
-        errors.push(GrantValidationError::ValueOutOfRange {
-            field: "memory_reservation",
-            reason: "exceeds i64::MAX (≈ 8 EiB); use a value ≤ 8 EiB",
         });
     }
 
@@ -873,12 +868,12 @@ pub fn tmpfs_paths(profile: DockerSecurityProfile) -> Vec<&'static str> {
 /// location when the profile's root filesystem is read-only. Empty for
 /// writable-root profiles.
 ///
-/// Companion to [`tmpfs_paths`]: together they cover the writable-home targets a
-/// read-only-root profile needs. `git config --global` can't use a tmpfs/bind on
-/// `~/.gitconfig` alone because it writes a `.gitconfig.lock` in the read-only
-/// home dir, so it is pointed at the writable `/jackin/state` mount instead.
-/// (The full read-only-root `$HOME` audit is tracked on the Docker hardening
-/// roadmap item.)
+/// The env-redirect arm of the read-only-root `$HOME` story (the in-place
+/// writable-path arm is [`tmpfs_paths`]). `git config --global` can't be fixed
+/// with a tmpfs/bind on `~/.gitconfig` alone because it writes a `.gitconfig.lock`
+/// in the read-only home dir, so it is pointed at the already-writable
+/// `/jackin/state` bind mount instead. (The full `$HOME` audit is tracked on the
+/// Docker hardening roadmap item.)
 pub fn readonly_home_env(grants: &EffectiveGrants) -> Vec<String> {
     if grants.system_writes {
         return Vec::new();
