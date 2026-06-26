@@ -62,6 +62,19 @@ fn pack_with_versions(versions: &str) -> anyhow::Result<RulePack> {
     pack.validate().map(|()| pack)
 }
 
+/// Load a one-rule pack whose sole rule carries `gate` (a TOML gate value like
+/// `{ any = [] }`) and return its `validate()` result — the load-time guard the
+/// `gate_rejects_*` cases assert fails.
+fn validate_gate(gate: &str) -> anyhow::Result<()> {
+    let pack: RulePack = toml::from_str(&format!(
+        "schema_version = 1\nagent = \"test\"\nvalidated_versions = \">=1.0.0, <2\"\n\
+         [[rule]]\nid = \"g\"\nstate = \"blocked\"\npriority = 1\nregion = \"bottom:5\"\n\
+         gate = {gate}\n"
+    ))
+    .unwrap();
+    pack.validate()
+}
+
 #[test]
 fn validated_versions_must_be_bounded() {
     // Bounded ranges are accepted.
@@ -710,15 +723,9 @@ all = [ { regex = "esc to interrupt" }, { line_regex = '^\s*[*]\s' } ]
 
 #[test]
 fn gate_rejects_empty_all_any() {
-    for empty in ["any = []", "all = []"] {
-        let pack: RulePack = toml::from_str(&format!(
-            "schema_version = 1\nagent = \"test\"\nvalidated_versions = \">=1.0.0, <2\"\n\
-             [[rule]]\nid = \"vacuous\"\nstate = \"blocked\"\npriority = 1\nregion = \"bottom:5\"\n\
-             gate = {{ {empty} }}\n"
-        ))
-        .unwrap();
+    for empty in ["{ any = [] }", "{ all = [] }"] {
         assert!(
-            pack.validate().is_err(),
+            validate_gate(empty).is_err(),
             "vacuous gate `{empty}` must be rejected at load"
         );
     }
@@ -727,14 +734,8 @@ fn gate_rejects_empty_all_any() {
 #[test]
 fn gate_rejects_overlong_leaf() {
     let long = "x".repeat(513);
-    let pack: RulePack = toml::from_str(&format!(
-        "schema_version = 1\nagent = \"test\"\nvalidated_versions = \">=1.0.0, <2\"\n\
-         [[rule]]\nid = \"overlong\"\nstate = \"blocked\"\npriority = 1\nregion = \"bottom:5\"\n\
-         gate = {{ contains = \"{long}\" }}\n"
-    ))
-    .unwrap();
     assert!(
-        pack.validate().is_err(),
+        validate_gate(&format!("{{ contains = \"{long}\" }}")).is_err(),
         "a >512-char gate leaf must be rejected"
     );
 }
@@ -742,18 +743,12 @@ fn gate_rejects_overlong_leaf() {
 #[test]
 fn gate_rejects_excessive_nesting_depth() {
     // Build `not = { not = { … contains } }` nested past MAX_GATE_DEPTH.
-    let mut inner = "{ contains = \"x\" }".to_owned();
+    let mut gate = "{ contains = \"x\" }".to_owned();
     for _ in 0..20 {
-        inner = format!("{{ not = {inner} }}");
+        gate = format!("{{ not = {gate} }}");
     }
-    let pack: RulePack = toml::from_str(&format!(
-        "schema_version = 1\nagent = \"test\"\nvalidated_versions = \">=1.0.0, <2\"\n\
-         [[rule]]\nid = \"deep\"\nstate = \"blocked\"\npriority = 1\nregion = \"bottom:5\"\n\
-         gate = {inner}\n"
-    ))
-    .unwrap();
     assert!(
-        pack.validate().is_err(),
+        validate_gate(&gate).is_err(),
         "over-nested gate must fail at load"
     );
 }
