@@ -1,4 +1,6 @@
 use super::*;
+use std::fs;
+use std::process::Command;
 
 #[test]
 fn paths_stay_inside_pr_bundle() {
@@ -143,6 +145,43 @@ fn parse_pr_info_filters_empty_and_non_string_paths() {
 }
 
 #[test]
+fn checkout_reset_guard_rejects_dirty_worktree() {
+    let temp = git_repo_with_commit();
+    fs::write(temp.path().join("tracked.txt"), "dirty\n").unwrap();
+
+    let err = ensure_checkout_reset_safe(temp.path(), "feature", "HEAD", false).unwrap_err();
+
+    assert!(
+        err.to_string().contains("local changes"),
+        "unexpected error: {err:#}"
+    );
+}
+
+#[test]
+fn checkout_reset_guard_rejects_local_commits_on_target_branch() {
+    let temp = git_repo_with_commit();
+    run_git(temp.path(), ["checkout", "-b", "feature"]);
+    fs::write(temp.path().join("feature.txt"), "local\n").unwrap();
+    run_git(temp.path(), ["add", "feature.txt"]);
+    run_git(temp.path(), ["commit", "-m", "local"]);
+
+    let err = ensure_checkout_reset_safe(temp.path(), "feature", "main", false).unwrap_err();
+
+    assert!(
+        err.to_string().contains("local commit"),
+        "unexpected error: {err:#}"
+    );
+}
+
+#[test]
+fn checkout_reset_guard_force_allows_dirty_worktree() {
+    let temp = git_repo_with_commit();
+    fs::write(temp.path().join("tracked.txt"), "dirty\n").unwrap();
+
+    ensure_checkout_reset_safe(temp.path(), "feature", "HEAD", true).unwrap();
+}
+
+#[test]
 fn parse_pr_info_rejects_missing_files() {
     let json = serde_json::json!({ "headRefName": "fix/example", "headRefOid": "abc123" });
 
@@ -159,4 +198,31 @@ fn json_string_rejects_missing_and_empty() {
         json_string(&serde_json::json!({ "k": "v" }), "k").unwrap(),
         "v"
     );
+}
+
+fn git_repo_with_commit() -> tempfile::TempDir {
+    let temp = tempfile::tempdir().unwrap();
+    run_git(temp.path(), ["init", "-b", "main"]);
+    run_git(
+        temp.path(),
+        ["config", "user.email", "test@example.invalid"],
+    );
+    run_git(temp.path(), ["config", "user.name", "Test User"]);
+    fs::write(temp.path().join("tracked.txt"), "base\n").unwrap();
+    run_git(temp.path(), ["add", "tracked.txt"]);
+    run_git(temp.path(), ["commit", "-m", "base"]);
+    temp
+}
+
+fn run_git<I, S>(dir: &Path, args: I)
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .status()
+        .unwrap();
+    assert!(status.success(), "git command failed with {status}");
 }

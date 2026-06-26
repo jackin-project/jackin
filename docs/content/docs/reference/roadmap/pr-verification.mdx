@@ -31,7 +31,7 @@ source "$(jackin-dev pr path <PR_NUMBER>)/env.sh"
 which jackin
 ```
 
-`jackin-dev pr sync <PR_NUMBER>` replaces the repeated shell sequence that exported `JACKIN_PR_TEST_DIR`, created the directory, cloned the repository, fetched the pull request ref, checked out `pr-<PR_NUMBER>`, and ran `cargo xtask pr prepare`. It also fixes the current state-location bug: no generated PR verification state belongs directly under the operator's home directory or live config directory.
+`jackin-dev pr sync <PR_NUMBER>` replaces the repeated shell sequence that exported `JACKIN_PR_TEST_DIR`, created the directory, cloned the repository, fetched the pull request ref, checked out `pr-<PR_NUMBER>`, and ran `cargo xtask pr prepare`. It also fixes the current state-location bug: no generated PR verification state belongs directly under the operator's home directory or live config directory. The checkout reset is guarded: sync refuses to proceed with local changes or local-only commits unless the operator explicitly passes `--force`.
 
 Each pull request gets one self-contained bundle:
 
