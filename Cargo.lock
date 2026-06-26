@@ -143,7 +143,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -154,7 +154,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -356,7 +356,7 @@ dependencies = [
  "bitflags 2.13.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "lazy_static",
  "lazycell",
  "log",
@@ -1408,7 +1408,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1570,7 +1570,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2610,7 +2610,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2640,15 +2640,6 @@ name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
 dependencies = [
  "either",
 ]
@@ -3509,7 +3500,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3600,7 +3591,7 @@ version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "chrono",
  "getrandom 0.2.17",
  "http",
@@ -4508,7 +4499,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "petgraph",
@@ -4527,7 +4518,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -5094,7 +5085,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5107,7 +5098,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5164,7 +5155,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5796,7 +5787,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6047,7 +6038,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6060,7 +6051,7 @@ dependencies = [
  "parking_lot",
  "rustix 1.1.4",
  "signal-hook",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6614,9 +6605,9 @@ dependencies = [
 
 [[package]]
 name = "turso"
-version = "0.7.0-pre.10"
+version = "0.7.0-pre.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d01c4d88407d9f140d7c20700820a3ed848a0f38f1502557b731cb7432e7025"
+checksum = "22b818883a69bb79cdb6e48c20e582b62a5e36ef208c62114d3852e395dd1f0a"
 dependencies = [
  "thiserror 2.0.18",
  "tracing",
@@ -6628,9 +6619,9 @@ dependencies = [
 
 [[package]]
 name = "turso_core"
-version = "0.7.0-pre.10"
+version = "0.7.0-pre.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41524b79d4649f57b242dc8624a583c1070277da3f35845b668822e549c84a6d"
+checksum = "77da3fcbf1d53c4828b788df3f67eeaf768773cd082135f70f8032b2ad0f635e"
 dependencies = [
  "aegis",
  "aes",
@@ -6697,9 +6688,9 @@ dependencies = [
 
 [[package]]
 name = "turso_ext"
-version = "0.7.0-pre.10"
+version = "0.7.0-pre.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "054da6e06172506a9c71488777a57abc378bf00bb612e7a175d226019678f74e"
+checksum = "7b255c52a7dcf62a2744ef7f65ea83c93975ef1a3d9a1ab91605cd37e39909a1"
 dependencies = [
  "chrono",
  "getrandom 0.4.3",
@@ -6708,9 +6699,9 @@ dependencies = [
 
 [[package]]
 name = "turso_macros"
-version = "0.7.0-pre.10"
+version = "0.7.0-pre.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef5f24b2872ee08384c0b52a576f2ad27e56596832676efad437b219925232f4"
+checksum = "997660c26f248fc59ba55399be85a5dc09870f00539676b9ce0d0ae2ba1535d5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6719,9 +6710,9 @@ dependencies = [
 
 [[package]]
 name = "turso_parser"
-version = "0.7.0-pre.10"
+version = "0.7.0-pre.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ae264e3470c5849d2b05d6759908b543cb805cf188145d7ea07be2b3e765144"
+checksum = "b8e42b200a507da7c843e5a68088e983eb95e20d8c6b5ba057489387409d4de1"
 dependencies = [
  "bitflags 2.13.0",
  "memchr",
@@ -6734,9 +6725,9 @@ dependencies = [
 
 [[package]]
 name = "turso_sdk_kit"
-version = "0.7.0-pre.10"
+version = "0.7.0-pre.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "941d1ee5e6a27e83b239410db6af385acc3bfc54e81e344e48dd7e42428d23ee"
+checksum = "20795688336c8f20743031e239ba71badf65fb1ecee14e665e19bbc4a67f1706"
 dependencies = [
  "bindgen 0.69.5",
  "env_logger",
@@ -6751,9 +6742,9 @@ dependencies = [
 
 [[package]]
 name = "turso_sdk_kit_macros"
-version = "0.7.0-pre.10"
+version = "0.7.0-pre.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59374eb3d3c7ffe4f9fccd3352f1c80fb1265f265fc0131bc62ab7573bee1355"
+checksum = "09905d3b134c0bd906894b004b893aa58c71b125b45958e55c42d5d56f9a87b7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6762,9 +6753,9 @@ dependencies = [
 
 [[package]]
 name = "turso_sync_engine"
-version = "0.7.0-pre.10"
+version = "0.7.0-pre.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e88f961e7a0b7679ca09122ead618faf14094fb7b88f51691e8263486fc7fe3f"
+checksum = "459add86b49ed9d5b25ff7d3b7be7faa24dc174bc9c840763231fe8f4a81dc11"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -6784,9 +6775,9 @@ dependencies = [
 
 [[package]]
 name = "turso_sync_sdk_kit"
-version = "0.7.0-pre.10"
+version = "0.7.0-pre.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "122e7c09a1470e0400f8db13ee7589e610c4ad1f2cc2034309e7ca9cfcd7c978"
+checksum = "885cad3abe73b2483a3d2cb4333bd7aae9eedf64368cf16361c6ff881db0ea70"
 dependencies = [
  "bindgen 0.69.5",
  "env_logger",
@@ -7276,7 +7267,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7391,15 +7382,6 @@ name = "windows-sys"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
-dependencies = [
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.59.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets 0.52.6",
 ]
