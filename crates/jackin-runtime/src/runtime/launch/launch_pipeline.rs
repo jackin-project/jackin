@@ -2063,3 +2063,6 @@ fn known_agent_credential_env(key: &str) -> bool {
         })
         .any(|credential_key| credential_key == key)
 }
+
+#[cfg(test)]
+mod tests;
