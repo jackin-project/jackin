@@ -112,7 +112,7 @@ pub struct DebugInfo {
     pub agent: Option<String>,
     /// Working directory / target label.
     pub target: Option<String>,
-    /// Bare run id (`jk-run-xxxxxx`) — never the log path.
+    /// Bare run id — never the log path.
     pub run_id: Option<String>,
     /// Absolute path to the run's diagnostics JSONL. Rendered copyable with a
     /// `file://` hyperlink; the bare run id goes in [`Self::run_id`] instead.
@@ -356,23 +356,38 @@ pub fn clamp_dialog_scroll(
 }
 
 /// Keys for the Debug-info dialog hint bar: the *available* scroll axes (per
-/// `axes`) then keyboard copy + dismiss. The scroll segment is omitted entirely
-/// when the body fits, and shows only the axis/axes that actually overflow —
-/// the dialog never advertises a direction the operator cannot move.
+/// `axes`), keyboard copy, dismiss, then click-to-copy. The scroll segment is
+/// omitted entirely when the body fits, and shows only the axis/axes that
+/// actually overflow — the dialog never advertises a direction the operator
+/// cannot move.
+///
+/// Single source of truth for the Debug-info hint bar: the console list modal
+/// and the launch cockpit both render this exact sequence so the same dialog
+/// never drifts between surfaces. The keyboard and mouse affordances are
+/// inline-handled (Enter copies the hovered row, Esc dismisses, left-click
+/// copies) with no backing `Keymap<A>`, so each span carries an
+/// `// UNREGISTERABLE` annotation per the keymap/hint-bar enforcement rule.
 #[must_use]
 pub fn debug_info_hint_spans(axes: crate::components::ScrollAxes) -> Vec<crate::HintSpan<'static>> {
     let mut spans = crate::components::scroll_hint_spans(axes);
     if axes.any() {
         spans.push(crate::HintSpan::GroupSep);
     }
+    // UNREGISTERABLE(container-info-copy): Enter copies the active row inline; no ContainerInfo keymap.
     spans.push(crate::HintSpan::Key("↵"));
     spans.push(crate::HintSpan::Text("copy value"));
     spans.push(crate::HintSpan::GroupSep);
+    // UNREGISTERABLE(container-info-reveal): R/O toggle reveals diagnostics inline; no ContainerInfo keymap.
     spans.push(crate::HintSpan::Key("R/O"));
     spans.push(crate::HintSpan::Text("reveal diagnostics"));
     spans.push(crate::HintSpan::GroupSep);
+    // UNREGISTERABLE(container-info-no-keymap): Esc dismisses inline.
     spans.push(crate::HintSpan::Key("Esc"));
     spans.push(crate::HintSpan::Text("dismiss"));
+    spans.push(crate::HintSpan::GroupSep);
+    // UNREGISTERABLE(mouse): mouse click cannot be expressed as a KeyChord.
+    spans.push(crate::HintSpan::Key("click"));
+    spans.push(crate::HintSpan::Text("copy value"));
     spans
 }
 

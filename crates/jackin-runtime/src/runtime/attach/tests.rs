@@ -97,8 +97,27 @@ fn host_attach_transport_falls_back_when_socket_inode_refuses_connect() {
     }
 }
 
+#[test]
+fn insert_run_as_user_places_flag_immediately_after_exec() {
+    let user = Some("1001:0".to_owned());
+    let mut args = vec!["exec", "-it", "ctr", "cmd"];
+    insert_run_as_user(&mut args, user.as_deref());
+    assert_eq!(args, vec!["exec", "--user", "1001:0", "-it", "ctr", "cmd"]);
+}
+
+#[test]
+fn insert_run_as_user_is_noop_when_absent() {
+    let user: Option<String> = None;
+    let mut args = vec!["exec", "-it", "ctr"];
+    insert_run_as_user(&mut args, user.as_deref());
+    assert_eq!(args, vec!["exec", "-it", "ctr"]);
+}
+
 #[tokio::test]
 async fn wait_for_capsule_daemon_polls_socket_status_command() {
+    let (_tmp, paths) = test_paths();
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _guard = run.activate();
     let docker = FakeDockerClient {
         exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 1\n".to_owned()])),
         ..Default::default()
@@ -115,11 +134,20 @@ async fn wait_for_capsule_daemon_polls_socket_status_command() {
             .any(|call| call.contains(&format!("sh -c {JACKIN_STATUS_CMD}"))),
         "expected socket/status wait command; recorded: {recorded:?}"
     );
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"timing_done\"")
+            && diagnostics.contains("wait_capsule_socket")
+            && diagnostics.contains("ready"),
+        "expected wait_capsule_socket timing in diagnostics: {diagnostics}"
+    );
 }
 
 #[tokio::test]
 async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
     let (_tmp, paths) = test_paths();
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _guard = run.activate();
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 0,
@@ -149,7 +177,8 @@ async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
     );
     assert!(
         runner.recorded.iter().any(|call| {
-            call.contains("docker exec -it")
+            call.contains("docker exec")
+                && call.contains("-it")
                 && call.contains("jk-agent-smith")
                 && call.contains("/jackin/runtime/jackin-capsule")
         }),
@@ -163,6 +192,14 @@ async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
             .any(|call| call.contains("docker start -ai")),
         "restart path must not attach to PID 1; recorded: {:?}",
         runner.recorded
+    );
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("restore_inspect")
+            && diagnostics.contains("stopped")
+            && diagnostics.contains("restore_start_container")
+            && diagnostics.contains("started"),
+        "expected restore timing diagnostics: {diagnostics}"
     );
 }
 

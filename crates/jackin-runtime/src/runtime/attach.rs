@@ -90,7 +90,12 @@ pub(super) async fn wait_for_capsule_daemon(
     const MAX_ATTEMPTS: u32 = 60;
     const INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
-    crate::spin_wait::spin_wait(
+    jackin_diagnostics::active_timing_started(
+        "capsule",
+        "wait_capsule_socket",
+        Some(container_name),
+    );
+    let wait_result = crate::spin_wait::spin_wait(
         "Waiting for jackin-capsule daemon",
         MAX_ATTEMPTS,
         INTERVAL,
@@ -102,7 +107,17 @@ pub(super) async fn wait_for_capsule_daemon(
         },
     )
     .await
-    .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"))
+    .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"));
+    jackin_diagnostics::active_timing_done(
+        "capsule",
+        "wait_capsule_socket",
+        if wait_result.is_ok() {
+            Some("ready")
+        } else {
+            Some("error")
+        },
+    );
+    wait_result
 }
 
 #[cfg(test)]
@@ -262,6 +277,18 @@ fn host_alt_screen_exec_flag() -> Option<&'static str> {
     jackin_diagnostics::host_screen_owned().then_some("-e=JACKIN_HOST_ALT_SCREEN=1")
 }
 
+/// Insert `--user <host-uid>:0` right after `exec` so a `docker exec` shell
+/// runs as the same host UID the container was launched with (`--user` on
+/// `docker run`). Without it the exec would default to the image's baked
+/// `agent` user (UID 1000) and hit the same bind-mount ownership mismatch the
+/// run-time UID mapping exists to remove. No-op on non-unix hosts.
+fn insert_run_as_user<'a>(args: &mut Vec<&'a str>, run_as_user: Option<&'a str>) {
+    if let Some(user) = run_as_user {
+        args.insert(1, user);
+        args.insert(1, "--user");
+    }
+}
+
 pub(super) async fn reconnect_or_create_session_with_focus(
     paths: &JackinPaths,
     container_name: &str,
@@ -284,6 +311,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         return outcome;
     }
     let focus_arg = focus_session.map(|id| id.to_string());
+    let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut args: Vec<&str> = vec![
         "exec",
         "-it",
@@ -293,10 +321,16 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     if let Some(flag) = host_alt_screen_exec_flag() {
         args.insert(1, flag);
     }
+    insert_run_as_user(&mut args, run_as_user.as_deref());
     if let Some(ref id) = focus_arg {
         args.push("--focus");
         args.push(id);
     }
+    jackin_diagnostics::active_timing_started(
+        "hardline",
+        "capsule_client_exec",
+        Some(container_name),
+    );
     let outcome = runner
         .run(
             "docker",
@@ -308,6 +342,15 @@ pub(super) async fn reconnect_or_create_session_with_focus(
             },
         )
         .await;
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        "capsule_client_exec",
+        if outcome.is_ok() {
+            Some("detached")
+        } else {
+            Some("error")
+        },
+    );
     // The capsule has detached; re-claim the alt screen before any post-attach
     // work so the exit flow does not flash the operator's shell.
     jackin_diagnostics::reassert_alt_screen();
@@ -320,13 +363,32 @@ pub(super) async fn start_or_reconnect_capsule_client(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    match docker.inspect_container_state(container_name).await {
+    jackin_diagnostics::active_timing_started("capsule", "restore_inspect", Some(container_name));
+    let inspect = docker.inspect_container_state(container_name).await;
+    let inspect_label = inspect.short_label();
+    jackin_diagnostics::active_timing_done("capsule", "restore_inspect", Some(&inspect_label));
+    match inspect {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
         ContainerState::Stopped { .. } | ContainerState::Created => {
-            docker
+            jackin_diagnostics::active_timing_started(
+                "capsule",
+                "restore_start_container",
+                Some(container_name),
+            );
+            let start_result = docker
                 .start_container(container_name)
                 .await
-                .with_context(|| format!("starting role container {container_name}"))?;
+                .with_context(|| format!("starting role container {container_name}"));
+            jackin_diagnostics::active_timing_done(
+                "capsule",
+                "restore_start_container",
+                if start_result.is_ok() {
+                    Some("started")
+                } else {
+                    Some("error")
+                },
+            );
+            start_result?;
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
@@ -429,6 +491,7 @@ pub async fn spawn_shell_session(
         return finalize_reconnected_foreground_session(paths, container_name, docker, runner)
             .await;
     }
+    let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut args: Vec<&str> = vec![
         "exec",
         "-it",
@@ -436,9 +499,15 @@ pub async fn spawn_shell_session(
         "/jackin/runtime/jackin-capsule",
         "new",
     ];
+    insert_run_as_user(&mut args, run_as_user.as_deref());
     if let Some(flag) = host_alt_screen_exec_flag() {
         args.insert(1, flag);
     }
+    jackin_diagnostics::active_timing_started(
+        "hardline",
+        "shell_session_exec",
+        Some(container_name),
+    );
     let result = runner
         .run(
             "docker",
@@ -450,6 +519,15 @@ pub async fn spawn_shell_session(
             },
         )
         .await;
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        "shell_session_exec",
+        if result.is_ok() {
+            Some("detached")
+        } else {
+            Some("error")
+        },
+    );
     jackin_diagnostics::reassert_alt_screen();
     eprintln!();
     result?;
@@ -529,7 +607,9 @@ pub async fn spawn_agent_session(
             .await;
     }
 
+    let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut exec_args = vec!["exec", "--workdir", workdir, "-it"];
+    insert_run_as_user(&mut exec_args, run_as_user.as_deref());
     let coauthor_env_flag;
     let dco_env_flag;
     if let Some(ref env) = coauthor_env {
@@ -560,6 +640,8 @@ pub async fn spawn_agent_session(
     if let Some(flag) = host_alt_screen_exec_flag() {
         exec_args.insert(1, flag);
     }
+    let timing_name = format!("new_{}_session_exec", agent.slug());
+    jackin_diagnostics::active_timing_started("hardline", &timing_name, Some(container_name));
     let result = runner
         .run(
             "docker",
@@ -571,6 +653,15 @@ pub async fn spawn_agent_session(
             },
         )
         .await;
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        &timing_name,
+        if result.is_ok() {
+            Some("detached")
+        } else {
+            Some("error")
+        },
+    );
     jackin_diagnostics::reassert_alt_screen();
     eprintln!();
     result?;
@@ -602,7 +693,19 @@ pub async fn hardline_agent_with_focus(
     // so the post-hardline reconcile in `app::Command::Hardline` would fire
     // too late. Firing here, while the container is observably running, ensures
     // caffeinate spawns for the duration of the re-attached session.
-    let attach_outcome = match docker.inspect_container_state(container_name).await {
+    jackin_diagnostics::active_timing_started(
+        "hardline",
+        "hardline_container_inspect",
+        Some(container_name),
+    );
+    let container_state = docker.inspect_container_state(container_name).await;
+    let container_state_label = container_state.short_label();
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        "hardline_container_inspect",
+        Some(&container_state_label),
+    );
+    let attach_outcome = match container_state {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
             super::caffeinate::reconcile(paths, docker, runner).await;
             reconnect_or_create_session_with_focus(
@@ -667,11 +770,27 @@ async fn finalize_reconnected_foreground_session(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    jackin_diagnostics::active_timing_started(
+        "hardline",
+        "post_attach_outcome_inspect",
+        Some(container_name),
+    );
     let mut outcome =
         crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
+    let outcome_label = outcome.as_label();
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        "post_attach_outcome_inspect",
+        Some(&outcome_label),
+    );
     super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
     let mut prompt = crate::isolation::finalize::RichCleanupPrompt;
+    jackin_diagnostics::active_timing_started(
+        "hardline",
+        "foreground_session_finalize",
+        Some(container_name),
+    );
     let mut decision = crate::isolation::finalize::finalize_foreground_session(
         container_name,
         &paths.data_dir.join(container_name),
@@ -682,14 +801,35 @@ async fn finalize_reconnected_foreground_session(
         runner,
     )
     .await?;
+    jackin_diagnostics::active_timing_done(
+        "hardline",
+        "foreground_session_finalize",
+        Some(decision.as_str()),
+    );
 
     if matches!(
         decision,
         crate::isolation::finalize::FinalizeDecision::ReturnToAgent
     ) {
         start_or_reconnect_capsule_client(paths, container_name, docker, runner).await?;
+        jackin_diagnostics::active_timing_started(
+            "hardline",
+            "post_attach_outcome_inspect",
+            Some(container_name),
+        );
         outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
+        let outcome_label = outcome.as_label();
+        jackin_diagnostics::active_timing_done(
+            "hardline",
+            "post_attach_outcome_inspect",
+            Some(&outcome_label),
+        );
         super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
+        jackin_diagnostics::active_timing_started(
+            "hardline",
+            "foreground_session_finalize",
+            Some(container_name),
+        );
         decision = crate::isolation::finalize::finalize_foreground_session(
             container_name,
             &paths.data_dir.join(container_name),
@@ -700,6 +840,11 @@ async fn finalize_reconnected_foreground_session(
             runner,
         )
         .await?;
+        jackin_diagnostics::active_timing_done(
+            "hardline",
+            "foreground_session_finalize",
+            Some(decision.as_str()),
+        );
     }
 
     finalize_reconnected_resources(paths, container_name, outcome, decision, docker).await

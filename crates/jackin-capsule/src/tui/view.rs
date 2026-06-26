@@ -65,6 +65,8 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     /// operator keystroke clears it.
     pub(crate) spawn_failure: Option<&'a str>,
     /// Resolved palette-key byte (`InputParser::palette_key().unwrap_or(0x1C)`).
+    /// Forwarded to the hint builder so the palette-key glyph reflects the
+    /// operator's `JACKIN_PALETTE_KEY` setting.
     pub(crate) palette_key: u8,
     /// Transient host clipboard image paste result. Painted in the content
     /// toast area so it cannot overwrite status rows or bottom chrome.

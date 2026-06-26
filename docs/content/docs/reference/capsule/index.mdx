@@ -85,7 +85,7 @@ Two protocols share the same socket. The first byte sent by a client selects whi
 
 Both channels cap a single payload at 4 MiB. The control channel rejects malformed JSON and unknown structural shapes. Unknown tagged message variants decode as `Unknown` so a newer peer can fail fast instead of hanging on a read. The attach channel rejects unknown tags, truncated payloads, and oversized lengths.
 
-The authoritative control-channel wire types live in <RepoFile path="crates/jackin-protocol/src/control.rs" /> so the host CLI and the in-container binary share the same serde schema without making `jackin` depend on `jackin-capsule`'s PTY and terminal stack. The attach-channel frame codec lives in <RepoFile path="crates/jackin-protocol/src/attach.rs" /> because both the host attach client and the in-container Capsule daemon need the same binary framing.
+The authoritative control-channel wire types live in <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile> so the host CLI and the in-container binary share the same serde schema without making `jackin` depend on `jackin-capsule`'s PTY and terminal stack. The attach-channel frame codec lives in <RepoFile path="crates/jackin-protocol/src/attach.rs">crates/jackin-protocol/src/attach.rs</RepoFile> because both the host attach client and the in-container Capsule daemon need the same binary framing.
 
 Current control messages:
 
@@ -129,12 +129,12 @@ Current attach frames:
 | `Welcome` | daemon → client | Handshake response |
 | `Output` | daemon → client | Terminal bytes to render |
 | `SessionList` | daemon → client | Typed session inventory |
-| `Shutdown` | daemon → client | All sessions exited; client should exit |
+| `Shutdown` | daemon → client | All sessions exited; client should exit; failed final sessions include a short reason payload |
 | `HostOpenUrl` | daemon → client | Host attach client opens an explicit HTTP(S) URL selected from jackin-owned UI, such as the GitHub context dialog |
 | `HostStageImageFromClipboardPath` | daemon → client | Host attach client reads host clipboard text for the explicit image-path staging action and replies with image frames or `ClipboardImageError` |
 | `FileExportStart` / `FileExportChunk` / `FileExportEnd` | daemon → client | Host attach client writes one validated regular file to `~/Downloads/jackin/<instance>/` with chunk offsets and SHA-256 verification |
 
-The interactive attach path is long-lived. The short-lived `docker exec` client connects, sends `Hello`, then forwards operator terminal input as `Input` frames and terminal resizes as `Resize` frames. The daemon replies with `Welcome`, then streams rendered terminal output as `Output` frames. When the operator detaches, the client sends `Detach` and exits; the daemon keeps every PTY running. When the last live session ends, the daemon sends `Shutdown`, drains the final frame, exits as PID 1, and Docker reports the role container stopped.
+The interactive attach path is long-lived. The short-lived `docker exec` client connects, sends `Hello`, then forwards operator terminal input as `Input` frames and terminal resizes as `Resize` frames. The daemon replies with `Welcome`, then streams rendered terminal output as `Output` frames. When the operator detaches, the client sends `Detach` and exits; the daemon keeps every PTY running. When the last live session ends, the daemon sends `Shutdown`, drains the final frame, exits as PID 1, and Docker reports the role container stopped. Clean exits use an empty `Shutdown` payload. Failed final sessions send a short reason payload so the attach client prints the error and exits non-zero instead of returning a silent success.
 
 The attach protocol is intentionally not a general RPC surface. It is optimized for terminal traffic and has three constraints:
 
@@ -217,7 +217,7 @@ host:
   -> render console preview / pane picker
 ```
 
-On Docker Desktop, the host cannot open the Linux VM's Unix socket path directly even though the parent directory is bind-mounted. In that case <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs" /> falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot`; the in-container client still speaks the same control protocol to the same daemon socket, then prints the JSON response for the host to read.
+On Docker Desktop, the host cannot open the Linux VM's Unix socket path directly even though the parent directory is bind-mounted. In that case <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs">crates/jackin-runtime/src/runtime/snapshot.rs</RepoFile> falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot`; the in-container client still speaks the same control protocol to the same daemon socket, then prints the JSON response for the host to read.
 
 ### Failure and Security Boundaries
 
@@ -259,11 +259,11 @@ Tab
 
 ### Virtual terminal emulator
 
-Each pane owns one PTY and one `DamageGrid` (from the <RepoFile path="crates/jackin-term/src/grid.rs" /> jackin-term crate). The grid feeds PTY bytes through a `vte::Parser` and maintains the cell grid, alternate screen, scrollback, cursor, and mode state, while a typed passthrough stream (`drain_passthrough()`) surfaces the OSC and extension sequences that need focused-pane forwarding. When the operator switches tabs, splits, or reattaches, the compositor re-renders the saved grid to the host terminal. Wide glyph continuation cells are skipped during replay so CJK and emoji output keeps the same column layout the agent drew.
+Each pane owns one PTY and one `DamageGrid` (from the <RepoFile path="crates/jackin-term/src/grid.rs">crates/jackin-term/src/grid.rs</RepoFile> jackin-term crate). The grid feeds PTY bytes through a `vte::Parser` and maintains the cell grid, alternate screen, scrollback, cursor, and mode state, while a typed passthrough stream (`drain_passthrough()`) surfaces the OSC and extension sequences that need focused-pane forwarding. When the operator switches tabs, splits, or reattaches, the compositor re-renders the saved grid to the host terminal. Wide glyph continuation cells are skipped during replay so CJK and emoji output keeps the same column layout the agent drew.
 
 ### Render model
 
-`jackin-capsule` is a re-emitting terminal multiplexer: it reads each pane's PTY into an owned jackin-term `DamageGrid`, then composes the operator's visible screen from those grids plus jackin' chrome. The current renderer has exactly one emit path. Every visible update is one `ratatui::Terminal::draw` of the full widget tree — status bar, pane bodies, borders, shared scrollbars, bottom chrome, dialogs, text selection, and transient banners — encoded by <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs" /> and written by <RepoFile path="crates/jackin-capsule/src/client_writer.rs" /> inside synchronized-output brackets.
+`jackin-capsule` is a re-emitting terminal multiplexer: it reads each pane's PTY into an owned jackin-term `DamageGrid`, then composes the operator's visible screen from those grids plus jackin' chrome. The current renderer has exactly one emit path. Every visible update is one `ratatui::Terminal::draw` of the full widget tree — status bar, pane bodies, borders, shared scrollbars, bottom chrome, dialogs, text selection, and transient banners — encoded by <RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs">crates/jackin-capsule/src/tui/socket_backend.rs</RepoFile> and written by <RepoFile path="crates/jackin-capsule/src/client_writer.rs">crates/jackin-capsule/src/client_writer.rs</RepoFile> inside synchronized-output brackets.
 
 The one-path rule exists because the old mixed renderer had three writers sharing one client-screen baseline: Ratatui frames, a focused-pane dirty-patch tier, and raw appends for chrome, cursor/mode assertions, hyperlinks, and banners. That shape made stale cells structural: a glyph that changed and changed back between Ratatui frames could be skipped forever because the patch path had already mutated the real terminal while Ratatui's previous buffer never learned about it. It also made scrollback and focus changes fragile because a handler could mutate state without requesting the exact repaint tier that happened to refresh both body and footer. The shipped renderer removes the class, not just the observed failures: handlers mutate state and record an invalidation, the render loop composes when `frame_generation` moves, and `ClientWriter` is the only object that can reach the attach socket.
 
@@ -350,11 +350,11 @@ The policy is read once per session at spawn time; an agent that exports the env
 
 ## Distribution and versioning
 
-`jackin-capsule` is versioned identically to the `jackin` CLI — both use the same <RepoFile path="crates/jackin/build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
+`jackin-capsule` is versioned identically to the `jackin` CLI. Both binaries use the shared <RepoFile path="crates/jackin-build-meta/src/lib.rs">jackin-build-meta</RepoFile> build-script helper: local and pull-request builds fall back to `{cargo_pkg_version}+{7-char-git-sha}`, which is currently the `0.6.0-dev+<sha>` shape, while the main-branch preview workflow injects the published `0.6.0-preview.<count>+<sha>` string through `JACKIN_VERSION_OVERRIDE`. The host CLI, `jackin-role`, and `jackin-capsule --version` output must match the version string embedded in the artifact being tested or published.
 
 ### How jackin' acquires the binary
 
-`ensure_available` in <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> resolves the binary in priority order:
+`ensure_available` in <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> resolves the binary in priority order:
 
 1. **`JACKIN_CAPSULE_BIN=/path/to/binary` (env var set)** — jackin' uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin' validates only that the file exists and is executable.
 
@@ -368,7 +368,7 @@ jackin' itself has no knowledge of how to build `jackin-capsule` from source. Bu
 
 ### Building for local development
 
-Use the `build-jackin-capsule` binary (defined in <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs" />) to compile `jackin-capsule` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
+Use the `build-jackin-capsule` binary (defined in <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs">crates/jackin/src/bin/build_jackin_capsule.rs</RepoFile>) to compile `jackin-capsule` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
 
 - `arm64` → `aarch64-unknown-linux-gnu.2.17`
 - `amd64` → `x86_64-unknown-linux-gnu.2.17`
@@ -400,7 +400,7 @@ The binary is written to the standard cache path and subsequent `jackin load` in
 | `--debug` | Convenience alias for `--profile debug`. |
 | `--export` | Print only `export JACKIN_CAPSULE_BIN=<path>` for `eval` |
 
-Prerequisites: `zig` and `cargo-zigbuild` must be installed. Both are declared in <RepoFile path="mise.toml" />; run `mise install zig cargo:cargo-zigbuild` if missing.
+Prerequisites: `zig` and `cargo-zigbuild` must be installed. Both are declared in <RepoFile path="mise.toml">mise.toml</RepoFile>; run `mise install zig cargo:cargo-zigbuild` if missing.
 
 First build takes 2–3 minutes; subsequent builds are incremental via cargo's dependency cache.
 
@@ -408,19 +408,19 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 
 ### Derived image build
 
-<RepoFile path="crates/jackin-image/src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
+<RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
 
 ## Relationship to the rest of jackin'
 
 | Component | Relationship |
 |---|---|
-| <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
-| <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
-| <RepoFile path="crates/jackin-image/src/derived_image.rs" /> | Copies binary into derived image build context |
-| <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
-| <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
-| <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
-| <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
+| <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
+| <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs">crates/jackin/src/bin/build_jackin_capsule.rs</RepoFile> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
+| <RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile> | Copies binary into derived image build context |
+| <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
+| <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
+| <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
+| <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs">crates/jackin-runtime/src/isolation/finalize.rs</RepoFile> | Queries socket to detect live sessions before cleanup |
 | [Agent runtime status authority roadmap item](/reference/roadmap/agent-runtime-status/) | Defines the in-container state authority and consumes agent-state events from the socket once the event stream is implemented |
 | [jackin' daemon roadmap item](/reference/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
 | [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |

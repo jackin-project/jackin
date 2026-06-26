@@ -1003,10 +1003,10 @@ impl DamageGrid {
             hyperlink: self.active_hyperlink.clone(),
         };
         {
+            let hyperlink = self.active_hyperlink.clone();
             let grid = self.active_grid();
             grid[row][col] = cell;
             if width > 1 && col + 1 < cols as usize && col + 1 < grid[row].len() {
-                let hyperlink = grid[row][col].hyperlink.clone();
                 grid[row][col + 1] = Cell {
                     contents: compact_str::CompactString::new(""),
                     is_wide: false,

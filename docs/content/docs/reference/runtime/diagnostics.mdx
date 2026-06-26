@@ -11,9 +11,13 @@ Every `jackin` command invocation mints a **run ID** before any work begins and 
 ~/.jackin/data/diagnostics/runs/<run-id>.jsonl
 ```
 
-Run IDs take the form `jk-run-<6 hex chars>` (for example, `jk-run-8b4766`). The host CLI prints the run ID at startup in `--debug` mode. Debug launches also inject `JACKIN_RUN_ID` and `JACKIN_RUN_DIAGNOSTICS_PATH` into the role container so Capsule's Debug info dialog can copy the exact host JSONL path instead of guessing from the container's home directory.
+A run ID is a bare unique value with no prefix: a jackin-minted id is six hex characters (for example, `8b4766`); when a wrapper such as Parallax propagates its run id, jackin adopts that value instead. The host CLI prints the run ID at startup in `--debug` mode. Debug launches also inject `JACKIN_RUN_ID` and `JACKIN_RUN_DIAGNOSTICS_PATH` into the role container so Capsule's Debug info dialog can copy the exact host JSONL path instead of guessing from the container's home directory.
 
 Up to 200 run artifacts are retained; any artifact older than 30 days is pruned on the next run. Command-specific output logs (from `write_command_output`) are stored as sibling files named `<run-id>.<command-name>.log`.
+
+The file is the **fallback sink**, gated on whether OTLP export is active — not on `--debug`. With no OTLP endpoint configured, the file is written (it is the only durable sink). With OTLP active, the backend is the sink and no file is written unless the operator forces it with `JACKIN_DIAGNOSTICS_FILE=1`. If OTLP is configured but the exporter cannot be built, jackin' falls back to writing the file and surfaces a compact `otlp` notice. When the file is gated off, `RunDiagnostics` still exists (it carries the run id and powers OTLP export and `active_run`) but holds no writer; `RunDiagnostics::persists()` reports whether a file is being written, and the command-output sidecars share the same gate.
+
+Use `jackin diagnostics summary <run-id>` to print the slowest broad stages, nested timings, build-context sizes, Docker build steps, and cache decisions for a run without hand-parsing the JSONL file.
 
 ## JSONL event schema
 
@@ -41,6 +45,8 @@ Every line in the run artifact is a JSON object with the following fields (all r
 | `stage_started` | A launch stage begins | none |
 | `stage_done` | A launch stage completes | `{"duration_ms": N}` — wall-clock ms for that stage |
 | `run_summary` | End of run | `{"stage_durations_ms": {...}, "stage_duration_histograms_ms": {...}, "event_counts": {...}, "cache_hits": N, "cache_misses": N}` |
+| `launch_plan` | Restore/launch planning selected a foreground plan | `{"plan":"AttachExisting","reason":"...","container":"..."}` where `plan` is one of `AttachExisting`, `StartStopped`, `CreateFromValidImage`, or `BuildAndCreate` |
+| `launch_plan_rejected` | Restore/launch planning rejected a faster plan | `{"plan":"...","reason":"...","container":"...","state":"..."}` |
 | `debug` | `--debug` mode only; detailed trace lines | category string |
 | `container_started` | After `docker run -d` succeeds | `{"container_name": "...", "capsule_log": "/path/to/multiplexer.log"}` |
 | `container_exited` | Container exited with code 0 after attach | `{"container_name": "...", "exit_code": 0, "oom_killed": false, "capsule_log": "..."}` |
@@ -72,21 +78,58 @@ The `stage_done` event's `detail` always includes `duration_ms` — the wall-clo
 
 This makes the run JSONL the primary source for spotting performance bottlenecks and correlating blocking stalls with async runtime work. The run summary also records event counts, stage-duration histograms, and cache hit/miss counters so metric evidence stays attached to the run ID instead of disappearing into a separate local log.
 
+Launch diagnostics include nested credential timings such as `operator_env:<KEY>`, `github_env:<KEY>`, `role_state_prepare:github_auth`, and `role_state_prepare:<agent>_auth`. Details name value kinds or auth modes/outcomes only; resolved secret values are not written.
+
+Launch-plan diagnostics explain why the foreground path chose a given repair level. For example, a missing current-role container records rejected `AttachExisting` / `StartStopped` plans and a selected `CreateFromValidImage` plan before the image decision proves whether that path can reuse a local image or must build. When launch reuses a valid local image but a refresh is still due, `CreateFromValidImage` keeps the restore reason and appends the image reason, such as `no_restore_candidate_valid_image:published_image_stale`.
+
+Image cache diagnostics explain each derived-image decision. A valid local image emits `image_cache_hit` with `recipe_hash_match`; a rebuild emits `image_cache_miss` with the invalidation reason; a foreground-valid image with stale refresh inputs emits `image_refresh_background` so summaries show that launch reused the image while refresh work remains. Current reasons include broad failures such as `local_image_missing`, `missing_recipe_label`, `published_image_stale`, or `inspect_failed`, plus component-level recipe changes such as `construct_image_changed`, `base_image_changed`, `hooks_hash_changed`, `claude_plugin_recipe_changed`, and `host_identity_strategy_changed`.
+
+Cold rebuild diagnostics also include `build_context_snapshot` after jackin' creates the immutable Docker build context. The event records file count, byte count, and the temporary context path so slow build-context creation can be separated from Docker build time.
+
 ## Implementation
 
-The diagnostics system lives in <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> (`RunDiagnostics` struct). One instance is held per process in a `OnceLock<Mutex<Option<Arc<RunDiagnostics>>>>`. The file sink is a `BufWriter<File>` behind a `Mutex`; each event is serialized via `serde_json` and flushed immediately.
+The diagnostics system lives in <RepoFile path="crates/jackin-diagnostics/src/run.rs">crates/jackin-diagnostics/src/run.rs</RepoFile> (`RunDiagnostics` struct). One instance is held per process in a `OnceLock<Mutex<Option<Arc<RunDiagnostics>>>>`. The file sink is an `Option<Mutex<BufWriter<File>>>` — `None` when the file is gated off; when present, each event is serialized via `serde_json` and flushed immediately. Event counters always update (they feed the run summary, which OTLP also exports); only the JSONL write is skipped when the writer is absent.
 
 `RunDiagnostics` methods:
-- `compact(kind, message)` — lifecycle breadcrumb; always written.
+- `compact(kind, message)` — lifecycle breadcrumb; written when the file sink is on.
 - `stage(kind, stage, message, detail)` — stage event with optional detail; tracks `stage_started` / `stage_done` wall-clock timings.
 - `debug(category, line)` — written only when `--debug` is active.
 - `container_started(container_name, capsule_log_path)` — structured container lifecycle event.
 - `container_exited(container_name, exit_code, oom_killed, capsule_log_path, crash_evidence)` — structured crash/exit event; emits an additional `container_crash_log` event when `crash_evidence` is `Some`.
 - `emit_run_summary()` — writes the `run_summary` event with all accumulated stage durations.
+- `summarize_run_file(path)` — reads an existing JSONL artifact and derives the operator-facing `jackin diagnostics summary` report.
 
-Every `RunDiagnostics` write also emits a `tracing::info!` or `tracing::debug!` event. `JackinDiagnosticsLayer` in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> bridges those tracing events back into the run JSONL schema, preserving span context when one is active. These events feed **only** the JSONL sink and the optional OTLP exporter, installed when jackin' is compiled with `--features otlp` and `JACKIN_OTLP_ENDPOINT` is set. The default build installs no terminal subscriber.
+Every `RunDiagnostics` write also emits a `tracing::info!` or `tracing::debug!` event (`kind: "debug"` events use DEBUG severity so level-based exporters can filter the firehose). `JackinDiagnosticsLayer` in <RepoFile path="crates/jackin-diagnostics/src/observability.rs">crates/jackin-diagnostics/src/observability.rs</RepoFile> bridges those tracing events back into the run JSONL schema, preserving span context when one is active. The same layer also captures the OpenTelemetry SDK's own `tracing` events (targets starting `opentelemetry`) at WARN and above and records them as `otlp_internal` — export failures the OTLP layers themselves cannot surface (they are filtered out of the log bridge to avoid an export→log→export feedback loop). The default build installs no terminal subscriber.
 
-**Diagnostic output is file-only — it never reaches the operator's screen, in either the full-screen TUI or plain CLI commands.** The run JSONL is the sole sink for the firehose; `--debug` raises the captured detail level in that file, it does not stream events to stderr. This is why `init_tracing` attaches no `fmt` layer: a layer writing to stdout/stderr would corrupt the alternate screen the console / launch cockpit owns, and would clutter ordinary CLI output. Operator-visible lifecycle lines are a separate, deliberately compact surface (`emit_compact_line`), gated on `rich_terminal_owned()`; the verbose firehose stays in the file where the run ID can retrieve it.
+## OTLP export
+
+jackin' exports OTLP over **gRPC only** — the reference backend's (Parallax) default and what `parallax run` injects. With the `otlp` feature (default for the `jackin` binary) and an endpoint configured via the standard OpenTelemetry variables — `OTEL_EXPORTER_OTLP_ENDPOINT` for a base every signal derives from, or the per-signal `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_ENDPOINT` overrides — `init_tracing` installs span, log, and metric export beside the JSONL layer, with the gRPC channel target set to the endpoint verbatim (gRPC routes by service name, so no `/v1/<signal>` path is appended). A non-grpc `OTEL_EXPORTER_OTLP_PROTOCOL` (or per-signal variant) while an endpoint is configured is rejected at startup as a fatal `E016` rather than mis-sent (`first_unsupported_protocol` → `JackinError::UnsupportedOtlpProtocol`):
+
+- **Spans** via `tracing-opentelemetry`: every `launch_stage` tracing span exports with its wall-clock duration and `stage` attribute, so per-stage timings render as a trace waterfall in the backend.
+- **Logs** via `opentelemetry-appender-tracing`: every tracing event becomes a log record — the JSONL event stream (with `kind`/`stage`/`detail` as attributes and the message as the body) plus third-party crate telemetry such as bollard's request traces. The layer filter follows the debug flag: INFO level normally, DEBUG with `--debug` — the same two-tier rule as the rest of the telemetry surface.
+- **Metrics** via an async-runtime `PeriodicReader` (5 s interval) over gRPC: `process.cpu.utilization` (a gauge, unit `1`; sysinfo per-core percent normalized to a 0..1 fraction) and `process.memory.usage` (an UpDownCounter per semconv, resident bytes), plus the stable tokio runtime counters `tokio.runtime.workers`, `tokio.runtime.alive.tasks`, and `tokio.runtime.global.queue.depth`. CPU and memory read through one shared sampler that refreshes sysinfo at most once per collect cycle — refreshing per-instrument would measure CPU over the microseconds between callbacks. The runtime gauges read jackin's **app** runtime handle, captured before entering the dedicated telemetry runtime (see below) — capturing it later would read the telemetry runtime, and reading it from the collect thread would yield none. Metric init is best-effort: a failed exporter build logs at DEBUG and never blocks span/log export or the run.
+
+The export filter is scoped to jackin's own telemetry: the directive silences the OTLP transport stack (`hyper`/`h2`/`tower`/`tonic`/`reqwest`/`opentelemetry*`) so the log bridge cannot re-export the exporter's own request logs — a feedback loop under `--debug` — and the backend is not flooded with dependency-internal spans. The silencing applies only to the export layers; `JackinDiagnosticsLayer` is unfiltered, so it still captures `opentelemetry*` WARN+ as `otlp_internal` and a failed export stays visible in the run file.
+
+### Tag taxonomy
+
+All attribute keys live in `otel_keys` in <RepoFile path="crates/jackin-diagnostics/src/observability.rs">crates/jackin-diagnostics/src/observability.rs</RepoFile> — one source of truth. Every key is dotted, never underscored: jackin's own keys are `jackin.component`, `jackin.screen.name`, `jackin.workspace`, `jackin.agent.selected`, …; the run id uses the `parallax.run.id` key (Parallax is the reference backend, which promotes it to a queryable column — `parallax logs --run <id>`); `service.*` and `session.*` reuse the OpenTelemetry standard namespaces. There is no separate `jackin.run.id` — one dotted key groups the run. The OTLP resource carries `service.name=jackin`, `service.version`, `jackin.component=host`, and `parallax.run.id` — omitted when a wrapper already supplies it via `OTEL_RESOURCE_ATTRIBUTES` (then the wrapper's value wins and the env detector provides it). Because the run id must be on the resource, `RunDiagnostics::start` mints it **before** installing the subscriber.
+
+### Per-screen traces and span links
+
+`screen.rs` (<RepoFile path="crates/jackin-diagnostics/src/screen.rs">crates/jackin-diagnostics/src/screen.rs</RepoFile>) models each TUI screen as its own trace. `enter_screen` starts a span, detaches it into a fresh trace with `set_parent(Context::new())`, and `add_link`s the previous screen's `SpanContext` — so screens are separate but navigable. The current screen is a thread-local (sound: host TUI navigation is single-threaded); `carry_link_forward` snapshots it across the `run_console` return so the launch trace links to the list it started from. `launch_trace` enters the `launch` screen, tags workspace/agent/provider, and `future.instrument`s `load_role` so the existing `launch_stage` spans re-root under the launch trace with no change to `jackin-launch`.
+
+### Cross-process propagation
+
+When OTLP is active, `launch.rs` injects `TRACEPARENT` (the launch span, via `current_traceparent`), a container-reachable `OTEL_EXPORTER_OTLP_ENDPOINT` (`container_otlp` rewrites a loopback authority to `host.docker.internal` and flags `--add-host=host.docker.internal:host-gateway`), and `JACKIN_RUN_ID`. The capsule daemon (<RepoFile path="crates/jackin-capsule/src/telemetry.rs">crates/jackin-capsule/src/telemetry.rs</RepoFile>) calls `init_capsule_tracing`, which stamps `jackin.component=capsule`, a minted standard `session.id`, and the host `parallax.run.id`, and emits a session-start span linked to the launch via the parsed traceparent. The capsule's `clog!`/`cdebug!` lines bridge into OTLP logs (INFO/DEBUG by tier) correlated by `session.id`. The session exports per activity rather than under one long-lived span, so a SIGKILL only loses the in-flight tail.
+
+### Exporters and lifecycle
+
+The gRPC/tonic exporter is async, so it cannot run on the SDK's stable dedicated-thread batch processors (they `block_on` the export off any reactor and panic / hang); it requires the async-runtime batch processors driven by a tokio runtime. Both the host and capsule use a current-thread tokio main, where plain `rt-tokio` deadlocks on flush (the `futures_executor::block_on` flush parks the only thread) and `rt-tokio-current-thread`'s isolated per-spawn runtime cannot drive tonic's h2 connection. jackin' therefore owns a **dedicated multi-thread telemetry runtime** (`otel_runtime`, one worker, held for the process lifetime) and builds every exporter/processor/reader inside its `enter()` guard so their workers — and tonic's connection driver — spawn onto it; the flush then parks the main thread while those worker threads complete the export. On the host, `ActiveRunGuard::drop` calls `shutdown_otlp` to force-flush all providers, so the tail flushes on **every** run exit — including `?` error early-returns — not just the success path; the capsule holds an equivalent `FlushGuard` for the daemon's lifetime. Without an endpoint configured the layers and the flush are no-ops, and `--no-default-features` removes the dependency entirely.
+
+The operator-facing setup lives in the [Run Telemetry guide](/guides/run-telemetry/).
+
+**The firehose never reaches the operator's screen, in either the full-screen TUI or plain CLI commands.** It flows only to the active sink (the run JSONL and/or OTLP export); `--debug` raises the captured detail level, it does not stream events to stderr. This is why `init_tracing` attaches no `fmt` layer: a layer writing to stdout/stderr would corrupt the alternate screen the console / launch cockpit owns, and would clutter ordinary CLI output. Operator-visible lifecycle lines are a separate, deliberately compact surface (`emit_compact_line`): printed to stderr on a plain CLI, but when a rich surface owns the screen they are *deferred* into the debug buffer and flushed at teardown rather than dropped — so a notice such as a failed export reaches the operator (and any wrapping parent process) without spewing over the cockpit, and without depending on the optional run file.
 
 ## Redaction
 
@@ -94,6 +137,6 @@ Every `RunDiagnostics` write also emits a `tracing::info!` or `tracing::debug!` 
 
 ## See also
 
-- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> — `RunDiagnostics` implementation
-- <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> — `tracing` subscriber initialization
+- <RepoFile path="crates/jackin-diagnostics/src/run.rs">crates/jackin-diagnostics/src/run.rs</RepoFile> — `RunDiagnostics` implementation
+- <RepoFile path="crates/jackin-diagnostics/src/observability.rs">crates/jackin-diagnostics/src/observability.rs</RepoFile> — `tracing` subscriber initialization
 - [Capsule debug crash triage](/reference/capsule/) — how to use the run JSONL + `multiplexer.log` pointer to trace a container crash

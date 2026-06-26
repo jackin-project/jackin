@@ -53,7 +53,6 @@ impl AttachOutcome {
         Self::OomKilled
     }
 
-    #[allow(dead_code)]
     pub(crate) fn as_label(self) -> String {
         match self {
             Self::StillRunning => "still_running".to_owned(),
@@ -71,7 +70,6 @@ pub enum FinalizeDecision {
 }
 
 impl FinalizeDecision {
-    #[allow(dead_code)]
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Preserved => "preserved",

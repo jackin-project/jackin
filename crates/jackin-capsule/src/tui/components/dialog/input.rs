@@ -1,13 +1,17 @@
 //! Key, filter, and list-hit helpers for capsule dialogs.
 
+use jackin_tui::components::raw_bytes_to_chord;
+
 use super::{CLOSE_TARGET_ITEMS, DialogAction, SPLIT_DIRECTION_ITEMS};
+use crate::tui::keymap::{RENAME_KEYMAP, RenameAction};
 
 /// Edit a rename-tab input buffer in response to a raw key chunk.
-/// Enter commits, Esc cancels, Backspace removes the trailing char,
-/// any other printable ASCII char appends. Length cap and printable
-/// filter live inside `jackin_tui::TextField` so this handler only
-/// needs to dispatch key bytes — the buffer math is shared with the
-/// console TUI surface.
+/// Dispatches advertised keys through [`RENAME_KEYMAP`]: Enter commits,
+/// Esc / Ctrl+C / Ctrl+Q cancel, Backspace removes the trailing char.
+/// Any other printable chunk appends (the keymap `None` arm). Length cap
+/// and printable filter live inside `jackin_tui::TextField` so this
+/// handler only needs to dispatch key bytes — the buffer math is shared
+/// with the console TUI surface.
 pub(super) fn rename_tab_handle_key(
     tab_idx: usize,
     input: &mut jackin_tui::TextField,
@@ -37,14 +41,14 @@ fn text_input_handle_key(
     key: &[u8],
     commit: impl FnOnce(String) -> DialogAction,
 ) -> DialogAction {
-    match key {
-        b"\x1b" | b"\x03" => DialogAction::Dismiss,
-        b"\r" | b"\n" => commit(input.trimmed_value()),
-        b"\x7f" | b"\x08" => {
+    match raw_bytes_to_chord(key).and_then(|chord| RENAME_KEYMAP.dispatch(chord)) {
+        Some(RenameAction::Dismiss) => DialogAction::Dismiss,
+        Some(RenameAction::Save) => commit(input.trimmed_value()),
+        Some(RenameAction::FieldBackspace) => {
             input.backspace();
             DialogAction::Redraw
         }
-        _ => {
+        None => {
             // Accept any valid UTF-8 chunk one char at a time so CJK /
             // emoji / combining-mark labels reach `TextField` and match
             // the unicode-width measurement the tab strip and dialogs use.
@@ -62,49 +66,6 @@ fn text_input_handle_key(
             DialogAction::Redraw
         }
     }
-}
-
-pub(super) fn is_arrow_up(key: &[u8]) -> bool {
-    matches!(key, b"\x1b[A" | b"\x1bOA")
-}
-
-pub(super) fn is_arrow_down(key: &[u8]) -> bool {
-    matches!(key, b"\x1b[B" | b"\x1bOB")
-}
-
-/// Universal dialog-dismiss keys. Operators reach for `Esc` and `q`
-/// most often, but Backspace, Delete, and `Ctrl+C` are common
-/// muscle-memory fallbacks. Uppercase `Q` is included so a shift-key
-/// slip doesn't trap the operator inside the dialog. Read-only
-/// dialogs (`ContainerInfo`) use this set; filterable list dialogs
-/// (`CommandPalette`, `AgentPicker`) use the narrower
-/// `is_filter_dismiss_key` because Backspace builds the filter and
-/// `q` types into it.
-pub(super) fn is_dismiss_key(key: &[u8]) -> bool {
-    matches!(
-        key,
-        b"\x1b"      // Esc
-        | b"q"
-        | b"Q"
-        | b"\x03"   // Ctrl+C
-        | b"\x7f"   // Backspace
-        | b"\x08" // Ctrl+H / older Backspace
-    )
-}
-
-/// Narrow dismiss set for type-to-filter dialogs. Only Esc and
-/// Ctrl+C close the dialog — every other key either navigates the
-/// filtered list, confirms the selection, or builds the filter.
-pub(super) fn is_filter_dismiss_key(key: &[u8]) -> bool {
-    matches!(key, b"\x1b" | b"\x03")
-}
-
-pub(super) fn is_backspace(key: &[u8]) -> bool {
-    matches!(key, b"\x7f" | b"\x08")
-}
-
-pub(super) fn is_enter(key: &[u8]) -> bool {
-    matches!(key, b"\r" | b"\n")
 }
 
 /// Filterable dialogs accept printable ASCII (0x20..=0x7e) as filter
