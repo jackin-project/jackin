@@ -88,7 +88,11 @@ pub(crate) fn poll_session(session: &mut TokenSession) -> bool {
         session.totals.output_tokens = scratch_output;
         session.totals.cache_read_tokens = scratch_cache_read;
         session.totals.cache_write_tokens = scratch_cache_write;
-        session.totals.model = last_model;
+        // Only update the model when this pass saw one — never clobber a
+        // previously-resolved model with `None` (matches the other adapters).
+        if last_model.is_some() {
+            session.totals.model = last_model;
+        }
     }
     changed
 }

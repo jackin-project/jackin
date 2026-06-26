@@ -17,6 +17,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Instant, SystemTime};
 
+use jackin_core::agent::Agent;
+
 use jackin_protocol::control::TokenUsageSummary;
 
 /// Aggregated token totals for one session.
@@ -51,7 +53,7 @@ impl TokenTotals {
 /// Per-session token monitor state.
 #[derive(Debug)]
 pub(crate) struct TokenSession {
-    pub(crate) agent: String,
+    pub(crate) agent: Agent,
     pub(crate) totals: TokenTotals,
     /// Last rowid seen in `SQLite` (for `OpenCode` incremental reads).
     pub(crate) last_rowid: i64,
@@ -62,9 +64,9 @@ pub(crate) struct TokenSession {
 }
 
 impl TokenSession {
-    pub(crate) fn new(agent: &str) -> Self {
+    pub(crate) fn new(agent: Agent) -> Self {
         Self {
-            agent: agent.to_owned(),
+            agent,
             totals: TokenTotals::default(),
             last_rowid: 0,
             last_polled: Instant::now(),
@@ -86,14 +88,15 @@ impl TokenSession {
     /// Poll for new token data. Returns `true` when totals changed.
     pub(crate) async fn poll(&mut self) -> bool {
         self.last_polled = Instant::now();
-        let changed = match self.agent.as_str() {
-            "claude" => claude::poll_session(self),
-            "codex" => codex::poll_session(self),
-            "kimi" => kimi::poll_session(self),
+        let changed = match self.agent {
+            Agent::Claude => claude::poll_session(self),
+            Agent::Codex => codex::poll_session(self),
+            Agent::Kimi => kimi::poll_session(self),
             // OpenCode reads SQLite via async turso.
-            "opencode" => opencode::poll_session(self).await,
-            "amp" => amp::poll_session(self),
-            _ => false,
+            Agent::Opencode => opencode::poll_session(self).await,
+            Agent::Amp => amp::poll_session(self),
+            // No token-spend reader for Grok yet.
+            Agent::Grok => false,
         };
         if changed {
             self.silent_polls = 0;
@@ -102,14 +105,11 @@ impl TokenSession {
             // present, else the agent slug (so e.g. Kimi, which carries no model,
             // still prices off its `kimi` row).
             if self.totals.cost_usd.is_none() {
-                let model = self
-                    .totals
-                    .model
-                    .clone()
-                    .unwrap_or_else(|| self.agent.clone());
+                let slug = self.agent.slug();
+                let model = self.totals.model.as_deref().unwrap_or(slug);
                 self.totals.cost_usd = pricing::estimate_cost_usd(
-                    &self.agent,
-                    &model,
+                    slug,
+                    model,
                     self.totals.input_tokens,
                     self.totals.output_tokens,
                     self.totals.cache_read_tokens,
@@ -175,7 +175,7 @@ impl TokenMonitor {
     }
 
     /// Register a new session for monitoring.
-    pub(crate) fn register_session(&mut self, session_id: u64, agent: &str) {
+    pub(crate) fn register_session(&mut self, session_id: u64, agent: Agent) {
         self.sessions.insert(session_id, TokenSession::new(agent));
     }
 
@@ -187,11 +187,11 @@ impl TokenMonitor {
     /// Reconcile the tracked set against the currently live agent sessions:
     /// register any newly-seen `(id, agent)` and drop any that have exited.
     /// One robust sync point beats hooking every session spawn/close site.
-    pub(crate) fn reconcile_sessions(&mut self, live: &[(u64, String)]) {
+    pub(crate) fn reconcile_sessions(&mut self, live: &[(u64, Agent)]) {
         let live_ids: std::collections::HashSet<u64> = live.iter().map(|(id, _)| *id).collect();
-        for (id, agent) in live {
-            if !self.sessions.contains_key(id) {
-                self.register_session(*id, agent);
+        for &(id, agent) in live {
+            if !self.sessions.contains_key(&id) {
+                self.register_session(id, agent);
             }
         }
         let stale: Vec<u64> = self

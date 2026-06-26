@@ -4,16 +4,16 @@ use std::time::Instant;
 
 #[test]
 fn token_monitor_backs_off_after_silence() {
-    let session = TokenSession::new("claude");
+    let session = TokenSession::new(Agent::Claude);
     assert_eq!(session.poll_interval_secs(), 30);
-    let mut session2 = TokenSession::new("claude");
+    let mut session2 = TokenSession::new(Agent::Claude);
     session2.silent_polls = 5;
     assert_eq!(session2.poll_interval_secs(), 60);
 }
 
 #[test]
 fn token_monitor_resets_backoff_after_change() {
-    let mut session = TokenSession::new("claude");
+    let mut session = TokenSession::new(Agent::Claude);
     session.silent_polls = 5;
     assert_eq!(session.poll_interval_secs(), 60);
     session.silent_polls = 0;
@@ -22,7 +22,7 @@ fn token_monitor_resets_backoff_after_change() {
 
 #[test]
 fn token_monitor_poll_due_respects_interval() {
-    let mut session = TokenSession::new("claude");
+    let mut session = TokenSession::new(Agent::Claude);
     session.last_polled = Instant::now();
     assert!(!session.poll_due());
 }
@@ -48,12 +48,12 @@ fn session_info_includes_token_usage_when_available() {
 #[test]
 fn reconcile_registers_new_and_drops_exited_sessions() {
     let mut monitor = TokenMonitor::new();
-    monitor.reconcile_sessions(&[(1, "claude".to_owned()), (2, "codex".to_owned())]);
+    monitor.reconcile_sessions(&[(1, Agent::Claude), (2, Agent::Codex)]);
     assert!(monitor.contains_session(1));
     assert!(monitor.contains_session(2));
 
     // Session 2 exits, session 3 appears.
-    monitor.reconcile_sessions(&[(1, "claude".to_owned()), (3, "amp".to_owned())]);
+    monitor.reconcile_sessions(&[(1, Agent::Claude), (3, Agent::Amp)]);
     assert!(monitor.contains_session(1));
     assert!(
         !monitor.contains_session(2),

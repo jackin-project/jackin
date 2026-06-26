@@ -128,6 +128,7 @@ use crate::tui::update::{
 };
 use crate::tui::view::spawn_request_failure_message;
 use crate::usage::UsageCache;
+use jackin_core::agent::Agent;
 use jackin_protocol::control::{ClientMsg, ServerMsg};
 
 mod compositor;
@@ -1090,10 +1091,11 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // Token-spend monitor: keep it synced to the live agent sessions
                 // and poll any due providers. `poll_due_sessions` self-throttles
                 // to the 30s/60s cadence, so calling it each state tick is cheap.
-                let token_sessions: Vec<(u64, String)> = mux
+                // `Agent` is `Copy`, so this builds without cloning per session.
+                let token_sessions: Vec<(u64, Agent)> = mux
                     .sessions
                     .iter()
-                    .filter_map(|(id, s)| s.agent.clone().map(|agent| (*id, agent)))
+                    .filter_map(|(id, s)| Some((*id, Agent::from_slug(s.agent.as_deref()?)?)))
                     .collect();
                 mux.token_monitor.reconcile_sessions(&token_sessions);
                 // Returned changed-id list is unused for now (no live event

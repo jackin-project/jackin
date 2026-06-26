@@ -1,5 +1,6 @@
 //! Tests for the parent module.
 use crate::token_monitor::TokenSession;
+use jackin_core::agent::Agent;
 
 #[test]
 fn amp_token_reader_parses_thread_messages() {
@@ -40,7 +41,7 @@ fn amp_token_reader_handles_messages_wrapper() {
 
 #[test]
 fn amp_changed_flag_includes_cache_tokens() {
-    let mut session = TokenSession::new("amp");
+    let mut session = TokenSession::new(Agent::Amp);
     session.totals.input_tokens = 100;
     session.totals.output_tokens = 50;
     session.totals.cache_read_tokens = 0;
@@ -64,7 +65,7 @@ fn amp_changed_flag_includes_cache_tokens() {
 
 #[test]
 fn amp_token_reader_skips_zero_usage() {
-    let session = TokenSession::new("amp");
+    let session = TokenSession::new(Agent::Amp);
     // Zero usage should not flip changed flag — verify via parse_raw_usage logic
     let zero = serde_json::json!({"usage":{"input_tokens":0,"output_tokens":0}});
     let usage = zero.get("usage").unwrap();
