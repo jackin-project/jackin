@@ -67,6 +67,13 @@ pub const CAPSULE_CONFIG_FILENAME: &str = "agent.toml";
 /// Normalized runtime config path read by Capsule PID 1.
 pub const CAPSULE_CONFIG_PATH: &str = "/jackin/run/agent.toml";
 
+/// Path inside the role container of the `jackin-exec` host credential
+/// resolver socket. The host creates it under the bind-mounted `/jackin/run`
+/// dir; the in-container capsule connects here to resolve on-demand
+/// credentials. Single source of truth so the mount side and the connect side
+/// cannot drift.
+pub const HOST_SOCK_CONTAINER_PATH: &str = "/jackin/run/host.sock";
+
 /// Host-validated role/session facts Capsule needs to spawn panes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CapsuleConfig {

@@ -345,12 +345,14 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         "manifest written container={container_name}"
     );
 
-    // Start host.sock credential resolver before the blocking attach call.
-    let _exec_host_handle = crate::exec_host::start_for_container(
+    // Start the host.sock credential resolver before the blocking attach call.
+    // Detached on purpose: the spawned task runs for the session independently
+    // of this handle (matches the Docker launch path).
+    drop(crate::exec_host::start_for_container(
         &paths.jackin_home,
         container_name,
         &capsule_config.exec_bindings,
-    );
+    ));
 
     // Wait for capsule daemon readiness.
     wait_for_capsule(container_name).await?;

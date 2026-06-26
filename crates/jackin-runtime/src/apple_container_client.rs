@@ -32,10 +32,6 @@ pub const BACKEND_NAME: &str = "apple-container";
 /// Backend name for the default Docker + `DinD` backend.
 pub const DOCKER_BACKEND_NAME: &str = "docker";
 
-/// Host.sock path inside the role container — the credential resolver
-/// socket that `jackin-exec` uses to resolve on-demand credentials.
-pub const HOST_SOCK_CONTAINER_PATH: &str = "/jackin/run/host.sock";
-
 /// Specification for launching a role container via `container run`.
 #[derive(Debug, Clone)]
 pub struct AppleContainerSpec {

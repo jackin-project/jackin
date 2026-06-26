@@ -902,16 +902,17 @@ async fn run_exec_selected(
 ) -> jackin_protocol::control::ServerMsg {
     use jackin_protocol::control::ServerMsg;
 
-    const HOST_SOCK: &str = "/jackin/run/host.sock";
-
-    let resolved = match crate::exec::resolve_credentials(HOST_SOCK, selected).await {
-        Ok(map) => map,
-        Err(error) => {
-            return ServerMsg::ExecDenied {
-                reason: format!("credential resolution failed: {error}"),
-            };
-        }
-    };
+    let resolved =
+        match crate::exec::resolve_credentials(jackin_protocol::HOST_SOCK_CONTAINER_PATH, selected)
+            .await
+        {
+            Ok(map) => map,
+            Err(error) => {
+                return ServerMsg::ExecDenied {
+                    reason: format!("credential resolution failed: {error}"),
+                };
+            }
+        };
     // Redaction set borrows the resolved values — no second copy of secret
     // material; the strings already live in `resolved` for the env injection.
     let secrets: Vec<&str> = resolved.values().map(String::as_str).collect();
