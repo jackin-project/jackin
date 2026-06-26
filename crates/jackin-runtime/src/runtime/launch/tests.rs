@@ -1156,6 +1156,26 @@ agents = ["amp"]
 }
 
 #[test]
+fn exec_binding_names_joins_names_in_order() {
+    let bindings = vec![
+        jackin_protocol::ExecBinding {
+            name: "A".to_owned(),
+            kind: jackin_protocol::ExecKind::Op,
+            source: "op://x".to_owned(),
+        },
+        jackin_protocol::ExecBinding {
+            name: "B".to_owned(),
+            kind: jackin_protocol::ExecKind::Literal,
+            source: "v".to_owned(),
+        },
+    ];
+    // This string is the contract the in-container picker reads; pin it so the
+    // two launch paths can't drift on the format.
+    assert_eq!(exec_binding_names(&bindings), "A,B");
+    assert_eq!(exec_binding_names(&[]), "");
+}
+
+#[test]
 fn resolve_backend_defaults_docker_and_workspace_overrides_config() {
     let mut config = jackin_config::AppConfig::default();
     // No selection anywhere → Docker.

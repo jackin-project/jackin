@@ -654,10 +654,13 @@ pub(super) fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> S
 /// Create the per-container socket dir and write Capsule's launch config
 /// (`agent.toml`) into it. The dir is bind-mounted to `/jackin/run`, so the
 /// in-container capsule reads `agent.toml` at startup and the host.sock
-/// credential-resolver socket lands beside it. Used by the apple-container
-/// launch path; the Docker path inlines an equivalent write alongside its
-/// extrausers passwd setup. Directory permissions are locked to `0o700` by the
-/// `exec_host` listener when it binds the socket.
+/// credential-resolver socket lands beside it. Shared by both launch paths:
+/// the apple-container path (`apple_container::launch`) and the Docker path
+/// (`launch_role_runtime`, which calls it inside its socket-dir `spawn_blocking`
+/// alongside the extrausers passwd write). The dir is created under the default
+/// umask; it is tightened to `0o700` only when the `exec_host` listener binds
+/// the socket, which happens only for workspaces that declare on-demand
+/// credentials.
 pub(super) fn prepare_socket_dir(
     socket_dir: &Path,
     capsule_config_contents: &str,

@@ -23,6 +23,16 @@
 //! For `kind = "op"`, `source` must start with `op://` and the `--`
 //! end-of-options sentinel is inserted before passing to `op read` to prevent
 //! argument injection via crafted op:// values.
+//!
+//! **Boundary limitation (Phase 1 ad-hoc).** This allow-list bounds *what* can
+//! be resolved to the operator-configured set; it does NOT enforce per-use
+//! operator *approval*. The picker (operator approval) is enforced daemon-side
+//! before the daemon connects here — but `/jackin/run/host.sock` is reachable
+//! by any in-container process, so a compromised agent could connect directly
+//! and resolve the whole configured set without a picker. Binding it to the
+//! daemon (e.g. `SO_PEERCRED` or a one-time per-confirm token) is remaining
+//! hardening, tracked on the jackin-exec roadmap item; the daemon move that
+//! replaces this listener subsumes it.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -86,10 +96,10 @@ async fn run_listener(sock_path: &Path, allowed_bindings: &[ExecBinding]) -> Res
         std::fs::create_dir_all(parent)?;
         // host.sock is the credential-resolution boundary: any process that can
         // connect and send an allow-listed (name,kind,source) triple gets the
-        // secret resolved. Lock the directory to 0o700 so only the operator's
-        // UID can reach the socket — independent of which backend created the
-        // dir (the Docker launch path also sets this; the apple-container path
-        // does not, so enforce it here at the shared listener choke point).
+        // secret resolved. Neither launch path tightens this dir — both create
+        // it under the default umask via `prepare_socket_dir` — so the listener
+        // is the single choke point that locks it to 0o700, restricting the
+        // socket to the operator's UID.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

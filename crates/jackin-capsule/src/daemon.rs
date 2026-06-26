@@ -175,8 +175,9 @@ pub struct Multiplexer {
     /// Control-channel reply slot for an in-flight `jackin-exec` credential
     /// picker. Set when an `ExecCommand` opens the `Dialog::ExecPicker`; the
     /// confirm/cancel handlers take it to send `ExecResult` / `ExecDenied`. A
-    /// new `ExecCommand` arriving while one is pending drops the prior sender
-    /// (its client sees the socket close and reports the error).
+    /// new `ExecCommand` arriving while one is pending denies the prior reply
+    /// with `ExecDenied { reason: "superseded …" }` (in `begin_exec_picker`) so
+    /// that client gets a structured answer rather than a dropped connection.
     pending_exec_reply: Option<tokio::sync::oneshot::Sender<ServerMsg>>,
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,

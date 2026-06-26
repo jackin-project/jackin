@@ -111,6 +111,32 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
     .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))
 }
 
+#[test]
+fn begin_exec_picker_supersedes_pending_reply_and_dialog() {
+    let mut mux = test_mux(40, 20);
+    let (tx1, mut rx1) = tokio::sync::oneshot::channel();
+    mux.begin_exec_picker("cmd1".to_owned(), vec![], tx1);
+
+    // A second jackin-exec request arrives while the first picker is pending.
+    let (tx2, _rx2) = tokio::sync::oneshot::channel();
+    mux.begin_exec_picker("cmd2".to_owned(), vec![], tx2);
+
+    // The prior client must get a structured denial, not a hung/closed socket.
+    match rx1.try_recv() {
+        Ok(ServerMsg::ExecDenied { reason }) => {
+            assert!(reason.contains("superseded"), "unexpected reason: {reason}");
+        }
+        other => panic!("expected ExecDenied for the superseded request, got {other:?}"),
+    }
+
+    // Exactly one ExecPicker remains, and it is for the newer command — so a
+    // later confirm can't resolve credentials for the stale one.
+    match mux.dialog_top() {
+        Some(Dialog::ExecPicker(state)) => assert_eq!(state.command, "cmd2"),
+        other => panic!("expected a single ExecPicker(cmd2) on top, got {other:?}"),
+    }
+}
+
 /// Compose the frame an invalidation with `reason` produces — the
 /// derived-rendering equivalent of the old per-tier compose calls.
 fn compose_after(mux: &mut Multiplexer, reason: FullRedrawReason) -> Vec<u8> {

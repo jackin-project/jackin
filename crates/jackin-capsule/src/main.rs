@@ -32,13 +32,10 @@ async fn main() -> Result<()> {
     }
 
     // Daemon mode when PID 1 (Docker backend, capsule is the entrypoint) or when
-    // `JACKIN_CAPSULE_FORCE_DAEMON` is set (apple-container backend, where
-    // `vminitd` is PID 1 and capsule runs as PID 2+). The env var is injected by
-    // the launch path, never baked into the image, so the Docker backend — where
-    // capsule IS PID 1 and client subcommands must stay client-mode — is
-    // unaffected.
-    let is_pid1 =
-        std::process::id() == 1 || std::env::var_os("JACKIN_CAPSULE_FORCE_DAEMON").is_some();
+    // the apple-container `JACKIN_CAPSULE_FORCE_DAEMON` marker applies to *this*
+    // invocation (see `forced_daemon_mode` — the env is inherited by
+    // `container exec` children, so it cannot mark the entrypoint on its own).
+    let is_pid1 = std::process::id() == 1 || forced_daemon_mode(&args);
 
     if is_pid1 {
         let launch_config = config::load()?;
@@ -171,6 +168,43 @@ fn invoked_as_prepare_commit_msg_hook(args: &[String]) -> bool {
     args.first()
         .and_then(|arg0| Path::new(arg0).file_name())
         .is_some_and(|file_name| file_name == "prepare-commit-msg")
+}
+
+/// Whether `JACKIN_CAPSULE_FORCE_DAEMON` should put this invocation into daemon
+/// mode (apple-container backend, where `vminitd` is PID 1 and the entrypoint
+/// capsule runs at PID 2+).
+///
+/// The env var is set via `container run`, so every `container exec` child
+/// (attach, `status`, `mcp-server`, `snapshot`, …) inherits it — the env alone
+/// cannot mark the entrypoint without also hijacking those client invocations.
+/// The entrypoint is the only form invoked with the initial agent slug as
+/// `argv[1]`; every client form is bare (attach), a `--focus` flag, or a known
+/// subcommand. So only the agent-slug form daemonizes.
+///
+/// (The capsule-not-PID-1 path itself is gated on apple-container Phase 0
+/// validation — see the apple-container roadmap item. The Docker backend never
+/// sets this env and stays on the PID-1 check.)
+fn forced_daemon_mode(args: &[String]) -> bool {
+    std::env::var_os("JACKIN_CAPSULE_FORCE_DAEMON").is_some() && is_daemon_entrypoint_args(args)
+}
+
+/// The argv-shape half of [`forced_daemon_mode`], split out so the
+/// entrypoint-vs-client classification is unit-testable without touching the
+/// process environment. `true` only for the initial-agent-slug entrypoint form.
+fn is_daemon_entrypoint_args(args: &[String]) -> bool {
+    match args.get(1).map(String::as_str) {
+        // Bare `jackin-capsule` (attach) or `--focus N` (attach) → client.
+        None => false,
+        Some(focus) if focus.starts_with("--focus") => false,
+        // Known client subcommands → client (must keep this list in sync with
+        // the client-mode dispatch match in `main`).
+        Some(
+            "status" | "snapshot" | "usage" | "agents" | "runtime-setup" | "mcp-server"
+            | "prepare-commit-msg" | "new" | "--version" | "-V" | "--help" | "-h",
+        ) => false,
+        // Anything else is the initial agent slug → daemon entrypoint.
+        Some(_) => true,
+    }
 }
 
 /// Detect a `jackin-exec` invocation and return the command + its args.
@@ -377,6 +411,37 @@ mod tests {
             parse_provider_flag(&args(&["jackin-capsule", "new", "claude", "--provider="])),
             Some(String::new())
         );
+    }
+
+    #[test]
+    fn force_daemon_only_captures_the_agent_slug_entrypoint() {
+        // The entrypoint is invoked with the initial agent slug → daemon mode.
+        assert!(is_daemon_entrypoint_args(&args(&[
+            "jackin-capsule",
+            "claude"
+        ])));
+        // Every client form must stay client even though `container exec`
+        // children inherit JACKIN_CAPSULE_FORCE_DAEMON in the apple-container VM.
+        assert!(!is_daemon_entrypoint_args(&args(&["jackin-capsule"]))); // bare attach
+        assert!(!is_daemon_entrypoint_args(&args(&[
+            "jackin-capsule",
+            "--focus",
+            "5"
+        ])));
+        for sub in [
+            "status",
+            "snapshot",
+            "agents",
+            "usage",
+            "mcp-server",
+            "runtime-setup",
+            "new",
+        ] {
+            assert!(
+                !is_daemon_entrypoint_args(&args(&["jackin-capsule", sub])),
+                "{sub} must stay client under FORCE_DAEMON"
+            );
+        }
     }
 
     #[test]
