@@ -69,6 +69,12 @@ impl LaunchHostTerminal for RecordingTerminal {
             .push(payload.to_owned());
         true
     }
+    fn reveal_file(&self, _path: &std::path::Path) -> bool {
+        false
+    }
+    fn open_file(&self, _path: &std::path::Path) -> bool {
+        false
+    }
 }
 
 fn hit_point_for_payload(

@@ -45,6 +45,10 @@ use crate::attach_protocol::{
     drain_and_exit_with_reason, handle_attach_client, initial_spawn_request, perform_handshake,
     spawn_request_label,
 };
+use crate::clipboard::{
+    CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT, ClipboardImageTransfers, cleanup_clipboard_run_dir,
+    stage_clipboard_image,
+};
 #[cfg(test)]
 use crate::git_context::{
     PACKED_REFS_CACHE_MAX_ENTRIES, PACKED_REFS_MAX_BYTES, read_branch_from_git_head,
@@ -131,6 +135,7 @@ use jackin_protocol::control::{ClientMsg, ServerMsg};
 mod compositor;
 mod context_mgmt;
 mod dialog_mgmt;
+mod file_export;
 mod input_dispatch;
 mod mouse_input;
 mod multiplexer_utils;
@@ -215,6 +220,12 @@ pub struct Multiplexer {
     /// visible. Cleared by the next click or typed input.
     selection_copied: bool,
     selection_copy_feedback_deadline: Option<Instant>,
+    /// Transient operator-facing result of a host clipboard image paste:
+    /// staged path, dialog-owned-input warning, or rejected payload reason.
+    clipboard_image_notice: Option<String>,
+    clipboard_image_notice_deadline: Option<Instant>,
+    clipboard_image_transfers: ClipboardImageTransfers,
+    clipboard_image_insert_mode: ClipboardImageInsertMode,
     /// Monotonic state-change counter: every mutation that can affect the
     /// visible frame bumps it via `invalidate`. The render loop composes
     /// when it moved past `rendered_generation` — there are no repaint
@@ -261,6 +272,9 @@ pub struct Multiplexer {
     /// next operator keystroke clears it.
     spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
+    /// Link target under an Alt/Ctrl hover in a mouse-disabled pane. Rendered
+    /// as a compositor-owned notice so no hover bytes are written into the PTY.
+    link_hover_url: Option<String>,
     /// P5: focus is on the agent-tab bar (green underline + Left/Right switch
     /// tabs; Down/Esc/click returns focus to the agent content). `false` means
     /// the agent terminal holds focus, the default.
@@ -507,6 +521,10 @@ impl Multiplexer {
             last_pane_press: None,
             selection_copied: false,
             selection_copy_feedback_deadline: None,
+            clipboard_image_notice: None,
+            clipboard_image_notice_deadline: None,
+            clipboard_image_transfers: ClipboardImageTransfers::default(),
+            clipboard_image_insert_mode: ClipboardImageInsertMode::PastePath,
             frame_generation: 0,
             rendered_generation: 0,
             wipe_pending: None,
@@ -519,6 +537,7 @@ impl Multiplexer {
             last_outer_terminal_title: None,
             spawn_failure: None,
             hover_target: None,
+            link_hover_url: None,
             tab_bar_focused: false,
             dialog_copy_feedback_deadline: None,
             pull_request_context_branch: None,
@@ -558,6 +577,148 @@ impl Multiplexer {
     /// pointer shapes, mode prefaces); they flush at the next frame boundary.
     pub(crate) fn send_out_of_band(&mut self, bytes: Vec<u8>) {
         self.client.enqueue_out_of_band(bytes);
+    }
+
+    /// Send a typed attach protocol frame that is not terminal output.
+    fn send_protocol_frame(&mut self, frame: ServerFrame) {
+        self.client.send_protocol_frame(frame);
+    }
+
+    fn request_clipboard_image_from_text_path(&mut self) {
+        self.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+        self.send_protocol_frame(ServerFrame::HostStageImageFromClipboardPath);
+    }
+
+    fn request_clipboard_image_paste(&mut self) {
+        self.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+        self.send_protocol_frame(ServerFrame::HostPasteImageFromClipboard);
+    }
+
+    fn request_clipboard_image_stage_only(&mut self) {
+        self.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
+        self.send_protocol_frame(ServerFrame::HostStageImageFromClipboard);
+    }
+
+    fn stage_clipboard_image_response(&mut self, image: jackin_protocol::attach::ClipboardImage) {
+        self.stage_clipboard_image_response_with(image, stage_clipboard_image);
+    }
+
+    fn stage_clipboard_image_response_with<F>(
+        &mut self,
+        image: jackin_protocol::attach::ClipboardImage,
+        stage: F,
+    ) where
+        F: FnOnce(&jackin_protocol::attach::ClipboardImage) -> Result<PathBuf>,
+    {
+        let insert_mode = std::mem::take(&mut self.clipboard_image_insert_mode);
+        match stage(&image) {
+            Ok(path) => {
+                let path = path.to_string_lossy();
+                let bytes = image.bytes.len();
+                crate::clog!(
+                    "clipboard-image: staged extension={} bytes={} path={path}",
+                    image.format.extension(),
+                    bytes
+                );
+                if insert_mode == ClipboardImageInsertMode::StageOnly {
+                    self.set_clipboard_image_notice(format!(
+                        "Image staged: {path} ({bytes} bytes)"
+                    ));
+                } else if self.dialog_captures_input() {
+                    crate::clog!(
+                        "clipboard-image: ignored staged path because a dialog owns input"
+                    );
+                    self.set_clipboard_image_notice(format!(
+                        "Image staged: {path} ({bytes} bytes; dialog focused; not pasted)"
+                    ));
+                } else if self.paste_text_to_focused_pane(path.as_bytes()) {
+                    self.set_clipboard_image_notice(format!(
+                        "Image staged: {path} ({bytes} bytes)"
+                    ));
+                } else {
+                    crate::clog!(
+                        "clipboard-image: staged path not pasted because no writable focused pane was available"
+                    );
+                    self.set_clipboard_image_notice(format!(
+                        "Image staged: {path} ({bytes} bytes; no writable focused pane; not pasted)"
+                    ));
+                }
+            }
+            Err(err) => {
+                log_clipboard_image_rejection("payload", &err);
+                self.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum ClipboardImageInsertMode {
+    #[default]
+    PastePath,
+    StageOnly,
+}
+
+fn log_clipboard_image_rejection(stage: &str, err: &anyhow::Error) {
+    let reason = clipboard_image_error_reason(err);
+    crate::clog!("clipboard-image: rejected reason={reason} stage={stage}");
+    crate::cdebug!("clipboard-image: rejected stage={stage} detail={err:#}");
+}
+
+fn clipboard_image_error_reason(err: &anyhow::Error) -> &'static str {
+    classify_clipboard_image_error(&format!("{err:#}"))
+}
+
+fn clipboard_image_host_error_reason(message: &str) -> &'static str {
+    classify_clipboard_image_error(message)
+}
+
+fn classify_clipboard_image_error(message: &str) -> &'static str {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("empty") {
+        "empty"
+    } else if lower.contains("exceeds cap")
+        || lower.contains("too large")
+        || lower.contains("over cap")
+    {
+        "oversize"
+    } else if lower.contains("magic")
+        || lower.contains("signature")
+        || lower.contains("not an image")
+        || lower.contains("unsupported image")
+    {
+        "signature-mismatch"
+    } else if lower.contains("sha-256") || lower.contains("digest") {
+        "digest-mismatch"
+    } else if lower.contains("offset") || lower.contains("did not match expected") {
+        "offset-mismatch"
+    } else if lower.contains("no active start") {
+        "missing-transfer"
+    } else if lower.contains("already active") {
+        "duplicate-transfer"
+    } else if lower.contains("display")
+        || lower.contains("wayland")
+        || lower.contains("xclip")
+        || lower.contains("wl-paste")
+        || lower.contains("wl-copy")
+    {
+        "backend-unavailable"
+    } else if lower.contains("create")
+        || lower.contains("creating")
+        || lower.contains("open")
+        || lower.contains("opening")
+        || lower.contains("write")
+        || lower.contains("writing")
+        || lower.contains("flush")
+        || lower.contains("flushing")
+        || lower.contains("permission")
+        || lower.contains("metadata")
+        || lower.contains("read")
+        || lower.contains("reading")
+    {
+        "staging-io"
+    } else {
+        "invalid-payload"
     }
 }
 
@@ -761,10 +922,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
 
             _ = sigterm.recv() => {
                 detach_client(&mut mux).await;
+                cleanup_clipboard_run_dir();
                 return Ok(());
             }
             _ = sigint.recv() => {
                 detach_client(&mut mux).await;
+                cleanup_clipboard_run_dir();
                 return Ok(());
             }
 
@@ -963,6 +1126,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 if mux.no_live_sessions()
                     && handle_last_session_exit(&mut mux, None).await
                 {
+                    cleanup_clipboard_run_dir();
                     return Ok(());
                 }
             }
@@ -1150,6 +1314,22 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             _ = state_ticker.tick() => {
                 mux.log_resource_metrics().await;
                 mux.maybe_spawn_pull_request_context_lookup(Instant::now());
+                let stale_image_transfers = mux
+                    .clipboard_image_transfers
+                    .abort_idle_older_than(CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT);
+                if stale_image_transfers > 0 {
+                    crate::clog!(
+                        "clipboard-image: cleaned up {stale_image_transfers} idle transfer{}",
+                        if stale_image_transfers == 1 { "" } else { "s" }
+                    );
+                    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                    mux.set_clipboard_image_notice(format!(
+                        "Image paste interrupted: cleaned up {stale_image_transfers} idle transfer{}",
+                        if stale_image_transfers == 1 { "" } else { "s" }
+                    ));
+                    mux.invalidate(status_change_redraw_reason());
+                    continue;
+                }
                 // Snapshot visible agent state, refresh, snapshot again. The
                 // ticker's only time-based effect is Working→Idle transitions;
                 // tab labels derive from state and the status bar has no
@@ -1169,6 +1349,10 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 }
                 if mux.expire_selection_copy_feedback(Instant::now()) {
                     mux.invalidate(selection_change_redraw_reason());
+                    continue;
+                }
+                if mux.expire_clipboard_image_notice(Instant::now()) {
+                    mux.invalidate(status_change_redraw_reason());
                     continue;
                 }
                 if mux.refresh_open_usage_dialog_from_cache() {
@@ -1262,6 +1446,45 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::Command(_payload) => {
             // Reserved for future structured commands from the host CLI.
+        }
+        ClientFrame::ClipboardImage(image) => mux.stage_clipboard_image_response(image),
+        ClientFrame::ClipboardImageStart(start) => {
+            let size = start.size;
+            if let Err(err) = mux.clipboard_image_transfers.start(start) {
+                log_clipboard_image_rejection("transfer-start", &err);
+                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+            } else if mux.clipboard_image_insert_mode == ClipboardImageInsertMode::StageOnly {
+                mux.set_clipboard_image_notice(format!("Image staging: receiving {size} bytes"));
+            } else {
+                mux.set_clipboard_image_notice(format!("Image paste: receiving {size} bytes"));
+            }
+        }
+        ClientFrame::ClipboardImageChunk(chunk) => {
+            if let Err(err) = mux.clipboard_image_transfers.chunk(chunk) {
+                log_clipboard_image_rejection("transfer-chunk", &err);
+                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+            }
+        }
+        ClientFrame::ClipboardImageEnd(end) => match mux.clipboard_image_transfers.end(end) {
+            Ok(image) => mux.stage_clipboard_image_response(image),
+            Err(err) => {
+                log_clipboard_image_rejection("transfer-end", &err);
+                mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+                mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
+            }
+        },
+        ClientFrame::ClipboardImageError(message) => {
+            let reason = clipboard_image_host_error_reason(&message);
+            crate::clog!("clipboard-image: host request failed reason={reason}");
+            crate::cdebug!("clipboard-image: host request failed detail={message}");
+            mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
+            mux.set_clipboard_image_notice(format!("Image paste rejected: {message}"));
+        }
+        ClientFrame::HostNotice(message) => {
+            crate::clog!("host-affordance: {message}");
+            mux.set_clipboard_image_notice(message);
         }
         ClientFrame::Detach => {
             mux.detach_requested = true;

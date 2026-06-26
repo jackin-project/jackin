@@ -95,7 +95,7 @@ pub fn failure_popup_rect_for_rows(area: Rect, rows: &[FailurePopupRow]) -> Rect
 
 fn failure_popup_render_line_count(rows: &[FailurePopupRow], width: u16) -> usize {
     rows.iter()
-        .map(|row| failure_popup_value_chunks(row, width, None).len())
+        .map(|row| failure_popup_value_chunks(row, width, None, None, None).len())
         .sum::<usize>()
         .max(1)
 }
@@ -104,11 +104,15 @@ fn failure_popup_value_chunks(
     row: &FailurePopupRow,
     width: u16,
     copied: Option<FailureCopyTarget>,
+    revealed: Option<FailureCopyTarget>,
+    opened: Option<FailureCopyTarget>,
 ) -> Vec<String> {
-    let badge = row
-        .copy_target
-        .filter(|target| copied == Some(*target))
-        .map_or("", |_| "  Copied!");
+    let badge = match row.copy_target {
+        Some(target) if copied == Some(target) => "  Copied!",
+        Some(target) if revealed == Some(target) => "  Revealed!",
+        Some(target) if opened == Some(target) => "  Opened!",
+        _ => "",
+    };
     let first_fixed_cols = FAILURE_POPUP_LABEL_WIDTH
         + jackin_tui::display_cols(FAILURE_POPUP_SEP)
         + jackin_tui::display_cols(badge);
@@ -178,7 +182,7 @@ fn failure_popup_value_rects(
     let mut y = body.y;
     let mut rects = Vec::new();
     for row in rows {
-        let chunks = failure_popup_value_chunks(row, body.width, None);
+        let chunks = failure_popup_value_chunks(row, body.width, None, None, None);
         if row.copy_target == Some(target) {
             for chunk in &chunks {
                 if y >= body.y.saturating_add(body.height) {
@@ -251,11 +255,39 @@ pub fn failure_copy_payload(
         .map(|row| row.value)
 }
 
+#[must_use]
+pub fn failure_reveal_payload(
+    failure: &LaunchFailure,
+    run_id: &str,
+    preferred: Option<FailureCopyTarget>,
+) -> Option<(FailureCopyTarget, String)> {
+    let rows = failure_popup_rows(failure, run_id);
+    let revealable = |target: FailureCopyTarget| {
+        matches!(
+            target,
+            FailureCopyTarget::DiagnosticsPath | FailureCopyTarget::CommandOutputPath
+        )
+    };
+    if let Some(target) = preferred.filter(|target| revealable(*target))
+        && let Some(value) = rows
+            .iter()
+            .find(|row| row.copy_target == Some(target))
+            .map(|row| row.value.clone())
+    {
+        return Some((target, value));
+    }
+    rows.into_iter()
+        .filter_map(|row| row.copy_target.map(|target| (target, row.value)))
+        .find(|(target, _)| revealable(*target))
+}
+
 fn render_failure_popup_lines(
     row: &FailurePopupRow,
     width: u16,
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
+    revealed: Option<FailureCopyTarget>,
+    opened: Option<FailureCopyTarget>,
 ) -> Vec<Line<'static>> {
     let label = jackin_tui::theme::DIM;
     let value_style = match row.copy_target {
@@ -266,11 +298,13 @@ fn render_failure_popup_lines(
         None => Style::default().fg(WHITE),
     };
     let label_width = FAILURE_POPUP_LABEL_WIDTH;
-    let badge = row
-        .copy_target
-        .filter(|target| copied == Some(*target))
-        .map_or("", |_| "  Copied!");
-    failure_popup_value_chunks(row, width, copied)
+    let badge = match row.copy_target {
+        Some(target) if copied == Some(target) => "  Copied!",
+        Some(target) if revealed == Some(target) => "  Revealed!",
+        Some(target) if opened == Some(target) => "  Opened!",
+        _ => "",
+    };
+    failure_popup_value_chunks(row, width, copied, revealed, opened)
         .into_iter()
         .enumerate()
         .map(|(idx, value)| {
@@ -331,6 +365,8 @@ pub fn render_failure_popup(
                 body.width,
                 view.failure_copy_hover,
                 view.failure_copied,
+                view.failure_revealed,
+                view.failure_opened,
             )
         })
         .collect::<Vec<_>>();
@@ -369,6 +405,7 @@ pub fn render_failure_popup(
 }
 
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn failure_popup_hyperlink_overlay(
     area: Rect,
     failure: &LaunchFailure,
@@ -376,6 +413,8 @@ pub fn failure_popup_hyperlink_overlay(
     debug_mode: bool,
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
+    revealed: Option<FailureCopyTarget>,
+    opened: Option<FailureCopyTarget>,
 ) -> Vec<u8> {
     let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
     let rows = failure_popup_rows(failure, run_id);
@@ -388,7 +427,7 @@ pub fn failure_popup_hyperlink_overlay(
     let mut y = body.y;
     let mut out = Vec::new();
     for row in &rows {
-        let chunks = failure_popup_value_chunks(row, body.width, copied);
+        let chunks = failure_popup_value_chunks(row, body.width, copied, revealed, opened);
         if let Some(href) = row.href.as_deref() {
             for chunk in &chunks {
                 if y >= body.y.saturating_add(body.height) {

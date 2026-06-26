@@ -712,13 +712,8 @@ pub(super) async fn launch_role_runtime(
         "-e",
         &git_author_email,
     ]);
-    let debug_run_id_env = if *debug {
-        run_args.extend_from_slice(&["-e", "JACKIN_DEBUG=1"]);
-        jackin_diagnostics::active_run().map(|r| format!("JACKIN_RUN_ID={}", r.run_id()))
-    } else {
-        None
-    };
-    if let Some(ref env) = debug_run_id_env {
+    let debug_envs = debug_runtime_envs(*debug);
+    for env in &debug_envs {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
     // Always pass the host jackin version so the capsule ContainerInfo dialog
@@ -859,7 +854,9 @@ pub(super) async fn launch_role_runtime(
         }
         // Share parallax.run.id so capsule telemetry groups with the host run.
         // In debug runs JACKIN_RUN_ID is already injected above; avoid a dupe.
-        if debug_run_id_env.is_none()
+        if !debug_envs
+            .iter()
+            .any(|env| env.starts_with("JACKIN_RUN_ID="))
             && let Some(run) = jackin_diagnostics::active_run()
         {
             otlp_propagation.push(format!("JACKIN_RUN_ID={}", run.run_id()));
@@ -1170,6 +1167,21 @@ fn host_runtime_passthrough_env(vars: impl IntoIterator<Item = (String, String)>
             }
         })
         .collect()
+}
+
+fn debug_runtime_envs(debug: bool) -> Vec<String> {
+    if !debug {
+        return Vec::new();
+    }
+    let mut envs = vec!["JACKIN_DEBUG=1".to_owned()];
+    if let Some(run) = jackin_diagnostics::active_run() {
+        envs.push(format!("JACKIN_RUN_ID={}", run.run_id()));
+        envs.push(format!(
+            "JACKIN_RUN_DIAGNOSTICS_PATH={}",
+            run.path().display()
+        ));
+    }
+    envs
 }
 
 /// Whether `diagnose_premature_exit` is firing before the operator's

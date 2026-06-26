@@ -143,8 +143,11 @@ pub(crate) fn dialog_action_frame_plan(action: &DialogAction) -> DialogActionFra
         | DialogAction::SplitDirection(_)
         | DialogAction::PickedCloseTarget(_)
         | DialogAction::RenameTab { .. }
+        | DialogAction::ExportFile { .. }
         | DialogAction::CopyToClipboard(_)
         | DialogAction::ExitDirty(_)
+        | DialogAction::OpenHostUrl(_)
+        | DialogAction::RevealHostPath(_)
         | DialogAction::Dismiss
         | DialogAction::Redraw
         | DialogAction::Consume => DialogActionFramePlan::Overlay(FullRedrawReason::DialogChange),
@@ -251,6 +254,7 @@ pub(crate) fn palette_route_frame_plan(route: PaletteCommandRoute) -> ActionFram
         | PaletteCommandRoute::OpenAgentPicker(_)
         | PaletteCommandRoute::ConfirmAction(_)
         | PaletteCommandRoute::OpenCloseTargetPicker
+        | PaletteCommandRoute::OpenExportFileDialog { .. }
         | PaletteCommandRoute::OpenUsage => {
             ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
         }
@@ -258,6 +262,14 @@ pub(crate) fn palette_route_frame_plan(route: PaletteCommandRoute) -> ActionFram
             ActionFramePlan::Full(FullRedrawReason::TabSwitch)
         }
         PaletteCommandRoute::ToggleZoom => ActionFramePlan::Full(FullRedrawReason::ZoomChange),
+        PaletteCommandRoute::StageImageFromClipboardPath
+        | PaletteCommandRoute::PasteImageFromClipboard
+        | PaletteCommandRoute::StageImageFromClipboard
+        | PaletteCommandRoute::ExportFileUnderCursor { .. }
+        | PaletteCommandRoute::ExportSelectedFile { .. }
+        | PaletteCommandRoute::OpenLinkUnderCursor => {
+            ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
+        }
         PaletteCommandRoute::ClearPane => ActionFramePlan::Diff(FullRedrawReason::PaneClear),
     }
 }

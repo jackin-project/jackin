@@ -7,6 +7,7 @@
 //! small constants that name the host↔Capsule runtime contract live
 //! here too so the two binaries cannot drift.
 
+pub mod attach;
 pub mod control;
 pub mod provider_adapter;
 pub mod snapshot;

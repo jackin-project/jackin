@@ -73,25 +73,31 @@ impl<'a> PullRequestStatus<'a> {
 }
 
 use jackin_tui::HintSpan;
-use jackin_tui::components::{
-    CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction, raw_bytes_to_chord,
-};
+use jackin_tui::components::{CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction};
+use jackin_tui::keymap::raw_bytes_to_chord;
 
 use crate::tui::keymap::{FILTER_LIST_KEYMAP, FilterListAction, READ_ONLY_DISMISS_KEYMAP};
 
 const PALETTE_WIDTH: u16 = 50;
 const CONTAINER_INFO_WIDTH: u16 = 86;
+const GITHUB_URL_ROW: usize = 3;
+const GITHUB_OPEN_PR_ROW: usize = 5;
+const GITHUB_OPEN_CI_ROW: usize = 6;
+
+fn file_url_path(href: &str) -> Option<&str> {
+    href.strip_prefix("file://").filter(|path| !path.is_empty())
+}
 mod input;
 use input::{
-    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, first_selectable_idx,
-    picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
+    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, export_file_handle_key,
+    first_selectable_idx, picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
     split_direction_filtered_indices, step_selectable,
 };
 mod hint;
 pub(crate) use hint::main_view_hint;
 use hint::{
-    confirm_hint, info_dialog_hint, palette_hint, picker_hint, provider_hint, read_only_hint,
-    rename_hint, usage_hint,
+    confirm_hint, export_file_hint, info_dialog_hint, palette_hint, picker_hint, provider_hint,
+    read_only_hint, rename_hint, usage_hint,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,6 +181,15 @@ pub enum Dialog {
     RenameTab {
         tab_idx: usize,
         input: jackin_tui::TextField,
+    },
+    /// Text-input modal opened from the command palette. The operator
+    /// types a workspace-relative path, workspace absolute path, or a
+    /// `/jackin/run/` path; the daemon validates and transfers it over
+    /// the host attach protocol.
+    ExportFile {
+        input: jackin_tui::TextField,
+        reveal_after_export: bool,
+        open_after_export: bool,
     },
     /// Read-only modal opened when the operator clicks the
     /// container-name segment of the bottom branch/PR context bar.
@@ -363,6 +378,12 @@ pub enum DialogAction {
     /// `label` clears the existing custom label and re-enables
     /// auto-naming.
     RenameTab { tab_idx: usize, label: String },
+    /// Operator typed a path for explicit host file export.
+    ExportFile {
+        path: String,
+        reveal_after_export: bool,
+        open_after_export: bool,
+    },
     /// Operator clicked or pressed Enter on the `ContainerInfo` copy
     /// target — copy the carried payload to the operator's clipboard
     /// via OSC 52 and keep the dialog open for visible feedback.
@@ -374,6 +395,11 @@ pub enum DialogAction {
     /// Operator picked a row in the dirty-exit modal. The daemon opens the
     /// agent picker, opens Inspect, or records keep/discard and drains.
     ExitDirty(ExitDirtyRow),
+    /// Ask the host attach client to open an allowlisted host URL.
+    OpenHostUrl(String),
+    /// Ask the host attach client to reveal an allowlisted jackin-owned host
+    /// path. Host side validates the path before touching the OS.
+    RevealHostPath(String),
     /// User dismissed with Escape.
     Dismiss,
     /// Request a daemon-side focused usage refresh.
@@ -417,6 +443,29 @@ impl Dialog {
     pub fn new_rename_tab(tab_idx: usize, initial: impl Into<String>) -> Self {
         let input = jackin_tui::TextField::new(initial.into()).with_max_chars(MAX_CUSTOM_LABEL_LEN);
         Self::RenameTab { tab_idx, input }
+    }
+
+    pub fn new_export_file() -> Self {
+        Self::new_export_file_with_post_action(false, false)
+    }
+
+    pub fn new_export_file_and_reveal() -> Self {
+        Self::new_export_file_with_post_action(true, false)
+    }
+
+    pub fn new_export_file_and_open() -> Self {
+        Self::new_export_file_with_post_action(false, true)
+    }
+
+    fn new_export_file_with_post_action(
+        reveal_after_export: bool,
+        open_after_export: bool,
+    ) -> Self {
+        Self::ExportFile {
+            input: jackin_tui::TextField::new("").with_max_chars(4096),
+            reveal_after_export,
+            open_after_export,
+        }
     }
 
     pub fn new_split_direction_picker() -> Self {
@@ -518,6 +567,15 @@ impl Dialog {
             diagnostics_log_path: log_path,
         }
         .into_state();
+        if debug && let Some(href) = diagnostics.run_log_href.as_deref() {
+            state.push_row(
+                jackin_tui::components::ContainerInfoRow::new(
+                    "Reveal diagnostics",
+                    diagnostics.run_log_display.clone(),
+                )
+                .hyperlink(href.to_owned()),
+            );
+        }
         if let Some(row) = *copied_row {
             state.mark_copied(row);
         }
@@ -573,9 +631,27 @@ impl Dialog {
             url_row,
             jackin_tui::components::ContainerInfoRow::new("CI Status", ci),
         ]);
+        if let Some(pr) = pr {
+            rows.push(
+                jackin_tui::components::ContainerInfoRow::new("Open PR", pr.url.clone())
+                    .hyperlink(pr.url.clone()),
+            );
+            let ci_url = pr
+                .checks
+                .as_ref()
+                .and_then(crate::pull_request::PullRequestChecks::ci_url);
+            let mut ci_row = jackin_tui::components::ContainerInfoRow::new(
+                "Open CI",
+                ci_url.unwrap_or("(unavailable)"),
+            );
+            if let Some(ci_url) = ci_url {
+                ci_row = ci_row.hyperlink(ci_url.to_owned());
+            }
+            rows.push(ci_row);
+        }
         let mut state = jackin_tui::components::ContainerInfoState::new("GitHub context", rows);
         if *copied {
-            state.mark_copied(3);
+            state.mark_copied(GITHUB_URL_ROW);
         }
         state.scroll = scroll.clone();
         Some(state)
@@ -1058,6 +1134,14 @@ impl Dialog {
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
         }
+        if let Self::ExportFile {
+            input,
+            reveal_after_export,
+            open_after_export,
+        } = self
+        {
+            return export_file_handle_key(input, *reveal_after_export, *open_after_export, key);
+        }
         // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
         // dismiss keys close, Enter copies the dialog's value to the
         // operator's clipboard with the `copied` flag flipped to true
@@ -1180,6 +1264,42 @@ impl Dialog {
                         DialogAction::Redraw
                     }
                 }
+                b"o" | b"O" => match self {
+                    Self::GitHubContext { .. } => github
+                        .and_then(|view| view.status.loaded())
+                        .map_or(DialogAction::Redraw, |pr| {
+                            DialogAction::OpenHostUrl(pr.url.clone())
+                        }),
+                    Self::ContainerInfo { diagnostics, .. } => diagnostics
+                        .run_log_href
+                        .as_deref()
+                        .and_then(file_url_path)
+                        .map_or(DialogAction::Redraw, |path| {
+                            DialogAction::RevealHostPath(path.to_owned())
+                        }),
+                    _ => DialogAction::Redraw,
+                },
+                b"c" | b"C" => {
+                    if !matches!(self, Self::GitHubContext { .. }) {
+                        return DialogAction::Redraw;
+                    }
+                    github
+                        .and_then(|view| view.status.loaded())
+                        .and_then(|pr| pr.checks.as_ref())
+                        .and_then(crate::pull_request::PullRequestChecks::ci_url)
+                        .map_or(DialogAction::Redraw, |url| {
+                            DialogAction::OpenHostUrl(url.to_owned())
+                        })
+                }
+                b"r" | b"R" => {
+                    if let Self::ContainerInfo { diagnostics, .. } = self
+                        && let Some(path) =
+                            diagnostics.run_log_href.as_deref().and_then(file_url_path)
+                    {
+                        return DialogAction::RevealHostPath(path.to_owned());
+                    }
+                    DialogAction::Redraw
+                }
                 _ => DialogAction::Redraw,
             };
         }
@@ -1247,6 +1367,7 @@ impl Dialog {
                         }
                     }
                     Self::RenameTab { .. }
+                    | Self::ExportFile { .. }
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
@@ -1307,6 +1428,7 @@ impl Dialog {
                         }
                     }
                     Self::RenameTab { .. }
+                    | Self::ExportFile { .. }
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
@@ -1483,7 +1605,7 @@ impl Dialog {
         // Text-input dialog has no clickable rows — clicks inside the
         // box are just swallowed so they don't dismiss or reach the
         // pane underneath.
-        if matches!(self, Self::RenameTab { .. }) {
+        if matches!(self, Self::RenameTab { .. } | Self::ExportFile { .. }) {
             return DialogAction::Consume;
         }
         // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
@@ -1493,13 +1615,17 @@ impl Dialog {
             let hit = self.container_info_state().and_then(|state| {
                 jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
             });
-            return match hit {
-                Some((hit_row, payload)) => {
-                    if let Self::ContainerInfo { copied_row, .. } = self {
-                        *copied_row = Some(hit_row);
-                    }
-                    DialogAction::CopyToClipboard(payload)
+            if let Some((hit_row, payload)) = hit {
+                if let Self::ContainerInfo { copied_row, .. } = self {
+                    *copied_row = Some(hit_row);
                 }
+                return DialogAction::CopyToClipboard(payload);
+            }
+            let reveal_hit = self.container_info_state().and_then(|state| {
+                jackin_tui::components::container_info_hyperlink_payload_at(area, &state, col, row)
+            });
+            return match reveal_hit.and_then(|(_, href)| file_url_path(&href).map(str::to_owned)) {
+                Some(path) => DialogAction::RevealHostPath(path),
                 None => DialogAction::Consume,
             };
         }
@@ -1513,14 +1639,20 @@ impl Dialog {
             let hit = self.github_context_state(github).and_then(|state| {
                 jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
             });
-            return match hit {
-                Some((_hit_row, payload)) => {
-                    if let Self::GitHubContext { copied, .. } = self {
-                        *copied = true;
-                    }
-                    DialogAction::CopyToClipboard(payload)
+            if let Some((_hit_row, payload)) = hit {
+                if let Self::GitHubContext { copied, .. } = self {
+                    *copied = true;
                 }
-                _ => DialogAction::Consume,
+                return DialogAction::CopyToClipboard(payload);
+            }
+            let open_hit = self.github_context_state(github).and_then(|state| {
+                jackin_tui::components::container_info_hyperlink_payload_at(area, &state, col, row)
+            });
+            return match open_hit {
+                Some((GITHUB_OPEN_PR_ROW | GITHUB_OPEN_CI_ROW, payload)) => {
+                    DialogAction::OpenHostUrl(payload)
+                }
+                Some(_) | None => DialogAction::Consume,
             };
         }
         if let Self::Usage { view, selected, .. } = self {
@@ -1622,6 +1754,7 @@ impl Dialog {
                 picker_filtered_rows(agents, filter).len() as u16
             }
             Self::RenameTab { .. }
+            | Self::ExportFile { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::Usage { .. }
@@ -1691,9 +1824,10 @@ impl Dialog {
                     }
                 }
             }
-            // RenameTab, ContainerInfo, ConfirmAction, and ProviderPicker
+            // Text-input, ContainerInfo, ConfirmAction, and ProviderPicker
             // clicks were already handled by early returns above.
             Self::RenameTab { .. }
+            | Self::ExportFile { .. }
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::Usage { .. }
@@ -1728,7 +1862,7 @@ impl Dialog {
             return false;
         }
         match self {
-            Self::RenameTab { .. } => false,
+            Self::RenameTab { .. } | Self::ExportFile { .. } => false,
             Self::ContainerInfo { .. } => {
                 let area = ratatui::layout::Rect {
                     x: box_col,
@@ -1739,6 +1873,10 @@ impl Dialog {
                 self.container_info_state().is_some_and(|state| {
                     jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
                         .is_some()
+                        || jackin_tui::components::container_info_hyperlink_payload_at(
+                            area, &state, col, row,
+                        )
+                        .is_some_and(|(_, href)| file_url_path(&href).is_some())
                 })
             }
             Self::GitHubContext { .. } => {
@@ -1751,6 +1889,12 @@ impl Dialog {
                 self.github_context_state(github).is_some_and(|state| {
                     jackin_tui::components::container_info_copy_payload_at(area, &state, col, row)
                         .is_some()
+                        || jackin_tui::components::container_info_hyperlink_payload_at(
+                            area, &state, col, row,
+                        )
+                        .is_some_and(|(idx, _)| {
+                            matches!(idx, GITHUB_OPEN_PR_ROW | GITHUB_OPEN_CI_ROW)
+                        })
                 })
             }
             Self::Usage { view, selected, .. } => {
@@ -1849,11 +1993,11 @@ impl Dialog {
                 let items = picker_filtered_rows(agents, filter).len() as u16;
                 items + 4
             }
-            Self::RenameTab { .. } => 5,
+            Self::RenameTab { .. } | Self::ExportFile { .. } => 5,
             Self::ContainerInfo { .. } => self.container_info_state().map_or(10, |state| {
                 jackin_tui::components::container_info_required_height(&state)
             }),
-            Self::GitHubContext { .. } => 9,
+            Self::GitHubContext { .. } => 11,
             Self::Usage { .. } => self.usage_state().map_or(10, |state| {
                 crate::tui::components::dialog_widgets::usage_info_required_height(&state)
             }),
@@ -1909,10 +2053,27 @@ impl Dialog {
             | Self::CloseTargetPicker { .. } => picker_hint(),
             Self::ProviderPicker { .. } => provider_hint(),
             Self::RenameTab { .. } => rename_hint(),
+            Self::ExportFile { .. } => export_file_hint(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
             Self::GitHubContext { .. } => {
                 if github.and_then(|view| view.status.loaded()).is_some() {
-                    info_dialog_hint("copy GitHub URL", axes)
+                    let mut spans = info_dialog_hint("copy GitHub URL", axes);
+                    let insert_at = spans
+                        .iter()
+                        .rposition(|span| matches!(span, HintSpan::Key("Esc")))
+                        .unwrap_or(spans.len());
+                    spans.splice(
+                        insert_at..insert_at,
+                        [
+                            HintSpan::Key("O"),
+                            HintSpan::Text("open PR"),
+                            HintSpan::GroupSep,
+                            HintSpan::Key("C"),
+                            HintSpan::Text("open CI"),
+                            HintSpan::GroupSep,
+                        ],
+                    );
+                    spans
                 } else {
                     read_only_hint()
                 }

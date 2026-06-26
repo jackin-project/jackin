@@ -5,7 +5,7 @@
 //! in-container rendering.
 
 use anyhow::{Context, Result};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
 
 use crate::protocol::attach::SpawnRequest;
@@ -25,6 +25,53 @@ pub async fn run_client(
     focus_session: Option<u64>,
 ) -> Result<()> {
     crate::tui::run::run_client(spawn_request, focus_session).await
+}
+
+/// Relay attach-protocol bytes between stdio and the daemon socket.
+///
+/// This is the fallback transport for hosts that can run `docker exec -i` but
+/// cannot open the bind-mounted Unix socket directly. The proxy is deliberately
+/// byte-blind: the host-side attach client still owns terminal mode, protocol
+/// encoding, frame caps, and validation.
+pub async fn run_attach_proxy() -> Result<()> {
+    run_attach_proxy_at(SOCKET_PATH, tokio::io::stdin(), tokio::io::stdout()).await
+}
+
+async fn run_attach_proxy_at<R, W>(socket_path: &str, input: R, output: W) -> Result<()>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let stream = UnixStream::connect(socket_path)
+        .await
+        .with_context(|| format!("cannot connect to jackin-capsule daemon at {socket_path}"))?;
+    let (mut socket_read, mut socket_write) = stream.into_split();
+    let mut input = input;
+    let mut output = output;
+
+    let input_to_socket = async {
+        tokio::io::copy(&mut input, &mut socket_write).await?;
+        socket_write.shutdown().await?;
+        Ok::<(), std::io::Error>(())
+    };
+    let socket_to_output = async {
+        tokio::io::copy(&mut socket_read, &mut output).await?;
+        output.shutdown().await?;
+        Ok::<(), std::io::Error>(())
+    };
+
+    tokio::pin!(input_to_socket);
+    tokio::pin!(socket_to_output);
+    tokio::select! {
+        result = &mut input_to_socket => {
+            result.context("relaying stdin to attach socket")?;
+            socket_to_output.await.context("relaying attach socket to stdout")?;
+        }
+        result = &mut socket_to_output => {
+            result.context("relaying attach socket to stdout")?;
+        }
+    }
+    Ok(())
 }
 
 /// Query the daemon for current session list and print it.
@@ -63,6 +110,87 @@ pub async fn run_status() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+    use tokio::net::UnixListener;
+
+    #[tokio::test]
+    async fn attach_proxy_relays_binary_bytes_without_interpreting_frames() {
+        let tmp = TempDir::new().unwrap();
+        let socket_path = short_socket_path(&tmp, "proxy.sock");
+        let listener = UnixListener::bind(&socket_path).unwrap();
+
+        let client_frame = vec![0x01, 0x00, 0x00, 0x00, 0x02, 0xff, 0x00];
+        let server_frame = vec![0x82, 0x00, 0x00, 0x00, 0x03, b'o', b'u', b't'];
+        let expected_client_frame = client_frame.clone();
+        let server_frame_for_task = server_frame.clone();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut received = vec![0u8; expected_client_frame.len()];
+            stream.read_exact(&mut received).await.unwrap();
+            assert_eq!(received, expected_client_frame);
+            stream.write_all(&server_frame_for_task).await.unwrap();
+            stream.shutdown().await.unwrap();
+        });
+
+        let input = tokio::io::duplex(1024);
+        let output = tokio::io::duplex(1024);
+        let (mut input_writer, input_reader) = input;
+        let (output_writer, mut output_reader) = output;
+
+        input_writer.write_all(&client_frame).await.unwrap();
+        input_writer.shutdown().await.unwrap();
+
+        run_attach_proxy_at(socket_path.to_str().unwrap(), input_reader, output_writer)
+            .await
+            .unwrap();
+
+        let mut received = Vec::new();
+        output_reader.read_to_end(&mut received).await.unwrap();
+        assert_eq!(received, server_frame);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn attach_proxy_exits_when_socket_closes_before_stdin() {
+        let tmp = TempDir::new().unwrap();
+        let socket_path = short_socket_path(&tmp, "proxy.sock");
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server_frame = vec![0x84, 0x00, 0x00, 0x00, 0x00];
+        let server_frame_for_task = server_frame.clone();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            stream.write_all(&server_frame_for_task).await.unwrap();
+            stream.shutdown().await.unwrap();
+        });
+
+        let (_input_writer, input_reader) = tokio::io::duplex(1024);
+        let (output_writer, mut output_reader) = tokio::io::duplex(1024);
+
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            run_attach_proxy_at(socket_path.to_str().unwrap(), input_reader, output_writer),
+        )
+        .await
+        .expect("proxy should exit after socket EOF")
+        .unwrap();
+
+        let mut received = Vec::new();
+        output_reader.read_to_end(&mut received).await.unwrap();
+        assert_eq!(received, server_frame);
+        server.await.unwrap();
+    }
+
+    fn short_socket_path(tmp: &TempDir, file_name: &str) -> PathBuf {
+        tmp.path().join(file_name)
+    }
 }
 
 /// Query the daemon for the tab/pane snapshot and print as JSON.
@@ -397,7 +525,7 @@ fn msg_kind(msg: &ServerMsg) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
+mod usage_tests {
     use super::*;
 
     fn account(
