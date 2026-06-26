@@ -290,7 +290,9 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     // socket dir bind-mount to /jackin/run: carries Capsule's launch config
     // (agent.toml, which the daemon requires at startup) and host.sock.
     let socket_dir = paths.jackin_home.join("sockets").join(container_name);
-    super::launch::prepare_socket_dir(&socket_dir, capsule_config)?;
+    let capsule_config_contents = toml::to_string(capsule_config)
+        .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
+    super::launch::prepare_socket_dir(&socket_dir, &capsule_config_contents)?;
     let mut mounts: Vec<(PathBuf, PathBuf)> = mount_pairs.to_vec();
     mounts.push((socket_dir, PathBuf::from("/jackin/run")));
 

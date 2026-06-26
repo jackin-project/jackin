@@ -232,14 +232,18 @@ async fn handle_connection(mut stream: UnixStream, allowed_bindings: &[ExecCredR
 }
 
 async fn resolve_all(refs: &[ExecCredRef]) -> Result<std::collections::BTreeMap<String, String>> {
-    let mut values = std::collections::BTreeMap::new();
-    for r in refs {
+    // Resolve concurrently: each `op` kind spawns an `op read` subprocess
+    // (network + a possible Touch ID prompt, ~1-3s each), so serial resolution
+    // would make interactive `jackin-exec` latency scale with the number of
+    // selected credentials. Mirrors the parallel launch-time resolver.
+    let resolved = futures_util::future::try_join_all(refs.iter().map(|r| async move {
         let value = resolve_one(r)
             .await
             .with_context(|| format!("resolving credential {:?}", r.name))?;
-        values.insert(r.name.clone(), value);
-    }
-    Ok(values)
+        Ok::<_, anyhow::Error>((r.name.clone(), value))
+    }))
+    .await?;
+    Ok(resolved.into_iter().collect())
 }
 
 fn validate_op_source(source: &str) -> Result<()> {

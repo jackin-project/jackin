@@ -638,13 +638,12 @@ pub(super) fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> S
 /// `exec_host` listener when it binds the socket.
 pub(super) fn prepare_socket_dir(
     socket_dir: &Path,
-    capsule_config: &jackin_protocol::CapsuleConfig,
+    capsule_config_contents: &str,
 ) -> std::io::Result<()> {
     std::fs::create_dir_all(socket_dir)?;
-    let contents = toml::to_string(capsule_config).map_err(std::io::Error::other)?;
     std::fs::write(
         socket_dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
-        contents,
+        capsule_config_contents,
     )
 }
 
@@ -1031,11 +1030,7 @@ pub(super) async fn launch_role_runtime(
         Some(container_name),
     );
     let prepare_socket_dir_result = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        std::fs::create_dir_all(&socket_dir_for_mkdir)?;
-        std::fs::write(
-            socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
-            capsule_config_contents_for_write,
-        )?;
+        prepare_socket_dir(&socket_dir_for_mkdir, &capsule_config_contents_for_write)?;
         if let Some(line) = extrausers_line_for_write {
             if let Some(parent) = extrausers_passwd_for_write.parent() {
                 std::fs::create_dir_all(parent)?;

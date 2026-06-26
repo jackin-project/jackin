@@ -903,7 +903,9 @@ async fn run_exec_selected(
             };
         }
     };
-    let secrets: Vec<String> = resolved.values().cloned().collect();
+    // Redaction set borrows the resolved values — no second copy of secret
+    // material; the strings already live in `resolved` for the env injection.
+    let secrets: Vec<&str> = resolved.values().map(String::as_str).collect();
     match crate::exec::execute_command(&command, &args, &resolved, &secrets).await {
         Ok((exit_code, stdout, stderr, redacted_count)) => ServerMsg::ExecResult {
             exit_code,

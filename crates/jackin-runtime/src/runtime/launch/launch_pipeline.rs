@@ -1637,7 +1637,6 @@ pub(crate) async fn load_role_with(
         {
             cleanup.run(docker).await;
             let mount_pairs = super::build_workspace_mount_pairs(&materialized);
-            let env_pairs: Vec<(String, String)> = resolved_env.vars.clone();
             return crate::runtime::apple_container::launch(
                 crate::runtime::apple_container::AppleContainerLaunch {
                     paths,
@@ -1652,7 +1651,7 @@ pub(crate) async fn load_role_with(
                     role_source_git: &source.git,
                     role_source_ref: opts.role_branch.as_deref(),
                     image_tag: &image,
-                    env_pairs: &env_pairs,
+                    env_pairs: &resolved_env.vars,
                     mount_pairs: &mount_pairs,
                     host_workdir_fingerprint: &host_workdir_fingerprint,
                     capsule_config: &launch_config,

@@ -6,45 +6,16 @@
 //!    control socket, sends `ExecCommand`, waits for `ExecResult` or
 //!    `ExecDenied`, and writes the output to the terminal.
 //!
-//! 2. **Shared types** (`ExecRequest`, `ExecPickerState`, …): used by the
-//!    daemon to carry exec work from the socket handler into the event loop.
+//! 2. **Shared types** (`ExecPickerState`, `CredRef`, …) and helpers
+//!    (`resolve_credentials`, `execute_command`): used by the daemon to drive
+//!    the credential picker and run the approved command.
 
 use anyhow::{Context as _, Result, bail};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
-use tokio::sync::oneshot;
 
 use crate::protocol::control::{ClientMsg, ServerMsg, frame};
 use crate::socket::SOCKET_PATH;
-
-// ---------------------------------------------------------------------------
-// Shared types (daemon ↔ socket handler)
-// ---------------------------------------------------------------------------
-
-/// A pending exec request forwarded from the socket handler into the
-/// daemon event loop. The socket handler awaits `response_rx` for the
-/// daemon's answer; the daemon resolves credentials and executes the
-/// command, then sends the result through `response_tx`.
-#[derive(Debug)]
-pub struct ExecRequest {
-    pub command: String,
-    pub args: Vec<String>,
-    pub response_tx: oneshot::Sender<ExecOutcome>,
-}
-
-/// The outcome of a `jackin-exec` invocation sent from daemon → socket handler.
-#[derive(Debug)]
-pub enum ExecOutcome {
-    Result {
-        exit_code: i32,
-        stdout: String,
-        stderr: String,
-        redacted_count: u32,
-    },
-    Denied {
-        reason: String,
-    },
-}
 
 /// State for the exec credential picker dialog shown by the daemon's TUI.
 #[derive(Debug, Clone)]
@@ -214,11 +185,9 @@ pub async fn resolve_credentials(
         .await
         .with_context(|| format!("connecting to host credential resolver at {host_sock_path}"))?;
 
-    let request = CredRequest { refs };
-    let body = serde_json::to_vec(&request)?;
-    let len = (body.len() as u32).to_be_bytes();
-    stream.write_all(&len).await?;
-    stream.write_all(&body).await?;
+    // Same 4-byte-BE-length + JSON framing as the control socket — reuse the
+    // canonical encoder so the two wire paths cannot drift.
+    stream.write_all(&frame(&CredRequest { refs })).await?;
 
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
@@ -248,7 +217,7 @@ pub async fn execute_command(
     command: &str,
     args: &[String],
     extra_env: &std::collections::BTreeMap<String, String>,
-    secrets_for_redaction: &[String],
+    secrets_for_redaction: &[&str],
 ) -> Result<(i32, String, String, u32)> {
     use std::process::Stdio;
 
@@ -278,30 +247,31 @@ pub async fn execute_command(
     // truncated away so the leading prefix no longer matches `secret` and the
     // replace misses it, leaking a verbatim partial secret to the caller.
     let mut redacted_count = 0u32;
-    for secret in secrets_for_redaction {
+    for &secret in secrets_for_redaction {
         if secret.is_empty() {
             continue;
         }
         // Plain value redaction — count and replace each stream independently
         // so a stream with no hit skips its replace scan.
-        let out_hits = stdout.matches(secret.as_str()).count();
-        let err_hits = stderr.matches(secret.as_str()).count();
+        let out_hits = stdout.matches(secret).count();
+        let err_hits = stderr.matches(secret).count();
         if out_hits > 0 {
-            stdout = stdout.replace(secret.as_str(), "[redacted by jackin']");
+            stdout = stdout.replace(secret, "[redacted by jackin']");
         }
         if err_hits > 0 {
-            stderr = stderr.replace(secret.as_str(), "[redacted by jackin']");
+            stderr = stderr.replace(secret, "[redacted by jackin']");
         }
         redacted_count += (out_hits + err_hits) as u32;
-        // PEM block redaction.
-        if secret.contains("BEGIN") && secret.contains("PRIVATE KEY") {
-            let pem_pattern = "-----BEGIN";
-            if stdout.contains(pem_pattern) || stderr.contains(pem_pattern) {
-                // Simple heuristic: redact any PEM block.
-                redact_pem(&mut stdout, &mut redacted_count);
-                redact_pem(&mut stderr, &mut redacted_count);
-            }
-        }
+    }
+    // PEM block redaction is global — `redact_pem` scrubs *any* PEM block, not a
+    // specific secret's — so run it once per stream when any key-type secret is
+    // present, rather than re-scanning inside the per-secret loop above.
+    if secrets_for_redaction
+        .iter()
+        .any(|s| s.contains("BEGIN") && s.contains("PRIVATE KEY"))
+    {
+        redact_pem(&mut stdout, &mut redacted_count);
+        redact_pem(&mut stderr, &mut redacted_count);
     }
 
     // Cap returned output at 1 MiB per stream, after redaction so truncation

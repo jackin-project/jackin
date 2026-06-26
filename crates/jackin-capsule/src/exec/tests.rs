@@ -77,7 +77,7 @@ async fn execute_command_redacts_secret_straddling_1mib_cap() {
         "cat",
         &[file.path().to_string_lossy().into_owned()],
         &env,
-        &[secret.to_owned()],
+        &[secret],
     )
     .await
     .unwrap();
@@ -95,7 +95,7 @@ async fn execute_command_redacts_plain_secret() {
         "printf",
         &["%s".to_owned(), "tok-SECRET-xyz".to_owned()],
         &env,
-        &["tok-SECRET-xyz".to_owned()],
+        &["tok-SECRET-xyz"],
     )
     .await
     .unwrap();
