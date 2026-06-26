@@ -1091,7 +1091,6 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // Token-spend monitor: keep it synced to the live agent sessions
                 // and poll any due providers. `poll_due_sessions` self-throttles
                 // to the 30s/60s cadence, so calling it each state tick is cheap.
-                // `Agent` is `Copy`, so this builds without cloning per session.
                 let token_sessions: Vec<(u64, Agent)> = mux
                     .sessions
                     .iter()
