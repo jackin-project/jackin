@@ -12,6 +12,91 @@ fn test_paths() -> (TempDir, JackinPaths) {
     (dir, paths)
 }
 
+fn short_test_paths() -> (TempDir, JackinPaths) {
+    let dir = tempfile::Builder::new()
+        .prefix("jk-attach-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let paths = JackinPaths::for_tests(dir.path());
+    (dir, paths)
+}
+
+fn ensure_socket_parent(paths: &JackinPaths, container_name: &str) -> PathBuf {
+    let socket_path = super::super::snapshot::socket_path(paths, container_name);
+    std::fs::create_dir_all(socket_path.parent().unwrap()).unwrap();
+    socket_path
+}
+
+#[test]
+fn attach_proxy_exec_args_use_stdio_not_tty() {
+    assert_eq!(
+        attach_proxy_exec_args("jk-agent-smith"),
+        vec![
+            "exec",
+            "-i",
+            "jk-agent-smith",
+            JACKIN_CAPSULE_PATH,
+            ATTACH_PROXY_SUBCOMMAND,
+        ]
+    );
+}
+
+#[test]
+fn host_attach_transport_falls_back_when_socket_path_is_missing() {
+    let (_tmp, paths) = short_test_paths();
+
+    let plan = select_host_attach_transport(&paths, "jk-agent-smith");
+
+    match plan {
+        HostAttachTransportPlan::AttachProxy {
+            socket_path,
+            direct_error,
+        } => {
+            assert!(socket_path.ends_with("sockets/jk-agent-smith/jackin.sock"));
+            assert_eq!(direct_error, None);
+        }
+        other @ HostAttachTransportPlan::DirectSocket { .. } => {
+            panic!("expected attach-proxy fallback, got {other:?}")
+        }
+    }
+}
+
+#[test]
+fn host_attach_transport_uses_direct_socket_when_connect_succeeds() {
+    let (_tmp, paths) = short_test_paths();
+    let socket_path = ensure_socket_parent(&paths, "jk-agent-smith");
+    let _listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+
+    let plan = select_host_attach_transport(&paths, "jk-agent-smith");
+
+    assert_eq!(plan, HostAttachTransportPlan::DirectSocket { socket_path });
+}
+
+#[test]
+fn host_attach_transport_falls_back_when_socket_inode_refuses_connect() {
+    let (_tmp, paths) = short_test_paths();
+    let socket_path = ensure_socket_parent(&paths, "jk-agent-smith");
+    std::fs::write(&socket_path, b"not a socket").unwrap();
+
+    let plan = select_host_attach_transport(&paths, "jk-agent-smith");
+
+    match plan {
+        HostAttachTransportPlan::AttachProxy {
+            socket_path: actual,
+            direct_error,
+        } => {
+            assert_eq!(actual, socket_path);
+            assert!(
+                direct_error.is_some_and(|error| !error.is_empty()),
+                "expected concrete direct-connect error"
+            );
+        }
+        other @ HostAttachTransportPlan::DirectSocket { .. } => {
+            panic!("expected attach-proxy fallback, got {other:?}")
+        }
+    }
+}
+
 #[test]
 fn insert_run_as_user_places_flag_immediately_after_exec() {
     let user = Some("1001:0".to_owned());
@@ -1024,4 +1109,26 @@ async fn wait_for_dind_succeeds_when_daemon_ready_immediately() {
     wait_for_dind("jk-agent-smith-dind", "jk-agent-smith-dind-certs", &docker)
         .await
         .unwrap();
+}
+
+#[test]
+fn git_policy_env_pairs_encodes_only_enabled_toggles() {
+    use jackin_core::env_model::{JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, JACKIN_GIT_DCO_ENV_NAME};
+
+    assert!(git_policy_env_pairs(false, false).is_empty());
+    assert_eq!(
+        git_policy_env_pairs(true, false),
+        vec![(JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, "1")]
+    );
+    assert_eq!(
+        git_policy_env_pairs(false, true),
+        vec![(JACKIN_GIT_DCO_ENV_NAME, "1")]
+    );
+    assert_eq!(
+        git_policy_env_pairs(true, true),
+        vec![
+            (JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, "1"),
+            (JACKIN_GIT_DCO_ENV_NAME, "1"),
+        ]
+    );
 }

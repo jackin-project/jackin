@@ -1736,6 +1736,24 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
     );
 }
 
+#[test]
+fn debug_runtime_envs_include_run_id_and_host_diagnostics_path() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
+    let _guard = run.activate();
+
+    let envs = debug_runtime_envs(true);
+
+    assert!(envs.contains(&"JACKIN_DEBUG=1".to_owned()));
+    assert!(envs.contains(&format!("JACKIN_RUN_ID={}", run.run_id())));
+    assert!(envs.contains(&format!(
+        "JACKIN_RUN_DIAGNOSTICS_PATH={}",
+        run.path().display()
+    )));
+}
+
 #[tokio::test]
 async fn validate_agent_supported_rejects_unsupported_choice() {
     let temp = tempdir().unwrap();

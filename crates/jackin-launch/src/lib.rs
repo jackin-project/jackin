@@ -87,6 +87,8 @@ pub trait LaunchHostTerminal: Send + Sync {
     fn emit_compact_line(&self, kind: &str, line: &str);
     fn set_pointer_shape(&self, pointer: bool);
     fn copy_to_clipboard(&self, payload: &str) -> bool;
+    fn reveal_file(&self, path: &Path) -> bool;
+    fn open_file(&self, path: &Path) -> bool;
 }
 
 mod test_support {
@@ -106,6 +108,12 @@ mod test_support {
         fn set_pointer_shape(&self, _pointer: bool) {}
         fn copy_to_clipboard(&self, _payload: &str) -> bool {
             true
+        }
+        fn reveal_file(&self, _path: &std::path::Path) -> bool {
+            false
+        }
+        fn open_file(&self, _path: &std::path::Path) -> bool {
+            false
         }
     }
 

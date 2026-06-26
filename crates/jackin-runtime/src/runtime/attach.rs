@@ -17,6 +17,8 @@ use crate::instance::{InstanceManifest, InstanceStatus};
 use anyhow::Context as _;
 use jackin_core::{CommandRunner, RunOptions};
 use jackin_docker::docker_client::DockerApi;
+use jackin_protocol::attach::SpawnRequest;
+use std::path::PathBuf;
 
 /// Shell command for querying the in-container daemon's session
 /// inventory.
@@ -35,6 +37,51 @@ use jackin_docker::docker_client::DockerApi;
 /// errors.
 pub const JACKIN_STATUS_CMD: &str =
     "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule status";
+
+pub const JACKIN_CAPSULE_PATH: &str = "/jackin/runtime/jackin-capsule";
+pub const ATTACH_PROXY_SUBCOMMAND: &str = "attach-proxy";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostAttachTransportPlan {
+    DirectSocket {
+        socket_path: PathBuf,
+    },
+    AttachProxy {
+        socket_path: PathBuf,
+        direct_error: Option<String>,
+    },
+}
+
+pub fn attach_proxy_exec_args(container_name: &str) -> Vec<String> {
+    vec![
+        "exec".to_owned(),
+        "-i".to_owned(),
+        container_name.to_owned(),
+        JACKIN_CAPSULE_PATH.to_owned(),
+        ATTACH_PROXY_SUBCOMMAND.to_owned(),
+    ]
+}
+
+pub fn select_host_attach_transport(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> HostAttachTransportPlan {
+    let socket_path = super::snapshot::socket_path(paths, container_name);
+    if !socket_path.exists() {
+        return HostAttachTransportPlan::AttachProxy {
+            socket_path,
+            direct_error: None,
+        };
+    }
+
+    match std::os::unix::net::UnixStream::connect(&socket_path) {
+        Ok(_) => HostAttachTransportPlan::DirectSocket { socket_path },
+        Err(err) => HostAttachTransportPlan::AttachProxy {
+            socket_path,
+            direct_error: Some(err.to_string()),
+        },
+    }
+}
 
 pub(super) async fn wait_for_capsule_daemon(
     container_name: &str,
@@ -242,6 +289,24 @@ fn insert_run_as_user<'a>(args: &mut Vec<&'a str>, run_as_user: Option<&'a str>)
     }
 }
 
+/// Git policy toggles as `(ENV_NAME, "1")` pairs — the single source of truth for
+/// which toggle gates which env var. The host-attach and docker-exec transports
+/// each adapt these pairs to their own wire shape (`SpawnRequest` env tuples vs
+/// `-e=NAME=1` flags).
+fn git_policy_env_pairs(coauthor_trailer: bool, dco: bool) -> Vec<(&'static str, &'static str)> {
+    let mut pairs = Vec::with_capacity(2);
+    if coauthor_trailer {
+        pairs.push((
+            jackin_core::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME,
+            "1",
+        ));
+    }
+    if dco {
+        pairs.push((jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME, "1"));
+    }
+    pairs
+}
+
 pub(super) async fn reconnect_or_create_session_with_focus(
     paths: &JackinPaths,
     container_name: &str,
@@ -251,6 +316,18 @@ pub(super) async fn reconnect_or_create_session_with_focus(
 ) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
     wait_for_capsule_daemon(container_name, docker).await?;
+    if super::host_attach::host_attach_enabled() {
+        let outcome = super::host_attach::run_host_attach_session(
+            paths,
+            container_name,
+            None,
+            focus_session,
+            &[],
+        )
+        .await;
+        jackin_diagnostics::reassert_alt_screen();
+        return outcome;
+    }
     let focus_arg = focus_session.map(|id| id.to_string());
     let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut args: Vec<&str> = vec![
@@ -417,6 +494,21 @@ pub async fn spawn_shell_session(
 
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
+    if super::host_attach::host_attach_enabled() {
+        let result = super::host_attach::run_host_attach_session(
+            paths,
+            container_name,
+            Some(SpawnRequest::Shell),
+            None,
+            &[],
+        )
+        .await;
+        jackin_diagnostics::reassert_alt_screen();
+        eprintln!();
+        result?;
+        return finalize_reconnected_foreground_session(paths, container_name, docker, runner)
+            .await;
+    }
     let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut args: Vec<&str> = vec![
         "exec",
@@ -483,39 +575,53 @@ pub async fn spawn_agent_session(
 
     let workdir = manifest.map_or("/workspace", |manifest| manifest.workdir.as_str());
 
-    // Agent selection travels as `jackin-capsule new <agent>` argv; these
-    // env values are session policy toggles consumed by the spawned entrypoint.
-    let coauthor_env = git_coauthor_trailer.then(|| {
-        format!(
-            "{}=1",
-            jackin_core::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
-        )
-    });
-    let dco_env = git_dco.then(|| format!("{}=1", jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME));
-
+    // Agent selection travels as `jackin-capsule new <agent>` argv; the
+    // git policy toggles are session env consumed by the spawned entrypoint.
+    // Each transport encodes them only on the path that consumes it.
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
+    if super::host_attach::host_attach_enabled() {
+        let mut session_env_overrides: Vec<(String, String)> =
+            git_policy_env_pairs(git_coauthor_trailer, git_dco)
+                .into_iter()
+                .map(|(name, value)| (name.to_owned(), value.to_owned()))
+                .collect();
+        session_env_overrides.extend(env_overrides.iter().cloned());
+        let spawn_request = if let Some(provider_label) = provider_label {
+            SpawnRequest::AgentWithProvider {
+                slug: agent.slug().to_owned(),
+                provider_label: provider_label.to_owned(),
+            }
+        } else {
+            SpawnRequest::agent(agent.slug())?
+        };
+        let result = super::host_attach::run_host_attach_session(
+            paths,
+            container_name,
+            Some(spawn_request),
+            None,
+            &session_env_overrides,
+        )
+        .await;
+        jackin_diagnostics::reassert_alt_screen();
+        eprintln!();
+        result?;
+        return finalize_reconnected_foreground_session(paths, container_name, docker, runner)
+            .await;
+    }
 
     let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut exec_args = vec!["exec", "--workdir", workdir, "-it"];
     insert_run_as_user(&mut exec_args, run_as_user.as_deref());
-    let coauthor_env_flag;
-    let dco_env_flag;
-    if let Some(ref env) = coauthor_env {
-        coauthor_env_flag = format!("-e={env}");
-        exec_args.push(coauthor_env_flag.as_str());
-    }
-    if let Some(ref env) = dco_env {
-        dco_env_flag = format!("-e={env}");
-        exec_args.push(dco_env_flag.as_str());
-    }
-    // Provider env overrides (e.g. ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL for Z.AI).
-    // Stored as owned strings so they outlive the exec_args vec.
-    let override_flags: Vec<String> = env_overrides
-        .iter()
-        .map(|(k, v)| format!("-e={k}={v}"))
+    // git policy toggles then provider env overrides (e.g. ANTHROPIC_AUTH_TOKEN +
+    // ANTHROPIC_BASE_URL for Z.AI) as docker `-e` flags. Owned so they outlive
+    // `exec_args`.
+    let env_flags: Vec<String> = git_policy_env_pairs(git_coauthor_trailer, git_dco)
+        .into_iter()
+        .map(|(name, value)| format!("-e={name}={value}"))
+        .chain(env_overrides.iter().map(|(k, v)| format!("-e={k}={v}")))
         .collect();
-    for flag in &override_flags {
+    for flag in &env_flags {
         exec_args.push(flag.as_str());
     }
     exec_args.push(container_name);

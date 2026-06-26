@@ -52,6 +52,7 @@ turso = { version = "0.7.0-pre.7", default-features = false }
 sha2 = "0.11"
 jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 ratatui = "0.30"
+hex = "0.4"
 dhat = { version = "0.3.3", optional = true }
 # tui-term was evaluated for pane-body rendering (see ADR-004) but did not fit
 # the capsule's owned-grid model. The custom cell widget approach is used instead.

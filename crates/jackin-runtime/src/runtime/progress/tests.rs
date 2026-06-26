@@ -523,6 +523,8 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
         label_transition: None,
         failure_copy_hover: None,
         failure_copied: None,
+        failure_revealed: None,
+        failure_opened: None,
         container_info_open: false,
         container_info_copied: None,
         container_info_hover: None,
@@ -581,6 +583,8 @@ fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
         label_transition: None,
         failure_copy_hover: None,
         failure_copied: None,
+        failure_revealed: None,
+        failure_opened: None,
         container_info_open: false,
         container_info_copied: None,
         container_info_hover: None,
@@ -644,6 +648,8 @@ fn rich_renderer_frame_contains_identity_stages_and_diagnostics() {
         label_transition: None,
         failure_copy_hover: None,
         failure_copied: None,
+        failure_revealed: None,
+        failure_opened: None,
         container_info_open: false,
         container_info_copied: None,
         container_info_hover: None,
@@ -917,8 +923,16 @@ fn failure_popup_wraps_long_paths_without_dropping_tail() {
 fn failure_popup_path_overlay_emits_osc8_file_links() {
     let area = Rect::new(0, 0, 120, 28);
     let failure = failure_with_paths();
-    let overlay =
-        failure_popup_hyperlink_overlay(area, &failure, "jk-run-rendered", true, None, None);
+    let overlay = failure_popup_hyperlink_overlay(
+        area,
+        &failure,
+        "jk-run-rendered",
+        true,
+        None,
+        None,
+        None,
+        None,
+    );
     let text = String::from_utf8_lossy(&overlay);
 
     assert!(text.contains("\x1b]8;;file:///jk/run/x.jsonl\x1b\\"));
