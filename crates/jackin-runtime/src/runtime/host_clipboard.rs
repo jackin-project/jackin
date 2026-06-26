@@ -900,6 +900,14 @@ mod tests {
             paste_surrounding_bytes(b"plain"),
             (b"plain".as_slice(), b"".as_slice())
         );
+        // The realistic Cmd+V case: type-ahead before, mouse report after.
+        let mut both = b"ab".to_vec();
+        both.extend_from_slice(&bracketed("/tmp/x.png"));
+        both.extend_from_slice(b"\x1b[<0;1;1M");
+        assert_eq!(
+            paste_surrounding_bytes(&both),
+            (b"ab".as_slice(), b"\x1b[<0;1;1M".as_slice())
+        );
     }
 
     #[test]
