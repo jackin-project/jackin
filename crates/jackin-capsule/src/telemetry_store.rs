@@ -72,7 +72,7 @@ where
     // Callers run inside `spawn_blocking` (no enclosing runtime), so `block_on`
     // never nests; sequential reuse avoids rebuilding a runtime per snapshot
     // write. Build errors propagate without panicking. INVARIANT: never call the
-    // store fns from inside the async runtime — route them through
+    // store functions from inside the async runtime — route them through
     // `spawn_blocking`, or `block_on` panics ("Cannot start a runtime from within
     // a runtime").
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
