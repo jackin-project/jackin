@@ -37,18 +37,7 @@ pub async fn run_status() -> Result<()> {
                 "daemon replied with ServerMsg::Unknown for Status — peer is newer than this CLI"
             )
         }
-        ServerMsg::Snapshot { .. } => {
-            anyhow::bail!("daemon replied with Snapshot for Status request")
-        }
-        ServerMsg::AgentRegistry { .. } => {
-            anyhow::bail!("daemon replied with AgentRegistry for Status request")
-        }
-        ServerMsg::UsageFocused { .. } => {
-            anyhow::bail!("daemon replied with UsageFocused for Status request")
-        }
-        ServerMsg::UsageAccounts { .. } => {
-            anyhow::bail!("daemon replied with UsageAccounts for Status request")
-        }
+        other => anyhow::bail!("daemon replied with {} for Status request", other.kind()),
     };
     crate::output::stdout_line(format_args!("Sessions: {}", sessions.len()));
     for s in &sessions {
@@ -78,18 +67,7 @@ pub async fn run_snapshot() -> Result<()> {
                 "daemon replied with ServerMsg::Unknown for Snapshot — peer is newer than this CLI"
             )
         }
-        ServerMsg::SessionList { .. } => {
-            anyhow::bail!("daemon replied with SessionList for Snapshot request")
-        }
-        ServerMsg::AgentRegistry { .. } => {
-            anyhow::bail!("daemon replied with AgentRegistry for Snapshot request")
-        }
-        ServerMsg::UsageFocused { .. } => {
-            anyhow::bail!("daemon replied with UsageFocused for Snapshot request")
-        }
-        ServerMsg::UsageAccounts { .. } => {
-            anyhow::bail!("daemon replied with UsageAccounts for Snapshot request")
-        }
+        other => anyhow::bail!("daemon replied with {} for Snapshot request", other.kind()),
     };
     let payload = serde_json::json!({
         "tabs": tabs,
@@ -119,18 +97,7 @@ pub async fn run_agents(format: AgentsFormat) -> Result<()> {
                 "daemon replied with ServerMsg::Unknown for Agents — peer is newer than this CLI"
             )
         }
-        ServerMsg::SessionList { .. } => {
-            anyhow::bail!("daemon replied with SessionList for Agents request")
-        }
-        ServerMsg::Snapshot { .. } => {
-            anyhow::bail!("daemon replied with Snapshot for Agents request")
-        }
-        ServerMsg::UsageFocused { .. } => {
-            anyhow::bail!("daemon replied with UsageFocused for Agents request")
-        }
-        ServerMsg::UsageAccounts { .. } => {
-            anyhow::bail!("daemon replied with UsageAccounts for Agents request")
-        }
+        other => anyhow::bail!("daemon replied with {} for Agents request", other.kind()),
     };
 
     // Determine caller's own codename and annotate matching records.
@@ -237,7 +204,7 @@ async fn usage_accounts() -> Result<Vec<AccountUsageSnapshotView>> {
         ServerMsg::UsageAccounts { accounts } => Ok(accounts),
         other => anyhow::bail!(
             "daemon replied with {} for UsageAccountList request",
-            msg_kind(&other)
+            other.kind()
         ),
     }
 }
@@ -339,18 +306,21 @@ fn usage_row_proves_live_quota(row: &AccountUsageSnapshotView) -> bool {
 }
 
 fn usage_provider_matches(needle: &str, provider: &str) -> bool {
+    // Interchangeable provider/agent labels: a match needs one member of a group
+    // on each side. Bidirectional and extensible — add a group, not two arms.
+    const SYNONYMS: &[&[&str]] = &[
+        &["openai", "codex"],
+        &["anthropic", "claude"],
+        &["xai", "grok"],
+        &["zai", "glm"],
+    ];
     let needle = normalize_usage_provider_label(needle);
     let provider = normalize_usage_provider_label(provider);
     provider.contains(&needle)
         || needle.contains(&provider)
-        || (needle.contains("openai") && provider.contains("codex"))
-        || (needle.contains("codex") && provider.contains("openai"))
-        || (needle.contains("anthropic") && provider.contains("claude"))
-        || (needle.contains("claude") && provider.contains("anthropic"))
-        || (needle.contains("xai") && provider.contains("grok"))
-        || (needle.contains("grok") && provider.contains("xai"))
-        || (needle.contains("zai") && provider.contains("glm"))
-        || (needle.contains("glm") && provider.contains("zai"))
+        || SYNONYMS.iter().any(|group| {
+            group.iter().any(|m| needle.contains(m)) && group.iter().any(|m| provider.contains(m))
+        })
 }
 
 fn normalize_usage_provider_label(value: &str) -> String {
@@ -383,17 +353,6 @@ async fn request_control(request: &ClientMsg) -> Result<ServerMsg> {
     stream.read_exact(&mut body).await?;
 
     Ok(serde_json::from_slice(&body)?)
-}
-
-fn msg_kind(msg: &ServerMsg) -> &'static str {
-    match msg {
-        ServerMsg::SessionList { .. } => "SessionList",
-        ServerMsg::Snapshot { .. } => "Snapshot",
-        ServerMsg::AgentRegistry { .. } => "AgentRegistry",
-        ServerMsg::UsageFocused { .. } => "UsageFocused",
-        ServerMsg::UsageAccounts { .. } => "UsageAccounts",
-        ServerMsg::Unknown => "Unknown",
-    }
 }
 
 #[cfg(test)]

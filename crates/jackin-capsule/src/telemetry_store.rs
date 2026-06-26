@@ -8,9 +8,9 @@
 use std::future::Future;
 use std::path::Path;
 
-use jackin_protocol::control::{
-    FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
-};
+use jackin_protocol::control::{FocusedUsageView, QuotaBucketView};
+#[cfg(test)]
+use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
 use sha2::{Digest, Sha256};
 use turso::{Connection, Row, params};
 
@@ -311,8 +311,8 @@ fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccountUsageSnaps
     let provider = view.account.provider_label.clone();
     let account_label = view.account.account_label.clone();
     let account_key_hash = account_key_hash(&provider, &account_label);
-    let source = source_label(view.source).to_owned();
-    let confidence = confidence_label(view.confidence).to_owned();
+    let source = crate::usage::usage_source_storage_label(view.source).to_owned();
+    let confidence = crate::usage::usage_confidence_storage_label(view.confidence).to_owned();
     let fetched_at = view.fetched_at_epoch;
     let last_error = view.last_error.clone();
     view.buckets
@@ -333,7 +333,7 @@ fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccountUsageSnaps
                 resets_at: bucket.resets_at,
                 fetched_at,
                 expires_at: None,
-                status: status_label(bucket.status).to_owned(),
+                status: crate::usage::usage_status_storage_label(bucket.status).to_owned(),
                 last_error: last_error.clone(),
                 focused_provider: view.focused_provider.clone(),
                 plan_label: view.account.plan_label.clone(),
@@ -342,7 +342,7 @@ fn account_snapshot_rows(view: &FocusedUsageView) -> Vec<StoredAccountUsageSnaps
                 limit_label: bucket.limit_label.clone(),
                 reset_label: bucket.reset_label.clone(),
                 pace_label: bucket.pace_label.clone(),
-                view_status: status_label(view.status).to_owned(),
+                view_status: crate::usage::usage_status_storage_label(view.status).to_owned(),
                 updated_label: view.updated_label.clone(),
                 status_bar_label: view.status_bar_label.clone(),
             }
@@ -388,37 +388,6 @@ fn hex_lower(bytes: &[u8]) -> String {
         out.push(char::from(HEX[usize::from(byte & 0x0f)]));
     }
     out
-}
-
-fn source_label(source: UsageSource) -> &'static str {
-    match source {
-        UsageSource::ProviderApi => "provider_api",
-        UsageSource::Cli => "cli",
-        UsageSource::LocalLogs => "local_logs",
-        UsageSource::Cache => "cache",
-        UsageSource::None => "none",
-    }
-}
-
-fn confidence_label(confidence: UsageConfidence) -> &'static str {
-    match confidence {
-        UsageConfidence::Authoritative => "authoritative",
-        UsageConfidence::Estimated => "estimated",
-        UsageConfidence::PresenceOnly => "presence_only",
-        UsageConfidence::None => "none",
-    }
-}
-
-fn status_label(status: UsageSnapshotStatus) -> &'static str {
-    match status {
-        UsageSnapshotStatus::Fresh => "fresh",
-        UsageSnapshotStatus::Stale => "stale",
-        UsageSnapshotStatus::NeedsLogin => "needs_login",
-        UsageSnapshotStatus::NeedsSecret => "needs_secret",
-        UsageSnapshotStatus::Unsupported => "unsupported",
-        UsageSnapshotStatus::Unavailable => "unavailable",
-        UsageSnapshotStatus::Error => "error",
-    }
 }
 
 #[cfg(test)]

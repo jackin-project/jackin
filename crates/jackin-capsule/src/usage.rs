@@ -707,7 +707,7 @@ fn quota_amounts_for_account_snapshot(
     )
 }
 
-fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {
+pub(crate) fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {
     match status {
         UsageSnapshotStatus::Fresh => "fresh",
         UsageSnapshotStatus::Stale => "stale",
@@ -719,7 +719,7 @@ fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {
     }
 }
 
-fn usage_source_storage_label(source: UsageSource) -> &'static str {
+pub(crate) fn usage_source_storage_label(source: UsageSource) -> &'static str {
     match source {
         UsageSource::ProviderApi => "provider_api",
         UsageSource::Cli => "cli",
@@ -729,7 +729,7 @@ fn usage_source_storage_label(source: UsageSource) -> &'static str {
     }
 }
 
-fn usage_confidence_storage_label(confidence: UsageConfidence) -> &'static str {
+pub(crate) fn usage_confidence_storage_label(confidence: UsageConfidence) -> &'static str {
     match confidence {
         UsageConfidence::Authoritative => "authoritative",
         UsageConfidence::Estimated => "estimated",
