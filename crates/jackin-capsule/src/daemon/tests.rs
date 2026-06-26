@@ -2627,9 +2627,9 @@ fn wheel_back_to_live_repaints_body_and_footer() {
     )
     .expect("wheel into history must repaint");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
-    // "exit scrollback" text in the footer — the diff encoder may split
-    // "scrollback" across a cursor-move when a cell matches the live footer,
-    // so match on the contiguous prefix "exit scrollb" instead.
+    // The diff encoder skips cells that match the live footer, so "scrollback"
+    // may be split across a cursor-move escape. Match the prefix that is always
+    // emitted as a contiguous run.
     assert!(
         contains(&scrolled, b"exit scrollb"),
         "scrolled frame must show the scrollback footer: {:?}",
