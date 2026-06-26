@@ -152,7 +152,6 @@ fn descendant_count_fixture_counts_full_tree_only_under_root() {
 
 #[test]
 fn foreground_agent_fixture_detects_direct_binary() {
-    let root = proc_info(100, 100, 300, Some("/bin/zsh"), "zsh", &["zsh"]);
     let foreground = [
         proc_info(
             300,
@@ -166,14 +165,16 @@ fn foreground_agent_fixture_detects_direct_binary() {
     ];
 
     assert_eq!(
-        detect_foreground_agent_from_process_infos(&root, &foreground),
-        Some((Some(Agent::Codex), 300))
+        foreground_group_from_process_infos(300, &foreground),
+        ForegroundGroup::Agent {
+            agent: Agent::Codex,
+            pgid: 300
+        }
     );
 }
 
 #[test]
 fn foreground_agent_fixture_detects_node_wrapped_claude() {
-    let root = proc_info(100, 100, 300, Some("/bin/zsh"), "zsh", &["zsh"]);
     let foreground = [proc_info(
         300,
         300,
@@ -184,14 +185,16 @@ fn foreground_agent_fixture_detects_node_wrapped_claude() {
     )];
 
     assert_eq!(
-        detect_foreground_agent_from_process_infos(&root, &foreground),
-        Some((Some(Agent::Claude), 300))
+        foreground_group_from_process_infos(300, &foreground),
+        ForegroundGroup::Agent {
+            agent: Agent::Claude,
+            pgid: 300
+        }
     );
 }
 
 #[test]
 fn foreground_agent_fixture_reports_unknown_shell_handoff() {
-    let root = proc_info(100, 100, 100, Some("/bin/bash"), "bash", &["bash"]);
     let foreground = [
         proc_info(100, 100, 100, Some("/bin/bash"), "bash", &["bash"]),
         proc_info(
@@ -205,27 +208,17 @@ fn foreground_agent_fixture_reports_unknown_shell_handoff() {
     ];
 
     assert_eq!(
-        detect_foreground_agent_from_process_infos(&root, &foreground),
-        Some((None, 100))
+        foreground_group_from_process_infos(100, &foreground),
+        ForegroundGroup::Unrecognized { pgid: 100 }
     );
 }
 
 #[test]
 fn foreground_agent_fixture_rejects_missing_foreground_group() {
+    // tpgid <= 0 means no foreground group; the public entry point short-circuits
+    // before touching /proc, so the guard is testable from a fixture.
     let root = proc_info(100, 100, 0, Some("/bin/bash"), "bash", &["bash"]);
-    let foreground = [proc_info(
-        100,
-        100,
-        0,
-        Some("/usr/local/bin/codex"),
-        "codex",
-        &["codex"],
-    )];
-
-    assert_eq!(
-        detect_foreground_agent_from_process_infos(&root, &foreground),
-        None
-    );
+    assert_eq!(detect_foreground_agent(&root), ForegroundGroup::None);
 }
 
 #[test]

@@ -237,41 +237,70 @@ pub fn identify_agent(info: &ProcessInfo) -> Option<Agent> {
     agent_from_name(info.comm.as_str())
 }
 
-/// Given the child PID of a session's root process, determine what agent
-/// currently owns the terminal's foreground process group.
-///
-/// Returns `(foreground_agent, foreground_pgid)` or `None` when there is no
-/// foreground process group. The agent is `None` when a foreground group exists
-/// but holds no recognized agent. `root_info` is the already-read `/proc` info
-/// for the child PID, so the caller (which read it for its own physics sample)
-/// does not pay a second stat+exe+cmdline read here.
-pub fn detect_foreground_agent(root_info: &ProcessInfo) -> Option<(Option<Agent>, u32)> {
-    if root_info.tpgid <= 0 {
-        return None;
+/// What owns the terminal's foreground process group. A `pgid` is present
+/// exactly when a group exists — an invariant the previous
+/// `Option<(Option<Agent>, u32)>` left to the caller to decode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForegroundGroup {
+    /// No foreground process group (`tpgid <= 0`).
+    None,
+    /// A foreground group exists but holds no recognized agent (e.g. a shell).
+    Unrecognized { pgid: u32 },
+    /// A recognized agent owns the foreground group.
+    Agent { agent: Agent, pgid: u32 },
+}
+
+impl ForegroundGroup {
+    /// A recognized agent owns the foreground.
+    pub fn is_agent(self) -> bool {
+        matches!(self, Self::Agent { .. })
     }
-    let fg_pgid = u32::try_from(root_info.tpgid).ok()?;
+
+    /// A foreground process group exists at all (agent or not).
+    pub fn has_group(self) -> bool {
+        !matches!(self, Self::None)
+    }
+
+    /// The foreground process group id, when one exists.
+    pub fn pgid(self) -> Option<u32> {
+        match self {
+            Self::None => None,
+            Self::Unrecognized { pgid } | Self::Agent { pgid, .. } => Some(pgid),
+        }
+    }
+}
+
+/// Given the child PID of a session's root process, determine what agent
+/// currently owns the terminal's foreground process group. `root_info` is the
+/// already-read `/proc` info for the child PID, so the caller (which read it for
+/// its own physics sample) does not pay a second stat+exe+cmdline read here.
+pub fn detect_foreground_agent(root_info: &ProcessInfo) -> ForegroundGroup {
+    if root_info.tpgid <= 0 {
+        return ForegroundGroup::None;
+    }
+    let Ok(fg_pgid) = u32::try_from(root_info.tpgid) else {
+        return ForegroundGroup::None;
+    };
     let process_group: Vec<_> = pids_in_pgrp(fg_pgid)
         .into_iter()
         .filter_map(read_process_info)
         .collect();
-    detect_foreground_agent_from_process_infos(root_info, &process_group)
+    foreground_group_from_process_infos(fg_pgid, &process_group)
 }
 
-fn detect_foreground_agent_from_process_infos(
-    root_info: &ProcessInfo,
+fn foreground_group_from_process_infos(
+    fg_pgid: u32,
     process_group: &[ProcessInfo],
-) -> Option<(Option<Agent>, u32)> {
-    if root_info.tpgid <= 0 {
-        return None;
-    }
-    let fg_pgid = u32::try_from(root_info.tpgid).ok()?;
+) -> ForegroundGroup {
     for proc_info in process_group {
         if let Some(agent) = identify_agent(proc_info) {
-            return Some((Some(agent), fg_pgid));
+            return ForegroundGroup::Agent {
+                agent,
+                pgid: fg_pgid,
+            };
         }
     }
-    // Process group exists but no recognized agent binary found.
-    Some((None, fg_pgid))
+    ForegroundGroup::Unrecognized { pgid: fg_pgid }
 }
 
 #[cfg(test)]

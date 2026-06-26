@@ -338,7 +338,7 @@ fn read_existing_json_object(
 /// array when the key is absent), deduplicated by `eq`. Bails — rather than
 /// overwriting — when the key exists but is not an array. The merge primitive
 /// shared by the `plugins.json` and `hooks.json` installers so neither
-/// hand-rolls the get-or-create-array + dedup-push dance. `label` names the
+/// hand-rolls the get-or-create-array + dedup-push dance. `config_path` names the
 /// config file for the bail message.
 fn upsert_into_json_array(
     map: &mut serde_json::Map<String, serde_json::Value>,
@@ -347,7 +347,7 @@ fn upsert_into_json_array(
     // already-present path on a drift-repair launch allocates nothing.
     value: impl FnOnce() -> serde_json::Value,
     eq: impl Fn(&serde_json::Value) -> bool,
-    label: &Path,
+    config_path: &Path,
 ) -> anyhow::Result<()> {
     let entry = map
         .entry(key.to_owned())
@@ -355,7 +355,7 @@ fn upsert_into_json_array(
     let arr = entry.as_array_mut().with_context(|| {
         format!(
             "{} `{key}` is not an array; refusing to overwrite",
-            label.display()
+            config_path.display()
         )
     })?;
     if !arr.iter().any(eq) {

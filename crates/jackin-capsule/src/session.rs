@@ -1014,9 +1014,8 @@ impl Session {
         };
 
         let foreground = detect_foreground_agent(&info);
-        // A recognized agent owns the foreground group (the inner Option is Some).
-        let foreground_is_agent = matches!(&foreground, Some((Some(_), _)));
-        let foreground_pgid = foreground.as_ref().map(|(_, pgid)| *pgid);
+        let foreground_is_agent = foreground.is_agent();
+        let foreground_pgid = foreground.pgid();
         let child_process_count = descendant_process_count(pid);
         let cpu_jiffies_delta = sample_cpu_jiffies_delta(pid, &mut self.cpu_sample, now);
         let root_is_agent = process::identify_agent(&info).is_some();
@@ -1029,7 +1028,7 @@ impl Session {
         // descendant work remains.
         let foreground_returned_to_shell = self.saw_agent_foreground
             && !foreground_is_agent
-            && foreground.is_some()
+            && foreground.has_group()
             && child_process_count == 0;
 
         ProcessEvidence {
