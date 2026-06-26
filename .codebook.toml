@@ -1000,4 +1000,5 @@ words = [
   "userspace",
   "vminitd",
   "vmnet",
+  "daemonizes",
 ]

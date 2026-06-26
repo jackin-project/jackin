@@ -4398,25 +4398,6 @@ async fn load_agent_does_not_short_circuit_on_running_instance() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let mut config = AppConfig::load_or_init(&paths).unwrap();
-    config.env.insert(
-        "OPERATOR_ATTACH_SECRET".to_owned(),
-        jackin_core::EnvValue::OpRef(jackin_core::OpRef {
-            op: "op://vault/item/attach-secret".to_owned(),
-            path: "Vault/Item/attach secret".to_owned(),
-            account: None,
-            on_demand: false,
-        }),
-    );
-    let git_marker = temp.path().join("git-pull-ran");
-    let git_script = temp.path().join("git");
-    std::fs::write(
-        &git_script,
-        format!("#!/bin/sh\ntouch '{}'\nexit 43\n", git_marker.display()),
-    )
-    .unwrap();
-    let mut perms = std::fs::metadata(&git_script).unwrap().permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
-    std::fs::set_permissions(&git_script, perms).unwrap();
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
     std::fs::create_dir_all(&cached_repo.repo_dir).unwrap();

@@ -16,7 +16,9 @@ use jackin_core::agent::Agent;
 use jackin_core::AuthForwardMode;
 
 use crate::auth::{AgentAuthConfig, GithubAuthConfig};
-use crate::schema::{DirtyExitPolicy, DockerConfig, GitConfig, RoleSource, RuntimeConfig, WorkspaceConfig};
+use crate::schema::{
+    DirtyExitPolicy, DockerConfig, GitConfig, RoleSource, RuntimeConfig, WorkspaceConfig,
+};
 use crate::versions::CURRENT_CONFIG_VERSION;
 
 /// Top-level operator configuration (`~/.config/jackin/config.toml`).
