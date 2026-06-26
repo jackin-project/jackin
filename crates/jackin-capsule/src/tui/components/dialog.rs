@@ -816,14 +816,13 @@ impl Dialog {
             return None;
         }
         if *selected == UsageDialogTab::Overview {
-            if step >= 0 {
-                return view.tabs.first().map(|tab| tab.label.clone());
-            }
-            if let Some(target) = view.tabs.last() {
-                return Some(target.label.clone());
-            }
-            *selected = UsageDialogTab::Provider;
-            return None;
+            // tabs is non-empty (guarded above), so first/last are always Some.
+            let target = if step >= 0 {
+                view.tabs.first()
+            } else {
+                view.tabs.last()
+            };
+            return target.map(|tab| tab.label.clone());
         }
         let current = view.tabs.iter().position(|tab| tab.active).unwrap_or(0);
         if step < 0 && current == 0 {

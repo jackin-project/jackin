@@ -215,7 +215,7 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
 
     let workspace = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
     // The account must land on the op ref, and the root key must be gone
-    // (v1alpha6 shape) — not silently dropped during the typed split.
+    // (v1alpha7 shape) — not silently dropped during the typed split.
     assert!(
         workspace.contains(r#"account = "WORKACCT""#),
         "legacy op_account must be stamped onto the ref:\n{workspace}"
@@ -229,7 +229,7 @@ TOKEN = { op = "op://v/i/f", path = "Work/Claude/token" }
 #[test]
 fn legacy_non_string_op_account_bails_loudly() {
     // A present-but-non-string op_account is operator data; it must
-    // surface, not be silently dropped (mirrors the v1alpha6 migration).
+    // surface, not be silently dropped (mirrors the v1alpha7 migration).
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();

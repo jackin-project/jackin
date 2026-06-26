@@ -61,6 +61,13 @@ pub const fn launch_overlay_chrome_areas(area: Rect, debug_mode: bool) -> Bottom
     if debug_mode {
         return bottom_chrome_areas(area);
     }
+    // spacer and footer collapse to a zero-height row past the bottom edge.
+    let collapsed = Rect {
+        x: area.x,
+        y: area.y + area.height,
+        width: area.width,
+        height: 0,
+    };
     BottomChromeAreas {
         body: Rect {
             height: area.height.saturating_sub(1),
@@ -72,18 +79,8 @@ pub const fn launch_overlay_chrome_areas(area: Rect, debug_mode: bool) -> Bottom
             width: area.width,
             height: if area.height >= 1 { 1 } else { 0 },
         },
-        spacer: Rect {
-            x: area.x,
-            y: area.y + area.height,
-            width: area.width,
-            height: 0,
-        },
-        footer: Rect {
-            x: area.x,
-            y: area.y + area.height,
-            width: area.width,
-            height: 0,
-        },
+        spacer: collapsed,
+        footer: collapsed,
     }
 }
 

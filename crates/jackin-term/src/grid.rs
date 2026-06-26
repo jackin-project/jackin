@@ -404,10 +404,13 @@ impl DamageGrid {
         row_arena: RowArena,
     ) -> Self {
         let blank = make_blank_grid(rows, cols, row_arena.clone());
+        let profile = VirtualTerminalProfile::default();
+        let reported_fg = profile.default_reported_fg;
+        let reported_bg = profile.default_reported_bg;
         Self {
             parser: vte::Parser::new(),
             pending_utf8: Vec::new(),
-            profile: VirtualTerminalProfile::default(),
+            profile,
             rows,
             cols,
             primary: blank.clone(),
@@ -438,8 +441,8 @@ impl DamageGrid {
             bracketed_paste: false,
             application_cursor: false,
             focus_events: false,
-            reported_fg: VirtualTerminalProfile::default().default_reported_fg,
-            reported_bg: VirtualTerminalProfile::default().default_reported_bg,
+            reported_fg,
+            reported_bg,
             current_attrs: Attrs::default(),
             active_hyperlink: None,
             scroll_top: 0,

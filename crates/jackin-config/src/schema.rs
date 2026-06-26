@@ -11,6 +11,7 @@
 
 use std::collections::BTreeMap;
 
+use jackin_core::docker_security::{DockerGrants, DockerSecurityProfile};
 use jackin_core::{Agent, EnvValue, MountIsolation};
 use serde::{Deserialize, Serialize};
 
@@ -154,7 +155,7 @@ impl WorkspaceRoleOverride {
 // ─── WorkspaceConfig ─────────────────────────────────────────────────────────
 
 /// A saved workspace: the workdir, mounts, and per-agent auth config.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WorkspaceConfig {
     #[serde(default = "current_workspace_version", rename = "version")]
     pub version: String,
@@ -195,6 +196,18 @@ pub struct WorkspaceConfig {
     /// `None` means inherit from the global `AppConfig::dirty_exit_policy`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dirty_exit_policy: Option<DirtyExitPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docker: Option<WorkspaceDockerConfig>,
+}
+
+/// Docker security settings scoped to one saved workspace.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceDockerConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<DockerSecurityProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grants: Option<DockerGrants>,
 }
 
 impl Default for WorkspaceConfig {
@@ -219,6 +232,7 @@ impl Default for WorkspaceConfig {
             github: None,
             git_pull_on_entry: false,
             dirty_exit_policy: None,
+            docker: None,
         }
     }
 }
@@ -391,9 +405,14 @@ impl DockerMounts {
 
 /// Top-level `[docker]` block in `config.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DockerConfig {
     #[serde(default)]
     pub mounts: DockerMounts,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<DockerSecurityProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grants: Option<DockerGrants>,
 }
 
 // ─── Resolved workspace ──────────────────────────────────────────────────────

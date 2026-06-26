@@ -1270,9 +1270,7 @@ fn is_known_quota_bucket(label: &str) -> bool {
 }
 
 fn quota_value_has_meter(value: &str) -> bool {
-    value
-        .split_once(' ')
-        .is_some_and(|(meter, _)| meter.chars().all(usage_meter_char))
+    usage_meter_parts(value).1.is_some()
 }
 
 fn render_filter_picker(

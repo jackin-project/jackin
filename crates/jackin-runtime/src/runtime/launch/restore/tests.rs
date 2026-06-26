@@ -20,9 +20,9 @@ fn manifest_for(container: &str) -> InstanceManifest {
         image_tag: "jk_agent-smith",
         docker: DockerResources {
             role_container: container.to_owned(),
-            dind_container: format!("{container}-dind"),
+            dind_container: Some(format!("{container}-dind")),
             network: format!("{container}-net"),
-            certs_volume: format!("{container}-dind-certs"),
+            certs_volume: Some(format!("{container}-dind-certs")),
         },
         role_git_sha: None,
         base_image_ref: None,

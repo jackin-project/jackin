@@ -240,13 +240,8 @@ fn verify_usage_provider(
                 .any(|alias| usage_provider_matches(alias, &account.provider))
         })
         .collect::<Vec<_>>();
-    if rows.is_empty() {
-        return UsageVerifyCheck {
-            label,
-            status: "missing",
-            detail: None,
-        };
-    }
+    // `max_by_key` is `None` exactly when there are no matching rows, so it
+    // doubles as the "missing" guard.
     let Some(latest) = rows.iter().max_by_key(|row| row.fetched_at) else {
         return UsageVerifyCheck {
             label,
@@ -290,18 +285,21 @@ fn usage_row_proves_live_quota(row: &AccountUsageSnapshotView) -> bool {
 }
 
 fn usage_provider_matches(needle: &str, provider: &str) -> bool {
+    // Interchangeable provider/agent labels: a match needs one member of a group
+    // on each side. Bidirectional and extensible — add a group, not two arms.
+    const SYNONYMS: &[&[&str]] = &[
+        &["openai", "codex"],
+        &["anthropic", "claude"],
+        &["xai", "grok"],
+        &["zai", "glm"],
+    ];
     let needle = normalize_usage_provider_label(needle);
     let provider = normalize_usage_provider_label(provider);
     provider.contains(&needle)
         || needle.contains(&provider)
-        || (needle.contains("openai") && provider.contains("codex"))
-        || (needle.contains("codex") && provider.contains("openai"))
-        || (needle.contains("anthropic") && provider.contains("claude"))
-        || (needle.contains("claude") && provider.contains("anthropic"))
-        || (needle.contains("xai") && provider.contains("grok"))
-        || (needle.contains("grok") && provider.contains("xai"))
-        || (needle.contains("zai") && provider.contains("glm"))
-        || (needle.contains("glm") && provider.contains("zai"))
+        || SYNONYMS.iter().any(|group| {
+            group.iter().any(|m| needle.contains(m)) && group.iter().any(|m| provider.contains(m))
+        })
 }
 
 fn normalize_usage_provider_label(value: &str) -> String {

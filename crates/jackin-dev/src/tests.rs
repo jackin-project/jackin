@@ -191,24 +191,41 @@ fn mise_exec_command_runs_inside_project_tool_env() {
 }
 
 #[test]
-fn parse_pr_info_filters_empty_and_non_string_paths() {
-    let json = serde_json::json!({
-        "headRefName": "fix/example",
-        "headRefOid": "abc123",
-        "files": [{"path": "a.rs"}, {"path": ""}, {"additions": 1}, {"path": "b.rs"}],
-    });
-    let info = parse_pr_info(&json).unwrap();
-
-    assert_eq!(info.head_ref_name, "fix/example");
-    assert_eq!(info.head_oid, "abc123");
-    assert_eq!(info.changed_files, vec!["a.rs", "b.rs"]);
+fn local_construct_image_ref_is_commit_pinned() {
+    let repo = test_repo_root();
+    let image = local_construct_image_ref(&repo).unwrap();
+    let prefix = "jackin-local/construct:trixie-";
+    assert!(
+        image.starts_with(prefix),
+        "expected commit-pinned local construct ref, got {image}"
+    );
+    let sha = &image[prefix.len()..];
+    assert_eq!(sha.len(), 12, "short SHA must be 12 chars: {image}");
+    assert!(
+        sha.chars().all(|c| c.is_ascii_hexdigit()),
+        "SHA must be hex: {image}"
+    );
 }
 
 #[test]
-fn parse_pr_info_rejects_missing_files() {
+fn parse_pr_refs_reads_head_name_and_oid() {
     let json = serde_json::json!({ "headRefName": "fix/example", "headRefOid": "abc123" });
+    let (name, oid) = parse_pr_refs(&json).unwrap();
+    assert_eq!(name, "fix/example");
+    assert_eq!(oid, "abc123");
+}
 
-    assert!(parse_pr_info(&json).is_err());
+#[test]
+fn parse_changed_files_trims_and_drops_blank_lines() {
+    // Mimics `gh pr diff --name-only`, including a path past the old 100-file cap.
+    let out = "a.rs\n  docker/construct/Dockerfile  \n\n\nb.rs\n";
+    let files = parse_changed_files(out).unwrap();
+    assert_eq!(files, vec!["a.rs", "docker/construct/Dockerfile", "b.rs"]);
+}
+
+#[test]
+fn parse_changed_files_rejects_empty() {
+    assert!(parse_changed_files("\n  \n").is_err());
 }
 
 #[test]

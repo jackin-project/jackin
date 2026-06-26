@@ -1,4 +1,4 @@
 from_version = "v1alpha4"
-target_version = "v1alpha7"
+target_version = "v1alpha8"
 target_version_shipped = "2026-05-17"
 summary = "Restamps config as v1alpha5. Introduces [git].coauthor_trailer and [git].dco (both boolean, default false); the migration is a no-op restamp."

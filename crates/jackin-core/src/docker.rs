@@ -108,6 +108,7 @@ pub trait DockerApi {
         &self,
         name: &str,
         labels: HashMap<String, String>,
+        internal: bool,
     ) -> anyhow::Result<()>;
     async fn remove_network(&self, name: &str) -> anyhow::Result<()>;
     async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>>;

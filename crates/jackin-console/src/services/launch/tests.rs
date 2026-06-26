@@ -59,6 +59,7 @@ fn build_workspace_choice_picks_up_default_agent_from_config() {
             github: None,
             git_pull_on_entry: false,
             dirty_exit_policy: None,
+            docker: None,
         },
     );
 
@@ -107,6 +108,7 @@ fn launch_workspace(workdir: &std::path::Path, allowed_roles: Vec<&str>) -> Work
         github: None,
         git_pull_on_entry: false,
         dirty_exit_policy: None,
+        docker: None,
     }
 }
 

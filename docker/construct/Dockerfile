@@ -33,6 +33,7 @@ RUN apt-get update && \
     bash \
     ca-certificates \
     curl \
+    dnsutils \
     fd-find \
     fish \
     fzf \
@@ -43,6 +44,8 @@ RUN apt-get update && \
     openssh-client \
     procps \
     ripgrep \
+    ipset \
+    iptables \
     sudo \
     tzdata \
     tree \
@@ -126,14 +129,20 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
            /var/cache/apt/* \
            /tmp/*
 
-# Create runtime user
+# Create runtime user. No baked sudoers — sudo is provisioned at runtime via
+# `docker exec --user root jackin-capsule sudo-provision`, only for profiles
+# that grant it (JACKIN_SUDO=1). The `sudo` package stays installed so the
+# grant can write /etc/sudoers.d/agent at launch.
 RUN useradd -m -u "$UID" -g 0 -s /bin/zsh agent && \
-    echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
     chmod 0775 /home/agent && \
     install -d -m 0775 -o agent -g 0 /home/agent/.claude /home/agent/.codex /home/agent/.jackin
 
 RUN printf 'umask 0002\n' > /etc/jackin-build-env
 ENV BASH_ENV=/etc/jackin-build-env
+
+# Install starship prompt as root so the installer can write to /usr/local/bin
+# without needing to escalate privileges.
+RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
 # including `docker exec` sessions that bypass jackin's runtime entrypoint.
@@ -147,9 +156,6 @@ ENV PATH="/home/agent/.local/share/mise/shims:/home/agent/.local/bin:${PATH}"
 # Install oh-my-zsh and plugins
 RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
     git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-/home/agent/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
-
-# Install starship prompt
-RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 COPY --chown=agent:0 --chmod=0664 zshrc /home/agent/.zshrc
 

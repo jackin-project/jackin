@@ -127,7 +127,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
 
     assert!(report.contains(&format!("DOCKER_HOST=tcp://{dind_hostname}:2376")));
     assert!(report.contains("DOCKER_TLS_VERIFY=1"));
-    assert!(report.contains("DOCKER_CERT_PATH=/certs/client"));
+    assert!(report.contains("DOCKER_CERT_PATH=/jackin/run/dind-certs/client"));
     assert!(report.contains(&format!("JACKIN_DIND_HOSTNAME={dind_hostname}")));
     assert!(report.contains(&format!("TESTCONTAINERS_HOST_OVERRIDE={dind_hostname}")));
     // Both casings carry the merged list — operator's localhost,127.0.0.1

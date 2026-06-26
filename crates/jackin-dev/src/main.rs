@@ -12,11 +12,6 @@ use serde_json::Value;
 
 const DEFAULT_REPO: &str = "jackin-project/jackin";
 const REPO_DIR_NAME: &str = "jackin";
-// Locked to the `construct-build-local` default tag composed from
-// `LOCAL_REGISTRY_IMAGE`/`STABLE_TAG` in `jackin-xtask/src/construct.rs`; if
-// those defaults move, or are overridden in the environment, the exported
-// `JACKIN_CONSTRUCT_IMAGE` drifts from the image the build actually produces.
-const CONSTRUCT_IMAGE: &str = "jackin-local/construct:trixie";
 const CAPSULE_PATH_DEPS: [(&str, &str); 7] = [
     ("crates/jackin-capsule/", "jackin-capsule"),
     ("crates/jackin-core/", "jackin-core"),
@@ -26,6 +21,18 @@ const CAPSULE_PATH_DEPS: [(&str, &str); 7] = [
     ("crates/jackin-tui/", "jackin-tui"),
     ("crates/jackin-build-meta/", "jackin-build-meta"),
 ];
+// Local construct image registry + stable tag — must match the
+// `LOCAL_REGISTRY_IMAGE`/`STABLE_TAG` defaults in `jackin-xtask/src/construct.rs`.
+// The exported `JACKIN_CONSTRUCT_IMAGE` pins to the commit-suffixed tag
+// (`<registry>:<stable>-<short12 sha>`) that `construct build-local` also
+// produces, NOT the moving `<registry>:<stable>` tag. Pinning to the commit
+// makes every custom build's tag unique, so a construct change invalidates the
+// cached role base (`local_role_base_labels_match` compares the construct
+// label) instead of silently reusing a stale base built from a different
+// construct. The role git SHA used here is `git rev-parse --short=12 HEAD`,
+// identical to `git_sha()` in the xtask.
+const LOCAL_CONSTRUCT_REGISTRY: &str = "jackin-local/construct";
+const CONSTRUCT_STABLE_TAG: &str = "trixie";
 
 #[derive(Parser)]
 #[command(name = "jackin-dev", about = "Developer tooling for jackin")]
@@ -213,7 +220,8 @@ fn sync(args: SyncArgs) -> Result<()> {
 
     if auto.construct.required {
         run_checked(command("mise", ["run", "construct-build-local"]).current_dir(&paths.repo))?;
-        env_lines.push(format!("export JACKIN_CONSTRUCT_IMAGE={CONSTRUCT_IMAGE}"));
+        let construct_image = local_construct_image_ref(&paths.repo)?;
+        env_lines.push(format!("export JACKIN_CONSTRUCT_IMAGE={construct_image}"));
     }
 
     if auto.capsule.required {
@@ -323,34 +331,73 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
             "--repo",
             repo,
             "--json",
-            "headRefName,headRefOid,files",
+            "headRefName,headRefOid",
         ],
     );
     let output = run_output(&mut cmd)?;
     let json: Value = serde_json::from_slice(&output).context("parsing gh pr view JSON")?;
-    parse_pr_info(&json)
-}
+    let (head_ref_name, head_oid) = parse_pr_refs(&json)?;
 
-// A missing or non-array `files` field is a contract break, not a zero-file PR:
-// silently collapsing it to empty would downgrade every `auto_prep` build
-// decision to "not needed" and launch the operator against a stale binary.
-fn parse_pr_info(json: &Value) -> Result<PullRequestInfo> {
-    let head_ref_name = json_string(json, "headRefName")?;
-    let head_oid = json_string(json, "headRefOid")?;
-    let changed_files = match json.get("files") {
-        Some(Value::Array(files)) => files
-            .iter()
-            .filter_map(|file| file.get("path").and_then(Value::as_str))
-            .filter(|path| !path.is_empty())
-            .map(str::to_owned)
-            .collect(),
-        _ => bail!("gh pr view did not return a `files` array"),
-    };
+    // `gh pr view --json files` caps at 100 files, so a large PR (e.g. #528 with
+    // 113) silently drops changed paths like `docker/construct/*` — downgrading
+    // every `auto_prep` build decision to "not needed" and launching against a
+    // stale image. `gh pr diff --name-only` lists every changed path, uncapped.
+    let mut diff_cmd = command(
+        "gh",
+        ["pr", "diff", &pr.to_string(), "--repo", repo, "--name-only"],
+    );
+    let diff_output = run_output(&mut diff_cmd)?;
+    let diff_text = String::from_utf8(diff_output)
+        .context("`gh pr diff --name-only` output was not valid UTF-8")?;
+    let changed_files = parse_changed_files(&diff_text)?;
+
     Ok(PullRequestInfo {
         head_ref_name,
         head_oid,
         changed_files,
     })
+}
+
+/// The commit-pinned local construct image ref that `construct build-local`
+/// produces (`jackin-local/construct:trixie-<short12 HEAD sha>`).
+///
+/// Pinning to the commit keeps each custom build's tag unique, so switching
+/// jackin' onto it invalidates a role base built from a different construct
+/// instead of reusing it under the moving `:trixie` tag.
+fn local_construct_image_ref(repo: &Path) -> Result<String> {
+    let sha = git_output(repo, ["rev-parse", "--short=12", "HEAD"])?;
+    if sha.is_empty() {
+        bail!(
+            "`git rev-parse --short=12 HEAD` returned an empty SHA in {}",
+            repo.display()
+        );
+    }
+    Ok(format!(
+        "{LOCAL_CONSTRUCT_REGISTRY}:{CONSTRUCT_STABLE_TAG}-{sha}"
+    ))
+}
+
+fn parse_pr_refs(json: &Value) -> Result<(String, String)> {
+    Ok((
+        json_string(json, "headRefName")?,
+        json_string(json, "headRefOid")?,
+    ))
+}
+
+// An empty file list is a contract break, not a zero-file PR: silently
+// collapsing it to empty would downgrade every `auto_prep` build decision to
+// "not needed" and launch the operator against a stale binary/image.
+fn parse_changed_files(diff_name_only: &str) -> Result<Vec<String>> {
+    let changed_files: Vec<String> = diff_name_only
+        .lines()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if changed_files.is_empty() {
+        bail!("`gh pr diff --name-only` returned no changed files");
+    }
+    Ok(changed_files)
 }
 
 fn json_string(json: &Value, key: &str) -> Result<String> {
