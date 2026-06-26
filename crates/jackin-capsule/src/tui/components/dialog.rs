@@ -96,8 +96,8 @@ use input::{
 mod hint;
 pub(crate) use hint::main_view_hint;
 use hint::{
-    confirm_hint, info_dialog_hint, palette_hint, picker_hint, provider_hint, read_only_hint,
-    rename_hint, usage_hint,
+    confirm_hint, export_file_hint, info_dialog_hint, palette_hint, picker_hint, provider_hint,
+    read_only_hint, rename_hint, usage_hint,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1227,11 +1227,8 @@ impl Dialog {
                 }
                 b"r" | b"R" => {
                     if let Self::ContainerInfo { diagnostics, .. } = self
-                        && let Some(path) = diagnostics
-                            .run_log_href
-                            .as_deref()
-                            .and_then(file_url_path)
-                            .filter(|path| !path.is_empty())
+                        && let Some(path) =
+                            diagnostics.run_log_href.as_deref().and_then(file_url_path)
                     {
                         return DialogAction::RevealHostPath(path.to_owned());
                     }
@@ -1558,22 +1555,6 @@ impl Dialog {
                     DialogAction::OpenHostUrl(payload)
                 }
                 Some(_) | None => DialogAction::Consume,
-            };
-        }
-        if let Self::Usage { view, selected, .. } = self {
-            let tab = Self::usage_tab_index_at(view, *selected, area, row, col);
-            return match tab {
-                Some(0) => {
-                    *selected = UsageDialogTab::Overview;
-                    DialogAction::Redraw
-                }
-                Some(idx) => view.tabs.get(idx.saturating_sub(1)).map_or_else(
-                    || DialogAction::Consume,
-                    |tab| DialogAction::SwitchUsageProvider {
-                        provider_label: tab.label.clone(),
-                    },
-                ),
-                None => DialogAction::Consume,
             };
         }
         if let Self::Usage { view, selected, .. } = self {
@@ -1965,7 +1946,8 @@ impl Dialog {
             | Self::AgentPicker { .. }
             | Self::CloseTargetPicker { .. } => picker_hint(),
             Self::ProviderPicker { .. } => provider_hint(),
-            Self::RenameTab { .. } | Self::ExportFile { .. } => rename_hint(),
+            Self::RenameTab { .. } => rename_hint(),
+            Self::ExportFile { .. } => export_file_hint(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
             Self::GitHubContext { .. } => {
                 if github.and_then(|view| view.status.loaded()).is_some() {

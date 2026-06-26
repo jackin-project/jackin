@@ -289,6 +289,24 @@ fn insert_run_as_user<'a>(args: &mut Vec<&'a str>, run_as_user: Option<&'a str>)
     }
 }
 
+/// Git policy toggles as `(ENV_NAME, "1")` pairs — the single source of truth for
+/// which toggle gates which env var. The host-attach and docker-exec transports
+/// each adapt these pairs to their own wire shape (`SpawnRequest` env tuples vs
+/// `-e=NAME=1` flags).
+fn git_policy_env_pairs(coauthor_trailer: bool, dco: bool) -> Vec<(&'static str, &'static str)> {
+    let mut pairs = Vec::with_capacity(2);
+    if coauthor_trailer {
+        pairs.push((
+            jackin_core::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME,
+            "1",
+        ));
+    }
+    if dco {
+        pairs.push((jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME, "1"));
+    }
+    pairs
+}
+
 pub(super) async fn reconnect_or_create_session_with_focus(
     paths: &JackinPaths,
     container_name: &str,
@@ -557,33 +575,18 @@ pub async fn spawn_agent_session(
 
     let workdir = manifest.map_or("/workspace", |manifest| manifest.workdir.as_str());
 
-    // Agent selection travels as `jackin-capsule new <agent>` argv; these
-    // env values are session policy toggles consumed by the spawned entrypoint.
-    let coauthor_env = git_coauthor_trailer.then(|| {
-        format!(
-            "{}=1",
-            jackin_core::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
-        )
-    });
-    let dco_env = git_dco.then(|| format!("{}=1", jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME));
-    let mut session_env_overrides = Vec::new();
-    if git_coauthor_trailer {
-        session_env_overrides.push((
-            jackin_core::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME.to_owned(),
-            "1".to_owned(),
-        ));
-    }
-    if git_dco {
-        session_env_overrides.push((
-            jackin_core::env_model::JACKIN_GIT_DCO_ENV_NAME.to_owned(),
-            "1".to_owned(),
-        ));
-    }
-    session_env_overrides.extend(env_overrides.iter().cloned());
-
+    // Agent selection travels as `jackin-capsule new <agent>` argv; the
+    // git policy toggles are session env consumed by the spawned entrypoint.
+    // Each transport encodes them only on the path that consumes it.
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
     if super::host_attach::host_attach_enabled() {
+        let mut session_env_overrides: Vec<(String, String)> =
+            git_policy_env_pairs(git_coauthor_trailer, git_dco)
+                .into_iter()
+                .map(|(name, value)| (name.to_owned(), value.to_owned()))
+                .collect();
+        session_env_overrides.extend(env_overrides.iter().cloned());
         let spawn_request = if let Some(provider_label) = provider_label {
             SpawnRequest::AgentWithProvider {
                 slug: agent.slug().to_owned(),
@@ -610,23 +613,15 @@ pub async fn spawn_agent_session(
     let run_as_user = crate::runtime::identity::host_run_as_user();
     let mut exec_args = vec!["exec", "--workdir", workdir, "-it"];
     insert_run_as_user(&mut exec_args, run_as_user.as_deref());
-    let coauthor_env_flag;
-    let dco_env_flag;
-    if let Some(ref env) = coauthor_env {
-        coauthor_env_flag = format!("-e={env}");
-        exec_args.push(coauthor_env_flag.as_str());
-    }
-    if let Some(ref env) = dco_env {
-        dco_env_flag = format!("-e={env}");
-        exec_args.push(dco_env_flag.as_str());
-    }
-    // Provider env overrides (e.g. ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL for Z.AI).
-    // Stored as owned strings so they outlive the exec_args vec.
-    let override_flags: Vec<String> = env_overrides
-        .iter()
-        .map(|(k, v)| format!("-e={k}={v}"))
+    // git policy toggles then provider env overrides (e.g. ANTHROPIC_AUTH_TOKEN +
+    // ANTHROPIC_BASE_URL for Z.AI) as docker `-e` flags. Owned so they outlive
+    // `exec_args`.
+    let env_flags: Vec<String> = git_policy_env_pairs(git_coauthor_trailer, git_dco)
+        .into_iter()
+        .map(|(name, value)| format!("-e={name}={value}"))
+        .chain(env_overrides.iter().map(|(k, v)| format!("-e={k}={v}")))
         .collect();
-    for flag in &override_flags {
+    for flag in &env_flags {
         exec_args.push(flag.as_str());
     }
     exec_args.push(container_name);

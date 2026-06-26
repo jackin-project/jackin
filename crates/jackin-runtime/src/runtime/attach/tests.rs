@@ -1110,3 +1110,25 @@ async fn wait_for_dind_succeeds_when_daemon_ready_immediately() {
         .await
         .unwrap();
 }
+
+#[test]
+fn git_policy_env_pairs_encodes_only_enabled_toggles() {
+    use jackin_core::env_model::{JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, JACKIN_GIT_DCO_ENV_NAME};
+
+    assert!(git_policy_env_pairs(false, false).is_empty());
+    assert_eq!(
+        git_policy_env_pairs(true, false),
+        vec![(JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, "1")]
+    );
+    assert_eq!(
+        git_policy_env_pairs(false, true),
+        vec![(JACKIN_GIT_DCO_ENV_NAME, "1")]
+    );
+    assert_eq!(
+        git_policy_env_pairs(true, true),
+        vec![
+            (JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, "1"),
+            (JACKIN_GIT_DCO_ENV_NAME, "1"),
+        ]
+    );
+}
