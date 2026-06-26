@@ -35,6 +35,23 @@ run_hook() {
 # values.
 /jackin/runtime/jackin-capsule runtime-setup
 
+# ── agent runtime status env ───────────────────────────────────────────
+# JACKIN_SESSION_ID is set by the daemon before spawning. Export remaining
+# status vars so hook scripts and subprocesses inherit them.
+export JACKIN_STATUS_SOCKET="${JACKIN_STATUS_SOCKET:-/jackin/run/jackin.sock}"
+export JACKIN_STATUS_SOURCE="${JACKIN_STATUS_SOURCE:-wrapper-${JACKIN_SESSION_ID:-0}}"
+export JACKIN_AGENT_RUNTIME="${JACKIN_AGENT:-unknown}"
+
+# ── Network allowlist (allowlist tier) ────────────────────────────────
+# The firewall (`jackin-capsule firewall-apply`) is run by jackin' via
+# `docker exec --user root` AFTER this entrypoint starts but BEFORE the agent
+# session begins, not here in the entrypoint. This avoids a conflict with
+# --security-opt no-new-privileges (docker exec as root needs no setuid
+# escalation; sudo inside the container does). The host blocks the session on a
+# non-zero firewall-apply (fail-closed), so the entrypoint neither needs nor can
+# verify install state here — a post-start exec cannot mutate this PID 1
+# environment. JACKIN_NETWORK_MODE is informational only.
+
 # ── agent-specific setup ───────────────────────────────────────────
 #
 # Per-session file setup already ran in `jackin-capsule runtime-setup`.

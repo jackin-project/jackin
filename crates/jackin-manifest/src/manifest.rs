@@ -17,7 +17,8 @@ use std::path::Path;
 
 pub use jackin_core::manifest::{
     AmpConfig, ClaudeConfig, ClaudeMarketplaceConfig, CodexConfig, EnvVarDecl, HookEntry,
-    HooksConfig, IdentityConfig, KimiConfig, ManifestWarning, OpencodeConfig, RoleManifest,
+    HooksConfig, IdentityConfig, KimiConfig, ManifestDockerConfig, ManifestWarning, OpencodeConfig,
+    RoleManifest,
 };
 
 /// Load and validate a `jackin.role.toml` from `repo_dir`.
@@ -64,6 +65,7 @@ fn validate_feature_versions(
     let v1alpha3 = jackin_config::parse_version("v1alpha3")?;
     let v1alpha4 = jackin_config::parse_version("v1alpha4")?;
     let v1alpha5 = jackin_config::parse_version("v1alpha5")?;
+    let v1alpha6 = jackin_config::parse_version("v1alpha6")?;
     if manifest_version < &v1alpha3
         && (manifest
             .agents
@@ -102,6 +104,11 @@ fn validate_feature_versions(
     {
         anyhow::bail!(
             "role \"{role_name}\" manifest is at {manifest_version} but uses v1alpha5 per-provider model overrides ([<agent>.providers]), which requires v1alpha5; run \"jackin role migrate <role-repo-path>\" to upgrade the local copy"
+        );
+    }
+    if manifest_version < &v1alpha6 && manifest.docker.is_some() {
+        anyhow::bail!(
+            "role \"{role_name}\" manifest is at {manifest_version} but uses v1alpha6 docker fields, which requires v1alpha6; run \"jackin role migrate <role-repo-path>\" to upgrade the local copy"
         );
     }
     Ok(())

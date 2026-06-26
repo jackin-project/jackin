@@ -11,6 +11,7 @@
 
 use std::collections::BTreeMap;
 
+use jackin_core::docker_security::{DockerGrants, DockerSecurityProfile};
 use jackin_core::{Agent, EnvValue, MountIsolation};
 use serde::{Deserialize, Serialize};
 
@@ -25,6 +26,38 @@ use crate::versions::current_workspace_version;
 #[allow(clippy::trivially_copy_pass_by_ref)]
 const fn is_false(v: &bool) -> bool {
     !*v
+}
+
+// ─── DirtyExitPolicy ─────────────────────────────────────────────────────────
+
+/// What jackin' does when a foreground session ends with dirty or unpushed
+/// isolated work (D8). Clean+pushed sessions always auto-clean regardless of
+/// this setting.
+///
+/// Resolution order: per-workspace override → global `AppConfig` default →
+/// built-in `Ask`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DirtyExitPolicy {
+    /// Prompt the operator with the exit dialog (default). (D8)
+    #[default]
+    Ask,
+    /// Auto-preserve the instance for resume — no prompt. (D8)
+    Keep,
+    /// Auto-discard everything including uncommitted edits and unpushed
+    /// commits — no prompt. Explicit operator opt-in for disposable
+    /// workspaces; jackin' does not second-guess it (D17).
+    Discard,
+}
+
+impl DirtyExitPolicy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::Keep => "keep",
+            Self::Discard => "discard",
+        }
+    }
 }
 
 // ─── Mount types ─────────────────────────────────────────────────────────────
@@ -122,7 +155,7 @@ impl WorkspaceRoleOverride {
 // ─── WorkspaceConfig ─────────────────────────────────────────────────────────
 
 /// A saved workspace: the workdir, mounts, and per-agent auth config.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WorkspaceConfig {
     #[serde(default = "current_workspace_version", rename = "version")]
     pub version: String,
@@ -159,6 +192,22 @@ pub struct WorkspaceConfig {
     pub github: Option<GithubAuthConfig>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub git_pull_on_entry: bool,
+    /// Per-workspace override for the dirty-exit decision policy (D8).
+    /// `None` means inherit from the global `AppConfig::dirty_exit_policy`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dirty_exit_policy: Option<DirtyExitPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docker: Option<WorkspaceDockerConfig>,
+}
+
+/// Docker security settings scoped to one saved workspace.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceDockerConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<DockerSecurityProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grants: Option<DockerGrants>,
 }
 
 impl Default for WorkspaceConfig {
@@ -182,6 +231,8 @@ impl Default for WorkspaceConfig {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            dirty_exit_policy: None,
+            docker: None,
         }
     }
 }
@@ -354,9 +405,14 @@ impl DockerMounts {
 
 /// Top-level `[docker]` block in `config.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DockerConfig {
     #[serde(default)]
     pub mounts: DockerMounts,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<DockerSecurityProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grants: Option<DockerGrants>,
 }
 
 // ─── Resolved workspace ──────────────────────────────────────────────────────

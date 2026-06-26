@@ -45,7 +45,7 @@ Each agent has a provider package (`pkg/providers/<agent>/`) whose `path_utils.g
 
 ## Leverage: jackin' already puts the history on the host
 
-The critical enabler is already shipped. jackin' bind-mounts each agent's home into the container and restores it on the host under the per-instance data dir — `~/.jackin/data/<container>/.claude/`, `.codex/`, `.local/share/amp/`, `.kimi-code/`, and `.local/share/opencode/` all carry the agent's conversation history (see [Session keep and resume](/reference/roadmap/session-keep-and-resume/)). That means **for four of the five agents the raw conversation is already a host-side file jackin' can read directly** — no terminal scraping, no new container mount, no host mutation. For those agents Déjà Vu's capture step is a host-side read of paths jackin' already owns, plus a normalize-and-copy into a purge-surviving archive. Only `Amp` (cloud-only) needs a different vector.
+The critical enabler is already shipped. jackin' bind-mounts each agent's home into the container and restores it on the host under the per-instance data dir — `~/.jackin/data/<container>/.claude/`, `.codex/`, `.local/share/amp/`, `.kimi-code/`, and `.local/share/opencode/` all carry the agent's conversation history (see [Runtime restore and image architecture](/reference/roadmap/instant-launch-architecture/)). That means **for four of the five agents the raw conversation is already a host-side file jackin' can read directly** — no terminal scraping, no new container mount, no host mutation. For those agents Déjà Vu's capture step is a host-side read of paths jackin' already owns, plus a normalize-and-copy into a purge-surviving archive. Only `Amp` (cloud-only) needs a different vector.
 
 ## Extraction vectors (research)
 
@@ -321,7 +321,7 @@ Named so later work has a home and V1 stays small:
 
 ## Related roadmap items
 
-- [Session keep and resume](/reference/roadmap/session-keep-and-resume/) — the shipped mechanism that already restores agent conversation history onto the host; Déjà Vu's primary capture source.
+- [Runtime restore and image architecture](/reference/roadmap/instant-launch-architecture/) — the shipped lifecycle mechanism that restores agent conversation history onto the host; Déjà Vu's primary capture source.
 - [Persistent storage and workspace memory layer](/reference/roadmap/persistent-storage-layer/) — the index/DB home Déjà Vu should reuse, and the cross-agent memory direction it complements.
 - [Terminal observation and automation](/reference/roadmap/terminal-observation-automation/) — owns the PTY/`DamageGrid` read APIs and opt-in recording the screen-scrape fallback would build on.
 - [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — the herdr-inspired status work; shares Capsule's screen-reading substrate and the "structured signals first, screen last, never trust scrollback as authority" discipline.

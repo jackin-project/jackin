@@ -380,6 +380,24 @@ pub fn active_instances_matching<'a>(
     })
 }
 
+/// Filter instances matching a query that are visible in the console tree —
+/// every status except `Purged` (no on-disk state) and `Superseded`
+/// (replaced by a newer instance). Live and failed/stopped instances
+/// alike appear so the operator can restore, restart, or delete them (D15).
+pub fn visible_instances_matching<'a>(
+    instances: &'a [jackin_core::instance::InstanceIndexEntry],
+    query: jackin_core::instance::InstanceQuery<'a>,
+) -> impl Iterator<Item = &'a jackin_core::instance::InstanceIndexEntry> {
+    instances.iter().filter(move |e| {
+        e.matches(query)
+            && !matches!(
+                e.status,
+                jackin_core::instance::InstanceStatus::Purged
+                    | jackin_core::instance::InstanceStatus::Superseded
+            )
+    })
+}
+
 /// Add a role to a workspace editor and select its row.
 pub fn add_role_to_workspace_editor(editor: &mut EditorState<'_>, config: &AppConfig, key: &str) {
     if let Some(idx) = crate::tui::screens::editor::update::add_role_to_workspace_editor(

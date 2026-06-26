@@ -68,6 +68,12 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
     /// Forwarded to the hint builder so the palette-key glyph reflects the
     /// operator's `JACKIN_PALETTE_KEY` setting.
     pub(crate) palette_key: u8,
+    /// Transient host clipboard image paste result. Painted in the content
+    /// toast area so it cannot overwrite status rows or bottom chrome.
+    pub(crate) clipboard_image_notice: Option<&'a str>,
+    /// Host-open target under an Alt/Ctrl hover in a mouse-disabled pane.
+    /// Painted through the compositor so the PTY never receives hover text.
+    pub(crate) link_hover_notice: Option<&'a str>,
 }
 
 /// Paint the scrollback scrollbar on a pane's right border through the shared
@@ -198,6 +204,7 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             },
             frame.area(),
         );
+        render_clipboard_image_notice(frame, &view);
         render_spawn_failure_banner(frame, &view);
         return;
     }
@@ -271,6 +278,8 @@ pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleR
             jackin_tui::components::Toast::new("Selection copied"),
         );
     }
+    render_clipboard_image_notice(frame, &view);
+    render_link_hover_notice(frame, &view);
 
     // Tab hover tooltip: codename pill painted one row below the hovered tab
     // cell, overlaid after pane bodies so it reads as a contextual label.
@@ -309,6 +318,29 @@ fn render_spawn_failure_banner(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame
         frame.render_widget(
             crate::tui::components::chrome::SpawnFailureBannerWidget { reason },
             frame.area(),
+        );
+    }
+}
+
+fn render_clipboard_image_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_>) {
+    if let Some(notice) = view.clipboard_image_notice {
+        jackin_tui::components::render_toast(
+            frame,
+            selection_toast_area(view),
+            jackin_tui::components::Toast::new(notice),
+        );
+    }
+}
+
+fn render_link_hover_notice(frame: &mut Frame<'_>, view: &CapsuleRatatuiFrame<'_>) {
+    if view.clipboard_image_notice.is_some() {
+        return;
+    }
+    if let Some(notice) = view.link_hover_notice {
+        jackin_tui::components::render_toast(
+            frame,
+            selection_toast_area(view),
+            jackin_tui::components::Toast::new(notice),
         );
     }
 }

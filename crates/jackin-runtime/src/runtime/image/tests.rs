@@ -64,7 +64,70 @@ fn docker_build_env_always_enables_buildkit_with_plain_progress() {
         vec![
             ("DOCKER_BUILDKIT".to_owned(), "1".to_owned()),
             ("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()),
+            ("BUILDX_NO_DEFAULT_ATTESTATIONS".to_owned(), "1".to_owned(),),
         ]
+    );
+}
+
+#[test]
+fn docker_info_store_parser_detects_containerd_snapshotter() {
+    assert_eq!(
+        docker_info_uses_containerd_store(
+            "overlayfs\n[[\"driver-type\",\"io.containerd.snapshotter.v1\"]]"
+        ),
+        Some(true)
+    );
+    assert_eq!(
+        docker_info_uses_containerd_store("overlay2\n[]"),
+        Some(false)
+    );
+    assert_eq!(docker_info_uses_containerd_store(""), None);
+}
+
+#[tokio::test]
+async fn non_containerd_image_store_note_emits_diagnostic() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let mut runner = FakeRunner::with_capture_queue(["overlay2\n[]".to_owned()]);
+
+    emit_non_containerd_image_store_note(&mut runner).await;
+
+    assert_eq!(
+        runner.recorded,
+        vec!["docker info --format {{.Driver}}\n{{json .DriverStatus}}".to_owned()]
+    );
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        diagnostics.contains("\"kind\":\"docker_image_store\"")
+            && diagnostics.contains("Docker daemon is not using the containerd image store")
+            && diagnostics.contains("\\\"containerd_image_store\\\":false")
+            && diagnostics.contains("overlay2"),
+        "non-containerd image store note missing: {diagnostics}"
+    );
+}
+
+#[tokio::test]
+async fn containerd_image_store_note_is_suppressed() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
+    let _active = run.activate();
+    let mut runner = FakeRunner::with_capture_queue([concat!(
+        "overlayfs\n",
+        "[[\"driver-type\",\"io.containerd.snapshotter.v1\"]]"
+    )
+    .to_owned()]);
+
+    emit_non_containerd_image_store_note(&mut runner).await;
+
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        !diagnostics.contains("docker_image_store"),
+        "containerd-backed daemon should not emit slow-store note: {diagnostics}"
     );
 }
 
@@ -544,7 +607,7 @@ fn parse_docker_build_steps_extracts_completed_buildkit_lines() {
     let steps = parse_docker_build_steps(
         r#"
 run: jk-run-test
-command: docker build .
+command: docker buildx build .
 
 ----- stdout -----
 #0 building with "orbstack" instance using docker driver
@@ -1040,6 +1103,7 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
         &validated_repo,
         false,
         None,
+        None,
         &docker,
         &mut runner,
     )
@@ -1136,6 +1200,7 @@ async fn decide_agent_image_rebuilds_on_legacy_or_mismatched_recipe_labels() {
             &validated_repo,
             false,
             None,
+            None,
             &docker,
             &mut runner,
         )
@@ -1196,6 +1261,7 @@ async fn decide_agent_image_builds_when_local_image_missing_without_inspecting_l
         &cached_repo,
         &validated_repo,
         false,
+        None,
         None,
         &docker,
         &mut runner,
@@ -1264,6 +1330,7 @@ plugins = []
         &validated_repo,
         false,
         None,
+        None,
         &docker,
         &mut runner,
     )
@@ -1323,6 +1390,7 @@ plugins = []
         &cached_repo,
         &validated_repo,
         false,
+        None,
         None,
         &docker,
         &mut runner,
@@ -1404,6 +1472,7 @@ plugins = []
         &validated_repo,
         false,
         None,
+        None,
         &docker,
         &mut runner,
     )
@@ -1483,7 +1552,7 @@ async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
     assert_eq!(row.image, image);
     let recorded = runner.recorded.join("\n");
     assert!(
-        !recorded.contains("docker build "),
+        !recorded.contains("docker buildx build "),
         "valid prewarm image should skip expensive build path; recorded:\n{recorded}"
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
@@ -1577,7 +1646,7 @@ plugins = []
     assert_eq!(row.image, image);
     let recorded = runner.recorded.join("\n");
     assert!(
-        recorded.contains("docker build "),
+        recorded.contains("docker buildx build "),
         "explicit/background prewarm should rebuild refresh decisions; recorded:\n{recorded}"
     );
     assert!(
@@ -1661,6 +1730,7 @@ preflight = "hooks/preflight.sh"
         &validated_repo,
         false,
         None,
+        None,
         &docker,
         &mut runner,
     )
@@ -1714,6 +1784,7 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
         &validated_repo,
         false,
         Some(branch),
+        None,
         &docker,
         &mut runner,
     )
@@ -1763,6 +1834,7 @@ async fn decide_agent_image_rebuilds_when_construct_image_label_has_changed() {
         &cached_repo,
         &validated_repo,
         false,
+        None,
         None,
         &docker,
         &mut runner,
@@ -1821,6 +1893,7 @@ async fn decide_agent_image_rebuilds_when_role_git_sha_has_changed() {
         &validated_repo,
         false,
         None,
+        None,
         &docker,
         &mut runner,
     )
@@ -1871,6 +1944,7 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
         &validated_repo,
         false,
         Some("feature/instant-launch"),
+        None,
         &docker,
         &mut runner,
     )
@@ -1919,6 +1993,7 @@ async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
         &cached_repo,
         &validated_repo,
         false,
+        None,
         None,
         &docker,
         &mut runner,
@@ -2010,6 +2085,7 @@ async fn decide_agent_image_rebuild_reason_is_emitted_in_diagnostics() {
         &cached_repo,
         &validated_repo,
         false,
+        None,
         None,
         &docker,
         &mut runner,
