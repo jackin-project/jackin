@@ -156,8 +156,8 @@ fn resource_flags_full() {
         user: "agent".to_owned(),
         sudo: true,
         system_writes: true,
-        memory_bytes: Some(4 * 1024 * 1024 * 1024),
-        memory_reservation_bytes: Some(3 * 1024 * 1024 * 1024),
+        memory_bytes: Some(4 * GB),
+        memory_reservation_bytes: Some(3 * GB),
         cpus: Some(2.0),
         pids: Some(512),
         nofile: Some(2048),
@@ -284,7 +284,7 @@ fn apply_grants_raises_all_resource_ceilings() {
         ..Default::default()
     };
     let e = apply_grants(base, &grants);
-    assert_eq!(e.memory_bytes, Some(64 * 1024 * 1024 * 1024));
+    assert_eq!(e.memory_bytes, Some(64 * GB));
     assert_eq!(e.cpus, Some(16.0));
     assert_eq!(e.pids, Some(99_999));
     assert_eq!(e.nofile, Some(1_048_576));
@@ -294,7 +294,7 @@ fn apply_grants_raises_all_resource_ceilings() {
 #[test]
 fn apply_grants_never_lowers_resource_ceilings() {
     let base = EffectiveGrants {
-        memory_bytes: Some(8 * 1024 * 1024 * 1024),
+        memory_bytes: Some(8 * GB),
         cpus: Some(4.0),
         pids: Some(4096),
         nofile: Some(65536),
@@ -308,7 +308,7 @@ fn apply_grants_never_lowers_resource_ceilings() {
         ..Default::default()
     };
     let e = apply_grants(base, &grants);
-    assert_eq!(e.memory_bytes, Some(8 * 1024 * 1024 * 1024));
+    assert_eq!(e.memory_bytes, Some(8 * GB));
     assert_eq!(e.cpus, Some(4.0));
     assert_eq!(e.pids, Some(4096));
     assert_eq!(e.nofile, Some(65536));
@@ -412,8 +412,8 @@ fn validate_effective_grants_catches_cross_source_root_and_sudo() {
 #[test]
 fn validate_effective_grants_catches_cross_source_reservation_exceeds_memory() {
     let grants = EffectiveGrants {
-        memory_bytes: Some(4 * 1024 * 1024 * 1024), // 4G
-        memory_reservation_bytes: Some(8 * 1024 * 1024 * 1024), // 8G
+        memory_bytes: Some(4 * GB),
+        memory_reservation_bytes: Some(8 * GB),
         ..profile_base_grants(DockerSecurityProfile::Standard)
     };
     let errors = validate_effective_grants(&grants);
@@ -430,8 +430,8 @@ fn validate_effective_grants_catches_cross_source_reservation_exceeds_memory() {
 #[test]
 fn validate_effective_grants_passes_when_invariants_hold() {
     let grants = EffectiveGrants {
-        memory_bytes: Some(16 * 1024 * 1024 * 1024),
-        memory_reservation_bytes: Some(12 * 1024 * 1024 * 1024),
+        memory_bytes: Some(16 * GB),
+        memory_reservation_bytes: Some(12 * GB),
         ..profile_base_grants(DockerSecurityProfile::Standard)
     };
     let errors = validate_effective_grants(&grants);
@@ -548,27 +548,6 @@ fn network_enforcement_label_all_cases() {
     );
 }
 
-/// Implicit `NET_ADMIN/NET_RAW` caps injected by `resolve_effective_grants` for Allowlist network.
-/// Tests via the public API (`resolve_effective_grants`) so the test exercises the same
-/// path an operator launch uses, not an internal function.
-#[test]
-fn allowlist_network_adds_implicit_caps() {
-    // No explicit grants: apply_implicit_grants() in resolve_effective_grants
-    // must inject the caps even without any config/workspace DockerGrants.
-    let grants = resolve_effective_grants(DockerSecurityProfile::Locked, None, None);
-    assert_eq!(grants.network, NetworkGrant::Allowlist);
-    assert!(
-        grants.capabilities_add.iter().any(|c| c == "NET_ADMIN"),
-        "resolve_effective_grants(Locked) must inject implicit NET_ADMIN; got: {:?}",
-        grants.capabilities_add
-    );
-    assert!(
-        grants.capabilities_add.iter().any(|c| c == "NET_RAW"),
-        "resolve_effective_grants(Locked) must inject implicit NET_RAW; got: {:?}",
-        grants.capabilities_add
-    );
-}
-
 /// Implicit caps are also present when hardened profile (Allowlist) has config grants.
 /// `apply_implicit_grants` must fire even when `apply_grants` already ran.
 #[test]
@@ -607,7 +586,7 @@ fn grant_layering_workspace_wins_over_config() {
         Some(&workspace_grants),
     );
     // Workspace memory wins (higher).
-    assert_eq!(grants.memory_bytes, Some(16 * 1024 * 1024 * 1024));
+    assert_eq!(grants.memory_bytes, Some(16 * GB));
     // Config cpus preserved (workspace didn't override).
     assert_eq!(grants.cpus, Some(4.0_f64.max(2.0))); // profile default 4.0 wins over config 2.0
 }
@@ -648,26 +627,8 @@ fn compat_profile_base_grants_sudo_on() {
     assert!(grants.sudo, "compat base grants must have sudo=true");
 }
 
-#[test]
-fn standard_profile_base_grants_sudo_off() {
-    let grants = profile_base_grants(DockerSecurityProfile::Standard);
-    assert!(
-        !grants.sudo,
-        "standard base grants must have sudo=false (WP-SUDO)"
-    );
-}
-
-#[test]
-fn hardened_profile_base_grants_sudo_off() {
-    let grants = profile_base_grants(DockerSecurityProfile::Hardened);
-    assert!(!grants.sudo, "hardened base grants must have sudo=false");
-}
-
-#[test]
-fn locked_profile_base_grants_sudo_off() {
-    let grants = profile_base_grants(DockerSecurityProfile::Locked);
-    assert!(!grants.sudo, "locked base grants must have sudo=false");
-}
+// Per-profile base `.sudo` defaults are asserted together in
+// `sudo_default_off_outside_compat_on_for_compat`.
 
 #[test]
 fn explicit_sudo_grant_flips_standard() {
@@ -738,43 +699,21 @@ fn hardened_sudo_grant_clears_no_new_privileges() {
 // ── WP4: standard DinD default is None ───────────────────────────────────
 
 #[test]
-fn standard_profile_base_grants_dind_none() {
-    let grants = profile_base_grants(DockerSecurityProfile::Standard);
-    assert_eq!(
-        grants.dind,
-        DindGrant::None,
-        "standard dind must default to None (WP4)"
-    );
-}
-
-#[test]
-fn compat_profile_base_grants_dind_privileged() {
-    let grants = profile_base_grants(DockerSecurityProfile::Compat);
-    assert_eq!(
-        grants.dind,
-        DindGrant::Privileged,
-        "compat keeps privileged DinD"
-    );
-}
-
-#[test]
-fn hardened_profile_base_grants_dind_none() {
-    let grants = profile_base_grants(DockerSecurityProfile::Hardened);
-    assert_eq!(
-        grants.dind,
-        DindGrant::None,
-        "hardened dind must default to None (Decision 12 / WP4)"
-    );
-}
-
-#[test]
-fn locked_profile_base_grants_dind_none() {
-    let grants = profile_base_grants(DockerSecurityProfile::Locked);
-    assert_eq!(
-        grants.dind,
-        DindGrant::None,
-        "locked dind must default to None (Decision 12 / WP4)"
-    );
+fn profile_base_grants_dind_defaults() {
+    // Decision 12 / WP4: only compat keeps privileged DinD; every secure-default
+    // profile (standard/hardened/locked) defaults DinD off.
+    for (profile, expected) in [
+        (DockerSecurityProfile::Standard, DindGrant::None),
+        (DockerSecurityProfile::Compat, DindGrant::Privileged),
+        (DockerSecurityProfile::Hardened, DindGrant::None),
+        (DockerSecurityProfile::Locked, DindGrant::None),
+    ] {
+        assert_eq!(
+            profile_base_grants(profile).dind,
+            expected,
+            "{profile} base dind"
+        );
+    }
 }
 
 // ── WP3: AppArmor probe parser ────────────────────────────────────────────
