@@ -404,8 +404,11 @@ pub const fn debug_chip_activation_allowed(
 }
 
 #[must_use]
-pub const fn console_pointer_hand(chrome_hovered: bool, base_clickable: bool) -> bool {
-    chrome_hovered || base_clickable
+pub const fn console_pointer_shape(
+    chrome_hovered: bool,
+    base_clickable: bool,
+) -> jackin_tui::PointerShape {
+    jackin_tui::clickable_pointer_shape(chrome_hovered || base_clickable)
 }
 
 const fn mouse_is_wheel(mouse: crossterm::event::MouseEvent) -> bool {
@@ -477,8 +480,12 @@ pub fn debug_chip_row(bar: Rect) -> Rect {
 }
 
 #[must_use]
-pub fn debug_run_id_label(run_id: Option<&str>) -> String {
-    run_id.unwrap_or_default().to_owned()
+pub fn debug_run_id_label(active_run_id: Option<&str>, env_run_id: Option<&str>) -> String {
+    active_run_id
+        .filter(|run_id| !run_id.is_empty())
+        .or_else(|| env_run_id.filter(|run_id| !run_id.is_empty()))
+        .unwrap_or_default()
+        .to_owned()
 }
 
 #[must_use]

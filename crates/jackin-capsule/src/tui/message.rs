@@ -17,6 +17,7 @@ pub enum Action {
     RequestExit,
     OpenContainerInfo,
     OpenGithubContext,
+    OpenUsage,
     OpenRenameTab(usize),
     OpenAgentPicker(PickerIntent),
     SwitchTab(usize),
@@ -30,6 +31,7 @@ pub enum Action {
     CloseFocusedTab,
     ClearFocusedPane,
     Detach,
+    RefreshUsage,
     Palette(PaletteCommand),
     Prefix(PrefixCommand),
     ResizePane(ArrowDir),
@@ -47,6 +49,11 @@ pub enum Action {
     FocusPaneAt {
         row: u16,
         col: u16,
+    },
+    OpenVisibleUrlAt {
+        row: u16,
+        col: u16,
+        button: u8,
     },
     PanePrimaryPress {
         row: u16,
@@ -163,6 +170,13 @@ pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> 
                 button: *button,
             })
         }
+        InputEvent::MousePress { col, row, button } if is_host_open_url_button(*button) => {
+            Some(Action::OpenVisibleUrlAt {
+                row: *row,
+                col: *col,
+                button: *button,
+            })
+        }
         InputEvent::MousePress {
             row,
             col,
@@ -199,6 +213,17 @@ pub fn input_event_action(event: &InputEvent, context: InputDispatchContext) -> 
     }
 }
 
+fn is_host_open_url_button(button: u8) -> bool {
+    const ALT_MODIFIER: u8 = 8;
+    const CTRL_MODIFIER: u8 = 16;
+    const MOTION_MODIFIER: u8 = 32;
+
+    let primary_button = button & 0b11 == 0;
+    let modified = button & (ALT_MODIFIER | CTRL_MODIFIER) != 0;
+    let motion = button & MOTION_MODIFIER != 0;
+    primary_button && modified && !motion && !is_wheel_button(button)
+}
+
 pub fn prefix_command_action(cmd: &PrefixCommand) -> Option<Action> {
     match cmd {
         PrefixCommand::NewTab => Some(Action::OpenAgentPicker(PickerIntent::NewTab)),
@@ -213,6 +238,7 @@ pub fn prefix_command_action(cmd: &PrefixCommand) -> Option<Action> {
         PrefixCommand::KillTab => Some(Action::CloseFocusedTab),
         PrefixCommand::ClearPane => Some(Action::ClearFocusedPane),
         PrefixCommand::Detach => Some(Action::Detach),
+        PrefixCommand::Usage => Some(Action::OpenUsage),
         PrefixCommand::Palette => Some(Action::OpenPalette),
         PrefixCommand::Redraw => None,
     }
@@ -227,7 +253,24 @@ pub(crate) enum PaletteCommandRoute {
     ConfirmAction(ConfirmKind),
     OpenCloseTargetPicker,
     ToggleZoom,
+    OpenExportFileDialog {
+        reveal_after_export: bool,
+        open_after_export: bool,
+    },
+    ExportFileUnderCursor {
+        reveal_after_export: bool,
+        open_after_export: bool,
+    },
+    ExportSelectedFile {
+        reveal_after_export: bool,
+        open_after_export: bool,
+    },
+    StageImageFromClipboardPath,
+    PasteImageFromClipboard,
+    StageImageFromClipboard,
+    OpenLinkUnderCursor,
     ClearPane,
+    OpenUsage,
 }
 
 pub(crate) fn palette_command_route(
@@ -244,7 +287,54 @@ pub(crate) fn palette_command_route(
         }
         PaletteCommand::Close => PaletteCommandRoute::OpenCloseTargetPicker,
         PaletteCommand::ZoomPane => PaletteCommandRoute::ToggleZoom,
+        PaletteCommand::ExportFile => PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: false,
+            open_after_export: false,
+        },
+        PaletteCommand::ExportFileAndReveal => PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: true,
+            open_after_export: false,
+        },
+        PaletteCommand::ExportFileAndOpen => PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: false,
+            open_after_export: true,
+        },
+        PaletteCommand::ExportFileUnderCursor => PaletteCommandRoute::ExportFileUnderCursor {
+            reveal_after_export: false,
+            open_after_export: false,
+        },
+        PaletteCommand::ExportFileUnderCursorAndReveal => {
+            PaletteCommandRoute::ExportFileUnderCursor {
+                reveal_after_export: true,
+                open_after_export: false,
+            }
+        }
+        PaletteCommand::ExportFileUnderCursorAndOpen => {
+            PaletteCommandRoute::ExportFileUnderCursor {
+                reveal_after_export: false,
+                open_after_export: true,
+            }
+        }
+        PaletteCommand::ExportSelectedFile => PaletteCommandRoute::ExportSelectedFile {
+            reveal_after_export: false,
+            open_after_export: false,
+        },
+        PaletteCommand::ExportSelectedFileAndReveal => PaletteCommandRoute::ExportSelectedFile {
+            reveal_after_export: true,
+            open_after_export: false,
+        },
+        PaletteCommand::ExportSelectedFileAndOpen => PaletteCommandRoute::ExportSelectedFile {
+            reveal_after_export: false,
+            open_after_export: true,
+        },
+        PaletteCommand::StageImageFromClipboardPath => {
+            PaletteCommandRoute::StageImageFromClipboardPath
+        }
+        PaletteCommand::PasteImageFromClipboard => PaletteCommandRoute::PasteImageFromClipboard,
+        PaletteCommand::StageImageFromClipboard => PaletteCommandRoute::StageImageFromClipboard,
+        PaletteCommand::OpenLinkUnderCursor => PaletteCommandRoute::OpenLinkUnderCursor,
         PaletteCommand::ClearPane => PaletteCommandRoute::ClearPane,
+        PaletteCommand::Usage => PaletteCommandRoute::OpenUsage,
         PaletteCommand::Exit => PaletteCommandRoute::ConfirmAction(ConfirmKind::Exit),
     }
 }
@@ -338,6 +428,7 @@ pub fn status_bar_click_action(state: StatusBarClickState) -> Option<Action> {
 pub(crate) fn branch_context_bar_click_action(hit: Option<BranchContextBarHit>) -> Option<Action> {
     match hit {
         Some(BranchContextBarHit::Context) => Some(Action::OpenGithubContext),
+        Some(BranchContextBarHit::UsageStatus) => Some(Action::OpenUsage),
         Some(BranchContextBarHit::Container) => Some(Action::OpenContainerInfo),
         // Debug chip also opens the shared ContainerInfo dialog.
         Some(BranchContextBarHit::DebugChip) => Some(Action::OpenContainerInfo),

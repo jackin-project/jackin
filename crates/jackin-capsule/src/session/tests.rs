@@ -53,6 +53,45 @@ impl MasterPty for NullMasterPty {
     }
 }
 
+/// Master PTY double that records the last `PtySize` handed to `resize`, so a
+/// test can assert what `TIOCSWINSZ` the agent's PTY actually received. Only
+/// `resize` differs from the inert double; the other (external-trait) methods
+/// delegate to an inner `NullMasterPty` rather than re-stubbing them.
+struct RecordingMasterPty {
+    inner: NullMasterPty,
+    last_size: Arc<Mutex<Option<PtySize>>>,
+}
+
+impl MasterPty for RecordingMasterPty {
+    fn resize(&self, size: PtySize) -> Result<()> {
+        if let Ok(mut slot) = self.last_size.lock() {
+            *slot = Some(size);
+        }
+        Ok(())
+    }
+    fn get_size(&self) -> Result<PtySize> {
+        self.inner.get_size()
+    }
+    fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>> {
+        self.inner.try_clone_reader()
+    }
+    fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>> {
+        self.inner.take_writer()
+    }
+    #[cfg(unix)]
+    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+        self.inner.process_group_leader()
+    }
+    #[cfg(unix)]
+    fn as_raw_fd(&self) -> Option<portable_pty::unix::RawFd> {
+        self.inner.as_raw_fd()
+    }
+    #[cfg(unix)]
+    fn tty_name(&self) -> Option<std::path::PathBuf> {
+        self.inner.tty_name()
+    }
+}
+
 fn test_session_with_policy(policy: OscPolicy) -> Session {
     let (input_tx, _input_rx) = mpsc::unbounded_channel();
     let mut session = Session::new_for_test(
@@ -67,6 +106,80 @@ fn test_session_with_policy(policy: OscPolicy) -> Session {
     );
     session.osc_policy = policy;
     session
+}
+
+#[test]
+fn resize_floors_pty_winsize_to_at_least_one() {
+    // A collapsed pane can hand `Session::resize` a 0-row (or 0-col) geometry.
+    // The agent PTY must never receive a 0×0 `TIOCSWINSZ` — programs expect
+    // ≥1 — and each axis must floor independently, not collapse to 1×1.
+    let last_size = Arc::new(Mutex::new(None));
+    let (input_tx, _input_rx) = mpsc::unbounded_channel();
+    let mut session = Session::new_for_test(
+        "Test".to_owned(),
+        Some("codex".to_owned()),
+        None,
+        (24, 80),
+        100,
+        input_tx,
+        Arc::new(Mutex::new(Box::new(RecordingMasterPty {
+            inner: NullMasterPty,
+            last_size: Arc::clone(&last_size),
+        }))),
+        Arc::new(Mutex::new(Box::new(NullChildKiller))),
+    );
+
+    let recorded = || {
+        last_size
+            .lock()
+            .ok()
+            .and_then(|slot| *slot)
+            .expect("resize must drive the PTY")
+    };
+
+    session.resize(0, 80);
+    let size = recorded();
+    assert_eq!(
+        (size.rows, size.cols),
+        (1, 80),
+        "0 rows floored to 1, cols kept"
+    );
+
+    session.resize(24, 0);
+    let size = recorded();
+    assert_eq!(
+        (size.rows, size.cols),
+        (24, 1),
+        "0 cols floored to 1, rows kept"
+    );
+}
+
+#[test]
+fn feed_pty_does_not_accumulate_scroll_ops() {
+    // feed_pty clears recorded scroll ops each chunk so they cannot grow
+    // unbounded while the scroll-region optimizer that would consume them is
+    // deferred.
+    let mut burst = Vec::new();
+    for i in 0..200 {
+        burst.extend_from_slice(format!("line {i}\r\n").as_bytes());
+    }
+    // Guard against a vacuous pass: confirm the burst genuinely records scroll
+    // ops, so the clear assertion below would fail if recording ever stopped or
+    // the clear ran before process().
+    let mut probe = jackin_term::DamageGrid::new(24, 80, 100);
+    probe.process(&burst);
+    assert!(
+        !probe.drain_scroll_ops().is_empty(),
+        "burst must record scroll ops for the clear assertion to be meaningful"
+    );
+    // feed_pty runs the same process() then clear_scroll_ops(); after it
+    // returns the buffer must already be empty.
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(&burst);
+    assert!(
+        session.shadow_grid.drain_scroll_ops().is_empty(),
+        "feed_pty must clear recorded scroll ops each chunk"
+    );
 }
 
 /// Feed `bytes` through a default-policy session and return the
@@ -112,13 +225,24 @@ fn osc_2_window_title_is_re_emitted_and_captured() {
 }
 
 #[test]
-fn osc_8_hyperlink_is_re_emitted() {
-    let drained = drained(b"\x1b]8;;https://example/\x07text\x1b]8;;\x07");
+fn osc_8_hyperlink_is_modeled_not_re_emitted() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(b"\x1b]8;;https://example/\x07text\x1b]8;;\x07");
+    let drained = session.drain_passthrough();
     assert!(
-        drained
-            .iter()
-            .any(|f| f.windows(b"https".len()).any(|w| w == b"https")),
-        "expected the http hyperlink to round-trip: {drained:?}"
+        drained.is_empty(),
+        "OSC 8 must not be raw passthrough: {drained:?}"
+    );
+    let snap = session.shadow_grid.dump();
+    assert_eq!(
+        snap.cell(0, 0)
+            .and_then(|cell| cell.hyperlink_uri.as_deref()),
+        Some("https://example/")
+    );
+    assert_eq!(
+        snap.cell(0, 4)
+            .and_then(|cell| cell.hyperlink_uri.as_deref()),
+        None
     );
 }
 
@@ -393,34 +517,237 @@ fn build_shell_command_removes_stale_agent_env() {
 }
 
 #[test]
-fn pty_output_does_not_clear_latched_blocked_state() {
+fn pty_output_does_not_change_state() {
+    // The old flap engine flipped state on every PTY byte (Idle→Working) and
+    // could not hold a blocked dialog through its own repaint. After Phase 2,
+    // PTY output updates recency only and never authors state.
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.state = AgentState::Blocked;
+    let before = session.last_output_at;
+    session.feed_pty(b"\x1b[2K some redrawn dialog frame\r\n");
     assert_eq!(
-        state_after_pty_output(AgentState::Blocked),
-        AgentState::Blocked
+        session.state,
+        AgentState::Blocked,
+        "PTY output must not author state"
     );
-    assert_eq!(
-        state_after_pty_output(AgentState::Working),
-        AgentState::Working
-    );
-    assert_eq!(
-        state_after_pty_output(AgentState::Idle),
-        AgentState::Working
+    assert!(
+        session.last_output_at >= before,
+        "PTY output still updates recency evidence"
     );
 }
 
 #[test]
-fn refresh_latches_blocked_until_operator_input() {
+fn operator_input_does_not_change_state() {
+    // A keystroke inside a blocked dialog used to flip Blocked→Working and
+    // re-notify. After Phase 2 it updates the input timestamp and reports
+    // whether it cleared a latched blocker, but never authors state.
+    let mut session = test_session_with_policy(OscPolicy::default());
+
+    session.state = AgentState::Blocked;
+    assert!(session.mark_operator_input(), "reports it was blocked");
     assert_eq!(
-        state_after_refresh(AgentState::Working, BLOCKED_AFTER),
-        AgentState::Blocked
+        session.state,
+        AgentState::Blocked,
+        "operator input must not author state"
     );
+
+    session.state = AgentState::Done;
+    assert!(!session.mark_operator_input());
     assert_eq!(
-        state_after_refresh(AgentState::Blocked, std::time::Duration::ZERO),
-        AgentState::Blocked
+        session.state,
+        AgentState::Done,
+        "operator input must not author state"
     );
+}
+
+#[test]
+fn redraw_soak_produces_zero_state_transitions() {
+    // The flap engine produced a Blocked↔Working flip on every redraw frame.
+    // Replaying a permission-dialog repaint many times must now yield zero
+    // state changes at the session level. (The real single Blocked transition
+    // arrives with the Phase 3/8 evidence pipeline; this guards that redraws
+    // alone never author state — the regression that motivated this work.)
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let start = session.state;
+    let frame =
+        b"\x1b[2K\x1b[1;1H Do you want to proceed?\r\n  1. Yes\r\n  2. No\r\n  esc to cancel\r\n";
+    let mut transitions = 0;
+    let mut prev = start;
+    for _ in 0..150 {
+        session.feed_pty(frame);
+        if session.state != prev {
+            transitions += 1;
+            prev = session.state;
+        }
+    }
     assert_eq!(
-        state_after_refresh(AgentState::Idle, BLOCKED_AFTER / 2),
-        AgentState::Working
+        transitions, 0,
+        "redraws must not author any state transition"
+    );
+    assert_eq!(session.state, start);
+}
+
+#[test]
+fn opencode_event_sets_complete_authority() {
+    use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let now = std::time::Instant::now();
+    session.apply_runtime_event("hook-opencode-1", "opencode", "permission.asked", now);
+    let a = session.authority.as_ref().expect("authority set");
+    assert_eq!(a.source_id, "hook-opencode-1");
+    assert_eq!(a.mapped_state, RawAgentState::Blocked);
+    assert!(a.pending_permission);
+    assert_eq!(a.grade, AuthorityGrade::Complete);
+}
+
+#[test]
+fn claude_event_never_sets_authority() {
+    // Decision 0a: Claude/Codex are identity-only; their events never produce
+    // a semantic authority — state comes from the screen pack + watchdog.
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event("hook-claude-1", "claude", "Stop", std::time::Instant::now());
+    assert!(session.authority.is_none());
+}
+
+#[test]
+fn clear_event_drops_authority_for_source() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let now = std::time::Instant::now();
+    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", now);
+    assert!(session.authority.is_some());
+    session.apply_runtime_event("hook-opencode-1", "opencode", "session.error", now);
+    assert!(session.authority.is_none());
+}
+
+#[test]
+fn clear_from_other_source_leaves_authority() {
+    // A Clear from a different source_id must not drop the live authority — the
+    // source guard keeps one reporter from clearing another's state.
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let now = std::time::Instant::now();
+    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", now);
+    session.apply_runtime_event("hook-opencode-2", "opencode", "session.error", now);
+    let a = session.authority.as_ref().expect("authority survives");
+    assert_eq!(a.source_id, "hook-opencode-1");
+}
+
+#[test]
+fn heartbeat_from_other_source_does_not_refresh_last_event() {
+    use std::time::Duration;
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let t0 = std::time::Instant::now();
+    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", t0);
+    let original = session.authority.as_ref().unwrap().last_event;
+    // A heartbeat (claude lifecycle event) from a different source must not
+    // refresh source-1's freshness, or a stale authority could outlive its TTL.
+    session.apply_runtime_event(
+        "hook-claude-9",
+        "claude",
+        "PreToolUse",
+        t0 + Duration::from_secs(5),
+    );
+    assert_eq!(session.authority.as_ref().unwrap().last_event, original);
+}
+
+#[test]
+fn amp_event_sets_partial_authority() {
+    use crate::agent_status::evidence::AuthorityGrade;
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event("hook-amp-1", "amp", "tool-start", std::time::Instant::now());
+    let a = session.authority.as_ref().expect("amp authority set");
+    // amp has partial lifecycle coverage, so it cannot author at full confidence.
+    assert_eq!(a.grade, AuthorityGrade::Partial);
+}
+
+#[test]
+fn osc_title_captured_and_capped() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let long = "x".repeat(400);
+    session.feed_pty(format!("\x1b]2;{long}\x07").as_bytes());
+    let osc = session.osc_evidence();
+    assert_eq!(
+        osc.title.as_ref().map(|t| t.chars().count()),
+        Some(256),
+        "title retained and capped at 256 chars"
+    );
+}
+
+#[test]
+fn osc94_progress_active_then_clear() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(b"\x1b]9;4;1;50\x07");
+    assert!(
+        session.osc_evidence().progress_active,
+        "OSC 9;4 state 1 marks progress active"
+    );
+    session.feed_pty(b"\x1b]9;4;0\x07");
+    assert!(!session.osc_evidence().progress_active);
+    assert!(session.osc_evidence().progress_cleared_at.is_some());
+}
+
+#[test]
+fn osc133_marks_set_shell_state() {
+    use crate::agent_status::evidence::RawAgentState;
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.feed_pty(b"\x1b]133;C\x07");
+    assert_eq!(
+        session.osc_evidence().shell_state,
+        Some(RawAgentState::Working)
+    );
+    session.feed_pty(b"\x1b]133;B\x07");
+    assert_eq!(
+        session.osc_evidence().shell_state,
+        Some(RawAgentState::Idle)
+    );
+}
+
+#[test]
+fn process_evidence_unavailable_without_child_pid() {
+    // Test sessions have no real child PID; sampling must report "no physics"
+    // (never a false exit), so the watchdog can't demote off this evidence.
+    let mut session = test_session_with_policy(OscPolicy::default());
+    let ev = session.sample_process_evidence(std::time::Instant::now());
+    assert!(!ev.physics_sampled);
+    assert!(!ev.process_exited);
+    assert!(!ev.foreground_is_agent);
+}
+
+#[test]
+fn clear_runtime_authority_drops_state_and_counters() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event(
+        "hook-opencode-1",
+        "opencode",
+        "permission.asked",
+        std::time::Instant::now(),
+    );
+    assert!(session.authority.is_some());
+    session.clear_runtime_authority();
+    assert!(session.authority.is_none());
+    assert_eq!(session.subagents_active, 0);
+}
+
+#[test]
+fn agent_session_gets_status_reporter_env() {
+    let mut cmd = CommandBuilder::new("/bin/true");
+    inject_status_env(&mut cmd, 42, Some("codex"));
+    let get = |k| cmd.get_env(k).and_then(|v| v.to_str());
+    assert_eq!(get("JACKIN_SESSION_ID"), Some("42"));
+    assert_eq!(get("JACKIN_AGENT_RUNTIME"), Some("codex"));
+    assert_eq!(get("JACKIN_STATUS_SOURCE"), Some("hook-codex-42"));
+    assert_eq!(get("JACKIN_STATUS_SOCKET"), Some("/jackin/run/jackin.sock"));
+}
+
+#[test]
+fn shell_session_gets_only_status_socket() {
+    let mut cmd = CommandBuilder::new("/bin/zsh");
+    inject_status_env(&mut cmd, 7, None);
+    assert!(cmd.get_env("JACKIN_SESSION_ID").is_none());
+    assert!(cmd.get_env("JACKIN_AGENT_RUNTIME").is_none());
+    assert!(cmd.get_env("JACKIN_STATUS_SOURCE").is_none());
+    assert_eq!(
+        cmd.get_env("JACKIN_STATUS_SOCKET").and_then(|v| v.to_str()),
+        Some("/jackin/run/jackin.sock")
     );
 }
 

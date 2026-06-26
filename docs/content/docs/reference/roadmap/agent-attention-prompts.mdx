@@ -25,7 +25,7 @@ The end state, from the operator's seat:
 
 ## How jackin❯ knows "I'm waiting"
 
-Attention prompts do not own state detection. They consume the [agent runtime status authority](/reference/roadmap/agent-runtime-status/), which runs inside `jackin-capsule` and arbitrates semantic runtime reports, foreground-process ownership, visible-screen signals, shell markers, cursor/readiness probes, and weak output activity. A notification fires only after that authority produces an effective `blocked` or derived `done` transition.
+Attention prompts do not own state detection. They consume the [agent runtime status authority](/reference/roadmap/agent-runtime-status/), which runs inside `jackin-capsule` and arbitrates semantic runtime reports, foreground-process ownership, visible-screen signals, shell markers, OSC evidence, process evidence, and output recency as watchdog input. A notification fires only after that authority produces an effective `blocked` or derived `done` transition.
 
 This avoids the failure mode where a notification feature invents its own "no output for N seconds means waiting" heuristic. Silence is evidence, not truth. The state authority is the single place that decides whether a quiet agent is blocked, still working, idle, done, unknown, or stuck.
 

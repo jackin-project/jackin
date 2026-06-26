@@ -479,12 +479,14 @@ impl DockerApi for BollardDockerClient {
         &self,
         name: &str,
         labels: HashMap<String, String>,
+        internal: bool,
     ) -> anyhow::Result<()> {
-        jackin_diagnostics::debug_log!("docker", "network create {name}");
+        jackin_diagnostics::debug_log!("docker", "network create {name} internal={internal}");
         self.inner
             .create_network(NetworkCreateRequest {
                 name: name.to_owned(),
                 labels: Some(labels),
+                internal: Some(internal),
                 ..Default::default()
             })
             .await

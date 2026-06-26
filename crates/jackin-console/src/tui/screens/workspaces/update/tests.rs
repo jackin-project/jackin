@@ -1138,7 +1138,9 @@ fn destructive_confirm_states_name_targets() {
     assert_eq!(purge.label, "role/dev");
     assert!(purge_debug.contains("Purge"));
     assert!(purge_debug.contains("role/dev"));
-    assert!(purge_debug.contains("Cannot be undone"));
+    assert!(purge_debug.contains(
+        "Removes the role container, DinD sidecar, volume, network, and local recovery state."
+    ));
 }
 
 #[test]

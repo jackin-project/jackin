@@ -112,6 +112,10 @@ pub struct LaunchView {
     pub failure_copy_hover: Option<FailureCopyTarget>,
     /// Last failure-popup value copied via OSC 52. Drives visible feedback.
     pub failure_copied: Option<FailureCopyTarget>,
+    /// Last failure-popup file path revealed through the host file manager.
+    pub failure_revealed: Option<FailureCopyTarget>,
+    /// Last failure-popup file path opened through the host file manager.
+    pub failure_opened: Option<FailureCopyTarget>,
     /// Operator opened the shared container info dialog from the footer chip.
     pub container_info_open: bool,
     /// Last copied row in the container info dialog.

@@ -118,7 +118,7 @@ session.wait(session.id, status: "blocked|done", timeout: 30m)
 session.capture(session.id, out: "after-agent-response")
 ```
 
-`blocked` and waiting details should not be invented by this API. They come from the [agent runtime status authority](/reference/roadmap/agent-runtime-status/), which may use runtime hooks/APIs, foreground process evidence, visible-screen signals, and cursor/readiness probes. Terminal observation consumes that status and combines it with the visible screen and trace evidence so callers can both know **that** an agent is waiting and inspect **what** it is waiting on.
+`blocked` and waiting details should not be invented by this API. They come from the [agent runtime status authority](/reference/roadmap/agent-runtime-status/), which uses runtime hooks/plugins, foreground process evidence, visible-screen rules, OSC evidence, shell markers, and process watchdog checks. Terminal observation consumes that status and combines it with the visible screen and trace evidence so callers can both know **that** an agent is waiting and inspect **what** it is waiting on.
 
 ### Screen text and frame snapshots
 
@@ -218,7 +218,7 @@ This item does not replace the [agent runtime status authority](/reference/roadm
 | Runtime status authority | Terminal observation and automation |
 |---|---|
 | Decides whether a session is `working`, `blocked`, `done`, `idle`, `unknown`, or stuck. | Reads the visible screen, waits for visible/status conditions, injects input, captures artifacts, and records traces. |
-| Uses runtime hooks/APIs, process ownership, screen evidence, shell markers, and cursor probes. | Exposes the live terminal and trace data to scripts, tests, workflow runners, and humans. |
+| Uses runtime hooks/plugins, process ownership, screen evidence, OSC evidence, shell markers, and watchdog checks. | Exposes the live terminal and trace data to scripts, tests, workflow runners, and humans. |
 | Should be conservative and avoid scraping as truth when semantic signals exist. | May use visible text as an explicit caller-requested condition, with evidence and timeout semantics. |
 
 The workflow runner should prefer status/marker waits when it needs semantic lifecycle truth and visible-text waits when the operator or test explicitly cares that text is on screen.

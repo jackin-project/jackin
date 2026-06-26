@@ -106,52 +106,40 @@ impl LaunchProgress {
         self.update_view(LaunchMessage::IdentityUpdated(identity));
     }
 
-    pub fn stage_started(&mut self, stage: LaunchStage, detail: impl Into<String>) {
+    fn emit_stage(
+        &mut self,
+        stage: LaunchStage,
+        status: StageStatus,
+        kind: &str,
+        detail: impl Into<String>,
+    ) {
         let detail = detail.into();
+        // The activity spinner tracks in-progress stages: set it iff the stage is
+        // still running. Done/Skipped are terminal and clear it.
+        let set_activity = matches!(status, StageStatus::Running);
         self.update_view(LaunchMessage::StageStatus {
             stage,
-            status: StageStatus::Running,
+            status,
             detail: detail.clone(),
-            set_activity: true,
+            set_activity,
         });
-        self.diagnostics
-            .stage("stage_started", stage.label(), &detail, None);
+        self.diagnostics.stage(kind, stage.label(), &detail, None);
+    }
+
+    pub fn stage_started(&mut self, stage: LaunchStage, detail: impl Into<String>) {
+        self.emit_stage(stage, StageStatus::Running, "stage_started", detail);
     }
 
     pub fn stage_progress(&mut self, stage: LaunchStage, detail: impl Into<String>) {
-        let detail = detail.into();
-        self.update_view(LaunchMessage::StageStatus {
-            stage,
-            status: StageStatus::Running,
-            detail: detail.clone(),
-            set_activity: true,
-        });
-        self.diagnostics
-            .stage("stage_progress", stage.label(), &detail, None);
+        self.emit_stage(stage, StageStatus::Running, "stage_progress", detail);
     }
 
     pub fn stage_done(&mut self, stage: LaunchStage, detail: impl Into<String>) {
-        let detail = detail.into();
-        self.update_view(LaunchMessage::StageStatus {
-            stage,
-            status: StageStatus::Done,
-            detail: detail.clone(),
-            set_activity: false,
-        });
-        self.diagnostics
-            .stage("stage_done", stage.label(), &detail, None);
+        self.emit_stage(stage, StageStatus::Done, "stage_done", detail);
     }
 
     pub fn stage_skipped(&mut self, stage: LaunchStage, reason: impl Into<String>) {
-        let reason = reason.into();
-        self.update_view(LaunchMessage::StageStatus {
-            stage,
-            status: StageStatus::Skipped,
-            detail: reason.clone(),
-            set_activity: false,
-        });
-        self.diagnostics
-            .stage("stage_skipped", stage.label(), &reason, None);
+        self.emit_stage(stage, StageStatus::Skipped, "stage_skipped", reason);
     }
 
     pub async fn stage_failed(&mut self, mut failure: LaunchFailure) {
@@ -356,4 +344,48 @@ pub fn standalone_error_popup(
 ) -> anyhow::Result<()> {
     let mut renderer = RichRenderer::enter_dialog(false, host, jackin_version)?;
     renderer.error_popup(title, message)
+}
+
+/// D23/D24: exit dialog with `I`-key inspect support.
+///
+/// Shows the D23 three-way choice (Return/Keep/Discard) with each preserved
+/// worktree's file list reachable via `I`. `worktrees_per_record` maps 1:1
+/// to the context records — one `Vec<WorktreeInspect>` per preserved record.
+pub fn standalone_exit_dialog_with_inspect(
+    title: &str,
+    context: &[PromptContextLine],
+    options: Vec<String>,
+    worktrees_per_record: &[Vec<crate::WorktreeInspect>],
+    host: &'static dyn LaunchHostTerminal,
+    jackin_version: &'static str,
+) -> anyhow::Result<usize> {
+    let mut renderer = RichRenderer::enter_dialog(false, host, jackin_version)?;
+    renderer.exit_dialog_with_inspect(title, context, options, worktrees_per_record)
+}
+
+/// D23/D21: standalone launch dialog. Supports delete-in-place and D24 inspect.
+///
+/// Returns `LaunchDialogResult` which the caller processes (delete → purge,
+/// then call again; restore → connect; fresh → supersede old candidates).
+pub fn standalone_launch_dialog(
+    title: &str,
+    candidates: &[crate::LaunchCandidate],
+    host: &'static dyn LaunchHostTerminal,
+    jackin_version: &'static str,
+) -> anyhow::Result<crate::LaunchDialogResult> {
+    let mut renderer = RichRenderer::enter_dialog(false, host, jackin_version)?;
+    renderer.launch_dialog(title, candidates)
+}
+
+impl LaunchProgress {
+    /// D23 launch dialog through the live launch progress surface.
+    pub fn launch_dialog_progress(
+        &mut self,
+        title: &str,
+        candidates: &[crate::LaunchCandidate],
+    ) -> anyhow::Result<crate::LaunchDialogResult> {
+        self.with_rich_renderer("launch dialog", |renderer| {
+            renderer.launch_dialog(title, candidates)
+        })
+    }
 }

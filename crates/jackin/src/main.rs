@@ -13,6 +13,8 @@ use jackin::cli::role::ConsoleArgs;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    jackin::install_default_tls_provider();
+
     // `try_parse` instead of `parse` so we can render the frozen-rain banner
     // for the root `--help`/`--version` ourselves before clap prints the help
     // body — clap reflows multi-line ANSI art passed through `before_help`.

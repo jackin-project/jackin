@@ -1,15 +1,28 @@
+ARG SHELLFIRM_VERSION
+
+# shellfirm has no Debian package, so build it from source in a throwaway Rust
+# stage (the documented cargo-install fallback) and copy only the binary into
+# the final image. Building inside Docker — rather than prebuilding on the host —
+# keeps it off the host's mise/cargo-binstall environment and produces the
+# binary for the target image architecture.
+FROM rust:1.96.0-trixie AS shellfirm-builder
+
+ARG SHELLFIRM_VERSION
+
+RUN cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked --root /opt/shellfirm && \
+    /opt/shellfirm/bin/shellfirm --version | grep -F "${SHELLFIRM_VERSION}"
+
 FROM debian:trixie-20260610@sha256:fe7312b5f05bf5f43fad76bcd8945642e4e47a68aefd1b73f447615899d0fac1
 
 ARG SHELLFIRM_VERSION
 
-COPY prebuilt/shellfirm /usr/local/bin/shellfirm
+COPY --from=shellfirm-builder /opt/shellfirm/bin/shellfirm /usr/local/bin/shellfirm
 RUN chmod 0755 /usr/local/bin/shellfirm && \
     shellfirm --version | grep -F "${SHELLFIRM_VERSION}"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG UID=1000
-ARG GID=1000
 
 # Install core system packages. zsh is the default login shell for
 # the `agent` user; fish is installed alongside as an opt-in
@@ -20,6 +33,7 @@ RUN apt-get update && \
     bash \
     ca-certificates \
     curl \
+    dnsutils \
     fd-find \
     fish \
     fzf \
@@ -30,8 +44,14 @@ RUN apt-get update && \
     openssh-client \
     procps \
     ripgrep \
+    ipset \
+    iptables \
     sudo \
+    tzdata \
     tree \
+    wl-clipboard \
+    xauth \
+    xclip \
     yq \
     zsh && \
     ln -sf /usr/bin/fdfind /usr/local/bin/fd && \
@@ -40,14 +60,14 @@ RUN apt-get update && \
            /var/cache/apt/* \
            /tmp/*
 
-# Resolve the `agent` user by its runtime host UID. The image bakes `agent` at
-# UID 1000, but containers run as the host operator's UID (`docker run --user`)
-# so host-owned bind-mounts are transparently writable. libnss-extrausers reads
-# an extra passwd file (bind-mounted at runtime) so `getpwuid(host_uid)` still
-# resolves to `agent` with HOME=/home/agent — keeping shells, git, and the
-# Node-based agent CLIs (which call getpwuid) happy. See
+# Resolve the `agent` user/group by the runtime host UID/GID. The image bakes
+# `agent` at UID 1000, but containers run as the host operator's UID/GID
+# (`docker run --user`) so host-owned bind-mounts are transparently writable.
+# libnss-extrausers reads extra passwd/group files (bind-mounted at runtime) so
+# `getpwuid(host_uid)` resolves to `agent` with HOME=/home/agent and host GIDs
+# can resolve when the base image has no matching group. See
 # /reference/roadmap/construct-user-creation/.
-RUN sed -ri 's/^(passwd:.*)$/\1 extrausers/' /etc/nsswitch.conf && \
+RUN sed -ri 's/^(passwd:.*)$/\1 extrausers/; s/^(group:.*)$/\1 extrausers/' /etc/nsswitch.conf && \
     install -d -m 0755 /var/lib/extrausers && \
     : > /var/lib/extrausers/passwd && \
     : > /var/lib/extrausers/group
@@ -109,11 +129,20 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
            /var/cache/apt/* \
            /tmp/*
 
-# Create runtime user
-RUN groupadd -g "$GID" agent && \
-    useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
-    echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent && \
-    install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
+# Create runtime user. No baked sudoers — sudo is provisioned at runtime via
+# `docker exec --user root jackin-capsule sudo-provision`, only for profiles
+# that grant it (JACKIN_SUDO=1). The `sudo` package stays installed so the
+# grant can write /etc/sudoers.d/agent at launch.
+RUN useradd -m -u "$UID" -g 0 -s /bin/zsh agent && \
+    chmod 0775 /home/agent && \
+    install -d -m 0775 -o agent -g 0 /home/agent/.claude /home/agent/.codex /home/agent/.jackin
+
+RUN printf 'umask 0002\n' > /etc/jackin-build-env
+ENV BASH_ENV=/etc/jackin-build-env
+
+# Install starship prompt as root so the installer can write to /usr/local/bin
+# without needing to escalate privileges.
+RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
 # including `docker exec` sessions that bypass the jackin runtime entrypoint.
@@ -131,12 +160,11 @@ RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master
 # Install starship prompt
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
-COPY --chown=agent:agent zshrc /home/agent/.zshrc
-RUN mkdir -p /home/agent/.config
-COPY --chown=agent:agent starship.toml /home/agent/.config/starship.toml
+COPY --chown=agent:0 --chmod=0664 zshrc /home/agent/.zshrc
+COPY --chown=agent:0 --chmod=0664 starship.toml /home/agent/.config/starship.toml
 
 # Fish config — opt-in alternative shell. Same Starship prompt and
 # auto-title behaviour as zsh so the operator's pane border title
 # does not regress when switching shells.
-RUN mkdir -p /home/agent/.config/fish
-COPY --chown=agent:agent fish-config.fish /home/agent/.config/fish/config.fish
+RUN install -d -o agent -g 0 -m 0775 /home/agent/.config/fish
+COPY --chown=agent:0 --chmod=0664 fish-config.fish /home/agent/.config/fish/config.fish

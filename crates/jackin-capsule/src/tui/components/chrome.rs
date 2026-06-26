@@ -14,7 +14,7 @@ use ratatui::{
 
 use crate::tui::components::status_bar::{PrefixMode, StatusBarPlan, StatusTabCell, TabGlyph};
 
-use jackin_tui::components::{Panel, PanelFocus};
+use jackin_tui::components::{Panel, PanelFocus, tab_cell_style};
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
@@ -29,21 +29,17 @@ pub struct StatusBarWidget<'a> {
     pub prefix_mode: PrefixMode,
     pub hovered_tab: Option<usize>,
     pub menu_hovered: bool,
+    /// P5: whether the tab bar itself holds focus. The active-tab underline is
+    /// the single focus indicator — bright phosphor-green when the bar is
+    /// focused, neutral (white) when focus is in the agent content below.
+    pub focused: bool,
 }
 
 impl StatusBarWidget<'_> {
     fn paint_tab(&self, cell: &StatusTabCell, idx: usize, area: Rect, buf: &mut Buffer) {
         let hovered = self.hovered_tab == Some(idx);
-        let bg = match (cell.active, hovered) {
-            (true, false) => jackin_tui::theme::TAB_BG_ACTIVE,
-            (true, true) => jackin_tui::theme::TAB_BG_ACTIVE_HOVER,
-            (false, false) => jackin_tui::theme::TAB_BG_INACTIVE,
-            (false, true) => jackin_tui::theme::TAB_BG_INACTIVE_HOVER,
-        };
-        let mut style = Style::default().bg(bg).fg(jackin_tui::theme::WHITE);
-        if cell.active {
-            style = style.add_modifier(Modifier::BOLD);
-        }
+        let style = tab_cell_style(cell.active, hovered);
+        let bg = style.bg.unwrap_or(Color::Reset);
         let glyph_char = match cell.glyph {
             TabGlyph::None => ' ',
             TabGlyph::Done => '○',
@@ -147,12 +143,17 @@ impl Widget for StatusBarWidget<'_> {
             && let Some(active) = plan.cells.iter().find(|c| c.active)
         {
             let underline = "━".repeat(active.cell_cols as usize);
+            let underline_fg = if self.focused {
+                jackin_tui::theme::PHOSPHOR_GREEN
+            } else {
+                jackin_tui::theme::WHITE
+            };
             buf.set_string(
                 area.x.saturating_add(active.start_col0),
                 area.y + 1,
                 &underline,
                 Style::default()
-                    .fg(jackin_tui::theme::WHITE)
+                    .fg(underline_fg)
                     .add_modifier(Modifier::BOLD),
             );
         }
@@ -195,6 +196,7 @@ const BAR_HOVER_FG: Color = Color::Rgb(0, 55, 140);
 /// the capsule rendering plan).
 pub(crate) struct BottomChromeWidget<'a> {
     pub(crate) branch: Option<&'a str>,
+    pub(crate) usage_status_label: Option<&'a str>,
     pub(crate) pull_request: Option<&'a crate::pull_request::PullRequestInfo>,
     pub(crate) pull_request_loading: bool,
     pub(crate) instance_id_label: &'a str,
@@ -214,34 +216,17 @@ pub(crate) struct BottomChromeWidget<'a> {
 
 impl Widget for BottomChromeWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        use crate::tui::app::HoverTarget;
         render_branch_bar_row(
             buf,
             area,
             self.branch,
+            self.usage_status_label,
             self.pull_request,
             self.pull_request_loading,
+            self.debug_run_id,
             self.instance_id_label,
             self.hover_target,
         );
-        if let Some(run_id) = self.debug_run_id.filter(|r| !r.is_empty()) {
-            let chip = format!(" {run_id} ");
-            let chip_cols = jackin_tui::display_cols(&chip) as u16;
-            let bar_y = area.height.saturating_sub(1);
-            let x = area.width.saturating_sub(chip_cols);
-            let style = if self.hover_target == Some(HoverTarget::DebugChip) {
-                Style::default()
-                    .bg(color(jackin_tui::WHITE))
-                    .fg(color(jackin_tui::DANGER_RED))
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-                    .bg(color(jackin_tui::DANGER_RED))
-                    .fg(color(jackin_tui::WHITE))
-                    .add_modifier(Modifier::BOLD)
-            };
-            buf.set_string(x, bar_y, &chip, style);
-        }
         let spans = crate::tui::components::dialog::main_view_hint(
             self.scrollback_active,
             self.palette_key,
@@ -256,23 +241,33 @@ impl Widget for BottomChromeWidget<'_> {
 /// footer hint spans.
 pub(crate) struct DialogBottomChromeWidget<'a> {
     pub(crate) branch: Option<&'a str>,
+    pub(crate) usage_status_label: Option<&'a str>,
     pub(crate) pull_request: Option<&'a crate::pull_request::PullRequestInfo>,
     pub(crate) pull_request_loading: bool,
+    pub(crate) debug_run_id: Option<&'a str>,
     pub(crate) instance_id_label: &'a str,
     pub(crate) hint_spans: Option<&'a [jackin_tui::HintSpan<'a>]>,
 }
 
 impl Widget for DialogBottomChromeWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        render_branch_bar_row(
-            buf,
-            area,
-            self.branch,
-            self.pull_request,
-            self.pull_request_loading,
-            self.instance_id_label,
-            None,
-        );
+        // The bottom branch/context bar under a dialog renders only in a debug
+        // launch (where the run id + diagnostics matter); outside debug it is
+        // hidden so the modal stays clean (commit 5f2076a6). Only the dialog
+        // hint renders below the dialog in that case.
+        if self.debug_run_id.is_some() {
+            render_branch_bar_row(
+                buf,
+                area,
+                self.branch,
+                self.usage_status_label,
+                self.pull_request,
+                self.pull_request_loading,
+                self.debug_run_id,
+                self.instance_id_label,
+                None,
+            );
+        }
         if let Some(spans) = self.hint_spans {
             render_hint_spans_row(buf, area, spans);
         }
@@ -300,12 +295,15 @@ impl Widget for SpawnFailureBannerWidget<'_> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_branch_bar_row(
     buf: &mut Buffer,
     area: Rect,
     branch: Option<&str>,
+    usage_status_label: Option<&str>,
     pull_request: Option<&crate::pull_request::PullRequestInfo>,
     pull_request_loading: bool,
+    debug_run_id: Option<&str>,
     instance_id_label: &str,
     hover_target: Option<crate::tui::app::HoverTarget>,
 ) {
@@ -315,8 +313,10 @@ fn render_branch_bar_row(
         area.height,
         area.width,
         branch,
+        usage_status_label,
         pull_request,
         pull_request_loading,
+        debug_run_id,
         instance_id_label,
     ) else {
         return;
@@ -337,6 +337,36 @@ fn render_branch_bar_row(
             bar_y,
             &layout.container,
             container_style,
+        );
+    }
+    if let Some(region) = layout.debug_chip_region {
+        let debug_hovered = hover_target == Some(HoverTarget::DebugChip);
+        let debug_style = if debug_hovered {
+            Style::default()
+                .bg(BAR_BG)
+                .fg(color(jackin_tui::DANGER_RED))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .bg(color(jackin_tui::DANGER_RED))
+                .fg(color(jackin_tui::WHITE))
+                .add_modifier(Modifier::BOLD)
+        };
+        buf.set_string(
+            area.x + region.start.saturating_sub(1),
+            bar_y,
+            &layout.debug_chip,
+            debug_style,
+        );
+    }
+    if let Some(region) = layout.usage_region {
+        let usage_hovered = hover_target == Some(HoverTarget::UsageStatus);
+        let usage_style = chunk_style(usage_hovered, BAR_FG, false);
+        buf.set_string(
+            area.x + region.start.saturating_sub(1),
+            bar_y,
+            &layout.usage,
+            usage_style,
         );
     }
 }

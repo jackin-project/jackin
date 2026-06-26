@@ -12,6 +12,7 @@ pub mod animation;
 pub mod ansi_text;
 pub mod components;
 pub mod geometry;
+pub mod host_colors;
 pub mod keymap;
 pub mod output;
 pub mod prune_output;
@@ -165,6 +166,10 @@ pub const LINK_FG_HOVER: Rgb = Rgb::new(130, 240, 240);
 /// bar renders in this so the operator can tell at a glance they are inside
 /// a `--debug` run. Readable on the white status-bar band.
 pub const DEBUG_AMBER: Rgb = Rgb::new(204, 92, 0);
+
+/// Amber — used for the Stuck tab glyph and token rate bar below 20% threshold.
+/// `#ffaa00`
+pub const AMBER: Rgb = Rgb::new(255, 170, 0);
 
 /// Neutral gray for unfocused chrome borders — the in-container multiplexer's
 /// inactive pane border and the host's full-screen non-interactive frames
@@ -392,6 +397,7 @@ pub mod ansi {
             (80, 80, 80) => "\x1b[38;2;80;80;80m",
             (255, 255, 255) => "\x1b[38;2;255;255;255m",
             (0, 0, 0) => "\x1b[38;2;0;0;0m",
+            (255, 170, 0) => "\x1b[38;2;255;170;0m",
             (180, 255, 180) => "\x1b[38;2;180;255;180m", // ACTION_ACCENT
             _ => "",
         }
@@ -469,6 +475,44 @@ pub mod ansi {
     pub fn bg(buf: &mut Vec<u8>, rgb: Rgb) {
         let _unused = write!(buf, "\x1b[48;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointerShape {
+    Default,
+    Pointer,
+    Text,
+    EwResize,
+    NsResize,
+    Grabbing,
+}
+
+impl PointerShape {
+    #[must_use]
+    pub const fn as_osc22_name(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Pointer => "pointer",
+            Self::Text => "text",
+            Self::EwResize => "ew-resize",
+            Self::NsResize => "ns-resize",
+            Self::Grabbing => "grabbing",
+        }
+    }
+}
+
+#[must_use]
+pub const fn clickable_pointer_shape(clickable: bool) -> PointerShape {
+    if clickable {
+        PointerShape::Pointer
+    } else {
+        PointerShape::Default
+    }
+}
+
+#[must_use]
+pub fn osc22_pointer_shape(shape: PointerShape) -> String {
+    format!("\x1b]22;{}\x1b\\", shape.as_osc22_name())
 }
 
 #[cfg(test)]

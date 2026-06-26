@@ -5,6 +5,8 @@ title: "Devcontainer Parity: Lessons from anthropics/claude-code"
 
 **Status**: Proposed — research captured, no implementation committed
 
+**Host-affordance note**: the construct image now includes `xclip`, `xauth`, and `wl-clipboard` because Amp and other Linux CLIs expect standard clipboard helper binaries. These packages do not make a macOS host clipboard available inside the container by themselves; host clipboard image paste remains part of the [Host Affordance Bridge](/reference/roadmap/clipboard-image-bridge/) and requires an explicit host-side bridge.
+
 ## Problem
 
 The upstream [Claude Code repository](https://github.com/anthropics/claude-code/tree/main/.devcontainer)
@@ -227,20 +229,20 @@ a broader hardening pass and document the tradeoff in
 
 ### Finding 4 — Persist shell history
 
-**Gap**: `~/.zsh_history` lives in the container's writable layer and is lost
-when the agent is recreated. Upstream mounts a named volume at
-`/commandhistory` and points `HISTFILE` at it.
+**Gap**: `~/.zsh_history` lives in the container's writable layer and is lost when the agent is recreated. Upstream mounts a named volume at `/commandhistory` and points `HISTFILE` there.
 
-**Options**:
+**This is lower priority than agent conversation history.** The upstream devcontainer conflates two things:
+- **Shell command history** (`~/.zsh_history`) — what the operator or agent typed at a zsh prompt. Low value: the agent's prompts are driven by the conversation, not typed manually; the operator rarely drops into the container shell.
+- **Agent conversation history** — every prompt the operator sent to Claude/Codex/Amp/Kimi/OpenCode and every answer the agent gave back. High value: this is the actual work record.
 
-1. **Bind mount `~/.jackin/data/{name}/.zsh_history` to `/home/agent/.zsh_history`.**
-   Consistent with how other state is persisted. Single line in
-   <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>.
-2. **Set `HISTFILE` inside the container to a subdir of `/home/agent/.jackin`**
-   (already bind-mounted) and let the existing persistence carry it.
+jackin' already preserves agent conversation history through the per-agent home bind mounts (`~/.jackin/data/{name}/home/.claude`, `.codex`, etc.) — the conversation files are on the host and survive eject. The deeper gap — cross-agent browsing, surviving `prune`, seeing history across instances — is tracked under the [Déjà Vu](/reference/roadmap/deja-vu/) roadmap item, not here.
 
-**Recommendation**: Option 2 is the cheapest. It is a ~5-line change in
-`zshrc` plus a small entrypoint nudge to ensure the directory exists.
+**Shell history persistence** (the literal zsh `HISTFILE`) is a low-effort quality-of-life improvement independent of the hardening contract:
+
+1. **Bind mount `~/.jackin/data/{name}/.zsh_history` to `/home/agent/.zsh_history`** via a single line in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />.
+2. Or redirect `HISTFILE` in `zshrc` to a path already bind-mounted (e.g. under `/jackin/state/`).
+
+**Recommendation**: Defer until after Déjà Vu V1. A bound `HISTFILE` adds minimal value if the operator never manually shells into the container. Track it as a small quality-of-life item. The [Déjà Vu](/reference/roadmap/deja-vu/) item is the correct home for everything worth keeping from an agent session.
 
 ### Finding 5 — Small construct additions worth considering
 
@@ -267,6 +269,16 @@ kit under jackin has to configure it themselves.
 
 This is downstream of Finding 2 — if jackin emits a `devcontainer.json`, the
 extensions list becomes an obvious payload for it.
+
+## Connection to the Docker Runtime Hardening Contract
+
+The findings here are inputs to the broader [Docker Runtime Hardening Contract](/reference/roadmap/docker-runtime-hardening-contract/). Specifically:
+
+- **Finding 1 (iptables egress allowlist)** maps to the `api_only` network tier in the capability taxonomy. The upstream `init-firewall.sh` is the V1 reference implementation. In jackin', this tier is configurable: the operator assembles the allowlist from agent endpoints + explicit additions rather than using a hard-coded Anthropic-specific list. The `NET_ADMIN`/`NET_RAW` capabilities required for iptables are implicitly granted when `network = "api_only"` is selected.
+- **Finding 3 (scoped sudo)** maps to the `agent_scoped_sudo` user privilege tier in the capability taxonomy — a tier between "no sudo" and "full sudo" where sudo is permitted only for named commands. `network = "api_only"` implicitly selects this tier so the firewall init script can run.
+- **Finding 4 (shell history vs. conversation history)** — the upstream conflates two concerns. Shell history (`~/.zsh_history`) is a trivial bind-mount addition, deferred. Agent conversation history — the actual work record — is already partially preserved by the per-agent home bind mounts (`~/.claude`, `.codex`, etc.) and is tracked in depth under [Déjà Vu](/reference/roadmap/deja-vu/), which covers cross-agent browsing, surviving `prune`, and the full extraction/normalization story. Both are independent of the hardening contract.
+
+The key distinction: the upstream devcontainer makes these choices as a fixed configuration for a single use case. jackin' makes them configurable: every upstream choice becomes a toggle, and the session contract shows the operator exactly what was granted.
 
 ## Non-Goals
 

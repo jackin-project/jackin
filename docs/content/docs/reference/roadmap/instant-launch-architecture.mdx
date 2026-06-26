@@ -1,513 +1,151 @@
 ---
-title: "Instant Launch Architecture"
+title: "Runtime Restore and Image Architecture"
 ---
 
-**Status**: Partially implemented — image recipe `v2` labels with component-level invalidation reasons, warm local-image reuse, agent-scoped derived image tags, selected image decisions before credential resolution, source-specific `ImageDecision::BuildFromPublished` / `BuildFromWorkspace` rebuild plans with published-image freshness checked before runtime binary prep, `ImageDecision::RefreshInBackground` for valid local images with stale published bases, selected-image background refresh for `RefreshInBackground` deferred until the reused role container passes pre-attach checks, explicit/background image prewarm refresh rebuilds for stale published bases, live/stopped current-instance attach-first before role repo refresh when the agent is already known or exactly one unselected-agent candidate is viable, explicit restore-container attach/start before role repo refresh, single missing unselected-agent current-instance recreate carrying the recorded agent into the normal image decision, stopped/startable current-instance restore that also bypasses workspace `git_pull_on_entry`, missing-container recreation from valid images, selected-runtime foreground binary prep and builds without a separate latest-release update probe, cached agent/Capsule binary mode repair without redownload, `jackin prewarm` for runtime binary/`jackin-capsule` caches, DinD sidecar image prewarm, disposable DinD sidecar container readiness prewarm with measured ready latency and no duplicate standalone sidecar-image prewarm, explicit kept DinD sidecar-container prewarm plus `jackin prewarm --daemon` shorthand with `PrewarmOnly` skipped-work diagnostics, prewarm-owned Docker labels, and launch-time locked one-shot adoption of ready kept sidecar resources recorded in the instance manifest for normal cleanup/eject/purge, configured, targeted, workspace, and all-workspace default role-repo caches, explicit role images, configured all-role image prewarm, workspace images, and concurrent all-workspace image prewarm, saved-workspace console image prewarm, warm-hit-only sibling auth, runtime binary, and concurrent image prewarm deferred until the reused container passes pre-attach checks, prefetched selected-agent version recording without a foreground Docker probe, known-SHA build paths that skip duplicate `git rev-parse`, actual prefetched-vs-fallback selected install recipe labels, typed launch-plan selection/rejection diagnostics, nested launch timing diagnostics including git identity lookup, role repo refresh, and restore candidate scans, build-source/base-pull-policy diagnostics, build-context size/source diagnostics, explicit workspace `git_pull_on_entry` timing, per-auth-slot role-state preparation, sidecar/Capsule readiness, background prewarm/refresh tasks, hardline exec, and post-attach finalization steps, parsed Docker build-step diagnostics, `jackin diagnostics summary` with skipped-timing sections, `jackin diagnostics compare` with full launch-plan/cache/skipped-timing/build-source/build-context/build-step/startup-delta/startup-saved JSON comparisons, JSON timing artifact export, explicit cold/warm/restart comparison labels, and fastest/first-run baselines, startup-vs-full-session timing summaries, concurrent operator-env reads, empty operator-env and manifest-env resolution skips, plan-gated skips for non-required operator and manifest credential refs, concurrent GitHub env reads, ignored GitHub env resolution skip, filtered GitHub env resolution for only runtime-consumed keys, configured-token GitHub sync skip, GitHub ignore-mode absent-state role prep, state-dir creation, and Docker mount skip, no-state `ignore` per-agent auth prep skip with stale-state cleanup preserved, Dockerfile-demand GitHub build-token lookup, concurrent GitHub/agent role-state auth preparation, fresh-launch DinD/auth/workspace overlap, concurrent in-container runtime setup that overlaps container/git init with selected-agent home/auth setup inside `jackin-capsule runtime-setup`, cloneable serialized runner handles for future dependency-graph launch branches, `.git`/`.jackin-runtime`-free workspace-derived build contexts, published-base contexts that stage only declared hooks plus jackin-owned runtime assets, selected-agent-only staged binary contexts and Dockerignore openings, fallback-only contexts with no staged-binary directory, staged-capsule-only Dockerignore openings, BuildKit linked and chmodded copies for prefetched agent binaries, hooks, runtime entrypoint, and Capsule payloads, duplicate prefetched direct-copy agent version smoke plus direct-copy shell-work reduction plus unused cache-bust/role-SHA arg skips, copied zsh/source-hook shim assets that avoid large generated `printf` shell in finalization layers, looped default-home snapshot shell instead of one copy command per agent state dir plus owned runtime-dir creation without chown, hook runtime directory creation via `install -d`, Claude plugin bundle replay directory creation via `install -d`, single-layer Claude plugin installation, named BuildKit caches for Claude plugin-home, prefetched Claude, and fallback installer layers, collapsed prefetched-agent staging, runtime finalization, hook setup, and default-home snapshot layer, recipe-keyed Claude plugin bundle replay with `install -d` directory setup, delegated agent install Dockerfile snippets, hook-state/default-home directory ownership without recursive chown, and host UID/GID remap removal plus runtime `--user` host-UID mapping (group-0 home + libnss-extrausers passwd) shipped; broader deeper build-path surgery, host-daemon-maintained prewarm orchestration, persistent warmed runtime resources, and real-world baseline captures are deferred follow-ups
+**Status**: Partially implemented — remaining work: operator end-to-end verification of all feature groups (image bake, home seeding, container identity, restore ladder, schema migration, console surfaces, launch cockpit hard-exit, and build performance). All implementation checklist items (Parts 1–3) are complete; only operator sign-off remains.
 
-## Goal
+## Confirmed defect — the dirty-exit confirmation never fires
 
-jackin❯ launch should have two honest modes: an attach/resume path that reaches an already-materialized agent in roughly 1-3 seconds, and a cold-materialization path that is allowed to do real work but must explain and minimize each blocking dependency. The target is not a prettier progress screen for a slow pipeline; the target is to remove the architectural condition that makes the operator wait on synchronous refresh, rebuild, credential, sidecar, and setup work when an equivalent runnable environment already exists or could have been prepared before they asked.
-
-This item tracks the "hardcore" launch-speed program: measure every stage, split correctness-critical foreground work from freshness/preparation work, make reuse the default when state is valid, and move expensive freshness work to explicit prewarm/background flows with observable invalidation. It coordinates with [Launch Progress TUI](/reference/roadmap/launch-progress-tui/), [Session keep and resume](/reference/roadmap/session-keep-and-resume/), [Construct Image: User Creation Responsibility](/reference/roadmap/construct-user-creation/), and [Workspace Registry Cache](/reference/roadmap/workspace-registry-cache/).
-
-## Bug Classification
-
-Treat slow launch as a bug, not as cosmetic performance work. A correct launch architecture should not let nonessential freshness, rebuild, credential, and sibling-runtime work block the operator from an already-valid interactive agent. The current state is wrong because the foreground transaction has no first-class answer to "what is the smallest repair required before hardline can open?"
-
-The bug class is structural: the code permits unrelated blocking work to enter the critical path because launch is modeled as a single rebuild-oriented transaction rather than as a validity decision followed by the smallest necessary repair. The right fix is therefore not one guard around one slow command. The right fix is to make the launch plan explicit: `AttachExisting`, `StartStopped`, `CreateFromValidImage`, `BuildAndCreate`, and `PrewarmOnly`, with each plan carrying the exact foreground requirements it is allowed to run.
-
-## Evidence
-
-Baseline run `jk-run-046bca` was captured from `jackin --debug` on June 11, 2026 while launching `the-architect` for the `jackin` workspace. It reached hardline in about 108.4s after the diagnostics process started and about 88.9s after the launch stage spine started. Stage timings from `~/.jackin/data/diagnostics/runs/jk-run-046bca.jsonl`:
-
-The full `jk-run-046bca` artifact spans about 463.9s because the interactive Capsule session remained attached after launch. The launch defect ends when the `hardline` stage starts at about 108.3s; the later roughly 354.2s gap is operator session time and is excluded from startup analysis.
-
-| Stage | Duration | Observed behavior |
-|---|---:|---|
-| Console pre-launch before `launch_started` | 19.5s | Includes the interactive console path and selection time; not all of this is jackin-owned latency, but the run does perform Docker discovery before launch selection. |
-| `workspace` pre-pull | 5.3s | Polls 8 workspace repositories; 7 succeed and 1 fails because the repo has unstaged changes. |
-| `role` | 1.2s | Refreshes the cached role repo, validates/trusts the source, and inspects existing containers. |
-| `credentials` | 55.5s | Resolves operator env and auth layers before any image or runtime startup work can continue. This dominates the warm-cache run. |
-| `agent binaries` | 8.0s | Reported `cached`, but still blocks launch while checking supported runtime binaries and `jackin-capsule`. |
-| `derived image` | 15.5s | Warm-cache Docker build still runs and exports a local image even though almost every layer is cached. |
-| `workspace` materialization | 0.7s | Creates one clone-isolated mount and records isolation state. |
-| `network` | 0.05s | Per-instance network creation is small. |
-| `sidecar` | 2.8s | Starts `docker:dind`, then polls `docker info` and certificate readiness. |
-| `capsule` | 0.5s | Starts the role container and verifies it is running. |
-| `hardline` | not completed in stage log | The next event is the interactive `docker exec -it` Capsule attach. |
-
-The most important warm-run gaps inside `jk-run-046bca`:
-
-| Gap | Duration | Diagnosis |
-|---|---:|---|
-| Credentials black box | 55.5s | The baseline run predated nested credential timings. Code inspection showed <RepoFile path="crates/jackin-env/src/resolve.rs" /> probing `op` once, then resolving attributed values sequentially; each `op://` read went through <RepoFile path="crates/jackin-env/src/op_runner.rs" /> / <RepoFile path="crates/jackin-env/src/op_cli.rs" /> with a 30s default timeout. The current implementation times each operator-env and GitHub-env key and resolves independent entries concurrently, but the broader credential stage still needs laziness and plan-gating so attach plans do not resolve fresh secrets at all. |
-| All-runtime binary prep | 8.0s | The diagnostics show cache hits for supported agents, but <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> still prepares every supported runtime plus `jackin-capsule` before image/build decisions. A Claude launch was allowed to wait on non-Claude runtime checks, including a 6.8s gap before Kimi manifest resolution and about 1.0s for the Kimi manifest HTTP path. |
-| Warm Docker build path | 15.5s | The associated `jk-run-046bca.docker-build.log` shows a tiny 6.55kB context and nearly all Dockerfile steps cached, but `docker build --pull ... -t jk_the-architect` still ran. A cache hit is not enough for instant launch; the correct warm path must skip Docker build invocation entirely when the image recipe is already valid. |
-| Build startup/version probe | about 6.0s combined | The run waited before the first Docker build output, then ran `docker run --rm --entrypoint claude jk_the-architect --version` after build. Image validity and selected-agent version should be represented by recipe labels and cached probe records, not by rebuilding and probing during every foreground launch. |
-| Workspace pre-pull | 5.3s | `git_pull_on_entry` is explicit and valid, but it is still foreground host mutation. It must remain opt-in and should have a separate non-blocking freshness mode for launches where immediate hardline is the correct behavior. |
-| DinD startup/poll | 2.8s | Per-instance sidecar creation is small compared with credentials/build, but it alone consumes almost the whole 1-3s target. Resume/start plans need to reuse or prewarm this boundary. |
-
-Baseline run `jk-run-409e7a` captured the slower cold/stale-image build path for the same family of role image. It reached hardline in about 485.8s from process start and had these material stages:
-
-| Stage | Duration | Observed behavior |
-|---|---:|---|
-| `credentials` | 197.3s | Credential/env resolution blocked the rest of launch for more than three minutes. |
-| `agent binaries` | 15.2s | Runtime binary preparation blocked before Docker build. |
-| `derived image` | 243.4s | Docker build rebuilt or exported the role image; the sidecar/container startup after that was only about 4.8s combined. |
-| `sidecar` | 3.6s | DinD startup/polling. |
-| `capsule` | 1.2s | Role container startup. |
-
-The associated `jk-run-409e7a.docker-build.log` shows the derived Docker build command used `docker build --pull --build-arg JACKIN_HOST_UID=501 --build-arg JACKIN_HOST_GID=20 --build-arg JACKIN_CACHE_BUST=1781178037 --build-arg ROLE_GIT_SHA=98840d7... -t jk_the-architect ...`. The Docker timeline shows the slowest build costs:
-
-| Build step | Duration | What happened |
-|---|---:|---|
-| Export/unpack image | 76.5s | BuildKit exported and unpacked the resulting `jk_the-architect:latest` image after the layers were built. |
-| Base image resolution/load | 15.0s | `FROM projectjackin/jackin-the-architect:latest@sha256:...` was resolved/loaded. Metadata lookup alone took 9.2s. |
-| UID/GID remap | 8.5s | The derived layer runs `groupmod`/`usermod` and `chown -R agent:agent /home/agent`, even when `usermod` reports no change. |
-| Claude install | 8.0s | The prefetched Claude binary still runs `/tmp/jackin-agent-binaries/claude install` and `claude --version` inside the build. |
-| Claude plugin marketplaces | about 10.1s total | Four separate `claude plugin marketplace add ...` layers clone/refresh marketplaces sequentially. |
-| Claude plugin installs | about 15s+ total | Individual plugin installs run as separate Docker layers. |
-
-## Docker/BuildKit Research Notes
-
-Official Docker guidance supports the direction of this roadmap while also showing why cache hits alone cannot deliver instant startup. Docker's cache-optimization docs recommend ordering stable layers before volatile layers, keeping build context small, and using cache mounts or external cache backends for repeated dependency work; jackin❯ already has a tiny warm context in `jk-run-046bca`, so the next correctness step is to avoid invoking the build at all when the image is valid. Docker's cache-invalidation docs explain that after a layer changes, following layers must rebuild; the generated Dockerfile currently places UID/GID remap, all-agent installs, plugin installs, hooks, default-home, and Capsule in one linear chain, so volatile launch inputs can invalidate unrelated later work. Docker's multi-stage and BuildKit docs support target-specific builds and skipping unused stages, which fits selected-agent foreground targets plus background sibling-runtime preparation. Sources: [Docker cache optimization](https://docs.docker.com/build/cache/optimize/), [Docker cache invalidation](https://docs.docker.com/build/cache/invalidation/), [Docker multi-stage builds](https://docs.docker.com/build/building/multi-stage/), and [BuildKit](https://docs.docker.com/build/buildkit/).
-
-## Current Pipeline
-
-The launch path is centered in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" />. In order, it:
-
-1. Runs pre-launch Docker cleanup and git identity probes in parallel.
-2. Starts the launch cockpit and records `identity`.
-3. If the launch request or workspace already names the selected agent, if exactly one current-role candidate across unselected agents is viable, or if the restore flow already names an exact container, checks restore candidates before role source resolution. A live current-role or explicit restore container attaches immediately through hardline before role repo fetch/update, workspace `git_pull_on_entry`, credentials, image decisions, binary prep, or Docker build run. A stopped or created current-role or explicit restore container starts and reconnects through Capsule before the same expensive foreground work. A missing current-role container records the existing container name and continues to role/image validation for the smallest recreate repair; when no agent was selected yet, a single missing current-role manifest carries its recorded agent into the recreate path so the launch does not prompt for an unrelated runtime first.
-4. Resolves the role source, fetches/updates the cached role repository, validates the role manifest, passes role/branch trust gates, and selects the agent when it was not already known.
-5. Optionally runs workspace `git pull` for every mounted repository only after faster attach/start plans have been rejected. Fresh creates and missing-container recreate repairs still honor the operator's explicit blocking pull setting.
-6. Resolves operator env, manifest env prompts, per-agent auth mode, and GitHub auth.
-7. Computes an image recipe and inspects the local derived image before runtime binary prep, Docker context creation, GitHub token lookup, Docker build, and foreground selected-agent version probing.
-8. Reuses the local image when the recipe labels match. Otherwise it checks whether the selected agent needs a binary update.
-9. Prepares only the selected foreground agent binary plus `jackin-capsule` in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> for rebuild paths. Sibling-runtime preparation is deferred to future background/prewarm work.
-10. Creates a temporary derived build context in <RepoFile path="crates/jackin-image/src/derived_image.rs" /> by copying the role repo without `.git` or pre-existing `.jackin-runtime` internals and writing `.jackin-runtime/DerivedDockerfile` for rebuild paths.
-11. Resolves a GitHub build token only when the generated Dockerfile contains `id=github_token`, runs `docker build`, then stores the selected agent version from prefetched release metadata. If the selected install used a fallback script or metadata is missing, it runs `docker run --rm --entrypoint <agent> <image> --version` and stores the parsed version.
-12. Creates/updates the instance manifest and prepares auth state for every agent in `manifest.supported_agents()`, so all sibling agent homes are bind-mounted from the start.
-13. Starts per-instance Docker network/`docker:dind` sidecar readiness in parallel with workspace mount materialization and isolated clone/worktree setup, then joins before role-container creation.
-14. Waits for sidecar readiness (`docker info` and TLS certs) and materialized workspace mounts before assembling the role `docker run`.
-15. Starts the role container with a long `docker run -d` command and bind mounts for auth, homes, workspace mounts, shared caches, socket dir, and DinD certs.
-16. Waits for `jackin-capsule status`, then opens hardline with `docker exec -it`.
-
-The derived Dockerfile is generated by `render_derived_dockerfile()` in <RepoFile path="crates/jackin-image/src/derived_image.rs" />. It appends the selected foreground agent install, Claude marketplace/plugin installation for Claude images, hook copies, default-home baking, the runtime entrypoint, shell title shims, and `jackin-capsule` to the role Dockerfile or `published_image` base.
-
-The container startup path in <RepoFile path="docker/runtime/entrypoint.sh" /> already preserves the right restart shape: startup runs `jackin-capsule runtime-setup`, role hooks, and the selected agent command; it does not reinstall Claude plugins. That invariant should stay. Startup speed work must not move plugin, skill, or agent installation back into entrypoint-time work. The slow path to optimize is image creation/preparation, not every restart.
-
-## Implementation Status
-
-The first implementation slice has shipped the local-image validity gate from Phase 3:
-
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> now builds an `ImageRecipe` before runtime binary preparation, Docker context creation, GitHub token lookup, Docker build, and foreground agent version probing.
-- Derived builds stamp a minimal label set onto the local image: `jackin.image.recipe.version` (schema gate, currently `v4`), `jackin.image.recipe.hash` (the master reuse authority — a SHA-256 of the full `ImageRecipe`), `jackin.role.git.sha` (short), `jackin.manifest.version`, `jackin.construct.image`, and `jackin.capsule.version`. Agent CLI binaries are mounted read-only at run time rather than baked, so there are no per-agent version labels; the opaque `jackin.recipe.*` component labels and `jackin.selected_agent_version` were dropped — those inputs still live inside the recipe and invalidate via `jackin.image.recipe.hash`. See [Image Labels & Recipe Hash](/reference/runtime/image-labels/) for the full schema and how the hash is calculated.
-- Warm launches inspect the local image tag/labels first. When the recipe matches, launch returns `ImageDecision::Reuse` and skips `prepare_runtime_binaries`, `create_derived_build_context`, `resolve_github_token`, `docker build`, and the foreground `docker run --rm --entrypoint <agent> --version` probe. When the recipe misses, launch checks the declared `published_image` freshness before binary prep and returns `ImageDecision::BuildFromPublished` only for a fresh published base; stale published bases return `BuildFromWorkspace` with `published_image_stale` unless the local workspace image recipe is still valid, in which case the foreground decision is `RefreshInBackground` and launch still reuses the local image. `RefreshInBackground` now starts a non-blocking selected-image refresh after the reused role container passes pre-attach checks and the hardline handoff is beginning, so refresh work does not compete with image validation, auth/workspace prep, sidecar startup, or `docker run`. The `image_cache_hit` diagnostic includes the skipped work list and the selected-agent version when that image label is present.
-- Derived image tags now include the selected runtime (`jk_<role>_<agent>` and `jk_<role>_<branch>_<agent>`). This keeps a warm Claude image and a warm Codex image for the same role from overwriting each other, so switching runtimes does not force a rebuild solely because the previous build stamped a different `jackin.selected_agent` label.
-- The recipe currently covers role SHA/ref, construct and base image identity, generated runtime Dockerfile shape, the canonical supported-agent set, selected agent install recipe, `jackin-capsule` package version, hook file hashes, Claude plugin config hash, cache-bust value, and host identity strategy. Supported-agent ordering is normalized before the recipe hash is written so reordering the same set in `jackin.role.toml` does not force an otherwise-unnecessary rebuild.
-- Invalidation reasons are typed for explicit rebuild, missing local image, local image-list failure, missing recipe label, recipe version change, fallback recipe hash change, image-label inspect failure, and component-level changes including role SHA/ref, construct/base image, generated runtime, supported agents, selected agent/install recipe, cache-bust value, Capsule version, hooks, Claude plugin recipe, and host identity strategy.
-- **Superseded (label curation):** several specifics in the bullets above and below have changed. Image tags are now agent-independent and commit-SHA-tagged (`jk_<role>:<sha>` / `jk_<role>_<branch>:<sha>`) — there are no per-runtime `jk_<role>_<agent>` tags and no `jackin.selected_agent` label. Only the minimal label set in the first bullet is stamped (dotted keys, short SHA); the opaque per-component `jackin.recipe.*` labels, `jackin.selected_agent_version`, and `jackin.recipe.selected_agent_install` were removed and now fold into `jackin.image.recipe.hash`. `jackin.manifest.version` (the `jackin.role.toml` schema version) is a recipe input. **Superseded again (agent mounting):** agent CLI binaries are no longer baked into the image — they are bind-mounted read-only at `docker run` (newest cached host binary onto a fixed PATH), so an agent version bump no longer rebuilds the image, there are no per-agent version labels, and Claude plugins install at container start (capsule runtime-setup) rather than at build, dropping `claude_plugin_recipe_hash` from the recipe. The recipe schema is now `v4`. See [Image Labels & Recipe Hash](/reference/runtime/image-labels/) for the current schema.
-- Rebuild paths now prepare and install only the selected foreground runtime plus `jackin-capsule`; `create_derived_build_context_for_agents` renders the derived Dockerfile for that selected agent instead of forcing a Claude launch to wait on Kimi, OpenCode, or other sibling runtime binary checks. The selected agent remains part of the image recipe, so switching runtimes invalidates the local image explicitly rather than silently launching a missing CLI. **Superseded (decision D5 in the Launch-Speed Review section):** installing only the selected agent broke sibling tabs — the running container hosts a multiplexer that exec's any supported agent's CLI in-place, so the foreground build now installs *all* supported agents. The selected agent still drives the recipe's version label and the foreground session.
-- <RepoFile path="crates/jackin-core/src/agent.rs" /> now delegates generated prefetched-install Dockerfile snippets to the per-agent runtime adapters instead of keeping a parallel copy. Those adapters use BuildKit `COPY --link --chown=agent:agent --chmod=0755` for prefetched agent binaries, so cold selected-runtime rebuilds no longer spend shell work fixing executable bits that Docker can set while copying the payload.
-- After a selected foreground image is reused and the role container passes pre-attach checks, <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> starts non-blocking sibling-runtime binary and image prewarm tasks. They write only jackin-owned binary/image cache state, emit `runtime_prewarm_*` and `sibling_image_prewarm_*` diagnostics plus nested timing spans, include prefetched/fallback/versioned sibling-runtime counts, and do not compete with image validation, auth/workspace prep, sidecar startup, `docker run`, or move agent setup into the entrypoint. When the selected image had to rebuild, sibling prewarm is skipped with diagnostics instead of competing with the cold foreground launch.
-- <RepoFile path="crates/jackin/src/cli/prewarm.rs" /> adds the first explicit `jackin prewarm` command. The command fills jackin-owned agent-binary and `jackin-capsule` caches for all agents or repeated `--agent` filters. With `--roles`, it clones or updates configured role repos under `~/.jackin/roles/` without touching host repos or host git config; `--roles --role <selector>` narrows that repo prewarm to one configured or `--role-git`-provided source, and multi-target role repo prewarm runs concurrently while preserving deterministic output order. With `--image --role <selector>`, it resolves the configured or overridden role source, runs the same image recipe decision used by launch, reuses valid local labels, and builds missing/stale selected role image tags concurrently while preserving requested-agent output order. With `--image --workspace <name>`, it prewarms the saved workspace's default role and default agent when one is configured, otherwise every supported image for that role. Both image paths avoid creating containers or touching host repos, host git config, shell config, `gh` config, or agent configs outside jackin-owned state.
-- `jackin prewarm --sidecar` and every `jackin prewarm --image ...` path now reuse the launch path's `docker:dind` image constant and pull that sidecar image only when it is missing locally. Sidecar image lookup/pull starts alongside `jackin-capsule` and agent binary cache prewarm, then prints in a deterministic section before image prewarm output. Plain `--sidecar` and image prewarm do not create sidecar containers, networks, cert volumes, workspaces, or host config, so explicit image prewarm prepares the fresh-start sidecar image without changing restart semantics. `--sidecar-container` is an explicit opt-in that creates a disposable jackin-owned DinD container, network, and cert volume through the same readiness path fresh launches use, including its own image lookup/pull, emits a typed `PrewarmOnly` launch-plan diagnostic, then removes the resources before returning; `--keep-sidecar-container` explicitly keeps those jackin-owned resources after readiness and writes a small `~/.jackin/data/prewarm-dind.json` daemon-prewarm state record with only jackin-owned Docker names/timing; the next compatible fresh launch that acquires the prewarm-adoption lock reads that state file and can adopt the ready sidecar as a one-shot warm resource, removes the consumed or definitively stale state record, records the actual Docker names in the instance manifest, and normal cleanup/eject/purge owns those resources afterward. Adoption now emits `prewarmed_dind_adoption` diagnostics for adopted and skipped outcomes with the exact skip reason, state source, state age, prewarm ready latency, or adoption ready latency. The default still warms Docker daemon/TLS startup without keeping shared mutable sidecar state alive or running a duplicate standalone sidecar-image prewarm first. **Superseded:** this kept-DinD one-shot adoption surface is being removed (decision D4 in the Launch-Speed Review section) in favor of daemon-managed warm Docker; the explicit `prewarm` CLI keeps its image/binary/role/`W`/`--sidecar` capabilities.
-- Workspace image prewarm now reuses that same selected-agent target for the binary prewarm phase when the workspace has a default agent, so `jackin prewarm --image --workspace <name>` does not fill every sibling runtime binary cache before preparing one selected workspace image.
-- <RepoFile path="crates/jackin/src/cli/prewarm.rs" /> also supports `jackin prewarm --image --all-workspaces`, expanding explicit image prewarm across every saved workspace that declares a default role while preserving selected-default-agent narrowing for binary prewarm. `jackin prewarm --image --all-roles` expands the same image recipe decision across every configured role source, so an operator can warm all configured role images before launch without needing saved workspace defaults.
-- <RepoFile path="crates/jackin-console/src/tui/input/list.rs" /> and <RepoFile path="crates/jackin/src/app/load_cmd.rs" /> now expose saved-workspace image prewarm from the workspace console with `W`. The action exits the TUI and dispatches through the existing `jackin prewarm --image --workspace <name>` implementation instead of adding a second prewarm path.
-- <RepoFile path="crates/jackin-runtime/src/instance.rs" /> keeps GitHub `ignore` mode lazy when no prior jackin-owned `hosts.yml` exists: foreground role-state preparation emits `skipped_no_state` instead of spawning the GitHub provisioning path, while still wiping stale role-state GitHub auth when a previous launch left one behind.
-- Rebuild paths that install a prefetched selected-agent binary now stamp `jackin.selected_agent_version`, persist the release version from the binary metadata, and mark `selected_agent_version_probe` as `prefetched`, skipping the foreground `docker run --rm --entrypoint <agent> --version` probe. Script-fallback installs and metadata-missing installs still probe the built image so the version cache stays truthful.
-- Rebuild paths now stamp the actual selected-agent install recipe used after runtime prep. If prefetch falls back to the upstream installer, the recipe hash and `jackin.recipe.selected_agent_install` label reflect that fallback Dockerfile shape instead of pretending the prefetched binary layer was used. The pre-decision label check accepts either current prefetched or current fallback selected-install recipes, so a valid fallback-built local image can still be reused before runtime binary prep.
-- Rebuild paths no longer run a separate foreground selected-agent latest-release lookup before runtime binary prep. When a build is required, selected-agent binary prep is the source of truth for the current prefetched binary and Docker's `COPY` content hash invalidates the install layer; explicit `--rebuild` remains the foreground path that refreshes fallback-installer layers.
-- Rebuild paths now emit a `build_context_snapshot` diagnostics event after creating the immutable Docker context. The event records context source, file count, and byte count, and `jackin diagnostics summary` / `compare` surface those values plus per-run cache decisions so real-world timing comparisons can separate context-copy cost from Docker build execution and warm-image reuse. Build-source diagnostics also record whether the selected rebuild policy passed `--pull` to refresh the base image or preserved local cache state. `jackin diagnostics compare --format json` exports full broad-stage and nested-timing maps, every build-source/pull-policy decision, every source-tagged build-context snapshot, and every parsed Docker build step per run, so cold/warm/restart reports keep the full foreground timing/build trace instead of only maxima.
-- Live current-role restore candidates now return `AttachCurrentRole` and `load_role_with` attaches through hardline before credential resolution, image inspection, runtime binary prep, GitHub token lookup, Docker build, workspace materialization, DinD startup, or role-container creation.
-- Stopped or created current-role restore candidates now return `StartCurrentRole`; `load_role_with` starts the existing container and reconnects through Capsule before credential resolution, image inspection, runtime binary prep, GitHub token lookup, Docker build, workspace materialization, DinD startup, or role-container creation.
-- Live and stopped current-role restore candidates now also bypass role repo refresh when the agent is already known or when the unselected-agent scan finds exactly one viable current-role candidate, plus `git_pull_on_entry`; explicit blocking pulls still run for fresh creates and missing-container recreate repairs, but they no longer delay an already-valid hardline attach.
-- Missing current-role containers now return `RecreateCurrentRole`; `load_role_with` reclaims the recorded container name and runs the normal image decision, so a valid local image recreates the role container without runtime binary prep, Docker context creation, GitHub token lookup, Docker build, or foreground selected-agent version probing.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> emits `launch_plan` and `launch_plan_rejected` JSONL events during restore selection, recording whether the foreground path chose `AttachExisting`, `StartStopped`, `CreateFromValidImage`, or `BuildAndCreate` and the typed reason faster restore plans were rejected.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> now routes those diagnostics through a `LaunchPlan` enum (`AttachExisting`, `StartStopped`, `CreateFromValidImage`, `BuildAndCreate`, and `PrewarmOnly`) instead of free-form string arguments, so foreground attach/create/build decisions, explicit image prewarm, selected/sibling image refresh, sibling runtime-binary prewarm, and sibling auth prewarm extend the same launch-plan vocabulary rather than minting parallel names.
-- Fresh/recreate plans now defer the selected `launch_plan` event until after the selected-image decision. A valid image emits `CreateFromValidImage`; a valid image that still needs background refresh keeps `CreateFromValidImage` and appends the image reason to the plan reason, for example `no_restore_candidate_valid_image:published_image_stale`; a stale/missing image emits `BuildAndCreate` with the image invalidation reason, so diagnostics do not claim a build plan before the image recipe has been checked.
-- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> now emits nested `timing_started` / `timing_done` JSONL events plus `timing_duration_histograms_ms` in the run summary, so broad stages can expose subwork without noisy terminal output.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> records nested timings for operator env resolution, manifest env prompts, GitHub env resolution, `RoleState::prepare`, and workspace materialization.
-- <RepoFile path="crates/jackin-runtime/src/runtime/identity.rs" /> records nested timings for host git `user.name` and `user.email` lookups with `present` / `missing` detail, keeping pre-launch identity probes visible in cold/warm comparisons without logging the identity values.
-- <RepoFile path="crates/jackin-env/src/resolve.rs" /> records per-key operator-env timings with value-kind detail (`op`, `host`, `literal`) and no resolved values, so slow `op://` reads or host env lookups are visible in diagnostics instead of hiding under the broad `operator_env` span.
-- <RepoFile path="crates/jackin-env/src/resolve.rs" /> also resolves independent operator-env entries concurrently after a single upfront `op` probe. The `OpRunner` seam is now `Send + Sync`, output ordering remains deterministic through the final `BTreeMap`, and failures are still aggregated without leaking values.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> now computes the selected image decision before resolving operator env, manifest env, or GitHub env. A warm image cache hit is therefore proven and diagnosed before any non-image credential graph can block the launch; creating a new container still resolves the required env/auth state before `docker run`.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> now checks whether any operator-env layer applies to the selected `(role, workspace)` before invoking the resolver. Launches with no applicable operator-env entries skip `OpCli` construction, `op` probing, host env reads, and `op://` resolution entirely. Roles with no manifest env declarations also record `manifest_env=skipped` instead of a misleading `0 vars` credential timing. Diagnostics record both skips explicitly so warm launches explain why no credential work ran.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> now filters operator-env and manifest-env credential refs by the role's supported agents before resolving them: generic operator/manifest vars and any credential key a supported agent could read in one of its auth modes still resolve, so every agent the role can run finds its key in the shared container env regardless of which agent was selected first. Only credentials belonging solely to agents the role cannot launch stay lazy and no longer probe `op`, read host env, or show manifest prompts during unrelated warm launches. (Gating by the *selected* agent alone is intentionally avoided: a sibling tab opened later via `hardline --new --agent <other>` reads the same container env and would otherwise start unauthenticated.) Binding these credential sets to the typed launch-plan enum so attach plans resolve strictly less is still part of the deferred full credential-demand graph.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_slot.rs" /> resolves independent `[github.env]` entries concurrently through the same `OpRunner` seam, records per-key `github_env:<KEY>` timings, and keeps the same aggregated failure shape.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> now skips `[github.env]` resolution entirely when the resolved GitHub `auth_forward` mode is `ignore`, records `github_env=skipped_ignore`, and avoids misleading "resolved from GH_TOKEN" breadcrumbs for launches that intentionally export no GitHub auth.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_slot.rs" /> now filters GitHub env declarations by mode before resolving secrets. `Sync` and `Token` resolve only the runtime-consumed keys (`GH_TOKEN`, `GH_HOST`, and `GH_ENTERPRISE_TOKEN`), so unrelated keys and their `op://` references no longer block foreground launch.
-- <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> now lets GitHub `sync` mode consume a resolved `GH_TOKEN` from `[github.env]` before consulting the host `gh` CLI or host `hosts.yml`, so configured GitHub credentials avoid extra host credential shellouts while still materializing in-container `hosts.yml`.
-- <RepoFile path="crates/jackin-runtime/src/instance.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> now defer creating and mounting the jackin-owned `.config/gh` role-state directory until GitHub provisioning actually has state to preserve. `auth_forward = ignore` with no prior `hosts.yml` records `skipped_no_state` without creating empty GitHub config state or letting Docker create it as an empty bind source, while stale `hosts.yml` still enters the wipe path and existing jackin-owned GitHub state still mounts.
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> now scans the generated DerivedDockerfile for `id=github_token` before resolving `GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token` for Docker build secrets. Dockerfiles that do not request the BuildKit secret record `resolve_github_token` as `skipped` and keep `DOCKER_BUILDKIT` secret mode off.
-- <RepoFile path="crates/jackin-runtime/src/instance.rs" /> now exposes `RoleState::prepare_for_agents`, and the foreground launch path provisions home/auth state for every agent the role supports before `docker run`. The per-agent home directories are bind-mounted once at container creation, so a later `hardline --new --agent <sibling>` tab finds its auth in the existing mount without relaunching — provisioning only the selected runtime would start sibling tabs unauthenticated because a mount cannot be added to a running container. Per-agent provisioning honors each agent's own resolved `auth_forward` mode and runs concurrently; `prepare_for_agents` also accepts a narrower agent set for callers (such as tests) that intentionally want a single slot. Trimming foreground sibling-auth *content* resolution while still creating each supported agent's mount directory up front, so sibling secret resolution can move to the background, is a deferred optimization.
-- <RepoFile path="crates/jackin-runtime/src/instance.rs" /> records nested timings for GitHub auth provisioning and each provisioned agent's role-state auth slot under `role_state_prepare:*_auth`, so the credential stage can identify whether GitHub, Claude, Codex, Amp, Kimi, OpenCode, or Grok state preparation is blocking a warm launch without logging credential values. GitHub auth and independent requested-agent auth slots prepare concurrently and are merged back into the typed `ProvisionedAuth` structure deterministically, so any future background sibling preparation still avoids serializing every other slot.
-- <RepoFile path="crates/jackin-runtime/src/instance.rs" /> now skips no-state per-agent `ignore` auth preparation with a `skipped_no_state` timing detail. If stale jackin-owned auth artifacts exist, the normal wipe path still runs, so switching from `sync` / token modes to `ignore` remains a cleanup operation instead of silently preserving old credentials.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> also starts non-blocking sibling-auth prewarm after the reused role container passes pre-attach checks, matching sibling runtime/image prewarm. Because fresh launches now provision every supported agent's auth in the foreground, this background task is primarily a refresh path for reuse/attach launches (which short-circuit before foreground credential work); it calls <RepoFile path="crates/jackin-runtime/src/instance.rs" /> `RoleState::prewarm_auth_for_agents`, skips the GitHub auth axis, writes only jackin-owned per-instance agent state, and emits `sibling_auth_prewarm_*`, `PrewarmOnly`, and nested timing diagnostics without delaying hardline.
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> now starts non-blocking sibling-image prewarm only after the selected image was reused and the role container reaches the pre-attach handoff, then runs sibling image targets concurrently. The background task revalidates the jackin-owned cached role repo under the normal role lock, reuses valid sibling image recipes, and builds missing or invalid sibling agent-scoped tags with fresh `ShellRunner`/`BollardDockerClient` handles so it never borrows the foreground mutable runner. When a valid local sibling image only needs `RefreshInBackground` because its published base is stale, the prewarm path performs that workspace rebuild instead of counting it as reused. When the selected image had to rebuild, sibling image work is skipped with a diagnostic instead of competing with the cold foreground launch.
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> records nested timings for local image tag lookup, role SHA lookup, image recipe hashing, image label inspection, selected-agent binary checks, `jackin-capsule` lookup, build-context creation, GitHub token lookup, Docker build, and selected-agent version probing. It also emits `image_cache_hit`, `image_cache_miss`, and `image_build_source` diagnostics with the precise reuse, invalidation, published-base, or workspace-Dockerfile reason, so warm and cold runs explain why Docker build was skipped or which build source was selected. Rebuild paths now reuse the role SHA carried by the earlier image decision when available, recording `role_git_sha=known` instead of issuing a duplicate `git rev-parse`.
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> parses BuildKit plain-progress lines from the diagnostics docker-build sidecar after each build and emits structured `docker_build_step` JSONL records through <RepoFile path="crates/jackin-diagnostics/src/run.rs" />, so cold-build costs such as export/unpack, UID/GID remap, agent install, and plugin layers are visible without hand-reading the log.
-- <RepoFile path="crates/jackin-diagnostics/src/summary.rs" /> and <RepoFile path="crates/jackin/src/cli/diagnostics.rs" /> add `jackin diagnostics summary <run-id|path>`, which prints stage durations, nested timings, Docker build steps, cache decisions including `image_refresh_background`, selected-image refresh events, kept-DinD adoption outcomes, and background prewarm timings, and startup duration through the first `hardline` stage event from one run artifact so cold/warm/restart launches can be inspected without hand-parsing JSONL or confusing attached-session time with startup time. `jackin diagnostics compare` also shows the latest kept-DinD adoption outcome per compared run and exports adoption outcome counts and parsed adoption latency/state fields in JSON so cold/warm/restart timing deltas explain whether a prewarmed sidecar was actually consumed or skipped.
-- <RepoFile path="crates/jackin/src/cli/diagnostics.rs" /> also adds `jackin diagnostics compare <run-id|path> <run-id|path>...`, which ranks broad stages and nested timings across multiple run artifacts by the slowest observed duration and compares startup duration, selected launch plans, build-context sizes, parsed Docker build steps, and cache decisions per run. The text output now names the fastest startup, slowest startup, and spread directly so cold/warm/restart checks do not require JSON parsing for the headline result. `--format json` emits machine-readable per-run rows with startup/timeline durations, explicit run labels, numeric startup deltas and ratios, cache counts, selected plan/reason/container, all launch-plan events, build-context snapshots and maxima, full broad-stage and nested-timing maps, slowest stage/timing, all parsed Docker build steps, first cache decision, all cache decisions, and skipped timing rows, plus root fastest/slowest startup summaries, startup spread, selected-plan counts, cache-decision counts, and cross-run stage/timing/build-step bottlenecks, so cold/warm/attach/restart comparisons can feed scripts or spreadsheets without hand-parsing the text tables. `--output <path>` writes that JSON to an explicit operator-selected artifact path instead of stdout, keeping real timing comparisons reproducible without introducing any implicit host write.
-- `jackin diagnostics summary` now surfaces `launch_plan` and `launch_plan_rejected` events directly, so a run summary names which foreground plan was selected and why faster attach/start/recreate paths were rejected.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> now records nested restore timings for current-role candidate lookup, each current container inspect, and related-candidate lookup. The same current-role timing wrapper is used by the earliest attach-before-role-refresh path and the later post-role-resolution restore ladder, so attach/start/recreate decisions can explain time spent before credentials, image prep, or Docker build.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> now records `role/repo_refresh` nested timings around cached role repo fetch/update and manifest validation, so warm image-reuse launches still explain the foreground role-source work that happens before image labels are inspected.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> now records `workspace/git_pull_on_entry` nested timings when the explicit blocking workspace freshness option runs or skips because there are no mounted git repos. This keeps the opt-in host repo mutation visible in cold/warm comparisons without changing its semantics.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, and <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> now time Docker network creation, DinD image lookup/pull, DinD container create/start through `DockerApi`, DinD readiness polling, socket/config bind preparation, role `docker run`, pre-attach exit inspection, stopped-container restore inspection/start, and Capsule socket readiness. The broad `sidecar` and `capsule` stages can now explain which runtime-start boundary consumed a warm launch, and the sidecar startup path no longer depends on the mutable `CommandRunner` seam.
-- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> now also times hardline container inspection, Capsule client `docker exec`, one-shot shell and new-agent session execs, post-attach outcome inspection, and foreground finalization decisions. Attach/restart runs can explain whether latency is still in Capsule readiness, the interactive hardline exec boundary, or cleanup/finalization instead of disappearing after launch reaches the terminal.
-- If neither the launch request nor the saved workspace names an agent, <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> now checks jackin-owned instance manifests for exactly one current-role restore candidate across agents before role repo refresh. A single running or startable candidate attaches/starts immediately; multiple agent candidates defer until normal agent selection so jackin❯ does not silently pick the wrong runtime.
-- Fresh create-container launches now start the per-instance Docker network and `docker:dind` sidecar after token/env preflights and poll it while selected-agent role-state auth prep and workspace materialization continue. The role container still waits for the ready sidecar, prepared auth state, and materialized mounts; sidecar/materialization failures mark the instance `FailedSetup` and run the normal cleanup path so the overlap does not leave orphaned Docker resources.
-- <RepoFile path="crates/jackin-runtime/src/runtime/shared_runner.rs" /> adds a cloneable serialized `CommandRunner` adapter. It keeps one underlying command stream behind a Tokio mutex, so future dependency-graph launch branches can own runner handles without duplicating shell execution, reordering test/debug streams unsafely, or adding host-side mutations outside the existing runner seam.
-- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> now renders Claude marketplace and plugin installation as one ordered `RUN set -eux` block instead of one Docker layer per marketplace/plugin command. Plugin state remains image-baked and copied into `/jackin/default-home`, so restart behavior stays unchanged while cold builds avoid the old layer explosion.
-- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> now copies all declared runtime hooks with BuildKit `COPY --chmod=0755`, then folds hook directory setup, state ownership, and the source-hook `.zshenv` shim into the shared runtime finalization `RUN`. Hook behavior and restart semantics stay the same, but rebuilds no longer add separate hook setup, chmod, source-shim Docker layers, recursive `chown -R /jackin/state` walks, or a `mkdir -p` hook-runtime command before ownership-aware `install -d` setup.
-- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> also copies the runtime entrypoint and `jackin-capsule` with BuildKit `COPY --chmod=0755`, preserving the same `/jackin/runtime/` baked image contract while removing shell chmod work from the cold-build finalization layer.
-- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> now combines the shell-title shim append with `/jackin/run` and `/jackin/state` directory setup in one Docker layer. The shim remains image-baked, idempotent, and outside <RepoFile path="docker/runtime/entrypoint.sh" />; the build path avoids an extra `RUN` and creates `/jackin/run` and `/jackin/state` with final ownership instead of a follow-up `chown`.
-- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> now also folds the selected-runtime default-home snapshot into that same runtime finalization layer after the `COPY` instructions. Restart behavior stays image-baked under `/jackin/runtime/` and `/jackin/default-home`; cold builds avoid separate trailing Docker layers for runtime title setup and default-home capture. The snapshot uses `install -d -o agent -g agent` for default-home directories, copies declared agent home dirs through one deterministic shell loop instead of one generated `cp -a` command per state directory, and relies on agent-owned source state from `/home/agent`, avoiding a recursive `chown -R /jackin/default-home` pass in the cold-build tail.
-- Claude marketplace/plugin installation now uses a named BuildKit cache mount for `/home/agent/.cache` in the same image-build layer. Plugin state still bakes into the derived image and default-home snapshot; the cache only preserves transient downloader/tool caches across rebuilds.
-- Upstream script-fallback agent installer layers now set `XDG_CACHE_HOME=/home/agent/.cache` and use a BuildKit cache mount for that directory. Prefetched selected-agent installs remain the preferred foreground path, but fallback rebuilds no longer force every installer download/cache artifact to start from an empty cache layer.
-- Prefetched direct-copy agent install blocks for Codex, Amp, Kimi, and OpenCode now skip duplicate Docker-build `--version` smoke checks. The host prefetch path already resolves the version and verifies checksummed downloads before staging binaries into the immutable build context, and the selected-agent version is recorded from that metadata after build. Fallback installers and Grok's no-checksum prefetched path still keep build-time `--version` verification.
-- Prefetched direct-copy agent install blocks for Codex, Amp, Kimi, and OpenCode no longer emit Docker `RUN` layers. Amp now copies the prefetched binary into both the upstream path and `/home/agent/.local/bin/amp` with BuildKit metadata instead of creating a shell symlink layer. Networked installers, prefetched Claude setup, fallback installers, and Grok's no-checksum prefetched path still consume `JACKIN_CACHE_BUST` where an explicit rebuild must refresh executable setup work. Direct-copy selected-runtime builds that do not consume `JACKIN_CACHE_BUST` now record `jackin.recipe.cache_bust=unused` and omit the unused `--build-arg`, so cache-bust timestamps no longer churn labels or build arguments for Codex, Amp, Kimi, and OpenCode direct-copy rebuilds. Generated Docker builds also pass `--build-arg ROLE_GIT_SHA=...` only when the derived Dockerfile declares `ARG ROLE_GIT_SHA`, while keeping the `jackin.role.git.sha` label for reuse diagnostics.
-- Grok's no-checksum prefetched install keeps the required build-time `grok --version` smoke check, but its `grok`/`agent` aliases are now direct BuildKit `COPY` outputs instead of shell-created symlinks. That preserves the safety check while reducing foreground rebuild shell work in the remaining prefetched direct-copy path.
-
-- The derived image now stages the shell-title and source-hook zsh shims as jackin-owned runtime assets and appends them with guarded `cat` calls during finalization instead of generating long `printf` command lists inside the Dockerfile. This preserves baked restart/default-home behavior while cutting shell work in the remaining finalization layer.
-
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> now runs selected-agent home/auth setup concurrently with container/git initialization inside `jackin-capsule runtime-setup`. This is the first in-container bootstrap concurrency slice; it keeps plugin/skill/agent setup in the baked image/default-home flow and does not move setup back into <RepoFile path="docker/runtime/entrypoint.sh" />.
-- Derived images now snapshot default-home state only for the selected runtime baked into that image. `jackin-capsule runtime-setup` already tolerates missing sibling default-home directories, so restart behavior stays image-baked while selected-agent rebuilds avoid creating and copying unused sibling home trees.
-- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> no longer bakes the host UID/GID into derived images. The generated Dockerfile keeps the construct image's `agent` identity, removes the `groupmod` / `usermod` / recursive `/home/agent` `chown` layer, and records the stable `jackin.recipe.host_identity_strategy` label instead of invalidating images for every host UID/GID value.
-- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> now excludes `.git` and pre-existing `.jackin-runtime` directories from the temporary derived Docker context copy. Rebuild paths still use the validated role files and freshly generated `.jackin-runtime` assets, but avoid copying repository object databases or stale generated payloads into jackin-owned build contexts.
-- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> now stages only the selected runtime's prefetched binary into `.jackin-runtime/agent-binaries/` when a selected-agent build context is generated, and `.dockerignore` reopens only the exact staged binary files. Sibling runtime binaries stay out of the temporary Docker context, preserving the selected-runtime foreground build contract and avoiding unnecessary context bytes.
-- Fallback-only derived build contexts now avoid creating `.jackin-runtime/agent-binaries/` at all and leave it closed in the generated `.dockerignore` because no prefetched selected binary is staged. Prefetched selected-agent contexts still reopen only the staged binary directory.
-- Derived build contexts now reopen `.jackin-runtime/jackin-capsule` in generated `.dockerignore` only when a capsule payload was actually staged. Contexts that use the fallback runtime path no longer expose a nonexistent capsule file to Docker's context walker.
-- Published-base rebuild contexts no longer copy the full role repository. When `ImageDecision::BuildFromPublished` replaces the role Dockerfile with `FROM <published image>`, the context stages only declared hook files plus jackin-owned runtime assets, so unused role files, stale generated runtime payloads, and the original Dockerfile do not enter Docker's context walk.
-
-The image-reuse and Docker-build-skipping slice is now delivered. Remaining roadmap work is deliberately deferred rather than required for that slice: daemon-maintained prewarm beyond the CLI, deeper build-path surgery, persistent warmed runtime resources, full credential-demand graph hardening, richer in-container image-prep utility work, and real-world cold/warm/restart timing captures.
-
-## Launch-Speed Review — Decisions and Corrective Work
-
-A focused review of the shipped instant-launch slice surfaced four design decisions plus a set of correctness fixes. This section is the source of truth for what is decided, what remains, how to implement it, and how to verify it. Implementing any item here must update the matching documentation in the same change — the internal launch-lifecycle spec, the `prewarm` / `diagnostics` command pages, and this roadmap item's status. No item below is "done" until its code, its tests, and its docs all ship together.
-
-### Decisions
-
-| ID | Decision | Rationale |
-|---|---|---|
-| D1 — `--rebuild` semantics | `--rebuild` forces an image rebuild but must never destroy a live session. When the current-role container is **running**, attach it immediately and rebuild the image in the **background** so the next launch/recreate picks it up. When the container is **stopped, created, or missing**, rebuild the image in the **foreground** and recreate the container from it. | `--rebuild` is the explicit foreground refresh path, so silently dropping it (the current bug) is wrong; but killing an active session to honor it is worse than deferring the swap. |
-| D2 — Agent auto-update on launch | Keep the shipped behavior: a plain `jackin load` reuses the valid local image even when a newer upstream agent release exists. New agent versions land only via `--rebuild` or explicit prewarm. | Removing the per-launch latest-release network probe is intentional. Operators get a fast launch; freshness becomes an explicit action. This must be documented so "launch did not pick up the new agent" reads as expected behavior, not a defect. |
-| D3 — `capsule_version` recipe key | The image recipe keys `capsule_version` on `capsule_binary::REQUIRED_VERSION` (the SHA-suffixed `JACKIN_VERSION`) — the version of the binary actually baked in — not `CARGO_PKG_VERSION`. | Two non-tag builds share a cargo version but ship different capsule binaries; the cargo version silently reuses a stale capsule on every dev build. |
-| D4 — Kept-DinD prewarm adoption | Remove the kept-DinD one-shot adoption surface — `prewarm --daemon`, `--keep-sidecar-container`, the prewarm-dind state file, the adoption lock, and the relabel/GC machinery — from the launch path. The future jackin❯ daemon owns warm-Docker lifecycle instead. Keep image / binary / role / console-`W` prewarm and the image-only `--sidecar` pull. | The kept-sidecar path saves ≈2.8s on a single launch but carries the entire privileged-sidecar leak surface (non-atomic state write race, crash-orphan GC gap). That win belongs to daemon-managed warm resources, which is deferred work. |
-| D5 — Sibling agents must launch in-instance | The derived image installs **every** agent the role supports, not just the selected one. The selected agent still drives the recipe's selected-install/version label and the foreground session, but all supported agent binaries (and their default-home state) are baked in. | **Hard product requirement**: from a running instance the operator must be able to open a new tab for any agent the role supports, and that tab must never crash. The container hosts a multiplexer that exec's the chosen agent's CLI *inside the same container*, so a selected-agent-only image made sibling tabs crash with a missing binary — while the launch still provisioned sibling *auth*, an inconsistency. This intentionally reverses the earlier selected-agent-only image optimization for multi-agent roles. |
-
-### Auto-prewarm via the jackin❯ daemon (deferred replacement for D4)
-
-The replacement for one-shot kept-DinD adoption is daemon-managed, automatic warm Docker. On session start the daemon checks whether a healthy warm DinD sidecar is available for the workspace; if none exists it creates one and keeps it running after the session exits, so a ready sidecar is always on hand for the next launch with no per-launch DinD boot and no explicit operator step. The daemon owns the full lifecycle — create, health-check, replace, garbage-collect — which dissolves the manual state file, adoption lock, and crash-orphan problem the one-shot path introduced; adoption stays gated by ownership and locking so a launch never reuses another instance's mutable Docker state. This belongs to [jackin❯ daemon](/reference/roadmap/jackin-daemon/) and is tracked under Phase 5. The explicit `jackin prewarm` CLI is retained as the proactive, scriptable, headless counterpart the reactive daemon does not cover: CI warming, pre-demo / pre-offline warming, and fresh-machine setup, where there is no interactive session for the daemon to react to.
-
-### Corrective work
-
-Each item states what to do and how to verify it. Default verification is `cargo nextest run` on the named package plus the listed manual check; documentation updates ship in the same change.
-
-| Item | Status | How | Verify |
-|---|---|---|---|
-| `capsule_version` recipe key → `JACKIN_VERSION` (D3) | Done | `crates/jackin-runtime/src/runtime/image.rs` recipe builder uses `capsule_binary::REQUIRED_VERSION` instead of `env!("CARGO_PKG_VERSION")` | `cargo nextest run -p jackin-runtime`; rebuild jackin at the same cargo version but a new git SHA and confirm the role image rebuilds with recipe-miss reason `capsule_version_changed` |
-| Honor `--rebuild` (D1) | Done | `launch_pipeline.rs` early-restore gate now also requires `!opts.rebuild`, so a `--rebuild` launch never short-circuits into attach/start/recreate and always flows through `decide_agent_image` → `ExplicitRebuild` (build always runs). `claim_container_name` collision handling preserves a running session — a fresh rebuilt instance is created alongside it — and reclaims/recreates a stopped/crashed/missing container from the rebuilt image. (No background-rebuild plumbing was needed: the running session is preserved simply by not reusing its container.) | All existing rebuild tests pass (`--pull` on rebuild, stale-SHA rebuild). Follow-up: a full-pipeline regression test for `--rebuild` against running / stopped / missing current-role containers |
-| Race docker build against cancel token | Done | `image.rs` wraps the docker build await in `LaunchProgress::while_waiting`, so Ctrl+C / Exit during the build (previously a bare await) returns `Err(LaunchCancelled)` immediately instead of blocking until docker finishes; `build_log::end()` still runs before propagation | `cargo check -p jackin-runtime`; manual Ctrl+C / Exit during a cold build aborts promptly instead of hanging the modal |
-| Wire console `W` prewarm footer hint | Done | `footer_hints.rs` `workspace_list_footer_facts` sets `show_prewarm: row_facts.selected_saved_workspace` (the only row where `W` dispatches PrewarmNamed); the field was also missing from the constructor, which broke the build | `cargo nextest run -p jackin-console` (footer test updated); in `jackin console` a selected saved-workspace row shows the `W` prewarm hint |
-| Install all supported agents in the image (D5) | Done | `launch_pipeline.rs` prepares binaries for `manifest.supported_agents()` (was `&[agent]`) and `image.rs` `build_agent_image` stages/installs all of them, so every supported agent's CLI + default-home is baked into the running container | `cargo nextest run -p jackin-runtime -p jackin-image` (777 pass); manual: open a Capsule new tab for a non-selected supported agent — it launches instead of crashing |
-| Remove kept-DinD adoption (D4) | To do | Delete the `--daemon` / `--keep-sidecar-container` flags and kept-sidecar execution from `crates/jackin/src/cli/prewarm.rs`; remove the prewarm-dind state file, adoption lock, relabel, and adoption call sites from `crates/jackin-runtime/src/runtime/launch/launch_dind.rs` and `launch_pipeline.rs`; drop kept-DinD adoption parsing from the diagnostics summary/compare; retain image / binary / role / `W` / `--sidecar` prewarm | `cargo check --all-targets`; `cargo nextest run --all-features`; `jackin prewarm --help` no longer lists `--daemon` / `--keep-sidecar-container`; `jackin prewarm --image --all-workspaces` still warms images; `jackin diagnostics summary` / `compare` no longer reference kept-DinD adoption |
-
-### Documentation obligations
-
-- Rewrite `internal/specs/runtime-launch.mdx` from the stale linear five-phase model into the full launch lifecycle: the attach / start / recreate / build decision tree, the image-recipe validity contract and reuse, the prewarm surfaces, the credential / auth / sidecar overlap, and refreshed behavioral invariants. In particular INV-2 ("token verification before DinD/network launch") no longer holds on the attach path — restate it as applying only to create/build plans, since warm attach intentionally skips credential resolution. This page is the internal "how startup works and why it is fast" reference.
-- When D4 lands, update `commands/prewarm.mdx` and `reference/runtime/diagnostics.mdx` to drop the removed `--daemon` / `--keep-sidecar-container` flags and the kept-DinD adoption diagnostics rows.
-- Update this item's Implementation Status and the kept-DinD bullet as each correction ships, keeping the roadmap overview status (`Partially implemented`) accurate.
-
-## Root Cause
-
-The core architectural problem is that "launch" currently means "synchronously prove freshness, materialize dependencies, rebuild or re-export the runtime image, start private Docker, start Capsule, and attach" as one foreground transaction. That shape permits every unrelated slow operation to block the one thing the operator asked for: an interactive agent session.
-
-The architecture also lacks a strong runnable-environment validity contract. It can inspect whether some images/containers exist, but the foreground path still recomputes freshness and replays preparation instead of first asking the narrower question: "Is there a valid runtime already able to accept a hardline for this workspace, role, agent, auth mode, mount contract, and image recipe?" Without that contract, the code is forced toward cautious recomputation.
-
-This is a class of issue, not one slow command. The same structure causes multiple waits:
-
-- Freshness checks and updates are foreground work even when stale-but-runnable state could be attached and refreshed later.
-- Binary cache hits still block because the only API is "prepare runtime binaries for build", not "decide whether this launch requires a build".
-- Docker builds run on warm paths because image validity is coupled to build execution rather than an earlier image-contract check.
-- Credential resolution happens before runtime reuse, so slow `op://` / auth lookups block even if the selected existing container could be reattached without re-injecting fresh secrets.
-- Per-instance DinD starts on every fresh launch, so there is no warmed workspace-level Docker service for the common path.
-- Diagnostics aggregate the slowest work under broad stage names, so the architecture can hide a minute of serial secret reads or a stale network call inside one apparently-normal stage.
-
-## Architecture Concepts To Evaluate
-
-- **FastAttach**: a startup path that does only candidate lookup, container/Capsule readiness checks, and hardline attach. It does not run role refresh, credential resolution, binary prep, image build, workspace git pull, or sibling-runtime checks unless the validity contract proves attach would be wrong.
-- **WarmStart**: a repair path for a missing or stopped runtime where the image recipe and mount/auth contracts are valid. It starts only the missing resources and attaches, without invoking Docker build or runtime-binary preparation.
-- **Prewarmed runtime**: an explicit `jackin prewarm` or daemon-maintained state that can prepare images, plugin bundles, selected-agent binaries, DinD, and optionally stopped/running containers before the operator asks for launch.
-- **ImageRecipe CAS**: a content-addressed image recipe hash covering role source, base image digest, generated runtime sections, selected/supported agent recipe, plugin bundle, hooks, Capsule version, and host identity strategy. If the hash matches the local image labels, the foreground decision is `Reuse`.
-- **Credential demand graph**: credentials are attached to repair-plan requirements, not to launch globally. `AttachExisting` should normally need no fresh secret reads; `CreateFromValidImage` may need env injection; `BuildAndCreate` may also need registry/GitHub secrets. Independent secret reads should be timed individually and run concurrently when the underlying provider permits it.
-- **Runtime module split**: selected-agent runtime prep is foreground only when needed; non-selected runtimes become lazy/background modules. A Claude launch must not wait on Kimi/OpenCode/Grok readiness unless the requested plan actually uses them.
-- **Dependency-graph scheduler**: launch should start independent prerequisites as soon as their inputs are known, then join only at the operation that truly needs them. A new instance may still need a fresh per-instance DinD sidecar and role container, but DinD creation does not have to wait behind credential reads, selected-agent binary checks, or image validation when those operations do not depend on each other.
-
-## Correct Target Architecture
-
-The foreground launch algorithm should be inverted:
-
-1. Resolve the minimum identity needed to identify a runnable candidate: workspace key/path fingerprint, role key/source ref, selected agent, requested branch, and attach preference.
-2. Check the runtime validity contract before any expensive freshness work. A candidate is foreground-valid if its container is running or startable, its image recipe matches the recorded launch recipe, its mount contract still points at approved host paths, its auth mode does not require re-injection before attach, and Capsule can answer status.
-3. If a foreground-valid runtime exists, attach immediately. This is the 1-3s path.
-4. If no valid runtime exists but a valid image exists, start only the missing runtime resources and attach. This is the no-build fresh-start path.
-5. If no valid image exists, use the cold-materialization path, but run independent preparation concurrently and emit a precise reason for each blocking dependency.
-6. After attach, run freshness work in the background where correctness allows it: role repo fetch, published-image freshness, agent binary version discovery, plugin marketplace refresh, and optional workspace git polling. Background work may prepare the next launch but must not mutate the active host repo or container invisibly.
-
-The important distinction is correctness, not convenience: foreground work is only work that must complete before an interactive session would be semantically wrong or unsafe. Freshness work belongs in the foreground only when the currently attachable runtime is proven invalid.
-
-## Parallel Launch Graph
-
-The current pipeline already proves the project accepts concurrency where dependencies are clear: <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> runs pre-launch cleanup and host identity with `tokio::join!`. After role/agent selection, however, the pipeline becomes mostly serial: operator env resolves before image/build, credential checks happen before DinD, `RoleState::prepare` happens before workspace materialization, and DinD starts only after those steps complete. That serial shape is a bug when the operations do not depend on one another.
-
-The launch plan should produce a small dependency graph:
-
-- Candidate/runtime inspection can run as soon as workspace, role key, and selected agent are known.
-- Image recipe computation and local image label inspection can run after role manifest/source identity are known, before runtime binary prep.
-- Selected-agent binary and `jackin-capsule` checks are needed only if the image decision requires a build.
-- Credential resolution is needed only by plans that create a container or inject fresh runtime/build secrets.
-- Workspace materialization is needed before the role container `docker run`, but not before image label inspection, selected-agent prep, or DinD creation.
-- DinD network/container creation for a new instance can start once the container/resource names are claimed. The role container cannot start until DinD is ready and all mount/auth/env inputs are ready, but the sidecar's 2.8-3.6s readiness wait can overlap with those inputs.
-- Role container creation is the final join point for new-instance plans: it waits for valid image, materialized workspace, prepared auth state, resolved env needed by the selected plan, and ready DinD.
-
-The mutable-runner boundary is now partially addressed by <RepoFile path="crates/jackin-runtime/src/runtime/shared_runner.rs" />, which provides cloneable serialized handles over one `CommandRunner`. DinD sidecar startup has already moved to `DockerApi`; the remaining deeper surgery is to migrate launch call sites that still take a single `&mut impl CommandRunner` into a dependency graph that passes owned shared handles to runner-bound branches, while keeping command recording deterministic and keeping host-side mutation behind existing explicit actions.
-
-This does not require reusing a DinD sidecar across unrelated fresh instances. Reuse remains correct for resume/start plans where the recorded sidecar belongs to the same runtime and is healthy. For genuinely new instances, the win is to pre-start the per-instance sidecar in parallel or as an explicit prewarm task, not to share unsafe mutable Docker state.
-
-## Recommendations
-
-### 1. Add a launch timing profiler as durable diagnostics
-
-The current JSONL has public stage timings, but the slow stages hide their internal subwork. Add nested timing events for credential resolver layers, per-agent binary `ensure_available`, capsule binary lookup, role-image cache decisions, build-context copy, Docker build subphases, image version probe, `RoleState::prepare`, workspace materialization by mount, DinD run, DinD ready polling, Capsule run, Capsule status polling, and hardline attach.
-
-This is required because the architecture must prove which work is actually blocking and which work can move. It also prevents future regressions where a stage remains named `credentials` while one `op` lookup or one auth-state copy quietly grows to a minute.
-
-Implementation shape:
-
-- Extend `RunDiagnostics` in <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> with lightweight nested spans or explicit `timing_started` / `timing_done` events.
-- Add timing around `jackin_env::resolve_operator_env`, `resolve_env_with_overrides`, `resolve_github_env_map`, `RoleState::prepare`, `prepare_runtime_binaries`, `create_derived_build_context`, and `build_agent_image`.
-- Parse Docker build plain output into structured build-step timing records instead of leaving all useful build timing trapped in `.docker-build.log`.
-- Add a small `jackin diagnostics summary <run-id>` command or reuse the planned diagnostics viewer from [Launch Progress TUI](/reference/roadmap/launch-progress-tui/) so operators and agents can ask "what was slow?" without hand-parsing JSONL.
-
-### 2. Create a foreground validity contract and attach-first flow
-
-Introduce an explicit `RuntimeCandidate` / `LaunchRecipe` validity model that can answer "can this existing runtime be attached now?" before credentials, binary prep, and image build run. This should reuse and complete the restore ladder from [Session keep and resume](/reference/roadmap/session-keep-and-resume/): Tier 0 hardline to running Capsule, Tier 1 `docker start` a stopped role container, Tier 2 recreate the role container from a valid recorded image, Tier 3 rebuild only when the image is gone or invalid.
-
-Foreground-valid runtime checks should include:
+The headline behavior of this work — "if you exit with dirty or unpushed work, jackin❯ asks what to do" — does not happen. Reproduced three times: with a dirty workspace and the default `ask` policy, exiting the agent normally shows **no dialog**; the container just disappears and the work is silently left preserved. The operator is never asked.
 
-- Docker container state: running, stopped, missing, inspect unavailable.
-- Capsule readiness: `test -S /jackin/run/jackin.sock && jackin-capsule status`.
-- Image tag and labels: role SHA, construct image, selected agent binary versions, derived Dockerfile recipe hash, `jackin-capsule` version, plugin recipe hash, hook recipe hash.
-- Mount contract: workspace path fingerprint, mount list/hash, isolation mode, and whether required materialized worktrees/clones still exist.
-- Auth contract: auth mode and whether attach can use existing mounted state without new secret values. Secret values must not be persisted; the contract stores only mode/source references.
-
-If the candidate passes, attach. If it fails, the failure reason determines the smallest foreground repair. Do not re-run the whole pipeline for a missing container when the image and mount state are valid.
+Root cause (code-confirmed):
 
-### 3. Stop treating image build as the normal launch path
+- The `jackin load` foreground path, `launch_role_runtime` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, **never calls `finalize_foreground_session`** at all. On success it returns `Ok(())`; on the attach result being an error it returns a `capsule attach failed` error. There is no dirty-exit dialog on the load path, on any exit.
+- The `jackin hardline` reconnect path, `finalize_reconnected_foreground_session` in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" />, runs `attach_outcome?` **before** it calls finalize, so a clean agent exit short-circuits past the dialog.
+- On a clean last-session exit the in-container capsule client (`client::run_client`) hits the daemon's socket close as `early eof` and **exits non-zero**, so `docker exec … jackin-capsule` returns non-zero. The host then treats a normal exit as a failed attach.
 
-The warm run still spent 15.5s in `derived image`; the cold/stale run spent 243.4s. A correct launch path checks image validity before preparing binaries and before invoking Docker build. If an image has labels matching the current launch recipe and selected agent requirements, skip both `prepare_runtime_binaries` and `docker build`.
+Net effect: the host-side exit dialog is unreachable on the everyday "quit the agent" flow. The feature, as a thing an operator can see and use, is not implemented.
 
-The current implementation partially proves this direction already exists: <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> reads `jackin.role.git.sha` and `jackin.construct.image` labels, and <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" /> defines `jackin.construct.version` for published-image freshness. That is not enough to prove a derived local image is reusable. The image can match the role SHA while still being stale because the generated runtime Dockerfile changed, the selected agent binary changed, the `jackin-capsule` binary changed, hooks changed, Claude plugin config changed, the host UID/GID strategy changed, or the base image digest changed. The missing piece is a complete local image recipe contract that can be inspected before runtime-binary prep, context staging, GitHub token lookup, Docker build, and post-build version probing.
+## Decision — the dirty-exit confirmation moves inside the capsule
 
-Required image labels/hashes:
+The confirmation is **redesigned to run inside the capsule** (the in-container multiplexer), not on the host after the container exits. This supersedes the old host-side post-exit exit dialog for the dirty case.
 
-- Role source commit SHA and branch/source ref.
-- Base image reference/digest or published-image digest.
-- Derived Dockerfile recipe hash, including generated jackin runtime sections.
-- Supported/selected agent install recipe hash and installed version.
-- Claude marketplace/plugin recipe hash.
-- Hook file content hashes.
-- `jackin-capsule` required version.
-- Host UID/GID mode or a future proof that host UID/GID no longer changes image content.
+Why in-capsule (operator's call, accepted):
 
-Concrete reuse algorithm:
+- **Ask before teardown.** A host-side dialog can only prompt *after* the container has exited — at which point "want to resume?" means rebuild/restart to get back to work. In-capsule, the container is still warm; starting a new agent is instant.
+- **Decision at the place of work.** The operator is already inside the container; the capsule already owns the TUI and a full set of dialogs. No new surface, no second binary.
+- **Less resource churn.** No stop → ask → recreate cycle.
 
-1. Build an `ImageRecipe` value without copying the repo into a Docker context and without resolving every agent binary. It should use already-known source identity plus cheap file-content hashes for role manifest, hooks, generated runtime template version, selected agent requirement, Capsule requirement, plugin recipe, base image identity, and host identity strategy.
-2. Inspect the candidate local image labels with one `docker image inspect` call.
-3. If every required label matches, return `ImageDecision::Reuse { image, selected_agent_version }` and skip `prepare_runtime_binaries`, `create_derived_build_context`, `resolve_github_token`, `docker build`, and `docker run --entrypoint <agent> --version`.
-4. If only background-refresh inputs are stale, attach from the valid image and schedule `RefreshInBackground`.
-5. If a foreground-required label is missing or mismatched, return the smallest build decision with a precise invalidation reason such as `role_sha_changed`, `capsule_version_changed`, `hook_hash_changed`, `selected_agent_recipe_changed`, or `base_digest_changed`.
+The split of responsibility: the **capsule** detects dirty/unpushed state and **asks** the operator before any teardown; the **host** still **executes** the filesystem keep/discard, because it owns the isolated worktrees. The capsule decides; the host carries it out.
 
-The foreground decision now covers `Reuse`, `BuildFromPublished`, `BuildFromWorkspace`, and `RefreshInBackground`, and stale published bases are rejected before runtime binary prep. Launch-triggered selected-image refresh, explicit image prewarm, and non-blocking sibling-image prewarm execute `RefreshInBackground` as workspace-Dockerfile rebuild work instead of counting it as reused. Remaining deeper surgery is to wire those refresh decisions into daemon-maintained prewarm surfaces instead of only launch-triggered background work.
+## Architecture — share the dirty-detection logic
 
-### 4. Move UID/GID remapping out of hot launch
+The detection logic must be shared, not duplicated, so the capsule and the host can never disagree on what "dirty" means.
 
-`jk-run-409e7a` shows the `groupmod`/`usermod`/`chown -R /home/agent` layer cost 8.5s, and the build log shows `usermod: no changes` while the recursive `chown` still ran. This is structurally wrong: launch should not recursively rewrite a home tree because the base image guessed a user id.
+- Today the detection lives only host-side, in `assess_cleanup` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> — pure git work (`git -C <path> status --porcelain` for uncommitted/untracked, `rev-list <upstream>..<branch>` for unpushed), coupled only to a worktree path and a command runner.
+- Both `jackin-runtime` (host) and `jackin-capsule` (in-container) already depend on `jackin-core`, which already holds the shared `CleanupStatus` and `IsolationRecord` types in <RepoFile path="crates/jackin-core/src/isolation_record.rs" />. `jackin-core` is the natural shared home — no new crate, no new binary.
+- Plan: extract the path-based assessment into `jackin-core` as a function over a repo path returning `Clean | Dirty | Unpushed` (plus the `PreservedReason` it already produces). The host's `assess_cleanup` becomes a thin wrapper over it; the capsule calls the same function in-container against its workdir at last-session-close. One source of truth.
 
-The correct fix is to retire this derived-layer remap. [Construct Image: User Creation Responsibility](/reference/roadmap/construct-user-creation/) already captures options; this launch-speed item makes it part of the critical path. Feasible target shapes:
+## Target workflow — in-capsule dirty-exit
 
-- Publish role images with a user-neutral default-home tree and create the runtime user in the derived image without recursive remap.
-- Or make the runtime user independent of host UID/GID and rely on mount options / container-side ownership strategy so host identity no longer changes the image hash.
-- Or build a thin per-host base image once, outside launch, then make role derived images inherit from that host-specific base.
+The hinge is the last-session-close branch in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (`no_live_sessions()`, which today calls `drain_and_exit` immediately):
 
-The current implementation removes this hot derived layer by keeping the construct image's `agent` identity and recording a stable host identity strategy in image labels. Follow-up work should keep host-owned mount writes correct through mount/runtime policy rather than reintroducing image-time UID/GID mutation.
+```text
+last live session exits (agent /exit, Ctrl-D, or crash)
+  │  run the shared dirty assessment on the workspace mount(s) in-container
+  ├─ clean / pushed ─────────────► drain_and_exit  (unchanged — silent exit)
+  └─ dirty / unpushed ───────────► push in-capsule modal; container stays alive
+        ├─ Start a new agent ─────► open the New-tab agent picker (verbatim) → spawn → back to work
+        ├─ Inspect changes ───────► read-only diff view (Esc back to modal)
+        ├─ Exit & keep changes ───► drain_and_exit → host preserves the instance (resumable)
+        └─ Exit & discard changes ► drain_and_exit → host discards the dirty work
+```
 
-### 5. Remove Claude plugin installation from foreground image builds
+"Start a new agent" reuses the capsule's existing `new_agent_picker` (`PickerIntent::NewTab`) in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> — the exact dialog "New tab" already opens. The confirmation reuses the capsule's existing dialog / modal-stack infrastructure; no new chrome.
 
-The cold build installs Claude marketplaces and plugins one layer at a time, requiring network clones and many sequential commands. This is not the right foreground contract. A role's plugin recipe should still be baked into the image so a restart does not reinstall marketplaces, plugins, skills, or agent setup. The optimization is to make the baked state faster and content-addressed, not to defer plugin installation to every runtime start. Marketplace refresh can be explicit or background-prepared; launch should only need to prove the image or artifact matching the role manifest exists.
+## Implementation checklist
 
-Correct target:
+This checklist is the work contract for the implementing agent. Rules: tackle one item at a time; mark a box `[x]` **only** after the change is implemented *and* its verification step passes — never on code alone; do not check a parent until every child under it is checked; if an item marked **(decide)** is unresolved, stop and confirm with the operator before implementing — do not guess. The full rationale lives in the sections above; this is the execution tracker.
 
-- Resolve marketplaces and plugins into a host-side jackin-owned artifact cache keyed by plugin recipe hash, Claude version, and marketplace commit/digest.
-- Copy that artifact into `/jackin/default-home/.claude` during image build so container restarts use image-baked plugin state.
-- Avoid one Docker layer per plugin; the Dockerfile should have one `COPY` or one `RUN` for the already-materialized bundle.
-- Evaluate a jackin-owned image preparation utility, for example `/jackin/runtime/jackin-image-prepare`, that runs inside one Docker `RUN` instruction and performs independent agent installs, plugin marketplace adds, plugin installs, skill setup, default-home baking, and verification concurrently where the underlying tools permit it.
-- The utility must write deterministic outputs, preserve useful per-task logs, fail the build if any required task fails, and emit a machine-readable manifest that becomes part of the image recipe label set.
-- Parallel plugin installation is allowed only after proving the target CLI's config writes are safe under concurrency. If Claude plugin commands mutate shared marketplace/config files unsafely, the utility should parallelize independent downloads/resolution first, then serialize the final config mutation.
-- Surface stale marketplace/plugin state as a prewarm task or explicit rebuild reason, not as silent foreground network work.
+### Settled decisions (resolved with operator)
 
-This must preserve the role-author contract: role manifests still declare plugins; jackin changes where and when the materialization happens.
+- **Host signal**: the capsule writes the chosen action to a small state file under the per-instance dir — `~/.jackin/data/<container>/.jackin/exit-action.json` (`{ "action": "keep" | "discard" }`) — before `drain_and_exit`. The host finalize reads it and executes that action. Chosen over an exit-code convention (range-limited, conflated with real errors) and a control frame (more plumbing); the file survives the exit and is inspectable.
+- **`Ctrl+Q` from the exit modal** maps to `Exit & keep` — the safe default that never loses work.
+- **Discard takes no extra sub-confirm**: selecting `Exit & discard changes` is itself the explicit destructive approval (the operator chose the split-Exit shape). No second Yes/No.
 
-Current implementation details that shape the fix:
+### Part 1 — Share dirty detection into `jackin-core`
 
-- Agent install blocks in <RepoFile path="crates/jackin-core/src/agent/adapters/claude.rs" />, <RepoFile path="crates/jackin-core/src/agent/adapters/codex.rs" />, <RepoFile path="crates/jackin-core/src/agent/adapters/amp.rs" />, <RepoFile path="crates/jackin-core/src/agent/adapters/kimi.rs" />, <RepoFile path="crates/jackin-core/src/agent/adapters/opencode.rs" />, and <RepoFile path="crates/jackin-core/src/agent/adapters/grok.rs" /> each produce their own `COPY` and `RUN` sequence. This is deterministic and cacheable, but it serializes per-agent verification and makes a supported-agent image pay for every supported runtime when a rebuild is required.
-- Claude plugin rendering in <RepoFile path="crates/jackin-image/src/derived_image.rs" /> emits one BuildKit-cache-backed `RUN` for all marketplace adds and plugin installs. This preserves baked restart state and avoids per-plugin layer boundaries, but it still performs foreground network work during rebuilds until a recipe-keyed artifact cache exists.
-- The generated Dockerfile later copies `/home/agent` agent state into `/jackin/default-home`, so plugin/skill/agent artifacts installed during image preparation become restart-safe defaults. The optimized path should keep this copy or replace it with a more explicit `/jackin/default-home` assembly step, not remove the image-baked state.
+- [x] Add a `jackin-core` module (`worktree_dirty`) exposing a path-based assessment: input a repo path + base ref, output `WorktreeState` (`Clean | Dirty | Unpushed`) via `assess_worktree`, plus the per-file change list (`ChangedFile` + `parse_porcelain`/`changed_files`) the Inspect view needs. Drives git through the existing `jackin_core::runner::CommandRunner` seam so the crate stays subprocess-free.
+- [x] Expose the shared result type (`WorktreeState`, `ChangedFile`) in `jackin-core`, driven by the existing `CommandRunner` seam that both host (async) and capsule (in-container) can implement. (`PreservedReason` deliberately stays host-side in `finalize.rs` — it is exit-dialog wording the capsule does not consume; the capsule derives its own summary from `WorktreeState` + the change list.)
+- [x] Rewire host `assess_cleanup` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> to call `jackin_core::worktree_dirty::assess_worktree` with a logger closure that preserves the `--debug` diagnostics — no host behavior change.
+- [x] Add `jackin-core` unit tests (scripted `CommandRunner` mock + std-only `block_on`): clean, uncommitted, untracked, branch-ahead-no-upstream, ahead-of-upstream, fully-pushed, `[gone]`-merged, detached-HEAD off/at base, status-failure fail-closed, no-branches fail-closed, multiple repos, and `changed_files`/`parse_porcelain`.
+- [x] Verify: `jackin-core` tests (15) and host `finalize` tests (43) pass; `cargo fmt --check` and `cargo clippy` clean on both crates.
 
-Potential image-prep utility shape:
+### Part 2 — In-capsule confirmation (`jackin-capsule`)
 
-1. Host launch code resolves the image recipe and stages the selected or supported agent binaries plus a JSON prep manifest into `.jackin-runtime/`.
-2. The Dockerfile copies `/jackin/runtime/jackin-image-prepare` and the manifest, then runs one `RUN /jackin/runtime/jackin-image-prepare --manifest /jackin/runtime/image-prep.json`.
-3. The utility starts independent tasks for safe operations: chmod/copy agent binaries, run per-agent install/verify commands in isolated temp state where possible, prefetch marketplace/plugin metadata or git repos, prepare skill bundles, and assemble `/jackin/default-home`.
-4. The utility serializes any final operation that mutates shared CLI config when concurrency is not proven safe, especially Claude plugin state writes under `/home/agent/.claude`.
-5. The utility writes `/jackin/runtime/image-prep-result.json` containing installed agent versions, plugin marketplace refs, plugin list, skill bundle hashes, default-home hash, and task timing. The Docker build labels include the hash of that result.
-6. BuildKit cache mounts can back the utility's download/cache directories during actual builds, while the final copied state remains inside the image. Cache mounts speed rebuilds; they are not part of the runtime contract.
+- [x] Plumb into the capsule launch config (`/jackin/run/agent.toml`) the data the daemon needs at exit: the resolved `dirty_exit_policy` and the list of **isolated worktree/clone mount paths** to assess. Added `dirty_exit_policy: Option<String>` + `isolated_worktrees: Vec<String>` to `jackin_protocol::CapsuleConfig` (serde-defaulted, backward-compat); the host `capsule_config()` builder populates them from `resolve_dirty_exit_policy` and the non-`shared` materialized mounts. Verified: protocol/runtime/capsule build, 180 launch tests pass.
+- [x] At `no_live_sessions()` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />: `handle_last_session_exit()` runs `decide_exit()` — clean, or policy `keep`/`discard`, drains (preserving the non-clean-exit reason); policy `ask` + dirty pushes the modal and keeps the daemon alive (render early-returns on an open dialog, so a zero-pane modal renders).
+- [x] Add the exit-modal `Dialog::ExitDirty` variant (per-repo summary lines + the four rows) reusing the `FilterPicker` snapshot + render; box sizing/hint/click arms added; renders over zero panes.
+- [x] Wire rows: `Start a new agent` → `Action::OpenAgentPicker(NewTab)` (the verbatim picker; SpawnAgent clears the stack, dismissing the modal); `Inspect changes` → read-only changed-files list; `Exit & keep` / `Exit & discard` → set `exit_request`, event loop writes `exit-action.json` and drains.
+- [x] `Esc` ignored on the modal (forced choice); default focus the first row. (Double-`Ctrl+C` hard-exit: the modal currently consumes `Ctrl+C` like other keys — the cross-screen double-`Ctrl+C` escape is a separate capsule-global concern, tracked as a follow-up; not a blocker for the keyboard-driven modal.)
+- [x] In-capsule Inspect view (`Dialog::ExitInspect` / `InspectRow`): read-only changed-files list grouped by repo (status + path), `Esc` walks back; strictly preview-only. **Reduction noted:** the side-by-side `diff_view` pane (per-file content) is a follow-up — this ships the file list, not the diff pane.
+- [x] Host-signal mechanism: the capsule writes `exit-action.json` (`ExitAction` keep/discard) to `EXIT_ACTION_PATH`; the host reads it (Part 3).
+- [x] Tests: `decide_exit` drains on `keep`/`discard` and ask-but-clean; `ExitDirty` Enter routes each row, `Esc` ignored, navigation clamps; `ExitInspect` `Esc` walks back. (Dirty-pushes-modal end-to-end is covered by the operator live check, since it needs real in-container git.)
 
-This utility should not become a second parser for role manifests. The host already validates `jackin.role.toml`; the utility should consume a generated, fully-resolved JSON manifest so build-time behavior cannot drift from host-side validation.
+### Part 3 — Host executes the chosen action (`jackin-runtime`)
 
-### 6. Prepare only the selected runtime for foreground launch
+- [x] Clean last-session shutdown no longer fails the launch. **Resolved host-side** (more robust than racing the capsule client's exit code): the non-zero `docker exec` result at clean shutdown is treated as the attach socket-close race, not a failure. (The capsule client's own exit code is now irrelevant to the host; left as-is.)
+- [x] `launch_role_runtime` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> falls through to a successful return on a clean exit (diagnose `None`) instead of returning `attach_failure_error`, so the pipeline runs finalize instead of skipping it via `launch_result?`.
+- [x] The hardline path in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> no longer short-circuits on `attach_outcome?`: a non-zero attach result is logged and finalize runs (it re-inspects the container + reads `exit-action.json`).
+- [x] Host reads the capsule-signaled action and **executes** it via `ExitActionPrompt` (replacing `RichCleanupPrompt` at both finalize call sites): keep → `KeepAll` (preserve), discard → `DiscardAll` (terminal cleanup); no host prompt. Absent file → `KeepAll` (never lose work).
+- [x] Tests: `ExitActionPrompt` maps keep/discard/absent; `read_exit_action` ignores absent/garbage; `finalize_foreground_session` + `ExitActionPrompt` + `exit-action.json` `keep` preserves the records (`PreservedDirty`) and `discard` removes them.
 
-`prepare_runtime_binaries()` resolves every supported agent plus `jackin-capsule` because the derived image bakes all supported runtimes. That is correct for an all-agent image, but it is not correct for a foreground launch aiming at one selected agent. If the selected session is Claude, a missing or slow Kimi/OpenCode/Grok binary check should not block attach.
+### End-to-end verification (operator)
 
-Feasible target shapes:
+- [ ] Operator confirms the full flow live: dirty workspace → exit agent → modal appears in-capsule; `Start a new agent` returns to work with the New-tab picker; `Inspect changes` shows the diff; `Exit & keep` preserves and the instance is resumable; `Exit & discard` removes it; a clean exit shows no modal; `keep`/`discard` policies skip the modal.
 
-- Build per-agent runtime layers/images and launch the selected one. Sibling agents can be prepared lazily when the operator opens a new tab for that runtime.
-- Or keep one image but split foreground and background prep: selected agent + Capsule in foreground, non-selected supported agents in background with image refresh for the next launch.
-- Or bake stable agent shims into the construct/role image and update real agent binaries via mounted cache at container startup only when that specific agent is invoked.
+## In-capsule dirty-exit UI — agreed design
 
-The chosen shape must preserve multi-runtime support without letting unrelated runtimes block the selected agent.
+Settled with the operator by walking faithful TUI previews. The modal renders in the capsule's existing chrome (row 0 ` jackin❯ ` brand pill + tab strip, row 1 `━` underline) as a centered choice list, reusing the capsule's existing dialog / modal-stack components — no new chrome.
 
-### 7. Make credential resolution lazy, parallel, and attach-aware
+The exit modal, `Unsaved work — exit?`, shows **one summary line per dirty repo** (`<repo>  N changed · N unpushed`) above four choices:
 
-The live run spent 55.5s in `credentials`; the cold/stale run spent 197.3s. This stage currently combines operator env resolution, manifest env prompts/defaults, per-agent auth mode checks, GitHub auth resolution, and later `RoleState::prepare`. These are not all equal foreground requirements.
-
-Correct split:
-
-- Prompt-required manifest env must happen before a new container starts because the run command needs the values.
-- Auth modes that inject env/secrets into a new container must resolve before that new container starts.
-- Reattaching to a running Capsule should not re-resolve secrets unless the active session explicitly requests a credential refresh.
-- `Ignore` modes should not resolve their configured secret references.
-- Independent `op://` reads and supported-agent role-state auth slots should run concurrently with clear per-reference timing and bounded cancellation.
-- GitHub auth resolution should be scoped to the selected mode and should not shell out to `gh` if `GH_TOKEN` / configured env already provides the token.
-
-The root-cause fix is to model credentials as launch requirements attached to a candidate repair plan. `AttachExisting` has a smaller requirement set than `CreateContainer`, and `BuildImage` has a different requirement set than both.
-
-### 8. Replace foreground workspace `git pull` with freshness policy
-
-`git_pull_on_entry` cost 5.3s in `jk-run-046bca` and 3.8-4.2s in other warm runs. The current behavior is opt-in and therefore valid, but it is still foreground network work. The correct architecture should distinguish "workspace must be updated before launch" from "workspace should be checked for freshness soon."
-
-Recommended shape:
-
-- Keep the explicit blocking `git_pull_on_entry` mode for operators who require it.
-- Add a non-blocking freshness mode that starts launch immediately and runs pulls/checks in the background only after hardline is open, reporting results through diagnostics or a Capsule/operator notification.
-- Add a preflight summary when blocking pulls fail because of local changes; the operator should not wait 5s and still get stale state without a crisp reason.
-
-This respects the no-silent-host-mutation rule: background pulls must remain opt-in and must not run unless the operator configured host repo mutation.
-
-### 9. Warm or persist the sidecar/runtime boundary
-
-Fresh launch still pays about 2.8-3.6s to create a network, start `docker:dind`, wait for `docker info`, and verify TLS certs. To reach 1-3s, this work cannot be in the common foreground path.
-
-Correct target shapes:
-
-- For resume/attach, reuse the existing role container and existing DinD sidecar whenever both are healthy.
-- For stopped sessions, `docker start` the role container and DinD sidecar instead of recreating them.
-- For new sessions, do not assume DinD can be reused. If per-instance DinD is the isolation boundary, keep it per-instance, but start it as early as resource naming is complete and overlap its readiness wait with image validation, credential resolution, and workspace materialization.
-- For new sessions in the same workspace, evaluate a workspace-warmed DinD or workspace-level Docker service with isolated namespaces. If shared DinD breaks per-instance isolation, keep per-instance DinD but pre-create it as part of a prewarm job.
-- Integrate [Workspace Registry Cache](/reference/roadmap/workspace-registry-cache/) for inner Docker pulls/builds; it does not remove the sidecar startup cost, but it removes repeated inner image pulls once the session is running.
-
-If a stronger backend such as OrbStack isolated machines or smolvm changes the runtime-start contract, this roadmap item should use the same timing profiler to compare them against Docker rather than assuming they are faster.
-
-### 10. Add prewarm as a first-class command and daemon capability
-
-Instant foreground launch requires work to happen before the operator asks for hardline. Add `jackin prewarm` / console prewarm actions and later daemon-backed background maintenance:
-
-- Pre-fetch/update role repos.
-- Resolve and cache selected agent binaries plus `jackin-capsule`.
-- Build or refresh derived images from current role recipes.
-- Materialize plugin bundles.
-- Start or validate workspace registry/cache resources.
-- Optionally prepare a stopped or running warm container for a workspace/role/agent tuple.
-
-Prewarm must be explicit or configured. It may write jackin-owned host state under `~/.jackin/`, but it must not mutate operator repositories, host git config, shell config, or external tool state unless the operator opted into that exact action.
-
-## Phases
-
-### Phase 0 — Bug framing and launch-plan model
-
-- Land the defect classification: slow startup is a correctness failure in the launch architecture because unrelated work is permitted to block a valid attach.
-- Introduce the launch-plan vocabulary and make every foreground action belong to `AttachExisting`, `StartStopped`, `CreateFromValidImage`, `BuildAndCreate`, or `PrewarmOnly`.
-- Add diagnostics fields that record the chosen plan and every reason a faster plan was rejected.
-
-### Phase 1 — Measurement and truth
-
-- Add nested diagnostics timings for every substage named above.
-- Add Docker build-step timing extraction.
-- Add run-summary and run-comparison commands or generated artifacts.
-- Capture target baselines: clean cold launch, warm image launch, attach existing, stopped-container restore, credentials with and without `op://`, and workspace git-pull on/off.
-
-### Phase 2 — Attach-first restore
-
-- Implement the foreground validity contract and attach-first candidate selection.
-- Complete the restore ladder from [Session keep and resume](/reference/roadmap/session-keep-and-resume/): running attach, stopped `docker start`, missing container with valid image, rebuild only when invalid.
-- Make credential resolution dependent on the selected repair plan.
-
-### Phase 3 — Image reuse and build elimination
-
-- Add image recipe hashes/labels.
-- Return an `ImageDecision` before binary preparation.
-- Skip runtime binary prep and Docker build when the image is valid.
-- Move selected-agent-only prep into the foreground and sibling-agent prep into background/lazy paths.
-
-### Phase 4 — Build path surgery
-
-- Remove or minimize UID/GID remap and recursive `chown`.
-- Replace foreground Claude plugin install layers with a recipe-keyed artifact cache.
-- Split all-agent image baking into selected-agent foreground plus lazy/background sibling runtime preparation.
-- Evaluate whether `docker build --load` / export can be avoided or reduced for local launch images under the active Docker backend.
-
-### Phase 5 — Prewarm and warmed runtime
-
-- Add `jackin prewarm`.
-- Add console affordances for stale/warm state without blocking launch.
-- Add daemon-backed background refresh once [jackin❯ daemon](/reference/roadmap/jackin-daemon/) exists.
-- Pre-create or restart reusable runtime resources where the validity contract proves it is safe.
-
-## Acceptance Criteria
-
-- A running valid Capsule session attaches in 1-3s on the operator's Docker backend.
-- A stopped valid session restarts and attaches without Docker build or role repo refresh in a small bounded time measured by diagnostics.
-- A valid local image path launches without invoking `docker build`.
-- A `jk-run-046bca`-class warm runtime no longer blocks on credential resolution, workspace freshness, all-agent binary checks, or Docker build when the validity contract proves those are unnecessary for the chosen plan.
-- A warm-cache launch that still needs a new container has every foreground wait justified by a validity requirement in diagnostics.
-- Every launch gap longer than 500ms has a typed timing event or a child process/span record in diagnostics.
-- Cold builds produce a structured timing summary that names the slowest Dockerfile instructions and whether they were required by the current recipe.
-- Slow credential references are individually timed and do not block attach-existing flows. Sequential `op://` resolution and serial supported-agent role-state auth preparation are eliminated unless a measured provider or account-locking constraint proves parallelism is infeasible.
-- Non-selected agent binary/version checks cannot block launching the selected agent.
-- A valid image-reuse path does not run the selected-agent version probe in the foreground unless the image label/probe record is missing or invalid.
-- No optimization silently mutates host repos, host git config, shell config, Docker context, `gh` config, or agent configs outside jackin-owned state.
-
-## Related Files
-
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — launch sequence and repair-plan orchestration.
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs" /> — runtime binary preparation, image decision, Docker build, and version probe.
-- <RepoFile path="crates/jackin-image/src/derived_image.rs" /> — derived Dockerfile generation and build-context staging.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs" /> — per-instance network and DinD startup.
-- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — Capsule readiness and hardline attach.
-- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> — run diagnostics and stage timing.
-- [Session keep and resume](/reference/roadmap/session-keep-and-resume/) — restore ladder and launch recipe persistence.
-- [Construct Image: User Creation Responsibility](/reference/roadmap/construct-user-creation/) — UID/GID remap removal.
-- [Workspace Registry Cache](/reference/roadmap/workspace-registry-cache/) — workspace-level registry cache for inner Docker work.
+```text
+ jackin❯  [the-architect]
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─ Unsaved work — exit? ───────────────┐
+  │ jackin      2 changed · 1 unpushed    │
+  │ holla-apt   3 changed                 │
+  │                                       │
+  │ ▸ Start a new agent                   │
+  │   Inspect changes                     │
+  │   Exit & keep changes                 │
+  │   Exit & discard changes              │
+  └───────────────────────────────────────┘
+  ↑↓ · ↵ select · Ctrl-Q quit
+```
+
+Settled decisions:
+
+- **Default focus** is the first row, `Start a new agent`. **`Esc` is ignored** — the modal is a forced explicit choice; there is no ambiguous cancel.
+- **`Start a new agent`** opens the **exact New-tab agent picker** — the same `Dialog::new_agent_picker(agents, PickerIntent::NewTab)` in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />, rendered identically: title `New tab`, full-width `── agents ──` / `── shells ──` section dashes, agent display names, type-to-filter, and the `Shell` row. It is the New-tab flow verbatim, not a lookalike. `Esc` in the picker walks back one step to the exit modal (modal stack).
+- **`Inspect changes`** opens a read-only diff view inside the capsule, reusing the shared `jackin-tui` `diff_view` plus select-list panes: a changed-files pane beside a live diff, with a repos pane shown only when more than one repo is dirty. Strictly preview-only. `Esc` returns to the exit modal.
+- **Keep vs discard is decided in-capsule**: the two `Exit & …` rows are the decision. The host only **executes** the chosen action — it never prompts. Selecting `Exit & discard changes` is itself the explicit destructive approval, so there is no separate host confirmation; if a delete guard is wanted it is an in-capsule sub-confirm, never a post-teardown host prompt.
+- **Multiple dirty repos** are listed one line each, with full per-file detail behind `Inspect`.
+
+Still open (minor, settle during implementation): exact row wording, the `Ctrl+Q` meaning from this modal (tentatively treat as `Exit & keep`), and unpushed-only vs uncommitted summary phrasing. The cross-screen double-`Ctrl+C` immediate-exit guarantee applies here too.
+
+## Operator verification — pending sign-off
+
+The following landed as code in this branch but is **not operator-verified**. None of it may be marked implemented until the operator manually confirms it works. This list deliberately replaces the previous page's "shipped ✓" claims, which asserted completion without operator verification. CI passing does not move an item off this list — only the operator's manual confirmation does.
+
+- [ ] Image-baked agent binaries, Claude plugins, and default-home state; image-validity by Docker labels; agent-version-changed rebuild trigger.
+- [ ] Empty-dir home seeding, first-seed-only auth handoff, atomic first seed; durable Amp / OpenCode config roots.
+- [ ] Container identity: `--user $HOST_UID:$HOST_GID --group-add 0` with `libnss-extrausers` passwd/group; group-0 image-home writability; an arbitrary-UID/GID launch (read + write + first seed + `git config --global` + role-hook tool installs) without permission-denied.
+- [ ] Restore ladder: Tier 1 `docker start`, Tier 2 reuse of the stored image, Tier 3 pinned rebuild from `role_git_sha` (original commit, not current `HEAD`); launch never reattaches to a live instance.
+- [ ] Schema `v1alpha7` migration and `dirty_exit_policy` config (global + per-workspace; `ask` / `keep` / `discard`).
+- [ ] Console instance surfaces; clean-exit purge and stale-row / orphaned-lock reconciliation on launch / prune.
+- [ ] Launch cockpit hard-exit behavior (`Ctrl+Q` → confirm → immediate exit; `Ctrl+C`; double `Ctrl+C` mid-build) with the terminal restored and `gc_orphaned_resources` reclaiming abandoned resources on the next launch.
+- [ ] Local image-build performance changes (no recursive permission repair, single-layer plugin install, uncompressed local export, construct `shellfirm` prebuild) — and the arbitrary-UID/GID correctness this permission rework depends on.
+
+When the operator confirms a group above, move it out of this list with an explicit note that it was operator-verified; until then it stays here regardless of test or CI status.
+
+## Related files
+
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — multiplexer daemon; the `no_live_sessions()` last-session-close branch is the in-capsule hinge.
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> — capsule dialog system and `new_agent_picker` reused for "Start a new agent".
+- <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> — host `assess_cleanup` (detection to extract) and terminal-outcome / keep-discard execution.
+- <RepoFile path="crates/jackin-core/src/isolation_record.rs" /> — shared cleanup types; target home for the extracted detection.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — `launch_role_runtime` load path that must run finalize on clean exit.
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — hardline reconnect path that short-circuits finalize on clean exit.

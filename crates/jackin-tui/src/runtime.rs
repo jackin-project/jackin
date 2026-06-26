@@ -1,5 +1,7 @@
 //! Shared runtime contracts for Ratatui-style update loops.
 
+use std::future::Future;
+
 /// Whether applying a message changed visible state and should schedule a draw.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[must_use]
@@ -99,6 +101,44 @@ where
         handle.spawn_blocking(run);
     } else {
         drop(std::thread::Builder::new().name(name.into()).spawn(run));
+    }
+    rx
+}
+
+/// Spawn async work and expose its single result as a subscription.
+///
+/// TUI component tests can run outside a Tokio runtime, so this mirrors the
+/// blocking helper's fallback by creating a named OS thread with a small runtime.
+pub fn spawn_named_async_subscription<T, F>(
+    name: impl Into<String>,
+    future: F,
+) -> BlockingSubscription<T>
+where
+    T: Send + 'static,
+    F: Future<Output = T> + Send + 'static,
+{
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let run = async move {
+        drop(tx.send(future.await));
+    };
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(run);
+    } else {
+        drop(
+            std::thread::Builder::new()
+                .name(name.into())
+                .spawn(move || {
+                    match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(runtime) => runtime.block_on(run),
+                        Err(error) => {
+                            drop(error);
+                        }
+                    }
+                }),
+        );
     }
     rx
 }

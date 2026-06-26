@@ -1,7 +1,6 @@
 //! Launch cockpit input handling.
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
@@ -20,6 +19,7 @@ use crate::tui::components::container_info_dialog::{
 };
 use crate::tui::components::failure_dialog::{failure_copy_payload, failure_copy_target_at};
 use crate::tui::components::footer::{footer_instance, format_activity};
+use crate::tui::input::{LaunchInput, is_ctrl_c_event};
 use crate::tui::terminal::current_terminal_area;
 use crate::{LaunchHostTerminal, LaunchMessage, LaunchView, update_launch_view};
 
@@ -53,13 +53,7 @@ enum QuitConfirmOutcome {
 
 /// `true` for a Ctrl+C key press. Hard cancel — wins over any open dialog.
 fn is_ctrl_c(ev: &Event) -> bool {
-    matches!(
-        ev,
-        Event::Key(k)
-            if k.kind == KeyEventKind::Press
-                && k.code == KeyCode::Char('c')
-                && k.modifiers.contains(KeyModifiers::CONTROL)
-    )
+    is_ctrl_c_event(ev)
 }
 
 /// Route a key into the open quit confirmation, mutating `view.quit_confirm`.
@@ -79,6 +73,13 @@ fn apply_quit_confirm_key(view: &mut LaunchView, key: event::KeyEvent) -> QuitCo
             QuitConfirmOutcome::Dismissed
         }
         ModalOutcome::Continue => QuitConfirmOutcome::Pending,
+    }
+}
+
+fn cockpit_outcome_for_quit_confirm(outcome: QuitConfirmOutcome) -> CockpitOutcome {
+    match outcome {
+        QuitConfirmOutcome::Confirmed => CockpitOutcome::HardExit,
+        QuitConfirmOutcome::Dismissed | QuitConfirmOutcome::Pending => CockpitOutcome::Continue,
     }
 }
 
@@ -102,7 +103,7 @@ fn clamp_container_info_scroll(view: &mut LaunchView, ctx: CockpitContext<'_>) {
         ctx.terminal.is_debug_mode(),
         ctx.jackin_version,
     );
-    let rect = launch_container_info_rect(ctx.area, &state);
+    let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
     jackin_tui::components::clamp_container_info_scroll(
         &mut view.container_info_scroll,
         state.content_width(),
@@ -236,7 +237,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             ctx.terminal.is_debug_mode(),
             ctx.jackin_version,
         );
-        let rect = launch_container_info_rect(ctx.area, &state);
+        let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
         if jackin_tui::components::classify_click(rect, col, row)
             == jackin_tui::components::ModalClickResult::OutsideDismiss
         {
@@ -253,8 +254,14 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         }
         // Click inside with no copy target → no-op (Defect 11: inside click swallowed).
     } else if let Some(failure) = v.failure.as_ref() {
-        if let Some(target) = failure_copy_target_at(ctx.area, failure, ctx.run_id, col, row)
-            && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
+        if let Some(target) = failure_copy_target_at(
+            ctx.area,
+            failure,
+            ctx.run_id,
+            ctx.terminal.is_debug_mode(),
+            col,
+            row,
+        ) && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
         {
             if ctx.terminal.copy_to_clipboard(&payload) {
                 let _dirty = update_launch_view(v, LaunchMessage::FailureCopied(target));
@@ -302,7 +309,7 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             ctx.terminal.is_debug_mode(),
             ctx.jackin_version,
         );
-        let rect = launch_container_info_rect(ctx.area, &state);
+        let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
         let hover = jackin_tui::components::container_info_copy_payload_at(rect, &state, col, row)
             .map(|(idx, _)| idx);
         if hover != v.container_info_hover {
@@ -312,7 +319,14 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         return;
     }
     if let Some(failure) = v.failure.as_ref() {
-        let hover = failure_copy_target_at(ctx.area, failure, ctx.run_id, col, row);
+        let hover = failure_copy_target_at(
+            ctx.area,
+            failure,
+            ctx.run_id,
+            ctx.terminal.is_debug_mode(),
+            col,
+            row,
+        );
         if hover != v.failure_copy_hover {
             let _dirty = update_launch_view(v, LaunchMessage::FailureCopyHovered(hover));
             ctx.terminal.set_pointer_shape(hover.is_some());
@@ -351,6 +365,7 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         });
     let hover = StatusFooterHover {
         left: activity_hovering,
+        usage: false,
         right: container_hovering,
         right_debug: debug_chip_hovering,
     };
@@ -358,6 +373,22 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         let _dirty = update_launch_view(v, LaunchMessage::FooterHoverChanged(hover));
         ctx.terminal
             .set_pointer_shape(activity_hovering || container_hovering || debug_chip_hovering);
+    }
+}
+
+fn emit_dialog_mouse_debug_telemetry(
+    terminal: &dyn LaunchHostTerminal,
+    v: &LaunchView,
+    m: event::MouseEvent,
+) {
+    if terminal.is_debug_mode() && (v.container_info_open || v.build_log_open) {
+        terminal.emit_debug_line(
+            "cockpit-dialog-mouse",
+            &format!(
+                "kind={:?} modifiers={:?} col={} row={} container_info_open={} build_log_open={}",
+                m.kind, m.modifiers, m.column, m.row, v.container_info_open, v.build_log_open
+            ),
+        );
     }
 }
 
@@ -373,7 +404,8 @@ pub fn handle_cockpit_input(
     run_log_path: &str,
     terminal: &dyn LaunchHostTerminal,
     jackin_version: &'static str,
-    cancel_token: &CancellationToken,
+    _cancel_token: &CancellationToken,
+    input: &LaunchInput,
 ) -> CockpitOutcome {
     let area = current_terminal_area();
     let ctx = CockpitContext {
@@ -383,39 +415,38 @@ pub fn handle_cockpit_input(
         terminal,
         jackin_version,
     };
-    while event::poll(Duration::ZERO).unwrap_or(false) {
-        let Ok(ev) = event::read() else {
-            return CockpitOutcome::Continue;
-        };
+    while let Some(ev) = input.try_recv() {
         let Ok(mut v) = view.lock() else {
             return CockpitOutcome::Continue;
         };
         // Ctrl+C: immediate hard stop. The render task restores the terminal
         // and exits at once — no cleanup, no waiting on in-flight work. Checked
         // before the quit-confirm modal so it wins even while that dialog is
-        // open. (Ctrl+Q, below, is the graceful, cleanup-running alternative.)
+        // open. The input owner also treats a rapid second Ctrl+C as this same
+        // hard stop even if the render task is starved.
         if is_ctrl_c(&ev) {
             return CockpitOutcome::HardExit;
         }
         // While the quit confirmation is open it owns all input: route keys to
-        // it (Yes → graceful cancel, No/Esc → dismiss) and swallow the rest.
+        // it (Yes → hard exit, No/Esc → dismiss) and swallow the rest.
         if v.quit_confirm.is_some() {
             if let Event::Key(k) = ev
                 && k.kind == KeyEventKind::Press
-                && apply_quit_confirm_key(&mut v, k) == QuitConfirmOutcome::Confirmed
             {
-                // Yes confirmed: graceful cancel. The pipeline unwinds via
-                // `Err` and runs `LoadCleanup` (removes the half-built
-                // container, network, volume) before exiting.
-                cancel_token.cancel();
-                return CockpitOutcome::Continue;
+                let outcome = cockpit_outcome_for_quit_confirm(apply_quit_confirm_key(&mut v, k));
+                // Yes confirmed: immediate hard exit, matching Ctrl+C. This
+                // deliberately skips graceful cleanup so a slow build cannot
+                // keep the operator trapped in the launch surface.
+                if outcome == CockpitOutcome::HardExit {
+                    return outcome;
+                }
             }
             continue;
         }
         match ev {
             // Ctrl+Q: ask before quitting. Opens the shared "Exit jackin❯?"
             // confirmation; the dialog (drawn next tick) owns input until
-            // answered. Unlike Ctrl+C this is reversible — No resumes launch.
+            // answered. No/Esc resumes launch; Yes hard-exits immediately.
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
                     && crate::tui::keymap::COCKPIT_KEYMAP.dispatch(KeyChord::from(k))
@@ -429,15 +460,7 @@ pub fn handle_cockpit_input(
                 // for a dialog mouse event so a `--debug` run reveals whether a
                 // horizontal-scroll gesture even reaches the cockpit (and as what
                 // kind/modifiers), instead of guessing at the mapping.
-                if terminal.is_debug_mode() && (v.container_info_open || v.build_log_open) {
-                    terminal.emit_compact_line(
-                      "cockpit-dialog-mouse",
-                      &format!(
-                          "kind={:?} modifiers={:?} col={} row={} container_info_open={} build_log_open={}",
-                          m.kind, m.modifiers, m.column, m.row, v.container_info_open, v.build_log_open
-                      ),
-                  );
-                }
+                emit_dialog_mouse_debug_telemetry(terminal, &v, m);
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
                         handle_cockpit_mouse_down(&mut v, ctx, m.column, m.row);
@@ -475,7 +498,11 @@ pub fn handle_cockpit_input(
                             ctx.terminal.is_debug_mode(),
                             ctx.jackin_version,
                         );
-                        let rect = launch_container_info_rect(ctx.area, &state);
+                        let rect = launch_container_info_rect(
+                            ctx.area,
+                            &state,
+                            ctx.terminal.is_debug_mode(),
+                        );
                         let axes = jackin_tui::components::dialog_scroll_axes(
                             state.content_width(),
                             state.content_height(),
@@ -510,7 +537,8 @@ pub fn handle_cockpit_input(
                     ctx.terminal.is_debug_mode(),
                     ctx.jackin_version,
                 );
-                let rect = launch_container_info_rect(ctx.area, &state);
+                let rect =
+                    launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
                 let axes = jackin_tui::components::dialog_scroll_axes(
                     state.content_width(),
                     state.content_height(),

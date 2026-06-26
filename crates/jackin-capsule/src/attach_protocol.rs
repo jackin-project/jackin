@@ -2,7 +2,7 @@
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::Duration;
 
 use crate::daemon::Multiplexer;
@@ -30,19 +30,22 @@ pub(crate) struct AttachHandshake {
     pub(crate) client_permit: tokio::sync::OwnedSemaphorePermit,
 }
 
+pub(crate) struct ControlRequest {
+    pub(crate) msg: jackin_protocol::control::ClientMsg,
+    pub(crate) reply_tx: oneshot::Sender<jackin_protocol::control::ServerMsg>,
+}
+
 /// Per-connection handshake task. Reads the first byte, routes
-/// control-channel requests inline (one-shot reply, closes the
-/// socket), and forwards validated attach Hellos back to the main
-/// loop via `handshake_tx`. Owning the slow `read_exact` here keeps a
-/// silent or slow client from stalling the daemon's main `select!`.
+/// control-channel requests back to the main daemon loop (one-shot
+/// reply, closes the socket), and forwards validated attach Hellos
+/// back to the main loop via `handshake_tx`. Owning the slow
+/// `read_exact` here keeps a silent or slow client from stalling the
+/// daemon's main `select!`.
 pub(crate) async fn perform_handshake(
     mut stream: UnixStream,
     client_permit: tokio::sync::OwnedSemaphorePermit,
     handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
-    sessions_snapshot: Vec<crate::protocol::control::SessionInfo>,
-    tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
-    history_snapshot: Vec<jackin_protocol::control::AgentRegistryEntry>,
-    active_tab: u32,
+    control_tx: mpsc::UnboundedSender<ControlRequest>,
 ) {
     // Bound the handshake reads. A client that opens the socket and
     // never sends a byte otherwise holds the `OwnedSemaphorePermit`
@@ -67,19 +70,28 @@ pub(crate) async fn perform_handshake(
         }
     }
     if first[0] == 0x00 {
-        // Control channel — one-shot length-prefixed JSON. The
-        // sessions snapshot is captured at accept time in the main
-        // loop; mildly stale (microseconds) for the host CLI's
-        // informational `status` query.
-        socket::handle_control_request(
-            stream,
-            first[0],
-            sessions_snapshot,
-            tabs_snapshot,
-            history_snapshot,
-            active_tab,
-        )
-        .await;
+        // Control channel — one-shot length-prefixed JSON. Decode off the
+        // main loop, then ask the daemon loop to build the reply from current
+        // state so refresh requests and usage APIs stay daemon-owned.
+        let msg = match socket::read_control_msg(&mut stream, first[0]).await {
+            Ok(msg) => msg,
+            Err(e) => {
+                crate::clog!("control: rejecting malformed request: {e:#}");
+                drop(client_permit);
+                return;
+            }
+        };
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if control_tx.send(ControlRequest { msg, reply_tx }).is_err() {
+            crate::clog!("control: daemon loop unavailable while handling request");
+            drop(client_permit);
+            return;
+        }
+        match tokio::time::timeout(HANDSHAKE_TIMEOUT, reply_rx).await {
+            Ok(Ok(reply)) => socket::write_control_reply(stream, &reply).await,
+            Ok(Err(_)) => crate::clog!("control: reply channel closed before response"),
+            Err(_) => crate::clog!("control: daemon reply timed out after {HANDSHAKE_TIMEOUT:?}"),
+        }
         drop(client_permit);
         return;
     }
@@ -144,11 +156,12 @@ pub(crate) async fn drain_and_exit_with_reason(mux: &mut Multiplexer, reason: Op
     if let Some(reason) = reason.as_deref() {
         mux.send_out_of_band(format!("\r\n[jackin-capsule] {reason}\r\n").into_bytes());
     }
-    detach_attached_task_with_reason(mux, "drain_and_exit", reason.as_deref()).await;
+    gracefully_detach_attached_task_with_reason(mux, "drain_and_exit", reason.as_deref()).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 }
 
 const ATTACH_SHUTDOWN_FLUSH_GRACE_MS: u64 = 50;
+const ATTACH_SHUTDOWN_CLOSE_GRACE_MS: u64 = 1000;
 
 pub(crate) fn send_attached_shutdown(
     mux: &mut Multiplexer,
@@ -198,6 +211,36 @@ async fn detach_attached_task_with_reason(
     }
     if let Some(handle) = mux.attached_task.take() {
         handle.abort();
+    }
+}
+
+async fn gracefully_detach_attached_task_with_reason(
+    mux: &mut Multiplexer,
+    context: &str,
+    reason: Option<&str>,
+) {
+    let had_sender = send_attached_shutdown(mux, context, reason);
+    let Some(mut handle) = mux.attached_task.take() else {
+        return;
+    };
+    if !had_sender {
+        handle.abort();
+        return;
+    }
+    tokio::select! {
+        result = &mut handle => {
+            if let Err(err) = result
+                && !err.is_cancelled()
+            {
+                crate::clog!("{context}: attach task ended with join error: {err}");
+            }
+        }
+        () = tokio::time::sleep(Duration::from_millis(ATTACH_SHUTDOWN_CLOSE_GRACE_MS)) => {
+            crate::clog!(
+                "{context}: attach client did not close after Shutdown within {ATTACH_SHUTDOWN_CLOSE_GRACE_MS}ms; aborting"
+            );
+            handle.abort();
+        }
     }
 }
 

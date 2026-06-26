@@ -17,6 +17,7 @@ fn status_bar_renders_without_tabs() {
                     prefix_mode: PrefixMode::Idle,
                     hovered_tab: None,
                     menu_hovered: false,
+                    focused: false,
                 },
                 frame.area(),
             );
@@ -45,6 +46,7 @@ fn status_bar_renders_shared_tab_underline() {
                     prefix_mode: PrefixMode::Idle,
                     hovered_tab: None,
                     menu_hovered: false,
+                    focused: false,
                 },
                 frame.area(),
             );
@@ -74,6 +76,7 @@ fn status_bar_resets_canvas_across_unused_columns() {
                     prefix_mode: PrefixMode::Idle,
                     hovered_tab: None,
                     menu_hovered: false,
+                    focused: false,
                 },
                 frame.area(),
             );

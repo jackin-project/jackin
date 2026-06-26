@@ -26,8 +26,10 @@ impl AgentRuntime for OpencodeRuntime {
         format!(
             "\
 USER agent
-COPY --link --chown=agent:agent --chmod=0755 {source} /home/agent/.opencode/bin/opencode
+COPY --link --chown=agent:0 --chmod=0755 {source} /home/agent/.opencode/bin/opencode
 ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
+RUN set -euxo pipefail && \\
+    opencode --version
 "
         )
     }
@@ -66,9 +68,15 @@ ENV PATH=\"/home/agent/.opencode/bin:${{PATH}}\"
     fn state_paths(&self) -> AgentStatePaths {
         AgentStatePaths {
             credential_dir: ".local/share/opencode",
+            config_dir: Some(".config/opencode"),
             credential_file: Some(".local/share/opencode/auth.json"),
             folder_env_var: Some("XDG_DATA_HOME"),
+            home_files: &[],
         }
+    }
+
+    fn default_home_exclude_paths(&self) -> &'static [&'static str] {
+        &[".config/opencode/opencode.json"]
     }
 
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {

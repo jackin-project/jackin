@@ -38,6 +38,29 @@ fn build_gh_command(workdir: &Path) -> Command {
     cmd
 }
 
+#[derive(Deserialize)]
+struct GhCheck {
+    bucket: String,
+    #[serde(default)]
+    link: String,
+}
+
+#[derive(Deserialize)]
+struct GhPullRequestView {
+    #[serde(rename = "statusCheckRollup", default)]
+    status_check_rollup: Vec<GhStatusCheck>,
+}
+
+#[derive(Deserialize)]
+struct GhStatusCheck {
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    conclusion: String,
+    #[serde(rename = "detailsUrl", default)]
+    details_url: String,
+}
+
 /// Run `gh <args>` and parse stdout as JSON. `Ok(None)` means
 /// `gh` exited successfully (per `accepted_statuses`) with empty
 /// stdout, the documented "no rows" shape. Failure is mapped to
@@ -138,17 +161,12 @@ fn gh_pull_request_checks(
     workdir: &Path,
     url: &str,
 ) -> Result<Option<PullRequestChecks>, LookupError> {
-    #[derive(Deserialize)]
-    struct GhCheck {
-        bucket: String,
-    }
-
     // `gh pr checks` exits with `8` when checks are pending and `0`
     // otherwise; both are accepted statuses.
     let Some(checks) = gh_json::<Vec<GhCheck>>(
         workdir,
         "gh pr checks",
-        &["pr", "checks", url, "--json", "bucket"],
+        &["pr", "checks", url, "--json", "bucket,link,name,workflow"],
         &[0, 8],
     )?
     else {
@@ -165,9 +183,78 @@ fn gh_pull_request_checks(
             );
         }
     }
-    Ok(Some(PullRequestChecks::from_buckets(
-        checks.into_iter().map(|c| c.bucket),
-    )))
+    let ci_url = best_check_url(&checks)
+        .or_else(|| {
+            gh_status_check_rollup_url(workdir, url)
+                .map_err(|e| {
+                    crate::cdebug!(
+                        "pull-request-context: gh pr view statusCheckRollup failed: {e}"
+                    );
+                })
+                .ok()
+                .flatten()
+        })
+        .or_else(|| pr_checks_tab_url(url));
+    Ok(Some(
+        PullRequestChecks::from_buckets(checks.iter().map(|c| c.bucket.as_str()))
+            .with_ci_url(ci_url),
+    ))
+}
+
+fn best_check_url(checks: &[GhCheck]) -> Option<String> {
+    ["fail", "cancel", "pending", "pass", "skipping"]
+        .into_iter()
+        .find_map(|bucket| {
+            checks
+                .iter()
+                .filter(|check| check.bucket == bucket)
+                .find_map(|check| validated_http_url(&check.link))
+        })
+}
+
+fn gh_status_check_rollup_url(workdir: &Path, url: &str) -> Result<Option<String>, LookupError> {
+    let Some(view) = gh_json::<GhPullRequestView>(
+        workdir,
+        "gh pr view",
+        &["pr", "view", url, "--json", "statusCheckRollup"],
+        &[0],
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(best_status_check_url(&view.status_check_rollup))
+}
+
+fn best_status_check_url(checks: &[GhStatusCheck]) -> Option<String> {
+    [0, 1, 2, 3].into_iter().find_map(|priority| {
+        checks
+            .iter()
+            .filter(|check| status_check_priority(check) == priority)
+            .find_map(|check| validated_http_url(&check.details_url))
+    })
+}
+
+fn status_check_priority(check: &GhStatusCheck) -> u8 {
+    match check.conclusion.as_str() {
+        "FAILURE" | "CANCELLED" | "TIMED_OUT" | "ACTION_REQUIRED" => 0,
+        "SUCCESS" | "NEUTRAL" => 2,
+        "SKIPPED" => 3,
+        _ if !matches!(check.status.as_str(), "COMPLETED" | "") => 1,
+        _ => 3,
+    }
+}
+
+fn pr_checks_tab_url(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
+    Some(format!("{}/checks", url.trim_end_matches('/')))
+}
+
+fn validated_http_url(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    matches!(parsed.scheme(), "http" | "https").then(|| url.to_owned())
 }
 
 #[cfg(test)]
@@ -310,4 +397,73 @@ fn read_pipe_bounded<R: std::io::Read + Send + 'static>(
         }
         Ok(bytes)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn status_check(status: &str, conclusion: &str, details_url: &str) -> GhStatusCheck {
+        GhStatusCheck {
+            status: status.to_owned(),
+            conclusion: conclusion.to_owned(),
+            details_url: details_url.to_owned(),
+        }
+    }
+
+    #[test]
+    fn best_check_url_prefers_failed_links() {
+        let checks = [
+            GhCheck {
+                bucket: "pass".to_owned(),
+                link: "https://github.com/pass".to_owned(),
+            },
+            GhCheck {
+                bucket: "fail".to_owned(),
+                link: "https://github.com/fail".to_owned(),
+            },
+            GhCheck {
+                bucket: "pending".to_owned(),
+                link: "https://github.com/pending".to_owned(),
+            },
+        ];
+
+        assert_eq!(
+            best_check_url(&checks).as_deref(),
+            Some("https://github.com/fail")
+        );
+    }
+
+    #[test]
+    fn best_status_check_url_prefers_failed_then_pending_then_success() {
+        let checks = [
+            status_check("COMPLETED", "SUCCESS", "https://github.com/success"),
+            status_check("IN_PROGRESS", "", "https://github.com/pending"),
+            status_check("COMPLETED", "FAILURE", "https://github.com/failure"),
+        ];
+
+        assert_eq!(
+            best_status_check_url(&checks).as_deref(),
+            Some("https://github.com/failure")
+        );
+
+        let checks = [
+            status_check("COMPLETED", "SUCCESS", "https://github.com/success"),
+            status_check("IN_PROGRESS", "", "https://github.com/pending"),
+        ];
+
+        assert_eq!(
+            best_status_check_url(&checks).as_deref(),
+            Some("https://github.com/pending")
+        );
+    }
+
+    #[test]
+    fn pr_checks_tab_url_appends_checks_to_http_pr_url() {
+        assert_eq!(
+            pr_checks_tab_url("https://github.com/jackin-project/jackin/pull/565").as_deref(),
+            Some("https://github.com/jackin-project/jackin/pull/565/checks")
+        );
+        assert!(pr_checks_tab_url("file:///tmp/pr").is_none());
+    }
 }

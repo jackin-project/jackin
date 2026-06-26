@@ -34,6 +34,9 @@ use serde::Serialize;
 
 use jackin_core::{JackinPaths, ansi_text::strip_bytes, prune_output};
 
+#[cfg(test)]
+mod tests;
+
 const RUN_DIR: &str = "diagnostics/runs";
 pub(crate) const MAX_RUN_ARTIFACTS: usize = 200;
 pub(crate) const MAX_RUN_ARTIFACT_AGE: Duration = Duration::from_hours(720);
@@ -282,6 +285,11 @@ impl RunDiagnostics {
 
     pub fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
         // Track wall-clock stage timings for the end-of-run summary (Defect 47.5).
+        // A stage runs on the operator's foreground launch path, so a slow one is a
+        // foreground wait the operator is paying for; capture its duration to
+        // explain any wait over the threshold (acceptance: explain every
+        // foreground wait over 500ms).
+        let mut foreground_wait_ms: Option<u64> = None;
         let enriched_detail = match kind {
             "stage_started" => {
                 if let Ok(mut starts) = self.stage_starts.lock() {
@@ -303,6 +311,7 @@ impl RunDiagnostics {
                 elapsed_ms.map_or_else(
                     || detail.map(String::from),
                     |ms| {
+                        foreground_wait_ms = Some(ms);
                         if let Ok(mut durs) = self.stage_durations_ms.lock() {
                             durs.push((stage.to_owned(), ms));
                         }
@@ -332,6 +341,35 @@ impl RunDiagnostics {
             message,
             Some(stage),
             enriched_detail.as_deref(),
+        );
+        if let Some(ms) = foreground_wait_ms {
+            self.explain_foreground_wait(stage, ms);
+        }
+    }
+
+    /// Threshold above which a foreground wait is explicitly explained in the
+    /// diagnostics stream, not merely timed. The operator is blocked at the
+    /// terminal for the whole foreground launch path, so any single stage that
+    /// holds them longer than this gets a typed `slow_foreground_wait` event
+    /// naming the stage and its cost (acceptance: explain every foreground wait
+    /// over 500ms).
+    pub const FOREGROUND_WAIT_EXPLAIN_THRESHOLD_MS: u64 = 500;
+
+    /// Emit a `slow_foreground_wait` diagnostic when a foreground stage/timing
+    /// exceeds [`Self::FOREGROUND_WAIT_EXPLAIN_THRESHOLD_MS`]. No-op below the
+    /// threshold so the stream stays quiet for the fast path.
+    fn explain_foreground_wait(&self, label: &str, ms: u64) {
+        let Some(wait) =
+            slow_foreground_wait_payload(label, ms, Self::FOREGROUND_WAIT_EXPLAIN_THRESHOLD_MS)
+        else {
+            return;
+        };
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
+            "slow_foreground_wait",
+            &wait.message,
+            Some(label),
+            Some(&wait.detail),
         );
     }
 
@@ -373,6 +411,9 @@ impl RunDiagnostics {
             Some(&event_detail),
             None,
         );
+        if let Some(ms) = elapsed_ms {
+            self.explain_foreground_wait(&key, ms);
+        }
     }
 
     fn stage_span_for(&self, kind: &str, stage: &str) -> tracing::Span {
@@ -848,6 +889,36 @@ fn now_ms() -> u128 {
 
 fn timing_key(stage: &str, name: &str) -> String {
     format!("{stage}\0{name}")
+}
+
+/// A `slow_foreground_wait` diagnostic ready to emit. Named fields instead of a
+/// `(String, String)` tuple so the operator message and the JSON detail — both
+/// `String` — can't be transposed at the call site.
+struct SlowForegroundWait {
+    message: String,
+    detail: String,
+}
+
+/// Build the `slow_foreground_wait` payload when `ms` exceeds `threshold`; `None`
+/// at or below it. Pure so the threshold decision and payload shape are
+/// unit-testable without a tracing subscriber.
+fn slow_foreground_wait_payload(
+    label: &str,
+    ms: u64,
+    threshold: u64,
+) -> Option<SlowForegroundWait> {
+    if ms <= threshold {
+        return None;
+    }
+    let message =
+        format!("{label} held the foreground launch path for {ms}ms (over {threshold}ms)");
+    let detail = serde_json::json!({
+        "label": label,
+        "duration_ms": ms,
+        "threshold_ms": threshold,
+    })
+    .to_string();
+    Some(SlowForegroundWait { message, detail })
 }
 
 fn timing_detail(name: &str, duration_ms: Option<u64>, detail: Option<&str>) -> String {

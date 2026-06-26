@@ -106,6 +106,7 @@ Inside container, operator must verify:
 - `Ctrl+\` opens command palette (override with `JACKIN_PALETTE_KEY`)
 - Mouse clicks, arrow keys, paste reach agent unmodified
 - The specific behavior changed by the PR was observed to work — one sentence (e.g. "Split pane rendered after `Ctrl+\ → Split pane │`", "Session switch preserved agent output")
+- **Reporter acceptance (any PR touching `agent_status/hook_installer` or `runtime_setup`):** launch each affected agent and confirm it starts with **no config-parse error or crash from the installed reporter** (e.g. Codex must not print `failed to parse hooks config … unknown field`; Amp must not crash on load). Installer unit tests assert what is *written*, not what the agent *accepts* — only a live launch catches agent config-schema drift, and CI cannot (the e2e roles are not authenticated real agents). This is the standing guard for the "installer writes agent-breaking config" class.
 
 PRs touching tmux-style prefix surface (`Ctrl+B Space` palette, `Ctrl+B "` / `Ctrl+B %` splits, `Ctrl+B d` detach) must opt in before launching + call out surface in verify list:
 
@@ -282,11 +283,20 @@ Rules for writing + maintaining workflows under `.github/workflows/` and composi
 - Use `jdx/mise-action` for every tool installation — Rust, Node, Bun, Zig, cargo tools, everything.
 - **Rust toolchain version**: channel declared in `rust-toolchain.toml`. mise reads it automatically via `idiomatic_version_file` — no version pin in `install_args` needed. mise does **not** install `components` from `rust-toolchain.toml`; add a `rustup component add <components>` step after mise when a job needs non-default components (e.g. `rustfmt`, `clippy`).
 - **Cross-compilation targets**: run `rustup target add <target>` after mise step; `actions-rust-lang/setup-rust-toolchain`'s `target:` parameter not available.
-- **Cargo-registry tools used across all jobs** (e.g. `cargo-nextest`): declare in `mise.toml` with a pinned version (`"cargo:cargo-nextest" = "0.9.136"`). Tools needed by only one job (e.g. `cargo-zigbuild`, `cross`) can use `install_args: "cargo:<crate>"` instead.
+- **Cargo-registry tools**: declare them in `mise.toml` with the Cargo backend in the tool key directly — `"cargo:cargo-nextest" = "0.9.136"` — and reference them by that same `cargo:<crate>` name in `install_args`. Do **not** use a `[tools]` short name plus a `[tool_alias] <name> = "cargo:<name>"` indirection: that indirection mis-resolves to the GitHub backend on newer mise (e.g. `mise install` 404s on `api.github.com/repos/<name>/releases`), so it breaks local checkouts even when pinned CI passes. Keep `cargo-binstall` pinned in `[tools]` and `settings.cargo.binstall = true` so mise uses compatible prebuilt Cargo binaries when available and source-build fallback when an upstream release has no runner-architecture asset. A tool with no cargo-binstall asset that only ships GitHub release binaries under a non-standard name (e.g. `shellfirm`) cannot use the Cargo backend — install it some other way or, as with `shellfirm`, build it where it is actually consumed (the construct Dockerfile) and drop it from `mise.toml`.
 - **MSRV override** (the `msrv` CI job only): read version from `Cargo.toml`'s `rust-version` field at job runtime — never hardcode. Use `install_args: "rust@${{ steps.msrv.outputs.version }}"` and pin cargo step with `RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}`.
 - **Multiple tools in one step**: space-separate in `install_args: "rust zig cargo:cargo-zigbuild"`. Use a GHA expression when set is matrix-conditional: `install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"`.
 
 **Locally:** `mise install` from repo root installs every tool at version CI uses.
+
+## Read-only GitHub token in workflows
+
+Pick the read token by what it reads, because the two read tokens have different rate-limit budgets. `${{ secrets.GH_READONLY_TOKEN }}` is a single organization PAT: one shared ~5000/hr bucket drained by every job, every workflow, and every concurrent PR in the org at once — so concentrating high-frequency reads on it exhausts it and fails the `changes` gate (and everything downstream) with `API rate limit exceeded for user ID …`. `${{ github.token }}` is minted fresh per workflow run with its own per-repo budget, so it spreads read load instead of pooling it.
+
+- **Same-repo reads → `${{ github.token }}`.** Anything that reads *this* repository: `dorny/paths-filter`'s `token`, `lychee` link checks, `gh api` / `curl` against this repo's runs, artifacts, caches, releases, compare, or contents, the GHA buildx cache `ghtoken`, and read-only composite-action token inputs that hit this repo. The per-run token has actions read/write scope, so it is also the correct token for cache writes.
+- **Cross-repo reads → `${{ secrets.GH_READONLY_TOKEN }}`.** Reads of *other* repositories that the per-repo `github.token` cannot reach or that would otherwise drain this repo's budget: `jdx/mise-action`'s `github_token` (downloads tool releases from external repos), and any read of a private sibling org repo. Keeping these on the org PAT keeps external-download volume off the per-repo budget.
+
+Keep write-capable tokens only where the step actually writes outside this repo's automatic `github.token` scope: Homebrew tap pushes/PRs (`HOMEBREW_TAP_TOKEN`), and release creation/edit/upload, cache deletion, registry publication where a cross-repo or elevated token is required. Do not route same-repo read traffic through the org PAT — it is the documented cause of the shared-bucket exhaustion above.
 
 ## Env-var scope: job level, not workflow level
 

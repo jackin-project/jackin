@@ -1,6 +1,6 @@
 use super::{
-    Attrs, Cell, DamageGrid, KITTY_KB_STACK_CAP, PassthroughEvent, blank_row, make_blank_grid,
-    reconstruct_csi,
+    Attrs, Cell, DamageGrid, KITTY_KB_STACK_CAP, PassthroughEvent, RowWrap, ScrollOp, blank_row,
+    make_blank_grid, reconstruct_csi,
 };
 use smallvec::SmallVec;
 // ── vte::Perform implementation ────────────────────────────────────────────
@@ -155,6 +155,13 @@ impl vte::Perform for DamageGrid {
                 let row = self.cursor_row as usize;
                 let bottom = self.scroll_bottom as usize;
                 let cols = self.cols;
+                if row <= bottom {
+                    self.scroll_ops.push(ScrollOp::Down {
+                        top: self.cursor_row,
+                        bottom: self.scroll_bottom,
+                        rows: p0.max(1),
+                    });
+                }
                 let grid = self.active_grid();
                 for _ in 0..n {
                     if bottom < grid.len() {
@@ -170,6 +177,13 @@ impl vte::Perform for DamageGrid {
                 let row = self.cursor_row as usize;
                 let bottom = self.scroll_bottom as usize;
                 let cols = self.cols;
+                if row <= bottom {
+                    self.scroll_ops.push(ScrollOp::Up {
+                        top: self.cursor_row,
+                        bottom: self.scroll_bottom,
+                        rows: p0.max(1),
+                    });
+                }
                 let grid = self.active_grid();
                 for _ in 0..n {
                     if row < grid.len() {
@@ -200,7 +214,7 @@ impl vte::Perform for DamageGrid {
             // Scroll Up.
             'S' => {
                 let n = p0.max(1);
-                self.scroll_up(n);
+                self.scroll_up(n, RowWrap::Hard);
             }
             // Scroll Down. Inserted blanks use the DEFAULT background (not BCE).
             'T' => {
@@ -208,6 +222,13 @@ impl vte::Perform for DamageGrid {
                 let top = self.scroll_top as usize;
                 let bottom = self.scroll_bottom as usize;
                 let cols = self.cols;
+                // Record the region shift like `S`/`L`/`M` do, so the deferred
+                // scroll-region optimizer sees both scroll directions.
+                self.scroll_ops.push(ScrollOp::Down {
+                    top: self.scroll_top,
+                    bottom: self.scroll_bottom,
+                    rows: p0.max(1),
+                });
                 let grid = self.active_grid();
                 for _ in 0..n {
                     if bottom < grid.len() {
@@ -238,7 +259,7 @@ impl vte::Perform for DamageGrid {
             // `>`-intermediate form (`CSI > 4 ; n m`, xterm modifyOtherKeys)
             // is not SGR and must fall through to the passthrough arm.
             'm' if intermediates.is_empty() => {
-                self.apply_sgr(&p);
+                self.apply_sgr_params(params);
             }
             // DEC Private Mode Set.
             'h' if intermediates == b"?" => {
@@ -368,10 +389,11 @@ impl vte::Perform for DamageGrid {
             // DECRQM; `!p` (DECSTR soft reset) has no `$` and falls through.
             'p' if intermediates.contains(&b'$') => {
                 let dec = intermediates.contains(&b'?');
+                let status = self.profile.decrqm_status(p0);
                 let reply = if dec {
-                    format!("\x1b[?{p0};0$y")
+                    format!("\x1b[?{p0};{status}$y")
                 } else {
-                    format!("\x1b[{p0};0$y")
+                    format!("\x1b[{p0};{status}$y")
                 };
                 self.passthrough
                     .push(PassthroughEvent::Reply(reply.into_bytes()));
@@ -440,6 +462,11 @@ impl vte::Perform for DamageGrid {
                     let top = self.scroll_top as usize;
                     let bottom = self.scroll_bottom as usize;
                     let cols = self.cols;
+                    self.scroll_ops.push(ScrollOp::Down {
+                        top: self.scroll_top,
+                        bottom: self.scroll_bottom,
+                        rows: 1,
+                    });
                     let grid = self.active_grid();
                     if bottom < grid.len() {
                         grid.remove(bottom);
@@ -472,6 +499,7 @@ impl vte::Perform for DamageGrid {
                 self.cursor_row = 0;
                 self.cursor_col = 0;
                 self.current_attrs = Attrs::default();
+                self.active_hyperlink = None;
                 self.scroll_top = 0;
                 self.scroll_bottom = self.rows.saturating_sub(1);
                 self.reset_modes();

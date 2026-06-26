@@ -60,6 +60,7 @@ fn root_help_shows_all_commands() {
         "role",
         "workspace",
         "config",
+        "usage",
     ] {
         assert!(help.contains(cmd), "missing command: {cmd}");
     }
@@ -151,6 +152,10 @@ fn all_subcommand_help_pages_show_banner() {
         vec!["jackin", "config", "mount", "list", "--help"],
         vec!["jackin", "config", "auth", "set", "--help"],
         vec!["jackin", "config", "auth", "show", "--help"],
+        vec!["jackin", "usage", "--help"],
+        vec!["jackin", "usage", "cache", "accounts", "--help"],
+        vec!["jackin", "usage", "jk-demo-role", "accounts", "--help"],
+        vec!["jackin", "usage", "jk-demo-role", "verify", "--help"],
     ];
     for args in &subcommands {
         let help = help_text(args);
@@ -160,6 +165,32 @@ fn all_subcommand_help_pages_show_banner() {
             args.join(" ")
         );
     }
+}
+
+#[test]
+fn parses_usage_cache_accounts_json() {
+    let cli =
+        Cli::try_parse_from(["jackin", "usage", "cache", "accounts", "--format", "json"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Some(Command::Usage(ref args))
+            if args.instance == "cache"
+                && args.format == "json"
+                && matches!(args.scope, usage::UsageScope::Accounts(_))
+    ));
+}
+
+#[test]
+fn parses_usage_verify() {
+    let cli = Cli::try_parse_from(["jackin", "usage", "jk-demo-role", "verify"]).unwrap();
+
+    assert!(matches!(
+        cli.command,
+        Some(Command::Usage(ref args))
+            if args.instance == "jk-demo-role"
+                && matches!(args.scope, usage::UsageScope::Verify)
+    ));
 }
 
 #[test]

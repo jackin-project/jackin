@@ -5,8 +5,10 @@ use std::io;
 use std::sync::{Arc, Mutex};
 
 use crate::pr_context::{command_output_or_lookup_error, command_stdout_trimmed};
+use crate::protocol::attach::read_server_frame;
 use crate::tui::components::dialog::PullRequestStatus;
 use portable_pty::{ChildKiller, MasterPty, PtySize};
+use tokio::io::AsyncReadExt;
 
 #[derive(Debug)]
 struct NullChildKiller;
@@ -105,6 +107,8 @@ fn test_mux(rows: u16, cols: u16) -> Multiplexer {
             initial_provider: None,
             claude_marketplaces: Vec::new(),
             claude_plugins: Vec::new(),
+            dirty_exit_policy: None,
+            isolated_worktrees: Vec::new(),
         },
     )
     .unwrap_or_else(|error| panic!("test multiplexer construction failed: {error}"))
@@ -130,6 +134,20 @@ fn apply_action_frame(mux: &mut Multiplexer, action: Action) -> Option<Vec<u8>> 
     mux.apply_action(action);
     let frame = mux.compose_pending_frame();
     (!frame.is_empty()).then_some(frame)
+}
+
+fn seed_usage_dialog_for_refresh_test(mux: &mut Multiplexer) {
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+    let mut stale = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
+    stale.updated_label = "seed".to_owned();
+    stale.status_bar_label = "seed".to_owned();
+    mux.dialog_push(Dialog::new_usage(stale));
 }
 
 /// Drive `handle_palette_command` then compose; `None` when empty.
@@ -164,6 +182,297 @@ fn frame_contains_screen_erase(frame: &[u8]) -> bool {
     frame.windows(b"\x1b[2J".len()).any(|w| w == b"\x1b[2J")
 }
 
+#[test]
+fn control_reply_for_request_shapes_usage_variants() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+    let focused = control_reply_for_request(&mut mux, ClientMsg::UsageFocused);
+    assert!(matches!(focused, ServerMsg::UsageFocused { .. }));
+
+    let refreshed = control_reply_for_request(&mut mux, ClientMsg::UsageRefreshFocused);
+    assert!(matches!(refreshed, ServerMsg::UsageFocused { .. }));
+    assert!(
+        mux.pending_usage_refresh.is_some(),
+        "refresh request should queue provider work instead of probing inline"
+    );
+
+    let accounts = control_reply_for_request(&mut mux, ClientMsg::UsageAccountList);
+    assert!(matches!(accounts, ServerMsg::UsageAccounts { .. }));
+}
+
+#[test]
+fn control_reply_report_runtime_event_applies_to_session_and_acks() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("opencode".to_owned()));
+    mux.sessions.insert(1, session);
+
+    let reply = control_reply_for_request(
+        &mut mux,
+        ClientMsg::ReportRuntimeEvent {
+            session_id: 1,
+            source_id: "hook-opencode-1".to_owned(),
+            runtime: "opencode".to_owned(),
+            event: "permission.asked".to_owned(),
+            payload: None,
+        },
+    );
+
+    assert!(matches!(reply, ServerMsg::Ack));
+    let authority = mux.sessions[&1]
+        .authority
+        .as_ref()
+        .expect("event applied to the addressed session's authority");
+    assert_eq!(authority.source_id, "hook-opencode-1");
+    assert!(authority.pending_permission);
+}
+
+#[test]
+fn control_reply_runtime_event_and_capture_for_unknown_session_still_ack() {
+    // The hook must never be blocked or failed by a stale/wrong session id: both
+    // control messages Ack (and do not panic) when the session is absent.
+    let mut mux = single_pane_tab_mux();
+
+    let event_reply = control_reply_for_request(
+        &mut mux,
+        ClientMsg::ReportRuntimeEvent {
+            session_id: 999,
+            source_id: "hook-opencode-1".to_owned(),
+            runtime: "opencode".to_owned(),
+            event: "permission.asked".to_owned(),
+            payload: None,
+        },
+    );
+    assert!(matches!(event_reply, ServerMsg::Ack));
+
+    let capture_reply =
+        control_reply_for_request(&mut mux, ClientMsg::StatusCapture { session_id: 999 });
+    assert!(matches!(capture_reply, ServerMsg::Ack));
+}
+
+#[test]
+fn control_usage_account_list_uses_in_memory_cache() {
+    let mut mux = single_pane_tab_mux();
+    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 123);
+    view.focused_agent = Some("codex".to_owned());
+    view.focused_provider = Some("OpenAI".to_owned());
+    view.account = jackin_protocol::control::FocusedAccountHeader {
+        provider_label: "OpenAI / Codex".to_owned(),
+        account_label: "codex@example.com".to_owned(),
+        username: None,
+        plan_label: Some("Pro 20x".to_owned()),
+        credential_origin: None,
+    };
+    view.status = jackin_protocol::control::UsageSnapshotStatus::Fresh;
+    view.source = jackin_protocol::control::UsageSource::ProviderApi;
+    view.confidence = jackin_protocol::control::UsageConfidence::Authoritative;
+    view.buckets = vec![jackin_protocol::control::QuotaBucketView {
+        label: "Session".to_owned(),
+        used_label: Some("63% used".to_owned()),
+        limit_label: Some("100%".to_owned()),
+        remaining_percent: Some(37),
+        reset_label: Some("Resets in 2h".to_owned()),
+        resets_at: None,
+        status_slot: None,
+        pace_label: None,
+        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+    }];
+    mux.usage_cache
+        .insert_snapshot_for_test("codex", Some("OpenAI"), view);
+
+    let accounts = control_reply_for_request(&mut mux, ClientMsg::UsageAccountList);
+
+    let ServerMsg::UsageAccounts { accounts } = accounts else {
+        panic!("usage accounts response expected");
+    };
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].provider, "OpenAI / Codex");
+    assert_eq!(accounts[0].account_label, "codex@example.com");
+    assert_eq!(accounts[0].used_amount, Some(63));
+}
+
+#[test]
+fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
+    let mut mux = single_pane_tab_mux();
+    seed_usage_dialog_for_refresh_test(&mut mux);
+
+    mux.apply_dialog_action(DialogAction::RefreshUsage);
+
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+        panic!("refresh usage action must keep usage dialog open");
+    };
+    assert!(
+        view.updated_label.contains("refreshing"),
+        "{:?}",
+        view.updated_label
+    );
+    assert_eq!(view.status_bar_label, "seed");
+    assert_eq!(
+        mux.pending_usage_refresh,
+        Some(crate::usage::UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned())
+        })
+    );
+}
+
+#[test]
+fn apply_action_refresh_usage_queues_refresh_without_replacing_dialog() {
+    let mut mux = single_pane_tab_mux();
+    seed_usage_dialog_for_refresh_test(&mut mux);
+
+    mux.apply_action(Action::RefreshUsage);
+
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+        panic!("refresh usage action must keep usage dialog open");
+    };
+    assert!(
+        view.updated_label.contains("refreshing"),
+        "{:?}",
+        view.updated_label
+    );
+    assert_eq!(view.status_bar_label, "seed");
+    assert_eq!(
+        mux.pending_usage_refresh,
+        Some(crate::usage::UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned())
+        })
+    );
+}
+
+#[test]
+fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
+    let mut mux = single_pane_tab_mux();
+    let (session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+    mux.dialog_push(Dialog::new_usage(
+        jackin_protocol::control::FocusedUsageView {
+            focused_provider: Some("MiniMax".to_owned()),
+            account: jackin_protocol::control::FocusedAccountHeader {
+                provider_label: "Usage".to_owned(),
+                account_label: "seed".to_owned(),
+                username: None,
+                plan_label: None,
+                credential_origin: None,
+            },
+            ..jackin_protocol::control::FocusedUsageView::unavailable("seed", 1)
+        },
+    ));
+
+    mux.apply_dialog_action(DialogAction::SwitchUsageProvider {
+        provider_label: "Claude".to_owned(),
+    });
+
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
+        panic!("switch usage provider action must keep usage dialog open");
+    };
+    assert_eq!(view.focused_provider.as_deref(), Some("Claude"));
+    assert_eq!(view.account.provider_label, "Anthropic / Claude");
+    assert_eq!(
+        mux.pending_usage_refresh,
+        Some(crate::usage::UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("Claude".to_owned())
+        })
+    );
+}
+
+#[test]
+fn apply_action_open_usage_queues_focused_provider_refresh() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+
+    mux.apply_action(Action::OpenUsage);
+
+    assert!(matches!(mux.dialog_top(), Some(Dialog::Usage { .. })));
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
+        panic!("usage dialog expected");
+    };
+    assert!(
+        view.updated_label.contains("refreshing"),
+        "{:?}",
+        view.updated_label
+    );
+    assert_eq!(
+        mux.pending_usage_refresh,
+        Some(crate::usage::UsageRefreshTarget {
+            agent: "codex".to_owned(),
+            provider: Some("OpenAI".to_owned())
+        })
+    );
+}
+
+#[test]
+fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _session_rx) = test_session_with_agent(24, 80, Some("codex".to_owned()));
+    session.provider = Some(crate::session::SessionProvider {
+        label: "OpenAI".to_owned(),
+        env_overrides: Vec::new(),
+    });
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Codex", 1, "test");
+    let now_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_secs() as i64;
+    let cached = jackin_protocol::control::FocusedUsageView {
+        focused_agent: Some("codex".to_owned()),
+        focused_provider: Some("OpenAI".to_owned()),
+        account: jackin_protocol::control::FocusedAccountHeader {
+            provider_label: "Codex".to_owned(),
+            account_label: "alexey@example.com".to_owned(),
+            username: None,
+            plan_label: Some("Pro 20x".to_owned()),
+            credential_origin: None,
+        },
+        buckets: vec![jackin_protocol::control::QuotaBucketView {
+            label: "Session".to_owned(),
+            used_label: Some("63% used".to_owned()),
+            limit_label: Some("100%".to_owned()),
+            remaining_percent: Some(37),
+            reset_label: Some("Resets at 15:00 UTC".to_owned()),
+            resets_at: None,
+            status_slot: None,
+            pace_label: None,
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        }],
+        status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        source: jackin_protocol::control::UsageSource::Cli,
+        confidence: jackin_protocol::control::UsageConfidence::Authoritative,
+        fetched_at_epoch: now_epoch - 120,
+        updated_label: "Updated just now".to_owned(),
+        status_bar_label: "Codex Session: 63% used · 37% left".to_owned(),
+        tabs: Vec::new(),
+        last_error: None,
+    };
+    mux.usage_cache
+        .insert_snapshot_for_test("codex", Some("OpenAI"), cached);
+    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
+    view.updated_label = "Updated just now".to_owned();
+    mux.dialog_push(Dialog::new_usage(view));
+
+    assert!(mux.refresh_open_usage_dialog_from_cache());
+
+    let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
+        panic!("usage dialog expected");
+    };
+    assert_eq!(view.updated_label, "Updated 2m ago");
+}
+
 fn pull_request_fixture(number: u64) -> PullRequestInfo {
     PullRequestInfo {
         number,
@@ -180,6 +489,49 @@ fn pull_request_fixture(number: u64) -> PullRequestInfo {
 fn oid(nibble: char) -> Oid {
     assert!(nibble.is_ascii_hexdigit(), "nibble must be 0-9/a-f");
     Oid::parse(&nibble.to_string().repeat(40)).expect("40 hex chars is a valid Oid")
+}
+
+#[test]
+fn clipboard_image_error_reason_uses_stable_compact_codes() {
+    let cases = [
+        (
+            anyhow::anyhow!("clipboard image transfer is empty"),
+            "empty",
+        ),
+        (
+            anyhow::anyhow!("clipboard image transfer 67108865 bytes exceeds cap 67108864"),
+            "oversize",
+        ),
+        (
+            anyhow::anyhow!("clipboard image magic bytes do not match Png"),
+            "signature-mismatch",
+        ),
+        (
+            anyhow::anyhow!("clipboard image transfer 7 SHA-256 mismatch"),
+            "digest-mismatch",
+        ),
+        (
+            anyhow::anyhow!("clipboard image transfer 7 offset 4 did not match expected 8"),
+            "offset-mismatch",
+        ),
+        (
+            anyhow::anyhow!("clipboard image transfer 7 has no active start"),
+            "missing-transfer",
+        ),
+        (
+            anyhow::anyhow!("Error: Can't open display: (null)"),
+            "backend-unavailable",
+        ),
+        (
+            anyhow::anyhow!("writing /jackin/run/clipboard/clipboard-1.png"),
+            "staging-io",
+        ),
+        (anyhow::anyhow!("unexpected payload"), "invalid-payload"),
+    ];
+
+    for (err, expected) in cases {
+        assert_eq!(clipboard_image_error_reason(&err), expected);
+    }
 }
 
 fn branch(name: &str) -> BranchName {
@@ -402,15 +754,20 @@ fn assert_no_scroll_thumb(frame: &[u8], context: &str) {
 }
 
 fn assert_frame_stays_within_geometry(frame: &[u8], rows: u16, cols: u16, context: &str) {
-    let (moves, max_row, max_col, screen_erases) = scan_emitted_frame(frame);
+    let metrics = scan_emitted_frame(frame);
     assert!(
-        screen_erases > 0,
+        metrics.full_screen_erases > 0,
         "{context} resize repaint must clear the old geometry"
     );
-    assert!(moves > 0, "{context} resize repaint must draw cells");
     assert!(
-        max_row <= rows && max_col <= cols,
-        "{context} resize repaint moved outside {rows}x{cols}: max {max_row}x{max_col}"
+        metrics.cursor_moves > 0,
+        "{context} resize repaint must draw cells"
+    );
+    assert!(
+        metrics.max_row_addressed <= rows && metrics.max_col_addressed <= cols,
+        "{context} resize repaint moved outside {rows}x{cols}: max {}x{}",
+        metrics.max_row_addressed,
+        metrics.max_col_addressed
     );
 }
 
@@ -663,13 +1020,12 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
         String::from_utf8_lossy(&first)
     );
 
-    // Chrome is widget cells now: every composed frame carries it inside the
-    // `?2026`-bracketed atomic frame, so re-emission cannot flicker and no
-    // byte cache exists to go stale.
+    // Chrome is widget cells now: Ratatui emits it when it changes, then the
+    // previous buffer suppresses unchanged chrome on later frames.
     let unchanged = compose_after(&mut mux, status_change_redraw_reason());
     assert!(
-        contains(&unchanged, b"resize pane"),
-        "chrome cells must ride every composed frame: {:?}",
+        !contains(&unchanged, b"resize pane"),
+        "unchanged chrome cells must not be re-emitted: {:?}",
         String::from_utf8_lossy(&unchanged)
     );
     assert!(
@@ -686,8 +1042,8 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
     );
     let changed = compose_after(&mut mux, FullRedrawReason::ScrollbackMovement);
     assert!(
-        contains(&changed, b"exit scrollback"),
-        "changed scrollback chrome must re-emit the raw hint row: {:?}",
+        contains(&changed, b"scroll") && contains(&changed, b"exit"),
+        "changed scrollback chrome must re-emit the hint row: {:?}",
         String::from_utf8_lossy(&changed)
     );
 }
@@ -696,18 +1052,138 @@ fn bottom_chrome_rides_the_cell_buffer_on_every_frame() {
 fn scan_emitted_frame_reports_geometry_fingerprint() {
     // \x1b[2J (erase) + move to (5,10) + move to (40,160).
     let frame = b"\x1b[2J\x1b[5;10Hx\x1b[40;160Hy".to_vec();
-    assert_eq!(scan_emitted_frame(&frame), (2, 40, 160, 1));
+    let metrics = scan_emitted_frame(&frame);
+    assert_eq!(metrics.cursor_moves, 2);
+    assert_eq!(metrics.max_row_addressed, 40);
+    assert_eq!(metrics.max_col_addressed, 160);
+    assert_eq!(metrics.full_screen_erases, 1);
+    assert_eq!(metrics.painted_cells, 2);
 
     // A move with no col defaults col to 1; `f` is an alias for `H`.
     let frame = b"\x1b[12Hz".to_vec();
-    assert_eq!(scan_emitted_frame(&frame), (1, 12, 1, 0));
+    let metrics = scan_emitted_frame(&frame);
+    assert_eq!(metrics.cursor_moves, 1);
+    assert_eq!(metrics.max_row_addressed, 12);
+    assert_eq!(metrics.max_col_addressed, 1);
+    assert_eq!(metrics.full_screen_erases, 0);
+}
+
+#[test]
+fn scan_emitted_frame_counts_modern_render_metrics() {
+    let frame = b"\x1b[0m\x1b]8;;https://example.test\x07x\x1b]8;;\x07";
+    let metrics = scan_emitted_frame(frame);
+    assert_eq!(metrics.bytes, frame.len());
+    assert_eq!(metrics.sgr_resets, 1);
+    assert_eq!(metrics.osc8_opens, 1);
+    assert_eq!(metrics.osc8_closes, 1);
+    assert_eq!(metrics.full_screen_erases, 0);
+    assert_eq!(metrics.painted_cells, 1);
+    assert!(
+        !metrics.full_frame_repaint,
+        "geometry-free scan should not claim full-frame repaint"
+    );
+    let full = crate::client_writer::scan_emitted_frame_with_geometry(b"12345678", Some((2, 5)));
+    assert!(
+        full.full_frame_repaint,
+        "painted-cell threshold should flag full-frame repaint"
+    );
+}
+
+#[test]
+fn pty_osc8_hyperlink_emits_from_frame_metadata() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"\x1b]8;;https://example.test/docs\x07link\x1b]8;;\x07");
+    mux.sessions.insert(1, session);
+
+    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+
+    assert!(
+        frame
+            .windows(b"\x1b]8;;https://example.test/docs\x1b\\".len())
+            .any(|w| w == b"\x1b]8;;https://example.test/docs\x1b\\"),
+        "safe OSC 8 link must be emitted from frame metadata: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+    assert!(
+        frame.windows(b"link".len()).any(|w| w == b"link"),
+        "linked glyphs must still render: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+}
+
+#[test]
+fn unsafe_pty_osc8_hyperlink_is_not_emitted_from_frame_metadata() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"\x1b]8;;javascript:alert(1)\x07link\x1b]8;;\x07");
+    mux.sessions.insert(1, session);
+
+    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+
+    assert!(
+        !frame
+            .windows(b"javascript".len())
+            .any(|w| w == b"javascript"),
+        "unsafe OSC 8 URI must not be emitted: {:?}",
+        String::from_utf8_lossy(&frame)
+    );
+    assert!(
+        frame.windows(b"link".len()).any(|w| w == b"link"),
+        "glyphs must render even when the hyperlink URI is filtered"
+    );
+}
+
+#[test]
+fn pty_sgr_metadata_emits_non_native_visible_attributes() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"\x1b[4:3;58:2:12:34:56;53mstyled");
+    mux.sessions.insert(1, session);
+
+    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+    let text = String::from_utf8_lossy(&frame);
+
+    for sgr in ["\x1b[4:3m", "\x1b[58;2;12;34;56m", "\x1b[53m"] {
+        assert!(
+            text.contains(sgr),
+            "SGR metadata {sgr:?} must be emitted in frame: {text:?}"
+        );
+    }
+}
+
+#[test]
+fn scroll_region_ops_do_not_emit_decstbm_optimization() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _rx) = test_session(20, 78);
+    session.feed_pty(b"\x1b[1;5r\x1b[5;1H");
+    for i in 0..8 {
+        session.feed_pty(format!("\r\nline {i}").as_bytes());
+    }
+    session.feed_pty(b"\x1b[r");
+    mux.sessions.insert(1, session);
+
+    let frame = compose_after(&mut mux, FullRedrawReason::FirstAttach);
+    let text = String::from_utf8_lossy(&frame);
+
+    assert!(
+        !text.contains("\x1b[1;5r") && !text.contains("\x1b[r"),
+        "DECSTBM scroll-region optimization must stay disabled: {text:?}"
+    );
+    assert!(
+        !text.contains("\x1b[1S")
+            && !text.contains("\x1b[S")
+            && !text.contains("\x1b[1T")
+            && !text.contains("\x1b[T"),
+        "scroll op optimization bytes must stay disabled: {text:?}"
+    );
 }
 
 #[test]
 fn wipe_policy_erases_only_on_first_attach_and_resize() {
     // I4: no screen erase outside FirstAttach/Resize. Every other
-    // invalidation repaints in place — the sentinel-baseline re-emit
-    // overwrites every cell without flashing the screen blank (D7).
+    // invalidation relies on Ratatui's previous buffer instead of blanking
+    // the screen.
     let erase = b"\x1b[2J";
     let contains = |frame: &[u8]| frame.windows(erase.len()).any(|w| w == erase);
 
@@ -2156,14 +2632,14 @@ fn wheel_back_to_live_repaints_body_and_footer() {
     .expect("wheel into history must repaint");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
     assert!(
-        contains(&scrolled, b"exit scrollback"),
+        contains(&scrolled, b"exit") && contains(&scrolled, b"scrollback"),
         "scrolled frame must show the scrollback footer: {:?}",
         String::from_utf8_lossy(&scrolled)
     );
 
     // Wheel-only return to the live tail: body and footer must repaint
     // together — the D2 regression left the scrollback view and the
-    // "exit scrollback" footer on screen here.
+    // scrollback footer on screen here.
     let live = handle_input_frame(
         &mut mux,
         InputEvent::MousePress {
@@ -2175,13 +2651,13 @@ fn wheel_back_to_live_repaints_body_and_footer() {
     .expect("wheel back to live must repaint");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
     assert!(
-        !contains(&live, b"exit scrollback"),
+        !contains(&live, b"scrollback"),
         "footer must return to the live hint: {:?}",
         String::from_utf8_lossy(&live)
     );
     assert!(
-        contains(&live, b"39"),
-        "body must repaint the live tail row: {:?}",
+        contains(&live, b"9"),
+        "body diff must include changed live-tail cells: {:?}",
         String::from_utf8_lossy(&live)
     );
     assert!(
@@ -2423,21 +2899,24 @@ fn diff_frames_repaint_in_place_without_screen_erase() {
 
     let first = compose_after(&mut mux, FullRedrawReason::FocusChange);
     let second = compose_after(&mut mux, FullRedrawReason::FocusChange);
-    for (frame, which) in [(&first, "first"), (&second, "second")] {
-        assert!(
-            !frame_contains_screen_erase(frame),
-            "{which} diff frame must not erase the screen"
-        );
-        // Convergence stopgap: every Ratatui frame re-emits its cells so the
-        // physical screen converges even if another writer desynced it. The
-        // encoder skips cells identical to the reset baseline (the space
-        // between the words), so match the words separately.
-        assert!(
-            contains(frame, b"hello") && contains(frame, b"capsule"),
-            "{which} diff frame must re-emit pane cells: {:?}",
-            String::from_utf8_lossy(frame)
-        );
-    }
+    assert!(
+        !frame_contains_screen_erase(&first),
+        "first diff frame must not erase the screen"
+    );
+    assert!(
+        contains(&first, b"hello") && contains(&first, b"capsule"),
+        "first diff frame must emit changed pane cells: {:?}",
+        String::from_utf8_lossy(&first)
+    );
+    assert!(
+        !frame_contains_screen_erase(&second),
+        "unchanged diff frame must not erase the screen"
+    );
+    assert!(
+        !contains(&second, b"hello") && !contains(&second, b"capsule"),
+        "unchanged diff frame must trust Ratatui's previous buffer: {:?}",
+        String::from_utf8_lossy(&second)
+    );
 }
 
 #[test]
@@ -2855,8 +3334,10 @@ fn pointer_shape_updates_only_when_shape_changes() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.left_region)
@@ -2870,6 +3351,35 @@ fn pointer_shape_updates_only_when_shape_changes() {
     mux.update_pointer_shape_for_mouse(23, hit.start, SGR_NO_BUTTON_MOTION);
     mux.client.flush_out_of_band();
     assert!(rx.try_recv().is_err(), "unchanged shape should not re-emit");
+}
+
+#[tokio::test]
+async fn drain_and_exit_delivers_shutdown_before_closing_attach_socket() {
+    let mut mux = test_mux(24, 80);
+    let (daemon_stream, mut client_stream) = tokio::net::UnixStream::pair().unwrap();
+    let (out_tx, out_rx) = mpsc::unbounded_channel();
+    let (cmd_tx, _cmd_rx) = mpsc::unbounded_channel();
+    mux.client.attach(out_tx);
+    mux.attached_task = Some(tokio::spawn(handle_attach_client(
+        daemon_stream,
+        out_rx,
+        cmd_tx,
+    )));
+
+    let read_shutdown = async {
+        let mut tag = [0u8; 1];
+        client_stream
+            .read_exact(&mut tag)
+            .await
+            .expect("shutdown tag should be readable");
+        read_server_frame(&mut client_stream, tag[0])
+            .await
+            .expect("shutdown frame should decode")
+            .expect("shutdown frame should be present")
+    };
+
+    let ((), frame) = tokio::join!(drain_and_exit(&mut mux), read_shutdown);
+    assert_eq!(frame, ServerFrame::Shutdown { reason: None });
 }
 
 #[test]
@@ -2927,6 +3437,63 @@ fn pointer_shape_updates_for_clickable_dialog_copy_target() {
     );
     mux.client.flush_out_of_band();
     let shape = rx.try_recv().expect("dialog pointer-shape update");
+    assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
+}
+
+#[test]
+fn pointer_shape_updates_for_modified_link_hover() {
+    let mut mux = single_pane_tab_mux();
+    mux.pointer_shapes_supported = true;
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hvisit https://example.com/visible now");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.update_pointer_shape_for_mouse(inner.row, inner.col + 7, 43);
+    mux.client.flush_out_of_band();
+    let shape = rx.try_recv().expect("link hover pointer-shape update");
+    assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
+}
+
+#[test]
+fn pointer_shape_updates_for_usage_dialog_tabs() {
+    let mut mux = single_pane_tab_mux();
+    mux.pointer_shapes_supported = true;
+    let mut view = jackin_protocol::control::FocusedUsageView::unavailable("seed", 1);
+    view.focused_provider = Some("OpenAI".to_owned());
+    view.tabs = vec![jackin_protocol::control::UsageProviderTab {
+        label: "OpenAI".to_owned(),
+        status_label: "usage unavailable".to_owned(),
+        account_label: "seed".to_owned(),
+        plan_label: None,
+        source_label: None,
+        active: true,
+    }];
+    mux.dialog_push(Dialog::new_usage(view.clone()));
+    let dialog = mux.dialog_top().expect("usage dialog should open");
+    let (row, col, rows, cols) = dialog.box_rect(mux.term_rows, mux.term_cols);
+    let area = ratatui::layout::Rect {
+        x: col,
+        y: row,
+        width: cols,
+        height: rows,
+    };
+    let inner = crate::tui::components::dialog_widgets::usage_dialog_inner_area(area);
+    let tabs = crate::tui::components::dialog_widgets::usage_tab_strip_labels(
+        &view,
+        crate::tui::components::dialog::UsageDialogTab::Provider,
+    );
+    let tab_area = crate::tui::components::dialog_widgets::usage_tab_strip_area(inner, &tabs);
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.update_pointer_shape_for_mouse(tab_area.y, tab_area.x, SGR_NO_BUTTON_MOTION);
+    mux.client.flush_out_of_band();
+
+    let shape = rx.try_recv().expect("usage tab pointer-shape update");
     assert!(shape.ends_with(b"\x1b]22;pointer\x1b\\"));
 }
 
@@ -3039,8 +3606,10 @@ fn bottom_container_click_opens_container_info_without_copying() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.container_region)
@@ -3089,8 +3658,10 @@ fn bottom_context_click_opens_github_context_dialog() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.left_region)
@@ -3119,9 +3690,12 @@ fn bottom_context_click_opens_github_context_dialog() {
         rendered.contains(&format!("\x1b[{hint_row};")),
         "dialog hint should render one row above the spacer: {rendered:?}"
     );
+    // Outside a debug launch the bottom branch/context bar is hidden under a
+    // dialog (commit 5f2076a6); this mux has no debug run id, so the final row
+    // must stay clear — only the dialog hint renders below the dialog.
     assert!(
-        rendered.contains(&format!("\x1b[{bottom_row};")),
-        "bottom branch/context bar should stay on the final row: {rendered:?}"
+        !rendered.contains(&format!("\x1b[{bottom_row};")),
+        "bottom branch/context bar must be hidden under a dialog outside debug: {rendered:?}"
     );
     assert!(matches!(
         mux.dialog_top(),
@@ -3369,6 +3943,37 @@ fn apply_action_switch_tab_moves_active_tab() {
 }
 
 #[test]
+fn tab_bar_focus_key_maps_arrows_and_exit() {
+    use super::input_dispatch::{TabBarFocusKey, tab_bar_focus_key};
+    assert_eq!(tab_bar_focus_key(b"\x1b[C"), Some(TabBarFocusKey::Next)); // Right
+    assert_eq!(tab_bar_focus_key(b"\x1b[D"), Some(TabBarFocusKey::Prev)); // Left
+    assert_eq!(tab_bar_focus_key(b"\x1b[B"), Some(TabBarFocusKey::Exit)); // Down
+    assert_eq!(tab_bar_focus_key(b"\x1b"), Some(TabBarFocusKey::Exit)); // Esc
+    assert_eq!(tab_bar_focus_key(b"x"), None);
+}
+
+#[test]
+fn tab_bar_focus_mode_arrows_switch_tabs_then_esc_returns_to_agent() {
+    // P5: while the tab bar is focused, Left/Right switch agent tabs and Esc
+    // returns focus to the agent content.
+    let mut mux = single_pane_tab_mux();
+    mux.tabs.push(Tab::new_single("Shell", 2, "test"));
+    drop(compose_after(&mut mux, FullRedrawReason::ExplicitRedraw));
+
+    mux.set_tab_bar_focused(true);
+    assert!(mux.tab_bar_focused);
+
+    mux.handle_input(InputEvent::Data(b"\x1b[C".to_vec())); // Right → next tab
+    assert_eq!(mux.active_tab, 1);
+    mux.handle_input(InputEvent::Data(b"\x1b[D".to_vec())); // Left → previous tab
+    assert_eq!(mux.active_tab, 0);
+    assert!(mux.tab_bar_focused, "arrows keep the bar focused");
+
+    mux.handle_input(InputEvent::Data(b"\x1b".to_vec())); // Esc → back to agent
+    assert!(!mux.tab_bar_focused);
+}
+
+#[test]
 fn apply_action_status_bar_click_switches_tab() {
     let mut mux = single_pane_tab_mux();
     mux.tabs.push(Tab::new_single("Shell", 2, "test"));
@@ -3412,8 +4017,10 @@ fn apply_action_branch_context_bar_click_opens_container_info() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
+        None,
         mux.status_bar.instance_id_label(),
     )
     .and_then(|layout| layout.container_region)
@@ -3546,8 +4153,8 @@ fn prefix_clear_pane_uses_diff_frame_without_screen_erase() {
 
 #[test]
 fn prefix_redraw_repaints_in_place_without_screen_erase() {
-    // The explicit-redraw chord re-emits every cell through the sentinel
-    // baseline; under the wipe policy (I4) only FirstAttach/Resize erase.
+    // The explicit-redraw chord must not clear the full terminal; under the
+    // wipe policy (I4) only FirstAttach/Resize erase.
     let mut mux = single_pane_tab_mux();
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
@@ -3994,6 +4601,54 @@ fn typed_input_snaps_scrollback_to_live_without_screen_erase() {
         !frame_contains_screen_erase(&frame),
         "typing scrollback snap must not clear the full screen"
     );
+}
+
+#[test]
+fn image_path_paste_uses_plain_bytes_when_bracketed_paste_is_off() {
+    let mut mux = single_pane_tab_mux();
+    let (session, mut input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+
+    assert!(mux.paste_text_to_focused_pane(b"/jackin/run/clipboard/clipboard-test.png"));
+
+    assert_eq!(
+        input_rx.try_recv().unwrap(),
+        b"/jackin/run/clipboard/clipboard-test.png"
+    );
+    assert!(
+        input_rx.try_recv().is_err(),
+        "plain paste should not produce extra PTY input"
+    );
+}
+
+#[test]
+fn image_path_paste_uses_bracketed_paste_when_enabled() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[?2004h");
+    assert!(
+        session.bracketed_paste(),
+        "test session should track bracketed-paste mode"
+    );
+    mux.sessions.insert(1, session);
+
+    assert!(mux.paste_text_to_focused_pane(b"/jackin/run/clipboard/clipboard-test.png"));
+
+    assert_eq!(
+        input_rx.try_recv().unwrap(),
+        b"\x1b[200~/jackin/run/clipboard/clipboard-test.png\x1b[201~"
+    );
+    assert!(
+        input_rx.try_recv().is_err(),
+        "bracketed paste should be one PTY input chunk"
+    );
+}
+
+#[test]
+fn image_path_paste_reports_missing_focused_session() {
+    let mut mux = single_pane_tab_mux();
+
+    assert!(!mux.paste_text_to_focused_pane(b"/jackin/run/clipboard/clipboard-test.png"));
 }
 
 #[test]
@@ -4571,9 +5226,8 @@ fn typed_input_after_copied_selection_clears_and_forwards() {
 
 #[test]
 fn split_close_frame_repaints_in_place_without_screen_erase() {
-    // Defect 29 is covered by the sentinel baseline now: a layout reflow
-    // re-emits every cell of the new layout in place, so cells from the
-    // removed pane are overwritten without flashing the screen blank (I4).
+    // Layout reflow must converge through Ratatui's diff without flashing the
+    // screen blank (I4).
     let mut mux = single_pane_tab_mux_with_size(24, 80);
     drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
 
@@ -4723,6 +5377,966 @@ fn assert_osc52_payloads(
     for (payload, text) in payloads.iter().zip(expected) {
         assert_eq!(payload, &expected_osc52_payload(text));
     }
+}
+
+#[tokio::test]
+async fn open_host_url_dialog_action_sends_typed_protocol_frame() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.apply_dialog_action(DialogAction::OpenHostUrl(
+        "https://github.com/jackin-project/jackin/pull/565".to_owned(),
+    ));
+
+    let bytes = rx.try_recv().expect("host-open-url frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("https://github.com/jackin-project/jackin/pull/565".to_owned())
+    );
+}
+
+#[test]
+fn open_host_url_dialog_action_honors_operator_opt_out() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.open_host_url_from_dialog(
+        "https://github.com/jackin-project/jackin/pull/565".to_owned(),
+        false,
+    );
+
+    assert!(
+        rx.try_recv().is_err(),
+        "disabled host URL opening must not emit a host-open frame"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Host link opening disabled by JACKIN_OPEN_LINKS")
+    );
+}
+
+#[test]
+fn open_host_url_dialog_action_rejects_unsupported_scheme() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.open_host_url_from_dialog("file:///Users/operator/private.txt".to_owned(), true);
+
+    assert!(
+        rx.try_recv().is_err(),
+        "unsupported host URL schemes must not emit a host-open frame"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Host link rejected: unsupported URL scheme")
+    );
+}
+
+#[test]
+fn host_url_open_policy_honors_operator_opt_out_values() {
+    assert!(mouse_input::host_url_opening_allowed_for(None));
+    assert!(mouse_input::host_url_opening_allowed_for(Some("allow")));
+    for value in ["deny", "off", "no"] {
+        assert!(
+            !mouse_input::host_url_opening_allowed_for(Some(value)),
+            "{value} should disable host URL opening"
+        );
+    }
+}
+
+#[tokio::test]
+async fn modified_click_visible_url_sends_typed_protocol_frame() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"visit https://example.com/jackin-preflight-url now\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "visit https://exa".len() as u16,
+            button: 8,
+        },
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "host-open URL gesture should not forward mouse bytes to a mouse-disabled pane"
+    );
+    let bytes = rx.try_recv().expect("host-open-url frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("https://example.com/jackin-preflight-url".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn modified_click_in_mouse_enabled_pane_forwards_to_pty() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[?1000h\x1b[?1006hvisit https://example.com/rich-tui now\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "visit https://exa".len() as u16,
+            button: 8,
+        },
+    );
+
+    let forwarded = input_rx
+        .try_recv()
+        .expect("modified click should forward to mouse-enabled pane");
+    assert!(
+        forwarded.starts_with(b"\x1b[<8;"),
+        "unexpected forwarded mouse bytes: {forwarded:02x?}"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "mouse-enabled pane should not emit a host-open-url frame"
+    );
+}
+
+#[tokio::test]
+async fn modified_click_visible_file_path_sends_file_export_frames() {
+    let temp = tempfile::tempdir().unwrap();
+    let workdir = temp.path().join("workspace");
+    std::fs::create_dir(&workdir).unwrap();
+    std::fs::write(workdir.join("report.txt"), b"hello export").unwrap();
+
+    let mut mux = single_pane_tab_mux();
+    mux.workdir = workdir.clone();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+    mux.client.flush_out_of_band();
+    while rx.try_recv().is_ok() {}
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"artifact report.txt ready\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "artifact report".len() as u16,
+            button: 8,
+        },
+    );
+    mux.client.flush_out_of_band();
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "modified file export must not forward mouse bytes to the pane"
+    );
+    let bytes = rx.try_recv().expect("file-export-start frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode file-export-start frame")
+        .expect("file-export-start frame");
+    let ServerFrame::FileExportStart(start) = frame else {
+        panic!("expected FileExportStart");
+    };
+    assert_eq!(
+        start.source_path,
+        workdir
+            .join("report.txt")
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string()
+    );
+    assert_eq!(start.file_name, "report.txt");
+    assert!(!start.reveal_after_export);
+    assert!(!start.open_after_export);
+}
+
+#[test]
+fn modified_click_plain_word_without_file_falls_through_quietly() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"plain words only\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "plain wo".len() as u16,
+            button: 8,
+        },
+    );
+    mux.client.flush_out_of_band();
+
+    assert!(
+        rx.try_recv().is_err(),
+        "plain modified-click must not emit host frames"
+    );
+    assert_eq!(mux.clipboard_image_notice.as_deref(), None);
+}
+
+#[tokio::test]
+async fn modified_click_prefers_osc8_target_over_visible_text() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(
+        b"\x1b]8;id=link;https://example.com/osc8\x07osc8_link\x1b]8;;\x07 and https://example.com/visible",
+    );
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + 1,
+            button: 8,
+        },
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "modified-click should stay host-open path"
+    );
+    let bytes = rx
+        .try_recv()
+        .expect("host-open-url frame should prefer OSC 8 target");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("https://example.com/osc8".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn modified_click_accepts_mailto_osc8_target() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(
+        b"\x1b]8;id=mail;mailto:operator@example.com\x07email\x1b]8;;\x07 and https://example.com/visible",
+    );
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + 1,
+            button: 8,
+        },
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "modified-click should stay host-open path"
+    );
+    let bytes = rx
+        .try_recv()
+        .expect("host-open-url frame should allow mailto OSC 8 target");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("mailto:operator@example.com".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn modified_click_accepts_visible_mailto_token() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"contact mailto:operator@example.com now\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "contact mailto:opera".len() as u16,
+            button: 8,
+        },
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "modified-click should stay host-open path"
+    );
+    let bytes = rx
+        .try_recv()
+        .expect("host-open-url frame should allow visible mailto target");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("mailto:operator@example.com".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn modified_click_rejects_unsafe_visible_url_without_forwarding() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"local file:///tmp/report.html now\r\n");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + "local file:///tmp/re".len() as u16,
+            button: 8,
+        },
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "unsafe host-open gesture should not forward mouse bytes"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "unsafe host-open gesture should not emit a host-open frame"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Host link rejected: unsupported URL scheme")
+    );
+}
+
+#[tokio::test]
+async fn modified_click_rejects_unsafe_osc8_url_without_forwarding() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(
+        b"\x1b]8;id=file;file:///tmp/report.html\x07local_file\x1b]8;;\x07 and https://example.com/visible",
+    );
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    apply_action_frame(
+        &mut mux,
+        Action::OpenVisibleUrlAt {
+            row: inner.row,
+            col: inner.col + 1,
+            button: 8,
+        },
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "unsafe OSC8 host-open gesture should not forward mouse bytes"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "unsafe OSC8 host-open gesture should not emit a host-open frame"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Host link rejected: unsupported URL scheme")
+    );
+}
+
+#[tokio::test]
+async fn open_link_under_cursor_palette_action_sends_typed_protocol_frame() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hvisit https://example.com/jackin-preflight-url now\x1b[1;15H");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "open-link command must not forward bytes to the pane"
+    );
+    let bytes = rx.try_recv().expect("host-open-url frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("https://example.com/jackin-preflight-url".to_owned())
+    );
+}
+
+#[test]
+fn modified_url_hover_renders_visible_target_without_forwarding_to_pty() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hvisit https://example.com/visible now");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    let frame = handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: inner.row,
+            col: inner.col + 7,
+            // SGR passive motion + Alt. Ghostty reported this shape during
+            // Phase 0 preflight for Option-hover in a mouse-disabled pane.
+            button: 43,
+        },
+    )
+    .expect("hovering a link should repaint the notice");
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "modified hover must not write bytes into a mouse-disabled pane"
+    );
+    assert_eq!(
+        mux.link_hover_url.as_deref(),
+        Some("https://example.com/visible")
+    );
+    let frame = String::from_utf8_lossy(&frame);
+    assert!(
+        frame.contains("Open link: https://example.com/visible"),
+        "hover notice missing from frame: {frame:?}"
+    );
+}
+
+#[test]
+fn modified_url_hover_prefers_osc8_target() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(
+        b"\x1b]8;id=link;https://example.com/osc8\x07https://example.com/visible\x1b]8;;\x07",
+    );
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    drop(handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: inner.row,
+            col: inner.col + 1,
+            button: 51,
+        },
+    ));
+
+    assert_eq!(
+        mux.link_hover_url.as_deref(),
+        Some("https://example.com/osc8")
+    );
+}
+
+#[test]
+fn unmodified_url_hover_clears_existing_link_notice() {
+    let mut mux = single_pane_tab_mux();
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hvisit https://example.com/visible now");
+    mux.sessions.insert(1, session);
+    mux.link_hover_url = Some("https://example.com/visible".to_owned());
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    let inner = mux.visible_panes()[0].inner;
+    drop(handle_input_frame(
+        &mut mux,
+        InputEvent::MousePress {
+            row: inner.row,
+            col: inner.col + 7,
+            button: SGR_NO_BUTTON_MOTION,
+        },
+    ));
+
+    assert_eq!(mux.link_hover_url, None);
+}
+
+#[tokio::test]
+async fn open_link_under_cursor_palette_prefers_osc8_target_over_visible_text() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(
+        b"\x1b]8;id=link;https://example.com/osc8\x07https://example.com/visible\x1b]8;;\x07\x1b[1;2H",
+    );
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "open-link must stay attach path"
+    );
+    let bytes = rx
+        .try_recv()
+        .expect("host-open-url frame should prefer OSC 8 target");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-open-url frame")
+        .expect("host-open-url frame");
+    assert_eq!(
+        frame,
+        ServerFrame::HostOpenUrl("https://example.com/osc8".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn open_link_under_cursor_palette_rejects_unsafe_visible_url() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hopen file:///tmp/report.html now\x1b[1;12H");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "unsafe open-link command must not forward bytes to the pane"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "unsafe open-link command must not emit a host-open frame"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Host link rejected: unsupported URL scheme")
+    );
+}
+
+#[tokio::test]
+async fn open_link_under_cursor_palette_action_reports_missing_url() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hplain text only\x1b[1;3H");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
+
+    assert!(
+        rx.try_recv().is_err(),
+        "missing URL must not emit a host-open frame"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("No host-open link under focused cursor")
+    );
+}
+
+#[tokio::test]
+async fn export_file_under_cursor_palette_action_sends_file_export_frames() {
+    let temp = tempfile::tempdir().unwrap();
+    let workdir = temp.path().join("workspace");
+    std::fs::create_dir(&workdir).unwrap();
+    std::fs::write(workdir.join("report.txt"), b"hello export").unwrap();
+
+    let mut mux = single_pane_tab_mux();
+    mux.workdir = workdir.clone();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+    mux.client.flush_out_of_band();
+    while rx.try_recv().is_ok() {}
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hsee report.txt now\x1b[1;7H");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    mux.handle_palette_command(PaletteCommand::ExportFileUnderCursorAndReveal);
+    mux.client.flush_out_of_band();
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "export-under-cursor command must not forward bytes to the pane"
+    );
+    let bytes = rx.try_recv().expect("file-export-start frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode file-export-start frame")
+        .expect("file-export-start frame");
+    let ServerFrame::FileExportStart(start) = frame else {
+        panic!("expected FileExportStart");
+    };
+    assert_eq!(
+        start.source_path,
+        workdir
+            .join("report.txt")
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string()
+    );
+    assert_eq!(start.file_name, "report.txt");
+    assert_eq!(start.size, "hello export".len() as u64);
+    assert!(start.reveal_after_export);
+    assert!(!start.open_after_export);
+    assert!(
+        mux.clipboard_image_notice
+            .as_deref()
+            .is_some_and(|notice| notice.contains("File export and reveal queued: report.txt"))
+    );
+}
+
+#[tokio::test]
+async fn export_selected_file_palette_action_sends_file_export_frames() {
+    let temp = tempfile::tempdir().unwrap();
+    let workdir = temp.path().join("workspace");
+    std::fs::create_dir(&workdir).unwrap();
+    std::fs::write(workdir.join("report.txt"), b"hello export").unwrap();
+
+    let mut mux = single_pane_tab_mux();
+    mux.workdir = workdir.clone();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+    mux.client.flush_out_of_band();
+    while rx.try_recv().is_ok() {}
+
+    let (mut session, mut input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1Hsee report.txt now\x1b[1;1H");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+    let inner = mux.visible_panes()[0].inner;
+    mux.selection = Some(SelectionState {
+        session_id: 1,
+        inner,
+        anchor_row: 0,
+        anchor_col: 4,
+        end_row: 0,
+        end_col: 13,
+    });
+
+    mux.handle_palette_command(PaletteCommand::ExportSelectedFileAndOpen);
+    mux.client.flush_out_of_band();
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "export-selected command must not forward bytes to the pane"
+    );
+    let bytes = rx.try_recv().expect("file-export-start frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode file-export-start frame")
+        .expect("file-export-start frame");
+    let ServerFrame::FileExportStart(start) = frame else {
+        panic!("expected FileExportStart");
+    };
+    assert_eq!(
+        start.source_path,
+        workdir
+            .join("report.txt")
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string()
+    );
+    assert_eq!(start.file_name, "report.txt");
+    assert!(!start.reveal_after_export);
+    assert!(start.open_after_export);
+    assert!(
+        mux.clipboard_image_notice
+            .as_deref()
+            .is_some_and(|notice| notice.contains("File export and open queued: report.txt"))
+    );
+}
+
+#[test]
+fn export_file_under_cursor_palette_action_reports_missing_path_token() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    let (mut session, _input_rx) = test_shell_session(20, 78);
+    session.feed_pty(b"\x1b[1;1H    \x1b[1;2H");
+    mux.sessions.insert(1, session);
+    drop(compose_after(&mut mux, FullRedrawReason::FirstAttach));
+
+    mux.handle_palette_command(PaletteCommand::ExportFileUnderCursor);
+    mux.client.flush_out_of_band();
+
+    assert!(
+        rx.try_recv().is_err(),
+        "missing path token must not emit file-export frames"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("No exportable file path under focused cursor")
+    );
+}
+
+#[test]
+fn export_selected_file_palette_action_reports_missing_selection() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.handle_palette_command(PaletteCommand::ExportSelectedFile);
+    mux.client.flush_out_of_band();
+
+    assert!(
+        rx.try_recv().is_err(),
+        "missing selection must not emit file-export frames"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("No selected file path to export")
+    );
+}
+
+#[tokio::test]
+async fn stage_image_path_palette_action_sends_typed_protocol_frame() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
+
+    mux.handle_palette_command(PaletteCommand::StageImageFromClipboardPath);
+
+    let bytes = rx.try_recv().expect("host-stage-image-path frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-stage-image-path frame")
+        .expect("host-stage-image-path frame");
+    assert_eq!(frame, ServerFrame::HostStageImageFromClipboardPath);
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::PastePath
+    );
+}
+
+#[tokio::test]
+async fn paste_image_palette_action_sends_typed_protocol_frame() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
+
+    mux.handle_palette_command(PaletteCommand::PasteImageFromClipboard);
+
+    let bytes = rx.try_recv().expect("host-paste-image frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-paste-image frame")
+        .expect("host-paste-image frame");
+    assert_eq!(frame, ServerFrame::HostPasteImageFromClipboard);
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::PastePath
+    );
+}
+
+#[tokio::test]
+async fn stage_image_palette_action_sends_typed_protocol_frame() {
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    mux.client.attach(tx);
+
+    mux.handle_palette_command(PaletteCommand::StageImageFromClipboard);
+
+    let bytes = rx.try_recv().expect("host-stage-image frame");
+    let tag = bytes[0];
+    let mut payload = &bytes[1..];
+    let frame = read_server_frame(&mut payload, tag)
+        .await
+        .expect("decode host-stage-image frame")
+        .expect("host-stage-image frame");
+    assert_eq!(frame, ServerFrame::HostStageImageFromClipboard);
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::StageOnly
+    );
+}
+
+#[tokio::test]
+async fn chunked_image_start_reports_visible_receiving_notice() {
+    let mut mux = single_pane_tab_mux();
+
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::ClipboardImageStart(jackin_protocol::attach::ClipboardImageStart {
+            transfer_id: 42,
+            format: jackin_protocol::attach::ClipboardImageFormat::Png,
+            size: 16 * 1024 * 1024,
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Image paste: receiving 16777216 bytes")
+    );
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::PastePath
+    );
+}
+
+#[tokio::test]
+async fn chunked_stage_image_start_reports_staging_receiving_notice() {
+    let mut mux = single_pane_tab_mux();
+    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
+
+    handle_client_frame(
+        &mut mux,
+        ClientFrame::ClipboardImageStart(jackin_protocol::attach::ClipboardImageStart {
+            transfer_id: 43,
+            format: jackin_protocol::attach::ClipboardImageFormat::Png,
+            size: 4 * 1024 * 1024,
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Image staging: receiving 4194304 bytes")
+    );
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::StageOnly
+    );
+}
+
+#[test]
+fn stage_only_clipboard_image_response_does_not_paste_path() {
+    let mut mux = single_pane_tab_mux();
+    let (session, mut input_rx) = test_shell_session(20, 78);
+    mux.sessions.insert(1, session);
+    mux.clipboard_image_insert_mode = ClipboardImageInsertMode::StageOnly;
+
+    mux.stage_clipboard_image_response_with(
+        jackin_protocol::attach::ClipboardImage {
+            format: jackin_protocol::attach::ClipboardImageFormat::Png,
+            bytes: b"\x89PNG\r\n\x1a\n".to_vec(),
+        },
+        |_| Ok(PathBuf::from("/jackin/run/clipboard/clipboard-test.png")),
+    );
+
+    assert!(
+        input_rx.try_recv().is_err(),
+        "stage-only response must not paste into the focused pane"
+    );
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some("Image staged: /jackin/run/clipboard/clipboard-test.png (8 bytes)")
+    );
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::PastePath
+    );
+}
+
+#[test]
+fn clipboard_image_response_reports_when_path_cannot_be_pasted() {
+    let mut mux = single_pane_tab_mux();
+
+    mux.stage_clipboard_image_response_with(
+        jackin_protocol::attach::ClipboardImage {
+            format: jackin_protocol::attach::ClipboardImageFormat::Png,
+            bytes: b"\x89PNG\r\n\x1a\n".to_vec(),
+        },
+        |_| Ok(PathBuf::from("/jackin/run/clipboard/clipboard-test.png")),
+    );
+
+    assert_eq!(
+        mux.clipboard_image_notice.as_deref(),
+        Some(
+            "Image staged: /jackin/run/clipboard/clipboard-test.png (8 bytes; no writable focused pane; not pasted)"
+        )
+    );
+    assert_eq!(
+        mux.clipboard_image_insert_mode,
+        ClipboardImageInsertMode::PastePath
+    );
 }
 
 #[test]
@@ -4897,6 +6511,55 @@ fn session_terminal_carries_the_attached_client_palette() {
     assert_eq!(terminal.cols, 20);
     assert_eq!(terminal.default_fg, Some((1, 2, 3)));
     assert_eq!(terminal.default_bg, Some((4, 5, 6)));
+}
+
+#[test]
+fn reattach_updates_capabilities_without_resetting_model_palette() {
+    let mut mux = single_pane_tab_mux();
+    let (session, mut rx) = test_session(20, 78);
+    mux.sessions.insert(1, session);
+
+    let ghostty = ClientTerminal {
+        term: Some("xterm-ghostty".to_owned()),
+        colorterm: Some("truecolor".to_owned()),
+        default_fg: Some((1, 2, 3)),
+        default_bg: Some((4, 5, 6)),
+        ..ClientTerminal::default()
+    };
+    mux.attached_capabilities = ghostty.attach_capabilities();
+    mux.pointer_shapes_supported = mux.attached_capabilities.pointer_shapes;
+    mux.attached_terminal = ghostty;
+    mux.apply_client_colors_to_sessions();
+
+    let dumb = ClientTerminal {
+        term: Some("dumb".to_owned()),
+        ..ClientTerminal::default()
+    };
+    mux.attached_capabilities = dumb.attach_capabilities();
+    mux.pointer_shapes_supported = mux.attached_capabilities.pointer_shapes;
+    mux.attached_terminal = dumb;
+    mux.apply_client_colors_to_sessions();
+
+    assert!(!mux.attached_capabilities.pointer_shapes);
+    assert!(!mux.pointer_shapes_supported);
+
+    let session = mux.sessions.get_mut(&1).expect("session");
+    session.feed_pty(b"\x1b]10;?\x07\x1b]11;?\x07\x1b[6n");
+    drop(session.drain_passthrough());
+    let replies = vec![
+        rx.try_recv().expect("OSC 10 reply"),
+        rx.try_recv().expect("OSC 11 reply"),
+        rx.try_recv().expect("DSR reply"),
+    ];
+    assert_eq!(
+        replies,
+        [
+            b"\x1b]10;rgb:0101/0202/0303\x07".to_vec(),
+            b"\x1b]11;rgb:0404/0505/0606\x07".to_vec(),
+            b"\x1b[1;1R".to_vec(),
+        ],
+        "reattach without colors must not reset model palette or DSR semantics"
+    );
 }
 
 // Echo-back conformance harness — the I1 (screen == model) enforcer.
@@ -5414,6 +7077,50 @@ fn vs16_emoji_stays_one_cluster() {
         Some("\u{2601}\u{fe0f}"),
         "VS16 emoji presentation must stay in the base cell"
     );
+    assert!(
+        view.cell(0, 0).expect("VS16 lead").is_wide,
+        "VS16 emoji presentation must occupy two model columns"
+    );
+    assert!(
+        view.cell(0, 1)
+            .expect("VS16 continuation")
+            .is_wide_continuation,
+        "VS16 emoji presentation must create a continuation cell"
+    );
+    assert_eq!(
+        view.cell(0, 2).map(Cell::contents),
+        Some("X"),
+        "next glyph must land after the grown VS16 cluster"
+    );
+}
+
+#[test]
+fn halfwidth_katakana_dakuten_width_echoes_to_client() {
+    let (mut mux, mut client, sid) = attached_single_pane();
+    feed_and_compose(&mut mux, &mut client, sid, "\u{ff76}\u{ff9e}X".as_bytes());
+    assert_frame_conformance(&mut mux, &client, "dakuten width echo-back");
+    let session = mux.sessions.get(&sid).unwrap();
+    let view = session.shadow_grid.scrollback_view(0, 1);
+    assert_eq!(
+        view.cell(0, 0).map(Cell::contents),
+        Some("\u{ff76}\u{ff9e}"),
+        "halfwidth katakana dakuten must stay in the base cell"
+    );
+    assert!(
+        view.cell(0, 0).expect("dakuten lead").is_wide,
+        "dakuten cluster must occupy two model columns"
+    );
+    assert!(
+        view.cell(0, 1)
+            .expect("dakuten continuation")
+            .is_wide_continuation,
+        "dakuten cluster must create a continuation cell"
+    );
+    assert_eq!(
+        view.cell(0, 2).map(Cell::contents),
+        Some("X"),
+        "next glyph must land after the grown dakuten cluster"
+    );
 }
 
 #[test]
@@ -5421,6 +7128,7 @@ fn zwj_family_emoji_stays_one_cluster() {
     let (mut mux, mut client, sid) = attached_single_pane();
     let family = "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}";
     feed_and_compose(&mut mux, &mut client, sid, family.as_bytes());
+    assert_frame_conformance(&mut mux, &client, "ZWJ family width echo-back");
     let session = mux.sessions.get(&sid).unwrap();
     let view = session.shadow_grid.scrollback_view(0, 1);
     assert_eq!(
@@ -5598,4 +7306,185 @@ fn render_perf_probe() {
         );
     }
     assert_frame_conformance(&mut mux, &client, "perf probe end");
+}
+
+fn exit_dirty_selected_value(mux: &Multiplexer) -> usize {
+    match mux.dialog_top() {
+        Some(Dialog::ExitDirty { selected, .. }) => *selected,
+        other => panic!("expected ExitDirty on top, got {other:?}"),
+    }
+}
+
+#[test]
+fn exit_dirty_down_arrow_advances_selection_via_handle_input() {
+    // Zero live panes — exactly the dirty-exit modal scenario.
+    let mut mux = test_mux(30, 100);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    assert_eq!(exit_dirty_selected_value(&mux), 0);
+
+    // Down arrow, as the input parser hands it to handle_input.
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
+    assert_eq!(
+        exit_dirty_selected_value(&mux),
+        1,
+        "down arrow must advance the dirty-exit selection through the full daemon path"
+    );
+
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
+    assert_eq!(exit_dirty_selected_value(&mux), 2);
+
+    // Up arrow walks back.
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x41]));
+    assert_eq!(exit_dirty_selected_value(&mux), 1);
+}
+
+#[test]
+fn exit_dirty_down_arrow_recomposes_a_changed_frame() {
+    let mut mux = test_mux(30, 100);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    // Paint the modal once so rendered == frame generation.
+    let first = mux.compose_pending_frame();
+
+    // Down arrow should invalidate and produce a non-empty, *changed* frame.
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42]));
+    assert!(
+        mux.has_pending_render(),
+        "down arrow on the modal must mark a pending render"
+    );
+    let second = mux.compose_pending_frame();
+    assert!(!second.is_empty(), "down arrow must recompose a frame");
+    assert_ne!(
+        first, second,
+        "the recomposed frame must differ once the selection moved"
+    );
+}
+
+// End-to-end screen repro: replay the daemon's emitted ANSI bytes into a real
+// terminal grid (the same vte-backed emulator the capsule uses for PTY output)
+// and read where the selection marker actually lands on screen.
+fn marker_row_on_screen(grid: &DamageGrid, rows: u16, cols: u16) -> Option<u16> {
+    for row in 0..rows {
+        for col in 0..cols {
+            if grid
+                .cell(row, col)
+                .is_some_and(|c| c.contents() == "\u{25b8}")
+            {
+                return Some(row);
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn exit_dirty_marker_moves_on_screen_with_zero_panes() {
+    let (rows, cols) = (44u16, 157u16);
+    let mut mux = test_mux(rows, cols);
+    mux.dialog_push(Dialog::new_exit_dirty(vec![
+        "holla   1 changed \u{b7} 3 unpushed".to_owned(),
+    ]));
+    mux.invalidate(FullRedrawReason::DialogChange);
+    let mut grid = DamageGrid::new(rows, cols, 0);
+
+    grid.process(&mux.compose_pending_frame());
+    let before = marker_row_on_screen(&grid, rows, cols);
+
+    mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42])); // down
+    grid.process(&mux.compose_pending_frame());
+    let after = marker_row_on_screen(&grid, rows, cols);
+
+    assert!(
+        before.is_some(),
+        "marker must be visible on screen initially"
+    );
+    assert!(
+        after > before,
+        "down arrow must move the rendered \u{25b8} marker: before={before:?} after={after:?}"
+    );
+}
+
+#[test]
+fn exit_dirty_marker_moves_after_session_exits_realistic() {
+    // Reproduce the real path: a live agent pane, the session exits, the
+    // dirty-exit modal opens with zero panes, then the operator presses down.
+    // The client is a persistent VirtualClient (its grid carries the agent
+    // screen forward), so this exercises the exact diff baseline the operator's
+    // terminal sees — unlike a modal opened on a blank mux.
+    let (rows, cols) = (44u16, 157u16);
+    let mut mux = single_pane_tab_mux_with_size(rows, cols);
+    let (session, _rx) = test_session(rows, cols);
+    mux.sessions.insert(1, session);
+    let mut client = VirtualClient::new(rows, cols);
+
+    // Agent paints something; the client mirrors it.
+    feed_and_compose(&mut mux, &mut client, 1, b"agent output here\r\n");
+
+    // The session exits — the daemon removes it (zero panes now).
+    mux.remove_exited_session(1);
+
+    // handle_last_session_exit opens the modal and invalidates.
+    mux.dialog_push(Dialog::new_exit_dirty(vec![
+        "holla   1 changed \u{b7} 3 unpushed".to_owned(),
+    ]));
+    mux.invalidate(FullRedrawReason::DialogChange);
+    let frame = mux.compose_pending_frame();
+    client.apply(&frame);
+    let before = marker_row_on_screen(&client.grid, rows, cols);
+
+    // Operator presses down.
+    dispatch_and_compose(
+        &mut mux,
+        &mut client,
+        InputEvent::Data(vec![0x1b, 0x5b, 0x42]),
+    );
+    let after = marker_row_on_screen(&client.grid, rows, cols);
+
+    assert!(
+        before.is_some(),
+        "modal marker must be visible after session exit"
+    );
+    assert!(
+        after > before,
+        "down arrow must move the rendered marker on the operator's screen: before={before:?} after={after:?}"
+    );
+}
+
+#[tokio::test]
+async fn last_session_exit_does_not_repush_modal_while_dialog_open() {
+    // Regression: the event loop calls handle_last_session_exit on every client
+    // frame while no sessions are live. With the dirty-exit modal already open,
+    // re-entering must NOT push a second modal (which reset the selection to 0
+    // every keypress, capping navigation at row 1).
+    let mut mux = test_mux(44, 157);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    let depth_before = mux.dialog_stack.len();
+
+    let exited = handle_last_session_exit(&mut mux, None).await;
+
+    assert!(!exited, "must keep the loop alive while the modal is open");
+    assert_eq!(
+        mux.dialog_stack.len(),
+        depth_before,
+        "must not re-push the modal while a dialog is already open"
+    );
+}
+
+#[test]
+fn exit_dirty_down_arrow_reaches_last_row() {
+    // The selection must advance all the way to the final row (Discard), not cap
+    // at row 1 — guards against an off-by-one or re-push regression.
+    let mut mux = test_mux(44, 157);
+    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    for _ in 0..5 {
+        mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42])); // down
+    }
+    match mux.dialog_top() {
+        Some(Dialog::ExitDirty { selected, .. }) => {
+            assert_eq!(
+                *selected, 3,
+                "five downs must land on the last row (Discard)"
+            );
+        }
+        other => panic!("expected ExitDirty, got {other:?}"),
+    }
 }

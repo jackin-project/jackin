@@ -25,6 +25,7 @@ fn draw(
                     prefix_mode,
                     hovered_tab,
                     menu_hovered: false,
+                    focused: false,
                 },
                 frame.area(),
             );

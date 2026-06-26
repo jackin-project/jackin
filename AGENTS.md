@@ -34,6 +34,18 @@ Normal pushes (new commits): no approval needed. History rewrites (amend DCO, re
 
 `git fetch -f` OK — updates local remote-tracking refs only, not remote branch.
 
+### Sync active branch with main
+
+Default to a normal merge commit when bringing `main` into the active PR branch. Do not rebase or rewrite history unless the operator explicitly asks for that branch.
+
+```sh
+git fetch origin main
+git merge --no-ff origin/main -m "chore(merge): sync main into <branch>"
+git push
+```
+
+Merge-sync commit subjects must still follow Conventional Commits. Use `chore(merge): sync main into <branch>` unless a more specific non-release maintenance type is clearly better.
+
 ### Push after every commit
 
 Push immediately after every `git commit`. No local-only commits.

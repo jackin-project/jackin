@@ -14,7 +14,9 @@ use jackin::{
     config::{AppConfig, ConfigEditor},
     console::{
         ConsoleStage,
-        effects::execute_pending_workspace_save_commit,
+        effects::{
+            apply_background_event, execute_pending_workspace_save_commit, poll_background_messages,
+        },
         tui::{
             InputOutcome, ManagerStage, ManagerState, dispatch_launch_for_workspace, handle_key,
             new_console_state,
@@ -37,6 +39,34 @@ const fn key(code: KeyCode) -> KeyEvent {
         kind: KeyEventKind::Press,
         state: KeyEventState::NONE,
     }
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "integration test waits for an owned background save worker to publish its subscription result"
+)]
+fn wait_for_config_save(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    cwd: &std::path::Path,
+) -> Result<()> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while std::time::Instant::now() < deadline {
+        let events = poll_background_messages(state, config, paths);
+        for event in events {
+            let config_save_finished = matches!(
+                event,
+                jackin_console::tui::state::update::ManagerBackgroundEvent::ConfigSaveFinished(_)
+            );
+            apply_background_event(state, config, paths, cwd, event);
+            if config_save_finished {
+                return Ok(());
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    anyhow::bail!("timed out waiting for config save worker")
 }
 
 fn seed_config(paths: &JackinPaths, temp_dir: &std::path::Path) -> Result<AppConfig> {
@@ -632,6 +662,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     // Enter moves state to PendingCommit; flush the queued write to disk.
     execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
+    wait_for_config_save(&mut state, &mut config, &paths, cwd)?;
 
     // Reload AppConfig from disk and assert both halves of the auth
     // change survived the round-trip.
@@ -1338,6 +1369,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     // Enter moves state to PendingCommit; flush the queued write to disk.
     execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
+    wait_for_config_save(&mut state, &mut config, &paths, cwd)?;
 
     // Reload AppConfig from disk and assert the round-trip.
     let reloaded = AppConfig::load_or_init(&paths)?;

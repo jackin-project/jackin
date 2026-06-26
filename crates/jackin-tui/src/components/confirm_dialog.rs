@@ -252,12 +252,15 @@ pub const fn width_pct(state: &ConfirmState) -> u16 {
     }
 }
 
-/// The canonical "Exit jackin❯?" confirmation, shared by every surface that
-/// can quit the app (console, launch cockpit). One construction site keeps the
-/// wording and shape identical everywhere. Default focus = No.
+/// The canonical "Exit jackin❯?" confirmation, shared by every host surface
+/// that can quit the app (console, launch cockpit). One construction site keeps
+/// the wording and shape identical everywhere. Default focus = Yes because the
+/// operator already invoked the explicit quit chord; destructive data-loss
+/// confirmations still use [`ConfirmState::new`] / [`ConfirmState::details`]
+/// and default to No.
 #[must_use]
 pub fn exit_confirm_state() -> ConfirmState {
-    ConfirmState::new("Exit jackin❯?")
+    ConfirmState::new("Exit jackin❯?").with_focus_yes()
 }
 
 /// Exit confirmation for surfaces where quitting force-stops the container and
@@ -297,7 +300,15 @@ pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmS
 
     let prompt_lines_vec: Vec<Line<'_>> = prompt
         .lines()
-        .map(|l| Line::from(Span::styled(l.to_owned(), crate::theme::BOLD_WHITE)))
+        .enumerate()
+        .map(|(idx, line)| {
+            let style = if idx == 0 {
+                crate::theme::BOLD_WHITE
+            } else {
+                crate::theme::DIM
+            };
+            Line::from(Span::styled(line.to_owned(), style))
+        })
         .collect();
     frame.render_widget(
         Paragraph::new(prompt_lines_vec).alignment(Alignment::Center),

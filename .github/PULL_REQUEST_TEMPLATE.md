@@ -226,6 +226,9 @@ Inside the container, verify:
 - Mouse clicks, arrow keys, and paste reach the agent unmodified
 - <One sentence specific to what this PR changed — e.g. "Split pane rendered
   after `Ctrl+\ → Split pane │`" or "Session switch preserved agent output">
+- <For usage/quota changes, after the overlay/refresher has run, execute
+  `jackin usage <instance-or-container> verify --debug` from the prepared
+  checkout environment and record whether all provider rows passed>
 
 <For PRs touching the tmux-style prefix surface (`Ctrl+B Space` palette,
 `Ctrl+B "` / `Ctrl+B %` splits, `Ctrl+B d` detach), opt in before launching

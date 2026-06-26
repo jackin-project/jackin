@@ -247,6 +247,28 @@ fn palette_routes_map_to_visible_frame_plans() {
         ActionFramePlan::Full(FullRedrawReason::ZoomChange)
     );
     assert_eq!(
+        palette_route_frame_plan(PaletteCommandRoute::StageImageFromClipboardPath),
+        ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
+    );
+    assert_eq!(
+        palette_route_frame_plan(PaletteCommandRoute::StageImageFromClipboard),
+        ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
+    );
+    assert_eq!(
+        palette_route_frame_plan(PaletteCommandRoute::ExportFileUnderCursor {
+            reveal_after_export: true,
+            open_after_export: false,
+        }),
+        ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
+    );
+    assert_eq!(
+        palette_route_frame_plan(PaletteCommandRoute::ExportSelectedFile {
+            reveal_after_export: false,
+            open_after_export: true,
+        }),
+        ActionFramePlan::Overlay(FullRedrawReason::PaletteOverlay)
+    );
+    assert_eq!(
         palette_route_frame_plan(PaletteCommandRoute::ClearPane),
         ActionFramePlan::Diff(FullRedrawReason::PaneClear)
     );
@@ -284,9 +306,29 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
         palette_route_frame_plan(PaletteCommandRoute::OpenAgentPicker(PickerIntent::NewTab)),
         palette_route_frame_plan(PaletteCommandRoute::ConfirmAction(ConfirmKind::CloseTab)),
         palette_route_frame_plan(PaletteCommandRoute::OpenCloseTargetPicker),
+        palette_route_frame_plan(PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: false,
+            open_after_export: false,
+        }),
+        palette_route_frame_plan(PaletteCommandRoute::OpenExportFileDialog {
+            reveal_after_export: false,
+            open_after_export: true,
+        }),
         palette_route_frame_plan(PaletteCommandRoute::NextTab),
         palette_route_frame_plan(PaletteCommandRoute::PreviousTab),
         palette_route_frame_plan(PaletteCommandRoute::ToggleZoom),
+        palette_route_frame_plan(PaletteCommandRoute::StageImageFromClipboardPath),
+        palette_route_frame_plan(PaletteCommandRoute::PasteImageFromClipboard),
+        palette_route_frame_plan(PaletteCommandRoute::StageImageFromClipboard),
+        palette_route_frame_plan(PaletteCommandRoute::ExportFileUnderCursor {
+            reveal_after_export: true,
+            open_after_export: false,
+        }),
+        palette_route_frame_plan(PaletteCommandRoute::ExportSelectedFile {
+            reveal_after_export: false,
+            open_after_export: true,
+        }),
+        palette_route_frame_plan(PaletteCommandRoute::OpenLinkUnderCursor),
         palette_route_frame_plan(PaletteCommandRoute::ClearPane),
     ];
     for plan in palette_plans {
@@ -317,7 +359,19 @@ fn frame_plans_keep_diff_tier_reasons_out_of_full_redraws() {
             tab_idx: 0,
             label: "work".into(),
         },
+        DialogAction::ExportFile {
+            path: "target/report.txt".into(),
+            reveal_after_export: false,
+            open_after_export: false,
+        },
         DialogAction::CopyToClipboard("container".into()),
+        DialogAction::OpenHostUrl("https://github.com/jackin-project/jackin/pull/565".into()),
+        DialogAction::RevealHostPath(
+            "/Users/operator/.jackin/data/diagnostics/runs/jk-run-abc123.jsonl".into(),
+        ),
+        DialogAction::SwitchUsageProvider {
+            provider_label: "Claude".into(),
+        },
         DialogAction::Dismiss,
         DialogAction::Redraw,
         DialogAction::Consume,

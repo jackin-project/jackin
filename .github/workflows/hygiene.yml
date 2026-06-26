@@ -68,8 +68,8 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust cargo-deny cargo-fuzz cargo-hack"
-          github_token: ${{ github.token }}
+          install_args: "cargo-binstall rust cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -112,7 +112,7 @@ jobs:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
           install_args: "rust"
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -123,18 +123,3 @@ jobs:
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - run: cargo build --release --locked
       - run: cargo test --workspace --locked
-
-  timing-summary:
-    if: always()
-    needs: [cache-usage, scheduled-hygiene, native-macos]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Write workflow timing summary
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/ci/workflow-timing-summary.sh Hygiene

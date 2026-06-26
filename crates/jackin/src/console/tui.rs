@@ -31,7 +31,7 @@ pub(crate) mod input {
             else {
                 return false;
             };
-            crate::console::effects::apply_role_load_completion(
+            crate::console::effects::apply_role_load_completion_for_tests(
                 editor, config, paths, load, result,
             );
             true

@@ -299,11 +299,15 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust zig cargo-zigbuild cosign syft sccache"
-          github_token: ${{ github.token }}
+          install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -390,11 +394,15 @@ jobs:
           restore-keys: |
             rustup-${{ runner.os }}-${{ runner.arch }}-
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          # sccache install: blank wrapper in case binstall source-falls-back
+          # to cargo, which would probe rustc through a missing sccache.
+          RUSTC_WRAPPER: ""
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust zig cargo-zigbuild cosign syft sccache"
-          github_token: ${{ github.token }}
+          install_args: "cargo-binstall rust zig cargo:cargo-zigbuild cosign syft cargo:sccache"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -768,18 +776,3 @@ jobs:
             --head "$branch")
           echo "Opened PR: $pr_url"
           gh pr merge "$pr_url" --squash --delete-branch
-
-  timing-summary:
-    if: always()
-    needs: [matrix-setup, source-changed, build-preview, build-jackin-capsule, publish-gate, publish-preview]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Write workflow timing summary
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/ci/workflow-timing-summary.sh "Publish Homebrew Preview"

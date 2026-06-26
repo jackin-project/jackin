@@ -12,11 +12,27 @@ use serde_json::Value;
 
 const DEFAULT_REPO: &str = "jackin-project/jackin";
 const REPO_DIR_NAME: &str = "jackin";
-// Locked to the `construct-build-local` default tag composed from
-// `LOCAL_REGISTRY_IMAGE`/`STABLE_TAG` in `jackin-xtask/src/construct.rs`; if
-// those defaults move, or are overridden in the environment, the exported
-// `JACKIN_CONSTRUCT_IMAGE` drifts from the image the build actually produces.
-const CONSTRUCT_IMAGE: &str = "jackin-local/construct:trixie";
+const CAPSULE_PATH_DEPS: [(&str, &str); 7] = [
+    ("crates/jackin-capsule/", "jackin-capsule"),
+    ("crates/jackin-core/", "jackin-core"),
+    ("crates/jackin-diagnostics/", "jackin-diagnostics"),
+    ("crates/jackin-protocol/", "jackin-protocol"),
+    ("crates/jackin-term/", "jackin-term"),
+    ("crates/jackin-tui/", "jackin-tui"),
+    ("crates/jackin-build-meta/", "jackin-build-meta"),
+];
+// Local construct image registry + stable tag — must match the
+// `LOCAL_REGISTRY_IMAGE`/`STABLE_TAG` defaults in `jackin-xtask/src/construct.rs`.
+// The exported `JACKIN_CONSTRUCT_IMAGE` pins to the commit-suffixed tag
+// (`<registry>:<stable>-<short12 sha>`) that `construct build-local` also
+// produces, NOT the moving `<registry>:<stable>` tag. Pinning to the commit
+// makes every custom build's tag unique, so a construct change invalidates the
+// cached role base (`local_role_base_labels_match` compares the construct
+// label) instead of silently reusing a stale base built from a different
+// construct. The role git SHA used here is `git rev-parse --short=12 HEAD`,
+// identical to `git_sha()` in the xtask.
+const LOCAL_CONSTRUCT_REGISTRY: &str = "jackin-local/construct";
+const CONSTRUCT_STABLE_TAG: &str = "trixie";
 
 #[derive(Parser)]
 #[command(name = "jackin-dev", about = "Developer tooling for jackin")]
@@ -44,6 +60,8 @@ enum PrCommand {
     Path(PrPathArgs),
     /// Show local checkout/env freshness for a PR verification bundle.
     Status(PrRepoArgs),
+    /// Preview sync auto-prep decisions and explain the changed files behind them.
+    Explain(PrRepoArgs),
 }
 
 /// Fields shared by every command that resolves a PR against a remote repo.
@@ -129,8 +147,14 @@ struct PullRequestInfo {
 
 #[derive(Debug)]
 struct AutoPrep {
-    capsule: bool,
-    construct: bool,
+    capsule: PrepDecision,
+    construct: PrepDecision,
+}
+
+#[derive(Debug)]
+struct PrepDecision {
+    required: bool,
+    reasons: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -164,6 +188,7 @@ fn run(cli: Cli) -> Result<()> {
             PrCommand::Env(args) => print_env(args),
             PrCommand::Path(args) => print_path(args),
             PrCommand::Status(args) => status(args),
+            PrCommand::Explain(args) => explain(args),
         },
     }
 }
@@ -183,7 +208,7 @@ fn sync(args: SyncArgs) -> Result<()> {
     )?;
     run_checked(command("mise", ["trust"]).current_dir(&paths.repo))?;
     run_checked(command("mise", ["install"]).current_dir(&paths.repo))?;
-    run_checked(command("cargo", ["build", "--bin", "jackin"]).current_dir(&paths.repo))?;
+    run_checked(mise_exec_command("cargo", ["build", "--bin", "jackin"]).current_dir(&paths.repo))?;
 
     prepare_config(args.config, &paths.config, &home)?;
     fs::create_dir_all(&paths.home)
@@ -193,18 +218,39 @@ fn sync(args: SyncArgs) -> Result<()> {
 
     let mut env_lines = env_lines(&paths);
 
-    if auto.construct {
+    if auto.construct.required {
         run_checked(command("mise", ["run", "construct-build-local"]).current_dir(&paths.repo))?;
-        env_lines.push(format!("export JACKIN_CONSTRUCT_IMAGE={CONSTRUCT_IMAGE}"));
+        let construct_image = local_construct_image_ref(&paths.repo)?;
+        env_lines.push(format!("export JACKIN_CONSTRUCT_IMAGE={construct_image}"));
     }
 
-    if auto.capsule {
+    if auto.capsule.required {
         env_lines.push(build_capsule_export(&paths.repo)?);
     }
 
     fs::write(&paths.env_file, format!("{}\n", env_lines.join("\n")))
         .with_context(|| format!("writing {}", paths.env_file.display()))?;
     print_sync_summary(args.common.pr, &paths, &pr, &auto);
+    Ok(())
+}
+
+fn explain(args: PrRepoArgs) -> Result<()> {
+    let paths = PrPaths::new(args.pr, args.test_dir)?;
+    let pr = pr_info(args.pr, &args.repo)?;
+    let auto = if paths.repo.join(".git").exists() {
+        auto_prep(&paths.repo, &pr.changed_files)?
+    } else {
+        auto_prep_from_paths(&pr.changed_files)
+    };
+
+    emit_line(format!("PR: #{}", args.pr));
+    emit_line(format!("repo: {}", args.repo));
+    emit_line(format!("head: {}", pr.head_oid));
+    emit_line(format!("changed files: {}", pr.changed_files.len()));
+    emit_line("");
+    emit_line("Preparation preview:");
+    print_prep_decision("capsule", &auto.capsule);
+    print_prep_decision("construct", &auto.construct);
     Ok(())
 }
 
@@ -285,34 +331,73 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
             "--repo",
             repo,
             "--json",
-            "headRefName,headRefOid,files",
+            "headRefName,headRefOid",
         ],
     );
     let output = run_output(&mut cmd)?;
     let json: Value = serde_json::from_slice(&output).context("parsing gh pr view JSON")?;
-    parse_pr_info(&json)
-}
+    let (head_ref_name, head_oid) = parse_pr_refs(&json)?;
 
-// A missing or non-array `files` field is a contract break, not a zero-file PR:
-// silently collapsing it to empty would downgrade every `auto_prep` build
-// decision to "not needed" and launch the operator against a stale binary.
-fn parse_pr_info(json: &Value) -> Result<PullRequestInfo> {
-    let head_ref_name = json_string(json, "headRefName")?;
-    let head_oid = json_string(json, "headRefOid")?;
-    let changed_files = match json.get("files") {
-        Some(Value::Array(files)) => files
-            .iter()
-            .filter_map(|file| file.get("path").and_then(Value::as_str))
-            .filter(|path| !path.is_empty())
-            .map(str::to_owned)
-            .collect(),
-        _ => bail!("gh pr view did not return a `files` array"),
-    };
+    // `gh pr view --json files` caps at 100 files, so a large PR (e.g. #528 with
+    // 113) silently drops changed paths like `docker/construct/*` — downgrading
+    // every `auto_prep` build decision to "not needed" and launching against a
+    // stale image. `gh pr diff --name-only` lists every changed path, uncapped.
+    let mut diff_cmd = command(
+        "gh",
+        ["pr", "diff", &pr.to_string(), "--repo", repo, "--name-only"],
+    );
+    let diff_output = run_output(&mut diff_cmd)?;
+    let diff_text = String::from_utf8(diff_output)
+        .context("`gh pr diff --name-only` output was not valid UTF-8")?;
+    let changed_files = parse_changed_files(&diff_text)?;
+
     Ok(PullRequestInfo {
         head_ref_name,
         head_oid,
         changed_files,
     })
+}
+
+/// The commit-pinned local construct image ref that `construct build-local`
+/// produces (`jackin-local/construct:trixie-<short12 HEAD sha>`).
+///
+/// Pinning to the commit keeps each custom build's tag unique, so switching
+/// jackin' onto it invalidates a role base built from a different construct
+/// instead of reusing it under the moving `:trixie` tag.
+fn local_construct_image_ref(repo: &Path) -> Result<String> {
+    let sha = git_output(repo, ["rev-parse", "--short=12", "HEAD"])?;
+    if sha.is_empty() {
+        bail!(
+            "`git rev-parse --short=12 HEAD` returned an empty SHA in {}",
+            repo.display()
+        );
+    }
+    Ok(format!(
+        "{LOCAL_CONSTRUCT_REGISTRY}:{CONSTRUCT_STABLE_TAG}-{sha}"
+    ))
+}
+
+fn parse_pr_refs(json: &Value) -> Result<(String, String)> {
+    Ok((
+        json_string(json, "headRefName")?,
+        json_string(json, "headRefOid")?,
+    ))
+}
+
+// An empty file list is a contract break, not a zero-file PR: silently
+// collapsing it to empty would downgrade every `auto_prep` build decision to
+// "not needed" and launch the operator against a stale binary/image.
+fn parse_changed_files(diff_name_only: &str) -> Result<Vec<String>> {
+    let changed_files: Vec<String> = diff_name_only
+        .lines()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if changed_files.is_empty() {
+        bail!("`gh pr diff --name-only` returned no changed files");
+    }
+    Ok(changed_files)
 }
 
 fn json_string(json: &Value, key: &str) -> Result<String> {
@@ -445,37 +530,101 @@ fn env_lines(paths: &PrPaths) -> Vec<String> {
 
 fn auto_prep(repo_dir: &Path, files: &[String]) -> Result<AutoPrep> {
     Ok(AutoPrep {
-        capsule: capsule_build_required(repo_dir, files)?,
-        construct: construct_build_required(files),
+        capsule: capsule_build_decision(repo_dir, files)?,
+        construct: construct_build_decision(files),
     })
 }
 
-fn construct_build_required(files: &[String]) -> bool {
-    files.iter().any(|file| {
-        file.starts_with("docker/construct/")
-            || file == "docker-bake.hcl"
-            || file == "mise.toml"
-            || file.starts_with("crates/jackin-xtask/src/construct")
-    })
+fn auto_prep_from_paths(files: &[String]) -> AutoPrep {
+    AutoPrep {
+        capsule: capsule_build_path_decision(files),
+        construct: construct_build_decision(files),
+    }
 }
 
-fn capsule_build_required(repo_dir: &Path, files: &[String]) -> Result<bool> {
-    if files.iter().any(|file| {
-        matches!(
-            file.as_str(),
-            "Cargo.lock" | "Cargo.toml" | "rust-toolchain.toml" | "mise.toml"
-        ) || file.starts_with(".cargo/")
-    }) {
-        return Ok(true);
+fn construct_build_decision(files: &[String]) -> PrepDecision {
+    let reasons = files
+        .iter()
+        .filter_map(|file| construct_reason(file).map(|reason| format!("{file}: {reason}")))
+        .collect::<Vec<_>>();
+    PrepDecision {
+        required: !reasons.is_empty(),
+        reasons,
+    }
+}
+
+fn construct_reason(file: &str) -> Option<&'static str> {
+    if file.starts_with("docker/construct/") {
+        Some("construct image source changed")
+    } else if file == "docker-bake.hcl" {
+        Some("construct image bake graph changed")
+    } else if file == "mise.toml" {
+        Some("construct-build-local task wiring may have changed")
+    } else if file.starts_with("crates/jackin-xtask/src/construct") {
+        Some("construct build orchestration changed")
+    } else {
+        None
+    }
+}
+
+fn capsule_build_decision(repo_dir: &Path, files: &[String]) -> Result<PrepDecision> {
+    let broad_reasons = files
+        .iter()
+        .filter_map(|file| capsule_broad_reason(file).map(|reason| format!("{file}: {reason}")))
+        .collect::<Vec<_>>();
+    if !broad_reasons.is_empty() {
+        return Ok(PrepDecision {
+            required: true,
+            reasons: broad_reasons,
+        });
     }
 
     let packages = workspace_packages(repo_dir)?;
     let affected = affected_workspace_packages(repo_dir, files, &packages)?;
     if affected.is_empty() {
-        return Ok(false);
+        return Ok(PrepDecision {
+            required: false,
+            reasons: Vec::new(),
+        });
     }
     let closure = local_dependency_closure(&packages, "jackin-capsule")?;
-    Ok(!affected.is_disjoint(&closure))
+    let reasons = capsule_dependency_reasons(repo_dir, files, &packages, &closure)?;
+    Ok(PrepDecision {
+        required: !reasons.is_empty(),
+        reasons,
+    })
+}
+
+fn capsule_broad_reason(file: &str) -> Option<&'static str> {
+    if matches!(
+        file,
+        "Cargo.lock" | "Cargo.toml" | "rust-toolchain.toml" | "mise.toml"
+    ) {
+        Some("workspace build inputs changed")
+    } else if file.starts_with(".cargo/") {
+        Some("cargo configuration changed")
+    } else {
+        None
+    }
+}
+
+fn capsule_build_path_decision(files: &[String]) -> PrepDecision {
+    let mut reasons = files
+        .iter()
+        .filter_map(|file| capsule_broad_reason(file).map(|reason| format!("{file}: {reason}")))
+        .collect::<Vec<_>>();
+
+    reasons.extend(files.iter().filter_map(|file| {
+        CAPSULE_PATH_DEPS
+            .iter()
+            .find(|(prefix, _package)| file.starts_with(prefix))
+            .map(|(_prefix, package)| format!("{file}: {package} is used by jackin-capsule"))
+    }));
+
+    PrepDecision {
+        required: !reasons.is_empty(),
+        reasons,
+    }
 }
 
 fn workspace_packages(repo_dir: &Path) -> Result<Vec<WorkspacePackage>> {
@@ -543,6 +692,38 @@ fn affected_workspace_packages(
     Ok(affected)
 }
 
+fn capsule_dependency_reasons(
+    repo_dir: &Path,
+    files: &[String],
+    packages: &[WorkspacePackage],
+    closure: &BTreeSet<String>,
+) -> Result<Vec<String>> {
+    let mut reasons = Vec::new();
+    for file in files {
+        let path = Path::new(file);
+        for package in packages {
+            if !closure.contains(&package.name) {
+                continue;
+            }
+            let package_root = package.root.strip_prefix(repo_dir).with_context(|| {
+                format!(
+                    "package {} root {} is outside repo {}",
+                    package.name,
+                    package.root.display(),
+                    repo_dir.display()
+                )
+            })?;
+            if path.starts_with(package_root) {
+                reasons.push(format!(
+                    "{file}: {} is used by jackin-capsule",
+                    package.name
+                ));
+            }
+        }
+    }
+    Ok(reasons)
+}
+
 fn local_dependency_closure(packages: &[WorkspacePackage], root: &str) -> Result<BTreeSet<String>> {
     let by_name: BTreeMap<&str, &WorkspacePackage> = packages
         .iter()
@@ -569,7 +750,7 @@ fn local_dependency_closure(packages: &[WorkspacePackage], root: &str) -> Result
 // stderr). If that output format changes, this match must change with it.
 fn build_capsule_export(repo_dir: &Path) -> Result<String> {
     let output = run_output(
-        command(
+        mise_exec_command(
             "cargo",
             ["run", "--bin", "build-jackin-capsule", "--", "--export"],
         )
@@ -598,6 +779,17 @@ where
     S: AsRef<OsStr>,
 {
     let mut cmd = Command::new(program);
+    cmd.args(args);
+    cmd
+}
+
+fn mise_exec_command<I, S>(program: &str, args: I) -> Command
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut cmd = Command::new("mise");
+    cmd.args(["exec", "--", program]);
     cmd.args(args);
     cmd
 }
@@ -689,6 +881,26 @@ fn built_label(value: bool) -> &'static str {
     if value { "built" } else { "not needed" }
 }
 
+fn prep_label(decision: &PrepDecision) -> &'static str {
+    if decision.required {
+        "will build"
+    } else {
+        "not needed"
+    }
+}
+
+fn print_prep_decision(name: &str, decision: &PrepDecision) {
+    emit_line(format!("  {name}: {}", prep_label(decision)));
+    if decision.reasons.is_empty() {
+        emit_line("    why: no changed file matches this prep rule");
+    } else {
+        emit_line("    why:");
+        for reason in &decision.reasons {
+            emit_line(format!("      - {reason}"));
+        }
+    }
+}
+
 fn print_sync_summary(pr: u64, paths: &PrPaths, info: &PullRequestInfo, auto: &AutoPrep) {
     emit_line(format!("Synced PR #{pr}:"));
     emit_line(format!("  repo: {}", paths.repo.display()));
@@ -697,8 +909,11 @@ fn print_sync_summary(pr: u64, paths: &PrPaths, info: &PullRequestInfo, auto: &A
     emit_line(format!("  home:   {}", paths.home.display()));
     emit_line(format!("  head:   {}", info.head_oid));
     emit_line(format!("  files:  {}", info.changed_files.len()));
-    emit_line(format!("  capsule: {}", built_label(auto.capsule)));
-    emit_line(format!("  construct: {}", built_label(auto.construct)));
+    emit_line(format!("  capsule: {}", built_label(auto.capsule.required)));
+    emit_line(format!(
+        "  construct: {}",
+        built_label(auto.construct.required)
+    ));
     emit_line("");
     emit_line("Next:");
     for line in enter_lines(paths) {

@@ -59,6 +59,9 @@ docker info
 <Aside type="tip">
 On macOS, [OrbStack](https://orbstack.dev/) is a lightweight alternative to Docker Desktop that works well with jackin❯.
 </Aside>
+
+For faster local image builds, use a Docker daemon with the containerd image store enabled. OrbStack already reports a containerd snapshotter in `docker info`; Docker Desktop exposes the setting under **Settings → General → Use containerd for pulling and storing images** on versions where it is not already enabled. jackin' does not change daemon settings for you, but launch diagnostics note when the active daemon is using the slower non-containerd store.
+
 ## What gets installed
 
 jackin❯ installs the host CLI plus the matching in-container runtime. Homebrew installs the `jackin-capsule` Linux binary beside the CLI so the first agent load does not need an extra GitHub download. Source installs can still fetch or build that runtime on first use.
