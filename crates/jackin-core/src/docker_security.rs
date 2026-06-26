@@ -21,10 +21,12 @@ pub enum DockerSecurityProfile {
     /// Restricted: allowlist network, no `DinD` by default, no sudo, read-only
     /// root, 16G memory.
     Hardened,
-    /// Typical dev work: open network, `DinD`, sudo, writable root, 16G memory.
+    /// Typical dev work: open network, no `DinD` by default, no sudo by default,
+    /// writable root, 16G memory. (`DinD`/sudo are raisable by explicit grant.)
     Standard,
     /// Maximum compatibility: privileged `DinD`, open network, sudo, no resource
-    /// limits. This remains the default until the sudo audit is complete.
+    /// limits. Remains the default until the WP6 flip (gated on the WP0 matrix
+    /// plus a changelog call-out, not on the now-removed sudo audit).
     #[default]
     Compat,
 }
@@ -88,8 +90,10 @@ pub enum NetworkGrant {
 
 impl NetworkGrant {
     /// Lowercase wire/label string for this tier. Single source for `Display`
-    /// and the runtime `network_grant_label` / `JACKIN_NETWORK_MODE` value, so
-    /// the contract label can never drift from the serde vocabulary.
+    /// and the runtime `network_grant_label` / `JACKIN_NETWORK_MODE` value. The
+    /// `as_str_matches_serde` guard test asserts it also equals the
+    /// `#[serde(rename_all = "lowercase")]` wire form, so the contract label
+    /// cannot drift from the serde vocabulary.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::None => "none",
@@ -161,3 +165,6 @@ pub struct DockerGrants {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities_add: Vec<String>,
 }
+
+#[cfg(test)]
+mod tests;

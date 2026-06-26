@@ -250,6 +250,28 @@ pub fn validate_grants(grants: &DockerGrants) -> Vec<GrantValidationError> {
         });
     }
 
+    // cpus must be finite and positive. A non-finite (NaN/inf) or non-positive
+    // value survives raise_to_max (NaN fails every `>=` compare, so it is kept)
+    // and reaches `--cpus <value>`, failing opaquely at `docker run` instead of
+    // at this launch-time gate.
+    if let Some(cpus) = grants.cpus
+        && (!cpus.is_finite() || cpus <= 0.0)
+    {
+        errors.push(GrantValidationError::ValueOutOfRange {
+            field: "cpus",
+            reason: "must be a finite value > 0; omit the field to remove the limit",
+        });
+    }
+
+    // nofile = 0 emits `--ulimit nofile=0:0`, forbidding the container from
+    // opening any file descriptor — a launch that cannot function. Reject it.
+    if grants.nofile == Some(0) {
+        errors.push(GrantValidationError::ValueOutOfRange {
+            field: "nofile",
+            reason: "must be > 0; omit the field to remove the limit",
+        });
+    }
+
     errors
 }
 
@@ -486,7 +508,8 @@ impl std::fmt::Display for ProfileSource {
 /// 1. CLI `--docker-profile` override
 /// 2. Workspace `[docker] profile` override
 /// 3. Global `[docker] profile` from `config.toml`
-/// 4. Compiled-in default (`Compat` until sudo audit resolves)
+/// 4. Compiled-in default (`Compat` until the WP6 flip; WP-SUDO removed the
+///    sudo-audit blocker)
 pub fn resolve_profile(
     cli_override: Option<DockerSecurityProfile>,
     workspace_profile: Option<DockerSecurityProfile>,

@@ -609,14 +609,57 @@ fn validate_grants_pids_must_be_positive() {
 /// `validate_grants` rejects memory exceeding `i64::MAX`.
 #[test]
 fn validate_grants_memory_overflow_is_error() {
-    // u64 value > i64::MAX — would silently wrap to negative without the check.
-    let huge = format!("{}B", i64::MAX as u64 + 1);
+    // 2^63 bytes = i64::MAX + 1, expressed with a parseable `G` suffix so the
+    // value actually reaches the i64-boundary check. A bare-"B" value would be
+    // rejected as UnparsableSize first and never exercise the overflow branch.
     let grants = DockerGrants {
-        memory: Some(huge),
+        memory: Some("8589934592G".to_owned()),
         ..Default::default()
     };
     let errors = validate_grants(&grants);
-    assert!(!errors.is_empty(), "memory > i64::MAX should be an error");
+    assert!(
+        errors.iter().any(|e| matches!(
+            e,
+            GrantValidationError::ValueOutOfRange { field: "memory", .. }
+        )),
+        "memory > i64::MAX must be ValueOutOfRange, got {errors:?}"
+    );
+}
+
+/// `validate_grants` rejects non-finite or non-positive `cpus`.
+#[test]
+fn validate_grants_cpus_must_be_finite_positive() {
+    for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        let grants = DockerGrants {
+            cpus: Some(bad),
+            ..Default::default()
+        };
+        let errors = validate_grants(&grants);
+        assert!(
+            errors.iter().any(|e| matches!(
+                e,
+                GrantValidationError::ValueOutOfRange { field: "cpus", .. }
+            )),
+            "cpus={bad} must be ValueOutOfRange, got {errors:?}"
+        );
+    }
+}
+
+/// `validate_grants` rejects `nofile = 0` (forbids opening any fd).
+#[test]
+fn validate_grants_nofile_zero_is_error() {
+    let grants = DockerGrants {
+        nofile: Some(0),
+        ..Default::default()
+    };
+    let errors = validate_grants(&grants);
+    assert!(
+        errors.iter().any(|e| matches!(
+            e,
+            GrantValidationError::ValueOutOfRange { field: "nofile", .. }
+        )),
+        "nofile=0 must be ValueOutOfRange, got {errors:?}"
+    );
 }
 
 // ── WP-SUDO: profile sudo defaults ───────────────────────────────────────
