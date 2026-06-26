@@ -5,7 +5,7 @@ ARG SHELLFIRM_VERSION
 # the final image. Building inside Docker — rather than prebuilding on the host —
 # keeps it off the host's mise/cargo-binstall environment and produces the
 # binary for the target image architecture.
-FROM rust:1.96.0-trixie AS shellfirm-builder
+FROM rust:1.96.0-trixie@sha256:6df234c1eb92b0545468fab8c18fc5f9adfb994e7d4f67d81d45fe2fcabf5657 AS shellfirm-builder
 
 ARG SHELLFIRM_VERSION
 
