@@ -327,13 +327,7 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
 /// jackin' onto it invalidates a role base built from a different construct
 /// instead of reusing it under the moving `:trixie` tag.
 fn local_construct_image_ref(repo: &Path) -> Result<String> {
-    let mut cmd = command("git", ["rev-parse", "--short=12", "HEAD"]);
-    cmd.current_dir(repo);
-    let output = run_output(&mut cmd)?;
-    let sha = String::from_utf8(output)
-        .context("`git rev-parse` output was not valid UTF-8")?
-        .trim()
-        .to_owned();
+    let sha = git_output(repo, ["rev-parse", "--short=12", "HEAD"])?;
     if sha.is_empty() {
         bail!(
             "`git rev-parse --short=12 HEAD` returned an empty SHA in {}",

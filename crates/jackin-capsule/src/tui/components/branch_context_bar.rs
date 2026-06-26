@@ -83,8 +83,7 @@ pub(crate) fn branch_context_bar_layout(
 
     let right_start = right.start(term_cols_usize.saturating_add(1));
     let left_max_cols = right_start.saturating_sub(2);
-    let left = context_left;
-    let left = take_display_cols(&left, left_max_cols);
+    let left = take_display_cols(&context_left, left_max_cols);
     let left_cols = display_cols(&left);
     let left_region = if left_clickable && left_cols > 0 {
         let end = u16::try_from(left_cols.saturating_add(1)).unwrap_or(u16::MAX);
