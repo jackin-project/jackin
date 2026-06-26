@@ -91,6 +91,15 @@ fn prefix_d_detaches() {
 }
 
 #[test]
+fn prefix_u_opens_usage() {
+    let events = parse_all_prefix_only(b"\x02u");
+    assert_eq!(
+        events,
+        vec![InputEvent::PrefixCommand(PrefixCommand::Usage)]
+    );
+}
+
+#[test]
 fn bracketed_paste_contents_are_forwarded_with_markers() {
     let mut parser = InputParser::new(Some(0x02), None);
     let mut events = parser.parse(b"\x1b[200~hello\x02world\n\x1b[201~");

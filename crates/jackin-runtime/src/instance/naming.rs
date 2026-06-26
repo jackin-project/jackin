@@ -125,20 +125,9 @@ fn truncate_component(component: &str, max_len: usize) -> String {
 
 fn short_hash(input: &str, len: usize) -> String {
     let digest = Sha256::digest(input.as_bytes());
-    let mut hex = hex_lower(&digest);
-    hex.truncate(len);
-    hex
-}
-
-/// Lowercase hex encoding of arbitrary bytes.
-pub(crate) fn hex_lower(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(HEX[(byte >> 4) as usize] as char);
-        out.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    out
+    let mut digest_hex = hex::encode(digest);
+    digest_hex.truncate(len);
+    digest_hex
 }
 
 fn random_instance_id() -> String {

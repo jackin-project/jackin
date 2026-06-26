@@ -11,13 +11,17 @@ fi
 # `; ` to the failure line — used by setup-once to surface its retry
 # semantics.
 run_hook() {
-    local label="$1" path="$2" tail="${3:-}"
+    local label="$1" path="$2" tail="${3:-}" hook_cwd="${4:-}"
     echo "[entrypoint] running $label hook..."
     # `$?` inside `if ! cmd; then ...` is the negated test's status (0),
     # not the hook's. Capture before the test so the failure log + exit
     # surface the real exit code.
     local rc=0
-    "$path" || rc=$?
+    if [ -n "$hook_cwd" ]; then
+        ( cd "$hook_cwd" && "$path" ) || rc=$?
+    else
+        "$path" || rc=$?
+    fi
     if [ "$rc" -ne 0 ]; then
         echo "[entrypoint] $label hook failed (exit $rc)${tail:+; $tail}" >&2
         exit "$rc"
@@ -30,6 +34,23 @@ run_hook() {
 # repeated pane starts quiet and avoids shell xtrace leaking token
 # values.
 /jackin/runtime/jackin-capsule runtime-setup
+
+# ── agent runtime status env ───────────────────────────────────────────
+# JACKIN_SESSION_ID is set by the daemon before spawning. Export remaining
+# status vars so hook scripts and subprocesses inherit them.
+export JACKIN_STATUS_SOCKET="${JACKIN_STATUS_SOCKET:-/jackin/run/jackin.sock}"
+export JACKIN_STATUS_SOURCE="${JACKIN_STATUS_SOURCE:-wrapper-${JACKIN_SESSION_ID:-0}}"
+export JACKIN_AGENT_RUNTIME="${JACKIN_AGENT:-unknown}"
+
+# ── Network allowlist (allowlist tier) ────────────────────────────────
+# The firewall (`jackin-capsule firewall-apply`) is run by jackin' via
+# `docker exec --user root` AFTER this entrypoint starts but BEFORE the agent
+# session begins, not here in the entrypoint. This avoids a conflict with
+# --security-opt no-new-privileges (docker exec as root needs no setuid
+# escalation; sudo inside the container does). The host blocks the session on a
+# non-zero firewall-apply (fail-closed), so the entrypoint neither needs nor can
+# verify install state here — a post-start exec cannot mutate this PID 1
+# environment. JACKIN_NETWORK_MODE is informational only.
 
 # ── agent-specific setup ───────────────────────────────────────────
 #
@@ -140,7 +161,7 @@ if [ -x /jackin/runtime/hooks/source.sh ]; then
 fi
 
 if [ -x /jackin/runtime/hooks/preflight.sh ]; then
-    run_hook preflight /jackin/runtime/hooks/preflight.sh
+    run_hook preflight /jackin/runtime/hooks/preflight.sh "" "$HOME"
 fi
 
 # In debug mode, pause so the operator can review logs before the agent clears the screen.

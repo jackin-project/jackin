@@ -27,7 +27,7 @@ fn env_points_at_bundle_state() {
 
 #[test]
 fn auto_prep_detects_capsule_and_construct_inputs() {
-    let repo = repo_root();
+    let repo = test_repo_root();
     let auto = auto_prep(
         &repo,
         &[
@@ -37,48 +37,58 @@ fn auto_prep_detects_capsule_and_construct_inputs() {
     )
     .unwrap();
 
-    assert!(auto.capsule);
-    assert!(auto.construct);
+    assert!(auto.capsule.required);
+    assert!(auto.construct.required);
+    assert_eq!(
+        auto.construct.reasons,
+        vec!["docker/construct/Dockerfile: construct image source changed"]
+    );
 }
 
 #[test]
 fn auto_prep_ignores_docs_only_changes() {
-    let repo = repo_root();
+    let repo = test_repo_root();
     let auto = auto_prep(
         &repo,
         &["docs/content/docs/reference/roadmap/pr-verification.mdx".to_owned()],
     )
     .unwrap();
 
-    assert!(!auto.capsule);
-    assert!(!auto.construct);
+    assert!(!auto.capsule.required);
+    assert!(!auto.construct.required);
+    assert!(auto.capsule.reasons.is_empty());
+    assert!(auto.construct.reasons.is_empty());
 }
 
 #[test]
 fn auto_prep_treats_protocol_change_as_capsule() {
-    let repo = repo_root();
+    let repo = test_repo_root();
     let auto = auto_prep(&repo, &["crates/jackin-protocol/src/wire.rs".to_owned()]).unwrap();
 
-    assert!(auto.capsule);
-    assert!(!auto.construct);
+    assert!(auto.capsule.required);
+    assert!(!auto.construct.required);
+    assert_eq!(
+        auto.capsule.reasons,
+        vec!["crates/jackin-protocol/src/wire.rs: jackin-protocol is used by jackin-capsule"]
+    );
 }
 
 #[test]
 fn auto_prep_treats_tui_dependency_change_as_capsule() {
-    let repo = repo_root();
+    let repo = test_repo_root();
     let auto = auto_prep(&repo, &["crates/jackin-tui/src/lib.rs".to_owned()]).unwrap();
 
-    assert!(auto.capsule);
-    assert!(!auto.construct);
+    assert!(auto.capsule.required);
+    assert!(!auto.construct.required);
 }
 
 #[test]
 fn auto_prep_ignores_unrelated_workspace_package_change() {
-    let repo = repo_root();
+    let repo = test_repo_root();
     let auto = auto_prep(&repo, &["crates/jackin-dev/src/main.rs".to_owned()]).unwrap();
 
-    assert!(!auto.capsule);
-    assert!(!auto.construct);
+    assert!(!auto.capsule.required);
+    assert!(!auto.construct.required);
 }
 
 #[test]
@@ -90,13 +100,55 @@ fn auto_prep_construct_triggers() {
         "crates/jackin-xtask/src/construct/image.rs",
     ] {
         assert!(
-            construct_build_required(&[file.to_owned()]),
+            construct_build_decision(&[file.to_owned()]).required,
             "{file} should trigger a construct build"
         );
     }
 }
 
-fn repo_root() -> PathBuf {
+#[test]
+fn construct_decision_explains_triggering_files() {
+    let decision = construct_build_decision(&[
+        "docs/content/docs/getting-started/concepts.mdx".to_owned(),
+        "docker-bake.hcl".to_owned(),
+        "crates/jackin-xtask/src/construct.rs".to_owned(),
+    ]);
+
+    assert!(decision.required);
+    assert_eq!(
+        decision.reasons,
+        vec![
+            "docker-bake.hcl: construct image bake graph changed",
+            "crates/jackin-xtask/src/construct.rs: construct build orchestration changed",
+        ]
+    );
+}
+
+#[test]
+fn capsule_decision_explains_broad_workspace_inputs() {
+    let repo = test_repo_root();
+    let decision = capsule_build_decision(&repo, &["Cargo.lock".to_owned()]).unwrap();
+
+    assert!(decision.required);
+    assert_eq!(
+        decision.reasons,
+        vec!["Cargo.lock: workspace build inputs changed"]
+    );
+}
+
+#[test]
+fn path_only_prep_explains_capsule_dependency_without_checkout() {
+    let auto = auto_prep_from_paths(&["crates/jackin-tui/src/lib.rs".to_owned()]);
+
+    assert!(auto.capsule.required);
+    assert!(!auto.construct.required);
+    assert_eq!(
+        auto.capsule.reasons,
+        vec!["crates/jackin-tui/src/lib.rs: jackin-tui is used by jackin-capsule"]
+    );
+}
+
+fn test_repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
@@ -129,24 +181,51 @@ fn shell_quote_quotes_shell_metachars() {
 }
 
 #[test]
-fn parse_pr_info_filters_empty_and_non_string_paths() {
-    let json = serde_json::json!({
-        "headRefName": "fix/example",
-        "headRefOid": "abc123",
-        "files": [{"path": "a.rs"}, {"path": ""}, {"additions": 1}, {"path": "b.rs"}],
-    });
-    let info = parse_pr_info(&json).unwrap();
+fn mise_exec_command_runs_inside_project_tool_env() {
+    let cmd = mise_exec_command("cargo", ["run", "--bin", "build-jackin-capsule"]);
 
-    assert_eq!(info.head_ref_name, "fix/example");
-    assert_eq!(info.head_oid, "abc123");
-    assert_eq!(info.changed_files, vec!["a.rs", "b.rs"]);
+    assert_eq!(
+        display_command(&cmd),
+        "mise exec -- cargo run --bin build-jackin-capsule"
+    );
 }
 
 #[test]
-fn parse_pr_info_rejects_missing_files() {
-    let json = serde_json::json!({ "headRefName": "fix/example", "headRefOid": "abc123" });
+fn local_construct_image_ref_is_commit_pinned() {
+    let repo = test_repo_root();
+    let image = local_construct_image_ref(&repo).unwrap();
+    let prefix = "jackin-local/construct:trixie-";
+    assert!(
+        image.starts_with(prefix),
+        "expected commit-pinned local construct ref, got {image}"
+    );
+    let sha = &image[prefix.len()..];
+    assert_eq!(sha.len(), 12, "short SHA must be 12 chars: {image}");
+    assert!(
+        sha.chars().all(|c| c.is_ascii_hexdigit()),
+        "SHA must be hex: {image}"
+    );
+}
 
-    assert!(parse_pr_info(&json).is_err());
+#[test]
+fn parse_pr_refs_reads_head_name_and_oid() {
+    let json = serde_json::json!({ "headRefName": "fix/example", "headRefOid": "abc123" });
+    let (name, oid) = parse_pr_refs(&json).unwrap();
+    assert_eq!(name, "fix/example");
+    assert_eq!(oid, "abc123");
+}
+
+#[test]
+fn parse_changed_files_trims_and_drops_blank_lines() {
+    // Mimics `gh pr diff --name-only`, including a path past the old 100-file cap.
+    let out = "a.rs\n  docker/construct/Dockerfile  \n\n\nb.rs\n";
+    let files = parse_changed_files(out).unwrap();
+    assert_eq!(files, vec!["a.rs", "docker/construct/Dockerfile", "b.rs"]);
+}
+
+#[test]
+fn parse_changed_files_rejects_empty() {
+    assert!(parse_changed_files("\n  \n").is_err());
 }
 
 #[test]

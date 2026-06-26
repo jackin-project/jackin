@@ -30,7 +30,7 @@ impl AgentRuntime for ClaudeRuntime {
 USER agent
 ARG JACKIN_CACHE_BUST=0
 ENV XDG_CACHE_HOME=\"/home/agent/.cache\"
-COPY --link --chown=agent:agent --chmod=0755 {source} /jackin/agent-binaries/claude
+COPY --link --chown=agent:0 --chmod=0755 {source} /jackin/agent-binaries/claude
 RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
     set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
@@ -77,9 +77,15 @@ RUN --mount=type=cache,id=jackin-agent-prefetch-claude,target=/home/agent/.cache
         AgentStatePaths {
             // Claude stores credentials in ~/.claude/ (directory) + ~/.claude.json.
             credential_dir: ".claude",
+            config_dir: None,      // all durable state under ~/.claude
             credential_file: None, // directory-based: .credentials.json + ~/.claude.json
             folder_env_var: Some("CLAUDE_CONFIG_DIR"),
+            home_files: &[".claude.json"],
         }
+    }
+
+    fn default_home_exclude_paths(&self) -> &'static [&'static str] {
+        &[".claude/backups"]
     }
 
     fn parse_version<'a>(&self, raw: &'a str) -> Option<&'a str> {

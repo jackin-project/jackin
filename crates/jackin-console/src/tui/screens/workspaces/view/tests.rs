@@ -1,7 +1,16 @@
 //! Tests for `view`.
 use super::*;
 use crate::tui::screens::workspaces::model::ManagerListRow;
+use jackin_core::instance::InstanceStatus;
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+fn instance_row_label(instance_id: &str, role_key: &str) -> InstanceRowLabel {
+    InstanceRowLabel {
+        instance_id: instance_id.to_owned(),
+        role_key: role_key.to_owned(),
+        status: InstanceStatus::Running,
+    }
+}
 
 fn display_row_facts(row: ManagerListRow) -> WorkspaceListDisplayRowFacts {
     WorkspaceListDisplayRowFacts {
@@ -203,10 +212,20 @@ fn workspace_list_display_helpers_own_visible_defaults() {
     assert!(new_workspace.hovered);
     assert!(!new_workspace.expanded);
     assert_eq!(
-        workspace_instance_list_label("abc123", "chainargos/agent-smith"),
+        workspace_instance_list_label("abc123", "chainargos/agent-smith", InstanceStatus::Running),
         "abc123  chainargos/agent-smith"
     );
-    let instance = workspace_instance_display_row("abc123", "chainargos/agent-smith", true, true);
+    assert_eq!(
+        workspace_instance_list_label("abc123", "role", InstanceStatus::Crashed),
+        "abc123  role  [crashed]"
+    );
+    let instance = workspace_instance_display_row(
+        "abc123",
+        "chainargos/agent-smith",
+        InstanceStatus::Running,
+        true,
+        true,
+    );
     assert_eq!(instance.label, "abc123  chainargos/agent-smith");
     assert_eq!(instance.tone, WorkspaceListRowTone::Instance);
     assert!(instance.selected);
@@ -275,21 +294,31 @@ fn workspace_list_display_row_for_row_routes_all_row_kinds() {
                 current_dir_expanded: false,
                 current_dir_has_instances: false,
             },
-            |idx| (idx == 3).then(|| ("i-cwd".to_owned(), "role".to_owned())),
+            |idx| (idx == 3).then(|| instance_row_label("i-cwd", "role")),
             |_| None,
             |_, _| None,
         ),
-        Some(workspace_instance_display_row("i-cwd", "role", true, true))
+        Some(workspace_instance_display_row(
+            "i-cwd",
+            "role",
+            InstanceStatus::Running,
+            true,
+            true
+        ))
     );
     assert_eq!(
         workspace_list_display_row_for_row(
             display_row_facts(ManagerListRow::WorkspaceInstance(1, 4)),
             |_| None,
             |_| None,
-            |ws, inst| (ws == 1 && inst == 4).then(|| ("i-ws".to_owned(), "smith".to_owned())),
+            |ws, inst| (ws == 1 && inst == 4).then(|| instance_row_label("i-ws", "smith")),
         ),
         Some(workspace_instance_display_row(
-            "i-ws", "smith", false, false
+            "i-ws",
+            "smith",
+            InstanceStatus::Running,
+            false,
+            false
         ))
     );
     assert_eq!(
@@ -323,7 +352,7 @@ fn workspace_list_display_rows_assembles_visual_rows() {
         |_| None,
         |idx| (idx == 1).then(|| ("ws-one".to_owned(), false, true)),
         |ws_idx, inst_idx| {
-            (ws_idx == 1 && inst_idx == 0).then(|| ("abc123".to_owned(), "role".to_owned()))
+            (ws_idx == 1 && inst_idx == 0).then(|| instance_row_label("abc123", "role"))
         },
     );
 
@@ -346,7 +375,11 @@ fn workspace_list_display_rows_assembles_visual_rows() {
     assert_eq!(
         rows[3],
         Some(workspace_instance_display_row(
-            "abc123", "role", false, true
+            "abc123",
+            "role",
+            InstanceStatus::Running,
+            false,
+            true
         ))
     );
 }

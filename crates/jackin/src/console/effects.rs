@@ -35,14 +35,6 @@ pub(crate) fn execute_manager_effect(
             let Some((target, sources)) = state.active_mount_info_sources(config) else {
                 return false;
             };
-            if tokio::runtime::Handle::try_current().is_err() {
-                let entries = jackin_console::services::mount_info::inspect_entries(sources);
-                return update_manager(
-                    state,
-                    ManagerMessage::MountInfoRefreshed(PendingMountInfoRefresh { target, entries }),
-                )
-                .is_dirty();
-            }
             let rx = spawn_blocking_subscription(move || {
                 let entries = jackin_console::services::mount_info::inspect_entries(sources);
                 PendingMountInfoRefresh { target, entries }
@@ -80,27 +72,29 @@ pub(crate) fn execute_manager_effect(
             true
         }
         ManagerEffect::OpenCreatePreludeFileBrowser => {
-            jackin_console::tui::file_browser::execute_create_prelude_file_browser_open(state);
-            true
+            jackin_console::tui::file_browser::start_create_prelude_file_browser_open(state)
         }
         ManagerEffect::OpenCreatePreludeFileBrowserAtLastCwd => {
-            jackin_console::tui::file_browser::execute_create_prelude_file_browser_reopen(state);
-            true
+            jackin_console::tui::file_browser::start_create_prelude_file_browser_reopen(state)
+        }
+        ManagerEffect::OpenEditorAuthSourceFolderBrowser => {
+            jackin_console::tui::file_browser::start_editor_auth_source_folder_browser_open(state)
         }
         ManagerEffect::OpenEditorAddMountFileBrowser => {
-            jackin_console::tui::file_browser::execute_editor_add_mount_file_browser_open(state);
-            true
+            jackin_console::tui::file_browser::start_editor_add_mount_file_browser_open(state)
         }
         ManagerEffect::OpenGlobalMountFileBrowser => {
-            jackin_console::tui::file_browser::execute_global_mount_file_browser_open(state);
-            true
+            jackin_console::tui::file_browser::start_global_mount_file_browser_open(state)
+        }
+        ManagerEffect::OpenSettingsAuthSourceFolderBrowser => {
+            jackin_console::tui::file_browser::start_settings_auth_source_folder_browser_open(state)
         }
         ManagerEffect::ApplyFileBrowserOutcome { context, outcome } => {
-            jackin_console::tui::file_browser::execute_file_browser_outcome(
+            jackin_console::tui::file_browser::execute_file_browser_outcome_or_start_listing(
                 state,
                 context,
                 outcome,
-                &crate::console::validate_auth_source_folder,
+                crate::console::validate_auth_source_folder,
             )
         }
         ManagerEffect::ResolveFileBrowserGitUrl(path) => {
@@ -179,18 +173,34 @@ pub fn execute_pending_workspace_save_commit(
 
 pub(crate) fn execute_remove_workspace(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    _config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     cwd: &std::path::Path,
     name: &str,
 ) -> bool {
-    match crate::console::services::config::remove_workspace(config, paths, name) {
-        Ok(()) => {
+    let rx = crate::console::services::config::start_remove_workspace(
+        paths.clone(),
+        cwd.to_path_buf(),
+        name.to_owned(),
+    );
+    state.begin_config_save(rx);
+    true
+}
+
+fn apply_remove_workspace_result(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    cwd: std::path::PathBuf,
+    result: anyhow::Result<AppConfig>,
+) {
+    match result {
+        Ok(saved) => {
+            *config = saved;
             let _unused = update_manager(
                 state,
                 ManagerMessage::ReloadFromConfig {
                     config: Box::new(config.clone()),
-                    cwd: cwd.to_path_buf(),
+                    cwd,
                 },
             );
         }
@@ -204,10 +214,130 @@ pub(crate) fn execute_remove_workspace(
             );
         }
     }
-    true
 }
 
 pub(crate) fn apply_role_load_completion(
+    state: &mut ManagerState<'_>,
+    _config: &mut AppConfig,
+    paths: &crate::paths::JackinPaths,
+    load: PendingRoleLoad,
+    result: anyhow::Result<()>,
+) {
+    match result {
+        Ok(()) => {
+            let rx = crate::console::services::config::start_role_source_persist(
+                paths.clone(),
+                jackin_console::tui::subscriptions::RoleSourcePersistOrigin::RoleLoad {
+                    raw: load.raw,
+                    key: load.key,
+                    source: load.source,
+                },
+            );
+            state.begin_config_save(rx);
+        }
+        Err(e) => {
+            let ManagerStage::Editor(editor) = &mut state.stage else {
+                return;
+            };
+            crate::debug_log!(
+                "role",
+                "role loader failed for key={key:?} raw={raw:?}: {e:?}",
+                key = load.key,
+                raw = load.raw
+            );
+            let err_text = e.to_string();
+            if let Some(panic_message) = err_text.strip_prefix("role loader panicked: ") {
+                crate::console::tui::state::open_role_input_error(
+                    editor,
+                    &format!(
+                        "Could not load role {:?}.\n\nThe role loader hit an internal \
+                         error while registering the repository.\n\n{panic_message}",
+                        load.raw
+                    ),
+                );
+                return;
+            }
+            open_role_resolution_error(editor, &load.raw, Some(&load.source.git), &e);
+        }
+    }
+}
+
+fn apply_role_source_persist_result(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    result: anyhow::Result<AppConfig>,
+    origin: jackin_console::tui::subscriptions::RoleSourcePersistOrigin<jackin_config::RoleSource>,
+) {
+    match origin {
+        jackin_console::tui::subscriptions::RoleSourcePersistOrigin::RoleLoad {
+            raw,
+            key,
+            source,
+        } => match result {
+            Ok(saved) => {
+                *config = saved;
+                let ManagerStage::Editor(editor) = &mut state.stage else {
+                    return;
+                };
+                crate::debug_log!(
+                    "role",
+                    "role repo registration completed for key={key:?} git={git:?}",
+                    git = source.git.as_str()
+                );
+                if source.trusted {
+                    crate::debug_log!(
+                        "role",
+                        "role source is trusted; adding key={key:?} directly to the workspace"
+                    );
+                    crate::console::tui::state::add_role_to_workspace_editor(editor, config, &key);
+                } else {
+                    crate::debug_log!(
+                        "role",
+                        "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
+                        git = source.git.as_str()
+                    );
+                    crate::console::tui::state::open_role_trust_confirm(editor, key, source);
+                }
+            }
+            Err(e) => {
+                let ManagerStage::Editor(editor) = &mut state.stage else {
+                    return;
+                };
+                crate::debug_log!(
+                    "role",
+                    "role loader failed for key={key:?} raw={raw:?}: {e:?}"
+                );
+                open_role_resolution_error(
+                    editor,
+                    &raw,
+                    Some(&source.git),
+                    &e.context("role repository loaded, but registration could not be persisted"),
+                );
+            }
+        },
+        jackin_console::tui::subscriptions::RoleSourcePersistOrigin::TrustConfirm {
+            key,
+            source: _,
+        } => match result {
+            Ok(saved) => {
+                *config = saved;
+                let ManagerStage::Editor(editor) = &mut state.stage else {
+                    return;
+                };
+                crate::console::tui::state::add_role_to_workspace_editor(editor, config, &key);
+            }
+            Err(error) => {
+                let ManagerStage::Editor(editor) = &mut state.stage else {
+                    return;
+                };
+                crate::console::tui::state::open_editor_action_error(editor, &error);
+            }
+        },
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn apply_role_load_completion_for_tests(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
@@ -315,7 +445,7 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
     )
     .await;
     let (_tx, rx) = tokio::sync::oneshot::channel();
-    apply_role_load_completion(
+    apply_role_load_completion_for_tests(
         editor,
         config,
         paths,
@@ -349,23 +479,23 @@ pub(crate) fn persist_trusted_role_source_for_tests(
 
 fn execute_trusted_role_source_persist(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    _config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
     key: &str,
     mut source: jackin_config::RoleSource,
 ) {
-    let ManagerStage::Editor(editor) = &mut state.stage else {
+    let ManagerStage::Editor(_) = &mut state.stage else {
         return;
     };
     source.trusted = true;
-    match execute_role_source_persist(config, paths, key, &source) {
-        Ok(()) => {
-            crate::console::tui::state::add_role_to_workspace_editor(editor, config, key);
-        }
-        Err(error) => {
-            crate::console::tui::state::open_editor_action_error(editor, &error);
-        }
-    }
+    let rx = crate::console::services::config::start_role_source_persist(
+        paths.clone(),
+        jackin_console::tui::subscriptions::RoleSourcePersistOrigin::TrustConfirm {
+            key: key.to_owned(),
+            source,
+        },
+    );
+    state.begin_config_save(rx);
 }
 
 pub(crate) fn execute_token_generate(
@@ -427,26 +557,6 @@ pub(crate) fn execute_workspace_save_effect(
             plan,
             exit_on_success,
         } => {
-            let has_records = jackin_runtime::isolation::state::list_records_for_workspace(
-                &paths.data_dir,
-                &original_name,
-            )
-            .is_ok_and(|records| !records.is_empty());
-            if !has_records {
-                let (_tx, rx) = tokio::sync::oneshot::channel();
-                let check = PendingDriftCheck::new(rx, original_name, plan, exit_on_success);
-                if let Ok(Some(effect)) =
-                    jackin_console::tui::input::save::continue_save_after_drift_check(
-                        state,
-                        config,
-                        check,
-                        Ok(crate::runtime::drift::DriftDetection::default()),
-                    )
-                {
-                    execute_workspace_save_effect(state, config, paths, cwd, effect);
-                }
-                return;
-            }
             let ManagerStage::Editor(editor) = &mut state.stage else {
                 return;
             };
@@ -507,9 +617,9 @@ pub(crate) fn execute_workspace_save_effect(
 
 pub(crate) fn execute_workspace_save_write(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    _config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
-    cwd: &std::path::Path,
+    _cwd: &std::path::Path,
     input: WorkspaceSaveWriteInput<'_>,
     exit_on_success: bool,
 ) {
@@ -527,12 +637,24 @@ pub(crate) fn execute_workspace_save_write(
             crate::console::services::config::WorkspaceSaveMode::Create { name }
         }
     };
-    let service_input = crate::console::services::config::WorkspaceSaveInput {
+    let rx = crate::console::services::config::start_workspace_save(
+        paths.clone(),
         mode,
-        original: input.original,
-        pending: input.pending,
-    };
-    match crate::console::services::config::save_workspace(paths, service_input) {
+        input.original.clone(),
+        input.pending.clone(),
+        exit_on_success,
+    );
+    state.begin_config_save(rx);
+}
+
+fn apply_workspace_save_write_result(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    cwd: &std::path::Path,
+    result: anyhow::Result<jackin_console::tui::subscriptions::WorkspaceSaveResult<AppConfig>>,
+    exit_on_success: bool,
+) {
+    match result {
         Ok(saved) => {
             *config = saved.config;
             if let ManagerStage::Editor(editor) = &mut state.stage {
@@ -581,6 +703,7 @@ pub(crate) fn execute_workspace_save_write(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn execute_role_source_persist(
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
@@ -592,7 +715,7 @@ pub(crate) fn execute_role_source_persist(
 
 fn execute_settings_save(
     state: &mut ManagerState<'_>,
-    config: &mut AppConfig,
+    _config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
 ) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
@@ -603,21 +726,33 @@ fn execute_settings_save(
     let auth_save = settings.auth.save_refs();
     let trust_save = settings.trust.save_refs();
     let general_save = settings.general.save_refs();
-    match crate::console::services::config::save_settings(
-        paths,
-        crate::console::services::config::SettingsSaveInput {
-            mounts_original: mounts_save.original,
-            mounts_pending: mounts_save.pending,
-            env_original: env_save.original,
-            env_pending: env_save.pending,
-            auth_pending: auth_save.pending,
-            original_github_env: auth_save.original_github_env,
-            github_env: auth_save.github_env,
-            trust_pending: trust_save.pending,
+    let rx = crate::console::services::config::start_settings_save(
+        paths.clone(),
+        crate::console::services::config::OwnedSettingsSaveInput {
+            mounts_original: mounts_save.original.to_vec(),
+            mounts_pending: mounts_save.pending.to_vec(),
+            env_original: env_save.original.clone(),
+            env_pending: env_save.pending.clone(),
+            auth_pending: auth_save.pending.to_vec(),
+            original_github_env: auth_save.original_github_env.clone(),
+            github_env: auth_save.github_env.clone(),
+            trust_pending: trust_save.pending.to_vec(),
             git_coauthor_trailer: general_save.git_coauthor_trailer,
             git_dco: general_save.git_dco,
         },
-    ) {
+    );
+    state.begin_config_save(rx);
+}
+
+fn apply_settings_save_result(
+    state: &mut ManagerState<'_>,
+    config: &mut AppConfig,
+    result: anyhow::Result<AppConfig>,
+) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    match result {
         Ok(saved) => {
             *config = saved;
             settings.mark_saved();
@@ -627,7 +762,7 @@ fn execute_settings_save(
     }
 }
 
-pub(crate) fn poll_background_messages(
+pub fn poll_background_messages(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
@@ -648,6 +783,16 @@ pub(crate) fn poll_background_messages(
     if let Some(result) = state.poll_mount_info_refresh() {
         messages.push(ManagerBackgroundEvent::Message(
             ManagerMessage::MountInfoRefreshed(result),
+        ));
+    }
+    if let Some(result) = state.poll_file_browser_listing() {
+        messages.push(ManagerBackgroundEvent::Message(
+            ManagerMessage::FileBrowserListingLoaded(result),
+        ));
+    }
+    if let Some(result) = state.poll_file_browser_commit() {
+        messages.push(ManagerBackgroundEvent::Message(
+            ManagerMessage::FileBrowserCommitValidated(result),
         ));
     }
     if let Some(result) = state.poll_instance_refresh() {
@@ -676,10 +821,13 @@ pub(crate) fn poll_background_messages(
     if let Some((cleanup, result)) = state.poll_pending_isolation_cleanup() {
         messages.push(ManagerBackgroundEvent::IsolationCleanupFinished { cleanup, result });
     }
+    if let Some(result) = state.poll_config_save() {
+        messages.push(ManagerBackgroundEvent::ConfigSaveFinished(result));
+    }
     messages
 }
 
-pub(crate) fn apply_background_event(
+pub fn apply_background_event(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &crate::paths::JackinPaths,
@@ -695,9 +843,7 @@ pub(crate) fn apply_background_event(
             dirty
         }
         ManagerBackgroundEvent::RoleLoadFinished { load, result } => {
-            if let ManagerStage::Editor(editor) = &mut state.stage {
-                apply_role_load_completion(editor, config, paths, load, result);
-            }
+            apply_role_load_completion(state, config, paths, load, result);
             true
         }
         ManagerBackgroundEvent::DriftCheckFinished { check, detection } => {
@@ -717,6 +863,32 @@ pub(crate) fn apply_background_event(
                 )
             {
                 execute_workspace_save_effect(state, config, paths, cwd, effect);
+            }
+            true
+        }
+        ManagerBackgroundEvent::ConfigSaveFinished(result) => {
+            match result {
+                jackin_console::tui::subscriptions::ConfigSaveResult::Workspace {
+                    result,
+                    exit_on_success,
+                } => {
+                    apply_workspace_save_write_result(state, config, cwd, result, exit_on_success);
+                }
+                jackin_console::tui::subscriptions::ConfigSaveResult::Settings(result) => {
+                    apply_settings_save_result(state, config, result);
+                }
+                jackin_console::tui::subscriptions::ConfigSaveResult::RemoveWorkspace {
+                    result,
+                    cwd,
+                } => {
+                    apply_remove_workspace_result(state, config, cwd, result);
+                }
+                jackin_console::tui::subscriptions::ConfigSaveResult::RoleSourcePersist {
+                    result,
+                    origin,
+                } => {
+                    apply_role_source_persist_result(state, config, result, origin);
+                }
             }
             true
         }
@@ -795,12 +967,26 @@ fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> Str
 #[cfg(test)]
 mod tests {
     use jackin_config::AppConfig;
-    use jackin_console::tui::effect::ConsoleEffect;
+    use jackin_config::WorkspaceConfig;
+    use jackin_console::tui::auth::{AuthKind, AuthMode};
+    use jackin_console::tui::components::file_browser::{
+        FileBrowserOutcome, FileBrowserState, FolderListing,
+    };
+    use jackin_console::tui::effect::FileBrowserEffectContext;
+    use jackin_console::tui::effect::{ConsoleEffect, WorkspaceSaveEffect};
     use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage};
 
-    use crate::console::tui::state::ManagerState;
+    use crate::console::tui::state::{
+        AuthForm, AuthFormFocus, AuthFormTarget, CreatePreludeState, EditorState,
+        FileBrowserTarget, ManagerEffect, ManagerStage, ManagerState, Modal, PendingRoleLoad,
+        SettingsAuthModal, SettingsState,
+    };
+    use crate::console::tui::{WorkspaceSaveWriteInput, WorkspaceSaveWriteMode};
 
-    use super::{execute_manager_effect, poll_background_messages};
+    use super::{
+        apply_role_load_completion, execute_manager_effect, execute_workspace_save_effect,
+        execute_workspace_save_write, poll_background_messages,
+    };
 
     #[tokio::test]
     async fn poll_background_messages_routes_file_browser_poll_through_message() {
@@ -837,5 +1023,343 @@ mod tests {
             state.instance_refresh_in_flight(),
             "instance refresh effect should spawn a worker"
         );
+    }
+
+    #[tokio::test]
+    async fn workspace_save_drift_check_starts_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.stage = ManagerStage::Editor(editor);
+
+        execute_workspace_save_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            cwd,
+            WorkspaceSaveEffect::StartDriftCheck {
+                original_name: "workspace".into(),
+                prospective_mounts: Vec::new(),
+                plan: jackin_console::tui::state::PendingSaveCommit {
+                    effective_removals: Vec::new(),
+                    final_mounts: None,
+                    delete_isolated_acknowledged: false,
+                    isolated_cleanup_complete: false,
+                },
+                exit_on_success: false,
+            },
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(
+            editor.pending_drift_check.is_some(),
+            "workspace save drift detection should run on a worker"
+        );
+        assert!(matches!(editor.modal, Some(Modal::StatusPopup { .. })));
+    }
+
+    #[tokio::test]
+    async fn workspace_save_write_starts_config_save_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let original = WorkspaceConfig::default();
+        let pending = WorkspaceConfig::default();
+        let editor = EditorState::new_edit("workspace".into(), original.clone());
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.stage = ManagerStage::Editor(editor);
+
+        execute_workspace_save_write(
+            &mut state,
+            &mut config,
+            &paths,
+            cwd,
+            WorkspaceSaveWriteInput {
+                mode: WorkspaceSaveWriteMode::Edit {
+                    original_name: "workspace".into(),
+                    pending_name: None,
+                    effective_removals: Vec::new(),
+                },
+                original: &original,
+                pending: &pending,
+            },
+            false,
+        );
+
+        assert!(
+            state.config_save_in_flight(),
+            "workspace config save should run on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn settings_save_starts_config_save_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let settings = SettingsState::from_config(&config);
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.stage = ManagerStage::Settings(settings);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ConsoleEffect::SaveSettings.into(),
+        );
+
+        assert!(
+            state.config_save_in_flight(),
+            "settings config save should run on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_workspace_starts_config_save_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        super::execute_remove_workspace(&mut state, &mut config, &paths, cwd, "workspace");
+
+        assert!(
+            state.config_save_in_flight(),
+            "workspace delete should run on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn trusted_role_source_persist_starts_config_save_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.stage = ManagerStage::Editor(editor);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::PersistTrustedRoleSource {
+                key: "agent-smith".into(),
+                source: jackin_config::RoleSource::default(),
+            },
+        );
+
+        assert!(
+            state.config_save_in_flight(),
+            "trusted role source persistence should run on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn role_load_completion_starts_role_source_persist_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.stage = ManagerStage::Editor(editor);
+        let (_tx, rx) = tokio::sync::oneshot::channel();
+
+        apply_role_load_completion(
+            &mut state,
+            &mut config,
+            &paths,
+            PendingRoleLoad {
+                raw: "agent-smith".into(),
+                key: "agent-smith".into(),
+                source: jackin_config::RoleSource::default(),
+                rx,
+            },
+            Ok(()),
+        );
+
+        assert!(
+            state.config_save_in_flight(),
+            "loaded role source persistence should run on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_prelude_file_browser_open_starts_listing_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::OpenCreatePreludeFileBrowser,
+        );
+
+        assert!(
+            state.file_browser_listing_in_flight(),
+            "file browser open should scan directories on a worker"
+        );
+        assert!(
+            matches!(state.stage, ManagerStage::List),
+            "the modal should open only after the worker returns"
+        );
+    }
+
+    #[tokio::test]
+    async fn file_browser_navigation_starts_listing_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let listing = FolderListing {
+            root: cwd.to_path_buf(),
+            cwd: cwd.to_path_buf(),
+            entries: Vec::new(),
+        };
+        let mut prelude = CreatePreludeState::new();
+        prelude.modal = Some(Modal::FileBrowser {
+            target: FileBrowserTarget::CreateFirstMountSrc,
+            state: FileBrowserState::from_listing(listing),
+        });
+        state.stage = ManagerStage::CreatePrelude(prelude);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::ApplyFileBrowserOutcome {
+                context: FileBrowserEffectContext::Prelude { browser_cwd: None },
+                outcome: FileBrowserOutcome::NavigateTo(cwd.join("child")),
+            },
+        );
+
+        assert!(
+            state.file_browser_listing_in_flight(),
+            "file browser navigation should scan directories on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn file_browser_commit_starts_validation_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let child = cwd.join("child");
+        std::fs::create_dir(&child).unwrap();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let listing = FolderListing {
+            root: cwd.to_path_buf(),
+            cwd: cwd.to_path_buf(),
+            entries: Vec::new(),
+        };
+        let mut prelude = CreatePreludeState::new();
+        prelude.modal = Some(Modal::FileBrowser {
+            target: FileBrowserTarget::CreateFirstMountSrc,
+            state: FileBrowserState::from_listing(listing),
+        });
+        state.stage = ManagerStage::CreatePrelude(prelude);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::ApplyFileBrowserOutcome {
+                context: FileBrowserEffectContext::Prelude { browser_cwd: None },
+                outcome: FileBrowserOutcome::RequestCommit(child),
+            },
+        );
+
+        assert!(
+            state.file_browser_commit_in_flight(),
+            "file browser commit validation should run on a worker"
+        );
+    }
+
+    #[tokio::test]
+    async fn editor_auth_source_folder_open_starts_listing_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
+        let mut form = AuthForm::new(AuthKind::Claude);
+        form.set_mode(AuthMode::Sync);
+        form.set_source_folder(cwd.to_path_buf());
+        editor.modal = Some(Modal::AuthForm {
+            target: AuthFormTarget::Workspace {
+                kind: AuthKind::Claude,
+            },
+            state: Box::new(form),
+            focus: AuthFormFocus::SourceFolder,
+            literal_buffer: String::new(),
+        });
+        state.stage = ManagerStage::Editor(editor);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::OpenEditorAuthSourceFolderBrowser,
+        );
+
+        assert!(state.file_browser_listing_in_flight());
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(matches!(editor.modal, Some(Modal::AuthForm { .. })));
+    }
+
+    #[tokio::test]
+    async fn settings_auth_source_folder_open_starts_listing_worker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let cwd = tmp.path();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, cwd);
+        let mut settings = SettingsState::from_config(&config);
+        let mut form = AuthForm::new(AuthKind::Claude);
+        form.set_mode(AuthMode::Sync);
+        form.set_source_folder(cwd.to_path_buf());
+        settings.auth.modal = Some(SettingsAuthModal::AuthForm {
+            target: AuthFormTarget::Workspace {
+                kind: AuthKind::Claude,
+            },
+            state: Box::new(form),
+            focus: AuthFormFocus::SourceFolder,
+            literal_buffer: String::new(),
+        });
+        state.stage = ManagerStage::Settings(settings);
+
+        execute_manager_effect(
+            &mut state,
+            &mut config,
+            &paths,
+            ManagerEffect::OpenSettingsAuthSourceFolderBrowser,
+        );
+
+        assert!(state.file_browser_listing_in_flight());
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(matches!(
+            settings.auth.modal,
+            Some(SettingsAuthModal::AuthForm { .. })
+        ));
     }
 }
