@@ -404,15 +404,12 @@ where
                 };
                 let input = &stdin_buf[..n];
                 // The two image sources are mutually exclusive by construction:
-                // Ctrl+V is the explicit clipboard trigger, while the pasted-path
-                // probe only matches a bracketed paste (never the lone Ctrl+V
-                // byte). Branch on the trigger so that exclusivity is structural.
-                // The two image sources are mutually exclusive by construction:
-                // Ctrl+V is the lone trigger byte (no surrounding bytes); the
-                // pasted-path probe matches a bracketed paste and carries any
-                // bytes that shared the read around the paste body, which must
-                // still be forwarded so a coincident keystroke/mouse report is
-                // not dropped when the body is consumed as an image.
+                // Ctrl+V is the lone trigger byte (no surrounding bytes), while the
+                // pasted-path probe matches a bracketed paste. Branch on the trigger
+                // so exclusivity is structural. The pasted-path read also carries any
+                // bytes sharing the read around the paste body; those are forwarded
+                // below so a coincident keystroke/mouse report is not dropped when the
+                // body is consumed as an image.
                 let staged: Option<(ClipboardImage, &[u8], &[u8])> =
                     if is_image_paste_trigger(input) {
                         log_clipboard_image_paste_trigger();
@@ -467,20 +464,25 @@ where
                         }
                     };
                 if let Some((image, prefix, suffix)) = staged {
+                    // Bytes typed before the paste must reach the agent ahead of the
+                    // image, preserving wire order (prefix → image → suffix).
+                    if !prefix.is_empty() {
+                        let msg = encode_client(ClientFrame::Input(prefix.to_vec()))
+                            .context("encoding paste-prefix Input frame")?;
+                        server_writer
+                            .write_all(&msg)
+                            .await
+                            .context("attach socket write failed (paste prefix)")?;
+                    }
                     match write_clipboard_image_frames(&mut server_writer, image).await {
                         Ok(()) => {
-                            // Forward any bytes that shared the read but were not
-                            // the paste body, so they are not dropped.
-                            for extra in [prefix, suffix] {
-                                if extra.is_empty() {
-                                    continue;
-                                }
-                                let msg = encode_client(ClientFrame::Input(extra.to_vec()))
-                                    .context("encoding surrounding Input frame")?;
+                            if !suffix.is_empty() {
+                                let msg = encode_client(ClientFrame::Input(suffix.to_vec()))
+                                    .context("encoding paste-suffix Input frame")?;
                                 server_writer
                                     .write_all(&msg)
                                     .await
-                                    .context("attach socket write failed (surrounding input)")?;
+                                    .context("attach socket write failed (paste suffix)")?;
                             }
                         }
                         Err(err) => {
@@ -488,7 +490,10 @@ where
                                 "attach",
                                 "host clipboard image frame rejected; forwarding original input: {err:#}"
                             );
-                            let msg = encode_client(ClientFrame::Input(input.to_vec()))
+                            // The prefix already went out, so forward only the rest of
+                            // the read (paste body + suffix) as raw text — no double-send.
+                            let rest = &input[prefix.len()..];
+                            let msg = encode_client(ClientFrame::Input(rest.to_vec()))
                                 .context("encoding fallback Input frame")?;
                             server_writer
                                 .write_all(&msg)
@@ -2045,6 +2050,135 @@ mod tests {
         let (image, trailing) = server_task.await.unwrap();
         assert!(matches!(image, ClientFrame::ClipboardImage(_)));
         assert_eq!(trailing, ClientFrame::Input(b"\x1b[<0;1;1M".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn attach_protocol_forwards_typed_prefix_before_a_staged_paste() {
+        let temp = tempfile::tempdir().unwrap();
+        let image_path = temp.path().join("shot.png");
+        fs::write(&image_path, b"\x89PNG\r\n\x1a\npayload").unwrap();
+
+        let (client, mut server) = duplex(4096);
+        let (client_reader, client_writer) = tokio::io::split(client);
+        let request = HostAttachRequest {
+            spawn_request: None,
+            focus_session: None,
+            env: Vec::new(),
+            terminal: ClientTerminal::default(),
+            export_subdir: "jk-agent-smith".to_owned(),
+            diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
+        };
+        // Type-ahead bytes precede the paste in the same read.
+        let mut raw_input = b"ab\x1b[200~".to_vec();
+        raw_input.extend_from_slice(image_path.display().to_string().as_bytes());
+        raw_input.extend_from_slice(b"\x1b[201~");
+
+        let server_task = tokio::spawn(async move {
+            let mut tag = [0u8; 1];
+            server.read_exact(&mut tag).await.unwrap();
+            let _hello = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server.read_exact(&mut tag).await.unwrap();
+            let first = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server.read_exact(&mut tag).await.unwrap();
+            let second = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server
+                .write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
+                .await
+                .unwrap();
+            (first, second)
+        });
+
+        let (mut input_writer, input_reader) = duplex(128);
+        input_writer.write_all(&raw_input).await.unwrap();
+        let winch = signal(SignalKind::window_change()).unwrap();
+        run_attach_protocol(
+            client_reader,
+            client_writer,
+            input_reader,
+            Cursor::new(Vec::<u8>::new()),
+            24,
+            80,
+            request,
+            Vec::new(),
+            winch,
+        )
+        .await
+        .unwrap();
+
+        // The typed prefix reaches the agent BEFORE the staged image, preserving
+        // wire order.
+        let (first, second) = server_task.await.unwrap();
+        assert_eq!(first, ClientFrame::Input(b"ab".to_vec()));
+        assert!(matches!(second, ClientFrame::ClipboardImage(_)));
+    }
+
+    #[tokio::test]
+    async fn attach_protocol_forwards_unresolved_image_path_paste_as_text() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("missing.png");
+
+        let (client, mut server) = duplex(4096);
+        let (client_reader, client_writer) = tokio::io::split(client);
+        let request = HostAttachRequest {
+            spawn_request: None,
+            focus_session: None,
+            env: Vec::new(),
+            terminal: ClientTerminal::default(),
+            export_subdir: "jk-agent-smith".to_owned(),
+            diagnostics_run_dir: tempfile::tempdir().unwrap().path().join("diagnostics/runs"),
+        };
+        let mut raw_input = b"\x1b[200~".to_vec();
+        raw_input.extend_from_slice(missing.display().to_string().as_bytes());
+        raw_input.extend_from_slice(b"\x1b[201~");
+
+        let server_task = tokio::spawn(async move {
+            let mut tag = [0u8; 1];
+            server.read_exact(&mut tag).await.unwrap();
+            let _hello = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server.read_exact(&mut tag).await.unwrap();
+            let frame = read_client_frame(&mut server, tag[0])
+                .await
+                .unwrap()
+                .unwrap();
+            server
+                .write_all(&encode_server(ServerFrame::Shutdown { reason: None }))
+                .await
+                .unwrap();
+            frame
+        });
+
+        let (mut input_writer, input_reader) = duplex(128);
+        input_writer.write_all(&raw_input).await.unwrap();
+        let winch = signal(SignalKind::window_change()).unwrap();
+        run_attach_protocol(
+            client_reader,
+            client_writer,
+            input_reader,
+            Cursor::new(Vec::<u8>::new()),
+            24,
+            80,
+            request,
+            Vec::new(),
+            winch,
+        )
+        .await
+        .unwrap();
+
+        // A recognized-but-unresolved image path is forwarded verbatim as text,
+        // never silently eaten.
+        assert_eq!(server_task.await.unwrap(), ClientFrame::Input(raw_input));
     }
 
     #[tokio::test]

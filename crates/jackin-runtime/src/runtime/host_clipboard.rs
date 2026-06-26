@@ -213,7 +213,8 @@ pub(super) async fn read_image_from_pasted_path(input: &[u8]) -> Result<Option<C
     // A recognized candidate that did not resolve (missing file, unreadable, not
     // an image) is rare, so logging it is not firehose. It still forwards as
     // ordinary text rather than nagging — the implicit paste did not ask to
-    // stage — but a `--debug` run can now see why nothing staged.
+    // stage — but a `--debug` run can now see that a recognized candidate failed
+    // to stage (the path itself was logged above).
     if matches!(resolved, Ok(None)) {
         jackin_diagnostics::debug_log!(
             "clipboard-image",
@@ -858,6 +859,23 @@ mod tests {
             .await
             .unwrap()
             .expect("bracketed file:// image URL should stage");
+        assert_eq!(staged.format, ClipboardImageFormat::Png);
+    }
+
+    #[tokio::test]
+    async fn pasted_path_stages_open_paste_missing_end_marker() {
+        // A paste whose end marker has not arrived on this read still stages from
+        // the start-marker tail (the split-across-reads start case).
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("shot.png");
+        std::fs::write(&path, b"\x89PNG\r\n\x1a\npayload").unwrap();
+
+        let mut input = b"\x1b[200~".to_vec();
+        input.extend_from_slice(path.display().to_string().as_bytes());
+        let staged = read_image_from_pasted_path(&input)
+            .await
+            .unwrap()
+            .expect("open bracketed paste should stage from the tail");
         assert_eq!(staged.format, ClipboardImageFormat::Png);
     }
 
