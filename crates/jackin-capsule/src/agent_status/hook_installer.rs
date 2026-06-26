@@ -224,21 +224,13 @@ impl HookInstaller for PluginInstaller {
         // plugins. Bail on a corrupt file instead of clobbering it.
         let path = self.config_path(agent_home);
         let mut root = read_existing_json_object(&path)?;
-        let plugins = root
-            .entry("plugins".to_owned())
-            .or_insert_with(|| serde_json::json!([]));
-        let arr = plugins.as_array_mut().with_context(|| {
-            format!(
-                "{} `plugins` is not an array; refusing to overwrite",
-                path.display()
-            )
-        })?;
-        if !arr
-            .iter()
-            .any(|p| p.as_str() == Some(self.plugin_path.as_str()))
-        {
-            arr.push(serde_json::json!(self.plugin_path));
-        }
+        upsert_into_json_array(
+            &mut root,
+            "plugins",
+            serde_json::json!(self.plugin_path),
+            |p| p.as_str() == Some(self.plugin_path.as_str()),
+            &path,
+        )?;
         write_json_file(&path, &serde_json::Value::Object(root))
     }
 
@@ -292,23 +284,15 @@ impl HookInstaller for CodexHookInstaller {
                 hooks_path.display()
             )
         })?;
-        for event in CODEX_HOOK_EVENTS {
+        for &event in CODEX_HOOK_EVENTS {
             let command = format!("{} --event {event}", self.hook_script_path);
-            let entry = hooks_obj
-                .entry((*event).to_owned())
-                .or_insert_with(|| serde_json::json!([]));
-            let arr = entry.as_array_mut().with_context(|| {
-                format!(
-                    "{} `hooks.{event}` is not an array; refusing to overwrite",
-                    hooks_path.display()
-                )
-            })?;
-            let present = arr.iter().any(|e| {
-                e.get("command").and_then(serde_json::Value::as_str) == Some(command.as_str())
-            });
-            if !present {
-                arr.push(serde_json::json!({ "command": command }));
-            }
+            upsert_into_json_array(
+                hooks_obj,
+                event,
+                serde_json::json!({ "command": command }),
+                |e| e.get("command").and_then(serde_json::Value::as_str) == Some(command.as_str()),
+                &hooks_path,
+            )?;
         }
         write_json_file(&hooks_path, &serde_json::Value::Object(root))
     }
@@ -348,6 +332,34 @@ fn read_existing_json_object(
             path.display()
         ),
     }
+}
+
+/// Ensure `value` is present in the JSON array at `map[key]` (creating an empty
+/// array when the key is absent), deduplicated by `eq`. Bails — rather than
+/// overwriting — when the key exists but is not an array. The merge primitive
+/// shared by the `plugins.json` and `hooks.json` installers so neither
+/// hand-rolls the get-or-create-array + dedup-push dance. `label` names the
+/// config file for the bail message.
+fn upsert_into_json_array(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    value: serde_json::Value,
+    eq: impl Fn(&serde_json::Value) -> bool,
+    label: &Path,
+) -> anyhow::Result<()> {
+    let entry = map
+        .entry(key.to_owned())
+        .or_insert_with(|| serde_json::json!([]));
+    let arr = entry.as_array_mut().with_context(|| {
+        format!(
+            "{} `{key}` is not an array; refusing to overwrite",
+            label.display()
+        )
+    })?;
+    if !arr.iter().any(eq) {
+        arr.push(value);
+    }
+    Ok(())
 }
 
 fn write_json_file(path: &Path, value: &serde_json::Value) -> anyhow::Result<()> {
