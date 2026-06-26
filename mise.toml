@@ -22,6 +22,11 @@ zig = "0.16.0"
 [settings]
 cargo.binstall = true
 idiomatic_version_file_enable_tools = ["rust"]
+# Pin every tool's resolved version + checksum in `mise.lock` so CI installs
+# from the lockfile instead of re-querying crates.io for each `cargo:` tool's
+# version list — that registry lookup intermittently 403-rate-limits the runner
+# and fails the whole job before the check even runs.
+lockfile = true
 
 # Construct image tasks. Each delegates to the `jackin-xtask` Rust binary
 # via `cargo xtask construct <sub>`; all task logic lives in Rust, not shell.
