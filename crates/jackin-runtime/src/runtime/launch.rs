@@ -773,20 +773,14 @@ pub(super) async fn launch_role_runtime(
 
     let capability_flags =
         crate::runtime::docker_profile::capability_flags(*profile, &grants.capabilities_add);
-    for flag in &capability_flags {
-        run_args.push(flag);
-    }
+    run_args.extend(capability_flags.iter().map(String::as_str));
     let readonly_flags = crate::runtime::docker_profile::readonly_root_flags(*profile, grants);
-    for flag in &readonly_flags {
-        run_args.push(flag);
-    }
+    run_args.extend(readonly_flags.iter().map(String::as_str));
     if grants.no_new_privileges {
         run_args.extend_from_slice(&["--security-opt", "no-new-privileges"]);
     }
     let resource_flags = crate::runtime::docker_profile::resource_flags(grants);
-    for flag in &resource_flags {
-        run_args.push(flag);
-    }
+    run_args.extend(resource_flags.iter().map(String::as_str));
     // WP3: per-decision launch telemetry. One line per applied control so a
     // `--debug` run shows exactly what was enforced. The session contract
     // (emitted below, once credential state is known) is the human-readable
@@ -798,6 +792,7 @@ pub(super) async fn launch_role_runtime(
     } else {
         "rootless"
     };
+    let yn = |enabled: bool| if enabled { "yes" } else { "no" };
     jackin_diagnostics::debug_log!(
         "launch",
         "profile_selected profile={profile} source={profile_source}",
@@ -805,11 +800,7 @@ pub(super) async fn launch_role_runtime(
     jackin_diagnostics::debug_log!(
         "launch",
         "cap_drop_all={} cap_add={}",
-        if crate::runtime::docker_profile::drops_all_caps(*profile) {
-            "yes"
-        } else {
-            "no"
-        },
+        yn(crate::runtime::docker_profile::drops_all_caps(*profile)),
         if grants.capabilities_add.is_empty() {
             "-".to_owned()
         } else {
@@ -819,22 +810,18 @@ pub(super) async fn launch_role_runtime(
     jackin_diagnostics::debug_log!(
         "launch",
         "no_new_privileges enforced={}",
-        if grants.no_new_privileges {
-            "yes"
-        } else {
-            "no"
-        },
+        yn(grants.no_new_privileges),
     );
     jackin_diagnostics::debug_log!("launch", "seccomp profile=docker-default");
     jackin_diagnostics::debug_log!(
         "launch",
         "apparmor available={} profile=docker-default layer={apparmor_layer}",
-        if apparmor_available { "yes" } else { "no" },
+        yn(apparmor_available),
     );
     jackin_diagnostics::debug_log!(
         "launch",
         "read_only_root enforced={} tmpfs={}",
-        if grants.system_writes { "no" } else { "yes" },
+        yn(!grants.system_writes),
         if grants.system_writes {
             "-".to_owned()
         } else {
@@ -858,11 +845,7 @@ pub(super) async fn launch_role_runtime(
     jackin_diagnostics::debug_log!(
         "launch",
         "network mode={} enforcement={}",
-        match grants.network {
-            crate::runtime::docker_profile::NetworkGrant::Allowlist => "allowlist",
-            crate::runtime::docker_profile::NetworkGrant::Open => "open",
-            crate::runtime::docker_profile::NetworkGrant::None => "none",
-        },
+        crate::runtime::docker_profile::network_grant_label(grants.network),
         crate::runtime::docker_profile::network_enforcement_label(grants),
     );
 
@@ -1014,11 +997,7 @@ pub(super) async fn launch_role_runtime(
     env_strings.push(format!(
         "{}={}",
         jackin_core::env_model::JACKIN_NETWORK_MODE_ENV_NAME,
-        match grants.network {
-            crate::runtime::docker_profile::NetworkGrant::Allowlist => "allowlist",
-            crate::runtime::docker_profile::NetworkGrant::Open => "open",
-            crate::runtime::docker_profile::NetworkGrant::None => "none",
-        }
+        crate::runtime::docker_profile::network_grant_label(grants.network)
     ));
     // WP-SUDO: the container provisions sudo at runtime from this signal (the
     // base image bakes no sudoers). Reserved so role manifests can't set it.
@@ -1028,15 +1007,9 @@ pub(super) async fn launch_role_runtime(
             jackin_core::env_model::JACKIN_SUDO_ENV_NAME
         ));
     }
-    // Read-only-root profiles (hardened/locked) make `~/.gitconfig` unwritable —
-    // not because the file is locked but because `git config --global` writes a
-    // lock file in the read-only `/home/agent` dir. The entrypoint and the agent
-    // both run `git config --global`, so redirect git's global config onto the
-    // writable `/jackin/state` bind-mount. (Part of the read-only-root `$HOME`
-    // audit on the Docker hardening roadmap item.)
-    if !grants.system_writes {
-        env_strings.push("GIT_CONFIG_GLOBAL=/jackin/state/gitconfig".to_owned());
-    }
+    // Read-only-root profiles need writable-home env redirects (e.g. git's
+    // global config) — see `readonly_home_env`, the companion to `tmpfs_paths`.
+    env_strings.extend(crate::runtime::docker_profile::readonly_home_env(grants));
     // Computed once here so the WP1 allowlist (below) can include the OTLP
     // endpoint host; reused for OTLP propagation after env_strings is flushed.
     let container_otlp = jackin_diagnostics::container_otlp();
@@ -1309,59 +1282,40 @@ pub(super) async fn launch_role_runtime(
     );
     run_role_result?;
 
-    // WP1: install the egress allowlist before any session starts. Root via
-    // `docker exec` needs no setuid, so it composes with no-new-privileges.
-    // Fail-closed (Decision 3): if `firewall-apply` errors, tear the container
-    // down rather than drop the operator into a session that believes it is
-    // firewalled but is not. `firewall-apply` reads JACKIN_ALLOWED_HOSTS from
-    // the container env injected at run; an empty list is itself fail-closed.
-    if let Some(firewall_args) =
+    // Privileged post-run capsule steps, each run as root via `docker exec`
+    // (needs no setuid, so composes with no-new-privileges) and each fail-closed:
+    // a non-zero exit tears the container down rather than start the agent with a
+    // control the profile only partially applied.
+    //   - WP1 firewall-apply (allowlist tier only): installs the egress allowlist
+    //     from JACKIN_ALLOWED_HOSTS; an empty list is itself fail-closed.
+    //   - WP-SUDO sudo-provision (sudo-granted profiles only — compat / explicit
+    //     `sudo = true`): writes /etc/sudoers.d/agent. The base image bakes no
+    //     sudoers, so non-sudo profiles have nothing to provision and skip it.
+    let mut post_run_steps: Vec<(String, [&str; 6], String)> = Vec::new();
+    if let Some(argv) =
         crate::runtime::docker_profile::firewall_post_run_argv(grants, container_name)
     {
-        let firewall_result = runner
-            .run("docker", &firewall_args, None, &docker_run_opts)
-            .await;
-        jackin_diagnostics::debug_log!(
-            "launch",
-            "firewall_apply profile={profile} exit={}",
-            if firewall_result.is_ok() {
-                "0"
-            } else {
-                "nonzero"
-            },
-        );
-        if let Err(err) = firewall_result {
-            if let Err(remove_err) = docker.remove_container(container_name).await {
-                jackin_diagnostics::emit_compact_line(
-                    "warning",
-                    &format!(
-                        "fail-closed teardown could not remove {container_name}: {remove_err}"
-                    ),
-                );
-            }
-            return Err(err.context(format!(
-                "egress allowlist install failed for `{profile}` profile; container torn down (fail-closed). The agent was not started without the firewall the profile promises."
-            )));
-        }
+        post_run_steps.push((
+            format!("firewall_apply profile={profile}"),
+            argv,
+            format!("egress allowlist install failed for `{profile}` profile; container torn down (fail-closed). The agent was not started without the firewall the profile promises."),
+        ));
     }
-
-    // WP-SUDO: enforce the sudo grant. Runs on every launch (the base image
-    // ships no sudoers): writes /etc/sudoers.d/agent when JACKIN_SUDO=1 is set,
-    // strips any stray entry otherwise. Fail-closed — a non-sudo profile that
-    // could not strip a build-time sudoers leftover must not start the agent.
-    {
-        let sudo_args =
-            crate::runtime::docker_profile::sudo_provision_post_run_argv(container_name);
-        let sudo_result = runner
-            .run("docker", &sudo_args, None, &docker_run_opts)
-            .await;
+    if grants.sudo {
+        post_run_steps.push((
+            format!("sudo_provision profile={profile}"),
+            crate::runtime::docker_profile::sudo_provision_post_run_argv(container_name),
+            format!("sudo provisioning failed for `{profile}` profile; container torn down (fail-closed)."),
+        ));
+    }
+    for (label, argv, failure_context) in &post_run_steps {
+        let result = runner.run("docker", argv, None, &docker_run_opts).await;
         jackin_diagnostics::debug_log!(
             "launch",
-            "sudo_provision enabled={} exit={}",
-            if grants.sudo { "yes" } else { "no" },
-            if sudo_result.is_ok() { "0" } else { "nonzero" },
+            "{label} exit={}",
+            if result.is_ok() { "0" } else { "nonzero" },
         );
-        if let Err(err) = sudo_result {
+        if let Err(err) = result {
             if let Err(remove_err) = docker.remove_container(container_name).await {
                 jackin_diagnostics::emit_compact_line(
                     "warning",
@@ -1370,9 +1324,7 @@ pub(super) async fn launch_role_runtime(
                     ),
                 );
             }
-            return Err(err.context(format!(
-                "sudo provisioning failed for `{profile}` profile; container torn down (fail-closed)."
-            )));
+            return Err(err.context(failure_context.clone()));
         }
     }
 

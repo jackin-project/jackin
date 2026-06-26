@@ -128,9 +128,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
            /tmp/*
 
 # Create runtime user. No baked sudoers — sudo is provisioned at runtime via
-# `docker exec --user root jackin-capsule sudo-provision` only for profiles
-# that grant it (JACKIN_SUDO=1). Workspace Dockerfile steps that need sudo
-# receive a temporary build-time grant injected by render_derived_dockerfile().
+# `docker exec --user root jackin-capsule sudo-provision`, only for profiles
+# that grant it (JACKIN_SUDO=1). The `sudo` package stays installed so the
+# grant can write /etc/sudoers.d/agent at launch.
 RUN groupadd -g "$GID" agent && \
     useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
     install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin

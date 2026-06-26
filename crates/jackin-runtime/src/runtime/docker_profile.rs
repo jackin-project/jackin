@@ -571,6 +571,15 @@ fn apply_implicit_grants(mut grants: EffectiveGrants) -> EffectiveGrants {
 
 // ── Docker flag emission ─────────────────────────────────────────────────────
 
+/// The `JACKIN_NETWORK_MODE` / contract label for a network tier.
+pub fn network_grant_label(network: NetworkGrant) -> &'static str {
+    match network {
+        NetworkGrant::Allowlist => "allowlist",
+        NetworkGrant::Open => "open",
+        NetworkGrant::None => "none",
+    }
+}
+
 /// Returns the network enforcement quality label.
 ///
 /// Used for session contract output and `JACKIN_NETWORK_ENFORCEMENT`. Shared
@@ -860,6 +869,23 @@ pub fn tmpfs_paths(profile: DockerSecurityProfile) -> Vec<&'static str> {
     TMPFS_PATHS_MINIMAL.iter().chain(extra).copied().collect()
 }
 
+/// Container env that redirects tools writing under `$HOME` onto a writable
+/// location when the profile's root filesystem is read-only. Empty for
+/// writable-root profiles.
+///
+/// Companion to [`tmpfs_paths`]: together they cover the writable-home targets a
+/// read-only-root profile needs. `git config --global` can't use a tmpfs/bind on
+/// `~/.gitconfig` alone because it writes a `.gitconfig.lock` in the read-only
+/// home dir, so it is pointed at the writable `/jackin/state` mount instead.
+/// (The full read-only-root `$HOME` audit is tracked on the Docker hardening
+/// roadmap item.)
+pub fn readonly_home_env(grants: &EffectiveGrants) -> Vec<String> {
+    if grants.system_writes {
+        return Vec::new();
+    }
+    vec!["GIT_CONFIG_GLOBAL=/jackin/state/gitconfig".to_owned()]
+}
+
 /// Emit `--read-only` plus a `--tmpfs <path>:rw,nosuid,nodev` pair for every
 /// [`tmpfs_paths`] entry. Empty for writable-root profiles.
 pub fn readonly_root_flags(
@@ -935,45 +961,37 @@ pub fn validate_dind_grant_for_cgroup(
 /// In-container path of the capsule binary, used for post-run `docker exec`.
 pub const CAPSULE_BIN_PATH: &str = "/jackin/runtime/jackin-capsule";
 
-/// WP1: the post-run `docker exec` argv that installs the egress allowlist, or
-/// `None` when the profile does not enforce one.
+/// `docker exec --user root <container> <capsule> <subcommand>` argv.
 ///
-/// Returns `Some` only for the `allowlist` tier; `open`/`none` install no
-/// firewall. The exec runs `--user root` (root via `exec` needs no setuid, so
-/// it composes with `no-new-privileges`) and is fail-closed at the call site.
-pub fn firewall_post_run_argv<'a>(
-    grants: &EffectiveGrants,
-    container_name: &'a str,
-) -> Option<[&'a str; 6]> {
-    if grants.network != NetworkGrant::Allowlist {
-        return None;
-    }
-    Some([
-        "exec",
-        "--user",
-        "root",
-        container_name,
-        CAPSULE_BIN_PATH,
-        "firewall-apply",
-    ])
-}
-
-/// WP-SUDO: the post-run `docker exec` argv that enforces the sudo grant.
-///
-/// Runs on every launch (not gated on the grant): it writes
-/// `/etc/sudoers.d/agent` when `JACKIN_SUDO=1` is in the container env and
-/// removes any stray entry otherwise. Because the base image bakes no sudoers,
-/// `compat` relies on this to *get* sudo, and a non-sudo profile relies on it to
-/// strip any build-time sudoers a derived image may carry. Runs `--user root`.
-pub fn sudo_provision_post_run_argv(container_name: &str) -> [&str; 6] {
+/// Root via `exec` needs no setuid, so it composes with `no-new-privileges`.
+/// Shared by the post-run privileged capsule steps (firewall, sudo).
+fn capsule_root_exec_argv<'a>(container_name: &'a str, subcommand: &'a str) -> [&'a str; 6] {
     [
         "exec",
         "--user",
         "root",
         container_name,
         CAPSULE_BIN_PATH,
-        "sudo-provision",
+        subcommand,
     ]
+}
+
+/// WP1: the post-run `docker exec` argv that installs the egress allowlist, or
+/// `None` when the profile does not enforce one (`open`/`none` install no
+/// firewall). Fail-closed at the call site.
+pub fn firewall_post_run_argv<'a>(
+    grants: &EffectiveGrants,
+    container_name: &'a str,
+) -> Option<[&'a str; 6]> {
+    (grants.network == NetworkGrant::Allowlist)
+        .then(|| capsule_root_exec_argv(container_name, "firewall-apply"))
+}
+
+/// WP-SUDO: the post-run `docker exec` argv that provisions sudo. Only run when
+/// the profile grants sudo (`compat`, or an explicit `sudo = true`); the base
+/// image bakes no sudoers, so non-sudo profiles have nothing to provision.
+pub fn sudo_provision_post_run_argv(container_name: &str) -> [&str; 6] {
+    capsule_root_exec_argv(container_name, "sudo-provision")
 }
 
 /// WP2: whether the role's Docker network must be created `internal`.
