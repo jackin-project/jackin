@@ -2040,3 +2040,70 @@ a .jk-name,
 :where(h1, h2, h3, h4, h5, h6) .jk-name {
   color: var(--jk-logo-ink);
 }
+
+/* ── Doc-root switcher (Fumadocs sidebar-tabs dropdown trigger) ──────────
+   The default trigger is a heavy bordered box, and fumadocs never forces
+   `size-full` on the trigger icon, so the 24px lucide glyph overflows its
+   20px slot. Restyle into a quiet brand-tinted control and size the icon to
+   its slot. Scoped to the tabs trigger; search triggers are excluded. */
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) {
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.625rem;
+  border-color: color-mix(in srgb, var(--jk-brand) 20%, transparent);
+  background: color-mix(in srgb, var(--jk-brand) 6%, transparent);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]):hover,
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full])[data-state="open"] {
+  background: color-mix(in srgb, var(--jk-brand) 13%, transparent);
+  border-color: color-mix(in srgb, var(--jk-brand) 42%, transparent);
+}
+
+/* Icon slot: fixed compact square, brand-green glyph that fills it. */
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > div:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  color: var(--jk-brand);
+}
+
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > div:first-child svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Title sits a touch stronger; up/down chevrons pick up the brand tint. */
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) p {
+  font-weight: 600;
+}
+
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > svg:last-child {
+  color: var(--jk-brand);
+  opacity: 0.65;
+}
+
+/* The dropdown panel's option tiles share the same oversized-icon bug and
+   should match the trigger: compact brand-green glyph, tidy hover. */
+[data-radix-popper-content-wrapper] [role="dialog"] a[href] > div:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--jk-brand);
+}
+
+[data-radix-popper-content-wrapper] [role="dialog"] a[href] > div:first-child svg {
+  width: 100%;
+  height: 100%;
+}
+
+[data-radix-popper-content-wrapper] [role="dialog"] a[href]:hover {
+  background: color-mix(in srgb, var(--jk-brand) 12%, transparent);
+}

@@ -11,7 +11,7 @@ import { staticFunctionMiddleware } from '@tanstack/start-static-server-function
 import browserCollections from 'collections/browser'
 import { useFumadocsLoader } from 'fumadocs-core/source/client'
 import { DocsLayout } from 'fumadocs-ui/layouts/docs'
-import { Map, Terminal, Wrench } from 'lucide-react'
+import { Layers, Route as RoadmapIcon, SquareTerminal } from "lucide-react"
 import {
   DocsBody,
   DocsDescription,
@@ -140,19 +140,19 @@ function Page() {
             title: 'jackin❯',
             description: 'Install, run, and operate jackin❯.',
             url: '/getting-started/why',
-            icon: <Terminal />,
+            icon: <SquareTerminal />,
           },
           {
             title: 'Behind jackin❯',
             description: 'Internals, research, and developer reference.',
             url: '/reference',
-            icon: <Wrench />,
+            icon: <Layers />,
           },
           {
             title: 'Roadmap',
             description: 'Planned, in-progress, and shipped work on jackin❯ itself.',
             url: '/roadmap',
-            icon: <Map />,
+            icon: <RoadmapIcon />,
           },
         ],
         footer: (

@@ -2,6 +2,6 @@
   "root": true,
   "title": "jackin❯",
   "description": "Install, run, and operate jackin❯.",
-  "icon": "Terminal",
+  "icon": "SquareTerminal",
   "pages": ["getting-started", "guides", "commands", "(role-authoring)"]
 }
