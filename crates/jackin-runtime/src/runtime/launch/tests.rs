@@ -5971,17 +5971,6 @@ plugins = []
     .unwrap();
 
     let container_name = launched_role_container_name(&runner);
-    let manifest_path = paths
-        .data_dir
-        .join(&container_name)
-        .join(".jackin/instance.json");
-    let body = std::fs::read_to_string(manifest_path).unwrap();
-    assert!(body.contains(r#""version": 2"#));
-    assert!(body.contains(&format!(r#""container_base": "{container_name}""#)));
-    assert!(body.contains(r#""role_key": "agent-smith""#));
-    assert!(body.contains(r#""agent_runtime": "claude""#));
-    assert!(body.contains(r#""host_workdir_fingerprint": "sha256:"#));
-    assert!(body.contains(r#""status": "clean_exited""#));
     // D9: clean exit purges per-instance data inline; state dir must be gone.
     let state_dir = paths.data_dir.join(&container_name);
     assert!(
