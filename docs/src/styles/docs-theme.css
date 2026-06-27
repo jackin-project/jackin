@@ -1257,16 +1257,10 @@ html.theme-init *::after {
   color: var(--jk-brand-muted);
 }
 
-#nd-sidebar a[data-active='true']::before {
-  content: "";
-  display: block;
-  position: absolute;
-  width: 2px;
-  inset-block: 0.25rem;
-  inset-inline-start: 0.55rem;
-  border-radius: 0;
-  background: color-mix(in oklab, var(--jk-brand) 66%, transparent);
-}
+/* The active left bar is left to fumadocs' own per-item rule
+   (data-[active=true]:before:*, positioned per indent via before:inset-s-2.5 →
+   remapped to 0.5rem above). A single fixed-inset bar here mispositioned it on
+   top-level items (e.g. the "Overview" root index), so it's not overridden. */
 
 /* ==========================================================================
    Mobile menu footer (social icons + theme toggle + language select).
