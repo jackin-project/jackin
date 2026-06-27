@@ -15,7 +15,7 @@ import ImageResponse from '@takumi-rs/image-response'
 import React from 'react'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { chevron, chevronSvg, wordChevronGap } from './brand-geometry'
+import { chevron, chevronHeight, chevronSvg, wordChevronGap } from './brand-geometry'
 import { font, interData, interFont, jbBoldData, outlineWord, placeWord } from './brand-outline'
 
 const root = join(import.meta.dirname, '..')
@@ -31,17 +31,20 @@ const round = (n: number) => Math.round(n * 100) / 100
 function wordmarkSvg(word: string, fontSize: number, wordColor: string, chevronColor: string, byline = false): string {
   const w = outlineWord(word, fontSize, wordColor)
   const left = round(w.width + wordChevronGap(fontSize))
-  const c = chevron(fontSize, left, w.capCenter)
+  const cy = round(w.capCenter + fontSize * 0.06) // nudge chevron down from the cap center
+  const c = chevron(fontSize, left, cy)
   let width = c.right
-  let height = round(Math.max(w.bottom, w.capCenter + (fontSize * 0.72) / 2))
+  let height = round(Math.max(w.bottom, cy + chevronHeight(fontSize) / 2))
   let bylineMarkup = ''
   if (byline) {
     const bf = Math.round(fontSize * 0.28)
     const by = outlineWord('by tailrocks', bf, GREY, interFont) // sans subtext, not the mono mark
-    const baseline = round(w.bottom + 0.12 * bf + by.baseline)
+    // Tuck the byline right under the letters (off the baseline, not the "j"
+    // descender) so it almost touches the word.
+    const baseline = round(w.baseline + 0.18 * bf + by.baseline)
     const bylineX = round(w.inkRight - by.inkRight) // ink right edge aligns with the end of "n"
     bylineMarkup = `\n  ${placeWord(by, bylineX, baseline)}`
-    height = round(baseline + (by.bottom - by.baseline))
+    height = round(Math.max(height, baseline + (by.bottom - by.baseline)))
   }
   const label = `${word}❯${byline ? ' by tailrocks' : ''}`
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}" preserveAspectRatio="xMinYMid meet">
@@ -139,7 +142,7 @@ function wordmarkElement(word: string, fontSize: number, withBg: boolean, byline
       width: chev.width,
       height: chev.height,
       src: `data:image/svg+xml;base64,${Buffer.from(chev.svg).toString('base64')}`,
-      style: { marginLeft: wordChevronGap(fontSize) },
+      style: { marginLeft: wordChevronGap(fontSize), marginTop: Math.round(fontSize * 0.12) },
     }),
   )
   const children: React.ReactNode[] = [row]
@@ -155,7 +158,7 @@ function wordmarkElement(word: string, fontSize: number, withBg: boolean, byline
             fontSize: Math.round(fontSize * 0.28),
             fontWeight: 500,
             color: GREY,
-            marginTop: Math.round(fontSize * 0.02),
+            marginTop: -Math.round(fontSize * 0.06), // tuck up under the letters
             // Ink right edge aligns with the end of the word (past chevron + side-bearing).
             alignSelf: 'flex-end',
             marginRight: Math.round(chev.width + wordChevronGap(fontSize) + (w.width - w.inkRight)),

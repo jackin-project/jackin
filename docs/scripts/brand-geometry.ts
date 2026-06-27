@@ -7,13 +7,15 @@
 // glyph's own geometry (ratios ÷ chevron height): inner-left 0.2207, inner tip
 // 0.3278, outer tip 0.5424; apex centered.
 
-const CHEVRON_HEIGHT_RATIO = 0.72 // chevron height ÷ font-size (≈ cap height, sits at letter level)
+const CHEVRON_HEIGHT_RATIO = 0.82 // chevron height ÷ font-size
 const X_INNER_LEFT = 0.2207
 const X_INNER_TIP = 0.3278
 const X_OUTER_TIP = 0.5424
 const WORD_CHEVRON_GAP = 0.16 // gap between word and chevron (÷ font-size)
 
 const round = (n: number) => Math.round(n * 100) / 100
+
+export const chevronHeight = (fontSize: number) => fontSize * CHEVRON_HEIGHT_RATIO
 
 export type Chevron = { d: string; right: number }
 
