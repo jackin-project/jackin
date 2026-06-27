@@ -35,10 +35,10 @@ function wordmarkSvg(word: string, fontSize: number, wordColor: string, chevronC
   let height = round(Math.max(w.bottom, w.capCenter + (fontSize * 0.72) / 2))
   let bylineMarkup = ''
   if (byline) {
-    const bf = Math.round(fontSize * 0.2)
+    const bf = Math.round(fontSize * 0.28)
     const by = outlineWord('by tailrocks', bf, GREY, interFont) // sans subtext, not the mono mark
-    const baseline = round(w.bottom + 0.45 * bf + by.baseline)
-    const bylineX = round((width - by.width) / 2) // centered under the wordmark
+    const baseline = round(w.bottom + 0.4 * bf + by.baseline)
+    const bylineX = round(w.width - by.width) // right edge aligns with the end of "n"
     bylineMarkup = `\n  ${placeWord(by, bylineX, baseline)}`
     height = round(baseline + (by.bottom - by.baseline))
   }
@@ -113,10 +113,13 @@ function wordmarkElement(word: string, fontSize: number, withBg: boolean, byline
           style: {
             display: 'flex',
             fontFamily: 'Inter',
-            fontSize: Math.round(fontSize * 0.2),
+            fontSize: Math.round(fontSize * 0.28),
             fontWeight: 500,
             color: GREY,
-            marginTop: Math.round(fontSize * 0.14),
+            marginTop: Math.round(fontSize * 0.1),
+            // Right edge aligns with the end of the word (offset past the chevron).
+            alignSelf: 'flex-end',
+            marginRight: Math.round(chev.width + wordChevronGap(fontSize)),
           },
         },
         'by tailrocks',
