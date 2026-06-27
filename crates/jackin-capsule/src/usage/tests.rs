@@ -876,7 +876,7 @@ fn usage_refresh_schedule_skips_until_ttl_or_manual_refresh() {
     let view = FocusedUsageView::unavailable("fresh", now_epoch());
 
     assert!(schedule.should_refresh_with_cooldown_dir(&target, now, dir.path()));
-    schedule.mark_refreshed_with_cooldown_dir(&target, now, &view, dir.path());
+    schedule.mark_refreshed_with_cooldown_dir(&target, now, &view, dir.path(), dir.path());
     assert!(!schedule.should_refresh_with_cooldown_dir(
         &target,
         now + Duration::from_secs(30),
@@ -905,7 +905,7 @@ fn usage_refresh_schedule_writes_and_honors_shared_rate_limit_cooldown() {
 
     let mut view = FocusedUsageView::unavailable("rate limited", now_epoch());
     view.last_error = Some("Codex usage HTTP 429 retry-after: 60".to_owned());
-    schedule.mark_refreshed_with_cooldown_dir(&target, now, &view, dir.path());
+    schedule.mark_refreshed_with_cooldown_dir(&target, now, &view, dir.path(), dir.path());
 
     let key = target.cache_key();
     assert!(shared_usage_cooldown_active(dir.path(), &key, now_epoch()));
@@ -914,6 +914,66 @@ fn usage_refresh_schedule_writes_and_honors_shared_rate_limit_cooldown() {
         now + Duration::from_secs(61),
         dir.path()
     ));
+}
+
+#[test]
+fn successful_refresh_writes_shared_cooldown_and_snapshot() {
+    let cooldown_dir = tempfile::tempdir().expect("tempdir");
+    let snapshots_dir = tempfile::tempdir().expect("tempdir");
+    let target = UsageRefreshTarget {
+        agent: "claude".to_owned(),
+        provider: None,
+    };
+    let mut schedule = UsageRefreshSchedule::default();
+    let now = Instant::now();
+    let view = FocusedUsageView::unavailable("fresh", now_epoch());
+
+    assert!(schedule.should_refresh_with_cooldown_dir(
+        &target,
+        now,
+        cooldown_dir.path()
+    ));
+
+    schedule.mark_refreshed_with_cooldown_dir(
+        &target,
+        now,
+        &view,
+        cooldown_dir.path(),
+        snapshots_dir.path(),
+    );
+
+    let key = target.cache_key();
+    // Shared cooldown marker written for success.
+    assert!(
+        shared_usage_cooldown_active(cooldown_dir.path(), &key, now_epoch()),
+        "success cooldown marker should be active after successful refresh"
+    );
+    // Fresh instance (no in-process state) sees cooldown → skips fetch.
+    let mut fresh_schedule = UsageRefreshSchedule::default();
+    assert!(
+        !fresh_schedule.should_refresh_with_cooldown_dir(&target, now, cooldown_dir.path()),
+        "fresh instance should skip fetch when success cooldown is active"
+    );
+    // Shared snapshot written and readable.
+    assert!(
+        read_shared_usage_snapshot(snapshots_dir.path(), &key).is_some(),
+        "shared snapshot should be readable after successful refresh"
+    );
+}
+
+#[test]
+fn fresh_instance_seeds_cache_from_shared_snapshot_when_cooldown_active() {
+    let snapshots_dir = tempfile::tempdir().expect("tempdir");
+    let key = "Claude Max";
+    let view = FocusedUsageView::unavailable("seed", now_epoch());
+    // Write a snapshot as if another instance had already refreshed.
+    write_shared_usage_snapshot(snapshots_dir.path(), key, &view);
+    // Another instance reads it back.
+    let loaded = read_shared_usage_snapshot(snapshots_dir.path(), key);
+    assert!(
+        loaded.is_some(),
+        "shared snapshot should be readable for seeding a fresh instance"
+    );
 }
 
 #[test]

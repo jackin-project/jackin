@@ -266,10 +266,24 @@ impl UsageCache {
             return;
         }
         self.refresh_schedule.in_flight = true;
-        let due_targets = targets
-            .into_iter()
-            .filter(|target| self.refresh_schedule.should_refresh(target, now))
-            .collect::<Vec<_>>();
+        let snapshots_dir = shared_usage_snapshots_dir();
+        let mut due_targets = Vec::new();
+        for target in targets {
+            if self.refresh_schedule.should_refresh(&target, now) {
+                due_targets.push(target);
+            } else {
+                // Cooldown active (rate-limit or a recent success by another
+                // instance): seed in-process cache from shared snapshot so this
+                // instance shows data instead of "refreshing" until the cooldown
+                // expires and it fetches for itself.
+                let key = target.cache_key();
+                if !self.snapshots.contains_key(&key) {
+                    if let Some(view) = read_shared_usage_snapshot(&snapshots_dir, &key) {
+                        self.snapshots.insert(key, CachedUsage { view });
+                    }
+                }
+            }
+        }
         if due_targets.is_empty() {
             self.refresh_schedule.in_flight = false;
             return;
@@ -493,13 +507,22 @@ impl UsageRefreshSchedule {
         cooldown_dir: &Path,
     ) -> bool {
         let key = target.cache_key();
-        if shared_usage_cooldown_active(cooldown_dir, &key, now_epoch()) {
-            return false;
-        }
         match self.next_due.get(&key).copied() {
             Some(due) if due > now => false,
-            Some(_) => true,
+            Some(_) => {
+                // Scheduled or explicit mark_due refresh: only hard rate-limit
+                // cooldowns (429 backoff from Anthropic) block; advisory success
+                // cooldowns are skipped so user-triggered and timer-driven refreshes
+                // always proceed when due.
+                !shared_usage_rate_limit_cooldown_active(cooldown_dir, &key, now_epoch())
+            }
             None => {
+                // First check for this instance: consult all shared cooldowns
+                // (both 429 and success markers) to avoid thundering herd when
+                // parallel instances all start simultaneously with empty next_due.
+                if shared_usage_cooldown_active(cooldown_dir, &key, now_epoch()) {
+                    return false;
+                }
                 self.next_due.insert(key, now);
                 true
             }
@@ -512,7 +535,13 @@ impl UsageRefreshSchedule {
         now: Instant,
         view: &FocusedUsageView,
     ) {
-        self.mark_refreshed_with_cooldown_dir(target, now, view, &shared_usage_cooldown_dir());
+        self.mark_refreshed_with_cooldown_dir(
+            target,
+            now,
+            view,
+            &shared_usage_cooldown_dir(),
+            &shared_usage_snapshots_dir(),
+        );
     }
 
     fn mark_refreshed_with_cooldown_dir(
@@ -521,6 +550,7 @@ impl UsageRefreshSchedule {
         now: Instant,
         view: &FocusedUsageView,
         cooldown_dir: &Path,
+        snapshots_dir: &Path,
     ) {
         let key = target.cache_key();
         if let Some(error) = view.last_error.as_deref()
@@ -538,8 +568,16 @@ impl UsageRefreshSchedule {
             self.next_due.insert(key, now + delay);
         } else {
             self.rate_limit_failures.remove(&key);
-            self.next_due
-                .insert(key.clone(), now + refresh_interval_for_key(&key));
+            let refresh_interval = refresh_interval_for_key(&key);
+            self.next_due.insert(key.clone(), now + refresh_interval);
+            // Write success marker so parallel instances starting within the base
+            // interval skip re-fetching the same provider — eliminating the
+            // thundering herd where all instances fire simultaneously on startup.
+            let success_until = now_epoch().saturating_add(
+                i64::try_from(USAGE_REFRESH_BASE_INTERVAL.as_secs()).unwrap_or(i64::MAX),
+            );
+            write_shared_usage_cooldown_marker(cooldown_dir, &key, success_until, "ok");
+            write_shared_usage_snapshot(snapshots_dir, &key, view);
         }
     }
 }
@@ -584,6 +622,40 @@ fn shared_usage_cooldown_dir() -> PathBuf {
     )
 }
 
+fn shared_usage_snapshots_dir() -> PathBuf {
+    std::env::var("JACKIN_USAGE_SNAPSHOTS_DIR").map_or_else(
+        |_| home_path(".jackin/data/daemon/usage-snapshots"),
+        PathBuf::from,
+    )
+}
+
+fn shared_usage_snapshot_path(snapshots_dir: &Path, key: &str) -> PathBuf {
+    snapshots_dir.join(format!(
+        "usage-{:016x}.snapshot.json",
+        stable_usage_hash(key)
+    ))
+}
+
+fn write_shared_usage_snapshot(snapshots_dir: &Path, key: &str, view: &FocusedUsageView) {
+    let Ok(json) = serde_json::to_string(view) else {
+        return;
+    };
+    if let Err(error) = fs::create_dir_all(snapshots_dir) {
+        crate::clog!("usage snapshot dir create failed for {key}: {error}");
+        return;
+    }
+    let path = shared_usage_snapshot_path(snapshots_dir, key);
+    if let Err(error) = fs::write(path, json) {
+        crate::clog!("usage snapshot write failed for {key}: {error}");
+    }
+}
+
+fn read_shared_usage_snapshot(snapshots_dir: &Path, key: &str) -> Option<FocusedUsageView> {
+    let path = shared_usage_snapshot_path(snapshots_dir, key);
+    let json = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&json).ok()
+}
+
 fn shared_usage_cooldown_marker_path(cooldown_dir: &Path, key: &str) -> PathBuf {
     cooldown_dir.join(format!("usage-{:016x}.cooldown", stable_usage_hash(key)))
 }
@@ -600,6 +672,27 @@ fn shared_usage_cooldown_active(cooldown_dir: &Path, key: &str, now_epoch: i64) 
         .trim()
         .parse::<i64>()
         .is_ok_and(|until_epoch| until_epoch > now_epoch)
+}
+
+/// Like `shared_usage_cooldown_active`, but returns `true` only when the marker
+/// represents a mandatory rate-limit (429) backoff, not an advisory success
+/// cooldown.  The file format is `{until_epoch}\n{reason}\n`; reason `"ok"`
+/// denotes a success marker, any other reason (e.g. the 429 response body) is
+/// a rate-limit marker.
+fn shared_usage_rate_limit_cooldown_active(cooldown_dir: &Path, key: &str, now_epoch: i64) -> bool {
+    let path = shared_usage_cooldown_marker_path(cooldown_dir, key);
+    let Ok(text) = fs::read_to_string(path) else {
+        return false;
+    };
+    let mut lines = text.lines();
+    let until = lines
+        .next()
+        .and_then(|s| s.trim().parse::<i64>().ok())
+        .unwrap_or(0);
+    if until <= now_epoch {
+        return false;
+    }
+    lines.next().map(str::trim).unwrap_or("") != "ok"
 }
 
 fn write_shared_usage_cooldown_marker(
