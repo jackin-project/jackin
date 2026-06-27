@@ -9,16 +9,31 @@
 @import '@fontsource/fraunces/500.css';
 @import '@fontsource/fraunces/700.css';
 
+/* Static Inter 900 for the giant wordmark. fontsource-variable ships
+   the variable-axis file where weight 900 is interpolated from the
+   wght axis endpoint, which reads thinner and more geometric than the
+   hand-drawn static Black. Declared under a unique family name so the
+   wordmark selectors unambiguously pick the static face instead of
+   the variable Inter that body/headline copy uses. */
+@font-face {
+  font-family: 'Inter Black';
+  font-style: normal;
+  font-display: block;
+  font-weight: 900;
+  src: url('@fontsource/inter/files/inter-latin-900-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* ==========================================================================
    Design tokens — dark-first, juicy-mint variants in [data-theme='light'].
 
    Light mode is explicitly NOT "dark mode with inverted luminance" — it's
-   a distinct brand aesthetic: a mint-tinted page that signals jackin❯
+   a distinct brand aesthetic: a mint-tinted page that signals jackin'
    green from first glance, with pure-white cards that lift off the
    tinted surface (the inverse of dark mode, where panels are LIGHTER
    than bg). Accent washes use --landing-accent-rgb so every border,
    bloom, and tint picks up a juicy mid-green (#16a34a) in light mode
-   and the bright phosphor (#5cf07a) in dark mode through one token.
+   and the bright phosphor (#00ff41) in dark mode through one token.
 
    Terminal-like surfaces (hero, code panel, daily-loop terminals,
    tabbed builder, install block) stay dark in BOTH modes via the
@@ -26,13 +41,13 @@
    ========================================================================== */
 
 :root {
-  --landing-bg: #0a0a0a;
-  --landing-bg-deep: #050505;
+  --landing-bg: #0a0b0a;
+  --landing-bg-deep: #050605;
   --landing-panel: #0f1110;
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
-  --landing-accent: #5cf07a;
+  --landing-accent: #00ff41;
   --landing-danger: #ff5e7a;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
@@ -42,7 +57,7 @@
      every border/wash/bloom/glow in the stylesheet. One token controls
      the hue of every accented surface: bright phosphor in dark mode,
      juicy mid-green (#16a34a) in light mode. */
-  --landing-accent-rgb: 92 240 122;
+  --landing-accent-rgb: 0 255 65;
 
   /* Page-level bg kept unscoped — the hero's bottom-fade gradient uses
      this to blend into whatever the page is (dark or light), even though
@@ -81,7 +96,9 @@
   /* Builder body syntax color (string literals). */
   --landing-builder-string: #fbc05b;
 
-  --landing-wordmark-stack: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  /* Wordmark typography — uses the static 'Inter Black' @font-face
+     declared above (hand-drawn 900), not the variable axis endpoint. */
+  --landing-wordmark-stack: 'Inter Black', 'Inter', sans-serif;
 }
 
 /* Light mode — white page body that matches the docs so landing→docs
@@ -114,7 +131,7 @@
   --landing-grid-dot: transparent;
 
   /* Green-tinted card shadows mirror the phosphor-bleed of dark mode
-     so cards feel like they're lifting out of a jackin❯ halo, not
+     so cards feel like they're lifting out of a jackin' halo, not
      casting a plain black drop. */
   --landing-card-shadow-soft: 0 14px 32px rgba(10, 80, 30, 0.12);
   --landing-card-shadow-strong: 0 20px 48px rgba(10, 80, 30, 0.18);
@@ -198,21 +215,21 @@
 
    Light mode: the hero flips to a saturated green bg with black rain
    — a deliberate brand-punch moment that signals "you're entering the
-   jackin❯ world." Text goes dark; the brand accent (chevron, star
+   jackin' world." Text goes dark; the brand accent (tick mark, star
    icon) flips to WHITE so it still pops against the green. The hero's
    CodePanel is shadowed by the always-dark scope above so it stays
    dark in both modes.
    ========================================================================== */
 
 .landing-hero-stage {
-  --landing-bg: #0a0a0a;
-  --landing-bg-deep: #050505;
+  --landing-bg: #0a0b0a;
+  --landing-bg-deep: #050605;
   --landing-panel: #0f1110;
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
-  --landing-accent: #5cf07a;
-  --landing-accent-rgb: 92 240 122;
+  --landing-accent: #00ff41;
+  --landing-accent-rgb: 0 255 65;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
   --landing-ui-subtle: rgba(244, 247, 245, 0.05);
@@ -260,13 +277,13 @@
    In dark mode, keep the hero as a solid near-black surface — matches
    the original design and is what the rain engine expects. */
 .landing-hero-stage {
-  background: #0a0a0a;
+  background: #0a0b0a;
 }
 :root[data-theme='light'] .landing-hero-stage {
   background: linear-gradient(
     180deg,
-    #0a0a0a 0%,
-    #0a0a0a 12%,     /* solid dark through the topnav strip */
+    #0a0b0a 0%,
+    #0a0b0a 12%,     /* solid dark through the topnav strip */
     #16a34a 40%,     /* smooth transition into brand green */
     #16a34a 68%,     /* hold green through the content zone */
     #ffffff 100%     /* fade to white at the seam to page body */
@@ -276,24 +293,31 @@
 /* Topnav in light-mode hero sits on the dark top of the gradient, so
    re-scope it to dark-mode tokens — this makes the theme-toggle pill
    read as a dark pill (not white-on-dark), the logo/star read as
-   light text, and the chevron + star icon stay phosphor-green. */
+   light text, and the tick + star icon stay phosphor-green. */
 :root[data-theme='light'] nav.landing-topnav {
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
   --landing-panel: #0f1110;
-  --landing-bg-deep: #050505;
+  --landing-bg-deep: #050605;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
-  --landing-accent: #5cf07a;
-  --landing-accent-rgb: 92 240 122;
+  --landing-accent: #00ff41;
+  --landing-accent-rgb: 0 255 65;
 }
 
 /* Primary CTA sits in the content zone (green bg) — override the
    token-driven default so the button reads as dark pill + white label
    instead of inheriting --landing-text (which we set to near-black
    for the green bg) as its background. */
-/* (Primary buttons now use the shared green accent in both themes.) */
+:root[data-theme='light'] .landing-hero-stage .landing-btn-primary {
+  background: #0a1f12;
+  color: #ffffff;
+  border-color: #0a1f12;
+}
+:root[data-theme='light'] .landing-hero-stage .landing-btn-primary:hover {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 6px 20px rgba(255, 255, 255, 0.25);
+}
 
 /* Drop the ::after overlay in light mode — the gradient bg provides
    all the structure (vignette + seam) we need, and layering the
@@ -475,7 +499,7 @@ html.theme-init *::after {
   font-family: 'Inter', sans-serif;
   font-size: 14px;
   font-weight: 600;
-  border-radius: 0;
+  border-radius: 5px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -484,8 +508,7 @@ html.theme-init *::after {
   transition: box-shadow 0.2s, background 0.15s, border-color 0.15s;
   text-decoration: none;
 }
-/* Solid phosphor-green buttons matching the jackin CLI accent — green block,
-   dark ink (bg-deep stays readable on the accent in both themes). */
+/* Solid phosphor-green buttons matching the jackin CLI accent. */
 .landing-btn-primary {
   background: var(--landing-accent);
   color: var(--landing-bg-deep);
@@ -544,21 +567,18 @@ html.theme-init *::after {
 .landing-footer-meta .sep { color: var(--landing-ui-strong); }
 .landing-footer-wordmark {
   font-family: var(--landing-wordmark-stack);
-  font-weight: 500;
+  font-weight: 900;
   font-size: clamp(120px, 24vw, 300px);
   line-height: 0.9;
-  letter-spacing: 0;
+  letter-spacing: -0.06em;
   color: var(--landing-text);
   margin: 0;
   padding: 0;
   user-select: none;
 }
-.landing-footer-wordmark .jk-brand-mark__chevron {
+.landing-footer-wordmark .tick {
   color: var(--landing-accent);
-}
-.landing-footer-wordmark .jk-brand-mark__byline {
-  font-size: clamp(15px, 3.1vw, 38px);
-  color: var(--landing-text-ghost);
+  text-shadow: 0 0 0.1em rgb(var(--landing-accent-rgb) / 0.35);
 }
 
 @media (max-width: 880px) {
@@ -569,7 +589,7 @@ html.theme-init *::after {
 .landing-pills { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .landing-pill-card {
   padding: 34px 30px 30px;
-  border: 1px solid var(--landing-ui); border-radius: 0;
+  border: 1px solid var(--landing-ui); border-radius: 10px;
   background: var(--landing-panel); position: relative;
   transition:
     transform 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94),
@@ -651,8 +671,8 @@ html.theme-init *::after {
 .landing-choice-lines { list-style: none; padding: 0; margin: 0 0 22px; display: flex; flex-direction: column; gap: 10px; }
 .landing-choice-lines li { color: var(--landing-text-dim); font-size: 15px; line-height: 1.55; padding-left: 22px; position: relative; }
 .landing-choice-lines li::before { content: "\2715"; position: absolute; left: 0; top: 0; color: var(--landing-danger); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
-.landing-choice-lines li code { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-text); background: var(--landing-chip-bg); padding: 1px 6px; border-radius: 0; }
-.landing-choice-verdict { padding: 10px 14px; background: rgba(255, 94, 122, 0.08); border: 1px solid rgba(255, 94, 122, 0.28); border-radius: 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--landing-danger); text-align: center; font-weight: 600; }
+.landing-choice-lines li code { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-text); background: var(--landing-chip-bg); padding: 1px 6px; border-radius: 3px; }
+.landing-choice-verdict { padding: 10px 14px; background: rgba(255, 94, 122, 0.08); border: 1px solid rgba(255, 94, 122, 0.28); border-radius: 5px; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--landing-danger); text-align: center; font-weight: 600; }
 .landing-pill-card.blue .landing-choice-lines li::before { color: var(--landing-pill-blue-text); }
 .landing-pill-card.blue .landing-choice-verdict { background: rgba(90, 155, 255, 0.08); border-color: rgba(90, 155, 255, 0.3); color: var(--landing-pill-blue-text); }
 .landing-choice-transition { margin-top: 48px; text-align: center; font-family: 'Fraunces', serif; font-style: italic; font-size: clamp(20px, 2.4vw, 28px); color: var(--landing-text); letter-spacing: -0.01em; }
@@ -663,7 +683,7 @@ html.theme-init *::after {
 }
 
 /* TabbedBuilder (Section 04, used by ApproachCards) — always-dark
-   terminal. Uses --landing-bg-deep (solid #050505) rather than a
+   terminal. Uses --landing-bg-deep (solid #050605) rather than a
    translucent rgba so the white page in light mode doesn't bleed
    through and turn the terminal muddy grey. */
 .landing-builder {
@@ -725,7 +745,7 @@ html.theme-init *::after {
 .landing-approach-card {
   padding: 32px 32px 30px;
   border: 1px solid rgb(var(--landing-accent-rgb) / 0.35);
-  border-radius: 0;
+  border-radius: 10px;
   /* Dark panel base with a subtle green wash layered on top — two
      backgrounds stacked. The semi-transparent green reads as a tint
      over the dark card in both modes; the dark base means the card
@@ -753,7 +773,7 @@ html.theme-init *::after {
 .landing-approach-card h3 { font-family: 'Inter', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--landing-text); margin: 0 0 14px; }
 .landing-approach-card p { color: var(--landing-text-dim); font-size: 15px; line-height: 1.6; margin: 0 0 22px; }
 .landing-approach-card p em { color: var(--landing-text); font-style: normal; font-weight: 500; }
-.landing-approach-cmd { display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-accent); background: rgb(var(--landing-accent-rgb) / 0.1); border: 1px solid rgb(var(--landing-accent-rgb) / 0.3); padding: 9px 14px; border-radius: 0; }
+.landing-approach-cmd { display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-accent); background: rgb(var(--landing-accent-rgb) / 0.1); border: 1px solid rgb(var(--landing-accent-rgb) / 0.3); padding: 9px 14px; border-radius: 5px; }
 .landing-approach-cmd .lbl { color: var(--landing-text-ghost); text-transform: uppercase; font-size: 10px; letter-spacing: 0.15em; }
 .landing-approach-repo { display: inline-flex; align-items: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--landing-text-ghost); padding: 4px 0 0 4px; margin-top: 8px; }
 .landing-approach-repo .lbl { text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.18em; }
@@ -772,7 +792,7 @@ html.theme-init *::after {
   background: var(--landing-toolset-chip-bg);
   border: 1px solid var(--landing-toolset-chip-border);
   padding: 5px 10px;
-  border-radius: 0;
+  border-radius: 4px;
 }
 .landing-toolset-chip.chip-plugin { color: var(--landing-accent); background: rgb(var(--landing-accent-rgb) / 0.08); border-color: rgb(var(--landing-accent-rgb) / 0.3); }
 .landing-approach-note { color: var(--landing-text-dim); font-size: 13.5px; font-style: italic; margin: 0 0 22px; }
@@ -810,7 +830,7 @@ html.theme-init *::after {
 }
 .landing-agent-card {
   border: 1px solid var(--landing-ui);
-  border-radius: 0;
+  border-radius: 10px;
   padding: 22px;
   background: var(--landing-panel);
   transition: border-color 0.2s, transform 0.2s;
@@ -823,7 +843,7 @@ html.theme-init *::after {
 }
 .landing-avatar {
   width: 44px; height: 44px;
-  border-radius: 0;
+  border-radius: 6px;
   background: linear-gradient(135deg, rgb(var(--landing-accent-rgb) / 0.18), rgb(var(--landing-accent-rgb) / 0.03));
   border: 1px solid var(--landing-ui-strong);
   display: flex;
@@ -868,7 +888,7 @@ html.theme-init *::after {
   align-items: center;
   padding: 26px 30px;
   border: 1px dashed rgb(var(--landing-accent-rgb) / 0.5);
-  border-radius: 0;
+  border-radius: 10px;
   /* Dark card base + green wash layered on top — same pattern as the
      approach cards; the hardcoded green-rgba bg would have left the
      white page showing through in light mode. */
@@ -885,7 +905,7 @@ html.theme-init *::after {
 }
 .landing-invite-avatar {
   width: 52px; height: 52px;
-  border-radius: 0;
+  border-radius: 8px;
   border: 1px dashed rgb(var(--landing-accent-rgb) / 0.55);
   background: transparent;
   display: flex; align-items: center; justify-content: center;
@@ -915,7 +935,7 @@ html.theme-init *::after {
   font-size: 13px; font-weight: 500;
   text-decoration: none; letter-spacing: 0.02em;
   border: 1px solid rgb(var(--landing-accent-rgb) / 0.45);
-  padding: 10px 16px; border-radius: 0;
+  padding: 10px 16px; border-radius: 5px;
   transition: gap 0.2s ease-out, border-color 0.2s, background 0.2s;
   white-space: nowrap;
 }
@@ -938,7 +958,7 @@ html.theme-init *::after {
 .landing-org-tab .at { color: var(--landing-text-ghost); margin-right: 2px; }
 
 .landing-machine { margin-top: 12px; display: grid; grid-template-columns: 1fr 36px 1fr 36px 1.35fr; gap: 0; align-items: stretch; }
-.landing-machine-panel { border: 1px solid var(--landing-ui); border-radius: 0; background: var(--landing-panel); padding: 22px 24px; display: flex; flex-direction: column; }
+.landing-machine-panel { border: 1px solid var(--landing-ui); border-radius: 10px; background: var(--landing-panel); padding: 22px 24px; display: flex; flex-direction: column; }
 .landing-machine-panel.preview {
   border-color: rgb(var(--landing-accent-rgb) / 0.35);
   /* Layer the green wash over the dark panel bg instead of replacing
@@ -952,10 +972,10 @@ html.theme-init *::after {
 .landing-machine-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--landing-accent); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 4px; }
 .landing-machine-sublabel { font-family: 'Inter', sans-serif; font-size: 13px; color: var(--landing-text-dim); margin-bottom: 18px; }
 .landing-machine-options { display: flex; flex-direction: column; gap: 8px; }
-.landing-machine-opt { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--landing-ui); border-radius: 0; cursor: pointer; transition: all 0.15s; background: var(--landing-machine-opt-bg); font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-text); text-align: left; width: 100%; }
+.landing-machine-opt { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--landing-ui); border-radius: 6px; cursor: pointer; transition: all 0.15s; background: var(--landing-machine-opt-bg); font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--landing-text); text-align: left; width: 100%; }
 .landing-machine-opt:hover { border-color: var(--landing-ui-strong); background: var(--landing-surface-hover-2); }
 .landing-machine-opt.active { border-color: var(--landing-accent); background: rgb(var(--landing-accent-rgb) / 0.08); box-shadow: 0 0 14px rgb(var(--landing-accent-rgb) / 0.12); }
-.landing-machine-opt .landing-radio { width: 11px; height: 11px; border-radius: 0; border: 1px solid var(--landing-ui-strong); flex-shrink: 0; transition: all 0.15s; }
+.landing-machine-opt .landing-radio { width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--landing-ui-strong); flex-shrink: 0; transition: all 0.15s; }
 .landing-machine-opt.active .landing-radio { background: var(--landing-accent); border-color: var(--landing-accent); box-shadow: 0 0 8px rgb(var(--landing-accent-rgb) / 0.7); }
 
 .landing-preview { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--landing-text); line-height: 1.65; }
@@ -964,7 +984,7 @@ html.theme-init *::after {
 .landing-preview-row .k { color: var(--landing-text-ghost); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; flex: 0 0 74px; padding-top: 3px; }
 .landing-preview-row .v { color: var(--landing-text); font-size: 13px; flex: 1; line-height: 1.55; }
 .landing-preview-row .v .hl { color: var(--landing-accent); }
-.landing-preview-denied { padding: 16px 18px; border: 1px dashed var(--landing-danger); border-radius: 0; color: var(--landing-danger); font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.65; background: rgba(255,94,122,0.04); }
+.landing-preview-denied { padding: 16px 18px; border: 1px dashed var(--landing-danger); border-radius: 6px; color: var(--landing-danger); font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.65; background: rgba(255,94,122,0.04); }
 .landing-preview-denied .label { color: var(--landing-danger); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 8px; display: block; font-weight: 600; }
 .landing-preview-denied code { font-family: inherit; font-size: inherit; background: transparent; padding: 0; }
 
@@ -973,12 +993,12 @@ html.theme-init *::after {
 .landing-mount-item .src { color: var(--landing-text); word-break: break-all; }
 .landing-mount-item .arrow { color: var(--landing-text-ghost); font-size: 10px; }
 .landing-mount-item .dst { color: var(--landing-text-dim); word-break: break-all; font-size: 11.5px; }
-.landing-mount-item .perm { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--landing-ui-strong); border-radius: 0; color: var(--landing-text-ghost); flex-shrink: 0; }
+.landing-mount-item .perm { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--landing-ui-strong); border-radius: 3px; color: var(--landing-text-ghost); flex-shrink: 0; }
 .landing-mount-item .perm.rw { color: var(--landing-accent); border-color: rgb(var(--landing-accent-rgb) / 0.4); }
 
 /* FocusCallout (Section 06) */
 .landing-focus-callout { margin-top: 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.landing-focus-card { padding: 22px 24px; border: 1px solid var(--landing-ui); border-radius: 0; background: var(--landing-panel); }
+.landing-focus-card { padding: 22px 24px; border: 1px solid var(--landing-ui); border-radius: 10px; background: var(--landing-panel); }
 .landing-focus-card.focus-role {
   border-color: rgb(var(--landing-accent-rgb) / 0.4);
   /* Dark base + green wash — same pattern as approach cards + cast
@@ -1017,7 +1037,7 @@ section.landing-section.landing-voc-scroll-section {
   grid-template-columns: 320px 1fr;
   gap: 0;
   border: 1px solid var(--landing-ui);
-  border-radius: 0;
+  border-radius: 10px;
   background: var(--landing-panel);
   overflow: hidden;
   margin-top: 36px;
@@ -1081,7 +1101,7 @@ section.landing-section.landing-voc-scroll-section {
   color: var(--landing-accent);
   background: rgb(var(--landing-accent-rgb) / 0.09);
   border: 1px solid rgb(var(--landing-accent-rgb) / 0.3);
-  padding: 10px 14px; border-radius: 0;
+  padding: 10px 14px; border-radius: 5px;
   display: inline-flex; align-items: center; gap: 10px;
   margin-top: 2px;
 }
@@ -1178,7 +1198,7 @@ section.landing-section.landing-voc-scroll-section {
   margin: 0; max-width: 440px;
 }
 .landing-loop-term {
-  /* Solid --landing-bg-deep (#050505) rather than translucent rgba —
+  /* Solid --landing-bg-deep (#050605) rather than translucent rgba —
      otherwise the white page in light mode bleeds through the alpha
      channel and the terminal reads as muddy grey instead of the
      near-black it's meant to be. */
@@ -1298,8 +1318,8 @@ nav.landing-topnav .landing-star {
 }
 .landing-logo {
   font-family: var(--landing-wordmark-stack);
-  font-weight: 500;
-  letter-spacing: 0;
+  font-weight: 900;
+  letter-spacing: -0.04em;
   font-size: clamp(22px, 2.4vw, 28px);
   line-height: 1;
   color: var(--landing-text);
@@ -1307,19 +1327,20 @@ nav.landing-topnav .landing-star {
   align-items: center;
   user-select: none;
 }
-.landing-logo .jk-brand-mark__chevron {
-  color: #ffffff;
+.landing-logo .tick {
+  color: var(--landing-accent);
+  text-shadow: 0 0 0.2em rgb(var(--landing-accent-rgb) / 0.45);
 }
 .landing-nav-right { display: flex; gap: 14px; align-items: center; }
 .landing-star {
   padding: 7px 14px;
   border: 1px solid var(--landing-accent);
   background: var(--landing-accent);
-  color: var(--landing-bg-deep);
-  border-radius: 0;
+  border-radius: 4px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   font-weight: 600;
+  color: var(--landing-bg-deep);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
@@ -1350,7 +1371,7 @@ nav.landing-topnav .landing-star {
   gap: 0;
   padding: 2px;
   border: 1px solid var(--landing-ui-strong);
-  border-radius: 0;
+  border-radius: 8px;
   background: var(--landing-panel);
 }
 .landing-theme-toggle button {
@@ -1361,7 +1382,7 @@ nav.landing-topnav .landing-star {
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: 6px;
   background: transparent;
   color: var(--landing-text-ghost);
   cursor: pointer;
@@ -1409,38 +1430,12 @@ nav.landing-topnav .landing-star {
 
 .landing-hero { padding: 88px 0 112px; }
 
-.landing-hero-wordmark-wrap {
-  display: flex;
-  justify-content: center;
-  margin: 0 0 clamp(64px, 8vw, 104px);
-}
-
-.landing-hero-wordmark {
-  font-family: var(--landing-wordmark-stack);
-  font-weight: 500;
-  font-size: clamp(56px, 8vw, 96px);
-  letter-spacing: 0;
-  line-height: 1;
-  color: var(--landing-text);
-  text-align: center;
-}
-
-.landing-hero-wordmark .jk-brand-mark__chevron {
-  color: #ffffff;
-}
-
-.landing-hero-wordmark .jk-brand-mark__byline {
-  justify-self: center;
-  font-size: clamp(13px, 1.8vw, 21px);
-  color: var(--landing-text-dim);
-}
-
 .landing-dev-warning {
   max-width: 960px;
   margin: 0 0 42px;
   padding: 18px 20px;
   border: 0;
-  border-radius: 0;
+  border-radius: 8px;
   background: #2a1a07;
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
   color: #fff7ed;
