@@ -268,52 +268,42 @@ body {
   background: var(--jk-bg);
 }
 
+/* Canonical brand lockup is a single inline SVG (see BrandMark.tsx) so every
+   placement — header, sidebar, mobile nav, landing, footer — is pixel-identical
+   and scales by the element's font-size. The wrapper only handles layout; the
+   green block, letters, and chevron all live inside the SVG. */
 .jk-brand-mark,
 .jk-site-title,
 .jk-sidebar-wordmark {
   display: inline-flex;
-  align-items: baseline;
-  font-family: var(--sl-font-mono);
-  font-weight: 500;
+  align-items: center;
   line-height: 1;
-  letter-spacing: 0;
-  color: var(--jk-logo-ink);
-  background: var(--jk-logo-block);
-  padding: 0.1em 0.36em;
-  border-radius: 0;
   user-select: none;
 }
 
+.jk-brand-mark__svg {
+  display: block;
+  height: 1.5em;
+  width: auto;
+}
+
+/* Lockup = mark with the "by tailrocks" byline stacked beneath it. */
 .jk-brand-mark--lockup {
-  display: inline-grid;
-  gap: 0.2em;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45em;
 }
 
 .jk-site-title {
   font-size: 1.5rem;
 }
 
-.jk-brand-mark__text {
-  color: var(--jk-logo-ink);
-}
-
-.jk-brand-mark__chevron,
-.jk-site-title .jk-brand-mark__chevron,
-.jk-sidebar-wordmark .jk-brand-mark__chevron {
-  color: var(--jk-logo-chevron);
-}
-
 .jk-brand-mark__byline {
-  grid-column: 1 / -1;
   font-family: var(--sl-font-mono);
-  font-size: 0.18em;
+  font-size: 0.2em;
   font-weight: 500;
   line-height: 1;
   color: var(--jk-text-dim);
-  letter-spacing: 0;
-}
-
-.jk-brand-mark--monogram {
   letter-spacing: 0;
 }
 
