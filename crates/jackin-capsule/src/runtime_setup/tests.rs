@@ -11,6 +11,43 @@ fn container_init_marker_is_container_local() {
     assert_eq!(CONTAINER_INIT_MARKER, "/jackin/state/container-init.done");
 }
 
+#[test]
+fn apply_forwarded_credential_first_seed_reseed_and_no_clobber() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forwarded = tmp.path().join("forwarded.json");
+    let target = tmp.path().join("auth.json");
+    fs::write(&forwarded, b"FORWARDED").expect("write forwarded");
+    // `api_key_envs: &[]` keeps the policy deterministic — no env reads.
+    let spec = ForwardedCredential {
+        agent: jackin_core::Agent::Codex,
+        label: "test",
+        forwarded: &forwarded,
+        target: &target,
+        api_key_envs: &[],
+    };
+
+    // First seed with a forwarded file: seeds the target.
+    apply_forwarded_credential(true, &spec).expect("first seed");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "FORWARDED");
+
+    // Later launch with the target present: a token the agent refreshed
+    // in-container is never clobbered.
+    fs::write(&target, b"REFRESHED").unwrap();
+    apply_forwarded_credential(false, &spec).expect("no-clobber");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "REFRESHED");
+
+    // Later launch with the target missing but forwarded present: re-seeds.
+    fs::remove_file(&target).unwrap();
+    apply_forwarded_credential(false, &spec).expect("re-seed");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "FORWARDED");
+
+    // First seed with no forwarded file and no api key: clears the stale target.
+    fs::write(&target, b"STALE").unwrap();
+    fs::remove_file(&forwarded).unwrap();
+    apply_forwarded_credential(true, &spec).expect("first seed without forward");
+    assert!(!target.exists(), "stale target must be removed");
+}
+
 // ── Agent config-dir env resolution ─────────────────────────────────
 // Pure `_from` cores so no process-global env mutation is needed.
 
