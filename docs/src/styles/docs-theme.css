@@ -293,13 +293,11 @@ body {
   font-size: 1.5rem;
 }
 
-.jk-brand-mark__text,
-.jk-name__text {
+.jk-brand-mark__text {
   color: var(--jk-logo-ink);
 }
 
 .jk-brand-mark__chevron,
-.jk-name__chevron,
 .jk-site-title .jk-brand-mark__chevron,
 .jk-sidebar-wordmark .jk-brand-mark__chevron {
   color: var(--jk-logo-chevron);
@@ -2017,42 +2015,41 @@ site-search dialog {
   color: var(--jk-brand);
 }
 
-/* Brand-styled inline name for "jackin❯" — automatically wrapped
-   by the `rehype-jk` plugin (see docs/scripts/rehype-jk.ts). Uses
-   `--jk-text` for the letters and canonical green for the chevron.
-   Skips code blocks. */
+/* Inline brand name for "jackin❯" in prose — auto-wrapped by the
+   `rehype-jk` plugin (docs/scripts/rehype-jk.ts). The loud green block is
+   reserved for the actual logo lockup (.jk-brand-mark in the sidebar,
+   landing, splash). In running text that block repeats dozens of times and
+   turns the page into highlighter soup, so here the mark is quiet: it reads
+   as plain text, just set in semibold with a muted-green chevron as the only
+   brand accent — enough to mark the name without fighting the prose. */
 .jk-name {
-  display: inline-flex;
-  align-items: baseline;
-  font-family: var(--sl-font-mono);
-  color: var(--jk-logo-ink);
-  background: var(--jk-logo-block);
-  padding: 0.05em 0.3em;
+  display: inline;
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
   border-radius: 0;
-  font-weight: 500;
-  line-height: 1;
+  font-weight: 600;
   letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .jk-name:hover {
   text-decoration: none;
 }
 
-/* Inside headings the mark must read as the canonical block, not a
-   blown-up bold mono word: headings are large and bold, and inheriting
-   that makes the green block tower over the heading text. Pin it to the
-   regular block weight and shrink it so its cap-height tracks the
-   heading text instead of dwarfing it. */
-:where(h1, h2, h3, h4, h5, h6) .jk-name {
-  font-size: 0.82em;
-  font-weight: 500;
+.jk-name__text {
+  color: inherit;
 }
 
-/* The mark keeps its black-on-green block even inside links and
-   headings; only the surrounding text takes the link/heading colour. */
-a .jk-name,
+.jk-name__chevron {
+  color: var(--jk-brand-muted);
+  font-weight: inherit;
+}
+
+/* Don't double-bold inside headings, which are already heavy. */
 :where(h1, h2, h3, h4, h5, h6) .jk-name {
-  color: var(--jk-logo-ink);
+  font-weight: inherit;
 }
 
 /* ── Doc-root switcher (Fumadocs sidebar-tabs dropdown trigger) ──────────
