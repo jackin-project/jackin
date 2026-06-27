@@ -11,7 +11,7 @@ import ImageResponse from '@takumi-rs/image-response'
 import React from 'react'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { caretSvg, faviconSvg, lockupSvg, wordChevronGap, wordWidth } from './brand-geometry'
+import { chevronSvg, faviconSvg, lockupSvg, wordChevronGap, wordWidth } from './brand-geometry'
 
 const root = join(import.meta.dirname, '..')
 const jbMono = readFileSync(
@@ -61,7 +61,7 @@ const PNG_FONT_SIZE = 220
 async function renderPng(word: string, wordColor: string, chevronColor: string): Promise<Buffer> {
   const fontSize = PNG_FONT_SIZE
   const fontWeight = 600
-  const chev = caretSvg(fontSize, chevronColor)
+  const chev = chevronSvg(fontSize, chevronColor)
   const gap = wordChevronGap(fontSize)
   const width = Math.ceil(wordWidth(fontSize, word.length) + gap + chev.width)
   const height = Math.ceil(chev.height)
@@ -135,7 +135,7 @@ const ICON_BG = '#0a0a0a'
 
 function iconElement(size: number) {
   const fontSize = Math.round(size * 0.5)
-  const chev = caretSvg(fontSize, GREEN)
+  const chev = chevronSvg(fontSize, GREEN)
   return React.createElement(
     'div',
     {

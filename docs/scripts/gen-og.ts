@@ -5,7 +5,7 @@ import React from 'react'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ageToColor, createRainState, tickRain } from '../src/components/landing/rainEngine'
-import { caret, caretSvg } from './brand-geometry'
+import { chevron, chevronSvg } from "./brand-geometry"
 
 const root = join(import.meta.dirname, '..')
 
@@ -81,7 +81,7 @@ function Rain({ width, height }: { width: number; height: number }) {
 // Chevron from the shared geometry (brand-geometry.ts), embedded as an <img> so
 // it's the exact same caret path used by the DOM lockup and standalone assets.
 function Chevron({ fontSize, marginLeft = 0 }: { fontSize: number; marginLeft?: number }) {
-  const c = caretSvg(fontSize, CHEVRON)
+  const c = chevronSvg(fontSize, CHEVRON)
   return React.createElement('img', {
     width: c.width,
     height: c.height,
@@ -239,7 +239,7 @@ async function generate(width: number, height: number, output: string) {
   console.log(`wrote ${output} (${png.byteLength.toLocaleString()} bytes)`)
 }
 
-const heroCaret = caret(138, 842, 314)
+const heroCaret = chevron(138, 842, 314)
 const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="jackin❯ by tailrocks">
   <rect width="1280" height="640" fill="${BG}"/>
   <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="22" font-weight="600" text-anchor="middle">
@@ -247,7 +247,7 @@ const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" heig
   </g>
   <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">
     <text x="586" y="338" font-size="138" font-weight="600" fill="${TEXT}">jackin</text>
-    <path d="${heroCaret.d}" fill="none" stroke="${CHEVRON}" stroke-width="${heroCaret.strokeWidth}" stroke-linecap="square" stroke-linejoin="miter"/>
+    <path d="${heroCaret.d}" fill="${CHEVRON}"/>
     <text x="626" y="446" font-size="26" font-weight="500" fill="${MUTED}">by tailrocks</text>
   </g>
 </svg>
