@@ -430,7 +430,7 @@ body {
 .jk-page-footer > a:hover,
 .jk-page-footer > a:focus-visible {
   background: var(--jk-sidebar-hover-bg);
-  box-shadow: var(--jk-sidebar-hover-shadow);
+  box-shadow: inset 0 0 0 1px var(--jk-accent), 0 4px 16px color-mix(in srgb, var(--jk-accent) 18%, transparent);
 }
 
 :root[data-theme='light'] .jk-page-footer > a {
@@ -1716,7 +1716,7 @@ header.header {
 .sl-markdown-content figure.shiki button[data-checked],
 #nd-page figure.shiki button[data-checked] {
   background: rgba(244, 247, 245, 0.14);
-  color: #f4f7f5;
+  color: var(--jk-accent);
 }
 
 .sl-markdown-content pre:not(:where(.expressive-code *)),
@@ -1909,7 +1909,7 @@ site-search button[data-open-modal] {
   }
 
   site-search button[data-open-modal]:hover {
-    border-color: var(--sl-color-text-accent);
+    border-color: var(--jk-accent);
     color: var(--jk-text);
   }
 }
@@ -1953,14 +1953,15 @@ site-search dialog {
   border-radius: 0;
   background: var(--jk-panel);
   color: var(--jk-text-dim);
-  box-shadow: none;
-  transition: border-color 0.15s, color 0.15s, transform 0.15s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  transition: border-color 0.15s, color 0.15s, transform 0.15s, box-shadow 0.2s;
 }
 
 .pagination-links a:hover {
-  border-color: var(--jk-brand);
+  border-color: var(--jk-accent);
   color: var(--jk-text);
   transform: translateY(-1px);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 18%, transparent);
 }
 
 .pagination-links a .link-title {
