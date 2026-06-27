@@ -22,6 +22,36 @@
   border-radius: 0 !important;
 }
 
+/* Exception: the terminal-window mockups and the red/blue pill capsules keep
+   their rounded corners (they depict product UI / physical pills, not the square
+   brand chrome). Values match the live site. Re-applied after the square reset. */
+.landing-code-panel,
+.landing-install {
+  border-radius: 10px !important;
+}
+.landing-loop-term {
+  border-radius: 8px !important;
+}
+.landing-builder {
+  border-radius: 6px !important;
+}
+.landing-code-tab,
+.landing-builder-tab {
+  border-radius: 4px !important;
+}
+.landing-builder-tag {
+  border-radius: 3px !important;
+}
+.landing-builder-head .landing-dot,
+.landing-loop-term-bar .landing-dot,
+.landing-pill-visual .landing-pill-color::after,
+.landing-pill-visual .landing-pill-white::after {
+  border-radius: 50% !important;
+}
+.landing-pill-visual {
+  border-radius: 1000px !important;
+}
+
 html {
   scrollbar-gutter: stable;
 }
