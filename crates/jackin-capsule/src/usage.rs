@@ -251,6 +251,14 @@ impl UsageCache {
         Some(view)
     }
 
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = "usage:refresh_accounts",
+            active = active_targets.len(),
+            focused = focused.is_some(),
+        )
+    )]
     pub(crate) fn refresh_active_account_snapshots(
         &mut self,
         active_targets: &[UsageRefreshTarget],
@@ -417,7 +425,21 @@ where
         let tx = tx.clone();
         let probe = Arc::clone(&probe);
         thread::spawn(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| probe(target)));
+            // One span per provider probe so the refresh lifecycle is visible in
+            // telemetry — each provider's fetch duration (e.g. the slow Amp CLI
+            // fallback) shows directly instead of being lost in the render
+            // firehose (Class VI: the usage path had no spans).
+            let agent = target.agent.clone();
+            let provider = target.provider.clone().unwrap_or_default();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let span = tracing::info_span!(
+                    "usage.provider_probe",
+                    otel.name = "usage:provider_probe",
+                    agent = %agent,
+                    provider = %provider,
+                );
+                span.in_scope(|| probe(target))
+            }));
             match result {
                 Ok(result) => {
                     drop(tx.send(result));
