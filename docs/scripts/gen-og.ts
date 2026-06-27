@@ -16,11 +16,9 @@ const BG = '#0a0a0a'
 const TEXT = '#ffffff'
 const MUTED = '#9ca8a1'
 const ACCENT = '#5cf07a'
-// The wordmark is always a phosphor-green block: black letters, white chevron,
-// square corners. ACCENT stays for non-logo UI highlights on the dark card.
-const BLOCK = '#00ff41'
-const INK = '#0a0a0a'
-const CHEVRON = '#ffffff'
+// Wordmark = white "jackin" + a green chevron on the dark card, no block —
+// matching the on-site lockup (src/components/brand/brand-mark.svg).
+const CHEVRON = ACCENT
 const RAIN_COLS = 80
 const RAIN_ROWS = 24
 
@@ -150,9 +148,7 @@ function Card({ width, height }: { width: number; height: number }) {
             fontSize: 142,
             fontWeight: 600,
             letterSpacing: 0,
-            color: INK,
-            background: BLOCK,
-            padding: '6px 26px',
+            color: TEXT,
             lineHeight: 1,
             marginBottom: 16,
           },
@@ -251,8 +247,7 @@ const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" heig
     ${rainSvgField(1280, 640)}
   </g>
   <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">
-    <rect x="296" y="206" width="660" height="176" fill="${BLOCK}"/>
-    <text x="586" y="338" font-size="138" font-weight="600" fill="${INK}">jackin</text>
+    <text x="586" y="338" font-size="138" font-weight="600" fill="${TEXT}">jackin</text>
     <path d="M842 240 916 314 842 388" fill="none" stroke="${CHEVRON}" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
     <text x="626" y="446" font-size="26" font-weight="500" fill="${MUTED}">by tailrocks</text>
   </g>

@@ -374,9 +374,8 @@
     <text x="1192.0" y="632.5" fill="rgb(0,140,30)" opacity="0.9">X</text>
   </g>
   <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">
-    <rect x="296" y="206" width="660" height="176" fill="#00ff41"/>
-    <text x="586" y="338" font-size="138" font-weight="600" fill="#0a0a0a">jackin</text>
-    <path d="M842 240 916 314 842 388" fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
+    <text x="586" y="338" font-size="138" font-weight="600" fill="#ffffff">jackin</text>
+    <path d="M842 240 916 314 842 388" fill="none" stroke="#5cf07a" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
     <text x="626" y="446" font-size="26" font-weight="500" fill="#9ca8a1">by tailrocks</text>
   </g>
 </svg>
