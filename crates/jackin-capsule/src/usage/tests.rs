@@ -1362,6 +1362,27 @@ fn status_bar_headline_drops_zero_window_and_zero_spend() {
     );
 }
 
+/// Bug 11: an over-cap window (>100% utilization) keeps its true used figure in
+/// the label instead of being clamped to `100% used`; `remaining` stays 0.
+#[test]
+fn over_cap_window_surfaces_true_used_percent() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "seven_day": { "utilization": 150.0, "resets_at": "2026-07-03T07:00:00Z" }
+    }))
+    .expect("valid Claude OAuth usage");
+    let buckets = usage.into_buckets(1_781_185_560);
+    let weekly = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly bucket");
+    assert_eq!(
+        weekly.remaining_percent,
+        Some(0),
+        "nothing left when over cap"
+    );
+    assert_eq!(weekly.used_label.as_deref(), Some("150% used"));
+}
+
 /// Bug 5: the overview headline bucket is the tightest *windowed* bucket that
 /// carries a reset — never the reset-less spend bucket, even when spend has the
 /// lowest remaining (so the overview row keeps its reset column).

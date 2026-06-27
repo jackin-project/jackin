@@ -3037,10 +3037,18 @@ fn fetch_claude_oauth_usage(access_token: &str) -> Result<ClaudeOAuthUsageRespon
 }
 
 fn claude_code_user_agent() -> String {
-    claude_code_user_agent_with(|command, args, timeout| {
-        run_cli_with_timeout_full(command, args, timeout)
-    })
-    .unwrap_or_else(|| CLAUDE_CODE_USER_AGENT_FALLBACK.to_owned())
+    // The Claude Code version is stable for the process lifetime, so resolve the
+    // UA once instead of spawning `claude --version` on every usage fetch — that
+    // per-probe subprocess was a measurable slice of the load latency (Bug 3).
+    static CACHED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            claude_code_user_agent_with(|command, args, timeout| {
+                run_cli_with_timeout_full(command, args, timeout)
+            })
+            .unwrap_or_else(|| CLAUDE_CODE_USER_AGENT_FALLBACK.to_owned())
+        })
+        .clone()
 }
 
 fn claude_code_user_agent_with<F>(mut runner: F) -> Option<String>
@@ -5439,7 +5447,24 @@ fn remaining_from_fraction(value: f64) -> Option<u8> {
 }
 
 fn used_percent_label(value: f64) -> Option<String> {
-    used_percent_from_fraction(value).map(|used| format!("{used}% used"))
+    // Surface over-cap usage truthfully: a window the API reports above its limit
+    // renders e.g. `150% used` rather than being clamped to `100% used` (Bug 11 —
+    // the clamp silently discarded the overage the API provided). `remaining`
+    // stays clamped at 0 (nothing left / bar full); only the used side carries the
+    // overage.
+    used_percent_uncapped(value).map(|used| format!("{used}% used"))
+}
+
+/// Used-percent without the upper clamp `used_percent_from_fraction` applies, so
+/// an over-cap window keeps its true figure (e.g. `150`). Treats a value `<= 1.0`
+/// as a fraction (×100) and a larger value as an already-scaled percent, matching
+/// the fraction/percent heuristic the rest of the module uses.
+fn used_percent_uncapped(value: f64) -> Option<u16> {
+    if !value.is_finite() || value < 0.0 {
+        return None;
+    }
+    let used = if value <= 1.0 { value * 100.0 } else { value };
+    Some(used.round().clamp(0.0, f64::from(u16::MAX)) as u16)
 }
 
 fn parse_iso_epoch(value: &str) -> Option<i64> {
