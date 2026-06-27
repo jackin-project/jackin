@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" class="jk-brand-mark__svg" viewBox="0 0 363 98" role="img" aria-hidden="true" preserveAspectRatio="xMinYMid meet">
-  <rect x="0" y="0" width="363" height="98" fill="var(--jk-logo-block)"/>
-  <text x="22" y="49" textLength="259" lengthAdjust="spacingAndGlyphs" dominant-baseline="central" font-family="var(--sl-font-mono)" font-size="72" font-weight="500" fill="var(--jk-logo-ink)">jackin</text>
-  <text x="295" y="49" textLength="46" lengthAdjust="spacingAndGlyphs" dominant-baseline="central" font-family="var(--sl-font-mono)" font-size="72" font-weight="600" fill="var(--jk-logo-chevron)">&#10095;</text>
+<svg xmlns="http://www.w3.org/2000/svg" class="jk-brand-mark__svg" viewBox="0 0 360 98" role="img" aria-hidden="true" preserveAspectRatio="xMinYMid meet">
+  <rect x="0" y="0" width="360" height="98" fill="var(--jk-logo-block)"/>
+  <text x="22" y="49" textLength="259" lengthAdjust="spacingAndGlyphs" dominant-baseline="central" font-family="var(--sl-font-mono)" font-size="72" font-weight="600" fill="var(--jk-logo-ink)">jackin</text>
+  <path d="M300 22 L332 49 L300 76" fill="none" stroke="var(--jk-logo-chevron)" stroke-width="12" stroke-linecap="square" stroke-linejoin="miter"/>
 </svg>
