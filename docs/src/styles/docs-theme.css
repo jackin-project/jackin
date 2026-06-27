@@ -1240,7 +1240,7 @@ html.theme-init *::after {
   content: "";
   position: absolute;
   width: 2px;
-  inset-block: 0.7rem;
+  inset-block: 0.25rem;
   inset-inline-start: 0.55rem;
   border-radius: 0;
   background: color-mix(in oklab, var(--jk-brand) 66%, transparent);
@@ -1275,7 +1275,7 @@ html.theme-init *::after {
   display: block;
   position: absolute;
   width: 2px;
-  inset-block: 0.7rem;
+  inset-block: 0.25rem;
   inset-inline-start: 0.55rem;
   border-radius: 0;
   background: color-mix(in oklab, var(--jk-brand) 66%, transparent);
