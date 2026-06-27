@@ -2037,18 +2037,20 @@ site-search dialog {
   gap: 0.5rem;
   padding: 0.4rem 0.55rem;
   border-radius: 0.625rem;
-  border-color: color-mix(in srgb, var(--jk-accent) 20%, transparent);
-  background: color-mix(in srgb, var(--jk-accent) 6%, transparent);
+  border-color: color-mix(in srgb, var(--jk-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
   transition:
     background-color 0.15s ease,
-    border-color 0.15s ease;
+    border-color 0.15s ease,
+    box-shadow 0.2s ease;
 }
 
 #nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]):hover,
 #nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full])[data-state="open"] {
-  background: color-mix(in srgb, var(--jk-accent) 13%, transparent);
-  border-color: color-mix(in srgb, var(--jk-accent) 42%, transparent);
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+  border-color: var(--jk-accent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
 }
 
 /* Icon slot: fixed compact square, brand-green glyph that fills it. */
