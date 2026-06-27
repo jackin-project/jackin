@@ -753,10 +753,7 @@ fn acquire_account_refresh_lock_in(dir: &Path, account_key: &str) -> RefreshLock
     if fs::create_dir_all(dir).is_err() {
         return RefreshLockOutcome::Unavailable;
     }
-    let path = dir.join(format!(
-        "usage-{:016x}.lock",
-        stable_usage_hash(account_key)
-    ));
+    let path = shared_usage_file_path(dir, account_key, "lock");
     #[expect(
         clippy::disallowed_methods,
         reason = "advisory lock file; the usage refresh runs on the blocking pool (spawn_blocking), not the render thread"
@@ -776,11 +773,16 @@ fn acquire_account_refresh_lock_in(dir: &Path, account_key: &str) -> RefreshLock
     }
 }
 
+/// `<dir>/usage-<account-hash>.<ext>` — the per-account shared-file naming scheme
+/// shared by the snapshot, cooldown marker, and refresh lock. Centralized so all
+/// three hash the account key the same way; cross-container files for one account
+/// must collide on name for the coordination to work (Class III).
+fn shared_usage_file_path(dir: &Path, key: &str, ext: &str) -> PathBuf {
+    dir.join(format!("usage-{:016x}.{ext}", stable_usage_hash(key)))
+}
+
 fn shared_usage_snapshot_path(snapshots_dir: &Path, key: &str) -> PathBuf {
-    snapshots_dir.join(format!(
-        "usage-{:016x}.snapshot.json",
-        stable_usage_hash(key)
-    ))
+    shared_usage_file_path(snapshots_dir, key, "snapshot.json")
 }
 
 fn write_shared_usage_snapshot(snapshots_dir: &Path, key: &str, view: &FocusedUsageView) {
@@ -804,7 +806,7 @@ fn read_shared_usage_snapshot(snapshots_dir: &Path, key: &str) -> Option<Focused
 }
 
 fn shared_usage_cooldown_marker_path(cooldown_dir: &Path, key: &str) -> PathBuf {
-    cooldown_dir.join(format!("usage-{:016x}.cooldown", stable_usage_hash(key)))
+    shared_usage_file_path(cooldown_dir, key, "cooldown")
 }
 
 fn shared_usage_cooldown_active(cooldown_dir: &Path, key: &str, now_epoch: i64) -> bool {
