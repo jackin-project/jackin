@@ -508,20 +508,21 @@ html.theme-init *::after {
   transition: box-shadow 0.2s, background 0.15s, border-color 0.15s;
   text-decoration: none;
 }
-/* Solid phosphor-green buttons matching the jackin CLI accent. */
+/* Solid green buttons using the docs accent (--jk-accent), so the landing CTAs
+   match the green used across the docs pages. Dark ink reads on it in both themes. */
 .landing-btn-primary {
-  background: var(--landing-accent);
-  color: var(--landing-bg-deep);
-  border: 1px solid var(--landing-accent);
+  background: var(--jk-accent);
+  color: #0a0a0a;
+  border: 1px solid var(--jk-accent);
 }
 .landing-btn-primary:hover {
   filter: brightness(1.08);
   box-shadow: 0 6px 20px rgb(var(--landing-accent-rgb) / 0.3);
 }
 .landing-btn-ghost {
-  background: var(--landing-accent);
-  color: var(--landing-bg-deep);
-  border: 1px solid var(--landing-accent);
+  background: var(--jk-accent);
+  color: #0a0a0a;
+  border: 1px solid var(--jk-accent);
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
   font-weight: 600;
@@ -1334,13 +1335,13 @@ nav.landing-topnav .landing-star {
 .landing-nav-right { display: flex; gap: 14px; align-items: center; }
 .landing-star {
   padding: 7px 14px;
-  border: 1px solid var(--landing-accent);
-  background: var(--landing-accent);
+  border: 1px solid var(--jk-accent);
+  background: var(--jk-accent);
   border-radius: 4px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   font-weight: 600;
-  color: var(--landing-bg-deep);
+  color: #0a0a0a;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
@@ -1351,7 +1352,7 @@ nav.landing-topnav .landing-star {
    SVG path uses currentColor so we colour it via `color`. filter: drop-shadow
    gives a softer, cleaner glow than text-shadow on text-based stars. */
 .landing-star-icon {
-  color: var(--landing-bg-deep);
+  color: #0a0a0a;
   flex-shrink: 0;
 }
 
