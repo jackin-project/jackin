@@ -2154,8 +2154,17 @@ fn usage_dialog_geometry_counts_rendered_section_lines() {
 
     assert!(usage_height >= 7);
     assert_eq!(d.box_rect(50, 120).2, usage_height);
-    let axes = d.body_scroll_axes(18, 60, None);
-    assert!(axes.vertical);
+    // Bug 2: the scroll bound now uses the same width-wrapped line set and body
+    // viewport (box − border − tab strip) the renderer uses. Assert overflow at a
+    // wide-but-short terminal (≥64 cols → wide layout matching `usage_height`;
+    // few rows → the box clamps below the content) so the dialog scrolls. A tall
+    // terminal must NOT advertise vertical scroll — the content fits its body.
+    // Bug 2: the scroll bound now uses the same width-wrapped line set and body
+    // viewport (box − border − tab strip) the renderer uses. At a wide terminal
+    // (≥64 cols → wide layout matching `usage_height`) the content overflows a
+    // short box and scrolls, and fits — no vertical scroll — at a tall one.
+    assert!(d.body_scroll_axes(18, 120, None).vertical);
+    assert!(!d.body_scroll_axes(50, 120, None).vertical);
 }
 
 #[test]

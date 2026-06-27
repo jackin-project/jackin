@@ -1043,17 +1043,24 @@ impl Dialog {
                 state
             };
             if let Self::GitHubContext { scroll, .. } | Self::Usage { scroll, .. } = self {
-                let (content_width, content_height) = if is_usage {
-                    crate::tui::components::dialog_widgets::usage_info_content_size(&state)
+                if is_usage {
+                    // Clamp against the same body+lines the renderer uses (Bug 2).
+                    let (content_width, content_height, scroll_rect) =
+                        crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state);
+                    jackin_tui::components::clamp_container_info_scroll(
+                        scroll,
+                        content_width,
+                        content_height,
+                        scroll_rect,
+                    );
                 } else {
-                    (state.content_width(), state.content_height())
-                };
-                jackin_tui::components::clamp_container_info_scroll(
-                    scroll,
-                    content_width,
-                    content_height,
-                    rect,
-                );
+                    jackin_tui::components::clamp_container_info_scroll(
+                        scroll,
+                        state.content_width(),
+                        state.content_height(),
+                        rect,
+                    );
+                }
             }
         }
     }
@@ -1095,12 +1102,14 @@ impl Dialog {
                 state
             };
             if is_usage {
-                let (content_width, content_height) =
-                    crate::tui::components::dialog_widgets::usage_info_content_size(&state);
+                // Same body+lines source as the renderer (Bug 2): the scroll_rect
+                // carries the true body viewport (box − border − tab strip).
+                let (content_width, content_height, scroll_rect) =
+                    crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state);
                 return jackin_tui::components::dialog_scroll_axes(
                     content_width,
                     content_height,
-                    rect,
+                    scroll_rect,
                 );
             }
             return jackin_tui::components::dialog_scroll_axes(
