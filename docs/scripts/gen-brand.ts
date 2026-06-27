@@ -65,7 +65,8 @@ function faviconSvg(size: number): string {
   // Baseline so the "j" cap is vertically centered on the square.
   const baseline = round(cy + (font.capHeight / 2) * (fontSize / font.unitsPerEm))
   const wg = placeWord(w, startX, baseline)
-  const c = chevron(fontSize, round(startX + w.width + gap), cy)
+  // Nudge the chevron down off the cap center, same as the wordmark lockup.
+  const c = chevron(fontSize, round(startX + w.width + gap), round(cy + fontSize * 0.06))
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
   <rect width="${size}" height="${size}" fill="${DARK}"/>
   ${wg}
