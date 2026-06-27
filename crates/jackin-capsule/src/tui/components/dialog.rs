@@ -662,6 +662,19 @@ impl Dialog {
         Some(state)
     }
 
+    /// Accent colour for a usage bucket's meter by severity. `Normal` keeps the
+    /// default (no accent → phosphor green); `Warn`/`Danger` grade toward amber
+    /// and red so an account approaching its cap reads as such at a glance.
+    fn usage_severity_accent(
+        severity: jackin_protocol::control::UsageSeverity,
+    ) -> Option<ratatui::style::Color> {
+        match severity {
+            jackin_protocol::control::UsageSeverity::Normal => None,
+            jackin_protocol::control::UsageSeverity::Warn => Some(jackin_tui::theme::DEBUG_AMBER),
+            jackin_protocol::control::UsageSeverity::Danger => Some(jackin_tui::theme::DANGER_RED),
+        }
+    }
+
     pub(crate) fn usage_state(&self) -> Option<jackin_tui::components::ContainerInfoState> {
         let Self::Usage {
             view,
@@ -718,10 +731,14 @@ impl Dialog {
             ));
         }
         for bucket in &view.buckets {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
+            let mut row = jackin_tui::components::ContainerInfoRow::new(
                 bucket.label.clone(),
                 Self::usage_bucket_value(bucket),
-            ));
+            );
+            if let Some(accent) = Self::usage_severity_accent(bucket.severity) {
+                row = row.accent(accent);
+            }
+            rows.push(row);
         }
         if let Some(error) = &view.last_error {
             rows.push(jackin_tui::components::ContainerInfoRow::new(

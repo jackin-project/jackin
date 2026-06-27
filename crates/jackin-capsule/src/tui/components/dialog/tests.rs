@@ -953,6 +953,7 @@ fn github_context_uses_shared_focused_info_dialog() {
 
 fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     jackin_protocol::control::FocusedUsageView {
+        spend_status_label: None,
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("OpenAI".to_owned()),
         account: jackin_protocol::control::FocusedAccountHeader {
@@ -964,6 +965,9 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         },
         buckets: vec![
             jackin_protocol::control::QuotaBucketView {
+                used_money: None,
+                limit_money: None,
+                severity: jackin_protocol::control::UsageSeverity::default(),
                 label: "Session".to_owned(),
                 used_label: Some("63% used".to_owned()),
                 limit_label: Some("100%".to_owned()),
@@ -975,6 +979,9 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
             },
             jackin_protocol::control::QuotaBucketView {
+                used_money: None,
+                limit_money: None,
+                severity: jackin_protocol::control::UsageSeverity::default(),
                 label: "Credits".to_owned(),
                 used_label: None,
                 limit_label: None,
@@ -1059,6 +1066,9 @@ fn usage_status_bucket(
     status: jackin_protocol::control::UsageSnapshotStatus,
 ) -> jackin_protocol::control::QuotaBucketView {
     jackin_protocol::control::QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: jackin_protocol::control::UsageSeverity::default(),
         label: label.to_owned(),
         used_label: None,
         limit_label: None,
@@ -1078,6 +1088,9 @@ fn quota_bucket(
     pace_label: Option<&str>,
 ) -> jackin_protocol::control::QuotaBucketView {
     jackin_protocol::control::QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: jackin_protocol::control::UsageSeverity::default(),
         label: label.to_owned(),
         used_label: Some(format!("{}% used", 100u8.saturating_sub(remaining_percent))),
         limit_label: Some("100%".to_owned()),
@@ -1092,6 +1105,9 @@ fn quota_bucket(
 
 fn text_bucket(label: &str, value: &str) -> jackin_protocol::control::QuotaBucketView {
     jackin_protocol::control::QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: jackin_protocol::control::UsageSeverity::default(),
         label: label.to_owned(),
         used_label: None,
         limit_label: None,
@@ -1198,6 +1214,9 @@ fn amp_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         "Updated just now",
         vec![
             jackin_protocol::control::QuotaBucketView {
+                used_money: None,
+                limit_money: None,
+                severity: jackin_protocol::control::UsageSeverity::default(),
                 label: "Amp Free".to_owned(),
                 used_label: Some("$9.60".to_owned()),
                 limit_label: Some("$10".to_owned()),
@@ -1209,6 +1228,9 @@ fn amp_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
             },
             jackin_protocol::control::QuotaBucketView {
+                used_money: None,
+                limit_money: None,
+                severity: jackin_protocol::control::UsageSeverity::default(),
                 label: "Individual credits".to_owned(),
                 used_label: None,
                 limit_label: Some("$4.76".to_owned()),
@@ -1559,6 +1581,9 @@ fn usage_dialog_renders_deficit_and_runout_quota_labels() {
     let mut view = usage_view_fixture();
     view.buckets
         .push(jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Weekly".to_owned(),
             used_label: Some("40% used".to_owned()),
             limit_label: Some("100%".to_owned()),
@@ -1612,6 +1637,9 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
     let mut view = usage_view_fixture();
     view.buckets = vec![
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Tokens".to_owned(),
             used_label: Some("400M".to_owned()),
             limit_label: Some("1B".to_owned()),
@@ -1623,6 +1651,9 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "MCP".to_owned(),
             used_label: Some("2h".to_owned()),
             limit_label: Some("5h".to_owned()),
@@ -1634,6 +1665,9 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Amp Free".to_owned(),
             used_label: Some("$12.00".to_owned()),
             limit_label: Some("$25.00".to_owned()),
@@ -1645,6 +1679,9 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "MiniMax M1 Coding plan".to_owned(),
             used_label: Some("12K".to_owned()),
             limit_label: Some("100K".to_owned()),
@@ -1698,6 +1735,9 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
     let mut view = usage_view_fixture();
     view.buckets
         .push(jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Extra usage".to_owned(),
             used_label: Some("SGD 78.49".to_owned()),
             limit_label: Some("SGD 260.00".to_owned()),
@@ -2044,6 +2084,9 @@ fn usage_dialog_geometry_counts_rendered_section_lines() {
     let mut view = usage_view_fixture();
     view.buckets.extend([
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Tokens".to_owned(),
             used_label: Some("100K".to_owned()),
             limit_label: Some("1M".to_owned()),
@@ -2055,6 +2098,9 @@ fn usage_dialog_geometry_counts_rendered_section_lines() {
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "MCP".to_owned(),
             used_label: Some("2".to_owned()),
             limit_label: Some("100".to_owned()),

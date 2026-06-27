@@ -363,6 +363,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                         "",
                         jackin_tui::components::StatusRightGroup {
                             usage: None,
+                            spend: None,
                             container: "",
                             run_id: Some(&run_id),
                         },

@@ -143,6 +143,7 @@ impl Multiplexer {
             self.term_cols,
             self.context_bar_branch(),
             self.focused_usage_status_label().as_deref(),
+            self.focused_spend_status_label().as_deref(),
             self.pull_request_context.as_deref(),
             self.pull_request_context_loading(),
             debug_run_id_label().as_deref(),

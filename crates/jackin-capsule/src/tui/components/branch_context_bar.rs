@@ -39,6 +39,8 @@ pub(crate) struct BranchContextBarLayout {
     pub(crate) left_region: Option<ColRange>,
     pub(crate) usage: String,
     pub(crate) usage_region: Option<ColRange>,
+    pub(crate) spend: String,
+    pub(crate) spend_region: Option<ColRange>,
     pub(crate) debug_chip: String,
     pub(crate) debug_chip_region: Option<ColRange>,
     pub(crate) container: String,
@@ -55,6 +57,7 @@ pub(crate) fn branch_context_bar_layout(
     term_cols: u16,
     branch: Option<&str>,
     usage_status_label: Option<&str>,
+    spend_status_label: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
     debug_run_id: Option<&str>,
@@ -76,6 +79,7 @@ pub(crate) fn branch_context_bar_layout(
         term_cols,
         StatusRightGroup {
             usage: usage_status_label,
+            spend: spend_status_label,
             container: container_name,
             run_id: debug_run_id,
         },
@@ -100,6 +104,14 @@ pub(crate) fn branch_context_bar_layout(
             .map_or_else(String::new, |chunk| chunk.text.clone()),
         usage_region: right
             .usage
+            .as_ref()
+            .and_then(|chunk| ColRange::new(chunk.start, chunk.end)),
+        spend: right
+            .spend
+            .as_ref()
+            .map_or_else(String::new, |chunk| chunk.text.clone()),
+        spend_region: right
+            .spend
             .as_ref()
             .and_then(|chunk| ColRange::new(chunk.start, chunk.end)),
         debug_chip: right
@@ -147,6 +159,7 @@ pub(crate) fn branch_context_bar_hit(
     term_cols: u16,
     branch: Option<&str>,
     usage_status_label: Option<&str>,
+    spend_status_label: Option<&str>,
     pull_request: Option<&PullRequestInfo>,
     pull_request_loading: bool,
     debug_run_id: Option<&str>,
@@ -160,6 +173,7 @@ pub(crate) fn branch_context_bar_hit(
         term_cols,
         branch,
         usage_status_label,
+        spend_status_label,
         pull_request,
         pull_request_loading,
         debug_run_id,

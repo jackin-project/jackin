@@ -272,6 +272,9 @@ fn control_usage_account_list_uses_in_memory_cache() {
     view.source = jackin_protocol::control::UsageSource::ProviderApi;
     view.confidence = jackin_protocol::control::UsageConfidence::Authoritative;
     view.buckets = vec![jackin_protocol::control::QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: jackin_protocol::control::UsageSeverity::default(),
         label: "Session".to_owned(),
         used_label: Some("63% used".to_owned()),
         limit_label: Some("100%".to_owned()),
@@ -354,6 +357,7 @@ fn apply_dialog_action_switch_usage_provider_updates_focused_provider() {
     mux.tabs[0] = Tab::new_single("Codex", 1, "test");
     mux.dialog_push(Dialog::new_usage(
         jackin_protocol::control::FocusedUsageView {
+            spend_status_label: None,
             focused_provider: Some("MiniMax".to_owned()),
             account: jackin_protocol::control::FocusedAccountHeader {
                 provider_label: "Usage".to_owned(),
@@ -430,6 +434,7 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
         .expect("system time after epoch")
         .as_secs() as i64;
     let cached = jackin_protocol::control::FocusedUsageView {
+        spend_status_label: None,
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("OpenAI".to_owned()),
         account: jackin_protocol::control::FocusedAccountHeader {
@@ -440,6 +445,9 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
             credential_origin: None,
         },
         buckets: vec![jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Session".to_owned(),
             used_label: Some("63% used".to_owned()),
             limit_label: Some("100%".to_owned()),
@@ -3334,6 +3342,7 @@ fn pointer_shape_updates_only_when_shape_changes() {
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
         None,
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
         None,
@@ -3606,6 +3615,7 @@ fn bottom_container_click_opens_container_info_without_copying() {
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
         None,
+        None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
         None,
@@ -3657,6 +3667,7 @@ fn bottom_context_click_opens_github_context_dialog() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),
@@ -4016,6 +4027,7 @@ fn apply_action_branch_context_bar_click_opens_container_info() {
         mux.term_rows,
         mux.term_cols,
         mux.pull_request_context_branch.as_deref(),
+        None,
         None,
         mux.pull_request_context.as_deref(),
         mux.pull_request_context_loading(),

@@ -650,7 +650,13 @@ fn usage_info_lines_impl(
         lines.push(usage_separator_line(context.width));
     }
     for row in state.rows() {
-        usage_lines_for_row(row.label(), row.value(), context, &mut lines);
+        usage_lines_for_row(
+            row.label(),
+            row.value(),
+            row.accent_color(),
+            context,
+            &mut lines,
+        );
     }
     lines
 }
@@ -710,6 +716,7 @@ fn usage_line_width(line: &Line<'_>) -> usize {
 fn usage_lines_for_row(
     label: &str,
     value: &str,
+    accent: Option<ratatui::style::Color>,
     context: UsageLineContext<'_>,
     lines: &mut Vec<Line<'static>>,
 ) {
@@ -741,7 +748,7 @@ fn usage_lines_for_row(
             if context.list_layout {
                 usage_quota_bucket_compact_lines(bucket, value, context.width, lines);
             } else {
-                usage_quota_bucket_lines(bucket, value, context.width, lines);
+                usage_quota_bucket_lines(bucket, value, accent, context.width, lines);
             }
         }
         _ if is_overview_provider_label(label) => {
@@ -927,6 +934,7 @@ fn usage_header_two_column(
 fn usage_quota_bucket_lines(
     label: &str,
     value: &str,
+    accent: Option<ratatui::style::Color>,
     width: usize,
     lines: &mut Vec<Line<'static>>,
 ) {
@@ -968,7 +976,7 @@ fn usage_quota_bucket_lines(
     let meter = usage_full_width_meter(meter, width);
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(meter, Style::default().fg(PHOSPHOR_GREEN)),
+        Span::styled(meter, Style::default().fg(accent.unwrap_or(PHOSPHOR_GREEN))),
     ]));
 
     let details = usage_quota_bucket_detail_parts(label, value);

@@ -21,6 +21,10 @@ pub struct StatusFooterHover {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StatusRightGroup<'a> {
     pub usage: Option<&'a str>,
+    /// Monetary spend chunk (`$53/$300`). Placed between `run_id` and
+    /// `container` so it claims width before the container name — under
+    /// pressure the container drops first and spend stays visible.
+    pub spend: Option<&'a str>,
     pub container: &'a str,
     pub run_id: Option<&'a str>,
 }
@@ -44,6 +48,7 @@ impl StatusRightChunk {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StatusRightGroupLayout {
     pub usage: Option<StatusRightChunk>,
+    pub spend: Option<StatusRightChunk>,
     pub container: Option<StatusRightChunk>,
     pub run_id: Option<StatusRightChunk>,
 }
@@ -51,9 +56,12 @@ pub struct StatusRightGroupLayout {
 impl StatusRightGroupLayout {
     #[must_use]
     pub fn start(&self, fallback: usize) -> usize {
+        // Leftmost present chunk, in left-to-right order:
+        // usage | container | spend | run_id.
         self.usage
             .as_ref()
             .or(self.container.as_ref())
+            .or(self.spend.as_ref())
             .or(self.run_id.as_ref())
             .map_or(fallback, |chunk| usize::from(chunk.start))
     }
@@ -85,12 +93,22 @@ pub fn status_right_group_layout(
             .filter(|run_id| !run_id.is_empty())
             .map(|run_id| format!(" {run_id} ")),
     );
+    // Spend is placed before the container so it survives width pressure first.
+    let spend = place_status_right_chunk(
+        &mut cursor,
+        term_cols,
+        right
+            .spend
+            .filter(|spend| !spend.is_empty())
+            .map(|spend| format!(" {spend} ")),
+    );
     let container = place_status_right_chunk(&mut cursor, term_cols, {
         (!right.container.is_empty()).then(|| format!(" {} ", right.container))
     });
     let usage = place_usage_status_chunk(&mut cursor, term_cols, right.usage);
     StatusRightGroupLayout {
         usage,
+        spend,
         container,
         run_id,
     }
@@ -141,6 +159,7 @@ impl<'a> StatusFooter<'a> {
             left,
             right: StatusRightGroup {
                 usage: None,
+                spend: None,
                 container: "",
                 run_id: None,
             },
@@ -244,6 +263,15 @@ impl Widget for StatusFooter<'_> {
                         },
                         self.alpha,
                     ))
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        if let Some(spend) = right_layout.spend {
+            right_spans.push(Span::styled(
+                spend.text,
+                Style::default()
+                    .bg(faded(WHITE, self.alpha))
+                    .fg(faded(Color::Black, self.alpha))
                     .add_modifier(Modifier::BOLD),
             ));
         }
@@ -399,6 +427,7 @@ pub fn status_footer_right_chip_rect(
             area.width,
             StatusRightGroup {
                 usage: None,
+                spend: None,
                 container: right,
                 run_id: right_debug,
             },
@@ -421,6 +450,7 @@ pub fn status_footer_debug_chip_rect(area: Rect, right_debug: &str) -> Option<Re
             area.width,
             StatusRightGroup {
                 usage: None,
+                spend: None,
                 container: "",
                 run_id: Some(right_debug),
             },

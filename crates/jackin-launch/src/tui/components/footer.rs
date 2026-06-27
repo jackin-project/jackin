@@ -47,6 +47,7 @@ pub fn render_footer(
         area,
         &format_activity(&view.status),
         StatusRightGroup {
+            spend: None,
             usage: None,
             container: &instance,
             run_id: debug_chip,

@@ -17,8 +17,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use chrono::{DateTime, Local, TimeZone, Utc};
 use jackin_protocol::control::{
-    AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot,
-    UsageConfidence, UsageProviderTab, UsageSnapshotStatus, UsageSource,
+    AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView,
+    StatusSlot, UsageConfidence, UsageProviderTab, UsageSeverity, UsageSnapshotStatus, UsageSource,
 };
 use serde::{Deserialize, Serialize};
 
@@ -205,6 +205,23 @@ impl UsageCache {
         // segment is hidden only when there is no focused agent at all (the
         // `focused_agent?` above returns `None` → caller renders nothing).
         Some("refreshing".to_owned())
+    }
+
+    /// Compact spend (`$53/$300`) for the focused account's status-bar chunk.
+    /// `None` when there is no focused agent, no snapshot yet, or the account
+    /// has no monetary spend window — the spend chunk is then simply omitted.
+    pub(crate) fn focused_spend_status_label(
+        &self,
+        focused_agent: Option<&str>,
+        focused_provider: Option<&str>,
+    ) -> Option<String> {
+        let agent = focused_agent?;
+        let cache_key = canonical_usage_cache_key(agent, focused_provider);
+        self.snapshots
+            .get(&cache_key)?
+            .view
+            .spend_status_label
+            .clone()
     }
 
     pub(crate) fn account_snapshot_views(&self) -> Vec<AccountUsageSnapshotView> {
@@ -736,6 +753,14 @@ fn usage_error_is_rate_limited(error: &str) -> bool {
         || lower.contains("rate limit")
         || lower.contains("retry-after")
         || lower.contains("retry after")
+}
+
+/// True when a provider fetch failed because the token was rejected (expired or
+/// revoked), as opposed to a transient/network error. Drives the honest
+/// `NeedsLogin` status so a stale on-disk token reads as "login", not "stale".
+fn usage_error_is_unauthorized(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    lower.contains("http 401") || lower.contains("http 403") || lower.contains("unauthorized")
 }
 
 fn usage_rate_limit_delay(error: &str, failures: u32) -> Duration {
@@ -1377,7 +1402,7 @@ fn codex_snapshot(
     };
     let rpc_quota = rpc_usage.as_ref().map(|usage| &usage.response);
     let (oauth_quota, oauth_error) = split_fetch(credentials.as_ref().map(|credentials| {
-        fetch_codex_oauth_usage(credentials, &codex_home).map(|mut usage| {
+        fetch_codex_oauth_usage_refreshing(credentials, &codex_home).map(|mut usage| {
             usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, &codex_home)
                 .inspect_err(|error| {
                     crate::cdebug!("codex reset-credits fetch failed: {error}");
@@ -1397,6 +1422,16 @@ fn codex_snapshot(
         UsageSnapshotStatus::NeedsLogin
     } else if quota.is_some() {
         UsageSnapshotStatus::Fresh
+    } else if provider_error
+        .as_deref()
+        .is_some_and(usage_error_is_unauthorized)
+    {
+        // The on-disk token is present but rejected (expired/revoked). Codex
+        // refreshes its own token on launch; jackin reads the token as-is, so a
+        // stale `auth.json` 401s here. Surface an honest "login" rather than a
+        // blank/stale meter — the root cause (no in-process refresh) is named in
+        // FINDINGS §9.2 E2.
+        UsageSnapshotStatus::NeedsLogin
     } else {
         UsageSnapshotStatus::Stale
     };
@@ -1977,6 +2012,7 @@ fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
         input.status,
         &input.buckets,
     );
+    let spend_status_label = spend_status_label(&input.buckets);
     FocusedUsageView {
         focused_agent: Some(input.agent.to_owned()),
         focused_provider: input
@@ -2006,9 +2042,25 @@ fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
         }
         .to_owned(),
         status_bar_label: headline,
+        spend_status_label,
         tabs: provider_tabs(input.surface),
         last_error: input.last_error,
     }
+}
+
+/// Compact `$used/$limit` (or `$used` when uncapped) for the status-bar spend
+/// chunk, read from the monetary `Spend`-slot bucket. Only emitted for a
+/// fresh/stale bucket that carries structured [`Money`]; absent otherwise so
+/// the bar shows nothing rather than a stale or zeroed figure.
+fn spend_status_label(buckets: &[QuotaBucketView]) -> Option<String> {
+    let spend = buckets.iter().find(|bucket| {
+        bucket.status_slot == Some(StatusSlot::Spend) && status_bar_fresh_or_stale(bucket)
+    })?;
+    let used = spend.used_money.as_ref()?;
+    Some(match spend.limit_money.as_ref() {
+        Some(limit) => format!("{}/{}", used.format_compact(), limit.format_compact()),
+        None => used.format_compact(),
+    })
 }
 
 fn status_bar_label(
@@ -2344,6 +2396,9 @@ fn bucket(
         status_slot: None,
         pace_label: pace_label.map(str::to_owned),
         status,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
     }
 }
 
@@ -2586,6 +2641,48 @@ struct ClaudeOAuthUsageResponse {
     seven_day_routines: Option<ClaudeOAuthUsageWindow>,
     #[serde(rename = "extra_usage")]
     extra_usage: Option<ClaudeOAuthExtraUsage>,
+    // The newer, self-describing money object. Preferred over `extra_usage`
+    // because it states the unit scale (`exponent`) and currency explicitly, so
+    // a minor-unit amount can never be mis-scaled. `extra_usage` is kept as a
+    // fallback for responses that predate `spend`.
+    #[serde(rename = "spend")]
+    spend: Option<ClaudeOAuthSpend>,
+    // Catch-all for the remaining keys — chiefly the rotating-codename dollar
+    // budget windows (`amber_ladder`, `omelette_promotional`, …). Capturing
+    // them generically, rather than enumerating each ephemeral name, is what
+    // lets enterprise dollar budgets surface instead of being silently dropped
+    // by a fixed-field struct.
+    #[serde(flatten)]
+    other_windows: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeOAuthSpend {
+    used: Option<ClaudeOAuthMoney>,
+    limit: Option<ClaudeOAuthMoney>,
+    percent: Option<u8>,
+    severity: Option<String>,
+    enabled: Option<bool>,
+    #[serde(rename = "disabled_reason")]
+    disabled_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeOAuthMoney {
+    #[serde(rename = "amount_minor")]
+    amount_minor: Option<i64>,
+    currency: Option<String>,
+    exponent: Option<u8>,
+}
+
+impl ClaudeOAuthMoney {
+    fn into_money(self) -> Option<Money> {
+        Some(Money::new(
+            self.amount_minor?,
+            self.currency.unwrap_or_else(|| "credits".to_owned()),
+            self.exponent.unwrap_or(2),
+        ))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -2593,6 +2690,13 @@ struct ClaudeOAuthUsageWindow {
     utilization: Option<f64>,
     #[serde(rename = "resets_at")]
     resets_at: Option<String>,
+    // Dollar-denominated budget windows (enterprise contractual allocations,
+    // carried under rotating codename keys like `amber_ladder`). Named in
+    // major-unit dollars by the API, so no `exponent` is supplied.
+    #[serde(rename = "limit_dollars")]
+    limit_dollars: Option<f64>,
+    #[serde(rename = "used_dollars")]
+    used_dollars: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2605,6 +2709,13 @@ struct ClaudeOAuthExtraUsage {
     used_credits: Option<f64>,
     utilization: Option<f64>,
     currency: Option<String>,
+    // Unit scale for `used_credits`/`monthly_limit`: they are MINOR units
+    // (e.g. cents), so the major value is `value / 10^decimal_places`. Ignoring
+    // this is what produced the 100×-too-large spend display.
+    #[serde(rename = "decimal_places")]
+    decimal_places: Option<u8>,
+    #[serde(rename = "disabled_reason")]
+    disabled_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2686,33 +2797,157 @@ impl ClaudeOAuthUsageResponse {
             self.seven_day_routines,
             now,
         );
-        if let Some(extra) = self.extra_usage
-            && extra.is_enabled.unwrap_or(true)
-        {
-            // surface Claude credits as spent vs cap only —
-            // `<currency> <spent> spent` + `NN% used`, against the monthly cap.
-            let remaining_percent = extra.utilization.and_then(remaining_from_fraction);
-            let currency = extra.currency.unwrap_or_else(|| "credits".to_owned());
-            let used = extra
-                .used_credits
-                .map(|used| format!("{} spent", format_extra_usage_amount(used, &currency)));
-            let limit = extra
-                .monthly_limit
-                .map(|limit| format_extra_usage_amount(limit, &currency));
-            let pace = remaining_percent
-                .map(|remaining| format!("{}% used", 100u8.saturating_sub(remaining)));
-            buckets.push(bucket(
-                "Extra usage",
-                used,
-                limit,
-                remaining_percent,
-                None,
-                pace.as_deref(),
-                UsageSnapshotStatus::Fresh,
-            ));
+        if let Some(spend) = claude_spend_bucket(self.spend, self.extra_usage) {
+            buckets.push(spend);
         }
+        push_claude_dollar_windows(&mut buckets, self.other_windows, now);
         buckets
     }
+}
+
+/// Surface rotating-codename dollar-budget windows (`amber_ladder` etc.) that a
+/// fixed-field struct would drop. Each captured key is parsed as a window; only
+/// those carrying a positive `limit_dollars` are real allocations and become a
+/// (non-headline) dollar bucket labelled by the humanized codename.
+fn push_claude_dollar_windows(
+    buckets: &mut Vec<QuotaBucketView>,
+    other: BTreeMap<String, serde_json::Value>,
+    now: i64,
+) {
+    for (key, value) in other {
+        let Ok(window) = serde_json::from_value::<ClaudeOAuthUsageWindow>(value) else {
+            continue;
+        };
+        let Some(limit) = window.limit_dollars.filter(|limit| *limit > 0.0) else {
+            continue;
+        };
+        // `*_dollars` are major-unit dollars; scale to minor for Money.
+        let used = window.used_dollars.unwrap_or(0.0).max(0.0);
+        let used_money = Money::new((used * 100.0).round() as i64, "USD", 2);
+        let limit_money = Money::new((limit * 100.0).round() as i64, "USD", 2);
+        let remaining_percent = if limit > 0.0 {
+            Some(((1.0 - (used / limit).clamp(0.0, 1.0)) * 100.0).round() as u8)
+        } else {
+            None
+        };
+        let reset_at = window.resets_at.as_deref().and_then(parse_iso_epoch);
+        let mut view = timed_bucket(
+            &humanize_reason(&key),
+            Some(format!("{} spent", used_money.format())),
+            Some(limit_money.format()),
+            remaining_percent,
+            reset_at,
+            now,
+            remaining_percent
+                .map(|remaining| format!("{}% used", 100u8.saturating_sub(remaining)))
+                .as_deref(),
+            UsageSnapshotStatus::Fresh,
+        );
+        view.used_money = Some(used_money);
+        view.limit_money = Some(limit_money);
+        buckets.push(view);
+    }
+}
+
+/// The normalized inputs for the monetary "Extra usage" bucket, derived from
+/// whichever source the API provided.
+struct ClaudeSpend {
+    used: Money,
+    limit: Option<Money>,
+    /// Percent of the cap already spent (0..=100).
+    used_percent: Option<u8>,
+    enabled: bool,
+    disabled_reason: Option<String>,
+    severity: UsageSeverity,
+}
+
+/// Build the monetary spend bucket from the API response.
+///
+/// Prefers the self-describing `spend{}` object (it carries `amount_minor` +
+/// `exponent`, so the scale is unambiguous); falls back to `extra_usage`,
+/// scaling `used_credits`/`monthly_limit` by `decimal_places`. Both paths feed
+/// one [`Money`]-typed builder, so spend can never be rendered 100× too large
+/// regardless of source. A disabled (e.g. out-of-credits) bucket is still
+/// surfaced — with its reason — rather than silently dropped, so the cap stays
+/// visible the way the web console shows it.
+fn claude_spend_bucket(
+    spend: Option<ClaudeOAuthSpend>,
+    extra: Option<ClaudeOAuthExtraUsage>,
+) -> Option<QuotaBucketView> {
+    let spend = normalize_claude_spend(spend, extra)?;
+    let remaining_percent = spend.used_percent.map(|used| 100u8.saturating_sub(used));
+    let used_label = Some(format!("{} spent", spend.used.format()));
+    let limit_label = spend.limit.as_ref().map(Money::format);
+    let pace = if spend.enabled {
+        spend.used_percent.map(|used| format!("{used}% used"))
+    } else {
+        Some(match &spend.disabled_reason {
+            Some(reason) => format!("disabled · {}", humanize_reason(reason)),
+            None => "disabled".to_owned(),
+        })
+    };
+    let mut view = bucket(
+        "Extra usage",
+        used_label,
+        limit_label,
+        remaining_percent,
+        None,
+        pace.as_deref(),
+        UsageSnapshotStatus::Fresh,
+    );
+    view.status_slot = Some(StatusSlot::Spend);
+    view.severity = spend.severity;
+    view.used_money = Some(spend.used);
+    view.limit_money = spend.limit;
+    Some(view)
+}
+
+fn normalize_claude_spend(
+    spend: Option<ClaudeOAuthSpend>,
+    extra: Option<ClaudeOAuthExtraUsage>,
+) -> Option<ClaudeSpend> {
+    if let Some(spend) = spend
+        && let Some(used) = spend.used.and_then(ClaudeOAuthMoney::into_money)
+    {
+        return Some(ClaudeSpend {
+            used,
+            limit: spend.limit.and_then(ClaudeOAuthMoney::into_money),
+            used_percent: spend.percent.map(|percent| percent.min(100)),
+            enabled: spend.enabled.unwrap_or(true),
+            disabled_reason: spend.disabled_reason,
+            severity: severity_from_label(spend.severity.as_deref()),
+        });
+    }
+    let extra = extra?;
+    let used_credits = extra.used_credits?;
+    let exponent = extra.decimal_places.unwrap_or(2);
+    let currency = extra.currency.unwrap_or_else(|| "credits".to_owned());
+    let used = Money::new(used_credits.round() as i64, &currency, exponent);
+    let limit = extra
+        .monthly_limit
+        .map(|limit| Money::new(limit.round() as i64, &currency, exponent));
+    Some(ClaudeSpend {
+        used,
+        limit,
+        used_percent: extra.utilization.and_then(used_percent_from_fraction),
+        enabled: extra.is_enabled.unwrap_or(true),
+        disabled_reason: extra.disabled_reason,
+        severity: UsageSeverity::Normal,
+    })
+}
+
+fn severity_from_label(label: Option<&str>) -> UsageSeverity {
+    match label.map(str::to_ascii_lowercase).as_deref() {
+        Some("warn" | "warning" | "elevated") => UsageSeverity::Warn,
+        Some("danger" | "critical" | "exceeded") => UsageSeverity::Danger,
+        _ => UsageSeverity::Normal,
+    }
+}
+
+/// Turn an API reason slug (`out_of_credits`) into a human phrase
+/// (`out of credits`) for the disabled-spend pace label.
+fn humanize_reason(reason: &str) -> String {
+    reason.replace(['_', '-'], " ")
 }
 
 fn push_claude_window(
@@ -2810,6 +3045,10 @@ struct CodexOAuthCredentials {
     access_token: String,
     account_id: Option<String>,
     account_label: Option<String>,
+    /// OAuth refresh token, when present, used to re-mint a rejected
+    /// `access_token` in place for a single retry (see
+    /// `fetch_codex_oauth_usage_refreshing`).
+    refresh_token: Option<String>,
 }
 
 #[cfg(test)]
@@ -2827,6 +3066,8 @@ fn codex_oauth_from_value(value: &serde_json::Value) -> Option<CodexOAuthCredent
             access_token: api_key.trim().to_owned(),
             account_id: None,
             account_label: Some("OPENAI_API_KEY".to_owned()),
+            // A static API key cannot be refreshed; there is nothing to re-mint.
+            refresh_token: None,
         });
     }
     let tokens = value.get("tokens")?;
@@ -2860,10 +3101,18 @@ fn codex_oauth_from_value(value: &serde_json::Value) -> Option<CodexOAuthCredent
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
         });
+    let refresh_token = tokens
+        .get("refresh_token")
+        .or_else(|| tokens.get("refreshToken"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
     Some(CodexOAuthCredentials {
         access_token,
         account_id,
         account_label,
+        refresh_token,
     })
 }
 
@@ -4130,6 +4379,83 @@ fn fetch_codex_oauth_usage(
     )
 }
 
+/// `OpenAI` OAuth token endpoint and the Codex CLI's public client id (the same
+/// values the CLI uses for its own refresh grant — neither is a secret).
+const CODEX_OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
+const CODEX_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+
+/// Body for the `refresh_token` grant. Pure so the request shape is unit-tested
+/// without a live endpoint.
+fn codex_refresh_request_body(refresh_token: &str) -> serde_json::Value {
+    serde_json::json!({
+        "client_id": CODEX_OAUTH_CLIENT_ID,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "scope": "openid profile email",
+    })
+}
+
+/// Extract the re-minted access token from a token-endpoint response. Pure.
+fn codex_access_token_from_response(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("access_token")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(str::to_owned)
+}
+
+fn refresh_codex_access_token(refresh_token: &str) -> Result<String, String> {
+    let client = provider_http_client()?;
+    let response = client
+        .post(CODEX_OAUTH_TOKEN_URL)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::ACCEPT, "application/json")
+        .json(&codex_refresh_request_body(refresh_token))
+        .send()
+        .map_err(|err| format!("Codex token refresh request failed: {err}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Codex token refresh HTTP {status}"));
+    }
+    let value: serde_json::Value = response
+        .json()
+        .map_err(|err| format!("Codex token refresh decode failed: {err}"))?;
+    codex_access_token_from_response(&value)
+        .ok_or_else(|| "Codex token refresh response missing access_token".to_owned())
+}
+
+/// Fetch Codex usage, transparently re-minting the access token once if the
+/// on-disk token is rejected (HTTP 401/403).
+///
+/// Root cause this addresses: jackin' reads `auth.json` as-is, while the Codex
+/// CLI refreshes that token only on its own launch — so a token that expired
+/// since the last CLI run would 401 here indefinitely. The refresh is used only
+/// for this read-only fetch and deliberately NOT written back to `auth.json`
+/// (avoiding any risk of corrupting the operator's live credential file); the
+/// CLI re-mints and persists its own copy on next launch.
+fn fetch_codex_oauth_usage_refreshing(
+    credentials: &CodexOAuthCredentials,
+    codex_home: &Path,
+) -> Result<CodexUsageResponse, String> {
+    match fetch_codex_oauth_usage(credentials, codex_home) {
+        Err(error) if usage_error_is_unauthorized(&error) => {
+            let Some(refresh_token) = credentials.refresh_token.as_deref() else {
+                return Err(error);
+            };
+            let access_token = refresh_codex_access_token(refresh_token)?;
+            let refreshed = CodexOAuthCredentials {
+                access_token,
+                account_id: credentials.account_id.clone(),
+                account_label: credentials.account_label.clone(),
+                refresh_token: credentials.refresh_token.clone(),
+            };
+            fetch_codex_oauth_usage(&refreshed, codex_home)
+        }
+        other => other,
+    }
+}
+
 fn fetch_codex_oauth_reset_credits(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
@@ -5233,14 +5559,6 @@ fn format_amount_with_unit(value: f64, unit: &str) -> String {
         format!("{value:.2}")
     };
     format!("{amount} {unit}")
-}
-
-fn format_extra_usage_amount(value: f64, unit: &str) -> String {
-    if unit.len() == 3 && unit.chars().all(|ch| ch.is_ascii_uppercase()) {
-        format!("{unit} {value:.2}")
-    } else {
-        format_amount_with_unit(value, unit)
-    }
 }
 
 #[derive(Debug, Clone, Default)]

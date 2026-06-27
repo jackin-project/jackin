@@ -440,6 +440,9 @@ pub(crate) fn focused_usage_view(
     let mut buckets = rows
         .iter()
         .map(|row| QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: row.window_kind.clone(),
             used_label: row.used_label.clone(),
             limit_label: row.limit_label.clone(),
@@ -458,6 +461,7 @@ pub(crate) fn focused_usage_view(
         .collect::<Vec<_>>();
     buckets.sort_by_key(|bucket| usage_bucket_order(&provider, &bucket.label));
     Ok(Some(FocusedUsageView {
+        spend_status_label: None,
         focused_agent: focused_agent.map(str::to_owned),
         focused_provider: first
             .focused_provider

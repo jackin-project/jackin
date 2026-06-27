@@ -126,7 +126,9 @@ impl Multiplexer {
         let term_rows = self.term_rows;
         let term_cols = self.term_cols;
         let active_tab = self.active_tab;
-        let usage_status_label = self.focused_usage_snapshot().status_bar_label;
+        let usage_snapshot = self.focused_usage_snapshot();
+        let usage_status_label = usage_snapshot.status_bar_label.clone();
+        let spend_status_label = usage_snapshot.spend_status_label.clone();
         let tabs = &self.tabs;
         let panes = self.visible_panes();
         // Frame-geometry trace: the status bar owns rows 0..STATUS_BAR_ROWS, so
@@ -437,6 +439,7 @@ impl Multiplexer {
                     scrollbars: &pane_scrollbars,
                     branch: branch.as_deref(),
                     usage_status_label: Some(usage_status_label.as_str()),
+                    spend_status_label: spend_status_label.as_deref(),
                     pull_request: pull_request.as_deref(),
                     pull_request_loading,
                     instance_id_label: self.status_bar.instance_id_label(),
