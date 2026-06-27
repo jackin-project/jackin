@@ -87,13 +87,18 @@ async fn pasted_path_stages_real_image_and_forwards_everything_else() {
     assert_eq!(staged.0.format, ClipboardImageFormat::Png);
     assert_eq!(staged.0.bytes, b"\x89PNG\r\n\x1a\npayload");
 
-    // Without bracketed-paste markers the read is treated as typed input.
-    assert!(
-        read_image_from_pasted_path(path.display().to_string().as_bytes())
-            .await
-            .unwrap()
-            .is_none()
-    );
+    // Bug 9: a `Cmd+V` whose read is a whole image path but NOT bracketed (the
+    // terminal didn't wrap it — the symptom where the raw host path landed in the
+    // prompt) still stages. Typing can't deliver a full path in one raw-mode read,
+    // so a single read that is exactly one real image path is unambiguously a
+    // paste/drop, not keystrokes.
+    let raw_path = path.display().to_string();
+    let unbracketed = read_image_from_pasted_path(raw_path.as_bytes())
+        .await
+        .unwrap()
+        .expect("unbracketed whole image path should stage (Bug 9)");
+    assert_eq!(unbracketed.0.format, ClipboardImageFormat::Png);
+    assert_eq!(unbracketed.0.bytes, b"\x89PNG\r\n\x1a\npayload");
 
     // A non-image path, a missing file, and prose all forward as text.
     let notes = temp.path().join("notes.txt");
