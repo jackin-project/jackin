@@ -1408,26 +1408,17 @@ html.theme-init *::after {
   border-inline-start-color: transparent;
 }
 
+/* Decorative wordmark at the foot of the TOC rail. Uses the generated asset
+   (public/brand/jackin-wordmark.svg) so it's the same mark as everywhere else —
+   never a hand-typed glyph. */
 #nd-toc::after {
-  content: "jackin❯";
+  content: "";
   display: block;
   margin-top: auto;
-  padding-top: 2rem;
-  padding-bottom: 1rem;
-  font-family: var(--sl-font-mono);
-  font-size: var(--jk-toc-wordmark-size);
-  font-weight: 500;
-  line-height: 0.82;
-  letter-spacing: 0;
-  background: linear-gradient(
-    90deg,
-    var(--jk-text) 0 6ch,
-    var(--jk-brand) 6ch 100%
-  );
-  background-clip: text;
-  color: transparent;
-  max-width: 100%;
-  overflow: hidden;
+  margin-bottom: 1rem;
+  width: 100%;
+  height: var(--jk-toc-wordmark-size);
+  background: url("/brand/jackin-wordmark.svg") left bottom / auto 100% no-repeat;
   pointer-events: none;
   user-select: none;
 }
