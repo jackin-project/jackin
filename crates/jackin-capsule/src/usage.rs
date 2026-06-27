@@ -1320,8 +1320,7 @@ fn provider_outcome(
 }
 
 fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
-    let config =
-        std::env::var("CLAUDE_CONFIG_DIR").map_or_else(|_| home_path(".claude"), PathBuf::from);
+    let config = env_dir_or_home("CLAUDE_CONFIG_DIR", ".claude");
     // Resolve the Claude OAuth token, home credentials first (the agent CLI
     // keeps the live token there and refreshes it in place). `~/.claude.json`
     // only carries `oauthAccount` metadata, never the token. The runtime-
@@ -1538,8 +1537,7 @@ fn codex_snapshot(
     now: i64,
     rpc_gate: &mut ManagedCliLaunchGate,
 ) -> FocusedUsageView {
-    let codex_home =
-        std::env::var("CODEX_HOME").map_or_else(|_| home_path(".codex"), PathBuf::from);
+    let codex_home = env_dir_or_home("CODEX_HOME", ".codex");
     // Home auth first, runtime-forwarded handoff last; one walk yields the
     // credential (with its winning path, for the `Auth:` origin) and the account
     // label, reading each file once.
