@@ -281,6 +281,10 @@ body {
   user-select: none;
 }
 
+.jk-brand-mark__svg-wrap {
+  display: inline-flex;
+}
+
 .jk-brand-mark__svg {
   display: block;
   height: 1.5em;
