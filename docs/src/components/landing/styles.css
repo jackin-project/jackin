@@ -1393,6 +1393,7 @@ nav.landing-topnav .landing-star {
   color: var(--landing-text-ghost);
   cursor: pointer;
   transition: color 0.15s, background-color 0.15s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 .landing-theme-toggle button:hover { color: var(--landing-text); }
 .landing-theme-toggle button[aria-pressed='true'] {

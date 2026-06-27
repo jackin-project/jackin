@@ -319,6 +319,7 @@ body {
   padding: 0.5rem;
   margin: -0.5rem;
   transition: color 0.15s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 
 .jk-social-link:hover {
@@ -360,6 +361,7 @@ body {
   color: var(--jk-text-ghost);
   cursor: pointer;
   transition: color 0.15s, background-color 0.15s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 
 .jk-theme-toggle button:hover {
@@ -1903,6 +1905,7 @@ site-search button[data-open-modal] {
     border: 1px solid var(--jk-ui);
     border-radius: 0;
     transition: border-color 0.15s, color 0.15s;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
   }
 
   site-search button[data-open-modal]:hover {
@@ -2036,6 +2039,7 @@ site-search dialog {
   border-radius: 0.625rem;
   border-color: color-mix(in srgb, var(--jk-accent) 20%, transparent);
   background: color-mix(in srgb, var(--jk-accent) 6%, transparent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
   transition:
     background-color 0.15s ease,
     border-color 0.15s ease;
