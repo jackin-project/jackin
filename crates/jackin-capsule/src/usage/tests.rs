@@ -1186,8 +1186,11 @@ fn claude_spend_object_preferred_and_scaled() {
     assert_eq!(spend.remaining_percent, Some(82));
     assert_eq!(spend.severity, UsageSeverity::Normal);
 
-    // The status-bar chunk renders compact money, not a percentage.
-    assert_eq!(spend_status_label(&buckets).as_deref(), Some("$53/$300"));
+    // The headline renders compact money as `<used> of <limit>`, currency once.
+    assert_eq!(
+        spend_headline_label(&buckets).as_deref(),
+        Some("$53 of 300")
+    );
 }
 
 #[test]
@@ -1307,10 +1310,32 @@ fn claude_spend_disabled_is_surfaced_with_reason() {
         spend.pace_label.as_deref(),
         Some("disabled · out of credits")
     );
-    // Status-bar chunk still shows the cap context.
+    // Headline still shows the cap context: `<used> of <limit>`.
     assert_eq!(
-        spend_status_label(&buckets).as_deref(),
-        Some("SGD 78/SGD 260")
+        spend_headline_label(&buckets).as_deref(),
+        Some("SGD 78 of 260")
+    );
+}
+
+/// The status-bar headline joins the percentage windows and the monetary spend
+/// into one ` · `-separated string.
+#[test]
+fn status_bar_headline_joins_windows_and_spend() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 11.0, "resets_at": "2026-06-28T16:40:00Z" },
+        "seven_day": { "utilization": 27.0, "resets_at": "2026-07-03T07:00:00Z" },
+        "spend": {
+            "used": { "amount_minor": 7849, "currency": "SGD", "exponent": 2 },
+            "limit": { "amount_minor": 26000, "currency": "SGD", "exponent": 2 },
+            "percent": 30,
+            "enabled": true
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+    let buckets = usage.into_buckets(1_781_185_560);
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Claude, &buckets).as_deref(),
+        Some("Session 89% · Weekly 73% · SGD 78 of 260")
     );
 }
 

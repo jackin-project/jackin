@@ -230,12 +230,6 @@ impl Multiplexer {
             .focused_status_bar_label(agent.as_deref(), provider.as_deref())
     }
 
-    pub(super) fn focused_spend_status_label(&self) -> Option<String> {
-        let (agent, provider) = self.focused_agent_provider();
-        self.usage_cache
-            .focused_spend_status_label(agent.as_deref(), provider.as_deref())
-    }
-
     pub(super) fn focused_usage_snapshot_for_provider(
         &mut self,
         provider_label: Option<&str>,

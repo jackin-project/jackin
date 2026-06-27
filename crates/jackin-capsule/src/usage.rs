@@ -207,23 +207,6 @@ impl UsageCache {
         Some("refreshing".to_owned())
     }
 
-    /// Compact spend (`$53/$300`) for the focused account's status-bar chunk.
-    /// `None` when there is no focused agent, no snapshot yet, or the account
-    /// has no monetary spend window — the spend chunk is then simply omitted.
-    pub(crate) fn focused_spend_status_label(
-        &self,
-        focused_agent: Option<&str>,
-        focused_provider: Option<&str>,
-    ) -> Option<String> {
-        let agent = focused_agent?;
-        let cache_key = canonical_usage_cache_key(agent, focused_provider);
-        self.snapshots
-            .get(&cache_key)?
-            .view
-            .spend_status_label
-            .clone()
-    }
-
     pub(crate) fn account_snapshot_views(&self) -> Vec<AccountUsageSnapshotView> {
         account_snapshot_views_from_cache(&self.snapshots)
     }
@@ -2012,7 +1995,6 @@ fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
         input.status,
         &input.buckets,
     );
-    let spend_status_label = spend_status_label(&input.buckets);
     FocusedUsageView {
         focused_agent: Some(input.agent.to_owned()),
         focused_provider: input
@@ -2042,24 +2024,24 @@ fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
         }
         .to_owned(),
         status_bar_label: headline,
-        spend_status_label,
         tabs: provider_tabs(input.surface),
         last_error: input.last_error,
     }
 }
 
-/// Compact `$used/$limit` (or `$used` when uncapped) for the status-bar spend
-/// chunk, read from the monetary `Spend`-slot bucket. Only emitted for a
-/// fresh/stale bucket that carries structured [`Money`]; absent otherwise so
-/// the bar shows nothing rather than a stale or zeroed figure.
-fn spend_status_label(buckets: &[QuotaBucketView]) -> Option<String> {
+/// Monetary spend for the status-bar headline, read from the `Spend`-slot
+/// bucket and rendered `<used> of <limit>` with the currency shown once
+/// (e.g. `SGD 78 of 260`). `None` unless a fresh/stale bucket carries
+/// structured [`Money`], so the headline shows nothing rather than a stale or
+/// zeroed figure.
+fn spend_headline_label(buckets: &[QuotaBucketView]) -> Option<String> {
     let spend = buckets.iter().find(|bucket| {
         bucket.status_slot == Some(StatusSlot::Spend) && status_bar_fresh_or_stale(bucket)
     })?;
     let used = spend.used_money.as_ref()?;
     Some(match spend.limit_money.as_ref() {
-        Some(limit) => format!("{}/{}", used.format_compact(), limit.format_compact()),
-        None => used.format_compact(),
+        Some(limit) => format!("{} of {}", used.format_compact(), limit.major_amount()),
+        None => format!("{} spent", used.format_compact()),
     })
 }
 
@@ -2090,7 +2072,10 @@ fn status_bar_headline_for_surface(
     if surface == UsageSurface::Amp {
         amp_status_bar_headline(buckets)
     } else {
-        let labels = status_bar_quota_labels(buckets);
+        // Session/Weekly percentages, then the monetary spend, all in one
+        // ` · `-joined headline (e.g. `Session 89% · Weekly 73% · SGD 78 of 260`).
+        let mut labels = status_bar_quota_labels(buckets);
+        labels.extend(spend_headline_label(buckets));
         (!labels.is_empty()).then(|| labels.join(" · "))
     }
 }

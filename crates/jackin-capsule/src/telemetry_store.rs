@@ -461,7 +461,6 @@ pub(crate) fn focused_usage_view(
         .collect::<Vec<_>>();
     buckets.sort_by_key(|bucket| usage_bucket_order(&provider, &bucket.label));
     Ok(Some(FocusedUsageView {
-        spend_status_label: None,
         focused_agent: focused_agent.map(str::to_owned),
         focused_provider: first
             .focused_provider

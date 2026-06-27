@@ -9,7 +9,6 @@ use super::*;
 
 fn usage_view() -> FocusedUsageView {
     FocusedUsageView {
-        spend_status_label: None,
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("OpenAI".to_owned()),
         account: FocusedAccountHeader {
@@ -69,7 +68,6 @@ fn provider_usage_view(
     fetched_at_epoch: i64,
 ) -> FocusedUsageView {
     FocusedUsageView {
-        spend_status_label: None,
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some(provider.to_owned()),
         account: FocusedAccountHeader {

@@ -953,7 +953,6 @@ fn github_context_uses_shared_focused_info_dialog() {
 
 fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
     jackin_protocol::control::FocusedUsageView {
-        spend_status_label: None,
         focused_agent: Some("codex".to_owned()),
         focused_provider: Some("OpenAI".to_owned()),
         account: jackin_protocol::control::FocusedAccountHeader {

@@ -98,7 +98,6 @@ fn right_group_renders_usage_container_then_run_id() {
     let row = dump_group(
         "building",
         StatusRightGroup {
-            spend: None,
             usage: Some("Session 37%"),
             container: "s9994y2n",
             run_id: Some("jk-run-3d7e23"),
@@ -127,7 +126,6 @@ fn right_group_layout_orders_usage_container_run_id() {
     let layout = status_right_group_layout(
         100,
         StatusRightGroup {
-            spend: None,
             usage: Some("Session 37%"),
             container: "s9994y2n",
             run_id: Some("jk-run-3d7e23"),
@@ -148,7 +146,6 @@ fn right_group_layout_compacts_usage_before_dropping_it() {
     let layout = status_right_group_layout(
         44,
         StatusRightGroup {
-            spend: None,
             usage: Some("Session 37% · Weekly 10%"),
             container: "jk-test-container",
             run_id: None,
@@ -165,7 +162,6 @@ fn right_group_render_uses_compacted_layout() {
     let row = dump_group(
         "building",
         StatusRightGroup {
-            spend: None,
             usage: Some("Session 37% · Weekly 10%"),
             container: "jk-test-container",
             run_id: None,

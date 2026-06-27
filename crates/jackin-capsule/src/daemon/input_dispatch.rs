@@ -671,7 +671,6 @@ impl Multiplexer {
             }
             Action::BranchContextBarClick { row, col } => {
                 let usage_status_label = self.focused_usage_snapshot().status_bar_label;
-                let spend_status_label = self.focused_spend_status_label();
                 let hit = branch_context_bar_hit(
                     row + 1,
                     col + 1,
@@ -679,7 +678,6 @@ impl Multiplexer {
                     self.term_cols,
                     self.context_bar_branch(),
                     Some(&usage_status_label),
-                    spend_status_label.as_deref(),
                     self.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
                     debug_run_id_label().as_deref(),
@@ -810,7 +808,6 @@ impl Multiplexer {
             }
         } else {
             let usage_status_label = self.focused_usage_status_label();
-            let spend_status_label = self.focused_spend_status_label();
             let branch_context_hit = match &event {
                 InputEvent::MousePress {
                     row,
@@ -823,7 +820,6 @@ impl Multiplexer {
                     self.term_cols,
                     self.context_bar_branch(),
                     usage_status_label.as_deref(),
-                    spend_status_label.as_deref(),
                     self.pull_request_context.as_deref(),
                     self.pull_request_context_loading(),
                     debug_run_id_label().as_deref(),

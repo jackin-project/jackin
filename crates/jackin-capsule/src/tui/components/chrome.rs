@@ -197,7 +197,6 @@ const BAR_HOVER_FG: Color = Color::Rgb(0, 55, 140);
 pub(crate) struct BottomChromeWidget<'a> {
     pub(crate) branch: Option<&'a str>,
     pub(crate) usage_status_label: Option<&'a str>,
-    pub(crate) spend_status_label: Option<&'a str>,
     pub(crate) pull_request: Option<&'a crate::pull_request::PullRequestInfo>,
     pub(crate) pull_request_loading: bool,
     pub(crate) instance_id_label: &'a str,
@@ -222,7 +221,6 @@ impl Widget for BottomChromeWidget<'_> {
             area,
             self.branch,
             self.usage_status_label,
-            self.spend_status_label,
             self.pull_request,
             self.pull_request_loading,
             self.debug_run_id,
@@ -244,7 +242,6 @@ impl Widget for BottomChromeWidget<'_> {
 pub(crate) struct DialogBottomChromeWidget<'a> {
     pub(crate) branch: Option<&'a str>,
     pub(crate) usage_status_label: Option<&'a str>,
-    pub(crate) spend_status_label: Option<&'a str>,
     pub(crate) pull_request: Option<&'a crate::pull_request::PullRequestInfo>,
     pub(crate) pull_request_loading: bool,
     pub(crate) debug_run_id: Option<&'a str>,
@@ -264,7 +261,6 @@ impl Widget for DialogBottomChromeWidget<'_> {
                 area,
                 self.branch,
                 self.usage_status_label,
-                self.spend_status_label,
                 self.pull_request,
                 self.pull_request_loading,
                 self.debug_run_id,
@@ -305,7 +301,6 @@ fn render_branch_bar_row(
     area: Rect,
     branch: Option<&str>,
     usage_status_label: Option<&str>,
-    spend_status_label: Option<&str>,
     pull_request: Option<&crate::pull_request::PullRequestInfo>,
     pull_request_loading: bool,
     debug_run_id: Option<&str>,
@@ -319,7 +314,6 @@ fn render_branch_bar_row(
         area.width,
         branch,
         usage_status_label,
-        spend_status_label,
         pull_request,
         pull_request_loading,
         debug_run_id,
@@ -373,17 +367,6 @@ fn render_branch_bar_row(
             bar_y,
             &layout.usage,
             usage_style,
-        );
-    }
-    if let Some(region) = layout.spend_region {
-        // Spend is non-interactive (no hover target); render bold like the usage
-        // headline so the `$53/$300` reads as part of the same status group.
-        let spend_style = chunk_style(false, BAR_FG, true);
-        buf.set_string(
-            area.x + region.start.saturating_sub(1),
-            bar_y,
-            &layout.spend,
-            spend_style,
         );
     }
 }

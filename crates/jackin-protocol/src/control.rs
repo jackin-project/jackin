@@ -146,14 +146,10 @@ pub struct FocusedUsageView {
     pub confidence: UsageConfidence,
     pub fetched_at_epoch: i64,
     pub updated_label: String,
+    /// Status-bar headline. Carries the percentage windows and, when the
+    /// focused account has a monetary spend window, the spend joined in:
+    /// `Session 89% · Weekly 73% · SGD 78 of 260`.
     pub status_bar_label: String,
-    /// Compact monetary spend for the status bar (`$53/$300`), rendered as its
-    /// own right-group chunk so it can outrank the container name under width
-    /// pressure — distinct from `status_bar_label`, which carries the
-    /// percentage windows (`Session N% · Weekly N%`). `None` when the focused
-    /// account has no monetary spend window.
-    #[serde(default)]
-    pub spend_status_label: Option<String>,
     pub tabs: Vec<UsageProviderTab>,
     pub last_error: Option<String>,
 }
@@ -179,7 +175,6 @@ impl FocusedUsageView {
             fetched_at_epoch: now_epoch,
             updated_label: "Unavailable".to_owned(),
             status_bar_label: "usage unavailable".to_owned(),
-            spend_status_label: None,
             tabs: Vec::new(),
             last_error: Some(reason),
         }
@@ -272,6 +267,14 @@ impl Money {
     #[must_use]
     pub fn format_compact(&self) -> String {
         self.format_with_precision(0)
+    }
+
+    /// Bare major-unit amount, rounded, with no currency (`260`). Used for the
+    /// limit side of a `<used> of <limit>` headline where the currency is
+    /// already shown on the used side.
+    #[must_use]
+    pub fn major_amount(&self) -> i64 {
+        self.major().round() as i64
     }
 
     fn format_with_precision(&self, prec: usize) -> String {
