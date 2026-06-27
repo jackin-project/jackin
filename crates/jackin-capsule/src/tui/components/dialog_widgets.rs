@@ -288,7 +288,9 @@ impl Dialog {
                     .expect("github_context_state is Some for GitHubContext"),
             ),
 
-            Dialog::ExitDirty { summary, selected, .. } => {
+            Dialog::ExitDirty {
+                summary, selected, ..
+            } => {
                 use crate::tui::components::dialog::EXIT_DIRTY_ROWS;
                 // Per-repo summary lines render as non-selectable section rows
                 // above the four choice rows.

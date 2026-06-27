@@ -56,7 +56,6 @@ impl DirtyRepo {
         }
         format!("{}   {}", self.label(), parts.join(" · "))
     }
-
 }
 
 /// Synchronous in-container git runner. The assessment helpers only call

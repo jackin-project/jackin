@@ -144,11 +144,14 @@ fn seed_home_dir_absent_dst_uses_atomic_rename() {
 
     let outcome = seed_home_dir(&src, &dst).expect("atomic seed should succeed");
     assert_eq!(outcome, SeedOutcome::FirstSeed);
-    assert!(dst.join("config.json").exists(), "renamed tree must contain seeded file");
+    assert!(
+        dst.join("config.json").exists(),
+        "renamed tree must contain seeded file"
+    );
     // No stale staging dirs should remain beside dst after a successful rename.
     let siblings: Vec<_> = fs::read_dir(tmp.path())
         .unwrap()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .collect();
     assert!(
         !siblings
@@ -162,7 +165,9 @@ fn seed_home_dir_absent_dst_uses_atomic_rename() {
 fn is_dir_empty_treats_read_error_as_nonempty() {
     // A path that does not exist causes read_dir to fail; must return false
     // (non-empty = conservative) rather than true (empty = would trigger first-seed).
-    assert!(!is_dir_empty(Path::new("/nonexistent/path/that/cannot/exist")));
+    assert!(!is_dir_empty(Path::new(
+        "/nonexistent/path/that/cannot/exist"
+    )));
 }
 
 #[test]

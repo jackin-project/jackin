@@ -12,13 +12,7 @@ fn tab_click_region_width_matches_layout() {
     let tab = Tab::new_single("Claude", 1, "test");
     let tabs = vec![tab];
     let states = vec![(1u64, VisibleAgentState::Blocked)];
-    bar.set_click_regions_from_plan(&status_bar_plan(
-        80,
-        &tabs,
-        0,
-        &states,
-        PrefixMode::Idle,
-    ));
+    bar.set_click_regions_from_plan(&status_bar_plan(80, &tabs, 0, &states, PrefixMode::Idle));
     let (start, end) = bar.tab_regions[0];
     assert_eq!(end - start, 10);
     // Recomputing with no state must keep the same width.
