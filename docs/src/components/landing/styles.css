@@ -293,14 +293,7 @@
    token-driven default so the button reads as dark pill + white label
    instead of inheriting --landing-text (which we set to near-black
    for the green bg) as its background. */
-:root[data-theme='light'] .landing-hero-stage .landing-btn-primary {
-  background: #0a1f12;
-  color: #ffffff;
-  border-color: #0a1f12;
-}
-:root[data-theme='light'] .landing-hero-stage .landing-btn-primary:hover {
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 6px 20px rgba(255, 255, 255, 0.25);
-}
+/* (Primary buttons now use the shared green accent in both themes.) */
 
 /* Drop the ::after overlay in light mode — the gradient bg provides
    all the structure (vignette + seam) we need, and layering the
@@ -491,26 +484,28 @@ html.theme-init *::after {
   transition: box-shadow 0.2s, background 0.15s, border-color 0.15s;
   text-decoration: none;
 }
+/* Solid phosphor-green buttons matching the jackin CLI accent — green block,
+   dark ink (bg-deep stays readable on the accent in both themes). */
 .landing-btn-primary {
-  background: var(--landing-text);
+  background: var(--landing-accent);
   color: var(--landing-bg-deep);
-  border: 1px solid var(--landing-text);
+  border: 1px solid var(--landing-accent);
 }
 .landing-btn-primary:hover {
-  box-shadow: 0 0 0 1px rgb(var(--landing-accent-rgb) / 0.35), 0 6px 20px rgb(var(--landing-accent-rgb) / 0.25);
+  filter: brightness(1.08);
+  box-shadow: 0 6px 20px rgb(var(--landing-accent-rgb) / 0.3);
 }
 .landing-btn-ghost {
-  background: transparent;
-  color: var(--landing-text);
-  border: 1px solid var(--landing-ui-strong);
+  background: var(--landing-accent);
+  color: var(--landing-bg-deep);
+  border: 1px solid var(--landing-accent);
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
 }
 .landing-btn-ghost:hover {
-  background: var(--landing-surface-hover-4);
-  border-color: var(--landing-text);
-  box-shadow: 0 0 0 1px rgb(var(--landing-accent-rgb) / 0.2), 0 6px 20px rgb(var(--landing-accent-rgb) / 0.15);
+  filter: brightness(1.08);
+  box-shadow: 0 6px 20px rgb(var(--landing-accent-rgb) / 0.3);
 }
 
 /* Footer (wordmark + meta) */
@@ -1299,7 +1294,7 @@ nav.landing-topnav {
 }
 nav.landing-topnav .landing-logo,
 nav.landing-topnav .landing-star {
-  text-shadow: 0 0 8px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.9);
+  text-shadow: none;
 }
 .landing-logo {
   font-family: var(--landing-wordmark-stack);
@@ -1318,29 +1313,30 @@ nav.landing-topnav .landing-star {
 .landing-nav-right { display: flex; gap: 14px; align-items: center; }
 .landing-star {
   padding: 7px 14px;
-  border: 1px solid var(--landing-ui-strong);
+  border: 1px solid var(--landing-accent);
+  background: var(--landing-accent);
+  color: var(--landing-bg-deep);
   border-radius: 0;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: var(--landing-text);
+  font-weight: 600;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: box-shadow 0.2s, border-color 0.15s;
+  transition: filter 0.15s, box-shadow 0.2s;
 }
 /* Shared star icon — used in topnav "Star on GitHub" + install-block CTA.
    SVG path uses currentColor so we colour it via `color`. filter: drop-shadow
    gives a softer, cleaner glow than text-shadow on text-based stars. */
 .landing-star-icon {
-  color: var(--landing-accent);
-  filter: drop-shadow(0 0 6px rgb(var(--landing-accent-rgb) / 0.55));
+  color: var(--landing-bg-deep);
   flex-shrink: 0;
 }
 
 .landing-star:hover {
-  border-color: var(--landing-text);
-  box-shadow: 0 0 0 1px rgb(var(--landing-accent-rgb) / 0.25), 0 6px 20px rgb(var(--landing-accent-rgb) / 0.18);
+  filter: brightness(1.08);
+  box-shadow: 0 6px 20px rgb(var(--landing-accent-rgb) / 0.25);
 }
 
 /* Landing-specific theme toggle — sits in the topnav over the always-dark
