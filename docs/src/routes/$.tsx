@@ -131,6 +131,10 @@ function Page() {
       tree={pageTree}
       sidebar={{
         defaultOpenLevel: 2,
+        // Render the section switcher in the sidebar. The desktop sidebar only
+        // shows it when tabMode === 'auto'; don't rely on the fumadocs default
+        // (it changed across versions and silently dropped the switcher).
+        tabMode: 'auto',
         // Three doc blocks, switched via the sidebar dropdown (fumadocs Sidebar Tabs).
         // Public is the default; Internals and Roadmap are separate roots, hidden
         // until the reader switches. Order matters: `/` prefix-matches everything,
