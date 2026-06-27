@@ -277,10 +277,10 @@ impl UsageCache {
                 // instance shows data instead of "refreshing" until the cooldown
                 // expires and it fetches for itself.
                 let key = target.cache_key();
-                if !self.snapshots.contains_key(&key) {
-                    if let Some(view) = read_shared_usage_snapshot(&snapshots_dir, &key) {
-                        self.snapshots.insert(key, CachedUsage { view });
-                    }
+                if let std::collections::hash_map::Entry::Vacant(e) = self.snapshots.entry(key)
+                    && let Some(view) = read_shared_usage_snapshot(&snapshots_dir, e.key())
+                {
+                    e.insert(CachedUsage { view });
                 }
             }
         }
@@ -707,7 +707,7 @@ fn shared_usage_rate_limit_cooldown_active(cooldown_dir: &Path, key: &str, now_e
     if until <= now_epoch {
         return false;
     }
-    lines.next().map(str::trim).unwrap_or("") != "ok"
+    lines.next().map_or("", str::trim) != "ok"
 }
 
 fn write_shared_usage_cooldown_marker(
