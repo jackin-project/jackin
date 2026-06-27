@@ -1230,26 +1230,19 @@ html.theme-init *::after {
   box-shadow: var(--jk-sidebar-hover-shadow);
 }
 
+/* Section ancestor (the folder-index leaf fumadocs flags `aria-current`
+   while you browse a child): only the true current page gets the wash + bar,
+   so the ancestor stays quiet — a faint brand text tint, no background, no
+   bar — to mark "you're in this section" without reading as a 2nd selection. */
 #nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']) {
-  color: color-mix(in oklab, var(--jk-brand) 58%, var(--jk-text-dim));
-  background-color: color-mix(in srgb, var(--jk-brand) 8%, transparent);
+  color: color-mix(in oklab, var(--jk-brand) 45%, var(--jk-text-dim));
   font-weight: 400;
-}
-
-#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true'])::before {
-  content: "";
-  position: absolute;
-  width: 2px;
-  inset-block: 0.25rem;
-  inset-inline-start: 0.55rem;
-  border-radius: 0;
-  background: color-mix(in oklab, var(--jk-brand) 66%, transparent);
 }
 
 #nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']):hover,
 #nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']):focus {
-  color: color-mix(in oklab, var(--jk-brand) 76%, var(--jk-text));
-  background-color: color-mix(in srgb, var(--jk-brand) 11%, transparent);
+  color: color-mix(in oklab, var(--jk-brand) 70%, var(--jk-text));
+  background-color: var(--jk-sidebar-hover-bg);
 }
 
 /* Selected page: quiet brand treatment (green text, faint green wash, thin
