@@ -168,14 +168,14 @@
 .landing-cast-invite,
 .landing-machine-panel,
 .landing-focus-card {
-  --landing-bg: #0a0a0a;
-  --landing-bg-deep: #050505;
+  --landing-bg: #0a0b0a;
+  --landing-bg-deep: #050605;
   --landing-panel: #0f1110;
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
-  --landing-accent: #5cf07a;
-  --landing-accent-rgb: 92 240 122;
+  --landing-accent: #00ff41;
+  --landing-accent-rgb: 0 255 65;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
   --landing-ui-subtle: rgba(244, 247, 245, 0.05);
