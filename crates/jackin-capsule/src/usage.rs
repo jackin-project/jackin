@@ -2808,7 +2808,8 @@ impl ClaudeOAuthUsageResponse {
 /// Surface rotating-codename dollar-budget windows (`amber_ladder` etc.) that a
 /// fixed-field struct would drop. Each captured key is parsed as a window; only
 /// those carrying a positive `limit_dollars` are real allocations and become a
-/// (non-headline) dollar bucket labelled by the humanized codename.
+/// (non-headline) dollar bucket labelled by the title-cased codename (the API
+/// supplies no human name for these windows).
 fn push_claude_dollar_windows(
     buckets: &mut Vec<QuotaBucketView>,
     other: BTreeMap<String, serde_json::Value>,
@@ -2825,16 +2826,14 @@ fn push_claude_dollar_windows(
         let used = window.used_dollars.unwrap_or(0.0).max(0.0);
         let used_money = Money::new((used * 100.0).round() as i64, "USD", 2);
         let limit_money = Money::new((limit * 100.0).round() as i64, "USD", 2);
-        let remaining_percent = if limit > 0.0 {
-            Some(((1.0 - (used / limit).clamp(0.0, 1.0)) * 100.0).round() as u8)
-        } else {
-            None
-        };
+        // `limit > 0.0` holds (filtered above), so the fraction is well-defined.
+        let remaining_percent =
+            Some(((1.0 - (used / limit).clamp(0.0, 1.0)) * 100.0).round() as u8);
         let reset_at = window.resets_at.as_deref().and_then(parse_iso_epoch);
         let mut view = timed_bucket(
-            &humanize_reason(&key),
-            Some(format!("{} spent", used_money.format())),
-            Some(limit_money.format()),
+            &humanize_window_label(&key),
+            Some(format!("{used_money} spent")),
+            Some(limit_money.to_string()),
             remaining_percent,
             reset_at,
             now,
@@ -2876,8 +2875,8 @@ fn claude_spend_bucket(
 ) -> Option<QuotaBucketView> {
     let spend = normalize_claude_spend(spend, extra)?;
     let remaining_percent = spend.used_percent.map(|used| 100u8.saturating_sub(used));
-    let used_label = Some(format!("{} spent", spend.used.format()));
-    let limit_label = spend.limit.as_ref().map(Money::format);
+    let used_label = Some(format!("{} spent", spend.used));
+    let limit_label = spend.limit.as_ref().map(Money::to_string);
     let pace = if spend.enabled {
         spend.used_percent.map(|used| format!("{used}% used"))
     } else {
@@ -2948,6 +2947,24 @@ fn severity_from_label(label: Option<&str>) -> UsageSeverity {
 /// (`out of credits`) for the disabled-spend pace label.
 fn humanize_reason(reason: &str) -> String {
     reason.replace(['_', '-'], " ")
+}
+
+/// Title-case a codename window key (`amber_ladder` → `Amber Ladder`) for use as
+/// a bucket label. Distinct from [`humanize_reason`] (which yields a lowercase
+/// phrase for inline pace text); a window label is a proper-noun-style heading
+/// shown beside `Session`/`Weekly`.
+fn humanize_window_label(key: &str) -> String {
+    key.split(['_', '-'])
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn push_claude_window(

@@ -126,9 +126,13 @@ impl Multiplexer {
         let term_rows = self.term_rows;
         let term_cols = self.term_cols;
         let active_tab = self.active_tab;
-        let usage_snapshot = self.focused_usage_snapshot();
-        let usage_status_label = usage_snapshot.status_bar_label.clone();
-        let spend_status_label = usage_snapshot.spend_status_label.clone();
+        // `focused_usage_snapshot()` returns an owned view; move both fields out
+        // rather than cloning on the per-frame compose path.
+        let jackin_protocol::control::FocusedUsageView {
+            status_bar_label: usage_status_label,
+            spend_status_label,
+            ..
+        } = self.focused_usage_snapshot();
         let tabs = &self.tabs;
         let panes = self.visible_panes();
         // Frame-geometry trace: the status bar owns rows 0..STATUS_BAR_ROWS, so

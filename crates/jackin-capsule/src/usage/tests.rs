@@ -1134,7 +1134,7 @@ fn claude_oauth_response_maps_windows_to_buckets() {
     assert_eq!(extra.limit_label.as_deref(), Some("SGD 260.00"));
     assert_eq!(extra.pace_label.as_deref(), Some("30% used"));
     assert_eq!(
-        extra.used_money.as_ref().map(Money::format).as_deref(),
+        extra.used_money.as_ref().map(Money::to_string).as_deref(),
         Some("SGD 78.49")
     );
     assert_eq!(
@@ -1267,7 +1267,7 @@ fn claude_codename_dollar_window_is_surfaced() {
     let buckets = usage.into_buckets(1_781_185_560);
     let amber = buckets
         .iter()
-        .find(|bucket| bucket.label == "amber ladder")
+        .find(|bucket| bucket.label == "Amber Ladder")
         .expect("amber_ladder dollar window surfaced");
     assert_eq!(amber.used_label.as_deref(), Some("$5000.00 spent"));
     assert_eq!(amber.limit_label.as_deref(), Some("$25000.00"));

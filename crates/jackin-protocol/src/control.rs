@@ -266,16 +266,9 @@ impl Money {
         self.amount_minor as f64 / 10f64.powi(i32::from(self.exponent))
     }
 
-    /// Human label. ISO-4217 three-letter codes render with a leading symbol
-    /// when known (`$53.31`) else `CUR 53.31`; non-standard labels (credits)
-    /// render as `53.31 credits`.
-    #[must_use]
-    pub fn format(&self) -> String {
-        self.format_with_precision(usize::from(self.exponent))
-    }
-
     /// Compact label for the width-constrained status bar: no minor units
-    /// (`$53`, `SGD 78`). Rounds to the nearest major unit.
+    /// (`$53`, `SGD 78`), rounded to the nearest major unit. The full-precision
+    /// form is the [`Display`](std::fmt::Display) impl.
     #[must_use]
     pub fn format_compact(&self) -> String {
         self.format_with_precision(0)
@@ -290,6 +283,15 @@ impl Money {
             }
             other => format!("{value:.prec$} {other}"),
         }
+    }
+}
+
+/// Full-precision label. `USD` renders with a leading `$` (`$53.31`); any other
+/// ISO-4217 three-letter code renders as `CODE 53.31` (e.g. `SGD 78.49`); a
+/// non-standard label (credits) renders as `53.31 credits`.
+impl std::fmt::Display for Money {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.format_with_precision(usize::from(self.exponent)))
     }
 }
 

@@ -93,7 +93,9 @@ pub fn status_right_group_layout(
             .filter(|run_id| !run_id.is_empty())
             .map(|run_id| format!(" {run_id} ")),
     );
-    // Spend is placed before the container so it survives width pressure first.
+    // Chunks are placed right-to-left, so a chunk placed earlier claims its
+    // width first and is the last to drop. Placing spend before the container
+    // means the container drops first under width pressure; spend stays.
     let spend = place_status_right_chunk(
         &mut cursor,
         term_cols,

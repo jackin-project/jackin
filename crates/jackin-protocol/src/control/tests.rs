@@ -158,17 +158,20 @@ fn money_scales_minor_units_by_exponent() {
     // major units, produced the 100×-too-large spend bug.
     let usd = Money::new(5331, "USD", 2);
     assert!((usd.major() - 53.31).abs() < 1e-9);
-    assert_eq!(usd.format(), "$53.31");
+    assert_eq!(usd.to_string(), "$53.31");
     assert_eq!(usd.format_compact(), "$53");
 }
 
 #[test]
 fn money_formats_currency_and_credit_labels() {
     // ISO-4217 non-USD code: leading code, full precision vs compact.
-    assert_eq!(Money::new(7849, "SGD", 2).format(), "SGD 78.49");
+    assert_eq!(Money::new(7849, "SGD", 2).to_string(), "SGD 78.49");
     assert_eq!(Money::new(7849, "SGD", 2).format_compact(), "SGD 78");
     // Non-standard label (credits) renders the unit as a suffix.
-    assert_eq!(Money::new(30000, "credits", 2).format(), "300.00 credits");
+    assert_eq!(
+        Money::new(30000, "credits", 2).to_string(),
+        "300.00 credits"
+    );
     assert_eq!(
         Money::new(30000, "credits", 2).format_compact(),
         "300 credits"
