@@ -727,6 +727,7 @@ fn shared_usage_lock_dir() -> PathBuf {
 }
 
 /// Outcome of trying to take the cross-container per-account refresh lock.
+#[derive(Debug)]
 enum RefreshLockOutcome {
     /// Won the lock — hold the handle for the refresh + shared-write window.
     Acquired(fs::File),
