@@ -177,4 +177,8 @@ Three tiers, by role — don't make every button look the same:
 - **Secondary** — green-accent outline: `background: color-mix(in srgb, var(--jk-accent) 8%, transparent)`, `color: var(--jk-accent)`, `border: 1px solid color-mix(in srgb, var(--jk-accent) 35%, transparent)`; hover bumps the bg to ~16% and the border to solid `--jk-accent`. Supporting actions (*Star on GitHub*, topnav *Docs/Star*, *Copy Markdown* / *Open*, the section switcher / `.landing-btn-ghost`, `.landing-star`, `.jk-page-actions button`).
 - **Icon-only / toggles** — neutral surface, green only on active/hover (theme toggle, social links, sidebar collapse, code-copy, search). A solid-green icon button is unreadable; keep these quiet.
 
+Shared across tiers: a subtle resting shadow `0 1px 2px rgb(0 0 0 / 0.2)` and a green-glow hover shadow `0 4px 16px color-mix(in srgb, var(--jk-accent) 22–30%, transparent)` (≈30% for solid primary, ≈22% for outline). Geometry for the standard CTA pair (primary + the matching secondary outline) is identical — Inter 14px/600, `padding: 13px 22px`, `border-radius: 5px`; compact placements (topnav, page actions) scale down but keep the same font, treatment, and shadows.
+
+One documented exception: on the light-mode hero (a green canvas) the primary button switches to a dark pill + white label for contrast, since a green button would vanish.
+
 Any new button picks one of these three tiers — never a one-off color or style.

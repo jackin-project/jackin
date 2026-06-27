@@ -393,6 +393,8 @@ body {
   border-color: color-mix(in srgb, var(--jk-accent) 35%, transparent);
   background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
   color: var(--jk-accent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.2s, color 0.15s;
 }
 .jk-page-actions button svg {
   color: var(--jk-accent) !important;
@@ -403,6 +405,7 @@ body {
   background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
   border-color: var(--jk-accent);
   color: var(--jk-accent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
 }
 
 .jk-page-footer {

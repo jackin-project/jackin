@@ -306,10 +306,9 @@
   --landing-accent-rgb: 0 255 65;
 }
 
-/* Primary CTA sits in the content zone (green bg) — override the
-   token-driven default so the button reads as dark pill + white label
-   instead of inheriting --landing-text (which we set to near-black
-   for the green bg) as its background. */
+/* Light-mode hero is a green canvas, so a green primary button would vanish on
+   it — the one necessary exception: dark pill + white label for contrast. Every
+   other primary (dark mode, and light mode outside the hero) is --jk-accent. */
 :root[data-theme='light'] .landing-hero-stage .landing-btn-primary {
   background: #0a1f12;
   color: #ffffff;
@@ -505,8 +504,9 @@ html.theme-init *::after {
   gap: 6px;
   cursor: pointer;
   letter-spacing: -0.01em;
-  transition: box-shadow 0.2s, background 0.15s, border-color 0.15s;
+  transition: box-shadow 0.2s, background 0.15s, border-color 0.15s, filter 0.15s;
   text-decoration: none;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 /* Solid green buttons using the docs accent (--jk-accent), so the landing CTAs
    match the green used across the docs pages. Dark ink reads on it in both themes. */
@@ -517,20 +517,19 @@ html.theme-init *::after {
 }
 .landing-btn-primary:hover {
   filter: brightness(1.08);
-  box-shadow: 0 6px 20px rgb(var(--landing-accent-rgb) / 0.3);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 30%, transparent);
 }
-/* Secondary tier: green-accent outline (matches .jk-page-actions / topnav star). */
+/* Secondary tier: green-accent outline. Same geometry as primary (inherits the
+   shared base: Inter 14px/600, padding 13px 22px, radius 5px). */
 .landing-btn-ghost {
   background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
   color: var(--jk-accent);
   border: 1px solid color-mix(in srgb, var(--jk-accent) 35%, transparent);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  font-weight: 600;
 }
 .landing-btn-ghost:hover {
   background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
   border-color: var(--jk-accent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
 }
 
 /* Footer (wordmark + meta) */
@@ -930,22 +929,24 @@ html.theme-init *::after {
   line-height: 1.55;
   max-width: 580px;
 }
+/* Primary tier — same geometry as .landing-btn-primary. */
 .landing-invite-cta {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--jk-accent);
   color: #0a0a0a;
   border: 1px solid var(--jk-accent);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px; font-weight: 600;
-  text-decoration: none; letter-spacing: 0.02em;
-  padding: 10px 16px; border-radius: 5px;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px; font-weight: 600;
+  text-decoration: none; letter-spacing: -0.01em;
+  padding: 13px 22px; border-radius: 5px;
   transition: gap 0.2s ease-out, filter 0.15s, box-shadow 0.2s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
   white-space: nowrap;
 }
 .landing-invite-cta:hover {
   gap: 10px;
   filter: brightness(1.08);
-  box-shadow: 0 6px 20px rgb(92 240 122 / 0.3);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 30%, transparent);
 }
 
 @media (max-width: 880px) {
@@ -1339,16 +1340,17 @@ nav.landing-topnav .landing-star {
   padding: 7px 14px;
   border: 1px solid color-mix(in srgb, var(--jk-accent) 35%, transparent);
   background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
-  border-radius: 4px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
+  border-radius: 5px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
   font-weight: 600;
   color: var(--jk-accent);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.2s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 /* Shared star icon — used in topnav "Star on GitHub" + install-block CTA.
    SVG path uses currentColor so we colour it via `color`. filter: drop-shadow
@@ -1361,6 +1363,7 @@ nav.landing-topnav .landing-star {
 .landing-star:hover {
   background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
   border-color: var(--jk-accent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
 }
 
 /* Landing-specific theme toggle — sits in the topnav over the always-dark
