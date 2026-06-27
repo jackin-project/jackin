@@ -2033,8 +2033,8 @@ site-search dialog {
   gap: 0.5rem;
   padding: 0.4rem 0.55rem;
   border-radius: 0.625rem;
-  border-color: color-mix(in srgb, var(--jk-brand) 20%, transparent);
-  background: color-mix(in srgb, var(--jk-brand) 6%, transparent);
+  border-color: color-mix(in srgb, var(--jk-accent) 20%, transparent);
+  background: color-mix(in srgb, var(--jk-accent) 6%, transparent);
   transition:
     background-color 0.15s ease,
     border-color 0.15s ease;
@@ -2042,8 +2042,8 @@ site-search dialog {
 
 #nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]):hover,
 #nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full])[data-state="open"] {
-  background: color-mix(in srgb, var(--jk-brand) 13%, transparent);
-  border-color: color-mix(in srgb, var(--jk-brand) 42%, transparent);
+  background: color-mix(in srgb, var(--jk-accent) 13%, transparent);
+  border-color: color-mix(in srgb, var(--jk-accent) 42%, transparent);
 }
 
 /* Icon slot: fixed compact square, brand-green glyph that fills it. */
@@ -2053,7 +2053,7 @@ site-search dialog {
   justify-content: center;
   width: 1.15rem;
   height: 1.15rem;
-  color: var(--jk-brand);
+  color: var(--jk-accent);
 }
 
 #nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > div:first-child svg {
@@ -2067,7 +2067,7 @@ site-search dialog {
 }
 
 #nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > svg:last-child {
-  color: var(--jk-brand);
+  color: var(--jk-accent);
   opacity: 0.65;
 }
 
