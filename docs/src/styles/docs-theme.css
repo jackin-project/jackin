@@ -388,6 +388,23 @@ body {
   border-bottom: 1px solid var(--jk-ui);
 }
 
+/* Page-action buttons (Copy Markdown / Open) use the green accent like the rest. */
+.jk-page-actions button {
+  border-color: color-mix(in srgb, var(--jk-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
+  color: var(--jk-accent);
+}
+.jk-page-actions button svg {
+  color: var(--jk-accent) !important;
+}
+.jk-page-actions button:hover,
+.jk-page-actions button:focus-visible,
+.jk-page-actions button[data-state='open'] {
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+  border-color: var(--jk-accent);
+  color: var(--jk-accent);
+}
+
 .jk-page-footer {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 }
@@ -429,25 +446,6 @@ body {
   }
 }
 
-:root[data-theme='light'] .jk-page-actions button {
-  border-color: rgba(17, 24, 39, 0.12);
-  background: #f5f6f4;
-  color: #1f2421;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 1px 1px rgba(0, 0, 0, 0.04);
-}
-
-:root[data-theme='light'] .jk-page-actions button:hover,
-:root[data-theme='light'] .jk-page-actions button:focus-visible,
-:root[data-theme='light'] .jk-page-actions button[data-state='open'] {
-  background: #ecefeb;
-  color: #111513;
-}
-
-:root[data-theme='light'] .jk-page-actions button svg {
-  color: #66716b !important;
-}
 
 :root[data-theme='light'] [data-radix-popper-content-wrapper] > [data-side][data-align] {
   border-color: rgba(17, 24, 39, 0.12);
