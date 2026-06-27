@@ -872,7 +872,10 @@ impl Dialog {
 
     fn usage_bucket_value(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
         let mut parts = Vec::new();
-        if bucket.label == "Extra usage" {
+        // Spend is identified by its semantic slot, not a label string, so a
+        // window rename can't silently change how the cap renders (Bug 7 class:
+        // presentation driven by data, not labels).
+        if bucket.status_slot == Some(jackin_protocol::control::StatusSlot::Spend) {
             if let Some(remaining) = bucket.remaining_percent {
                 let used = 100u8.saturating_sub(remaining);
                 parts.push(format!("{} {used}% used", Self::usage_meter(used)));
@@ -909,7 +912,20 @@ impl Dialog {
         if let Some(reset) = &bucket.reset_label {
             parts.push(reset.clone());
         }
-        if bucket.label == "Credits"
+        // Dollar-bearing windows (Claude codename budgets such as `amber_ladder`,
+        // the enterprise contractual budget) carry used/limit money. Show the
+        // figures from the data — not a label match — so the global budget's
+        // `$0 / $25,000` is visible the way the Extra-usage cap is (Bug 7).
+        if bucket.status_slot != Some(jackin_protocol::control::StatusSlot::Spend)
+            && (bucket.used_money.is_some() || bucket.limit_money.is_some())
+        {
+            match (&bucket.used_label, &bucket.limit_label) {
+                (Some(used), Some(limit)) => parts.push(format!("Budget: {used} / {limit}")),
+                (Some(used), None) => parts.push(used.clone()),
+                (None, Some(limit)) => parts.push(limit.clone()),
+                (None, None) => {}
+            }
+        } else if bucket.label == "Credits"
             && bucket.remaining_percent == Some(0)
             && let Some(limit) = &bucket.limit_label
         {

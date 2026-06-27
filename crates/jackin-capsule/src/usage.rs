@@ -2039,6 +2039,11 @@ fn spend_headline_label(buckets: &[QuotaBucketView]) -> Option<String> {
         bucket.status_slot == Some(StatusSlot::Spend) && status_bar_fresh_or_stale(bucket)
     })?;
     let used = spend.used_money.as_ref()?;
+    // Drop zero spend from the compact headline (Bug 8): `$0 spent` / `$0 of N`
+    // carries no signal in the status bar. The dialog still shows `$0.00 spent`.
+    if used.amount_minor == 0 {
+        return None;
+    }
     Some(match spend.limit_money.as_ref() {
         Some(limit) => format!("{} of {}", used.format_compact(), limit.major_amount()),
         None => format!("{} spent", used.format_compact()),
@@ -2132,8 +2137,12 @@ fn status_bar_quota_labels(buckets: &[QuotaBucketView]) -> Vec<String> {
             .iter()
             .find(|bucket| bucket.status_slot == Some(slot) && status_bar_fresh_or_stale(bucket))
             .and_then(|bucket| {
+                // Drop a zero window from the compact headline (Bug 8, operator
+                // decision: omit every zero-value segment from the status bar;
+                // the dialog still shows `0% left`).
                 bucket
                     .remaining_percent
+                    .filter(|&remaining| remaining != 0)
                     .map(|remaining| format!("{label} {remaining}%"))
             })
     })
@@ -2209,11 +2218,30 @@ fn provider_matches_usage_label(provider: &str, account_provider: &str) -> bool 
 }
 
 fn most_constrained_fresh_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
+    // Prefer a rolling-window bucket that actually carries a reset, excluding the
+    // monetary Spend slot (already shown as money in the status bar, and it has
+    // no rolling reset). Tightest remaining wins; ties break to the soonest reset
+    // so the overview row always carries a reset column (Bug 5: a reset-less spend
+    // bucket must not win the headline and blank the reset). Fall back to the old
+    // "any fresh bucket with a remaining" only when no windowed+reset bucket
+    // exists, so a provider that genuinely has only reset-less windows still shows.
     buckets
         .iter()
         .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
-        .filter(|bucket| bucket.remaining_percent.is_some())
-        .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
+        .filter(|bucket| bucket.status_slot != Some(StatusSlot::Spend))
+        .filter(|bucket| bucket.remaining_percent.is_some() && bucket.resets_at.is_some())
+        .min_by(|a, b| {
+            a.remaining_percent
+                .cmp(&b.remaining_percent)
+                .then(a.resets_at.cmp(&b.resets_at))
+        })
+        .or_else(|| {
+            buckets
+                .iter()
+                .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
+                .filter(|bucket| bucket.remaining_percent.is_some())
+                .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
+        })
 }
 
 fn preserve_cached_quota_on_failed_refresh(view: &mut FocusedUsageView, cached: &FocusedUsageView) {

@@ -1743,7 +1743,7 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
             remaining_percent: Some(70),
             reset_label: None,
             resets_at: None,
-            status_slot: None,
+            status_slot: Some(jackin_protocol::control::StatusSlot::Spend),
             pace_label: None,
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         });
@@ -1787,6 +1787,43 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
         .expect("monthly cap");
     let used = rendered.find("30% used").expect("used percent");
     assert!(used < monthly, "{rendered}");
+}
+
+/// Bug 7: a dollar-bearing window that is NOT the spend slot (a Claude codename
+/// budget such as `amber_ladder`, the enterprise contractual budget) must show
+/// its used/limit dollars in the dialog — driven by the bucket's `used_money`/
+/// `limit_money`, not by a `"Extra usage"` label match.
+#[test]
+fn usage_dialog_renders_dollar_budget_window() {
+    let mut view = usage_view_fixture();
+    view.buckets
+        .push(jackin_protocol::control::QuotaBucketView {
+            used_money: Some(jackin_protocol::control::Money::new(0, "USD", 2)),
+            limit_money: Some(jackin_protocol::control::Money::new(2_500_000, "USD", 2)),
+            severity: jackin_protocol::control::UsageSeverity::default(),
+            label: "Amber Ladder".to_owned(),
+            used_label: Some("$0.00 spent".to_owned()),
+            limit_label: Some("$25,000.00".to_owned()),
+            remaining_percent: Some(100),
+            reset_label: Some("Resets in 66d".to_owned()),
+            resets_at: Some(1_788_000_000),
+            status_slot: None,
+            pace_label: Some("0% used".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        });
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+    assert!(
+        values
+            .iter()
+            .any(|value| value.contains("Budget: $0.00 spent / $25,000.00")),
+        "dollar-window cap must render: {values:?}"
+    );
 }
 
 #[test]

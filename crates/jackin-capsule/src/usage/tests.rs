@@ -1339,6 +1339,55 @@ fn status_bar_headline_joins_windows_and_spend() {
     );
 }
 
+/// Bug 8: the compact headline drops every zero-value segment — a `0%` window
+/// and `$0` spend — while the dialog (not this fn) still shows them.
+#[test]
+fn status_bar_headline_drops_zero_window_and_zero_spend() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 0.0, "resets_at": "2026-06-28T16:40:00Z" },
+        "seven_day": { "utilization": 1.0, "resets_at": "2026-07-03T07:00:00Z" },
+        "spend": {
+            "used": { "amount_minor": 0, "currency": "USD", "exponent": 2 },
+            "limit": { "amount_minor": 30000, "currency": "USD", "exponent": 2 },
+            "percent": 0,
+            "enabled": true
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+    let buckets = usage.into_buckets(1_781_185_560);
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Claude, &buckets).as_deref(),
+        Some("Session 100%"),
+        "Weekly 0% and $0 spent must be omitted from the status bar"
+    );
+}
+
+/// Bug 5: the overview headline bucket is the tightest *windowed* bucket that
+/// carries a reset — never the reset-less spend bucket, even when spend has the
+/// lowest remaining (so the overview row keeps its reset column).
+#[test]
+fn most_constrained_skips_reset_less_spend_for_windowed_reset_bucket() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 11.0, "resets_at": "2026-06-28T16:40:00Z" },
+        "seven_day": { "utilization": 27.0, "resets_at": "2026-07-03T07:00:00Z" },
+        "spend": {
+            "used": { "amount_minor": 9000, "currency": "USD", "exponent": 2 },
+            "limit": { "amount_minor": 30000, "currency": "USD", "exponent": 2 },
+            "percent": 30,
+            "enabled": true
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+    // Spend = 70% left (lowest), but reset-less; Weekly = 73% left with a reset.
+    let buckets = usage.into_buckets(1_781_185_560);
+    let chosen = most_constrained_fresh_bucket(&buckets).expect("a windowed bucket");
+    assert_eq!(chosen.status_slot, Some(StatusSlot::Weekly));
+    assert!(
+        chosen.resets_at.is_some(),
+        "chosen bucket must carry a reset"
+    );
+}
+
 #[test]
 fn fraction_helpers_reject_absent_and_clamp_present() {
     // Fraction form (0..=1) and already-percent form (>1) both map to a
