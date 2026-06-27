@@ -1135,24 +1135,22 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
         home_path(".claude.json"),
         PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
     ];
-    // One home-first walk yields both the OAuth token (with its winning path, for
+    // One home-first walk yields the OAuth token (with its winning path, for
     // the `Auth:` origin — there is no keychain reader in the capsule, so the
-    // origin names the file) and the `oauthAccount` email, reading each file
-    // once. account_label is the real email identity — empty when none, never a
+    // origin names the file), the `oauthAccount` email, and the
+    // `oauthAccount.organizationType` tier label, reading each file once.
+    // account_label is the real email identity — empty when none, never a
     // fabricated auth-method string; the auth source lives on `credential_origin`.
-    let (oauth_resolved, account_email) = resolve_identity(
+    // `organizationType` (e.g. "claude_enterprise", "claude_max") is the account
+    // tier; Enterprise/Team accounts carry a billing-mode `subscriptionType`
+    // ("API Usage Billing") in the credentials file that is useless as a plan label.
+    let (oauth_resolved, account_email, organization_type) = resolve_identity_with_extra(
         &oauth_candidates,
         claude_oauth_from_value,
         claude_email_from_value,
+        claude_organization_type_from_value,
     );
     let (oauth_path, oauth) = oauth_resolved.unzip();
-    // `organizationType` in oauthAccount (e.g. "claude_enterprise", "claude_max") is
-    // the account tier, not the billing model. Enterprise/Team accounts carry a
-    // billing-mode `subscriptionType` ("API Usage Billing") that is useless as a
-    // plan label; `organizationType` is authoritative and comes from `.claude.json`.
-    let organization_type = oauth_candidates.iter().find_map(|p| {
-        claude_organization_type_from_value(&read_json_file(p)?)
-    });
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
         .filter(|v| !v.is_empty());
@@ -2527,10 +2525,28 @@ fn resolve_identity<T>(
     extract_credential: impl Fn(&serde_json::Value) -> Option<T>,
     extract_label: impl Fn(&serde_json::Value) -> Option<String>,
 ) -> (Option<(PathBuf, T)>, Option<String>) {
+    let (result, label, _) = resolve_identity_with_extra(
+        candidates,
+        extract_credential,
+        extract_label,
+        |_| None::<String>,
+    );
+    (result, label)
+}
+
+/// Like `resolve_identity` but also extracts a third field in the same walk,
+/// avoiding a second pass over the candidate files.
+fn resolve_identity_with_extra<T>(
+    candidates: &[PathBuf],
+    extract_credential: impl Fn(&serde_json::Value) -> Option<T>,
+    extract_label: impl Fn(&serde_json::Value) -> Option<String>,
+    extract_extra: impl Fn(&serde_json::Value) -> Option<String>,
+) -> (Option<(PathBuf, T)>, Option<String>, Option<String>) {
     let mut credential = None;
     let mut label = None;
+    let mut extra = None;
     for path in candidates {
-        if credential.is_some() && label.is_some() {
+        if credential.is_some() && label.is_some() && extra.is_some() {
             break;
         }
         let Some(value) = read_json_file(path) else {
@@ -2544,8 +2560,11 @@ fn resolve_identity<T>(
         if label.is_none() {
             label = extract_label(&value);
         }
+        if extra.is_none() {
+            extra = extract_extra(&value);
+        }
     }
-    (credential, label)
+    (credential, label, extra)
 }
 
 #[derive(Debug, Deserialize)]

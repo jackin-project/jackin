@@ -586,6 +586,7 @@ where
         }
         match f().await {
             Ok(v) => return Ok(v),
+            Err(e) if is_connect_timeout(&e) => return Err(e),
             Err(e) => {
                 record(
                     "retry_failed",
