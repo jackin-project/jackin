@@ -72,9 +72,18 @@ const serverLoader = createServerFn({
       ? sectionSegment.charAt(0).toUpperCase() + sectionSegment.slice(1).replace(/-/g, ' ')
       : undefined
 
+    // The public/jackin❯ tab is the catch-all section — every page not under the
+    // /reference or /roadmap roots. It can't be matched by a url prefix (the
+    // section has several), so the switcher matches it by exact membership.
+    const publicUrls = source
+      .getPages()
+      .map((p) => p.url)
+      .filter((url) => !url.startsWith('/reference') && !url.startsWith('/roadmap'))
+
     return {
       path: page.path,
       markdownUrl: slugsToMarkdownPath(page.slugs).url,
+      publicUrls,
       footerItems: {
         previous: serializeFooterItem(footerItems.previous),
         next: serializeFooterItem(footerItems.next),
@@ -123,7 +132,9 @@ const clientLoader = browserCollections.docs.createClientLoader({
 })
 
 function Page() {
-  const { pageTree, path, markdownUrl, footerItems } = useFumadocsLoader(Route.useLoaderData())
+  const loaderData = Route.useLoaderData()
+  const { pageTree, path, markdownUrl, footerItems } = useFumadocsLoader(loaderData)
+  const publicUrls = new Set(loaderData.publicUrls)
 
   return (
     <DocsLayout
@@ -141,13 +152,14 @@ function Page() {
         // so the more specific roots must come after it for active-tab detection.
         tabs: [
           {
-            // Public is the catch-all section spanning /getting-started, /guides,
-            // /commands — no shared prefix but `/`. Matching on `/` keeps the
-            // switcher present on every public page; the more-specific /reference
-            // and /roadmap tabs still win on their pages via findLast (order matters).
+            // Public is the catch-all section (everything not under /reference or
+            // /roadmap). It has no single url prefix isActive can match, so it's
+            // matched by exact page membership via `urls`. `url` is just the click
+            // target. Order matters: /reference and /roadmap win via findLast.
             title: 'jackin❯',
             description: 'Install, run, and operate jackin❯.',
-            url: '/',
+            url: '/getting-started/why',
+            urls: publicUrls,
             icon: <SquareTerminal />,
           },
           {
