@@ -14,6 +14,12 @@ export const jbBoldData = readFileSync(
 )
 export const font = fontkit.create(jbBoldData) as Font
 
+// Inter — used for the "by tailrocks" byline (a sans subtext, not the mono mark).
+export const interData = readFileSync(
+  join(root, 'node_modules', '@fontsource', 'inter', 'files', 'inter-latin-500-normal.woff'),
+)
+export const interFont = fontkit.create(interData) as Font
+
 const round = (n: number) => Math.round(n * 100) / 100
 
 export type OutlinedWord = {
@@ -26,10 +32,10 @@ export type OutlinedWord = {
   capCenter: number
 }
 
-/** Outline `text` in JetBrains Mono Bold at `fontSize`, filled with `fill`. */
-export function outlineWord(text: string, fontSize: number, fill: string): OutlinedWord {
-  const scale = fontSize / font.unitsPerEm
-  const run = font.layout(text)
+/** Outline `text` at `fontSize`, filled with `fill`, in `face` (default mono bold). */
+export function outlineWord(text: string, fontSize: number, fill: string, face: Font = font): OutlinedWord {
+  const scale = fontSize / face.unitsPerEm
+  const run = face.layout(text)
   let x = 0
   let maxY = -Infinity
   let minY = Infinity
@@ -50,7 +56,7 @@ export function outlineWord(text: string, fontSize: number, fill: string): Outli
     baseline,
     width: round(right * scale),
     bottom: round((maxY - minY) * scale),
-    capCenter: round((maxY - font.capHeight / 2) * scale),
+    capCenter: round((maxY - face.capHeight / 2) * scale),
   }
 }
 

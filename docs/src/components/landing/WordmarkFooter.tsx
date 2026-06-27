@@ -11,7 +11,7 @@ export function WordmarkFooter() {
         <span className="sep">·</span>
         <span>Apache 2.0</span>
       </div>
-      <BrandMark className="landing-footer-wordmark" byline />
+      <BrandMark className="landing-footer-wordmark" />
     </footer>
   );
 }

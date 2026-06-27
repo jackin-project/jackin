@@ -15,7 +15,7 @@ import React from 'react'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chevron, chevronSvg, wordChevronGap } from './brand-geometry'
-import { font, jbBoldData, outlineWord, placeWord } from './brand-outline'
+import { font, interData, interFont, jbBoldData, outlineWord, placeWord } from './brand-outline'
 
 const root = join(import.meta.dirname, '..')
 
@@ -35,11 +35,11 @@ function wordmarkSvg(word: string, fontSize: number, wordColor: string, chevronC
   let height = round(Math.max(w.bottom, w.capCenter + (fontSize * 0.72) / 2))
   let bylineMarkup = ''
   if (byline) {
-    const bf = Math.round(fontSize * 0.18)
-    const by = outlineWord('by tailrocks', bf, GREY)
-    const baseline = round(w.bottom + 0.3 * bf + by.baseline)
-    bylineMarkup = `\n  ${placeWord(by, 0, baseline)}`
-    width = Math.max(width, by.width)
+    const bf = Math.round(fontSize * 0.2)
+    const by = outlineWord('by tailrocks', bf, GREY, interFont) // sans subtext, not the mono mark
+    const baseline = round(w.bottom + 0.45 * bf + by.baseline)
+    const bylineX = round((width - by.width) / 2) // centered under the wordmark
+    bylineMarkup = `\n  ${placeWord(by, bylineX, baseline)}`
     height = round(baseline + (by.bottom - by.baseline))
   }
   const label = `${word}❯${byline ? ' by tailrocks' : ''}`
@@ -75,33 +75,23 @@ const pub = join(root, 'public')
 mkdirSync(brandDir, { recursive: true })
 
 // 1. Canonical wordmark + monogram (outlined SVG). Used by BrandMark and the TOC.
-for (const [name, word] of [['jackin-wordmark', 'jackin'], ['jackin-monogram', 'j']] as const) {
-  writeFileSync(join(brandDir, `${name}.svg`), wordmarkSvg(word, 200, WHITE, GREEN))
-  console.log(`wrote public/brand/${name}.svg`)
-}
-// Lockup variant with the "by tailrocks" byline — used by BrandMark byline / footer.
-writeFileSync(join(brandDir, 'jackin-lockup.svg'), wordmarkSvg('jackin', 200, WHITE, GREEN, true))
-console.log('wrote public/brand/jackin-lockup.svg')
+// Canonical wordmark carries the "by tailrocks" byline (shown on every logo).
+// The monogram (used for square icons) stays byline-free.
+writeFileSync(join(brandDir, 'jackin-wordmark.svg'), wordmarkSvg('jackin', 200, WHITE, GREEN, true))
+console.log('wrote public/brand/jackin-wordmark.svg')
+writeFileSync(join(brandDir, 'jackin-monogram.svg'), wordmarkSvg('j', 200, WHITE, GREEN, false))
+console.log('wrote public/brand/jackin-monogram.svg')
 
 // 2. Favicon (outlined, renders without a webfont).
 writeFileSync(join(pub, 'favicon.svg'), faviconSvg(512))
 console.log('wrote public/favicon.svg')
 
 // 3. PNG rasters via Takumi (embeds the bold font, so text is exact).
-function wordmarkElement(word: string, fontSize: number, withBg: boolean) {
+function wordmarkElement(word: string, fontSize: number, withBg: boolean, byline = false) {
   const chev = chevronSvg(fontSize, GREEN)
-  return React.createElement(
+  const row = React.createElement(
     'div',
-    {
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '100%',
-        height: '100%',
-        ...(withBg ? { backgroundColor: DARK } : {}),
-      },
-    },
+    { style: { display: 'flex', alignItems: 'center' } },
     React.createElement(
       'span',
       { style: { display: 'flex', fontFamily: 'JetBrainsMono', fontSize, fontWeight: 700, color: WHITE, lineHeight: 1 } },
@@ -114,6 +104,40 @@ function wordmarkElement(word: string, fontSize: number, withBg: boolean) {
       style: { marginLeft: wordChevronGap(fontSize) },
     }),
   )
+  const children: React.ReactNode[] = [row]
+  if (byline) {
+    children.push(
+      React.createElement(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            fontFamily: 'Inter',
+            fontSize: Math.round(fontSize * 0.2),
+            fontWeight: 500,
+            color: GREY,
+            marginTop: Math.round(fontSize * 0.14),
+          },
+        },
+        'by tailrocks',
+      ),
+    )
+  }
+  return React.createElement(
+    'div',
+    {
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        height: '100%',
+        ...(withBg ? { backgroundColor: DARK } : {}),
+      },
+    },
+    ...children,
+  )
 }
 
 async function renderPng(element: React.ReactElement, width: number, height: number): Promise<Buffer> {
@@ -121,7 +145,10 @@ async function renderPng(element: React.ReactElement, width: number, height: num
     width,
     height,
     format: 'png',
-    fonts: [{ name: 'JetBrainsMono', data: jbBoldData, weight: 700, style: 'normal' }],
+    fonts: [
+      { name: 'JetBrainsMono', data: jbBoldData, weight: 700, style: 'normal' },
+      { name: 'Inter', data: interData, weight: 500, style: 'normal' },
+    ],
   })
   await response.ready
   return Buffer.from(await response.arrayBuffer())
@@ -129,9 +156,11 @@ async function renderPng(element: React.ReactElement, width: number, height: num
 
 for (const [name, word] of [['jackin-wordmark', 'jackin'], ['jackin-monogram', 'j']] as const) {
   const fontSize = 220
+  const byline = word === 'jackin'
   const chev = chevronSvg(fontSize, GREEN)
   const width = Math.ceil(fontSize * 0.6 * word.length + wordChevronGap(fontSize) + chev.width)
-  const png = await renderPng(wordmarkElement(word, fontSize, false), width, Math.ceil(chev.height * 1.4))
+  const height = Math.ceil(chev.height * 1.4 + (byline ? fontSize * 0.45 : 0))
+  const png = await renderPng(wordmarkElement(word, fontSize, false, byline), width, height)
   writeFileSync(join(brandDir, `${name}.png`), png)
   console.log(`wrote public/brand/${name}.png (${png.byteLength.toLocaleString()} bytes)`)
 }

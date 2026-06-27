@@ -1,25 +1,19 @@
 type BrandMarkProps = {
-  byline?: boolean
   className?: string
 }
 
 // The jackin❯ lockup is the single generated, fully-outlined SVG at
-// /brand/jackin-wordmark.svg (see scripts/gen-brand.ts) — the same file the TOC
-// uses. Rendered as an <img> so every placement is byte-for-byte identical and
-// needs no webfont. The wrapper carries the accessible label.
-export function BrandMark({ byline = false, className }: BrandMarkProps) {
+// /brand/jackin-wordmark.svg (see scripts/gen-brand.ts) — it carries the
+// "by tailrocks" byline and is the same file the TOC uses. Rendered as an <img>
+// so every placement is byte-for-byte identical and needs no webfont.
+export function BrandMark({ className }: BrandMarkProps) {
   return (
     <span
-      aria-label={`jackin❯${byline ? ' by tailrocks' : ''}`}
-      className={['jk-brand-mark', byline ? 'jk-brand-mark--lockup' : '', className].filter(Boolean).join(' ')}
+      aria-label="jackin❯ by tailrocks"
+      className={['jk-brand-mark', className].filter(Boolean).join(' ')}
       translate="no"
     >
-      <img
-        className="jk-brand-mark__svg"
-        src={byline ? '/brand/jackin-lockup.svg' : '/brand/jackin-wordmark.svg'}
-        alt=""
-        aria-hidden="true"
-      />
+      <img className="jk-brand-mark__svg" src="/brand/jackin-wordmark.svg" alt="" aria-hidden="true" />
     </span>
   )
 }

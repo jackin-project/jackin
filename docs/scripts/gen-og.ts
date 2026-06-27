@@ -160,9 +160,9 @@ function Card({ width, height }: { width: number; height: number }) {
         {
           style: {
             display: 'flex',
-            fontFamily: 'JetBrainsMono',
+            fontFamily: 'Inter',
             fontSize: 24,
-            fontWeight: 600,
+            fontWeight: 500,
             color: MUTED,
             marginBottom: 46,
           },
