@@ -288,6 +288,22 @@ impl UsageCache {
             self.refresh_schedule.in_flight = false;
             return;
         }
+        // Write pre-fetch advisory markers for every target about to be fetched.
+        // Other instances that reach should_refresh_with_cooldown_dir after this
+        // point see the cooldown and skip — closing the race window from ~HTTP-
+        // latency down to ~RAM-operation latency (µs vs. 1–3 s).
+        let cooldown_dir = shared_usage_cooldown_dir();
+        let prefetch_until = now_epoch().saturating_add(
+            i64::try_from(PROVIDER_PROBE_TIMEOUT.as_secs()).unwrap_or(i64::MAX),
+        );
+        for target in &due_targets {
+            write_shared_usage_cooldown_marker(
+                &cooldown_dir,
+                &target.cache_key(),
+                prefetch_until,
+                "ok",
+            );
+        }
         let codex_rpc_gate = self.codex_rpc_gate.clone();
         let grok_rpc_gate = self.grok_rpc_gate.clone();
         let provider_keys = provider_keys.clone();

@@ -103,9 +103,12 @@ Both parts implemented in `crates/jackin-capsule/src/usage.rs`:
 
 **Part 2 — shared snapshot for seeding.** After a successful fetch, the view is serialized to JSON in `~/.jackin/data/daemon/usage-snapshots/usage-{hash}.snapshot.json`. In `refresh_active_account_snapshots`, when a target is blocked by cooldown and the in-process cache has no entry for it, the shared snapshot is read and inserted — so the instance shows data instead of "refreshing" for the cooldown duration.
 
-**Remaining gap:** the success cooldown prevents new instances from thundering immediately *after* one instance has completed. The race window (parallel instances that all start and check cooldown before any one succeeds) is not eliminated by a post-fetch marker alone; it is bounded by the HTTP fetch duration (~1-3 s). Instances in the same startup batch still race for that window. The fix prevents all subsequent waves (5-minute refresh cycles, delayed new-window opens).
+**Part 3 — pre-fetch advisory marker (commit `TBD`).** The post-fetch success cooldown still left a race window equal to the HTTP fetch duration (~1-3 s): parallel instances that all check cooldown before any one completes still race. Fixed by writing an advisory `"ok"` marker with TTL = `PROVIDER_PROBE_TIMEOUT` (35 s) for each due target immediately before dispatching HTTP requests — closing the window from ~HTTP-latency to ~RAM-operation latency (µs). On completion `mark_refreshed` overwrites with the permanent success marker (5 min) or the 429 backoff marker.
 
-**Symptom-layer patch (not sufficient alone):** random startup jitter reduces collision probability but does not eliminate it and does not address the shared-state asymmetry that is the root cause.
+**Thundering herd fully resolved.** All three mechanisms working together:
+1. Success cooldown (post-fetch, 5 min) — blocks 5-minute refresh cycles from racing
+2. Pre-fetch advisory marker (pre-dispatch, 35 s) — closes the startup race window
+3. Shared snapshot seeding — instances blocked by cooldown show data instead of "refreshing"
 
 ---
 
