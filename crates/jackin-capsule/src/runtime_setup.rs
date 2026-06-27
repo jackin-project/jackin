@@ -491,16 +491,25 @@ fn setup_codex() -> Result<()> {
     // first-seed only (decided above) so it never re-copies over a token the
     // agent refreshed in-container, regardless of ordering.
     write_codex_provider_config(&codex_home())?;
+    let auth_path = codex_auth_path();
+    let forwarded = Path::new("/jackin/codex/auth.json");
     if copy_auth {
-        let auth_path = codex_auth_path();
-        if Path::new("/jackin/codex/auth.json").is_file() {
-            copy_file_with_mode("/jackin/codex/auth.json", &auth_path, 0o600)?;
+        if forwarded.is_file() {
+            copy_file_with_mode(forwarded, &auth_path, 0o600)?;
         } else {
             remove_file_if_exists(&auth_path)?;
             crate::output::stderr_line(format_args!(
                 "[entrypoint] codex: no auth.json forwarded - agent will start unauthenticated unless OPENAI_API_KEY is set"
             ));
         }
+    } else if !auth_path.exists() && forwarded.is_file() {
+        // Non-first-seed but auth absent: first-seed ran without forwarded auth
+        // (the host had none, or forwarding became available only on a later
+        // launch) and it is present now. Re-seed rather than leaving codex
+        // permanently signed out — mirrors the Claude credentials path. Guarded
+        // on `!auth_path.exists()` so a token the agent refreshed in-container
+        // is never clobbered.
+        copy_file_with_mode(forwarded, &auth_path, 0o600)?;
     }
     Ok(())
 }
