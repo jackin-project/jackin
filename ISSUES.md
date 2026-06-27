@@ -93,13 +93,17 @@ This is a classic read-check-fetch TOCTOU race. The shared state is asymmetric: 
 
 **Why instances with different tokens also hit 429:** Anthropic's `/api/oauth/usage` endpoint appears to rate-limit per-token or per-IP. Instance 3 (`alexey@chainargos.com`) self-healed faster, suggesting it hit its per-account limit from an earlier session fetch, not from this thundering herd alone.
 
-### Required fix (structural — not yet implemented)
+### Fix — shipped in commit `0d206728`
 
-The shared cooldown must cover **successful fetches** as well as rate-limit failures, with TTL = `USAGE_REFRESH_BASE_INTERVAL`. This ensures any instance that has fetched successfully within the base interval blocks other instances from re-fetching the same provider — eliminating the thundering herd at startup.
+Both parts implemented in `crates/jackin-capsule/src/usage.rs`:
 
-Two parts:
-1. After a successful fetch, write a shared success marker (`~/.jackin/data/daemon/usage-cooldowns/`) with TTL = base refresh interval. Other instances starting fresh see "recently fetched, skip."
-2. A fresh instance that sees an active cooldown (from another instance's success) should seed its in-process cache from a shared snapshot file (e.g., `~/.jackin/data/daemon/usage-cache/{provider}.json`) rather than showing "refreshing" forever.
+**Part 1 — success cooldown marker.** After every successful fetch, `mark_refreshed_with_cooldown_dir` now writes a shared cooldown marker in `~/.jackin/data/daemon/usage-cooldowns/` with TTL = `USAGE_REFRESH_BASE_INTERVAL`. Fresh instances (startup path, `next_due == None`) see the marker and skip the fetch.
+
+**Success vs. rate-limit semantics.** Rate-limit cooldowns are mandatory: they block all refreshes including user-triggered `mark_due`. Success cooldowns are advisory: they block fresh-startup probes only. The distinction is encoded in the cooldown file reason line — `"ok"` = success (advisory), any other string = rate-limit (mandatory). `should_refresh_with_cooldown_dir` now checks `shared_usage_rate_limit_cooldown_active` in the scheduled/`mark_due` path and `shared_usage_cooldown_active` (both types) in the startup path.
+
+**Part 2 — shared snapshot for seeding.** After a successful fetch, the view is serialized to JSON in `~/.jackin/data/daemon/usage-snapshots/usage-{hash}.snapshot.json`. In `refresh_active_account_snapshots`, when a target is blocked by cooldown and the in-process cache has no entry for it, the shared snapshot is read and inserted — so the instance shows data instead of "refreshing" for the cooldown duration.
+
+**Remaining gap:** the success cooldown prevents new instances from thundering immediately *after* one instance has completed. The race window (parallel instances that all start and check cooldown before any one succeeds) is not eliminated by a post-fetch marker alone; it is bounded by the HTTP fetch duration (~1-3 s). Instances in the same startup batch still race for that window. The fix prevents all subsequent waves (5-minute refresh cycles, delayed new-window opens).
 
 **Symptom-layer patch (not sufficient alone):** random startup jitter reduces collision probability but does not eliminate it and does not address the shared-state asymmetry that is the root cause.
 
