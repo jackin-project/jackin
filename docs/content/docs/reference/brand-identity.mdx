@@ -5,7 +5,18 @@ description: Canonical mark, color, typography, prompt, and asset rules for jack
 
 # Brand Identity
 
-jackin❯ uses a terminal-native mark: lowercase monospace text on a solid phosphor-green block — a black `jackin` word and a white `❯` chevron, with square corners.
+jackin❯ uses a terminal-native wordmark: the lowercase monospace word `jackin` in white, followed by a green `❯` chevron, on a transparent background. No block, no rounded corners.
+
+## One source of truth
+
+The mark is **generated**, never hand-drawn. Its geometry lives in exactly one place — <RepoFile path="docs/scripts/brand-geometry.ts" /> — and every surface is emitted from it by <RepoFile path="docs/scripts/gen-brand.ts" />:
+
+```sh
+bun run gen-brand   # DOM lockup, favicon(.svg/.ico), app icons, manifest, wordmark/monogram SVG+PNG
+bun run gen-og      # social cards + README hero (chevron from the same geometry)
+```
+
+Never redraw the word or chevron by hand in a component, SVG, or script. To change the logo, edit `brand-geometry.ts` and regenerate — the change then propagates everywhere at once. Adding a color style or glyph variant is a new entry in `gen-brand.ts`'s `STYLES` / `VARIANTS`.
 
 ## Text Forms
 
@@ -22,31 +33,22 @@ Literal commands, binaries, crates, packages, environment variables, config keys
 
 ## Logo Lockup
 
-Logo artwork uses:
-
-```text
-jackin❯
-by tailrocks
-```
-
-Use the byline on logos, banners, cards, README artwork, social cards, splash surfaces, and generated assets. Do not append `by tailrocks` to ordinary prose, command examples, package names, or code identifiers.
+The wordmark is white `jackin` + a green chevron. The chevron is a geometric stroked caret (open `❯`), with square caps and mitered joins, sized in proportion to the word — its ratios are derived once in `brand-geometry.ts`. On logos, banners, cards, README artwork, social cards, and splash surfaces it may carry the `by tailrocks` byline beneath it; do not append the byline to ordinary prose, command examples, package names, or code identifiers.
 
 ## Color
 
 | Token | Hex | Use |
 |---|---:|---|
-| Logo block green | `#00FF41` | The phosphor block every mark sits on — the same green as the digital rain and the CLI's terminal accents |
-| Logo ink (black) | `#0A0A0A` | The `jackin` word / `j` letter on the block |
-| Logo chevron (white) | `#FFFFFF` | The `❯` chevron on the block |
-| Chevron accent | `#5CF07A` | Brighter green for non-logo UI accents only (links, focus rings, sidebar pills); never the logo block |
+| Logo word | `#FFFFFF` | The `jackin` word / `j` letter. In the DOM it tracks the theme foreground (`--jk-text`); exported assets use white on dark |
+| Logo chevron | `#5CF07A` | The green `❯` chevron |
 | Muted accent | `#1D9E75` | UI accent when pure phosphor is too strong; never part of the mark |
-| Dark canvas | `#0A0A0A` | Default background the block floats on |
+| Dark canvas | `#0A0A0A` | Background for icons and social cards (the wordmark itself sits on a transparent background) |
 
-The mark is always a `#00FF41` phosphor block with a black `jackin` word and a white `❯` chevron, in both light and dark contexts — one colorway, no light/dark variants. The logo uses the real jackin green (the same `#00FF41` as the rain and terminal); the brighter `#5CF07A` is reserved for non-logo UI accents. Square corners only: terminals cannot round corners, so neither does the block or any UI surface. Never recolor the chevron green, never make the word and chevron the same color, never drop the block.
+The wordmark has a transparent background — no block. Square caps only: terminals cannot round corners, so neither does the mark or any UI surface. Never recolor the word green, never make the word and chevron the same color, never re-introduce the block on the wordmark.
 
 ## Type
 
-The mark uses one monospace face and one weight. The docs and generated assets use JetBrains Mono Medium with this fallback chain:
+The mark uses one monospace face. The docs and generated assets use JetBrains Mono with this fallback chain:
 
 ```css
 "JetBrains Mono", "Berkeley Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace
@@ -64,18 +66,20 @@ codex j❯
 claude j❯
 ```
 
-The prompt sigil renders on the same green block: a black `j` and a white `❯` on `#00FF41`, square edges, where the prompt renderer supports color.
+In a terminal the chevron is the `❯` glyph rather than the geometric caret — a TTY can't draw paths, so the glyph is the proven medium fallback (same class as the `jackin>` plaintext fallback).
 
 ## Assets
 
-Committed brand assets live under `docs/public/`:
+Committed brand assets live under `docs/public/`, all produced by the generators above:
 
 | Asset | Source |
 |---|---|
-| `favicon.svg` / `favicon.ico` | `j❯` monogram |
+| `favicon.svg` / `favicon.ico` | `j❯` monogram on a dark square |
 | `apple-touch-icon.png` | `j❯` monogram, 180 px |
 | `icon-192.png` / `icon-512.png` | PWA monogram icons |
+| `brand/jackin-wordmark.{svg,png}` | standalone wordmark, transparent background |
+| `brand/jackin-monogram.{svg,png}` | standalone `j❯` monogram, transparent background |
 | `og-image.png` / `og-image-github.png` | dark social cards with the full lockup |
 | `readme-hero.svg` / `readme-hero.png` | static README hero banner |
 
-Regenerate icons with `bun run gen-icons` from `docs/`. Regenerate social and README images with `bun run gen-og`.
+Regenerate the logo and icons with `bun run gen-brand`; regenerate social and README images with `bun run gen-og`. Both read `brand-geometry.ts`, so the mark stays identical across every surface.
