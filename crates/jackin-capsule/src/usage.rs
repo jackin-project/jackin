@@ -309,6 +309,28 @@ impl UsageCache {
             self.refresh_schedule.in_flight = false;
             return;
         }
+        // Take the cross-container per-account refresh lock: keep only the targets
+        // this instance won (or whose lock infra is absent). A target held by
+        // another instance is dropped — it is being refreshed there, and this
+        // instance already seeded the shared snapshot above (Class III-D). The
+        // held lock handles live until the end of this method (released on drop),
+        // spanning the fetch and the shared-snapshot write so no other instance
+        // re-fetches the same account in that window.
+        let mut refresh_locks = Vec::new();
+        due_targets.retain(|target| {
+            match acquire_account_refresh_lock(&target.shared_account_key()) {
+                RefreshLockOutcome::Acquired(file) => {
+                    refresh_locks.push(file);
+                    true
+                }
+                RefreshLockOutcome::Unavailable => true,
+                RefreshLockOutcome::Held => false,
+            }
+        });
+        if due_targets.is_empty() {
+            self.refresh_schedule.in_flight = false;
+            return;
+        }
         // Write pre-fetch advisory markers for every target about to be fetched.
         // Other instances that reach should_refresh_with_cooldown_dir after this
         // point see the cooldown and skip — closing the race window from ~HTTP-
@@ -384,6 +406,10 @@ impl UsageCache {
             self.accounts_materialize_failed,
             materialize,
         );
+        // Release the per-account refresh locks only now — after the shared
+        // snapshot has been written — so a waiting instance that next wins the
+        // lock sees fresh shared data rather than re-fetching (Class III-D).
+        drop(refresh_locks);
         self.refresh_schedule.in_flight = false;
     }
 
@@ -686,6 +712,62 @@ fn shared_usage_snapshots_dir() -> PathBuf {
         |_| home_path(".jackin/data/daemon/usage-snapshots"),
         PathBuf::from,
     )
+}
+
+fn shared_usage_lock_dir() -> PathBuf {
+    std::env::var("JACKIN_USAGE_LOCK_DIR").map_or_else(
+        |_| home_path(".jackin/data/daemon/usage-locks"),
+        PathBuf::from,
+    )
+}
+
+/// Outcome of trying to take the cross-container per-account refresh lock.
+enum RefreshLockOutcome {
+    /// Won the lock — hold the handle for the refresh + shared-write window.
+    Acquired(fs::File),
+    /// Locking infra is absent (no shared volume / lock dir): proceed without a
+    /// lock so single-container/dev runs still refresh. Best-effort, never gates.
+    Unavailable,
+    /// Another instance holds the lock (it is refreshing this account now): skip
+    /// the network and rely on the shared snapshot already seeded into memory.
+    Held,
+}
+
+/// Try to take the account's exclusive refresh lock (non-blocking). `flock` on
+/// the bind-mounted shared volume shares the inode across same-kernel containers,
+/// so exactly one instance refreshes a given account while the rest read the
+/// shared snapshot — ending the N×-instances rate-limit storm (Class III-D). A
+/// stale lock self-heals: `flock` releases when the holding process exits.
+fn acquire_account_refresh_lock(account_key: &str) -> RefreshLockOutcome {
+    acquire_account_refresh_lock_in(&shared_usage_lock_dir(), account_key)
+}
+
+fn acquire_account_refresh_lock_in(dir: &Path, account_key: &str) -> RefreshLockOutcome {
+    use fs2::FileExt as _;
+    if fs::create_dir_all(dir).is_err() {
+        return RefreshLockOutcome::Unavailable;
+    }
+    let path = dir.join(format!(
+        "usage-{:016x}.lock",
+        stable_usage_hash(account_key)
+    ));
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "advisory lock file; the usage refresh runs on the blocking pool (spawn_blocking), not the render thread"
+    )]
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&path);
+    match file {
+        Ok(file) => match file.try_lock_exclusive() {
+            Ok(()) => RefreshLockOutcome::Acquired(file),
+            Err(_) => RefreshLockOutcome::Held,
+        },
+        Err(_) => RefreshLockOutcome::Unavailable,
+    }
 }
 
 fn shared_usage_snapshot_path(snapshots_dir: &Path, key: &str) -> PathBuf {

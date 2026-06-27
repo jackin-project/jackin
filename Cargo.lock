@@ -2723,6 +2723,7 @@ dependencies = [
  "criterion",
  "crossterm",
  "dhat",
+ "fs2",
  "hex",
  "insta",
  "jackin-build-meta",

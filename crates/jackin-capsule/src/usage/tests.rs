@@ -1366,6 +1366,41 @@ fn status_bar_headline_drops_zero_window_and_zero_spend() {
     );
 }
 
+/// Class III-D: the per-account refresh lock is exclusive — a second acquirer of
+/// the same account is told it is Held while the first holds it, and can acquire
+/// once the first is released. (flock conflicts across distinct open file
+/// descriptions even in-process, mirroring the cross-container behavior.)
+#[test]
+fn account_refresh_lock_is_exclusive_and_releases() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let key = "Anthropic#deadbeef";
+    let first = acquire_account_refresh_lock_in(dir.path(), key);
+    assert!(
+        matches!(first, RefreshLockOutcome::Acquired(_)),
+        "first acquirer wins the lock"
+    );
+    assert!(
+        matches!(
+            acquire_account_refresh_lock_in(dir.path(), key),
+            RefreshLockOutcome::Held
+        ),
+        "second acquirer of the held lock is told it is Held"
+    );
+    // A different account is independent.
+    assert!(matches!(
+        acquire_account_refresh_lock_in(dir.path(), "OpenAI#feedface"),
+        RefreshLockOutcome::Acquired(_)
+    ));
+    drop(first);
+    assert!(
+        matches!(
+            acquire_account_refresh_lock_in(dir.path(), key),
+            RefreshLockOutcome::Acquired(_)
+        ),
+        "lock is re-acquirable after release"
+    );
+}
+
 /// Class III-C: hydrating a shared snapshot keeps its numbers but marks the view
 /// and its buckets Stale (last-known, not freshly fetched by this instance).
 #[test]
