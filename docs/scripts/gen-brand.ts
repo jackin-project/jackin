@@ -1,157 +1,111 @@
-// Single generator for the jackin❯ logo. Produces every representation of the
-// mark from one geometry source (brand-geometry.ts):
-//   - the DOM lockup  src/components/brand/brand-mark.svg  (themed CSS vars,
-//     page webfont, scales by font-size; imported via ?raw by BrandMark)
-//   - standalone assets under  public/brand/  as SVG and PNG, per style.
+// Single generator for the jackin❯ logo. One geometry source (brand-geometry.ts)
+// → one set of assets, used everywhere:
+//   - public/brand/jackin-wordmark.svg  ← the canonical logo, imported by
+//     BrandMark and used as the TOC wordmark. The word is OUTLINED (JetBrains
+//     Mono Bold → vector paths) and the chevron is the ❯ vector path, so the
+//     single file renders identically as inline SVG, <img>, or background —
+//     with no dependence on a loaded webfont.
+//   - public/brand/jackin-monogram.svg, *.png, favicon.svg/.ico, app icons.
 //
-// Logo style: transparent background, white "jackin", green chevron. New styles
-// are just entries in STYLES; new representations are SVG (string) + PNG (Takumi).
+// Logo style: transparent background, white "jackin" (bold), green ❯ chevron.
+// To change the mark, edit this file or brand-geometry.ts and rerun `gen-brand`.
 
 import ImageResponse from '@takumi-rs/image-response'
 import React from 'react'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { chevronSvg, faviconSvg, lockupSvg, wordChevronGap, wordWidth } from './brand-geometry'
+import { chevron, chevronSvg, wordChevronGap } from './brand-geometry'
+import { font, jbBoldData, outlineWord, placeWord } from './brand-outline'
 
 const root = join(import.meta.dirname, '..')
-const jbMono = readFileSync(
-  join(root, 'node_modules', '@fontsource', 'jetbrains-mono', 'files', 'jetbrains-mono-latin-600-normal.woff'),
-)
 
 const WHITE = '#ffffff'
 const GREEN = '#5cf07a'
+const DARK = '#0a0a0a'
+const GREY = '#9ca8a1'
+const round = (n: number) => Math.round(n * 100) / 100
 
-// Variants = which glyphs the mark shows. Styles = colors. Each (variant × style)
-// is emitted as SVG and PNG; the DOM lockup is a separate themed SVG.
-const VARIANTS = [
-  { name: 'wordmark', word: 'jackin' },
-  { name: 'monogram', word: 'j' },
-]
-const STYLES = {
-  // Canonical: white word + green chevron on a transparent background.
-  default: { wordColor: WHITE, chevronColor: GREEN },
+// The canonical lockup: outlined word + ❯ chevron, transparent background.
+// With `byline`, a small grey "by tailrocks" (also outlined) sits beneath it.
+function wordmarkSvg(word: string, fontSize: number, wordColor: string, chevronColor: string, byline = false): string {
+  const w = outlineWord(word, fontSize, wordColor)
+  const left = round(w.width + wordChevronGap(fontSize))
+  const c = chevron(fontSize, left, w.capCenter)
+  let width = c.right
+  let height = round(Math.max(w.bottom, w.capCenter + (fontSize * 0.72) / 2))
+  let bylineMarkup = ''
+  if (byline) {
+    const bf = Math.round(fontSize * 0.18)
+    const by = outlineWord('by tailrocks', bf, GREY)
+    const baseline = round(w.bottom + 0.3 * bf + by.baseline)
+    bylineMarkup = `\n  ${placeWord(by, 0, baseline)}`
+    width = Math.max(width, by.width)
+    height = round(baseline + (by.bottom - by.baseline))
+  }
+  const label = `${word}❯${byline ? ' by tailrocks' : ''}`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}" preserveAspectRatio="xMinYMid meet">
+  ${w.group}
+  <path d="${c.d}" fill="${chevronColor}"/>${bylineMarkup}
+</svg>
+`
 }
 
-// 1. DOM lockup — theme-aware colors + the page mono webfont.
-writeFileSync(
-  join(root, 'src', 'components', 'brand', 'brand-mark.svg'),
-  lockupSvg({
-    wordColor: 'var(--jk-text)',
-    chevronColor: 'var(--jk-brand)',
-    fontFamily: 'var(--sl-font-mono)',
-    fontWeight: 500,
-    className: 'jk-brand-mark__svg',
-  }),
-)
-console.log('wrote src/components/brand/brand-mark.svg')
+// Square app icon: outlined "j" + chevron centered on a filled square.
+function faviconSvg(size: number): string {
+  const fontSize = round(size * 0.46)
+  const w = outlineWord('j', fontSize, WHITE)
+  const gap = round(wordChevronGap(fontSize))
+  const contentW = w.width + gap + chevron(fontSize, 0, 0).right
+  const startX = round((size - contentW) / 2)
+  const cy = round(size / 2)
+  // Baseline so the "j" cap is vertically centered on the square.
+  const baseline = round(cy + (font.capHeight / 2) * (fontSize / font.unitsPerEm))
+  const wg = placeWord(w, startX, baseline)
+  const c = chevron(fontSize, round(startX + w.width + gap), cy)
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
+  <rect width="${size}" height="${size}" fill="${DARK}"/>
+  ${wg}
+  <path d="${c.d}" fill="${GREEN}"/>
+</svg>
+`
+}
 
-// 2. Favicon — j❯ monogram on a dark square (an icon needs a background).
-writeFileSync(
-  join(root, 'public', 'favicon.svg'),
-  faviconSvg({ bg: '#0a0a0a', wordColor: WHITE, chevronColor: GREEN }),
-)
-console.log('wrote public/favicon.svg')
-
-// 3. Standalone assets — SVG + PNG, transparent background.
 const brandDir = join(root, 'public', 'brand')
+const pub = join(root, 'public')
 mkdirSync(brandDir, { recursive: true })
 
-const PNG_FONT_SIZE = 220
-
-async function renderPng(word: string, wordColor: string, chevronColor: string): Promise<Buffer> {
-  const fontSize = PNG_FONT_SIZE
-  const fontWeight = 600
-  const chev = chevronSvg(fontSize, chevronColor)
-  const gap = wordChevronGap(fontSize)
-  const width = Math.ceil(wordWidth(fontSize, word.length) + gap + chev.width)
-  const height = Math.ceil(chev.height)
-
-  const element = React.createElement(
-    'div',
-    {
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        width: '100%',
-        height: '100%',
-        // Transparent background — no backgroundColor set.
-      },
-    },
-    React.createElement(
-      'span',
-      {
-        style: {
-          display: 'flex',
-          fontFamily: 'JetBrainsMono',
-          fontSize,
-          fontWeight,
-          color: wordColor,
-          lineHeight: 1,
-        },
-      },
-      word,
-    ),
-    React.createElement('img', {
-      width: chev.width,
-      height: chev.height,
-      src: `data:image/svg+xml;base64,${Buffer.from(chev.svg).toString('base64')}`,
-      style: { marginLeft: gap },
-    }),
-  )
-
-  const response = new ImageResponse(element, {
-    width,
-    height,
-    format: 'png',
-    fonts: [{ name: 'JetBrainsMono', data: jbMono, weight: 600, style: 'normal' }],
-  })
-  await response.ready
-  return Buffer.from(await response.arrayBuffer())
+// 1. Canonical wordmark + monogram (outlined SVG). Used by BrandMark and the TOC.
+for (const [name, word] of [['jackin-wordmark', 'jackin'], ['jackin-monogram', 'j']] as const) {
+  writeFileSync(join(brandDir, `${name}.svg`), wordmarkSvg(word, 200, WHITE, GREEN))
+  console.log(`wrote public/brand/${name}.svg`)
 }
+// Lockup variant with the "by tailrocks" byline — used by BrandMark byline / footer.
+writeFileSync(join(brandDir, 'jackin-lockup.svg'), wordmarkSvg('jackin', 200, WHITE, GREEN, true))
+console.log('wrote public/brand/jackin-lockup.svg')
 
-for (const [styleName, style] of Object.entries(STYLES)) {
-  for (const variant of VARIANTS) {
-    const base = `jackin-${variant.name}${styleName === 'default' ? '' : `-${styleName}`}`
+// 2. Favicon (outlined, renders without a webfont).
+writeFileSync(join(pub, 'favicon.svg'), faviconSvg(512))
+console.log('wrote public/favicon.svg')
 
-    const svg = lockupSvg({
-      word: variant.word,
-      fontSize: 200,
-      fontWeight: 600,
-      wordColor: style.wordColor,
-      chevronColor: style.chevronColor,
-    })
-    writeFileSync(join(brandDir, `${base}.svg`), svg)
-    console.log(`wrote public/brand/${base}.svg`)
-
-    const png = await renderPng(variant.word, style.wordColor, style.chevronColor)
-    writeFileSync(join(brandDir, `${base}.png`), png)
-    console.log(`wrote public/brand/${base}.png (${png.byteLength.toLocaleString()} bytes)`)
-  }
-}
-
-// 4. App-icon bundle (favicon.ico, apple-touch, PWA icons) — the j❯ monogram on
-//    a dark square, rendered from the same geometry as favicon.svg.
-const ICON_BG = '#0a0a0a'
-
-function iconElement(size: number) {
-  const fontSize = Math.round(size * 0.5)
+// 3. PNG rasters via Takumi (embeds the bold font, so text is exact).
+function wordmarkElement(word: string, fontSize: number, withBg: boolean) {
   const chev = chevronSvg(fontSize, GREEN)
   return React.createElement(
     'div',
     {
       style: {
-        width: '100%',
-        height: '100%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: ICON_BG,
+        width: '100%',
+        height: '100%',
+        ...(withBg ? { backgroundColor: DARK } : {}),
       },
     },
     React.createElement(
       'span',
-      { style: { display: 'flex', fontFamily: 'JetBrainsMono', fontSize, fontWeight: 600, color: WHITE, lineHeight: 1 } },
-      'j',
+      { style: { display: 'flex', fontFamily: 'JetBrainsMono', fontSize, fontWeight: 700, color: WHITE, lineHeight: 1 } },
+      word,
     ),
     React.createElement('img', {
       width: chev.width,
@@ -162,20 +116,33 @@ function iconElement(size: number) {
   )
 }
 
-async function iconPng(size: number): Promise<Buffer> {
-  const response = new ImageResponse(iconElement(size), {
-    width: size,
-    height: size,
+async function renderPng(element: React.ReactElement, width: number, height: number): Promise<Buffer> {
+  const response = new ImageResponse(element, {
+    width,
+    height,
     format: 'png',
-    fonts: [{ name: 'JetBrainsMono', data: jbMono, weight: 600, style: 'normal' }],
+    fonts: [{ name: 'JetBrainsMono', data: jbBoldData, weight: 700, style: 'normal' }],
   })
   await response.ready
   return Buffer.from(await response.arrayBuffer())
 }
 
+for (const [name, word] of [['jackin-wordmark', 'jackin'], ['jackin-monogram', 'j']] as const) {
+  const fontSize = 220
+  const chev = chevronSvg(fontSize, GREEN)
+  const width = Math.ceil(fontSize * 0.6 * word.length + wordChevronGap(fontSize) + chev.width)
+  const png = await renderPng(wordmarkElement(word, fontSize, false), width, Math.ceil(chev.height * 1.4))
+  writeFileSync(join(brandDir, `${name}.png`), png)
+  console.log(`wrote public/brand/${name}.png (${png.byteLength.toLocaleString()} bytes)`)
+}
+
+// 4. App-icon bundle.
+async function iconPng(size: number): Promise<Buffer> {
+  return renderPng(wordmarkElement('j', Math.round(size * 0.5), true), size, size)
+}
+
 function faviconIco(images: Buffer[]): Buffer {
   const header = Buffer.alloc(6)
-  header.writeUInt16LE(0, 0)
   header.writeUInt16LE(1, 2)
   header.writeUInt16LE(images.length, 4)
   let offset = 6 + images.length * 16
@@ -194,16 +161,11 @@ function faviconIco(images: Buffer[]): Buffer {
   return Buffer.concat([header, ...entries, ...images])
 }
 
-const pub = join(root, 'public')
 const ico = await Promise.all([16, 32, 48].map((s) => iconPng(s)))
 writeFileSync(join(pub, 'favicon.ico'), faviconIco(ico))
 console.log('wrote public/favicon.ico')
 
-for (const [name, size] of [
-  ['apple-touch-icon.png', 180],
-  ['icon-192.png', 192],
-  ['icon-512.png', 512],
-] as const) {
+for (const [name, size] of [['apple-touch-icon.png', 180], ['icon-192.png', 192], ['icon-512.png', 512]] as const) {
   const png = await iconPng(size)
   writeFileSync(join(pub, name), png)
   console.log(`wrote public/${name} (${size}x${size}, ${png.byteLength.toLocaleString()} bytes)`)
@@ -216,8 +178,8 @@ const manifest = {
     'Run AI coding agents at full speed inside isolated containers: scoped access, per-agent state, and host boundaries that stay visible.',
   start_url: '/',
   display: 'standalone',
-  background_color: ICON_BG,
-  theme_color: ICON_BG,
+  background_color: DARK,
+  theme_color: DARK,
   icons: [
     { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
     { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },

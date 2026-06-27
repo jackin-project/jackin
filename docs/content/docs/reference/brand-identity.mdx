@@ -48,13 +48,7 @@ The wordmark has a transparent background — no block. Square caps only: termin
 
 ## Type
 
-The mark uses one monospace face. The docs and generated assets use JetBrains Mono with this fallback chain:
-
-```css
-"JetBrains Mono", "Berkeley Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace
-```
-
-Supporting prose uses Inter or the system sans-serif stack.
+The mark uses **JetBrains Mono Bold**. In every generated asset the word is **outlined to vector paths** — never SVG `<text>` — so the logo is font-independent and renders identically as inline SVG, `<img>`, background, or raster. Supporting prose uses Inter or the system sans-serif stack.
 
 ## Terminal Prompt
 
@@ -77,7 +71,8 @@ Committed brand assets live under `docs/public/`, all produced by the generators
 | `favicon.svg` / `favicon.ico` | `j❯` monogram on a dark square |
 | `apple-touch-icon.png` | `j❯` monogram, 180 px |
 | `icon-192.png` / `icon-512.png` | PWA monogram icons |
-| `brand/jackin-wordmark.{svg,png}` | standalone wordmark, transparent background |
+| `brand/jackin-wordmark.{svg,png}` | standalone wordmark (outlined), transparent background — the file BrandMark and the TOC use |
+| `brand/jackin-lockup.svg` | wordmark with the grey `by tailrocks` byline |
 | `brand/jackin-monogram.{svg,png}` | standalone `j❯` monogram, transparent background |
 | `og-image.png` / `og-image-github.png` | dark social cards with the full lockup |
 | `readme-hero.svg` / `readme-hero.png` | static README hero banner |

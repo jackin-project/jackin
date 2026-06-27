@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <rect width="512" height="512" fill="#0a0a0a"/>
-  <text x="108.73" y="256" textLength="153.6" lengthAdjust="spacingAndGlyphs" dominant-baseline="central" font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="256" font-weight="600" fill="#ffffff">j</text>
-  <path d="M303.29 348.16 L363.71 256 L303.29 163.84 L343.97 163.84 L403.27 256 L343.97 348.16 Z" fill="#5cf07a"/>
+  <g fill="#ffffff" transform="translate(120.51 341.96) scale(0.24 -0.24)"><path transform="translate(0 0)" d="M82 -180L82 -64L229 -64Q279 -64 306 -37Q333 -10 333 39L333 434L112 434L112 550L458 550L458 36Q458 -64 398 -122Q338 -180 236 -180ZM391 642Q353 642 331 661.5Q309 681 309 714Q309 747 331 766.5Q353 786 391 786Q429 786 451 766.5Q473 747 473 714Q473 681 451 661.5Q429 642 391 642Z"/></g>
+  <path d="M299.5 340.79 L355.09 256 L299.5 171.21 L336.93 171.21 L391.48 256 L336.93 340.79 Z" fill="#5cf07a"/>
 </svg>

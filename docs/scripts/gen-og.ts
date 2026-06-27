@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ageToColor, createRainState, tickRain } from '../src/components/landing/rainEngine'
 import { chevron, chevronSvg } from "./brand-geometry"
+import { outlineWord, placeWord } from './brand-outline'
 
 const root = join(import.meta.dirname, '..')
 
@@ -239,6 +240,8 @@ async function generate(width: number, height: number, output: string) {
   console.log(`wrote ${output} (${png.byteLength.toLocaleString()} bytes)`)
 }
 
+const heroWord = outlineWord('jackin', 138, TEXT)
+const heroWordGroup = placeWord(heroWord, Math.round((586 - heroWord.width / 2) * 100) / 100, 338)
 const heroCaret = chevron(138, 842, 314)
 const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="jackin❯ by tailrocks">
   <rect width="1280" height="640" fill="${BG}"/>
@@ -246,7 +249,7 @@ const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" heig
     ${rainSvgField(1280, 640)}
   </g>
   <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">
-    <text x="586" y="338" font-size="138" font-weight="600" fill="${TEXT}">jackin</text>
+    ${heroWordGroup}
     <path d="${heroCaret.d}" fill="${CHEVRON}"/>
     <text x="626" y="446" font-size="26" font-weight="500" fill="${MUTED}">by tailrocks</text>
   </g>
