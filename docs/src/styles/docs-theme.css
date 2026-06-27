@@ -2030,6 +2030,7 @@ site-search dialog {
   padding: 0.05em 0.3em;
   border-radius: 0;
   font-weight: 500;
+  line-height: 1;
   letter-spacing: 0;
 }
 
@@ -2037,11 +2038,14 @@ site-search dialog {
   text-decoration: none;
 }
 
-/* Inside headings the existing heading weight wins so we do not
-   double-bold. Colour still inherits the heading's own colour, which
-   is `--jk-text` in both themes by default. */
+/* Inside headings the mark must read as the canonical block, not a
+   blown-up bold mono word: headings are large and bold, and inheriting
+   that makes the green block tower over the heading text. Pin it to the
+   regular block weight and shrink it so its cap-height tracks the
+   heading text instead of dwarfing it. */
 :where(h1, h2, h3, h4, h5, h6) .jk-name {
-  font-weight: inherit;
+  font-size: 0.82em;
+  font-weight: 500;
 }
 
 /* The mark keeps its black-on-green block even inside links and
