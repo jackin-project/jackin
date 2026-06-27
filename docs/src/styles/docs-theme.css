@@ -1233,7 +1233,7 @@ html.theme-init *::after {
 #nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']) {
   color: color-mix(in oklab, var(--jk-brand) 58%, var(--jk-text-dim));
   background-color: color-mix(in srgb, var(--jk-brand) 8%, transparent);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 #nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true'])::before {
@@ -1261,7 +1261,7 @@ html.theme-init *::after {
   color: color-mix(in oklab, var(--jk-brand) 76%, var(--jk-text));
   background-color: color-mix(in srgb, var(--jk-brand) 12%, transparent);
   box-shadow: none;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 :root[data-theme='light'] #nd-sidebar a[data-active='true'],
