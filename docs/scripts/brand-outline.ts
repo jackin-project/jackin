@@ -27,7 +27,10 @@ export type OutlinedWord = {
   group: string
   /** placement-ready: replace the group's translate to move it. */
   baseline: number
+  /** advance width (includes the trailing side-bearing). */
   width: number
+  /** visual ink right edge of the last glyph (no side-bearing). */
+  inkRight: number
   bottom: number
   capCenter: number
 }
@@ -40,6 +43,7 @@ export function outlineWord(text: string, fontSize: number, fill: string, face: 
   let maxY = -Infinity
   let minY = Infinity
   let right = 0
+  let inkRight = 0
   const glyphs: string[] = []
   for (const g of run.glyphs) {
     const d = g.path.toSVG()
@@ -47,6 +51,7 @@ export function outlineWord(text: string, fontSize: number, fill: string, face: 
     const bb = g.path.bbox
     maxY = Math.max(maxY, bb.maxY)
     minY = Math.min(minY, bb.minY)
+    if (d) inkRight = Math.max(inkRight, x + bb.maxX)
     right = x + g.advanceWidth
     x += g.advanceWidth
   }
@@ -55,6 +60,7 @@ export function outlineWord(text: string, fontSize: number, fill: string, face: 
     group: `<g fill="${fill}" transform="translate(0 ${baseline}) scale(${round(scale)} ${round(-scale)})">${glyphs.join('')}</g>`,
     baseline,
     width: round(right * scale),
+    inkRight: round(inkRight * scale),
     bottom: round((maxY - minY) * scale),
     capCenter: round((maxY - face.capHeight / 2) * scale),
   }

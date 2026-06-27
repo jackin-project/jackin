@@ -37,8 +37,8 @@ function wordmarkSvg(word: string, fontSize: number, wordColor: string, chevronC
   if (byline) {
     const bf = Math.round(fontSize * 0.28)
     const by = outlineWord('by tailrocks', bf, GREY, interFont) // sans subtext, not the mono mark
-    const baseline = round(w.bottom + 0.4 * bf + by.baseline)
-    const bylineX = round(w.width - by.width) // right edge aligns with the end of "n"
+    const baseline = round(w.bottom + 0.12 * bf + by.baseline)
+    const bylineX = round(w.inkRight - by.inkRight) // ink right edge aligns with the end of "n"
     bylineMarkup = `\n  ${placeWord(by, bylineX, baseline)}`
     height = round(baseline + (by.bottom - by.baseline))
   }
@@ -106,6 +106,7 @@ function wordmarkElement(word: string, fontSize: number, withBg: boolean, byline
   )
   const children: React.ReactNode[] = [row]
   if (byline) {
+    const w = outlineWord(word, fontSize, WHITE)
     children.push(
       React.createElement(
         'div',
@@ -116,10 +117,10 @@ function wordmarkElement(word: string, fontSize: number, withBg: boolean, byline
             fontSize: Math.round(fontSize * 0.28),
             fontWeight: 500,
             color: GREY,
-            marginTop: Math.round(fontSize * 0.1),
-            // Right edge aligns with the end of the word (offset past the chevron).
+            marginTop: Math.round(fontSize * 0.02),
+            // Ink right edge aligns with the end of the word (past chevron + side-bearing).
             alignSelf: 'flex-end',
-            marginRight: Math.round(chev.width + wordChevronGap(fontSize)),
+            marginRight: Math.round(chev.width + wordChevronGap(fontSize) + (w.width - w.inkRight)),
           },
         },
         'by tailrocks',
