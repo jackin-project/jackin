@@ -1379,6 +1379,7 @@ nav.landing-topnav .landing-star {
   border: 1px solid var(--landing-ui-strong);
   border-radius: 8px;
   background: var(--landing-panel);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 .landing-theme-toggle button {
   display: inline-flex;
@@ -1393,12 +1394,11 @@ nav.landing-topnav .landing-star {
   color: var(--landing-text-ghost);
   cursor: pointer;
   transition: color 0.15s, background-color 0.15s;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 .landing-theme-toggle button:hover { color: var(--landing-text); }
 .landing-theme-toggle button[aria-pressed='true'] {
-  color: var(--landing-accent);
-  background: var(--landing-bg-deep);
+  color: var(--jk-accent);
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
 }
 .landing-theme-toggle button:focus-visible {
   outline: 2px solid var(--landing-accent);

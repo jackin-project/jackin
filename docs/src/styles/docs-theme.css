@@ -346,6 +346,7 @@ body {
   border: 1px solid var(--jk-ui);
   border-radius: 0;
   background: var(--jk-panel);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 
 .jk-theme-toggle button {
@@ -361,7 +362,6 @@ body {
   color: var(--jk-text-ghost);
   cursor: pointer;
   transition: color 0.15s, background-color 0.15s;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 
 .jk-theme-toggle button:hover {
@@ -370,7 +370,7 @@ body {
 
 .jk-theme-toggle button[aria-pressed='true'] {
   color: var(--jk-accent);
-  background: var(--jk-bg-deep);
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
 }
 
 .jk-page-title {
