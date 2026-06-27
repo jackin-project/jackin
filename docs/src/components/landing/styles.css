@@ -519,17 +519,18 @@ html.theme-init *::after {
   filter: brightness(1.08);
   box-shadow: 0 6px 20px rgb(var(--landing-accent-rgb) / 0.3);
 }
+/* Secondary tier: green-accent outline (matches .jk-page-actions / topnav star). */
 .landing-btn-ghost {
-  background: var(--jk-accent);
-  color: #0a0a0a;
-  border: 1px solid var(--jk-accent);
+  background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
+  color: var(--jk-accent);
+  border: 1px solid color-mix(in srgb, var(--jk-accent) 35%, transparent);
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
   font-weight: 600;
 }
 .landing-btn-ghost:hover {
-  filter: brightness(1.08);
-  box-shadow: 0 6px 20px rgb(var(--landing-accent-rgb) / 0.3);
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+  border-color: var(--jk-accent);
 }
 
 /* Footer (wordmark + meta) */
@@ -1336,30 +1337,30 @@ nav.landing-topnav .landing-star {
 .landing-nav-right { display: flex; gap: 14px; align-items: center; }
 .landing-star {
   padding: 7px 14px;
-  border: 1px solid var(--jk-accent);
-  background: var(--jk-accent);
+  border: 1px solid color-mix(in srgb, var(--jk-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
   border-radius: 4px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   font-weight: 600;
-  color: #0a0a0a;
+  color: var(--jk-accent);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: filter 0.15s, box-shadow 0.2s;
+  transition: background 0.15s, border-color 0.15s;
 }
 /* Shared star icon — used in topnav "Star on GitHub" + install-block CTA.
    SVG path uses currentColor so we colour it via `color`. filter: drop-shadow
    gives a softer, cleaner glow than text-shadow on text-based stars. */
 .landing-star-icon {
-  color: #0a0a0a;
+  color: var(--jk-accent);
   flex-shrink: 0;
 }
 
 .landing-star:hover {
-  filter: brightness(1.08);
-  box-shadow: 0 6px 20px rgb(var(--landing-accent-rgb) / 0.25);
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+  border-color: var(--jk-accent);
 }
 
 /* Landing-specific theme toggle — sits in the topnav over the always-dark
