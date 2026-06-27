@@ -1458,6 +1458,7 @@ async fn build_workspace_mount_strings_preserves_readonly_on_user_facing_mount()
 #[tokio::test]
 async fn workspace_mise_paths_cover_workdir_and_mount_destinations() {
     let workspace = jackin_config::ResolvedWorkspace {
+        name: "".to_owned(),
         label: "sample-workspace".to_owned(),
         workdir: "/workspace".to_owned(),
         mounts: vec![
@@ -1559,6 +1560,7 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
         auth_outcomes: std::collections::BTreeMap::new(),
     };
     let workspace = jackin_config::ResolvedWorkspace {
+        name: "".to_owned(),
         label: "sample-workspace".to_owned(),
         workdir: "/workspace".to_owned(),
         mounts: vec![jackin_config::MountConfig {
@@ -1708,6 +1710,7 @@ echo "pulled $2"
     std::fs::create_dir_all(repo_b.join(".git")).unwrap();
 
     let workspace = jackin_config::ResolvedWorkspace {
+        name: "".to_owned(),
         label: "parallel".to_owned(),
         workdir: "/workspace".to_owned(),
         mounts: vec![
@@ -1737,6 +1740,7 @@ echo "pulled $2"
 
 fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
     jackin_config::ResolvedWorkspace {
+        name: "".to_owned(),
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
         mounts: vec![jackin_config::MountConfig {
@@ -2191,6 +2195,7 @@ trusted = true
     let mut config = AppConfig::load_or_init(&paths).unwrap();
 
     let workspace = jackin_config::ResolvedWorkspace {
+        name: "".to_owned(),
         label: "/workspace".to_owned(),
         workdir: "/workspace".to_owned(),
         mounts: vec![
@@ -2921,6 +2926,7 @@ plugins = []
     let workspace_dir = temp.path().join("workspace");
     std::fs::create_dir_all(&workspace_dir).unwrap();
     let workspace = jackin_config::ResolvedWorkspace {
+        name: "".to_owned(),
         label: workspace_dir.display().to_string(),
         workdir: workspace_dir.display().to_string(),
         mounts: vec![jackin_config::MountConfig {
@@ -2997,6 +3003,7 @@ plugins = []
     let workspace_dir = temp.path().join("workspace");
     std::fs::create_dir_all(&workspace_dir).unwrap();
     let workspace = jackin_config::ResolvedWorkspace {
+        name: "".to_owned(),
         label: workspace_dir.display().to_string(),
         workdir: workspace_dir.display().to_string(),
         mounts: vec![jackin_config::MountConfig {
@@ -6435,6 +6442,7 @@ plugins = []
     .unwrap();
 
     let workspace = jackin_config::ResolvedWorkspace {
+        name: "".to_owned(),
         label: "sample-workspace".to_owned(),
         workdir: "/workspace".to_owned(),
         mounts: vec![

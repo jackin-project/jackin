@@ -86,6 +86,7 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     std::fs::create_dir_all(&cdir).unwrap();
 
     let resolved = ResolvedWorkspace {
+        name: "".to_owned(),
         label: "jackin".into(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![MountConfig {

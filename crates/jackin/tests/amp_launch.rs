@@ -82,6 +82,7 @@ agents = ["amp"]
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let workspace = ResolvedWorkspace {
+        name: "".to_owned(),
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
         mounts: vec![MountConfig {
@@ -199,6 +200,7 @@ agents = ["amp"]
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let workspace = ResolvedWorkspace {
+        name: "".to_owned(),
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
         mounts: vec![MountConfig {
