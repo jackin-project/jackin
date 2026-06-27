@@ -19,7 +19,6 @@ fn apply_forwarded_credential_first_seed_reseed_and_no_clobber() {
     fs::write(&forwarded, b"FORWARDED").expect("write forwarded");
     // `api_key_envs: &[]` keeps the policy deterministic — no env reads.
     let spec = ForwardedCredential {
-        agent: jackin_core::Agent::Codex,
         label: "test",
         forwarded: &forwarded,
         target: &target,

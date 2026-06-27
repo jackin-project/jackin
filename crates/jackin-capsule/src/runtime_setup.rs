@@ -346,7 +346,6 @@ fn setup_claude() -> Result<()> {
     apply_forwarded_credential(
         first_seed,
         &ForwardedCredential {
-            agent: jackin_core::Agent::Claude,
             label: "claude",
             forwarded: Path::new("/jackin/claude/credentials.json"),
             target: &credentials_path,
@@ -493,8 +492,6 @@ fn claude_plugin_fingerprint(config: &jackin_protocol::CapsuleConfig) -> String 
 /// both ends of the host→container sync read the same shape so a reader does not
 /// have to relearn each agent.
 struct ForwardedCredential<'a> {
-    /// Agent whose home is seeded — gates first-seed vs re-seed.
-    agent: jackin_core::Agent,
     /// Short log label, e.g. `"codex"`.
     label: &'a str,
     /// Mounted host credential inside the container (`/jackin/<agent>/<file>`).
@@ -516,8 +513,11 @@ struct ForwardedCredential<'a> {
 ///   present, re-seed (the first seed raced the host login). Guarded on
 ///   `!target.exists()` so a token the agent refreshed in-container is never
 ///   clobbered.
-fn seed_forwarded_credential(spec: &ForwardedCredential<'_>) -> Result<()> {
-    let first_seed = seed_agent_home_from_enum(spec.agent)?.is_first_seed();
+fn seed_forwarded_credential(
+    agent: jackin_core::Agent,
+    spec: &ForwardedCredential<'_>,
+) -> Result<()> {
+    let first_seed = seed_agent_home_from_enum(agent)?.is_first_seed();
     apply_forwarded_credential(first_seed, spec)
 }
 
@@ -554,13 +554,15 @@ fn setup_codex() -> Result<()> {
     // Provider config is idempotent and runs every start; the credential seed
     // (last, fallible step) handles first-seed vs re-seed uniformly.
     write_codex_provider_config(&codex_home())?;
-    seed_forwarded_credential(&ForwardedCredential {
-        agent: jackin_core::Agent::Codex,
-        label: "codex",
-        forwarded: Path::new("/jackin/codex/auth.json"),
-        target: &codex_auth_path(),
-        api_key_envs: &["OPENAI_API_KEY"],
-    })
+    seed_forwarded_credential(
+        jackin_core::Agent::Codex,
+        &ForwardedCredential {
+            label: "codex",
+            forwarded: Path::new("/jackin/codex/auth.json"),
+            target: &codex_auth_path(),
+            api_key_envs: &["OPENAI_API_KEY"],
+        },
+    )
 }
 
 /// Appends the `[model_providers.minimax]` block to `config.toml` and writes
@@ -815,13 +817,15 @@ fn build_minimax_catalog(
 }
 
 fn setup_amp() -> Result<()> {
-    seed_forwarded_credential(&ForwardedCredential {
-        agent: jackin_core::Agent::Amp,
-        label: "amp",
-        forwarded: Path::new("/jackin/amp/secrets.json"),
-        target: &amp_secrets_path(),
-        api_key_envs: &["AMP_API_KEY"],
-    })
+    seed_forwarded_credential(
+        jackin_core::Agent::Amp,
+        &ForwardedCredential {
+            label: "amp",
+            forwarded: Path::new("/jackin/amp/secrets.json"),
+            target: &amp_secrets_path(),
+            api_key_envs: &["AMP_API_KEY"],
+        },
+    )
 }
 
 /// Kimi is the one sync-capable agent whose credential is a directory, not a
@@ -847,7 +851,7 @@ fn setup_kimi() -> Result<()> {
                 "[entrypoint] kimi: no forwarded credential and no api key in env - agent will require interactive login"
             ));
         }
-    } else if forwarded_present && (!target.is_dir() || !dir_nonempty(target)?) {
+    } else if forwarded_present && !(target.is_dir() && dir_nonempty(target)?) {
         copy_dir_contents(forwarded, target)?;
     }
     Ok(())
@@ -865,23 +869,27 @@ fn setup_opencode() -> Result<()> {
         .create("/home/agent/.config/opencode")
         .context("failed to create /home/agent/.config/opencode")?;
     write_opencode_config(Path::new("/home/agent/.config/opencode/opencode.json"))?;
-    seed_forwarded_credential(&ForwardedCredential {
-        agent: jackin_core::Agent::Opencode,
-        label: "opencode",
-        forwarded: Path::new("/jackin/opencode/auth.json"),
-        target: &opencode_auth_path(),
-        api_key_envs: &["OPENCODE_API_KEY"],
-    })
+    seed_forwarded_credential(
+        jackin_core::Agent::Opencode,
+        &ForwardedCredential {
+            label: "opencode",
+            forwarded: Path::new("/jackin/opencode/auth.json"),
+            target: &opencode_auth_path(),
+            api_key_envs: &["OPENCODE_API_KEY"],
+        },
+    )
 }
 
 fn setup_grok() -> Result<()> {
-    seed_forwarded_credential(&ForwardedCredential {
-        agent: jackin_core::Agent::Grok,
-        label: "grok",
-        forwarded: Path::new("/jackin/grok/auth.json"),
-        target: Path::new(GROK_AUTH_PATH),
-        api_key_envs: &["XAI_API_KEY", "GROK_DEPLOYMENT_KEY"],
-    })
+    seed_forwarded_credential(
+        jackin_core::Agent::Grok,
+        &ForwardedCredential {
+            label: "grok",
+            forwarded: Path::new("/jackin/grok/auth.json"),
+            target: Path::new(GROK_AUTH_PATH),
+            api_key_envs: &["XAI_API_KEY", "GROK_DEPLOYMENT_KEY"],
+        },
+    )
 }
 
 /// Writes `opencode.json` with `"permission":"allow"` plus a `provider` block
