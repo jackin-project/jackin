@@ -870,6 +870,17 @@ impl Dialog {
         Some(*selected)
     }
 
+    /// `<prefix>: <used> / <limit>` when both money labels are present, else
+    /// whichever single label exists, else nothing. Shared by the spend-cap and
+    /// dollar-budget lines so the partial-data rendering can't diverge.
+    fn money_cap_part(used: Option<&str>, limit: Option<&str>, prefix: &str) -> Option<String> {
+        match (used, limit) {
+            (Some(used), Some(limit)) => Some(format!("{prefix}: {used} / {limit}")),
+            (Some(label), None) | (None, Some(label)) => Some(label.to_owned()),
+            (None, None) => None,
+        }
+    }
+
     fn usage_bucket_value(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
         let mut parts = Vec::new();
         // Spend is identified by its semantic slot, not a label string, so a
@@ -880,12 +891,11 @@ impl Dialog {
                 let used = 100u8.saturating_sub(remaining);
                 parts.push(format!("{} {used}% used", Self::usage_meter(used)));
             }
-            match (&bucket.used_label, &bucket.limit_label) {
-                (Some(used), Some(limit)) => parts.push(format!("Monthly cap: {used} / {limit}")),
-                (Some(used), None) => parts.push(used.clone()),
-                (None, Some(limit)) => parts.push(limit.clone()),
-                (None, None) => {}
-            }
+            parts.extend(Self::money_cap_part(
+                bucket.used_label.as_deref(),
+                bucket.limit_label.as_deref(),
+                "Monthly cap",
+            ));
             if parts.is_empty()
                 || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
             {
@@ -919,12 +929,11 @@ impl Dialog {
         if bucket.status_slot != Some(jackin_protocol::control::StatusSlot::Spend)
             && (bucket.used_money.is_some() || bucket.limit_money.is_some())
         {
-            match (&bucket.used_label, &bucket.limit_label) {
-                (Some(used), Some(limit)) => parts.push(format!("Budget: {used} / {limit}")),
-                (Some(used), None) => parts.push(used.clone()),
-                (None, Some(limit)) => parts.push(limit.clone()),
-                (None, None) => {}
-            }
+            parts.extend(Self::money_cap_part(
+                bucket.used_label.as_deref(),
+                bucket.limit_label.as_deref(),
+                "Budget",
+            ));
         } else if bucket.label == "Credits"
             && bucket.remaining_percent == Some(0)
             && let Some(limit) = &bucket.limit_label
@@ -1043,24 +1052,20 @@ impl Dialog {
                 state
             };
             if let Self::GitHubContext { scroll, .. } | Self::Usage { scroll, .. } = self {
-                if is_usage {
-                    // Clamp against the same body+lines the renderer uses (Bug 2).
-                    let (content_width, content_height, scroll_rect) =
-                        crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state);
-                    jackin_tui::components::clamp_container_info_scroll(
-                        scroll,
-                        content_width,
-                        content_height,
-                        scroll_rect,
-                    );
+                // Usage clamps against the same body+lines the renderer uses, with
+                // a rect whose viewport excludes the tab strip (Bug 2); other
+                // dialogs clamp against the box rect directly.
+                let (content_width, content_height, clamp_rect) = if is_usage {
+                    crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state)
                 } else {
-                    jackin_tui::components::clamp_container_info_scroll(
-                        scroll,
-                        state.content_width(),
-                        state.content_height(),
-                        rect,
-                    );
-                }
+                    (state.content_width(), state.content_height(), rect)
+                };
+                jackin_tui::components::clamp_container_info_scroll(
+                    scroll,
+                    content_width,
+                    content_height,
+                    clamp_rect,
+                );
             }
         }
     }

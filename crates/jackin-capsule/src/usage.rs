@@ -309,42 +309,33 @@ impl UsageCache {
             self.refresh_schedule.in_flight = false;
             return;
         }
-        // Take the cross-container per-account refresh lock: keep only the targets
-        // this instance won (or whose lock infra is absent). A target held by
-        // another instance is dropped — it is being refreshed there, and this
-        // instance already seeded the shared snapshot above (Class III-D). The
-        // held lock handles live until the end of this method (released on drop),
-        // spanning the fetch and the shared-snapshot write so no other instance
-        // re-fetches the same account in that window.
+        // For each due target, in one pass (resolving the account key — which reads
+        // credential files — exactly once): take the cross-container per-account
+        // refresh lock, then write the pre-fetch advisory marker for the targets
+        // we keep. A target held by another instance is dropped — it is being
+        // refreshed there, and this instance already seeded the shared snapshot
+        // above (Class III-D). The pre-fetch marker makes other instances that
+        // reach `should_refresh` after this point skip, closing the race window to
+        // ~RAM latency. The held lock handles live until the end of this method
+        // (released on drop), spanning the fetch and the shared-snapshot write so
+        // no other instance re-fetches the same account in that window.
+        let cooldown_dir = shared_usage_cooldown_dir();
+        let prefetch_until = now_epoch()
+            .saturating_add(i64::try_from(PROVIDER_PROBE_TIMEOUT.as_secs()).unwrap_or(i64::MAX));
         let mut refresh_locks = Vec::new();
         due_targets.retain(|target| {
-            match acquire_account_refresh_lock(&target.shared_account_key()) {
-                RefreshLockOutcome::Acquired(file) => {
-                    refresh_locks.push(file);
-                    true
-                }
-                RefreshLockOutcome::Unavailable => true,
-                RefreshLockOutcome::Held => false,
+            let account_key = target.shared_account_key();
+            match acquire_account_refresh_lock(&account_key) {
+                RefreshLockOutcome::Held => return false,
+                RefreshLockOutcome::Acquired(file) => refresh_locks.push(file),
+                RefreshLockOutcome::Unavailable => {}
             }
+            write_shared_usage_cooldown_marker(&cooldown_dir, &account_key, prefetch_until, "ok");
+            true
         });
         if due_targets.is_empty() {
             self.refresh_schedule.in_flight = false;
             return;
-        }
-        // Write pre-fetch advisory markers for every target about to be fetched.
-        // Other instances that reach should_refresh_with_cooldown_dir after this
-        // point see the cooldown and skip — closing the race window from ~HTTP-
-        // latency down to ~RAM-operation latency (µs vs. 1–3 s).
-        let cooldown_dir = shared_usage_cooldown_dir();
-        let prefetch_until = now_epoch()
-            .saturating_add(i64::try_from(PROVIDER_PROBE_TIMEOUT.as_secs()).unwrap_or(i64::MAX));
-        for target in &due_targets {
-            write_shared_usage_cooldown_marker(
-                &cooldown_dir,
-                &target.shared_account_key(),
-                prefetch_until,
-                "ok",
-            );
         }
         let codex_rpc_gate = self.codex_rpc_gate.clone();
         let grok_rpc_gate = self.grok_rpc_gate.clone();
@@ -587,21 +578,30 @@ impl UsageRefreshSchedule {
         // refresh by any instance on the same account suppresses the others
         // (Class III).
         let key = target.cache_key();
-        let account_key = target.shared_account_key();
         match self.next_due.get(&key).copied() {
+            // Common steady-state case: scheduled and not yet due. Returns without
+            // resolving the account key, which would read credential files.
             Some(due) if due > now => false,
             Some(_) => {
                 // Scheduled or explicit mark_due refresh: only hard rate-limit
                 // cooldowns (429 backoff from Anthropic) block; advisory success
                 // cooldowns are skipped so user-triggered and timer-driven refreshes
                 // always proceed when due.
-                !shared_usage_rate_limit_cooldown_active(cooldown_dir, &account_key, now_epoch())
+                !shared_usage_rate_limit_cooldown_active(
+                    cooldown_dir,
+                    &target.shared_account_key(),
+                    now_epoch(),
+                )
             }
             None => {
                 // First check for this instance: consult all shared cooldowns
                 // (both 429 and success markers) to avoid thundering herd when
                 // parallel instances all start simultaneously with empty next_due.
-                if shared_usage_cooldown_active(cooldown_dir, &account_key, now_epoch()) {
+                if shared_usage_cooldown_active(
+                    cooldown_dir,
+                    &target.shared_account_key(),
+                    now_epoch(),
+                ) {
                     return false;
                 }
                 self.next_due.insert(key, now);
@@ -700,25 +700,30 @@ fn stable_usage_hash(value: &str) -> u64 {
     })
 }
 
+/// Resolve a directory from an env override, else a path under the container
+/// home — the one shape every shared-usage dir (and the cred-home resolvers)
+/// use. Runtime points the `JACKIN_USAGE_*_DIR` vars at the host-shared volume
+/// (Class III-B); unset falls back to the per-container default.
+fn env_dir_or_home(env_var: &str, home_default: &str) -> PathBuf {
+    std::env::var(env_var).map_or_else(|_| home_path(home_default), PathBuf::from)
+}
+
 fn shared_usage_cooldown_dir() -> PathBuf {
-    std::env::var("JACKIN_USAGE_COOLDOWN_DIR").map_or_else(
-        |_| home_path(".jackin/data/daemon/usage-cooldowns"),
-        PathBuf::from,
+    env_dir_or_home(
+        "JACKIN_USAGE_COOLDOWN_DIR",
+        ".jackin/data/daemon/usage-cooldowns",
     )
 }
 
 fn shared_usage_snapshots_dir() -> PathBuf {
-    std::env::var("JACKIN_USAGE_SNAPSHOTS_DIR").map_or_else(
-        |_| home_path(".jackin/data/daemon/usage-snapshots"),
-        PathBuf::from,
+    env_dir_or_home(
+        "JACKIN_USAGE_SNAPSHOTS_DIR",
+        ".jackin/data/daemon/usage-snapshots",
     )
 }
 
 fn shared_usage_lock_dir() -> PathBuf {
-    std::env::var("JACKIN_USAGE_LOCK_DIR").map_or_else(
-        |_| home_path(".jackin/data/daemon/usage-locks"),
-        PathBuf::from,
-    )
+    env_dir_or_home("JACKIN_USAGE_LOCK_DIR", ".jackin/data/daemon/usage-locks")
 }
 
 /// Outcome of trying to take the cross-container per-account refresh lock.
@@ -926,36 +931,41 @@ fn shared_usage_account_key(agent: &str, focused_provider: Option<&str>) -> Stri
     }
 }
 
-/// Claude account identity (the `oauthAccount` email) read from the same
-/// credential candidates `claude_snapshot` uses, without fetching usage.
-fn claude_account_identity() -> Option<String> {
-    let config =
-        std::env::var("CLAUDE_CONFIG_DIR").map_or_else(|_| home_path(".claude"), PathBuf::from);
+/// Claude OAuth credential candidates, home-first — the single source of truth
+/// for the path precedence, shared by `claude_snapshot` (token + identity) and
+/// `claude_account_identity` (the shared-cache key) so the list can't drift.
+fn claude_oauth_candidates(config: &Path) -> [PathBuf; 4] {
     [
         config.join(".credentials.json"),
         home_path(".claude/.credentials.json"),
         home_path(".claude.json"),
         PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
     ]
-    .iter()
-    .find_map(|path| {
-        read_json_file(path)
-            .as_ref()
-            .and_then(claude_email_from_value)
-    })
 }
 
-/// Codex account identity (`account_id`, else the account label) read from the
-/// `CODEX_HOME` auth file or the forwarded handoff, without fetching usage.
-fn codex_account_identity() -> Option<String> {
-    let codex_home =
-        std::env::var("CODEX_HOME").map_or_else(|_| home_path(".codex"), PathBuf::from);
+/// Codex auth credential candidates (home auth first, forwarded handoff last) —
+/// shared by `codex_snapshot` and `codex_account_identity`.
+fn codex_auth_candidates(codex_home: &Path) -> [PathBuf; 2] {
     [
         codex_home.join("auth.json"),
         PathBuf::from(CODEX_HANDOFF_AUTH_PATH),
     ]
-    .iter()
-    .find_map(|path| {
+}
+
+/// Claude account identity (the `oauthAccount` email) from the same credential
+/// candidates `claude_snapshot` uses, without fetching usage.
+fn claude_account_identity() -> Option<String> {
+    let config = env_dir_or_home("CLAUDE_CONFIG_DIR", ".claude");
+    claude_oauth_candidates(&config)
+        .iter()
+        .find_map(|path| load_claude_account_email(path))
+}
+
+/// Codex account identity (`account_id`, else the account label) from the same
+/// auth candidates `codex_snapshot` uses, without fetching usage.
+fn codex_account_identity() -> Option<String> {
+    let codex_home = env_dir_or_home("CODEX_HOME", ".codex");
+    codex_auth_candidates(&codex_home).iter().find_map(|path| {
         let creds = codex_oauth_from_value(&read_json_file(path)?)?;
         creds.account_id.or(creds.account_label)
     })
@@ -1318,12 +1328,7 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     // fallback — mirroring the other providers (Codex/Amp/Kimi/Grok) — so the
     // snapshot does not silently drop to the impoverished CLI path when the
     // home copy lacks `claudeAiOauth.accessToken`. Matches CodexBar's order.
-    let oauth_candidates = [
-        config.join(".credentials.json"),
-        home_path(".claude/.credentials.json"),
-        home_path(".claude.json"),
-        PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
-    ];
+    let oauth_candidates = claude_oauth_candidates(&config);
     // One home-first walk yields the OAuth token (with its winning path, for
     // the `Auth:` origin — there is no keychain reader in the capsule, so the
     // origin names the file), the `oauthAccount` email, and the
@@ -1534,12 +1539,10 @@ fn codex_snapshot(
 ) -> FocusedUsageView {
     let codex_home =
         std::env::var("CODEX_HOME").map_or_else(|_| home_path(".codex"), PathBuf::from);
-    let auth_path = codex_home.join("auth.json");
-    let handoff_auth_path = Path::new(CODEX_HANDOFF_AUTH_PATH);
     // Home auth first, runtime-forwarded handoff last; one walk yields the
     // credential (with its winning path, for the `Auth:` origin) and the account
     // label, reading each file once.
-    let codex_candidates = [auth_path, handoff_auth_path.to_path_buf()];
+    let codex_candidates = codex_auth_candidates(&codex_home);
     let (resolved, account_from_file) = resolve_identity(
         &codex_candidates,
         codex_oauth_from_value,
@@ -2412,11 +2415,9 @@ fn most_constrained_fresh_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBu
         .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
         .filter(|bucket| bucket.status_slot != Some(StatusSlot::Spend))
         .filter(|bucket| bucket.remaining_percent.is_some() && bucket.resets_at.is_some())
-        .min_by(|a, b| {
-            a.remaining_percent
-                .cmp(&b.remaining_percent)
-                .then(a.resets_at.cmp(&b.resets_at))
-        })
+        // Both keys are `Some` (filtered), so a plain tuple key orders by tightest
+        // remaining, then soonest reset.
+        .min_by_key(|bucket| (bucket.remaining_percent, bucket.resets_at))
         .or_else(|| {
             buckets
                 .iter()
@@ -2743,7 +2744,6 @@ fn claude_organization_type_from_value(value: &serde_json::Value) -> Option<Stri
         .map(humanize_plan_label)
 }
 
-#[cfg(test)]
 fn load_claude_account_email(path: &Path) -> Option<String> {
     claude_email_from_value(&read_json_file(path)?)
 }
@@ -5633,13 +5633,9 @@ fn env_value(name: &str) -> Option<String> {
 /// never fabricated into a full meter (`remaining_from_fraction(-0.5)` would
 /// otherwise yield `Some(100)` — a "100% left" row for data that is absent).
 fn used_percent_from_fraction(value: f64) -> Option<u8> {
-    if !value.is_finite() || value < 0.0 {
-        return None;
-    }
-    let used = if value <= 1.0 { value * 100.0 } else { value }
-        .round()
-        .clamp(0.0, 100.0) as u8;
-    Some(used)
+    // The clamped-to-100 sibling of `used_percent_uncapped`: same fraction/percent
+    // heuristic and absent-value guard, capped at 100 for the `% left` meter.
+    used_percent_uncapped(value).map(|used| used.min(100) as u8)
 }
 
 fn remaining_from_fraction(value: f64) -> Option<u8> {
