@@ -934,7 +934,9 @@ fn usage_refresh_schedule_writes_and_honors_shared_rate_limit_cooldown() {
     view.last_error = Some("Codex usage HTTP 429 retry-after: 60".to_owned());
     schedule.mark_refreshed_with_cooldown_dir(&target, now, &view, dir.path(), dir.path());
 
-    let key = target.cache_key();
+    // Shared cooldown is account-scoped (Class III); assert with the same key
+    // the production write path uses.
+    let key = target.shared_account_key();
     assert!(shared_usage_cooldown_active(dir.path(), &key, now_epoch()));
     assert!(!schedule.should_refresh_with_cooldown_dir(
         &target,
@@ -965,7 +967,9 @@ fn successful_refresh_writes_shared_cooldown_and_snapshot() {
         snapshots_dir.path(),
     );
 
-    let key = target.cache_key();
+    // Shared files are account-scoped (Class III); use the same key the
+    // production write path uses so the round-trip is exercised faithfully.
+    let key = target.shared_account_key();
     // Shared cooldown marker written for success.
     assert!(
         shared_usage_cooldown_active(cooldown_dir.path(), &key, now_epoch()),
@@ -1360,6 +1364,18 @@ fn status_bar_headline_drops_zero_window_and_zero_spend() {
         Some("Session 100%"),
         "Weekly 0% and $0 spent must be omitted from the status bar"
     );
+}
+
+/// Class III: a surface with no resolvable OAuth identity falls back to the
+/// provider-surface key (preserving prior single-account behavior), so the
+/// account-keying never breaks key-based providers.
+#[test]
+fn shared_account_key_falls_back_to_provider_for_unsupported() {
+    let target = UsageRefreshTarget {
+        agent: "totally-unknown-agent".to_owned(),
+        provider: Some("NoSuchProvider".to_owned()),
+    };
+    assert_eq!(target.shared_account_key(), target.cache_key());
 }
 
 /// Bug 11: an over-cap window (>100% utilization) keeps its true used figure in

@@ -79,6 +79,13 @@ impl UsageRefreshTarget {
     fn cache_key(&self) -> String {
         canonical_usage_cache_key(&self.agent, self.provider.as_deref())
     }
+
+    /// Key for the host-shared snapshot/cooldown files: scoped to the resolved
+    /// account, not just the provider surface, so same-account instances across
+    /// containers coordinate while different accounts never collide (Class III).
+    fn shared_account_key(&self) -> String {
+        shared_usage_account_key(&self.agent, self.provider.as_deref())
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -284,9 +291,13 @@ impl UsageCache {
                 // instance): seed in-process cache from shared snapshot so this
                 // instance shows data instead of "refreshing" until the cooldown
                 // expires and it fetches for itself.
-                let key = target.cache_key();
-                if let std::collections::hash_map::Entry::Vacant(e) = self.snapshots.entry(key)
-                    && let Some(view) = read_shared_usage_snapshot(&snapshots_dir, e.key())
+                // Seed the in-memory cache (provider-keyed, per-container) from the
+                // account-scoped shared snapshot, so a different account's data on
+                // the same provider surface is never read in (Class III).
+                let account_key = target.shared_account_key();
+                if let std::collections::hash_map::Entry::Vacant(e) =
+                    self.snapshots.entry(target.cache_key())
+                    && let Some(view) = read_shared_usage_snapshot(&snapshots_dir, &account_key)
                 {
                     e.insert(CachedUsage { view });
                 }
@@ -306,7 +317,7 @@ impl UsageCache {
         for target in &due_targets {
             write_shared_usage_cooldown_marker(
                 &cooldown_dir,
-                &target.cache_key(),
+                &target.shared_account_key(),
                 prefetch_until,
                 "ok",
             );
@@ -543,7 +554,12 @@ impl UsageRefreshSchedule {
         now: Instant,
         cooldown_dir: &Path,
     ) -> bool {
+        // `next_due` is per-instance scheduling (provider-keyed, in-memory); the
+        // shared cooldown markers are cross-container and account-scoped so a
+        // refresh by any instance on the same account suppresses the others
+        // (Class III).
         let key = target.cache_key();
+        let account_key = target.shared_account_key();
         match self.next_due.get(&key).copied() {
             Some(due) if due > now => false,
             Some(_) => {
@@ -551,13 +567,13 @@ impl UsageRefreshSchedule {
                 // cooldowns (429 backoff from Anthropic) block; advisory success
                 // cooldowns are skipped so user-triggered and timer-driven refreshes
                 // always proceed when due.
-                !shared_usage_rate_limit_cooldown_active(cooldown_dir, &key, now_epoch())
+                !shared_usage_rate_limit_cooldown_active(cooldown_dir, &account_key, now_epoch())
             }
             None => {
                 // First check for this instance: consult all shared cooldowns
                 // (both 429 and success markers) to avoid thundering herd when
                 // parallel instances all start simultaneously with empty next_due.
-                if shared_usage_cooldown_active(cooldown_dir, &key, now_epoch()) {
+                if shared_usage_cooldown_active(cooldown_dir, &account_key, now_epoch()) {
                     return false;
                 }
                 self.next_due.insert(key, now);
@@ -589,7 +605,11 @@ impl UsageRefreshSchedule {
         cooldown_dir: &Path,
         snapshots_dir: &Path,
     ) {
+        // `key` schedules this instance (provider-keyed, in-memory); `account_key`
+        // names the cross-container shared files so the cooldown/snapshot a refresh
+        // produces is visible to other instances on the same account (Class III).
         let key = target.cache_key();
+        let account_key = target.shared_account_key();
         if let Some(error) = view.last_error.as_deref()
             && usage_error_is_rate_limited(error)
         {
@@ -601,7 +621,7 @@ impl UsageRefreshSchedule {
             let delay = usage_rate_limit_delay(error, *failures);
             let until_epoch =
                 now_epoch().saturating_add(i64::try_from(delay.as_secs()).unwrap_or(i64::MAX));
-            write_shared_usage_cooldown_marker(cooldown_dir, &key, until_epoch, error);
+            write_shared_usage_cooldown_marker(cooldown_dir, &account_key, until_epoch, error);
             self.next_due.insert(key, now + delay);
         } else {
             self.rate_limit_failures.remove(&key);
@@ -613,8 +633,8 @@ impl UsageRefreshSchedule {
             let success_until = now_epoch().saturating_add(
                 i64::try_from(USAGE_REFRESH_BASE_INTERVAL.as_secs()).unwrap_or(i64::MAX),
             );
-            write_shared_usage_cooldown_marker(cooldown_dir, &key, success_until, "ok");
-            write_shared_usage_snapshot(snapshots_dir, &key, view);
+            write_shared_usage_cooldown_marker(cooldown_dir, &account_key, success_until, "ok");
+            write_shared_usage_snapshot(snapshots_dir, &account_key, view);
         }
     }
 }
@@ -799,6 +819,62 @@ fn usage_backoff_delay(base: Duration, failures: u32) -> Duration {
     let shift = failures.saturating_sub(1).min(8);
     let multiplier = 1u64.checked_shl(shift).unwrap_or(u64::MAX);
     Duration::from_secs(base.as_secs().saturating_mul(multiplier)).min(USAGE_REFRESH_BACKOFF_CAP)
+}
+
+/// Cross-container account identity for the shared snapshot/cooldown files
+/// (Class III). Resolves the OAuth account identity from the credential for the
+/// multi-account OAuth surfaces (Claude email, Codex `account_id`) and scopes the
+/// key to it, so two containers on the same provider but different accounts (e.g.
+/// two Claude logins) get distinct keys — no cross-account
+/// collision, and same-account instances coordinate. Surfaces with no resolvable
+/// OAuth identity (API-key providers, today single-credential per container) fall
+/// back to the provider surface, preserving prior behavior.
+fn shared_usage_account_key(agent: &str, focused_provider: Option<&str>) -> String {
+    let surface = resolve_surface(agent, focused_provider);
+    let identity = match surface {
+        UsageSurface::Claude => claude_account_identity(),
+        UsageSurface::Codex => codex_account_identity(),
+        _ => None,
+    };
+    match identity {
+        Some(id) => format!("{}#{:016x}", surface.label(), stable_usage_hash(&id)),
+        None => canonical_usage_cache_key(agent, focused_provider),
+    }
+}
+
+/// Claude account identity (the `oauthAccount` email) read from the same
+/// credential candidates `claude_snapshot` uses, without fetching usage.
+fn claude_account_identity() -> Option<String> {
+    let config =
+        std::env::var("CLAUDE_CONFIG_DIR").map_or_else(|_| home_path(".claude"), PathBuf::from);
+    [
+        config.join(".credentials.json"),
+        home_path(".claude/.credentials.json"),
+        home_path(".claude.json"),
+        PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
+    ]
+    .iter()
+    .find_map(|path| {
+        read_json_file(path)
+            .as_ref()
+            .and_then(claude_email_from_value)
+    })
+}
+
+/// Codex account identity (`account_id`, else the account label) read from the
+/// `CODEX_HOME` auth file or the forwarded handoff, without fetching usage.
+fn codex_account_identity() -> Option<String> {
+    let codex_home =
+        std::env::var("CODEX_HOME").map_or_else(|_| home_path(".codex"), PathBuf::from);
+    [
+        codex_home.join("auth.json"),
+        PathBuf::from(CODEX_HANDOFF_AUTH_PATH),
+    ]
+    .iter()
+    .find_map(|path| {
+        let creds = codex_oauth_from_value(&read_json_file(path)?)?;
+        creds.account_id.or(creds.account_label)
+    })
 }
 
 fn canonical_usage_cache_key(agent: &str, focused_provider: Option<&str>) -> String {
