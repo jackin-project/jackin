@@ -300,25 +300,11 @@ pub fn warp_out(host_screen_owned: bool) {
 ///
 /// `host_screen_owned` should be `jackin_diagnostics::host_screen_owned()`.
 pub fn warp_end_caption(elapsed: Option<std::time::Duration>, host_screen_owned: bool) {
-    clear_screen();
-    let _ = hold_resizable(
-        std::time::Duration::from_millis(2400),
-        host_screen_owned,
-        || {
-            let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-            let mid = rows / 2;
-            draw_brand_pill_bottom();
-            if let Some(d) = elapsed {
-                let line = format!("You were in the Construct for {}", format_universe_duration(d));
-                let col = center_col(cols, line.chars().count());
-                stderr_fragment(format_args!(
-                    "\x1b[{};{col}H{}",
-                    mid.saturating_add(2),
-                    line.color(owo_rgb(WHITE))
-                ));
-            }
-        },
-    );
+    if let Some(d) = elapsed {
+        let line = format!("You were in the Construct for {}", format_universe_duration(d));
+        // Same glitch-in reveal as the intro phrases (e.g. "Knock, knock, operator.").
+        let _ = glitch_centered(&line, WHITE, 2400, host_screen_owned);
+    }
     clear_screen();
 }
 
