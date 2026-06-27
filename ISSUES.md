@@ -93,7 +93,7 @@ This is a classic read-check-fetch TOCTOU race. The shared state is asymmetric: 
 
 **Why instances with different tokens also hit 429:** Anthropic's `/api/oauth/usage` endpoint appears to rate-limit per-token or per-IP. Instance 3 (`alexey@chainargos.com`) self-healed faster, suggesting it hit its per-account limit from an earlier session fetch, not from this thundering herd alone.
 
-### Required fix (structural)
+### Required fix (structural — not yet implemented)
 
 The shared cooldown must cover **successful fetches** as well as rate-limit failures, with TTL = `USAGE_REFRESH_BASE_INTERVAL`. This ensures any instance that has fetched successfully within the base interval blocks other instances from re-fetching the same provider — eliminating the thundering herd at startup.
 
@@ -105,63 +105,79 @@ Two parts:
 
 ---
 
-## Issue 2 — Auth in Usage panel must match synced auth for the active folder/role
+## Issue 2 — Auth plan label wrong for Enterprise/Team accounts; container starts unauthenticated
 
-### Observed correct behavior (what must always hold)
+### Observed symptoms
 
-Each project folder uses its own Claude account via `auth_forward = "sync"`. The Usage panel MUST show the same credentials that were synced to the container — never the host account unless that IS the synced account.
+**Expected:** each project shows its correct Claude account tier in the TUI header and Status tab:
+- jackin project → `Claude Max` ✓ (already correct)
+- scentbird project → `Claude Enterprise`
+- scentbird AI project → `Claude Team`
 
-Confirmed correct instances:
-
-**scentbird project** (`c8pqe1vf`):
+**Actual:**
 ```
-Anthropic                             azhokhov@scentbird.com
-Auth: OAuth · /jackin/claude/credentials.json    Enterprise
+▝▜█████▛▘  Sonnet 4.6 · API Usage Billing          ← wrong tier label
+   Auth token:       none                            ← unauthenticated
+   cwd:              /Users/donbeave/Projects/scentbird/scentbird
 ```
-Synced enterprise credentials (`/jackin/claude/credentials.json`) won — correct.
 
-**scentbird AI project** (`ky1vwbra`):
-```
-Anthropic                             azhokhov@scentbird.com
-Auth: OAuth · /jackin/claude/credentials.json    Enterprise
-```
-Same — correct.
+Both scentbird and scentbird-AI instances showed `API Usage Billing` and `Auth token: none`. The actual Claude Code agent outside the container authenticated correctly (`Login method: Claude Enterprise account`, `Organization: Scentbird`, `Email: azhokhov@scentbird.com`).
 
-**jackin project** (`es5sbb0q`):
-```
-Anthropic                             alexey@chainargos.com
-Auth: OAuth · ~/.claude/.credentials.json        Max
-```
-Host home credentials won — correct for this project.
+### Root-cause analysis — Bug 2a: wrong plan label
 
-### Credential resolution order (`claude_snapshot`, usage.rs:1023–1028)
+`claude_snapshot` derived the plan label from `claudeAiOauth.subscriptionType` in `.credentials.json`. For Enterprise and Team accounts, Anthropic stores the **billing model** here (`"API Usage Billing"`), not the account tier. The account tier is stored in `oauthAccount.organizationType` in `.claude.json`:
+
+```json
+// ~/.claude.json (confirmed from real Max account)
+{
+  "oauthAccount": {
+    "organizationType": "claude_max",  ← tier ("claude_enterprise", "claude_team", …)
+    "organizationName": "alexey@chainargos.com's Organization",
+    "billingType": "stripe_subscription",  ← billing model (different field)
+    ...
+  }
+}
+```
+
+**Structural condition that permitted the bug:** `claude_snapshot` read from `claudeAiOauth` (credentials file) for the plan label. The credentials file is the right place for the access token; it is not the right place for the account tier. `oauthAccount` in the account file (`.claude.json`) is the authoritative source for the tier, but was only read for the email address, not the tier.
+
+### Fix 2a — shipped in commit `9193e555`
+
+Added `claude_organization_type_from_value` that reads `oauthAccount.organizationType` from the same candidate files already scanned by `resolve_identity`. Priority in `plan_label`:
+
+```
+organizationType (account tier, most reliable)
+OR subscription_type (credentials file fallback when account file unavailable)
+```
+
+Result:
+- Max: `organizationType: "claude_max"` → `"Claude Max"` ✓
+- Enterprise: `organizationType: "claude_enterprise"` → `"Claude Enterprise"` ✓
+- Team: `organizationType: "claude_team"` → `"Claude Team"` ✓
+
+### Root-cause analysis — Bug 2b: container starts unauthenticated
+
+`setup_claude()` in `runtime_setup.rs` copied credentials to `~/.claude/.credentials.json` only when `is_first_seed()` returned true. If the first seed ran **without** credentials available (Keychain read failed at container creation time, or source folder wasn't configured), the agent home was seeded with empty auth state. On all subsequent launches, `is_first_seed()` returned false (home already has content) → credential copy was skipped → agent permanently unauthenticated, even after `/jackin/claude/credentials.json` became available.
+
+**Structural condition that permitted the bug:** the design intent ("never overwrite a token a later tab refreshed") was implemented as an unconditional gate: `if is_first_seed() { copy creds }`. This conflated two distinct states: "in-container token was refreshed (preserve it)" and "in-container has no token (always seed)." The absence of credentials in the container was not a checked condition.
+
+### Fix 2b — shipped in commit `9193e555`
+
+Added a fallback path in `setup_claude()`: when NOT first-seed AND `~/.claude/.credentials.json` is absent AND `/jackin/claude/credentials.json` is present, copy the forwarded credentials. Also re-seeds `account.json` from the forwarded copy if the container's copy is still the empty `{}` skeleton (since `account.json` carries `organizationType` for the plan label fix).
 
 ```rust
-let oauth_candidates = [
-    config.join(".credentials.json"),              // 1. $CLAUDE_CONFIG_DIR/.credentials.json
-    home_path(".claude/.credentials.json"),        // 2. ~/.claude/.credentials.json (host home)
-    home_path(".claude.json"),                     // 3. ~/.claude.json (host home)
-    PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH), // 4. /jackin/claude/credentials.json (synced)
-];
+} else if !credentials_path.exists() && forwarded_creds.is_file() {
+    // Non-first-seed but credentials absent: re-seed from forwarded copy.
+    copy_file_with_mode(forwarded_creds, &credentials_path, 0o600)?;
+    if forwarded_account.is_file()
+        && fs::read_to_string(&account_path).map_or(true, |s| s.trim() == "{}")
+    {
+        copy_file_with_mode(forwarded_account, &account_path, 0o600)?;
+    }
+}
 ```
 
-The synced credentials (`/jackin/claude/credentials.json`) are **last** in priority. They win only when options 1–3 are all absent.
-
-### Structural concern
-
-This priority order means: if host home is mounted into a container AND `~/.claude/.credentials.json` exists on the host (true for the jackin project instance), option 2 wins over the synced credentials (option 4) — regardless of which account the role was configured to sync.
-
-Currently this happens to produce the right result because:
-- scentbird containers apparently do not have the host `~/.claude/.credentials.json` visible at `HOME`
-- The jackin container does
-
-But this is **fragile**: the correctness depends on the container mount layout, not on an explicit "use the synced credentials when sync mode is active" policy. If mount layout changes (e.g., host home is mounted for all containers), scentbird containers would start showing `alexey@chainargos.com` instead of the synced `azhokhov@scentbird.com` — breaking the invariant silently.
-
-### Required fix (structural)
-
-_Awaiting user confirmation of whether this is the exact issue they see, or a different failure mode. More description needed._
-
-The correct structural fix is: when `auth_forward = "sync"` is active, the capsule should prefer `/jackin/claude/credentials.json` over any host-side credential path. The sync mode exists precisely to override the host account; the resolution order should reflect that intent.
+This does NOT overwrite existing in-container credentials (the guard `!credentials_path.exists()` ensures it only runs when the file is absent), preserving the original design intent for the normal case.
 
 ---
 
