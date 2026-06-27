@@ -1037,6 +1037,13 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
         claude_email_from_value,
     );
     let (oauth_path, oauth) = oauth_resolved.unzip();
+    // `organizationType` in oauthAccount (e.g. "claude_enterprise", "claude_max") is
+    // the account tier, not the billing model. Enterprise/Team accounts carry a
+    // billing-mode `subscriptionType` ("API Usage Billing") that is useless as a
+    // plan label; `organizationType` is authoritative and comes from `.claude.json`.
+    let organization_type = oauth_candidates.iter().find_map(|p| {
+        claude_organization_type_from_value(&read_json_file(p)?)
+    });
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
         .filter(|v| !v.is_empty());
@@ -1120,7 +1127,8 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
         surface: UsageSurface::Claude,
         account_label: account,
         username: None,
-        plan_label: oauth.and_then(|credentials| credentials.subscription_type),
+        plan_label: organization_type
+            .or_else(|| oauth.and_then(|credentials| credentials.subscription_type)),
         credential_origin,
         buckets,
         status,
@@ -2345,9 +2353,30 @@ fn claude_email_from_value(value: &serde_json::Value) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// Claude account tier from `oauthAccount.organizationType` in `~/.claude.json`.
+///
+/// Enterprise/Team accounts store their billing model in `subscriptionType`
+/// ("API Usage Billing"), not the account tier. `organizationType` carries the
+/// tier directly (e.g. `"claude_enterprise"`, `"claude_max"`, `"claude_team"`) and is
+/// the authoritative source for the plan label shown in the TUI header.
+fn claude_organization_type_from_value(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("oauthAccount")?
+        .get("organizationType")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(humanize_plan_label)
+}
+
 #[cfg(test)]
 fn load_claude_account_email(path: &Path) -> Option<String> {
     claude_email_from_value(&read_json_file(path)?)
+}
+
+#[cfg(test)]
+fn load_claude_organization_type(path: &Path) -> Option<String> {
+    claude_organization_type_from_value(&read_json_file(path)?)
 }
 
 fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthCredentials> {

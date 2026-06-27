@@ -1848,6 +1848,81 @@ fn claude_oauth_credentials_fall_back_to_rate_limit_tier() {
 }
 
 #[test]
+fn claude_organization_type_humanizes_enterprise_tier() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "oauthAccount": {
+                "emailAddress": "user@company.com",
+                "organizationType": "claude_enterprise",
+                "subscriptionType": "API Usage Billing"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write account");
+    assert_eq!(
+        load_claude_organization_type(&path).as_deref(),
+        Some("Claude Enterprise")
+    );
+}
+
+#[test]
+fn claude_organization_type_humanizes_team_tier() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "oauthAccount": {
+                "emailAddress": "user@team.ai",
+                "organizationType": "claude_team"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write account");
+    assert_eq!(
+        load_claude_organization_type(&path).as_deref(),
+        Some("Claude Team")
+    );
+}
+
+#[test]
+fn claude_organization_type_humanizes_max_tier() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "oauthAccount": {
+                "organizationType": "claude_max"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write account");
+    assert_eq!(
+        load_claude_organization_type(&path).as_deref(),
+        Some("Claude Max")
+    );
+}
+
+#[test]
+fn claude_organization_type_absent_returns_none() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({ "oauthAccount": { "emailAddress": "x@y.com" } }).to_string(),
+    )
+    .expect("write account");
+    assert_eq!(load_claude_organization_type(&path), None);
+}
+
+#[test]
 fn claude_code_user_agent_parses_cli_version() {
     assert_eq!(
         claude_code_version_from_text("Claude Code 2.1.7\n").as_deref(),

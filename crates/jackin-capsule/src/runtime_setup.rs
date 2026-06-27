@@ -338,13 +338,15 @@ fn install_agent_status_reporter(agent: &str) -> Result<()> {
 
 fn setup_claude() -> Result<()> {
     let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Claude)?.is_first_seed();
+    let forwarded_creds = Path::new("/jackin/claude/credentials.json");
+    let forwarded_account = Path::new("/jackin/claude/account.json");
+    let credentials_path = claude_credentials_path();
     if copy_auth {
-        if Path::new("/jackin/claude/account.json").is_file() {
-            copy_file_with_mode("/jackin/claude/account.json", claude_account_path(), 0o600)?;
+        if forwarded_account.is_file() {
+            copy_file_with_mode(forwarded_account, claude_account_path(), 0o600)?;
         }
-        let credentials_path = claude_credentials_path();
-        if Path::new("/jackin/claude/credentials.json").is_file() {
-            copy_file_with_mode("/jackin/claude/credentials.json", &credentials_path, 0o600)?;
+        if forwarded_creds.is_file() {
+            copy_file_with_mode(forwarded_creds, &credentials_path, 0o600)?;
         } else {
             // First-setup only (inside `if copy_auth`): never clear a token a
             // later tab refreshed. See the run_agent_setup gate comment.
@@ -352,6 +354,21 @@ fn setup_claude() -> Result<()> {
             crate::output::stderr_line(format_args!(
                 "[entrypoint] claude: no credentials.json forwarded - agent will start unauthenticated unless ANTHROPIC_API_KEY is set"
             ));
+        }
+    } else if !credentials_path.exists() && forwarded_creds.is_file() {
+        // Non-first-seed but credentials absent: first-seed ran without credentials
+        // (e.g. Keychain read failed at container creation time) and credentials
+        // became available on a later launch. Re-seed from the forwarded copy
+        // rather than leaving the agent permanently unauthenticated.
+        copy_file_with_mode(forwarded_creds, &credentials_path, 0o600)?;
+        // Re-seed account.json too if the container's copy is still the empty
+        // skeleton — it carries organizationType used for the plan label.
+        let account_path = claude_account_path();
+        if forwarded_account.is_file()
+            && fs::read_to_string(&account_path)
+                .map_or(true, |s| s.trim() == "{}")
+        {
+            copy_file_with_mode(forwarded_account, &account_path, 0o600)?;
         }
     }
 
