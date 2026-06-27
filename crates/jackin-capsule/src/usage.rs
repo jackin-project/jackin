@@ -284,23 +284,25 @@ impl UsageCache {
         let snapshots_dir = shared_usage_snapshots_dir();
         let mut due_targets = Vec::new();
         for target in targets {
+            // Seed the in-memory cache from the account-scoped shared snapshot
+            // (as Stale) the first time this instance sees a target, so a fresh
+            // instance shows real last-known numbers immediately instead of
+            // "refreshing" — whether the target is due (about to fetch in the
+            // background) or not (cooldown active). The shared key is
+            // account-scoped so a different account's data on the same provider
+            // surface is never read in (Class III-C). Keyed in memory by provider
+            // (per-container), one account per agent.
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                self.snapshots.entry(target.cache_key())
+                && let Some(view) =
+                    read_shared_usage_snapshot(&snapshots_dir, &target.shared_account_key())
+            {
+                e.insert(CachedUsage {
+                    view: stale_shared_view(view, now_epoch()),
+                });
+            }
             if self.refresh_schedule.should_refresh(&target, now) {
                 due_targets.push(target);
-            } else {
-                // Cooldown active (rate-limit or a recent success by another
-                // instance): seed in-process cache from shared snapshot so this
-                // instance shows data instead of "refreshing" until the cooldown
-                // expires and it fetches for itself.
-                // Seed the in-memory cache (provider-keyed, per-container) from the
-                // account-scoped shared snapshot, so a different account's data on
-                // the same provider surface is never read in (Class III).
-                let account_key = target.shared_account_key();
-                if let std::collections::hash_map::Entry::Vacant(e) =
-                    self.snapshots.entry(target.cache_key())
-                    && let Some(view) = read_shared_usage_snapshot(&snapshots_dir, &account_key)
-                {
-                    e.insert(CachedUsage { view });
-                }
             }
         }
         if due_targets.is_empty() {
@@ -2385,6 +2387,24 @@ fn preserve_cached_quota_on_failed_refresh(view: &mut FocusedUsageView, cached: 
         view.status,
         &view.buckets,
     );
+}
+
+/// Present a shared-snapshot view as this instance's last-known **Stale** data:
+/// it was fetched by some other instance earlier, not freshly by us. Keeps the
+/// numbers, marks the view and its buckets Stale, sources from cache, and sets an
+/// "as of" relative label (Class III-C). With Bug 1's marker, the status bar then
+/// reads `Updated Xm ago · refreshing...` while this instance's background fetch
+/// runs, upgrading to Fresh on completion — never a blank "refreshing" cold start.
+fn stale_shared_view(mut view: FocusedUsageView, now: i64) -> FocusedUsageView {
+    view.status = UsageSnapshotStatus::Stale;
+    view.source = UsageSource::Cache;
+    for bucket in &mut view.buckets {
+        if bucket.status == UsageSnapshotStatus::Fresh {
+            bucket.status = UsageSnapshotStatus::Stale;
+        }
+    }
+    view.updated_label = relative_updated_label(view.fetched_at_epoch, now);
+    view
 }
 
 fn provider_tabs(active: UsageSurface) -> Vec<UsageProviderTab> {

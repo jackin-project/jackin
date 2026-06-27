@@ -1366,6 +1366,38 @@ fn status_bar_headline_drops_zero_window_and_zero_spend() {
     );
 }
 
+/// Class III-C: hydrating a shared snapshot keeps its numbers but marks the view
+/// and its buckets Stale (last-known, not freshly fetched by this instance).
+#[test]
+fn stale_shared_view_downgrades_status_keeps_numbers() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 15.0, "resets_at": "2026-06-28T16:40:00Z" }
+    }))
+    .expect("valid Claude OAuth usage");
+    let buckets = usage.into_buckets(1_781_185_560);
+    let fresh = FocusedUsageView {
+        status: UsageSnapshotStatus::Fresh,
+        buckets,
+        fetched_at_epoch: 1_781_185_560,
+        ..FocusedUsageView::unavailable("seed", 1_781_185_560)
+    };
+    let stale = stale_shared_view(fresh, 1_781_185_860);
+    assert_eq!(stale.status, UsageSnapshotStatus::Stale);
+    assert!(
+        stale
+            .buckets
+            .iter()
+            .all(|b| b.status == UsageSnapshotStatus::Stale),
+        "every bucket downgraded to Stale"
+    );
+    let session = stale
+        .buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket");
+    assert_eq!(session.remaining_percent, Some(85), "numbers preserved");
+}
+
 /// Class III: a surface with no resolvable OAuth identity falls back to the
 /// provider-surface key (preserving prior single-account behavior), so the
 /// account-keying never breaks key-based providers.
