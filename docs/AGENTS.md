@@ -166,3 +166,15 @@ bun install --frozen-lockfile
 - Fumadocs chrome uses CSS custom properties. Mappings in `src/styles/docs-theme.css` (Fumadocs `--color-fd-*` plus legacy `--sl-*` compat tokens → Radix tokens from `tempo-tokens.css`).
 - Brand accent token `--jk-brand` is theme-aware (bright #00ff41 dark, muted #16a34a light) — tabs underline, sidebar active pill, right-rail TOC, pagination hover.
 - Code blocks always use a dark surface (`--jk-code-bg`) regardless of page theme. Shiki theme: github-dark in both modes.
+
+### Buttons
+
+One button system across **both** docs and landing. All buttons use the docs accent `--jk-accent` (theme-adaptive: `#5cf07a` dark / `#1d9e75` light) — the same green everywhere. Never style a button with `--landing-accent` (`#00ff41`) or any other green; that bright phosphor is reserved for terminal-output mockups (code panel, loop terminals) and the matrix rain, not UI controls.
+
+Three tiers, by role — don't make every button look the same:
+
+- **Primary** — solid green: `background: var(--jk-accent)`, `color: #0a0a0a` (dark ink, reads in both themes), matching border; hover `filter: brightness(1.08)`. The page's main CTA only (e.g. *Get Started*, *Read the Docs*, *Read the guide* / `.landing-btn-primary`, `.landing-invite-cta`).
+- **Secondary** — green-accent outline: `background: color-mix(in srgb, var(--jk-accent) 8%, transparent)`, `color: var(--jk-accent)`, `border: 1px solid color-mix(in srgb, var(--jk-accent) 35%, transparent)`; hover bumps the bg to ~16% and the border to solid `--jk-accent`. Supporting actions (*Star on GitHub*, topnav *Docs/Star*, *Copy Markdown* / *Open*, the section switcher / `.landing-btn-ghost`, `.landing-star`, `.jk-page-actions button`).
+- **Icon-only / toggles** — neutral surface, green only on active/hover (theme toggle, social links, sidebar collapse, code-copy, search). A solid-green icon button is unreadable; keep these quiet.
+
+Any new button picks one of these three tiers — never a one-off color or style.
