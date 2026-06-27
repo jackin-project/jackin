@@ -293,9 +293,8 @@ impl UsageCache {
         // point see the cooldown and skip — closing the race window from ~HTTP-
         // latency down to ~RAM-operation latency (µs vs. 1–3 s).
         let cooldown_dir = shared_usage_cooldown_dir();
-        let prefetch_until = now_epoch().saturating_add(
-            i64::try_from(PROVIDER_PROBE_TIMEOUT.as_secs()).unwrap_or(i64::MAX),
-        );
+        let prefetch_until = now_epoch()
+            .saturating_add(i64::try_from(PROVIDER_PROBE_TIMEOUT.as_secs()).unwrap_or(i64::MAX));
         for target in &due_targets {
             write_shared_usage_cooldown_marker(
                 &cooldown_dir,
@@ -2525,12 +2524,10 @@ fn resolve_identity<T>(
     extract_credential: impl Fn(&serde_json::Value) -> Option<T>,
     extract_label: impl Fn(&serde_json::Value) -> Option<String>,
 ) -> (Option<(PathBuf, T)>, Option<String>) {
-    let (result, label, _) = resolve_identity_with_extra(
-        candidates,
-        extract_credential,
-        extract_label,
-        |_| None::<String>,
-    );
+    let (result, label, _) =
+        resolve_identity_with_extra(candidates, extract_credential, extract_label, |_| {
+            None::<String>
+        });
     (result, label)
 }
 

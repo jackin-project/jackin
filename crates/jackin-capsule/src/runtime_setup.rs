@@ -365,8 +365,7 @@ fn setup_claude() -> Result<()> {
         // skeleton — it carries organizationType used for the plan label.
         let account_path = claude_account_path();
         if forwarded_account.is_file()
-            && fs::read_to_string(&account_path)
-                .map_or(true, |s| s.trim() == "{}")
+            && fs::read_to_string(&account_path).map_or(true, |s| s.trim() == "{}")
         {
             copy_file_with_mode(forwarded_account, &account_path, 0o600)?;
         }

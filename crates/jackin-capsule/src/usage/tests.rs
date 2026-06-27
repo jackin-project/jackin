@@ -928,11 +928,7 @@ fn successful_refresh_writes_shared_cooldown_and_snapshot() {
     let now = Instant::now();
     let view = FocusedUsageView::unavailable("fresh", now_epoch());
 
-    assert!(schedule.should_refresh_with_cooldown_dir(
-        &target,
-        now,
-        cooldown_dir.path()
-    ));
+    assert!(schedule.should_refresh_with_cooldown_dir(&target, now, cooldown_dir.path()));
 
     schedule.mark_refreshed_with_cooldown_dir(
         &target,
