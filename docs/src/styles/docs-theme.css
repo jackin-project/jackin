@@ -1254,11 +1254,14 @@ html.theme-init *::after {
   background-color: color-mix(in srgb, var(--jk-brand) 11%, transparent);
 }
 
+/* Selected page: quiet brand treatment (green text, faint green wash, thin
+   accent bar) — matches the status-active style instead of the old heavy
+   solid-fill pill. Font family/weight left as-is on purpose. */
 #nd-sidebar a[data-active='true'],
 #nd-sidebar a[data-active='true']:hover,
 #nd-sidebar a[data-active='true']:focus {
-  color: var(--sl-color-text-invert);
-  background-color: var(--jk-accent);
+  color: color-mix(in oklab, var(--jk-brand) 76%, var(--jk-text));
+  background-color: color-mix(in srgb, var(--jk-brand) 12%, transparent);
   box-shadow: none;
   font-weight: 600;
 }
@@ -1266,11 +1269,18 @@ html.theme-init *::after {
 :root[data-theme='light'] #nd-sidebar a[data-active='true'],
 :root[data-theme='light'] #nd-sidebar a[data-active='true']:hover,
 :root[data-theme='light'] #nd-sidebar a[data-active='true']:focus {
-  color: #ffffff;
+  color: var(--jk-brand-muted);
 }
 
 #nd-sidebar a[data-active='true']::before {
-  display: none;
+  content: "";
+  display: block;
+  position: absolute;
+  width: 2px;
+  inset-block: 0.7rem;
+  inset-inline-start: 0.55rem;
+  border-radius: 0;
+  background: color-mix(in oklab, var(--jk-brand) 66%, transparent);
 }
 
 /* ==========================================================================
