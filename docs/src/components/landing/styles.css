@@ -931,19 +931,20 @@ html.theme-init *::after {
 }
 .landing-invite-cta {
   display: inline-flex; align-items: center; gap: 6px;
-  color: var(--landing-accent);
+  background: var(--jk-accent);
+  color: #0a0a0a;
+  border: 1px solid var(--jk-accent);
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px; font-weight: 500;
+  font-size: 13px; font-weight: 600;
   text-decoration: none; letter-spacing: 0.02em;
-  border: 1px solid rgb(var(--landing-accent-rgb) / 0.45);
   padding: 10px 16px; border-radius: 5px;
-  transition: gap 0.2s ease-out, border-color 0.2s, background 0.2s;
+  transition: gap 0.2s ease-out, filter 0.15s, box-shadow 0.2s;
   white-space: nowrap;
 }
 .landing-invite-cta:hover {
   gap: 10px;
-  border-color: var(--landing-accent);
-  background: rgb(var(--landing-accent-rgb) / 0.1);
+  filter: brightness(1.08);
+  box-shadow: 0 6px 20px rgb(92 240 122 / 0.3);
 }
 
 @media (max-width: 880px) {
