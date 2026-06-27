@@ -137,9 +137,13 @@ function Page() {
         // so the more specific roots must come after it for active-tab detection.
         tabs: [
           {
+            // Public is the catch-all section spanning /getting-started, /guides,
+            // /commands — no shared prefix but `/`. Matching on `/` keeps the
+            // switcher present on every public page; the more-specific /reference
+            // and /roadmap tabs still win on their pages via findLast (order matters).
             title: 'jackin❯',
             description: 'Install, run, and operate jackin❯.',
-            url: '/getting-started/why',
+            url: '/',
             icon: <SquareTerminal />,
           },
           {
