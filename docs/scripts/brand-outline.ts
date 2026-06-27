@@ -56,8 +56,11 @@ export function outlineWord(text: string, fontSize: number, fill: string, face: 
     x += g.advanceWidth
   }
   const baseline = round(maxY * scale)
+  // Keep full precision on the scale — rounding it (e.g. 0.0273 → 0.03) distorts
+  // the glyph size and throws off alignment for small text like the byline.
+  const s = Math.round(scale * 1e6) / 1e6
   return {
-    group: `<g fill="${fill}" transform="translate(0 ${baseline}) scale(${round(scale)} ${round(-scale)})">${glyphs.join('')}</g>`,
+    group: `<g fill="${fill}" transform="translate(0 ${baseline}) scale(${s} ${-s})">${glyphs.join('')}</g>`,
     baseline,
     width: round(right * scale),
     inkRight: round(inkRight * scale),

@@ -10,6 +10,7 @@
 // Logo style: transparent background, white "jackin" (bold), green ❯ chevron.
 // To change the mark, edit this file or brand-geometry.ts and rerun `gen-brand`.
 
+import { Resvg } from '@resvg/resvg-js'
 import ImageResponse from '@takumi-rs/image-response'
 import React from 'react'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -75,9 +76,46 @@ const pub = join(root, 'public')
 mkdirSync(brandDir, { recursive: true })
 
 // 1. Canonical wordmark + monogram (outlined SVG). Used by BrandMark and the TOC.
+// Guarantee, by rasterizing the result, that the byline's right edge lines up
+// with the end of the "n" (the actual rendered pixels — not font metrics, which
+// can lie). Throws if the two right edges differ by more than `tolUnits`. This
+// would have caught the scale-rounding bug that pushed the byline ~30 units out.
+function assertBylineAligned(svg: string, wordFontSize: number, tolUnits = 3) {
+  const vbW = Number(svg.match(/viewBox="0 0 ([0-9.]+)/)?.[1])
+  const renderW = 2000
+  const { pixels, width, height } = new Resvg(svg, { fitTo: { mode: 'width', value: renderW } }).render()
+  const toVb = (px: number) => (px / width) * vbW
+  // x where the chevron begins, so the word scan can stop before it.
+  const wordRightVb = outlineWord('jackin', wordFontSize, WHITE).width + wordChevronGap(wordFontSize)
+  const chevronLeftPx = Math.floor(((wordRightVb + 2) / vbW) * width)
+  const rightInk = (y0: number, y1: number, xCapPx: number) => {
+    let max = -1
+    for (let y = y0; y < y1; y++) {
+      for (let x = Math.min(width - 1, xCapPx); x > max; x--) {
+        if (pixels[(y * width + x) * 4 + 3] > 40) {
+          max = Math.max(max, x)
+          break
+        }
+      }
+    }
+    return max
+  }
+  const wordRight = rightInk(Math.floor(height * 0.2), Math.floor(height * 0.5), chevronLeftPx)
+  const bylineRight = rightInk(Math.floor(height * 0.8), Math.floor(height * 0.99), width - 1)
+  const delta = Math.abs(toVb(wordRight) - toVb(bylineRight))
+  if (delta > tolUnits) {
+    throw new Error(
+      `byline misaligned by ${delta.toFixed(1)} units (word "n" right ${toVb(wordRight).toFixed(1)}, byline right ${toVb(bylineRight).toFixed(1)})`,
+    )
+  }
+  console.log(`✓ byline aligned to the word (Δ ${delta.toFixed(2)} units)`)
+}
+
 // Canonical wordmark carries the "by tailrocks" byline (shown on every logo).
 // The monogram (used for square icons) stays byline-free.
-writeFileSync(join(brandDir, 'jackin-wordmark.svg'), wordmarkSvg('jackin', 200, WHITE, GREEN, true))
+const wordmark = wordmarkSvg('jackin', 200, WHITE, GREEN, true)
+assertBylineAligned(wordmark, 200)
+writeFileSync(join(brandDir, 'jackin-wordmark.svg'), wordmark)
 console.log('wrote public/brand/jackin-wordmark.svg')
 writeFileSync(join(brandDir, 'jackin-monogram.svg'), wordmarkSvg('j', 200, WHITE, GREEN, false))
 console.log('wrote public/brand/jackin-monogram.svg')
