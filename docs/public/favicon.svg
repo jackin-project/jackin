@@ -1,1 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#0a0a0a"/><text x="220" y="324" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="290" font-weight="600" fill="#ffffff">j</text><path d="M286 174 382 256 286 338" fill="none" stroke="#5cf07a" stroke-width="40" stroke-linecap="square" stroke-linejoin="miter"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#0a0a0a"/>
+  <text x="71.27" y="256" textLength="153.6" lengthAdjust="spacingAndGlyphs" dominant-baseline="central" font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="256" font-weight="600" fill="#ffffff">j</text>
+  <path d="M281.19 118.72 L418.47 256 L281.19 393.28" fill="none" stroke="#5cf07a" stroke-width="44.52" stroke-linecap="square" stroke-linejoin="miter"/>
+</svg>

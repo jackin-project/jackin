@@ -5,6 +5,7 @@ import React from 'react'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ageToColor, createRainState, tickRain } from '../src/components/landing/rainEngine'
+import { caret, caretSvg } from './brand-geometry'
 
 const root = join(import.meta.dirname, '..')
 
@@ -77,18 +78,15 @@ function Rain({ width, height }: { width: number; height: number }) {
   return React.createElement('div', { style: { position: 'absolute', inset: 0, display: 'flex' } }, children)
 }
 
-function Chevron({ size, stroke, marginLeft = 0 }: { size: number; stroke: number; marginLeft?: number }) {
-  return React.createElement('div', {
-    style: {
-      display: 'flex',
-      width: size,
-      height: size,
-      borderTop: `${stroke}px solid ${CHEVRON}`,
-      borderRight: `${stroke}px solid ${CHEVRON}`,
-      transform: 'rotate(45deg)',
-      marginLeft,
-      marginTop: size * 0.08,
-    },
+// Chevron from the shared geometry (brand-geometry.ts), embedded as an <img> so
+// it's the exact same caret path used by the DOM lockup and standalone assets.
+function Chevron({ fontSize, marginLeft = 0 }: { fontSize: number; marginLeft?: number }) {
+  const c = caretSvg(fontSize, CHEVRON)
+  return React.createElement('img', {
+    width: c.width,
+    height: c.height,
+    src: `data:image/svg+xml;base64,${Buffer.from(c.svg).toString('base64')}`,
+    style: { marginLeft },
   })
 }
 
@@ -154,7 +152,7 @@ function Card({ width, height }: { width: number; height: number }) {
           },
         },
         React.createElement('span', { style: { display: 'flex' } }, 'jackin'),
-        React.createElement(Chevron, { size: 74, stroke: 14, marginLeft: 6 }),
+        React.createElement(Chevron, { fontSize: 142, marginLeft: 10 }),
       ),
       React.createElement(
         'div',
@@ -241,6 +239,7 @@ async function generate(width: number, height: number, output: string) {
   console.log(`wrote ${output} (${png.byteLength.toLocaleString()} bytes)`)
 }
 
+const heroCaret = caret(138, 842, 314)
 const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="jackin❯ by tailrocks">
   <rect width="1280" height="640" fill="${BG}"/>
   <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="22" font-weight="600" text-anchor="middle">
@@ -248,7 +247,7 @@ const readmeHeroSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" heig
   </g>
   <g font-family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" text-anchor="middle">
     <text x="586" y="338" font-size="138" font-weight="600" fill="${TEXT}">jackin</text>
-    <path d="M842 240 916 314 842 388" fill="none" stroke="${CHEVRON}" stroke-width="24" stroke-linecap="square" stroke-linejoin="miter"/>
+    <path d="${heroCaret.d}" fill="none" stroke="${CHEVRON}" stroke-width="${heroCaret.strokeWidth}" stroke-linecap="square" stroke-linejoin="miter"/>
     <text x="626" y="446" font-size="26" font-weight="500" fill="${MUTED}">by tailrocks</text>
   </g>
 </svg>
