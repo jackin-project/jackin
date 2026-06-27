@@ -47,7 +47,7 @@
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
-  --landing-accent: #00ff41;
+  --landing-accent: #5cf07a;
   --landing-danger: #ff5e7a;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
@@ -57,7 +57,7 @@
      every border/wash/bloom/glow in the stylesheet. One token controls
      the hue of every accented surface: bright phosphor in dark mode,
      juicy mid-green (#16a34a) in light mode. */
-  --landing-accent-rgb: 0 255 65;
+  --landing-accent-rgb: 92 240 122;
 
   /* Page-level bg kept unscoped — the hero's bottom-fade gradient uses
      this to blend into whatever the page is (dark or light), even though
@@ -112,7 +112,7 @@
   --landing-text: #1a1c1b;
   --landing-text-dim: #5d6460;
   --landing-text-ghost: #8a928e;
-  --landing-accent: #007a22;    /* deep forest — matches docs --jk-accent (AA on white) */
+  --landing-accent: #1d9e75;    /* deep forest — matches docs --jk-accent (AA on white) */
   --landing-danger: #b0183a;
   --landing-ui: rgba(0, 0, 0, 0.08);
   --landing-ui-strong: rgba(0, 0, 0, 0.18);
@@ -120,7 +120,7 @@
 
   /* Juicy mid-green (docs --jk-brand) for borders and accent washes in
      the body — stays visible at low alpha on white panels. */
-  --landing-accent-rgb: 22 163 74;
+  --landing-accent-rgb: 29 158 117;
 
   --landing-page-bg: var(--landing-bg);
 
@@ -228,8 +228,8 @@
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
-  --landing-accent: #00ff41;
-  --landing-accent-rgb: 0 255 65;
+  --landing-accent: #5cf07a;
+  --landing-accent-rgb: 92 240 122;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
   --landing-ui-subtle: rgba(244, 247, 245, 0.05);
@@ -1500,7 +1500,9 @@ h1.landing-hero-headline {
   color: var(--landing-text);
   max-width: 780px;
 }
-h1.landing-hero-headline .accent { color: var(--landing-accent); }
+h1.landing-hero-headline .accent { color: var(--jk-accent); }
+/* Light-mode hero is a green canvas — keep the accent white there for contrast. */
+:root[data-theme='light'] .landing-hero-stage h1.landing-hero-headline .accent { color: #ffffff; }
 h1.landing-hero-headline .soft { color: var(--landing-text-dim); font-weight: 300; }
 
 .landing-hero-deck {
