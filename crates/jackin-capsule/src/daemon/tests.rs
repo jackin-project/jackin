@@ -309,8 +309,12 @@ fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("refresh usage action must keep usage dialog open");
     };
+    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
+    // below); the "refreshing" marker is applied by the dialog tick only when a
+    // refresh task is genuinely in flight. No task is spawned here, so the marker
+    // must NOT appear — it is no longer driven by the scheduling flag.
     assert!(
-        view.updated_label.contains("refreshing"),
+        !view.updated_label.contains("refreshing"),
         "{:?}",
         view.updated_label
     );
@@ -334,8 +338,12 @@ fn apply_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("refresh usage action must keep usage dialog open");
     };
+    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
+    // below); the "refreshing" marker is applied by the dialog tick only when a
+    // refresh task is genuinely in flight. No task is spawned here, so the marker
+    // must NOT appear — it is no longer driven by the scheduling flag.
     assert!(
-        view.updated_label.contains("refreshing"),
+        !view.updated_label.contains("refreshing"),
         "{:?}",
         view.updated_label
     );
@@ -404,8 +412,12 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
         panic!("usage dialog expected");
     };
+    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
+    // below); the "refreshing" marker is applied by the dialog tick only when a
+    // refresh task is genuinely in flight. No task is spawned here, so the marker
+    // must NOT appear — it is no longer driven by the scheduling flag.
     assert!(
-        view.updated_label.contains("refreshing"),
+        !view.updated_label.contains("refreshing"),
         "{:?}",
         view.updated_label
     );
