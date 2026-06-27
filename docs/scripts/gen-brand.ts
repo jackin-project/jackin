@@ -115,13 +115,14 @@ function assertBylineAligned(svg: string, tolUnits = 3) {
   console.log(`✓ byline aligned to the word (Δ ${delta.toFixed(2)} units)`)
 }
 
-// Wordmark — no byline. Used in nav chrome: header, sidebar, landing nav, TOC.
-writeFileSync(join(brandDir, 'jackin-wordmark.svg'), wordmarkSvg('jackin', 200, WHITE, GREEN, false))
+// Wordmark — carries the "by tailrocks" byline; shown on every logo (header,
+// sidebar, landing nav, TOC, footer). The lockup is kept as an explicit alias
+// for surfaces that opt in via BrandMark's byline prop.
+const wordmark = wordmarkSvg('jackin', 200, WHITE, GREEN, true)
+assertBylineAligned(wordmark)
+writeFileSync(join(brandDir, 'jackin-wordmark.svg'), wordmark)
 console.log('wrote public/brand/jackin-wordmark.svg')
-// Lockup — with the "by tailrocks" byline. Used on the footer / large surfaces.
-const lockup = wordmarkSvg('jackin', 200, WHITE, GREEN, true)
-assertBylineAligned(lockup)
-writeFileSync(join(brandDir, 'jackin-lockup.svg'), lockup)
+writeFileSync(join(brandDir, 'jackin-lockup.svg'), wordmark)
 console.log('wrote public/brand/jackin-lockup.svg')
 writeFileSync(join(brandDir, 'jackin-monogram.svg'), wordmarkSvg('j', 200, WHITE, GREEN, false))
 console.log('wrote public/brand/jackin-monogram.svg')
@@ -204,7 +205,7 @@ async function renderPng(element: React.ReactElement, width: number, height: num
 
 for (const [name, word] of [['jackin-wordmark', 'jackin'], ['jackin-monogram', 'j']] as const) {
   const fontSize = 220
-  const byline = false
+  const byline = word === 'jackin'
   const chev = chevronSvg(fontSize, GREEN)
   const width = Math.ceil(fontSize * 0.6 * word.length + wordChevronGap(fontSize) + chev.width)
   const height = Math.ceil(chev.height * 1.4 + (byline ? fontSize * 0.45 : 0))
