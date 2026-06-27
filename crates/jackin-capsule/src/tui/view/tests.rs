@@ -239,7 +239,7 @@ fn non_debug_dialog_hides_bottom_status_bar() {
 
     let buf = terminal.backend().buffer();
     let row0: String = (0..30).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
-    assert!(row0.contains("jackin'"), "status brand missing: {row0:?}");
+    assert!(row0.contains("jackin❯"), "status brand missing: {row0:?}");
     let hint = row_text(buf, 21);
     assert!(hint.contains("dismiss"), "dialog hint missing: {hint:?}");
     let footer = row_text(buf, 23);

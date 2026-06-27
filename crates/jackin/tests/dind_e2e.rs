@@ -231,7 +231,7 @@ fn jackin_load_ctrl_q_yes_exits_cold_build_quickly() {
         "Ctrl+Q then Enter should hard-exit successfully during a cold build\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stdout.contains("Exit jackin'?"),
+        stdout.contains("Exit jackin❯?"),
         "exit confirmation did not render before quick exit\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 }
