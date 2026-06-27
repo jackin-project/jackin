@@ -1,5 +1,4 @@
 // docs/components/landing/HeroContent.tsx
-import { BrandMark } from '../brand/BrandMark';
 import { CodePanel } from './CodePanel';
 
 export function HeroContent() {
@@ -12,9 +11,6 @@ export function HeroContent() {
 
   return (
     <>
-      <div className="landing-hero-wordmark-wrap">
-        <BrandMark className="landing-hero-wordmark" byline />
-      </div>
       <div className="landing-hero-grid">
         <div className="landing-hero-left">
           <h1 className="landing-hero-headline">
