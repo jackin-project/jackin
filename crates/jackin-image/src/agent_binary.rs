@@ -287,11 +287,11 @@ async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
 
 async fn resolve_claude() -> Result<AgentRelease> {
     let base = "https://downloads.claude.ai/claude-code-releases";
-    let version = fetch_text(&format!("{base}/latest")).await?;
+    let version = fetch_text_with_retry(&format!("{base}/latest")).await?;
     let version = version.trim().to_owned();
     let platform = platform_x64_arm64();
     let manifest: ClaudeManifest =
-        serde_json::from_str(&fetch_text(&format!("{base}/{version}/manifest.json")).await?)?;
+        serde_json::from_str(&fetch_text_with_retry(&format!("{base}/{version}/manifest.json")).await?)?;
     let entry = manifest
         .platforms
         .get(platform)
@@ -307,7 +307,7 @@ async fn resolve_claude() -> Result<AgentRelease> {
 
 async fn resolve_amp() -> Result<AgentRelease> {
     let base = "https://static.ampcode.com";
-    let version = fetch_text(&format!("{base}/cli/cli-version.txt"))
+    let version = fetch_text_with_retry(&format!("{base}/cli/cli-version.txt"))
         .await?
         .trim()
         .to_owned();
@@ -315,7 +315,7 @@ async fn resolve_amp() -> Result<AgentRelease> {
         "arm64" => "linux-arm64",
         _ => "linux-x64",
     };
-    let sha_text = fetch_text(&format!("{base}/cli/{version}/{platform}-amp.sha256")).await?;
+    let sha_text = fetch_text_with_retry(&format!("{base}/cli/{version}/{platform}-amp.sha256")).await?;
     let checksum = parse_sha256_hex(&sha_text)
         .with_context(|| format!("amp published checksum for {version} {platform}"))?;
     Ok(AgentRelease {
@@ -328,7 +328,7 @@ async fn resolve_amp() -> Result<AgentRelease> {
 }
 
 async fn resolve_kimi() -> Result<AgentRelease> {
-    let version = fetch_text(&format!("{KIMI_DOWNLOAD_BASE_URL}/latest"))
+    let version = fetch_text_with_retry(&format!("{KIMI_DOWNLOAD_BASE_URL}/latest"))
         .await?
         .trim()
         .to_owned();
@@ -339,7 +339,7 @@ async fn resolve_kimi() -> Result<AgentRelease> {
     //   manifest:       ${KIMI_BINARY_BASE}/${version}/manifest.json
     //   binary:         ${KIMI_BINARY_BASE}/${version}/${filename}
     let manifest: KimiManifest = serde_json::from_str(
-        &fetch_text(&format!("{KIMI_BINARY_BASE_URL}/{version}/manifest.json")).await?,
+        &fetch_text_with_retry(&format!("{KIMI_BINARY_BASE_URL}/{version}/manifest.json")).await?,
     )?;
     let entry = manifest
         .platforms
@@ -456,6 +456,15 @@ async fn resolve_opencode() -> Result<AgentRelease> {
 async fn fetch_text(url: &str) -> Result<String> {
     record("agent_binary_http_get", url);
     jackin_docker::net::fetch_text(url).await
+}
+
+async fn fetch_text_with_retry(url: &str) -> Result<String> {
+    let url = url.to_owned();
+    retry_with_backoff(3, Duration::from_millis(500), move || {
+        let u = url.clone();
+        async move { fetch_text(&u).await }
+    })
+    .await
 }
 
 async fn github_auth_token() -> Option<String> {
