@@ -83,32 +83,32 @@ mkdirSync(brandDir, { recursive: true })
 // with the end of the "n" (the actual rendered pixels — not font metrics, which
 // can lie). Throws if the two right edges differ by more than `tolUnits`. This
 // would have caught the scale-rounding bug that pushed the byline ~30 units out.
-function assertBylineAligned(svg: string, wordFontSize: number, tolUnits = 3) {
+function assertBylineAligned(svg: string, tolUnits = 3) {
   const vbW = Number(svg.match(/viewBox="0 0 ([0-9.]+)/)?.[1])
-  const renderW = 2000
-  const { pixels, width, height } = new Resvg(svg, { fitTo: { mode: 'width', value: renderW } }).render()
+  const { pixels, width, height } = new Resvg(svg, { fitTo: { mode: 'width', value: 2000 } }).render()
   const toVb = (px: number) => (px / width) * vbW
-  // x where the chevron begins, so the word scan can stop before it.
-  const wordRightVb = outlineWord('jackin', wordFontSize, WHITE).width + wordChevronGap(wordFontSize)
-  const chevronLeftPx = Math.floor(((wordRightVb + 2) / vbW) * width)
-  const rightInk = (y0: number, y1: number, xCapPx: number) => {
-    let max = -1
-    for (let y = y0; y < y1; y++) {
-      for (let x = Math.min(width - 1, xCapPx); x > max; x--) {
-        if (pixels[(y * width + x) * 4 + 3] > 40) {
-          max = Math.max(max, x)
-          break
-        }
-      }
+  // Classify pixels by color, not position: white = word, grey = byline, green =
+  // chevron (ignored). Robust to chevron size / byline vertical placement.
+  let wordRight = -1
+  let bylineRight = -1
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4
+      if (pixels[i + 3] < 128) continue
+      const r = pixels[i]
+      const g = pixels[i + 1]
+      const b = pixels[i + 2]
+      const white = r > 225 && g > 225 && b > 225
+      const green = g - r > 40 || g - b > 40
+      const grey = !white && !green && r > 110 && r < 215 && Math.abs(r - g) < 35 && Math.abs(g - b) < 35
+      if (white && x > wordRight) wordRight = x
+      if (grey && x > bylineRight) bylineRight = x
     }
-    return max
   }
-  const wordRight = rightInk(Math.floor(height * 0.2), Math.floor(height * 0.5), chevronLeftPx)
-  const bylineRight = rightInk(Math.floor(height * 0.8), Math.floor(height * 0.99), width - 1)
   const delta = Math.abs(toVb(wordRight) - toVb(bylineRight))
   if (delta > tolUnits) {
     throw new Error(
-      `byline misaligned by ${delta.toFixed(1)} units (word "n" right ${toVb(wordRight).toFixed(1)}, byline right ${toVb(bylineRight).toFixed(1)})`,
+      `byline misaligned by ${delta.toFixed(1)} units (word right ${toVb(wordRight).toFixed(1)}, byline right ${toVb(bylineRight).toFixed(1)})`,
     )
   }
   console.log(`✓ byline aligned to the word (Δ ${delta.toFixed(2)} units)`)
@@ -117,7 +117,7 @@ function assertBylineAligned(svg: string, wordFontSize: number, tolUnits = 3) {
 // Canonical wordmark carries the "by tailrocks" byline (shown on every logo).
 // The monogram (used for square icons) stays byline-free.
 const wordmark = wordmarkSvg('jackin', 200, WHITE, GREEN, true)
-assertBylineAligned(wordmark, 200)
+assertBylineAligned(wordmark)
 writeFileSync(join(brandDir, 'jackin-wordmark.svg'), wordmark)
 console.log('wrote public/brand/jackin-wordmark.svg')
 writeFileSync(join(brandDir, 'jackin-monogram.svg'), wordmarkSvg('j', 200, WHITE, GREEN, false))

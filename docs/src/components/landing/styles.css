@@ -519,10 +519,10 @@ html.theme-init *::after {
   padding: 60px 40px 0;
   overflow: hidden;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
+  text-align: center;
+  gap: 28px;
   border-top: 1px solid var(--landing-ui);
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
