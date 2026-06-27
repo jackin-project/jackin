@@ -1,0 +1,159 @@
+---
+title: "04 — lean-ctx: design teardown"
+---
+
+# 04 — lean-ctx: design teardown
+
+lean-ctx (brand **LeanCTX**, "Lean Context") is the **integrated context runtime** member of the group — and it is a different *kind* of thing from the other three. Caveman is a prompt, headroom is a compression pipeline, RTK is a single deterministic filter; lean-ctx is a long-lived local **runtime** that tries to do everything the other three do *and* the one thing the [head-to-head](/reference/research/token-optimization-tools/05-head-to-head/) said none of them did — maintain a persistent, queryable code graph — behind one binary, one daemon, and one MCP server. It is, almost exactly, the **superset monolith** the [combining page](/reference/research/token-optimization-tools/06-combining/) argued no vendor was building and would be a mistake to build. So it is the most important new data point in the hub: a real, shipping test of that thesis.
+
+| Field | Value |
+|---|---|
+| Repository | `yvgude/lean-ctx` |
+| Pitch | "Context intelligence layer for AI agents… decides what they read, remembers what they learn, guards what they touch — and proves what they save. 60–90% fewer tokens (cached: 99%)." |
+| Languages | Rust (single binary, 1,200+ source files); TS/Python client SDKs; a Lean 4 proof crate |
+| Form factor | One Rust binary that is simultaneously a **shell hook**, an **MCP server** (77 tools), an **HTTP/team server**, a **daemon**, an **LLM proxy**, and a **browser dashboard** |
+| Latest seen | `v3.8.9` (created 2026-03-23 — the youngest of the four) |
+| Adoption (2026-06-20) | 2,800★ / 19 watchers / 278 forks / 13 open issues — see [evidence](/reference/research/token-optimization-tools/07-evidence-and-claims/) |
+| License | Apache-2.0; local engine "free forever" (CI-enforced), paid cloud sync |
+| Bucket hit | **All input buckets** (native reads via MCP, shell output via hook, RAG/providers, history via proxy) + persistent code-graph retrieval; **not** the output bucket |
+| Cache interaction | **Safe** in MCP/hook mode (write-time + ~13-tok handle re-reads); proxy mode is cache-safe **by design** (frozen-region rewrites) but lossy on prose |
+
+## The magic: context as a managed runtime, not a single transform
+
+The other three each bet on *one* interception point. lean-ctx's bet is that the win comes from owning the whole context lifecycle — what enters, how it is shaped, what is remembered, and a proof of what was saved — as a stateful runtime. Its own framing is "four dimensions of context": **compression** (input efficiency), **routing** (the right fidelity per read), **memory** (context that persists across chats), and **verification** (control + a signed savings receipt). Mechanically that means it occupies *every* interception point the other three split between them, plus two layers — code intelligence and verification — that none of them have at all.
+
+```text
+            WHERE lean-ctx INTERCEPTS  (it spans the whole pipeline)
+
+   model's decoder ───────────────►  (nothing — no output register; caveman's slot)
+
+   Bash tool boundary ────────────►  SHELL HOOK   (81 pattern modules, 46 hook-wired — RTK's slot)
+
+   MCP / native-read boundary ────►  ctx_read 10 modes + ~13-tok cached handles
+                                      (write-time, cache-safe — headroom-MCP's slot)
+
+   API wire (proxy) ──────────────►  frozen-region prose rewrite + history prune
+                                      (cache-safe-by-design live zone — headroom-proxy's slot)
+
+   BELOW the read ────────────────►  PROPERTY GRAPH + BM25 + embeddings (RRF hybrid
+                                      search), LSP, call graph  ── the lever the
+                                      head-to-head said NONE of the three had
+
+   ALONGSIDE ─────────────────────►  CCP session memory · knowledge graph · multi-agent
+                                      Context OS · signed savings ledger · Context Proof
+```
+
+Read off this one fact: lean-ctx is not a fourth point on the determinism gradient — it **spans** it. Its default compression core (tree-sitter AST, Shannon-entropy filtering, TF-IDF codebook, 81 handcrafted shell-pattern modules (46 wired into the shell hook), BM25 lexical search) is **fully deterministic, no model** — RTK's risk profile, headroom's breadth. Its optional layers (dense embeddings, the proxy's prose rewrite) re-import headroom's ML and proxy risks, but only when you turn them on.
+
+## What it productizes from each of the other three
+
+The most useful way to see lean-ctx is as a re-implementation of the other three's good ideas in one process, plus two new layers.
+
+| lean-ctx subsystem | What it does | The prior tool it mirrors | Difference |
+|---|---|---|---|
+| **Shell hook** (`core/patterns/`, 81 modules; 46 hook-wired) | Compress git/cargo/npm/docker/kubectl/… output at the Bash boundary | **RTK** | Same write-time, cache-safe-by-construction interception; narrower hook reach than RTK's ~96 command surfaces, but versioned and structurally parsed |
+| **`ctx_read` 10 modes + handle cache** | `full`/`map`/`signatures`/`diff`/`entropy`/`lines:N-M`/… ; re-reads return a ~13-tok stub | **headroom-MCP** + RTK code filter | Cache-safe write-time compression on native reads; adds content-addressed re-read caching neither RTK nor headroom ships |
+| **Proxy** (`proxy/anthropic.rs`, `prose.rs`, `cache_safety.rs`) | Rewrite prose + prune history on the API wire | **headroom proxy** | Same live-zone idea (only rewrites the frozen window `[cached_prefix_len, boundary)`), instrumented with a measurable cache-safety ratio; same lossy-prose risk |
+| **Archive + `ctx_expand`** | Large outputs stored, retrievable by FTS5 search | **headroom CCR** (`headroom_retrieve`) | Reversible compression — the lossy-but-recoverable pattern, with cross-archive full-text search added |
+| **CCP session memory + knowledge graph** | Facts/decisions/tasks persist across chats; temporal facts; episodic/procedural memory | **headroom cross-agent memory** / **cavemem** | Local-first, structured recovery snapshots that survive compaction |
+| **Context OS** (`a2a/`, handoff, shared sessions) | Multi-agent message bus, handoff bundles, per-agent cost | **headroom `SharedContext`** / **cavecrew** | A full SQLite-WAL event bus + HMAC-signed transport, not just a report-passing convention |
+| **Property graph + RRF hybrid search + LSP** | Persistent AST graph (imports/calls/exports/type_ref), BM25 + embeddings + graph-proximity fusion, rename/references via rust-analyzer/pylsp/… | **none of the three** | This is the **code-intelligence lever** the [head-to-head](/reference/research/token-optimization-tools/05-head-to-head/) listed as ✗ for all three — lean-ctx is the only one that bundles it |
+| **Savings ledger + Context Proof + Lean proofs** | Tamper-evident SHA-256 savings chain, replayable proof artifacts, 20 versioned contracts with CI drift gates, a Lean 4 proof crate | **none of the three** | A verification layer with no equivalent anywhere in the group |
+
+The two bottom rows are why lean-ctx is not just "RTK + headroom in one binary." The persistent code graph is the lever the hub repeatedly named as *missing from all three* (the ast-grep / codedb / codebase-memory class). And the verification layer — proving what was saved, netted for waste — is a genuinely new answer to the hub's standing complaint that every tool reports a per-payload ratio and none reconciles to the bill.
+
+## The compression core, measured first-party
+
+The headline mechanism reproduces directly. Building the binary (`cargo build --release`, a **64.7 MB** artifact — see self-cost) and running its own benchmark on the lean-ctx repo (`lean-ctx benchmark report .`, tiktoken `o200k_base`, 50 files / 479K raw tokens):
+
+| Read mode | Compression | Latency | Self-rated quality | What it is |
+|---|---:|---:|---:|---|
+| `full` | 0% | 0 | 100% | verbatim; first read, then ~13-tok cached re-read |
+| `signatures` | **96.5%** | 4.3 ms | **95.9%** | AST API surface with `@L164-190` line spans (JIT disclosure) |
+| `map` | **97.8%** | 12.4 ms | **77.0%** | repo-map outline — biggest cut, **largest fidelity loss** |
+| `aggressive` | 10.3% | 0.25 ms | 100% | strip comments only (misnamed — it is the *gentle* mode) |
+| `entropy` | 0.5% | 14.7 ms | 100% | Shannon-entropy line filter — negligible on code |
+| `cache_hit` | 99.7% | 0.05 ms | n/a | the content-addressed re-read stub |
+
+Two findings matter as much as the headline:
+
+- **It is a *code* compressor.** The same run, by language: Rust **96.1%**, JS **99.2%**, TS **96.8%**, Python **92.7%** — but **Markdown 7.5%, JSON 30.6%, CSS 4.1%, HTML 6.8%, TOML 0.8%**. This is the exact code-vs-prose asymmetry the hub flagged for headroom (logs/JSON compress, code/grep 0%), here **inverted**: lean-ctx crushes source code via tree-sitter and barely touches prose, config, or data. Its "60–90%" lives almost entirely on *code reads*, which is why the [first-party measurements](/reference/research/token-optimization-tools/10-first-party-measurements/) — a docs/research workload that is 76% native `.mdx` reads — are exactly the workload lean-ctx's `map`/`signatures` modes help *least* on (they help most on the `.rs` source they were built for).
+- **`map`'s 97.8% costs fidelity.** lean-ctx's own quality score puts `map` at **77%** — a real, self-disclosed signal that the highest-compression mode drops structure the model may need. `signatures` (96.5% at 95.9% quality) is the honest sweet spot, and lean-ctx's `auto` mode and bounce tracker exist precisely to keep the agent off `map` when it would backfire.
+
+The session-simulation headline reproduces too — and carries the same caveat as RTK's: the benchmark's "30-minute coding session" lands at **86–87%** (672K → 87.7K raw tokens), a per-session best case on a code-read-heavy mix, **not** a whole-bill dollar figure. The [evidence page](/reference/research/token-optimization-tools/07-evidence-and-claims/) applies the identical per-payload-≠-whole-bill correction.
+
+## The cache story: three interception points, two of them safe by construction
+
+lean-ctx is unusually careful about caching for a tool this large, and the care is in the source, not just the pitch:
+
+- **`ctx_read` / shell hook (write-time).** The compressed text is what enters context, so there is no prefix to bust — RTK's by-construction safety, extended to native reads. Re-reads return a ~13-token content-addressed handle (`@F1`), so a file read twice is cached, not re-sent.
+- **Prefix-cache-friendly output ordering.** The post-dispatch pipeline emits static content (path, imports, types) before dynamic content (bodies, annotations) so the provider's KV cache sees a stable prefix — headroom's CacheAligner idea, built in.
+- **Proxy (`proxy/cache_safety.rs`).** When you run lean-ctx as an LLM proxy it rewrites prose **only inside the frozen window `[cached_prefix_len, boundary)`** — never the client-cached prefix, never the live tail — and reports a cache-safety ratio (`1.0` = every rewrite provably cache-safe) on `/status`. This is the same live-zone discipline headroom uses, instrumented.
+
+The catch is identical to headroom's: the proxy's prose rewrite (`proxy/prose.rs`) is **lossy text compression**, so proxy mode trades the deterministic safety of the read/hook layers for reach over conversation history — and inherits the lossy-prose risk. The honest reading: **use lean-ctx as MCP + shell hook (deterministic, cache-safe) and treat the proxy as the opt-in, higher-risk reach extension**, exactly the [recommendation the hub gives for headroom](/reference/research/token-optimization-tools/02-headroom-design/).
+
+## The genuinely new layers
+
+### Code intelligence — the lever the head-to-head said no one had
+
+lean-ctx maintains a persistent, on-disk **property graph** (AST nodes + edges for `imports`/`calls`/`exports`/`type_ref`/`tested_by`, weighted BFS), a **BM25 lexical index** (measured 2.7 MB on a 50-file repo, ~479 µs average query), an **optional dense-embedding index** (feature-gated), and **RRF hybrid search** that fuses all three. On top sit `ctx_graph impact` (blast radius), `ctx_callgraph`, `ctx_symbol`, and LSP-powered `ctx_refactor` (rename/references via rust-analyzer, typescript-language-server, pylsp, gopls). Every `ctx_read` appends a `[related: …]` hint from the graph.
+
+This is the **structural-retrieval** lever the [head-to-head](/reference/research/token-optimization-tools/05-head-to-head/) marked ✗ for caveman, headroom, *and* RTK — "answer 'where is `foo` defined?' without re-reading." lean-ctx is the only one of the four that ships it. It does not make lean-ctx a *compressor* of a different physics; it makes it a *retriever* that the other three are not, which is a separate (and complementary) token lever the dossier covers in its [code-intelligence chapter](/reference/research/token-optimization/51-code-intelligence-tools/).
+
+### Verification — proving the saving, netted for waste
+
+Two ideas here have no analog in the other three:
+
+- **Bounce-netted savings.** A "bounce" is a compressed read immediately followed by a full re-read of the same file — wasted tokens. lean-ctx tracks bounce rate per file extension, deducts wasted tokens via `adjusted_total_saved()`, and auto-upgrades modes when an extension's bounce rate exceeds 30%. This is a *more honest savings accounting than RTK's `rtk gain`*, which counts the compression without netting the re-runs the hub flagged as RTK's silent cost.
+- **The signed savings ledger + Context Proof.** `lean-ctx savings` is a per-event, tamper-evident SHA-256 chain with tokenizer transparency; `ctx_proof`/`ctx_verify` emit replayable proof artifacts; 20 versioned contracts run as CI drift gates; and a Lean 4 proof crate (`lean/`) formalizes some invariants. Whether the formal proofs cover anything load-bearing is unverified, but the *direction* — make the saving auditable rather than self-reported — is the answer to the hub's central evidence complaint.
+
+### Context Field Theory — the scoring layer
+
+lean-ctx's intellectual core is **CFT**: each context item gets a potential `Φ(i,t) = wR*R + wS*S + wG*G + wH*H − wC*C − wD*D` (task relevance via heat-diffusion/PageRank, predictive surprise, graph proximity, a Thompson-Sampling history bandit, token cost, Jaccard/MinHash redundancy). A greedy-knapsack compiler selects items by `Φ/token`, applies phase-transition view downgrades (full→signatures→map→handle) under budget pressure, and emits sparse handles (5–30 tokens) that expand on demand. This is the "adaptive compression with Thompson Sampling bandits" of the crate description, and it is the most academically ambitious design in the group — though, like everything else here, unbenchmarked against an independent agentic-success baseline.
+
+## What lean-ctx has, and what it lacks
+
+| Feature | lean-ctx |
+|---|---|
+| Compresses broad input (native reads, shell, RAG, history) | **Yes — the only one that reaches all of them in one tool** |
+| Persistent queryable code graph / symbol index | **Yes — unique in the group** |
+| LSP refactoring (rename/references/definition) | **Yes — unique** |
+| Reversible compression (archive + `ctx_expand`) | **Yes** (FTS5-searchable; headroom-CCR class) |
+| Cross-session + multi-agent memory | **Yes** (CCP + Context OS) |
+| Cache-safe input compression | **Yes** in MCP/hook mode; proxy cache-safe-by-design but lossy on prose |
+| Deterministic by default (no ML in the hot path) | **Yes** — embeddings + proxy prose rewrite are opt-in |
+| Bounce-netted, signed, auditable savings | **Yes — unique** |
+| Compresses output (the 5×-priced class) | **No** — no output register; caveman's slot is empty here |
+| Touches thinking (20% of dollars) | **No** — like all four |
+| Single small artifact | **No** — 64.7 MB binary + daemon + dashboard + SQLite stores |
+| Zero MCP schema rent | **No** — 77 tools (mitigated: dynamic loading exposes only core+session at startup) |
+| Zero host-state write | **No** — installs hooks/skills across up to 34 agent targets |
+| Independent third-party benchmark | **No** — youngest tool; every number is self-measured |
+
+## Self-cost — the monolith tax the hub predicted
+
+This is where lean-ctx pays for spanning the whole pipeline, and it pays the most of the four:
+
+- **Footprint.** The release binary measured **64.7 MB** (vs RTK's ~4.1 MB) — the docs cite ~17 MB with tree-sitter and ~5.7 MB without, so the full-feature build is heavy. It runs a **long-lived daemon**, a **browser dashboard** on `localhost:3333`, an **HTTP/team server**, optional **LSP subprocesses**, and several **SQLite stores** under `~/.lean-ctx/`. This is RTK's host-write surface plus headroom's process surface plus a database — all at once, which is precisely the "every cost of all three simultaneously" the [combining page](/reference/research/token-optimization-tools/06-combining/) warned a monolith would incur.
+- **MCP schema rent.** 77 tools is a large schema; lean-ctx mitigates it with dynamic tool categories (only ~27 core + ~5 session loaded at startup for capable clients, the rest on demand) — a real engineering answer, but the rent is non-zero and larger than RTK's (zero) or caveman's (~940 tok).
+- **Host writes.** `lean-ctx setup` writes hooks and `SKILL.md` files across up to 34 agent targets and a daemon autostart (LaunchAgent/systemd). In a jackin❯ container this is the same host-write-ban / hook-reconciliation hazard RTK and caveman raise — multiplied by the number of surfaces it touches. (`lean-ctx uninstall` is correspondingly thorough — it removes hooks, configs, autostart, data dir, and the binary.)
+- **Supply chain.** Apache-2.0, single binary, no telemetry by default (local OpenTelemetry-style metrics only, opt-in sharing). But the optional embeddings feature downloads a model, the optional `qdrant` backend reaches a vector DB, and the proxy — when enabled — sits in the request path as an integrity boundary (the CompressionAttack surface headroom also has). Default install is local-only and deterministic; the risky surfaces are all opt-in.
+
+**Failure modes** follow from the size: `map`-mode over-compression (the measured 77% quality — mitigated by bounce tracking and `auto`); a stale code graph misranking reads (mitigated by incremental `git diff` updates); proxy prose rewrite dropping an identifier (the headroom risk); and the operational fragility of a daemon + dashboard + DB that a 5-line hook does not have.
+
+## Commercial model
+
+lean-ctx is **open-core, done more cleanly than RTK's**. The local engine is Apache-2.0 and "free forever" — the project states it as a CI-enforced invariant ("Free isn't a plan we maintain, it's an invariant our CI enforces"), and the paid tiers (**Pro $9/mo** personal cloud sync, **Team $18/seat/mo** shared index + audit log) add only hosting, sync, and governance — never gating a local capability. That is a structurally lower open-core risk than the [RTK Cloud](/reference/research/token-optimization-tools/03-rtk-design/) tension the hub flags (where features *could* migrate behind the paywall), though "free forever" is a promise that only time tests.
+
+## Evidence and claims to kill
+
+- **"Up to 99% / 60–90% fewer tokens."** Reproduced — but the 99% is the cache-hit handle re-read and the 96–99% is `map`/`signatures` on **code**; prose, config, and data compress 0.8–30% in lean-ctx's own benchmark. Whole-bill, the per-payload-≠-bill correction applies exactly as for the other three: most input already reads at 0.1× cache price, and lean-ctx touches none of the 20%-of-dollars thinking bucket.
+- **"Single Rust binary, no runtime dependencies."** True that it is one binary, but it is a **64.7 MB** binary that runs a daemon, a dashboard, an HTTP server, optional LSP subprocesses, and SQLite stores — "no deps" understates the runtime footprint relative to RTK's genuinely tiny single binary.
+- **"cl100k is within ~3% of Claude's tokenizer."** lean-ctx counts Claude/Anthropic traffic with tiktoken `cl100k_base` (and benchmarks with `o200k_base`) — both GPT tokenizers, not Claude's BPE. The 3% claim is more optimistic than the dossier's finding that the Fable/Opus tokenizer can bill materially more on English/ASCII; treat every lean-ctx percentage as directional, the same caveat that applies to RTK and caveman.
+- **"Proxy is cache-safe."** True *by design* (frozen-region rewrites, instrumented), but the proxy's prose rewrite is lossy — cache-safe is not the same as lossless, and the deterministic safety lives in the MCP/hook layers, not the proxy.
+
+lean-ctx's evidence tier is **T1 for the mechanism** (reproduced locally here: read modes, shell compression, graph/BM25 search all work as described) and **T4 for its product percentages** (self-measured, GPT tokenizer, per-session best cases, no independent third-party benchmark and the youngest project of the four). Its bounce-netted, signed ledger is the strongest *self-instrumentation* of the four; what it lacks is the external replication headroom has and the transparency caveman's readable-prompt mechanism has.
+
+---
+
+Next: [05 — Head-to-head](/reference/research/token-optimization-tools/05-head-to-head/), where the four teardowns become one feature matrix — and lean-ctx forces a new row the three-way version never needed.

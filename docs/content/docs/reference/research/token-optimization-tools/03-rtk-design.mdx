@@ -1,0 +1,198 @@
+---
+title: "03 — RTK: design teardown"
+---
+
+# 03 — RTK: design teardown
+
+RTK ("Rust Token Killer") is the **narrow, deterministic input-side** member of the trio. It is the deterministic mirror of headroom's pipeline — the same *kinds* of transform (filter, group, truncate, dedup) but with no router-ML and no proxy. It compresses the output of shell commands at the tool boundary, before that output ever enters context, using fixed per-command rules in a single self-contained Rust binary. It occupies the safest corner of the input-compression space — and pays for that safety in reach.
+
+| Field | Value |
+|---|---|
+| Repository | `rtk-ai/rtk` (default branch `develop`; `main` 404s) |
+| Pitch | "CLI proxy that reduces LLM token consumption by 60-90% on common dev commands. Single Rust binary, zero dependencies" |
+| Form factor | **CLI + agent hook** — a `~4.1 MB` stripped binary plus a PreToolUse hook; not a library, no *official* MCP server (a third-party RTK↔MCP bridge is listed on mcpmarket, unverified), not a proxy in front of the API |
+| Latest seen | `v0.42.4` (212 release tags in ~5 months — RC-heavy cadence) |
+| Adoption (2026-06-18) | 63,608★ / 146 watchers — PR-inflated; see [evidence](/reference/research/token-optimization-tools/07-evidence-and-claims/) |
+| License | Apache-2.0 (single binary, zero runtime deps) |
+| Bucket hit | Shell-command output (a slice of the 61% cache lines — only what runs through Bash) |
+| Cache interaction | **Safe by construction** (write-time, at the tool boundary) |
+
+## The magic: compress the observation upstream of context, with no model
+
+RTK's design insight is the cleanest expression of the one cache-safe input-compression design point that exists on hosted Claude. Whole-prompt recompression fights the cache (it must beat ~5.5–10× just to break even); but compressing a *new observation at the moment it is produced* — before it is ever cached — is cache-safe, because the compressed text is simply what gets cached in the first place. There is no prefix to bust, *by construction*.
+
+RTK is the purest instance of that idea:
+
+- It compresses at the **tool boundary** (the Bash call), which is upstream of context entirely.
+- It uses **deterministic rule-based transforms**, not a learned model — so there is no ML model in the hot path, none of headroom's `kompress-base` latency or attack surface.
+- It adds **zero MCP schema rent** — it is a hook plus a binary, not a set of tool definitions injected every turn.
+
+```text
+              RTK INTERCEPTION  (auto-rewrite mode, the default)
+
+   agent decides to run:  git status
+        │
+        ▼
+   ┌──────────────────────────┐   PreToolUse hook rewrites the command
+   │  RTK PreToolUse hook       │   BEFORE execution:
+   │  "git status" → "rtk git    │   git status  ──►  rtk git status
+   │   status"                   │   ("100% adoption, zero context overhead")
+   └──────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────┐   the rtk binary runs the real command,
+   │  rtk binary (6-phase)      │   captures stdout/stderr, applies the
+   │                            │   command-specific filter, prints the
+   └──────────────────────────┘   compressed result
+        │
+        ▼
+   compressed output  ──►  enters context as the tool result
+        │                  (this shrunk text IS what gets cached —
+        ▼                   nothing upstream to invalidate)
+   cache write shrinks; every later 0.1× read of it shrinks;
+   the cached prefix is never touched.
+```
+
+## The six-phase lifecycle
+
+Every command RTK handles flows through the same fixed lifecycle. The whole thing is a single binary with **~5–10 ms cold start, ~2–5 MB RAM, ~5–15 ms per command** — fast enough that the hook overhead is negligible against the tokens saved.
+
+```text
+   PARSE  ──►  ROUTE  ──►  EXECUTE  ──►  FILTER  ──►  PRINT  ──►  TRACK
+   ─────      ─────       ───────       ──────       ─────       ─────
+   clap       main.rs     std::process  command-     verbosity-  write
+   extracts   matches a   ::Command     specific     gated       savings
+   command    command     subprocess,   strategy     output      to SQLite
+   + args     enum to a   capture       (one of                  history.db
+              module      stdout/stderr  12)                      (rtk gain)
+```
+
+The reliability behavior is baked into these phases and is what makes RTK CI-safe: **exit codes are preserved** (`std::process::exit(output.status.code())` — critical so a failing test still fails the pipeline), a **filter failure falls back to the original output** (`anyhow::Result`, never swallow the command), a **failure-tee** saves the full unfiltered output to disk so the agent can debug without re-running, and `-vvv` shows the raw pre-filter output on demand.
+
+## The twelve deterministic strategies
+
+RTK is not one generic summarizer — it is a dispatch table of twelve strategies, each matched to a command's output *shape*. This is the deterministic counterpart to headroom's typed compressors, and the reason RTK can hit high per-command ratios without an ML model: the structure of `git status` or `pytest` output is known in advance, so the transform can be exact.
+
+| Strategy | Targets | Claimed cut | Maps to dossier lever |
+|---|---|---|---|
+| Stats Extraction | `git status` / `git log` | 90–99% | status/diff dedup |
+| Error-Only | test-runner stderr | high | log filtering (failures only) |
+| Grouping-by-Pattern | `lint` / `tsc` / `grep` | 80–90% | aggregate similar items |
+| Deduplication | logs → unique lines + counts | high | collapse repeats |
+| Structure-Only | JSON → keys + types | high | JSON sampling |
+| **Code Filtering** | `read` / `cat` / `smart` | 60–90% (Aggressive) | outline (keep signatures, drop bodies) |
+| Failure-Focus | `vitest` / `playwright` | 94–99% | keep only failures |
+| Tree-Compression | `ls` | ~80% | grouping by directory |
+| Progress-Filtering | strip ANSI / progress bars | — | drop redraw noise |
+| JSON/Text-Dual-Mode | `ruff` / `pip` | — | format-aware |
+| State-Machine-Parsing | `pytest` lifecycle | — | parse the run's phases |
+| NDJSON-Streaming | `go test` | — | streaming line parse |
+
+It also sniffs the package manager before running JS/TS tools (`pnpm-lock.yaml` → `pnpm exec`, else `yarn`, else `npx`), so the rewrite targets the right runner.
+
+### The code filter — RTK is code-aware (a correction worth flagging)
+
+An early reading of RTK held that its `read`/`cat` filter was "line-trimming, not AST-aware." That is **half wrong**: `src/core/filter.rs` ships a **language-aware code filter** with three levels across **10 languages** (Rust/Python/JS/TS/Go/C/C++/Java/Ruby/Shell, `filter.rs:59-78`) — but it is *not* a parser. It is hand-written **regex signature-matching plus brace counting** (`filter.rs:233-300`), which is more fragile than the tree-sitter parsers headroom and lean-ctx use (braces inside strings/comments, multi-line signatures, and Python indentation all break it silently); the [implementation deep-dive](/reference/research/token-optimization-tools/12-implementation-comparison/) compares the three at source. The three levels:
+
+- `None` (0%) — pass through.
+- `Minimal` (20–40%) — strip comments.
+- `Aggressive` (60–90%) — strip comments **and function bodies**.
+
+So RTK's Aggressive read overlaps headroom's `CodeAwareCompressor` (keep signatures, drop bodies) more than first stated. **The real surviving distinction is statefulness, not capability.** Both RTK and headroom drop bodies on *a payload as it passes through*, one read at a time; neither builds the **persistent, queryable symbol index** that a code-intelligence tool (ast-grep / codedb) maintains. Structural *retrieval* — asking "where is `foo` defined?" without re-reading the file — is a different lever (the dossier's [code-intelligence chapter](/reference/research/token-optimization/51-code-intelligence-tools/)); one-shot body-dropping on a file the agent reads is something RTK, headroom, and ast-grep can all do.
+
+## The two hook modes
+
+RTK can intercept in either of two ways, trading adoption for autonomy:
+
+- **auto-rewrite (default)** — the PreToolUse hook silently rewrites `git status` → `rtk git status` before execution. "100% adoption, zero context overhead," at the cost of always interposing.
+- **suggest** — RTK emits a `systemMessage` hint and lets the agent choose whether to use `rtk`. ~70–85% adoption, more transparent.
+
+Configuration lives in `~/.config/rtk/config.toml`. RTK claims 14 agent-platform integrations (Claude Code, Copilot, Cursor, Gemini CLI, Codex via instructions, Windsurf/Cline/Kilo/Antigravity via rule files, OpenCode/OpenClaw/Pi via TS plugins, Hermes via Python).
+
+## Persistent state and the token counter caveat
+
+RTK keeps a SQLite history at `~/.local/share/rtk/history.db` — per-command `saved_tokens` / `savings_pct` / `exec_time_ms`, 90-day auto-cleanup, queried by `rtk gain`. One important caveat for reading those numbers: RTK's token counter is a **~4-chars-per-token GPT-style heuristic, not Claude's BPE**. So every `rtk gain` figure is directionally right but not Claude-accurate — and since the Fable/Opus tokenizer can bill ~30% more on English/ASCII text, RTK's self-reported savings should be treated as approximate even before the whole-bill correction.
+
+## The defining limitation: RTK only sees Bash
+
+This is the single most important fact about RTK's reach, and it is understated by the "works with your agent's file tools" marketing. **In Claude Code the agent reads files through the native `Read` tool and searches through native `Grep`/`Glob` — none of which route through a shell, so none are compressed by RTK.**
+
+```text
+              WHAT RTK SEES vs WHAT IT MISSES (Claude Code)
+
+   RTK COMPRESSES (runs through Bash):        RTK NEVER SEES (no shell):
+   ┌───────────────────────────────┐         ┌───────────────────────────────┐
+   │  cargo test / npm test / pytest│         │  native Read (file contents)   │
+   │  git status / git diff / git log│        │  native Grep / Glob (search)   │
+   │  build output / lint / tsc      │        │  RAG chunks                    │
+   │  ls / tree                      │         │  conversation history          │
+   │  gh / aws / log files via cat   │         │  the system prompt / CLAUDE.md │
+   └───────────────────────────────┘         └───────────────────────────────┘
+        │                                          │
+        ▼                                          ▼
+   a SLICE of the 61% input bucket            the REST of the 61% — which is
+   (large where the workload is               where headroom (API-layer) bites
+    Bash-heavy; small otherwise)              and RTK cannot reach at all
+```
+
+So RTK bites hard on test/build/git/log/`gh` output the agent genuinely runs through Bash, and does nothing for native-tool reads, RAG, conversation history, or thinking. How much RTK can save therefore depends entirely on **how much of a given session's observation tokens actually flow through the shell** — a number you must measure for your workload before assuming RTK can touch them.
+
+**The reach limit has a workaround RTK ships itself.** RTK provides `rtk read` / `rtk grep` / `rtk find` / `rtk diff` wrappers (with `-l minimal|aggressive` compression levels), so the precise limit is "RTK cannot intercept the *native* `Read`/`Grep`," not "RTK cannot compress reads at all." Steer the agent to prefer the wrappers (via `AGENTS.md` / `RTK.md` guidance or the hook) and RTK reaches file reads and searches too. The native-tool default is the obstacle, not a hard capability ceiling — which is why [gaps and open questions](/reference/research/token-optimization-tools/09-gaps-open-questions-and-next-brief/) flags "measure how much traffic actually routes through RTK" as the open question that bounds its real value.
+
+**RTK also has a commercial arm (roadmap).** Beyond the OSS binary, the vendor lists **RTK Cloud** — team cost analytics, per-dev token reports, rate-limit monitoring, and enterprise controls (SSO / audit logs), "Free for open-source, Teams from $15/dev/month," currently waitlist. It has a stated monetization path — as does [lean-ctx](/reference/research/token-optimization-tools/04-leanctx-design/) (paid cloud sync) — which bears on long-term sustainability (see [gaps](/reference/research/token-optimization-tools/09-gaps-open-questions-and-next-brief/)).
+
+## What RTK has, and what it lacks
+
+| Feature | RTK |
+|---|---|
+| Deterministic, no ML in the loop | **Yes — its defining trait** |
+| Cache-safe by construction | **Yes** (write-time at the tool boundary) |
+| Zero MCP schema rent | **Yes** |
+| Single self-contained binary, zero deps | **Yes** (~4.1 MB) |
+| CI-safe (exit codes preserved, fail-safe fallback) | **Yes** |
+| Language-aware code filter (10 languages, regex-based) | **Yes** (per-read, not a persistent index) |
+| 100+ command formats out of the box | **Yes** — the turnkey advantage over a hand-written filter |
+| Reaches native `Read`/`Grep`/`Glob` | **No — Bash only**; the reach ceiling |
+| Reaches RAG / history / files not via shell | **No** |
+| Reversible / recoverable on a *successful* command | **No** — tee fires on failure only |
+| Compresses output (what the model writes) | **No** — input side only |
+| Touches thinking (20% of dollars) | **No** |
+| Whole-session telemetry | **No** — `rtk gain` is per-command, with a non-Claude tokenizer |
+| Independent benchmark | **No** — every number is vendor or self-counter |
+
+## Self-cost and failure mode
+
+**Self-cost.** Compute is small (~5–15 ms/command) and telemetry is off by default. The real cost is that `rtk init -g` **writes a PreToolUse hook into the agent's config** — a host-state mutation that, in a jackin❯ context, collides with the host-write ban and, more concretely, with caveman's own `SessionStart`/`UserPromptSubmit` hook registration. Two tools writing the same `~/.claude` surface is the genuine adoption hazard, not the compute.
+
+**Failure mode.** Truncation on a *successful* command can silently drop the one line the agent needed, and the failure-tee only fires on a command *failure* — so a truncated-but-successful command has no recovery path. The tell is the agent re-running a command uncompressed to see full output (which erodes the saving), which is why the validation harness makes **command re-run rate** a first-class metric.
+
+There is also a documented cautionary data point worth surfacing: the compression-market sweep flagged RTK's own issue tracker reporting that, in one configuration, the hook *raised* Claude Code cost 18% (issue #582) and that another issue (#886) bypassed permission prompts. Output-rewriting hooks are not automatically free; the cache-safety is real, but the integration has edges.
+
+## Evidence and claims to kill
+
+RTK's published figures are internally consistent and honest about being per-command, but they are **all** the maintainer's own, produced by RTK's own `rtk gain` counter, with no stated Claude tokenizer and no third-party replication.
+
+| Workload (RTK self-report) | Claimed cut | Honest reading |
+|---|---|---|
+| `ls` / `tree` | −80% | repetitive listing — the grouping lever |
+| `cat` / `read` | −70% | only when the agent uses Bash `cat`, not native `Read` |
+| `grep` / `rg` | −80% (alt blog: 49.5%) | search-result trimming (line-trim, not structural) |
+| `git status` / `git diff` | −80% / −75% | genuinely redundant content |
+| `cargo` / `npm` / `pytest` / `go test` | −90% | logs — matches the dossier's local −94.2% log filter |
+| "30-minute session" | ~118k → ~23.9k = **−80%** | a per-command best case **assuming a Bash-heavy mix**; not a measured whole-session distribution |
+
+The whole-bill correction, same category as caveman's and headroom's: "60–90%" is a per-command ratio on verbose commands. On the modeled heavy day, Bash-command output is only part of the 61% cache traffic, so the realistic whole-bill effect is `(Bash-output share of the 61%) × compression% × (write-share + 0.1×read-share)` — low double digits of dollars at best. RTK has **two evidence gaps weaker than headroom's**: no whole-session production telemetry (headroom published median 4.8% across 50k+ sessions), and no independent third-party measurement of any kind.
+
+The RTK-specific claim graveyard:
+
+- **"RTK cuts 60–90% of your tokens"** — per-command best case, not whole-bill; no whole-session telemetry exists.
+- **"Works with your agent's file tools"** — **No, Bash calls only.** Native `Read`/`Edit`/`Grep`/`Glob` never run through a shell.
+- **"63.5k stars = a proven, widely-adopted tool"** — PR-inflated (146 watchers, best HN thread 18 points / 3 comments, zero independent benchmarks).
+- **"Drop-in hook, `<10 ms`, free win"** — the compute is cheap and the cache-safety is real, but it writes a host-state hook and can silently truncate a needed line on a successful command.
+- **"Same output, just smaller" (lossless)** — lossless only where the dropped content was genuinely redundant; truncation is lossy with no success-path recovery.
+
+RTK's evidence tier is **T1 for the mechanism** (the underlying filter/dedup/group/JSON-sample levers are locally reproduced in the dossier) and **T4 for RTK's specific product numbers** (vendor self-report through its own counter). The full RTK record, the per-command table, the benchmark caveats, and the jackin❯ adoption guardrails live in the dossier's [RTK chapter](/reference/research/token-optimization/56-rtk-and-write-time-observation-compression/).
+
+---
+
+Next: [04 — lean-ctx design](/reference/research/token-optimization-tools/04-leanctx-design/), the integrated context runtime that tries to be all three at once — and then some.

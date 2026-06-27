@@ -5,7 +5,7 @@
 //! `NOPASSWD:ALL` was removed in WP-SUDO). At runtime this subcommand writes the
 //! passwordless-sudo entry when the profile grants sudo (`JACKIN_SUDO=1`) and
 //! removes any stray entry otherwise. The launch path only execs this on
-//! sudo-granted profiles (no jackin' image bakes a sudoers file, so non-sudo
+//! sudo-granted profiles (no jackin❯ image bakes a sudoers file, so non-sudo
 //! profiles have nothing to provision); the removal arm remains the safety net
 //! for a hand-authored image that ships one.
 

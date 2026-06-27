@@ -130,7 +130,7 @@ When an agent session exits cleanly (the operator types `/exit` or the agent fin
 
 Role identity, workspace workdir, supported-agent order, and model overrides are not duplicated into container-wide environment variables. The daemon reads those values from `/jackin/run/agent.toml`, keeping all jackin-owned in-container runtime state under `/jackin/`.
 
-Session state is not yet reconciled against the live container on console refresh — Phase 4 of the [Console agent session control](/reference/roadmap/console-agent-session-control/) roadmap covers this work. The `sessions` field in the instance manifest is written but not populated until reconciliation lands.
+Session state is not yet reconciled against the live container on console refresh — Phase 4 of the [Console agent session control](/roadmap/console-agent-session-control/) roadmap covers this work. The `sessions` field in the instance manifest is written but not populated until reconciliation lands.
 
 Implementation: <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>, <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> (`launch_role_runtime`), <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
 

@@ -1,0 +1,215 @@
+---
+title: "Move documentation to a separate repository"
+---
+
+**Status**: Deferred — design captured; decision deferred until the cross-repo freshness story is solid.
+
+## Problem
+
+The Fumadocs documentation site currently lives inside this
+repo under `docs/` (entry point: <RepoFile path="docs/source.config.ts">docs/source.config.ts</RepoFile>, with sidebar metadata in `docs/content/docs/**/meta.json`).
+That worked while jackin❯ was a
+single Rust crate, but the project is now an **ecosystem of GitHub
+repositories**:
+
+- `jackin-project/jackin` — CLI source (this repo) + the docs site
+- `jackin-project/jackin-agent-smith` — default role
+- `jackin-project/jackin-the-architect` — Rust development role
+- `jackin-project/homebrew-tap` — install channel
+- `jackin-project/jackin-marketplace` — Claude plugin marketplace
+- `jackin-project/jackin-role-action` — role manifest validator
+- `jackin-project/jackin-dev`, `jackin-project/jackin-github-terraform`
+  — supporting infrastructure
+
+The docs site is the only place where the **whole ecosystem** is
+explained — what each repo is for, how they fit together, the
+operator-facing UX, the contributor-facing internals, the roadmap. It
+is not specifically *about* the CLI repo, even though it currently
+ships from there. Hosting it inside the CLI repo creates two
+asymmetries:
+
+- The docs cover behaviour spread across *all* repos, but every PR
+  that affects docs has to land in **this** repo.
+- Contributors to a sibling repo (a role author tweaking
+  `jackin-agent-smith`, for example) cannot update the docs in the
+  same PR as the change they describe — they have to open a second
+  PR here.
+
+The argument *for* moving the docs site into its own repository is
+simple: the docs are an ecosystem-level concern, and an ecosystem-level
+artefact deserves its own home, the same way every other component
+already does.
+
+## Why this is not obviously a win
+
+The big counter-argument is **freshness**. The single biggest
+documentation problem in any project is staleness. Today, freshness
+is enforced by physical co-location:
+
+- A behaviour change in `src/cli/**` ships with the matching update to
+  `docs/content/docs/(public)/commands/<cmd>.mdx` in the same commit.
+- The per-PR contract in <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> ("Code
+  ↔ Docs Cross-Reference" table) is enforceable because both sides are
+  in the same diff.
+- The PR review surface naturally includes docs.
+
+If we move the docs site to a separate repository, every one of those
+properties weakens unless we explicitly engineer it back. Drift becomes
+a real risk, not a theoretical one.
+
+So the question is **not** "should the docs move out?" — the question is
+"can we keep the docs as fresh as they are today after they move out?"
+This roadmap item exists to answer that.
+
+## Why it might still be worth it
+
+- **Audience match.** The docs cover the whole ecosystem. Hosting them
+  in the CLI repo implicitly suggests they are about the CLI.
+- **Independent edit surface.** Contributors to other repos, role
+  authors, and documentation-only contributors can work without
+  reading the Rust crate.
+- **CI and tooling separation.** The docs build (Fumadocs + TanStack Start + bun +
+  pagefind) and the Rust build (cargo + nextest) currently share a
+  single repo's CI minutes and PR checks. A split would isolate them.
+- **Versioning.** A separate docs repo can grow a versioned-docs flow
+  (multiple sidebars per major version of jackin❯) without polluting
+  the CLI repo's branches.
+- **Same-repo bleed.** Docs PRs and code PRs currently compete for
+  reviewer attention; splitting clarifies the ownership of each PR.
+
+## Open questions
+
+This is the part the roadmap item exists to figure out.
+
+### Q1. Where do the docs live?
+
+Likely candidates:
+
+- `jackin-project/jackin-docs` — symmetric with the rest of the
+  ecosystem.
+- `jackin-project/docs` — short and unambiguous.
+- A monorepo-style umbrella like `jackin-project/website`.
+
+The naming is downstream of where the published site lives
+(`jackin.tailrocks.com` today). DNS does not care about the repo
+name.
+
+### Q2. How do we keep docs fresh across repos?
+
+This is the load-bearing question. Options to consider, alone or in
+combination:
+
+1. **Required co-PR.** A change to source areas listed in the "Code ↔
+   Docs Cross-Reference" table requires a linked PR in the docs
+   repository before merge. Enforced by a CI check that reads the PR
+   body for a `Docs-PR:` trailer (or similar) and queries the GitHub
+   API to confirm the linked PR exists and is open or already merged.
+2. **Docs-deploy webhook.** Source PRs ping the docs repo on merge so
+   contributors are nudged to update. This is informational, not
+   blocking.
+3. **Structural CI checks in the docs repo.** Lychee link-check and
+   `<RepoFile />` validation already remap GitHub blob URLs to the
+   live source — extend that to fail when a referenced file no longer
+   exists in any sibling repo.
+4. **Docs-as-a-submodule.** The docs site lives in its own repo but
+   is consumed as a git submodule by `jackin-project/jackin`. CI in
+   the CLI repo can run `git diff --submodule` to enforce that
+   structural source changes bump the docs commit.
+5. **Per-repo contribution snippets.** Each sibling repo (role repos,
+   tap, marketplace) ships a small `DOCS.md` that lists which docs
+   pages it owns. PR templates remind contributors to update them.
+6. **Generated reference.** Anything that *can* be generated from
+   source (CLI flag tables, manifest schema, env-var reserved-name
+   list) is generated rather than hand-edited, so drift is impossible
+   for those pages. The generator runs on the source repo and pushes
+   to the docs repo on release.
+
+We do not need to pick one. We need to pick the **smallest
+combination** that makes drift unlikely and contribution easy.
+
+### Q3. What about the PR review surface?
+
+Today, a reviewer sees both the source and the docs change in the same
+diff. After a split, reviewers have to look at two PRs in two repos.
+Mitigations:
+
+- The CLI PR's body links to the docs PR in a standard place
+  (`Docs-PR: jackin-project/jackin-docs#123`).
+- The docs PR's body links back.
+- A small bot (or a `gh` script in CI) embeds a rendered preview of
+  the docs PR in the CLI PR conversation, so reviewers do not have to
+  context-switch.
+
+### Q4. What does Edit-on-GitHub do?
+
+The Fumadocs `editLink.baseUrl` currently points at
+`https://github.com/jackin-project/jackin/edit/main/docs/`. After the
+move it points at `https://github.com/jackin-project/jackin-docs/edit/main/`.
+The friction of an "Edit this page" round trip drops, because the
+contributor lands directly in the docs-only repo.
+
+### Q5. How do we ship the move?
+
+Doing this without breaking anything is the primary risk.
+
+- Pick the new repo and set it up to build the same site at the same
+  domain.
+- Mirror the existing `docs/` history into the new repo (`git
+  filter-repo` or `git subtree split`).
+- Switch the GitHub Actions deploy workflow.
+- Delete `docs/` from this repo in the same release cut, and update
+  every reference (<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile>,
+  <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>, <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile>,
+  and the docs cross-reference table).
+
+Per <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> ("Project status: pre-release"), the
+move can be a hard cut — no compatibility shim, no parallel docs trees.
+
+## Inspirations / prior art
+
+Worth studying when fleshing out the design:
+
+- **Astro** — `withastro/astro` keeps docs in `withastro/docs`.
+  Their split-repo docs workflow and tooling are well-documented.
+- **Fumadocs** — same arrangement (the docs site for the framework
+  this site uses lives in its own repo).
+- **Vue** — `vuejs/docs` is a separate repo from `vuejs/core`; large
+  documented site, multi-language community, contribution flow worth
+  studying.
+- **Rust Book** — `rust-lang/book` is a dedicated repo distinct from
+  `rust-lang/rust`. Cargo's own book is the opposite shape: the
+  Cargo Book lives in-repo at `rust-lang/cargo/src/doc/`. Both
+  shapes coexist in the same ecosystem, which is itself a useful
+  reference.
+- **Kubernetes** — `kubernetes/website` is famously its own repo,
+  with a strict cross-repo PR policy and a large translator
+  community.
+
+The pattern is roughly: small projects keep docs in-repo;
+ecosystem-shaped projects move them out. jackin❯ is on the line.
+
+## Acceptance criteria
+
+When this lands, the following should all be true:
+
+1. The docs site is published from a separate repository.
+2. There is a documented, enforceable mechanism that prevents source
+   changes in any of the listed code areas from merging without the
+   matching docs change either landing first or being linked.
+3. PR review across two repos costs no more than one extra click for
+   the reviewer.
+4. `PROJECT_STRUCTURE.md` and the cross-reference table are updated to
+   point at the new repo and explain the new flow.
+5. The freshness check from the docs site's own <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile>
+   ("Roadmap sidebar discipline", `<RepoFile />` validation, lychee
+   link checks) is preserved or improved.
+
+## Related
+
+- [Codebase Map](/reference/getting-oriented/codebase-map/) — must be updated to point
+  at the new repo when this lands.
+- [split workspace-file layout](/reference/runtime/configuration/#one-file-per-workspace-by-design) — orthogonal, but in the same "configuration / workflow ergonomics" cluster.
+- [Developer Reference Fumadocs section](/roadmap/developer-reference-setup/) — also a docs-discoverability item, since both depend on docs being easy to find and edit.
+- <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> — the "Code ↔ Docs
+  Cross-Reference" table is the single biggest piece of in-repo state
+  that has to migrate or be re-enforced.

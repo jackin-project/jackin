@@ -102,7 +102,7 @@ Command dispatch lives in `crates/jackin/src/app/`. Every clap subcommand has a
 match arm in <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile> (`run`) that calls
 into the relevant domain module (`workspace/`, `runtime/`, `config/`,
 etc.). When you add a flag, also update the matching docs page under
-`docs/content/docs/commands/`.
+`docs/content/docs/(public)/commands/`.
 
 ### "I want to change container lifecycle behaviour"
 
@@ -327,7 +327,7 @@ first:
 - <RepoFile path="TESTING.md">TESTING.md</RepoFile> — how to run the test suite.
 - <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> — agent-facing pointer covering the multi-repo ecosystem and the per-PR docs contract; the detailed module map this page surfaces is the source of truth.
 
-The [Roadmap](/reference/roadmap/) is the catalogue of in-flight and
+The [Roadmap](/roadmap/) is the catalogue of in-flight and
 planned design work. When picking up a task, the matching roadmap
 entry usually has the problem statement, the chosen approach, and the
 related source files.

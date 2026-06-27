@@ -9,7 +9,7 @@ Primary branch: `main`.
 - **Stay on active branch.** Never commit `main`; propose branch, get operator confirm. One PR per session = one branch. → [CONTRIBUTING.md](CONTRIBUTING.md)
 - **No silent host writes.** No dotfiles, `.git`, `~/.config/gh`, `~/.gitconfig`, host remotes — without explicit opt-in surfaced in launch summary. Reads OK. → [HOST_AND_CONTAINER.md](HOST_AND_CONTAINER.md)
 - **Container paths under `/jackin/` only.** No FHS roots (`/run`, `/var`, `/opt`, `/etc`, `/tmp/jackin*`). → [HOST_AND_CONTAINER.md](HOST_AND_CONTAINER.md)
-- **Brand: `jackin❯`** in rich-text prose; `jackin>` only for plaintext fallback. Code/paths/commands/env vars use literal `jackin`. → [RULES.md](RULES.md)
+- **Brand is always `jackin❯`.** The product/project name is *always* written `jackin❯` (lowercase letters + the `❯` chevron) in every rich-text surface — prose, docs, UI, comments, commit/PR descriptions, marketing. Never `jackin'`, `Jackin`, `Jackin'`, or bare `jackin` for the brand. Only proven plaintext-only surfaces may fall back to `jackin>`. Use the no-chevron literal `jackin` *exclusively* for code identifiers, commands, binaries, crates, packages, env vars, config keys, file paths, URLs, and labels (`jackin`, `jackin-capsule`, `JACKIN_DEBUG`, `~/.jackin/`). If the chevron makes a possessive awkward, rewrite the sentence. → [RULES.md](RULES.md)
 - **Every commit: sign `-s`, push immediately.** → [CONTRIBUTING.md](CONTRIBUTING.md)
 - **Pre-release: breaking changes OK, no migration shims.** Exception: `config.toml`, per-workspace files, `jackin.role.toml` versioned; schema changes ship 5 artifacts under one version bump per PR. → [PRERELEASE.md](PRERELEASE.md)
 

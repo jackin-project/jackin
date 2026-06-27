@@ -1,7 +1,7 @@
 //! WP0 — Acceptance test matrix harness: Tier 1 mechanism probes.
 //!
 //! For each Docker security profile (`locked`, `hardened`, `standard`, `compat`),
-//! starts a container with the flags jackin' would apply, then asserts the
+//! starts a container with the flags jackin❯ would apply, then asserts the
 //! effective posture via `docker exec`:
 //!
 //! - Capability set: `NET_ADMIN`/`NET_RAW` present only for allowlist profiles;

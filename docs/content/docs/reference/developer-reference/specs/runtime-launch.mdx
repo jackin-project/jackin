@@ -1,0 +1,49 @@
+---
+title: "runtime/launch.rs — Behavioral Spec"
+---
+
+Behavioral invariant contract for <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — the `jackin load` critical-path pipeline. This spec is the verification oracle for the planned [split-runtime-launch](/roadmap/split-runtime-launch/) refactor: any split must preserve every INV below.
+
+## Purpose
+
+`load_role` (public API) → `load_role_with` (pipeline implementation). Runs five sequential phases: resolve source + trust, resolve/claim instance, resolve launch inputs, build + prepare state, launch + finalize.
+
+## Pipeline overview
+
+```
+load_role (public API)
+  └─ load_role_with (pipeline)
+       1. Resolve source + trust   — clone/update repo; confirm untrusted agents
+       2. Resolve/claim instance   — restore candidates; claim final container slot
+       3. Resolve launch inputs    — print summary; resolve manifest env, operator env,
+                                     auth mode, diagnostics
+       4. Build + prepare state    — build image; prepare auth; materialize mounts;
+                                     create cache/state dirs
+       5. Launch + finalize        — start runtime; attach; finalize worktrees;
+                                     classify teardown/preservation
+```
+
+## Behavioral invariants
+
+| INV | Description | Verify by |
+|---|---|---|
+| INV-1 | Trust confirmation runs before the image build — an untrusted agent may be cloned and resolved but not built until confirmed | `confirm_trust_for_test` closure runs before `build_agent_image` in `load_role_with` |
+| INV-2 | Token-mode verification fails fast before auth state preparation and runtime startup — a missing credential env var aborts before DinD/network launch | `verify_credential_env_present` runs before `RoleState::prepare` / `launch_role_runtime` |
+| INV-3 | Container slot claim runs before the launch summary is printed — the name the operator sees is the final locked name that flows to the running container | `claim_container_name` runs before the launch-summary step progress and env diagnostic (`print_launch_diagnostic`); the claimed name threads through `launch_role_runtime` |
+| INV-4 | Foreground-attach finalization runs before teardown classification — isolated worktrees are finalized before deciding whether to preserve or clean the container | `finalize_foreground_session` happens before the `inspect_container_state(...)` cleanup match |
+| INV-5 | Cleanup classification preserves restartable sessions and tears down clean exits | `Running` / crash paths disarm cleanup; clean-exit path runs cleanup |
+| INV-6 | `render_exit` runs on both success and error exits from `load_role_with` | both `Ok(_)` and `Err(error)` arms call `render_exit` |
+
+## Test seams
+
+Two `LoadOptions` fields are dependency-injection points for unit tests; any split must preserve them:
+
+- `op_runner: Option<Box<dyn OpRunner>>` — inject a fake `op://` resolver
+- `host_env: Option<BTreeMap<String, String>>` — inject a fake host env map
+
+Two additional seams are closure parameters of `load_role_with` itself, not `LoadOptions` fields:
+
+- `confirm_trust_for_test` closure — passed into `load_role_with` to fake trust confirmation
+- `confirm_branch_for_test` closure — passed into `load_role_with` to fake role-branch confirmation
+
+These seams isolate the pipeline from Docker, git, and the operator's real credentials in tests.

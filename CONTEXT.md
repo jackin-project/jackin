@@ -1,6 +1,6 @@
-# jackin' Domain Language
+# jackin❯ Domain Language
 
-Shared vocabulary for jackin' — agent containers, their lifecycle, and how operators start and return to them. This file is a glossary only; it carries no implementation detail.
+Shared vocabulary for jackin❯ — agent containers, their lifecycle, and how operators start and return to them. This file is a glossary only; it carries no implementation detail.
 
 ## Lifecycle
 

@@ -11,6 +11,7 @@ import { staticFunctionMiddleware } from '@tanstack/start-static-server-function
 import browserCollections from 'collections/browser'
 import { useFumadocsLoader } from 'fumadocs-core/source/client'
 import { DocsLayout } from 'fumadocs-ui/layouts/docs'
+import { Map, Terminal, Wrench } from 'lucide-react'
 import {
   DocsBody,
   DocsDescription,
@@ -130,6 +131,30 @@ function Page() {
       tree={pageTree}
       sidebar={{
         defaultOpenLevel: 2,
+        // Three doc blocks, switched via the sidebar dropdown (fumadocs Sidebar Tabs).
+        // Public is the default; Internals and Roadmap are separate roots, hidden
+        // until the reader switches. Order matters: `/` prefix-matches everything,
+        // so the more specific roots must come after it for active-tab detection.
+        tabs: [
+          {
+            title: 'jackin❯',
+            description: 'Install, run, and operate jackin❯.',
+            url: '/getting-started/why',
+            icon: <Terminal />,
+          },
+          {
+            title: 'Behind jackin❯',
+            description: 'Internals, research, and developer reference.',
+            url: '/reference',
+            icon: <Wrench />,
+          },
+          {
+            title: 'Roadmap',
+            description: 'Planned, in-progress, and shipped work on jackin❯ itself.',
+            url: '/roadmap',
+            icon: <Map />,
+          },
+        ],
         footer: (
           <div className="jk-sidebar-footer">
             <ThemeToggle />

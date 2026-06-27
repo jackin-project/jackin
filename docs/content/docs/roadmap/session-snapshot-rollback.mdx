@@ -1,0 +1,136 @@
+---
+title: "Session Snapshot and Rollback"
+---
+
+**Status**: Open — design proposal (Containment track, [Agent Orchestrator Research Program](/roadmap/agent-orchestrator-research/))
+
+## Problem
+
+Per-mount isolation and worktree cleanup protect many source-control flows, but
+they do not fully answer recovery for every agent session:
+
+- a workspace may be dirty before launch
+- a mount may not be a Git repository
+- generated files and caches may be expensive or unsafe to roll back manually
+- agent state, auth state, and tool config can be poisoned across sessions
+- future autonomous queues may run unattended long enough that "just inspect
+  the diff" is not enough
+
+jackin❯ needs a recovery story that is explicit, scoped, and opt-in. It should
+not become a silent host backup system.
+
+<Aside type="note">
+This item is the **opposite direction** from [Session keep and resume](/roadmap/session-keep-and-resume/), and the two are easy to confuse. Keep-and-resume moves a session *forward* — a crash, a power-off, or an OrbStack upgrade killed the container, and the operator wants the same instance back to **continue** the work. This item moves a session *backward* — the work itself went wrong (a poisoned tool config, an unsafe generated-file sprawl, an agent edit the operator wants gone) and the operator wants to **undo** it to the pre-launch host state. Restoring a killed session belongs to keep-and-resume; rolling back a bad one belongs here. The snapshot layer this item proposes is the heavier, opt-in mechanism for the undo case; it is deliberately deferred relative to keep-and-resume's reuse-first restore ladder.
+</Aside>
+
+## Inspiration
+
+Hazmat takes a pre-session snapshot and exposes restore/diff workflows. Its
+verification docs also model backup/restore ordering and reversibility
+invariants. That is stronger than jackin❯ needs for a first pass, but the
+principle is useful: recovery behavior should be visible before launch and
+should not rely on the agent behaving.
+
+Docker Sandboxes provides a different reference point: sandbox state persists,
+and `sbx rm` removes the sandbox and associated worktrees. That is useful for
+VM cleanup, but it does not replace project-level rollback when workspace
+changes are live on the host.
+
+## Proposal
+
+Add a scoped snapshot layer for sessions where rollback matters.
+
+Suggested config shape:
+
+```toml
+[workspaces.my-project.recovery]
+snapshot = "off" # off | metadata | project | project-and-state
+exclude = ["target/", "node_modules/", ".next/"]
+```
+
+Launch output must print:
+
+- whether a snapshot will be created
+- which paths are covered
+- which excludes apply
+- where metadata is stored
+- whether restore is available
+- which host paths would be overwritten by restore
+
+## Phases
+
+### Phase 1 — Metadata-only recovery index
+
+- Record resolved mounts, isolated worktree paths, base commits, dirty status,
+  and cleanup policy in the persistent storage layer.
+- Add `jackin recovery show <instance>` for post-session inspection.
+- Do not copy file contents yet.
+
+### Phase 2 — Project snapshots
+
+- Add opt-in snapshots for non-git mounts and dirty working trees.
+- Use integration-provided excludes from
+  [stack integration contracts](/roadmap/stack-integration-contracts/).
+- Store snapshots under jackin❯ data directory, not inside the project.
+- Add diff/list commands before restore.
+
+### Phase 3 — State snapshots
+
+- Snapshot selected jackin-managed state such as agent config, plugin state,
+  and auth delivery artifacts when the selected auth mode makes that safe.
+- Do not snapshot secret values into a broader-readable archive.
+- Integrate with
+  [container credential exposure](/roadmap/container-credential-exposure/)
+  so secret handling stays explicit.
+
+### Phase 4 — Remote and Kubernetes recovery
+
+- Map the recovery contract onto SSH remote directories and Kubernetes volumes.
+- Prefer platform-native snapshots where available, but keep the same
+  operator-facing contract.
+
+## Restore rules
+
+Restore must be destructive only by explicit operator confirmation.
+
+Minimum restore flow:
+
+```sh
+jackin recovery show <instance>
+jackin recovery diff <instance>
+jackin recovery restore <instance>
+```
+
+The restore command should refuse to run while the instance is active. It
+should print the exact host paths it will mutate and require an explicit flag
+or interactive confirmation.
+
+Before any destructive restore, jackin❯ should snapshot the current state of the
+paths it is about to overwrite. That emergency snapshot is not a replacement
+for a real backup system, but it preserves a last-known state if the operator
+selected the wrong instance, the restore target changed since launch, or the
+snapshot excludes were too broad.
+
+## Host-side effects
+
+Snapshots write to jackin❯ data directory. Restore mutates host workspace
+paths and must therefore be opt-in, visible in the session contract, and
+guarded by interactive confirmation or an explicit destructive flag.
+
+## Related files
+
+- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile> — cleanup and purge behavior
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> — foreground session finalization
+- <RepoFile path="crates/jackin-config/src/resolve.rs">crates/jackin-config/src/resolve.rs</RepoFile> — resolved workspace mount state
+- [Per-mount isolation](/guides/workspaces/#per-mount-isolation) — isolated worktree/clone design
+- [Persistent storage layer](/roadmap/persistent-storage-layer/) — future metadata store
+
+## Source materials
+
+- [Hazmat README](https://github.com/dredozubov/hazmat) — snapshot and restore
+  positioning
+- [Hazmat verified scope](https://github.com/dredozubov/hazmat/blob/master/tla/VERIFIED.md) —
+  backup/restore safety and setup/rollback verification notes
+- [Docker Sandboxes usage](https://docs.docker.com/ai/sandboxes/usage/) —
+  sandbox lifecycle, branch worktrees, and cleanup behavior
+- [Agent Orchestrator Research Program](/roadmap/agent-orchestrator-research/)

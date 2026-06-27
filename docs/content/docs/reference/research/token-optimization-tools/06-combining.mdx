@@ -1,0 +1,167 @@
+---
+title: "06 — Combining them: is there one product?"
+---
+
+# 06 — Combining them: is there one product?
+
+The operator's central question: *is there a single product that combines what caveman, headroom, and RTK each do — and gets the best of each in one place — and if not, what is the best you can do?*
+
+When this hub was a three-way comparison the answer was "no such product exists, and building one would be a mistake." **lean-ctx is that product** — the integrated context runtime that genuinely tries to do everything the three specialists do, plus a code graph and a verification layer they lack. So the question is no longer hypothetical. The honest updated answer: **lean-ctx proves a superset *can* be built and is genuinely more capable on reach — but it also confirms the prediction that doing so re-imports every cost the specialists avoid.** The real decision is therefore not "stack vs nothing" but **layered specialists vs one integrated runtime**, and which wins depends on whether you value minimal footprint and independent removability (stack) or consolidation plus the code-graph/verification surface (lean-ctx).
+
+## lean-ctx vs the thought experiment
+
+The three-way version of this page ran a thought experiment: *if* someone built the one-product superset, here is what it would have to contain and what each piece would cost. lean-ctx built almost exactly that product, so the thought experiment is now an audit — prediction on the left, what shipped on the right:
+
+```text
+   PREDICTED "ONE PRODUCT"          inherited cost          WHAT LEAN-CTX ACTUALLY SHIPS
+   ──────────────────────           ──────────────         ────────────────────────────
+   output register shaper    ◄────  caveman's lossiness    NOT included — no output register
+                                                            (caveman's slot stays empty)
+   + Bash-boundary hook       ◄────  RTK's host-write +     YES — 56 pattern modules + a hook
+                                     hook-conflict surface   (same host-write hazard, ×34 agents)
+   + API-layer compressor     ◄────  headroom's proxy       YES — proxy w/ frozen-region rewrite
+                                     latency + cache-bust     (cache-safe-by-design, still lossy)
+   + ML prose stage           ◄────  CompressionAttack +    OPT-IN only — default core is
+                                     model download           deterministic (avoids the cost by default)
+   + reversible store         ◄────  a store to provision   YES — archive + CCP + property graph +
+                                     and secure               BM25 (several SQLite DBs to secure)
+   + [NOT predicted]          ◄────  —                      PLUS a persistent CODE GRAPH and a
+                                                            signed VERIFICATION layer the stack lacks
+   ──────────────────────────       ──────────────         ────────────────────────────
+   verdict: every cost at once       mostly confirmed       a 64.7 MB binary + daemon + dashboard
+                                                            + DBs — but smarter than predicted on
+                                                            ML (opt-in) and reach (adds code graph)
+```
+
+Two things the prediction got right and one it got wrong:
+
+- **Right: the footprint tax is real and large.** lean-ctx carries a 64.7 MB binary, a long-lived daemon, a browser dashboard, multiple SQLite stores, a 77-tool MCP schema, and host writes across up to 34 agents. That is RTK's host-write surface *plus* headroom's process/attack surface *plus* a database tier, exactly as predicted — the costs do stack in one process.
+- **Right: it does not solve output.** lean-ctx has no output register, so even the superset still needs caveman for the 5×-priced output class. No single tool spans output *and* input *and* code-graph.
+- **Wrong: the ML cost is avoidable, and the reach is genuinely larger.** The prediction assumed a superset must run an ML stage in the hot path (headroom's cost). lean-ctx's default core is deterministic (tree-sitter/entropy/TF-IDF/BM25); ML embeddings and proxy prose rewrite are opt-in. And it adds a capability the stack of three *cannot* assemble from those three: a persistent, queryable code graph. So "monolith = strictly worse" was too strong; "monolith = broader but much heavier, and still not a superset of output" is the accurate verdict.
+
+## Why the specialists still win their slices
+
+Even granting lean-ctx's reach, the per-slice case for the specialists is unchanged, and it is why the stack remains the default for most:
+
+- **caveman's whole advantage is being a zero-machinery prompt.** lean-ctx cannot match "free, no runtime, unconditionally cache-safe, minutes to adopt" because it is a daemon-class runtime. For output compression specifically, caveman wins on cost by an enormous margin.
+- **RTK's whole advantage is minimalism.** It does the same write-time shell compression lean-ctx does, in a ~4 MB single binary with no daemon, no DBs, and no 77-tool schema. When shell output is the only problem, RTK is ~1/16th the footprint for the same lever.
+- **headroom's advantage is evidence and history-reach.** It has the only third-party measurement and fleet telemetry in the group, and it reaches conversation history natively (lean-ctx reaches history only in its opt-in proxy).
+
+lean-ctx's advantage is **consolidation + two new layers** (code graph, verification). That is a real reason to choose it — but it is a different axis from "cheapest cache-safe win," which the stack still owns.
+
+## The layered stack — still the "best of each" for most
+
+The clearest published model is a four-layer stack (from the `sgaabdu4/claude-code-tips` community guide), into which the specialists slot at distinct layers, each shrinking what the next must handle:
+
+```text
+                 THE LAYERED TOKEN-OPTIMIZATION STACK
+
+   Layer 1  PREVENT data from entering context at all
+            (code-intelligence retrieval — lean-ctx's code graph fits HERE,
+             or a standalone Codebase-Memory MCP)
+                │  what's left flows down ▼
+   Layer 2  VIRTUALIZE output (context-mode / sandboxed execution)
+                │
+   Layer 3  CAVEMAN — compress what the model WRITES into context
+                │  (output register; 5×-priced class; cache-neutral)
+                ▼
+   Layer 4  compress what is SENT to the API:
+            ┌─────────────────────────────────────────────────────┐
+            │  RTK        on SHELL OUTPUT, at the Bash tool boundary │
+            │  HEADROOM   on GENERAL API-layer traffic (everything   │
+            │             else: native reads, RAG, history)          │
+            │  LEAN-CTX   can occupy Layer 1 (code graph) AND Layer 4 │
+            │             (shell + reads) in one runtime — the        │
+            │             all-in-one alternative to assembling them    │
+            └─────────────────────────────────────────────────────┘
+                │
+                ▼
+            provider (billed)
+```
+
+Read this two ways. As a **stack of specialists**, caveman compresses output, RTK compresses Bash observations, headroom compresses everything else — "complementary layers, not overlapping." As an **integrated runtime**, lean-ctx collapses Layer 1 (its code graph prevents reads) and Layer 4 (its hook + MCP compress reads/shell) into one process — but you still bolt caveman on top for output. Either way caveman is the output layer; the choice is whether the input layers are three small tools or one big one.
+
+## The published evidence that the input tools compose
+
+This is not just architecture. One practitioner published a month of production TypeScript/Next.js work measuring RTK and headroom (self-measured via each tool's own counter — not a controlled A/B, but the best public head-to-head):
+
+| Tool | Tokens saved (1 month) | Reported reduction | Note |
+|---|---:|---|---|
+| **RTK** alone | 1,327,700,000 | 60–90% per command (file reads 66.9%, lint 100%) | dominates the total because this workload was Bash-heavy |
+| **headroom** alone | 189,014,601 | 31.0–59.1% per model, **96% prefix-cache-hit** | the cache-safe live-zone design measurably holds in the wild |
+| **combined** | 1,516,714,601 | — | "RTK's filtered output is further compressed by headroom's proxy" — additive |
+
+The combination measured as additive (1.33B + 0.19B ≈ 1.52B), with headroom's ~200–500-token proxy-metadata cost the only overhead — confirming the two input specialists compose at different interception points. lean-ctx was not in this measurement (too young); whether its single-runtime approach beats the two-tool stack on the same workload is exactly the [open question](/reference/research/token-optimization-tools/09-gaps-open-questions-and-next-brief/) the harness must answer.
+
+### The vendor itself treats the input tools as a stack
+
+The strongest evidence the specialists are *designed* to layer comes from headroom's own release notes: **v0.22.4 (2026-06-01) wires a `tokens_saved_rtk` data plane and "RTK metrics + Rust observability."** Headroom *tracks* RTK's savings rather than re-implementing shell rewriting — it treats RTK as a complementary upstream layer. lean-ctx takes the opposite bet: re-implement the shell layer (its own 56 pattern modules) inside one runtime rather than compose with RTK. Both bets are defensible; they are the stack-vs-monolith choice in vendor form.
+
+## Standalone vs combined: what you get, and what you miss
+
+| If you install only… | You capture | You miss entirely |
+|---|---|---|
+| **caveman** | The output class (~17% of dollars, 5×-priced), cache-neutral, zero runtime, minutes to adopt | All input compression — verbose test/build/log output and big reads still hit context at full size |
+| **RTK** | The Bash-observation slice of the 61% bucket — the largest *concrete* coding waste — deterministically and cache-safely, tiny footprint | Output verbosity; non-Bash reads, RAG, history; code-graph retrieval |
+| **headroom** | The broadest *evidenced* input surface — native reads, RAG, history, cross-agent memory — reversibly | Output verbosity; code-graph retrieval; pays ML/proxy latency + attack surface |
+| **lean-ctx** | Nearly the whole input side (shell + native reads + providers) **plus a persistent code graph, memory, and a signed savings ledger** — one runtime | Output verbosity (still need caveman); conversation history unless you run the proxy; carries the largest footprint of the four |
+
+The decisive fact for "do I need everything": because caveman touches *only output* and the input tools touch *only input*, **caveman never double-counts with any of them.** Running caveman plus one input layer is strictly additive and is the sweet spot for most projects. The genuine redundancy is among the input tools — do not run RTK *and* lean-ctx's shell hook (two shell-rewrite paths over the same bytes), and do not stack headroom's proxy on lean-ctx's proxy.
+
+## What to actually run, by project shape
+
+| Project shape | Bring | Rationale |
+|---|---|---|
+| Default coding agent, want the cheapest real win | **caveman + RTK** | Output + the biggest concrete input slice; both cache-safe, both deterministic, no ML, no proxy, tiny footprint. The recommended lean stack. |
+| Output verbosity is the *only* complaint; tool output already controlled | **caveman alone** | Smallest intervention; nothing else justified. |
+| Bash-dominated workload, output already terse | **RTK alone** | The dominant waste is shell output; caveman adds little if the model is already brief. |
+| Agent *platform*: large JSON/API/RAG, long histories, cross-agent memory, want the best evidence | **headroom (+ caveman)** | Only headroom reaches history natively with published telemetry + CCR recall. |
+| Medium/large repo where you want code-graph retrieval + memory + broad compression **in one tool**, and can carry a daemon | **lean-ctx (+ caveman)** | The only tool that bundles the code graph + memory + shell + native-read compression + a signed ledger. Run caveman for output; do **not** also run RTK's hook (lean-ctx already does shell). |
+| Maximal coverage, willing to pay and run the harness | **caveman + (RTK or lean-ctx) + headroom-MCP** | Pick *one* input shell path (RTK *or* lean-ctx, not both) + headroom for history/RAG reach — only after each clears the harness on its own slice. |
+
+## The memory either/or — now three-way
+
+Memory is the one layer where you must pick exactly one, because running two memory stores is pure overhead:
+
+| Option | Shape | Pick it when |
+|---|---|---|
+| **cavemem** (caveman family) | single-agent, lossy, no recovery, plugin-native | Claude-only, want the lightest option |
+| **headroom memory + CCR** | cross-agent, reversible, auto-dedup | multi-tool (Claude+Codex+Gemini), value reversibility + the most evidence |
+| **lean-ctx CCP + knowledge/property graph** | local-first, structured recovery, code-graph-linked | you already run lean-ctx for compression and want memory in the same runtime |
+
+Run exactly one memory layer. None publishes injection-cost-vs-re-exploration-saved net accounting, so meter whichever you choose.
+
+## What "combining" must *not* mean
+
+Stacking is additive only if you avoid pointing two tools of the *same kind* at the *same tokens*:
+
+- **Run exactly one shell-rewrite path.** RTK *or* lean-ctx's hook, never both fighting over the same Bash bytes.
+- **Run exactly one output policy** (caveman) — do not stack headroom's output shaper on it.
+- **Run exactly one proxy**, if any — lean-ctx's or headroom's, never layered.
+- **Run exactly one memory store** (above).
+- **Do not expect per-tool percentages to sum to a marketed stack headline.** "90%+ token reduction" guides quote token counts (mostly 0.1×-priced cache reads), not dollars; "30 min → 3 hr session" is a context-occupancy / tasks-per-cap win, not a 90% dollar cut.
+
+## The 10× wall still stands
+
+Whether you assemble the stack or adopt lean-ctx, it is not an order-of-magnitude dollar cut:
+
+- The marketed "90%+", "1.5 billion tokens saved", and "up to 99%" figures are **token counts or per-payload ratios, not dollars** — most of those tokens are cache *reads* priced at 0.1×.
+- "30 min → 3 hr on a 200K window" is a **context-occupancy / tasks-per-cap** win for a capped subscriber, not a $-per-task cut.
+- **None of the four touches thinking (20% of dollars).** The largest unaddressed bucket is unmoved regardless of how many you stack or whether you consolidate into one runtime.
+
+The dossier's verdict holds unchanged: ≈2.5× defensible at zero quality loss, ≈5–6.2× if a validated model-routing flip passes your harness, and **no honest 10×** — the binding constraints are frontier-model thinking output and the cache-read floor, which none of these tools moves.
+
+## jackin❯ adoption: the cache-safe subset as infrastructure
+
+For a jackin❯ container, adopt in **risk/reach order**, each cleared by the validation harness on its own slice before the next:
+
+1. **caveman first (output).** Unconditionally cache-safe, hits the 5×-priced class, zero runtime. The operator's baseline.
+2. **RTK second (Bash observations).** The lowest-footprint input layer: deterministic, cache-safe by construction, zero MCP rent, a tiny single binary. Pilot it **role-scoped inside a container, never on the host** (host-write ban — it writes a PreToolUse hook). **Reconcile its hook with caveman's**, **disable telemetry**, and **A/B against a hand-written log/grep filter** — RTK earns its place only if its coverage beats a filter you could write yourself net of dropped-context risk.
+3. **headroom third (everything else on the wire).** Only if the workload needs RAG/file/history compression or cross-agent reversible memory, and only in **MCP mode, never the whole-prompt proxy** in a container.
+4. **lean-ctx — only if you specifically want its code-graph / memory / verification surface, and treat it as a heavyweight.** It is the highest-footprint option (64.7 MB binary, daemon, dashboard, DBs, host writes ×34 agents) and the youngest with no independent benchmark — so for a container it is a deliberate "I want the integrated runtime" choice, not a default. If adopted: use **MCP + shell-hook mode only (deterministic, cache-safe), never the proxy**; do **not** also run RTK (one shell path); scope all host writes into the container (the host-write ban applies with the widest blast radius of the four); pin the version (200+ releases / 3 months — fast-moving); and keep caveman for output. Its bounce-netted, signed ledger is a genuine asset for *proving* the saving inside the harness.
+
+Across all of them, the guardrail is the same: a per-payload compression ratio is **not a banked saving** until it survives the harness — task/test success at least at baseline, `cache_read` ratio preserved, command-re-run / bounce rate not worse, and total tokens-per-solved-task down by at least 20% net of each tool's own overhead. The detailed harness is in [Evidence and claims](/reference/research/token-optimization-tools/07-evidence-and-claims/); the container-specific hazards are in the [architect code-intelligence tooling roadmap](/roadmap/architect-code-intelligence-tooling/).
+
+---
+
+Next: [07 — Evidence and claims](/reference/research/token-optimization-tools/07-evidence-and-claims/) — the benchmark tables, the consolidated claim graveyard, and the runnable validation harness.

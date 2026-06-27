@@ -114,7 +114,7 @@ states, and provider-child cooldowns stay owned by the PID 1 daemon.
 The usage surface is account-quota-only: the obsolete workspace/session spend
 summary messages and CLI subcommands were removed with the Capsule usage overlay
 cleanup. Per-message token/cost attribution belongs to
-[Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/), not this
+[Token & Cost Telemetry](/roadmap/token-cost-telemetry/), not this
 control surface.
 `jackin-capsule usage claude-cli` is intentionally outside the control channel:
 it is an explicit operator diagnostic that runs `claude -p /usage` on demand and
@@ -331,7 +331,7 @@ Modern terminals interpret OSC escape sequences agents emit for window titles, c
 | `JACKIN_OSC_TITLE` | OSC 0 / 1 / 2 window-title and icon-name updates |
 | `JACKIN_OSC_NOTIFY` | OSC 9 desktop notifications |
 | `JACKIN_OSC_HYPERLINK` | OSC 8 clickable hyperlinks |
-| `JACKIN_OPEN_LINKS` | jackin' host browser-open actions, including GitHub open rows, visible URL modified-click, and command-palette link open |
+| `JACKIN_OPEN_LINKS` | jackin❯ host browser-open actions, including GitHub open rows, visible URL modified-click, and command-palette link open |
 
 OSC 7 (current working directory) is never forwarded — it would tell the operator's host terminal to track the *container's* cwd, which has no meaning outside the container; jackin-capsule captures it locally for the pane title and stops. OSC 8 forwarding additionally rejects any URI whose scheme is not `http`, `https`, or `mailto` (so a compromised agent cannot ship a `javascript:` or `file://` hyperlink that would script the operator's host terminal on click).
 
@@ -425,12 +425,12 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 | <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
 | <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
 | <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
-| [Agent runtime status authority roadmap item](/reference/roadmap/agent-runtime-status/) | Design record and regression checklist for the shipped in-container state authority |
-| [jackin❯ daemon roadmap item](/reference/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
+| [Agent runtime status authority roadmap item](/roadmap/agent-runtime-status/) | Design record and regression checklist for the shipped in-container state authority |
+| [jackin❯ daemon roadmap item](/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
 | [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |
 
 ## See also
 
 - [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) — the non-negotiable passthrough contract and per-feature verification checklist
-- [jackin-capsule roadmap item](/reference/roadmap/jackin-capsule/) — original problem statement, Herdr evaluation, phased implementation plan
-- [Agent Orchestrator Research](/reference/roadmap/agent-orchestrator-research/) — comparative analysis of Herdr and other tools that informed the design
+- [jackin-capsule roadmap item](/roadmap/jackin-capsule/) — original problem statement, Herdr evaluation, phased implementation plan
+- [Agent Orchestrator Research](/roadmap/agent-orchestrator-research/) — comparative analysis of Herdr and other tools that informed the design

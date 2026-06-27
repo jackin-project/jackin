@@ -773,7 +773,7 @@ pub fn github_allowlist_hosts(gh_host: Option<&str>) -> Vec<String> {
 /// Union of: operator/role-configured `grants.allowed_hosts`, the agent's
 /// default API endpoint(s), any forwarded GitHub host(s), and the OTLP
 /// telemetry endpoint host — deduplicated, order-preserving. The OTLP host is
-/// jackin'-owned infrastructure egress (Decision 9): it is always present when
+/// jackin❯-owned infrastructure egress (Decision 9): it is always present when
 /// telemetry is active and is not operator-removable, so the capsule keeps
 /// exporting under `hardened`/`locked`.
 ///
@@ -1009,7 +1009,7 @@ pub fn validate_dind_grant_for_cgroup(
     if grant == DindGrant::Rootless && cgroup_version == "v1" {
         return Err(
             "rootless DinD requires cgroup v2 for user-namespace isolation; this host is cgroup v1. \
-             Use `dind = \"privileged\"` or run on a cgroup v2 host — jackin' will not silently fall \
+             Use `dind = \"privileged\"` or run on a cgroup v2 host — jackin❯ will not silently fall \
              back to a privileged sidecar."
                 .to_owned(),
         );

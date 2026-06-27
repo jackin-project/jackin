@@ -1,7 +1,11 @@
 {
-  "title": "Behind jackin❯ — Internals",
+  "root": true,
+  "title": "Behind jackin❯",
+  "description": "Internals, research, and developer reference. Not part of the user-facing product docs.",
+  "icon": "Wrench",
   "defaultOpen": false,
   "pages": [
+    "index",
     "getting-oriented",
     "runtime",
     "capsule",
@@ -9,6 +13,8 @@
     "tui",
     "security-implementation",
     "research-watchlist",
-    "(errors)"
+    "(errors)",
+    "research",
+    "developer-reference"
   ]
 }
