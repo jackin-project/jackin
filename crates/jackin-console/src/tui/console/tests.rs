@@ -211,7 +211,7 @@ mod quit_confirm {
 
     fn unresolved_workspace() -> ResolvedWorkspace {
         ResolvedWorkspace {
-            name: "".to_owned(),
+            name: String::new(),
             label: "scratch".to_owned(),
             workdir: "/workspace".to_owned(),
             mounts: Vec::new(),

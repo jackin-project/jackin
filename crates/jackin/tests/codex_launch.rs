@@ -62,7 +62,7 @@ fn capsule_config_for_run(paths: &JackinPaths, run_cmd: &str) -> jackin_protocol
 
 fn codex_workspace(repo_dir: &Path) -> ResolvedWorkspace {
     ResolvedWorkspace {
-        name: "".to_owned(),
+        name: String::new(),
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
         mounts: vec![MountConfig {
@@ -253,7 +253,7 @@ plugins = []
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let workspace = ResolvedWorkspace {
-        name: "".to_owned(),
+        name: String::new(),
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
         mounts: vec![MountConfig {
