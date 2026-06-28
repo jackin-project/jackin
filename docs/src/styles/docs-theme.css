@@ -1250,6 +1250,15 @@ html.theme-init *::after {
   box-shadow: var(--jk-sidebar-hover-shadow);
 }
 
+/* Regular nav links: fumadocs' hover:bg-fd-accent equals the sidebar surface
+   (--jk-panel) in light mode, so the hover was invisible. Use the same hover
+   token as active items — visible and consistent in both themes. */
+#nd-sidebar a:hover,
+#nd-sidebar a:focus-visible {
+  color: var(--jk-text);
+  background-color: var(--jk-sidebar-hover-bg);
+}
+
 /* Section ancestor (the folder-index leaf fumadocs flags `aria-current`
    while you browse a child): only the true current page gets the wash + bar,
    so the ancestor stays quiet — a faint brand text tint, no background, no
