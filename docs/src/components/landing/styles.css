@@ -303,6 +303,23 @@
   --landing-accent-rgb: 0 255 65;
 }
 
+/* Topnav sits on the green hero canvas in light mode — the secondary buttons use
+   --jk-accent (dark green) which would vanish on green. Switch them to a white
+   treatment, matching the hero's white accent, so they read against the canvas. */
+:root[data-theme='light'] nav.landing-topnav .landing-star {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.12);
+}
+:root[data-theme='light'] nav.landing-topnav .landing-star-icon {
+  color: #ffffff;
+}
+:root[data-theme='light'] nav.landing-topnav .landing-star:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: #ffffff;
+  box-shadow: none;
+}
+
 /* Light-mode hero is a green canvas, so a green primary button would vanish on
    it — the one necessary exception: dark pill + white label for contrast. Every
    other primary (dark mode, and light mode outside the hero) is --jk-accent. */
