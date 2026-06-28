@@ -1442,6 +1442,11 @@ html.theme-init *::after {
   pointer-events: none;
   user-select: none;
 }
+/* Light mode: use the dark-word variant so the watermark isn't an invisible
+   white word on white. */
+:root[data-theme='light'] #nd-toc::after {
+  background-image: url("/brand/jackin-wordmark-onlight.svg");
+}
 
 /* ==========================================================================
    Header / top nav
