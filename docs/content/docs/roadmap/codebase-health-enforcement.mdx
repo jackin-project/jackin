@@ -95,6 +95,17 @@ Worked example — the `build_log` inversion (P2): define `trait BuildLogSink` i
 
 **Decision:** delete all 19 `pub use jackin_X::*` shim modules in the `jackin` binary; callers import directly from the owning crate root (`use jackin_manifest::RoleManifest`). Each library crate's `lib.rs` is its single facade — keep those crate-root re-exports curated so the public surface *is* the facade. No `jackin::prelude` glob, no per-module re-export layer. **Why:** one home per concept — the crate whose name matches — which is the entire navigability goal; a binary-side prelude would reintroduce a second home and a glob indirection ([matklad cautions against exactly this](https://matklad.github.io/2021/08/22/large-rust-workspaces.html)). Fix the memorize-this exceptions along the way (e.g. `DriftDetection` "import from `runtime::drift` directly") so there are zero special cases. The import-site churn is mechanical and behavior-preserving (a [Parallel Change](https://martinfowler.com/bliki/ParallelChange.html): callers migrate to the crate path, then the shim is deleted).
 
+### D7 — Naming convention (P8): one predictable stem vocabulary
+
+**Decision:** a file's stem must predict its role, with one vocabulary per subsystem kind. Two concrete rules:
+
+- **TUI stacks** all use the canonical TEA stems (following from D5's shared contract): `model.rs` (state), `message.rs` (the `Message` enum), `update.rs` (the central `update`), `view.rs` (render), `effect.rs` (side effects), with `run.rs`/`input.rs` where needed. Retire the `state.rs` / `render.rs` synonyms so "where is the update loop / the view?" has one answer on every surface.
+- **`jackin-config`'s `app_config_*` fan-out** (`app_config_mounts.rs`, `app_config_persist.rs`, `app_config_roles.rs`, `app_config_workspaces.rs` — a `type_aspect.rs` stem used nowhere else) converts to the workspace's standard coordinator + sibling layout: `app_config.rs` coordinator + `app_config/{mounts,persist,roles,workspaces}.rs`.
+
+**Why:** a predictable convention is the difference between "navigate by knowing the rule" and "navigate by grepping"; the project already standardized on coordinator + self-named siblings (no `mod.rs`), so this extends one existing rule rather than inventing a second.
+
+**Deferred sub-decisions (settle during implementation, not blocking):** (a) whether `jackin-config`'s file-IO persistence (`persist.rs`) splits into an L2 adapter to keep the schema crate strictly IO-free, or the schema crate keeps a thin documented IO edge; (b) the W4 unused-dep tool overlap (`cargo-shear` already runs — reconcile with `cargo-machete` rather than run both); (c) the cross-crate `FakeOpWriter` test-helper dedup (needs a shared `test-support` feature like the one `config_with_agents` now uses).
+
 ## Workstreams
 
 ### W1 — Architecture & boundaries (the core restructuring)
