@@ -24,11 +24,23 @@ const WHITE = '#ffffff'
 const GREEN = '#5cf07a'
 const DARK = '#0a0a0a'
 const GREY = '#9ca8a1'
+// Light-surface variant: dark word + AA accent chevron + darker byline, for the
+// logo on white chrome (docs header/sidebar, landing footer) in light mode.
+const DARK_WORD = '#15181c'
+const ACCENT = '#0b774e'
+const GREY_DARK = '#5d6460'
 const round = (n: number) => Math.round(n * 100) / 100
 
 // The canonical lockup: outlined word + ❯ chevron, transparent background.
 // With `byline`, a small grey "by tailrocks" (also outlined) sits beneath it.
-function wordmarkSvg(word: string, fontSize: number, wordColor: string, chevronColor: string, byline = false): string {
+function wordmarkSvg(
+  word: string,
+  fontSize: number,
+  wordColor: string,
+  chevronColor: string,
+  byline = false,
+  bylineColor: string = GREY,
+): string {
   const w = outlineWord(word, fontSize, wordColor)
   const left = round(w.width + wordChevronGap(fontSize))
   const cy = round(w.capCenter + fontSize * 0.06) // nudge chevron down from the cap center
@@ -38,7 +50,7 @@ function wordmarkSvg(word: string, fontSize: number, wordColor: string, chevronC
   let bylineMarkup = ''
   if (byline) {
     const bf = Math.round(fontSize * 0.28)
-    const by = outlineWord('by tailrocks', bf, GREY, interFont) // sans subtext, not the mono mark
+    const by = outlineWord('by tailrocks', bf, bylineColor, interFont) // sans subtext, not the mono mark
     // Tuck the byline right under the letters (off the baseline, not the "j"
     // descender) so it almost touches the word.
     const baseline = round(w.baseline + 0.18 * bf + by.baseline)
@@ -126,6 +138,14 @@ writeFileSync(join(brandDir, 'jackin-lockup.svg'), wordmark)
 console.log('wrote public/brand/jackin-lockup.svg')
 writeFileSync(join(brandDir, 'jackin-monogram.svg'), wordmarkSvg('j', 200, WHITE, GREEN, false))
 console.log('wrote public/brand/jackin-monogram.svg')
+
+// Light-surface variant (dark word + accent chevron) for white chrome in light
+// mode. Same geometry as the white wordmark, so no separate alignment assert.
+const wordmarkOnlight = wordmarkSvg('jackin', 200, DARK_WORD, ACCENT, true, GREY_DARK)
+writeFileSync(join(brandDir, 'jackin-wordmark-onlight.svg'), wordmarkOnlight)
+console.log('wrote public/brand/jackin-wordmark-onlight.svg')
+writeFileSync(join(brandDir, 'jackin-lockup-onlight.svg'), wordmarkOnlight)
+console.log('wrote public/brand/jackin-lockup-onlight.svg')
 
 // 2. Favicon (outlined, renders without a webfont).
 writeFileSync(join(pub, 'favicon.svg'), faviconSvg(512))

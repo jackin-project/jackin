@@ -291,6 +291,25 @@ body {
   width: auto;
 }
 
+/* Variant switch: white-word mark on dark surfaces (default), dark-word mark on
+   white chrome in light mode. The hero canvas stays dark in light mode, so its
+   logo (.landing-logo) keeps the white-word variant. */
+.jk-brand-mark__svg--onlight {
+  display: none;
+}
+:root[data-theme='light'] .jk-brand-mark__svg--ondark {
+  display: none;
+}
+:root[data-theme='light'] .jk-brand-mark__svg--onlight {
+  display: block;
+}
+:root[data-theme='light'] .landing-logo .jk-brand-mark__svg--ondark {
+  display: block;
+}
+:root[data-theme='light'] .landing-logo .jk-brand-mark__svg--onlight {
+  display: none;
+}
+
 /* Lockup = mark with the "by tailrocks" byline stacked beneath it. */
 .jk-brand-mark--lockup {
   flex-direction: column;
