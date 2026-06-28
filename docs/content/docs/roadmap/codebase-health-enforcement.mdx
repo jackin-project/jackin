@@ -58,6 +58,14 @@ Concrete decisions for the open workstreams (W1, W4, W6, and the remaining W5 sl
 
 **Binding condition (performance).** Because release builds do not cross-crate LTO by default, splitting hot, tightly-coupled paths across new crate boundaries can cost runtime performance. Therefore: (a) the release profile enables `lto = "thin"` workspace-wide before hot paths cross new boundaries, and (b) each god-crate carve is perf-checked against a representative launch/attach measurement to confirm no regression. No carve lands on an unmeasured hot path. This operationalizes the performance guardrail above; performance is preserved, not assumed.
 
+### D2 — Boundary pattern: trait ports (hexagonal), not channels or relocated globals
+
+**Decision:** when a lower layer must hand data to a higher one, the lower layer depends on a **trait port** defined in a neutral low crate (`jackin-core`), the higher layer provides the adapter (`impl` of the port), and the entry/runtime layer injects it. Not an event channel, not a relocated global sink. **Why:** the port is an abstraction the domain owns — the literal Dependency-Inversion fix — it removes the global mutable state (channels and ports both do; a relocated global does not), it is the most testable (pass a `Vec`-backed fake), and it maps cleanly to a `cargo-deny` ban because the dependency target is a core-owned trait. Per-call dynamic dispatch (`&dyn`) is negligible on these paths (per-line build output, not per-byte); use `impl Trait` for static dispatch if a path is ever measured hot.
+
+Worked example — the `build_log` inversion (P2): define `trait BuildLogSink` in `jackin-core`; `jackin-docker`'s shell runner takes `&dyn BuildLogSink` and calls `push_line` on it; `jackin-launch` (the UI) implements it; the runtime injects the UI's sink. Result: `jackin-docker → jackin-core` only.
+
+**Scope clarification.** This pattern governs only the *streaming sinks* — `build_log` and the launch `progress` updates. The other inversions are **misplaced types, not data flows**, and are fixed by plain relocation, no port needed: `PromptResult` (env → launch) and the `progress` value types (runtime → tui) move to `jackin-core`; the terminal-ownership / debug-surface state moves out of `jackin-diagnostics` to a presentation/terminal crate (P7). A trait port is used *only* where a lower layer actively pushes data upward at runtime.
+
 ## Workstreams
 
 ### W1 — Architecture & boundaries (the core restructuring)
