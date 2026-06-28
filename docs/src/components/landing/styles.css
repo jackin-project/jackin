@@ -528,6 +528,13 @@ html.theme-init *::after {
   border-color: var(--jk-accent);
   box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
 }
+/* Light mode: the solid primary fill is the darker light accent (#0b774e); dark
+   ink would vanish on it, so use white. The hero primary keeps its dark-pill
+   override (more specific), so this doesn't touch it. */
+:root[data-theme='light'] .landing-btn-primary,
+:root[data-theme='light'] .landing-invite-cta {
+  color: #ffffff;
+}
 
 /* Footer (wordmark + meta) */
 .landing-footer {

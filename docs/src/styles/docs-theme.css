@@ -456,7 +456,7 @@ body {
   background: #ffffff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.88),
-    inset 0 0 0 1px rgba(31, 36, 33, 0.12),
+    inset 0 0 0 1px var(--jk-ui),
     0 1px 1px rgba(0, 0, 0, 0.04);
 }
 
@@ -482,7 +482,7 @@ body {
 }
 
 :root[data-theme='light'] [data-radix-popper-content-wrapper] > [data-side][data-align] a:hover {
-  background: #ecefeb;
+  background: var(--jk-panel);
   color: #111513;
 }
 
@@ -1011,23 +1011,23 @@ html.theme-init *::after {
 
 :root[data-theme='light'] .sl-markdown-content table:not(:where(.not-content *)) {
   background: #ffffff;
-  border-color: rgba(31, 36, 33, 0.13);
+  border-color: var(--jk-ui);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.78),
     0 1px 1px rgba(17, 24, 39, 0.03);
 }
 
 :root[data-theme='light'] .sl-markdown-content table :is(th, td):not(:where(.not-content *)) {
-  border-bottom-color: rgba(31, 36, 33, 0.1);
+  border-bottom-color: var(--jk-ui);
 }
 
 :root[data-theme='light'] .sl-markdown-content thead:not(:where(.not-content *)) {
-  background: #ecefed;
+  background: var(--jk-panel);
 }
 
 :root[data-theme='light'] .sl-markdown-content th:not(:where(.not-content *)) {
-  border-bottom-color: rgba(31, 36, 33, 0.16);
-  color: #222725;
+  border-bottom-color: var(--jk-ui-strong);
+  color: var(--jk-prose);
 }
 
 .sl-markdown-content td:not(:where(.not-content *)) {
