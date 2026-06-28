@@ -95,7 +95,7 @@ Clippy CI-enforced with:
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 ```
 
-Workspace enables `clippy::all` deny plus `pedantic`/`cargo` as modern baseline, then carries explicit allow entries for noisy style-only lints not matching jackin' current API shape. `warnings = "deny"` deliberately not baked into manifest; `-D warnings` gate stays in CI so future compiler warning don't brick local builds while jackin' rides each new stable toolchain. No `nursery` or `restriction` wholesale. Cherry-pick individual lints only.
+Workspace enables `clippy::all` deny plus `pedantic`/`cargo` as modern baseline, then carries explicit allow entries for noisy style-only lints not matching jackin❯ current API shape. `warnings = "deny"` deliberately not baked into manifest; `-D warnings` gate stays in CI so future compiler warning don't brick local builds while jackin❯ rides each new stable toolchain. No `nursery` or `restriction` wholesale. Cherry-pick individual lints only.
 
 Suppression discipline:
 
@@ -138,4 +138,4 @@ cargo hack check --workspace --feature-powerset --all-targets --locked
 
 Current transitive duplicate-version debt recorded as version-pinned `bans.skip` entries. Keep `multiple-versions = "warn"` so new duplicate version still trips gate; no broad duplicate allows.
 
-`cargo-audit` = deliberately duplicated RustSec PR gate so PR changing `Cargo.lock` can't introduce known-vulnerable dependency while waiting for scheduled hygiene workflow. `cargo-vet` and `cargo-crev` deliberately not adopted while jackin' solo-maintainer: they're shared-audit systems, no audit-sharing org here. Revisit only if jackin' gains real multi-person review/audit group or production deployment needs provenance attestations beyond RustSec advisory checks.
+`cargo-audit` = deliberately duplicated RustSec PR gate so PR changing `Cargo.lock` can't introduce known-vulnerable dependency while waiting for scheduled hygiene workflow. `cargo-vet` and `cargo-crev` deliberately not adopted while jackin❯ solo-maintainer: they're shared-audit systems, no audit-sharing org here. Revisit only if jackin❯ gains real multi-person review/audit group or production deployment needs provenance attestations beyond RustSec advisory checks.

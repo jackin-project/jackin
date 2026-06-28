@@ -156,7 +156,7 @@ pub struct DamageGrid {
     /// renders without any background styling until OSC 11 is answered — so
     /// the query must never go silent. The capsule overwrites these with the
     /// attach client's real terminal colors when the client could read them;
-    /// the defaults assume the jackin' dark theme.
+    /// the defaults assume the jackin❯ dark theme.
     reported_fg: (u8, u8, u8),
     reported_bg: (u8, u8, u8),
 

@@ -145,7 +145,7 @@ ENV BASH_ENV=/etc/jackin-build-env
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
-# including `docker exec` sessions that bypass jackin's runtime entrypoint.
+# including `docker exec` sessions that bypass the jackin runtime entrypoint.
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
@@ -162,5 +162,8 @@ COPY --chown=agent:0 --chmod=0664 zshrc /home/agent/.zshrc
 # Fish config — opt-in alternative shell. Same Starship prompt and
 # auto-title behaviour as zsh so the operator's pane border title
 # does not regress when switching shells.
-RUN install -d -o agent -g 0 -m 0775 /home/agent/.config/fish
+# install -d creates /home/agent/.config/ here so the starship.toml
+# COPY below does not auto-create it as root-owned.
+RUN install -d -o agent -g 0 -m 0775 /home/agent/.config /home/agent/.config/fish
 COPY --chown=agent:0 --chmod=0664 fish-config.fish /home/agent/.config/fish/config.fish
+COPY --chown=agent:0 --chmod=0664 starship.toml /home/agent/.config/starship.toml

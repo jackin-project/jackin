@@ -1,0 +1,112 @@
+---
+title: "11 — Extended comparison axes"
+---
+
+# 11 — Extended comparison axes
+
+Pages 01–07 compared the four tools on what they do, how they work, and what they save. This page adds the six axes the earlier passes never set side by side — the ones surfaced by the [gap analysis](/reference/research/token-optimization-tools/09-gaps-open-questions-and-next-brief/): security/privacy, project health, interaction with Claude Code's own context management, build-vs-buy, subscriber economics, and non-coding behavior. Repo stats are a fresh `gh api` pull (2026-06-20); external claims carry sources; reasoned (not measured) calls are labeled.
+
+## (a) Security, privacy, and supply-chain
+
+The tools sit on a surface-area gradient that is roughly the *inverse* of their reach gradient — except lean-ctx, which is broad-reach yet local-first-by-default, so its surface depends heavily on which opt-in features you enable.
+
+| Concern | Caveman | Headroom | RTK | lean-ctx |
+|---|---|---|---|---|
+| **Data egress** | None — only changes what the model *writes* | **Highest** — proxy mode sees *every byte* of *every request*; library/MCP modes local-only | None by default (filters locally); opt-in anonymized telemetry | **None by default** (local-first, no telemetry by default); opt-in cloud sync + opt-in proxy add egress paths |
+| **Supply-chain** | npm package + deps; writes hooks into `~/.claude` | **Auto-downloads `kompress-base` ML model over TLS** (unpinned = integrity boundary); pip/npm/docker | Single `~4.1 MB` binary, zero runtime deps (smallest) + a hook write | **64.7 MB binary** (largest); opt-in embeddings model download + opt-in qdrant; writes hooks/skills across **up to 34 agents** + daemon autostart |
+| **Code-execution / injection** | None (it is a prompt) | Runs a local model + proxy process | **Runs subprocesses** — quoting/shlex matters | **Runs the most** — shell-hook subprocesses + LSP subprocesses + daemon + optional proxy; SSRF-guarded URL reads (http/https only) |
+| **Known security issue** | `caveman-shrink` broken MCP registration — availability, not security | **CompressionAttack** (arXiv 2510.22963, ≤80% ASR) targets an ML compressor in the request path | **Issue #886 reportedly bypasses Claude Code permission prompts** *(not proven; single report)* | Self-disclosed **"40+ hardening fixes" (v3.5.16)** — path traversal, injection, CSPRNG, CSP, resource limits; path-jail + redaction shipped (remediation history, not an open CVE) |
+| **Model-integrity attack surface** | None | **Yes** — the ML stage is the attack surface | None (deterministic rules) | None by default (deterministic core); **only if** embeddings/proxy enabled |
+| **License** | MIT | Apache-2.0 | Apache-2.0 | Apache-2.0 |
+
+**Verdict.** Caveman has the smallest surface (a prompt). RTK is next (deterministic, local, tiny binary — but a hook write and the #886 permission concern). **lean-ctx and headroom are the two large surfaces, for different reasons:** headroom by *egress* (an ML proxy that sees everything) and a mandatory model download; lean-ctx by *footprint* (the biggest binary, the most subprocesses, host writes across dozens of agents) — but lean-ctx is **local-first by default with no telemetry and a deterministic core**, so its egress/ML risks are opt-in, whereas headroom's are on by default in proxy mode. For a security-conscious container: caveman freely; RTK with #886 checked and telemetry off; **lean-ctx only in MCP + shell-hook mode (no proxy, no cloud sync), version-pinned, with all host writes scoped into the container**; headroom only in MCP/library mode with the model pinned.
+
+## (b) Project health and sustainability
+
+Stars are PR-inflated for three of the four and ignored here. The real signals (`gh api`, 2026-06-20):
+
+| Signal | Caveman | Headroom | RTK | lean-ctx |
+|---|---|---|---|---|
+| Stars (noise) | 74,495 | 33,871 | 63,643 | **2,800** |
+| **Watchers** (truer) | 166 | 115 | 146 | 19 |
+| Forks | 4,190 | 2,287 | 3,918 | 278 |
+| **Open issues** | 293 | 303 | **1,260** | **13** |
+| License | MIT | Apache-2.0 | Apache-2.0 | Apache-2.0 |
+| Latest release | `v1.9.0` | `v0.26.0` | `v0.42.4` | `v3.8.9` |
+| Created | 2025 | 2026-05 | 2026-01-22 | **2026-03-23** (youngest) |
+| Cadence | steady | ~190 PyPI releases | **212 tags in ~5 months** | "200+ releases" / fast |
+| Maintainer model | solo (JuliusBrussee) | solo (chopratejas) | small team + commercial (RTK Cloud) | small + **commercial (LeanCTX Cloud)** |
+| Stated sustainability | none | none stated | **RTK Cloud** ($15/dev/mo, waitlist) | **LeanCTX Cloud shipped** (Pro $9/mo, Team $18/seat); "local free is a CI-enforced invariant" |
+
+**Verdict.** None is a mature, multi-maintainer project; all four are fast-moving solo/small efforts riding a 2026 hype spike. RTK's **1,260 open issues** signal adoption outrunning triage (or thin maintenance); lean-ctx's **13 open issues** signal the opposite — either tight triage or simply far less adoption (2,800★ vs 30–74k). Two have funded paths (RTK Cloud, LeanCTX Cloud); **lean-ctx's open-core is the cleaner of the two** — the local engine is Apache-2.0 and its "free forever" is stated as a CI-enforced invariant, whereas RTK Cloud has the classic risk of features migrating behind the paywall. But lean-ctx is also the **youngest** (created 2026-03) with the broadest surface to maintain, so its bus-factor risk is real. **For a container that pins versions, pin a known-good version of any of the four and re-verify on upgrade** — most acutely for lean-ctx, whose fast cadence and large surface make doc drift and regressions likeliest. *(Reasoned from repo metrics; not a measured reliability study.)*
+
+## (c) Interaction with Claude Code's native context management
+
+Claude Code already ships context-management features that touch the *same tokens* these tools target. Do the tools conflict or compose?
+
+| Native feature | What it does | Caveman | Headroom | RTK | lean-ctx |
+|---|---|---|---|---|---|
+| **microcompact** | no-LLM trimming of redundant tool output every turn | Compose (different bucket) | **Overlap** (diminishing returns on same bytes) | **Overlap** (RTK trims upstream, microcompact in-context) | **Overlap** — its hook + bounce tracker + pressure auto-downgrade do similar trimming; compose with diminishing returns |
+| **`/compact` + auto-compaction** | LLM history rewrite (cache-write spike) | Compose | **Conflict risk** — proxy `IntelligentContext` can double-compact | Compose (tool boundary, upstream) | **Compose + complement** in MCP/hook (its session-survival snapshot *aids* recovery after compaction); **conflict risk only in proxy mode** |
+| **context editing** (server-side stale-result clearing) | clears old tool results near the limit | Compose | **Overlap** with `IntelligentContext` | Compose | Overlap (its own eviction/CFT ledger does similar) — compose in MCP/hook |
+| **automatic prompt caching** | the 0.1× read floor | Compose (cache-neutral) | **Conflict risk in proxy mode**; safe in MCP/library | **Compose** (cache-safe by construction) | **Compose** in MCP/hook (write-time + prefix-friendly ordering *cooperates* with caching); proxy is cache-safe-by-design but still a second stabilizer |
+
+**Verdict.** **Caveman composes cleanly with everything** (output-side). **RTK composes** (upstream of all of them). **lean-ctx composes in MCP + shell-hook mode** — and uniquely *complements* compaction with its session-survival snapshot — but its proxy, like headroom's, is a second stabilizer that can fight Claude Code's own caching/compaction. **Headroom's proxy is the most conflict-prone.** The repeated lesson: for both runtimes, use MCP/hook and avoid the whole-prompt proxy in front of Claude Code. And: **microcompact already does, for free, a slice of what all three input tools charge reach/ML/footprint for** — measure the *incremental* win over native microcompact, not over a naive baseline.
+
+## (d) Build-vs-buy: the spectrum from a 5-line style to a daemon runtime
+
+Mechanically, caveman is a Claude Code **output-style** plus two hooks — so hand-rolling its core is a ~5-line file. lean-ctx is the opposite extreme: you *cannot* hand-roll a property graph + RRF search + LSP + CCP memory. The four span the whole build-vs-buy spectrum.
+
+| | Hand-written output-style | Caveman plugin | RTK | lean-ctx |
+|---|---|---|---|---|
+| Can you hand-roll the core? | it *is* the hand-roll | yes (it is a style + hooks) | partially (a log/grep filter hook) | **no** — code graph, RRF, LSP, CFT are not a weekend script |
+| Footprint | none | ~940-tok rent + 2 hooks | ~4 MB binary + 1 hook | 64.7 MB binary + daemon + DBs + 77-tool schema |
+| What "buy" gets you | — | the family + UX | 100+ command patterns turnkey | the entire context runtime + code intelligence + verification |
+
+**Verdict.** For *pure output compression*, a hand-written output-style is leaner and lower-risk than the caveman plugin (no hooks, no ~940-tok rent) — buy the plugin only for the ecosystem/UX. For *shell compression*, RTK's "buy" is justified by its 100+-command coverage over a hand-written filter. For the *code graph + memory + verification*, lean-ctx is the only "buy" available — those capabilities are genuinely not hand-rollable, which is the strongest single argument for adopting it *if* you need them. The spectrum: **build the output style, buy RTK's patterns, buy lean-ctx's runtime only when you need what cannot be built cheaply.** *(Reasoned from the teardowns; token deltas in the harness backlog.)*
+
+## (e) Subscriber economics — tasks-per-cap ranking
+
+For a Max-plan subscriber, dollars below the cap are sunk; the objective is **tasks-per-cap** — how far each tool stretches the 5-hour window (dossier [chapter 41](/reference/research/token-optimization/41-subscription-and-quota-economics/)). This *re-orders* the $-per-task recommendation.
+
+- The window fills with **input volume** — and [page 10](/reference/research/token-optimization-tools/10-first-party-measurements/) measured 94% of token volume here is cache-read. Reducing what gets written (and thus later re-read) extends the window; reducing output (caveman's target, 0.9% of volume) barely moves it.
+- So for window extension: **headroom ≈ lean-ctx (broad input) ≳ RTK (Bash input) ≫ caveman (output)** — the inverse of the $-per-task lean stack. lean-ctx's ~13-token cache-handle re-reads directly cut re-read volume, the dominant occupancy cost, so it is as strong a window-extender as headroom (and stronger on code-read-heavy work). The community "30 min → 3 hr session" headline is a tasks-per-cap/occupancy win, not a dollar cut, and it is driven by the input tools, not caveman.
+- **Caveat (not proven):** the cap's token *denominator* and exact cache-read weighting are unpublished (dossier chapter 41, bounded `INCOMPLETE`); cap cache-read weight is community-triangulated at ≈0.1× (T3). The *direction* (input tools extend the window most) is solid; the *magnitude* is not.
+
+| Objective | Best | Middle | Least |
+|---|---|---|---|
+| **$ per task** (API pricing) | caveman + RTK (cache-safe, no ML, tiny) | headroom / lean-ctx (MCP) | — |
+| **tasks per cap** (Max subscriber) | **headroom ≈ lean-ctx** (broad input) | **RTK** (Bash input) | caveman (output) |
+
+The metric you optimize flips the ranking. State which one you are on before picking a tool.
+
+## (f) Non-coding / multi-domain behavior
+
+All four are benchmarked on coding; their behavior off the code path is uneven, and it inverts the usual ranking.
+
+| Domain | Caveman | Headroom | RTK | lean-ctx |
+|---|---|---|---|---|
+| Prose / docs / chat output | **Best fit** — register compression *is* prose compression | n/a (input side) | n/a | n/a (input side) |
+| Data / JSON / API / RAG / HTML | n/a | **Strong** — typed compressors are general, not code-specific | Weak — keyed on dev commands | Weak — measured JSON 30.6%, Markdown 7.5%, HTML 6.8% (its outline modes are code-specific) |
+| Logs / sysadmin / data-pipeline shell output | n/a | Strong (LogCompressor) | **Good but dev-keyed** | Good but dev-keyed (56 patterns are dev tools; novel commands pass through) |
+| Pure code | Passes verbatim (no help) | CodeAware outline | Aggressive code filter (per-read) | **Best** — tree-sitter outline 96–99% (per-read) + code graph |
+
+**Verdict.** Caveman **generalizes best** (its lever is prose, useful anywhere output is verbose). Headroom is second (typed compressors cover logs/JSON/HTML/RAG, not just code). **RTK and lean-ctx are the most code/dev-bound** — RTK because it keys on dev commands, lean-ctx because its compression *strength is code* (it barely touches prose/config, as measured on page 10). So for a non-coding agent (research, data, ops) the ranking is **caveman ≳ headroom ≫ RTK ≈ lean-ctx**; lean-ctx's edge (the code graph) is precisely a *code* feature, which is no help off the code path. *(Reasoned + the page-10 measurement; no broader non-code benchmark run.)*
+
+## Summary: how the rankings move by axis
+
+| Axis | Winner | Notable |
+|---|---|---|
+| Smallest security/privacy surface | **caveman** | RTK next; headroom (ML+proxy egress) and lean-ctx (footprint) largest — but lean-ctx is local-first by default |
+| Smallest / largest footprint | **RTK** smallest / **lean-ctx** largest | RTK ~4 MB one binary; lean-ctx 64.7 MB + daemon + DBs |
+| Sustainability path | **lean-ctx / RTK** (both funded) | lean-ctx's open-core is cleaner (CI-enforced free local); both young |
+| Composes with native Claude Code features | **caveman** / **RTK** / **lean-ctx (MCP+hook)** | both proxies (headroom, lean-ctx) conflict |
+| Build-vs-buy | **build** the output style; **buy** lean-ctx's code graph (unbuildable) | RTK's patterns are a justified middle "buy" |
+| tasks-per-cap (subscriber) | **headroom ≈ lean-ctx** ≳ RTK ≫ caveman | inverts the $-per-task order |
+| non-coding generality | **caveman** ≳ headroom ≫ RTK ≈ lean-ctx | lean-ctx is the most code-bound (its strength is code) |
+
+No tool wins every axis — the hub's thesis restated from six new angles: they specialize (and lean-ctx *consolidates*, at a footprint cost), and the "best" one is the one matched to *your* axis (workload, metric, threat model). The [overview](/reference/research/token-optimization-tools/) and [combining](/reference/research/token-optimization-tools/06-combining/) pages turn that into a stack-or-runtime decision.
+
+---
+
+Back to the [overview](/reference/research/token-optimization-tools/) · [gaps & open questions](/reference/research/token-optimization-tools/09-gaps-open-questions-and-next-brief/).

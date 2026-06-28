@@ -28,12 +28,17 @@ fn help_text(args: &[&str]) -> String {
 // ── Banner tests ────────────────────────────────────────────────────
 
 #[test]
-fn root_help_shows_banner_pill() {
+fn root_help_clap_render_has_no_before_help_pill() {
+    // The root command intentionally carries no clap `before_help`: the binary
+    // prints the brand mark (frozen-rain banner or pill) itself, so clap's own
+    // root render leads with the about text, not the pill. (Subcommands keep
+    // their pill — see `all_subcommand_help_pages_show_banner`.) The binary-level
+    // brand mark is covered by the `root_help_leads_with_brand_mark` integration
+    // test.
     let help = help_text(&["jackin", "--help"]);
-    // The banner is the ` jackin' ` brand pill at the top of the help.
     assert!(
-        help.trim_start().starts_with("jackin'"),
-        "brand pill should lead the help: {help:?}"
+        !help.trim_start().starts_with("jackin❯"),
+        "root clap render should not embed the pill: {help:?}"
     );
 }
 
@@ -155,7 +160,7 @@ fn all_subcommand_help_pages_show_banner() {
     for args in &subcommands {
         let help = help_text(args);
         assert!(
-            help.contains("jackin'"),
+            help.contains("jackin❯"),
             "brand pill missing in: {}",
             args.join(" ")
         );

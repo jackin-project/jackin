@@ -48,7 +48,7 @@ fn row_text(buf: &Buffer, row: u16, cols: u16) -> String {
 fn brand_pill_renders_before_menu_hint() {
     let (_, buf) = draw(80, &[], 0, &[], None, PrefixMode::Idle);
     let row = row_text(&buf, 0, 80);
-    let brand = row.find("jackin'").expect("brand text missing");
+    let brand = row.find("jackin❯").expect("brand text missing");
     let menu = row.find("Menu").expect("menu button missing");
     assert!(brand < menu);
 }
@@ -58,12 +58,12 @@ fn active_tab_background_differs_from_brand_pill() {
     let tab = Tab::new_single("Codex", 7, "test");
     let (_, buf) = draw(80, &[tab], 0, &[], None, PrefixMode::Idle);
     let brand_cells = (0..80)
-        .filter(|x| buf[(*x, 0)].bg == jackin_tui::theme::PHOSPHOR_GREEN)
+        .filter(|x| buf[(*x, 0)].bg == jackin_tui::theme::BRAND_BLOCK)
         .count();
     let active_tab_cells = (0..80)
         .filter(|x| buf[(*x, 0)].bg == jackin_tui::theme::TAB_BG_ACTIVE)
         .count();
-    assert_eq!(brand_cells, jackin_tui::display_cols(" jackin' "));
+    assert_eq!(brand_cells, jackin_tui::display_cols(" jackin❯ "));
     assert!(active_tab_cells > 0, "active tab should use graphite bg");
 }
 

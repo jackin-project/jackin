@@ -1,10 +1,10 @@
 ---
-title: "jackin' Capsule: Multiplexer Design Rules"
+title: "jackin❯ Capsule: Multiplexer Design Rules"
 ---
 
 **Rule zero: the agent's experience is inviolable.**
 
-The operator chose their agent (Claude Code, Codex, Amp, etc.) for its UX. The jackin' Capsule multiplexer is a thin layer of glass in front of that UX — transparent in every direction, with zero opinions about what happens inside.
+The operator chose their agent (Claude Code, Codex, Amp, etc.) for its UX. The jackin❯ Capsule multiplexer is a thin layer of glass in front of that UX — transparent in every direction, with zero opinions about what happens inside.
 
 Every feature, bug fix, and refactor must pass this test before it ships: **does the agent work exactly as it would in a bare terminal?** If the answer is anything other than an unqualified yes, the feature is incomplete.
 
@@ -38,13 +38,13 @@ Every capability the base image supports must reach the agent inside the pane.
 - Enable **SGR mouse** (`\e[?1006h`) and **any-event tracking** (`\e[?1003h`) on the host terminal when a client connects.
 - Forward mouse events to the active pane when that pane's program has enabled mouse reporting. Events that land on multiplexer UI (top chrome rows, pane borders, dialogs) are handled by the multiplexer first.
 - Preserve the mouse protocol the agent expects on the PTY side: if the agent sets SGR mouse, forward SGR; if it uses default xterm/X10 or UTF-8 mouse encoding, re-encode into that form. The client always keeps the outer terminal in SGR any-event mode so the multiplexer can parse every event, then `DamageGrid::mouse_protocol_mode()` and `mouse_protocol_encoding()` decide the per-pane PTY encoding.
-- **Mouse button 1 (left click) on pane content reaches the agent only after the pane opted into mouse reporting.** When a pane has not opted in (plain shell, prompt, post-exit output), a left drag starts jackin' text-selection path instead of leaking raw mouse escape bytes into the prompt.
+- **Mouse button 1 (left click) on pane content reaches the agent only after the pane opted into mouse reporting.** When a pane has not opted in (plain shell, prompt, post-exit output), a left drag starts jackin❯ text-selection path instead of leaking raw mouse escape bytes into the prompt.
 - **Double-click selects and copies the word under the cursor.** Two presses on the same pane cell within 500 ms select the word's display-column span, copy it via OSC 52 immediately, and keep the highlight visible — exactly like a dragged selection, and unlike multiplexers that flash-and-hide. Word bounds resolve in three passes: a URL pass that keeps `http(s)://…` spans whole (with trailing prose punctuation and unbalanced closers trimmed), a quoted-path pass that selects a quoted span containing `/` as one path (spaces included, quotes excluded, backslash-escaped quotes treated as content), then a token pass that expands across non-separator cells (whitespace and `| ( ) [ ] { } < > , ; !` end a token) and trims quotes, backticks, and trailing `. : ! ?` from the edges. Interior joiners survive — `gpt-5.5`, `00:25`, `aaaaa:uuuuu`, `~/Projects/…/jackin`, `FOO=bar+baz` each select whole — while `{feature}` yields `feature`, `Vec<String>` clicks to `String`, and a double-click on whitespace or a blank row selects nothing. The semantics follow the terminal semantic-selection convention (kitty's word characters `@-./_~?&=%+#` all join; the bracket family including `<>` breaks, per Alacritty/kitty/VS Code), with herdr's interior-join/edge-trim refinement for `:` and `.` — deliberately not UAX #29 linguistic segmentation, which splits the paths and URLs developers copy whole. The release that ends the double-click must not write the clipboard a second time, and dragged selection keeps its existing behavior unchanged.
 
 ### Clipboard and OSC 52
 
 - Pass OSC 52 sequences from the focused pane to the host terminal unmodified unless the operator disabled `JACKIN_OSC52`. This enables agent-initiated clipboard writes to reach the operator's clipboard.
-- jackin'-owned copy actions such as Debug info copyable values (Run ID, Container ID, Diagnostics log) and mouse-selection copy emit OSC 52 directly from the multiplexer to the attached client. They must render visible feedback because terminals may silently drop clipboard writes when policy blocks them.
+- jackin❯-owned copy actions such as Debug info copyable values (Run ID, Container ID, Diagnostics log) and mouse-selection copy emit OSC 52 directly from the multiplexer to the attached client. They must render visible feedback because terminals may silently drop clipboard writes when policy blocks them.
 - Never intercept or log clipboard content.
 
 ### Pointer shape
@@ -70,7 +70,7 @@ Every capability the base image supports must reach the agent inside the pane.
 
 - The multiplexer's own UI elements (status bar, borders, dialog) use ANSI 256-color and 24-bit color.
 - Pane PTYs advertise `COLORTERM=truecolor` by default so agent CLIs and TUIs can enable 24-bit color without guessing from `TERM`.
-- Do not copy the host's `COLORTERM` into pane sessions. The pane environment is deterministic because a preserved jackin' instance can be reattached from a different terminal later.
+- Do not copy the host's `COLORTERM` into pane sessions. The pane environment is deterministic because a preserved jackin❯ instance can be reattached from a different terminal later.
 - Pane content is passed through without color transformation. Never re-encode pane output colors.
 
 ### Bracketed paste
@@ -79,8 +79,8 @@ Every capability the base image supports must reach the agent inside the pane.
 
 ### Scrollback
 
-- Each pane keeps bounded primary-screen scrollback through `DamageGrid`. Alternate-screen TUIs own their own scrollback and jackin' does not synthesize history for them. Mouse wheel on a pane scrolls jackin' primary-screen view unless that pane opted into mouse reporting.
-- Plain `Ctrl+L` is pane input and must pass through unchanged. jackin'-owned clear-screen/clear-scrollback behavior must be a palette or prefix command: clear jackin' `DamageGrid` scrollback state, send form-feed to the pane so the foreground program redraws its own visible grid, and avoid RIS (`ESC c`) or any local visible-grid mutation that would desynchronise the app's cursor model.
+- Each pane keeps bounded primary-screen scrollback through `DamageGrid`. Alternate-screen TUIs own their own scrollback and jackin❯ does not synthesize history for them. Mouse wheel on a pane scrolls jackin❯ primary-screen view unless that pane opted into mouse reporting.
+- Plain `Ctrl+L` is pane input and must pass through unchanged. jackin❯-owned clear-screen/clear-scrollback behavior must be a palette or prefix command: clear jackin❯ `DamageGrid` scrollback state, send form-feed to the pane so the foreground program redraws its own visible grid, and avoid RIS (`ESC c`) or any local visible-grid mutation that would desynchronise the app's cursor model.
 - **Every scrollback-offset change repaints the pane body and the footer hint together.** The visible window changed wholesale even though no grid cell did, so the offset change records an invalidation and the next composed frame repaints the whole view — including the wheel return to offset 0.
 - **While the view is scrolled back, the operator cursor is hidden.** The live VT cursor position is meaningless against history rows; `?25h` may only be re-asserted once the view is back at the live tail. The per-frame cursor reconciliation derives this from the focused pane's offset, so it holds across focus swaps and attach with no separate assertion site.
 - **While scrolled back, the view is anchored to content.** Rows newly evicted into scrollback during a PTY feed grow the tail-relative offset by the same count (then clamp), so the rows under the reader hold still while the agent streams. Typing snaps to live; wheel-down to offset 0 returns to the live view with no special case.

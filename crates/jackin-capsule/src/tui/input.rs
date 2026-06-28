@@ -213,8 +213,8 @@ pub enum InputEvent {
     /// `PrefixCommand::Palette`, which fires only after the prefix
     /// gesture; the daemon collapses both into the same dialog open.
     OpenPalette,
-    /// `Ctrl+Q` (byte `0x11`) → open the "Exit jackin'?" confirmation. The
-    /// quit chord is consistent with every other jackin' surface; the dialog
+    /// `Ctrl+Q` (byte `0x11`) → open the "Exit jackin❯?" confirmation. The
+    /// quit chord is consistent with every other jackin❯ surface; the dialog
     /// warns that exiting force-stops the container before it does so.
     RequestExit,
     /// Resize the focused pane in `dir` by one step. Emitted by

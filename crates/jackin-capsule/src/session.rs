@@ -800,7 +800,7 @@ impl Session {
     /// Clear this pane's saved scrollback and ask the foreground
     /// program to redraw its visible screen via the standard form-feed
     /// key (`Ctrl+L`). The visible grid is left to the PTY program so
-    /// readline/TUI cursor state does not desynchronise from jackin's
+    /// readline/TUI cursor state does not desynchronise from jackin❯'s
     /// local grid mirror.
     pub fn clear_scrollback_and_request_screen_clear(&mut self) {
         self.scroll_to_live();
@@ -1713,7 +1713,7 @@ pub fn build_shell_command(
 /// conservative baseline so a running session can be reattached from Ghostty,
 /// Kitty, iTerm, Warp, or any other xterm-compatible client without retaining
 /// assumptions from the terminal that launched the container. `COLORTERM`
-/// intentionally advertises jackin's 24-bit color path without tying the pane
+/// intentionally advertises jackin❯'s 24-bit color path without tying the pane
 /// to a host-specific terminfo entry.
 fn apply_terminal_env(cmd: &mut CommandBuilder) {
     cmd.env("TERM", "xterm-256color");

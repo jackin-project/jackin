@@ -1340,9 +1340,13 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
             String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::DialogChange))
                 .to_string();
 
+        // The brand pill renders as a green block with a black word and a white
+        // chevron, so the cursor-diff stream splits `jackin` and `❯` with escape
+        // codes. Assert the word plus the block colour rather than a contiguous
+        // `jackin❯` substring.
         assert!(
-            frame.contains("jackin'"),
-            "{context} should preserve the top status brand while a dialog is open: {frame:?}"
+            frame.contains("jackin") && frame.contains("48;2;0;255;65"),
+            "{context} should preserve the top status brand (green block) while a dialog is open: {frame:?}"
         );
         assert!(
             !frame.contains(&format!(
@@ -2575,7 +2579,7 @@ fn wheel_forwards_to_mouse_enabled_tui() {
 
     assert!(
         redraw.is_none(),
-        "pane-owned wheel should not redraw jackin'"
+        "pane-owned wheel should not redraw jackin❯"
     );
     assert_eq!(
         input_rx.try_recv().expect("wheel should reach PTY"),
@@ -2610,7 +2614,7 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
 
         assert!(
             redraw.is_some(),
-            "{pane_kind} pane scrollback should redraw jackin'"
+            "{pane_kind} pane scrollback should redraw jackin❯"
         );
         assert!(
             input_rx.try_recv().is_err(),
@@ -2981,7 +2985,7 @@ fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
 
         assert!(
             redraw.is_none(),
-            "{pane_kind} normal-screen pane without scrollback should not redraw jackin'"
+            "{pane_kind} normal-screen pane without scrollback should not redraw jackin❯"
         );
         assert!(
             input_rx.try_recv().is_err(),
@@ -3186,7 +3190,7 @@ fn wheel_sends_cursor_fallback_to_mouse_disabled_alt_screen_tui() {
 
     assert!(
         redraw.is_none(),
-        "pane-owned fallback should not redraw jackin'"
+        "pane-owned fallback should not redraw jackin❯"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
@@ -3221,7 +3225,7 @@ fn wheel_sends_cursor_fallback_to_alt_screen_tui_with_retained_primary_scrollbac
 
     assert!(
         redraw.is_none(),
-        "alternate-screen fallback should not redraw jackin'"
+        "alternate-screen fallback should not redraw jackin❯"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
@@ -3245,7 +3249,7 @@ fn wheel_cursor_fallback_respects_application_cursor_mode() {
 
     assert!(
         redraw.is_none(),
-        "pane-owned fallback should not redraw jackin'"
+        "pane-owned fallback should not redraw jackin❯"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1bOB\x1bOB\x1bOB");
 }

@@ -13,7 +13,7 @@ Deeper questions — module layout, what each `src/` subdir owns, where to start
 | Question | Page |
 |---|---|
 | "Where does the code for X live?" | [Codebase Map](https://jackin.tailrocks.com/reference/codebase-map/) (mirrored at `docs/content/docs/reference/codebase-map.mdx`) |
-| "How does jackin' orchestrate containers?" | [Architecture](https://jackin.tailrocks.com/reference/architecture/) |
+| "How does jackin❯ orchestrate containers?" | [Architecture](https://jackin.tailrocks.com/reference/architecture/) |
 | "How do instance identity, restore, and parallel sessions work?" | [Runtime Instance Model](https://jackin.tailrocks.com/reference/runtime-instance-model/) |
 | "What does `~/.config/jackin/config.toml` look like?" | [Configuration File](https://jackin.tailrocks.com/reference/configuration/) |
 | "How are role repositories structured?" | [Role Repositories](https://jackin.tailrocks.com/guides/role-repos/) |
@@ -23,13 +23,13 @@ Docs = single source of truth for *narrative* internals. This file stays terse o
 
 ## Ecosystem repositories
 
-jackin' split across multiple GitHub repos. This repo owns CLI; siblings own roles, construct image source, Homebrew tap, docs site (docs live inside this repo today — see roadmap item [Move documentation to a separate repository](https://jackin.tailrocks.com/reference/roadmap/docs-separate-repository/)).
+jackin❯ split across multiple GitHub repos. This repo owns CLI; siblings own roles, construct image source, Homebrew tap, docs site (docs live inside this repo today — see roadmap item [Move documentation to a separate repository](https://jackin.tailrocks.com/reference/roadmap/docs-separate-repository/)).
 
 | Repository | Owns |
 |---|---|
 | [`jackin-project/jackin`](https://github.com/jackin-project/jackin) (this repo) | CLI source, `construct` Dockerfile under `docker/construct/`, docs site under `docs/`, CI workflows |
 | [`jackin-project/jackin-agent-smith`](https://github.com/jackin-project/jackin-agent-smith) | Default general-purpose role (`agent-smith`) |
-| [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) | Rust-development role (`the-architect`) used to develop jackin' itself |
+| [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) | Rust-development role (`the-architect`) used to develop jackin❯ itself |
 | [`jackin-project/homebrew-tap`](https://github.com/jackin-project/homebrew-tap) | Homebrew formulae — preview now, stable once jackin reaches first stable release |
 | [`jackin-project/jackin-marketplace`](https://github.com/jackin-project/jackin-marketplace) | Claude plugin marketplace consumed by role manifests |
 | [`jackin-project/validate-agent-action`](https://github.com/jackin-project/validate-agent-action) | GitHub Action validating `jackin.role.toml` in role repos |
@@ -79,9 +79,9 @@ Fumadocs site on TanStack Start and Vite. **Lives alongside source today** — u
 
 Sidebar split by **three audiences**:
 
-- **Operator** (Getting Started, Operator Guide, Commands) — uses jackin' as product through CLI/TUI. Pages describe behaviour through CLI/TUI flows — no TOML schemas, no on-disk paths, no Rust internals.
-- **Role author** (Role Authoring) — *also user-facing*, but for users building own role repos (`backend-engineer`, `docs-writer`, `security-reviewer`, …). Explain how to create role from scratch, manifest schema, what tools ship in `construct`. No knowledge of jackin' implementation required.
-- **Contributor** (Behind jackin' — Internals) — works on jackin' itself. Architecture, Configuration File schema, Codebase Map, Roadmap. On-disk layouts, internal mechanisms, Rust-level detail live here.
+- **Operator** (Getting Started, Operator Guide, Commands) — uses jackin❯ as product through CLI/TUI. Pages describe behaviour through CLI/TUI flows — no TOML schemas, no on-disk paths, no Rust internals.
+- **Role author** (Role Authoring) — *also user-facing*, but for users building own role repos (`backend-engineer`, `docs-writer`, `security-reviewer`, …). Explain how to create role from scratch, manifest schema, what tools ship in `construct`. No knowledge of jackin❯ implementation required.
+- **Contributor** (Behind jackin❯ — Internals) — works on jackin❯ itself. Architecture, Configuration File schema, Codebase Map, Roadmap. On-disk layouts, internal mechanisms, Rust-level detail live here.
 
 Slugs stable across audience split — parenthesized content group directories keep audience organization out of URLs.
 

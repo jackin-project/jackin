@@ -1,4 +1,4 @@
-//! jackin-image: image generation and binary artifact management for jackin'.
+//! jackin-image: image generation and binary artifact management for jackin❯.
 //!
 //! Provides derived-image Dockerfile generation, agent binary acquisition and
 //! caching, jackin-capsule binary acquisition, shared artifact helpers, and

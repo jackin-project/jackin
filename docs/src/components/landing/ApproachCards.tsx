@@ -35,13 +35,13 @@ export function ApproachCards() {
       <div className="landing-shell">
         <div className="landing-sec-label">04 · The Approach</div>
         <h2 className="landing-sec-title">Draw the boundary <span className="accent">yourself</span>.</h2>
-        <p className="landing-sec-intro">jackin' gives you exactly one move: a clear boundary around an AI agent. You decide what's inside — toolchains, plugins, conventions — and what it can reach — paths, tokens, exposed ports. Two ways to get there.</p>
+        <p className="landing-sec-intro">jackin❯ gives you exactly one move: a clear boundary around an AI agent. You decide what's inside — toolchains, plugins, conventions — and what it can reach — paths, tokens, exposed ports. Two ways to get there.</p>
 
         <div className="landing-approach-grid">
           <div className="landing-approach-card">
             <div className="landing-route">Route 01 · Reuse</div>
             <h3>Pick up an opinionated one</h3>
-            <p>Some orgs publish roles for their stack. The jackin' team ships <em>the-architect</em> — with everything the jackin' ecosystem requires to build jackin' itself. Zero config: load and start working.</p>
+            <p>Some orgs publish roles for their stack. The jackin❯ team ships <em>the-architect</em> — with everything the jackin❯ ecosystem requires to build jackin❯ itself. Zero config: load and start working.</p>
             <div className="landing-toolset">
               <span className="landing-toolset-chip">Rust stable</span>
               <span className="landing-toolset-chip">cargo-nextest</span>

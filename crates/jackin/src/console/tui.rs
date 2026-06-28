@@ -107,7 +107,7 @@ pub(crate) mod input {
 }
 pub mod run;
 pub mod state {
-    //! Manager state machine for the jackin' console TUI.
+    //! Manager state machine for the jackin❯ console TUI.
     //!
     //! `ManagerState` and all concrete type aliases now live in `jackin-console`.
     //! This module re-exports the full public surface.

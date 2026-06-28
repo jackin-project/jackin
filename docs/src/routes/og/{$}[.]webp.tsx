@@ -25,8 +25,8 @@ function Card({ title, description }: { title: string; description?: string }) {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
-        backgroundColor: '#0a0b0a',
-        borderLeft: '12px solid #00ff41',
+        backgroundColor: '#0a0a0a',
+        borderLeft: '12px solid #5cf07a',
         padding: 80,
         fontFamily: 'Inter',
       }}

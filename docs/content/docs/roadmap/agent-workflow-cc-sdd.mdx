@@ -1,0 +1,34 @@
+---
+title: "Agent workflow: jackin❯-native spec-driven workflow"
+---
+
+**Status**: Open — iterating. Current state: the `jackin-dev` skill set.
+
+## Problem
+
+jackin❯ needs a repo-committed, docs-first, cross-agent spec workflow. The earlier approach leaned on `obra/superpowers` with design/spec docs under `docs/superpowers/specs/` — version-controlled, but outside the Fumadocs site and tied to one plugin stack (Claude-only command surface). We want the spec to be a first-class, browsable docs artifact that every agent jackin❯ supports can drive.
+
+## Current direction
+
+We are **not** adopting an external tool wholesale. Instead the workflow is jackin❯-native and iterating:
+
+- **The roadmap item `.mdx` is the living change-spec.** While a change is open it carries `## Problem` / `## Why It Matters` / `## Design` / `## Tasks`; on ship it retires into canonical docs — docs are the archive (no parallel `openspec/` dir, no separate `internal/specs/` tree).
+- **Skills orchestrate it.** The [`jackin-dev`](https://github.com/jackin-project/jackin-dev) plugin ships `propose` → `brainstorm` → `/goal Implement` → `merge-pr` (plus `research`, `create-pr`), manual-only and cross-agent (`~/.agents/skills/`). They sequence the repo's rule files rather than restating them, and shell out to `cargo xtask` helpers for the mechanical steps (`change new`, `roadmap retire`, `pr body`, `schema-check`, …).
+
+This is the **initial iteration**, not a finished design. We expect to learn what survives by using it.
+
+## Prior art to mine (not adopt)
+
+Kept as reference for when we grow our own spec-driven tooling:
+
+- **`obra/superpowers`** — brainstorming → spec authoring, writing-plans, TDD/debug/review skills; legacy specs at `docs/superpowers/specs/`. The brainstorming method informed our `brainstorm` skill.
+- **OpenSpec** — artifact roles (proposal / design / tasks) + propose→archive lifecycle discipline. Mapped onto our roadmap-item sections; we did **not** install its `openspec/` dir or JS CLI (would duplicate the roadmap + docs).
+- **`gotalab/cc-sdd`** — `/spec` `/plan` `/execute` command shape. A candidate wrapper, not adopted; `.claude/commands/` would only ever be one client of the canonical docs-backed spec.
+
+## Open threads
+
+Loose on purpose — we iterate rather than lock a detailed plan:
+
+- Whether jackin❯ eventually grows its **own** spec-driven tool (cc-sdd/OpenSpec-like) or keeps the skills + roadmap-item model.
+- The deferred `plan` skill (break `## Design` → `## Tasks`).
+- Retiring `obra/superpowers` and migrating any high-value specs from `docs/superpowers/specs/` once the replacement covers day-to-day needs.

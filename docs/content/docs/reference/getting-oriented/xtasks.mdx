@@ -3,7 +3,7 @@ title: Workspace Automation (xtasks)
 description: Every cargo xtask subcommand, what it does, and when a contributor reaches for it
 ---
 
-jackin' keeps its workspace automation in a single Rust binary, <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile>, following the cargo-xtask pattern: all task logic is Rust, subprocesses (`docker`, `git`) are driven through `std::process::Command`, and the project carries no shell task scripts. The cargo alias in <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile> makes `cargo xtask <command>` the direct entrypoint, and the `construct-*` tasks in <RepoFile path="mise.toml">mise.toml</RepoFile> delegate to the same binary so CI and local runs share one implementation.
+jackin❯ keeps its workspace automation in a single Rust binary, <RepoFile path="crates/jackin-xtask/src/main.rs">crates/jackin-xtask/src/main.rs</RepoFile>, following the cargo-xtask pattern: all task logic is Rust, subprocesses (`docker`, `git`) are driven through `std::process::Command`, and the project carries no shell task scripts. The cargo alias in <RepoFile path=".cargo/config.toml">.cargo/config.toml</RepoFile> makes `cargo xtask <command>` the direct entrypoint, and the `construct-*` tasks in <RepoFile path="mise.toml">mise.toml</RepoFile> delegate to the same binary so CI and local runs share one implementation.
 
 <Aside type="note">
 **This page is the canonical inventory of xtask commands.** A PR that adds, removes, or reshapes a subcommand updates this page in the same PR. The declarative image build graph stays in <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile> — the xtask invokes it rather than reimplementing it in flag assembly.

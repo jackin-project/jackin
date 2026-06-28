@@ -43,7 +43,7 @@ export JACKIN_STATUS_SOURCE="${JACKIN_STATUS_SOURCE:-wrapper-${JACKIN_SESSION_ID
 export JACKIN_AGENT_RUNTIME="${JACKIN_AGENT:-unknown}"
 
 # ── Network allowlist (allowlist tier) ────────────────────────────────
-# The firewall (`jackin-capsule firewall-apply`) is run by jackin' via
+# The firewall (`jackin-capsule firewall-apply`) is run by jackin❯ via
 # `docker exec --user root` AFTER this entrypoint starts but BEFORE the agent
 # session begins, not here in the entrypoint. This avoids a conflict with
 # --security-opt no-new-privileges (docker exec as root needs no setuid

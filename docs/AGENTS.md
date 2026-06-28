@@ -89,20 +89,20 @@ bun install --frozen-lockfile
 - Content source defined in `source.config.ts`, loaded via `src/lib/source.ts`.
 - File-based routing: `content/docs/foo/bar.mdx` → `/foo/bar`. Parenthesized group dirs (e.g. `content/docs/(role-authoring)/`) are organizational, absent from URLs.
 - Link docs pages with site-absolute routes (e.g. `/guides/mounts/`). Generated-site lychee check is authoritative guard, including fragments.
-- No GitHub blob links or `<RepoFile />` for pages published under `content/docs/`. Use site route instead (e.g. `/reference/roadmap/per-mount-isolation/`). GitHub only for external repos and repo files not rendered as docs.
+- No GitHub blob links or `<RepoFile />` for pages published under `content/docs/`. Use site route instead (e.g. `/roadmap/per-mount-isolation/`). GitHub only for external repos and repo files not rendered as docs.
 - Link non-doc repo files with `<RepoFile path="src/runtime/image.rs" />`, not plain code spans, when reader should open the file. Component renders GitHub `blob/main` URL; CI link check remaps to PR checkout, so renames/deletions fail before merge. Avoid `tree/main` directory links unless a concrete file is impossible.
 - Plain inline-code refs to existing repo files under `src/`, `docs/`, `docker/`, `.github/` fail `bun run check:repo-links`; link them. Published docs pages → docs route. Non-doc repo files → `<RepoFile />`. Future files not yet existing may stay code spans.
 - `check:repo-links` exists because lychee only checks real links in rendered HTML. Plain code spans like `src/runtime/launch.rs` aren't links, so lychee can't detect renames/deletions. The source check forces `<RepoFile />`, then lychee verifies the generated URL.
 - `mailto:` links are lychee-checked; use real intentional addresses, not placeholders.
 - Sidebar + top-nav configured via `meta.json` files and `src/lib/layout.shared.tsx`.
-- **Roadmap sidebar discipline.** Every MDX file under `content/docs/reference/roadmap/` must be referenced in at least one `meta.json` under the roadmap tree (nested group structure: root `meta.json` points to group dirs; each group's `meta.json` points to pages via `../slug` or `../../slug`). On any add/rename/delete/status-change of a roadmap item — or directory restructure — verify sidebar still matches directory contents in same PR. Operators discover open work via sidebar (not overview prose), so an item reachable only via direct URL or overview is effectively hidden. Audit from `docs/`:
+- **Roadmap sidebar discipline.** Every MDX file under `content/docs/roadmap/` must be referenced in at least one `meta.json` under the roadmap tree (nested group structure: root `meta.json` points to group dirs; each group's `meta.json` points to pages via `../slug` or `../../slug`). On any add/rename/delete/status-change of a roadmap item — or directory restructure — verify sidebar still matches directory contents in same PR. Operators discover open work via sidebar (not overview prose), so an item reachable only via direct URL or overview is effectively hidden. Audit from `docs/`:
 
   ```sh
   bun run check:roadmap-sidebar
   ```
 
   Script reports any MDX file with no matching `meta.json` entry and any entry with no matching MDX file. Both directions must be clean.
-- **Roadmap overview discipline.** `content/docs/reference/roadmap/index.mdx` is the entry operators land on for a single picture of *what shipped, partial, planned, deferred, on hold*. Sidebar lists every item alphabetically/by phase; overview tells the **status story**. Different jobs, maintained together, not folded into one.
+- **Roadmap overview discipline.** `content/docs/roadmap/index.mdx` is the entry operators land on for a single picture of *what shipped, partial, planned, deferred, on hold*. Sidebar lists every item alphabetically/by phase; overview tells the **status story**. Different jobs, maintained together, not folded into one.
 
   On any add/rename/delete/`**Status**`-change of a roadmap item, update `roadmap.mdx` so item lands in matching section:
 
@@ -120,10 +120,10 @@ bun install --frozen-lockfile
   Audit which roadmap items are missing from overview:
 
   ```sh
-  ls docs/content/docs/reference/roadmap/*.mdx \
+  ls docs/content/docs/roadmap/*.mdx \
     | xargs -n1 basename -s .mdx | grep -v '^index$' | sort > /tmp/roadmap-files
-  grep -oE 'reference/roadmap/[a-z0-9-]+' docs/content/docs/reference/roadmap/index.mdx \
-    | sed 's|reference/roadmap/||' | sort -u > /tmp/roadmap-overview
+  grep -oE 'roadmap/[a-z0-9-]+' docs/content/docs/roadmap/index.mdx \
+    | sed 's|roadmap/||' | sort -u > /tmp/roadmap-overview
   comm -23 /tmp/roadmap-files /tmp/roadmap-overview
   ```
 
@@ -133,11 +133,11 @@ bun install --frozen-lockfile
 - **Do not hard-wrap MDX prose, or any markdown the docs site renders, or AGENTS.md / PULL_REQUESTS.md / CLAUDE.md / README.md / CHANGELOG.md / any other prose markdown in the repo.** Each paragraph = one long line. Fumadocs, GitHub's renderer, every reasonable editor wrap at display width; hard-wrapping at ~70 cols makes one-word edits touch every line and splits sentences across meaningless boundaries. Exception: content with meaningful line breaks — code fences, list bullets, table cells, frontmatter values. Unwrap existing hard-wrapped paragraphs as part of the edit that brings you there. The PR-body rule in `PULL_REQUESTS.md` is the same rule applied to every prose markdown surface.
 - Self-hosted fonts via fontsource (`src/styles/fonts.css`) — no third-party font CDN.
 - Keep docs and code aligned; when they differ, code is source of truth.
-- **Never reference open pull requests in published documentation.** No link of form `https://github.com/jackin-project/<repo>/pull/<N>` or prose like "PR #123" / "in flight in #123" in `content/docs/**.mdx`. Open PRs are ephemeral (closed, rebased, force-pushed, retitled, split, replaced) — pointing at one bakes a transient URL into a long-lived page. For features *under development*, describe **state** ("under active development", "in flight", "design in progress") without naming the PR. The landing PR updates docs to say it landed; until then docs describe steady-state user-visible reality, not in-progress engineering. Closed/merged PRs and issues may appear when they're the canonical record of a *resolved* design discussion or known limitation — existing pattern in `reference/roadmap/*.mdx`, fine. Applies equally to README, AGENTS files outside `docs/`, any other published artefact.
+- **Never reference open pull requests in published documentation.** No link of form `https://github.com/jackin-project/<repo>/pull/<N>` or prose like "PR #123" / "in flight in #123" in `content/docs/**.mdx`. Open PRs are ephemeral (closed, rebased, force-pushed, retitled, split, replaced) — pointing at one bakes a transient URL into a long-lived page. For features *under development*, describe **state** ("under active development", "in flight", "design in progress") without naming the PR. The landing PR updates docs to say it landed; until then docs describe steady-state user-visible reality, not in-progress engineering. Closed/merged PRs and issues may appear when they're the canonical record of a *resolved* design discussion or known limitation — existing pattern in `roadmap/*.mdx`, fine. Applies equally to README, AGENTS files outside `docs/`, any other published artefact.
 - **The site has three audiences, not two.** Classify every docs change against this list before writing:
-  1. **Operator** (sidebar groups: *Getting Started*, *Operator Guide*, *Commands*) — uses jackin' as a product via CLI/TUI. Never asked to know on-disk paths, TOML schemas, internals.
-  2. **Role author** (sidebar group: *Role Authoring* — pages under `guides/role-repos.mdx` and `developing/*`) — **also user-facing**. Builds own role repos with own toolchain + plugins. Needs no jackin' implementation knowledge to follow. Only concession: `developing/construct-image.mdx` has a contributor lower half for `mise run construct-build-local` / CI workflow.
-  3. **Contributor** (sidebar group: *Behind jackin' — Internals* — `reference/*`, including `roadmap/*.mdx`) — works on jackin' itself. Architecture, config-file schema, codebase map, roadmap design proposals. On-disk layouts, internal mechanisms, Rust-level details live here.
+  1. **Operator** (sidebar groups: *Getting Started*, *Operator Guide*, *Commands*) — uses jackin❯ as a product via CLI/TUI. Never asked to know on-disk paths, TOML schemas, internals.
+  2. **Role author** (sidebar group: *Role Authoring* — pages under `guides/role-repos.mdx` and `developing/*`) — **also user-facing**. Builds own role repos with own toolchain + plugins. Needs no jackin❯ implementation knowledge to follow. Only concession: `developing/construct-image.mdx` has a contributor lower half for `mise run construct-build-local` / CI workflow.
+  3. **Contributor** (sidebar group: *Behind jackin❯ — Internals* — `reference/*`, including `roadmap/*.mdx`) — works on jackin❯ itself. Architecture, config-file schema, codebase map, roadmap design proposals. On-disk layouts, internal mechanisms, Rust-level details live here.
 
   When adding/rewriting a page, decide which audience it serves and put it under matching sidebar group. Never mix audiences in one page beyond the explicit `developing/construct-image.mdx` exception. User-facing surfaces (Operator, Role Authoring) link out to Internals for deeper detail; don't inline it.
 
@@ -150,8 +150,8 @@ bun install --frozen-lockfile
 
   Where each kind belongs:
 
-  - **Contributor-only internals** (on-disk layout under `~/.config/jackin/` and `~/.jackin/`, schema of jackin' `config.toml`, `isolation.json`, per-container state-dir layout, internal Rust struct/enum/function names, any "technical debt" admission) belong under `reference/` and `reference/roadmap/`. Must **not** appear on Operator or Role Authoring surfaces.
-  - **Role-author surface schema** differs from jackin' internals and *is* allowed on Role Authoring pages: the role's own `jackin.role.toml` schema (`[claude]`, `[codex]`, `[hooks]`, `[identity]`, `[env.<NAME>]`, etc.) lives in `developing/role-manifest.mdx` because the author writes that file. Likewise the role repo's own `Dockerfile` shape lives in `developing/creating-roles.mdx` and `guides/role-repos.mdx`. These are role artefacts, not jackin' storage.
+  - **Contributor-only internals** (on-disk layout under `~/.config/jackin/` and `~/.jackin/`, schema of jackin❯ `config.toml`, `isolation.json`, per-container state-dir layout, internal Rust struct/enum/function names, any "technical debt" admission) belong under `reference/` and `roadmap/`. Must **not** appear on Operator or Role Authoring surfaces.
+  - **Role-author surface schema** differs from jackin❯ internals and *is* allowed on Role Authoring pages: the role's own `jackin.role.toml` schema (`[claude]`, `[codex]`, `[hooks]`, `[identity]`, `[env.<NAME>]`, etc.) lives in `developing/role-manifest.mdx` because the author writes that file. Likewise the role repo's own `Dockerfile` shape lives in `developing/creating-roles.mdx` and `guides/role-repos.mdx`. These are role artefacts, not jackin❯ storage.
   - **The contributor section of `developing/construct-image.mdx`** (lower half — `mise run construct-build-local`, CI workflow, advanced publish rehearsal) is the documented two-audience exception. Its top-of-page Aside calls this out.
 
   When a user-facing page needs internal layout for context, link to the matching internals page (`/reference/configuration/`, `/reference/architecture/`, `/reference/codebase-map/`) instead of inlining. When in doubt ask: "could a reader follow this using only the CLI/TUI?" If no because it describes a TOML key or on-disk path, move that detail to internals.
@@ -164,5 +164,23 @@ bun install --frozen-lockfile
 ## Theme
 
 - Fumadocs chrome uses CSS custom properties. Mappings in `src/styles/docs-theme.css` (Fumadocs `--color-fd-*` plus legacy `--sl-*` compat tokens → Radix tokens from `tempo-tokens.css`).
-- Brand accent token `--jk-brand` is theme-aware (bright #00ff41 dark, muted #16a34a light) — tabs underline, sidebar active pill, right-rail TOC, pagination hover.
+- **Accent.** `--jk-accent` is the theme-aware UI green (`#5cf07a` dark, `#0b774e` light — the light value is AA ~5:1 on white). Use it for links, active state, accent borders/icons, and buttons. `--jk-brand` (`#5cf07a`) is the bright phosphor — **dark mode only; never paint it on a white surface** (use `--jk-accent` there). The matrix-rain `#00ff41` is for terminal/rain mockups only.
+- **Light mode is token-driven, not per-component.** Light surfaces are neutral cool-greys (no green tint): `--jk-panel #f4f5f7`, `--jk-bg-deep #e8eaee`. One neutral border family `rgba(17,24,39, .05/.1/.2)` (`--jk-ui*`) across docs + landing; shadows neutral too. Don't reintroduce green-tinted neutrals, green-grey borders (`rgba(31,36,33,*)` / `rgba(5,20,12,*)`), or green drop-shadows. New light styling reads tokens, never a one-off rgba.
+- **Logo on light chrome.** The wordmark has a white word; on white light chrome use the `-onlight` variant (dark word + accent chevron) — `BrandMark` emits both and CSS toggles by theme. The hero keeps the white-word mark (its canvas stays dark in light mode).
 - Code blocks always use a dark surface (`--jk-code-bg`) regardless of page theme. Shiki theme: github-dark in both modes.
+
+### Buttons
+
+One button system across **both** docs and landing. All buttons use the docs accent `--jk-accent` (theme-adaptive: `#5cf07a` dark / `#1d9e75` light) — the same green everywhere. Never style a button with `--landing-accent` (`#00ff41`) or any other green; that bright phosphor is reserved for terminal-output mockups (code panel, loop terminals) and the matrix rain, not UI controls.
+
+Three tiers, by role — don't make every button look the same:
+
+- **Primary** — solid green: `background: var(--jk-accent)`, `color: #0a0a0a` (dark ink, reads in both themes), matching border; hover `filter: brightness(1.08)`. The page's main CTA only (e.g. *Get Started*, *Read the Docs*, *Read the guide* / `.landing-btn-primary`, `.landing-invite-cta`).
+- **Secondary** — green-accent outline: `background: color-mix(in srgb, var(--jk-accent) 8%, transparent)`, `color: var(--jk-accent)`, `border: 1px solid color-mix(in srgb, var(--jk-accent) 35%, transparent)`; hover bumps the bg to ~16% and the border to solid `--jk-accent`. Supporting actions (*Star on GitHub*, topnav *Docs/Star*, *Copy Markdown* / *Open*, the section switcher / `.landing-btn-ghost`, `.landing-star`, `.jk-page-actions button`).
+- **Icon-only / toggles** — neutral surface, green only on active/hover (theme toggle, social links, sidebar collapse, code-copy, search). A solid-green icon button is unreadable; keep these quiet.
+
+Shared across tiers: a subtle resting shadow `0 1px 2px rgb(0 0 0 / 0.2)` and a green-glow hover shadow `0 4px 16px color-mix(in srgb, var(--jk-accent) 22–30%, transparent)` (≈30% for solid primary, ≈22% for outline). Geometry for the standard CTA pair (primary + the matching secondary outline) is identical — Inter 14px/600, `padding: 13px 22px`, `border-radius: 5px`; compact placements (topnav, page actions) scale down but keep the same font, treatment, and shadows.
+
+One documented exception: on the light-mode hero (a green canvas) the primary button switches to a dark pill + white label for contrast, since a green button would vanish.
+
+Any new button picks one of these three tiers — never a one-off color or style.

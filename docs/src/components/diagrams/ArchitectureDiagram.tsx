@@ -2,7 +2,7 @@ export function ArchitectureDiagram() {
   return (
     <figure
       className="jk-arch not-content"
-      aria-label="jackin' runtime architecture: host machine running Docker Engine, with a per-agent network containing an Agent container linked to a DinD sidecar, plus three host-side persisted paths"
+      aria-label="jackin❯ runtime architecture: host machine running Docker Engine, with a per-agent network containing an Agent container linked to a DinD sidecar, plus three host-side persisted paths"
     >
       <div className="jk-arch-panel">
         <header className="jk-arch-header">

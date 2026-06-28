@@ -26,7 +26,7 @@ fn status_bar_renders_without_tabs() {
     let buf = terminal.backend().buffer();
     // Brand pill should appear in row 0
     let row0: String = (0..9).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
-    assert!(row0.contains("jackin'"), "brand pill missing: {row0:?}");
+    assert!(row0.contains("jackin❯"), "brand pill missing: {row0:?}");
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn status_bar_renders_shared_tab_underline() {
         })
         .unwrap();
     let buf = terminal.backend().buffer();
-    let tab_start = u16::try_from(jackin_tui::display_cols(BRAND_TEXT)).unwrap() + 1;
+    let tab_start = u16::try_from(jackin_tui::display_cols(" jackin❯ ")).unwrap() + 1;
 
     assert_eq!(buf[(tab_start, 1)].symbol(), "━");
     assert_eq!(buf[(tab_start, 1)].fg, jackin_tui::theme::WHITE);

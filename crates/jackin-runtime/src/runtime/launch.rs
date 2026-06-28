@@ -199,7 +199,7 @@ fn push_agent_home_mounts(mounts: &mut Vec<String>, root: &Path, agent: jackin_c
     }
 }
 
-/// Returns the per-agent mount strings in jackin's `src:dst[:ro]` idiom for
+/// Returns the per-agent mount strings in jackin❯'s `src:dst[:ro]` idiom for
 /// `docker run -v`.
 ///
 /// Every provisioned agent is represented on `state.auth`, so the mount block
@@ -1906,7 +1906,7 @@ pub(super) fn launch_failure_cli_error(
     ])
     .build();
     table
-        .with(tabled::settings::Style::modern_rounded())
+        .with(tabled::settings::Style::modern())
         .with(tabled::settings::Remove::row(
             tabled::settings::object::Rows::first(),
         ));

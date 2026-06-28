@@ -19,7 +19,7 @@ pub(super) const HELP_STYLES: Styles = Styles::styled()
     .invalid(AnsiColor::Red.on_default().effects(Effects::BOLD))
     .error(AnsiColor::Red.on_default().effects(Effects::BOLD));
 
-// The canonical jackin' logo, shared with the host and capsule status bars.
+// The canonical jackin❯ logo, shared with the host and capsule status bars.
 pub(super) const BANNER: &str = jackin_tui::ansi::BRAND_BANNER;
 
 pub mod cleanup;
@@ -56,11 +56,14 @@ pub use workspace::{
 /// stdout is attached to a reasonably-sized interactive terminal, and
 /// otherwise prints this help page (exit 0, silent).
 #[derive(Debug, Parser)]
+// Root help shows the one-line `BANNER` pill inherited from the flattened
+// `ConsoleArgs`. It needs no explicit `before_help`; the binary layers the
+// frozen-rain field above that pill on a wide interactive terminal (clap
+// reflows multi-line ANSI art, so the rain is printed directly, not here).
 #[command(
     name = "jackin",
     version = env!("JACKIN_VERSION"),
     styles = HELP_STYLES,
-    before_help = BANNER,
     disable_help_subcommand = true,
     after_help = "Run 'jackin help <command>' for more detailed information."
 )]
@@ -115,6 +118,8 @@ pub enum Command {
     /// Delete cached or stale jackin data
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Prune(PruneCommand),
+    /// Open the operator console to manage workspaces, launch roles, and more
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
     Console(ConsoleArgs),
     /// Validate, migrate, and scaffold role repositories
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
@@ -126,7 +131,7 @@ pub enum Command {
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Config(ConfigCommand),
     Logs(LogsArgs),
-    /// Run pre-flight health checks for your jackin' setup
+    /// Run pre-flight health checks for your jackin❯ setup
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Doctor(doctor::DoctorArgs),
     /// Inspect run diagnostics artifacts

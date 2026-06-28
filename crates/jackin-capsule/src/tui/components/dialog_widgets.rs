@@ -1327,7 +1327,7 @@ fn render_filter_picker(
     show_filter: bool,
 ) {
     // Reuse the shared modal panel so the menu/pickers match every other
-    // jackin' dialog: PHOSPHOR_GREEN focused border + bold-white title.
+    // jackin❯ dialog: PHOSPHOR_GREEN focused border + bold-white title.
     let title_str = format!(" {title} ");
     let block = jackin_tui::components::Panel::new()
         .title(&title_str)

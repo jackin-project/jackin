@@ -1,4 +1,4 @@
-//! jackin' library crate root.
+//! jackin❯ library crate root.
 //!
 //! Re-exports the module tree consumed by `main.rs`, `src/bin/role.rs`, and
 //! integration tests. The crate is simultaneously a binary (via `main.rs`) and

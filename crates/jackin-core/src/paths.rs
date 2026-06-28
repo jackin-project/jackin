@@ -1,4 +1,4 @@
-//! Host-side path layout: `JackinPaths` centralises every directory jackin'
+//! Host-side path layout: `JackinPaths` centralises every directory jackin❯
 //! reads or writes on the host machine.
 //!
 //! `JackinPaths::detect()` resolves from the OS home directory with
@@ -11,7 +11,7 @@
 use directories::BaseDirs;
 use std::path::{Path, PathBuf};
 
-/// All host-side directories that jackin' reads or writes.
+/// All host-side directories that jackin❯ reads or writes.
 #[derive(Debug, Clone)]
 pub struct JackinPaths {
     pub home_dir: PathBuf,
@@ -77,7 +77,7 @@ impl JackinPaths {
         }
     }
 
-    /// Create all base directories that jackin' owns on the host.
+    /// Create all base directories that jackin❯ owns on the host.
     ///
     /// # Errors
     /// Returns an error if any directory cannot be created.

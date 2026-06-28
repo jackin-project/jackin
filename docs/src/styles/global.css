@@ -7,12 +7,12 @@
    colour values. */
 
 @theme {
-  --color-landing-bg: #0a0b0a;
-  --color-landing-bg-deep: #050605;
+  --color-landing-bg: #0a0a0a;
+  --color-landing-bg-deep: #050505;
   --color-landing-panel: #0f1110;
   --color-landing-text: #f4f7f5;
   --color-landing-text-dim: #9ca8a1;
   --color-landing-text-ghost: #5e6a64;
-  --color-landing-accent: #00ff41;
+  --color-landing-accent: #5cf07a;
   --color-landing-danger: #ff5e7a;
 }
