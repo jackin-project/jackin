@@ -1,6 +1,7 @@
 //! Tests for `workspace`.
 use super::*;
-use jackin_config::{AppConfig, RoleSource, WorkspaceConfig, WorkspaceRoleOverride};
+use jackin_config::test_support::config_with_agents as config_with_agents_for_override;
+use jackin_config::{WorkspaceConfig, WorkspaceRoleOverride};
 
 struct TestWorkspace {
     allowed_roles: Vec<String>,
@@ -130,14 +131,6 @@ fn preferred_role_index_ignores_missing_roles() {
         preferred_role_index(&eligible, Some("ghost"), Some("beta")),
         None
     );
-}
-
-fn config_with_agents_for_override(names: &[&str]) -> AppConfig {
-    let mut config = AppConfig::default();
-    for name in names {
-        config.roles.insert((*name).into(), RoleSource::default());
-    }
-    config
 }
 
 fn ws_with_role_overrides(allowed: &[&str], override_agents: &[&str]) -> WorkspaceConfig {

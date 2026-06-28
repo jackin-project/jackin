@@ -1,6 +1,8 @@
 //! Tests for `view`.
 
 use super::*;
+#[cfg(any(test, feature = "test-support"))]
+use jackin_config::test_support::config_with_agents;
 
 fn hint_labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
     items
@@ -537,8 +539,8 @@ fn auth_source_folder_rows_render_display_kinds_without_env_suffix() {
 use super::prepare_editor_tab_for_area;
 use super::render_roles_tab;
 use crate::tui::state::{EditorState, EditorTab, FieldFocus};
+use jackin_config::AppConfig;
 use jackin_config::WorkspaceConfig;
-use jackin_config::{AppConfig, RoleSource};
 use jackin_tui::components::scrollable_panel::viewport_width as scroll_viewport_width;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -549,14 +551,6 @@ fn ws_with_allowed(names: &[&str]) -> WorkspaceConfig {
         allowed_roles: names.iter().map(|s| (*s).into()).collect(),
         ..WorkspaceConfig::default()
     }
-}
-
-fn config_with_agents(names: &[&str]) -> AppConfig {
-    let mut config = AppConfig::default();
-    for name in names {
-        config.roles.insert((*name).into(), RoleSource::default());
-    }
-    config
 }
 
 fn render_roles_to_dump(ws: WorkspaceConfig, config: &AppConfig) -> String {

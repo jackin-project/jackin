@@ -27,5 +27,8 @@ directories = "6.0"
 [dev-dependencies]
 tempfile = "=3.27.0"
 
+[features]
+test-support = []
+
 [lints]
 workspace = true

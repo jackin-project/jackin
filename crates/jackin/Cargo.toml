@@ -61,6 +61,7 @@ jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
 
 [dev-dependencies]
 assert_cmd = "=2.2.2"
+jackin-config = { version = "0.6.0-dev", path = "../jackin-config", features = ["test-support"] }
 jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime", features = ["test-support"] }
 criterion = { version = "=0.8.2", features = ["html_reports"] }
 predicates = "=3.1.4"

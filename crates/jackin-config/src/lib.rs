@@ -24,6 +24,9 @@ pub mod sensitive;
 pub mod validation;
 pub mod versions;
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
+
 pub use app_config::AppConfig;
 pub use app_config_mounts::{GlobalMountRow, WorkspaceGlobalMountRows};
 pub use app_config_persist::{
