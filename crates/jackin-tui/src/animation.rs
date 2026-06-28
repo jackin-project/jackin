@@ -301,7 +301,10 @@ pub fn warp_out(host_screen_owned: bool) {
 /// `host_screen_owned` should be `jackin_diagnostics::host_screen_owned()`.
 pub fn warp_end_caption(elapsed: Option<std::time::Duration>, host_screen_owned: bool) {
     if let Some(d) = elapsed {
-        let line = format!("You were in the Construct for {}", format_universe_duration(d));
+        let line = format!(
+            "You were in the Construct for {}",
+            format_universe_duration(d)
+        );
         // Same glitch-in reveal as the intro phrases (e.g. "Knock, knock, operator.").
         let _ = glitch_centered(&line, WHITE, 2400, host_screen_owned);
     }
