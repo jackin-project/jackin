@@ -1862,11 +1862,10 @@ header.header {
 }
 
 :root[data-theme='light'] .jk-aside {
-  background: color-mix(in srgb, var(--jk-aside-color) 8%, var(--jk-bg));
+  background: color-mix(in srgb, var(--jk-aside-color) 7%, var(--jk-bg));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 1px 1px rgba(0, 0, 0, 0.04),
-    0 10px 24px color-mix(in srgb, var(--jk-aside-color) 12%, transparent);
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 22%, transparent),
+    0 1px 2px rgba(17, 24, 39, 0.04);
 }
 
 :root[data-theme='light'] .jk-aside svg {
@@ -2033,7 +2032,9 @@ site-search dialog {
 }
 
 .jk-name__chevron {
-  color: var(--jk-brand-muted);
+  /* The chevron is always the canonical brand green — one identical chevron color
+     everywhere (logo + inline mark), in both themes. */
+  color: #5cf07a;
   font-weight: inherit;
 }
 
