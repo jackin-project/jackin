@@ -267,8 +267,8 @@ pub async fn prewarm_dind_sidecar_container(
         let suffix = std::process::id();
         format!("{PREWARM_CONTAINER_BASE}-{suffix}")
     };
-    let dind = format!("{base}-dind");
-    let network = format!("{base}-net");
+    let dind = super::super::naming::dind_container_name(&base);
+    let network = super::super::naming::role_network_name(&base);
     let certs_volume = format!("{base}-certs");
 
     super::emit_prewarm_launch_plan(if keep {
