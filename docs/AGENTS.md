@@ -164,7 +164,9 @@ bun install --frozen-lockfile
 ## Theme
 
 - Fumadocs chrome uses CSS custom properties. Mappings in `src/styles/docs-theme.css` (Fumadocs `--color-fd-*` plus legacy `--sl-*` compat tokens → Radix tokens from `tempo-tokens.css`).
-- Brand accent token `--jk-brand` is theme-aware (bright #00ff41 dark, muted #16a34a light) — tabs underline, sidebar active pill, right-rail TOC, pagination hover.
+- **Accent.** `--jk-accent` is the theme-aware UI green (`#5cf07a` dark, `#0b774e` light — the light value is AA ~5:1 on white). Use it for links, active state, accent borders/icons, and buttons. `--jk-brand` (`#5cf07a`) is the bright phosphor — **dark mode only; never paint it on a white surface** (use `--jk-accent` there). The matrix-rain `#00ff41` is for terminal/rain mockups only.
+- **Light mode is token-driven, not per-component.** Light surfaces are neutral cool-greys (no green tint): `--jk-panel #f4f5f7`, `--jk-bg-deep #e8eaee`. One neutral border family `rgba(17,24,39, .05/.1/.2)` (`--jk-ui*`) across docs + landing; shadows neutral too. Don't reintroduce green-tinted neutrals, green-grey borders (`rgba(31,36,33,*)` / `rgba(5,20,12,*)`), or green drop-shadows. New light styling reads tokens, never a one-off rgba.
+- **Logo on light chrome.** The wordmark has a white word; on white light chrome use the `-onlight` variant (dark word + accent chevron) — `BrandMark` emits both and CSS toggles by theme. The hero keeps the white-word mark (its canvas stays dark in light mode).
 - Code blocks always use a dark surface (`--jk-code-bg`) regardless of page theme. Shiki theme: github-dark in both modes.
 
 ### Buttons
