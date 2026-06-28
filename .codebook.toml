@@ -993,4 +993,8 @@ words = [
   "Notif",
   "epoll",
   "Acks",
+  "recompiles",
+  "Cranelift",
+  "Bazel",
+  "gha",
 ]
