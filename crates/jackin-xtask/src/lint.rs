@@ -68,6 +68,14 @@ fn emit(line: &str) {
     println!("{line}");
 }
 
+/// Run the file-size gate in enforce mode (no budget print). The umbrella
+/// `cargo xtask lint` entry point uses this.
+pub(crate) fn enforce() -> Result<()> {
+    run(LintFilesArgs {
+        print_budget: false,
+    })
+}
+
 pub(crate) fn run(args: LintFilesArgs) -> Result<()> {
     let root = repo_root()?;
     let budget_path = root.join(BUDGET_PATH);
@@ -95,17 +103,15 @@ fn measure(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
 }
 
 fn walk(dir: &Path, out: &mut BTreeMap<PathBuf, usize>) -> Result<()> {
-    for entry in fs::read_dir(dir)
-        .with_context(|| format!("reading {}", dir.display()))?
-    {
+    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
         let path = entry?.path();
         if path.is_dir() {
             walk(&path, out)?;
             continue;
         }
         if path.extension().is_some_and(|ext| ext == "rs") {
-            let text = fs::read_to_string(&path)
-                .with_context(|| format!("reading {}", path.display()))?;
+            let text =
+                fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
             // count physical lines (matches `wc -l` semantics, matches the
             // numbers maintainers see in editors and the budget file).
             let lines = text.lines().count();
@@ -118,8 +124,8 @@ fn walk(dir: &Path, out: &mut BTreeMap<PathBuf, usize>) -> Result<()> {
 fn read_budget(path: &Path) -> Result<Budget> {
     let text = fs::read_to_string(path)
         .with_context(|| format!("reading budget file {}", path.display()))?;
-    let budget: Budget = toml::from_str(&text)
-        .with_context(|| format!("parsing budget file {}", path.display()))?;
+    let budget: Budget =
+        toml::from_str(&text).with_context(|| format!("parsing budget file {}", path.display()))?;
     Ok(budget)
 }
 
@@ -176,10 +182,10 @@ fn check(root: &Path, budget: &Budget, counts: &BTreeMap<PathBuf, usize>) -> Res
 }
 
 fn relative(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .map_or_else(|_| path.to_string_lossy().into_owned(), |p| {
-            p.to_string_lossy().into_owned()
-        })
+    path.strip_prefix(root).map_or_else(
+        |_| path.to_string_lossy().into_owned(),
+        |p| p.to_string_lossy().into_owned(),
+    )
 }
 
 /// Print a fresh budget TOML listing every file currently over its cap,

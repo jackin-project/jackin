@@ -23,6 +23,7 @@ mod lint;
 mod pr;
 mod pty_fixture;
 mod schema;
+mod test_layout;
 
 use std::process::ExitCode;
 
@@ -69,15 +70,24 @@ enum Command {
     ///
     /// Use as `cargo xtask schema-check --base origin/main`.
     SchemaCheck(schema::SchemaCheckArgs),
-    /// File-size ratchet gate (Workstream B) and dependency-direction gate
-    /// (Workstream 4) of codebase-health-enforcement.
+    /// Codebase-health lint gates (codebase-health-enforcement W3 + W4).
     ///
-    /// Use as `cargo xtask lint files` (enforce file sizes) or
-    /// `cargo xtask lint files --print-budget` (refresh the budget file).
-    /// `cargo xtask lint arch` enforces the dependency-direction bans.
+    /// `cargo xtask lint` (no subcommand) runs **every** gate — the file-size
+    /// ratchet, the test-file-layout rule, and the dependency-direction check.
+    /// This is the CI entry point. Add `--strict` to fail on architecture
+    /// violations instead of just reporting them.
+    ///
+    /// Subcommands run a single gate: `cargo xtask lint files`
+    /// (`--print-budget` refreshes the budget file), `cargo xtask lint tests`,
+    /// `cargo xtask lint arch` (`--dump` / `--strict`).
     Lint {
         #[command(subcommand)]
-        command: LintCommand,
+        command: Option<LintCommand>,
+        /// When running all gates (no subcommand), fail on architecture
+        /// violations. Forwarded to the arch gate; ignored when a subcommand
+        /// is given.
+        #[arg(long)]
+        strict: bool,
     },
 }
 
@@ -85,8 +95,23 @@ enum Command {
 enum LintCommand {
     /// Enforce the file-size ratchet from `file-size-budget.toml`.
     Files(lint::LintFilesArgs),
+    /// Enforce the test-file-layout rule (tests live in a sibling
+    /// `tests.rs`, never inline `#[cfg(test)] mod tests` or split across
+    /// `tests/` sub-modules).
+    Tests(test_layout::LintTestsArgs),
     /// Dependency-direction gate (Workstream 4).
     Arch(arch::LintArchArgs),
+}
+
+/// Run every codebase-health lint gate in sequence — the `cargo xtask lint`
+/// (no subcommand) entry point used by CI. The file-size ratchet and the
+/// test-file-layout rule always hard-fail on violations; the dependency-
+/// direction gate fails only in `strict` mode (informational otherwise, while
+/// the P2 inversions are still being cleaned up).
+fn run_all_lints(strict: bool) -> anyhow::Result<()> {
+    lint::enforce()?;
+    test_layout::enforce()?;
+    arch::check(strict)
 }
 
 fn main() -> ExitCode {
@@ -99,9 +124,11 @@ fn main() -> ExitCode {
         Command::Research(cmd) => docs::run_research(cmd),
         Command::Roadmap(cmd) => docs::run_roadmap(cmd),
         Command::SchemaCheck(args) => schema::run(args),
-        Command::Lint { command } => match command {
-            LintCommand::Files(args) => lint::run(args),
-            LintCommand::Arch(args) => arch::run(args),
+        Command::Lint { command, strict } => match command {
+            Some(LintCommand::Files(args)) => lint::run(args),
+            Some(LintCommand::Tests(args)) => test_layout::run(args),
+            Some(LintCommand::Arch(args)) => arch::run(args),
+            None => run_all_lints(strict),
         },
     };
     match result {

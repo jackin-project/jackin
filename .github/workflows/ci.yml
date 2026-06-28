@@ -431,15 +431,14 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-      # Gate: production .rs files under 2000L, tests.rs under 10000L; grandfathered
-      # entries in file-size-budget.toml may only decrease. See the file header
-      # and `roadmap/codebase-health-enforcement` for the rule.
-      - run: cargo run -p jackin-xtask --locked -- lint files
-      # Gate: dependency-direction violations across workspace crates. Reports
-      # the known P2 inversions today (informational, exits 0); each cleanup
-      # PR flips one off the forbidden list, and `--strict` is the eventual
-      # hard mode once all P2 cleanups land.
-      - run: cargo run -p jackin-xtask --locked -- lint arch
+      # Gate: all codebase-health lint checks via the umbrella command —
+      #   • file-size ratchet (file-size-budget.toml: production ≤2000L, tests ≤10000L)
+      #   • test-file-layout ratchet (test-layout-allowlist.toml: one sibling tests.rs)
+      #   • dependency-direction (informational, exits 0, until the P2 inversions
+      #     are cleaned up; `lint --strict` is the eventual hard mode).
+      # Grandfathered entries in each ratchet file may only ever shrink. See
+      # `roadmap/codebase-health-enforcement`.
+      - run: cargo run -p jackin-xtask --locked -- lint
 
   clippy:
     needs: [changes, matrix-setup, cargo-registry-warmup]

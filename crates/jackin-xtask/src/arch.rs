@@ -66,6 +66,15 @@ fn emit(line: &str) {
     println!("{line}");
 }
 
+/// Run the dependency-direction gate. `strict` fails on violations;
+/// non-strict reports and exits 0. The umbrella `cargo xtask lint` uses this.
+pub(crate) fn check(strict: bool) -> Result<()> {
+    run(LintArchArgs {
+        dump: false,
+        strict,
+    })
+}
+
 pub(crate) fn run(args: LintArchArgs) -> Result<()> {
     let root = repo_root()?;
     let metadata = read_metadata(&root)?;
