@@ -84,6 +84,9 @@ struct SyncArgs {
     /// Isolated config source for `JACKIN_CONFIG_DIR`.
     #[arg(long, value_enum, default_value_t = ConfigSource::Copy)]
     config: ConfigSource,
+    /// Reset the checkout even when local work would otherwise block sync.
+    #[arg(long)]
+    force: bool,
 }
 
 /// Fields for local-only commands; these never touch the remote, so no `--repo`.
@@ -205,6 +208,7 @@ fn sync(args: SyncArgs) -> Result<()> {
         args.common.pr,
         &pr.head_ref_name,
         &paths.repo,
+        args.force,
     )?;
     run_checked(command("mise", ["trust"]).current_dir(&paths.repo))?;
     run_checked(command("mise", ["install"]).current_dir(&paths.repo))?;
@@ -362,7 +366,7 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
 /// produces (`jackin-local/construct:trixie-<short12 HEAD sha>`).
 ///
 /// Pinning to the commit keeps each custom build's tag unique, so switching
-/// jackin' onto it invalidates a role base built from a different construct
+/// jackin❯ onto it invalidates a role base built from a different construct
 /// instead of reusing it under the moving `:trixie` tag.
 fn local_construct_image_ref(repo: &Path) -> Result<String> {
     let sha = git_output(repo, ["rev-parse", "--short=12", "HEAD"])?;
@@ -408,7 +412,13 @@ fn json_string(json: &Value, key: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("gh pr view did not return {key}"))
 }
 
-fn checkout_repo(repo: &str, pr: u64, head_ref_name: &str, repo_dir: &Path) -> Result<()> {
+fn checkout_repo(
+    repo: &str,
+    pr: u64,
+    head_ref_name: &str,
+    repo_dir: &Path,
+    force: bool,
+) -> Result<()> {
     if !repo_dir.join(".git").exists() {
         let parent = repo_dir
             .parent()
@@ -460,6 +470,7 @@ fn checkout_repo(repo: &str, pr: u64, head_ref_name: &str, repo_dir: &Path) -> R
         (pr_remote_ref, format!("origin/pr-{pr}-head"))
     };
 
+    ensure_checkout_reset_safe(repo_dir, head_ref_name, &remote_ref, force)?;
     run_checked(
         command("git", ["checkout", "-B", head_ref_name, &remote_ref]).current_dir(repo_dir),
     )?;
@@ -470,6 +481,48 @@ fn checkout_repo(repo: &str, pr: u64, head_ref_name: &str, repo_dir: &Path) -> R
         )
         .current_dir(repo_dir),
     )?;
+    Ok(())
+}
+
+fn ensure_checkout_reset_safe(
+    repo_dir: &Path,
+    head_ref_name: &str,
+    remote_ref: &str,
+    force: bool,
+) -> Result<()> {
+    if force {
+        return Ok(());
+    }
+
+    let status = git_output(repo_dir, ["status", "--porcelain", "--untracked-files=all"])?;
+    if !status.is_empty() {
+        bail!(
+            "refusing to reset checkout because {} has local changes; commit/stash them or rerun with --force",
+            repo_dir.display()
+        );
+    }
+
+    let local_branch_ref = format!("refs/heads/{head_ref_name}");
+    let local_branch_exists = run_status(
+        command(
+            "git",
+            ["show-ref", "--verify", "--quiet", &local_branch_ref],
+        )
+        .current_dir(repo_dir),
+    )?;
+    if local_branch_exists {
+        let ahead_range = format!("{remote_ref}..{local_branch_ref}");
+        let ahead = git_output(repo_dir, ["rev-list", "--count", &ahead_range])?;
+        let ahead: u64 = ahead
+            .parse()
+            .with_context(|| format!("parsing git rev-list count {ahead:?}"))?;
+        if ahead > 0 {
+            bail!(
+                "refusing to reset branch {head_ref_name} because it has {ahead} local commit(s) not in {remote_ref}; push/cherry-pick them or rerun with --force"
+            );
+        }
+    }
+
     Ok(())
 }
 

@@ -8,7 +8,7 @@ use ratatui::{Terminal, backend::TestBackend};
 fn status_bar_renders_without_tabs() {
     let backend = TestBackend::new(80, 2);
     let mut terminal = Terminal::new(backend).unwrap();
-    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle, None);
+    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle);
     terminal
         .draw(|frame| {
             frame.render_widget(
@@ -26,7 +26,7 @@ fn status_bar_renders_without_tabs() {
     let buf = terminal.backend().buffer();
     // Brand pill should appear in row 0
     let row0: String = (0..9).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
-    assert!(row0.contains("jackin'"), "brand pill missing: {row0:?}");
+    assert!(row0.contains("jackin❯"), "brand pill missing: {row0:?}");
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn status_bar_renders_shared_tab_underline() {
     ];
     let backend = TestBackend::new(80, 2);
     let mut terminal = Terminal::new(backend).unwrap();
-    let plan = status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle, None);
+    let plan = status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle);
     terminal
         .draw(|frame| {
             frame.render_widget(
@@ -53,7 +53,7 @@ fn status_bar_renders_shared_tab_underline() {
         })
         .unwrap();
     let buf = terminal.backend().buffer();
-    let tab_start = u16::try_from(jackin_tui::display_cols(BRAND_TEXT)).unwrap() + 1;
+    let tab_start = u16::try_from(jackin_tui::display_cols(" jackin❯ ")).unwrap() + 1;
 
     assert_eq!(buf[(tab_start, 1)].symbol(), "━");
     assert_eq!(buf[(tab_start, 1)].fg, jackin_tui::theme::WHITE);
@@ -67,7 +67,7 @@ fn status_bar_resets_canvas_across_unused_columns() {
     ];
     let backend = TestBackend::new(100, 2);
     let mut terminal = Terminal::new(backend).unwrap();
-    let plan = status_bar_plan(100, &tabs, 1, &[], PrefixMode::Idle, None);
+    let plan = status_bar_plan(100, &tabs, 1, &[], PrefixMode::Idle);
     terminal
         .draw(|frame| {
             frame.render_widget(
@@ -212,4 +212,29 @@ fn truncate_spans_keeps_fitting_groups_drops_overflowing() {
         "trailing GroupSep must be stripped"
     );
     let _ = full; // suppress unused warning
+}
+
+#[test]
+fn dynamic_key_hint_uses_key_style() {
+    let area = Rect::new(0, 0, 40, 4);
+    let mut buf = Buffer::empty(area);
+    render_hint_spans_row(
+        &mut buf,
+        area,
+        &[
+            jackin_tui::HintSpan::DynKey("Ctrl-\\".to_owned()),
+            jackin_tui::HintSpan::Text("menu"),
+        ],
+    );
+
+    let key_cell = (0..area.width)
+        .find(|x| buf[(*x, 1)].symbol() == "C")
+        .expect("key rendered");
+    assert_eq!(buf[(key_cell, 1)].fg, color(jackin_tui::WHITE));
+    assert!(
+        buf[(key_cell, 1)]
+            .style()
+            .add_modifier
+            .contains(Modifier::BOLD)
+    );
 }

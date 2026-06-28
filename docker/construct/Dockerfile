@@ -5,14 +5,14 @@ ARG SHELLFIRM_VERSION
 # the final image. Building inside Docker — rather than prebuilding on the host —
 # keeps it off the host's mise/cargo-binstall environment and produces the
 # binary for the target image architecture.
-FROM rust:1.96.0-trixie AS shellfirm-builder
+FROM rust:1.96.0-trixie@sha256:6df234c1eb92b0545468fab8c18fc5f9adfb994e7d4f67d81d45fe2fcabf5657 AS shellfirm-builder
 
 ARG SHELLFIRM_VERSION
 
 RUN cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked --root /opt/shellfirm && \
     /opt/shellfirm/bin/shellfirm --version | grep -F "${SHELLFIRM_VERSION}"
 
-FROM debian:trixie-20260610@sha256:fe7312b5f05bf5f43fad76bcd8945642e4e47a68aefd1b73f447615899d0fac1
+FROM debian:trixie-20260623@sha256:d07d1b51c39f51188e60be9b64e6bf769fa94e187f092bc32b91305cfa34ba5a
 
 ARG SHELLFIRM_VERSION
 
@@ -145,7 +145,7 @@ ENV BASH_ENV=/etc/jackin-build-env
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
-# including `docker exec` sessions that bypass jackin's runtime entrypoint.
+# including `docker exec` sessions that bypass the jackin runtime entrypoint.
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
@@ -162,5 +162,8 @@ COPY --chown=agent:0 --chmod=0664 zshrc /home/agent/.zshrc
 # Fish config — opt-in alternative shell. Same Starship prompt and
 # auto-title behaviour as zsh so the operator's pane border title
 # does not regress when switching shells.
-RUN install -d -o agent -g 0 -m 0775 /home/agent/.config/fish
+# install -d creates /home/agent/.config/ here so the starship.toml
+# COPY below does not auto-create it as root-owned.
+RUN install -d -o agent -g 0 -m 0775 /home/agent/.config /home/agent/.config/fish
 COPY --chown=agent:0 --chmod=0664 fish-config.fish /home/agent/.config/fish/config.fish
+COPY --chown=agent:0 --chmod=0664 starship.toml /home/agent/.config/starship.toml

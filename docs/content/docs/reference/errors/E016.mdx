@@ -4,12 +4,12 @@ title: "E016 — Unsupported OTLP protocol"
 
 **E016**: Unsupported OTLP protocol
 
-jackin' exports run telemetry over OTLP/gRPC only. This error means an OTLP endpoint is configured (`OTEL_EXPORTER_OTLP_ENDPOINT` or a per-signal variant) while `OTEL_EXPORTER_OTLP_PROTOCOL` (or a per-signal `_PROTOCOL` variable) requests a transport jackin' does not speak — typically `http/protobuf` or `http/json`. Rather than build an exporter that would silently never deliver, jackin' stops at startup.
+jackin❯ exports run telemetry over OTLP/gRPC only. This error means an OTLP endpoint is configured (`OTEL_EXPORTER_OTLP_ENDPOINT` or a per-signal variant) while `OTEL_EXPORTER_OTLP_PROTOCOL` (or a per-signal `_PROTOCOL` variable) requests a transport jackin❯ does not speak — typically `http/protobuf` or `http/json`. Rather than build an exporter that would silently never deliver, jackin❯ stops at startup.
 
 ## What to try
 
 - Set `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` (the default for backends such as Parallax) and point `OTEL_EXPORTER_OTLP_ENDPOINT` at the gRPC endpoint, e.g. `http://localhost:4317`.
-- Or unset the OTLP endpoint variables to disable export — jackin' then records the run to a local diagnostics file instead.
+- Or unset the OTLP endpoint variables to disable export — jackin❯ then records the run to a local diagnostics file instead.
 
 ## See also
 

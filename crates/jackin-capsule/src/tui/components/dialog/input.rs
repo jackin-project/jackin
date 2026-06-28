@@ -68,6 +68,42 @@ fn text_input_handle_key(
     }
 }
 
+/// Drive the `jackin-exec` credential picker from a raw key chunk.
+///
+/// Space toggles the row under the cursor (multi-select); ↑/↓ move the cursor;
+/// Enter confirms with the selected credentials; Esc / Ctrl+C cancel. Any other
+/// key is consumed so it never reaches the focused pane behind the modal.
+pub(super) fn exec_picker_handle_key(
+    state: &mut crate::exec::ExecPickerState,
+    key: &[u8],
+) -> DialogAction {
+    match key {
+        b" " => {
+            state.toggle_cursor();
+            DialogAction::Redraw
+        }
+        // Up arrow / Ctrl+P.
+        b"\x1b[A" | b"\x10" => {
+            state.cursor_up();
+            DialogAction::Redraw
+        }
+        // Down arrow / Ctrl+N.
+        b"\x1b[B" | b"\x0e" => {
+            state.cursor_down();
+            DialogAction::Redraw
+        }
+        // Enter — confirm and resolve the selected credentials.
+        b"\r" | b"\n" => DialogAction::ExecConfirm {
+            command: state.command.clone(),
+            args: state.args.clone(),
+            selected: state.selected_refs(),
+        },
+        // Esc / Ctrl+C — cancel, run nothing.
+        b"\x1b" | b"\x03" => DialogAction::ExecCancel,
+        _ => DialogAction::Consume,
+    }
+}
+
 /// Filterable dialogs accept printable ASCII (0x20..=0x7e) as filter
 /// input. Multi-byte sequences fall through as no-op redraws — they
 /// were already classified by the parser (or arrived unrecognised),

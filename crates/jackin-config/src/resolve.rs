@@ -178,6 +178,7 @@ pub fn resolve_load_workspace(
     }
 
     Ok(ResolvedWorkspace {
+        name: label.clone(),
         label,
         workdir: workspace.workdir,
         mounts,

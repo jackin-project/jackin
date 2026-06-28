@@ -1349,6 +1349,7 @@ fn settings_auth_source_display<AuthModal, EnvModal, PendingOpCommit>(
     auth_source_display(
         settings_auth_source_value(auth, env, kind, mode).map(|value| match value {
             jackin_core::EnvValue::Plain(value) => AuthSourceValue::Plain(value.clone()),
+            jackin_core::EnvValue::Extended(e) => AuthSourceValue::Plain(e.value.clone()),
             jackin_core::EnvValue::OpRef(op_ref) => AuthSourceValue::OpRefPath(op_ref.path.clone()),
         }),
         env_name,

@@ -318,7 +318,12 @@ impl Multiplexer {
             return false;
         };
         let mut view = self.focused_usage_snapshot_for_provider(provider_label.as_deref());
-        if self.pending_usage_refresh.is_some() {
+        // "Refreshing" is derived from observable truth — a refresh task is
+        // actually in flight — not from the `pending_usage_refresh` scheduling
+        // flag (which lingered Some and stuck the marker onto Fresh data). The
+        // decorate fn additionally no-ops on a Fresh snapshot, so a loaded view
+        // is never annotated as refreshing (Bug 1).
+        if self.usage_refresh_task.is_some() {
             decorate_usage_view_refreshing(&mut view);
         }
         if let Some(Dialog::Usage {
@@ -338,7 +343,9 @@ impl Multiplexer {
     }
 
     fn decorate_open_usage_dialog_refreshing(&mut self) {
-        if self.pending_usage_refresh.is_none() {
+        // Same truth source as `refresh_open_usage_dialog_from_cache`: only an
+        // in-flight task drives the marker, never the scheduling flag (Bug 1).
+        if self.usage_refresh_task.is_none() {
             return;
         }
         if let Some(Dialog::Usage { view, .. }) = self.dialog_top_mut() {
@@ -459,6 +466,14 @@ fn session_refresh_target(
 }
 
 fn decorate_usage_view_refreshing(view: &mut jackin_protocol::control::FocusedUsageView) {
+    // Never annotate a Fresh snapshot as "refreshing" — the marker is only for a
+    // view that is still loading/stale while a refresh runs. A Fresh view that is
+    // being re-fetched in the background updates its timestamp on completion
+    // instead, so the status bar never reads the contradictory
+    // `Updated just now · refreshing...` (Bug 1).
+    if view.status == jackin_protocol::control::UsageSnapshotStatus::Fresh {
+        return;
+    }
     if !view.updated_label.contains("refreshing") {
         view.updated_label.push_str(" · refreshing...");
     }

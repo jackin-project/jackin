@@ -1,0 +1,114 @@
+---
+title: Installation
+description: How to install jackin❯ on your system
+---
+
+<EarlyDevelopmentNotice />
+
+## Prerequisites
+
+- **Docker** — jackin❯ uses Docker to create isolated containers. Make sure Docker is installed and the Docker daemon is running.
+- **macOS or Linux** — jackin❯ currently supports macOS and Linux. Windows support via WSL2 is possible but untested.
+
+## Install jackin❯
+
+The easiest way to install on macOS or Linux is via Homebrew. The Homebrew formulae are maintained in the [jackin-project/homebrew-tap](https://github.com/jackin-project/homebrew-tap) repository.
+
+<Tabs>
+<TabItem label="Homebrew">
+
+```bash
+brew tap jackin-project/tap
+
+# Active early-development channel
+brew install jackin@preview
+```
+
+</TabItem>
+
+<TabItem label="From source">
+
+```bash
+cargo install --git https://github.com/jackin-project/jackin.git jackin --locked
+```
+
+The package name is required because the repository root is a Cargo workspace.
+
+</TabItem>
+</Tabs>
+## Verify installation
+
+```bash
+jackin --version
+```
+
+You should see the jackin❯ version and the banner:
+
+```
+jackin 0.6.0-dev
+```
+
+## Docker setup
+
+jackin❯ requires Docker to be running. Verify with:
+
+```bash
+docker info
+```
+
+<Aside type="tip">
+On macOS, [OrbStack](https://orbstack.dev/) is a lightweight alternative to Docker Desktop that works well with jackin❯.
+</Aside>
+
+For faster local image builds, use a Docker daemon with the containerd image store enabled. OrbStack already reports a containerd snapshotter in `docker info`; Docker Desktop exposes the setting under **Settings → General → Use containerd for pulling and storing images** on versions where it is not already enabled. jackin❯ does not change daemon settings for you, but launch diagnostics note when the active daemon is using the slower non-containerd store.
+
+## Apple Container (macOS 26 ARM, optional)
+
+On macOS 26 (Tahoe) with Apple Silicon, jackin' can use Apple Container as an alternative runtime backend. Each agent session gets its own dedicated Linux kernel via Virtualization.framework — stronger isolation than the default Docker backend.
+
+**Install apple/container:**
+
+```bash
+# Via Homebrew (homebrew/core):
+brew install container
+
+# Or download from GitHub Releases:
+open https://github.com/apple/container/releases
+```
+
+**Verify:**
+
+```bash
+container --version
+```
+
+**Use with jackin':**
+
+```bash
+# Load an agent using the Apple Container backend:
+jackin load the-architect . --backend apple-container
+
+# Or set as default in ~/.config/jackin/workspaces/my-project.toml:
+# [runtime]
+# backend = "apple-container"
+```
+
+<Aside type="note">
+The Apple Container backend is experimental on macOS 26 ARM. The default Docker backend continues to work on all supported platforms.
+</Aside>
+## What gets installed
+
+jackin❯ installs the host CLI plus the matching in-container runtime. Homebrew installs the `jackin-capsule` Linux binary beside the CLI so the first agent load does not need an extra GitHub download. Source installs can still fetch or build that runtime on first use.
+
+When you first load an agent, jackin❯ will:
+
+1. **Pull the `construct` image** — the shared Debian-based base image every agent extends
+2. **Fetch the role repository** — cached locally so subsequent loads of the same role do not re-clone
+3. **Build a derived image** — layers the role's tools and the agent runtime on top of the `construct`
+4. **Create a per-agent `Docker` network** — for isolation between agents
+
+Subsequent loads of the same role are typically fast: `Docker`'s layer cache is reused, the role-repo cache is reused, and only changed layers rebuild. Pass `--rebuild` when you want jackin❯ to refresh the agent-runtime install layer (for example, to pick up a newer agent release).
+
+## Next steps
+
+Ready to go? Head to the [Quick Start](/getting-started/quickstart) to load your first agent.

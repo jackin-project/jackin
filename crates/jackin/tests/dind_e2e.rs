@@ -231,7 +231,7 @@ fn jackin_load_ctrl_q_yes_exits_cold_build_quickly() {
         "Ctrl+Q then Enter should hard-exit successfully during a cold build\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stdout.contains("Exit jackin'?"),
+        stdout.contains("Exit jackin❯?"),
         "exit confirmation did not render before quick exit\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 }
@@ -733,7 +733,7 @@ fn pty_command(
         // Inherit DOCKER_HOST/DOCKER_TLS_VERIFY/DOCKER_CERT_PATH so the launch
         // drives whatever daemon the operator points at — the DOCKER_HOST
         // behavior architecture.mdx documents. TESTCONTAINERS_HOST_OVERRIDE
-        // stays stripped so a host value can't bleed past jackin's reserved
+        // stays stripped so a host value can't bleed past jackin❯'s reserved
         // per-container override into the in-container testcontainers smoke.
         .env_remove("TESTCONTAINERS_HOST_OVERRIDE");
     apply_host_docker_config(&mut command);

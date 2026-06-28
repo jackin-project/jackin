@@ -9,8 +9,8 @@
     "start": "serve .output/public --config serve.json",
     "types:check": "fumadocs-mdx && tsc --noEmit",
     "postinstall": "fumadocs-mdx",
+    "gen-brand": "bun run scripts/gen-brand.ts",
     "gen-og": "bun run scripts/gen-og.ts",
-    "gen-icons": "bun run scripts/gen-icons.ts",
     "check:repo-links": "bun run scripts/check-repo-links.ts",
     "check:roadmap-sidebar": "bun run scripts/check-roadmap-sidebar.ts",
     "check:links": "lychee --config lychee.toml --include-fragments --remap \"https://jackin.tailrocks.com/(.*) file://$PWD/.output/public/\\$1\" --remap \"https://github.com/jackin-project/jackin/edit/main/(.*) file://$PWD/../\\$1\" --remap \"https://github.com/jackin-project/jackin/blob/main/(.*) file://$PWD/../\\$1\" --remap \"https://github.com/jackin-project/jackin/issues https://api.github.com/repos/jackin-project/jackin/issues\" --remap \"https://github.com/([^/]+)/([^/]+)/blob/([^/]+)/(.*) https://api.github.com/repos/\\$1/\\$2/contents/\\$4?ref=\\$3\" --remap \"https://github.com/([^/]+)/([^/]+)/tree/([^/]+)/(.*) https://api.github.com/repos/\\$1/\\$2/contents/\\$4?ref=\\$3\" --root-dir \"$PWD/.output/public\" '.output/public/**/*.html'",
@@ -48,9 +48,12 @@
   "devDependencies": {
     "@fontsource/inter": "5.2.8",
     "@fontsource/jetbrains-mono": "5.2.8",
+    "@resvg/resvg-js": "2.6.2",
     "@types/bun": "1.3.14",
+    "@types/fontkit": "2.0.9",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
+    "fontkit": "2.0.4",
     "typescript": "6.0.3"
   }
 }

@@ -50,7 +50,7 @@ pub(super) fn print_env_table(vars: &[(String, String)]) {
         })
         .collect();
     let mut table = Table::new(rows);
-    table.with(Style::modern_rounded());
+    table.with(Style::modern());
     println!("{table}");
 }
 
@@ -164,7 +164,7 @@ pub(super) fn handle(
                             })
                             .collect();
                         let mut table = Table::new(rows);
-                        table.with(Style::modern_rounded());
+                        table.with(Style::modern());
                         println!("Global mounts:");
                         println!("{table}");
                     }
@@ -182,7 +182,7 @@ pub(super) fn handle(
                             })
                             .collect();
                         let mut table = Table::new(rows);
-                        table.with(Style::modern_rounded());
+                        table.with(Style::modern());
                         println!("Scoped global mounts:");
                         println!("{table}");
                     }

@@ -43,7 +43,7 @@ Every PR must include copy-pasteable "Verify locally" section in body. Agents cr
 
 Use template's `jackin-dev pr sync <PR_NUMBER>` checkout flow with real PR number + verification commands. `jackin-dev` creates or refreshes `$HOME/Projects/jackin-project/test/pr-<PR_NUMBER>/jackin`, prepares isolated config/state under the same PR bundle, checks out the PR's real head branch, builds the local binary, builds and exports a local capsule when the diff changes `jackin-capsule` or a workspace package in its dependency closure, writes `env.sh`, and prints the next commands. The bundle starts from a PR-specific test directory so operator can inspect multiple PRs at once without checkout collisions. Uses PR number, not branch name, for directory; branch prompt still shows the PR's actual head branch.
 
-Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when local check worth running beyond CI + GitHub's diff UI. Add Rust tests only when relevant Rust test command exists. Add Docs checks only when relevant automated docs command exists; use template's docs gate rather than restating here. Keep Rust tests + Docs checks separate blocks; docs tests validate published documentation surface + docs tooling, not Rust project. Add User Smoke only when operator can exercise changed behavior locally (CLI, runtime, workspace, Docker, TUI, operator-flow changes). No placeholder sections saying no test applies; no commands that only print files for review. For CLI/runtime smoke, run local checkout's `jackin` binary + exercise behavior touched by PR. When behavior reachable from jackin' console, User Smoke block must lead with console command from template — operator's most intuitive end-to-end validation path. Follow with exact keys/clicks, setup commands, expected state needed to make changed behavior visible. Direct subcommand invocations belong after console smoke as faster repeat checks, or as primary smoke path only when changed behavior has no meaningful console route. Prose like "open the console and verify the tab" incomplete unless preceded by command operator pastes + state-seeding commands needed for UI to show changed behavior. For subcommands without `--debug`, include closest supported debug command in same smoke block + explain gap in one sentence.
+Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when local check worth running beyond CI + GitHub's diff UI. Add Rust tests only when relevant Rust test command exists. Add Docs checks only when relevant automated docs command exists; use template's docs gate rather than restating here. Keep Rust tests + Docs checks separate blocks; docs tests validate published documentation surface + docs tooling, not Rust project. Add User Smoke only when operator can exercise changed behavior locally (CLI, runtime, workspace, Docker, TUI, operator-flow changes). No placeholder sections saying no test applies; no commands that only print files for review. For CLI/runtime smoke, run local checkout's `jackin` binary + exercise behavior touched by PR. When behavior reachable from jackin❯ console, User Smoke block must lead with console command from template — operator's most intuitive end-to-end validation path. Follow with exact keys/clicks, setup commands, expected state needed to make changed behavior visible. Direct subcommand invocations belong after console smoke as faster repeat checks, or as primary smoke path only when changed behavior has no meaningful console route. Prose like "open the console and verify the tab" incomplete unless preceded by command operator pastes + state-seeding commands needed for UI to show changed behavior. For subcommands without `--debug`, include closest supported debug command in same smoke block + explain gap in one sentence.
 
 ### jackin-capsule PRs
 
@@ -99,7 +99,7 @@ For non-trivial code changes, structure PR's "Verify locally" section by intent:
 
 No generic commands that don't materially validate PR. Particularly, no `git diff --check` unless PR specifically about whitespace, patch hygiene, generated diffs, or another issue that command catches.
 
-For console/TUI changes, workspace flows, runtime behavior manually verifiable through jackin', put console smoke first then list keys/clicks operator walks. If TUI change depends on config or workspace state, seed that state in PR body before console command using template's isolated env-var pattern. For CLI subcommand changes, include exact subcommand invocation + expected output or persisted file change.
+For console/TUI changes, workspace flows, runtime behavior manually verifiable through jackin❯, put console smoke first then list keys/clicks operator walks. If TUI change depends on config or workspace state, seed that state in PR body before console command using template's isolated env-var pattern. For CLI subcommand changes, include exact subcommand invocation + expected output or persisted file change.
 
 #### Isolation env vars
 
@@ -113,7 +113,7 @@ Three env vars let operator test PR without touching live config or state:
 
 `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` mandatory in Checkout block for every PR, including docs-only + pure-refactor PRs. Operator may paste same checkout block before deciding which smoke commands to run, and schema/state writes can happen from surprising places like first-load config sync. `jackin-dev` writes them under the PR-numbered test bundle so every PR gets one removable copy of config + runtime state.
 
-For construct image PRs, `jackin-dev pr sync <PR_NUMBER>` detects construct inputs from the diff, builds the local construct image, and points jackin' at it for Dockerfile validation + role container launch instead of published one. The same sync command builds and exports the local capsule only when the PR also affects the capsule dependency closure.
+For construct image PRs, `jackin-dev pr sync <PR_NUMBER>` detects construct inputs from the diff, builds the local construct image, and points jackin❯ at it for Dockerfile validation + role container launch instead of published one. The same sync command builds and exports the local capsule only when the PR also affects the capsule dependency closure.
 
 No `JACKIN_CONSTRUCT_IMAGE` in PRs that don't touch construct image — isolation pattern scopes test risk, not exhaustively listing every env var.
 
@@ -144,9 +144,9 @@ Do not flag items listed under "Accepted exceptions" on the [Open review finding
 
 Catalog forward-looking backlog — consult on demand when review task calls for it. Not operational context; don't load at session start.
 
-### Always check the PR against the jackin' design principles
+### Always check the PR against the jackin❯ design principles
 
-Every PR review must explicitly verify change against jackin' [design principles](docs/content/docs/getting-started/design-principles.mdx). Read that page before producing review output. If change appears to contradict any principle (most commonly: *never mutate the host machine silently*, *operator-only configuration boundaries*, *container is the trust boundary, not the prompt*), flag loudly in review with specific reference to which principle at risk.
+Every PR review must explicitly verify change against jackin❯ [design principles](docs/content/docs/getting-started/design-principles.mdx). Read that page before producing review output. If change appears to contradict any principle (most commonly: *never mutate the host machine silently*, *operator-only configuration boundaries*, *container is the trust boundary, not the prompt*), flag loudly in review with specific reference to which principle at risk.
 
 Don't silently let principle violation pass because diff small or operator seemed to want shortcut. Operators rely on principles across every feature — quietly-merged exception erodes that contract for every future PR.
 
@@ -158,7 +158,7 @@ Operator's call decides outcome — agent's job to ask question, not silently ap
 
 ### Always check TUI changes against the TUI design decisions
 
-Every PR review touching console, capsule, or any terminal UI surface must explicitly verify change against jackin' [TUI design decisions](docs/content/docs/reference/tui/index.mdx). Read those pages before producing review output. Reviewers must reject or flag TUI changes that miss documented interaction cues: long-running or background work needs explicit in-surface progress/status state; clickable targets need distinct resting style, visible hover style change, pointer-shape feedback where supported; active keys need footer hints; focus + scroll geometry must use shared rules.
+Every PR review touching console, capsule, or any terminal UI surface must explicitly verify change against jackin❯ [TUI design decisions](docs/content/docs/reference/tui/index.mdx). Read those pages before producing review output. Reviewers must reject or flag TUI changes that miss documented interaction cues: long-running or background work needs explicit in-surface progress/status state; clickable targets need distinct resting style, visible hover style change, pointer-shape feedback where supported; active keys need footer hints; focus + scroll geometry must use shared rules.
 
 For every TUI action that can wait on I/O, Docker, git, network, background worker, token generation, or any noticeably slow operation, review must answer: after operator commits action, what visible state tells them work happening before result appears? If answer "screen stays unchanged until it finishes," PR violates TUI design decisions + must be fixed before landing.
 
@@ -168,7 +168,7 @@ Surface TUI issues like this:
 
 ## Solo-maintainer review model
 
-jackin' has exactly one human contributor — operator. No second reviewer available, and GitHub does not let PR author approve own PR. Shapes pre-merge confidence model:
+jackin❯ has exactly one human contributor — operator. No second reviewer available, and GitHub does not let PR author approve own PR. Shapes pre-merge confidence model:
 
 - Branch protection on `main` does **not** require approving review (`required_approving_review_count = 0` in `jackin-github-terraform`). Don't propose raising it without concrete plan for how second human reviews every PR.
 - "Get second pair of eyes" not available pre-merge. Pre-merge confidence comes from CI, path-aware aggregator status checks, strict up-to-date branch policy, agent following rules in this file — not human reviewer operator does not have.
@@ -189,10 +189,10 @@ Roadmap pages for planned, researched, designed, deferred, or remaining work. On
 
 ## Documentation as the source of truth — check before marking any PR ready
 
-**The published docs site is the spec.** Every feature jackin' ships must be described from two angles, both kept current in same PR that lands change:
+**The published docs site is the spec.** Every feature jackin❯ ships must be described from two angles, both kept current in same PR that lands change:
 
-- **User-facing docs** (the *Operator* and *Role Authoring* sidebar groups: `getting-started/`, `guides/`, `commands/`, `developing/`) describe **what jackin' does from outside the binary**. They answer "if I run this command or set this config, what will happen?" without naming on-disk paths operator never edits, internal Rust types, or implementation steps. Reader following only user-facing docs must use feature successfully.
-- **Contributor-facing docs** (the *Internals* sidebar group: `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, `reference/claude-token-orchestrator.mdx`, `reference/schema-versions.mdx`, `reference/tui/`, plus active items under `reference/roadmap/`) describe **how jackin' is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `src/`, links into source tree all live here.
+- **User-facing docs** (the *Operator* and *Role Authoring* sidebar groups: `getting-started/`, `guides/`, `commands/`, `developing/`) describe **what jackin❯ does from outside the binary**. They answer "if I run this command or set this config, what will happen?" without naming on-disk paths operator never edits, internal Rust types, or implementation steps. Reader following only user-facing docs must use feature successfully.
+- **Contributor-facing docs** (the *Internals* sidebar group: `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, `reference/claude-token-orchestrator.mdx`, `reference/schema-versions.mdx`, `reference/tui/`, plus active items under `reference/roadmap/`) describe **how jackin❯ is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `src/`, links into source tree all live here.
 
 Both surfaces load-bearing. If operator-visible behaviour ships without user-facing docs update, feature not shipped — operators can't learn it exists or how to invoke it. If internal change ships without contributor-facing docs update, next agent reading internals page debugs against stale spec.
 

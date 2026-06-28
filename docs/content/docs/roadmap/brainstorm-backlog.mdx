@@ -1,0 +1,87 @@
+---
+title: "Brainstorm backlog: unscheduled platform ideas"
+description: "A holding pen for researched-but-undesigned ideas that emerged from a roadmap-wide review against the 2025-2026 AI-coding-agent landscape. Each entry names the gap, why it fits jackin❯, and which existing infrastructure it would reuse. None is committed; promote an entry to its own roadmap item when it is ready for design."
+---
+
+**Status**: Proposed — brainstorm, no implementation committed
+
+## What this page is
+
+This is a deliberately lightweight collection of ideas that came out of a single roadmap-wide review: each existing item was read, and the result was compared against current practice in the AI-coding-agent ecosystem to find genuine gaps. Every entry below was checked against the existing roadmap and is either absent or only mentioned in passing. None of these is a designed proposal yet — this page exists so the ideas are recorded in one place instead of being lost, and so the strongest ones can be promoted into their own roadmap items when there is appetite to design them.
+
+The flagship idea from the same review, agent-to-agent collaboration with a visible Conductor view, was strong enough to get its own page: see [Agent-to-agent collaboration (Conductor view)](/roadmap/agent-to-agent-collaboration/).
+
+<Aside type="note">
+These are brainstorm-stage. Before any entry is implemented it should graduate to a dedicated roadmap item with a full Problem / Why It Matters / Design / Related Files treatment, be wired into the sidebar and the overview, and follow the normal documentation discipline.
+</Aside>
+
+## Security and trust
+
+### Indirect prompt-injection and untrusted-content boundary
+
+**Gap.** The roadmap has no treatment of indirect prompt injection or tool poisoning, which is the defining 2025-2026 agent-security topic (OWASP LLM01; the GitHub-MCP issue-injection incident; supply-chain bugs in MCP proxies). jackin❯'s entire isolation model protects the host from the agent. It does not protect the agent — and the mounted repo and forwarded credentials — from malicious content the agent reads, such as a poisoned issue, a crafted dependency README, or a hostile tool description.
+
+**Why it fits jackin❯.** jackin❯'s positioning is "scoped access, full autonomy." Because container egress is allow-listed rather than denied, a prompt-injected agent inside a hardened container can still exfiltrate the mounted private repo to an allowed destination. Closing this seam is where the "scoped access" promise is currently strongest in marketing and weakest in implementation. It pairs naturally with the daemon and the Capsule control plane.
+
+**Reuses.** The existing role-source trust-on-first-use model, the [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) egress controls, and the host bridge approval UX.
+
+### MCP gateway and tool-call governance
+
+**Gap.** MCP appears in the roadmap only as specific servers (the attention server, the host-bridge secret server, role-declared servers). Nothing inspects the MCP protocol itself. [Process-level sandboxing](/roadmap/process-level-sandboxing/) confines tool calls at the OS layer, but there is no governance layer between an agent and its MCP servers: no tool-poisoning or lookalike-tool detection, no MCP server pinning or signature, no semantic rate limiting, no human-in-the-loop approval for write or execute tool calls, no unified tool-call audit trail.
+
+**Why it fits jackin❯.** A gateway between agent and MCP servers is becoming core agent infrastructure, and jackin❯ already owns the container boundary, the Capsule control socket, and (with the daemon) the operator approval path — the gateway is the missing middle layer, not a new program.
+
+**Reuses.** The Capsule control channel, the host-bridge approval UX, and the role trust model extended to MCP servers.
+
+## Cost and quality
+
+### Eval and outcome-scoring harness
+
+**Gap.** jackin❯ uniquely runs the same task across many runtime, provider, and role combinations, but it only measures cost (through [token and cost telemetry](/roadmap/token-cost-telemetry/)), never success. "benchmark" in the roadmap means competitive research, not a first-party harness.
+
+**Why it fits jackin❯.** A small eval harness — run a fixture task, score did-tests-pass or did-the-branch-build, attribute the result to the runtime/provider/role, and combine it with the cost data already captured — would let jackin❯ answer "which agent plus provider plus role finishes this class of task best and cheapest?" That is a category-defining capability for a multi-runtime orchestrator.
+
+**Reuses.** The diagnostics run records, token/cost telemetry, and the [workspace-native PR verification](/roadmap/pr-verification/) build-and-test flow.
+
+### Budget enforcement, not just budget telemetry
+
+**Gap.** [Token and cost telemetry](/roadmap/token-cost-telemetry/) explicitly states it cannot enforce a per-task or per-day budget and leaves budget gates as future work. With autonomous queues and parallel agents, runaway tool or loop spend is the most-cited operational risk for autonomous agents.
+
+**Why it fits jackin❯.** A hard spend cap that pauses or kills an instance at a configured daily or per-task threshold is a concrete runaway-cost guard. The telemetry plumbing exists; the missing piece is the enforcement hook.
+
+**Reuses.** Token/cost telemetry as the meter, the agent runtime status authority as the trigger source, and the daemon (or Capsule) as the actuator that pauses or kills a session.
+
+## Observability and models
+
+### First-class OpenTelemetry GenAI export
+
+**Gap.** [Deja Vu](/roadmap/deja-vu/) aligns its capture vocabulary to the OpenTelemetry GenAI conventions, but nothing exports agent telemetry as OTLP. The OpenTelemetry GenAI semantic conventions (including the new MCP span conventions) are now the industry-standard vocabulary that every agent-observability backend ingests.
+
+**Why it fits jackin❯.** OpenTelemetry crates are already a dependency. A daemon or Capsule OTLP exporter would let operators point jackin❯ at any agent-observability backend with no re-instrumentation, and it composes with the eval harness and the cost telemetry.
+
+**Reuses.** The existing OpenTelemetry dependencies, the Capsule status/event stream, and the diagnostics layer.
+
+### Local and self-hosted models as a provider, with hybrid routing
+
+**Gap.** Local model engines appear once in the entire roadmap, as a passing "dev server" example. [Alternative LLM providers](/roadmap/alternative-llm-providers/) covers only cloud providers.
+
+**Why it fits jackin❯.** Running a local model engine as a sidecar (the same shape as the existing Docker-in-Docker sidecar) fits jackin❯'s isolation and privacy thesis precisely, and hybrid routing — a cheap or local model for routine work and a frontier cloud model for the hardest fraction — is becoming the default deployment pattern for cost and resilience. It also directly powers the cheap workers in the [Conductor view](/roadmap/agent-to-agent-collaboration/).
+
+**Reuses.** The provider catalog and picker, the DinD sidecar pattern, and the per-session model override mechanism.
+
+### Sandboxed browser and computer-use for agents
+
+**Gap.** Terminal automation is covered by [terminal observation and automation](/roadmap/terminal-observation-automation/), but a sandboxed headless browser inside the container — for web-app build-and-verify loops — is not; it appears only as a competitor's UX in the orchestrator research.
+
+**Why it fits jackin❯.** A headless browser (for example via a browser-control MCP server) running as a sidecar gives web-focused agents the ability to see and verify the app they are building, inside the same isolation boundary jackin❯ already provides through DinD.
+
+**Reuses.** The DinD sidecar pattern, the MCP registration pattern, and the network egress policy work.
+
+## Small wins
+
+- **AI-generated-code provenance.** Stamp which diffs an agent produced (the daemon already correlates sessions to PRs) so review and audit can target the AI-authored changes. Complements the public-attribution research.
+- **`jackin doctor` blast-radius summary.** Surface the effective Docker profile, egress mode, and any sensitive mounts as a one-line "blast radius" summary at launch, once the Docker security profiles work has landed.
+
+## Suggested sequencing
+
+The ideas above are not equal in leverage. The three that reuse infrastructure already landing — budget enforcement, the MCP gateway, and the indirect-prompt-injection boundary — are the lowest-regret next steps because they close the seam between "we isolate the host from the agent" and "we also protect the agent, the repo, and the operator's budget from a compromised or runaway agent." The eval harness and OpenTelemetry export are the highest-leverage observability additions. Local and hybrid models and the sandboxed browser are larger, more speculative bets best taken after the Conductor view proves the multi-agent direction.

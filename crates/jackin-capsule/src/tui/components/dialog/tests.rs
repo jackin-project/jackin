@@ -1,5 +1,7 @@
 //! Tests for `jackin-capsule` dialog components.
 #![allow(clippy::too_many_lines)]
+use std::sync::Arc;
+
 use super::*;
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
@@ -962,6 +964,9 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         },
         buckets: vec![
             jackin_protocol::control::QuotaBucketView {
+                used_money: None,
+                limit_money: None,
+                severity: jackin_protocol::control::UsageSeverity::default(),
                 label: "Session".to_owned(),
                 used_label: Some("63% used".to_owned()),
                 limit_label: Some("100%".to_owned()),
@@ -973,6 +978,9 @@ fn usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
             },
             jackin_protocol::control::QuotaBucketView {
+                used_money: None,
+                limit_money: None,
+                severity: jackin_protocol::control::UsageSeverity::default(),
                 label: "Credits".to_owned(),
                 used_label: None,
                 limit_label: None,
@@ -1057,6 +1065,9 @@ fn usage_status_bucket(
     status: jackin_protocol::control::UsageSnapshotStatus,
 ) -> jackin_protocol::control::QuotaBucketView {
     jackin_protocol::control::QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: jackin_protocol::control::UsageSeverity::default(),
         label: label.to_owned(),
         used_label: None,
         limit_label: None,
@@ -1076,6 +1087,9 @@ fn quota_bucket(
     pace_label: Option<&str>,
 ) -> jackin_protocol::control::QuotaBucketView {
     jackin_protocol::control::QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: jackin_protocol::control::UsageSeverity::default(),
         label: label.to_owned(),
         used_label: Some(format!("{}% used", 100u8.saturating_sub(remaining_percent))),
         limit_label: Some("100%".to_owned()),
@@ -1090,6 +1104,9 @@ fn quota_bucket(
 
 fn text_bucket(label: &str, value: &str) -> jackin_protocol::control::QuotaBucketView {
     jackin_protocol::control::QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: jackin_protocol::control::UsageSeverity::default(),
         label: label.to_owned(),
         used_label: None,
         limit_label: None,
@@ -1196,6 +1213,9 @@ fn amp_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
         "Updated just now",
         vec![
             jackin_protocol::control::QuotaBucketView {
+                used_money: None,
+                limit_money: None,
+                severity: jackin_protocol::control::UsageSeverity::default(),
                 label: "Amp Free".to_owned(),
                 used_label: Some("$9.60".to_owned()),
                 limit_label: Some("$10".to_owned()),
@@ -1207,6 +1227,9 @@ fn amp_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView {
                 status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
             },
             jackin_protocol::control::QuotaBucketView {
+                used_money: None,
+                limit_money: None,
+                severity: jackin_protocol::control::UsageSeverity::default(),
                 label: "Individual credits".to_owned(),
                 used_label: None,
                 limit_label: Some("$4.76".to_owned()),
@@ -1557,6 +1580,9 @@ fn usage_dialog_renders_deficit_and_runout_quota_labels() {
     let mut view = usage_view_fixture();
     view.buckets
         .push(jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Weekly".to_owned(),
             used_label: Some("40% used".to_owned()),
             limit_label: Some("100%".to_owned()),
@@ -1610,6 +1636,9 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
     let mut view = usage_view_fixture();
     view.buckets = vec![
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Tokens".to_owned(),
             used_label: Some("400M".to_owned()),
             limit_label: Some("1B".to_owned()),
@@ -1621,6 +1650,9 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "MCP".to_owned(),
             used_label: Some("2h".to_owned()),
             limit_label: Some("5h".to_owned()),
@@ -1632,6 +1664,9 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Amp Free".to_owned(),
             used_label: Some("$12.00".to_owned()),
             limit_label: Some("$25.00".to_owned()),
@@ -1643,6 +1678,9 @@ fn usage_dialog_renders_dynamic_provider_quota_bucket_meters() {
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "MiniMax M1 Coding plan".to_owned(),
             used_label: Some("12K".to_owned()),
             limit_label: Some("100K".to_owned()),
@@ -1696,13 +1734,16 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
     let mut view = usage_view_fixture();
     view.buckets
         .push(jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Extra usage".to_owned(),
             used_label: Some("SGD 78.49".to_owned()),
             limit_label: Some("SGD 260.00".to_owned()),
             remaining_percent: Some(70),
             reset_label: None,
             resets_at: None,
-            status_slot: None,
+            status_slot: Some(jackin_protocol::control::StatusSlot::Spend),
             pace_label: None,
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         });
@@ -1746,6 +1787,43 @@ fn usage_dialog_renders_extra_usage_monthly_cap() {
         .expect("monthly cap");
     let used = rendered.find("30% used").expect("used percent");
     assert!(used < monthly, "{rendered}");
+}
+
+/// Bug 7: a dollar-bearing window that is NOT the spend slot (a Claude codename
+/// budget such as `amber_ladder`, the enterprise contractual budget) must show
+/// its used/limit dollars in the dialog — driven by the bucket's `used_money`/
+/// `limit_money`, not by a `"Extra usage"` label match.
+#[test]
+fn usage_dialog_renders_dollar_budget_window() {
+    let mut view = usage_view_fixture();
+    view.buckets
+        .push(jackin_protocol::control::QuotaBucketView {
+            used_money: Some(jackin_protocol::control::Money::new(0, "USD", 2)),
+            limit_money: Some(jackin_protocol::control::Money::new(2_500_000, "USD", 2)),
+            severity: jackin_protocol::control::UsageSeverity::default(),
+            label: "Amber Ladder".to_owned(),
+            used_label: Some("$0.00 spent".to_owned()),
+            limit_label: Some("$25,000.00".to_owned()),
+            remaining_percent: Some(100),
+            reset_label: Some("Resets in 66d".to_owned()),
+            resets_at: Some(1_788_000_000),
+            status_slot: None,
+            pace_label: Some("0% used".to_owned()),
+            status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
+        });
+    let d = Dialog::new_usage(view);
+    let state = d.usage_state().expect("usage state");
+    let values: Vec<&str> = state
+        .rows()
+        .iter()
+        .map(jackin_tui::components::ContainerInfoRow::value)
+        .collect();
+    assert!(
+        values
+            .iter()
+            .any(|value| value.contains("Budget: $0.00 spent / $25,000.00")),
+        "dollar-window cap must render: {values:?}"
+    );
 }
 
 #[test]
@@ -2042,6 +2120,9 @@ fn usage_dialog_geometry_counts_rendered_section_lines() {
     let mut view = usage_view_fixture();
     view.buckets.extend([
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Tokens".to_owned(),
             used_label: Some("100K".to_owned()),
             limit_label: Some("1M".to_owned()),
@@ -2053,6 +2134,9 @@ fn usage_dialog_geometry_counts_rendered_section_lines() {
             status: jackin_protocol::control::UsageSnapshotStatus::Fresh,
         },
         jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "MCP".to_owned(),
             used_label: Some("2".to_owned()),
             limit_label: Some("100".to_owned()),
@@ -2070,8 +2154,17 @@ fn usage_dialog_geometry_counts_rendered_section_lines() {
 
     assert!(usage_height >= 7);
     assert_eq!(d.box_rect(50, 120).2, usage_height);
-    let axes = d.body_scroll_axes(18, 60, None);
-    assert!(axes.vertical);
+    // Bug 2: the scroll bound now uses the same width-wrapped line set and body
+    // viewport (box − border − tab strip) the renderer uses. Assert overflow at a
+    // wide-but-short terminal (≥64 cols → wide layout matching `usage_height`;
+    // few rows → the box clamps below the content) so the dialog scrolls. A tall
+    // terminal must NOT advertise vertical scroll — the content fits its body.
+    // Bug 2: the scroll bound now uses the same width-wrapped line set and body
+    // viewport (box − border − tab strip) the renderer uses. At a wide terminal
+    // (≥64 cols → wide layout matching `usage_height`) the content overflows a
+    // short box and scrolls, and fits — no vertical scroll — at a tall one.
+    assert!(d.body_scroll_axes(18, 120, None).vertical);
+    assert!(!d.body_scroll_axes(50, 120, None).vertical);
 }
 
 #[test]
@@ -2181,6 +2274,55 @@ fn agent_picker_section_labels_are_bare_not_dash_padded() {
 }
 
 #[test]
+fn exec_picker_space_toggles_enter_confirms_esc_cancels() {
+    use crate::exec::ExecPickerState;
+    let bindings = vec![
+        jackin_protocol::ExecBinding {
+            name: "GH_TOKEN".into(),
+            kind: jackin_protocol::ExecKind::Env,
+            source: "$GH_TOKEN".into(),
+        },
+        jackin_protocol::ExecBinding {
+            name: "API_KEY".into(),
+            kind: jackin_protocol::ExecKind::Op,
+            source: "op://v/i/f".into(),
+        },
+    ];
+    let state = ExecPickerState::from_bindings("ssh".into(), vec!["sentry".into()], &bindings);
+    // Two unselected rows, cursor at the top.
+    assert_eq!(state.items.len(), 2);
+    assert!(state.items.iter().all(|i| !i.selected));
+
+    let mut dialog = Dialog::ExecPicker(state);
+    // Space toggles the row under the cursor (GH_TOKEN) on.
+    assert_eq!(dialog.handle_key(b" ", None), DialogAction::Redraw);
+    // Enter confirms, carrying the command + only the selected credential.
+    let action = dialog.handle_key(b"\r", None);
+    let DialogAction::ExecConfirm {
+        command,
+        args,
+        selected,
+    } = action
+    else {
+        panic!("expected ExecConfirm, got {action:?}");
+    };
+    assert_eq!(command, "ssh");
+    assert_eq!(args, vec!["sentry".to_owned()]);
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].name, "GH_TOKEN");
+    assert_eq!(selected[0].kind, jackin_protocol::ExecKind::Env);
+    assert_eq!(selected[0].source, "$GH_TOKEN");
+
+    // Esc cancels with no command run.
+    let mut cancel = Dialog::ExecPicker(ExecPickerState::from_bindings(
+        "deploy".into(),
+        vec![],
+        &bindings,
+    ));
+    assert_eq!(cancel.handle_key(b"\x1b", None), DialogAction::ExecCancel);
+}
+
+#[test]
 fn exit_dirty_enter_routes_each_row() {
     let expected = [
         ExitDirtyRow::StartNewAgent,
@@ -2189,7 +2331,7 @@ fn exit_dirty_enter_routes_each_row() {
         ExitDirtyRow::Discard,
     ];
     for (steps, want) in expected.iter().enumerate() {
-        let mut d = Dialog::new_exit_dirty(vec!["jackin   1 changed".to_owned()]);
+        let mut d = Dialog::new_exit_dirty(vec!["jackin   1 changed".to_owned()], Arc::from([]));
         for _ in 0..steps {
             d.handle_key(b"\x1b[B", None);
         }
@@ -2205,12 +2347,12 @@ fn exit_dirty_esc_and_ctrl_c_keep_and_exit() {
     // Reuses the shared FilterListAction::Dismiss path like every other dialog,
     // mapping dismiss to keep-and-exit so the operator never loses work and the
     // global Ctrl+C contract is preserved (no swallowed keys).
-    let mut esc = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    let mut esc = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     assert_eq!(
         esc.handle_key(b"\x1b", None),
         DialogAction::ExitDirty(ExitDirtyRow::Keep)
     );
-    let mut ctrl_c = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    let mut ctrl_c = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     assert_eq!(
         ctrl_c.handle_key(b"\x03", None),
         DialogAction::ExitDirty(ExitDirtyRow::Keep)
@@ -2220,14 +2362,14 @@ fn exit_dirty_esc_and_ctrl_c_keep_and_exit() {
 #[test]
 fn exit_dirty_navigation_clamps_at_ends() {
     // Up at the top stays on the first row.
-    let mut top = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    let mut top = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     top.handle_key(b"\x1b[A", None);
     assert!(matches!(
         top.handle_key(b"\r", None),
         DialogAction::ExitDirty(ExitDirtyRow::StartNewAgent)
     ));
     // Down past the end clamps to the last row.
-    let mut bottom = Dialog::new_exit_dirty(vec!["x".to_owned()]);
+    let mut bottom = Dialog::new_exit_dirty(vec!["x".to_owned()], Arc::from([]));
     for _ in 0..10 {
         bottom.handle_key(b"\x1b[B", None);
     }
@@ -2239,10 +2381,10 @@ fn exit_dirty_navigation_clamps_at_ends() {
 
 #[test]
 fn exit_inspect_esc_walks_back() {
-    let mut d = Dialog::new_exit_inspect(vec![
+    let mut d = Dialog::new_exit_inspect(Arc::from([
         InspectRow::Repo("jackin".to_owned()),
         InspectRow::File("M a.rs".to_owned()),
-    ]);
+    ]));
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
 }
 
@@ -2268,7 +2410,7 @@ fn exit_dirty_selection_marker_moves_on_down_arrow() {
         })
     }
 
-    let mut d = Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]);
+    let mut d = Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()], Arc::from([]));
     let before = marker_row(&d).expect("marker visible initially");
     assert_eq!(d.handle_key(b"\x1b[B", None), DialogAction::Redraw);
     let after = marker_row(&d).expect("marker visible after down");

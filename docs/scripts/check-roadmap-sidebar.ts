@@ -2,14 +2,14 @@ import { readdir, readFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Every MDX file under content/docs/reference/roadmap/ (excluding index.mdx and
+// Every MDX file under content/docs/roadmap/ (excluding index.mdx and
 // files inside parenthesized group subdirectories) must be referenced in at least
 // one meta.json under the same directory tree, so it appears in the docs sidebar.
 // This script enforces that invariant both ways: no MDX without a meta.json entry,
 // and no meta.json entry without a matching MDX file.
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const roadmapDir = resolve(__dirname, '..', 'content', 'docs', 'reference', 'roadmap')
+const roadmapDir = resolve(__dirname, '..', 'content', 'docs', 'roadmap')
 
 interface MetaJson {
   pages?: string[]
@@ -72,14 +72,14 @@ const [sidebarSlugs, roadmapSlugs] = await Promise.all([
 
 for (const slug of [...roadmapSlugs].sort()) {
   if (!sidebarSlugs.has(slug)) {
-    failures.push(`MDX file not in any sidebar meta.json: content/docs/reference/roadmap/${slug}.mdx`)
+    failures.push(`MDX file not in any sidebar meta.json: content/docs/roadmap/${slug}.mdx`)
   }
 }
 
 for (const slug of [...sidebarSlugs].sort()) {
   if (!roadmapSlugs.has(slug)) {
     failures.push(
-      `meta.json references non-existent MDX file: content/docs/reference/roadmap/${slug}.mdx`,
+      `meta.json references non-existent MDX file: content/docs/roadmap/${slug}.mdx`,
     )
   }
 }

@@ -295,7 +295,7 @@ fn ensure_tool(tool: &str) -> Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!(
             "`{tool}` is not installed in this container image, but the `allowlist` network tier \
              requires `iptables` and `ipset`. Rebuild the role image on a construct image that \
-             installs them (jackin' construct >= 0.17-trixie), or use a profile whose network \
+             installs them (jackin❯ construct >= 0.17-trixie), or use a profile whose network \
              tier does not enforce an egress allowlist."
         ),
         Err(e) => Err(e).context(format!("checking for `{tool}`")),

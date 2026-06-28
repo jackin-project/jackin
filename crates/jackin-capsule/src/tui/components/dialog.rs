@@ -24,6 +24,8 @@
 /// - **Hint footer** follows the console TUI's structured format:
 ///   `Key WHITE+BOLD`, label `PHOSPHOR_GREEN`, dot separator
 ///   `PHOSPHOR_DARK`, three-space group gap between logical groups.
+use std::sync::Arc;
+
 use crate::pull_request::PullRequestInfo;
 
 /// Borrowed snapshot of multiplexer PR state, so `GitHubContext`
@@ -89,9 +91,9 @@ fn file_url_path(href: &str) -> Option<&str> {
 }
 mod input;
 use input::{
-    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, export_file_handle_key,
-    first_selectable_idx, picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
-    split_direction_filtered_indices, step_selectable,
+    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, exec_picker_handle_key,
+    export_file_handle_key, first_selectable_idx, picker_filtered_rows, printable_filter_char,
+    rename_tab_handle_key, split_direction_filtered_indices, step_selectable,
 };
 mod hint;
 pub(crate) use hint::main_view_hint;
@@ -265,6 +267,12 @@ pub enum Dialog {
         selected: usize,
         intent: PickerIntent,
     },
+    /// Operator credential picker for a `jackin-exec` invocation. The daemon
+    /// builds it from the workspace's on-demand bindings, stashes the control
+    /// reply channel, and drives confirm/cancel through `DialogAction`. Space
+    /// toggles the row under the cursor, ↑/↓ move, Enter confirms (resolve the
+    /// selected credentials + run the command), Esc cancels (deny, run nothing).
+    ExecPicker(crate::exec::ExecPickerState),
     /// Last-session dirty-exit modal (in-capsule). Shows a per-repo summary plus
     /// the four choice rows. `Esc` is ignored — the operator must pick a row.
     ExitDirty {
@@ -272,12 +280,15 @@ pub enum Dialog {
         summary: Vec<String>,
         /// Focused choice row, `0..EXIT_DIRTY_ROWS.len()`.
         selected: usize,
+        /// Pre-built Inspect rows (section header + file rows per repo). Shared
+        /// with `ExitInspect` via `Arc` so opening Inspect is a ref-count bump.
+        inspect_rows: Arc<[InspectRow]>,
     },
     /// Read-only changed-files list opened from the `ExitDirty` modal's Inspect
     /// row. `Esc` walks back to the exit modal (modal stack).
     ExitInspect {
         /// Changed-file rows grouped by repo via section headers.
-        lines: Vec<InspectRow>,
+        lines: Arc<[InspectRow]>,
         /// Focused row for scrolling.
         selected: usize,
     },
@@ -337,7 +348,7 @@ impl ConfirmKind {
             Self::CloseTab => {
                 "Reap every pane in this tab. Unsaved state across all panes is lost."
             }
-            Self::Exit => "Stop all agents; jackin' will clean up.",
+            Self::Exit => "Stop all agents; jackin❯ will clean up.",
         }
     }
 }
@@ -408,6 +419,17 @@ pub enum DialogAction {
     SwitchUsageProvider { provider_label: String },
     /// Dialog is still open; redraw.
     Redraw,
+    /// Operator confirmed a `jackin-exec` credential picker (Enter). Carries
+    /// the command + the selected credentials; the daemon resolves them via the
+    /// host socket, runs the command, and replies `ExecResult`.
+    ExecConfirm {
+        command: String,
+        args: Vec<String>,
+        selected: Vec<jackin_protocol::ExecBinding>,
+    },
+    /// Operator cancelled the `jackin-exec` picker (Esc) — daemon replies
+    /// `ExecDenied` and runs nothing.
+    ExecCancel,
     /// Mouse event lands somewhere with no semantic effect (border,
     /// padding row). Swallow it so it does not reach the focused pane.
     Consume,
@@ -657,6 +679,19 @@ impl Dialog {
         Some(state)
     }
 
+    /// Accent colour for a usage bucket's meter by severity. `Normal` keeps the
+    /// default (no accent → phosphor green); `Warn`/`Danger` grade toward amber
+    /// and red so an account approaching its cap reads as such at a glance.
+    fn usage_severity_accent(
+        severity: jackin_protocol::control::UsageSeverity,
+    ) -> Option<ratatui::style::Color> {
+        match severity {
+            jackin_protocol::control::UsageSeverity::Normal => None,
+            jackin_protocol::control::UsageSeverity::Warn => Some(jackin_tui::theme::DEBUG_AMBER),
+            jackin_protocol::control::UsageSeverity::Danger => Some(jackin_tui::theme::DANGER_RED),
+        }
+    }
+
     pub(crate) fn usage_state(&self) -> Option<jackin_tui::components::ContainerInfoState> {
         let Self::Usage {
             view,
@@ -713,10 +748,14 @@ impl Dialog {
             ));
         }
         for bucket in &view.buckets {
-            rows.push(jackin_tui::components::ContainerInfoRow::new(
+            let mut row = jackin_tui::components::ContainerInfoRow::new(
                 bucket.label.clone(),
                 Self::usage_bucket_value(bucket),
-            ));
+            );
+            if let Some(accent) = Self::usage_severity_accent(bucket.severity) {
+                row = row.accent(accent);
+            }
+            rows.push(row);
         }
         if let Some(error) = &view.last_error {
             rows.push(jackin_tui::components::ContainerInfoRow::new(
@@ -848,19 +887,32 @@ impl Dialog {
         Some(*selected)
     }
 
+    /// `<prefix>: <used> / <limit>` when both money labels are present, else
+    /// whichever single label exists, else nothing. Shared by the spend-cap and
+    /// dollar-budget lines so the partial-data rendering can't diverge.
+    fn money_cap_part(used: Option<&str>, limit: Option<&str>, prefix: &str) -> Option<String> {
+        match (used, limit) {
+            (Some(used), Some(limit)) => Some(format!("{prefix}: {used} / {limit}")),
+            (Some(label), None) | (None, Some(label)) => Some(label.to_owned()),
+            (None, None) => None,
+        }
+    }
+
     fn usage_bucket_value(bucket: &jackin_protocol::control::QuotaBucketView) -> String {
         let mut parts = Vec::new();
-        if bucket.label == "Extra usage" {
+        // Spend is identified by its semantic slot, not a label string, so a
+        // window rename can't silently change how the cap renders (Bug 7 class:
+        // presentation driven by data, not labels).
+        if bucket.status_slot == Some(jackin_protocol::control::StatusSlot::Spend) {
             if let Some(remaining) = bucket.remaining_percent {
                 let used = 100u8.saturating_sub(remaining);
                 parts.push(format!("{} {used}% used", Self::usage_meter(used)));
             }
-            match (&bucket.used_label, &bucket.limit_label) {
-                (Some(used), Some(limit)) => parts.push(format!("Monthly cap: {used} / {limit}")),
-                (Some(used), None) => parts.push(used.clone()),
-                (None, Some(limit)) => parts.push(limit.clone()),
-                (None, None) => {}
-            }
+            parts.extend(Self::money_cap_part(
+                bucket.used_label.as_deref(),
+                bucket.limit_label.as_deref(),
+                "Monthly cap",
+            ));
             if parts.is_empty()
                 || bucket.status != jackin_protocol::control::UsageSnapshotStatus::Fresh
             {
@@ -887,7 +939,19 @@ impl Dialog {
         if let Some(reset) = &bucket.reset_label {
             parts.push(reset.clone());
         }
-        if bucket.label == "Credits"
+        // Dollar-bearing windows (Claude codename budgets such as `amber_ladder`,
+        // the enterprise contractual budget) carry used/limit money. Show the
+        // figures from the data — not a label match — so the global budget's
+        // `$0 / $25,000` is visible the way the Extra-usage cap is (Bug 7).
+        if bucket.status_slot != Some(jackin_protocol::control::StatusSlot::Spend)
+            && (bucket.used_money.is_some() || bucket.limit_money.is_some())
+        {
+            parts.extend(Self::money_cap_part(
+                bucket.used_label.as_deref(),
+                bucket.limit_label.as_deref(),
+                "Budget",
+            ));
+        } else if bucket.label == "Credits"
             && bucket.remaining_percent == Some(0)
             && let Some(limit) = &bucket.limit_label
         {
@@ -1005,16 +1069,19 @@ impl Dialog {
                 state
             };
             if let Self::GitHubContext { scroll, .. } | Self::Usage { scroll, .. } = self {
-                let (content_width, content_height) = if is_usage {
-                    crate::tui::components::dialog_widgets::usage_info_content_size(&state)
+                // Usage clamps against the same body+lines the renderer uses, with
+                // a rect whose viewport excludes the tab strip (Bug 2); other
+                // dialogs clamp against the box rect directly.
+                let (content_width, content_height, clamp_rect) = if is_usage {
+                    crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state)
                 } else {
-                    (state.content_width(), state.content_height())
+                    (state.content_width(), state.content_height(), rect)
                 };
                 jackin_tui::components::clamp_container_info_scroll(
                     scroll,
                     content_width,
                     content_height,
-                    rect,
+                    clamp_rect,
                 );
             }
         }
@@ -1057,12 +1124,14 @@ impl Dialog {
                 state
             };
             if is_usage {
-                let (content_width, content_height) =
-                    crate::tui::components::dialog_widgets::usage_info_content_size(&state);
+                // Same body+lines source as the renderer (Bug 2): the scroll_rect
+                // carries the true body viewport (box − border − tab strip).
+                let (content_width, content_height, scroll_rect) =
+                    crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state);
                 return jackin_tui::components::dialog_scroll_axes(
                     content_width,
                     content_height,
-                    rect,
+                    scroll_rect,
                 );
             }
             return jackin_tui::components::dialog_scroll_axes(
@@ -1105,18 +1174,20 @@ impl Dialog {
         }
     }
 
-    /// Build the in-capsule dirty-exit modal from per-repo summary lines.
+    /// Build the in-capsule dirty-exit modal from per-repo summary lines and
+    /// the pre-built inspect rows (shared with the Inspect sub-dialog).
     #[must_use]
-    pub fn new_exit_dirty(summary: Vec<String>) -> Self {
+    pub fn new_exit_dirty(summary: Vec<String>, inspect_rows: Arc<[InspectRow]>) -> Self {
         Self::ExitDirty {
             summary,
             selected: 0,
+            inspect_rows,
         }
     }
 
     /// Build the read-only Inspect list opened from the dirty-exit modal.
     #[must_use]
-    pub fn new_exit_inspect(lines: Vec<InspectRow>) -> Self {
+    pub fn new_exit_inspect(lines: Arc<[InspectRow]>) -> Self {
         Self::ExitInspect { lines, selected: 0 }
     }
 
@@ -1132,6 +1203,11 @@ impl Dialog {
         // character inside a custom tab name).
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
+        }
+        // The exec credential picker is multi-select (Space toggles), so it
+        // intercepts keys before the shared single-select arrow/dismiss logic.
+        if let Self::ExecPicker(state) = self {
+            return exec_picker_handle_key(state, key);
         }
         if let Self::ExportFile {
             input,
@@ -1370,7 +1446,8 @@ impl Dialog {
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
-                    | Self::ConfirmAction { .. } => {}
+                    | Self::ConfirmAction { .. }
+                    | Self::ExecPicker(_) => {}
                     Self::ExitDirty { selected, .. } => {
                         if *selected > 0 {
                             *selected -= 1;
@@ -1431,7 +1508,8 @@ impl Dialog {
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
-                    | Self::ConfirmAction { .. } => {}
+                    | Self::ConfirmAction { .. }
+                    | Self::ExecPicker(_) => {}
                     Self::ExitDirty { selected, .. } => {
                         if *selected + 1 < EXIT_DIRTY_ROWS.len() {
                             *selected += 1;
@@ -1759,6 +1837,7 @@ impl Dialog {
             | Self::Usage { .. }
             | Self::ConfirmAction { .. }
             | Self::ProviderPicker { .. }
+            | Self::ExecPicker(_)
             | Self::ExitDirty { .. }
             | Self::ExitInspect { .. } => 0,
         };
@@ -1832,6 +1911,7 @@ impl Dialog {
             | Self::Usage { .. }
             | Self::ConfirmAction { .. }
             | Self::ProviderPicker { .. }
+            | Self::ExecPicker(_)
             | Self::ExitDirty { .. }
             | Self::ExitInspect { .. } => DialogAction::Consume,
         }
@@ -1861,7 +1941,7 @@ impl Dialog {
             return false;
         }
         match self {
-            Self::RenameTab { .. } | Self::ExportFile { .. } => false,
+            Self::RenameTab { .. } | Self::ExportFile { .. } | Self::ExecPicker(_) => false,
             Self::ContainerInfo { .. } => {
                 let area = ratatui::layout::Rect {
                     x: box_col,
@@ -2012,6 +2092,9 @@ impl Dialog {
             },
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
+            // Top border + command line + separator + one row per credential +
+            // hint + bottom border.
+            Self::ExecPicker(state) => state.items.len() as u16 + 5,
             Self::ExitDirty { summary, .. } => (summary.len() + EXIT_DIRTY_ROWS.len()) as u16 + 4,
             Self::ExitInspect { lines, .. } => lines.len() as u16 + 4,
         };
@@ -2049,7 +2132,8 @@ impl Dialog {
             Self::CommandPalette { .. } => palette_hint(),
             Self::SplitDirectionPicker { .. }
             | Self::AgentPicker { .. }
-            | Self::CloseTargetPicker { .. } => picker_hint(),
+            | Self::CloseTargetPicker { .. }
+            | Self::ExecPicker(_) => picker_hint(),
             Self::ProviderPicker { .. } => provider_hint(),
             Self::RenameTab { .. } => rename_hint(),
             Self::ExportFile { .. } => export_file_hint(),

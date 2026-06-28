@@ -149,22 +149,27 @@ fn unescape_shell_path(text: &str) -> String {
     out
 }
 
-/// Auto-stage path for `Cmd+V` parity: if `input` carries a bracketed-paste
-/// start marker (leading/trailing bytes and a missing end marker are tolerated)
-/// and the paste body is a single real, magic-validated host image file, return
-/// that image plus the `prefix`/`suffix` bytes sharing the read around the paste,
-/// so the caller stages the image, inserts the container path instead of the raw
-/// host path, and still forwards the surrounding bytes. Anything else returns
-/// `None` and is forwarded as ordinary text.
+/// Auto-stage path for `Cmd+V` parity: if `input`'s paste body is a single real,
+/// magic-validated host image file, return that image plus the `prefix`/`suffix`
+/// bytes sharing the read, so the caller stages the image, inserts the container
+/// path instead of the raw host path, and still forwards the surrounding bytes.
+/// Anything else returns `None` and is forwarded as ordinary text.
+///
+/// The body is the bracketed-paste content when the read carries the
+/// `ESC[200~ … ESC[201~` markers; otherwise the whole read is the body. The
+/// unbracketed fallback is what makes a `Cmd+V` work in terminals that do not
+/// bracket the paste (the symptom: the raw host path lands in the prompt). It is
+/// safe because raw-mode *typing* delivers one byte per read, so a whole absolute
+/// image path can only arrive in a single read via a paste/drop — never
+/// keystroke-by-keystroke — and `looks_like_image_path` still requires the entire
+/// body to be one absolute image path with no other bytes.
 pub(super) async fn read_image_from_pasted_path(
     input: &[u8],
 ) -> Result<Option<(ClipboardImage, &[u8], &[u8])>> {
     if !paste_image_paths_enabled() {
         return Ok(None);
     }
-    let Some((prefix, body, suffix)) = split_paste(input) else {
-        return Ok(None);
-    };
+    let (prefix, body, suffix) = split_paste(input).unwrap_or((&[], input, &[]));
     let Ok(text) = std::str::from_utf8(body) else {
         return Ok(None);
     };

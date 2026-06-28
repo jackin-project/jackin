@@ -85,6 +85,8 @@ fn hint_span_display_cols_match_render_contract() {
     // Separators occupy three columns each.
     assert_eq!(HintSpan::Sep.display_cols(), 3);
     assert_eq!(HintSpan::GroupSep.display_cols(), 3);
+    // DynKey renders like Key — no leading space, char count.
+    assert_eq!(HintSpan::DynKey("^\\".to_owned()).display_cols(), 2);
     // Multi-byte / wide glyphs use char count, not byte len.
     assert_eq!(HintSpan::Key("↑↓").display_cols(), 2);
 }
@@ -218,4 +220,53 @@ fn fixed_prefix_scroll_segments_keep_combining_mark_with_base() {
         .collect();
 
     assert!(rendered.contains(&"e\u{301}"));
+}
+
+#[test]
+fn version_splash_has_mark_version_byline_under_six_lines() {
+    let s = ansi::version_splash("9.9.9");
+    assert!(s.contains("jackin"));
+    assert!(s.contains("9.9.9"));
+    assert!(s.contains("by tailrocks"));
+    // Green block + white chevron (never the same colour as the word).
+    assert!(s.contains("\x1b[48;2;0;255;65m"));
+    assert!(s.contains("\x1b[38;2;255;255;255m"));
+    assert!(s.lines().count() <= 6, "version splash exceeds six lines");
+}
+
+#[test]
+fn help_banner_is_deterministic_bounded_phosphor() {
+    fn visible_cols(line: &str) -> usize {
+        let mut n = 0;
+        let mut chars = line.chars();
+        while let Some(ch) = chars.next() {
+            if ch == '\x1b' {
+                for c in chars.by_ref() {
+                    if c == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                n += 1;
+            }
+        }
+        n
+    }
+
+    let a = ansi::help_banner(80);
+    // Deterministic: identical bytes for the same width on every call.
+    assert_eq!(a, ansi::help_banner(80));
+    // Centered lockup: the green block, the word, and the byline.
+    assert!(a.contains("\x1b[48;2;0;255;65m"));
+    assert!(a.contains("jackin"));
+    assert!(a.contains("by tailrocks"));
+    // Phosphor rain present (not a blank field).
+    assert!(a.contains("\x1b[38;2;0;255;65m"));
+    // Bounded so it never wraps the terminal it was sized for.
+    for line in a.lines() {
+        assert!(
+            visible_cols(line) <= 80,
+            "help banner line exceeds terminal width: {line:?}"
+        );
+    }
 }

@@ -23,6 +23,80 @@ fn ctrl_q_requests_exit() {
 }
 
 #[test]
+fn csi_u_ctrl_backslash_opens_palette_by_default() {
+    // Two encodings: `\x1b[92;5u` (codepoint=92='\\', Ctrl modifier) and the
+    // legacy bare-codepoint form `\x1b[28u` (codepoint=0x1C=Ctrl+\). Both must
+    // reach the same palette-open action.
+    let events = parse_all_default(b"\x1b[92;5u");
+    assert_eq!(events, vec![InputEvent::OpenPalette]);
+    let events = parse_all_default(b"\x1b[28u");
+    assert_eq!(events, vec![InputEvent::OpenPalette]);
+}
+
+#[test]
+fn csi_u_ctrl_q_requests_exit() {
+    let events = parse_all_default(b"\x1b[113;5u");
+    assert_eq!(events, vec![InputEvent::RequestExit]);
+}
+
+#[test]
+fn csi_u_control_release_is_suppressed() {
+    let events = parse_all_default(b"\x1b[92;5:3u");
+    assert!(events.is_empty(), "release must be dropped: {events:?}");
+}
+
+#[test]
+fn csi_u_lowercase_ctrl_converts_to_control_byte() {
+    assert_eq!(csi_u_control_byte(u32::from(b'a'), Some(5)), Some(0x01));
+    assert_eq!(csi_u_control_byte(u32::from(b'z'), Some(5)), Some(0x1A));
+}
+
+#[test]
+fn csi_u_no_ctrl_modifier_returns_none() {
+    // Shift-only (modifier=2) must not produce a control byte.
+    assert_eq!(csi_u_control_byte(u32::from(b'a'), Some(2)), None);
+    // No modifier at all must not produce a control byte.
+    assert_eq!(csi_u_control_byte(u32::from(b'a'), None), None);
+}
+
+#[test]
+fn csi_u_uppercase_ctrl_converts_to_control_byte() {
+    // Terminals in CSI-u mode encode Ctrl+A (uppercase) as codepoint=65, modifier=5.
+    // `csi_u_control_byte` must map that to 0x01 so it can be dispatched against
+    // the global keymap — same logic applies to the full A-Z range.
+    assert_eq!(csi_u_control_byte(u32::from(b'A'), Some(5)), Some(0x01));
+    assert_eq!(csi_u_control_byte(u32::from(b'Z'), Some(5)), Some(0x1A));
+}
+
+#[test]
+fn csi_u_special_chars_ctrl_convert_to_control_bytes() {
+    assert_eq!(csi_u_control_byte(u32::from(b'\\'), Some(5)), Some(0x1C));
+    assert_eq!(csi_u_control_byte(u32::from(b']'), Some(5)), Some(0x1D));
+    assert_eq!(csi_u_control_byte(u32::from(b'^'), Some(5)), Some(0x1E));
+    assert_eq!(csi_u_control_byte(u32::from(b'_'), Some(5)), Some(0x1F));
+}
+
+#[test]
+fn csi_u_unbound_ctrl_byte_falls_through_as_data() {
+    // Ctrl+] (0x1D) is not the palette key and not in the global keymap.
+    // `dispatch_control_byte` returns None → classify_csi returns None →
+    // the raw bytes are forwarded verbatim as Data.
+    let events = parse_all_default(b"\x1b[93;5u");
+    match &events[..] {
+        [InputEvent::Data(_)] => {}
+        other => panic!("unbound ctrl byte must fall through as Data: {other:?}"),
+    }
+}
+
+#[test]
+fn xterm_modify_other_keys_global_shortcuts_are_intercepted() {
+    let events = parse_all_default(b"\x1b[27;5;92~");
+    assert_eq!(events, vec![InputEvent::OpenPalette]);
+    let events = parse_all_default(b"\x1b[27;5;113~");
+    assert_eq!(events, vec![InputEvent::RequestExit]);
+}
+
+#[test]
 fn lone_lf_passes_through_with_default_palette_key() {
     // Bracketed paste / multi-line input continuation must reach
     // the PTY as `\n` under the default palette binding.

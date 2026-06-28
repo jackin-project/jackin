@@ -51,6 +51,7 @@ pub struct StatusRightGroupLayout {
 impl StatusRightGroupLayout {
     #[must_use]
     pub fn start(&self, fallback: usize) -> usize {
+        // Leftmost present chunk, in left-to-right order: usage | container | run_id.
         self.usage
             .as_ref()
             .or(self.container.as_ref())

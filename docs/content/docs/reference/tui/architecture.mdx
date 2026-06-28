@@ -5,7 +5,7 @@ description: "Elm Architecture layers, source code locations, typed effects flow
 
 ## Architecture — Model / Update / View
 
-Every jackin' terminal surface uses Ratatui with The Elm Architecture: Model, Message, Update, Effect/Subscription, View, and terminal/run-loop wiring. This is a **hard requirement** for `jackin-console`, `jackin-launch`, `jackin-capsule`, and every new TUI path. It keeps the update layer testable, the render layer pure, and external work outside the visual boundary.
+Every jackin❯ terminal surface uses Ratatui with The Elm Architecture: Model, Message, Update, Effect/Subscription, View, and terminal/run-loop wiring. This is a **hard requirement** for `jackin-console`, `jackin-launch`, `jackin-capsule`, and every new TUI path. It keeps the update layer testable, the render layer pure, and external work outside the visual boundary.
 
 Each layer has a strict scope:
 
@@ -176,7 +176,7 @@ No renderer, component, or update function calls Docker, git, `op`, `gh`, the fi
 
 The `jackin-capsule` render is **all Ratatui**. jackin-term is the per-pane terminal **model**, not a separate render pipeline:
 
-1. **Ratatui composition.** The whole multiplexer frame — status bar (`StatusBarWidget`), pane borders and bodies (`PaneBodyWidget`), dialogs, selection highlight, and scrollbar — is painted by `view.rs` into one `ratatui` `Buffer`. This is the same Elm Architecture layer as every other jackin' TUI surface.
+1. **Ratatui composition.** The whole multiplexer frame — status bar (`StatusBarWidget`), pane borders and bodies (`PaneBodyWidget`), dialogs, selection highlight, and scrollbar — is painted by `view.rs` into one `ratatui` `Buffer`. This is the same Elm Architecture layer as every other jackin❯ TUI surface.
 
 2. **Per-pane terminal model (`jackin-term`).** Each pane's body comes from the agent's PTY. jackin-term parses the agent's escape bytes and maintains a cell grid for that pane — the `vte → DamageGrid → GridSnapshot` model in `crates/jackin-term/`. That model is then *rendered* by `PaneBodyWidget`, a Ratatui `Widget` that paints the `GridSnapshot`'s cells into the same Ratatui buffer as everything else.
 

@@ -1,0 +1,130 @@
+---
+title: "12 — Implementation deep-dive: rival features, source-compared"
+---
+
+# 12 — Implementation deep-dive: rival features, source-compared
+
+Every prior page in this hub reasoned about the four tools from their docs, README files, and one from-source build of lean-ctx. This page does the thing the [gaps page](/reference/research/token-optimization-tools/09-gaps-open-questions-and-next-brief/) kept deferring: it **clones all four repositories and reads the actual source**, then compares the *implementations* of each feature the tools share — not "does tool X have feature Y?" (the [head-to-head matrix](/reference/research/token-optimization-tools/05-head-to-head/) already answers that) but *"two tools both claim feature Y — whose code is better, and why?"* The answer to the hub's central question (one integrated tool, or a layered stack of specialists?) turns on exactly this, because "lean-ctx re-implements the other three" is only a real argument if its re-implementations are at least as good as the originals. They mostly are — and the reasons are in the code.
+
+<Aside type="note">
+**Method.** All four repos were `git clone`d on 2026-06-20 and read directly: **caveman** (`JuliusBrussee/caveman` @ `25d22f8`; a prompt/skill/hook tool, no Rust), **headroom** (`chopratejas/headroom` @ `f4bd2fe`; 176 Rust files / 67K LOC + 895 Python + 1,197 TS), **RTK** (`rtk-ai/rtk` @ `444f1c0`, branch `develop`; 107 Rust files / 74K LOC), **lean-ctx** (`yvgude/lean-ctx` @ `1891bd8`; 1,236 Rust files / 396K LOC). Every claim below carries a `file:line` citation from the cloned tree. Where the source contradicts an earlier page in this hub, it is corrected here and listed in [§ Corrections](#corrections-to-earlier-pages-source-verified). This is a static read of the code, not a runtime A/B — the controlled harness is still [the open deliverable](/reference/research/token-optimization-tools/10-first-party-measurements/).
+</Aside>
+
+## Who wins each shared feature, in source
+
+| Shared feature | Contenders | Source winner | The deciding reason (from code) |
+|---|---|---|---|
+| **Shell-output compression** | RTK · lean-ctx · (headroom logs) | **RTK** breadth / **lean-ctx** safety | RTK ~96 command surfaces (38 native + 58 TOML filters) vs lean-ctx 81 pattern modules (46 hook-wired); lean-ctx adds a verbatim-policy classifier + never-compress-errors guards |
+| **Language-aware code outlining** | headroom · RTK · lean-ctx | **lean-ctx** | tree-sitter (21 grammars) + self-rated quality score + bounce detection vs RTK's regex/brace-counting (10 langs) and headroom's tree-sitter (8 langs) |
+| **Persistent code graph / structural retrieval** | lean-ctx only | **lean-ctx (uncontested)** | real SQLite property graph + BM25 + RRF fusion + LSP refactor; RTK/headroom have *no* cross-file symbol index (verified, not assumed) |
+| **Cache-safe context rewriting** | headroom · lean-ctx | **lean-ctx** | computes a measured `cache_safe_ratio` surfaced on `/status`; headroom asserts + defensively restores but ships no per-rewrite safety gauge |
+| **Memory & reversible recovery** | caveman · headroom · lean-ctx | **lean-ctx** > headroom ≫ caveman | lean-ctx: SQLite-WAL event bus + HMAC transport + FTS5-searchable byte-exact archive; headroom: real CCR recovery but RAM-only `SharedContext`; caveman: a single markdown file |
+| **Savings accounting / verification** | RTK · lean-ctx · (headroom) | **lean-ctx** | bounce-*netted*, real-BPE, SHA-256 hash-chained ledger vs RTK's `SUM(input−output)` on a `chars/4` heuristic with no signing |
+| **Output-register compression** | caveman · (headroom shaper) | **caveman (uncontested)** | headroom's shaper is `enabled=False` by default and thinner; caveman is a graduated 6-level register with code/error verbatim guards |
+
+The pattern is stark: **on the input side, lean-ctx's re-implementation is the better-engineered one almost everywhere** (the lone exception is RTK's raw command breadth) — and on the output side it does not compete at all, leaving caveman uncontested. That is the stack-vs-runtime tension restated from source rather than from docs.
+
+## (1) Shell-output compression — RTK vs lean-ctx
+
+Both intercept Bash commands at write-time and rewrite verbose `git`/`cargo`/`docker`/`kubectl` output before it enters context. The dispatch shapes differ.
+
+- **RTK** has two tiers: 38 native Rust handlers under `src/cmds/**/*_cmd.rs` (structural streaming parsers — e.g. cargo classifies build lines and emits `format!("cargo build ({} crates compiled)", self.compiled)` at `cmds/rust/cargo_cmd.rs:97`) **plus** 58 declarative TOML filters compiled by an 8-stage line pipeline (`core/toml_filter.rs:16-23`). The TOML tier is user-extensible (drop a `.rtk/filters.toml`) and covers the long tail — terraform, helm, ansible, systemctl — with zero Rust. Total ≈ **96 command surfaces**, the widest dispatch of the three, and a 68-variant clap `Commands` enum (`main.rs:1495`).
+- **lean-ctx** uses prefix dispatch: `try_specific_pattern` (`core/patterns/mod.rs:181`) is an 89-branch `if c.starts_with("git ")…` chain over **81 pattern modules**, but its shell *hook* only intercepts the **46 commands** in `rewrite_registry.rs` — the deeper library is reachable through the proxy/`-c` path. Per-command parsers go deeper than RTK's (cargo alone splits into 10 sub-modes), and a `shorter_only` token-count gate (`mod.rs:172`) refuses to emit output that didn't actually shrink.
+
+On **safety** the two are close and both beat headroom: both preserve exit codes (`runner.rs:106` / `exec.rs:531`) and both tee full raw output to disk on failure with a recovery hint (`tee.rs:78-99` / `exec.rs:504`). lean-ctx edges ahead on defense-in-depth — an explicit `Passthrough/Verbatim/Compressible` policy classifier checked in two places (`shell/output_policy.rs:35`), hard "never compress build/lint errors or test output" guards (`compress/engine.rs:65,73`), and secret redaction before the tee write.
+
+**headroom's `LogCompressor`** (`crates/headroom-core/src/transforms/log_compressor.rs`, 1,295 lines) is a *different category*: it is keyed on **content type, not command** — `applies_to()` returns `&[ContentType::BuildOutput]` (`log_offload.rs:96`) and a build log is recognized by its text shape via regex scoring (`content_detector.rs:15`), with **no exit-code awareness at all** (grep `exit_code` in that file → nothing). It would compress a pasted CI log as readily as live output, but it offers none of the per-command verbatim-on-error contracts the other two implement.
+
+**Verdict.** RTK wins **breadth** (≈96 surfaces + an extensible TOML tier vs 46 hook-wired) and minimalism; lean-ctx wins **per-command depth and safety** (policy classifier + never-compress-errors + shorter-only gate). headroom's log compressor is sophisticated *within* log compression but is command-agnostic and exit-code-blind — not a write-time shell wrapper. For the lean stack this confirms RTK's slot: when shell output is the whole problem, RTK does it in ~4 MB with the widest coverage; lean-ctx matches the safety but only over its narrower 46-command hook set.
+
+## (2) Code outlining + the code-graph claim — headroom vs RTK vs lean-ctx
+
+This is where the implementations diverge most sharply, because the *parsing technology* differs:
+
+| | Parser | Languages | Modes | Fidelity guard |
+|---|---|---:|---|---|
+| **headroom** | tree-sitter (Python pack) | **8** (`code_compressor.py:177-186`) | 1 configurable pass | hard ratio floor (`<0.05` → return original, `:1036`) |
+| **RTK** | **hand-written regex + brace counting** (`filter.rs:233-300`) | **10** (`filter.rs:59-78`) | 3 (none / minimal / aggressive) | **none** — no syntax validation, no guard |
+| **lean-ctx** | tree-sitter, **21 grammars** (cargo manifest) | **21 deep** (24 `LanguageId`, `language_capabilities.rs`) | 6 (`auto/full/map/signatures/aggressive/entropy`) | self-rated quality score + bounce detection |
+
+The decisive axis is **tree-sitter vs regex**. RTK's `FUNC_SIGNATURE` regex plus manual brace-counting fails on exactly the cases that matter — braces inside strings or comments (`"}"`, `// }`) corrupt the depth counter and silently truncate or leak bodies; multi-line signatures, generics, decorators, and Python's brace-free indentation are mis-handled — and because there is **no syntax validation and no over-compression guard**, every failure is silent. A tree-sitter parse (headroom, lean-ctx) operates on the concrete syntax tree and is immune to all of these. lean-ctx then edges out headroom by adding two safety nets headroom lacks: a composite **self-rated quality score** with an adaptive threshold (`core/quality.rs`) and **behavioral bounce detection** — a `map`/`signatures` read followed by a full re-read flags a `ModeBounce` and re-tunes thresholds (`loop_detection.rs:344-352`).
+
+**The code-graph claim — verified, not assumed.** lean-ctx is genuinely the only one of the three with a persistent, queryable code graph, and the agents confirmed every primitive is a real implementation: a SQLite property/call graph (`core/index_orchestrator.rs:235`, `core/call_graph.rs`), a persisted **BM25** index, **RRF** hybrid fusion citing Cormack/Clarke/Buettcher 2009 with `RRF_K=60` (`core/hybrid_search.rs:1-26`), and **LSP-backed** rename/references/definition via `lsp_types` (`tools/ctx_refactor.rs`). The negatives were checked too: RTK's SQLite holds only `commands`/`parse_failures` analytics (no symbol index at all), and headroom's BM25/vector indexes serve a *conversation-memory RAG* layer (`memory/adapters/fts5.py`), not a cross-file code graph — its `CodeCompressor` resolves nothing across files.
+
+**Verdict.** lean-ctx wins code outlining decisively — **2× RTK's and 2.6× headroom's language coverage**, the only robust parser-plus-fidelity-guard stack, and the only real code graph. This is the page that most strengthens the case for lean-ctx *if you need code intelligence*: the structural-retrieval lever the three-way said no one had is not vaporware — it is ~2,000+ lines of working graph/search/LSP code.
+
+## (3) Cache-safe context rewriting — headroom vs lean-ctx
+
+Both proxies face the same hazard: Claude Code caches the prompt prefix at the 0.1× read price, and a naive whole-request rewrite re-bills it at the 1.25× write price. Both solve it correctly — freeze the cached prefix, rewrite only a middle "live/frozen" window, leave the live tail intact — but they *prove* it differently.
+
+- **headroom** works in **message units**: a `PrefixCacheTracker` records the provider's cached-token count and freezes that many messages (`cache/prefix_tracker.py:1-22`); transforms touch only the latest non-frozen turn, and a defensive `_restore_frozen_prefix` re-clamps any drifted index back to the original bytes (`proxy/handlers/anthropic.py:251-273`). Notably its **`CacheAligner` is now detector-only** — the old rewrite path "violated invariant I2 … that path has been removed" (`transforms/cache_aligner.py:3-23`); it now only *detects* volatile content and warns "cache prefix unstable."
+- **lean-ctx** computes an explicit half-open window `[cached_prefix_len, boundary)` with integer indices: `cached_prefix_len` finds the last `cache_control` breakpoint (`proxy/history_prune.rs:51-59`) and `prune_boundary` is a **monotone staircase** (`KEEP_MIN=8`, `STRIDE=16`) so re-pruning a passed boundary is byte-identical (`history_prune.rs:27-41`). Crucially it ships a **measured cache-safety ratio** — `cache_safety.rs` tracks `CACHE_SAFE_REQUESTS / PROSE_REQUESTS`, surfaces `cache_safe_ratio` on `/status` (`mod.rs:401`), and unit-tests it (3/3=1.0, 2/4=0.5). "`1.0` = every rewrite was provably cache-safe; below `1.0` is a regression signal."
+
+Both are lossy on prose (headroom's truncation fallback `universal.py:142`; lean-ctx's `squeeze_prose` drops `jaccard>0.9` duplicates and caps length, `core/web/distill.rs:146-180`), and both ship a **safe non-proxy MCP mode** that sidesteps the request rewrite entirely — confirmed in both trees (`headroom/integrations/mcp/server.py`; lean-ctx `mcp_stdio.rs`).
+
+**Verdict.** lean-ctx's implementation is **more rigorous because it is instrumented**: it turns the frozen-window invariant into a measured, tested, status-exposed ratio, where headroom proves safety by assertion + defensive restore + cost-outcome telemetry (`busts_avoided`, `tokens_lost_to_cache_bust`) but ships *no per-rewrite safety gauge*. lean-ctx also rewrites more aggressively (system + user prose + tool results across three providers), but every path is gated on `cached_prefix_len` and reported through the gauge. headroom is the more *conservative* design (its strongest move was deleting a cache-busting path); lean-ctx is the more *measured* one.
+
+## (4) Memory & reversible recovery — caveman vs headroom vs lean-ctx
+
+The gap here is the widest of any axis, because the three tools are at completely different tiers of infrastructure:
+
+| | Store | Reversible recovery | Cross-agent transport |
+|---|---|---|---|
+| **caveman** | one markdown file, lossy, overwritten in place (`skills/caveman-compress/SKILL.md:14`) | **none** — only a `.original.md` file copy; "re-ask / git" (`INSTALL.md:226`) | prompt convention — subagent text injected verbatim (`skills/cavecrew/SKILL.md:32`) |
+| **headroom** | SQLite, 6 tables, `agent_id`-scoped (`memory/adapters/sqlite.py:91`) | **CCR** store+retrieve, hash-keyed, ~30-min TTL (`compression_store.py:261-451`) | `SharedContext` is **RAM-only** (`shared_context.py:88-89`); real sharing is WAL SQLite |
+| **lean-ctx** | SQLite-WAL graph + JSON knowledge/session stores | **archive** byte-exact + **FTS5 search** + `ctx_expand` (`core/archive.rs:43-164`, `archive_fts.rs:86`) | **real SQLite-WAL event bus** (`context_bus.rs:305-492`) + **HMAC-SHA256** signed transport (`a2a_transport.rs:96-127`) |
+
+The decisive groundings: lean-ctx's archive gives **byte-exact recovery** *plus* a full-text reverse index, so you can search archived outputs and then expand the matched id — recovery without knowing the id (test asserts `retrieve(id) == content`, `archive_expand_tests.rs:20`). headroom has genuine content-addressed CCR recovery but it is hash-keyed only and TTL-bounded. caveman has effectively none — its sole persistence is a one-way file copy before overwrite. On cross-agent transport, lean-ctx runs an append-only event log with monotonic versioning, causal lineage, `tokio::broadcast` fan-out, and HMAC-signed envelopes with constant-time verification; headroom's *named* `SharedContext` is a `dict` behind a lock; caveman's is a report-passing convention with no backing store.
+
+**Verdict.** **lean-ctx > headroom ≫ caveman.** lean-ctx is real signed infrastructure, headroom is real (but its headline cross-agent primitive is RAM-only and its failure-mining writes to markdown, not its DB), and caveman is a prompt convention. One honest caveat that applies to *both* "reversible" stores: recovery is retention-bounded (headroom ~30 min, lean-ctx 500 MB / max-age eviction) — beyond the window all three degrade to re-ask.
+
+## (5) Savings accounting & verification — RTK vs lean-ctx
+
+This axis decides which tool's *own numbers* you can trust, and the source verdict is the most lopsided in the hub.
+
+- **RTK** counts with a flat heuristic — `estimate_tokens = chars/4` (`core/tracking.rs:1284`, no BPE library at all) — and books **gross** savings: `saved = input.saturating_sub(output)` summed as `SUM(saved_tokens)` over a plain, resettable SQLite table (`tracking.rs:410,639`). It **nets out nothing**: a compressed read immediately invalidated by a raw re-read is still booked as a full win. No signing, no hash, no tamper-evidence.
+- **lean-ctx** counts with a **real tiktoken BPE** and *records the tokenizer family into every ledger event* (`core/tokens.rs:148`, `event.rs:22`). It is **bounce-netted**: `BounceTracker` detects a compressed-read-then-full-reread within a 5-tick window, writes a *negative* ledger event, and `adjusted_total_saved()` can legitimately go negative (`bounce_tracker.rs:113-169`, `context_ledger.rs:580`); once an extension's bounce rate exceeds 0.30 it auto-pins that extension to full reads (`should_force_full`, `bounce_tracker.rs:198`). The ledger is a **real SHA-256 hash chain** — `entry_hash = SHA256(prev_hash ‖ content)` with a genesis, a `verify()` that re-walks from genesis and reports `first_invalid_at`, and a tamper test that mutates a value and asserts failure (`savings_ledger/event.rs:120`, `store.rs:115-142,450`). And a real anti-inflation guard: `record_tool_event` refuses to write when `saved == 0`.
+
+On the **Lean 4 proofs** the source settles the hub's standing "is it load-bearing?" question with a *nuanced yes*: 11 `.lean` files, **85 theorems, zero `sorry`/`admit`/`axiom`**, proving genuine safety/structure invariants — secrets never survive aggressive filtering, instruction files are never compressed, more-compressed output ⊆ less-compressed (`Compression/SecretSafety.lean:34`, `ReadModes.lean:94`). But they prove properties of **simplified models** (the code says so: "the gap is validated via differential random testing", `Basic.lean:10-15`) and prove **nothing about the savings arithmetic or the hash chain**. So: real formal verification of compression-*safety* models — not a machine-checked guarantee that the accounting is correct. Calling the whole story "formally verified" overclaims; calling the proofs "marketing" underclaims. There are ~24 versioned contracts with CI drift gates (`core/contracts.rs`, `tests/contracts_frozen.rs`), close to the "20" the hub cited.
+
+**Verdict.** lean-ctx's bounce-netted, real-BPE, hash-chained ledger is **decisively more honest than RTK's `rtk gain`** on every axis — tokenizer, netting, tamper-evidence. The asterisk: **all three count Claude traffic with GPT tokenizers** (RTK `chars/4` — the softest; headroom `cl100k×1.1`; lean-ctx `o200k`/`cl100k`), so every headline percentage in this whole hub is directionally soft — lean-ctx least so, and the only one transparent about the residual error in its own event schema.
+
+## (6) Output-register compression — caveman vs the headroom shaper
+
+caveman is the entire output-side tool, and the source confirms it owns the slice. Its mechanism is a graduated **6-level register** (`lite/full/ultra` + three classical-Chinese `wenyan` tiers, `skills/caveman/SKILL.md:34-41`) injected at session start by a hook that reads `SKILL.md` and filters to the active level (`src/hooks/caveman-activate.js:54-91`), then **re-injected every user turn** to survive context compression (`caveman-mode-tracker.js:122`). It is well-guarded, not crude: code blocks, API names, and error strings are kept verbatim (`SKILL.md:21,23`), `ultra` explicitly abbreviates "prose words only, never code symbols", and an **Auto-Clarity** carve-out drops compression entirely for security warnings, destructive-op confirmations, and order-sensitive sequences (`SKILL.md:58-74`).
+
+**headroom's output shaper exists but is `enabled=False` by default** — triple-confirmed (`proxy/output_shaper.py:103,110-114,342`) — and even enabled it is thinner: five byte-stable verbosity strings plus structural effort-routing, whose top level ("Minimum tokens. Fragments fine. No preamble") is essentially a one-line restatement of caveman's register. headroom converges on the same idea and ships it off.
+
+On **evidence quality** the source corrects a hub number worth flagging: caveman's marquee "75%/65%" comes from `benchmarks/run.py`, which uses Claude's *real* `usage.output_tokens` (good) but benchmarks against a verbose "You are a helpful assistant" baseline (generous — it banks the generic "be terse" effect). The repo's *honest* harness is `evals/`, which adds an "Answer concisely." **control arm**, explicitly disowns the inflated methodology, and lands caveman at **~50% over a plain terse instruction** (`evals/README.md:9-19`, tiktoken `o200k`). The "58.5%/59.6%" figure the hub cites is the *input-side* `caveman-compress` number, a separate claim. (Also corrected: the "broken `caveman-shrink` MCP" the hub lists is in source a *working* proxy with an installer guard against the broken-stub case #474 — `bin/install.js:65-103` — not a live defect.)
+
+**Verdict.** caveman owns output uncontested, and its register is genuinely well-designed (graduated levels, verbatim guards, auto-clarity). Its real, defensible savings are roughly **half the headline** — material, but ~50% over a terse baseline, not 75% from nothing — and *no* harness anywhere yet checks that the compressed answer preserves technical fidelity, which remains the [largest standing quality question](/reference/research/token-optimization-tools/09-gaps-open-questions-and-next-brief/) for the output side.
+
+## Corrections to earlier pages (source-verified)
+
+Reading the source forced several factual fixes. Per the hub's auditability rule, they are logged here and patched in the canonical matrices:
+
+| Claim in earlier pages | Source-verified value | Evidence |
+|---|---|---|
+| RTK code filter covers "8 languages" | **10** code languages, regex-based (not parser-based) | `rtk/src/core/filter.rs:59-78` |
+| lean-ctx outlines "18 languages" (tree-sitter) | **21** deep tree-sitter grammars (24 `LanguageId` total) | lean-ctx `rust/` cargo manifest; `core/language_capabilities.rs` |
+| lean-ctx shell = "56 pattern modules" | **81** pattern modules; the shell *hook* intercepts **46** commands | `core/patterns/` ; `rewrite_registry.rs` |
+| headroom CacheAligner splits static/dynamic by rewriting | **detector-only** since the rewrite path "violated invariant I2" and was removed | `transforms/cache_aligner.py:3-23` |
+| caveman "`caveman-shrink` broken MCP registration" | working proxy **guarded** against the broken-stub case (#474) | `caveman/bin/install.js:65-103` |
+| lean-ctx Lean proofs "load-bearing unverified" | **85 theorems, 0 `sorry`**, proving safety/structure invariants — but over simplified models, not the accounting | `lean/LeanCtxProofs/*.lean`; `Basic.lean:10-15` |
+| lean-ctx "20 versioned contracts" | **~24** schema-versioned contracts with CI drift gates | `core/contracts.rs:245-340` |
+
+None of these change a *conclusion* — they sharpen the numbers. The language-count fixes are patched into the [head-to-head matrix](/reference/research/token-optimization-tools/05-head-to-head/); the rest are scoped to this page's evidence.
+
+## What the source does to the central thesis
+
+Reading the code **strengthens, not overturns**, the hub's standing verdict — and adds a dimension the docs-only pages could not:
+
+- **lean-ctx's re-implementations are not knockoffs; they are usually the better-engineered version.** It out-implements RTK on code outlining (tree-sitter vs regex) and on savings honesty (bounce-netted signed ledger vs `SUM` on `chars/4`), out-implements headroom on cache-safety instrumentation (a measured ratio vs assertion) and on memory infrastructure (signed event bus vs RAM dict), and is the only one with a real code graph. So "adopt lean-ctx *if you need its surface*" is now backed by code quality, not just feature count.
+- **But the two structural limits hold exactly.** lean-ctx still has **no output register** (caveman's slot is empty in source — confirmed), so even the better-engineered monolith does not subsume caveman; and it still pays the largest footprint (the 396K-LOC, daemon-class reality is right there in the tree). The [combining page](/reference/research/token-optimization-tools/06-combining/)'s "broader but heavier, and still not a superset of output" verdict is precisely what the source shows.
+- **RTK's narrow win survives.** It keeps the breadth crown on shell commands (≈96 surfaces + an extensible TOML tier) and the minimalism crown (≈4 MB, `chars/4`, one hook) — so when shell output is the *whole* problem, the source still says reach for RTK over the 396K-LOC runtime.
+
+The decision the hub has argued all along is therefore unchanged but better-grounded: **caveman for output (always, uncontested), then either the lean specialist stack (RTK + headroom-MCP) or the one integrated runtime (lean-ctx) for input — and the runtime is worth its footprint precisely when you need the code graph + signed ledger + memory that its source proves are real.** The one thing source reading *cannot* settle remains the [open harness](/reference/research/token-optimization-tools/10-first-party-measurements/): which actually wins tokens-per-solved-task on live traffic. Better code is necessary, not sufficient.
+
+---
+
+Back to the [head-to-head matrix](/reference/research/token-optimization-tools/05-head-to-head/) · the [combining decision](/reference/research/token-optimization-tools/06-combining/) · the [overview](/reference/research/token-optimization-tools/).

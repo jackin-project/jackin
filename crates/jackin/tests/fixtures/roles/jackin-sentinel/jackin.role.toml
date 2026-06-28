@@ -3,7 +3,7 @@ dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp", "kimi", "opencode", "grok"]
 
 [identity]
-name = "jackin' Sentinel"
+name = "jackin❯ Sentinel"
 
 [claude]
 model = "sonnet"

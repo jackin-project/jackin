@@ -1,0 +1,881 @@
+---
+title: "Host Affordance Bridge"
+---
+
+**Status**: Partially implemented — core host screenshot/image paste is ready for operator opt-in testing behind `JACKIN_HOST_ATTACH=1`; Phase 0 complete; opt-in Phase 1A host attach, image staging with chunked large-image transfer, explicit host image paste, explicit image-path staging, Linux clipboard setup diagnostics, first GitHub host-open actions, visible URL open gestures with modifier-hover disclosure, command-palette cursor URL open, host-link opt-out, Debug info host diagnostics path copy/reveal, launch-failure artifact reveal/open, minimal chunked file export, explicit export-and-reveal/open, cursor-path export/reveal/open, selected-text export/reveal/open, and modified-click visible-file export landed
+
+**Preflight gate**: [Host Affordance Bridge Preflight](/roadmap/host-affordance-bridge-preflight/) records the Phase 0 measurements that made the opt-in implementation slice safe to start: Ghostty event capture, OrbStack socket transport, host clipboard backends, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup. The same page now tracks promotion evidence required before `JACKIN_HOST_ATTACH=1` can become default behavior.
+
+## Implementation Brief For `/goal`
+
+Implementation has reached the first operator-testable milestone. This PR establishes the host-attach foundation and the bounded screenshot/image paste path needed for a real-world smoke test. The feature remains opt-in until live validation proves parity.
+
+Current implementation-readiness decision:
+
+- **READY** for operator smoke testing of the core path: start or attach with `JACKIN_HOST_ATTACH=1`, copy a host screenshot or image, press `Ctrl+V` in a focused Capsule pane, and expect a validated `/jackin/run/clipboard/...` path plus visible Capsule feedback.
+- **READY** for additional opt-in implementation slices that keep `JACKIN_HOST_ATTACH=1`, use explicit operator actions, preserve the legacy attach path, and add focused tests/docs in the same PR.
+- **NOT READY** for default-on host attach, broad automatic clipboard/file behavior, background clipboard reads, arbitrary host filesystem access, or any live-validation claim that has not been proved on a fresh isolated throwaway jackin❯ instance.
+- The current goal stops at this operator-testable milestone. Remaining bullets below are intentionally kept as follow-up validation or future implementation scope so the operator can test the core screenshot paste path first and report findings.
+
+Already implemented in this PR:
+
+- Operator-facing usage and validation instructions now live in [Host Affordances](/guides/host-affordances/), including `JACKIN_HOST_ATTACH=1`, image paste, explicit image-path staging, GitHub PR/CI opening, visible URL opening, file export, Amp/xclip expectations, and the live validation checklist.
+- Construct image installs `xclip`, `xauth`, and `wl-clipboard` so Amp and other Linux CLIs have the expected clipboard helper binaries when a real Linux display bridge exists.
+- The binary attach protocol moved to `jackin-protocol`, so the host runtime and Capsule share one `Hello`/`Input`/`Resize`/`Output`/`Bell`/`Shutdown` encoder/decoder.
+- `jackin-capsule attach-proxy` relays raw attach-protocol bytes between stdio and `/jackin/run/jackin.sock` without parsing frames.
+- `jackin-runtime` can select direct host Unix socket attach when connect succeeds, or `docker exec -i <container> /jackin/runtime/jackin-capsule attach-proxy` when the socket path is missing or connect fails.
+- `JACKIN_HOST_ATTACH=1` opts foreground attach paths into the host-owned attach loop for `hardline`, reconnect, new shell sessions, and new agent sessions. The default path remains the existing in-container `docker exec -it /jackin/runtime/jackin-capsule` client until live validation proves parity.
+- The OSC 10/11 default-color query moved into `jackin-tui`, and both Capsule's legacy attach client and the opt-in host attach loop use it before `Hello`. Any operator input bytes observed during the query window are forwarded as ordinary `Input` frames.
+- The attach protocol has a bounded `ClipboardImage` client frame with explicit `png`, `jpg`, `gif`, `webp`, and `tiff` format tags. Normal attach/control frames keep the existing 4 MiB cap; small clipboard-image frames have a narrowly scoped 16 MiB frame cap, so the legacy image-byte payload cap is `MAX_CLIPBOARD_IMAGE_BYTES = 16 MiB - 1`. Larger image payloads use `ClipboardImageStart` / `ClipboardImageChunk` / `ClipboardImageEnd` frames with 1 MiB chunks, a 64 MiB transfer cap, offsets, and SHA-256 verification before Capsule stages the image. Malformed chunks cancel the active transfer id so a retry cannot be poisoned by stale buffered state.
+- Capsule validates image magic bytes before staging a received image under `/jackin/run/clipboard/` with directory mode `0700` and file mode `0600`, then pastes the staged container path into the focused pane when no dialog owns input. The paste uses bracketed-paste wrappers when the focused pane has bracketed paste enabled. Capsule also best-effort removes staged clipboard files on clean daemon exit and SIGINT/SIGTERM shutdown.
+- Capsule renders transient image-paste feedback in the constrained toast area: chunked transfers first show `Image paste: receiving <bytes> bytes` or `Image staging: receiving <bytes> bytes`; successful staging shows `Image staged: /jackin/run/clipboard/... (<bytes> bytes)`; dialog-owned or no-writable-focused-pane cases show the staged path, byte count, and a not-pasted warning; rejected payloads show `Image paste rejected: ...`. Tests prove the notice stays off the status rows, pane prompt, footer hint, and bottom branch/run bar.
+- The opt-in host attach loop treats a lone `Ctrl+V` as an image-paste trigger: on macOS it first asks the host pasteboard for PNG-coerced clipboard data through `osascript`, then TIFF image data, then a read-only Finder/file-url source and magic-byte detection; on Linux it reads image MIME data from host-side `wl-paste` when `WAYLAND_DISPLAY` exists, then host-side `xclip` when `DISPLAY` exists. If no valid in-cap image is available, it forwards the original `Ctrl+V` byte unchanged.
+- The command palette now includes `Paste image from host clipboard`. This explicit operator action asks the host attach client to read the host clipboard as an image immediately, then sends the same `ClipboardImage` / chunked image frames as the `Ctrl+V` image trigger. It gives operators a discoverable path when a terminal consumes or remaps paste gestures.
+- The command palette now includes `Stage image without pasting`. This explicit operator action asks the host attach client to read the host clipboard as an image immediately, stages the validated image under `/jackin/run/clipboard/`, and reports the staged container path without writing that path into the focused pane.
+- The command palette now includes `Stage image from clipboard path`. This explicit operator action asks the host attach client to read the host clipboard as text, require an absolute image file path or `file://` URL, validate the image by magic bytes, and send the bytes through the same `ClipboardImage` / chunked image frames as a direct image paste.
+- The host attach loop auto-stages a pasted host image path so a normal `Cmd+V` works without a special key for screenshot tools that copy a file path (for example CleanShot). When a read's paste body is one absolute path or `file://` URL that resolves to a real, magic-validated image file, the loop reads that file (retrying once with shell-escaping removed for paths like `Application\ Support`) and sends the same `ClipboardImage` / chunked frames as `Ctrl+V`, so the staged container path replaces the raw host path. The body is the bracketed-paste content when the read carries `ESC[200~ … ESC[201~`; **when it does not** (terminals that do not bracket the paste — the case where the raw host path used to land in the prompt), the whole read is the body. The unbracketed fallback is safe because raw-mode typing delivers one byte per read, so a whole absolute path can only arrive in a single read via a paste/drop, never keystroke-by-keystroke. The probe reads only the already-pasted bytes — it never touches the host clipboard or filesystem for ordinary text — and rejects prose, relative paths, non-image files, missing files, and pastes mixed with other typed bytes, which all stay ordinary text. It is on by default under host attach via `JACKIN_PASTE_IMAGE_PATHS`; set that to `0`/`false`/`no`/`off` to keep the prior contract where every paste is plain text. Because macOS never exposes `Cmd` to the process, a raw image-only clipboard (which pastes no text) still needs `Ctrl+V` or a terminal-level `cmd+v`→`Ctrl+V` remap; both are documented in [Host Affordances](/guides/host-affordances/).
+- The explicit host clipboard image/path actions now return Linux setup errors through the normal Capsule `ClipboardImageError` feedback path. Missing `WAYLAND_DISPLAY`/`DISPLAY`, missing host-side `wl-paste`, and missing host-side `xclip` produce visible operator messages instead of a generic unreadable-image rejection. The implicit `Ctrl+V` probe keeps its terminal-input fallback behavior.
+- GitHub context lookup asks `gh pr checks <pr-url> --json bucket,link,name,workflow` and stores the best HTTP(S) CI target URL alongside the existing bucket counts. Target choice is failed check `link`, then cancelled, pending, passing, and skipped check links; if no check link is useful it falls back to `gh pr view <pr-url> --json statusCheckRollup` `detailsUrl` using failed/cancelled/timed-out, pending, success, then skipped priority; if that is unavailable it opens the PR checks tab.
+- The GitHub context dialog keeps `Enter` as copy URL, adds `O` for host-open PR, adds `C` for host-open CI when a check URL is available, and renders separate `Open PR` / `Open CI` action rows. Mouse clicks on the copy row still copy; clicks on the explicit open rows emit a host-open request.
+- The attach protocol has a host-open server frame, and the opt-in host attach client handles it with the host OS opener (`open` on macOS, `xdg-open` on Linux, `rundll32 url.dll,FileProtocolHandler` on Windows). The frame and host opener allow only `http`, `https`, and `mailto`. `Alt`-click and `Ctrl`-click on a visible host-open URL in a mouse-disabled pane reuse the same URL-token rules as double-click selection and emit the same host-open frame. `Alt`/`Ctrl` passive hover over a safe URL renders a compositor-owned `Open link: ...` notice, emits the terminal pointer-shape cue when supported, never forwards hover bytes to the pane, and prefers OSC 8 hyperlink targets over visible text when an OSC 8 region covers the cell. The command palette also includes `Open link under cursor`, which resolves the focused pane's terminal cursor through the same URL-token rules and shows a transient no-link notice when the cursor is not on a host-open link. `Cmd`-click is not relied on because Phase 0 did not prove a process-visible modifier bit for it; OSC 8 hyperlink-region lookup is now preferred when available.
+- `JACKIN_OPEN_LINKS=deny` / `off` / `no` disables jackin❯ host browser-open actions while leaving ordinary terminal output and OSC 8 passthrough under their separate policies. Capsule suppresses GitHub/context and cursor-link host-open frames with visible feedback; modified-click falls back to normal mouse dispatch. The host attach client also refuses to spawn the host opener when the same opt-out is set.
+- Host-open URL telemetry redacts query strings and fragments in default logs and host attach errors. The full URL still travels in the typed attach frame so the explicit operator action opens the intended target; logs keep only enough route information to debug the action.
+- The command palette now includes `Export file`, `Export file and reveal`, `Export file and open`, `Export file under cursor`, `Export file under cursor and reveal`, `Export file under cursor and open`, `Export selected file`, `Export selected file and reveal`, and `Export selected file and open`. The dialog accepts a workspace-relative path, a workspace absolute path, or a `/jackin/run/` path; the cursor actions extract the visible token under the focused pane cursor, and the selected-file actions treat the current text selection as the requested path. `Alt`/`Ctrl` modified-click on a mouse-disabled pane tries URL open first, then exports the visible token only if the same export validator proves it is an allowed regular file; ordinary words and invalid paths keep the normal mouse fallback. All export variants run the same validator. Capsule canonicalizes the path, rejects symlink escapes outside the workspace and `/jackin/run/`, rejects non-regular files, caps the first implementation at 64 MiB, and sends `FileExportStart` / `FileExportChunk` / `FileExportEnd` server frames with transfer id, size, offsets, SHA-256 digest, and explicit reveal/open flags. The host attach client writes verified exports under `~/Downloads/jackin/<instance>/` with collision-resistant names, never overwrites an existing host file silently, removes temporary files after interrupted, malformed, or idle transfers, and only asks the host OS file manager or opener to act on the exported copy when the operator chose an explicit reveal/open export action. The legacy in-container attach client ignores these frames, so the feature requires `JACKIN_HOST_ATTACH=1` until host attach is promoted.
+- Host-open, clipboard-image, and file-export results now return bounded feedback to Capsule, which paints the existing transient notice surface. The host attach client clamps `HostNotice` and `ClipboardImageError` messages before encoding so oversized host errors cannot break the feedback frame itself. Host desktop open/reveal helpers wait for the host command exit status and report nonzero exits without logging stdout/stderr or private payloads. Clipboard-image compact logs record the host paste trigger, no-image text-forward fallback, staged extension, byte count, staged container path, transfer stage, and coarse rejection reason; full rejection detail is debug-only. File-export debug and compact logs use source category, basename, byte count, destination category, destination basename, and coarse rejection reason rather than full container or host paths; operator-visible notices still show the exported destination. This gives the operator visible success or rejection feedback instead of requiring host log inspection.
+- The launch failure popup now has explicit `R` reveal and `O` open actions for the **run diagnostics** and **docker output** rows. It derives the selected path from the same wrapped/clickable row data as copy and OSC 8 overlays, targets the hovered file row when present, otherwise targets the diagnostics JSONL first, and keeps the popup open with visible feedback.
+- Tests cover construct-image Linux clipboard helper package presence, shared protocol round-trips, binary proxy relay, proxy exec shape, direct socket selection, missing socket fallback, connect-failure fallback, host-loop Hello construction, host-loop terminal input forwarding, host-loop bracketed-paste/mouse-byte passthrough, host-loop OSC 52 output passthrough, host-loop pre-attach input forwarding, shared terminal-color parsing, clipboard-image protocol caps, explicit image-path staging frames and errors, explicit stage-without-pasting frame routing and paste suppression, stale stage-only mode reset when a later paste/path-stage request supersedes it, generic host-notice frames, Capsule image magic validation/staging, staged-path bracketed paste, no-writable-focused-pane image feedback, visible image-paste feedback placement and priority, malformed image-chunk cancellation and retry, idle image-transfer cleanup, oversize chunk-transfer start rejection, host clipboard trigger fallback, host image-paste/fallback compact diagnostics capture, host file-url image fallback, host clipboard text-path/file-url validation, host clipboard command-output validation, host-open URL scheme rejection, host opener command selection, visible URL modified-click dispatch, modifier-hover URL disclosure with OSC 8 preference and pointer-shape cue, GitHub context copy/open PR/open CI keyboard and mouse actions, file-export frame round-trips, file-export malformed-payload rejection, missing-path rejection with visible feedback, host export digest verification, digest-mismatch cleanup, interrupted/malformed/idle-transfer temp cleanup, collision-resistant export naming, shared host desktop opener/reveal command selection, and launch-failure artifact reveal state.
+
+Remaining follow-up work:
+
+- Live-validate `JACKIN_HOST_ATTACH=1` in Ghostty against a new isolated throwaway jackin❯ instance using the [Host Affordances](/guides/host-affordances/) checklist: text paste, mouse routing, resize, focus, pane switching, bracketed paste, OSC 52 copy, jackin-owned selection copy, clean detach, and image paste into Codex/Amp/Claude-style prompts.
+- Verify the macOS `osascript` PNG/TIFF path with raw screenshots and copied browser images. The Phase 0 browser probe exposed TIFF, so the implementation now tries PNG first and TIFF second before falling back to copied file URLs.
+- Verify the macOS Finder/file-url fallback with a copied Finder image file. Finder copy produced `public.file-url` plus filename text and an icon payload; the implementation now resolves the file URL read-only, detects image magic, and sends image bytes through the same Capsule staging path.
+- Live-validate Linux host image readers on real Wayland and X11 hosts. The implementation only runs `wl-paste` when the host attach process has `WAYLAND_DISPLAY`, and only runs `xclip` when it has `DISPLAY`; installing `xclip` inside the container remains Amp/runtime compatibility only and does not expose the macOS clipboard. Missing Linux display/tool setup now returns visible feedback for explicit palette actions, but real-host Wayland/X11 reads still need validation.
+- Live-validate the `Paste image from host clipboard` command-palette action with raw screenshot, copied browser image, copied Finder image file, and non-image clipboard content. It should stage the same image sources as the `Ctrl+V` path and return visible rejection feedback for unsupported content.
+- Live-validate the `Stage image without pasting` command-palette action with raw screenshot, copied browser image, copied Finder image file, and non-image clipboard content. It should stage the same image sources as the `Ctrl+V` path, report the staged path in Capsule feedback, and leave the focused pane input untouched.
+- Live-validate the `Stage image from clipboard path` command-palette action with host clipboard text containing an absolute image path, a `file://` image URL, a non-image path, a missing path, and relative text.
+- Live-validate the default-on pasted-image-path auto-stage (`JACKIN_PASTE_IMAGE_PATHS`) by pasting with `Cmd+V` from a screenshot tool that copies a file path (such as CleanShot): confirm a real absolute image path (including one with shell-escaped spaces) stages and inserts the container path, while prose, a relative path, a non-image file, a missing file, a path printed in agent output, and a paste mixed with typed bytes all remain ordinary text; confirm `JACKIN_PASTE_IMAGE_PATHS=0` disables it; and confirm the Ghostty `cmd+v`→`Ctrl+V` remap covers raw image-only clipboards.
+- Live-validate the GitHub context open actions and visible URL actions from Ghostty through `JACKIN_HOST_ATTACH=1`, including PR open, failing-CI open, no-CI disabled state, `Alt`/`Ctrl` hover disclosure, `Alt`-click URL open, `Ctrl`-click URL open, `Open link under cursor`, non-URL fallback/no-link feedback, and host opener failure logging.
+- Live-validate `Export file`, `Export file and reveal`, `Export file and open`, the three under-cursor export variants, the three selected-file export variants, and modified-click visible-file export through `JACKIN_HOST_ATTACH=1` with a new isolated throwaway jackin❯ instance: workspace-relative path, workspace absolute path, `/jackin/run/` artifact, rejected directory, rejected symlink escape, missing cursor token, missing selection, invalid modified-click token fallback, conflict-safe host filename, digest-mismatch telemetry via a synthetic test-only path if needed, visible host destination, explicit host file-manager reveal, and explicit host open.
+- Live-validate launch-failure artifact reveal from a fresh throwaway failed launch: diagnostics JSONL reveal, docker-output reveal when present, hover-selected `R`, fallback diagnostics-first `R`, and failure-path reveal logging.
+- After live validation, decide whether to promote host attach from opt-in to default and whether the landed URL actions need richer runtime-specific behavior.
+- Live validation must use a new isolated throwaway jackin❯ instance; do not inspect or mutate existing `jk-*` containers.
+
+Next implementation slice after this one:
+
+- Live-profile chunked image-transfer latency and cancellation behavior for 16 MiB through 64 MiB payloads, then decide whether very large transfers should move to a negotiated side stream.
+- Add runtime-aware path insertion only after generic staged-path paste is reliable. For Amp, the generic staged path is expected to be enough because Amp documents image input through pasted file paths, terminal drag/drop, and `@` file mentions in [Image Support in CLI](https://ampcode.com/news/cli-image-support); Amp's `xclip` integration remains a separate copy-out/runtime-helper compatibility path.
+
+## Problem
+
+jackin❯ runs agent CLIs inside isolated Docker containers and multiplexes them through `jackin-capsule`. That isolation is the product boundary, but it currently breaks several local-terminal expectations: when the operator has an image in the host clipboard and pastes into Claude Code, Codex, or another multimodal CLI, the agent should receive an image attachment or an image file path it can read; when the operator sees a PR, CI run, or ordinary URL, they should be able to open it in the host browser; when an agent creates a file inside the container, the operator should be able to intentionally export it to the host; when a later drag/drop or file-paste feature exists, the staged file should appear inside the container. Today those actions work naturally when the agent runs directly on the host, but not reliably through jackin❯ because the process that can read host clipboard, open the host browser, receive desktop drag/drop information, or write to host Downloads/Desktop is not the process receiving input inside the container.
+
+The visible symptom is that a paste often becomes a path, nothing, or ordinary text instead of an image. The structural problem is deeper: jackin❯ currently treats attach input as a terminal byte stream. Host clipboard image data is not guaranteed to exist in that stream. It usually lives behind the host OS clipboard APIs, terminal-app paste events, or terminal-specific behavior before any bytes reach `stdin`.
+
+This is not just a missing convenience feature. It is a host/container parity gap: jackin❯ should make an agent running inside a container feel like the same agent running on the host unless isolation intentionally changes behavior. Clipboard image paste, GitHub/CI opening, clickable URL behavior, and container-file export are places where the boundary is visible today.
+
+## Root Cause
+
+The architecture currently puts the interactive attach client inside the container:
+
+```text
+Ghostty / terminal on host
+  -> docker exec -it <container> /jackin/runtime/jackin-capsule
+      -> /jackin/run/jackin.sock
+          -> Capsule daemon
+              -> focused agent PTY
+```
+
+The host terminal can see `Cmd+V`, `Ctrl+V`, drag/drop events, file promises, and the host clipboard. The in-container `jackin-capsule` attach client cannot. It only reads whatever bytes Docker forwards to the pseudo-terminal. For text paste, that is usually enough. For image paste, it is not.
+
+That means a symptom-layer patch inside the Capsule input parser cannot be correct by itself. Capsule can recognize bytes that arrive, but it cannot recover image bytes that never crossed the host/container boundary. The root-cause fix is to move image-aware input capture to a host-owned component and then send a typed payload across jackin❯'s supported host/container boundary.
+
+## Current Implementation Facts
+
+This roadmap is intentionally written against the current jackin❯ architecture, not an imagined one:
+
+- `jackin load`, `hardline`, and console session creation still attach interactively by running `docker exec -it <container> /jackin/runtime/jackin-capsule`; the process that owns raw mode, alt-screen setup, mouse/focus capture, terminal colors, stdin forwarding, and SIGWINCH handling is currently the in-container Capsule client.
+- Capsule PID 1 is the daemon. Non-PID-1 `jackin-capsule` invocations are clients or control subcommands that connect to `/jackin/run/jackin.sock`.
+- The socket lives under the per-instance bind mount `~/.jackin/sockets/<container>/` on the host and `/jackin/run/` in the container. Capsule creates the parent with `0700` permissions and the socket with `0600` permissions.
+- The same socket carries two protocols: `0x00` starts the length-prefixed JSON control protocol, and any nonzero first byte starts the binary attach protocol.
+- Attach frames are currently `[tag][u32_be length][payload]`. Normal attach and control payloads are capped at 4 MiB; `ClientFrame::ClipboardImage` has a narrowly scoped 16 MiB frame cap for small images. Larger image paste uses typed chunked client frames capped at 1 MiB per chunk, with transfer id, offsets, total size, and SHA-256 digest. File export uses the same chunking shape in the server-to-host direction.
+- The first attach frame must be `Hello`; the newest validated interactive attach takes over the single writable attached-client slot.
+- Host direct socket control already exists for snapshots when the host can open the bind-mounted socket, with `docker exec` fallback when it cannot. Interactive host attach now has an opt-in `JACKIN_HOST_ATTACH=1` path with the same direct/proxy transport selection.
+- A stdio `attach-proxy` subcommand exists and is the fallback for Docker Desktop, OrbStack when direct socket connection fails, and any backend where the host can run `docker exec -i` but cannot open the mounted Unix socket.
+- Current clipboard behavior includes OSC 52 copy-out, terminal byte-stream paste-in, bracketed paste tracking, jackin-owned copy feedback, an opt-in host-attach image paste path for macOS PNG-coerced clipboard data, TIFF image data, Finder/file-url image files, and Linux host-side `wl-paste`/`xclip` image MIME reads, plus an explicit command-palette action that stages an absolute image path or `file://` image URL from host clipboard text. Accepted images are staged under `/jackin/run/clipboard/`, pasted using bracketed-paste semantics when enabled, and surfaced with transient success/rejection feedback. Images larger than the single-frame cap use chunked attach frames with digest verification. Live Linux validation and default-on host attach remain unimplemented.
+- GitHub context state stores PR number, title, URL, draft state, check bucket counts, and one best-effort CI target URL. The CI URL source is `gh pr checks` `link` fields first, `statusCheckRollup.detailsUrl` second, and the PR checks tab last. The dialog has separate copy, open PR, and open CI actions. Follow-up work is live validation through host attach.
+- File export cannot ride the existing control/attach frame model as a whole-file payload. The first implementation uses chunked attach frames and host-side digest verification for regular files up to 64 MiB. Directory export, arbitrary host destinations, overwrite confirmation, and very large-file side streams remain follow-up work.
+
+These facts are part of the implementation contract. If the code changes before this roadmap is implemented, update this section first so a future `/goal` run does not build against stale assumptions.
+
+## Research Findings
+
+### Host CLIs
+
+The public Codex CLI documentation says Codex supports image inputs in two ways: paste images into the interactive composer, or pass image file paths with `--image` / `-i`. It does not document the internal paste implementation, but the architecture implication is clear: a local Codex process has access to the host clipboard and local image files before it constructs the model request. See [Codex CLI features — Image inputs](https://developers.openai.com/codex/cli/features#image-inputs).
+
+Claude Code exposes similar behavior in practice: when run directly on the host, it detects an image in the clipboard and inserts an image placeholder into its prompt composer. That does not prove a public protocol jackin❯ can rely on; it proves the host-local process has a capability the in-container process lacks.
+
+### herdr
+
+[herdr](https://github.com/ogulcancelik/herdr) is the closest public reference because it is a Rust terminal-native agent multiplexer. It is not embedded in jackin❯ because herdr is AGPL-3.0 while jackin❯ is Apache-2.0, but its design is directly informative.
+
+The relevant herdr shape:
+
+1. The host-side client watches terminal input for a paste trigger such as `Ctrl+V` or an empty bracketed-paste sequence.
+2. On that trigger, it asks the host platform for an image clipboard payload.
+3. macOS reads the pasteboard through AppleScript by coercing clipboard data to PNG.
+4. Linux reads image MIME types through `wl-paste` on Wayland or `xclip` on X11.
+5. The client validates and caps the image payload, then sends a typed `ClipboardImage { extension, data }` message over herdr's client/server protocol.
+6. The server stages the image to a private temp file and routes the staged path as a paste event to the active pane.
+
+The files that matter in herdr are `src/client/mod.rs`, `src/platform/macos.rs`, `src/platform/linux.rs`, `src/server/clipboard_image.rs`, `src/server/headless.rs`, and `src/server/terminal_attach.rs`. jackin❯ should borrow the architecture and validation ideas, not copy code.
+
+### Ghostty and terminal behavior
+
+Ghostty already supports terminal graphics display through the Kitty graphics protocol, and it can paste file-backed images in some flows, but there is an explicit Ghostty discussion showing a gap for screenshots captured directly to the macOS clipboard: [ghostty-org/ghostty discussion #10478](https://github.com/ghostty-org/ghostty/discussions/10478). That distinction matters. A file copied from Finder can become a pasteable path or terminal image indicator; a screenshot copied directly to the pasteboard may never become a path or byte stream for the child process.
+
+This confirms the jackin❯ design should not assume "image paste" is one terminal protocol. It must handle at least three host clipboard shapes:
+
+| Clipboard shape | Example | Correct jackin❯ behavior |
+|---|---|---|
+| Raw image data | macOS screenshot copied with `Shift+Cmd+Ctrl+4`, image copied from a browser | Read host clipboard bytes, validate, stage inside the container, paste readable container path. |
+| File promise / file URL / copied file | Screenshot saved to disk then copied in Finder, image copied from a file manager | Resolve the host file if permitted, copy or bind/stage it into the container, paste readable container path. |
+| Plain text path | Operator copied `/path/to/image.png` text | Treat as ordinary text unless an explicit image-paste command says "stage this path." |
+
+### Existing jackin❯ clipboard surface
+
+jackin-capsule already has clipboard behavior that must remain intact:
+
+- Pane programs can write text to the host clipboard through OSC 52 passthrough when the operator has not disabled it.
+- jackin-owned actions such as text selection, double-click word copy, Debug info copyable values, and launch-failure copy targets emit OSC 52 from the multiplexer.
+- Those copy actions render visible feedback, such as the `Selection copied` toast, because terminals may accept, deny, or silently ignore clipboard writes.
+- Bracketed paste from the host terminal is mirrored from the focused pane and forwarded as ordinary input bytes.
+
+The screenshot-driven lesson is that image paste must join this surface deliberately. It should not be treated as a special case hidden in the input parser, and it should not replace existing OSC 52 text copy behavior. The correct model is a clipboard boundary with explicit direction, ownership, and permission:
+
+| Direction | Current / target mechanism | Boundary owner |
+|---|---|---|
+| Pane or jackin❯ UI writes text to host clipboard | OSC 52, with visible copy feedback | Capsule output path and host terminal policy. |
+| Host text paste enters focused pane | Terminal byte stream, bracketed-paste-aware | Host terminal plus attach client. |
+| Host image paste enters focused pane | Host clipboard reader, typed `ClipboardImage` frame, container staging, pasted container path | Host attach client plus Capsule staging. |
+| Agent reads host clipboard directly | Not allowed | No implementation path. |
+
+This keeps copy-out, text paste-in, and image paste-in separate. That separation is a correctness property, not just an implementation preference: text copy is terminal-mediated, text paste is byte-stream-mediated, and image paste requires a host API read plus a file transfer into the container.
+
+### Adjacent host affordance: opening links
+
+The same host/container boundary appears with hyperlinks. Capsule already forwards safe OSC 8 hyperlinks (`http`, `https`, and `mailto`) to the outer terminal, and it also renders jackin-owned hyperlink regions for chrome and dialogs. That is correct but incomplete: not every terminal exposes a convenient clickable-link gesture, and some visible links are plain text rather than OSC 8 regions.
+
+The host attach client should eventually own an explicit "open link under cursor" affordance:
+
+1. The operator performs an explicit gesture, such as `Cmd`-click on macOS if the terminal exposes that modifier to the program, `Ctrl`-click where that is the portable terminal modifier, or a command palette action such as "Open link under cursor".
+2. The host attach client asks Capsule which safe link is under the cursor, or derives the visible URL from the current pane snapshot using the same URL-token semantics as double-click selection.
+3. The host attach client opens the URL with the host OS browser action (`open` on macOS, `xdg-open` or a configured opener on Linux).
+4. Capsule renders a compact feedback cue only if the action fails or is blocked by policy.
+
+This should be implemented as an explicit host action, not as automatic browser opening when an agent prints a link. A compromised or noisy agent can emit unlimited OSC 8 hyperlinks; it must not be able to launch host browser windows without a user gesture.
+
+`Cmd`-click is desirable on macOS, but it is a terminal capability question, not an assumption. Some terminals consume `Cmd`-click for their own hyperlink handling and never send it to the child program. Phase 0 should measure what Ghostty and the other supported terminals actually send for `Cmd`-click, `Option`-click, and `Ctrl`-click. If `Cmd` never reaches the host attach client, jackin❯ can still provide the capability through a command palette action and any modifier sequence the terminal does expose.
+
+The design must cover two visible agent experiences:
+
+| Experience | Examples | Link-open behavior |
+|---|---|---|
+| Plain CLI transcript | Codex-style output, shell output, logs, command results | Scan visible row text and scrollback snapshots for URL-shaped tokens; when the modifier is held and the cursor is over a safe URL, draw a subtle hover highlight and open on modified click. |
+| Rich TUI / alternate-screen mode | Claude Code, Amp, Grok, and other TUIs that render panels, mouse targets, and OSC 8 links | Prefer OSC 8 hyperlink regions and jackin-known chrome link regions; fall back to visible URL-token detection on the current rendered grid. Normal mouse input continues to the TUI. Only an explicit link-open gesture on a safe URL is intercepted. |
+| jackin-owned chrome and dialogs | GitHub context dialog, Debug info dialog, bottom PR target, launch-failure popup | Use first-class actions because jackin❯ already owns the URL and click target. The GitHub context dialog should expose open actions for both the PR URL and the CI/checks URL without requiring modifier-hover over text. |
+
+The hover highlight should be an overlay in Capsule's compositor, not bytes injected into the pane. If the focused TUI has mouse reporting enabled, ordinary motion, clicks, and drags still belong to the TUI. The link-open path becomes active only while jackin❯ can positively identify the operator's modifier or while an explicit command palette action is running. If the terminal cannot report `Cmd` hover state, the correct result is "command palette action works, modifier hover is unavailable in that terminal", not guessing from unmodified mouse movement and stealing rich-TUI input.
+
+The GitHub context dialog is the canonical first chrome target. It already displays branch, PR number, PR title, GitHub URL, and CI status. The host-affordance bridge should add separate actions for "Open PR in browser" and "Open CI in browser"; when CI is failing, the CI action should prefer the most specific failing check/run URL available rather than the generic repository Actions page. Keyboard flow can keep `Enter` as copy and add an open key such as `o`, or expose an action row with separate `copy URL`, `open PR`, and `open CI` targets. Mouse flow should keep copy and open targets visually distinct so an accidental copy click does not launch the browser.
+
+This requires new data in Capsule. The current PR context lookup only asks `gh pr list` for `number`, `title`, `url`, and `isDraft`, then asks `gh pr checks` for bucket counts. V1 must extend that state with check/run URLs, or add a host/Capsule query path that can resolve the CI target when the dialog opens. A UI-only open button without a real URL source is incomplete.
+
+### tmux and OSC 52
+
+tmux's clipboard integration is mostly about text clipboard synchronization. Its wiki describes OSC 52 and external clipboard tools as "blunt" and inconsistently supported, and calls out the security problem where allowing arbitrary applications to set the outside clipboard means anything that can write to a pane can affect the system clipboard. See the [tmux clipboard wiki](https://github.com/tmux/tmux/wiki/Clipboard).
+
+OSC 52 is useful for jackin❯ text copy out of the container and maybe for text clipboard reads in terminals that explicitly support queries. It is not a correct foundation for image paste. Many terminals do not support reading the clipboard through OSC 52; where reads exist, they typically require user consent; and the payload model is text-oriented rather than "give the remote program the host's screenshot as a file it can read."
+
+### Kitty graphics
+
+The [Kitty terminal graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) lets a terminal application display raster images in a compatible terminal. That is the opposite direction from this feature. It answers "how can a program draw an image in Ghostty/kitty?" not "how can a program inside a Docker container receive an image from the host clipboard?" jackin❯ may eventually need Kitty graphics passthrough for visual previews, but it is not the clipboard image bridge.
+
+### Remote-terminal analogs
+
+Remote SSH tools solve the same class of problem with an out-of-band upload: read the local clipboard, write an image file on the remote machine, then paste or copy the remote path. [clipssh](https://samuellawrentz.com/blog/clipssh/) is a concise example of that model. jackin❯'s container boundary is not SSH, but the correct abstraction is the same: host image bytes must be deliberately transferred to the environment where the agent can read them, and the thing pasted into the agent should be the destination path.
+
+Ghostty has an open SSH-image-paste discussion that describes the same desired user flow: detect a local clipboard image, upload it to the remote session, and insert the remote path so tools like Claude Code can read it. The proposed path there is SCP over an existing SSH control socket. jackin❯ does not need SSH for local Docker, but the product invariant is identical: paste/upload creates a destination-local file path, not a host-only path. See [ghostty-org/ghostty discussion #10517](https://github.com/ghostty-org/ghostty/discussions/10517).
+
+### Link handling references
+
+WezTerm has a first-class `OpenLinkAtMouseCursor` action that can be bound to `Ctrl`-click, plus `hyperlink_rules` that turn visible text patterns into clickable links. This supports jackin❯'s planned split between explicit OSC 8 regions and implicit URL detection. See [WezTerm `OpenLinkAtMouseCursor`](https://wezterm.org/config/lua/keyassignment/OpenLinkAtMouseCursor.html) and [WezTerm `hyperlink_rules`](https://wezterm.org/config/lua/config/hyperlink_rules.html).
+
+xterm.js documents the common safety rule for link activation: terminals often require a modifier, usually `Ctrl` or `Cmd` on macOS, to avoid accidental window opening. It also calls out hover URL display as a safety feature, especially for OSC 8 links where the displayed text can differ from the actual target. jackin❯ should follow that model: show enough target information on hover/debug surfaces, but do not log full query strings by default. See [xterm.js Link Handling](https://xtermjs.org/docs/guides/link-handling/).
+
+Rio's hyperlink hints are useful because they make modifier keys configurable and default to `Command` on macOS and `Alt` elsewhere. That argues against hard-coding `Cmd` as the only jackin❯ link-open gesture. The first implementation should prefer platform defaults but keep a configurable modifier/open command path. See [Rio Hyperlinks](https://rioterm.com/docs/features/hyperlinks).
+
+xterm mouse protocols can report Shift, Meta, and Control modifiers with mouse events, but the xterm documentation also notes that Shift and Control are often unavailable because terminals reserve them for selection or menus. That confirms Phase 0 must measure the actual terminal, especially Ghostty on macOS, instead of assuming modifier-hover will be visible to the attach client. See [xterm control sequences — mouse tracking](https://www.xfree86.org/current/ctlseqs.html).
+
+### Shell integration and file transfer references
+
+iTerm2's shell integration can download a file referenced in remote output and can upload a dragged Finder file to the remote host with SCP when Option is held. This is not a direct implementation target for jackin❯, but it proves the UX class is established: terminal chrome can turn a visible remote/container path or host drag/drop into an explicit transfer action. jackin❯'s equivalent should be typed Capsule staging under `/jackin/run/clipboard/` or a future `/jackin/run/uploads/`, not ad hoc shell text injection. See [iTerm2 shell integration](https://iterm2.com/3.0/documentation-shell-integration.html).
+
+WezTerm shell integration uses OSC 7, OSC 133, and OSC 1337 to mark working directories, prompt/input/output zones, and pane state. jackin❯ already blocks OSC 7 passthrough to avoid host cwd pollution, but the idea of prompt/output zones is still useful: when shell sessions emit OSC 133, Capsule can use those zones to make transcript-mode link hover, command-output selection, and future "open artifact from last command" more precise. See [WezTerm shell integration](https://wezterm.org/shell-integration.html).
+
+Kitty's clipboard kitten can read and write arbitrary clipboard MIME types, including raster images, and can work over SSH with permission prompts. That is a useful optional backend/protocol reference, but it should not become jackin❯'s primary path because it depends on Kitty-compatible terminal support and terminal-level clipboard permissions. The primary path remains a host attach client with platform readers. See [Kitty clipboard kitten](https://sw.kovidgoyal.net/kitty/kittens/clipboard/).
+
+Kitty's remote-file kitten supports opening, editing, and downloading files from a remote SSH session. The terminal can use hyperlinks from commands such as `ls --hyperlink=auto`, then a modified click chooses an action. This is the closest UX precedent for jackin❯'s container-file export path: visible file path plus explicit operator action plus host-side destination. See [Kitty remote files](https://sw.kovidgoyal.net/kitty/kittens/remote_file/).
+
+Kitty's transfer kitten is a more protocol-shaped precedent: it can copy files in either direction over the TTY device, including remote-to-local download and local-to-remote upload. jackin❯ should not depend on Kitty's implementation, but it validates a typed bidirectional file-transfer capability as a terminal-adjacent primitive. See [kitten-transfer manual](https://manpages.ubuntu.com/manpages/noble/man1/kitten-transfer.1.html).
+
+iTerm2's utilities include `it2dl`, which downloads a remote file into the local Downloads folder. This reinforces the correct host destination model for jackin❯: a predictable operator-owned download location with visible feedback, not silent writes to arbitrary host paths. See [iTerm2 utilities](https://iterm2.com/documentation-utilities.html).
+
+## Decision
+
+Implement this as a **host-owned attach client with typed host-affordance frames**, starting with clipboard-image frames and explicit host-link-open requests, not as a persistent host daemon in the first design.
+
+The correct data flow is:
+
+```text
+Ghostty / terminal on host
+  -> jackin host attach client
+      -> read host clipboard on explicit paste trigger
+      -> validate and cap image bytes
+      -> Capsule attach protocol ClipboardImage frame
+          -> Capsule daemon stages under /jackin/run/clipboard/
+          -> Capsule pastes the container-readable path into the focused PTY
+```
+
+This fixes the structural cause: the host component that can read the host clipboard does so, then uses an explicit jackin protocol message to cross the container boundary. It also preserves the container boundary: agents receive a file path inside the container, not arbitrary host clipboard access.
+
+The daemon remains relevant for future desktop/global bridges, but it is not required for the first correct implementation. Image paste is synchronous with an attached terminal and an explicit paste gesture. A short-lived host attach client can perform the needed host-side read without a long-running process.
+
+## Implementation Contract
+
+This section is the authoritative scope for an agent asked to implement this roadmap. The research sections explain why the design exists; they are not permission to implement every referenced terminal feature.
+
+### V1 Required Scope
+
+The first implementation that claims to satisfy this roadmap must ship these pieces together:
+
+1. **Host-owned attach foundation**
+   - Host `jackin` owns the raw terminal during attach.
+   - Same-kernel Docker connects directly to the bind-mounted Capsule socket when possible.
+   - Docker Desktop, OrbStack, and any host that cannot open the Unix socket use a `jackin-capsule attach-proxy` stdio relay inside the container.
+   - Existing attach behavior remains intact: raw mode cleanup, resize, focus events, terminal colors, bracketed paste, normal input forwarding, OSC 52 copy-out, OSC 8 passthrough, and jackin-owned copy feedback.
+2. **Clipboard image paste**
+   - Explicit operator paste gesture reads host clipboard image data.
+   - Host reader supports macOS raw screenshot paste and at least one Linux backend when available.
+   - Capsule receives a typed image payload, validates size/signature, stages under `/jackin/run/clipboard/`, and pastes the container path into the focused pane without auto-submit.
+3. **GitHub context host actions**
+   - GitHub context dialog exposes separate copy, open PR, and open CI/checks actions. This has landed for keyboard and mouse flow.
+   - Open actions run in the host attach client, not inside the container. This has landed for opt-in host attach via `ServerFrame::HostOpenUrl`.
+   - CI opening prefers failed check `link`, then cancelled, pending, passing, and skipped links from `gh pr checks`; if those are unavailable it prefers failed/cancelled/timed-out `statusCheckRollup.detailsUrl`, then pending, successful, skipped detail URLs, then the PR checks tab.
+4. **Minimal container file export**
+   - Operator can explicitly export one regular container file to a surfaced host destination. This has landed through the command palette `Export file` action, with `Export file and reveal`, `Export file and open`, under-cursor export variants, selected-text export variants, and modified-click visible-file export as explicit host-side effects after verified export.
+   - Default destination is a jackin-owned host download directory. The current implementation uses `~/Downloads/jackin/<instance>/` with the sanitized container/instance name.
+   - Export uses typed Capsule transfer or negotiated side stream, not `docker cp` as the product surface. This has landed as typed chunked attach frames with SHA-256 verification.
+   - V1 supports workspace files and jackin-owned diagnostics/artifacts; arbitrary container paths are denied or require explicit confirmation. The current implementation allows workspace files and `/jackin/run/`.
+
+### V1 Explicit Non-Scope
+
+Do not implement these in the V1 PR, even though this page discusses them as future directions:
+
+- Persistent host daemon or Desktop Agent Hub integration.
+- Remote Docker, Kubernetes, SSH, or cross-host relay.
+- Directory export, archive export, or recursive export.
+- Generic arbitrary file paste, PDF paste, or drag/drop upload.
+- Runtime-specific image prompt adapters for Claude Code, Codex, Amp, Kimi, Grok, or OpenCode.
+- Kitty, iTerm2, or WezTerm proprietary transfer protocols as required dependencies.
+- Host file picker UI or destination preferences UI.
+- Browser opening for arbitrary schemes beyond `http`, `https`, and `mailto`.
+- Agent-triggered host actions without an operator gesture.
+
+### Completion Criteria
+
+The roadmap item is implemented only when:
+
+- The in-container attach client is no longer the only supported interactive attach path for host-terminal capabilities.
+- Clipboard image paste works from Ghostty on macOS for a screenshot in the host clipboard.
+- The attach transport is validated on OrbStack: direct socket if OrbStack supports it for the mounted Capsule socket, otherwise the stdio `attach-proxy` fallback.
+- At least one Linux image clipboard backend is implemented or returns a clear "missing host clipboard tool" operator message.
+- GitHub context can open PR and CI/check URLs from the host browser through explicit UI actions.
+- A regular file created inside the workspace/container can be exported to the host download directory through Capsule UI without `docker cp`.
+- All host-side effects are explicit, logged at compact level without private payloads, and covered by tests.
+- Existing pane input, rich TUI mouse behavior, OSC 52 copy, OSC 8 passthrough, and bracketed paste regressions are covered.
+
+If an implementation chooses to split V1 across multiple PRs, the first PR must land only infrastructure that is already usable and tested, and the PR description must name which V1 bullets remain. Do not claim the roadmap item is complete until every V1 required bullet above is shipped.
+
+## Non-Goals
+
+- Do not expose the host clipboard to agents as a general API.
+- Do not let agents request clipboard reads without an operator paste gesture.
+- Do not let agents open host browser windows merely by printing URLs, emitting OSC 8, or updating GitHub context.
+- Do not let agents write files to the host merely by printing paths, emitting OSC links, or creating files in the container.
+- Do not mount the host's general temp directory or Downloads directory into the container to "make paths work."
+- Do not rely on OSC 52 clipboard reads as the primary implementation.
+- Do not use Kitty graphics as the transfer path for image paste.
+- Do not make Kitty/iTerm2 proprietary clipboard or file-transfer protocols required for the primary implementation.
+- Do not add a persistent host daemon just for this feature.
+- Do not implement provider-specific hacks for Claude Code, Codex, Amp, Kimi, or OpenCode as the foundation. Runtime-specific improvements can sit above the bridge after the generic bridge is correct.
+
+## Target Operator Experience
+
+When an operator is attached to a jackin❯ Capsule session and presses the paste gesture while the host clipboard contains an image:
+
+1. jackin❯ reads the image from the host clipboard.
+2. jackin❯ stages it into the running role container.
+3. The focused agent prompt receives a readable container path, pasted in the same bracketed-paste-safe way as normal text paste.
+4. Claude Code, Codex, or any other image-aware CLI can attach/read that file using its normal local-file support.
+5. The operator sees a compact status cue such as `Image staged: /jackin/run/clipboard/clip-...png`.
+
+The behavior should be the same whether the clipboard source is a raw screenshot, a copied browser image, a copied image file, or a drag/drop image file, subject to platform support and explicit permission policy.
+
+The status cue should reuse the same transient-feedback discipline as `Selection copied`: visible enough to confirm the host clipboard action happened, constrained to the multiplexer chrome/overlay surface, and never drawn over the pane prompt, status rows, footer hint, or bottom branch/run bar. Image staging feedback should prove the staged container path, not leak a source host path or clipboard metadata.
+
+## Architecture
+
+### Host Attach Client
+
+The host `jackin` binary should own the interactive terminal during attach instead of delegating the whole interactive session to `docker exec -it ... /jackin/runtime/jackin-capsule`.
+
+This host client should:
+
+- Enter raw mode, enable bracketed paste, and own terminal cleanup.
+- Collect terminal identity and color information currently collected by the in-container attach client.
+- Connect to the Capsule attach protocol directly when the bind-mounted socket is usable from the host.
+- Use a stdio relay fallback through `docker exec -i` when direct host connection to the Unix socket is impossible, especially Docker Desktop and OrbStack on macOS.
+- Forward normal input bytes unchanged.
+- Intercept only explicit image-paste triggers and convert them into typed clipboard-image frames.
+- Preserve existing copy-out behavior by forwarding focused-pane OSC 52 writes and jackin-owned OSC 52 copy actions to the host terminal with the same visible feedback behavior operators already see.
+- Preserve host-terminal selection behavior. If the operator selects text directly in Ghostty's viewport and copies it, jackin❯ should not interfere; if the operator uses jackin-owned pane selection, jackin❯ continues to emit OSC 52 and render its own copy feedback.
+- Provide the correct home for future host-only operator actions such as "open link under cursor", because a process inside the Linux role container cannot reliably open the operator's macOS or Linux desktop browser.
+
+The first stage can keep the existing in-container client for compatibility while adding a host client behind a feature flag or narrow attach path. The end state should remove the architectural dependency on the in-container client for host-terminal capabilities.
+
+### Socket Connectivity
+
+jackin❯ already bind-mounts a per-instance host directory at `/jackin/run`; the Capsule socket appears at `~/.jackin/sockets/<container>/jackin.sock` and the docs already describe this boundary. On same-kernel Docker hosts, host code can open that socket directly. On Docker Desktop for macOS, the host can see the inode through the bind mount but cannot connect to the Linux VM's Unix socket reliably. OrbStack is Docker-compatible but has its own macOS/VM filesystem and socket integration behavior, so it must be tested as a separate local container backend rather than assumed equivalent to Docker Desktop.
+
+The correct portable attach strategy is therefore:
+
+| Environment | Attach transport |
+|---|---|
+| Same-kernel Linux Docker | Host `UnixStream` directly to `~/.jackin/sockets/<container>/jackin.sock`. |
+| Docker Desktop macOS | Host process runs `docker exec -i <container> /jackin/runtime/jackin-capsule attach-proxy`; the proxy connects to `/jackin/run/jackin.sock` inside the container and relays framed bytes over stdio. |
+| OrbStack macOS | Probe direct host connection to `~/.jackin/sockets/<container>/jackin.sock`; if connect fails, use the same `docker exec -i ... attach-proxy` relay. The implementation must record which path was selected in debug logs. |
+| Future remote Docker / Kubernetes | Host-side attach transport becomes another adapter, but the clipboard-image frame and staging contract remain the same. |
+
+This keeps the image bridge independent of Docker implementation details. The protocol says "client sends ClipboardImage"; the transport decides how bytes reach the daemon.
+
+The implementation should reuse the existing snapshot/control precedent: try the host-visible socket path first when the Docker backend makes that meaningful, then fall back through an in-container command when the host can see the socket inode but cannot connect through the VM boundary. Do not special-case OrbStack by name unless measurement proves distinct behavior that cannot be represented by the same probe-and-fallback adapter.
+
+### Protocol
+
+The implemented attach protocol has this client-to-server frame:
+
+```rust
+ClientFrame::ClipboardImage(ClipboardImage {
+    format: ClipboardImageFormat,
+    bytes: Vec<u8>,
+})
+```
+
+`ClipboardImageFormat` is an explicit tag, not a free-form extension string. The first implementation supports `Png`, `Jpeg`, `Gif`, `Webp`, and `Tiff`; Capsule validates the claimed format against image magic bytes before staging.
+
+Keep normal paste as `ClientFrame::Input`. A host image paste should not be encoded as base64 text inside a terminal paste sequence. It should be a typed frame so Capsule can validate, stage, log, and route it deliberately.
+
+The existing normal `MAX_FRAME_PAYLOAD` is 4 MiB. Small clipboard-image frames deliberately use a separate 16 MiB frame cap and expose `MAX_CLIPBOARD_IMAGE_BYTES = 16 MiB - 1` for the one-byte format discriminator. Larger image paste uses chunked client-to-server frames:
+
+```rust
+ClientFrame::ClipboardImageStart(ClipboardImageStart {
+    transfer_id: u64,
+    format: ClipboardImageFormat,
+    size: u64,
+})
+ClientFrame::ClipboardImageChunk(ClipboardImageChunk {
+    transfer_id: u64,
+    offset: u64,
+    bytes: Vec<u8>,
+})
+ClientFrame::ClipboardImageEnd(ClipboardImageEnd {
+    transfer_id: u64,
+    sha256: [u8; 32],
+})
+ClientFrame::ClipboardImageError(String)
+ClientFrame::HostNotice(String)
+ServerFrame::HostPasteImageFromClipboard
+ServerFrame::HostStageImageFromClipboardPath
+ServerFrame::HostStageImageFromClipboard
+```
+
+Each image chunk is capped at 1 MiB, and the first implementation caps a chunked image transfer at 64 MiB. Capsule assembles by transfer id, enforces contiguous offsets and total byte count, verifies SHA-256, cancels the active transfer id on a malformed chunk, shows a transient receiving notice while a chunked transfer is active, then reuses the same magic-byte validation and `/jackin/run/clipboard/` staging path as single-frame images. `ServerFrame::HostPasteImageFromClipboard` is emitted by the explicit image-paste command-palette action; the host attach client responds with ordinary image frames from the host clipboard image reader or `ClientFrame::ClipboardImageError` when the request cannot be satisfied, and Capsule pastes the staged container path into the focused pane. `ServerFrame::HostStageImageFromClipboard` is emitted by the explicit stage-without-pasting command; the host attach client responds with the same ordinary image frames, and Capsule consumes the next image response in stage-only mode so no path is typed into the focused pane. `ServerFrame::HostStageImageFromClipboardPath` is emitted only by the explicit path-staging command; the host attach client responds with the ordinary image frames when the host clipboard text is an absolute readable image path, or `ClientFrame::ClipboardImageError` when the request cannot be satisfied. This keeps ordinary path text paste compatible while giving the operator deliberate image-paste, image-stage, and path-staging actions. File export uses server-to-host attach frames:
+
+```rust
+ServerFrame::FileExportStart(FileExportStart {
+    transfer_id: u64,
+    source_path: String,
+    file_name: String,
+    size: u64,
+    reveal_after_export: bool,
+    open_after_export: bool,
+})
+ServerFrame::FileExportChunk(FileExportChunk {
+    transfer_id: u64,
+    offset: u64,
+    bytes: Vec<u8>,
+})
+ServerFrame::FileExportEnd(FileExportEnd {
+    transfer_id: u64,
+    sha256: [u8; 32],
+})
+```
+
+Each file chunk is capped at 1 MiB. The first implementation caps an exported file at 64 MiB, writes to a temporary host file under `~/Downloads/jackin/<instance>/`, verifies byte count and SHA-256, then renames to a collision-resistant final path. `reveal_after_export` and `open_after_export` are explicit post-export host actions carried on the same validated export request; palette call sites keep them mutually exclusive. Broader file export and very large binary transfers still need more transfer work:
+
+- Add a negotiated side stream that still routes through Capsule policy and telemetry.
+- Add explicit cancellation frames for interrupted image/file transfers if live validation proves they are useful. Malformed image chunks already cancel their active transfer id, idle image transfers are timed out with visible feedback, and malformed/interrupted/idle file exports already clean up temporary host files.
+
+Large image paste now uses chunking up to the first 64 MiB cap; images beyond that still require a side stream or a higher explicit cap and must not be implemented as one oversized attach frame.
+
+### Host Clipboard Readers
+
+Use maintained crates or platform APIs where practical, and keep each backend isolated behind one trait:
+
+```rust
+trait HostClipboardImageReader {
+    fn read_image(&self) -> Result<Option<ClipboardImagePayload>, ClipboardReadError>;
+}
+```
+
+Backends:
+
+| Platform | Primary backend | Fallback |
+|---|---|---|
+| macOS | Native pasteboard access through a small Rust/ObjC or Swift helper, or a maintained Rust clipboard crate if it can read images reliably. | `osascript` coercing the pasteboard to PNG/TIFF, used as a compatibility fallback and test oracle. |
+| Wayland Linux | `wl-paste --type image/png` and sibling image MIME types. | None initially; return "no image" if unavailable. |
+| X11 Linux | `xclip -selection clipboard -t image/png -o` and sibling image MIME types. | `xsel` if it can read typed image selections reliably. |
+| Windows | Out of scope until native Windows host support exists. | None. |
+
+The reader should try image MIME types in a deterministic order and validate the returned bytes against the claimed format. It should never trust a clipboard command just because it exited successfully.
+
+Supported formats:
+
+| Format | Extension | Validation |
+|---|---|---|
+| PNG | `png` | `\x89PNG\r\n\x1a\n` signature. |
+| JPEG | `jpg` | `0xFF 0xD8 0xFF` prefix. |
+| GIF | `gif` | `GIF87a` or `GIF89a`. |
+| WebP | `webp` | `RIFF....WEBP`. |
+| TIFF | `tiff` | `MM\0*` or `II*\0` prefix. |
+
+SVG should not be accepted as an image clipboard payload in V1. It is text with active-content and parser concerns. If needed later, add it as a separate explicit file-staging path with stricter sanitization.
+
+### Container Staging
+
+Capsule should stage received images under:
+
+```text
+/jackin/run/clipboard/
+```
+
+The staged files are jackin-owned runtime state and therefore belong under `/jackin/`, specifically the ephemeral runtime mount. The host-side backing directory is already per-instance under `~/.jackin/sockets/<container>/`; this feature should not create a new top-level container path or a new host path family.
+
+`/jackin/run/clipboard/` is runtime staging, not durable artifact storage. It is acceptable for clipboard images that need to survive long enough for the agent to read them after prompt submission. It is not the destination for exported host files, diagnostics archives, or user-kept artifacts.
+
+Staging rules:
+
+- Create `/jackin/run/clipboard/` with `0700`.
+- Create files with `0600` and `create_new`.
+- Generate collision-resistant names that do not include host paths or clipboard text.
+- Use extension only after sanitization.
+- Re-validate magic bytes in Capsule before writing, even if the host reader already validated.
+- Return the staged in-container path to the paste router.
+- Delete staged files on clean daemon exit and SIGINT/SIGTERM shutdown when possible, and always remove them when the instance socket dir is cleaned up. Ordinary client reattach does not remove staged files because a running agent may still need to read a just-pasted path.
+
+The pasted text should be the container path:
+
+```text
+/jackin/run/clipboard/clip-<timestamp>-<nonce>.png
+```
+
+For agents that require command-line attachment syntax rather than a bare path, runtime-specific prompt adapters can be added later. The generic primitive remains "stage a readable file and paste its path."
+
+### Paste Routing
+
+After staging, Capsule should paste the path into the focused PTY using the same bracketed-paste semantics as normal text paste:
+
+- If the focused pane has bracketed paste enabled, write `ESC [ 200 ~ <path> ESC [ 201 ~`.
+- Otherwise write the path as ordinary bytes.
+- Do not append Enter automatically in V1. The operator should review the prompt before submission.
+
+If no pane is focused, or the focused pane is not writable, Capsule reports the staged path and a `not pasted` warning instead of dropping the image silently.
+
+### Host Link Opening
+
+Host link opening is not part of the image-paste V1, but the host attach client should be designed so it can support it without another architecture turn.
+
+The required pieces are:
+
+- Preserve Capsule's existing OSC 8 passthrough so terminals with native hyperlink support keep working.
+- Track safe hyperlink regions in the focused pane and jackin-owned chrome as queryable frame metadata.
+- Add an attach request such as `OpenLinkAt { row, col }` or `LinkAt { row, col }` so the host client can ask Capsule what link lives under a mouse event.
+- Add a direct `OpenUrl { url, source }` request for jackin-owned chrome and dialogs that already carry an exact URL, starting with GitHub context's PR and CI/check URLs.
+- Fall back to plain-text URL detection in the visible row when no OSC 8 region exists. Reuse the selection URL-token rules instead of adding a second URL parser.
+- Support both primary-screen transcript output and alternate-screen rich TUI output by querying Capsule's composed grid, not by scraping terminal scrollback from the host terminal emulator.
+- Render modifier-hover disclosure as a compositor overlay derived from the current frame's link metadata. The first slice renders an `Open link: ...` notice for `Alt`/`Ctrl` passive hover in mouse-disabled panes and never writes highlight escape sequences into the agent PTY.
+- Restrict openable schemes to `http`, `https`, and `mailto` unless a later operator setting explicitly adds more.
+- Execute the browser-open command only in the host process.
+- Never open a URL just because an agent emitted OSC 8 or printed text.
+- `JACKIN_OPEN_LINKS=deny` / `off` / `no` has landed as the environment opt-out before default-on.
+
+This can share the same transport foundation as image paste: the host client owns the operator gesture and host-side action; Capsule owns terminal state, pane focus, and URL safety classification.
+
+### Container File Export
+
+The inverse of host-to-container image/file staging is container-to-host export. Operators often need to inspect or keep artifacts created by agents: screenshots, generated images, logs, patch files, archives, reports, or build outputs. Today they must manually use `docker cp`, bind mounts, or copy text out of the pane. The desired Capsule experience is a first-class "Export file to host" action.
+
+The implemented first-pass data flow is:
+
+```text
+Operator selects / points at a container path
+  -> Capsule validates path and file metadata inside the container
+      -> Capsule streams file bytes over the attach protocol
+          -> host attach client writes to an explicit host destination
+              -> operator sees Exported: ~/Downloads/jackin/<instance>/...
+```
+
+Container export should be built around explicit operator actions:
+
+- A command palette action such as `Export file` that prompts for or pre-fills a container path. The current implementation has the path-entry action, visible-token under-cursor variants, and selected-text path variants.
+- A click/action on jackin-owned file-path rows in launch failures, diagnostics, and future artifact dialogs. Debug info diagnostics logs now support copy and explicit host reveal.
+- A modified click or context action on visible file paths in plain transcript output, only when the path can be resolved against the focused pane's container cwd. The current implementation exports on `Alt`/`Ctrl` modified-click only after URL-open resolution declines and the file-export validator accepts the token.
+- Explicit `Export file and open` after export, using the host opener on the verified exported copy, not on the container path.
+
+Destination policy:
+
+- Default to a jackin-owned host download root such as `~/Downloads/jackin/<workspace-or-instance>/`. The current implementation uses the sanitized container/instance name as that subdirectory.
+- Preserve the basename, but sanitize it and append a collision-resistant suffix when needed.
+- Never write to Desktop, Downloads root, a user repository, or an arbitrary host path without an explicit file-picker/CLI destination.
+- Surface the destination before or immediately after export.
+- Add an operator setting later for the default export directory, but keep it under an explicit host-side-effects section before shipping.
+
+Validation and transfer rules:
+
+- Resolve the requested path inside the container before transfer; the current implementation canonicalizes the request and rejects symlink escapes outside the workspace and `/jackin/run/`.
+- Allow workspace files and jackin-owned runtime files by default; the current implementation allows the workspace and `/jackin/run/`. Other container paths require a later confirmation or policy setting.
+- Start with regular files only. The current implementation rejects directories. Directory archive export should be a separate explicit action, for example "Export directory as tar.zst".
+- Apply size caps and stream in chunks so large artifacts do not exhaust memory. The current implementation uses 1 MiB chunks and a 64 MiB V1 cap.
+- Compute a digest during transfer and report bytes + digest in debug logs. The current implementation verifies SHA-256 before final host rename and debug-logs transfer id, path category, basename, byte count, SHA-256, destination category, final path, and digest mismatch details without logging file contents.
+- Do not log file contents. Compact logs use path category, basename, byte count, destination category, coarse rejection reason, and result; they do not include full container paths or full host destinations. Host notices may show the exported destination because they are the operator-facing confirmation for the explicit export action.
+
+This uses typed attach frames rather than shelling out to `docker cp` as the product architecture. `docker cp` bypasses Capsule's path policy, focus/session ownership, telemetry, and future remote-transport abstraction. A `docker cp` helper can remain a manual fallback outside the multiplexer.
+
+### Observability
+
+Add compact logs:
+
+- `clipboard-image: paste trigger source=clipboard`
+- `clipboard-image: staged extension=png bytes=123456 path=/jackin/run/clipboard/...`
+- `clipboard-image: rejected reason=oversize stage=transfer-start`
+- `clipboard-image: rejected reason=signature-mismatch stage=payload`
+- `clipboard-image: no-image source=clipboard text-paste=forwarded`
+- `host-link-open: opened scheme=https source=osc8`
+- `host-link-open: opened scheme=https source=github-context-pr`
+- `host-link-open: opened scheme=https source=github-context-ci`
+- `host-link-open: rejected reason=unsafe-scheme scheme=file`
+- `host-file-export: requested category=workspace basename=report.md`
+- `host-file-export: exported bytes=123456 dest=downloads/jackin/...`
+- `host-file-export: rejected reason=oversize bytes=... max=...`
+- `host-file-export: rejected reason=path-policy path_category=container-root`
+
+Add debug logs:
+
+- Which host backend was attempted.
+- Which MIME type was tried.
+- Why each backend returned no image.
+- Clipboard command exit status or platform error, with no image bytes and no base64.
+- Attach transport path: direct socket vs stdio proxy.
+- For host link opening, the mouse/modifier event, link source (`osc8`, chrome metadata, or plain text), policy decision, and opener command exit status. Query strings and fragments are redacted in landed host-open logs; future link-source telemetry must preserve that rule.
+- For host file export, path resolution category, transfer id, byte count, digest, destination category, and failure cause, without file contents.
+
+Do not log image contents, base64 payloads, source host paths unless the user explicitly used a file-staging command, clipboard-derived metadata that may contain private content, or full URL query strings from host link opening.
+
+## Host-side Effects
+
+This roadmap authorizes five classes of host-side effects, all gated by an explicit operator gesture:
+
+| Effect | Trigger | Host mutation / action | Required guardrails |
+|---|---|---|---|
+| Clipboard image paste | Operator invokes paste while the attach client is focused and the host clipboard contains an image. | Read host clipboard; copy validated bytes into per-instance jackin-owned runtime state visible as `/jackin/run/clipboard/...` inside the container. | No general clipboard API for agents; no host paths pasted; no image bytes in logs; size and format caps. |
+| Clipboard text-path image staging | Operator pastes a single absolute host image path (default-on auto-stage), or invokes the command-palette `Stage image from clipboard path` action; the referenced host file must be a real image. | Read the referenced image file from the host (auto-stage reads only the pasted bytes; the palette action reads host clipboard text); copy validated bytes into per-instance jackin-owned runtime state visible as `/jackin/run/clipboard/...` inside the container. | Absolute image files only, validated by magic bytes; host path is never pasted; ordinary non-image text stays text; auto-stage rejects prose, relative paths, missing files, and mixed pastes, and is opt-out via `JACKIN_PASTE_IMAGE_PATHS=0`; same caps as direct image paste. |
+| Open link in browser | Operator invokes an open-link gesture, such as modifier-click or command palette action, on a safe URL. | Launch the host browser/opener for that URL. | User gesture required; scheme allowlist; operator opt-out; no automatic opens from agent output. |
+| Open GitHub context targets | Operator invokes an explicit GitHub context action such as "open PR" or "open CI". | Launch the host browser/opener for the known PR or CI/checks URL. | User gesture required; target is derived from trusted jackin❯ GitHub context state; failing CI should prefer the failing run/check URL when known. |
+| Export container file | Operator invokes an explicit export action on a resolved container file path. | Write a copy under a surfaced host destination, defaulting to a jackin-owned Downloads subdirectory. | User gesture required; path policy; regular-file-only V1; size cap; no arbitrary host destination without explicit file picker/CLI destination. |
+
+None of these effects writes host configuration, shell files, git state, browser profiles, or user repositories. If a later implementation needs persistent host preferences, they must live under jackin-owned host state and be surfaced before the behavior ships.
+
+## Security Model
+
+This feature must preserve the rule that jackin❯ does not silently mutate or expose the host.
+
+The allowed host-side effects are deliberately narrow: read the host clipboard image data on an operator paste gesture, read host clipboard text plus one absolute image path on the explicit image-stage action, open a safe URL on an operator open gesture, open known GitHub context targets on an operator dialog action, and write an exported container file to a surfaced host destination on an operator export action. The host clipboard, browser, and filesystem are not exposed to the agent as APIs. Image bytes are copied into per-instance jackin-owned runtime state, URLs are opened only by the host attach client, and exported files are written only by the host attach client after Capsule validates and streams the selected container file.
+
+Threats and mitigations:
+
+| Threat | Mitigation |
+|---|---|
+| Malicious agent tries to read clipboard repeatedly. | Agents cannot invoke the host reader. Only the host attach client reads the clipboard on operator paste. |
+| Agent prints a host image path and expects jackin❯ to auto-import it. | Agent-printed output is never auto-staged: only an operator paste (a bracketed paste in the input stream) or an explicit palette action can stage, and only when the content is a single absolute path to a real readable image file. Plain prose and non-image text stay ordinary text; the paste auto-stage is opt-out via `JACKIN_PASTE_IMAGE_PATHS=0`. |
+| Malicious pane tricks the operator into pasting secrets. | This is the same class as ordinary paste. Add visible staging feedback and never auto-submit. |
+| Clipboard command returns text for an image MIME request. | Validate magic bytes before staging. |
+| Oversized clipboard image exhausts memory or socket bandwidth. | Apply host read cap, protocol image cap, and Capsule staging cap. |
+| Staged file leaks after session. | Keep files under per-instance `/jackin/run/clipboard/`; remove on detach and instance cleanup. |
+| Host path leaks into the prompt. | Generate container-local paths; do not paste host paths. |
+| Any same-UID process injects image frames into the socket. | Preserve existing `0700` socket directory and `0600` socket file permissions; typed frame validation prevents arbitrary file writes outside staging. |
+| Image parser vulnerability. | Do not decode pixels in jackin❯ V1. Validate only small magic-byte/header checks and pass bytes through as files. |
+| Agent spams OSC 8 to open browser windows. | Host link opening is gesture-gated; OSC 8 alone only marks a region and never opens anything. |
+| Link opens a dangerous local or active-content URI. | Restrict schemes to `http`, `https`, and `mailto`; keep `file`, `javascript`, `data`, and custom app schemes blocked unless explicitly configured later. |
+| Agent prints `/etc/shadow` and tricks export. | Export requires explicit operator action and path policy; sensitive container paths outside workspace and `/jackin/` require confirmation or are denied by default. |
+| Export follows a symlink to an unexpected location. | Resolve and validate paths inside Capsule before streaming; reject symlink escapes when exporting from a restricted root. |
+| Export overwrites host files. | Host client uses create-new or collision-resistant names by default; arbitrary overwrite requires explicit file-picker confirmation. |
+| Large export exhausts memory or disk. | Stream chunks, enforce caps, surface byte counts, and fail cleanly before writing beyond policy. |
+
+## Correctness Invariants
+
+- Every host clipboard image accepted by jackin❯ becomes a file readable from inside the focused agent container.
+- No host-only path is pasted to an agent unless the same path is intentionally mounted and readable inside the container.
+- Every staged path lives under `/jackin/run/clipboard/`.
+- An image paste never becomes raw terminal base64.
+- An image paste never auto-submits unless a later explicit operator setting enables that behavior.
+- A failed image paste is visible to the operator.
+- Normal text paste behavior remains byte-for-byte compatible unless the host clipboard reader positively detects an image on an explicit image-paste trigger.
+- Plain text paths remain ordinary terminal text unless the operator invokes the explicit image-path staging action.
+- Same-kernel Docker, Docker Desktop, and OrbStack use the same attach protocol; only transport differs.
+- Existing copy-out behavior remains intact: pane OSC 52, jackin-owned selection copy, double-click word copy, and copyable dialog rows still reach the host terminal and still render visible feedback.
+- Image-stage feedback follows the same overlay constraints as `Selection copied`: it must not cover the prompt cursor, pane input line, status bar, footer hint, or branch/run bar.
+- A host browser open happens only after an explicit operator gesture and only from the host attach client or a future daemon/Desktop surface with the same approval semantics.
+- Links emitted by an agent are inert until the operator clicks or invokes an open command.
+- Plain-text URL detection uses one shared URL-token rule with double-click selection; there must not be separate subtly different URL grammars for copying and opening.
+- Rich TUI mouse fidelity remains intact: unmodified mouse events and mouse events without a safe link target continue to the focused pane exactly as they do today.
+- Link-hover highlighting is presentational only; it never mutates the PTY, never changes pane scrollback, and never rewrites the agent's rendered cells.
+- jackin-owned dialogs that already know URLs expose explicit open actions instead of forcing the operator through text selection, terminal-native hyperlinks, or modifier-click detection.
+- GitHub context's CI open action resolves to the most useful available target: failing job/check URL first, then workflow run URL, then PR checks tab or repository Actions page only as a fallback.
+- Container file export is always a copy from container to a surfaced host path; agents never receive a writable host directory as a side effect of export.
+- Exported host files use create-new/collision-resistant writes by default and never overwrite operator files silently.
+- Export path resolution happens inside Capsule against the container filesystem before any host write begins.
+
+## Alternatives Considered
+
+### Keep the current docker-exec attach client and patch Capsule input parsing
+
+This is insufficient because the in-container attach client cannot read the host clipboard. It can only parse bytes that arrive through Docker's PTY. If Ghostty or the OS never sends image bytes to `stdin`, no parser can recover them.
+
+### Stage image files on the host and paste host paths
+
+This works only when the host path is mounted inside the container at the same path. That is false for general host temp paths, Finder files, screenshots, and most clipboard sources. Pasting host paths is the exact broken state the feature is meant to eliminate.
+
+### Bind-mount a host clipboard staging directory and paste mapped paths
+
+This is a viable lower-level mechanism, but it should be hidden behind the Capsule staging contract rather than exposed as the product architecture. The simplest implementation may write bytes to the bind-mounted `/jackin/run/clipboard/` directory from the host so the container sees them immediately. The invariant still needs to be "agent sees `/jackin/run/clipboard/...`", not "agent sees some host temp path."
+
+### Use OSC 52 clipboard query
+
+This is not portable enough, is text-oriented, often requires user consent, and does not solve file staging inside the container. It can remain a possible text clipboard enhancement but not the image bridge foundation.
+
+### Use Kitty graphics
+
+Kitty graphics is for displaying images in the terminal. The feature needs to import host clipboard images into the agent's filesystem/context. Display and input are different directions.
+
+### Add a persistent host daemon first
+
+A daemon can solve this and will be useful for broader host bridge features, but it is not required for explicit paste while a host attach client is active. A daemon-first design also risks conflating "operator pasted into this focused terminal" with "agent can ask the host to read clipboard later." Those are different permissions and should remain separate.
+
+### Agent-specific direct attachments
+
+Codex and Claude Code may have internal prompt attachment APIs that would let jackin❯ inject an image more semantically than pasting a path. That can be an enhancement after the generic bridge exists. The correct base layer is agent-independent: stage a file where the runtime can read it and paste a path.
+
+### Rely only on terminal-native hyperlink clicking
+
+Forwarding OSC 8 is necessary and already part of Capsule's terminal-fidelity model, but it is not sufficient. Some terminals do not expose the desired modifier-click behavior, and plain text URLs are not OSC 8 links. A host-owned open-link action makes the experience consistent while preserving terminal-native hyperlinks where they work.
+
+### Use `docker cp` as the file export product surface
+
+`docker cp` is a useful manual fallback, but it is not the right user-facing Capsule feature. It requires the operator to know the container name and exact path, bypasses the focused session and path policy, does not integrate with hover/dialog actions, and will not compose with future remote Docker or Kubernetes transports. Capsule export should be typed, policy-checked, logged, and available from the same multiplexer UI that showed the file path.
+
+### Bind-mount a host export directory into every container
+
+This makes export mechanically easy but violates the directionality that keeps the host safe. A writable host mount gives agents an ambient host write surface. The correct export direction is pull-based: the operator requests a copy, Capsule streams bytes out, and the host client writes to a surfaced destination.
+
+## Expected Code Touchpoints
+
+A future implementation should start from these existing surfaces:
+
+- Host launch and attach: `crates/jackin/src/app/load_cmd.rs`, `crates/jackin-runtime/src/runtime/attach.rs`, `crates/jackin-runtime/src/runtime/launch.rs`, and `crates/jackin-runtime/src/runtime/snapshot.rs`.
+- Capsule PID split, socket, and attach protocol: `crates/jackin-capsule/src/main.rs`, `crates/jackin-capsule/src/socket.rs`, and `crates/jackin-protocol/src/protocol/attach.rs`.
+- Current terminal client behavior to preserve: `crates/jackin-capsule/src/tui/run.rs`, `crates/jackin-capsule/src/tui/terminal.rs`, `crates/jackin-capsule/src/tui/host_colors.rs`, and `crates/jackin-capsule/src/tui/input.rs`.
+- Pane input/output and OSC policy: `crates/jackin-capsule/src/session.rs`, `crates/jackin-capsule/src/daemon.rs`, and `crates/jackin-capsule/src/daemon/mouse_input.rs`.
+- GitHub context data and dialog UI: `crates/jackin-capsule/src/pr_context.rs`, `crates/jackin-capsule/src/pull_request.rs`, and `crates/jackin-capsule/src/tui/components/dialog.rs`.
+- Existing host-private write posture to reuse conceptually for create-new, permissioned, symlink-safe writes: `crates/jackin-runtime/src/instance/auth.rs`. Do not reuse credential-specific helpers as a generic export API without extracting the policy boundary.
+
+The closest tests to extend are:
+
+- Socket/control/protocol permissions and caps: `crates/jackin-capsule/src/socket/tests.rs` and attach protocol tests.
+- Runtime attach command construction and transport selection: `crates/jackin-runtime/src/runtime/attach/tests.rs` and snapshot fallback tests.
+- Launch/socket path invariants: `crates/jackin-runtime/src/runtime/launch/tests.rs` and `crates/jackin-image/src/derived_image/tests.rs`.
+- Input/paste behavior: `crates/jackin-capsule/src/tui/input/tests.rs`.
+- OSC passthrough, copy feedback, mouse selection, and dialog actions: `crates/jackin-capsule/src/session/tests.rs`, `crates/jackin-capsule/src/daemon/tests.rs`, and `crates/jackin-capsule/src/tui/components/dialog/tests.rs`.
+
+Any implementation PR must also update the operator-facing attach/clipboard/export docs and the contributor-facing Capsule/runtime docs in the same PR. A code change without those docs is not complete.
+
+## Phasing
+
+The implementation contract above controls scope. The phases below are the recommended sequence for landing it without mixing future ideas into V1.
+
+### Phase 0 — validation and protocol design
+
+- Phase 0 Ghostty paste/click/motion measurements were captured under `/tmp/jackin-hab-preflight/` during the preflight run. They cover `Cmd+V`, `Ctrl+V`, raw screenshot clipboard, copied browser image, copied Finder image, plain text paste, `Cmd`/`Option`/`Ctrl` click, and modifier motion.
+- Phase 0 confirmed this slice should not rely on `Cmd` as the portable process-visible modifier on macOS. The landed URL path uses `Alt`/`Ctrl` where the terminal exposes modifier bits, plus explicit command-palette actions.
+- Phase 0 confirmed modifier motion is visible for `Alt`/`Ctrl` in Ghostty, so hover disclosure could be implemented without forwarding hover bytes into the pane.
+
+### Phase 1 — host attach foundation
+
+- Host-owned attach code in `jackin-runtime` / host CLI flow landed behind `JACKIN_HOST_ATTACH=1`: the host runtime owns raw mode, stdin/stdout, resize, focus/mouse bytes, cleanup, shared protocol framing, direct/proxy transport selection, and the shared OSC 10/11 default-color query.
+- Preserve existing terminal setup behavior: raw mode, resize, focus events, terminal colors, bracketed paste, and cleanup. Raw mode, resize, focus/mouse bytes, bracketed paste bytes, cleanup, and queried terminal-color parity are implemented in the opt-in host path; live parity validation is still pending.
+- Direct-socket attach landed for same-kernel Docker hosts.
+- The `attach-proxy` subcommand landed in `jackin-capsule` for Docker Desktop, OrbStack fallback mode, and other environments where the host cannot open the mounted Unix socket.
+- Transport-selection tests cover direct, missing-socket, and connect-failure branches; live OrbStack validation remains manual.
+- OSC 8 hyperlink passthrough and frame hyperlink-region metadata are preserved while moving attach to the host.
+- Host attach regression tests prove normal text input, pre-attach leftovers, bracketed-paste bytes, SGR mouse bytes, and pane OSC 52 output pass through the opt-in host loop unchanged. Capsule-side attached-client tests cover jackin-owned selection copy, double-click word copy, and rich TUI mouse routing; the remaining gate is live end-to-end parity in Ghostty.
+
+### Phase 2 — V1 affordances
+
+- `ClientFrame::ClipboardImage` landed as a bounded single-frame protocol message with explicit format tags and a `MAX_CLIPBOARD_IMAGE_BYTES = 16 MiB - 1` cap; `ClipboardImageStart` / `ClipboardImageChunk` / `ClipboardImageEnd` now cover larger image payloads up to the 64 MiB first-pass transfer cap.
+- Capsule staging under `/jackin/run/clipboard/` landed with magic-byte validation, private directory/file permissions, and focused-pane path insertion when no dialog owns input.
+- Host attach macOS PNG-coerced clipboard reading, TIFF clipboard reading, and Finder/file-url image reading landed for a lone `Ctrl+V`, with fallback to forwarding the original byte when no valid image is present.
+- The explicit `Stage image from clipboard path` command-palette action landed. It reads host clipboard text only on that action, requires an absolute readable image path or `file://` URL, validates magic bytes, and returns visible `ClipboardImageError` feedback on failure.
+- The explicit `Stage image without pasting` command-palette action landed. It reads host clipboard image data through the same host reader as `Ctrl+V`, stages the accepted image under `/jackin/run/clipboard/`, and reports the path without writing into the focused pane.
+- Remaining validation for this phase: live bracketed paste compatibility in host attach, live Finder/file-url validation, live image-path staging validation, Linux backend behavior, and real-agent prompt behavior.
+- Image-stage feedback placement tests now cover status rows, footer hint, bottom branch/run bar, link-hover priority, and selection-copy toast priority. Remaining validation is real-agent prompt/body placement during live image-paste testing.
+- GitHub context dialog tests now cover keyboard copy URL, keyboard open PR, keyboard open CI, mouse copy target, mouse open targets, and pointer clickability for the explicit open rows.
+- Host URL-open request handling now covers GitHub context PR and CI/check URLs, `Alt`/`Ctrl` modified-click on visible `http`/`https`/`mailto` URLs in mouse-disabled panes, OSC 8 `mailto` host-open targets, explicit unsafe-scheme rejection feedback for modified-click visible and OSC 8 targets, rich-TUI modified-click passthrough when the pane owns mouse input, modifier-hover URL disclosure with OSC 8 preference, the supported-terminal pointer-shape cue, and the command-palette `Open link under cursor` action through a scheme-limited attach server frame handled by the opt-in host attach client. Regression coverage now includes the `JACKIN_OPEN_LINKS` opt-out branch for jackin-owned dialog URL opens.
+- Remaining GitHub/link validation for this phase: live browser-open validation from Ghostty.
+- macOS host clipboard PNG/TIFF image reading and Linux command backends exist behind opt-in host attach, and explicit Linux palette actions now surface missing display/tool setup; live validation still decides promotion/default behavior.
+- Debug info diagnostics rows now copy the host `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` path supplied by `JACKIN_RUN_DIAGNOSTICS_PATH` during debug launches, with an in-container fallback for older Capsule launches that lack the metadata. In the launch cockpit, pressing `R` / `O` in Debug info or clicking the separate **Reveal diagnostics** row calls the host desktop reveal helper directly. In Capsule, the same action sends a typed host-reveal-path attach frame; the host attach client canonicalizes the requested path, requires it to stay under jackin❯ diagnostics run directory, requires a `.jsonl` suffix, and only then asks the host OS file manager to reveal it. `O` is scoped to the active read-only dialog, so Debug info can no longer accidentally open the GitHub PR URL when PR context is loaded behind it.
+- Launch-failure diagnostic rows now have explicit host reveal/open actions. The `R` key reveals and the `O` key opens the hovered **run diagnostics** or **docker output** row when applicable, falls back to the diagnostics JSONL, reuses the host desktop helpers, and records visible feedback without dismissing the popup.
+- Minimal container file export landed: command-palette path entry, under-cursor visible-token actions, selected-text actions, modified-click visible-file export, explicit export-and-reveal/open actions, workspace and `/jackin/run/` path policy, regular-file-only validation, missing-path and missing-token rejection with visible feedback, 64 MiB cap, chunked attach frames, host SHA-256 verification, debug telemetry for transfer id/source category/basename/bytes/SHA-256/destination category/reveal/open flags, collision-resistant host destination under `~/Downloads/jackin/<instance>/`, interrupted/malformed/idle-transfer temp cleanup, and legacy-client frame ignore.
+- Current jackin-owned dialogs do not yet contain a first-class row whose value is a validated container file path. Debug info diagnostics and launch-failure artifacts are host-side jackin-owned files, so their correct action is reveal/open through the host desktop helpers, not export. Existing container-file affordances are therefore the command-palette path entry, under-cursor visible-token actions, selected-text actions, and modified-click visible-file export. Remaining validation is live create-new host destination behavior through `JACKIN_HOST_ATTACH=1`, live explicit reveal/open behavior, live cursor-path export/reveal/open behavior, live selected-text export/reveal/open behavior, live modified-click visible-file export behavior, live Debug info diagnostics reveal, live launch-failure artifact reveal/open, and live interrupted-transfer behavior if a real attach transport drops mid-export.
+
+### Phase 3 — platform completeness
+
+- Improve macOS native pasteboard reader beyond the initial V1 backend if V1 used `osascript`.
+- Add both Wayland `wl-paste` image MIME support and X11 `xclip` image MIME support if V1 shipped only one Linux backend.
+- File clipboard support where the OS/terminal provides copied file URLs or paths.
+- Live-validate operator-facing Linux clipboard failure messages on real Wayland and X11 hosts after the missing-display and missing-tool diagnostics landed in the explicit palette-action path.
+- Optional "reveal/open exported file" host actions after successful export have landed as explicit `Export file and reveal`, `Export file and open`, `Export file under cursor and reveal`, `Export file under cursor and open`, `Export selected file and reveal`, and `Export selected file and open`; remaining work is live host file-manager/opener validation.
+
+### Phase 4 — runtime-aware and interaction polish
+
+- Detect focused runtime and choose the best paste text shape when the runtime has a documented image-attachment syntax.
+- `Paste image from host clipboard` and `Open link under cursor` command-palette actions have landed; continue live validation and runtime-specific polish from those generic actions.
+- Extend transcript-mode link behavior for Codex-style plain output beyond the first mouse-disabled-pane slice: richer hover styling and richer live validation of normal unmodified click forwarding. Unsafe-scheme rejection feedback for modified-click visible and OSC 8 targets has landed.
+- Add richer rich-TUI link behavior for Claude/Amp/Grok-style screens beyond the first OSC 8/visible-token lookup slice: runtime-specific hover styling, modifier-click interception only on safe links, and unmodified mouse passthrough to the pane.
+- GitHub context now has first-class `Open PR` and `Open CI` rows. Debug info now has a distinct first-class **Reveal diagnostics** row. Focused-pane visible file tokens now have under-cursor export/reveal/open actions. Continue adding first-class open/export buttons only when the surface owns enough typed metadata to distinguish host URLs, host files, and validated container files.
+- Future generated-artifact rows that point at container files should get true export/reveal/open actions backed by Capsule validation. Do not add another path-guess action to host-side artifacts: Debug info diagnostics paths and launch-failure logs are already host-owned jackin❯ artifacts, so they stay copyable plus reveal/open host-path surfaces.
+- `Stage image without pasting` has landed. Continue live validation and runtime-specific polish from that generic action.
+- Staged image status cues now include the staged container path and byte count.
+- Export completion status cues now include the host destination path and byte count.
+- Consider a shared transient-feedback queue for `Selection copied`, copyable dialog rows, OSC 52-denied copy attempts, and `Image staged`, with ordering and replacement rules so one feedback item cannot permanently hide another.
+
+### Phase 5 — future-only daemon, desktop, and remote work
+
+- Let the future jackin❯ daemon/Desktop Agent Hub provide the host clipboard reader for remote or background attach surfaces.
+- Keep operator-gesture gating: the daemon should not expose arbitrary clipboard reads to agents.
+- Let the future daemon/Desktop surface provide browser-open actions for remote/background sessions using the same explicit operator-gesture and scheme-allowlist policy.
+- Let the future daemon/Desktop surface provide save dialogs, destination preferences, progress UI, and richer reveal-in-Finder/reveal-in-files affordances for exports.
+- Add drag/drop path support if Ghostty or other terminals send file path escapes that jackin❯ can distinguish safely.
+- Add generic arbitrary file paste/upload after image paste and export are complete.
+- Add directory export / archive export as an explicit follow-up after regular-file export is complete.
+- Consider cross-host relay for future Kubernetes/remote-agent work, following the same "read host clipboard, transfer to target runtime, paste target path" invariant.
+
+## Open Design Questions
+
+### Paste trigger
+
+What should count as an explicit image-paste trigger?
+
+- `Ctrl+V` detected in raw input, matching herdr's first implementation.
+- Empty bracketed paste (`ESC [ 200 ~ ESC [ 201 ~`) while the host clipboard contains an image.
+- A jackin-owned command palette action.
+- Terminal-specific paste events if a host terminal library exposes them.
+
+Recommended answer: implement command palette action and raw `Ctrl+V` first, then add terminal-specific mappings only when measured. `Cmd+V` on macOS is usually handled by the terminal emulator before terminal bytes exist, so jackin❯ must verify what Ghostty actually sends.
+
+### Host clipboard crate
+
+Should jackin❯ use a cross-platform Rust crate or platform-specific helpers? The answer should be decided by capability, not convenience. A crate is correct if it can read image payloads, file promises, and common MIME types without pulling in an unmaintained dependency. If no crate satisfies that, use platform helpers behind a small internal trait.
+
+### Where to stage bytes
+
+Two mechanically possible staging paths exist:
+
+- Host writes into the bind-mounted host directory backing `/jackin/run/clipboard/`, then sends a small frame telling Capsule the file is ready.
+- Host sends image bytes in a frame and Capsule writes the file.
+
+The frame approach is cleaner and centralizes validation in Capsule. The host-write approach avoids sending large payloads over the socket and may work better on Docker Desktop or OrbStack if stdio relay throughput is a real limit. The invariant should decide the implementation: either path must produce a Capsule-validated file under `/jackin/run/clipboard/`, not a host path.
+
+### Multi-client attach
+
+Capsule currently has one active attach client. If a future daemon/Desktop client also observes the same session, image paste should route from the foreground/writable client only. Read-only observers must not be able to inject clipboard frames.
+
+### Cleanup lifetime
+
+Should staged images last until detach, until the tab closes, until container cleanup, or for a fixed TTL? Recommended answer: keep for the container lifetime in V1, under `/jackin/run/clipboard/`, and rely on instance cleanup. Removing immediately after paste is wrong because agents may read the file after the prompt is submitted, not at paste time.
+
+### Non-image file paste
+
+Image paste naturally raises "what about PDFs, logs, and arbitrary files?" V1 should stay image-specific because agent CLIs have direct multimodal image support and image signatures are easy to validate without decoding. General file paste is a separate "host file staging" feature with a broader security and policy surface.
+
+### Link opener policy
+
+Should host link opening be enabled by default or require a setting? Recommended answer: enable only for explicit operator gestures and safe schemes, and still provide an environment/config opt-out. Opening a URL is an observable host-side action, but a modifier-click or command palette action is already an operator request. The opt-out exists for untrusted roles or terminals where users prefer native handling only.
+
+### GitHub context CI target
+
+What URL should the GitHub context dialog open when CI is failing? Recommended answer: store enough check metadata to open the most specific failing surface. If there is exactly one failed job, open that job. If several jobs failed in one workflow run, open the run summary. If failures span runs, open the PR checks tab with the failed contexts visible. Falling back to the repository Actions page is valid only when jackin❯ does not have check/run URLs.
+
+### File export destination
+
+Where should exported files land? Recommended answer: default to `~/Downloads/jackin/<workspace-or-instance>/` with create-new writes and a visible destination cue. Add an explicit `--to <path>` / file-picker destination later for one-off exports. Do not default to Desktop, the current repository, or the host path that "looks equivalent" to a container workspace path.
+
+### File export path policy
+
+Which container paths can be exported without confirmation? Recommended answer: workspace paths, `/jackin/run/clipboard/`, `/jackin/run/uploads/`, and jackin-owned diagnostics/artifact paths. Everything else either requires confirmation or is denied initially. This keeps the feature useful for generated artifacts while preventing a broad "copy anything from the container" footgun.
+
+### Directory export
+
+Should directories be supported? Recommended answer: not in V1. Start with regular files only. Directory export should be explicit and archived inside Capsule as `tar.zst` with path normalization, symlink policy, size limits, and a clear destination filename.
+
+## Related Work
+
+- [jackin❯ Capsule control plane](/roadmap/jackin-capsule/) — owns the in-container multiplexer and attach protocol this feature extends.
+- [Terminal observation and automation](/roadmap/terminal-observation-automation/) — adjacent host/session control work; this feature adds a typed input payload rather than a screen observation primitive.
+- [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) — broader daemon-mediated host request channel. Clipboard image paste should not wait for it, but later daemon/Desktop surfaces can reuse its approval and audit patterns.
+- [jackin❯ daemon](/roadmap/jackin-daemon/) — future host process for reactive features; not required for the first image-paste bridge.
+- [GitHub link tracking](/roadmap/github-link-tracking/) — adjacent link awareness work; host link opening is the low-level operator action that can later power richer PR/issue link surfaces.
+- [herdr](https://github.com/ogulcancelik/herdr) — reference architecture for host clipboard image detection, typed image payloads, staging, and path paste.
+- [tmux clipboard wiki](https://github.com/tmux/tmux/wiki/Clipboard) — reference for OSC 52 text clipboard limits and security concerns.
+- [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) — relevant to image display, not image paste transfer.
+- [Ghostty discussion #10478](https://github.com/ghostty-org/ghostty/discussions/10478) — concrete evidence that raw macOS screenshot clipboard paste and file-backed image paste behave differently in terminals.
+- [Ghostty discussion #10517](https://github.com/ghostty-org/ghostty/discussions/10517) — SSH image paste request with the same "upload locally held image, paste remote path" product invariant.
+- [WezTerm `OpenLinkAtMouseCursor`](https://wezterm.org/config/lua/keyassignment/OpenLinkAtMouseCursor.html) and [`hyperlink_rules`](https://wezterm.org/config/lua/config/hyperlink_rules.html) — reference for explicit open-link actions and implicit URL detection.
+- [xterm.js Link Handling](https://xtermjs.org/docs/guides/link-handling/) — reference for modifier-gated activation and URL hover disclosure.
+- [Rio Hyperlinks](https://rioterm.com/docs/features/hyperlinks) — reference for configurable hyperlink modifier keys and platform defaults.
+- [iTerm2 shell integration](https://iterm2.com/3.0/documentation-shell-integration.html) — reference for host-side upload/download actions tied to remote terminal context.
+- [WezTerm shell integration](https://wezterm.org/shell-integration.html) — reference for OSC 7 / OSC 133 / OSC 1337 prompt and pane metadata.
+- [Kitty clipboard kitten](https://sw.kovidgoyal.net/kitty/kittens/clipboard/) — reference for terminal-mediated arbitrary clipboard MIME transfer with permission prompts.
+- [Kitty remote files](https://sw.kovidgoyal.net/kitty/kittens/remote_file/) — reference for opening, editing, and downloading remote files from visible terminal paths.
+- [Kitty transfer kitten](https://manpages.ubuntu.com/manpages/noble/man1/kitten-transfer.1.html) — reference for bidirectional TTY file transfer.
+- [iTerm2 utilities](https://iterm2.com/documentation-utilities.html) — reference for a remote-file download helper that lands files in Downloads.

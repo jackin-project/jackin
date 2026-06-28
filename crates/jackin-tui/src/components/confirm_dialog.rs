@@ -252,7 +252,7 @@ pub const fn width_pct(state: &ConfirmState) -> u16 {
     }
 }
 
-/// The canonical "Exit jackin'?" confirmation, shared by every host surface
+/// The canonical "Exit jackin❯?" confirmation, shared by every host surface
 /// that can quit the app (console, launch cockpit). One construction site keeps
 /// the wording and shape identical everywhere. Default focus = Yes because the
 /// operator already invoked the explicit quit chord; destructive data-loss
@@ -260,7 +260,7 @@ pub const fn width_pct(state: &ConfirmState) -> u16 {
 /// and default to No.
 #[must_use]
 pub fn exit_confirm_state() -> ConfirmState {
-    ConfirmState::new("Exit jackin'?").with_focus_yes()
+    ConfirmState::new("Exit jackin❯?").with_focus_yes()
 }
 
 /// Exit confirmation for surfaces where quitting force-stops the container and
@@ -271,7 +271,7 @@ pub fn exit_confirm_state() -> ConfirmState {
 pub fn exit_confirm_state_with_data_loss() -> ConfirmState {
     ConfirmState::details(
         "Confirm",
-        "Exit jackin'?",
+        "Exit jackin❯?",
         Vec::new(),
         vec![
             "Exiting force-stops the container immediately.".into(),

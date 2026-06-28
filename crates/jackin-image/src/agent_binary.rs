@@ -287,11 +287,12 @@ async fn resolve_latest_release(agent: Agent) -> Result<AgentRelease> {
 
 async fn resolve_claude() -> Result<AgentRelease> {
     let base = "https://downloads.claude.ai/claude-code-releases";
-    let version = fetch_text(&format!("{base}/latest")).await?;
+    let version = fetch_text_with_retry(&format!("{base}/latest")).await?;
     let version = version.trim().to_owned();
     let platform = platform_x64_arm64();
-    let manifest: ClaudeManifest =
-        serde_json::from_str(&fetch_text(&format!("{base}/{version}/manifest.json")).await?)?;
+    let manifest: ClaudeManifest = serde_json::from_str(
+        &fetch_text_with_retry(&format!("{base}/{version}/manifest.json")).await?,
+    )?;
     let entry = manifest
         .platforms
         .get(platform)
@@ -307,7 +308,7 @@ async fn resolve_claude() -> Result<AgentRelease> {
 
 async fn resolve_amp() -> Result<AgentRelease> {
     let base = "https://static.ampcode.com";
-    let version = fetch_text(&format!("{base}/cli/cli-version.txt"))
+    let version = fetch_text_with_retry(&format!("{base}/cli/cli-version.txt"))
         .await?
         .trim()
         .to_owned();
@@ -315,7 +316,8 @@ async fn resolve_amp() -> Result<AgentRelease> {
         "arm64" => "linux-arm64",
         _ => "linux-x64",
     };
-    let sha_text = fetch_text(&format!("{base}/cli/{version}/{platform}-amp.sha256")).await?;
+    let sha_text =
+        fetch_text_with_retry(&format!("{base}/cli/{version}/{platform}-amp.sha256")).await?;
     let checksum = parse_sha256_hex(&sha_text)
         .with_context(|| format!("amp published checksum for {version} {platform}"))?;
     Ok(AgentRelease {
@@ -328,7 +330,7 @@ async fn resolve_amp() -> Result<AgentRelease> {
 }
 
 async fn resolve_kimi() -> Result<AgentRelease> {
-    let version = fetch_text(&format!("{KIMI_DOWNLOAD_BASE_URL}/latest"))
+    let version = fetch_text_with_retry(&format!("{KIMI_DOWNLOAD_BASE_URL}/latest"))
         .await?
         .trim()
         .to_owned();
@@ -339,7 +341,7 @@ async fn resolve_kimi() -> Result<AgentRelease> {
     //   manifest:       ${KIMI_BINARY_BASE}/${version}/manifest.json
     //   binary:         ${KIMI_BINARY_BASE}/${version}/${filename}
     let manifest: KimiManifest = serde_json::from_str(
-        &fetch_text(&format!("{KIMI_BINARY_BASE_URL}/{version}/manifest.json")).await?,
+        &fetch_text_with_retry(&format!("{KIMI_BINARY_BASE_URL}/{version}/manifest.json")).await?,
     )?;
     let entry = manifest
         .platforms
@@ -397,24 +399,25 @@ async fn resolve_grok() -> Result<AgentRelease> {
     let primary = GROK_BASE_PRIMARY;
     let fallback = GROK_BASE_FALLBACK;
 
-    let (base, version) = if let Ok(text) = fetch_text(&format!("{primary}/stable")).await {
-        let v = text.trim().to_owned();
-        if v.is_empty() {
-            let v = fetch_text(&format!("{fallback}/stable"))
+    let (base, version) =
+        if let Ok(text) = fetch_text_with_retry(&format!("{primary}/stable")).await {
+            let v = text.trim().to_owned();
+            if v.is_empty() {
+                let v = fetch_text_with_retry(&format!("{fallback}/stable"))
+                    .await?
+                    .trim()
+                    .to_owned();
+                (fallback.to_owned(), v)
+            } else {
+                (primary.to_owned(), v)
+            }
+        } else {
+            let v = fetch_text_with_retry(&format!("{fallback}/stable"))
                 .await?
                 .trim()
                 .to_owned();
             (fallback.to_owned(), v)
-        } else {
-            (primary.to_owned(), v)
-        }
-    } else {
-        let v = fetch_text(&format!("{fallback}/stable"))
-            .await?
-            .trim()
-            .to_owned();
-        (fallback.to_owned(), v)
-    };
+        };
 
     if version.is_empty() {
         anyhow::bail!("failed to fetch Grok version pointer from {base}/stable");
@@ -456,6 +459,44 @@ async fn resolve_opencode() -> Result<AgentRelease> {
 async fn fetch_text(url: &str) -> Result<String> {
     record("agent_binary_http_get", url);
     jackin_docker::net::fetch_text(url).await
+}
+
+/// Returns true when `error` is a TCP connect-phase timeout. Unlike a slow
+/// response or a server-side error, a connect timeout means the endpoint is
+/// unreachable and retrying immediately will not help.
+fn is_connect_timeout(error: &anyhow::Error) -> bool {
+    error.chain().any(|e| {
+        e.downcast_ref::<reqwest::Error>()
+            .is_some_and(|re| re.is_connect() && re.is_timeout())
+    })
+}
+
+/// Like `fetch_text` but retries transient HTTP/network errors up to 3 times
+/// with exponential back-off. Connect timeouts are NOT retried — when the CDN
+/// endpoint is unreachable, further attempts won't help and would only multiply
+/// the per-agent wait by the connect-timeout value (currently 15 s).
+async fn fetch_text_with_retry(url: &str) -> Result<String> {
+    let url = url.to_owned();
+    let mut last_err = anyhow::anyhow!("no attempts made");
+    for attempt in 0..3u32 {
+        if attempt > 0 {
+            let delay = Duration::from_millis(500) * (1 << (attempt - 1));
+            record(
+                "retry_backoff",
+                &format!("attempt {attempt}/3, waiting {delay:?}"),
+            );
+            tokio::time::sleep(delay).await;
+        }
+        match fetch_text(&url).await {
+            Ok(v) => return Ok(v),
+            Err(e) if is_connect_timeout(&e) => return Err(e),
+            Err(e) => {
+                record("retry_failed", &format!("attempt {}/3: {e:#}", attempt + 1));
+                last_err = e;
+            }
+        }
+    }
+    Err(last_err).context("giving up after 3 attempts")
 }
 
 async fn github_auth_token() -> Option<String> {
@@ -545,6 +586,7 @@ where
         }
         match f().await {
             Ok(v) => return Ok(v),
+            Err(e) if is_connect_timeout(&e) => return Err(e),
             Err(e) => {
                 record(
                     "retry_failed",

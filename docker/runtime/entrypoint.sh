@@ -43,7 +43,7 @@ export JACKIN_STATUS_SOURCE="${JACKIN_STATUS_SOURCE:-wrapper-${JACKIN_SESSION_ID
 export JACKIN_AGENT_RUNTIME="${JACKIN_AGENT:-unknown}"
 
 # ── Network allowlist (allowlist tier) ────────────────────────────────
-# The firewall (`jackin-capsule firewall-apply`) is run by jackin' via
+# The firewall (`jackin-capsule firewall-apply`) is run by jackin❯ via
 # `docker exec --user root` AFTER this entrypoint starts but BEFORE the agent
 # session begins, not here in the entrypoint. This avoids a conflict with
 # --security-opt no-new-privileges (docker exec as root needs no setuid
@@ -57,9 +57,30 @@ export JACKIN_AGENT_RUNTIME="${JACKIN_AGENT:-unknown}"
 # Per-session file setup already ran in `jackin-capsule runtime-setup`.
 # The remaining shell branch only builds the final argv because role
 # `source.sh` can mutate this shell's environment before `exec`.
+# ── jackin-exec system prompt injection ────────────────────────────
+# When on-demand credential bindings are configured (JACKIN_EXEC_BINDINGS
+# is non-empty), prepend a system prompt block telling agents to use
+# jackin-exec for those commands.
+JACKIN_EXEC_SYSTEM_PROMPT=""
+if [ -n "${JACKIN_EXEC_BINDINGS:-}" ]; then
+    JACKIN_EXEC_SYSTEM_PROMPT="$(cat <<'EXEC_PROMPT'
+When you need to execute commands that require credentials — SSH connections,
+registry logins, cloud CLI commands (aws, kubectl, gh), git push — call
+jackin-exec <command> instead of running the command directly. jackin' will
+securely inject the required credentials. Available secure bindings:
+EXEC_PROMPT
+)"
+    # Append the binding names on a new line
+    JACKIN_EXEC_SYSTEM_PROMPT="${JACKIN_EXEC_SYSTEM_PROMPT}
+${JACKIN_EXEC_BINDINGS}"
+fi
+
 case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
   claude)
     LAUNCH=(claude --settings '{"skipDangerousModePermissionPrompt":true}' --dangerously-skip-permissions --verbose)
+    if [ -n "${JACKIN_EXEC_SYSTEM_PROMPT:-}" ]; then
+        LAUNCH+=(--system-prompt "${JACKIN_EXEC_SYSTEM_PROMPT}")
+    fi
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
     fi
@@ -71,7 +92,7 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
         # Activate the provider's model catalog (real metadata + context window)
         # if runtime-setup wrote one. Passed as -c, not a profile-file key: a
         # profile-file model_catalog_json trips a Codex config-parse bug.
-        catalog="$HOME/.codex/${JACKIN_CODEX_PROFILE}.models.json"
+        catalog="${CODEX_HOME:-$HOME/.codex}/${JACKIN_CODEX_PROFILE}.models.json"
         if [ -f "$catalog" ]; then
             LAUNCH+=(-c "model_catalog_json=$catalog")
         fi

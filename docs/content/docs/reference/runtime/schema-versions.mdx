@@ -14,7 +14,7 @@ Breaking changes to schemas are expected — that is how the project explores id
 
 - **Each schema file carries its own `version` stamp.** When jackin reads the file, it compares the on-disk version against the binary's `CURRENT_*_VERSION` and applies any pending migration steps before parsing, so operators see a working setup after every upgrade.
 - **Operator-owned files migrate automatically.** `config.toml` and `~/.config/jackin/workspaces/<name>.toml` are rewritten in place on startup; the operator does nothing.
-- **Role-owned files migrate explicitly.** Role authors run `jackin role migrate <role-repo-path>` on their desktop to rewrite a `jackin.role.toml` against the latest schema, then commit and push the result. jackin' never writes back into a role repo on its own — that would silently mutate someone else's source tree. CI, validation workflows, and Renovate-style migration automation use the standalone `jackin-role migrate <role-repo-path>` binary so role repos do not need the full `jackin` operator CLI.
+- **Role-owned files migrate explicitly.** Role authors run `jackin role migrate <role-repo-path>` on their desktop to rewrite a `jackin.role.toml` against the latest schema, then commit and push the result. jackin❯ never writes back into a role repo on its own — that would silently mutate someone else's source tree. CI, validation workflows, and Renovate-style migration automation use the standalone `jackin-role migrate <role-repo-path>` binary so role repos do not need the full `jackin` operator CLI.
 - **Migrations are a hard PR-review rule.** Every change to one of the three versioned files must bump the corresponding `CURRENT_*_VERSION`, add a migration step, and update this page. Adding a new enum variant counts as a schema-breaking change: old binaries cannot parse manifests that use the new variant. The full rule lives in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> and <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile>.
 - **Version mismatches produce actionable errors.** The version check runs before full TOML deserialization, so old binaries always surface a clear message rather than a cryptic parse error. When a manifest's `version` is newer than what the binary knows about, jackin rejects it with: `role manifest is at {version}, this binary only understands up to {CURRENT_MANIFEST_VERSION}; upgrade jackin`. Current binaries accept older role manifests when the file only uses fields and enum values that existed at that older version. If an older-stamped manifest uses a newer feature, jackin rejects it with a feature-specific `jackin role migrate <role-repo-path>` hint.
 
@@ -62,13 +62,47 @@ version = "v1alpha8"
 | Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml</RepoFile> |
 | Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml</RepoFile> |
 
-**Summary**: adds optional global and per-workspace Docker security profile/grants config. This is additive with serde defaults, so existing files round-trip cleanly and the migration is a no-op restamp.
+**Summary**: introduces selectable container backends and on-demand credential metadata, and adds optional global and per-workspace Docker security profile and grants config. Config gains an optional `[runtime].default_backend` field selecting the host-wide backend (`docker` default, or `apple-container`). Workspace files gain an optional `[runtime].backend` per-workspace override plus optional `on_demand` env metadata that marks a credential for exec-time injection rather than launch-time injection. Config and workspace also gain optional `[docker].profile` and `[docker.grants]` for Docker security policy. All fields are additive with `serde` defaults, so existing files round-trip cleanly through a no-op restamp.
 
-**Example with explicit policy**:
+**Before** (v1alpha6 config):
+
+```toml
+version = "v1alpha6"
+data_dir = "/tmp/jackin"
+```
+
+**After** (v1alpha7 — no change needed; `default_backend` defaults to `docker`):
 
 ```toml
 version = "v1alpha7"
-dirty_exit_policy = "keep"
+data_dir = "/tmp/jackin"
+```
+
+**Example with an explicit backend and an on-demand credential**:
+
+```toml
+# config.toml
+version = "v1alpha7"
+
+[runtime]
+default_backend = "apple-container"
+```
+
+```toml
+# workspaces/prod.toml
+version = "v1alpha7"
+
+[env]
+GH_TOKEN = { value = "$GH_TOKEN", on_demand = true }
+```
+
+**Example with explicit Docker security policy**:
+
+```toml
+version = "v1alpha7"
+
+[docker]
+profile = "hardened"
 ```
 
 ### Manifest `v1alpha5` — 2026-06-10
@@ -146,35 +180,6 @@ version = "v1alpha6"
 [claude]
 auth_forward = "sync"
 sync_source_dir = "/Users/alice/company/.claude"
-```
-
-### `v1alpha7` — 2026-06-09
-
-| File kind | Predecessor | Migration mode | Fixture |
-|---|---|---|---|
-| Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml" /> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> |
-
-**Summary**: introduces `[docker].profile` (optional string: `locked`, `hardened`, `standard`, `compat`) and `[docker].grants` (optional table with per-dimension capability overrides) on both `config.toml` and workspace files. Both fields are additive with serde defaults — absent means no profile override / no grants. The migration is a no-op restamp for both file kinds.
-
-**Before** (v1alpha6 config):
-
-```toml
-version = "v1alpha6"
-
-[roles.the-architect]
-git = "https://github.com/jackin-project/jackin-the-architect.git"
-trusted = true
-```
-
-**After** (v1alpha7):
-
-```toml
-version = "v1alpha7"
-
-[roles.the-architect]
-git = "https://github.com/jackin-project/jackin-the-architect.git"
-trusted = true
 ```
 
 ### Manifest `v1alpha6` — 2026-06-18
@@ -530,7 +535,7 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 
 ### `legacy`
 
-`legacy` means the manifest has no top-level `version` field. jackin'
+`legacy` means the manifest has no top-level `version` field. jackin❯
 does not auto-write role repositories during normal role loading. Run
 `jackin role migrate <role-repo-path>` to rewrite a local copy on a
 desktop, or `jackin-role migrate <role-repo-path>` in CI and
@@ -583,10 +588,10 @@ Full role manifest examples live in
 
 ## Migration retention
 
-jackin' does not keep every migration forever. If a file is too old and
+jackin❯ does not keep every migration forever. If a file is too old and
 the current binary no longer includes the full path to the current
-schema, jackin' errors and tells the operator to upgrade through an older
-jackin' first.
+schema, jackin❯ errors and tells the operator to upgrade through an older
+jackin❯ first.
 
 Migration entry points:
 

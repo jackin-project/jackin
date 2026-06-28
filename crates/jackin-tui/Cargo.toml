@@ -4,7 +4,7 @@ version = "0.6.0-dev"
 edition.workspace = true
 rust-version.workspace = true
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
-description = "Shared phosphor palette and tab-strip helpers used by jackin's console TUI and the in-container multiplexer."
+description = "Shared phosphor palette and tab-strip helpers used by jackin❯'s console TUI and the in-container multiplexer."
 license.workspace = true
 readme = "README.md"
 publish = false
@@ -21,13 +21,13 @@ crossterm = "0.29"
 jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
 owo-colors = { version = "4", features = ["supports-colors"] }
 ratatui = "0.30"
-similar = "2"
+similar = "3"
 tokio = { version = "1", features = ["io-util", "rt", "sync", "time"] }
 tui-scrollbar = "0.2.4"
 unicode-width = "0.2"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+tokio = { version = "=1.52.3", features = ["macros", "rt", "test-util"] }
 
 [lints]
 workspace = true

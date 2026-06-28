@@ -13,7 +13,7 @@ use crate::tui::input::{ArrowDir, InputEvent, PrefixCommand, is_wheel_button};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     OpenPalette,
-    /// Ctrl+Q: open the "Exit jackin'?" confirmation (data-loss variant).
+    /// Ctrl+Q: open the "Exit jackin❯?" confirmation (data-loss variant).
     RequestExit,
     OpenContainerInfo,
     OpenGithubContext,

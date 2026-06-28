@@ -199,7 +199,7 @@ jackin console --debug
 ```
 
 <Keep the console command first whenever the changed behavior is reachable from
-jackin' console; it is the preferred operator smoke path. List the clicks, keys,
+jackin❯ console; it is the preferred operator smoke path. List the clicks, keys,
 workspace state, in-container commands, and expected output that disambiguate a
 pass/fail. Add narrower repeat checks after the console flow when helpful, e.g.
 `jackin load <role> <target> --debug`. Replace the console
@@ -220,7 +220,7 @@ jackin load the-architect . --debug
 
 Inside the container, verify:
 
-- Row 0 status bar is visible: `jackin'  [<agent-name>]`
+- Row 0 status bar is visible: `jackin❯  [<agent-name>]`
 - Agent TUI starts and renders correctly below the status bar
 - `Ctrl+\` opens the command palette (override with `JACKIN_PALETTE_KEY`)
 - Mouse clicks, arrow keys, and paste reach the agent unmodified

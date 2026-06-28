@@ -13,6 +13,7 @@ fn secret_display_uses_plain_value_or_op_path() {
         op: "op://vault/item/field".to_owned(),
         path: "Vault/Item/Field".to_owned(),
         account: None,
+        on_demand: false,
     });
     assert!(matches!(
         secret_display(&op_ref),

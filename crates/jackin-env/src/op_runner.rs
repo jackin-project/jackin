@@ -48,6 +48,20 @@ where
                     r.path
                 )
             }),
+        EnvValue::Extended(e) => {
+            if e.on_demand {
+                // on_demand vars are filtered out before launch env injection
+                // (see `EnvValue::is_on_demand`), resolved later at exec time.
+                // Reaching here means the launch filter was bypassed.
+                Err(anyhow::anyhow!(
+                    "{layer_label} env var {var_name:?}: on_demand value reached \
+                     resolve_env_value — it should have been filtered before launch"
+                ))
+            } else {
+                // on_demand = false behaves exactly like a Plain value.
+                dispatch_plain(layer_label, var_name, &e.value, host_env)
+            }
+        }
     }
 }
 

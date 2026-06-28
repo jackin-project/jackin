@@ -194,6 +194,28 @@ impl Dialog {
                 }
             }
 
+            Dialog::ExecPicker(state) => {
+                // Multi-select credential list. The checkbox state is encoded in
+                // each row label (`[x]` / `[ ]`) so the shared single-select
+                // FilterPicker widget renders it without a bespoke widget; the
+                // cursor is the highlighted row, Space toggles via handle_key.
+                let items: Vec<PickerItem> = state
+                    .items
+                    .iter()
+                    .map(|item| {
+                        let mark = if item.selected { "[x]" } else { "[ ]" };
+                        PickerItem::Item(format!("{mark} {}  {}", item.binding.name, item.display))
+                    })
+                    .collect();
+                DialogRatatuiSnapshot::FilterPicker {
+                    title: format!("Attach credentials · {}", state.command),
+                    filter: String::new(),
+                    items,
+                    selected: state.cursor,
+                    show_filter: false,
+                }
+            }
+
             Dialog::SplitDirectionPicker { selected, filter } => {
                 use crate::tui::components::dialog::SPLIT_DIRECTION_ITEMS;
                 let needle = filter.to_ascii_lowercase();
@@ -288,7 +310,9 @@ impl Dialog {
                     .expect("github_context_state is Some for GitHubContext"),
             ),
 
-            Dialog::ExitDirty { summary, selected } => {
+            Dialog::ExitDirty {
+                summary, selected, ..
+            } => {
                 use crate::tui::components::dialog::EXIT_DIRTY_ROWS;
                 // Per-repo summary lines render as non-selectable section rows
                 // above the four choice rows.
@@ -357,11 +381,14 @@ impl DialogRatatuiSnapshot {
                 block_area,
             ),
             Self::UsageInfo { state, tabs, .. } => {
-                let (width, height) = usage_info_content_size(state);
-                let tab_width = usage_tab_strip_width(tabs);
-                let width = width.max(tab_width);
-                let height = height.saturating_add(2);
-                jackin_tui::components::dialog_scroll_axes(width, height, block_area)
+                // Same body+lines source the renderer uses (Bug 2): wrapped line
+                // count + a `scroll_rect` whose viewport is the true body (box
+                // minus border minus tab strip). The tab strip width still floors
+                // the horizontal content so the strip itself can't overflow.
+                let (content_width, content_height, scroll_rect) =
+                    usage_scroll_inputs(block_area, state);
+                let width = content_width.max(usage_tab_strip_width(tabs));
+                jackin_tui::components::dialog_scroll_axes(width, content_height, scroll_rect)
             }
             _ => jackin_tui::components::ScrollAxes::none(),
         }
@@ -487,13 +514,11 @@ fn render_usage_info(
         .focused(tab_bar_focused)
         .hovered(hovered_tab)
         .render(frame, tab_area);
-    let body_y = inner.y.saturating_add(tab_area.height);
-    let body = Rect {
-        x: inner.x,
-        y: body_y,
-        width: inner.width,
-        height: inner.height.saturating_sub(tab_area.height),
-    };
+    // Body geometry comes from the shared `usage_body_rect`, the same source the
+    // scroll-bound path uses, so the rendered viewport and the scroll clamp can
+    // never disagree (Bug 2). (`usage_tab_strip_area` above gives the strip its
+    // centered x; its height matches `usage_body_rect`'s fixed 2-row reservation.)
+    let body = usage_body_rect(area);
     let lines = usage_info_lines_for_width(state, body.width);
     let mut scroll = state.scroll.clone();
     jackin_tui::components::render_scrollable_dialog_body(frame, area, body, &lines, &mut scroll);
@@ -603,13 +628,46 @@ pub(crate) fn usage_info_required_height(
         .max(7)
 }
 
-pub(crate) fn usage_info_content_size(
+/// The usage-dialog body rect (border **and** the 2-row tab strip removed).
+/// Single source of truth for body geometry so the renderer and every
+/// scroll-bound computation agree on the viewport (Bug 2). The tab strip is a
+/// fixed 2 rows — `usage_tab_strip_area`'s height is `inner.height.min(2)`,
+/// independent of tab count — so the body needs no tab list to compute.
+pub(crate) fn usage_body_rect(box_rect: Rect) -> Rect {
+    let inner = usage_dialog_inner_area(box_rect);
+    let tab_h = inner.height.min(2);
+    Rect {
+        x: inner.x,
+        y: inner.y.saturating_add(tab_h),
+        width: inner.width,
+        height: inner.height.saturating_sub(tab_h),
+    }
+}
+
+/// Content size + the rect to feed the generic scroll helpers
+/// (`dialog_scroll_axes` / `clamp_dialog_scroll`), derived from the **same**
+/// width-wrapped line set the renderer uses, so the scroll bound can never
+/// under- or over-shoot the rendered body (Bug 2).
+///
+/// Returns `(content_width, content_height, scroll_rect)` where `content_height`
+/// is the wrapped line count at the body width, and `scroll_rect` is sized so
+/// that `viewport_height(scroll_rect) == body.height` and
+/// `viewport_width(scroll_rect) == body.width` (those helpers subtract the
+/// 1-cell border; `scroll_rect.height = body.height + 2` re-adds exactly that so
+/// the true body viewport — box minus border minus tab strip — is what clamps).
+pub(crate) fn usage_scroll_inputs(
+    box_rect: Rect,
     state: &jackin_tui::components::ContainerInfoState,
-) -> (usize, usize) {
-    let lines = usage_info_lines(state);
-    let width = lines.iter().map(usage_line_width).max().unwrap_or(0);
-    let height = lines.len();
-    (width, height)
+) -> (usize, usize, Rect) {
+    let body = usage_body_rect(box_rect);
+    let lines = usage_info_lines_for_width(state, body.width);
+    let content_width = lines.iter().map(usage_line_width).max().unwrap_or(0);
+    let content_height = lines.len();
+    let scroll_rect = Rect {
+        height: body.height.saturating_add(2),
+        ..box_rect
+    };
+    (content_width, content_height, scroll_rect)
 }
 
 fn usage_info_lines(state: &jackin_tui::components::ContainerInfoState) -> Vec<Line<'static>> {
@@ -648,7 +706,13 @@ fn usage_info_lines_impl(
         lines.push(usage_separator_line(context.width));
     }
     for row in state.rows() {
-        usage_lines_for_row(row.label(), row.value(), context, &mut lines);
+        usage_lines_for_row(
+            row.label(),
+            row.value(),
+            row.accent_color(),
+            context,
+            &mut lines,
+        );
     }
     lines
 }
@@ -708,6 +772,7 @@ fn usage_line_width(line: &Line<'_>) -> usize {
 fn usage_lines_for_row(
     label: &str,
     value: &str,
+    accent: Option<ratatui::style::Color>,
     context: UsageLineContext<'_>,
     lines: &mut Vec<Line<'static>>,
 ) {
@@ -739,7 +804,7 @@ fn usage_lines_for_row(
             if context.list_layout {
                 usage_quota_bucket_compact_lines(bucket, value, context.width, lines);
             } else {
-                usage_quota_bucket_lines(bucket, value, context.width, lines);
+                usage_quota_bucket_lines(bucket, value, accent, context.width, lines);
             }
         }
         _ if is_overview_provider_label(label) => {
@@ -925,6 +990,7 @@ fn usage_header_two_column(
 fn usage_quota_bucket_lines(
     label: &str,
     value: &str,
+    accent: Option<ratatui::style::Color>,
     width: usize,
     lines: &mut Vec<Line<'static>>,
 ) {
@@ -966,7 +1032,7 @@ fn usage_quota_bucket_lines(
     let meter = usage_full_width_meter(meter, width);
     lines.push(Line::from(vec![
         usage_content_indent(),
-        Span::styled(meter, Style::default().fg(PHOSPHOR_GREEN)),
+        Span::styled(meter, Style::default().fg(accent.unwrap_or(PHOSPHOR_GREEN))),
     ]));
 
     let details = usage_quota_bucket_detail_parts(label, value);
@@ -1283,7 +1349,7 @@ fn render_filter_picker(
     show_filter: bool,
 ) {
     // Reuse the shared modal panel so the menu/pickers match every other
-    // jackin' dialog: PHOSPHOR_GREEN focused border + bold-white title.
+    // jackin❯ dialog: PHOSPHOR_GREEN focused border + bold-white title.
     let title_str = format!(" {title} ");
     let block = jackin_tui::components::Panel::new()
         .title(&title_str)

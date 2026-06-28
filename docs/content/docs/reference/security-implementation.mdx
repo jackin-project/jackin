@@ -2,7 +2,7 @@
 title: "Security Implementation"
 ---
 
-This document describes jackin's security implementation from a contributor perspective. It covers the threat model, the specific functions that enforce security invariants, the external tools bundled in the construct image, and the high-autonomy launch flags used for all five agent runtimes.
+This document describes jackin❯ security implementation from a contributor perspective. It covers the threat model, the specific functions that enforce security invariants, the external tools bundled in the construct image, and the high-autonomy launch flags used for all five agent runtimes.
 
 ## Threat model
 
@@ -10,9 +10,9 @@ This document describes jackin's security implementation from a contributor pers
 |---|---|---|---|
 | Agent reads/writes files on host | Yes | Mount scoping in <RepoFile path="crates/jackin-config/src/mounts.rs">crates/jackin-config/src/mounts.rs</RepoFile> | Explicitly mounted rw paths |
 | Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> | TOCTOU window between symlink check and file use |
-| Container escape | Out of scope | Docker hardening tracked in [Docker runtime hardening contract](/reference/roadmap/docker-runtime-hardening-contract/) and [smolvm backend research](/reference/roadmap/smolvm-backend-research/) | Shared kernel; future microVM work addresses this |
-| Agent exfiltration over network | Needs policy | Tracked in [Network egress policy](/reference/roadmap/network-egress-policy/) | Open egress by default today |
-| Supply chain (capsule binary) | SHA256 + signed manifest | <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> | See [signed releases](/reference/roadmap/security-threat-model-and-signed-releases/) |
+| Container escape | Out of scope | Docker hardening tracked in [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) and [smolvm backend research](/roadmap/smolvm-backend-research/) | Shared kernel; future microVM work addresses this |
+| Agent exfiltration over network | Needs policy | Tracked in [Network egress policy](/roadmap/network-egress-policy/) | Open egress by default today |
+| Supply chain (capsule binary) | SHA256 + signed manifest | <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> | See [signed releases](/roadmap/security-threat-model-and-signed-releases/) |
 
 ## Security functions
 
@@ -60,7 +60,7 @@ Disable per-session by setting `JACKIN_DISABLE_TIRITH=1` in the container enviro
 
 ## High-autonomy launch flags
 
-jackin' launches each agent with flags that remove tool-approval prompts. These are defined in <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> and applied at container start before the agent binary runs.
+jackin❯ launches each agent with flags that remove tool-approval prompts. These are defined in <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> and applied at container start before the agent binary runs.
 
 | Agent | Configuration | Where |
 |---|---|---|
@@ -70,7 +70,7 @@ jackin' launches each agent with flags that remove tool-approval prompts. These 
 | Kimi | `--yolo` CLI flag (auto-approves all tool actions) | line 58 |
 | OpenCode | `OPENCODE_CONFIG_CONTENT='{"permission":"allow"}'` env var + `~/.config/opencode/opencode.json` written with `"permission": "allow"` by capsule runtime setup | line 64 + <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> |
 
-When any of these configurations are active: jackin' still enforces mount scoping, network isolation, and the host Docker socket exclusion. The flags remove tool-approval prompts but do not remove auth prompts, user questions, plan confirmation, model/account issues, runtime updates, or terminal-level failures. Operators who need the approval prompts restored can rebuild the derived image without the high-autonomy flags by customising the entrypoint hook.
+When any of these configurations are active: jackin❯ still enforces mount scoping, network isolation, and the host Docker socket exclusion. The flags remove tool-approval prompts but do not remove auth prompts, user questions, plan confirmation, model/account issues, runtime updates, or terminal-level failures. Operators who need the approval prompts restored can rebuild the derived image without the high-autonomy flags by customising the entrypoint hook.
 
 ## Container boundary contract
 

@@ -1,13 +1,13 @@
 ---
 title: Architecture
-description: How jackin' orchestrates containers, networks, and persisted state
+description: How jackin❯ orchestrates containers, networks, and persisted state
 ---
 
 
 <Aside type="note">
 This page is **for contributors** — anyone who wants to understand or
-work on jackin' itself. Operators do not need to read it to use
-jackin'; the [Operator Guide](/guides/workspaces/) and
+work on jackin❯ itself. Operators do not need to read it to use
+jackin❯; the [Operator Guide](/guides/workspaces/) and
 [Concepts](/getting-started/concepts/) cover everything an operator
 needs.
 </Aside>
@@ -16,7 +16,7 @@ needs.
 
 <ArchitectureDiagram />
 
-jackin' deliberately uses your existing Docker engine as the operator control plane. For host-side Docker API calls, jackin' honors `DOCKER_HOST` when the operator sets it to a non-empty value (matching Docker CLI's own treatment of an empty `DOCKER_HOST=` as unset), including TLS endpoints — when `DOCKER_HOST` points at a `tcp://` daemon and `DOCKER_TLS_VERIFY` / `DOCKER_CERT_PATH` are set, jackin' performs the mutual-TLS handshake with those client certificates, so a remote daemon or a Docker-in-Docker socket on `:2376` works out of the box. Otherwise it inspects the active Docker CLI context — including any per-shell `DOCKER_CONTEXT` override — and connects to that context's Docker host when the context is a local socket or plain HTTP/TCP endpoint, so API calls such as network creation land on the same daemon that later `docker run` commands use. SSH Docker contexts are rejected for now because the Bollard dependency build cannot reproduce the Docker CLI's SSH transport, and TLS *contexts* are rejected because jackin' does not yet wire a context's TLS material into the connection (a directly-set `DOCKER_HOST` with explicit `DOCKER_CERT_PATH` is the supported path for TLS daemons).
+jackin❯ deliberately uses your existing Docker engine as the operator control plane. For host-side Docker API calls, jackin❯ honors `DOCKER_HOST` when the operator sets it to a non-empty value (matching Docker CLI's own treatment of an empty `DOCKER_HOST=` as unset), including TLS endpoints — when `DOCKER_HOST` points at a `tcp://` daemon and `DOCKER_TLS_VERIFY` / `DOCKER_CERT_PATH` are set, jackin❯ performs the mutual-TLS handshake with those client certificates, so a remote daemon or a Docker-in-Docker socket on `:2376` works out of the box. Otherwise it inspects the active Docker CLI context — including any per-shell `DOCKER_CONTEXT` override — and connects to that context's Docker host when the context is a local socket or plain HTTP/TCP endpoint, so API calls such as network creation land on the same daemon that later `docker run` commands use. SSH Docker contexts are rejected for now because the Bollard dependency build cannot reproduce the Docker CLI's SSH transport, and TLS *contexts* are rejected because jackin❯ does not yet wire a context's TLS material into the connection (a directly-set `DOCKER_HOST` with explicit `DOCKER_CERT_PATH` is the supported path for TLS daemons).
 
 That creates an important split:
 
@@ -24,17 +24,17 @@ That creates an important split:
 - **runtime orchestration** creates the role container, DinD sidecar, certs volume, and per-instance network on that same selected host Docker engine
 - **runtime Docker commands issued by the agent** go to the per-instance DinD sidecar
 
-So jackin' gets host-side cache reuse for building agent images, while still keeping the agent away from your host Docker daemon during runtime.
+So jackin❯ gets host-side cache reuse for building agent images, while still keeping the agent away from your host Docker daemon during runtime.
 
 ## Design constraints
 
-jackin' architecture is shaped by a few explicit decisions:
+jackin❯ architecture is shaped by a few explicit decisions:
 
 1. **Local development first.** The first target is a developer machine that already knows how to run Docker.
 2. **Environment as source code.** Roles should be normal git repos reviewed like normal software.
 3. **Workspace boundary separate from tool profile.** File visibility and installed tooling are different control planes on purpose.
 4. **Operator-owned infrastructure, not black-box runtime.** The implementation should stay inspectable and patchable.
-5. **Container isolation is acceptable for the first target.** jackin' does not claim a microVM boundary today.
+5. **Container isolation is acceptable for the first target.** jackin❯ does not claim a microVM boundary today.
 
 ## Async architecture
 
@@ -56,13 +56,13 @@ This is a cross-cutting TUI rule too: background I/O reports into typed state, a
 
 <ImageLayers />
 
-The role repo owns the environment layer. jackin' owns the derived agent layer.
+The role repo owns the environment layer. jackin❯ owns the derived agent layer.
 
-That means a role defines the tools and conventions, while jackin' injects the agent-specific pieces such as Claude, Codex, Amp, Kimi, or OpenCode installation, the entrypoint, and UID/GID remapping.
+That means a role defines the tools and conventions, while jackin❯ injects the agent-specific pieces such as Claude, Codex, Amp, Kimi, or OpenCode installation, the entrypoint, and UID/GID remapping.
 
 ## Role repository tooling
 
-Role repositories are normal source repositories, so jackin' keeps role maintenance split between two surfaces. The main operator CLI owns desktop ergonomics: its role-authoring dispatch validates checked-out role repositories, applies manifest migrations to local copies, and writes small starter repositories for authors. That path lives in <RepoFile path="crates/jackin/src/role_authoring.rs">crates/jackin/src/role_authoring.rs</RepoFile> and reuses the same manifest migration registry and repository contract checks used by runtime launch.
+Role repositories are normal source repositories, so jackin❯ keeps role maintenance split between two surfaces. The main operator CLI owns desktop ergonomics: its role-authoring dispatch validates checked-out role repositories, applies manifest migrations to local copies, and writes small starter repositories for authors. That path lives in <RepoFile path="crates/jackin/src/role_authoring.rs">crates/jackin/src/role_authoring.rs</RepoFile> and reuses the same manifest migration registry and repository contract checks used by runtime launch.
 
 Automation stays on the small role-focused binary in <RepoFile path="crates/jackin/src/bin/role.rs">crates/jackin/src/bin/role.rs</RepoFile>. CI workflows and future Renovate-style migration jobs should not depend on the full operator CLI just to validate a role repo or restamp a manifest; they call the standalone validator, which shares <RepoFile path="crates/jackin-manifest/src/repo.rs">crates/jackin-manifest/src/repo.rs</RepoFile> and <RepoFile path="crates/jackin-manifest/src/migrations.rs">crates/jackin-manifest/src/migrations.rs</RepoFile> with the desktop path.
 
@@ -91,7 +91,7 @@ Launch progress is emitted through <RepoFile path="crates/jackin-runtime/src/run
 | `role` | Resolve the role source from config or command flags, acquire/update the role-repo cache, check out the requested ref/branch, and load the role manifest. |
 | `credentials` | Inspect host-side agent/GitHub/1Password credential availability read-only, materialize per-instance auth state under jackin-owned state, and prepare the credential mounts/env that the container receives. |
 | `construct` | Verify or pull the shared construct base image (`projectjackin/construct:trixie`) that the derived role image builds from. |
-| `agent binaries` | Resolve and cache the declared agent runtime binaries plus the matching `jackin-capsule` binary under jackin-owned host cache state. If release metadata lookup fails after the metadata TTL expires, jackin' falls back to the newest executable cached agent binary and records a diagnostics warning; a cold cache still fails the launch. |
+| `agent binaries` | Resolve and cache the declared agent runtime binaries plus the matching `jackin-capsule` binary under jackin-owned host cache state. If release metadata lookup fails after the metadata TTL expires, jackin❯ falls back to the newest executable cached agent binary and records a diagnostics warning; a cold cache still fails the launch. |
 | `derived image` | Generate the role-specific `DerivedDockerfile`, assemble the temporary Docker build context, copy cached runtime assets into it, run `docker build`, and capture Docker stdout/stderr to a plain run sidecar log on failure. |
 | `workspace` | Prepare the mounted workspace/directory, optional workspace git-pull-on-entry work, per-instance manifest/index records, runtime directories, mount list, and Capsule launch config. |
 | `network` | Create or reconcile the per-instance Docker network and related host-side runtime names. |
@@ -115,7 +115,7 @@ Every fresh launch gets a unique DNS-safe instance identity. Existing running or
 
 ### Capsule supervisor and session model
 
-Every role container runs the jackin' Capsule (<RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile>) as PID 1. In daemon mode it reaps children, manages PTYs, renders the multiplexer, and serves the socket API. `SIGTERM` / `SIGINT` trigger orderly shutdown, and the daemon exits when the last live session ends so Docker reports a clean container exit. The full Capsule design is documented in [jackin' Capsule](/reference/capsule//).
+Every role container runs the jackin❯ Capsule (<RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile>) as PID 1. In daemon mode it reaps children, manages PTYs, renders the multiplexer, and serves the socket API. `SIGTERM` / `SIGINT` trigger orderly shutdown, and the daemon exits when the last live session ends so Docker reports a clean container exit. The full Capsule design is documented in [jackin❯ Capsule](/reference/capsule//).
 
 Sessions are daemon-owned PTYs inside the running container. All agent sessions are equal — there is no "primary" or "secondary" distinction.
 
@@ -130,7 +130,7 @@ When an agent session exits cleanly (the operator types `/exit` or the agent fin
 
 Role identity, workspace workdir, supported-agent order, and model overrides are not duplicated into container-wide environment variables. The daemon reads those values from `/jackin/run/agent.toml`, keeping all jackin-owned in-container runtime state under `/jackin/`.
 
-Session state is not yet reconciled against the live container on console refresh — Phase 4 of the [Console agent session control](/reference/roadmap/console-agent-session-control/) roadmap covers this work. The `sessions` field in the instance manifest is written but not populated until reconciliation lands.
+Session state is not yet reconciled against the live container on console refresh — Phase 4 of the [Console agent session control](/roadmap/console-agent-session-control/) roadmap covers this work. The `sessions` field in the instance manifest is written but not populated until reconciliation lands.
 
 Implementation: <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>, <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> (`launch_role_runtime`), <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
 
@@ -159,7 +159,7 @@ The DinD sidecar auto-generates TLS certificates at startup into a shared Docker
 
 ## Terminal capability model
 
-Pane PTYs run with a stable `TERM=xterm-256color` baseline and `COLORTERM=truecolor`. jackin' does not copy the host terminal's `$TERM` into the long-lived container environment, because a preserved instance can be reattached later from a different terminal app. A pane that started while the operator used Ghostty must still be safe to reattach from Kitty, iTerm, Warp, SSH, or a plain xterm-compatible terminal. `COLORTERM=truecolor` is a deterministic capability hint for agent CLIs and TUIs, not a host-specific terminal identity.
+Pane PTYs run with a stable `TERM=xterm-256color` baseline and `COLORTERM=truecolor`. jackin❯ does not copy the host terminal's `$TERM` into the long-lived container environment, because a preserved instance can be reattached later from a different terminal app. A pane that started while the operator used Ghostty must still be safe to reattach from Kitty, iTerm, Warp, SSH, or a plain xterm-compatible terminal. `COLORTERM=truecolor` is a deterministic capability hint for agent CLIs and TUIs, not a host-specific terminal identity.
 
 Terminal-specific enhancements are attached-client state instead. Every foreground attach (`jackin load`, `jackin hardline`, and console attach) runs a short-lived Capsule client through `docker exec`; that client reports its current `TERM`, `TERM_PROGRAM`, and `COLORTERM` in the attach handshake. The PID 1 daemon stores that identity only for the active client and refreshes it on every takeover, so jackin-owned output enhancements follow the terminal the operator is using now.
 
@@ -171,12 +171,12 @@ The container no longer runs tmux for agent sessions. The Capsule owns the PTYs 
 
 | Former tmux concern | Capsule behavior |
 |---|---|
-| Modified keys | Client-side input parsing preserves xterm/Kitty/CSI-u key sequences and forwards pane input unmodified unless it is a jackin'-owned palette or prefix command. |
+| Modified keys | Client-side input parsing preserves xterm/Kitty/CSI-u key sequences and forwards pane input unmodified unless it is a jackin❯-owned palette or prefix command. |
 | Terminal feature advertisement | Pane PTYs run with `TERM=xterm-256color` and `COLORTERM=truecolor`; outer-terminal identity is reported per attach and used only for client-side enhancements. |
 | Focus events | The attach client enables focus reporting on the outer terminal and forwards focus-in/focus-out only to panes that requested it. |
 | OSC passthrough | Focused-pane OSC 0/1/2 titles, OSC 8 hyperlinks, OSC 9 notifications, and OSC 52 clipboard writes are forwarded with per-family opt-outs. OSC 7 is captured for pane titles and not forwarded to the host. |
-| Escape timing | The input parser treats Escape as data for the pane except when a jackin' dialog is open; dialogs receive normalized legacy keys even after an embedded TUI enables progressive keyboard reporting. |
-| Mouse | The client keeps the outer terminal in SGR any-event mode. The daemon handles clicks on jackin' chrome and forwards pane mouse events only when the pane's program opted into mouse reporting. |
+| Escape timing | The input parser treats Escape as data for the pane except when a jackin❯ dialog is open; dialogs receive normalized legacy keys even after an embedded TUI enables progressive keyboard reporting. |
+| Mouse | The client keeps the outer terminal in SGR any-event mode. The daemon handles clicks on jackin❯ chrome and forwards pane mouse events only when the pane's program opted into mouse reporting. |
 
 Implementation: <RepoFile path="crates/jackin-capsule/src/client.rs">crates/jackin-capsule/src/client.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/tui/input.rs">crates/jackin-capsule/src/tui/input.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>, and <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>.
 
@@ -194,7 +194,7 @@ Workspace mounts pass through three distinct shapes between operator intent and 
 
 Materialization happens **after** jackin claims the final unique container name and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: worktree mode creates a scratch branch from host `HEAD`, clone mode runs a local clone of the host repo's current branch, and both modes record `base_commit`. Later loads to the same container reuse the existing checkout as-is — no reset, no rebase, no fast-forward.
 
-On first worktree creation for a host repo, jackin' enables `extensions.worktreeConfig` (bumping `core.repositoryformatversion` to 1 if needed) so per-worktree config writes via `git config --worktree` don't leak into the shared host `.git/config`.
+On first worktree creation for a host repo, jackin❯ enables `extensions.worktreeConfig` (bumping `core.repositoryformatversion` to 1 if needed) so per-worktree config writes via `git config --worktree` don't leak into the shared host `.git/config`.
 
 ### `isolation.json`
 
@@ -223,7 +223,7 @@ Successful cleanup removes the corresponding record rather than keeping a histor
 
 ### Foreground session finalization
 
-Every command that opens or reopens an agent foreground session — `jackin load`, `jackin hardline`, the operator console — funnels through the same post-session finalizer. After the foreground `docker exec ... jackin-capsule` attach returns, jackin' inspects the container and decides:
+Every command that opens or reopens an agent foreground session — `jackin load`, `jackin hardline`, the operator console — funnels through the same post-session finalizer. After the foreground `docker exec ... jackin-capsule` attach returns, jackin❯ inspects the container and decides:
 
 - **Container is still running** → preserve everything for `jackin hardline` to reconnect later. No isolated-checkout action.
 - **Stopped, non-zero exit or OOM** → preserve the container, DinD, and isolated checkouts so `jackin hardline` can restart in place.
@@ -275,7 +275,7 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 This is what persists across sessions:
 
 - Claude/Codex/Amp/Kimi/OpenCode history, runtime-local settings, plugins, and authentication state stored under the per-instance durable home
-- jackin' plugin metadata
+- jackin❯ plugin metadata
 - `gh` state acquired inside the agent container
 
 This is what does **not** persist:
@@ -284,17 +284,17 @@ This is what does **not** persist:
 - ad-hoc root filesystem changes outside mounted paths
 - DinD images, containers, and cache
 
-That means jackin' restores only host-backed state: workspace mounts, isolated worktrees/clones, and the per-instance agent home under `~/.jackin/data/<container>/home/`. Anything installed or edited only in the container writable layer is intentionally disposable and will not be restored after Docker deletes the container.
+That means jackin❯ restores only host-backed state: workspace mounts, isolated worktrees/clones, and the per-instance agent home under `~/.jackin/data/<container>/home/`. Anything installed or edited only in the container writable layer is intentionally disposable and will not be restored after Docker deletes the container.
 
-jackin'' is biased toward **reproducible roles** rather than **mutable long-lived sandboxes**.
+jackin❯ is biased toward **reproducible roles** rather than **mutable long-lived sandboxes**.
 
 If a tool should always exist, put it in the role repo Dockerfile instead of installing it ad hoc during a session.
 
 ## Why Docker instead of microVMs?
 
-Because jackin' is solving a slightly different problem.
+Because jackin❯ is solving a slightly different problem.
 
-Using plain Docker lets jackin':
+Using plain Docker lets jackin❯:
 
 - reuse a toolchain developers already have
 - keep the implementation smaller and easier to inspect
@@ -316,13 +316,13 @@ If the main thing you need is the strongest local boundary for autonomous agents
 - **DinD transport uses auto-generated TLS certificates.** The certificates are generated per-session and not pinned to a CA chain you control.
 - **Claude installation is not fully pinned.** The derived image installs Claude Code from the upstream installer.
 - **Derived build context rejects symlinks.** Role repos with symlink-heavy layouts are not supported yet.
-- **Cached role repos must stay clean.** jackin' refuses to build from a dirty or origin-mismatched cache.
+- **Cached role repos must stay clean.** jackin❯ refuses to build from a dirty or origin-mismatched cache.
 - **Container mutability is intentionally thin.** That keeps sessions cleaner, but makes ad-hoc package installs non-persistent.
 - **Isolation-mode edits are guarded only when preserved state already records the previous mode.** Source drift is checked before workspace edits are saved; changing only `mounts[].isolation` can still take effect on the next launch without a pre-save warning when there is no conflicting preserved record.
 
 ## Technology stack
 
-jackin' is built in Rust. The runtime dependencies, grouped by what they own, match <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>:
+jackin❯ is built in Rust. The runtime dependencies, grouped by what they own, match <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>:
 
 | Concern | Crates |
 |---|---|

@@ -1,0 +1,142 @@
+---
+title: Role Repositories
+description: How role repositories work and how they're discovered
+---
+
+<Aside type="note">
+This page is **for role authors** — anyone creating their own
+role repository (`backend-engineer`, `docs-writer`,
+`security-reviewer`, …) for themselves or for a team. Role
+authoring is a normal user-facing activity, not a contributor
+activity: you do not need to know how jackin❯ is implemented to
+read this page. Operators who only *load* existing roles only need
+the role's selector name (e.g. `agent-smith`) and can skip this
+section.
+</Aside>
+
+## What is a role repo?
+
+A role repo is a GitHub repository that defines a specific role. It contains:
+
+1. A **Dockerfile** — the role's environment definition (tools, languages, SDKs)
+2. A **manifest file** (`jackin.role.toml`) — metadata about the role
+
+When you run `jackin load agent-smith`, jackin❯ looks for a GitHub repo named `jackin-agent-smith` and builds a container from it.
+
+A role repo is where you decide what kind of worker you are creating. In most teams, that means creating role-specific environments rather than one universal image. A frontend-oriented role repo can install browser tooling and UI-focused plugins, while a backend-oriented repo can install server toolchains and database clients.
+
+A role is best thought of as a reusable tool profile. It is where you decide things like:
+
+- which language toolchains are installed
+- which helper scripts and shell defaults are present
+- which Claude plugins are installed
+- whether this is a frontend, backend, infra, or review-focused environment
+
+## Naming convention
+
+Role repos follow the `jackin-{role-name}` naming pattern:
+
+| Role name | GitHub repo | Load command |
+|---|---|---|
+| `agent-smith` | `jackin-agent-smith` | `jackin load agent-smith` |
+| `neo` | `jackin-neo` | `jackin load neo` |
+| `the-architect` | `jackin-the-architect` | `jackin load the-architect` |
+
+### Namespaced roles
+
+Organizations can publish roles under their namespace:
+
+| Role name | GitHub repo | Load command |
+|---|---|---|
+| `chainargos/frontend-engineer` | `chainargos/jackin-frontend-engineer` | `jackin load chainargos/frontend-engineer` |
+| `chainargos/backend-engineer` | `chainargos/jackin-backend-engineer` | `jackin load chainargos/backend-engineer` |
+| `chainargos/security-reviewer` | `chainargos/jackin-security-reviewer` | `jackin load chainargos/security-reviewer` |
+
+The namespace prefix maps directly to the GitHub organization or user.
+
+## When should you create another role?
+
+Create another role when the work needs a meaningfully different environment.
+
+Common reasons include:
+
+- frontend work needs Node, browser tooling, and UI-focused plugins
+- backend work needs Rust or Go toolchains, API clients, and database tools
+- infra work needs Terraform, cloud CLIs, and deployment helpers
+- security review work should have a smaller, audit-focused tool and plugin set
+- docs work may need writing or publishing tools without bringing in unrelated build systems
+
+The goal is not to create lots of arbitrary images. The goal is to avoid one kitchen-sink image that exposes every tool and plugin to every task.
+
+## Role identity
+
+Roles can declare a display name in their manifest:
+
+```toml title="jackin.role.toml"
+[identity]
+name = "Agent Smith"
+```
+
+This name appears in jackin❯ TUI and output. When omitted, the role selector name is used instead (e.g., `agent-smith`).
+
+## Caching
+
+jackin❯ caches each role's repository on first load and reuses the cached checkout on every subsequent load — there is no manual cache to manage. Branches loaded with `--role-branch` are cached separately from the default branch, so you can flip between them without re-cloning either side. jackin❯ updates the cache on each load to keep it in sync with the configured source.
+
+jackin❯ is intentionally strict about that cache:
+
+- if the cached repo's `origin` no longer matches the configured source, load fails
+- if the cached repo contains local changes or extra files, load fails
+
+This avoids silently building from a tampered or stale cache. If you intentionally need a clean cache, run `jackin purge <role>` to drop it and let the next load clone fresh.
+
+<Aside type="tip">
+Pass `--rebuild` to force jackin❯ to rebuild the Docker image from scratch. This is useful when the construct base image or agent Dockerfile has changed.
+</Aside>
+## The repo contract
+
+Every role repo must satisfy a contract:
+
+1. **Must contain `jackin.role.toml`** at the repository root
+2. **Must contain a Dockerfile** at the path declared in the manifest
+3. **The Dockerfile path must be relative** and must stay inside the repo checkout (no `../` escapes)
+4. **The final Dockerfile stage must use the construct base**:
+   ```dockerfile
+   FROM projectjackin/construct:0.4-trixie
+   ```
+   An optional alias is allowed:
+   ```dockerfile
+   FROM projectjackin/construct:0.4-trixie AS runtime
+   ```
+5. **Earlier stages may use any base image** — multi-stage builds are fully supported
+6. **No symlinks** — the derived build-context generator currently rejects symlinks
+
+<Aside type="caution">
+Role repos only own their agent-specific environment layer. jackin❯ owns everything else: validating the contract, generating the derived Dockerfile, resolving and caching the agent runtimes declared by the role (Claude Code, Codex, Amp, Kimi, OpenCode), injecting the entrypoint, mounting workspaces, and wiring Docker-in-Docker.
+</Aside>
+## Example role repo
+
+A minimal role repo for a Node.js development agent:
+
+```toml title="jackin.role.toml"
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[identity]
+name = "Frontend Engineer"
+```
+
+```dockerfile title="Dockerfile"
+FROM projectjackin/construct:0.4-trixie
+
+# Install Node.js via mise
+RUN mise install node@22 && mise use --global node@22
+
+# Install common global packages
+RUN npm install -g typescript tsx prettier eslint
+```
+
+That's it. jackin❯ handles the rest — agent runtime resolution and installation, entrypoint, user mapping, state persistence, and DinD setup.

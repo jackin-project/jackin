@@ -1,7 +1,7 @@
 //! In-container clipboard asset staging for host-affordance bridge frames.
 //!
 //! The host may claim an image format, but the Capsule validates magic bytes
-//! before writing a container-readable path under jackin's runtime root.
+//! before writing a container-readable path under jackin❯'s runtime root.
 
 use std::collections::HashMap;
 use std::fs::{

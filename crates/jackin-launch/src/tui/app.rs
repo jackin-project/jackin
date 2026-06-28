@@ -127,7 +127,7 @@ pub struct LaunchView {
     /// each frame, so the offset persists here and is threaded into the rebuilt
     /// `ContainerInfoState` — long paths scroll instead of clipping.
     pub container_info_scroll: jackin_tui::components::DialogBodyScroll,
-    /// Operator pressed Ctrl+Q: the "Exit jackin'?" confirmation overlays the
+    /// Operator pressed Ctrl+Q: the "Exit jackin❯?" confirmation overlays the
     /// cockpit and owns input until answered. `None` = not confirming. Ctrl+C
     /// bypasses this entirely (immediate hard cancel).
     pub quit_confirm: Option<jackin_tui::components::ConfirmState>,

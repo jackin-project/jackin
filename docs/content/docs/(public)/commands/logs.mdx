@@ -1,0 +1,76 @@
+---
+title: jackin logs
+description: "Show or follow the jackin❯ Capsule log"
+---
+
+## Synopsis
+
+```bash
+jackin logs [SELECTOR] [OPTIONS]
+```
+
+Show, follow, or bundle the jackin❯ Capsule log for a running or recently-run container. The Capsule writes one timestamped line per operator action (prefix key, pane split, tab close, agent spawn), PTY event (read EOF, child reaped), and PID-1 reap to a host-readable file under each container's state directory. The log is the primary input for bug reports about pane lifecycle, focus, or input routing.
+
+## Arguments
+
+| Argument | Required | Description |
+|---|---|---|
+| `SELECTOR` | No | Container base name, instance ID, role display name, or workspace label. Omitted: list every container with a log file. Required for `--path`, `--follow`, `--bundle`, or a printed tail. |
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--path` | Print the resolved log file path instead of its content. |
+| `--tail <N>` | Print the last N lines (default 200). Ignored when `--follow` is set. |
+| `--follow` | Follow the log as it grows (like `tail -f`). Ctrl+C to stop. |
+| `--bundle <PATH>` | Copy the last `--tail` lines (with a one-block header naming the source container, role, and path) into a fresh file at the given path. Existing file is overwritten. Designed for pasting into bug reports. |
+| `--debug` | Print every external command jackin issues and their captured output. Also enabled by `JACKIN_DEBUG=1`. |
+
+`--path`, `--follow`, and `--bundle` are mutually exclusive.
+
+## Examples
+
+```bash
+# List every container with a log file
+jackin logs
+
+# Print the last 200 lines of one container's log
+jackin logs jk-k7p9m2xq-thearchitect
+
+# Match by role display name (errors if multiple containers share the role)
+jackin logs the-architect --tail 500
+
+# Tail -f the log
+jackin logs jk-k7p9m2xq-thearchitect --follow
+
+# Bundle the last 200 lines for a bug report
+jackin logs jk-k7p9m2xq-thearchitect --bundle ~/Desktop/jackin-bug.txt
+
+# Show only the path (useful for scripting)
+jackin logs jk-k7p9m2xq-thearchitect --path
+```
+
+## Selector resolution
+
+The selector is matched against each container's base name (exact or substring), role display name (case-insensitive), and workspace label (case-insensitive). When the substring or display-name match is ambiguous, `jackin logs` errors and lists the candidates so you can re-run with a more specific selector.
+
+## What's in the log
+
+Each line is timestamped in ISO-8601 UTC and prefixed with `[jackin-capsule]`. The Capsule writes:
+
+- **Action breadcrumbs** — every prefix-key chord, dialog action, pane spawn, split, zoom, clear-pane, close, tab close, and exited-session removal. These reconstruct what you pressed in what order.
+- **Lifecycle events** — child process reap, PTY read EOF, session resize, attach/detach.
+- **Errors** — PTY read/write errors with errno, mutex poison, control-protocol parse failures, queue closures.
+
+Reader-task EOF and child-reaper events are both logged; the difference between them is load-bearing when triaging "agent exited but pane stayed open" reports — see [`reference/jackin-capsule`](/reference/capsule//) for the lifecycle model.
+
+## Bundling for bug reports
+
+`--bundle` is the supported way to share a log with the jackin maintainers. The header it writes pins the container base, the role, the workspace, the container status, and the source path, so the reader can correlate the trace with the rest of the bug context without a separate paste.
+
+```bash
+jackin logs the-architect --bundle /tmp/jackin-bug.txt --tail 500
+```
+
+Then attach `/tmp/jackin-bug.txt` to the issue or paste its contents directly.

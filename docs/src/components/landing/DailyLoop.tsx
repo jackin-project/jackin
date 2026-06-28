@@ -7,7 +7,7 @@ export function DailyLoop() {
       <div className="landing-shell">
         <div className="landing-sec-label">07 · How it Works</div>
         <h2 className="landing-sec-title">The <span className="accent">daily loop</span>.</h2>
-        <p className="landing-sec-intro">Five moves. Any number of agents. A full day's flow with jackin'.</p>
+        <p className="landing-sec-intro">Five moves. Any number of agents. A full day's flow with jackin❯.</p>
 
         <div className="landing-loop">
           {loopFrames.map(f => (

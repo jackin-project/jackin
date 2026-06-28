@@ -1,6 +1,6 @@
 # Pre-release policy
 
-jackin' no released version — proof-of-concept. Rules here consequence of that status, **all retire when jackin' ships first tagged release.**
+jackin❯ no released version — proof-of-concept. Rules here consequence of that status, **all retire when jackin❯ ships first tagged release.**
 
 ## Breaking changes are expected and acceptable
 

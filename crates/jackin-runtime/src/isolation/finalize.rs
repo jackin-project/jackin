@@ -226,7 +226,7 @@ fn rich_exit_dialog(
     }
     context.push(PromptContextLine::Blank);
     context.push(PromptContextLine::Muted(
-        "Choose how jackin' should handle these worktrees. Press I to inspect changes.".to_owned(),
+        "Choose how jackin❯ should handle these worktrees. Press I to inspect changes.".to_owned(),
     ));
 
     let options = vec![

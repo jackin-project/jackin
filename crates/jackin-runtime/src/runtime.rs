@@ -1,8 +1,9 @@
-//! jackin' container bootstrap runtime.
+//! jackin❯ container bootstrap runtime.
 //!
 //! Re-exports the public entry points consumed by `app.rs` and `console/`.
 //! Each sub-module owns one slice of the container lifecycle.
 
+pub mod apple_container;
 pub mod attach;
 pub mod caffeinate;
 pub mod cleanup;

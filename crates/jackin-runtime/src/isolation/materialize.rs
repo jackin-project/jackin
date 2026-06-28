@@ -105,7 +105,7 @@ pub struct WorktreeAuxMounts {
 ///
 /// On-disk layout (groups all git-related artifacts under
 /// `<container_state>/git/`, with `worktree/repo/` marking the subtree
-/// as git-managed and `overrides/` holding jackin's bind-mount sources):
+/// as git-managed and `overrides/` holding jackin❯'s bind-mount sources):
 ///
 /// ```text
 /// <container_state>/git/
@@ -186,7 +186,7 @@ fn strip_userinfo(url: String) -> String {
 ///
 /// Storage layout: every git-related artifact for one mount lives
 /// under `<container_state>/git/`, with `worktree/repo/` marking the
-/// subtree as git-managed and `overrides/` holding jackin's
+/// subtree as git-managed and `overrides/` holding jackin❯'s
 /// bind-mount sources. Override-file names match their docker mount
 /// destinations:
 ///
@@ -995,7 +995,7 @@ async fn materialize_clone(
         .await?;
 
     // `git clone --local <mount.src>` points the clone's `origin` at
-    // `mount.src` — on jackin's mount layout that path is identical
+    // `mount.src` — on jackin❯'s mount layout that path is identical
     // inside and outside the container, so pushes loop back to a
     // host-local working tree instead of the operator's upstream.
     // Copy the host's own `origin` URL across (worktree mode inherits

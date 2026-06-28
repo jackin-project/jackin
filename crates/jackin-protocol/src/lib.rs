@@ -19,11 +19,62 @@ pub use snapshot::InstanceSnapshot;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// How an [`ExecBinding`]'s `source` is resolved by the host credential
+/// resolver. Serializes as `"op"` / `"env"` / `"literal"`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecKind {
+    /// Resolve via `op read <source>` on the host.
+    Op,
+    /// Read the host env var named by `source` (a `$VAR` / `${VAR}` reference).
+    Env,
+    /// Return `source` verbatim.
+    Literal,
+}
+
+/// One on-demand credential binding the operator configured for a session.
+///
+/// Built host-side from the workspace's `on_demand` env entries and handed to
+/// the host credential resolver (`jackin-runtime`'s `exec_host`) as the
+/// allow-list of (name, kind, source) triples it will resolve.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExecBinding {
+    pub name: String,
+    pub kind: ExecKind,
+    pub source: String,
+}
+
+/// `jackin-exec` host.sock request: the operator-selected credentials the
+/// in-container capsule asks the host resolver to resolve. Framed with
+/// [`control::frame`], same as the control socket.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CredRequest {
+    pub refs: Vec<ExecBinding>,
+}
+
+/// `jackin-exec` host.sock reply. Internally tagged so the capsule decodes it
+/// in one parse instead of trying success-then-error struct shapes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum CredReply {
+    /// Every requested credential resolved: `name -> value`.
+    Ok { values: BTreeMap<String, String> },
+    /// Resolution failed; `error` is operator-facing (no secret material).
+    Error { error: String },
+}
+
 /// Filename written under `/jackin/run/` by the host launcher.
 pub const CAPSULE_CONFIG_FILENAME: &str = "agent.toml";
 
 /// Normalized runtime config path read by Capsule PID 1.
 pub const CAPSULE_CONFIG_PATH: &str = "/jackin/run/agent.toml";
+
+/// Path inside the role container of the `jackin-exec` host credential
+/// resolver socket. The host creates it under the bind-mounted `/jackin/run`
+/// dir; the in-container capsule connects here to resolve on-demand
+/// credentials. Single source of truth so the mount side and the connect side
+/// cannot drift.
+pub const HOST_SOCK_CONTAINER_PATH: &str = "/jackin/run/host.sock";
 
 /// Filename the capsule writes the operator's dirty-exit choice to, under the
 /// per-instance state dir, for the host to read and execute on cleanup.
@@ -77,6 +128,12 @@ pub struct CapsuleConfig {
     /// start by the capsule.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub claude_plugins: Vec<String>,
+    /// On-demand credential bindings (`jackin-exec`). Carries the
+    /// `(name, kind, source)` triples the host credential resolver allow-lists;
+    /// the container only learns the names (via `JACKIN_EXEC_BINDINGS`), never
+    /// resolved values. Empty when the workspace declares no on-demand vars.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exec_bindings: Vec<ExecBinding>,
     /// Resolved dirty-exit policy (`"ask"` | `"keep"` | `"discard"`). The
     /// in-container daemon shows the dirty-exit modal only when this is `"ask"`;
     /// `"keep"`/`"discard"` exit straight to the host executing that policy.
@@ -130,7 +187,7 @@ pub const MINIMAX_OPENAI_BASE_URL: &str = "https://api.minimax.io/v1";
 /// `MiniMax` Token Plan model — all three Claude tiers map to this single model.
 pub const MINIMAX_DEFAULT_MODEL: &str = "MiniMax-M3";
 /// `MiniMax-M3` context window (tokens). Codex ships no metadata for this custom
-/// model, so jackin' registers it via a Codex model catalog; the value cannot be
+/// model, so jackin❯ registers it via a Codex model catalog; the value cannot be
 /// raised through a profile-scoped `model_context_window` (Codex clamps that to
 /// the model's fallback cap).
 pub const MINIMAX_CONTEXT_WINDOW: u64 = 512_000;

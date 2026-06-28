@@ -1,4 +1,4 @@
 from_version = "v1alpha6"
 target_version = "v1alpha8"
 target_version_shipped = "2026-06-09"
-summary = "Restamps workspace as v1alpha7. Adds optional workspace Docker profile/grants config; additive with serde default, no transformation needed."
+summary = "Restamps workspace as v1alpha8. Adds optional on_demand env metadata, optional [runtime].backend for per-workspace backend overrides, and optional workspace Docker profile/grants config; additive with serde defaults, no transformation needed."

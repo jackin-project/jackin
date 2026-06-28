@@ -651,7 +651,7 @@ pub fn create_derived_build_context_for_agents(
     // Validation policy by ingress channel — intentionally asymmetric:
     //
     // - `base_image_override` argument: hard error on invalid input.
-    //   The caller is jackin's own runtime code (or a future CLI flag
+    //   The caller is jackin❯'s own runtime code (or a future CLI flag
     //   the operator typed explicitly). A typo / programmer bug is
     //   worth failing the build loudly.
     //

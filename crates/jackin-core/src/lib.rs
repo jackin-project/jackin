@@ -1,6 +1,6 @@
-//! jackin-core: universal vocabulary types shared across all jackin' crates.
+//! jackin-core: universal vocabulary types shared across all jackin❯ crates.
 //!
-//! This is a leaf crate — it has no jackin' dependencies, no tokio, no
+//! This is a leaf crate — it has no jackin❯ dependencies, no tokio, no
 //! subprocess, no filesystem access. Every higher crate depends on this one,
 //! never the reverse.
 //!
@@ -43,7 +43,7 @@ pub use docker::{
 pub use docker_security::{
     DindGrant, DockerGrants, DockerSecurityProfile, NetworkGrant, ParseProfileError,
 };
-pub use env_value::{EnvValue, FieldTarget, OpRef};
+pub use env_value::{EnvValue, Extended, FieldTarget, OpRef};
 pub use isolation::{MountIsolation, ParseMountIsolationError};
 pub use isolation_record::{CleanupStatus, DriftDetection, IsolationRecord};
 pub use path_text::shorten_home;

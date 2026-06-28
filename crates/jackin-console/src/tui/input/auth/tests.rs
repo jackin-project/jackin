@@ -224,6 +224,7 @@ fn auth_form_save_persists_workspace_layer_into_pending() {
         .expect("credential env var must be set");
     match value {
         EnvValue::Plain(s) => assert_eq!(s, "secret"),
+        EnvValue::Extended(value) => assert_eq!(value.value, "secret"),
         EnvValue::OpRef(_) => panic!("expected plain literal credential"),
     }
 }
@@ -618,6 +619,7 @@ fn auth_form_save_persists_role_layer_into_pending() {
         .expect("role env credential must be set");
     match env_val {
         EnvValue::Plain(s) => assert_eq!(s, "abc"),
+        EnvValue::Extended(value) => assert_eq!(value.value, "abc"),
         EnvValue::OpRef(_) => panic!("expected plain literal"),
     }
 }
@@ -734,6 +736,7 @@ fn auth_form_generate_op_mint_remounts_form_focus_save() {
         op: "op://uuid/claude-vault".into(),
         path: "Personal/Claude/oauth-token".into(),
         account: None,
+        on_demand: false,
     };
     apply_op_picker_to_auth_form_with_runner(editor, minted.clone(), &StubRunner);
 
@@ -854,6 +857,7 @@ fn auth_form_op_ref_picker_commit_applies_to_form() {
         op: "op://uuid/anthropic-vault".into(),
         path: "Work/Anthropic/api-key".into(),
         account: None,
+        on_demand: false,
     };
     apply_op_picker_to_auth_form_with_runner(editor, picked.clone(), &StubRunner);
 
@@ -910,6 +914,7 @@ fn auth_form_op_ref_picker_failed_read_does_not_apply_op_ref() {
         op: "op://uuid/missing".into(),
         path: "Vault/Missing/field".into(),
         account: None,
+        on_demand: false,
     };
     apply_op_picker_to_auth_form_with_runner(editor, picked, &FailRunner);
 
@@ -996,6 +1001,7 @@ fn auth_form_save_disabled_blocks_enter() {
             op: String::new(),
             path: String::new(),
             account: None,
+            on_demand: false,
         });
     } else {
         panic!("auth form must still be open");
@@ -1084,6 +1090,7 @@ fn github_form_save_persists_workspace_layer_into_pending() {
         .expect("GH_TOKEN must land on the github env block, not the regular env block");
     match value {
         EnvValue::Plain(s) => assert_eq!(s, "ghp_xxx"),
+        EnvValue::Extended(value) => assert_eq!(value.value, "ghp_xxx"),
         EnvValue::OpRef(_) => panic!("expected plain literal credential"),
     }
     // GH_TOKEN must NOT have leaked into the regular workspace env
@@ -1380,6 +1387,7 @@ fn github_form_save_round_trip_renders_persisted_values() {
         .expect("GH_TOKEN must persist on the github env block")
     {
         EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
+        EnvValue::Extended(value) => assert_eq!(value.value, "ghp_round_trip"),
         EnvValue::OpRef(_) => panic!("expected plain literal"),
     }
 }

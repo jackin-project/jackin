@@ -23,14 +23,8 @@ fn chrome_frame(
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan = crate::tui::components::status_bar::status_bar_plan(
-        80,
-        &tabs,
-        0,
-        &[],
-        PrefixMode::Idle,
-        None,
-    );
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle);
     terminal
         .draw(|frame| {
             render_capsule_ratatui_frame(
@@ -187,14 +181,8 @@ fn non_debug_dialog_hides_bottom_status_bar() {
     ];
     let backend = TestBackend::new(120, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan = crate::tui::components::status_bar::status_bar_plan(
-        120,
-        &tabs,
-        0,
-        &[],
-        PrefixMode::Idle,
-        None,
-    );
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(120, &tabs, 0, &[], PrefixMode::Idle);
 
     terminal
         .draw(|frame| {
@@ -239,7 +227,7 @@ fn non_debug_dialog_hides_bottom_status_bar() {
 
     let buf = terminal.backend().buffer();
     let row0: String = (0..30).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
-    assert!(row0.contains("jackin'"), "status brand missing: {row0:?}");
+    assert!(row0.contains("jackin❯"), "status brand missing: {row0:?}");
     let hint = row_text(buf, 21);
     assert!(hint.contains("dismiss"), "dialog hint missing: {hint:?}");
     let footer = row_text(buf, 23);
@@ -310,14 +298,8 @@ fn clipboard_image_notice_takes_priority_over_selection_copy_toast() {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(90, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan = crate::tui::components::status_bar::status_bar_plan(
-        90,
-        &tabs,
-        0,
-        &[],
-        PrefixMode::Idle,
-        None,
-    );
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
 
     terminal
         .draw(|frame| {
@@ -393,14 +375,8 @@ fn debug_dialog_keeps_status_bar_visible() {
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
     let backend = TestBackend::new(120, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan = crate::tui::components::status_bar::status_bar_plan(
-        120,
-        &tabs,
-        0,
-        &[],
-        PrefixMode::Idle,
-        None,
-    );
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(120, &tabs, 0, &[], PrefixMode::Idle);
 
     terminal
         .draw(|frame| {
@@ -445,7 +421,7 @@ fn debug_dialog_keeps_status_bar_visible() {
 
     let buf = terminal.backend().buffer();
     let row0: String = (0..30).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
-    assert!(row0.contains("jackin'"), "status brand missing: {row0:?}");
+    assert!(row0.contains("jackin❯"), "status brand missing: {row0:?}");
     assert!(row0.contains("Codex"), "status tab missing: {row0:?}");
     let row1: String = (0..30).map(|x| buf[(x, 1)].symbol().to_owned()).collect();
     assert!(
@@ -478,14 +454,8 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(90, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan = crate::tui::components::status_bar::status_bar_plan(
-        90,
-        &tabs,
-        0,
-        &[],
-        PrefixMode::Idle,
-        None,
-    );
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
 
     terminal
         .draw(|frame| {
@@ -549,7 +519,7 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
         "selection copy toast must not draw over hint/spacer/footer rows: {all_rows:?}"
     );
     assert!(
-        all_rows[0].contains("jackin'"),
+        all_rows[0].contains("jackin❯"),
         "status brand missing: {:?}",
         all_rows[0]
     );

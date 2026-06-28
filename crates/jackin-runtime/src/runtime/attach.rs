@@ -62,11 +62,40 @@ pub fn attach_proxy_exec_args(container_name: &str) -> Vec<String> {
     ]
 }
 
+/// Conservative `sockaddr_un.sun_path` capacity across the platforms jackin'
+/// targets (macOS/BSD = 104, Linux = 108). A socket path at or above this cannot
+/// be `connect`ed directly — the kernel rejects it — so the direct transport is
+/// impossible regardless of whether the socket exists.
+const MAX_UNIX_SOCKET_PATH_LEN: usize = 104;
+
 pub fn select_host_attach_transport(
     paths: &JackinPaths,
     container_name: &str,
 ) -> HostAttachTransportPlan {
     let socket_path = super::snapshot::socket_path(paths, container_name);
+
+    // A path at/over the `sun_path` limit can never bind/connect directly; the OS
+    // returns a generic error that reads like "connection refused", silently
+    // degrading to the attach-proxy and conflating "too long" with "not ready"
+    // (Bug 10). Detect it explicitly and surface it at a visible tier with a
+    // precise reason, instead of leaving it to a swallowed connect error.
+    let path_len = socket_path.as_os_str().len();
+    if path_len >= MAX_UNIX_SOCKET_PATH_LEN {
+        let reason = format!(
+            "socket path is {path_len} bytes, at/over the {MAX_UNIX_SOCKET_PATH_LEN}-byte \
+             sun_path limit; using attach-proxy (shorten the jackin state dir)"
+        );
+        tracing::warn!(
+            otel.name = "attach:socket_path_over_sun_len",
+            path_len,
+            "{reason}"
+        );
+        return HostAttachTransportPlan::AttachProxy {
+            socket_path,
+            direct_error: Some(reason),
+        };
+    }
+
     if !socket_path.exists() {
         return HostAttachTransportPlan::AttachProxy {
             socket_path,

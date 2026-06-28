@@ -199,7 +199,7 @@ fn push_agent_home_mounts(mounts: &mut Vec<String>, root: &Path, agent: jackin_c
     }
 }
 
-/// Returns the per-agent mount strings in jackin's `src:dst[:ro]` idiom for
+/// Returns the per-agent mount strings in jackin❯'s `src:dst[:ro]` idiom for
 /// `docker run -v`.
 ///
 /// Every provisioned agent is represented on `state.auth`, so the mount block
@@ -347,6 +347,55 @@ fn build_workspace_mount_strings(
         }
     }
     out
+}
+
+/// The container backend selected for a launch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Backend {
+    Docker,
+    AppleContainer,
+}
+
+/// Resolve the container backend for a launch. A per-workspace
+/// `[runtime].backend` overrides the host-wide `[runtime].default_backend`,
+/// which defaults to Docker when unset.
+///
+/// The backend fields are free-text strings in the config schema, so an
+/// unrecognised value is rejected here rather than silently falling through to
+/// Docker — a typo must fail closed, not launch the wrong (weaker-isolation)
+/// backend behind the operator's back.
+pub(super) fn resolve_backend(
+    config: &AppConfig,
+    workspace_name: Option<&str>,
+) -> anyhow::Result<Backend> {
+    let selected = workspace_name
+        .and_then(|name| config.workspaces.get(name))
+        .and_then(|ws| ws.runtime.backend.as_deref())
+        .or(config.runtime.default_backend.as_deref());
+    match selected {
+        None | Some(crate::apple_container_client::DOCKER_BACKEND_NAME) => Ok(Backend::Docker),
+        Some(crate::apple_container_client::BACKEND_NAME) => Ok(Backend::AppleContainer),
+        Some(other) => anyhow::bail!(
+            "unknown runtime backend {other:?}: expected `{}` or `{}`",
+            crate::apple_container_client::DOCKER_BACKEND_NAME,
+            crate::apple_container_client::BACKEND_NAME,
+        ),
+    }
+}
+
+/// Translate a [`MaterializedWorkspace`] into `(host, guest)` mount pairs for
+/// the apple-container backend (which formats its own `-v host:container`
+/// flags via the `container` CLI). Mirrors [`build_workspace_mount_strings`]
+/// but yields typed path pairs. Read-only flags and the worktree-mode `.git`
+/// override entries are not yet carried — tracked as apple-container Phase 0
+/// work, since they need empirical validation inside an apple/container VM.
+pub(super) fn build_workspace_mount_pairs(
+    workspace: &crate::isolation::materialize::MaterializedWorkspace,
+) -> Vec<(PathBuf, PathBuf)> {
+    crate::isolation::materialize::mount_order_for_docker(workspace)
+        .into_iter()
+        .map(|mount| (PathBuf::from(&mount.bind_src), PathBuf::from(&mount.dst)))
+        .collect()
 }
 
 pub(super) struct LaunchContext<'a> {
@@ -540,9 +589,45 @@ pub(super) fn capsule_config(
         initial_provider,
         claude_marketplaces: Vec::new(),
         claude_plugins: Vec::new(),
+        // Populated by the launch pipeline once the operator env is known; the
+        // manifest alone does not carry on-demand workspace credentials.
+        exec_bindings: Vec::new(),
         dirty_exit_policy: Some(dirty_exit_policy.to_owned()),
         isolated_worktrees,
     }
+}
+
+/// Comma-join the on-demand credential binding names for the
+/// `JACKIN_EXEC_BINDINGS` env var. Shared by the Docker and apple-container
+/// launch paths so the two cannot format the list differently.
+#[must_use]
+pub(super) fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> String {
+    bindings
+        .iter()
+        .map(|b| b.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Create the per-container socket dir and write Capsule's launch config
+/// (`agent.toml`) into it. The dir is bind-mounted to `/jackin/run`, so the
+/// in-container capsule reads `agent.toml` at startup and the host.sock
+/// credential-resolver socket lands beside it. Shared by both launch paths:
+/// the apple-container path (`apple_container::launch`) and the Docker path
+/// (`launch_role_runtime`, which calls it inside its socket-dir `spawn_blocking`
+/// alongside the extrausers passwd write). The dir is created under the default
+/// umask; it is tightened to `0o700` only when the `exec_host` listener binds
+/// the socket, which happens only for workspaces that declare on-demand
+/// credentials.
+pub(super) fn prepare_socket_dir(
+    socket_dir: &Path,
+    capsule_config_contents: &str,
+) -> std::io::Result<()> {
+    std::fs::create_dir_all(socket_dir)?;
+    std::fs::write(
+        socket_dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
+        capsule_config_contents,
+    )
 }
 
 /// Launch the role container after the caller has prepared the private network
@@ -1147,6 +1232,13 @@ pub(super) async fn launch_role_runtime(
     // runtime is built without the `fs` feature here, and blocking on
     // a slow / NFS host parks the worker driving the docker-run RPC
     // for every other future scheduled on it.
+    // Host-shared usage cache dir, mounted into every container so the
+    // account-keyed snapshot/cooldown (and refresh lock) coordinate across
+    // instances — a new instance reads the prior state and only one instance
+    // refreshes a given account (Class III). Shared (no container_name), owned by
+    // the host UID like the socket dir so the container can write it.
+    let usage_shared_dir = paths.jackin_home.join("data").join("usage-shared");
+    let usage_shared_dir_for_mkdir = usage_shared_dir.clone();
     let socket_dir_for_mkdir = socket_dir.clone();
     let capsule_config_contents_for_write = capsule_config_contents.clone();
     let extrausers_passwd_for_write = extrausers_passwd.clone();
@@ -1159,6 +1251,7 @@ pub(super) async fn launch_role_runtime(
     );
     let prepare_socket_dir_result = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
         std::fs::create_dir_all(&socket_dir_for_mkdir)?;
+        std::fs::create_dir_all(&usage_shared_dir_for_mkdir)?;
         std::fs::write(
             socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
             capsule_config_contents_for_write,
@@ -1200,6 +1293,19 @@ pub(super) async fn launch_role_runtime(
         },
     );
     prepare_socket_dir_result?;
+    // Start the jackin-exec host credential resolver for this container's
+    // on-demand bindings. Its socket lands in the dir just prepared (bind-
+    // mounted to /jackin/run), so the in-container capsule reaches it at
+    // /jackin/run/host.sock. Spawned detached: the task runs independently of
+    // this handle, for the host process's lifetime alongside the interactive
+    // attach. No-op when the workspace declares no on-demand credentials.
+    if !ctx.capsule_config.exec_bindings.is_empty() {
+        drop(crate::exec_host::start_for_container(
+            &ctx.paths.jackin_home,
+            ctx.container_name,
+            &ctx.capsule_config.exec_bindings,
+        ));
+    }
     // `Display` is lossy on non-UTF-8 paths — docker would silently mount a
     // different host dir than the one we just created. Bail rather than
     // smuggle U+FFFD into a `-v` argument.
@@ -1211,6 +1317,27 @@ pub(super) async fn launch_role_runtime(
     })?;
     let socket_mount = format!("{socket_dir_str}:/jackin/run");
     run_args.extend_from_slice(&["-v", &socket_mount]);
+    // Bind the host-shared usage cache RW and point the capsule's shared-dir env
+    // at subdirectories under it, so the account-keyed snapshot/cooldown/lock
+    // files live on one host-shared volume across all containers (Class III). The capsule
+    // `create_dir_all`s the subdirectories on first write.
+    let usage_shared_str = usage_shared_dir.to_str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "usage-shared dir {} contains non-UTF-8 bytes; cannot pass to docker -v",
+            usage_shared_dir.display(),
+        )
+    })?;
+    let usage_shared_mount = format!("{usage_shared_str}:/jackin/usage-shared");
+    run_args.extend_from_slice(&[
+        "-v",
+        &usage_shared_mount,
+        "-e",
+        "JACKIN_USAGE_SNAPSHOTS_DIR=/jackin/usage-shared/snapshots",
+        "-e",
+        "JACKIN_USAGE_COOLDOWN_DIR=/jackin/usage-shared/cooldowns",
+        "-e",
+        "JACKIN_USAGE_LOCK_DIR=/jackin/usage-shared/locks",
+    ]);
     // Mount the host UID/GID entries where libnss-extrausers reads them.
     let extrausers_mounts = if extrausers_entries.is_some() {
         let passwd_mount = extrausers_passwd
@@ -1877,7 +2004,7 @@ pub(super) fn launch_failure_cli_error(
     ])
     .build();
     table
-        .with(tabled::settings::Style::modern_rounded())
+        .with(tabled::settings::Style::modern())
         .with(tabled::settings::Remove::row(
             tabled::settings::object::Rows::first(),
         ));

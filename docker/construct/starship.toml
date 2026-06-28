@@ -1,0 +1,25 @@
+format = "$env_var$directory$git_branch$git_status$character"
+add_newline = false
+
+[env_var.JACKIN_AGENT]
+format = "[$env_value ](white)"
+
+# Green-block prompt sigil: black `j`, white `❯`, on the #00FF41 logo block.
+[character]
+success_symbol = "[ j](bg:#00FF41 fg:#0A0A0A)[❯ ](bg:#00FF41 fg:#FFFFFF)"
+error_symbol = "[ j](bg:#00FF41 fg:#0A0A0A)[❯ ](bg:#00FF41 fg:#FFFFFF)"
+vimcmd_symbol = "[ j](bg:#00FF41 fg:#0A0A0A)[❯ ](bg:#00FF41 fg:#FFFFFF)"
+
+[directory]
+style = "cyan"
+truncation_length = 3
+truncate_to_repo = false
+format = "[$path]($style) "
+
+[git_branch]
+style = "purple"
+format = "[$symbol$branch]($style) "
+
+[git_status]
+style = "yellow"
+format = "[$all_status$ahead_behind]($style) "
