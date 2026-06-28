@@ -190,7 +190,9 @@
   --jk-text-ghost: #828b93;
   --jk-accent:     #0b774e;   /* AA on white (~5:1): links, active, borders, icons */
   --jk-accent-dim: #0a5e3d;
-  --jk-brand:      #5cf07a;   /* phosphor — DARK MODE ONLY, never on a light surface */
+  --jk-brand:      #0b774e;   /* light = accent. Phosphor #5cf07a is dark-mode only;
+                                 no light surface renders it, so this resolves to
+                                 the AA accent (fixes TOC active, tabs, diagrams). */
   --jk-brand-muted: #0b774e;
   --jk-ui:         rgba(17, 24, 39, 0.1);   /* one neutral border family */
   --jk-ui-strong:  rgba(17, 24, 39, 0.2);
