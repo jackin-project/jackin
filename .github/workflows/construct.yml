@@ -237,6 +237,14 @@ jobs:
         with:
           name: ${{ env.BUILDX_BUILDER }}
           driver: docker-container
+          # Route docker.io base-image pulls (rust, debian) through Google's
+          # pull-through mirror so construct builds don't hit Docker Hub's
+          # per-account pull-rate limit (429 Too Many Requests). Bases stay
+          # digest-pinned, so the mirror only serves bytes — integrity is still
+          # verified against the pinned sha256.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       - name: Bootstrap buildx
         run: mise run construct-init-buildx
