@@ -1,0 +1,366 @@
+---
+title: jackin workspace
+description: "Manage saved workspace configurations"
+---
+
+## Synopsis
+
+```bash
+jackin workspace <SUBCOMMAND>
+```
+
+Create, list, modify, and delete saved workspace definitions.
+
+A workspace describes project access, not agent tooling. It answers: which host paths should be mounted into the container, and which roles are allowed to use that layout?
+
+## Subcommands
+
+### `workspace create`
+
+```bash
+jackin workspace create <NAME> --workdir <PATH> --mount <SPEC> [OPTIONS]
+```
+
+Create a new workspace definition.
+
+| Option | Description |
+|---|---|
+| `--workdir <PATH>` | Working directory inside the container |
+| `--mount <SPEC>` | Bind-mount spec (repeatable, at least one required) |
+| `--allowed-role <NAME>` | Restrict to these roles (repeatable) |
+| `--default-role <NAME>` | Role to preselect in interactive pickers and CLI context loading |
+| `--default-agent <claude\|codex\|amp\|kimi\|opencode>` | Default agent for this workspace |
+| `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared`, `worktree`, or `clone`. The `<DST>` must match a mount destination present in the final mount plan; an unknown `<DST>` is a hard error. |
+| `--keep-awake` | macOS only: opt this workspace into the keep-awake reconciler. While any agent in the workspace is running, jackin❯ keeps a single detached `caffeinate -imsu` alive so the host stays awake. No-op on Linux/Windows. See [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake). |
+| `--git-pull` | Run `git pull` on every mounted git repository from the host before the agent container starts. Failures are non-fatal — the launch continues even when offline or the working tree is dirty. See [Git pull on entry](/guides/workspaces/#git-pull-on-entry). |
+
+```bash
+jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app
+jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app --mount ~/cache:/cache:ro
+jackin workspace create amp-app --workdir ~/Projects/amp-app --mount ~/Projects/amp-app --default-agent amp
+jackin workspace create monorepo --workdir /workspace --mount ~/src:/workspace
+jackin workspace create restricted --workdir ~/app --mount ~/app --allowed-role agent-smith --default-role agent-smith
+jackin workspace create remote --workdir ~/Projects/remote --mount ~/Projects/remote --keep-awake
+
+# Isolated source mount + shared cache child
+jackin workspace create jackin \
+  --workdir /workspace/jackin \
+  --mount ~/projects/jackin:/workspace/jackin \
+  --mount ~/.cache/jackin/target:/workspace/jackin/target \
+  --mount-isolation /workspace/jackin=worktree
+```
+
+### `workspace list`
+
+```bash
+jackin workspace list [--format <human|json>]
+```
+
+Show all saved workspaces. Pass `--format json` for machine-readable output with a `schema_version` field.
+
+### `workspace show`
+
+```bash
+jackin workspace show <NAME> [--format <human|json>]
+```
+
+Display details of a specific workspace including workdir, mounts, and role restrictions. Pass `--format json` for structured output.
+
+The mount table includes an **Isolation** column showing each mount's effective isolation mode (`shared`, `worktree`, or `clone`). Mounts with no `isolation` field in TOML display as `shared`.
+
+### `workspace edit`
+
+```bash
+jackin workspace edit <NAME> [OPTIONS]
+```
+
+Modify an existing workspace.
+
+| Option | Description |
+|---|---|
+| `--workdir <PATH>` | Update the working directory |
+| `--mount <SPEC>` | Add a mount (repeatable) |
+| `--remove-destination <PATH>` | Remove a mount by container path (repeatable) |
+| `--allowed-role <NAME>` | Grant role access (repeatable) |
+| `--remove-allowed-role <NAME>` | Revoke role access (repeatable) |
+| `--default-role <NAME>` | Set the default role for picker preselection and CLI context loading |
+| `--clear-default-role` | Clear the default role |
+| `--default-agent <claude\|codex\|amp\|kimi\|opencode>` | Set default agent |
+| `--clear-default-agent` | Clear the explicit default agent so launch resolution uses the role manifest or prompts for multi-agent roles |
+| `--mount-isolation <DST>=<TYPE>` | Set isolation for a mount destination (repeatable). Can target an existing mount or a mount being upserted in the same command. |
+| `--delete-isolated-state` | Acknowledge deleting preserved isolated state when an edit changes the `src` of a materialized isolated mount. Required for non-interactive source-drift edits; ignored when no preserved state exists. |
+| `--keep-awake` | macOS only: enable the keep-awake reconciler on this workspace. Mutually exclusive with `--no-keep-awake`. |
+| `--no-keep-awake` | Disable the keep-awake reconciler on this workspace. Mutually exclusive with `--keep-awake`. |
+| `--git-pull` | Enable git pull on entry for this workspace. Mutually exclusive with `--no-git-pull`. |
+| `--no-git-pull` | Disable git pull on entry for this workspace. Mutually exclusive with `--git-pull`. |
+| `--prune` | Also remove pre-existing redundant mounts (rule-C violations) as part of this edit. |
+| `--yes`, `-y` | Skip confirmation prompts for mount collapses. |
+
+```bash
+jackin workspace edit my-app --workdir ~/new-dir
+jackin workspace edit my-app --mount ~/cache:/cache:ro
+jackin workspace edit my-app --remove-destination /old-mount
+jackin workspace edit my-app --allowed-role chainargos/backend-engineer
+jackin workspace edit my-app --default-role agent-smith
+jackin workspace edit my-app --clear-default-role
+jackin workspace edit my-app --default-agent amp
+jackin workspace edit my-app --clear-default-agent
+jackin workspace edit my-app --keep-awake
+jackin workspace edit my-app --no-keep-awake
+jackin workspace edit my-app --git-pull
+jackin workspace edit my-app --no-git-pull
+
+# Flip an existing mount to per-container worktrees
+jackin workspace edit my-app --mount-isolation /workspace/my-app=worktree
+
+# Change the host src of a previously materialized isolated mount
+# (non-interactive; explicitly accept that preserved state will be deleted)
+jackin workspace edit my-app \
+  --mount ~/projects/my-app-v2:/workspace/my-app \
+  --delete-isolated-state
+```
+
+`workspace edit` rejects isolation changes on a running container with a clear "eject first" message. Source-drift edits that would invalidate preserved isolated state prompt interactively; non-interactive runs require `--delete-isolated-state` to proceed.
+
+### Mount collapse
+
+When you add a mount that is an ancestor of existing mounts (same host-to-container offset), the descendants become redundant. `jackin workspace edit` detects this and prompts before removing them:
+
+```
+Adding mount(s) will subsume 2 existing mount(s):
+  • ~/Projects/proj-alpha/sub-a
+  • ~/Projects/proj-alpha/sub-b
+These will be removed from the workspace.
+Proceed? [y/N]
+```
+
+Flags:
+
+- `--yes` / `-y` — skip the prompt (required for non-interactive use).
+- `--prune` — also clean up pre-existing redundant mounts in the workspace.
+
+Conflict cases that are rejected with an error (not prompted):
+
+- **Readonly mismatch.** Parent and descendant have different `:ro` flags.
+- **Child under existing parent.** Adding a mount that is already covered by a pre-existing mount in the workspace.
+
+In both cases the error text names both paths and the operator's next step.
+
+### `workspace remove`
+
+```bash
+jackin workspace remove <NAME>
+```
+
+Delete a saved workspace.
+
+## `workspace prune`
+
+```bash
+jackin workspace prune <NAME> [OPTIONS]
+```
+
+Remove pre-existing redundant mounts from a saved workspace. Useful when upgrading from an older jackin config or after a hand-edit that left redundants.
+
+| Option | Description |
+|---|---|
+| `--yes` / `-y` | Skip the interactive prompt |
+
+```bash
+jackin workspace prune my-app        # interactive
+jackin workspace prune my-app --yes  # non-interactive
+```
+
+A mount is redundant when another mount in the same workspace strictly covers it at the same container location — same host-to-container offset. See [Redundant mounts](/guides/mounts/#redundant-mounts) in the mounts guide.
+
+## `workspace env`
+
+Manage operator env vars at workspace and workspace-role scope.
+
+Values are stored verbatim — `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work. jackin❯ resolves values at launch time; there is no editor-side validation of key names or value shape.
+
+Without `--role`, writes and reads target the **workspace-wide** scope (applies to every role launch in this workspace). With `--role <SELECTOR>`, they target the **per-(workspace × role)** scope (applies only when that role is launched in this workspace). The workspace must already exist — unknown workspaces fail fast with a non-zero exit. The role selector is not pre-validated.
+
+### `workspace env set`
+
+```bash
+jackin workspace env set <WORKSPACE> <KEY> <VALUE> [OPTIONS]
+```
+
+Set or overwrite an env var at the chosen scope.
+
+| Option | Description |
+|---|---|
+| `--role <SELECTOR>` | Apply to the per-(workspace × role) scope instead of the workspace-wide one |
+| `--comment <TEXT>` | Attach an inline comment to the key |
+
+```bash
+# Workspace scope
+jackin workspace env set prod DB_URL "op://Work/Prod/db-url"
+
+# Workspace-role scope
+jackin workspace env set prod OPENAI_KEY "op://Work/OpenAI/key" --role agent-smith
+
+# Attach a comment
+jackin workspace env set prod DEBUG "1" --comment "temporary; remove after Q2"
+```
+
+### `workspace env unset`
+
+```bash
+jackin workspace env unset <WORKSPACE> <KEY> [OPTIONS]
+```
+
+Remove an env var from the chosen scope. Idempotent: if the key is not present, prints `<KEY> not set.` and exits 0 without modifying anything. Fails fast if `<WORKSPACE>` does not exist.
+
+| Option | Description |
+|---|---|
+| `--role <SELECTOR>` | Unset from the per-(workspace × role) scope instead of the workspace-wide one |
+
+```bash
+jackin workspace env unset prod DB_URL
+jackin workspace env unset prod OPENAI_KEY --role agent-smith
+```
+
+### `workspace env list`
+
+```bash
+jackin workspace env list <WORKSPACE> [OPTIONS]
+```
+
+Show the env vars registered at the chosen scope as a table with `Key` and `Value` columns. Prints `No env vars set.` when the scope is empty. Values are shown as-stored (no resolution, no masking). Fails fast if `<WORKSPACE>` does not exist.
+
+| Option | Description |
+|---|---|
+| `--role <SELECTOR>` | List vars from the per-(workspace × role) scope instead of the workspace-wide one |
+
+```bash
+jackin workspace env list prod
+jackin workspace env list prod --role agent-smith
+```
+
+## `workspace claude-token`
+
+End-to-end orchestrator for Claude long-lived OAuth tokens. Generates a fresh token, stores it in 1Password, and wires the workspace so Claude inside the container reads it from the env. The operator never sees the token value.
+
+```bash
+jackin workspace claude-token <SUBCOMMAND>
+```
+
+| Subcommand | Purpose |
+|---|---|
+| `setup`  | Generate (or adopt) a token, store it, switch the workspace to OAuth-token mode. |
+| `rotate` | Replace the workspace's current token with a freshly-captured one and delete the prior 1P item. |
+| `revoke` | Clear the wired token and switch the workspace's Claude auth back to `ignore`. Optionally delete the 1P item. |
+| `doctor` | Resolve the wired token via `op` and report its SHA-256 prefix so the operator can confirm the managed token source points at a real, readable item. |
+
+Every subcommand needs `claude` and `op` on `PATH`. `setup` and `rotate` drive `claude setup-token` interactively under a PTY — the operator completes the OAuth flow in their browser. The token is captured into a redacted in-memory secret and never echoed to stdout, scrollback, or shell history.
+
+### `workspace claude-token setup`
+
+```bash
+jackin workspace claude-token setup <WORKSPACE> [--role <ROLE>] (--vault <VAULT> | --interactive) [OPTIONS]
+```
+
+| Option | Description |
+|---|---|
+| `--vault <VAULT>`        | 1Password vault name or UUID where the new item lands. Required unless `--reuse` or `--interactive` is passed. Mutually exclusive with `--reuse`. |
+| `--item-name <NAME>`     | Override the item title. Default: `Claude`. A custom title may contain `{ws}`, which substitutes the workspace name. |
+| `--role <ROLE>`          | Wire the token for a specific role override instead of all roles in the workspace. Omit to wire the workspace-level slot. Must be a role the workspace allows, otherwise the command fails before minting. The interactive flow prompts for the scope when `--role` is absent. |
+| `--plain`                | Mint the token and store it as a plaintext literal in config instead of 1Password. Mutually exclusive with `--vault` and `--reuse`. The interactive flow offers this as a source choice. |
+| `--op-account <ACCOUNT>` | Pin every `op` invocation to a specific 1P account. Persists onto the workspace so subsequent `rotate` / `revoke` use the same account. |
+| `--reuse <OP_REF>`       | Skip token generation and adopt the supplied `op://Vault/Item/field` reference verbatim. Use when an item already exists in 1Password. |
+| `--interactive` / `-i`   | Walk plain CLI prompts (account → vault → item → field) to choose where the token lands. Mutually exclusive with `--vault` and `--reuse`. At the item step pick an existing item or `[ + New item ]` to create a fresh 1Password item; at the field step pick an existing field to write the token in-place or `[ + New field ]` to append a new field. |
+
+On success the workspace's Claude auth flips to OAuth-token mode and the new (or reused) `op://` reference is written as the managed `CLAUDE_CODE_OAUTH_TOKEN` env value for that workspace. An "expires in N days" countdown is stamped into the local cache so the launch banner can surface it. On failure no on-disk config is changed and any orphan 1P item is best-effort deleted; if the cleanup itself fails the error message includes the exact `op item delete` command to run by hand.
+
+```bash
+# First-time setup — opens the browser for the OAuth flow
+jackin workspace claude-token setup my-app --vault Personal
+
+# Multi-account 1P operators pin the account
+jackin workspace claude-token setup my-app --vault Work --op-account work@example.com
+
+# Adopt an existing op:// reference instead of minting a new token
+jackin workspace claude-token setup my-app --reuse "op://Personal/Claude/oauth-token"
+
+# Plain CLI prompts — choose vault, item, and field interactively
+jackin workspace claude-token setup my-app --interactive
+
+# Wire the token for a specific role override instead of all roles
+jackin workspace claude-token setup my-app --role chainargos/agent-brown --vault Personal
+
+# Store the minted token as a plaintext literal in config instead of 1Password
+jackin workspace claude-token setup my-app --plain
+```
+
+### `workspace claude-token rotate`
+
+```bash
+jackin workspace claude-token rotate <WORKSPACE> [--role <ROLE>] [OPTIONS]
+```
+
+Capture a fresh token, store it under a new 1P item, repoint the workspace, then delete the prior item. Without `--vault` the prior item's vault is reused, so `rotate <ws>` is the day-to-day form.
+
+| Option | Description |
+|---|---|
+| `--role <ROLE>`          | Rotate the per-role slot wired by `setup --role` instead of the workspace-level slot. The prior token, its vault, and the item to delete are read from that same scope. Must be a role the workspace allows. |
+| `--vault <VAULT>`        | Move the rotated item to a different vault. Defaults to the prior item's vault. |
+| `--item-name <NAME>`     | Override the auto-generated item title for the new item. |
+| `--op-account <ACCOUNT>` | Pin every `op` invocation for this rotation. |
+
+If the prior 1P item cannot be deleted (auth, permission, network), the rotate exits non-zero with a copy-pasteable `op item delete` recovery command — the new item is wired and live, the old one needs hand-removal.
+
+```bash
+jackin workspace claude-token rotate my-app
+jackin workspace claude-token rotate my-app --vault Archive  # move to a different vault
+jackin workspace claude-token rotate my-app --role chainargos/agent-brown  # rotate the role-scoped token
+```
+
+### `workspace claude-token revoke`
+
+```bash
+jackin workspace claude-token revoke <WORKSPACE> [--delete-op-item]
+```
+
+Clear the wired token from the workspace and switch the agent's auth mode back to `ignore`. The cached expiry stamp is removed so the launch banner stops surfacing a countdown.
+
+| Option | Description |
+|---|---|
+| `--delete-op-item` | Also delete the 1P item the workspace pointed at. Refused (with a hand-recovery hint) when the slot held a literal token instead of an `op://` reference, or when the URI does not parse — the operator explicitly opted into a 1P-side delete and a silent no-op would let the secret survive in the vault. |
+
+```bash
+jackin workspace claude-token revoke my-app                    # config-only revoke
+jackin workspace claude-token revoke my-app --delete-op-item   # also remove the 1P item
+```
+
+### `workspace claude-token doctor`
+
+```bash
+jackin workspace claude-token doctor <WORKSPACE>
+```
+
+Resolve the wired token through `op` and print:
+
+- The workspace's auth-forward mode.
+- The pinned 1P account (or `(default)`).
+- The `op://` reference (or `(literal slot)` when the workspace stores the token verbatim).
+- A 12-character SHA-256 prefix of the resolved value so the operator can compare against what they expect to see in 1Password.
+
+This is a structural / connectivity check — it does not contact Claude's API. Doctor's job is to confirm the canonical-slot plumbing resolves cleanly. Token validity upstream is observed by launching the workspace and watching the auth banner.
+
+```bash
+jackin workspace claude-token doctor my-app
+```
+
+A working slot prints:
+
+```text
+workspace        my-app
+auth_forward     oauth_token
+op account       work@example.com
+op_ref           Personal/Claude/oauth-token
+token sha256     a3f9c2b81e74… (12 hex prefix; matches stored value)
+```
+
+See [Claude OAuth-token authentication](/guides/authentication/agents/claude-code/#oauth_token-claude-code-only) for the operator-level concept; [Claude Token Orchestrator](/reference/capsule/token-orchestrator/) for the under-the-hood mechanics (contributor reference).

@@ -16,7 +16,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-page="$repo_root/docs/content/docs/reference/roadmap/agent-runtime-status.mdx"
+page="$repo_root/docs/content/docs/roadmap/agent-runtime-status.mdx"
 lib="$repo_root/crates/jackin-capsule/src/lib.rs"
 cargo_toml="$repo_root/Cargo.toml"
 

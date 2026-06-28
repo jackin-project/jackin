@@ -77,7 +77,7 @@ pub const MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES_U64: u64 = MAX_CLIPBOARD_IMAGE_TRAN
 pub const MAX_CLIPBOARD_IMAGE_BYTES: usize = MAX_CLIPBOARD_IMAGE_FRAME_PAYLOAD - 1;
 pub const MAX_HELLO_ENV: usize = 64;
 /// Per-entry cap on Hello env-value byte length. Operator-supplied env
-/// values in jackin' are short (slugs, booleans, file paths); cap at
+/// values in jackin❯ are short (slugs, booleans, file paths); cap at
 /// 8 KiB so a buggy or hostile client cannot smuggle a megabyte-sized
 /// env entry past `MAX_HELLO_ENV` (the count cap) into the spawned
 /// session's environment block.

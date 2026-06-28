@@ -161,7 +161,7 @@ mod quit_confirm {
 
     #[test]
     fn quit_confirm_handle_key_y_commits_exit() {
-        let mut state = ConfirmState::new("Exit jackin'?");
+        let mut state = ConfirmState::new("Exit jackin❯?");
         assert!(matches!(
             state.handle_key(key(crossterm::event::KeyCode::Char('y'))),
             ModalOutcome::Commit(true)
@@ -170,7 +170,7 @@ mod quit_confirm {
 
     #[test]
     fn quit_confirm_handle_key_n_returns_commit_false() {
-        let mut state = ConfirmState::new("Exit jackin'?");
+        let mut state = ConfirmState::new("Exit jackin❯?");
         assert!(matches!(
             state.handle_key(key(crossterm::event::KeyCode::Char('n'))),
             ModalOutcome::Commit(false)
@@ -179,7 +179,7 @@ mod quit_confirm {
 
     #[test]
     fn quit_confirm_handle_key_esc_cancels() {
-        let mut state = ConfirmState::new("Exit jackin'?");
+        let mut state = ConfirmState::new("Exit jackin❯?");
         assert!(matches!(
             state.handle_key(key(crossterm::event::KeyCode::Esc)),
             ModalOutcome::Cancel
@@ -211,6 +211,7 @@ mod quit_confirm {
 
     fn unresolved_workspace() -> ResolvedWorkspace {
         ResolvedWorkspace {
+            name: String::new(),
             label: "scratch".to_owned(),
             workdir: "/workspace".to_owned(),
             mounts: Vec::new(),

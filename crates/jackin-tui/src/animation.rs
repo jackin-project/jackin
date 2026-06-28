@@ -10,7 +10,7 @@ use owo_colors::OwoColorize as _;
 use std::io::{self, Write};
 
 use crate::output::clear_screen;
-use crate::{PHOSPHOR_DIM, PHOSPHOR_GREEN, Rgb, WHITE, owo_rgb};
+use crate::{BRAND_BLOCK, Rgb, WHITE, owo_rgb};
 
 fn stderr_fragment(args: std::fmt::Arguments<'_>) {
     let mut stderr = io::stderr().lock();
@@ -155,18 +155,24 @@ fn center_col(cols: u16, width: usize) -> u16 {
     u16::try_from(margin + 1).unwrap_or(1)
 }
 
-const BRAND_PILL: &str = " jackin' ";
+const BRAND_PILL: &str = " jackin❯ ";
 
 fn draw_brand_pill_bottom() {
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let row = rows.saturating_sub(2).max(1);
     let col = center_col(cols, BRAND_PILL.chars().count());
+    // Green block, black word, white chevron — split so the chevron stays white.
     stderr_fragment(format_args!(
-        "\x1b[{row};{col}H{}",
-        BRAND_PILL
+        "\x1b[{row};{col}H{}{}{}",
+        " jackin"
             .bold()
             .color(owo_rgb(crate::BLACK))
-            .on_color(owo_rgb(PHOSPHOR_GREEN))
+            .on_color(owo_rgb(BRAND_BLOCK)),
+        "❯"
+            .bold()
+            .color(owo_rgb(WHITE))
+            .on_color(owo_rgb(BRAND_BLOCK)),
+        " ".on_color(owo_rgb(BRAND_BLOCK)),
     ));
 }
 
@@ -249,13 +255,7 @@ fn intro_phrases(host_screen_owned: bool) {
     if type_centered("Stand up, operator...", WHITE, 60, 950, host_screen_owned) {
         return;
     }
-    if type_centered(
-        "They're already inside...",
-        WHITE,
-        55,
-        950,
-        host_screen_owned,
-    ) {
+    if type_centered("Host stays outside...", WHITE, 55, 950, host_screen_owned) {
         return;
     }
     if type_centered("Follow the green.", WHITE, 50, 850, host_screen_owned) {
@@ -300,25 +300,14 @@ pub fn warp_out(host_screen_owned: bool) {
 ///
 /// `host_screen_owned` should be `jackin_diagnostics::host_screen_owned()`.
 pub fn warp_end_caption(elapsed: Option<std::time::Duration>, host_screen_owned: bool) {
-    clear_screen();
-    let _ = hold_resizable(
-        std::time::Duration::from_millis(2400),
-        host_screen_owned,
-        || {
-            let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-            let mid = rows / 2;
-            draw_brand_pill_bottom();
-            if let Some(d) = elapsed {
-                let line = format!("in the Construct for {}", format_universe_duration(d));
-                let col = center_col(cols, line.chars().count());
-                stderr_fragment(format_args!(
-                    "\x1b[{};{col}H{}",
-                    mid.saturating_add(2),
-                    line.color(owo_rgb(PHOSPHOR_DIM))
-                ));
-            }
-        },
-    );
+    if let Some(d) = elapsed {
+        let line = format!(
+            "You were in the Construct for {}",
+            format_universe_duration(d)
+        );
+        // Same glitch-in reveal as the intro phrases (e.g. "Knock, knock, operator.").
+        let _ = glitch_centered(&line, WHITE, 2400, host_screen_owned);
+    }
     clear_screen();
 }
 
@@ -469,14 +458,26 @@ fn warp_edge_radius(angle: f32, cx: f32, cy: f32) -> f32 {
 
 /// Format a session duration compactly: `2h 14m`, `7m 30s`, or `45s`.
 #[must_use]
+/// Human-readable session length: the two largest non-zero units, worded and
+/// pluralized — e.g. `1 day 3 hours`, `28 minutes 17 seconds`, `45 seconds`.
 pub fn format_universe_duration(d: std::time::Duration) -> String {
+    fn unit(n: u64, name: &str) -> String {
+        format!("{n} {name}{}", if n == 1 { "" } else { "s" })
+    }
+
     let secs = d.as_secs();
-    let (h, m, s) = (secs / 3600, (secs % 3600) / 60, secs % 60);
-    if h > 0 {
-        format!("{h}h {m}m")
-    } else if m > 0 {
-        format!("{m}m {s}s")
+    let days = secs / 86_400;
+    let hours = (secs % 86_400) / 3600;
+    let minutes = (secs % 3600) / 60;
+    let seconds = secs % 60;
+
+    if days > 0 {
+        format!("{} {}", unit(days, "day"), unit(hours, "hour"))
+    } else if hours > 0 {
+        format!("{} {}", unit(hours, "hour"), unit(minutes, "minute"))
+    } else if minutes > 0 {
+        format!("{} {}", unit(minutes, "minute"), unit(seconds, "second"))
     } else {
-        format!("{s}s")
+        unit(seconds, "second")
     }
 }

@@ -366,7 +366,7 @@ fn pr_info(pr: u64, repo: &str) -> Result<PullRequestInfo> {
 /// produces (`jackin-local/construct:trixie-<short12 HEAD sha>`).
 ///
 /// Pinning to the commit keeps each custom build's tag unique, so switching
-/// jackin' onto it invalidates a role base built from a different construct
+/// jackin❯ onto it invalidates a role base built from a different construct
 /// instead of reusing it under the moving `:trixie` tag.
 fn local_construct_image_ref(repo: &Path) -> Result<String> {
     let sha = git_output(repo, ["rev-parse", "--short=12", "HEAD"])?;

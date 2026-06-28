@@ -96,7 +96,7 @@ pub enum RoleRepoValidationError {
     DockerfileMissingVersionPin,
     /// Catch-all for non-structural failures (TOML parse, IO, manifest
     /// semantic validation). The friendly translator renders these as
-    /// the generic "not a valid Jackin role" message.
+    /// the generic "not a valid jackin❯ role" message.
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

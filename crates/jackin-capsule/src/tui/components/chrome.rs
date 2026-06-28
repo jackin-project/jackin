@@ -18,8 +18,6 @@ use jackin_tui::components::{Panel, PanelFocus, tab_cell_style};
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
-const BRAND_TEXT: &str = " jackin' ";
-
 /// Brand pill + tab cells (row 0) and the active-tab underline (row 1),
 /// painted into the Ratatui `Buffer` so the `SocketBackend` diff tracks every
 /// chrome cell. The `plan` is computed once per frame by the compositor and
@@ -84,16 +82,18 @@ impl Widget for StatusBarWidget<'_> {
             }
         }
 
-        // Row 0: brand pill.
+        // Row 0: brand pill — green block, black word, white chevron.
+        let pill = Style::default()
+            .bg(jackin_tui::theme::BRAND_BLOCK)
+            .add_modifier(Modifier::BOLD);
+        buf.set_string(area.x, area.y, " jackin", pill.fg(Color::Black));
         buf.set_string(
-            area.x,
+            area.x.saturating_add(7),
             area.y,
-            BRAND_TEXT,
-            Style::default()
-                .bg(jackin_tui::theme::PHOSPHOR_GREEN)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
+            "❯",
+            pill.fg(jackin_tui::theme::WHITE),
         );
+        buf.set_string(area.x.saturating_add(8), area.y, " ", pill);
 
         // Row 0: tab cells.
         for (idx, cell) in plan.cells.iter().enumerate() {
@@ -450,6 +450,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::Hint
     for span in visible {
         let (text, style): (String, Style) = match span {
             jackin_tui::HintSpan::Key(k) => ((*k).to_owned(), key_style),
+            jackin_tui::HintSpan::DynKey(k) => (k.clone(), key_style),
             jackin_tui::HintSpan::Text(t) => (format!(" {t}"), text_style),
             jackin_tui::HintSpan::Dyn(t) => (format!(" {t}"), dyn_style),
             jackin_tui::HintSpan::Sep => (" · ".to_owned(), sep_style),

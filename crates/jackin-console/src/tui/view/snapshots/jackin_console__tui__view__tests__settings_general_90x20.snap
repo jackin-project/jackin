@@ -3,7 +3,7 @@ source: crates/jackin-console/src/tui/view/tests.rs
 assertion_line: 992
 expression: rendered
 ---
- jackin'  · settings                                                                      
+ jackin❯  · settings                                                                      
                                                                                           
                                                                                           
  General   Mounts   Environments   Auth   Trust                                           

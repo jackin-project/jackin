@@ -16,15 +16,87 @@ use tempfile::Builder as TempfileBuilder;
 
 const CONTAINER_INIT_MARKER: &str = "/jackin/state/container-init.done";
 
-// In-container credential file each file-based agent reads. Single source of
-// truth shared by the `setup_*` copy/remove sites and `agent_live_credential_path`
-// (the skip-path probe behind `warn_if_credentials_missing`) so the two cannot
-// drift and silently defeat the missing-credential warning.
-const CLAUDE_CREDENTIALS_PATH: &str = "/home/agent/.claude/.credentials.json";
-const CODEX_AUTH_PATH: &str = "/home/agent/.codex/auth.json";
-const AMP_SECRETS_PATH: &str = "/home/agent/.local/share/amp/secrets.json";
-const OPENCODE_AUTH_PATH: &str = "/home/agent/.local/share/opencode/auth.json";
+// Container home for the `agent` user. Every default agent config/credential
+// location hangs off this. The per-agent resolvers below honor an agent's
+// standard config-dir env var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+// `XDG_DATA_HOME`) when the role sets one, falling back here otherwise — so a
+// role that exports e.g. `CLAUDE_CONFIG_DIR` has its credentials written where
+// the CLI actually looks, instead of the fixed default the CLI no longer reads.
+const AGENT_HOME: &str = "/home/agent";
+
+// Grok has no standard config-dir env var, so its credential path is fixed.
 const GROK_AUTH_PATH: &str = "/home/agent/.grok/auth.json";
+
+// Each resolver pairs a thin env-reading wrapper with a pure `_from` core, so
+// path composition is unit-tested without mutating process-global env (which is
+// racy across parallel tests and `unsafe` under Rust 2024). Same split as
+// `write_codex_provider_config` / `write_codex_provider_config_inner`.
+
+/// Resolve a path under `AGENT_HOME` honoring an optional env override.
+/// When `env` is set, its value is used verbatim; otherwise falls back to
+/// `AGENT_HOME/subpath`. Shared by all three standard env-override resolvers.
+fn env_or_agent_home(env: Option<&str>, subpath: &str) -> PathBuf {
+    env.map_or_else(|| Path::new(AGENT_HOME).join(subpath), PathBuf::from)
+}
+
+/// Resolve Claude Code's config directory, honoring `CLAUDE_CONFIG_DIR` when the
+/// role sets it (default `~/.claude`). Claude reads `.credentials.json` — and,
+/// when the env var is set, `.claude.json` — from this directory.
+fn claude_config_dir() -> PathBuf {
+    claude_config_dir_from(nonempty_env("CLAUDE_CONFIG_DIR").as_deref())
+}
+
+fn claude_config_dir_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".claude")
+}
+
+/// `.credentials.json` always lives inside the resolved Claude config dir.
+fn claude_credentials_path() -> PathBuf {
+    claude_config_dir().join(".credentials.json")
+}
+
+/// `.claude.json` placement is asymmetric: with `CLAUDE_CONFIG_DIR` set it lives
+/// inside that dir; with it unset Claude reads `$HOME/.claude.json` (home root).
+/// Writing it on the wrong side leaves the CLI unable to find its onboarding
+/// state, so it falls back to the interactive login screen even though a valid
+/// `.credentials.json` was forwarded.
+fn claude_account_path() -> PathBuf {
+    claude_account_path_from(nonempty_env("CLAUDE_CONFIG_DIR").as_deref())
+}
+
+fn claude_account_path_from(env: Option<&str>) -> PathBuf {
+    Path::new(env.unwrap_or(AGENT_HOME)).join(".claude.json")
+}
+
+/// Codex reads `auth.json` and `config.toml` from `CODEX_HOME` (default `~/.codex`).
+fn codex_home() -> PathBuf {
+    codex_home_from(nonempty_env("CODEX_HOME").as_deref())
+}
+
+fn codex_home_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".codex")
+}
+
+fn codex_auth_path() -> PathBuf {
+    codex_home().join("auth.json")
+}
+
+/// XDG data root honored by Amp and opencode (default `~/.local/share`).
+fn xdg_data_home() -> PathBuf {
+    xdg_data_home_from(nonempty_env("XDG_DATA_HOME").as_deref())
+}
+
+fn xdg_data_home_from(env: Option<&str>) -> PathBuf {
+    env_or_agent_home(env, ".local/share")
+}
+
+fn amp_secrets_path() -> PathBuf {
+    xdg_data_home().join("amp/secrets.json")
+}
+
+fn opencode_auth_path() -> PathBuf {
+    xdg_data_home().join("opencode/auth.json")
+}
 const CAPSULE_RUNTIME_BIN: &str = "/jackin/runtime/jackin-capsule";
 const GIT_HOOKS_DIR: &str = "/jackin/state/git-hooks";
 const GIT_HOOK_PATH: &str = "/jackin/state/git-hooks/prepare-commit-msg";
@@ -208,9 +280,9 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
 
 fn run_agent_setup() -> Result<()> {
     let agent = std::env::var("JACKIN_AGENT").context("JACKIN_AGENT must be set")?;
-    // D6/D19: home emptiness is the gate. First seed copies auth; subsequent
-    // starts leave in-container credentials untouched (agent refreshes tokens
-    // in-place inside the durable home). No external marker file.
+    // Home emptiness is the gate: first seed copies auth; subsequent starts
+    // leave in-container credentials untouched (agent refreshes tokens in-place
+    // inside the durable home). No external marker file.
     match agent.as_str() {
         "claude" => setup_claude(),
         "codex" => setup_codex(),
@@ -265,30 +337,22 @@ fn install_agent_status_reporter(agent: &str) -> Result<()> {
 }
 
 fn setup_claude() -> Result<()> {
-    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Claude)?.is_first_seed();
-    if copy_auth {
-        if Path::new("/jackin/claude/account.json").is_file() {
-            copy_file_with_mode(
-                "/jackin/claude/account.json",
-                "/home/agent/.claude.json",
-                0o600,
-            )?;
-        }
-        if Path::new("/jackin/claude/credentials.json").is_file() {
-            copy_file_with_mode(
-                "/jackin/claude/credentials.json",
-                CLAUDE_CREDENTIALS_PATH,
-                0o600,
-            )?;
-        } else {
-            // First-setup only (inside `if copy_auth`): never clear a token a
-            // later tab refreshed. See the run_agent_setup gate comment.
-            remove_file_if_exists(CLAUDE_CREDENTIALS_PATH)?;
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] claude: no credentials.json forwarded - agent will start unauthenticated unless ANTHROPIC_API_KEY is set"
-            ));
-        }
-    }
+    // Claude is the one sync-capable agent with two forwarded files. Seed its
+    // home once, then apply the shared credential policy to credentials.json and
+    // the Claude-only account.json (.claude.json onboarding metadata) under that
+    // single first-seed signal — same policy as every other agent.
+    let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Claude)?.is_first_seed();
+    let credentials_path = claude_credentials_path();
+    apply_forwarded_credential(
+        first_seed,
+        &ForwardedCredential {
+            label: "claude",
+            forwarded: Path::new("/jackin/claude/credentials.json"),
+            target: &credentials_path,
+            api_key_envs: &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
+        },
+    )?;
+    seed_claude_account_json(first_seed)?;
 
     if env_is_one("JACKIN_DISABLE_TIRITH") {
         crate::output::stdout_line(format_args!(
@@ -310,10 +374,6 @@ fn setup_claude() -> Result<()> {
             &["mcp", "add", "shellfirm", "--", "shellfirm", "mcp"],
         );
     }
-    // jackin-exec MCP tool: register only when the workspace declares on-demand
-    // credentials (JACKIN_EXEC_BINDINGS non-empty), so the tool advertises a
-    // non-empty binding list. The agent spawns `jackin-capsule mcp-server`,
-    // which exposes a `jackin_exec` tool over MCP stdio.
     if std::env::var_os("JACKIN_EXEC_BINDINGS").is_some_and(|v| !v.is_empty()) {
         run_optional_command(
             "claude",
@@ -327,26 +387,195 @@ fn setup_claude() -> Result<()> {
             ],
         );
     }
+    setup_claude_plugins();
+    Ok(())
+}
+
+/// Seed Claude's `.claude.json` onboarding metadata (organization type drives
+/// the plan label). On first seed, copy the forwarded account if present; on
+/// later launches, re-seed only while the container copy is still the empty
+/// `{}` skeleton — so a populated file the CLI has since written is preserved.
+fn seed_claude_account_json(first_seed: bool) -> Result<()> {
+    let forwarded_account = Path::new("/jackin/claude/account.json");
+    if !forwarded_account.is_file() {
+        return Ok(());
+    }
+    let account_path = claude_account_path();
+    let needs_seed = first_seed
+        || fs::read_to_string(&account_path).map_or(true, |contents| contents.trim() == "{}");
+    if needs_seed {
+        copy_file_with_mode(forwarded_account, &account_path, 0o600)?;
+    }
+    Ok(())
+}
+
+/// Install the Claude plugin marketplaces and plugins declared by the role
+/// manifest, once per declared plugin set.
+///
+/// Plugin setup moved here from the image build: the `claude` binary is now
+/// bind-mounted read-only at `docker run` (not baked into the derived image), so
+/// there is no longer a build step to run `claude plugin install`. Idempotent:
+/// a fingerprint marker prevents re-install on re-launches and sibling tabs
+/// unless the declared plugin set changes.
+fn setup_claude_plugins() {
+    let Some(config) = crate::config::load_optional() else {
+        return;
+    };
+    if config.claude_marketplaces.is_empty() && config.claude_plugins.is_empty() {
+        return;
+    }
+    // Re-run when the declared plugin set changes. The marker records the exact
+    // marketplaces+plugins it was written for; a bare exists() check would
+    // shadow a `jackin.role.toml` plugin edit forever.
+    let config_dir = claude_config_dir();
+    let marker = config_dir.join(".jackin-plugins.done");
+    let fingerprint = claude_plugin_fingerprint(&config);
+    if fs::read_to_string(&marker).is_ok_and(|s| s == fingerprint) {
+        return;
+    }
+    // The official marketplace backs the common plugins; non-fatal if already
+    // registered (failure logged via clog!, not propagated). Its result does not
+    // gate the user-declared installs or the marker — the infrastructure add is
+    // best-effort.
+    run_optional_command(
+        "claude",
+        &[
+            "plugin",
+            "marketplace",
+            "add",
+            "anthropics/claude-plugins-official",
+        ],
+    );
+    let mut all_ok = true;
+    for marketplace in &config.claude_marketplaces {
+        let mut args = vec!["plugin", "marketplace", "add", marketplace.source.as_str()];
+        if !marketplace.sparse.is_empty() {
+            args.push("--sparse");
+            args.extend(marketplace.sparse.iter().map(String::as_str));
+        }
+        all_ok &= run_optional_command("claude", &args);
+    }
+    for plugin in &config.claude_plugins {
+        all_ok &= run_optional_command("claude", &["plugin", "install", plugin.as_str()]);
+    }
+    if !all_ok {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] claude plugins: one or more installs failed; marker not written, will retry on next launch"
+        ));
+        return;
+    }
+    if let Err(e) = fs::create_dir_all(&config_dir) {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] claude plugins: failed to create marker dir {}: {e} (plugins will re-run next launch)",
+            config_dir.display()
+        ));
+        return;
+    }
+    if let Err(e) = fs::write(&marker, &fingerprint) {
+        crate::output::stderr_line(format_args!(
+            "[entrypoint] claude plugins: failed to write install marker (plugins will re-run next launch): {e}"
+        ));
+    }
+}
+
+/// Stable fingerprint of the declared Claude marketplaces + plugins, stored as
+/// the install marker's contents so a changed plugin set re-triggers install.
+fn claude_plugin_fingerprint(config: &jackin_protocol::CapsuleConfig) -> String {
+    let mut out = String::new();
+    for marketplace in &config.claude_marketplaces {
+        out.push_str("m:");
+        out.push_str(&marketplace.source);
+        for path in &marketplace.sparse {
+            out.push(' ');
+            out.push_str(path);
+        }
+        out.push('\n');
+    }
+    for plugin in &config.claude_plugins {
+        out.push_str("p:");
+        out.push_str(plugin);
+        out.push('\n');
+    }
+    out
+}
+
+/// One agent's host-forwarded single-file credential, seeded into its
+/// in-container config dir. The capsule analogue of the host-side
+/// `provision_single_file_credential` (see `jackin-runtime` `instance/auth.rs`):
+/// both ends of the host→container sync read the same shape so a reader does not
+/// have to relearn each agent.
+struct ForwardedCredential<'a> {
+    /// Short log label, e.g. `"codex"`.
+    label: &'a str,
+    /// Mounted host credential inside the container (`/jackin/<agent>/<file>`).
+    forwarded: &'a Path,
+    /// In-container destination, already resolved to honor the agent's
+    /// config-dir env var (`CODEX_HOME`, `XDG_DATA_HOME`, …) where it has one.
+    target: &'a Path,
+    /// API-key env vars that are an alternative to forwarded auth; any one set
+    /// suppresses the "needs interactive login" warning.
+    api_key_envs: &'a [&'a str],
+}
+
+/// Seed a host-forwarded credential into an agent's config dir with one uniform
+/// policy for every sync-capable agent:
+///
+/// - **First seed**: copy the forwarded file when present; otherwise clear any
+///   stale destination and warn — unless an API-key env var supplies auth.
+/// - **Later launches**: if the destination is missing but the forwarded file is
+///   present, re-seed (the first seed raced the host login). Guarded on
+///   `!target.exists()` so a token the agent refreshed in-container is never
+///   clobbered.
+fn seed_forwarded_credential(
+    agent: jackin_core::Agent,
+    spec: &ForwardedCredential<'_>,
+) -> Result<()> {
+    let first_seed = seed_agent_home_from_enum(agent)?.is_first_seed();
+    apply_forwarded_credential(first_seed, spec)
+}
+
+/// The credential-seeding policy, decoupled from the home-seed signal so a
+/// multi-file agent (Claude: credentials.json + account.json) can seed its home
+/// once and apply this same policy to each file under that one `first_seed`.
+fn apply_forwarded_credential(first_seed: bool, spec: &ForwardedCredential<'_>) -> Result<()> {
+    if first_seed {
+        if spec.forwarded.is_file() {
+            copy_file_with_mode(spec.forwarded, spec.target, 0o600)?;
+        } else if spec
+            .api_key_envs
+            .iter()
+            .any(|key| nonempty_env(key).is_some())
+        {
+            crate::output::stderr_line(format_args!(
+                "[entrypoint] {}: no forwarded credential; using api-key auth from env",
+                spec.label
+            ));
+        } else {
+            remove_file_if_exists(spec.target)?;
+            crate::output::stderr_line(format_args!(
+                "[entrypoint] {}: no forwarded credential and no api key in env - agent will require interactive login",
+                spec.label
+            ));
+        }
+    } else if !spec.target.exists() && spec.forwarded.is_file() {
+        copy_file_with_mode(spec.forwarded, spec.target, 0o600)?;
+    }
     Ok(())
 }
 
 fn setup_codex() -> Result<()> {
-    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Codex)?.is_first_seed();
-    // Provider config is idempotent and runs every start; the credential copy is
-    // gated on first-seed only (D6/D19 home-emptiness, decided above), so it never
-    // re-copies over an in-container-refreshed token regardless of ordering.
-    write_codex_provider_config(Path::new("/home/agent/.codex"))?;
-    if copy_auth {
-        if Path::new("/jackin/codex/auth.json").is_file() {
-            copy_file_with_mode("/jackin/codex/auth.json", CODEX_AUTH_PATH, 0o600)?;
-        } else {
-            remove_file_if_exists(CODEX_AUTH_PATH)?;
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] codex: no auth.json forwarded - agent will start unauthenticated unless OPENAI_API_KEY is set"
-            ));
-        }
-    }
-    Ok(())
+    // Provider config is idempotent and runs every start; the credential seed
+    // (last, fallible step) handles first-seed vs re-seed uniformly.
+    write_codex_provider_config(&codex_home())?;
+    seed_forwarded_credential(
+        jackin_core::Agent::Codex,
+        &ForwardedCredential {
+            label: "codex",
+            forwarded: Path::new("/jackin/codex/auth.json"),
+            target: &codex_auth_path(),
+            api_key_envs: &["OPENAI_API_KEY"],
+        },
+    )
 }
 
 /// Appends the `[model_providers.minimax]` block to `config.toml` and writes
@@ -601,59 +830,51 @@ fn build_minimax_catalog(
 }
 
 fn setup_amp() -> Result<()> {
-    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Amp)?.is_first_seed();
-    if copy_auth {
-        if Path::new("/jackin/amp/secrets.json").is_file() {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] amp: forwarding host secrets.json into ~/.local/share/amp/"
-            ));
-            copy_file_with_mode("/jackin/amp/secrets.json", AMP_SECRETS_PATH, 0o600)?;
-        } else if nonempty_env("AMP_API_KEY").is_some() {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth"
-            ));
-        } else {
-            remove_file_if_exists(AMP_SECRETS_PATH)?;
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] amp: no secrets.json mounted and AMP_API_KEY unset - agent will require interactive login"
-            ));
-        }
-    }
-    Ok(())
+    seed_forwarded_credential(
+        jackin_core::Agent::Amp,
+        &ForwardedCredential {
+            label: "amp",
+            forwarded: Path::new("/jackin/amp/secrets.json"),
+            target: &amp_secrets_path(),
+            api_key_envs: &["AMP_API_KEY"],
+        },
+    )
 }
 
+/// Kimi is the one sync-capable agent whose credential is a directory, not a
+/// single file, so it cannot use [`seed_forwarded_credential`]. It follows the
+/// same first-seed / re-seed / api-key-fallback policy, applied to a directory:
+/// the only divergence is that a stale destination is not cleared (clearing a
+/// directory is riskier than removing one file, and Kimi has no destructive
+/// "no auth" case).
 fn setup_kimi() -> Result<()> {
-    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Kimi)?.is_first_seed();
-    if copy_auth {
-        let kimi_src = Path::new("/jackin/kimi-code");
-        if kimi_src.is_dir() && dir_nonempty(kimi_src)? {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] kimi: copying provisioned credentials into ~/.kimi-code/"
-            ));
-            copy_dir_contents(kimi_src, Path::new("/home/agent/.kimi-code"))?;
-        } else if kimi_src.is_dir() {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] kimi: sync mode active but host ~/.kimi-code was absent at provision time - Kimi will start without forwarded auth"
-            ));
+    let first_seed = seed_agent_home_from_enum(jackin_core::Agent::Kimi)?.is_first_seed();
+    let forwarded = Path::new("/jackin/kimi-code");
+    let target = Path::new("/home/agent/.kimi-code");
+    let forwarded_present = forwarded.is_dir() && dir_nonempty(forwarded)?;
+    if first_seed {
+        if forwarded_present {
+            copy_dir_contents(forwarded, target)?;
         } else if nonempty_env("KIMI_CODE_API_KEY").is_some() {
             crate::output::stderr_line(format_args!(
-                "[entrypoint] kimi: KIMI_CODE_API_KEY present in env; agent will use api-key auth"
+                "[entrypoint] kimi: no forwarded credential; using api-key auth from env"
             ));
         } else {
             crate::output::stderr_line(format_args!(
-                "[entrypoint] kimi: KIMI_CODE_API_KEY unset - agent will require interactive login or config"
+                "[entrypoint] kimi: no forwarded credential and no api key in env - agent will require interactive login"
             ));
         }
+    } else if forwarded_present && !(target.is_dir() && dir_nonempty(target)?) {
+        copy_dir_contents(forwarded, target)?;
     }
     Ok(())
 }
 
 fn setup_opencode() -> Result<()> {
-    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Opencode)?.is_first_seed();
     // Runtime provider config is written every start, layered on top of the
     // seeded `.config/opencode` defaults: it embeds live API keys from container
     // env, so it is never baked into default-home. Written before the credential
-    // copy — see setup_codex for why the copy must be the last fallible step.
+    // seed, which (as in setup_codex) is the last fallible step.
     use std::os::unix::fs::DirBuilderExt as _;
     fs::DirBuilder::new()
         .recursive(true)
@@ -661,51 +882,27 @@ fn setup_opencode() -> Result<()> {
         .create("/home/agent/.config/opencode")
         .context("failed to create /home/agent/.config/opencode")?;
     write_opencode_config(Path::new("/home/agent/.config/opencode/opencode.json"))?;
-    if copy_auth {
-        if Path::new("/jackin/opencode/auth.json").is_file() {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] opencode: forwarding host auth.json into ~/.local/share/opencode/"
-            ));
-            copy_file_with_mode("/jackin/opencode/auth.json", OPENCODE_AUTH_PATH, 0o600)?;
-        } else if nonempty_env("OPENCODE_API_KEY").is_some() {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] opencode: OPENCODE_API_KEY present in env; agent will use api-key auth"
-            ));
-        } else {
-            remove_file_if_exists(OPENCODE_AUTH_PATH)?;
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset - agent will require interactive login"
-            ));
-        }
-    }
-    Ok(())
+    seed_forwarded_credential(
+        jackin_core::Agent::Opencode,
+        &ForwardedCredential {
+            label: "opencode",
+            forwarded: Path::new("/jackin/opencode/auth.json"),
+            target: &opencode_auth_path(),
+            api_key_envs: &["OPENCODE_API_KEY"],
+        },
+    )
 }
 
 fn setup_grok() -> Result<()> {
-    let copy_auth = seed_agent_home_from_enum(jackin_core::Agent::Grok)?.is_first_seed();
-    if copy_auth {
-        if Path::new("/jackin/grok/auth.json").is_file() {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] grok: forwarding host auth.json into ~/.grok/"
-            ));
-            copy_file_with_mode("/jackin/grok/auth.json", GROK_AUTH_PATH, 0o600)?;
-        } else if nonempty_env("XAI_API_KEY").is_some() {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] grok: XAI_API_KEY present in env; agent will use api-key auth"
-            ));
-        } else if nonempty_env("GROK_DEPLOYMENT_KEY").is_some() {
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] grok: GROK_DEPLOYMENT_KEY present in env; agent will use deployment key auth"
-            ));
-        } else {
-            remove_file_if_exists(GROK_AUTH_PATH)?;
-            crate::output::stderr_line(format_args!(
-                "[entrypoint] grok: no auth.json mounted and no XAI_API_KEY/GROK_DEPLOYMENT_KEY - agent will require interactive login"
-            ));
-        }
-    }
-
-    Ok(())
+    seed_forwarded_credential(
+        jackin_core::Agent::Grok,
+        &ForwardedCredential {
+            label: "grok",
+            forwarded: Path::new("/jackin/grok/auth.json"),
+            target: Path::new(GROK_AUTH_PATH),
+            api_key_envs: &["XAI_API_KEY", "GROK_DEPLOYMENT_KEY"],
+        },
+    )
 }
 
 /// Writes `opencode.json` with `"permission":"allow"` plus a `provider` block
@@ -831,7 +1028,7 @@ fn opencode_provider_block(
 
 /// Whether a durable home was empty and got seeded on this start. Named instead
 /// of a bare `bool` so the seed/auth contract is explicit at every call site:
-/// auth handoff is copied only on [`SeedOutcome::FirstSeed`] (D19).
+/// auth handoff is copied only on [`SeedOutcome::FirstSeed`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SeedOutcome {
     /// The home was empty (or absent); defaults were seeded and first-start auth
@@ -843,17 +1040,17 @@ enum SeedOutcome {
 }
 
 impl SeedOutcome {
-    /// True on the first seed, when first-start auth handoff must run (D19).
+    /// True on the first seed, when first-start auth handoff must run.
     fn is_first_seed(self) -> bool {
         matches!(self, Self::FirstSeed)
     }
 }
 
-/// D5/D6: empty-dir gate + first seed.
+/// Seed `src` into `dst`, gated on `dst` being empty.
 ///
 /// Returns [`SeedOutcome::FirstSeed`] when dst was empty, [`SeedOutcome::AlreadySeeded`]
 /// when dst already has entries (seeded on a prior start; in-container files are
-/// authoritative). Auth is copied by the caller only on `FirstSeed` (D19).
+/// authoritative). Auth is copied by the caller only on `FirstSeed`.
 ///
 /// If `dst` already exists, it may be a Docker bind mount target; seed it in
 /// place because POSIX cannot rename over a mount point.
@@ -908,9 +1105,9 @@ fn seed_home_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<SeedOut
     Ok(SeedOutcome::FirstSeed)
 }
 
-/// D4/D6: seed an agent's durable home, gated on the primary data root's
-/// emptiness, and — for agents that persist a separate config root — seed that
-/// paired config root in the same first-seed pass (two sequential seeds, not one
+/// Seed an agent's durable home, gated on the primary data root's emptiness,
+/// and — for agents that persist a separate config root — seed that paired
+/// config root in the same first-seed pass (two sequential seeds, not one
 /// atomic transaction). Both roots share one lifecycle: empty data root means
 /// first start (seed both, returning
 /// [`SeedOutcome::FirstSeed`] so the caller copies auth); if *either* root already
@@ -942,7 +1139,7 @@ fn seed_agent_home(
 /// paired-config roots from the agent enum
 /// ([`AgentStatePaths`](jackin_core::agent::runtime::AgentStatePaths)) so the
 /// per-agent folder layout has one source of truth. Returns the first-seed
-/// outcome; the caller copies auth only on [`SeedOutcome::FirstSeed`] (D19).
+/// outcome; the caller copies auth only on [`SeedOutcome::FirstSeed`].
 fn seed_agent_home_from_enum(agent: jackin_core::Agent) -> Result<SeedOutcome> {
     let paths = agent.runtime().state_paths();
     let data_default = format!("/jackin/default-home/{}", paths.credential_dir);
@@ -962,7 +1159,9 @@ fn seed_agent_home_from_enum(agent: jackin_core::Agent) -> Result<SeedOutcome> {
 }
 
 fn is_dir_empty(path: &Path) -> bool {
-    fs::read_dir(path).map_or(true, |mut d| d.next().is_none())
+    // Conservative on error: treat an unreadable directory as non-empty to
+    // prevent an I/O failure from being mistaken for a first-seed opportunity.
+    !dir_nonempty(path).unwrap_or(true)
 }
 
 fn copy_dir_contents(src: &Path, dst: &Path) -> Result<()> {
@@ -1220,7 +1419,7 @@ fn runtime_setup_output(command: &mut Command) -> io::Result<Output> {
     command.output()
 }
 
-fn run_optional_command(program: &str, args: &[&str]) {
+fn run_optional_command(program: &str, args: &[&str]) -> bool {
     let mut command = Command::new(program);
     command.args(args);
     if !env_is_one("JACKIN_DEBUG") {
@@ -1231,12 +1430,13 @@ fn run_optional_command(program: &str, args: &[&str]) {
     // call leaves the role launched without the MCP wired up, so log
     // the exact failure to the multiplexer log for operator triage.
     match command.status() {
-        Ok(status) if status.success() => {}
+        Ok(status) if status.success() => true,
         Ok(status) => {
             crate::clog!(
                 "optional command {} exited with status {status}",
                 format_command(program, args)
             );
+            false
         }
         Err(e) => {
             crate::clog!(
@@ -1244,6 +1444,7 @@ fn run_optional_command(program: &str, args: &[&str]) {
                 format_command(program, args),
                 e.raw_os_error()
             );
+            false
         }
     }
 }

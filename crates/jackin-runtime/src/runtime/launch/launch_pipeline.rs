@@ -197,9 +197,8 @@ pub(crate) async fn load_role_with(
     // identification rule used by `jackin workspace show`.
     let workspace_name = config
         .workspaces
-        .iter()
-        .find(|(_, w)| w.workdir == workspace.workdir)
-        .map(|(name, _)| name.clone());
+        .contains_key(workspace.name.as_str())
+        .then(|| workspace.name.clone());
 
     let mut steps = super::StepCounter::new(&selector.name);
     if let Some(run) = jackin_diagnostics::active_run() {

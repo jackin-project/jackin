@@ -14,7 +14,7 @@ Applies to agent instruction graph — repo's rule files. Published docs site se
 
 ## Brand spelling
 
-In prose, product and project always spelled `jackin'`: lowercase, trailing apostrophe. Never write `Jackin`, `Jackin'`, or bare `jackin` for brand/product/project in normal text. No-apostrophe spelling only for literal commands, binaries, crates, packages, env vars, config keys, file paths, labels, selectors, URLs, code identifiers — `jackin`, `jackin-capsule`, `JACKIN_DEBUG`, `~/.jackin/`, `jackin.role.toml`. If apostrophe makes possessive or sentence awkward, rewrite sentence instead of dropping it.
+In rich-text prose, product and project always spelled `jackin❯`: lowercase letters followed immediately by the `❯` chevron. Plaintext-only environments may use `jackin>`. Compact logo or prompt surfaces may use `j❯`, with `j>` reserved for proven plaintext fallbacks. Never write `Jackin`, `Jackin'`, `jackin'`, or bare `jackin` for brand/product/project in normal text. Use the no-chevron spelling only for literal commands, binaries, crates, packages, env vars, config keys, file paths, labels, selectors, URLs, and code identifiers — `jackin`, `jackin-capsule`, `JACKIN_DEBUG`, `~/.jackin/`, `jackin.role.toml`. If the chevron makes possessive or sentence awkward, rewrite the sentence instead of dropping it.
 
 ## Deprecations
 

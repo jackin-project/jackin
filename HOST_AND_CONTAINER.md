@@ -1,10 +1,10 @@
 # Host and container boundaries
 
-Two hard rules govern where jackin' may write: never touch host-side state without explicit opt-in, and everything it owns inside a container lives under single root. Apply across schemas, design proposals, roadmap items, runtime behavior, PR descriptions.
+Two hard rules govern where jackin❯ may write: never touch host-side state without explicit opt-in, and everything it owns inside a container lives under single root. Apply across schemas, design proposals, roadmap items, runtime behavior, PR descriptions.
 
 ## Never mutate the host machine silently (hard rule)
 
-**Operator host machine is their property. jackin' must never write host-side state — files, git config, repo `.git/config`, `.git/refs`, `~/.gitconfig`, `~/.config/gh/`, `~/.claude/`, `~/.codex/`, host git remotes, or any user repository — without explicit, opt-in, surfaced-in-launch-summary action. All "smoothing" jackin' does to make container work belongs *inside container*.**
+**Operator host machine is their property. jackin❯ must never write host-side state — files, git config, repo `.git/config`, `.git/refs`, `~/.gitconfig`, `~/.config/gh/`, `~/.claude/`, `~/.codex/`, host git remotes, or any user repository — without explicit, opt-in, surfaced-in-launch-summary action. All "smoothing" jackin❯ does to make container work belongs *inside container*.**
 
 What rule blocks:
 
@@ -14,17 +14,17 @@ What rule blocks:
 - Force-pushing, fetching, pulling, pruning host git repo as provisioning side effect. Only host-side git commands CLI runs today are operator-opted-in (`git_pull_on_entry`, `worktree add` under `isolation = "worktree"`), scoped to workspace mounted repos.
 - Writing host `~/.config/gh/hosts.yml` from container in-session `gh auth login`. In-container token rotation must not flow back to host without explicit operator-controlled bidirectional-sync opt-in (tracked under [GitHub CLI auth strategy](docs/content/docs/reference/roadmap/github-cli-auth-strategy.mdx) follow-ups).
 
-**Read paths against host fine.** `gh auth token --hostname github.com`, parsing `~/.config/gh/hosts.yml`, reading `~/.claude.json`, looking up host git user.email — all read-only. Forbidden direction: host-side *writes* triggered by jackin' without explicit operator opt-in.
+**Read paths against host fine.** `gh auth token --hostname github.com`, parsing `~/.config/gh/hosts.yml`, reading `~/.claude.json`, looking up host git user.email — all read-only. Forbidden direction: host-side *writes* triggered by jackin❯ without explicit operator opt-in.
 
 When design proposal or roadmap item mentions doing anything to host, must call out under "Host-side effects" section, implementing PR must surface action in launch summary, change must be opt-in (config flag, CLI flag, or operator confirmation prompt). PRs touching host silently rejected at review.
 
-Reason: host machine is where operator works. Surprise mutations break flow, surface as inexplicable bugs in terminals outside jackin', erode trust. jackin' absorbs messiness inside containers so host stays clean.
+Reason: host machine is where operator works. Surprise mutations break flow, surface as inexplicable bugs in terminals outside jackin❯, erode trust. jackin❯ absorbs messiness inside containers so host stays clean.
 
 Host root for jackin-owned paths is `~/.jackin/`, with own subdirectory layout (`~/.jackin/{data,cache,sockets,roles,run}/`).
 
-## Container path convention: everything jackin' owns lives under `/jackin/` (hard rule)
+## Container path convention: everything jackin❯ owns lives under `/jackin/` (hard rule)
 
-**Every path jackin' creates, mounts, or owns inside role container must live under `/jackin/`.** No FHS-borrowed top-level directories (`/run/jackin/`, `/var/lib/jackin/`, `/opt/jackin/`, `/etc/jackin/`), no scattered locations to discover one-by-one. Operator running `ls /jackin/` inside any role container must see complete map of jackin-owned state in one place.
+**Every path jackin❯ creates, mounts, or owns inside role container must live under `/jackin/`.** No FHS-borrowed top-level directories (`/run/jackin/`, `/var/lib/jackin/`, `/opt/jackin/`, `/etc/jackin/`), no scattered locations to discover one-by-one. Operator running `ls /jackin/` inside any role container must see complete map of jackin-owned state in one place.
 
 Layout (current and going forward):
 

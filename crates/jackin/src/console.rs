@@ -1,4 +1,4 @@
-//! Binary adapter for the jackin' interactive console (`jackin console`).
+//! Binary adapter for the jackin❯ interactive console (`jackin console`).
 //!
 //! Phase 5 adapter-shell end state. Entry point is `run_console`. All
 //! console product state, update, view, input planning, and business rules

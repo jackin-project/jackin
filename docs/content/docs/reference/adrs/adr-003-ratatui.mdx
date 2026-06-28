@@ -1,6 +1,6 @@
 ---
 title: "ADR-003: Ratatui as the TUI rendering library"
-description: "Why jackin' uses ratatui and not tui-rs, crossterm-raw, or another terminal rendering approach."
+description: "Why jackin❯ uses ratatui and not tui-rs, crossterm-raw, or another terminal rendering approach."
 ---
 
 **Status**: Accepted
@@ -10,7 +10,7 @@ description: "Why jackin' uses ratatui and not tui-rs, crossterm-raw, or another
 
 ## Context
 
-jackin' needs to render full-screen terminal UIs on three surfaces: the host workspace console (`jackin-console`), the launch progress cockpit (`jackin-launch`), and the in-container multiplexer (`jackin-capsule`). The choices at the time of evaluation were:
+jackin❯ needs to render full-screen terminal UIs on three surfaces: the host workspace console (`jackin-console`), the launch progress cockpit (`jackin-launch`), and the in-container multiplexer (`jackin-capsule`). The choices at the time of evaluation were:
 
 - **`tui-rs`** — the original Rust immediate-mode TUI library. Archived/abandoned in 2023.
 - **`ratatui`** — a community fork of `tui-rs`, actively maintained as its de-facto successor.
@@ -31,7 +31,7 @@ ratatui = "0.30"
 
 **Why ratatui over raw ANSI everywhere:** Raw ANSI gives byte-level control but requires hand-rolling layout, clipping, UTF-8 display-width, scrollbar geometry, and double-buffered diffing. `ratatui` handles all of that through its `Buffer`/`Rect`/`Widget` model, which is composable and testable via `TestBackend`. The capsule now renders pane body content from jackin-term snapshots through `PaneBodyWidget` (see ADR-004), while chrome, dialogs, and overlays also use `ratatui`.
 
-**Why ratatui over cursive:** `cursive` is retained-mode (a widget tree you mutate) versus `ratatui`'s immediate-mode (render from state every frame). Immediate-mode pairs directly with the Elm Architecture adopted across all jackin' TUI surfaces: state → render, no widget identity to track. `ratatui` also has a much larger and more active ecosystem of third-party widgets and examples.
+**Why ratatui over cursive:** `cursive` is retained-mode (a widget tree you mutate) versus `ratatui`'s immediate-mode (render from state every frame). Immediate-mode pairs directly with the Elm Architecture adopted across all jackin❯ TUI surfaces: state → render, no widget identity to track. `ratatui` also has a much larger and more active ecosystem of third-party widgets and examples.
 
 ## Consequences
 

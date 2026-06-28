@@ -10,18 +10,19 @@ export const Route = createRootRoute({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: "jackin' - Jack your AI coding agents in" },
+      { title: 'jackin❯ - isolated AI coding agent containers' },
       {
         name: 'description',
         content:
-          "Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.",
+          'Run AI coding agents at full speed inside isolated containers: scoped access, per-agent state, and host boundaries that stay visible.',
       },
-      { name: 'theme-color', content: '#0a0b0a', media: '(prefers-color-scheme: dark)' },
+      { name: 'theme-color', content: '#0a0a0a', media: '(prefers-color-scheme: dark)' },
       { name: 'theme-color', content: '#ffffff', media: '(prefers-color-scheme: light)' },
     ],
     links: [
       { rel: 'stylesheet', href: appCss },
       { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
+      { rel: 'alternate icon', href: '/favicon.ico', sizes: '16x16 32x32 48x48' },
       { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
       { rel: 'icon', type: 'image/png', sizes: '192x192', href: '/icon-192.png' },
       { rel: 'icon', type: 'image/png', sizes: '512x512', href: '/icon-512.png' },

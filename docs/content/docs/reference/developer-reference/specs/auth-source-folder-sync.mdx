@@ -1,0 +1,107 @@
+---
+title: "Auth Source-Folder Sync - Behavioral Spec"
+---
+
+Behavioral invariant contract for alternate agent credential/config folders. This spec records the goal and evidence for `sync_source_dir` so future runtime, console, or documentation changes preserve the intended behavior.
+
+## Goal
+
+Operators can keep multiple host logins for the same agent and select which login a workspace or role should use. In `sync` mode, `sync_source_dir` is the agent credential/config directory itself, not a replacement home directory. jackin❯ must prepare the container by reading the same files and credential backends that the agent uses on the host for that selected profile.
+
+The feature is successful when a workspace configured with an alternate source folder launches the selected agent already authenticated as the alternate account, while the default host CLI can still use the default account outside jackin❯.
+
+## Scope requirements
+
+Source-folder sync is a scoped account-selection mechanism, not a global account switch. The same host machine may have several project workspaces, and each workspace must be able to point an agent at a different host profile. For example, workspace A can sync Codex from one `CODEX_HOME`, while workspace B syncs Codex from another `CODEX_HOME`; launching one workspace must not rewrite, clear, or depend on the other workspace's source folder.
+
+The same rule applies inside one workspace at the role layer. A workspace role override can choose a different source folder for an agent than the workspace default. That lets one workspace run role A with one cloud account and role B with another cloud account for the same agent, while agents without a role override continue inheriting the workspace or global source folder.
+
+## Evidence
+
+The failing run showed the console saved an alternate Claude Code source folder, but runtime setup reported no forwarded Claude credentials. Claude Code then opened first-run onboarding and theme selection inside the container. That proves the console persistence path worked, while launch-time auth preparation interpreted the selected folder incorrectly.
+
+Local host verification established that the default behavior is agent-specific:
+
+| Agent | Host profile selector | Account verification command | Selected source folder for jackin❯ |
+|---|---|---|---|
+| Claude Code | `CLAUDE_CONFIG_DIR=/path/to/claude-profile` | `claude auth status` or an authenticated launch | `/path/to/claude-profile` |
+| Codex | `CODEX_HOME=/path/to/codex-profile` | `/status` inside Codex | `/path/to/codex-profile` |
+| Amp | `XDG_DATA_HOME=/path/to/xdg-data-root` | `amp --no-color usage` | `/path/to/xdg-data-root/amp` |
+
+Claude Code on macOS stores the OAuth secret in the system Keychain, while `.claude.json` carries account/config metadata. The Keychain service name is **per config dir**: the default `~/.claude` uses the bare `Claude Code-credentials` item, and every other `CLAUDE_CONFIG_DIR` uses `Claude Code-credentials-<suffix>`, where `<suffix>` is the first eight hex chars of the SHA-256 of the absolute config dir path (verified live: `~/.claude-work` → `…-3342f2c7`). An alternate Claude `CLAUDE_CONFIG_DIR` therefore selects both the profile metadata and the credential from that folder's own Keychain entry.
+
+Credential extraction for an explicit source folder must read **only** that folder: its `.credentials.json` file (Linux / explicit export) or its per-config-dir Keychain entry (macOS). It must **never** fall back to the default `~/.claude` credentials or the default `Claude Code-credentials` Keychain item — doing so leaks the operator's default account (e.g. a personal Max login) into a capsule explicitly pointed at an Enterprise source folder. When the selected folder yields no readable credentials, preparation leaves the capsule unauthenticated and logs the miss rather than substituting the default account.
+
+Amp does not use `AMP_DATA_HOME` for main account credentials. The current CLI derives its data store from `XDG_DATA_HOME` and writes the API key to `$XDG_DATA_HOME/amp/secrets.json`; `~/.config/amp/settings.json` remains preferences-only.
+
+## Invariants
+
+| INV | Description | Verify by |
+|---|---|---|
+| INV-1 | `sync_source_dir` is a direct agent credential/config directory, not a home directory that gets agent defaults appended under it | Unit tests for Codex, Amp, Kimi, OpenCode, and Grok copy credentials directly from `source_dir/<credential-file>` or the selected Kimi directory |
+| INV-2 | Claude Code source-folder sync copies `.claude.json` from the selected `CLAUDE_CONFIG_DIR` | A regression test prepares Claude state from a source folder containing `.claude.json` and confirms the role-state account file contains that metadata |
+| INV-3 | Claude Code credential extraction for an explicit source folder reads only that folder (its `.credentials.json`, else its per-config-dir macOS Keychain entry) and never falls back to the default host credentials | A regression test prepares Claude state from a source folder with no credentials while default host credentials exist, and confirms the role-state `credentials.json` is not the default account (`HostMissing`, not `Synced`) |
+| INV-4 | Amp source-folder sync reads `secrets.json` from the selected Amp data directory | A regression test calls Amp source-folder provisioning with `source_dir/secrets.json` and confirms the role-state secret is mounted |
+| INV-5 | Runtime launch mounts prepared auth state only when preparation produced or preserved a credential handoff file | Launch mount tests assert Claude, Codex, and Amp include auth mounts under synced states and omit them under ignored/missing states |
+| INV-6 | Source-folder resolution preserves the three-layer account-selection scope: workspace-role override, then workspace, then global | Resolver tests prove role overrides win over workspace/global, and launch-boundary tests prove the same resolver shape is used per agent and per role before `RoleState::prepare` |
+| INV-7 | The Source Folder picker validates a candidate folder against the selected agent's credential structure and rejects a wrong folder inline instead of saving it | `validate_sync_source_dir` unit tests cover every sync agent (valid, empty, and wrong-folder cases); the picker commit handler surfaces the rejection reason and keeps the picker open |
+| INV-8 | When a role sets an agent's standard config-dir env var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `XDG_DATA_HOME`), `runtime-setup` writes the forwarded credential and config files to the directory that env var selects inside the container, not the fixed default — otherwise the CLI reads a path jackin never wrote to and falls back to interactive login | `runtime_setup` resolver tests assert the `*_from` cores compose the env-selected path (e.g. `CLAUDE_CONFIG_DIR=/home/agent/.claude-work` ⇒ both `.claude.json` and `.credentials.json` land inside that dir) and the default path when unset |
+
+## Source-folder shapes
+
+| Agent | Default source | Explicit source-folder meaning |
+|---|---|---|
+| Claude Code | Host `~/.claude` plus macOS Keychain or `~/.claude/.credentials.json` | The `CLAUDE_CONFIG_DIR` directory containing `.claude.json`; credential comes from that folder's `.credentials.json` or its per-config-dir Keychain entry, with no fallback to the default account |
+| Codex | `~/.codex/auth.json` | The `CODEX_HOME` directory containing `auth.json` |
+| Amp | `~/.local/share/amp/secrets.json` | The Amp data directory containing `secrets.json`, usually `$XDG_DATA_HOME/amp` |
+| Kimi | `~/.kimi-code` | The `.kimi-code` directory itself |
+| OpenCode | `~/.local/share/opencode/auth.json` | The OpenCode data directory containing `auth.json` |
+| Grok | `~/.grok/auth.json` | The Grok directory containing `auth.json` |
+
+## Host alias examples
+
+Use separate host aliases only for local verification and account setup; jackin❯ itself should not create or mutate these host aliases.
+
+```sh
+alias claude-alt='CLAUDE_CONFIG_DIR="$HOME/.claude-alt" claude'
+alias codex-alt='CODEX_HOME="$HOME/.codex-alt" codex'
+alias amp-alt='XDG_DATA_HOME="$HOME/.local/share/amp-alt-xdg" XDG_CONFIG_HOME="$HOME/.config/amp-alt-xdg" XDG_CACHE_HOME="$HOME/.cache/amp-alt-xdg" amp'
+```
+
+After logging in through those aliases, configure jackin❯ source folders as:
+
+```text
+Claude Code: ~/.claude-alt
+Codex:       ~/.codex-alt
+Amp:         ~/.local/share/amp-alt-xdg/amp
+```
+
+## Smoke criteria
+
+1. Verify the default host CLI still reports the default account.
+2. Verify the alternate alias reports the alternate account.
+3. In `jackin console`, configure the workspace or role Auth tab to `sync` mode and set Source folder to the alternate folder. Selecting a folder that lacks the agent's credential structure (e.g. the Amp data root instead of its `amp/` subfolder) is rejected in the picker with a structure error and is not saved.
+4. Launch the agent from that workspace or role.
+5. Inside the container, run the agent's account/status command or equivalent and confirm it reports the alternate account without triggering first-run login/onboarding.
+
+For Claude Code, the strongest failure signal is first-run onboarding after runtime setup prints that no credentials were forwarded. For Codex, `/status` must show the alternate account. For Amp, `amp --no-color usage` must show the alternate account after the selected data directory has been copied into the container.
+
+## Container-side config-dir resolution
+
+The host-side rules above decide *which folder jackin reads credentials from*. A symmetric rule governs *where jackin writes those credentials inside the container*. The agent CLIs honor the same standard config-dir env vars at runtime, so when a role exports one, jackin must write to the directory it selects rather than the fixed default — the CLI reads the env-selected path, and a credential written anywhere else is invisible to it.
+
+`runtime-setup` resolves each in-container path through the env var the agent itself respects, falling back to the default when unset:
+
+| Agent | Env var honored | Credential / config target |
+|---|---|---|
+| Claude Code | `CLAUDE_CONFIG_DIR` | `.credentials.json` inside the dir; `.claude.json` inside the dir when the var is set, else `$HOME/.claude.json` (the CLI's own asymmetry) |
+| Codex | `CODEX_HOME` | `auth.json` and `config.toml` inside the dir |
+| Amp | `XDG_DATA_HOME` | `$XDG_DATA_HOME/amp/secrets.json` |
+| OpenCode | `XDG_DATA_HOME` | `$XDG_DATA_HOME/opencode/auth.json` |
+| Kimi / Grok | none | fixed `~/.kimi-code` / `~/.grok/auth.json` |
+
+Roles should set these env vars only for genuinely custom multi-profile needs; the defaults already match each CLI's standard layout, so an unnecessary override only adds a path to keep aligned (and previously broke Claude auth by relocating `.claude.json` lookup away from where jackin wrote it).
+
+## Non-goals
+
+jackin❯ must not silently write host aliases, rotate host logins, or mutate host-side agent config while launching a workspace. Operators may create alternate host profiles themselves, and jackin❯ only reads from the selected source folder or default credential backend during launch preparation.

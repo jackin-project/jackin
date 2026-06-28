@@ -1,13 +1,13 @@
 ---
 title: "Architecture Decision Records"
-description: "Architectural decisions made during jackin' development, with context, rationale, and consequences."
+description: "Architectural decisions made during jackin❯ development, with context, rationale, and consequences."
 ---
 
 Architecture Decision Records (ADRs) document significant design choices — what was decided, why, what alternatives were considered, and what the trade-offs are.
 
 ## Active ADRs
 
-- **[ADR-001: Single-crate vs Cargo workspace](/reference/adrs/adr-001-single-crate-vs-workspace)** — why jackin' started as a single crate, the threshold that triggered workspace adoption, and the current workspace structure.
+- **[ADR-001: Single-crate vs Cargo workspace](/reference/adrs/adr-001-single-crate-vs-workspace)** — why jackin❯ started as a single crate, the threshold that triggered workspace adoption, and the current workspace structure.
 - **[ADR-002: Rust toolchain pinning and MSRV policy](/reference/adrs/adr-002-rust-toolchain)** — how the toolchain is pinned via `rust-toolchain.toml`, the MSRV guarantee, and the `edition = "2024"` floor.
 - **[ADR-003: Ratatui as the TUI rendering library](/reference/adrs/adr-003-ratatui)** — why ratatui over tui-rs, raw ANSI, or cursive, and how it is used across all three TUI surfaces.
 - **[ADR-004: Capsule pane-body rendering mechanism](/reference/adrs/adr-004-pane-body-rendering)** — why the capsule renders pane bodies through a custom cell widget rather than tui-term.

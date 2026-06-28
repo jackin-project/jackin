@@ -1,5 +1,5 @@
 #!/bin/sh
-# Claude Code hook reporter for jackin' agent runtime status.
+# Claude Code hook reporter for jackin❯ agent runtime status.
 #
 # Keep this as a dumb pipe: Claude sends the hook payload on stdin, and the
 # capsule daemon owns event mapping/gating.

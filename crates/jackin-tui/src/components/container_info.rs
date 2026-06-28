@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
 };
 
@@ -31,6 +31,9 @@ pub struct ContainerInfoRow {
     href: Option<String>,
     copyable: bool,
     emphasised: bool,
+    /// Optional accent colour for the row's meter/value, used to severity-grade
+    /// a usage bucket (warn/danger). `None` keeps the default rendering.
+    accent: Option<Color>,
 }
 
 impl ContainerInfoRow {
@@ -42,7 +45,21 @@ impl ContainerInfoRow {
             href: None,
             copyable: false,
             emphasised: false,
+            accent: None,
         }
+    }
+
+    /// Set the accent colour used to severity-grade this row's meter.
+    #[must_use]
+    pub const fn accent(mut self, accent: Color) -> Self {
+        self.accent = Some(accent);
+        self
+    }
+
+    /// The row's accent colour, if any.
+    #[must_use]
+    pub const fn accent_color(&self) -> Option<Color> {
+        self.accent
     }
 
     #[must_use]

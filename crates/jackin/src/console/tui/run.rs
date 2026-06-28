@@ -321,7 +321,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     // body; the status bar (debug chip) renders below in
                     // `debug_bar_area`, so the bottom chrome reads: dialog
                     // backdrop, hint row, blank spacer, status bar — the same
-                    // ordering every jackin' surface uses.
+                    // ordering every jackin❯ surface uses.
                     let hint_row = ratatui::layout::Rect {
                         x: main_area.x,
                         y: main_area.bottom().saturating_sub(1),

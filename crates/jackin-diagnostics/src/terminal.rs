@@ -68,7 +68,7 @@ pub fn reassert_alt_screen() {
 
 pub fn set_terminal_title(title: &str) {
     let mut stderr = io::stderr().lock();
-    drop(write!(stderr, "\x1b]0;jackin' \u{00b7} {title}\x07"));
+    drop(write!(stderr, "\x1b]0;jackin❯ \u{00b7} {title}\x07"));
     drop(stderr.flush());
 }
 

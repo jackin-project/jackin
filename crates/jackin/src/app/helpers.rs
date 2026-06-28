@@ -130,7 +130,7 @@ pub(super) fn render_workspace_show(
     }
     let mut info_table = Table::builder(info.iter().map(|(k, v)| [*k, *v])).build();
     info_table
-        .with(Style::modern_rounded())
+        .with(Style::modern())
         .with(tabled::settings::Remove::row(
             tabled::settings::object::Rows::first(),
         ));
@@ -150,7 +150,7 @@ pub(super) fn render_workspace_show(
             })
             .collect();
         let mut mount_table = Table::new(mount_rows);
-        mount_table.with(Style::modern_rounded());
+        mount_table.with(Style::modern());
         let _unused = writeln!(out);
         let _unused = writeln!(out, "Workspace mounts:");
         let _unused = writeln!(out, "{mount_table}");
@@ -165,7 +165,7 @@ pub(super) fn render_workspace_show(
             mount: mount_display(&row.mount.src, &row.mount.dst),
             mode: mount_mode(row.mount.readonly),
         }));
-        table.with(Style::modern_rounded());
+        table.with(Style::modern());
         let _unused = writeln!(out);
         let _unused = writeln!(out, "Global mounts:");
         let _unused = writeln!(out, "{table}");
@@ -187,7 +187,7 @@ pub(super) fn render_workspace_show(
                 mount: mount_display(&row.mount.src, &row.mount.dst),
                 mode: mount_mode(row.mount.readonly),
             }));
-            table.with(Style::modern_rounded());
+            table.with(Style::modern());
             let _unused = writeln!(out);
             let _unused = writeln!(out, "Global mounts ({role}):");
             let _unused = writeln!(out, "{table}");

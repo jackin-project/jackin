@@ -2,7 +2,7 @@
 source: crates/jackin-console/src/tui/view/tests.rs
 expression: rendered
 ---
- jackin'  · workspaces                                                          
+ jackin❯  · workspaces                                                          
                                                                                 
 ┌──────────────────────┐┌ General ─────────────────────────────────────────────┐
 │▸  Current directory  ││  Working dir /workspace                              │

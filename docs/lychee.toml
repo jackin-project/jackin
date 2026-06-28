@@ -44,6 +44,9 @@ exclude = [
   # wezterm.org is browser-visible but CI lychee intermittently fails to connect
   # to it. Cited from reference/tui and capsule terminal-model docs.
   "https://wezterm\\.org/",
+  # xtermjs.org is browser-visible but CI lychee fails to connect to it.
+  # Cited from reference/roadmap/clipboard-image-bridge.
+  "https://xtermjs\\.org/",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]

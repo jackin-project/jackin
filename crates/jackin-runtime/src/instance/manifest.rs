@@ -1,6 +1,6 @@
 //! Instance index (`instances.json`) and per-container manifest: status tracking, session records.
 //!
-//! The index is the host-side registry of every container jackin' has
+//! The index is the host-side registry of every container jackin❯ has
 //! launched; the per-instance manifest records lifecycle status and agent
 //! session history. Not responsible for Docker interaction — purely JSON
 //! persistence under `~/.jackin/data/`.

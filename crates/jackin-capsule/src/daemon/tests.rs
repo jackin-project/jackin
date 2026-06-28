@@ -299,6 +299,9 @@ fn control_usage_account_list_uses_in_memory_cache() {
     view.source = jackin_protocol::control::UsageSource::ProviderApi;
     view.confidence = jackin_protocol::control::UsageConfidence::Authoritative;
     view.buckets = vec![jackin_protocol::control::QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: jackin_protocol::control::UsageSeverity::default(),
         label: "Session".to_owned(),
         used_label: Some("63% used".to_owned()),
         limit_label: Some("100%".to_owned()),
@@ -333,8 +336,12 @@ fn apply_dialog_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("refresh usage action must keep usage dialog open");
     };
+    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
+    // below); the "refreshing" marker is applied by the dialog tick only when a
+    // refresh task is genuinely in flight. No task is spawned here, so the marker
+    // must NOT appear — it is no longer driven by the scheduling flag.
     assert!(
-        view.updated_label.contains("refreshing"),
+        !view.updated_label.contains("refreshing"),
         "{:?}",
         view.updated_label
     );
@@ -358,8 +365,12 @@ fn apply_action_refresh_usage_queues_refresh_without_replacing_dialog() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog still open") else {
         panic!("refresh usage action must keep usage dialog open");
     };
+    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
+    // below); the "refreshing" marker is applied by the dialog tick only when a
+    // refresh task is genuinely in flight. No task is spawned here, so the marker
+    // must NOT appear — it is no longer driven by the scheduling flag.
     assert!(
-        view.updated_label.contains("refreshing"),
+        !view.updated_label.contains("refreshing"),
         "{:?}",
         view.updated_label
     );
@@ -428,8 +439,12 @@ fn apply_action_open_usage_queues_focused_provider_refresh() {
     let Dialog::Usage { view, .. } = mux.dialog_top().expect("usage dialog open") else {
         panic!("usage dialog expected");
     };
+    // Bug 1: the action only QUEUES the refresh (pending_usage_refresh set
+    // below); the "refreshing" marker is applied by the dialog tick only when a
+    // refresh task is genuinely in flight. No task is spawned here, so the marker
+    // must NOT appear — it is no longer driven by the scheduling flag.
     assert!(
-        view.updated_label.contains("refreshing"),
+        !view.updated_label.contains("refreshing"),
         "{:?}",
         view.updated_label
     );
@@ -467,6 +482,9 @@ fn open_usage_dialog_refreshes_visible_relative_timestamp_from_cache() {
             credential_origin: None,
         },
         buckets: vec![jackin_protocol::control::QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Session".to_owned(),
             used_label: Some("63% used".to_owned()),
             limit_label: Some("100%".to_owned()),
@@ -1349,9 +1367,13 @@ fn dialog_backdrop_preserves_status_bar_and_hides_pane_chrome() {
             String::from_utf8_lossy(&compose_after(&mut mux, FullRedrawReason::DialogChange))
                 .to_string();
 
+        // The brand pill renders as a green block with a black word and a white
+        // chevron, so the cursor-diff stream splits `jackin` and `❯` with escape
+        // codes. Assert the word plus the block colour rather than a contiguous
+        // `jackin❯` substring.
         assert!(
-            frame.contains("jackin'"),
-            "{context} should preserve the top status brand while a dialog is open: {frame:?}"
+            frame.contains("jackin") && frame.contains("48;2;0;255;65"),
+            "{context} should preserve the top status brand (green block) while a dialog is open: {frame:?}"
         );
         assert!(
             !frame.contains(&format!(
@@ -2584,7 +2606,7 @@ fn wheel_forwards_to_mouse_enabled_tui() {
 
     assert!(
         redraw.is_none(),
-        "pane-owned wheel should not redraw jackin'"
+        "pane-owned wheel should not redraw jackin❯"
     );
     assert_eq!(
         input_rx.try_recv().expect("wheel should reach PTY"),
@@ -2619,7 +2641,7 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
 
         assert!(
             redraw.is_some(),
-            "{pane_kind} pane scrollback should redraw jackin'"
+            "{pane_kind} pane scrollback should redraw jackin❯"
         );
         assert!(
             input_rx.try_recv().is_err(),
@@ -2654,8 +2676,11 @@ fn wheel_back_to_live_repaints_body_and_footer() {
     )
     .expect("wheel into history must repaint");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
+    // The diff encoder skips cells that match the live footer, so "scrollback"
+    // may be split across a cursor-move escape. Match the prefix that is always
+    // emitted as a contiguous run.
     assert!(
-        contains(&scrolled, b"exit") && contains(&scrolled, b"scrollback"),
+        contains(&scrolled, b"exit scrollb"),
         "scrolled frame must show the scrollback footer: {:?}",
         String::from_utf8_lossy(&scrolled)
     );
@@ -2987,7 +3012,7 @@ fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
 
         assert!(
             redraw.is_none(),
-            "{pane_kind} normal-screen pane without scrollback should not redraw jackin'"
+            "{pane_kind} normal-screen pane without scrollback should not redraw jackin❯"
         );
         assert!(
             input_rx.try_recv().is_err(),
@@ -3192,7 +3217,7 @@ fn wheel_sends_cursor_fallback_to_mouse_disabled_alt_screen_tui() {
 
     assert!(
         redraw.is_none(),
-        "pane-owned fallback should not redraw jackin'"
+        "pane-owned fallback should not redraw jackin❯"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
@@ -3227,7 +3252,7 @@ fn wheel_sends_cursor_fallback_to_alt_screen_tui_with_retained_primary_scrollbac
 
     assert!(
         redraw.is_none(),
-        "alternate-screen fallback should not redraw jackin'"
+        "alternate-screen fallback should not redraw jackin❯"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1b[A\x1b[A\x1b[A");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
@@ -3251,7 +3276,7 @@ fn wheel_cursor_fallback_respects_application_cursor_mode() {
 
     assert!(
         redraw.is_none(),
-        "pane-owned fallback should not redraw jackin'"
+        "pane-owned fallback should not redraw jackin❯"
     );
     assert_wheel_cursor_fallback_sent(&mut input_rx, b"\x1bOB\x1bOB\x1bOB");
 }
@@ -7342,7 +7367,10 @@ fn exit_dirty_selected_value(mux: &Multiplexer) -> usize {
 fn exit_dirty_down_arrow_advances_selection_via_handle_input() {
     // Zero live panes — exactly the dirty-exit modal scenario.
     let mut mux = test_mux(30, 100);
-    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    mux.dialog_push(Dialog::new_exit_dirty(
+        vec!["holla   1 changed".to_owned()],
+        Arc::from([]),
+    ));
     assert_eq!(exit_dirty_selected_value(&mux), 0);
 
     // Down arrow, as the input parser hands it to handle_input.
@@ -7364,7 +7392,10 @@ fn exit_dirty_down_arrow_advances_selection_via_handle_input() {
 #[test]
 fn exit_dirty_down_arrow_recomposes_a_changed_frame() {
     let mut mux = test_mux(30, 100);
-    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    mux.dialog_push(Dialog::new_exit_dirty(
+        vec!["holla   1 changed".to_owned()],
+        Arc::from([]),
+    ));
     // Paint the modal once so rendered == frame generation.
     let first = mux.compose_pending_frame();
 
@@ -7403,9 +7434,10 @@ fn marker_row_on_screen(grid: &DamageGrid, rows: u16, cols: u16) -> Option<u16> 
 fn exit_dirty_marker_moves_on_screen_with_zero_panes() {
     let (rows, cols) = (44u16, 157u16);
     let mut mux = test_mux(rows, cols);
-    mux.dialog_push(Dialog::new_exit_dirty(vec![
-        "holla   1 changed \u{b7} 3 unpushed".to_owned(),
-    ]));
+    mux.dialog_push(Dialog::new_exit_dirty(
+        vec!["holla   1 changed \u{b7} 3 unpushed".to_owned()],
+        Arc::from([]),
+    ));
     mux.invalidate(FullRedrawReason::DialogChange);
     let mut grid = DamageGrid::new(rows, cols, 0);
 
@@ -7446,9 +7478,10 @@ fn exit_dirty_marker_moves_after_session_exits_realistic() {
     mux.remove_exited_session(1);
 
     // handle_last_session_exit opens the modal and invalidates.
-    mux.dialog_push(Dialog::new_exit_dirty(vec![
-        "holla   1 changed \u{b7} 3 unpushed".to_owned(),
-    ]));
+    mux.dialog_push(Dialog::new_exit_dirty(
+        vec!["holla   1 changed \u{b7} 3 unpushed".to_owned()],
+        Arc::from([]),
+    ));
     mux.invalidate(FullRedrawReason::DialogChange);
     let frame = mux.compose_pending_frame();
     client.apply(&frame);
@@ -7479,7 +7512,10 @@ async fn last_session_exit_does_not_repush_modal_while_dialog_open() {
     // re-entering must NOT push a second modal (which reset the selection to 0
     // every keypress, capping navigation at row 1).
     let mut mux = test_mux(44, 157);
-    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    mux.dialog_push(Dialog::new_exit_dirty(
+        vec!["holla   1 changed".to_owned()],
+        Arc::from([]),
+    ));
     let depth_before = mux.dialog_stack.len();
 
     let exited = handle_last_session_exit(&mut mux, None).await;
@@ -7497,7 +7533,10 @@ fn exit_dirty_down_arrow_reaches_last_row() {
     // The selection must advance all the way to the final row (Discard), not cap
     // at row 1 — guards against an off-by-one or re-push regression.
     let mut mux = test_mux(44, 157);
-    mux.dialog_push(Dialog::new_exit_dirty(vec!["holla   1 changed".to_owned()]));
+    mux.dialog_push(Dialog::new_exit_dirty(
+        vec!["holla   1 changed".to_owned()],
+        Arc::from([]),
+    ));
     for _ in 0..5 {
         mux.handle_input(InputEvent::Data(vec![0x1b, 0x5b, 0x42])); // down
     }
@@ -7510,4 +7549,64 @@ fn exit_dirty_down_arrow_reaches_last_row() {
         }
         other => panic!("expected ExitDirty, got {other:?}"),
     }
+}
+
+#[test]
+fn build_exit_inspect_rows_groups_repos_with_header_and_file_rows() {
+    use crate::exit_assess::DirtyRepo;
+    use crate::tui::components::dialog::InspectRow;
+    use jackin_core::worktree_dirty::ChangedFile;
+
+    let repos = vec![
+        DirtyRepo {
+            path: "/workspace/alpha".to_owned(),
+            changed: vec![
+                ChangedFile {
+                    status: 'M',
+                    path: "src/main.rs".to_owned(),
+                },
+                ChangedFile {
+                    status: '?',
+                    path: "new.rs".to_owned(),
+                },
+            ],
+            unpushed: 0,
+        },
+        DirtyRepo {
+            path: "/workspace/beta".to_owned(),
+            changed: vec![],
+            unpushed: 1,
+        },
+    ];
+    let rows = build_exit_inspect_rows(&repos);
+    // First entry must be a Repo header.
+    assert!(matches!(rows.first(), Some(InspectRow::Repo(_))));
+    // Two repos → exactly two Repo headers.
+    let repo_count = rows
+        .iter()
+        .filter(|r| matches!(r, InspectRow::Repo(_)))
+        .count();
+    assert_eq!(repo_count, 2, "one header per repo");
+    // alpha has two changed files → two File rows follow its header.
+    let file_count = rows
+        .iter()
+        .filter(|r| matches!(r, InspectRow::File(_)))
+        .count();
+    assert_eq!(file_count, 2, "only changed files produce File rows");
+    // Repo labels are derived from the final path component.
+    if let Some(InspectRow::Repo(label)) = rows.first() {
+        assert_eq!(label, "alpha");
+    }
+    // File rows are formatted as "<status> <path>".
+    let file_rows: Vec<_> = rows
+        .iter()
+        .filter_map(|r| {
+            if let InspectRow::File(s) = r {
+                Some(s.as_str())
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(file_rows, ["M src/main.rs", "? new.rs"]);
 }

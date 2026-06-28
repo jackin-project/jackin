@@ -19,7 +19,7 @@ pub const MIN_TUI_ROWS: u16 = 15;
 /// Error message emitted when `jackin console` is invoked but the current
 /// terminal cannot host the TUI.
 pub const CONSOLE_REQUIRES_TTY_ERROR: &str =
-    "jackin' console requires an interactive terminal (stdout must be a TTY, minimum size 40x15)";
+    "jackin❯ console requires an interactive terminal (stdout must be a TTY, minimum size 40x15)";
 
 /// What the top-level dispatcher should do after parsing.
 #[derive(Debug, PartialEq, Eq)]

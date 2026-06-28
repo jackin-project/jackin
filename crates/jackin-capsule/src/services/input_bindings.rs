@@ -17,23 +17,6 @@ pub fn resolve_input_bindings() -> InputBindings {
     }
 }
 
-/// Short display label for a raw key byte, suitable for status-bar legend.
-/// Control codes render as `C-x`; printable ASCII as the character itself.
-pub fn palette_key_glyph(key: Option<u8>) -> Option<String> {
-    let b = key?;
-    Some(match b {
-        0x01..=0x1a => format!("C-{}", (b'a' + (b - 1)) as char),
-        0x1b => "Esc".to_owned(),
-        0x1c => "C-\\".to_owned(),
-        0x1d => "C-]".to_owned(),
-        0x1e => "C-^".to_owned(),
-        0x1f => "C-_".to_owned(),
-        0x7f => "Del".to_owned(),
-        b if b.is_ascii_graphic() => String::from(b as char),
-        _ => format!("0x{b:02x}"),
-    })
-}
-
 /// Prefix mode is opt-in: returns `Some(byte)` when `JACKIN_PREFIX`
 /// is set to a parseable key, `None` otherwise.
 fn resolve_prefix_binding() -> Option<u8> {

@@ -89,7 +89,7 @@ is the weakest option.
 Found we use the grid (cell read), geometry, modes, scrollback, and `Callbacks` — never the emit.
 Confirmed the per-cell `String` alloc and the O(grid) snapshot rebuild by reading `render.rs`.
 
-**`alacritty_terminal` buy path:** evaluated as a grid+damage source while keeping jackin's
+**`alacritty_terminal` buy path:** evaluated as a grid+damage source while keeping jackin❯
 emit. The grid ideas remain useful references, but the public API is not shaped for a stable
 multiplexer-facing dependency.
 

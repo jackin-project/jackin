@@ -444,7 +444,7 @@ pub fn handle_cockpit_input(
             continue;
         }
         match ev {
-            // Ctrl+Q: ask before quitting. Opens the shared "Exit jackin'?"
+            // Ctrl+Q: ask before quitting. Opens the shared "Exit jackin❯?"
             // confirmation; the dialog (drawn next tick) owns input until
             // answered. No/Esc resumes launch; Yes hard-exits immediately.
             Event::Key(k)

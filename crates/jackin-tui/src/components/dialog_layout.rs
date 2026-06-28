@@ -1,6 +1,6 @@
 //! Shared dialog inner layout helper.
 //!
-//! Every modal dialog in jackin' follows the canonical vertical layout:
+//! Every modal dialog in jackin❯ follows the canonical vertical layout:
 //!
 //! ```text
 //! ┌ Title ──────────────────────────────────────┐

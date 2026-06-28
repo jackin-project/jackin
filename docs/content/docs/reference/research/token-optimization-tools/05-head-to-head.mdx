@@ -1,0 +1,196 @@
+---
+title: "05 — Head-to-head: where each wins, what each lacks"
+---
+
+# 05 — Head-to-head: where each wins, what each lacks
+
+The four design teardowns ([caveman](/reference/research/token-optimization-tools/01-caveman-design/), [headroom](/reference/research/token-optimization-tools/02-headroom-design/), [RTK](/reference/research/token-optimization-tools/03-rtk-design/), [lean-ctx](/reference/research/token-optimization-tools/04-leanctx-design/)) described each tool on its own terms. This page sets them against each other directly: a feature-by-feature has/lacks matrix, the internals side-by-side, and a clear statement of the *best case* for each — the workload where it beats the others outright.
+
+The framing to keep in mind throughout: **three of the four are points on one pipeline; lean-ctx is a runtime drawn across it.** Caveman is output; headroom and RTK are two opposite points on input; lean-ctx occupies the input points the other two split *and* adds a code-graph layer none of them have. So most "comparisons" between caveman and the others are category errors — caveman owns output alone — and the real rivalry is on the input side, where RTK, headroom, and lean-ctx overlap but act at different interception points.
+
+## The feature matrix — has (✓), lacks (✗), partial (◐)
+
+| Capability | Caveman | Headroom | RTK | lean-ctx |
+|---|:---:|:---:|:---:|:---:|
+| **Compresses output** (what the model writes) | ✓ | ◐ (optional shaper, off by default) | ✗ | ✗ |
+| **Compresses input** (what the model reads) | ✗ | ✓ (broad) | ✓ (Bash only) | ✓ (broad) |
+| Reaches native `Read`/`Grep`/`Glob` | ✗ | ✓ | ✗ | ✓ (via MCP `ctx_read`) |
+| Reaches RAG chunks / external providers | ✗ | ✓ | ✗ | ✓ (provider framework) |
+| Reaches conversation history | ✗ | ✓ | ✗ | ◐ (proxy mode, opt-in) |
+| Reaches shell / test / build / log output | ✗ | ✓ | ✓ | ✓ (56 pattern modules) |
+| Touches **thinking** (20% of dollars) | ✗ | ✗ | ✗ | ✗ |
+| Hits the 5×-priced output class | ✓ | ◐ | ✗ | ✗ |
+| **Deterministic** (no ML in the loop) | ✓ (it is a prompt) | ✗ (`kompress-base`) | ✓ | ✓ **by default** (ML opt-in) |
+| **Reversible / recoverable** compression | ✗ (re-ask) | ✓ (CCR `headroom_retrieve`) | ◐ (tee on failure only) | ✓ (archive + `ctx_expand`) |
+| Language-aware code outlining (per-read) | ✗ (passes code verbatim) | ✓ (tree-sitter, 8 langs) | ✓ (regex, 10 langs) | ✓ (tree-sitter, 21 langs) |
+| **Persistent queryable symbol index / code graph** | ✗ | ✗ | ✗ | ✓ **— unique** (property graph + BM25 + RRF) |
+| LSP refactoring (rename/references/definition) | ✗ | ✗ | ✗ | ✓ **— unique** |
+| Cross-agent shared memory | ◐ (cavemem, single-agent, lossy) | ✓ (dedup, reversible) | ✗ | ✓ (CCP + Context OS) |
+| Failure-mining into memory files | ✗ | ✓ (`learn`) | ✗ | ◐ (knowledge/gotcha capture) |
+| Bounce-netted / signed savings ledger | ✗ | ✗ | ✗ (raw `rtk gain`) | ✓ **— unique** |
+| **Cache-safe** on Claude Code | ✓ (output side, always) | ◐ (MCP/library yes; proxy risky) | ✓ (by construction) | ◐ (MCP/hook yes; proxy cache-safe-by-design but lossy) |
+| Zero MCP schema rent | ✗ (~940 tok skill listing) | ✗ (in MCP mode) | ✓ | ✗ (77 tools; dynamic loading mitigates) |
+| Zero host-state write | ✗ (2 hooks) | ◐ (config + model download) | ✗ (PreToolUse hook) | ✗ (hooks/skills ×34 agents + daemon autostart) |
+| Zero runtime compute | ✓ | ✗ (P50 52 ms / P99 4.2 s) | ◐ (~5–15 ms/cmd) | ✗ (long-lived daemon + DBs) |
+| Single self-contained artifact | ◐ (plugin + hooks) | ✗ (Rust core + ML runtime + Python) | ✓ (one ~4.1 MB binary) | ◐ (one binary, but **64.7 MB** + daemon + dashboard + DBs) |
+| CI-safe (preserves exit codes) | n/a (output side) | n/a | ✓ | ✓ (shell hook preserves exit codes) |
+| Multi-surface ecosystem | ✓ (the broadest *family*) | ◐ (memory + learn) | ◐ (read/grep/find wrappers) | ✓ (77 tools, providers, dashboard, team server) |
+| Whole-session telemetry | ✗ | ✓ (50k+ sessions) | ✗ | ◐ (local dashboard; no published fleet telemetry) |
+| Independent third-party benchmark | ✗ | ◐ (one: 47.5%) | ✗ | ✗ (youngest tool) |
+| Locally reproduced headline | ✓ (58.5% output) | ◐ (mechanisms yes; product no) | ✗ | ✓ (96–99% on code reads, here) |
+
+Read the matrix as one output tool, two input specialists, and one input runtime:
+
+- **Only caveman compresses output.** Headroom's output shaper is off by default; RTK and lean-ctx do not touch output at all. This row is uncontested.
+- **headroom and lean-ctx both reach the non-shell input sources** (native reads, RAG, history); RTK does not. headroom reaches history natively; lean-ctx reaches it only in proxy mode.
+- **lean-ctx owns two rows alone**: the persistent code graph / symbol index (the structural-retrieval lever the three-way said *no one* had) and LSP refactoring. This is the genuine capability the fourth tool adds to the comparison.
+- **The bottom of the matrix is where cost diverges most**: caveman is zero-runtime; RTK is one tiny deterministic binary; headroom pays ML+proxy; **lean-ctx pays the most** — a 64.7 MB binary, a daemon, databases, and the widest host-write surface — in exchange for being the only one that spans the whole input side plus code intelligence.
+
+## The internals side-by-side
+
+| Primitive | Caveman | Headroom | RTK | lean-ctx |
+|---|---|---|---|---|
+| Interception point | Model's own decoder (a prompt rule) | API request (proxy) or observation (MCP/lib) | Bash tool boundary (PreToolUse hook) | **All of them**: shell hook + MCP read + proxy |
+| Engine type | **Markdown instruction** (no code path) | Router + typed compressors + ML model | 12 deterministic Rust filters keyed on the command | Tree-sitter AST + entropy/TF-IDF + 56 patterns + BM25/graph; CFT Φ-scoring |
+| Parser / structural | none | per-type (AST outline, JSON, log) | per-command + a `filter.rs` regex code filter (10 langs) | tree-sitter (21 langs) + persistent property graph + call graph |
+| ML in the loop | **No** | **Yes** (`kompress-base`, auto-downloaded) | **No** | **No by default**; opt-in embeddings + proxy prose |
+| Persistent state | none (hooks only track tokens) | CCR store + cross-agent memory + `learn` | SQLite history (`rtk gain`) | CCP session + knowledge graph + property graph + BM25 + archive |
+| Token counter | tiktoken `o200k_base` (eval only) | own counter, no stated tokenizer | ~4 chars/token heuristic | tiktoken `o200k_base` / `cl100k_base` (GPT, not Claude BPE) |
+| Recovery on loss | **none** (re-ask) | **CCR `headroom_retrieve`** (reversible) | tee **on failure only** | **archive + `ctx_expand`** (reversible, FTS5-searchable) |
+| Host-state write | `~/.claude` hooks ×2 | MCP/proxy config + model download | `~/.claude` PreToolUse hook | hooks/skills ×34 agents + daemon autostart (LaunchAgent/systemd) |
+| Runtime cost | ~0 compute + ~940-tok prefix | P50 52 ms / P99 4.17 s + ML + MCP rent | ~5–15 ms/cmd, ~4 MB binary | daemon + 64.7 MB binary; read 4–12 ms; BM25 ~0.5 ms |
+| Hardest failure | over-terse, unrecoverable | ML drops an identifier; proxy cache-bust | truncates a needed line on a *successful* command | `map`-mode over-compression (77% quality); stale graph; proxy prose loss |
+
+The teardowns confirm the [determinism gradient](/reference/research/token-optimization-tools/) from a new angle: caveman is a zero-machinery prompt; RTK is maximum determinism (fixed rules, no model, single tiny binary); headroom buys *breadth* by paying for an ML stage, a proxy, and a reversible store; **lean-ctx buys *the most* breadth — every input point plus a code graph — while keeping a deterministic default core, paying instead in footprint.** More machinery → more reach and reversibility, but also more latency, more host effects, and a real attack surface.
+
+## Where each one wins — the best case for each
+
+### Caveman wins when the waste is the model talking too much
+
+```text
+   BEST CASE: CAVEMAN
+   ───────────────────
+   symptom   the model writes long explanations, restates code it just
+             edited, narrates what it is about to do
+   why it    output is the 5×-priced token class AND cache-neutral, so every
+   wins      token shaved is worth ~5× an input token and costs nothing in
+             cache risk; it is a free prompt with zero runtime
+   margin    the ONLY tool that touches output at all; headroom's shaper is
+   over      off-by-default and weaker, RTK and lean-ctx can't see output.
+   rivals    No contest — caveman owns this slice outright.
+   also      works under any agent/model (it is just a register instruction),
+   unique    and the family extends to commits, reviews, and subagent reports
+```
+
+Caveman is uncontested on output. It is also the first tool to adopt for a separate reason: it is the only one that is *unconditionally* cache-safe and requires no runtime, no binary, no host service — minutes to adopt, nothing to provision.
+
+### RTK wins when the waste is verbose shell output and you want zero footprint
+
+```text
+   BEST CASE: RTK
+   ──────────────
+   symptom   Bash-heavy workload: repeated `cargo test`, `git status`/`diff`,
+             build logs, `pytest`/`go test`, lint output flooding context
+   why it    deterministic (no ML to mis-fire), cache-safe BY CONSTRUCTION,
+   wins      zero MCP rent, ONE ~4 MB binary, CI-safe (exit codes preserved)
+   margin    vs headroom on the SAME shell output: no ML attack surface, no
+   over      model latency, no proxy. vs lean-ctx: same write-time safety in
+   rivals    1/16th the footprint — no daemon, no DBs, no 77-tool schema.
+   also      the MOST container-adoptable of the four (tiny single binary,
+   unique    deterministic, nothing to provision); 100+ command formats turnkey
+```
+
+RTK's win is the *cheapest* way to compress the largest concrete input slice — shell output — deterministically and cache-safely. lean-ctx does the same shell compression, but RTK does only that, in a fraction of the footprint; when shell output is the whole problem, RTK's minimalism beats lean-ctx's breadth.
+
+### Headroom wins when the waste is history and RAG on the wire, reversibly
+
+```text
+   BEST CASE: HEADROOM
+   ───────────────────
+   symptom   large JSON/API payloads, RAG chunks, long conversation history
+             on the wire; multi-tool (Claude+Codex+Gemini) workflows needing
+             shared, reversible, deduplicated memory
+   why it    reaches everything in the request (incl. history) reversibly via
+   wins      CCR, with production telemetry and one independent measurement —
+             the best-evidenced of the four
+   margin    vs RTK: sees non-shell input RTK is blind to. vs lean-ctx: a
+   over      proven cross-agent memory + the only published whole-session
+   rivals    telemetry; lean-ctx's equivalents are younger and unbenchmarked.
+   also      `learn` failure-mining + cross-agent dedup memory + the most
+   unique    independent evidence of any tool here
+```
+
+Headroom's win is reach-with-evidence on the API wire, especially conversation history (which lean-ctx reaches only in its opt-in proxy) and cross-agent memory, backed by the only third-party measurement and fleet telemetry in the group.
+
+### lean-ctx wins when you want the code graph and memory in one runtime
+
+```text
+   BEST CASE: LEAN-CTX
+   ───────────────────
+   symptom   large code-read-heavy work in a medium/large repo where you ALSO
+             want "where does this ripple to?", ranked search, cross-session
+             memory, and an auditable savings receipt — all at once
+   why it    the ONLY tool that bundles a persistent code graph (impact/
+   wins      callgraph/RRF search) + LSP refactor + CCP memory + a signed,
+             bounce-netted savings ledger behind one deterministic-by-default
+             binary, while also doing RTK's shell + headroom's reads
+   margin    vs all three: it is the only one with structural retrieval and
+   over      verification. vs the layered stack: one install, one config,
+   rivals    one savings ledger instead of three tools to reconcile.
+   also      reproduced here at 96–99% on code reads; cleanest open-core
+   unique    (local free forever); most honest savings accounting (bounce-net)
+```
+
+lean-ctx's win is **consolidation plus the code-graph lever**: when the workload genuinely needs structural retrieval, memory, and broad input compression together — and you are willing to run a daemon-class tool — one runtime beats assembling three. Its cost is the footprint and the lack of independent evidence; its edge is being the only tool here that answers "where is `foo` used?" without a re-read and proves what it saved.
+
+## Quick selection guide
+
+| If the waste is… | Reach for | Why |
+|---|---|---|
+| The model writing too much prose / restating code | **caveman** | output class, 5×-priced, cache-neutral |
+| Verbose `cargo test` / `git` / build / log output run through Bash | **RTK** (or lean-ctx hook) | deterministic, cache-safe at the tool boundary, zero MCP rent — RTK if footprint matters |
+| Big native-tool file reads, RAG chunks, long history on the wire | **headroom** (MCP / live-zone) | broad API-layer reach + reversible recall + the best evidence |
+| Whole files re-read just to see structure; "where does `foo` ripple?" | **lean-ctx** (or a standalone code-intelligence tool) | persistent code graph / RRF search — the structural-retrieval lever, now bundled |
+| Code-read-heavy work that ALSO needs memory + verification, one tool | **lean-ctx** | consolidates code graph + memory + broad compression + a signed ledger |
+| Thinking tokens (20% of dollars) | **none of them** | effort routing / model selection — the unmoved wall |
+
+## Cache-safety, compared
+
+Cache interaction is the make-or-break axis for any input compressor on an already-caching Claude Code, and it separates the four:
+
+| Tool / mode | Where it acts | Cache interaction | ML in hot path | MCP rent |
+|---|---|---|---|---|
+| **caveman** | Model's generated prose (output) | **Neutral** — never touches the prefix | no | ~940 tok skill listing |
+| **RTK** | New Bash command output, at the tool boundary | **Safe by construction** — the compressed text is what gets cached | **no** | **none** |
+| **lean-ctx (hook + MCP read)** | Shell output + native reads, write-time; ~13-tok handle re-reads | **Safe** (write-time) + prefix-friendly ordering | no (default) | yes (77 tools, dynamic) |
+| **headroom (MCP)** | A new observation, on demand | **Safe** (write-time) | yes (`kompress-base`) | yes |
+| **lean-ctx (proxy)** | Frozen-region prose rewrite `[prefix, boundary)` | **Cache-safe by design** (instrumented ratio) but **lossy on prose** | opt-in | n/a |
+| **headroom (proxy)** | Rewrites the whole request | **Risk** — can churn the prefix Claude Code already caches | yes | n/a |
+| Whole-prompt proxy (LLMLingua-style) | Rewrites the whole request | **Breaks the cache** — must beat ~5.5–10× | yes | n/a |
+
+RTK occupies the safest corner: write-time, deterministic, native-hook, no model, tiny. lean-ctx and headroom are both safe in the modes that matter (write-time MCP/hook) and carry proxy modes that need care — headroom's proxy is the riskiest (whole-request), lean-ctx's is cache-safe-by-design but still lossy on prose. Caveman is trivially safe because it is output-side.
+
+## Evidence quality, compared
+
+Adoption stars are PR-inflated for three of the four and must be ignored as a quality signal. What separates them is the *kind* of evidence behind the headline:
+
+| Tool | Best evidence | Weakest spot |
+|---|---|---|
+| **caveman** | Locally reproduced **58.5%** output-token cut; mechanism is transparent (it is a prompt) | No agentic-task quality benchmark of register-compressed output exists anywhere |
+| **headroom** | Production telemetry across **50k+ sessions** (median 4.8%) + **one independent 47.5%** + academic backing for the write-time pattern | Product percentages are vendor self-report; the ML stage is unbenchmarked on code quality |
+| **RTK** | The underlying levers (log filter −94.2%, JSON minify −34.3%) are locally reproduced in the dossier | **No whole-session telemetry and no independent benchmark of RTK itself** |
+| **lean-ctx** | **Reproduced here**: 96–99% on code reads, &lt;10% on prose/config; the most honest self-accounting (bounce-netted, signed ledger); 2,900+ tests | **No independent third-party benchmark**; youngest tool; GPT-tokenizer self-measurement; `map`-mode quality only 77% |
+
+On evidence, headroom is the best-*externally*-instrumented, caveman is the most transparent (you can read the mechanism), lean-ctx is the best-*self*-instrumented (it nets out its own waste and signs the ledger) but the least externally verified, and RTK is the least verified of all.
+
+## What none of them can do
+
+Two limits still bind all four, and lean-ctx removes a third that bound the original three:
+
+1. **None touches thinking (20% of dollars).** Thinking bills as output, is invisible in the transcript, and on Fable 5 cannot even be disabled. No register instruction, no input filter, no observation compressor, and no code graph reaches it — only the **effort** lever and model routing do. This is the largest single bucket none of the four moves.
+2. **The persistent-symbol-index gap is now half-closed.** The three-way version said *none* of the three could answer "where is `foo` defined?" without re-reading. **lean-ctx changes that** — its property graph + call graph + RRF search are exactly that structural-retrieval lever (the ast-grep / codedb class the dossier's [code-intelligence chapter](/reference/research/token-optimization/51-code-intelligence-tools/) covers). caveman, headroom, and RTK still lack it; lean-ctx is the one tool here that has it.
+3. **None converts a per-payload ratio into a whole-bill dollar saving for free.** Every headline — caveman's 75%, headroom's 60–95%, RTK's 60–90%, lean-ctx's "up to 99%" — is per-payload, per-command, or per-session; the whole-bill effect is bounded by how much of the bill that class represents and by the 0.1× cache-read discount most input tokens already enjoy.
+
+---
+
+Next: [06 — Combining](/reference/research/token-optimization-tools/06-combining/) — whether one product can be the best of each, why lean-ctx is the real test of that question, and the layered stack that is still the answer for most.

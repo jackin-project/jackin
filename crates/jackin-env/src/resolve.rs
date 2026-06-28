@@ -110,7 +110,7 @@ pub fn resolve_op_uri_to_ref(
         _ => bail!("malformed op:// URI (expected 3 or 4 path segments): {input}"),
     };
 
-    // Item segment may carry [subtitle] filter — jackin's display extension.
+    // Item segment may carry [subtitle] filter — jackin❯'s display extension.
     // Nested condition makes map_or awkward; allow the if-let pattern here.
     #[allow(clippy::option_if_let_else)]
     let (item_name, subtitle_filter): (&str, Option<&str>) = if let Some(open) = item_seg.rfind('[')

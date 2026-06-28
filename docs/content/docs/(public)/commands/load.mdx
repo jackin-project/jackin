@@ -1,0 +1,170 @@
+---
+title: jackin load
+description: "Jack an agent into an isolated container"
+---
+
+<Aside type="note">
+`jackin load` is the direct launch entry point. For most day-to-day work,
+[`jackin console`](/commands/console/) is simpler and faster. Use
+`jackin load` when you want a one-liner launch command or a flag the console
+does not expose.
+</Aside>
+
+## Synopsis
+
+```bash
+jackin load [SELECTOR] [TARGET] [OPTIONS]
+```
+
+Load an agent into an isolated `Docker` container directly from the command line.
+
+`SELECTOR` chooses the **role** (tool profile). `TARGET` chooses the **workspace or path** (file access boundary).
+
+Every invocation gets a run diagnostics handle such as `42f9aa`. `jackin load` requires a rich terminal and shows a full-screen launch progress surface with a sliding stage rail for jackin❯ stages (`identity`, `role`, `credentials`, `construct`, `agent binaries`, `derived image`, `workspace`, `network`, `sidecar`, `capsule`, `hardline`). The stage-word row below the rail fades at both ends as it scrolls, so clipped words taper in and out instead of cutting off abruptly. Workspace repository polling from `git_pull_on_entry` is part of that surface; per-repo pull details go to diagnostics/debug evidence instead of printing over the launch cockpit. Prompts for role choice, target ambiguity, sensitive mounts, role trust, restore decisions, agent choice, and manifest env values render as launch dialogs instead of plain terminal prompts.
+
+The full digital rain animation is a boundary marker. The intro is two screens — the opening phrase/logo screen, then the accelerating warp into the construct — and appears only when this launch starts with no jackin-managed role containers already running. The outro is two screens too — the decelerating warp, then the closing logo/time-in-construct caption — and appears only when the foreground session exits and no role containers remain. Launching or leaving a second concurrent instance does not play either boundary ritual because the operator is still inside the construct. Non-interactive shells and terminals that cannot host the rich surface cannot run `jackin load`; use `jackin console` from a rich terminal or fix the terminal environment.
+
+Contributors can force the boundary rituals for local visual QA with env vars instead of CLI flags. See [Launch Progress Surface](/reference/tui/chrome/#launch-progress-surface) for `JACKIN_FORCE_BOUNDARY_INTRO`, `JACKIN_FORCE_BOUNDARY_OUTRO`, and `JACKIN_FORCE_BOUNDARY_RITUALS`.
+
+## Arguments
+
+| Argument | Required | Description |
+|---|---|---|
+| `SELECTOR` | No | Role selector (e.g., `agent-smith`, `chainargos/backend-engineer`). When omitted, uses the last-used or default role for the workspace. |
+| `TARGET` | No | Path, `path:container-dest`, or saved workspace name. Defaults to the current directory. |
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--mount <SPEC>` | Additional bind-mount spec. Repeatable. Format: `path[:ro]` or `src:dst[:ro]` |
+| `--rebuild` | Force rebuild the Docker image and refresh agent CLI install layers |
+| `--role-branch <BRANCH>` | Check out a specific branch of the role repository for local testing. See **Testing a role branch** below. |
+| `--force` | Acknowledge a dirty host working tree when materializing an isolated mount in non-interactive mode. Required only when (a) the workspace has at least one `worktree`-isolated mount and (b) the host repo's tree has staged, unstaged-tracked, or untracked files. Ignored otherwise. |
+| `--dry-run` | Resolve and print the launch plan (workspace, role, agent, mounts) then exit without spawning any containers. Nothing is changed. Combine with `--format json` for scriptable plan inspection. |
+| `--format <human\|json>` | Output format for `--dry-run`. `human` (default) prints a readable plan summary. `json` emits a structured plan envelope. Has no effect without `--dry-run`. |
+| `--debug` | Write detailed command, Docker, resolver, auth, and build traces to the run diagnostics artifact. The launch surface stays clean and does not stream raw logs. |
+| `--agent <NAME>` | Override the launch agent (`claude`, `codex`, `amp`, `kimi`, or `opencode`). When omitted, a workspace `default_agent` wins first, a single-agent role uses its only runtime, and a multi-agent role prompts in the rich launch surface. |
+
+## Examples
+
+```bash
+# Use workspace + last agent for current directory
+jackin load
+
+# Force fresh agent CLI install layers
+jackin load --rebuild
+
+# Load a specific agent into current directory
+jackin load agent-smith
+
+# Load into a specific path
+jackin load agent-smith ~/Projects/my-app
+
+# Path with custom container destination
+jackin load agent-smith ~/Projects/my-app:/app
+
+# Load into a saved workspace
+jackin load agent-smith big-monorepo
+
+# Workspace with additional mounts
+jackin load agent-smith big-monorepo --mount ~/extra-data
+
+# Path with read-only additional mount
+jackin load agent-smith ~/app --mount ~/cache:/cache:ro
+
+# Build and test a specific role branch locally before it merges
+jackin load the-architect --role-branch feat/my-pr
+```
+
+## What happens
+
+1. Resolves the role and clones/updates its repository (or the specified branch when `--role-branch` is set)
+2. Validates the role repo contract (`jackin.role.toml` + Dockerfile) with strict manifest parsing
+3. **If the agent source has never been trusted**, prompts the operator to review and confirm before proceeding (see [Agent source trust](/guides/security-model#4-agent-source-trust))
+4. **If `--role-branch` is set**, always prompts to confirm the branch is safe to build, regardless of the role's trust status (see [Branch trust gate](/guides/security-model#branch-trust-gate))
+5. Resolves the runtime agent from `--agent`, workspace `default_agent`, a single supported role agent, or an interactive prompt for multi-agent roles
+6. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
+7. Resolves operator env, then prompts for any remaining interactive environment variables declared in the manifest
+8. Resolves and caches the required agent binaries and the matching `jackin-capsule` binary under jackin-owned host cache state
+9. Generates and builds a derived Docker image, including declared Claude plugins (cached if unchanged; branch builds ignore `published_image` and always build from source)
+10. Checks the local instance index for missing recoverable work in the same workspace or directory before creating a fresh runtime; matching-role restore candidates can be rebuilt from the prompt, and related role instances whose containers are gone can be recovered or rebuilt in place from the saved manifest source/ref. Running or stopped instances do not block a fresh launch.
+11. Creates a per-agent Docker network and DinD sidecar
+12. Launches the agent container with all resolved mounts and environment variables
+13. Runs runtime hooks if declared (`setup_once`, `source`, then `preflight`)
+14. Starts the selected agent CLI
+
+Failures in the launch surface show a short diagnosis, the failed stage, the diagnostics run handle, and evidence paths under jackin-owned state. Raw Docker output, build logs, stack traces, and debug traces are not rendered in the failure popup. The live Docker build overlay uses a black terminal-style surface and interprets ANSI colour from Docker output when present. The run timeline remains JSONL for agent/debug analysis; Docker build failures also write a plain, colour-free `.log` sidecar with the command, working directory, exit status, stdout, and stderr so the operator can inspect the Docker output directly from a terminal.
+
+<Aside type="note">
+Host-side Docker work follows the operator's selected Docker daemon. If `DOCKER_HOST` is set to a non-empty value, jackin❯ uses it. Otherwise jackin❯ follows the active Docker CLI context (honouring a per-shell `DOCKER_CONTEXT` override) for local-socket and plain HTTP/TCP contexts, so the image build, per-agent network, DinD sidecar, and role container are created on the same Docker backend. SSH and TLS Docker contexts currently fail with an explicit error instead of silently dropping connection settings.
+</Aside>
+<Aside type="note">
+If the agent manifest declares interactive environment variables, `jackin load` prompts for values that are not already supplied by operator env before building the Docker image. Built-in sibling agent credential prompts stay lazy: a `Claude Code` launch does not ask for a manifest-declared `OPENAI_API_KEY` unless the selected runtime's auth mode needs that key. This ensures no build time is wasted if you cancel.
+</Aside>
+<Aside type="caution">
+Third-party agents (namespaced selectors like `org/agent-name`) require trust confirmation on first use. jackin❯ will show the agent name and git URL and ask you to confirm before building. You can pre-trust with `jackin config trust grant org/agent-name` or revoke with `jackin config trust revoke org/agent-name`. See [Agent source trust](/guides/security-model#4-agent-source-trust) for details.
+</Aside>
+<Aside type="note">
+If the cached role repo has been locally modified, contains extra files, or its git `origin` no longer matches the configured source, `jackin load` stops with an error instead of trusting that cache.
+</Aside>
+<Aside type="caution">
+If two resolved mounts target the same container destination, `jackin load` fails with a conflict error. It does not silently override one mount with another.
+</Aside>
+<Aside type="tip">
+If no selector is given and the current directory falls under a saved workspace's host `workdir` or one of its mounted host paths, that workspace's default or last-used agent is used automatically.
+</Aside>
+## Testing a role branch (`--role-branch`)
+
+`--role-branch` lets you build and run a specific branch of a role repository locally before it merges to the default branch. This is the intended workflow for verifying a PR on a role repo (for example, checking that a Dockerfile change works end-to-end) without affecting your stable local image or other operators who may share the same role.
+
+```bash
+jackin load the-architect --role-branch feat/caveman-all-install
+```
+
+### What changes when `--role-branch` is set
+
+| Behaviour | Default | With `--role-branch` |
+|---|---|---|
+| Branch cached and reused | Default branch | The named branch — repeat loads of the same branch reuse the cached checkout |
+| Image | Stable per-role image | Branch-specific image, fully isolated from the stable image |
+| Concurrency with default-branch loads | Same role's default-branch load may be blocked while the cache refreshes | Branch builds never block default-branch loads, and vice versa |
+| Trust confirmation | First-use only | **Always** — regardless of the role's trusted status |
+| Forced rebuild | Pass `--rebuild` to refresh layers | Same — pass `--rebuild` to refresh layers |
+
+The branch image is completely separate from the default-branch image. Running `jackin load the-architect` after a branch build still uses the unchanged default-branch image.
+
+Branch names with slashes (`feat/my-pr`) and dashes (`feat-my-pr`) are kept distinct, so loading both never reuses the same image or cache slot by mistake.
+
+For choosing between a fresh instance and another agent session inside an existing instance, see [Parallel Agents](/guides/parallel-agents/).
+
+### Branch trust gate
+
+Every `--role-branch` load triggers an interactive rich confirmation dialog, even for roles you have already trusted. The dialog names the role, source URL, and branch, then requires you to confirm that you reviewed the branch before jackin❯ builds it.
+
+This gate exists because `trusted = true` in your config covers the default branch of a role, not every PR branch an external contributor might open against it. See [Branch trust gate](/guides/security-model#branch-trust-gate) for the full threat model.
+
+`--role-branch` requires an interactive terminal. Non-interactive contexts (CI, scripts) will exit with an error — this is intentional.
+
+### Combining with `--rebuild`
+
+`--role-branch` alone does not bust the Docker layer cache. If you push new commits to the branch and want a clean rebuild:
+
+```bash
+jackin load the-architect --role-branch feat/my-pr --rebuild
+```
+
+## Dirty-host acknowledgement (`--force`)
+
+When a workspace mount has `isolation = "worktree"`, `jackin load` materializes a new `git worktree` from the host repo's current `HEAD` before starting the container. If the host tree is dirty (staged changes, unstaged tracked changes, or untracked files — ignored files do not count), those edits stay on the host and are **not** carried into the agent's worktree.
+
+In an interactive rich launch, jackin❯ asks for confirmation in the launch dialog before materializing. In non-interactive contexts (CI, scripts, piped input) the launch fails fast unless you pass `--force` to acknowledge that:
+
+- the worktree branches from `HEAD`, not from your working copy
+- uncommitted host edits will not appear inside the container
+
+`--force` does **not**:
+
+- discard, stash, or commit any host changes
+- relax any other validation (sensitive mounts, mid-rebase host repo, readonly worktree mounts, nested isolated dst paths still hard-error)
+- affect `shared` mounts or workspaces with no isolated mounts

@@ -1,6 +1,6 @@
 # jackin-build-meta
 
-Build-script helper crate for jackin' binaries.
+Build-script helper crate for jackin❯ binaries.
 
 Workspace binaries need the same embedded runtime version string: the Cargo package version plus the current short git SHA when the checkout is available. Without this crate, each binary would need a parallel `build.rs` implementation and those rules could drift.
 

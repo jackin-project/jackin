@@ -304,7 +304,7 @@ fn sanity_scrollback() {
 
 #[test]
 fn sanity_dec_private_modes() {
-    // Mouse reporting enable/disable (modes jackin' uses).
+    // Mouse reporting enable/disable (modes jackin❯ uses).
     let seq =
         b"\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l";
     run_conformance(24, 80, seq, "DEC mouse mode enable/disable");

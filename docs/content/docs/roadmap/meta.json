@@ -1,0 +1,19 @@
+{
+  "root": true,
+  "title": "Roadmap",
+  "description": "Planned, in-progress, and shipped work on jackin❯ itself. Internal planning surface.",
+  "icon": "Route",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "(agent-orchestrator-research)",
+    "(codebase-health)",
+    "(reactive-daemon-program)",
+    "(agent-runtimes-authentication)",
+    "(isolation-security)",
+    "(infrastructure)",
+    "(operator-surface)",
+    "(documentation-tooling)",
+    "(configuration-ergonomics)"
+  ]
+}

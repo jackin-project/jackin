@@ -126,6 +126,8 @@ impl Multiplexer {
         let term_rows = self.term_rows;
         let term_cols = self.term_cols;
         let active_tab = self.active_tab;
+        // `focused_usage_snapshot()` returns an owned view; move the headline out
+        // rather than cloning on the per-frame compose path.
         let usage_status_label = self.focused_usage_snapshot().status_bar_label;
         let tabs = &self.tabs;
         let panes = self.visible_panes();
@@ -184,7 +186,6 @@ impl Multiplexer {
         // Status-bar inputs snapshotted before the draw closure borrows self.
         let session_states = self.snapshot_session_states();
         let prefix_mode = self.status_bar.prefix_mode;
-        let palette_key_glyph = self.status_bar.palette_key_glyph.as_deref();
         // Lay out row 0 once per frame. The owned plan is shared with the
         // status-bar widget (paint), the tab tooltip, and the click-region
         // refresh below, so the bar is never laid out more than once per frame.
@@ -194,7 +195,6 @@ impl Multiplexer {
             active_tab,
             &session_states,
             prefix_mode,
-            palette_key_glyph,
         );
         let hover_target = self.hover_target;
         let hovered_tab = crate::tui::view::hovered_tab(hover_target);

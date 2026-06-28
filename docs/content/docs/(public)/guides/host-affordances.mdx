@@ -1,0 +1,135 @@
+---
+title: Host Affordances
+description: Opt-in host attach actions for image paste, image-path staging, GitHub URL opening, and file export
+---
+
+Host affordances are explicit operator actions that cross the container boundary while keeping agents isolated. They are currently an opt-in validation path. Enable them only for a session you are prepared to test:
+
+```bash
+JACKIN_HOST_ATTACH=1 jackin load <role>
+JACKIN_HOST_ATTACH=1 jackin hardline <instance>
+```
+
+With host attach enabled, the `jackin` host process owns the terminal attach loop and can perform a small set of host-side actions. Agents do not get a general API for the host clipboard, browser, or filesystem.
+
+Open the command palette from an attached Capsule session with `Ctrl+\` unless your local config has changed the palette key.
+
+## What Works
+
+| Action | How to trigger it | Result |
+|---|---|---|
+| Clipboard image paste | Focus an agent or shell pane, copy an image on the host, then press `Ctrl+V`. | jackin❯ reads the host clipboard, stages a validated image under `/jackin/run/clipboard/`, and pastes that container path into the focused pane. |
+| Paste a host image path (`Cmd+V`) | With a screenshot tool that copies a *file path* to the clipboard (for example CleanShot), copy the image, focus a pane, and paste normally with `Cmd+V`. | jackin❯ recognizes that the pasted text is a single absolute host image file, stages the validated image under `/jackin/run/clipboard/`, and inserts that container path instead of the raw host path. This makes a normal `Cmd+V` paste work without a special key. On by default under host attach; set `JACKIN_PASTE_IMAGE_PATHS=0` to keep every paste as plain text. |
+| Paste image from host clipboard | Copy an image on the host, open the command palette, and run **Paste image from host clipboard**. | jackin❯ runs the same host clipboard image reader as `Ctrl+V`, stages the validated image under `/jackin/run/clipboard/`, and pastes the container path. |
+| Stage image without pasting | Copy an image on the host, open the command palette, and run **Stage image without pasting**. | jackin❯ runs the same host clipboard image reader as `Ctrl+V`, stages the validated image under `/jackin/run/clipboard/`, and shows the staged container path without typing it into the focused pane. |
+| Stage image from clipboard path | Copy an absolute host image path or `file://` URL as text, open the command palette, and run **Stage image from clipboard path**. | jackin❯ reads the host clipboard text, validates the referenced image, stages it under `/jackin/run/clipboard/`, and pastes the container path. |
+| Open GitHub PR or CI | Open the GitHub context dialog from the bottom PR/branch row, then choose **Open PR** or **Open CI**. | jackin❯ opens the selected HTTP(S) URL with the host OS opener. |
+| Open visible URL | In a mouse-disabled pane such as a shell or plain transcript, `Alt`-click or `Ctrl`-click an `http`, `https`, or `mailto` URL. | Capsule resolves the URL using the same token rules as double-click selection, then asks the host attach client to open it. Unsupported schemes are rejected with a transient notice; non-URL clicks keep the normal mouse fallback. |
+| Open link under cursor | Move the focused pane's terminal cursor onto an `http`, `https`, or `mailto` URL token, open the command palette, and run **Open link under cursor**. | Capsule resolves the URL using the same token rules as modified-click, then asks the host attach client to open it. If the cursor is not on a host-open link, jackin❯ shows a transient notice and sends nothing to the pane. |
+| Export file | Open the command palette, run **Export file**, and enter a workspace path or a `/jackin/run/` path. | Capsule validates the container file and the host attach client writes a verified copy under `~/Downloads/jackin/<instance>/`, then reports the destination and byte count. |
+| Export file and reveal | Open the command palette, run **Export file and reveal**, and enter a workspace path or a `/jackin/run/` path. | This uses the same verified export path, then asks the host OS file manager to reveal the exported copy after the digest-matched rename. On macOS that is `open -R`; on Linux it is `xdg-open` on the destination directory; on Windows it is `explorer.exe /select,...`. |
+| Export file and open | Open the command palette, run **Export file and open**, and enter a workspace path or a `/jackin/run/` path. | This uses the same verified export path, then asks the host OS opener to open the exported copy after the digest-matched rename. On macOS that is `open`; on Linux it is `xdg-open`; on Windows it is `explorer.exe`. |
+| Export file under cursor | Move the focused pane's terminal cursor onto a visible workspace path or `/jackin/run/` path, then run **Export file under cursor**. | Capsule extracts the visible token under the cursor and runs the same export validator as **Export file**. If the cursor is not on an exportable path token, jackin❯ shows a transient notice and sends nothing to the pane. |
+| Export file under cursor and reveal | Move the focused pane's terminal cursor onto a visible workspace path or `/jackin/run/` path, then run **Export file under cursor and reveal**. | This uses the same cursor-token export path, then asks the host OS file manager to reveal the verified exported copy. |
+| Export file under cursor and open | Move the focused pane's terminal cursor onto a visible workspace path or `/jackin/run/` path, then run **Export file under cursor and open**. | This uses the same cursor-token export path, then asks the host OS opener to open the verified exported copy. |
+| Export selected file | Select a visible workspace path or `/jackin/run/` path in a pane, then run **Export selected file**. | Capsule treats the selected text as the requested path and runs the same export validator as **Export file**. Empty selections show a no-path notice and send nothing to the pane. |
+| Export selected file and reveal | Select a visible workspace path or `/jackin/run/` path in a pane, then run **Export selected file and reveal**. | This uses the same selected-text export path, then asks the host OS file manager to reveal the verified exported copy. |
+| Export selected file and open | Select a visible workspace path or `/jackin/run/` path in a pane, then run **Export selected file and open**. | This uses the same selected-text export path, then asks the host OS opener to open the verified exported copy. |
+| Modified-click export | In a mouse-disabled pane, `Alt`-click or `Ctrl`-click a visible workspace path or `/jackin/run/` path. | Capsule tries host-open URL resolution first. If the token is not a URL but resolves to an allowed regular export file, Capsule queues a normal file export. Plain words and invalid paths keep the normal mouse fallback without a host action. |
+| Copy diagnostics path | Launch with `--debug`, open Debug info from the status/debug chip, then click the diagnostics log row. | The launch cockpit copies the host diagnostics JSONL path directly. In-container Capsule copies the same launched path through OSC 52; older launches without that metadata fall back to the in-container path guess. |
+| Reveal diagnostics log | Launch with `--debug`, open Debug info, then press `R` / `O` or click **Reveal diagnostics**. | The launch cockpit reveals the host diagnostics JSONL path directly. In-container Capsule asks the host attach client to reveal the same path; that host client only accepts canonical paths under jackin❯ diagnostics run directory and rejects all other host paths. |
+| Reveal/open launch failure logs | If the rich launch failure popup shows **run diagnostics** or **docker output**, press `R` to reveal or `O` to open. Hovering either path chooses that row; otherwise jackin❯ targets the diagnostics JSONL first. | The host launch surface asks the host OS file manager to reveal or open the selected diagnostic artifact and keeps the popup open with visible feedback. |
+
+Image staging accepts PNG, JPEG, GIF, WebP, and TIFF by magic-byte validation. Small images use one typed attach frame; larger images are chunked with SHA-256 verification. Exported files are chunked and verified the same way. Host files are written with collision-resistant names; jackin❯ does not overwrite an existing host file silently.
+
+Host-open, host-reveal, and file-export results are reported back into Capsule as transient host notices. The operator should see a visible success or rejection message instead of having to inspect host logs. Revealing or opening an exported file is never automatic; it only happens after an explicit reveal/open export action, including the prompt-based and under-cursor variants. Revealing diagnostics artifacts is similarly explicit through Debug info's `R` / `O` key or **Reveal diagnostics** row in both the launch cockpit and Capsule, or through the launch failure popup's `R` key when a run-diagnostics or docker-output artifact is visible. Opening launch-failure artifacts is also explicit through the launch failure popup's `O` key.
+
+## Clipboard Expectations
+
+Ordinary text paste remains ordinary terminal input, with one narrow exception for image-path parity: when a single paste's *entire* content is one absolute host path or `file://` URL that resolves to a real, magic-validated image file, jackin❯ auto-stages that image and inserts the container path instead. This is what makes a normal `Cmd+V` paste work for screenshot tools that copy a file path (such as CleanShot). Anything else — prose, a relative path, a non-image file, a path to a file that does not exist, or a paste mixed with other typed bytes — stays plain text. The behavior is on by default under host attach; set `JACKIN_PASTE_IMAGE_PATHS=0` (or `false`/`no`/`off`) to disable it and keep every paste as ordinary text. The probe only reads the bytes already pasted, so ordinary text pastes never touch the host clipboard or filesystem.
+
+Use **Paste image from host clipboard** when you want an explicit discoverable image-paste action, **Stage image without pasting** when you want a staged container file but do not want jackin❯ to type the path into the focused pane, or **Stage image from clipboard path** when you intentionally want jackin❯ to treat host clipboard text as an image path or file URL.
+
+### `Cmd+V` and raw-screenshot parity
+
+`Cmd` is a macOS GUI modifier the terminal consumes; it never reaches jackin❯ as a keystroke, so jackin❯ can only react to what the terminal *pastes*. Screenshot tools that copy a **file path** (CleanShot, "Copy as Pathname") paste that path, which the auto-stage path above turns into a real image — so `Cmd+V` already works for them. A **raw image-only clipboard** (for example macOS `Shift+Ctrl+Cmd+4`) has no text representation, so `Cmd+V` pastes nothing and there is nothing for jackin❯ to catch; use `Ctrl+V` for those, which reads the host clipboard image directly. To keep pressing `Cmd+V` for every source, remap it at the terminal level — for Ghostty, add a keybind that sends `Ctrl+V`'s byte:
+
+```ini
+keybind = cmd+v=text:\x16
+```
+
+With that remap, `Cmd+V` routes through the same host clipboard image probe as `Ctrl+V`, so raw screenshots and copied images both paste. Trade-off: a `Cmd+V` with no image in the clipboard now sends the `Ctrl+V` control byte to the focused agent instead of pasting clipboard *text*, so apply this remap only if you rarely paste plain text with `Cmd+V`. The friction-free default is the reverse: leave `Cmd+V` as your normal text paste, rely on the file-path auto-stage above for screenshot tools that copy a path, and use `Ctrl+V` for raw image-only clipboards.
+
+When an image is staged but Capsule has no writable focused pane, jackin❯ reports the staged `/jackin/run/clipboard/...` path and says it was not pasted instead of silently dropping the image. The staged file remains available for manual copy or a later explicit action.
+
+On macOS, direct image paste first asks the host pasteboard for PNG-coerced image data, then TIFF image data, then copied Finder file URLs. On Linux, the host attach process looks for host-side `wl-paste` when `WAYLAND_DISPLAY` exists and host-side `xclip` when `DISPLAY` exists. Explicit palette actions report missing Linux setup directly, such as a missing `WAYLAND_DISPLAY`/`DISPLAY` bridge or a missing host-side `wl-paste`/`xclip` binary. The ordinary `Ctrl+V` image probe still falls back to terminal input when the host clipboard does not provide a usable image.
+
+Installing `xclip`, `xauth`, or `wl-clipboard` inside the agent container does not expose the macOS host clipboard. Those packages are present for Linux runtime compatibility, including tools such as Amp that expect standard clipboard helper binaries. Real Linux clipboard access still requires an explicit display or Wayland bridge; jackin❯ does not silently mount display sockets or Xauthority files.
+
+For Amp image prompts, the intended jackin❯ handoff is the staged container file path. Amp documents CLI image support through pasted file paths, terminal drag/drop, and `@` file mentions, so jackin❯ does not need to make Amp read the macOS clipboard directly for image paste parity. Amp's `xclip`/`wl-copy` behavior remains a separate copy-out/runtime-helper concern.
+
+## Screenshot Paste Smoke Test
+
+Use this short path when you only want to validate the core clipboard-image bridge:
+
+1. Start or reattach to a fresh throwaway instance with `JACKIN_HOST_ATTACH=1`.
+2. Focus an agent or shell pane that can receive typed input.
+3. On macOS, copy a screenshot to the host clipboard with the system screenshot shortcut that copies instead of saving to a file, such as `Shift+Cmd+Ctrl+4`.
+4. Press `Ctrl+V` in the focused jackin❯ pane.
+5. Confirm Capsule shows an `Image staged: /jackin/run/clipboard/... (<bytes> bytes)` notice and that the focused pane receives the same `/jackin/run/clipboard/...` path.
+6. Ask the agent to use that pasted path as the image input. For Amp, pasted file paths are the intended handoff.
+
+If the host clipboard does not contain an image, `Ctrl+V` is forwarded as ordinary terminal input. If the clipboard contains an unsupported or oversized image, Capsule should show an image-paste rejection instead of silently dropping the gesture.
+
+## Export Policy
+
+The first export implementation accepts:
+
+- Workspace-relative paths.
+- Absolute paths inside the mounted workspace.
+- Paths under `/jackin/run/`.
+
+Capsule resolves the path inside the container before any host write begins. It rejects missing paths, directories, non-regular files, and symlink escapes outside the allowed roots. The first implementation caps exports at 64 MiB.
+
+## Testing Checklist
+
+Use a fresh throwaway instance while this feature remains opt-in:
+
+Before testing host actions, create a few in-container fixtures from a focused shell pane:
+
+```bash
+printf 'host affordance text paste\n' > hab-text.txt
+printf 'export me\n' > hab-export.txt
+printf '\x89PNG\r\n\x1a\nfixture\n' > /jackin/run/hab-fixture.png
+printf 'https://example.com/jackin-host-affordance\n'
+printf 'file:///tmp/jackin-host-affordance\n'
+pwd
+printf '%s\n' "$PWD/hab-export.txt" /jackin/run/hab-fixture.png
+```
+
+The expected host export destination is `~/Downloads/jackin/<instance>/`. The exact exported filename can gain a collision suffix when the file already exists; the success notice is the source of truth for the destination path and byte count.
+
+1. Start or attach with `JACKIN_HOST_ATTACH=1`.
+2. Paste ordinary text and confirm it still reaches the focused pane as text. `Cmd+V` may arrive as pasted text from the terminal, while `Ctrl+V` is the explicit image-probe trigger when the clipboard contains an image.
+3. Copy a raw screenshot or browser image and press `Ctrl+V`; confirm a `/jackin/run/clipboard/...` path appears.
+4. Copy a raw screenshot or browser image and run **Paste image from host clipboard**; confirm the same staged-path behavior.
+5. Copy a raw screenshot or browser image and run **Stage image without pasting**; confirm the toast reports a `/jackin/run/clipboard/...` path and the focused pane receives no input.
+6. Copy an absolute image path and a `file://` image URL as text, then run **Stage image from clipboard path** for each; confirm a staged path appears. Use `/jackin/run/hab-fixture.png` only for in-container export tests; path staging reads host clipboard text as a host path, so use a real host image path such as `/tmp/example.png` for this step.
+7. Run **Export file** for `hab-export.txt` and confirm the host copy appears under `~/Downloads/jackin/<instance>/` and the notice includes the destination plus byte count. Then run **Export file and reveal** for the same file and confirm the host file manager reveals the verified copy. Finally run **Export file and open** and confirm the host OS opens the exported copy.
+8. Move the terminal cursor onto the printed `$PWD/hab-export.txt` token and run **Export file under cursor**. Confirm it exports the same way as the prompt action. Repeat with **Export file under cursor and reveal** and **Export file under cursor and open**, then move the cursor onto non-path text and confirm the command shows a no-path notice.
+9. Select the printed `$PWD/hab-export.txt` token in a focused pane and run **Export selected file**. Confirm it exports the same way as the prompt action. Repeat with **Export selected file and reveal** and **Export selected file and open**, then clear the selection and confirm the command shows a no-selection notice.
+10. `Alt`-click or `Ctrl`-click the same visible path and confirm jackin❯ queues a normal file export. Then modified-click a plain word and confirm no host action occurs.
+11. Launch with `--debug`, open Debug info, click the diagnostics row to copy it, then press `R` / `O` or click **Reveal diagnostics** and confirm the host file manager reveals the same JSONL file.
+12. Trigger a throwaway launch failure and press `R` on the failure popup. Confirm the host file manager reveals the run diagnostics JSONL, then hover **docker output** when present and press `R` again to reveal that artifact. Press `O` on each row to confirm the host OS opens the selected artifact.
+13. Open the GitHub context dialog on a PR branch and test **Open PR** and **Open CI**.
+14. Print or display an `http`, `https`, `mailto`, and `file:///tmp/example` URL in a shell pane, then test `Alt`-click and `Ctrl`-click. Confirm allowed schemes open, unsupported schemes show a rejection notice, and non-URL modified clicks still behave like normal mouse input. The fixture command above prints one allowed HTTP URL and one rejected `file://` URL.
+15. Move the pane cursor onto an `http`, `https`, or `mailto` URL token and run **Open link under cursor**. Then move the cursor onto non-URL text and confirm the command shows a no-link notice.
+
+If a host action fails, jackin❯ should show visible feedback in the Capsule UI. Missing host clipboard tools, unsupported clipboard content, invalid image paths, rejected export paths, and host opener failures should not fail silently.
+For host clipboard path staging, missing or unreadable host files are reported as unsupported clipboard path content instead of echoing the copied host path back into the TUI.
+
+## Current Limits
+
+Host attach is still behind `JACKIN_HOST_ATTACH=1` until live terminal validation proves parity with the existing in-container attach client. Remaining validation includes Ghostty text paste, mouse routing, resize, focus, pane switching, bracketed paste, OSC 52 copy, image paste into real agent prompts, Linux clipboard backends, and live export/reveal/open-link behavior. The implemented visible-URL gesture depends on modifier bits that Ghostty exposes to the process: Phase 0 proved `Option`/`Alt` and `Ctrl` reach the raw stream, while `Cmd` was not distinguishable and is not relied on.
+
+Set `JACKIN_OPEN_LINKS=deny` (or `off` / `no`) on the `jackin load` or `jackin hardline` command to disable jackin❯ host browser-open actions for an untrusted role. This opt-out blocks GitHub open actions, visible URL modified-click, and **Open link under cursor**; it does not block normal terminal OSC 8 passthrough.

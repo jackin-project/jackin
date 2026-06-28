@@ -1,0 +1,62 @@
+---
+title: Codex
+description: How jackin❯ forwards your Codex CLI login into agent containers
+---
+
+
+Codex CLI authenticates via `~/.codex/auth.json` on your host. In `sync` mode (the default), jackin❯ copies this file into the container on every launch — Codex inside the container sees the same account and model access you have locally.
+
+## Logging in on the host
+
+Before sync can forward anything, you need a working Codex login on your host:
+
+```bash
+codex auth login
+```
+
+Follow the prompted flow. Once it completes, Codex is ready on your host and jackin❯ will forward that login into every container launch.
+
+<Aside type="tip">
+To verify the host login is active, run `codex` briefly on the host — if it starts a session without prompting for credentials, you're good.
+</Aside>
+
+## Runtime trust prompts
+
+jackin❯ passes Codex an in-container `trust_level = "trusted"` override for workspace-backed launches, so Codex does not stop on the "Do you trust this directory?" prompt after the workspace is already mounted into the container. This does not write to your host `~/.codex/config.toml` or mark the host checkout trusted outside jackin❯.
+
+## Subscription
+
+Codex CLI uses your OpenAI account. You can subscribe to ChatGPT Plus, Team, or Enterprise, or use pay-as-you-go API credits.
+
+**[Get an OpenAI subscription](https://chatgpt.com/)**
+
+A ChatGPT Plus or Team subscription includes Codex CLI access with a fixed monthly rate and generous usage — typically more cost-effective than pay-as-you-go API credits if you run agents frequently through jackin❯.
+
+The plan you have on the host is the one the container sees.
+
+## Alternative providers
+
+Codex sessions can also run against providers that expose an OpenAI-compatible endpoint. [MiniMax](/guides/authentication/minimax/) is the provider jackin❯ supports today; once you configure a `MINIMAX_API_KEY` in jackin❯ Auth settings, Codex launches can choose MiniMax instead of OpenAI.
+
+MiniMax works with Codex because Codex already speaks an OpenAI-compatible endpoint. jackin❯ keeps that provider setup inside its own Auth settings and the selected container process, so you do not edit host Codex settings to use MiniMax through jackin❯.
+
+For subscription, API-key, and provider-picker details, see [MiniMax authentication](/guides/authentication/minimax/). MiniMax is a provider choice at session launch time; it does not change the Codex auth modes below.
+
+## Modes available
+
+| Mode | Supported |
+|---|---|
+| `sync` (default) | Yes — forwards `~/.codex/auth.json` |
+| `api_key` | Yes — injects `OPENAI_API_KEY` |
+| `oauth_token` | No — rejected at config time |
+| `ignore` | Yes — no forwarding |
+
+See [Agent Authentication](/guides/authentication/agents/) for what each mode does and how to switch between them.
+
+## Troubleshooting
+
+If Codex inside the container shows "Not logged in":
+
+1. Check that the host login is active — run `codex` briefly on the host.
+2. Open the **Auth** tab in `jackin console` and verify the effective mode for the (workspace × role × Codex) cell.
+3. If the container has stale credentials and the host has fresh ones, restart: `jackin eject <role> && jackin load <role>`.

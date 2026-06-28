@@ -14,8 +14,8 @@ use tracing_subscriber::prelude::*;
 
 const JSONL_TARGET: &str = "jackin_diagnostics::jsonl";
 
-/// OTLP/tracing attribute keys — the single source of truth for jackin's
-/// telemetry tag taxonomy. Every key is dotted, never underscored: jackin's own
+/// OTLP/tracing attribute keys — the single source of truth for jackin❯'s
+/// telemetry tag taxonomy. Every key is dotted, never underscored: jackin❯'s own
 /// keys use the `jackin.*` namespace, the run id uses `parallax.*` (the
 /// reference backend), and `service.*`/`session.*` reuse the OpenTelemetry
 /// standard namespaces. Instrumentation sites across the host TUI, launch flow,
@@ -409,7 +409,7 @@ fn container_endpoint() -> Option<String> {
 /// Rewrite a host-loopback OTLP endpoint to `host.docker.internal` (the host
 /// gateway), leaving any already-routable host untouched. Hand-rolled rather
 /// than pulling a URL parser: the only transform is swapping a loopback
-/// authority, and the input is jackin's own `scheme://host[:port][/path]`.
+/// authority, and the input is jackin❯'s own `scheme://host[:port][/path]`.
 fn rewrite_endpoint_for_container(endpoint: &str) -> ContainerOtlp {
     if let Some((scheme, rest)) = endpoint.split_once("://") {
         let (authority, path) = rest.split_once('/').map_or((rest, ""), |(a, p)| (a, p));
@@ -519,7 +519,7 @@ mod otlp {
 
     /// Dedicated multi-thread tokio runtime that drives OTLP export. Held for the
     /// process lifetime so the async-runtime batch processors (and tonic's h2
-    /// connection driver) have a reactor decoupled from jackin's current-thread
+    /// connection driver) have a reactor decoupled from jackin❯'s current-thread
     /// main: the `futures_executor::block_on` flush parks the main thread, and
     /// these worker threads keep exporting regardless. One worker is plenty for
     /// a single run's telemetry volume.
@@ -741,14 +741,14 @@ mod otlp {
     pub(super) fn init(debug: bool, run_id: &str, endpoints: &OtlpEndpoints) -> anyhow::Result<()> {
         ensure_grpc_protocol().map_err(|e| anyhow::anyhow!(e))?;
         let runtime = otel_runtime()?;
-        // The tokio runtime gauges must report jackin's app runtime, not the
+        // The tokio runtime gauges must report jackin❯'s app runtime, not the
         // dedicated telemetry runtime — capture its handle before entering ours.
         let app_handle = tokio::runtime::Handle::try_current().ok();
         // Build every exporter, processor, and reader inside the dedicated
         // runtime: the async-runtime processors spawn their worker tasks (and
         // tonic spawns its h2 connection driver) onto whichever runtime is
         // entered here, and they must land on the multi-thread telemetry runtime
-        // — not jackin's current-thread main, where flush would deadlock.
+        // — not jackin❯'s current-thread main, where flush would deadlock.
         let _runtime_guard = runtime.enter();
         let span_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
@@ -790,7 +790,7 @@ mod otlp {
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
         let level = if debug { "debug" } else { "info" };
-        // Scope the export to jackin's own telemetry. Silencing the OTLP
+        // Scope the export to jackin❯'s own telemetry. Silencing the OTLP
         // transport stack stops the log bridge from re-exporting the exporter's
         // own request logs (a feedback loop under `--debug`) and keeps the
         // backend free of dependency-internal spans the operator never asked for.
@@ -1009,7 +1009,7 @@ mod otlp {
 
     /// Process and runtime metrics, exported every 5 s: CPU utilization and
     /// memory via `sysinfo`, plus the stable tokio runtime counters (workers,
-    /// alive tasks, global queue depth) read from `app_handle` — jackin's *app*
+    /// alive tasks, global queue depth) read from `app_handle` — jackin❯'s *app*
     /// runtime handle, captured by the caller before entering the dedicated
     /// telemetry runtime. Capturing it here would instead read the telemetry
     /// runtime; reading it from the collect thread (no ambient runtime) would

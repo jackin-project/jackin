@@ -1,19 +1,19 @@
 ---
-title: "jackin' Capsule: In-Container Control Plane"
+title: "jackin❯ Capsule: In-Container Control Plane"
 ---
 
 
-The **jackin' Capsule** is the in-container runtime control plane for every Capsule-managed role container. Its executable is `jackin-capsule`, installed at `/jackin/runtime/jackin-capsule` in the derived image and run as PID 1 when the container starts.
+The **jackin❯ Capsule** is the in-container runtime control plane for every Capsule-managed role container. Its executable is `jackin-capsule`, installed at `/jackin/runtime/jackin-capsule` in the derived image and run as PID 1 when the container starts.
 
 The Capsule is not the Docker container, the role image, or an agent runtime. It is the process inside the container that owns PTYs, supervises child processes, renders the in-container multiplexer, exposes the Unix socket API, and performs deterministic runtime setup before each agent starts. The `jackin` host CLI uses that process as the boundary between host orchestration and in-container session state.
 
 ## The problem it solves
 
-When jackin' used tmux as the session layer, three structural limitations became apparent:
+When jackin❯ used tmux as the session layer, three structural limitations became apparent:
 
-**No structured session inventory.** Querying which agents were running required `docker exec <container> tmux list-sessions` from the host — a subprocess round-trip that returns a string jackin' then had to parse. There was no typed interface; every session management operation went through shell command construction and string output parsing.
+**No structured session inventory.** Querying which agents were running required `docker exec <container> tmux list-sessions` from the host — a subprocess round-trip that returns a string jackin❯ then had to parse. There was no typed interface; every session management operation went through shell command construction and string output parsing.
 
-**No agent-state awareness.** tmux knows about terminal sessions and windows. It has no concept of whether the process inside a pane is working, waiting for input, or finished. jackin' could not ask "is this agent blocked?" without reading raw PTY output from outside the container.
+**No agent-state awareness.** tmux knows about terminal sessions and windows. It has no concept of whether the process inside a pane is working, waiting for input, or finished. jackin❯ could not ask "is this agent blocked?" without reading raw PTY output from outside the container.
 
 **No event stream.** The host could not subscribe to "a session ended" without polling. The only reliable signal was the container stopping, which was too coarse — a container could be running with zero active sessions.
 
@@ -21,11 +21,11 @@ These three gaps are why observability, attention prompts, and future desktop in
 
 ## Why build it in-house
 
-The closest public reference is [Herdr](https://github.com/ogulcancelik/herdr) — a Rust multiplexer purpose-built for AI coding agents with four-state status tracking, a Unix socket API, and workspace-level roll-ups. Herdr cannot be embedded in jackin': it is AGPL-3.0, which conflicts with the Apache-2.0 license used by jackin'.
+The closest public reference is [Herdr](https://github.com/ogulcancelik/herdr) — a Rust multiplexer purpose-built for AI coding agents with four-state status tracking, a Unix socket API, and workspace-level roll-ups. Herdr cannot be embedded in jackin❯: it is AGPL-3.0, which conflicts with the Apache-2.0 license used by jackin❯.
 
-Beyond the license, Herdr wraps **bare host processes**. jackin' wraps **Docker containers**. When Herdr sees `docker attach` rather than the agent process, its PTY heuristics degrade — it is watching the wrong process. `jackin-capsule` runs *inside* the container and reads the agent's PTY output directly, which is exactly where the heuristics need to run.
+Beyond the license, Herdr wraps **bare host processes**. jackin❯ wraps **Docker containers**. When Herdr sees `docker attach` rather than the agent process, its PTY heuristics degrade — it is watching the wrong process. `jackin-capsule` runs *inside* the container and reads the agent's PTY output directly, which is exactly where the heuristics need to run.
 
-Building it in-house gives jackin' a control plane that is:
+Building it in-house gives jackin❯ a control plane that is:
 
 - **Typed and structured.** The socket has a one-shot JSON control channel for inventory queries and a binary attach channel for interactive sessions. The host asks for a session list and gets a typed response, not a string to parse.
 - **Agent-aware.** The multiplexer owns every PTY session from spawn to exit. It sees the output directly and can infer state (working / blocked / done / idle) without guessing.
@@ -68,7 +68,7 @@ The important invariant is that the host starts and stops containers, but the Ca
 
 ### Unix Socket and Wire Protocol
 
-The daemon listens at `/jackin/run/jackin.sock` inside the container. jackin' bind-mounts a host directory for the instance to `/jackin/run`; the socket file appears inside that directory after the daemon starts:
+The daemon listens at `/jackin/run/jackin.sock` inside the container. jackin❯ bind-mounts a host directory for the instance to `/jackin/run`; the socket file appears inside that directory after the daemon starts:
 
 ```
 docker run ... -v ~/.jackin/sockets/<container-name>:/jackin/run ...
@@ -114,7 +114,7 @@ states, and provider-child cooldowns stay owned by the PID 1 daemon.
 The usage surface is account-quota-only: the obsolete workspace/session spend
 summary messages and CLI subcommands were removed with the Capsule usage overlay
 cleanup. Per-message token/cost attribution belongs to
-[Token & Cost Telemetry](/reference/roadmap/token-cost-telemetry/), not this
+[Token & Cost Telemetry](/roadmap/token-cost-telemetry/), not this
 control surface.
 `jackin-capsule usage claude-cli` is intentionally outside the control channel:
 it is an explicit operator diagnostic that runs `claude -p /usage` on demand and
@@ -160,10 +160,10 @@ The host and Capsule intentionally exchange only a small set of facts:
 - **Per-session agent identity** is set later by the daemon immediately before it spawns `/jackin/runtime/entrypoint.sh` for an agent pane. Shell panes get no `JACKIN_AGENT`.
 - **Terminal input** crosses through the attach channel as raw bytes in `Input` frames. The daemon either consumes bytes that target Capsule UI (palette, prefix commands, tab chrome, dialog controls) or writes them to the active PTY unchanged.
 - **Host-affordance actions** cross only through explicit attach frames while the host-owned attach client is active. `Ctrl+V` can become a `ClipboardImage` frame when the host clipboard contains supported image data; the command palette's **Stage image from clipboard path** action emits `HostStageImageFromClipboardPath` and expects image frames or `ClipboardImageError` in response; GitHub context rows can emit `HostOpenUrl`; and the command palette's **Export file**, **Export file and reveal**, and **Export file and open** dialogs ask Capsule to validate one workspace or `/jackin/run/` regular file before streaming it to the host download directory. The reveal/open variants set explicit post-export flags on `FileExportStart`; the host attach client acts only after byte count and SHA-256 verification.
-- **Wheel input** is routed by focused-pane state. Mouse-enabled programs receive re-encoded pane-local SGR or xterm mouse events. Normal-screen panes that did not request mouse reporting use jackin' scrollback only when the grid has retained history, including rows preserved before normal-screen clear/redraw and top-anchored scroll-region movement; that same retained history is the only source for pane scroll chrome. When retained history is empty, wheel input stays local to jackin' so it cannot mutate the prompt as cursor keys, whether the pane was spawned as an agent or shell. Alternate-screen panes without mouse reporting receive cursor-key fallback, matching terminal emulator alternate-screen scroll behavior.
+- **Wheel input** is routed by focused-pane state. Mouse-enabled programs receive re-encoded pane-local SGR or xterm mouse events. Normal-screen panes that did not request mouse reporting use jackin❯ scrollback only when the grid has retained history, including rows preserved before normal-screen clear/redraw and top-anchored scroll-region movement; that same retained history is the only source for pane scroll chrome. When retained history is empty, wheel input stays local to jackin❯ so it cannot mutate the prompt as cursor keys, whether the pane was spawned as an agent or shell. Alternate-screen panes without mouse reporting receive cursor-key fallback, matching terminal emulator alternate-screen scroll behavior.
 - **Terminal output** is read by a per-session PTY reader, parsed into that pane's `DamageGrid`, composed with Capsule chrome, and sent back to the attached client as raw ANSI bytes in `Output` frames.
 - **Session inventory** is read from the daemon's in-memory session table and returned through the control channel as typed JSON. The host does not scrape rendered terminal text to learn which sessions exist.
-- **Console previews** are read from the daemon's tab/pane snapshot. On same-kernel Docker hosts the host opens the bind-mounted Unix socket directly; on Docker Desktop, where the macOS host cannot connect to a Linux VM Unix socket, jackin' falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot` and reads the same JSON response through stdout.
+- **Console previews** are read from the daemon's tab/pane snapshot. On same-kernel Docker hosts the host opens the bind-mounted Unix socket directly; on Docker Desktop, where the macOS host cannot connect to a Linux VM Unix socket, jackin❯ falls back to `docker exec ... /jackin/runtime/jackin-capsule snapshot` and reads the same JSON response through stdout.
 - **Runtime setup inputs** are already present in mounted `/jackin/` state and environment selected by the host launcher. `jackin-capsule runtime-setup` copies or applies that state inside the container before the agent process replaces the entrypoint.
 
 The full lifecycle for a normal attach looks like this:
@@ -283,7 +283,7 @@ Full-frame redraws are still intentional and named in <RepoFile path="crates/jac
 
 The top two rows of the host terminal are owned by `jackin-capsule` and never yielded to agent sessions. They render:
 
-- **`jackin'` brand pill** — bright-green background, near-black text. Always visible. When an operator shares their screen, others can immediately see the container is running inside jackin'.
+- **`jackin❯` brand pill** — bright-green background, near-black text. Always visible. When an operator shares their screen, others can immediately see the container is running inside jackin❯.
 - **Session tabs** — one tab per session. Active tab is bold white text on a lifted graphite background, separate from the brand green, with the white underline as the primary active cue. Inactive tabs are grey. Mouse-clickable tabs lift their background on hover. Tabs show a state glyph for the session roll-up. The blocked attention glyph is latched: incidental PTY output does not clear it, and explicit operator keyboard input to that pane does.
 - **Menu button** — the right side of row 0 keeps a padded, clickable `☰Menu` button. It uses blue chrome rather than the green brand/focus color, lifts on hover, and switches the pointer cursor where supported. When prefix mode is enabled and awaiting the next key, the button changes to `prefix…` so the operator can see that Capsule has consumed the prefix byte and is waiting for the command key.
 
@@ -309,7 +309,7 @@ Key press arrives
   └─ Everything else → active pane PTY stdin
 ```
 
-The palette key (and, when enabled, the prefix-key state machine) are the only keystrokes the multiplexer intercepts from the input stream in normal mode. The default `Ctrl+\` (`0x1C`) is picked because raw-mode terminals never emit it as content and no agent uses it as an editing key; the earlier `Ctrl+J` default collided with the literal LF byte that multi-line editors use as a line continuation, so `Ctrl+J` is only available as an opt-in via `JACKIN_PALETTE_KEY=C-j`. Plain `Ctrl+L` is forwarded unmodified; the clear path owned by jackin' is explicit through the palette's **Clear pane** action or prefix then `Ctrl+L`. That command clears the scrollback the pane's `DamageGrid` holds, sends form-feed to the pane so the shell or TUI redraws its own visible screen, and never uses RIS (`ESC c`) because a reset would disrupt pane modes. The close path is scoped by the active tab's pane count: a single-pane tab renders **Close tab** and routes straight to confirmation, while split tabs render **Close** and push the pane-vs-tab target picker. The top-level **Exit** command opens an **Exit?** confirmation; confirming terminates every live pane, lets PID 1 exit after the session set is empty, and hands control back to the host finalizer so the normal cleanup/eject path removes the role container, DinD sidecar, certs volume, and network. Detach remains explicit through prefix `d` or the attach protocol's `Detach` frame and keeps sessions running. Everything else — including all agent-specific shortcuts, bracketed paste, mouse events, and extended key sequences — is forwarded unmodified to the active PTY.
+The palette key (and, when enabled, the prefix-key state machine) are the only keystrokes the multiplexer intercepts from the input stream in normal mode. The default `Ctrl+\` (`0x1C`) is picked because raw-mode terminals never emit it as content and no agent uses it as an editing key; the earlier `Ctrl+J` default collided with the literal LF byte that multi-line editors use as a line continuation, so `Ctrl+J` is only available as an opt-in via `JACKIN_PALETTE_KEY=C-j`. Plain `Ctrl+L` is forwarded unmodified; the clear path owned by jackin❯ is explicit through the palette's **Clear pane** action or prefix then `Ctrl+L`. That command clears the scrollback the pane's `DamageGrid` holds, sends form-feed to the pane so the shell or TUI redraws its own visible screen, and never uses RIS (`ESC c`) because a reset would disrupt pane modes. The close path is scoped by the active tab's pane count: a single-pane tab renders **Close tab** and routes straight to confirmation, while split tabs render **Close** and push the pane-vs-tab target picker. The top-level **Exit** command opens an **Exit?** confirmation; confirming terminates every live pane, lets PID 1 exit after the session set is empty, and hands control back to the host finalizer so the normal cleanup/eject path removes the role container, DinD sidecar, certs volume, and network. Detach remains explicit through prefix `d` or the attach protocol's `Detach` frame and keeps sessions running. Everything else — including all agent-specific shortcuts, bracketed paste, mouse events, and extended key sequences — is forwarded unmodified to the active PTY.
 
 Dialog dispatch receives normalized keys, not raw terminal protocol details. When a focused agent enables kitty / CSI-u keyboard reporting, the input parser converts unmodified arrow keys and Escape back to the legacy byte forms the dialog handlers match, and it suppresses release events. That keeps `Esc` as "pop one dialog frame" even after an embedded TUI has enabled progressive keyboard reporting.
 
@@ -331,7 +331,7 @@ Modern terminals interpret OSC escape sequences agents emit for window titles, c
 | `JACKIN_OSC_TITLE` | OSC 0 / 1 / 2 window-title and icon-name updates |
 | `JACKIN_OSC_NOTIFY` | OSC 9 desktop notifications |
 | `JACKIN_OSC_HYPERLINK` | OSC 8 clickable hyperlinks |
-| `JACKIN_OPEN_LINKS` | jackin' host browser-open actions, including GitHub open rows, visible URL modified-click, and command-palette link open |
+| `JACKIN_OPEN_LINKS` | jackin❯ host browser-open actions, including GitHub open rows, visible URL modified-click, and command-palette link open |
 
 OSC 7 (current working directory) is never forwarded — it would tell the operator's host terminal to track the *container's* cwd, which has no meaning outside the container; jackin-capsule captures it locally for the pane title and stops. OSC 8 forwarding additionally rejects any URI whose scheme is not `http`, `https`, or `mailto` (so a compromised agent cannot ship a `javascript:` or `file://` hyperlink that would script the operator's host terminal on click).
 
@@ -341,8 +341,8 @@ The multiplexer also emits its own OSC 2 title from the compositor. That title i
 
 The attach client enables SGR any-event mouse tracking on the outer terminal. When the daemon sees passive pointer motion, it emits OSC 22 pointer-shape hints for interactive chrome when the client reports a real terminal identity through `TERM_PROGRAM` or a known OSC 22-capable `TERM` family. Clearly non-interactive terminals (`TERM=dumb`, `TERM=linux`), generic PTYs that only report `xterm-256color`, and known terminals that mishandle the sequence stay on the default pointer:
 
-- `pointer` over clickable chrome owned by jackin', such as tabs, the top menu button, the bottom-row GitHub and Debug info entry points, and clickable dialog values such as Container ID, Run ID, Diagnostics log, and GitHub URL copy targets.
-- `text` over pane bodies where mouse selection owned by jackin' is available because the focused program did not request mouse reporting.
+- `pointer` over clickable chrome owned by jackin❯, such as tabs, the top menu button, the bottom-row GitHub and Debug info entry points, and clickable dialog values such as Container ID, Run ID, Diagnostics log, and GitHub URL copy targets.
+- `text` over pane bodies where mouse selection owned by jackin❯ is available because the focused program did not request mouse reporting.
 - `ew-resize` / `ns-resize` over split borders and `grabbing` during an active resize drag.
 - `default` everywhere else, and again during attach cleanup.
 
@@ -356,19 +356,19 @@ The policy is read once per session at spawn time; an agent that exports the env
 
 `jackin-capsule` is versioned identically to the `jackin` CLI — both use the same <RepoFile path="crates/jackin/build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
 
-### How jackin' acquires the binary
+### How jackin❯ acquires the binary
 
 `ensure_available` in <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> resolves the binary in priority order:
 
-1. **`JACKIN_CAPSULE_BIN=/path/to/binary` (env var set)** — jackin' uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin' validates only that the file exists and is executable.
+1. **`JACKIN_CAPSULE_BIN=/path/to/binary` (env var set)** — jackin❯ uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin❯ validates only that the file exists and is executable.
 
 2. **Cache hit** — if `~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/jackin-capsule` exists and is executable, it is used immediately.
 
-3. **Packaged binary** — Homebrew formulae install the matching Linux `jackin-capsule` resource under the formula's `libexec/jackin-capsule/linux-<arch>/jackin-capsule` path. If that binary exists and passes the same version check, jackin' uses it directly.
+3. **Packaged binary** — Homebrew formulae install the matching Linux `jackin-capsule` resource under the formula's `libexec/jackin-capsule/linux-<arch>/jackin-capsule` path. If that binary exists and passes the same version check, jackin❯ uses it directly.
 
-4. **Download** — on a cache and package miss, a `jackin-capsule-*.tar.gz` archive and its `.sha256` companion are downloaded from GitHub Releases: the rolling `preview` tag for `-dev` and `-preview.*` versions, or the versioned `v<version>` tag for stable releases. The archive hash must match before jackin' extracts the top-level `jackin-capsule` binary into the cache. On Linux the extracted binary is also verified by executing `jackin-capsule --version` and asserting the output matches the expected version string.
+4. **Download** — on a cache and package miss, a `jackin-capsule-*.tar.gz` archive and its `.sha256` companion are downloaded from GitHub Releases: the rolling `preview` tag for `-dev` and `-preview.*` versions, or the versioned `v<version>` tag for stable releases. The archive hash must match before jackin❯ extracts the top-level `jackin-capsule` binary into the cache. On Linux the extracted binary is also verified by executing `jackin-capsule --version` and asserting the output matches the expected version string.
 
-jackin' itself has no knowledge of how to build `jackin-capsule` from source. Build logic lives exclusively in the developer tool described below.
+jackin❯ itself has no knowledge of how to build `jackin-capsule` from source. Build logic lives exclusively in the developer tool described below.
 
 ### Building for local development
 
@@ -414,7 +414,7 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 
 <RepoFile path="crates/jackin-image/src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /jackin/runtime/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/jackin/runtime/jackin-capsule` the base image provides.
 
-## Relationship to the rest of jackin'
+## Relationship to the rest of jackin❯
 
 | Component | Relationship |
 |---|---|
@@ -425,12 +425,12 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 | <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
 | <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
 | <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
-| [Agent runtime status authority roadmap item](/reference/roadmap/agent-runtime-status/) | Design record and regression checklist for the shipped in-container state authority |
-| [jackin' daemon roadmap item](/reference/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
+| [Agent runtime status authority roadmap item](/roadmap/agent-runtime-status/) | Design record and regression checklist for the shipped in-container state authority |
+| [jackin❯ daemon roadmap item](/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
 | [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |
 
 ## See also
 
 - [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) — the non-negotiable passthrough contract and per-feature verification checklist
-- [jackin-capsule roadmap item](/reference/roadmap/jackin-capsule/) — original problem statement, Herdr evaluation, phased implementation plan
-- [Agent Orchestrator Research](/reference/roadmap/agent-orchestrator-research/) — comparative analysis of Herdr and other tools that informed the design
+- [jackin-capsule roadmap item](/roadmap/jackin-capsule/) — original problem statement, Herdr evaluation, phased implementation plan
+- [Agent Orchestrator Research](/roadmap/agent-orchestrator-research/) — comparative analysis of Herdr and other tools that informed the design

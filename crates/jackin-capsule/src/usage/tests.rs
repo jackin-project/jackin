@@ -396,6 +396,9 @@ fn codex_cached_usage_view() -> FocusedUsageView {
         plan_label: Some("Pro 20x".to_owned()),
         credential_origin: None,
         buckets: vec![QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::default(),
             label: "Session".to_owned(),
             used_label: Some("63% used".to_owned()),
             limit_label: Some("100%".to_owned()),
@@ -445,6 +448,9 @@ fn materialized_usage_accounts_write_normalized_snapshots() {
 fn status_bar_label_uses_session_and_weekly_remaining() {
     let buckets = vec![
         QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::default(),
             label: "Session".to_owned(),
             used_label: Some("63% used".to_owned()),
             limit_label: Some("100%".to_owned()),
@@ -456,6 +462,9 @@ fn status_bar_label_uses_session_and_weekly_remaining() {
             status: UsageSnapshotStatus::Fresh,
         },
         QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::default(),
             label: "Weekly".to_owned(),
             used_label: Some("90% used".to_owned()),
             limit_label: Some("100%".to_owned()),
@@ -487,6 +496,9 @@ fn status_bar_reads_session_weekly_slots_from_tags() {
     // cycle Weekly with no session. An untagged window (MCP) never reaches
     // the headline.
     let pct = |label: &str, remaining: u8, slot: Option<StatusSlot>| QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
         label: label.to_owned(),
         used_label: None,
         limit_label: None,
@@ -571,6 +583,9 @@ fn codex_plan_display_name_matches_codexbar() {
 #[test]
 fn status_bar_label_uses_stale_cached_percentages() {
     let buckets = vec![QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
         label: "Session".to_owned(),
         used_label: Some("99% used".to_owned()),
         limit_label: Some("100%".to_owned()),
@@ -599,6 +614,9 @@ fn status_bar_label_drops_tagged_bucket_that_failed() {
     // window errored) must not surface its percentage as if it were live;
     // the headline falls through to the snapshot-level status label.
     let buckets = vec![QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
         label: "Session".to_owned(),
         used_label: Some("50% used".to_owned()),
         limit_label: Some("100%".to_owned()),
@@ -625,6 +643,9 @@ fn status_bar_label_drops_tagged_bucket_that_failed() {
 fn status_bar_label_uses_amp_free_and_credits() {
     let buckets = vec![
         QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::default(),
             label: "Amp Free".to_owned(),
             used_label: Some("$5.24".to_owned()),
             limit_label: Some("$10".to_owned()),
@@ -636,6 +657,9 @@ fn status_bar_label_uses_amp_free_and_credits() {
             status: UsageSnapshotStatus::Fresh,
         },
         QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: UsageSeverity::default(),
             label: "Individual credits".to_owned(),
             used_label: None,
             limit_label: Some("$4.76".to_owned()),
@@ -662,6 +686,9 @@ fn status_bar_label_uses_amp_free_and_credits() {
 #[test]
 fn status_bar_label_uses_stale_amp_cache() {
     let buckets = vec![QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
         label: "Amp Free".to_owned(),
         used_label: Some("$9.10".to_owned()),
         limit_label: Some("$10".to_owned()),
@@ -876,7 +903,7 @@ fn usage_refresh_schedule_skips_until_ttl_or_manual_refresh() {
     let view = FocusedUsageView::unavailable("fresh", now_epoch());
 
     assert!(schedule.should_refresh_with_cooldown_dir(&target, now, dir.path()));
-    schedule.mark_refreshed_with_cooldown_dir(&target, now, &view, dir.path());
+    schedule.mark_refreshed_with_cooldown_dir(&target, now, &view, dir.path(), dir.path());
     assert!(!schedule.should_refresh_with_cooldown_dir(
         &target,
         now + Duration::from_secs(30),
@@ -905,15 +932,75 @@ fn usage_refresh_schedule_writes_and_honors_shared_rate_limit_cooldown() {
 
     let mut view = FocusedUsageView::unavailable("rate limited", now_epoch());
     view.last_error = Some("Codex usage HTTP 429 retry-after: 60".to_owned());
-    schedule.mark_refreshed_with_cooldown_dir(&target, now, &view, dir.path());
+    schedule.mark_refreshed_with_cooldown_dir(&target, now, &view, dir.path(), dir.path());
 
-    let key = target.cache_key();
+    // Shared cooldown is account-scoped (Class III); assert with the same key
+    // the production write path uses.
+    let key = target.shared_account_key();
     assert!(shared_usage_cooldown_active(dir.path(), &key, now_epoch()));
     assert!(!schedule.should_refresh_with_cooldown_dir(
         &target,
         now + Duration::from_secs(61),
         dir.path()
     ));
+}
+
+#[test]
+fn successful_refresh_writes_shared_cooldown_and_snapshot() {
+    let cooldown_dir = tempfile::tempdir().expect("tempdir");
+    let snapshots_dir = tempfile::tempdir().expect("tempdir");
+    let target = UsageRefreshTarget {
+        agent: "claude".to_owned(),
+        provider: None,
+    };
+    let mut schedule = UsageRefreshSchedule::default();
+    let now = Instant::now();
+    let view = FocusedUsageView::unavailable("fresh", now_epoch());
+
+    assert!(schedule.should_refresh_with_cooldown_dir(&target, now, cooldown_dir.path()));
+
+    schedule.mark_refreshed_with_cooldown_dir(
+        &target,
+        now,
+        &view,
+        cooldown_dir.path(),
+        snapshots_dir.path(),
+    );
+
+    // Shared files are account-scoped (Class III); use the same key the
+    // production write path uses so the round-trip is exercised faithfully.
+    let key = target.shared_account_key();
+    // Shared cooldown marker written for success.
+    assert!(
+        shared_usage_cooldown_active(cooldown_dir.path(), &key, now_epoch()),
+        "success cooldown marker should be active after successful refresh"
+    );
+    // Fresh instance (no in-process state) sees cooldown → skips fetch.
+    let mut fresh_schedule = UsageRefreshSchedule::default();
+    assert!(
+        !fresh_schedule.should_refresh_with_cooldown_dir(&target, now, cooldown_dir.path()),
+        "fresh instance should skip fetch when success cooldown is active"
+    );
+    // Shared snapshot written and readable.
+    assert!(
+        read_shared_usage_snapshot(snapshots_dir.path(), &key).is_some(),
+        "shared snapshot should be readable after successful refresh"
+    );
+}
+
+#[test]
+fn fresh_instance_seeds_cache_from_shared_snapshot_when_cooldown_active() {
+    let snapshots_dir = tempfile::tempdir().expect("tempdir");
+    let key = "Claude Max";
+    let view = FocusedUsageView::unavailable("seed", now_epoch());
+    // Write a snapshot as if another instance had already refreshed.
+    write_shared_usage_snapshot(snapshots_dir.path(), key, &view);
+    // Another instance reads it back.
+    let loaded = read_shared_usage_snapshot(snapshots_dir.path(), key);
+    assert!(
+        loaded.is_some(),
+        "shared snapshot should be readable for seeding a fresh instance"
+    );
 }
 
 #[test]
@@ -929,6 +1016,9 @@ fn failed_refresh_preserves_last_fresh_quota_rows_as_stale_cache() {
         credential_origin: None,
     };
     cached.buckets = vec![QuotaBucketView {
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
         label: "Weekly".to_owned(),
         used_label: Some("90% used".to_owned()),
         limit_label: Some("100%".to_owned()),
@@ -982,12 +1072,16 @@ fn claude_oauth_response_maps_windows_to_buckets() {
         "seven_day": { "utilization": 0.78, "resets_at": "2026-06-12T14:26:00Z" },
         "seven_day_sonnet": { "utilization": 0.02, "resets_at": "2026-06-12T14:26:00Z" },
         "seven_day_routines": { "utilization": 0.0 },
+        // Real API shape: credits are MINOR units (cents) with `decimal_places`,
+        // and `utilization` is a percent (0..100). No `spend` object here, so this
+        // exercises the `extra_usage` fallback path.
         "extra_usage": {
             "is_enabled": true,
-            "monthly_limit": 260.0,
-            "used_credits": 78.49,
-            "utilization": 0.30,
-            "currency": "SGD"
+            "monthly_limit": 26000.0,
+            "used_credits": 7849.0,
+            "utilization": 30.0,
+            "currency": "SGD",
+            "decimal_places": 2
         }
     }))
     .expect("valid Claude OAuth usage");
@@ -1035,11 +1129,367 @@ fn claude_oauth_response_maps_windows_to_buckets() {
         .iter()
         .find(|bucket| bucket.label == "Extra usage")
         .expect("extra usage bucket");
-    // spent vs cap — `<currency> <spent> spent` + `NN% used`.
+    // spent vs cap — `<currency> <spent> spent` + `NN% used`. Minor units are
+    // scaled by `decimal_places` (7849 → 78.49), and the bucket fills the Spend
+    // slot carrying structured Money for the status-bar chunk.
+    assert_eq!(extra.status_slot, Some(StatusSlot::Spend));
     assert_eq!(extra.remaining_percent, Some(70));
     assert_eq!(extra.used_label.as_deref(), Some("SGD 78.49 spent"));
     assert_eq!(extra.limit_label.as_deref(), Some("SGD 260.00"));
     assert_eq!(extra.pace_label.as_deref(), Some("30% used"));
+    assert_eq!(
+        extra.used_money.as_ref().map(Money::to_string).as_deref(),
+        Some("SGD 78.49")
+    );
+    assert_eq!(
+        extra
+            .used_money
+            .as_ref()
+            .map(Money::format_compact)
+            .as_deref(),
+        Some("SGD 78")
+    );
+}
+
+/// The self-describing `spend{}` object is preferred over `extra_usage` and
+/// reproduces the web console's Enterprise figure exactly ($53.31 / $300.00,
+/// 18% used) — the regression guard for the 100×-too-large bug.
+#[test]
+fn claude_spend_object_preferred_and_scaled() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        // Enterprise responses carry no rolling windows, only spend.
+        "five_hour": null,
+        "seven_day": null,
+        // A stale/raw extra_usage is also present; spend{} must win.
+        "extra_usage": {
+            "is_enabled": true,
+            "monthly_limit": 30000.0,
+            "used_credits": 5331.0,
+            "utilization": 17.77,
+            "currency": "USD",
+            "decimal_places": 2
+        },
+        "spend": {
+            "used": { "amount_minor": 5331, "currency": "USD", "exponent": 2 },
+            "limit": { "amount_minor": 30000, "currency": "USD", "exponent": 2 },
+            "percent": 18,
+            "severity": "normal",
+            "enabled": true
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+
+    let buckets = usage.into_buckets(1_781_185_560);
+    let spend = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Spend))
+        .expect("spend bucket");
+    assert_eq!(spend.used_label.as_deref(), Some("$53.31 spent"));
+    assert_eq!(spend.limit_label.as_deref(), Some("$300.00"));
+    assert_eq!(spend.pace_label.as_deref(), Some("18% used"));
+    assert_eq!(spend.remaining_percent, Some(82));
+    assert_eq!(spend.severity, UsageSeverity::Normal);
+
+    // The headline renders compact money as `<used> of <limit>`, currency once.
+    assert_eq!(
+        spend_headline_label(&buckets).as_deref(),
+        Some("$53 of 300")
+    );
+}
+
+#[test]
+fn codex_refresh_request_body_uses_refresh_grant() {
+    let body = codex_refresh_request_body("rt-abc");
+    assert_eq!(body["grant_type"], "refresh_token");
+    assert_eq!(body["refresh_token"], "rt-abc");
+    assert_eq!(body["client_id"], CODEX_OAUTH_CLIENT_ID);
+    assert!(
+        !CODEX_OAUTH_CLIENT_ID.is_empty(),
+        "client id must be set for the refresh grant"
+    );
+}
+
+#[test]
+fn codex_access_token_parsed_from_refresh_response() {
+    let value = serde_json::json!({ "access_token": "  new-token  ", "token_type": "Bearer" });
+    assert_eq!(
+        codex_access_token_from_response(&value).as_deref(),
+        Some("new-token")
+    );
+    // Missing / empty token yields None so the caller falls back to NeedsLogin.
+    assert!(codex_access_token_from_response(&serde_json::json!({})).is_none());
+    assert!(codex_access_token_from_response(&serde_json::json!({ "access_token": "" })).is_none());
+}
+
+#[test]
+fn codex_oauth_credentials_carry_refresh_token() {
+    let value = serde_json::json!({
+        "tokens": {
+            "access_token": "at-1",
+            "refresh_token": "rt-1",
+            "account_id": "acct-1"
+        }
+    });
+    let creds = codex_oauth_from_value(&value).expect("codex credentials");
+    assert_eq!(creds.access_token, "at-1");
+    assert_eq!(creds.refresh_token.as_deref(), Some("rt-1"));
+    // A static API key has nothing to refresh.
+    let api = codex_oauth_from_value(&serde_json::json!({ "OPENAI_API_KEY": "sk-x" }))
+        .expect("api key credentials");
+    assert!(api.refresh_token.is_none());
+}
+
+#[test]
+fn unauthorized_errors_are_distinguished_from_transient() {
+    assert!(usage_error_is_unauthorized(
+        "Codex OAuth usage HTTP 401 Unauthorized"
+    ));
+    assert!(usage_error_is_unauthorized(
+        "Claude OAuth usage HTTP 403 Forbidden"
+    ));
+    assert!(!usage_error_is_unauthorized("Codex OAuth usage HTTP 500"));
+    assert!(!usage_error_is_unauthorized("request failed: timed out"));
+    // A rate-limit is transient, not an auth failure.
+    assert!(!usage_error_is_unauthorized("usage HTTP 429 rate limit"));
+}
+
+/// Rotating-codename dollar-budget windows (enterprise contractual
+/// allocations) surface as dollar buckets instead of being dropped by the
+/// fixed-field struct; zero/absent ones are ignored.
+#[test]
+fn claude_codename_dollar_window_is_surfaced() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": null,
+        "amber_ladder": {
+            "utilization": 0.0,
+            "resets_at": "2026-09-02T06:59:59+00:00",
+            "limit_dollars": 25000,
+            "used_dollars": 5000.0
+        },
+        // Present but empty — must not produce a bucket.
+        "omelette_promotional": { "utilization": 0.0, "limit_dollars": null }
+    }))
+    .expect("valid Claude OAuth usage");
+
+    let buckets = usage.into_buckets(1_781_185_560);
+    let amber = buckets
+        .iter()
+        .find(|bucket| bucket.label == "Amber Ladder")
+        .expect("amber_ladder dollar window surfaced");
+    assert_eq!(amber.used_label.as_deref(), Some("$5000.00 spent"));
+    assert_eq!(amber.limit_label.as_deref(), Some("$25000.00"));
+    assert_eq!(amber.remaining_percent, Some(80));
+    assert_eq!(amber.status_slot, None);
+    assert!(
+        !buckets
+            .iter()
+            .any(|bucket| bucket.label.contains("omelette")),
+        "a null-budget codename window must not produce a bucket"
+    );
+}
+
+/// A disabled (out-of-credits) spend window is still surfaced — with its
+/// reason — instead of being silently dropped, so the cap stays visible.
+#[test]
+fn claude_spend_disabled_is_surfaced_with_reason() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "spend": {
+            "used": { "amount_minor": 7849, "currency": "SGD", "exponent": 2 },
+            "limit": { "amount_minor": 26000, "currency": "SGD", "exponent": 2 },
+            "percent": 30,
+            "severity": "normal",
+            "enabled": false,
+            "disabled_reason": "out_of_credits"
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+
+    let buckets = usage.into_buckets(1_781_185_560);
+    let spend = buckets
+        .iter()
+        .find(|bucket| bucket.status_slot == Some(StatusSlot::Spend))
+        .expect("disabled spend bucket is still present");
+    assert_eq!(spend.used_label.as_deref(), Some("SGD 78.49 spent"));
+    assert_eq!(
+        spend.pace_label.as_deref(),
+        Some("disabled · out of credits")
+    );
+    // Headline still shows the cap context: `<used> of <limit>`.
+    assert_eq!(
+        spend_headline_label(&buckets).as_deref(),
+        Some("SGD 78 of 260")
+    );
+}
+
+/// The status-bar headline joins the percentage windows and the monetary spend
+/// into one ` · `-separated string.
+#[test]
+fn status_bar_headline_joins_windows_and_spend() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 11.0, "resets_at": "2026-06-28T16:40:00Z" },
+        "seven_day": { "utilization": 27.0, "resets_at": "2026-07-03T07:00:00Z" },
+        "spend": {
+            "used": { "amount_minor": 7849, "currency": "SGD", "exponent": 2 },
+            "limit": { "amount_minor": 26000, "currency": "SGD", "exponent": 2 },
+            "percent": 30,
+            "enabled": true
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+    let buckets = usage.into_buckets(1_781_185_560);
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Claude, &buckets).as_deref(),
+        Some("Session 89% · Weekly 73% · SGD 78 of 260")
+    );
+}
+
+/// Bug 8: the compact headline drops every zero-value segment — a `0%` window
+/// and `$0` spend — while the dialog (not this fn) still shows them.
+#[test]
+fn status_bar_headline_drops_zero_window_and_zero_spend() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 0.0, "resets_at": "2026-06-28T16:40:00Z" },
+        "seven_day": { "utilization": 1.0, "resets_at": "2026-07-03T07:00:00Z" },
+        "spend": {
+            "used": { "amount_minor": 0, "currency": "USD", "exponent": 2 },
+            "limit": { "amount_minor": 30000, "currency": "USD", "exponent": 2 },
+            "percent": 0,
+            "enabled": true
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+    let buckets = usage.into_buckets(1_781_185_560);
+    assert_eq!(
+        status_bar_headline_for_surface(UsageSurface::Claude, &buckets).as_deref(),
+        Some("Session 100%"),
+        "Weekly 0% and $0 spent must be omitted from the status bar"
+    );
+}
+
+/// Class III-D: the per-account refresh lock is exclusive — a second acquirer of
+/// the same account is told it is Held while the first holds it, and can acquire
+/// once the first is released. (flock conflicts across distinct open file
+/// descriptions even in-process, mirroring the cross-container behavior.)
+#[test]
+fn account_refresh_lock_is_exclusive_and_releases() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let key = "Anthropic#deadbeef";
+    let first = acquire_account_refresh_lock_in(dir.path(), key);
+    assert!(
+        matches!(first, RefreshLockOutcome::Acquired(_)),
+        "first acquirer wins the lock"
+    );
+    assert!(
+        matches!(
+            acquire_account_refresh_lock_in(dir.path(), key),
+            RefreshLockOutcome::Held
+        ),
+        "second acquirer of the held lock is told it is Held"
+    );
+    // A different account is independent.
+    assert!(matches!(
+        acquire_account_refresh_lock_in(dir.path(), "OpenAI#feedface"),
+        RefreshLockOutcome::Acquired(_)
+    ));
+    drop(first);
+    assert!(
+        matches!(
+            acquire_account_refresh_lock_in(dir.path(), key),
+            RefreshLockOutcome::Acquired(_)
+        ),
+        "lock is re-acquirable after release"
+    );
+}
+
+/// Class III-C: hydrating a shared snapshot keeps its numbers but marks the view
+/// and its buckets Stale (last-known, not freshly fetched by this instance).
+#[test]
+fn stale_shared_view_downgrades_status_keeps_numbers() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 15.0, "resets_at": "2026-06-28T16:40:00Z" }
+    }))
+    .expect("valid Claude OAuth usage");
+    let buckets = usage.into_buckets(1_781_185_560);
+    let fresh = FocusedUsageView {
+        status: UsageSnapshotStatus::Fresh,
+        buckets,
+        fetched_at_epoch: 1_781_185_560,
+        ..FocusedUsageView::unavailable("seed", 1_781_185_560)
+    };
+    let stale = stale_shared_view(fresh, 1_781_185_860);
+    assert_eq!(stale.status, UsageSnapshotStatus::Stale);
+    assert!(
+        stale
+            .buckets
+            .iter()
+            .all(|b| b.status == UsageSnapshotStatus::Stale),
+        "every bucket downgraded to Stale"
+    );
+    let session = stale
+        .buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket");
+    assert_eq!(session.remaining_percent, Some(85), "numbers preserved");
+}
+
+/// Class III: a surface with no resolvable OAuth identity falls back to the
+/// provider-surface key (preserving prior single-account behavior), so the
+/// account-keying never breaks key-based providers.
+#[test]
+fn shared_account_key_falls_back_to_provider_for_unsupported() {
+    let target = UsageRefreshTarget {
+        agent: "totally-unknown-agent".to_owned(),
+        provider: Some("NoSuchProvider".to_owned()),
+    };
+    assert_eq!(target.shared_account_key(), target.cache_key());
+}
+
+/// Bug 11: an over-cap window (>100% utilization) keeps its true used figure in
+/// the label instead of being clamped to `100% used`; `remaining` stays 0.
+#[test]
+fn over_cap_window_surfaces_true_used_percent() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "seven_day": { "utilization": 150.0, "resets_at": "2026-07-03T07:00:00Z" }
+    }))
+    .expect("valid Claude OAuth usage");
+    let buckets = usage.into_buckets(1_781_185_560);
+    let weekly = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly bucket");
+    assert_eq!(
+        weekly.remaining_percent,
+        Some(0),
+        "nothing left when over cap"
+    );
+    assert_eq!(weekly.used_label.as_deref(), Some("150% used"));
+}
+
+/// Bug 5: the overview headline bucket is the tightest *windowed* bucket that
+/// carries a reset — never the reset-less spend bucket, even when spend has the
+/// lowest remaining (so the overview row keeps its reset column).
+#[test]
+fn most_constrained_skips_reset_less_spend_for_windowed_reset_bucket() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 11.0, "resets_at": "2026-06-28T16:40:00Z" },
+        "seven_day": { "utilization": 27.0, "resets_at": "2026-07-03T07:00:00Z" },
+        "spend": {
+            "used": { "amount_minor": 9000, "currency": "USD", "exponent": 2 },
+            "limit": { "amount_minor": 30000, "currency": "USD", "exponent": 2 },
+            "percent": 30,
+            "enabled": true
+        }
+    }))
+    .expect("valid Claude OAuth usage");
+    // Spend = 70% left (lowest), but reset-less; Weekly = 73% left with a reset.
+    let buckets = usage.into_buckets(1_781_185_560);
+    let chosen = most_constrained_fresh_bucket(&buckets).expect("a windowed bucket");
+    assert_eq!(chosen.status_slot, Some(StatusSlot::Weekly));
+    assert!(
+        chosen.resets_at.is_some(),
+        "chosen bucket must carry a reset"
+    );
 }
 
 #[test]
@@ -1845,6 +2295,81 @@ fn claude_oauth_credentials_fall_back_to_rate_limit_tier() {
 
     assert_eq!(credentials.access_token, "access");
     assert_eq!(credentials.subscription_type.as_deref(), Some("Max"));
+}
+
+#[test]
+fn claude_organization_type_humanizes_enterprise_tier() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "oauthAccount": {
+                "emailAddress": "user@company.com",
+                "organizationType": "claude_enterprise",
+                "subscriptionType": "API Usage Billing"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write account");
+    assert_eq!(
+        load_claude_organization_type(&path).as_deref(),
+        Some("Claude Enterprise")
+    );
+}
+
+#[test]
+fn claude_organization_type_humanizes_team_tier() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "oauthAccount": {
+                "emailAddress": "user@team.ai",
+                "organizationType": "claude_team"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write account");
+    assert_eq!(
+        load_claude_organization_type(&path).as_deref(),
+        Some("Claude Team")
+    );
+}
+
+#[test]
+fn claude_organization_type_humanizes_max_tier() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({
+            "oauthAccount": {
+                "organizationType": "claude_max"
+            }
+        })
+        .to_string(),
+    )
+    .expect("write account");
+    assert_eq!(
+        load_claude_organization_type(&path).as_deref(),
+        Some("Claude Max")
+    );
+}
+
+#[test]
+fn claude_organization_type_absent_returns_none() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("claude.json");
+    fs::write(
+        &path,
+        serde_json::json!({ "oauthAccount": { "emailAddress": "x@y.com" } }).to_string(),
+    )
+    .expect("write account");
+    assert_eq!(load_claude_organization_type(&path), None);
 }
 
 #[test]

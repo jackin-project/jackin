@@ -46,16 +46,16 @@ fn summary_line_omits_zero_counts() {
 }
 
 #[test]
-fn inspect_rows_render_status_and_path() {
+fn changed_file_carries_status_and_path() {
     let r = DirtyRepo {
         path: "/work/x".to_owned(),
         changed: vec![changed_file('M', "src/a.rs"), changed_file('?', "n.md")],
         unpushed: 0,
     };
-    assert_eq!(
-        r.inspect_rows(),
-        vec!["M src/a.rs".to_owned(), "? n.md".to_owned()]
-    );
+    assert_eq!(r.changed[0].status, 'M');
+    assert_eq!(r.changed[0].path, "src/a.rs");
+    assert_eq!(r.changed[1].status, '?');
+    assert_eq!(r.changed[1].path, "n.md");
 }
 
 #[test]

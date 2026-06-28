@@ -1,4 +1,6 @@
+import { createElement } from 'react'
 import { loader } from 'fumadocs-core/source'
+import { icons } from 'lucide-react'
 import { docs } from 'collections/server'
 import { site } from './shared'
 export { markdownPathToSlugs, slugsToMarkdownPath, splatToSlugs } from './source-paths'
@@ -6,6 +8,12 @@ export { markdownPathToSlugs, slugsToMarkdownPath, splatToSlugs } from './source
 export const source = loader({
   source: docs.toFumadocsSource(),
   baseUrl: '/',
+  // Resolve `icon` strings in meta.json (the doc-root tab tiles) to Lucide icons.
+  icon(name) {
+    if (name && name in icons) {
+      return createElement(icons[name as keyof typeof icons])
+    }
+  },
 })
 
 export function pageCanonicalUrl(pageUrl: string) {

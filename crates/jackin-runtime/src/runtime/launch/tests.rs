@@ -1507,6 +1507,7 @@ async fn build_workspace_mount_strings_preserves_readonly_on_user_facing_mount()
 #[tokio::test]
 async fn workspace_mise_paths_cover_workdir_and_mount_destinations() {
     let workspace = jackin_config::ResolvedWorkspace {
+        name: String::new(),
         label: "sample-workspace".to_owned(),
         workdir: "/workspace".to_owned(),
         mounts: vec![
@@ -1608,6 +1609,7 @@ fn codex_trust_fixture(root: &Path) -> (RoleState, jackin_config::ResolvedWorksp
         auth_outcomes: std::collections::BTreeMap::new(),
     };
     let workspace = jackin_config::ResolvedWorkspace {
+        name: String::new(),
         label: "sample-workspace".to_owned(),
         workdir: "/workspace".to_owned(),
         mounts: vec![jackin_config::MountConfig {
@@ -1757,6 +1759,7 @@ echo "pulled $2"
     std::fs::create_dir_all(repo_b.join(".git")).unwrap();
 
     let workspace = jackin_config::ResolvedWorkspace {
+        name: String::new(),
         label: "parallel".to_owned(),
         workdir: "/workspace".to_owned(),
         mounts: vec![
@@ -1786,6 +1789,7 @@ echo "pulled $2"
 
 fn repo_workspace(repo_dir: &Path) -> jackin_config::ResolvedWorkspace {
     jackin_config::ResolvedWorkspace {
+        name: String::new(),
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
         mounts: vec![jackin_config::MountConfig {
@@ -2240,6 +2244,7 @@ trusted = true
     let mut config = AppConfig::load_or_init(&paths).unwrap();
 
     let workspace = jackin_config::ResolvedWorkspace {
+        name: String::new(),
         label: "/workspace".to_owned(),
         workdir: "/workspace".to_owned(),
         mounts: vec![
@@ -2970,6 +2975,7 @@ plugins = []
     let workspace_dir = temp.path().join("workspace");
     std::fs::create_dir_all(&workspace_dir).unwrap();
     let workspace = jackin_config::ResolvedWorkspace {
+        name: String::new(),
         label: workspace_dir.display().to_string(),
         workdir: workspace_dir.display().to_string(),
         mounts: vec![jackin_config::MountConfig {
@@ -3046,6 +3052,7 @@ plugins = []
     let workspace_dir = temp.path().join("workspace");
     std::fs::create_dir_all(&workspace_dir).unwrap();
     let workspace = jackin_config::ResolvedWorkspace {
+        name: String::new(),
         label: workspace_dir.display().to_string(),
         workdir: workspace_dir.display().to_string(),
         mounts: vec![jackin_config::MountConfig {
@@ -4602,6 +4609,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
     ]);
     let mut workspace = repo_workspace(&cached_repo.repo_dir);
     workspace.label = "workspace".to_owned();
+    workspace.name = "workspace".to_owned();
     workspace.default_agent = Some(jackin_core::agent::Agent::Claude);
 
     load_role(
@@ -4695,6 +4703,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
     ]);
     let mut workspace = repo_workspace(&cached_repo.repo_dir);
     workspace.label = "workspace".to_owned();
+    workspace.name = "workspace".to_owned();
 
     load_role(
         &paths,
@@ -6489,6 +6498,7 @@ plugins = []
     .unwrap();
 
     let workspace = jackin_config::ResolvedWorkspace {
+        name: String::new(),
         label: "sample-workspace".to_owned(),
         workdir: "/workspace".to_owned(),
         mounts: vec![

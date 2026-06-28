@@ -31,6 +31,7 @@ pub fn build_workspace_choice(
             Ok(Some(WorkspaceChoice {
                 name: "Current directory".to_owned(),
                 workspace: ResolvedWorkspace {
+                    name: current.workdir.clone(),
                     label: current.workdir.clone(),
                     workdir: current.workdir,
                     mounts: current.mounts,
@@ -54,6 +55,7 @@ pub fn build_workspace_choice(
             Ok(Some(WorkspaceChoice {
                 name: name.clone(),
                 workspace: ResolvedWorkspace {
+                    name: name.clone(),
                     label: name.clone(),
                     workdir: saved.workdir.clone(),
                     mounts: saved.mounts.clone(),

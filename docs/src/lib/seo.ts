@@ -1,6 +1,6 @@
 import { site } from './shared'
 
-const OG_ALT = "jackin' - jack your AI coding agents in: isolated worlds, scoped access, full autonomy"
+const OG_ALT = 'jackin❯ - isolated AI coding agent containers with scoped access and visible host boundaries'
 
 export function ogImageUrl(slug: string) {
   return new URL(`/og/${slug}.webp`, site.origin).toString()
@@ -65,7 +65,7 @@ export function pageSeo({
 
   return {
     meta: [
-      { title: `${title} - jackin'` },
+      { title: `${title} - jackin❯` },
       { name: 'description', content: desc },
       { property: 'og:title', content: title },
       { property: 'og:description', content: desc },

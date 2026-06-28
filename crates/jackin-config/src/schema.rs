@@ -30,7 +30,7 @@ const fn is_false(v: &bool) -> bool {
 
 // ─── DirtyExitPolicy ─────────────────────────────────────────────────────────
 
-/// What jackin' does when a foreground session ends with dirty or unpushed
+/// What jackin❯ does when a foreground session ends with dirty or unpushed
 /// isolated work (D8). Clean+pushed sessions always auto-clean regardless of
 /// this setting.
 ///
@@ -46,7 +46,7 @@ pub enum DirtyExitPolicy {
     Keep,
     /// Auto-discard everything including uncommitted edits and unpushed
     /// commits — no prompt. Explicit operator opt-in for disposable
-    /// workspaces; jackin' does not second-guess it (D17).
+    /// workspaces; jackin❯ does not second-guess it (D17).
     Discard,
 }
 
@@ -466,6 +466,7 @@ pub struct DockerConfig {
 /// The binary's `workspace::resolve` builds it from an `AppConfig`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedWorkspace {
+    pub name: String,
     pub label: String,
     pub workdir: String,
     pub mounts: Vec<MountConfig>,

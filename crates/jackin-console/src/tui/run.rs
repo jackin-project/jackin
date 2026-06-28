@@ -185,7 +185,7 @@ const fn modal_kind_consumes_letter_input(kind: Option<LetterInputModalKind>) ->
 
 /// Whether a key should open the global exit confirmation.
 ///
-/// Two triggers, matching every other jackin' surface:
+/// Two triggers, matching every other jackin❯ surface:
 /// * `Ctrl+Q` — the explicit quit chord. Always opens, regardless of screen or
 ///   focus: it is not a text character, so it never collides with typing.
 /// * bare `q`/`Q` — a convenience trigger, but only off the main screen and

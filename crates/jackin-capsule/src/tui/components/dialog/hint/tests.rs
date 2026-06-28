@@ -5,6 +5,7 @@ fn labels(spans: &[HintSpan<'_>]) -> String {
         .iter()
         .filter_map(|span| match span {
             HintSpan::Key(text) | HintSpan::Text(text) => Some((*text).to_owned()),
+            HintSpan::DynKey(text) => Some(text.clone()),
             HintSpan::Dyn(text) => Some(text.clone()),
             HintSpan::Sep | HintSpan::GroupSep => None,
         })

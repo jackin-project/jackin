@@ -1,0 +1,70 @@
+---
+title: OpenCode
+description: How jackin❯ forwards your OpenCode login into agent containers
+---
+
+
+OpenCode authenticates via `~/.local/share/opencode/auth.json` on your host, which stores provider-level credentials. In `sync` mode (the default), jackin❯ copies this file into the container on every launch — OpenCode inside the container sees the same providers and model access you have on the host.
+
+## Logging in on the host
+
+Before sync can forward anything, you need a working OpenCode login on your host. OpenCode supports multiple providers — the one you configure determines which models are available.
+
+### Z.AI Coding Plan
+
+The Z.AI Coding Plan is a subscription that gives access to the GLM-5.1 model through OpenCode. This is the provider jackin❯ uses in its own development.
+
+1. Subscribe at [z.ai/subscribe](https://z.ai/subscribe).
+2. Log in on the host:
+
+   ```bash
+   opencode login
+   ```
+
+   Select the Z.AI Coding Plan provider and follow the prompted flow.
+
+3. Verify the host login:
+
+   ```bash
+   opencode providers list
+   ```
+
+   The `zai-coding-plan` provider should appear with a valid credential. The credential is stored in `~/.local/share/opencode/auth.json`.
+
+<Aside type="tip">
+The model is specified in the role manifest as a `provider/model` string — for example, `zai-coding-plan/glm-5.1`. jackin❯ passes the model to OpenCode via the `-m` flag at launch time. You don't need to configure the model separately in OpenCode.
+</Aside>
+
+## Runtime trust prompts
+
+jackin❯ launches OpenCode with inline runtime config that sets `permission` to `allow`, so workspace-backed launches do not stop on OpenCode permission prompts. This applies only inside the jackin❯ container runtime; jackin❯ does not write OpenCode settings on the host.
+
+## Subscription
+
+OpenCode itself is open source and free. The providers it connects to have their own pricing — a subscription is usually more cost-effective than pay-as-you-go for regular agent use.
+
+| Provider | How to get it |
+|---|---|
+| **[Z.AI Coding Plan](https://z.ai/subscribe)** | Paid subscription — includes GLM-5.1. Fixed monthly rate, cheaper than per-token billing for heavy use. |
+| Other OpenAI-compatible providers | Varies by provider. Check the provider's pricing page. |
+
+The provider credentials you configure on the host are the ones the container sees.
+
+## Modes available
+
+| Mode | Supported |
+|---|---|
+| `sync` (default) | Yes — forwards `~/.local/share/opencode/auth.json` |
+| `api_key` | Yes — injects `OPENCODE_API_KEY` |
+| `oauth_token` | No — rejected at config time |
+| `ignore` | Yes — no forwarding |
+
+See [Agent Authentication](/guides/authentication/agents/) for what each mode does and how to switch between them.
+
+## Troubleshooting
+
+If OpenCode inside the container shows "Not logged in" or can't reach the model:
+
+1. Check that the host login is active — run `opencode providers list` on the host.
+2. Open the **Auth** tab in `jackin console` and verify the effective mode for the (workspace × role × OpenCode) cell.
+3. If the container has stale credentials and the host has fresh ones, restart: `jackin eject <role> && jackin load <role>`.
