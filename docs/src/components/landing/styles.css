@@ -503,7 +503,6 @@ html.theme-init *::after {
   letter-spacing: -0.01em;
   transition: box-shadow 0.2s, background 0.15s, border-color 0.15s, filter 0.15s;
   text-decoration: none;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 /* Solid green buttons using the docs accent (--jk-accent), so the landing CTAs
    match the green used across the docs pages. Dark ink reads on it in both themes. */
@@ -944,7 +943,6 @@ html.theme-init *::after {
   text-decoration: none; letter-spacing: -0.01em;
   padding: 13px 22px; border-radius: 5px;
   transition: gap 0.2s ease-out, filter 0.15s, box-shadow 0.2s;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
   white-space: nowrap;
 }
 .landing-invite-cta:hover {
@@ -1354,7 +1352,6 @@ nav.landing-topnav .landing-star {
   align-items: center;
   gap: 8px;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.2s;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 /* Shared star icon — used in topnav "Star on GitHub" + install-block CTA.
    SVG path uses currentColor so we colour it via `color`. filter: drop-shadow
@@ -1383,7 +1380,6 @@ nav.landing-topnav .landing-star {
   border: 1px solid var(--landing-ui-strong);
   border-radius: 8px;
   background: var(--landing-panel);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 .landing-theme-toggle button {
   display: inline-flex;
