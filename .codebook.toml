@@ -33,7 +33,7 @@ ignore_paths = [
   "docs/node_modules/**/*",
   "docs/public/**/*",
   "docs/src/routeTree.gen.ts",
-  "docs/content/docs/research/token-optimization/**/*",
+  "docs/content/docs/reference/research/**/*",
   "**/Cargo.lock",
   "**/bun.lock",
 ]
@@ -46,6 +46,7 @@ ignore_patterns = [
 
 words = [
   "andrewpatterson",
+  "watchlists",
   "bigmodel",
   "chgrp",
   "codexbar",
