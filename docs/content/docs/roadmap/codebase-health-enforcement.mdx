@@ -48,6 +48,16 @@ Mapped from a full crate survey. Conceptual layers today: **domain** (`jackin-co
 | P7 | **Presentation/IO leaking into wrong layers** | `jackin-core` carries `ansi_text`/`prune_output`/`url_text` (presentation) in a "pure vocabulary" crate; `jackin-diagnostics` owns terminal-ownership state (presentation) yet is depended on by domain crates | The layer labels stop meaning anything; leaks travel downward via misleading crate names. |
 | P8 | **Naming inconsistency** | `app_config_*.rs` "type_aspect" fan-out in `jackin-config` (a convention used nowhere else); duplicate file stems (`auth.rs` ×6, `update.rs` ×7); shim names colliding with crate names | No predictable convention to navigate by. |
 
+## Design
+
+Concrete decisions for the open workstreams (W1, W4, W6, and the remaining W5 slices), settled through brainstorming. Each decision carries a one-line *why*.
+
+### D1 — Restructure scope: full layered topology
+
+**Decision:** pursue the rust-analyzer-style layered topology — explicit per-concern layer crates with strictly inward dependencies — over the lighter module-first or hybrid options. **Why:** it gives the most honest map (crate name → layer → allowed dependencies), which is the stated goal; the larger churn is acceptable because every move is behavior-preserving and independently shippable.
+
+**Binding condition (performance).** Because release builds do not cross-crate LTO by default, splitting hot, tightly-coupled paths across new crate boundaries can cost runtime performance. Therefore: (a) the release profile enables `lto = "thin"` workspace-wide before hot paths cross new boundaries, and (b) each god-crate carve is perf-checked against a representative launch/attach measurement to confirm no regression. No carve lands on an unmeasured hot path. This operationalizes the performance guardrail above; performance is preserved, not assumed.
+
 ## Workstreams
 
 ### W1 — Architecture & boundaries (the core restructuring)
