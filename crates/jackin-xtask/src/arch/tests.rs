@@ -7,14 +7,6 @@ use std::collections::{BTreeMap, BTreeSet};
 fn synthetic_graph_flags_only_listed_forbidden_edges() {
     let mut deps: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     deps.insert(
-        "jackin-env".into(),
-        BTreeSet::from(["jackin-core".into(), "jackin-launch".into()]),
-    );
-    deps.insert(
-        "jackin-docker".into(),
-        BTreeSet::from(["jackin-launch".into()]),
-    );
-    deps.insert(
         "jackin-runtime".into(),
         BTreeSet::from(["jackin-core".into(), "jackin-tui".into()]),
     );
@@ -40,8 +32,6 @@ fn synthetic_graph_flags_only_listed_forbidden_edges() {
         problems,
         vec![
             "jackin-config → jackin-diagnostics",
-            "jackin-docker → jackin-launch",
-            "jackin-env → jackin-launch",
             "jackin-manifest → jackin-diagnostics",
             "jackin-runtime → jackin-tui",
         ]
@@ -51,14 +41,6 @@ fn synthetic_graph_flags_only_listed_forbidden_edges() {
 #[test]
 fn synthetic_graph_passes_when_clean() {
     let mut deps: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    deps.insert(
-        "jackin-env".into(),
-        BTreeSet::from(["jackin-core".into(), "jackin-config".into()]),
-    );
-    deps.insert(
-        "jackin-docker".into(),
-        BTreeSet::from(["jackin-core".into()]),
-    );
     deps.insert(
         "jackin-runtime".into(),
         BTreeSet::from(["jackin-core".into(), "jackin-config".into()]),

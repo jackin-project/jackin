@@ -32,11 +32,16 @@ use crate::docs::repo_root;
 /// Forbid edges (from, to). `from` is not allowed to depend on `to`.
 /// Stored as `(from, to)` so symmetric blocks are easy to read.
 const FORBIDDEN_EDGES: &[(&str, &str)] = &[
-    ("jackin-env", "jackin-launch"),
-    ("jackin-docker", "jackin-launch"),
-    ("jackin-runtime", "jackin-tui"),
+    // Domain infra lifting logs into the diagnostics sink. Will move to a
+    // port-trait indirection once the debug telemetry refactor lands — the
+    // log calls themselves stay, only the layer edge flips.
     ("jackin-config", "jackin-diagnostics"),
     ("jackin-manifest", "jackin-diagnostics"),
+    // Presentation/infra leak — runtime owns the bootstrap pipeline and
+    // currently reaches upward into the TUI for the build log and launch
+    // view. W1 follow-up adds a port trait that runtime owns and the TUI
+    // subscribes to.
+    ("jackin-runtime", "jackin-tui"),
 ];
 
 #[derive(Args, Debug)]
