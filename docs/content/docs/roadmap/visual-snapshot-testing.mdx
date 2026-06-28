@@ -133,5 +133,5 @@ These are unresolved and should be settled in Phase 2 (the harness), before broa
 - [Test infrastructure & behavioral specs](/roadmap/test-infra-behavioral-specs/) — owns the shared `jackin-test-support` crate and the determinism harness this item builds on; this item supplies the styled SVG artifact and the visual assertions.
 - [Rust CI tooling & dependency hygiene](/roadmap/rust-ci-tooling/) — owns CI wiring, coverage, and the `insta` dev-dependency; the golden-comparison steps slot into its aggregators.
 - [Terminal observation and automation](/roadmap/terminal-observation-automation/) — owns live PTY read/wait/send automation of running sessions; complementary, not overlapping: that item captures live sessions for orchestration, this one asserts deterministic render regressions. The two should share the styled-cell frame schema.
-- [Brand identity system](/roadmap/brand-identity-system/) — defines the colour and wordmark contract these visual tests defend.
+- [Brand identity system](/reference/brand-identity/) — defines the colour and wordmark contract these visual tests defend.
 - [Launch progress TUI](/roadmap/launch-progress-tui/) — its renderer snapshots should use this item's harness.
