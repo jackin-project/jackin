@@ -19,7 +19,6 @@ jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
 jackin-config = { version = "0.6.0-dev", path = "../jackin-config" }
 jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
 jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
-jackin-launch = { version = "0.6.0-dev", path = "../jackin-launch" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
