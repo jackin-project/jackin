@@ -4555,6 +4555,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
     ]);
     let mut workspace = repo_workspace(&cached_repo.repo_dir);
     workspace.label = "workspace".to_owned();
+    workspace.name = "workspace".to_owned();
     workspace.default_agent = Some(jackin_core::agent::Agent::Claude);
 
     load_role(
@@ -4648,6 +4649,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
     ]);
     let mut workspace = repo_workspace(&cached_repo.repo_dir);
     workspace.label = "workspace".to_owned();
+    workspace.name = "workspace".to_owned();
 
     load_role(
         &paths,
