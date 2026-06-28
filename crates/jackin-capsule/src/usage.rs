@@ -23,13 +23,13 @@ use serde::{Deserialize, Serialize};
 
 mod format;
 use format::{
-    CliOutput, codex_account_from_value, codex_limit_label, compact_count,
-    compact_duration_label, dollar_amounts, env_value, expiry_label, first_number_key,
-    first_string_key, format_amount_with_unit, format_cents, format_currency, home_path,
-    humanize_plan_label, humanize_words_with, json_number, local_timestamp_label,
-    oauth_origin, parse_iso_epoch, percent_before_used, quota_pace_label,
-    remaining_from_fraction, reset_label, run_cli_with_timeout, run_cli_with_timeout_full,
-    titlecase_ascii, used_percent_from_fraction, used_percent_label, window_minutes_label,
+    CliOutput, codex_account_from_value, codex_limit_label, compact_count, compact_duration_label,
+    dollar_amounts, env_value, expiry_label, first_number_key, first_string_key,
+    format_amount_with_unit, format_cents, format_currency, home_path, humanize_plan_label,
+    humanize_words_with, json_number, local_timestamp_label, oauth_origin, parse_iso_epoch,
+    percent_before_used, quota_pace_label, remaining_from_fraction, reset_label,
+    run_cli_with_timeout, run_cli_with_timeout_full, titlecase_ascii, used_percent_from_fraction,
+    used_percent_label, window_minutes_label,
 };
 
 const PROVIDER_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -5495,8 +5495,6 @@ fn minimax_bucket_label(model_name: &str, window: MiniMaxWindow) -> String {
         (false, MiniMaxWindow::Weekly) => format!("{model} · Weekly"),
     }
 }
-
-
 
 fn minimax_usage_count_line(
     usage: Option<i64>,

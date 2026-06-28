@@ -219,7 +219,11 @@ pub(super) struct CliOutput {
     pub(super) stderr: String,
 }
 
-pub(super) fn run_cli_with_timeout(command: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
+pub(super) fn run_cli_with_timeout(
+    command: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<String, String> {
     let output = run_cli_with_timeout_full(command, args, timeout)?;
     if !output.success {
         return Err(format!(

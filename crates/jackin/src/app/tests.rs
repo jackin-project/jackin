@@ -692,10 +692,7 @@ fn delete_prior_op_item_with_op_ref_calls_writer_with_parsed_uuids() {
         *writer.deletes.borrow(),
         vec![("VAULT_UUID".to_owned(), "OLD_ITEM".to_owned())],
     );
-    assert_eq!(
-        *writer.delete_accounts.borrow(),
-        vec![None],
-    );
+    assert_eq!(*writer.delete_accounts.borrow(), vec![None],);
 }
 
 /// The prior item the operator adopted (no jackin tag) must NOT be

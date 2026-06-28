@@ -1,13 +1,13 @@
 //! Host observability substrate: structured JSONL run diagnostics, debug-mode
 //! flag, terminal-ownership guards, and the `debug_log!` macro.
 
+pub mod build_log;
 pub mod logging;
 pub mod observability;
 pub mod run;
 pub mod screen;
 pub mod summary;
 pub mod terminal;
-pub mod build_log;
 
 pub use logging::{
     begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line, emit_debug_line,

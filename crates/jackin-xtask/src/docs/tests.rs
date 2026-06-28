@@ -176,15 +176,9 @@ fn research_scaffold_in_creates_dossier_and_registers() {
 
 #[test]
 fn line_references_slug_is_boundary_safe() {
-    assert!(line_references_slug(
-        "see /roadmap/auth/ for",
-        "auth"
-    ));
+    assert!(line_references_slug("see /roadmap/auth/ for", "auth"));
     assert!(line_references_slug("    \"../auth\"", "auth"));
-    assert!(!line_references_slug(
-        "/roadmap/auth-health/",
-        "auth"
-    ));
+    assert!(!line_references_slug("/roadmap/auth-health/", "auth"));
     assert!(!line_references_slug("nothing here", "auth"));
 }
 
@@ -221,10 +215,7 @@ fn retire_apply_removes_entry_and_page_when_clean() {
         },
     )
     .expect("clean retire should succeed");
-    assert!(
-        !d.join("roadmap/shipme.mdx").exists(),
-        "page deleted"
-    );
+    assert!(!d.join("roadmap/shipme.mdx").exists(), "page deleted");
     let meta = read_meta(&d.join("roadmap/(grp)/meta.json")).unwrap();
     assert!(
         meta["pages"].as_array().unwrap().is_empty(),
@@ -255,10 +246,7 @@ fn retire_apply_fails_on_dangling_inbound_link() {
     );
     // Fail-closed: nothing is mutated when the gate trips.
     let d = docs.path();
-    assert!(
-        d.join("roadmap/shipme.mdx").exists(),
-        "page must survive"
-    );
+    assert!(d.join("roadmap/shipme.mdx").exists(), "page must survive");
     let meta = read_meta(&d.join("roadmap/(grp)/meta.json")).unwrap();
     assert_eq!(meta["pages"][0], "../shipme", "sidebar entry must survive");
 }
