@@ -8,7 +8,7 @@
 //! must reserve; rendering writes ANSI escape sequences directly into the
 //! caller-supplied `buf` using absolute cursor positions.
 
-use jackin_tui::components::{StatusRightGroup, status_right_group_layout};
+use jackin_tui::components::{StatusRightChunk, StatusRightGroup, status_right_group_layout};
 use jackin_tui::{display_cols, take_display_cols};
 
 use crate::pull_request::PullRequestInfo;
@@ -47,6 +47,16 @@ pub(crate) struct BranchContextBarLayout {
 
 pub(crate) fn visible_branch(branch: Option<&str>, is_default_branch: bool) -> Option<&str> {
     branch.filter(|_| !is_default_branch)
+}
+
+/// Split a placed right-group chunk into its display text and clickable column
+/// range (`("", None)` when the chunk is absent). Shared by every right-group
+/// slot so the unpack happens one way.
+fn chunk_text_and_region(chunk: Option<&StatusRightChunk>) -> (String, Option<ColRange>) {
+    chunk.map_or_else(
+        || (String::new(), None),
+        |chunk| (chunk.text.clone(), ColRange::new(chunk.start, chunk.end)),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -91,33 +101,18 @@ pub(crate) fn branch_context_bar_layout(
     } else {
         None
     };
+    let (usage, usage_region) = chunk_text_and_region(right.usage.as_ref());
+    let (debug_chip, debug_chip_region) = chunk_text_and_region(right.run_id.as_ref());
+    let (container, container_region) = chunk_text_and_region(right.container.as_ref());
     Some(BranchContextBarLayout {
         left,
         left_region,
-        usage: right
-            .usage
-            .as_ref()
-            .map_or_else(String::new, |chunk| chunk.text.clone()),
-        usage_region: right
-            .usage
-            .as_ref()
-            .and_then(|chunk| ColRange::new(chunk.start, chunk.end)),
-        debug_chip: right
-            .run_id
-            .as_ref()
-            .map_or_else(String::new, |chunk| chunk.text.clone()),
-        debug_chip_region: right
-            .run_id
-            .as_ref()
-            .and_then(|chunk| ColRange::new(chunk.start, chunk.end)),
-        container: right
-            .container
-            .as_ref()
-            .map_or_else(String::new, |chunk| chunk.text.clone()),
-        container_region: right
-            .container
-            .as_ref()
-            .and_then(|chunk| ColRange::new(chunk.start, chunk.end)),
+        usage,
+        usage_region,
+        debug_chip,
+        debug_chip_region,
+        container,
+        container_region,
     })
 }
 

@@ -1147,6 +1147,13 @@ pub(super) async fn launch_role_runtime(
     // runtime is built without the `fs` feature here, and blocking on
     // a slow / NFS host parks the worker driving the docker-run RPC
     // for every other future scheduled on it.
+    // Host-shared usage cache dir, mounted into every container so the
+    // account-keyed snapshot/cooldown (and refresh lock) coordinate across
+    // instances — a new instance reads the prior state and only one instance
+    // refreshes a given account (Class III). Shared (no container_name), owned by
+    // the host UID like the socket dir so the container can write it.
+    let usage_shared_dir = paths.jackin_home.join("data").join("usage-shared");
+    let usage_shared_dir_for_mkdir = usage_shared_dir.clone();
     let socket_dir_for_mkdir = socket_dir.clone();
     let capsule_config_contents_for_write = capsule_config_contents.clone();
     let extrausers_passwd_for_write = extrausers_passwd.clone();
@@ -1159,6 +1166,7 @@ pub(super) async fn launch_role_runtime(
     );
     let prepare_socket_dir_result = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
         std::fs::create_dir_all(&socket_dir_for_mkdir)?;
+        std::fs::create_dir_all(&usage_shared_dir_for_mkdir)?;
         std::fs::write(
             socket_dir_for_mkdir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
             capsule_config_contents_for_write,
@@ -1211,6 +1219,27 @@ pub(super) async fn launch_role_runtime(
     })?;
     let socket_mount = format!("{socket_dir_str}:/jackin/run");
     run_args.extend_from_slice(&["-v", &socket_mount]);
+    // Bind the host-shared usage cache RW and point the capsule's shared-dir env
+    // at subdirectories under it, so the account-keyed snapshot/cooldown/lock
+    // files live on one host-shared volume across all containers (Class III). The capsule
+    // `create_dir_all`s the subdirectories on first write.
+    let usage_shared_str = usage_shared_dir.to_str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "usage-shared dir {} contains non-UTF-8 bytes; cannot pass to docker -v",
+            usage_shared_dir.display(),
+        )
+    })?;
+    let usage_shared_mount = format!("{usage_shared_str}:/jackin/usage-shared");
+    run_args.extend_from_slice(&[
+        "-v",
+        &usage_shared_mount,
+        "-e",
+        "JACKIN_USAGE_SNAPSHOTS_DIR=/jackin/usage-shared/snapshots",
+        "-e",
+        "JACKIN_USAGE_COOLDOWN_DIR=/jackin/usage-shared/cooldowns",
+        "-e",
+        "JACKIN_USAGE_LOCK_DIR=/jackin/usage-shared/locks",
+    ]);
     // Mount the host UID/GID entries where libnss-extrausers reads them.
     let extrausers_mounts = if extrausers_entries.is_some() {
         let passwd_mount = extrausers_passwd

@@ -12,18 +12,11 @@ fn tab_click_region_width_matches_layout() {
     let tab = Tab::new_single("Claude", 1, "test");
     let tabs = vec![tab];
     let states = vec![(1u64, VisibleAgentState::Blocked)];
-    bar.set_click_regions_from_plan(&status_bar_plan(
-        80,
-        &tabs,
-        0,
-        &states,
-        PrefixMode::Idle,
-        None,
-    ));
+    bar.set_click_regions_from_plan(&status_bar_plan(80, &tabs, 0, &states, PrefixMode::Idle));
     let (start, end) = bar.tab_regions[0];
     assert_eq!(end - start, 10);
     // Recomputing with no state must keep the same width.
-    bar.set_click_regions_from_plan(&status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle, None));
+    bar.set_click_regions_from_plan(&status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle));
     let (s2, e2) = bar.tab_regions[0];
     assert_eq!(e2 - s2, 10);
     assert_eq!((s2, e2), (start, end));
@@ -51,7 +44,7 @@ fn status_bar_keeps_supplied_container_name_and_instance_id() {
 #[test]
 fn idle_hint_is_planned() {
     let mut bar = StatusBar::new();
-    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle, None);
+    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle);
     bar.set_click_regions_from_plan(&plan);
     assert_eq!(plan.hint_text, " ☰Menu ");
     assert!(bar.hint_at(1, 75), "menu hint should be clickable");
@@ -59,16 +52,14 @@ fn idle_hint_is_planned() {
 
 #[test]
 fn awaiting_prefix_hint_is_planned() {
-    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Awaiting, None);
+    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Awaiting);
     assert_eq!(plan.hint_text, " prefix… ");
 }
 
 #[test]
-fn configured_palette_glyph_appears_in_hint_text() {
-    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle, Some("C-\\"));
-    assert_eq!(plan.hint_text, " C-\\ Menu ");
-    let plan_disabled = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle, None);
-    assert_eq!(plan_disabled.hint_text, " ☰Menu ");
+fn idle_menu_hint_is_icon_only() {
+    let plan = status_bar_plan(80, &[], 0, &[], PrefixMode::Idle);
+    assert_eq!(plan.hint_text, " ☰Menu ");
 }
 
 #[test]

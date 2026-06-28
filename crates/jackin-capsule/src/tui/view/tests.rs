@@ -23,14 +23,8 @@ fn chrome_frame(
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan = crate::tui::components::status_bar::status_bar_plan(
-        80,
-        &tabs,
-        0,
-        &[],
-        PrefixMode::Idle,
-        None,
-    );
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(80, &tabs, 0, &[], PrefixMode::Idle);
     terminal
         .draw(|frame| {
             render_capsule_ratatui_frame(
@@ -187,14 +181,8 @@ fn non_debug_dialog_hides_bottom_status_bar() {
     ];
     let backend = TestBackend::new(120, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan = crate::tui::components::status_bar::status_bar_plan(
-        120,
-        &tabs,
-        0,
-        &[],
-        PrefixMode::Idle,
-        None,
-    );
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(120, &tabs, 0, &[], PrefixMode::Idle);
 
     terminal
         .draw(|frame| {
@@ -310,14 +298,8 @@ fn clipboard_image_notice_takes_priority_over_selection_copy_toast() {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(90, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan = crate::tui::components::status_bar::status_bar_plan(
-        90,
-        &tabs,
-        0,
-        &[],
-        PrefixMode::Idle,
-        None,
-    );
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
 
     terminal
         .draw(|frame| {
@@ -393,14 +375,8 @@ fn debug_dialog_keeps_status_bar_visible() {
     let snapshot = (DialogRatatuiSnapshot::DebugInfo(state), (3, 8, 10, 64));
     let backend = TestBackend::new(120, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan = crate::tui::components::status_bar::status_bar_plan(
-        120,
-        &tabs,
-        0,
-        &[],
-        PrefixMode::Idle,
-        None,
-    );
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(120, &tabs, 0, &[], PrefixMode::Idle);
 
     terminal
         .draw(|frame| {
@@ -478,14 +454,8 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
     let tabs = [Tab::new_single("Codex", 1, "codex")];
     let backend = TestBackend::new(90, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let status_plan = crate::tui::components::status_bar::status_bar_plan(
-        90,
-        &tabs,
-        0,
-        &[],
-        PrefixMode::Idle,
-        None,
-    );
+    let status_plan =
+        crate::tui::components::status_bar::status_bar_plan(90, &tabs, 0, &[], PrefixMode::Idle);
 
     terminal
         .draw(|frame| {

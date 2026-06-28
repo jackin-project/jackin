@@ -66,6 +66,16 @@ The right side of every jackin' status bar carries up to two clickable chips:
 
 **Implementation applies to all status bar surfaces:** the capsule bottom bar, the host console bottom bar, and the launch cockpit status bar. Any status bar that shows an instance ID or run ID must wire the click handlers to the appropriate dialog.
 
+### Status bar usage headline — windows + spend
+
+The focused agent's usage headline is one ` · `-joined string carrying the percentage windows and, when the account has a monetary spend window, the spend: `Session 89% · Weekly 73% · SGD 78 of 260`. It is built capsule-side in `status_bar_headline_for_surface` (<RepoFile path="crates/jackin-capsule/src/usage.rs">crates/jackin-capsule/src/usage.rs</RepoFile>) and travels to every surface as `FocusedUsageView::status_bar_label`. The headline occupies the `usage` slot of the right group (`usage · container · run_id` in `StatusRightGroup`, <RepoFile path="crates/jackin-tui/src/components/status_footer.rs">crates/jackin-tui/src/components/status_footer.rs</RepoFile>); under width pressure the whole `usage` chunk is the first to drop (it is the most compressible), leaving the container/run-id identity.
+
+**Spend label.** Read from the `Spend`-slot quota bucket's structured `Money`, formatted `<used> of <limit>` with the currency shown once (`SGD 78 of 260`, `$53 of 300`) — used in compact (whole-unit) form, limit as a bare rounded amount via `Money::major_amount`. Omitted entirely when the account has no monetary spend window (a subscription-only plan), rather than showing `$0`.
+
+**Money is never preformatted upstream.** Spend amounts travel as a typed `Money { amount_minor, currency, exponent }` (in `jackin-protocol`) and are formatted only at the rendering edge. A bare float-plus-currency representation previously let a minor-unit value (cents) render 100× too large; carrying the scale end to end removes that whole class.
+
+**Usage dialog meters are severity-graded.** In the Usage overlay each quota bucket's meter colours by the API-reported severity carried on the bucket (`UsageSeverity`): normal stays phosphor green, `warn` renders amber, `danger` renders red. The severity rides the shared `ContainerInfoRow` as an optional accent colour so it reaches the meter renderer instead of being flattened away when buckets become display rows — the meter is never hard-coded green regardless of how close the account is to its cap. A disabled or out-of-credits spend window is still shown (with its reason, e.g. `disabled · out of credits`) rather than dropped, so the cap stays visible the way the web console shows it.
+
 ### Version display — two rows, consistent format
 
 Wherever the jackin' version and the capsule version appear together (Debug info dialog, any info panel), they must appear on **separate rows** using the canonical names:

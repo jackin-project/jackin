@@ -8,7 +8,7 @@ fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
         .into_iter()
         .filter_map(|item| match item {
             HintSpan::Key(value) | HintSpan::Text(value) => Some(value.to_owned()),
-            HintSpan::Dyn(value) => Some(value),
+            HintSpan::Dyn(value) | HintSpan::DynKey(value) => Some(value),
             HintSpan::Sep | HintSpan::GroupSep => None,
         })
         .collect()
