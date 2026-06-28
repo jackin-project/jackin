@@ -2,7 +2,15 @@
 title: "Codebase health: structure & reviewability"
 ---
 
-**Status**: Open — proposal. This page is the plan only; the opening PR ships the roadmap item, no code. Each workstream below lands later as its own behavior-preserving, PR-sized slice.
+**Status**: Partially implemented — gates live, first decomposition slice landed. This umbrella item stays open until all six workstreams land and the file-size + lint backlogs are cleared.
+
+**Shipped in this branch** (workstream headers below show the rest as still open):
+
+- **W2 — Stricter Clippy (entire workstream landed).** Flipped `too_many_lines`, `cognitive_complexity`, `excessive_nesting`, `fn_params_excessive_bools`, `struct_excessive_bools` from `allow` to `warn`. Set `clippy.toml` thresholds at the measured current maxima so nothing breaks on day one: `too-many-lines-threshold = 450` (max measured 438), `cognitive-complexity-threshold = 100` (max 88), `excessive-nesting-threshold = 8`, `too-many-arguments-threshold = 9`. Existing offenders grandfathered with narrow `#[expect(clippy::<lint>, reason = "tracked in codebase-health-enforcement")]` — every one of them is a burn-down backlog item. Stale `#[expect]` for lints that no longer fire were removed.
+- **W3 — File-size ratchet gate (entire workstream landed).** New committed budget at <RepoFile path="file-size-budget.toml">file-size-budget.toml</RepoFile> (production cap 2000L, test cap 10000L, with the current over-cap files grandfathered with their present line counts). New <RepoFile path="crates/jackin-xtask/src/lint.rs">cargo xtask lint files</RepoFile> subcommand enforces the budget (refuses to let a listed file grow past its recorded count, refuses any non-listed file over its cap). `cargo xtask lint files --print-budget` emits a refreshed budget for use after a decomposition. New `file-size-gate` job in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> mirroring the existing `schema-check` shape.
+- **W5 — first decomposition slice landed:** `crates/jackin-capsule/src/usage.rs` 6374→5983L; extracted the shared formatting/CLI/JSON helpers into <RepoFile path="crates/jackin-capsule/src/usage/format.rs">`usage/format.rs`</RepoFile> (414L). The remaining provider sections (`claude`, `codex`, `grok`, `zai`, `kimi`, `minimax`, `amp`), the view-rendering and refresh-orchestration, and the build_snapshot dispatcher stay in `usage.rs` for now — see W5 below for the follow-up PRs that bring each one under the cap.
+- **Tooling debt (entire entry shipped):** fixed `ROADMAP_REL` in <RepoFile path="crates/jackin-xtask/src/docs.rs">`crates/jackin-xtask/src/docs.rs`</RepoFile> from the dead `reference/roadmap` path to `roadmap`; `cargo xtask change new` and `cargo xtask roadmap audit` now resolve correctly. The same file is the home for the W3 `lint files` subcommand, as called out in the original tooling-debt note.
+- **Carried-over Phase 2 cleanups (verified + one shipped):** confirmed `build_mode_resolution` in `launch/auth_error.rs` delegates to `resolve_mode_with_trace`; the two inline `format!("{base}-dind")` / `format!("{base}-net")` derivations in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs">`launch_dind.rs`</RepoFile> now go through the canonical `dind_container_name` / `role_network_name` helpers in <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs">`runtime/naming.rs`</RepoFile>. The `config_with_agents` and `FakeOpWriter` test-helper dedup items are still open (cross-crate test-util extraction needs a follow-up).
 
 The umbrella tracker for making jackin❯ understandable and reviewable as it grows. The thesis, in one line: **the structure of the code should reveal what the app does and where each thing lives — and that property has to be enforced, not remembered.** jackin❯ is now ~20 crates and ~300k lines. Crate separation exists and helps, but a new developer still cannot reliably answer "where does feature X live?" — the architecture has accumulated indirection (re-export shims), inverted dependencies, misleading crate names, god-crates, and duplicated subsystems that send the same question to several different files. This item lays out the target architecture, the concrete problems blocking it, and the workstreams (restructure → enforce) that get there and keep it there.
 
@@ -58,22 +66,22 @@ Behavior-preserving moves that make the layout match the target. Sequence with W
 
 The reviewability levers are currently OFF. CI already runs `cargo clippy … -D warnings`, so flipping a lint to `warn` enforces it immediately. Measure first, set thresholds at the current maximum, grandfather with narrow `#[expect(…, reason = "…")]`, ratchet down. Never blanket-`allow`.
 
-- [ ] **W2.0 measure** — apply the lints below locally; capture violation counts + current maxima to set non-breaking initial thresholds.
-- [ ] Enable `too_many_lines` (`allow` → `warn`) + set `too-many-lines-threshold`.
-- [ ] Enable `cognitive_complexity` (nursery, cherry-pick) + threshold.
-- [ ] Enable `excessive_nesting` (nursery; default 0 disables — set e.g. 5) + threshold.
-- [ ] Flip `fn_params_excessive_bools` and `struct_excessive_bools` `allow` → `warn`.
-- [ ] Tune `clippy.toml` thresholds: `too-many-arguments`, `type-complexity`, `enum-variant-size`.
+- [x] **W2.0 measure** — apply the lints below locally; capture violation counts + current maxima to set non-breaking initial thresholds.
+- [x] Enable `too_many_lines` (`allow` → `warn`) + set `too-many-lines-threshold`.
+- [x] Enable `cognitive_complexity` (nursery, cherry-pick) + threshold.
+- [x] Enable `excessive_nesting` (nursery; default 0 disables — set e.g. 5) + threshold.
+- [x] Flip `fn_params_excessive_bools` and `struct_excessive_bools` `allow` → `warn`.
+- [x] Tune `clippy.toml` thresholds: `too-many-arguments`, `type-complexity`, `enum-variant-size`.
 - Decision: `*/tests.rs` exceed limits by nature — enforce on production code, `#[expect]` the large test fns, handle test size under W3.
 
 ### W3 — File-size ratchet gate
 
 Clippy has **no** max-file-length lint; this is the bespoke check it cannot provide. Same shape as the existing `bun run check:roadmap-sidebar`.
 
-- [ ] **Hard ceiling** — no production `.rs` over an absolute cap (proposed 2000L); new files born under it.
-- [ ] **High-water-mark allowlist (the ratchet)** — a committed budget (`file-size-budget.toml` or a `cargo xtask lint files` subcommand) lists every current over-cap file with its line count; the gate fails if a listed file *grows*, or if an unlisted file exceeds the cap. Numbers may only decrease; an entry is deleted when its file drops under the cap. **You cannot add lines to an already-too-big file**, which makes decomposition self-enforcing.
-- [ ] Wire into <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> as a required job; seed from today's offenders.
-- [ ] Separate, higher budget for `*/tests.rs` (`launch/tests.rs` 8603L, `daemon/tests.rs` 7612L) so production enforcement isn't blocked on the test-infra work ([test-infra-behavioral-specs](/roadmap/test-infra-behavioral-specs/)).
+- [x] **Hard ceiling** — no production `.rs` over an absolute cap (proposed 2000L); new files born under it.
+- [x] **High-water-mark allowlist (the ratchet)** — a committed budget (`file-size-budget.toml` or a `cargo xtask lint files` subcommand) lists every current over-cap file with its line count; the gate fails if a listed file *grows*, or if an unlisted file exceeds the cap. Numbers may only decrease; an entry is deleted when its file drops under the cap. **You cannot add lines to an already-too-big file**, which makes decomposition self-enforcing.
+- [x] Wire into <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> as a required job; seed from today's offenders.
+- [x] Separate, higher budget for `*/tests.rs` (`launch/tests.rs` 8603L, `daemon/tests.rs` 7612L) so production enforcement isn't blocked on the test-infra work ([test-infra-behavioral-specs](/roadmap/test-infra-behavioral-specs/)).
 
 ### W4 — Enforce the architecture in CI
 
@@ -90,7 +98,7 @@ The one-time remediation that brings today's files under W2/W3 and realizes the 
 
 | File | Lines | Direction |
 |---|---|---|
-| <RepoFile path="crates/jackin-capsule/src/usage.rs">usage.rs</RepoFile> | 6374 | `usage/{claude,codex,grok,zai,kimi,minimax,amp}.rs` + `usage/{format,view,refresh}.rs`; `usage.rs` stays coordinator |
+| <RepoFile path="crates/jackin-capsule/src/usage.rs">usage.rs</RepoFile> | 5983 | first slice shipped: extracted <RepoFile path="crates/jackin-capsule/src/usage/format.rs">`usage/format.rs`</RepoFile> (414L). Remaining slices: `usage/{claude,codex,grok,zai,kimi,minimax,amp}.rs` + `usage/{view,refresh}.rs`; `usage.rs` stays coordinator. |
 | <RepoFile path="crates/jackin-console/src/tui/app.rs">tui/app.rs</RepoFile> | 5083 | split `ConsoleModal` dispatch + per-screen update handlers; tied to W6 |
 | <RepoFile path="crates/jackin-console/src/tui/screens/editor/model.rs">screens/editor/model.rs</RepoFile> | 4176 | the duplication core of [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/) — split the unified surface, not the two duplicated ones |
 | <RepoFile path="crates/jackin-console/src/tui/screens/settings/model.rs">screens/settings/model.rs</RepoFile> | 3852 | as above |
@@ -131,6 +139,8 @@ Open until the layout matches the target, the gates are enforced, and the backlo
 ## Tooling debt
 
 `cargo xtask change new` / `roadmap audit` resolve the roadmap at the dead `docs/content/docs/reference/roadmap` path (it moved to `docs/content/docs/roadmap`). Fix `ROADMAP_REL` in <RepoFile path="crates/jackin-xtask/src/docs.rs">jackin-xtask/src/docs.rs</RepoFile> to `"roadmap"`. Same file is the natural home for the W3 `lint files` subcommand. Until fixed, validate with `bun run check:roadmap-sidebar`.
+
+**Resolved in this branch:** `ROADMAP_REL` is now `"roadmap"`; `cargo xtask change new` and `cargo xtask roadmap audit` resolve the right directory. The same file is now the home for the W3 `cargo xtask lint files` subcommand.
 
 ## What shipped in Phase 2
 
