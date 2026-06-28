@@ -91,6 +91,10 @@ Worked example — the `build_log` inversion (P2): define `trait BuildLogSink` i
 
 **Contract shape.** The runtime centers on **one** `update(&mut Model, Message)` per app (canonical TEA), with components translating input events → messages — *not* per-component co-located update loops (the "co-location reduces duplication" claim was adversarially refuted; the single central `update` is the actual de-duplication). Sequence with [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/), which already collapses two of the four stacks (editor + settings) and is the first consumer of the shared contract.
 
+### D6 — Shim-maze end-state (P1): direct imports from crate roots, no binary facade layer
+
+**Decision:** delete all 19 `pub use jackin_X::*` shim modules in the `jackin` binary; callers import directly from the owning crate root (`use jackin_manifest::RoleManifest`). Each library crate's `lib.rs` is its single facade — keep those crate-root re-exports curated so the public surface *is* the facade. No `jackin::prelude` glob, no per-module re-export layer. **Why:** one home per concept — the crate whose name matches — which is the entire navigability goal; a binary-side prelude would reintroduce a second home and a glob indirection ([matklad cautions against exactly this](https://matklad.github.io/2021/08/22/large-rust-workspaces.html)). Fix the memorize-this exceptions along the way (e.g. `DriftDetection` "import from `runtime::drift` directly") so there are zero special cases. The import-site churn is mechanical and behavior-preserving (a [Parallel Change](https://martinfowler.com/bliki/ParallelChange.html): callers migrate to the crate path, then the shim is deleted).
+
 ## Workstreams
 
 ### W1 — Architecture & boundaries (the core restructuring)
