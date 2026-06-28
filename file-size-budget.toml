@@ -31,6 +31,9 @@ test_cap = 10000
 [[production]]
 path = "crates/jackin-capsule/src/usage.rs"
 lines = 5983
+# Decomposition underway — first slice shipped (usage/format.rs, 414L);
+# the remaining per-provider splits (claude, codex, grok, amp) bring this
+# below the 2000L cap in follow-up PRs.
 
 [[production]]
 path = "crates/jackin-console/src/tui/app.rs"
