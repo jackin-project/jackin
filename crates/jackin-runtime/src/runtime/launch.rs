@@ -1220,9 +1220,9 @@ pub(super) async fn launch_role_runtime(
     let socket_mount = format!("{socket_dir_str}:/jackin/run");
     run_args.extend_from_slice(&["-v", &socket_mount]);
     // Bind the host-shared usage cache RW and point the capsule's shared-dir env
-    // at subdirs under it, so the account-keyed snapshot/cooldown/lock files live
-    // on one host-shared volume across all containers (Class III). The capsule
-    // `create_dir_all`s the subdirs on first write.
+    // at subdirectories under it, so the account-keyed snapshot/cooldown/lock
+    // files live on one host-shared volume across all containers (Class III). The capsule
+    // `create_dir_all`s the subdirectories on first write.
     let usage_shared_str = usage_shared_dir.to_str().ok_or_else(|| {
         anyhow::anyhow!(
             "usage-shared dir {} contains non-UTF-8 bytes; cannot pass to docker -v",
