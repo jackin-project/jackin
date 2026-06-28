@@ -89,7 +89,7 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Cache bun modules
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('docs/bun.lock') }}
@@ -126,7 +126,7 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Cache bun modules
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('docs/bun.lock') }}
@@ -141,7 +141,7 @@ jobs:
         run: bun run build
 
       - name: Restore lychee cache
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .lycheecache
           # Not scoped by ref: a PR and the post-merge main run must check the
