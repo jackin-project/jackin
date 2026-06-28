@@ -29,6 +29,10 @@ impl MuxMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub(crate) struct MuxModeState {
     pub(crate) dialog_open: bool,
     pub(crate) dragging: bool,
@@ -51,6 +55,10 @@ pub(crate) fn mux_mode_for_state(state: MuxModeState) -> MuxMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub(crate) struct PointerShapeState {
     pub(crate) dragging: bool,
     pub(crate) selecting: bool,
@@ -148,6 +156,10 @@ pub(crate) fn hover_target_for_state(state: HoverState) -> Option<HoverTarget> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub(crate) struct CursorVisibilityState {
     pub(crate) dialog_open: bool,
     pub(crate) focused_pane_available: bool,

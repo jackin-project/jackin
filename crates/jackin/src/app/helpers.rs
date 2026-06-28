@@ -58,10 +58,6 @@ pub(super) fn resolve_instance_reference(
 /// trailing mounts table with one row per mount. The mounts table renders the
 /// canonical lowercase isolation name (`shared`/`worktree`/`clone`) so the output
 /// matches TOML/CLI input verbatim.
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub(super) fn render_workspace_show(
     config: &AppConfig,
     name: &str,

@@ -133,10 +133,6 @@ pub(super) async fn handle_load(
     result
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "command handler mirrors match arm complexity"
-)]
 pub(super) async fn handle_console(
     config: AppConfig,
     paths: JackinPaths,

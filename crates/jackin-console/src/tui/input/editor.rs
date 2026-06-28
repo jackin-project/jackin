@@ -130,10 +130,6 @@ fn dispatch_editor_top_level(key: KeyEvent, tab_bar_focused: bool) -> EditorTopL
 
 // Central keymap dispatch — table-like layout makes the keymap
 // readable at a glance; extracting per-key helpers just scatters it.
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub fn handle_editor_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
@@ -555,10 +551,6 @@ pub type EditorModalOutcome = crate::tui::message::ConsoleEditorModalOutcome<
     jackin_core::OpRef,
 >;
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending per-modal split — tracked in codebase-readability roadmap"
-)]
 pub fn handle_editor_modal(
     editor: &mut EditorState<'_>,
     key: KeyEvent,

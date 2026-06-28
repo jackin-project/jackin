@@ -159,8 +159,7 @@ fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
 )]
 #[expect(
     clippy::too_many_lines,
-    clippy::too_many_arguments,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
+    reason = "tracked in codebase-health-enforcement"
 )]
 pub(crate) async fn load_role_with(
     paths: &JackinPaths,

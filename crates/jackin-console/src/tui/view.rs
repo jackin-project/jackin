@@ -15,6 +15,10 @@ pub struct WorkspaceFrameAreas {
     pub footer: Rect,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ModalOverlayState {
     pub status_overlay: bool,

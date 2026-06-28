@@ -616,6 +616,10 @@ fn validate_linux_clipboard_backend_env(label: &str) -> Result<()> {
 }
 
 #[cfg(any(target_os = "linux", test))]
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 fn validate_linux_clipboard_backend(
     wayland: bool,
     display: bool,

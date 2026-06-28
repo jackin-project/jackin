@@ -21,7 +21,7 @@ use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
 const DOCS_ROOT: &str = "docs/content/docs";
-const ROADMAP_REL: &str = "reference/roadmap";
+const ROADMAP_REL: &str = "roadmap";
 const RESEARCH_REL: &str = "research";
 
 // ---------------------------------------------------------------------------

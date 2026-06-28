@@ -1,0 +1,74 @@
+# File-size ratchet budget.
+#
+# Owned by Workstream B of the codebase-health-enforcement roadmap item
+# (`roadmap/codebase-health-enforcement`). Drives `cargo xtask lint files`.
+#
+# The rule (enforced by the gate, mirror of the docstring on the `LintFiles`
+# subcommand):
+#
+#   1. Production Rust sources (every `crates/**/*.rs` except `tests.rs`) must
+#      be at most `production_cap` lines long. The cap is 2000L today; ratchet
+#      down over time.
+#   2. Test sources (`**/tests.rs`) must be at most `test_cap` lines long. The
+#      test cap is 10000L today because the launch and daemon tests are large
+#      by design — see `roadmap/test-infra-behavioral-specs/` for the
+#      long-term fix.
+#   3. Every file currently over its cap is grandfathered in this file with
+#      its **current** line count. The recorded count is the ratchet:
+#      the gate fails if a listed file grows past its recorded count, and
+#      fails if any non-listed file exceeds the cap. Numbers can only
+#      decrease; when a file drops under its cap, delete its entry.
+#
+# To refresh numbers after a decomposition:
+#   cargo xtask lint files --print-budget > file-size-budget.toml
+# …then prune entries whose line counts now sit under the cap, and
+# commit the result.
+
+production_cap = 2000
+test_cap = 10000
+
+# Grandfathered production files (current line counts; may only decrease):
+[[production]]
+path = "crates/jackin-capsule/src/usage.rs"
+lines = 6374
+
+[[production]]
+path = "crates/jackin-console/src/tui/app.rs"
+lines = 5095
+
+[[production]]
+path = "crates/jackin-console/src/tui/screens/editor/model.rs"
+lines = 4176
+
+[[production]]
+path = "crates/jackin-console/src/tui/screens/settings/model.rs"
+lines = 3852
+
+[[production]]
+path = "crates/jackin-runtime/src/runtime/launch.rs"
+lines = 2833
+
+[[production]]
+path = "crates/jackin-runtime/src/runtime/image.rs"
+lines = 2812
+
+[[production]]
+path = "crates/jackin-console/src/tui/screens/editor/view.rs"
+lines = 2389
+
+[[production]]
+path = "crates/jackin-capsule/src/tui/components/dialog.rs"
+lines = 2265
+
+[[production]]
+path = "crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs"
+lines = 2213
+
+# Grandfathered test files (current line counts; may only decrease):
+[[test]]
+path = "crates/jackin-runtime/src/runtime/launch/tests.rs"
+lines = 8603
+
+[[test]]
+path = "crates/jackin-capsule/src/daemon/tests.rs"
+lines = 7612

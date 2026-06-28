@@ -48,6 +48,10 @@ pub enum WorkspaceListRowTone {
     Instance,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceListDisplayRow {
     pub label: String,
@@ -58,6 +62,10 @@ pub struct WorkspaceListDisplayRow {
     pub hovered: bool,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListDisplayRowFacts {
     pub row: ManagerListRow,
@@ -97,6 +105,10 @@ pub enum WorkspaceSidebarPlan {
     ListNames,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceSidebarFacts {
     pub inline_provider_picker_open: bool,
@@ -166,6 +178,10 @@ pub const fn workspace_sidebar_owns_focus(list_names_focused: bool, list_modal_o
     list_names_focused && !list_modal_open
 }
 
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[must_use]
 pub fn current_directory_display_row(
     expanded: bool,

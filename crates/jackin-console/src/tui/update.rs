@@ -248,6 +248,10 @@ pub struct ListPreRenderFocusPlan {
     pub list_names_focused: bool,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListPreRenderScrollResetPlan {
     pub reset_workspace: bool,
@@ -256,6 +260,10 @@ pub struct ListPreRenderScrollResetPlan {
     pub reset_roles: bool,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListPreRenderFacts {
     pub list_scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
@@ -320,6 +328,10 @@ pub const fn list_names_focus_plan(focused: bool) -> bool {
     focused
 }
 
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[must_use]
 pub const fn list_modal_key_target(
     github_picker: bool,
@@ -357,6 +369,10 @@ pub const fn list_modal_scroll_target(
     }
 }
 
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[must_use]
 pub const fn shared_modal_scroll_target(
     workdir_pick: bool,
@@ -444,6 +460,10 @@ pub fn console_mouse_wheel_plan(
     }
 }
 
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[must_use]
 pub const fn list_pre_render_focus_plan(
     list_scroll_focus: Option<crate::tui::focus::MountScrollFocus>,

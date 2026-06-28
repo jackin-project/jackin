@@ -28,6 +28,10 @@ pub(crate) enum PaneScreen<'a> {
     View(jackin_term::GridView<'a>),
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) tabs: &'a [Tab],
     /// Row-0 layout computed once per frame and shared by the status-bar

@@ -19,6 +19,10 @@ use crate::tui::{
     },
 };
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceSavePreview {
     pub mode: WorkspaceSaveMode,
@@ -638,6 +642,10 @@ pub fn build_settings_save_lines<
     settings_save_lines(&settings_save_preview(settings))
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsGeneralPreview {
     pub original_coauthor_trailer: bool,
@@ -706,10 +714,6 @@ pub struct TrustPreviewRow {
 }
 
 #[must_use]
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>> {
     let heading = Style::default()
         .fg(jackin_tui::theme::WHITE)
@@ -981,10 +985,6 @@ fn allowed_roles_summary(preview: &WorkspaceSavePreview) -> String {
 }
 
 #[must_use]
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> {
     let heading = Style::default()
         .fg(jackin_tui::theme::WHITE)

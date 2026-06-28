@@ -777,6 +777,10 @@ pub fn selected_index(selected: usize, row_count: usize) -> usize {
     crate::tui::focus::selected_index(selected, row_count)
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListSelectionPlan {
     pub selected: usize,
@@ -973,6 +977,10 @@ pub fn workspace_list_clickable_at_position(
         .is_some()
 }
 
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[must_use]
 pub const fn workspace_list_scroll_focus_plan(
     in_left_pane: bool,

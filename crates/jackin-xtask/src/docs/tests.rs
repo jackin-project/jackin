@@ -177,12 +177,12 @@ fn research_scaffold_in_creates_dossier_and_registers() {
 #[test]
 fn line_references_slug_is_boundary_safe() {
     assert!(line_references_slug(
-        "see /reference/roadmap/auth/ for",
+        "see /roadmap/auth/ for",
         "auth"
     ));
     assert!(line_references_slug("    \"../auth\"", "auth"));
     assert!(!line_references_slug(
-        "/reference/roadmap/auth-health/",
+        "/roadmap/auth-health/",
         "auth"
     ));
     assert!(!line_references_slug("nothing here", "auth"));
@@ -194,11 +194,11 @@ fn roadmap_fixture(extra: &[(&str, &str)]) -> tempfile::TempDir {
     let docs = tempfile::tempdir().unwrap();
     let d = docs.path();
     write_meta_mk(
-        &d.join("reference/roadmap/(grp)/meta.json"),
+        &d.join("roadmap/(grp)/meta.json"),
         &json!({ "pages": ["../shipme"] }),
     );
     write(
-        &d.join("reference/roadmap/shipme.mdx"),
+        &d.join("roadmap/shipme.mdx"),
         "---\ntitle: Ship Me\n---\n\n**Status**: Open\n\n## Problem\n\nbody\n",
     );
     for (rel, body) in extra {
@@ -222,10 +222,10 @@ fn retire_apply_removes_entry_and_page_when_clean() {
     )
     .expect("clean retire should succeed");
     assert!(
-        !d.join("reference/roadmap/shipme.mdx").exists(),
+        !d.join("roadmap/shipme.mdx").exists(),
         "page deleted"
     );
-    let meta = read_meta(&d.join("reference/roadmap/(grp)/meta.json")).unwrap();
+    let meta = read_meta(&d.join("roadmap/(grp)/meta.json")).unwrap();
     assert!(
         meta["pages"].as_array().unwrap().is_empty(),
         "sidebar entry dropped"
@@ -236,7 +236,7 @@ fn retire_apply_removes_entry_and_page_when_clean() {
 fn retire_apply_fails_on_dangling_inbound_link() {
     let docs = roadmap_fixture(&[(
         "guides/foo.mdx",
-        "---\ntitle: F\n---\n\nSee [the work](/reference/roadmap/shipme/).\n",
+        "---\ntitle: F\n---\n\nSee [the work](/roadmap/shipme/).\n",
     )]);
     let err = roadmap_retire(
         docs.path(),
@@ -256,17 +256,17 @@ fn retire_apply_fails_on_dangling_inbound_link() {
     // Fail-closed: nothing is mutated when the gate trips.
     let d = docs.path();
     assert!(
-        d.join("reference/roadmap/shipme.mdx").exists(),
+        d.join("roadmap/shipme.mdx").exists(),
         "page must survive"
     );
-    let meta = read_meta(&d.join("reference/roadmap/(grp)/meta.json")).unwrap();
+    let meta = read_meta(&d.join("roadmap/(grp)/meta.json")).unwrap();
     assert_eq!(meta["pages"][0], "../shipme", "sidebar entry must survive");
 }
 
 #[test]
 fn retire_partial_sets_status_and_keeps_page() {
     let docs = roadmap_fixture(&[]);
-    let item = docs.path().join("reference/roadmap/shipme.mdx");
+    let item = docs.path().join("roadmap/shipme.mdx");
     roadmap_retire(
         docs.path(),
         RoadmapRetireArgs {

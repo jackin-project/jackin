@@ -634,7 +634,7 @@ pub(super) fn prepare_socket_dir(
 /// and `DinD` sidecar.
 #[expect(
     clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
+    reason = "tracked in codebase-health-enforcement"
 )]
 pub(super) async fn launch_role_runtime(
     ctx: &LaunchContext<'_>,

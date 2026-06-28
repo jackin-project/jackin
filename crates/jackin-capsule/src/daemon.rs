@@ -159,6 +159,10 @@ struct SessionLaunch {
     missing_debug_implementations,
     reason = "Multiplexer owns PTY sessions and render/input state; targeted debug logs expose the useful fields."
 )]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct Multiplexer {
     sessions: HashMap<u64, Session>,
     tabs: Vec<Tab>,

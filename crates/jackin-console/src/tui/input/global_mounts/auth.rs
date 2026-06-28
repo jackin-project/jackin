@@ -94,8 +94,6 @@ pub fn settings_auth_can_generate_token(auth: &crate::tui::state::SettingsAuthSt
 }
 
 #[expect(
-    clippy::too_many_lines,
-    clippy::too_many_arguments,
     clippy::type_complexity,
     reason = "pending extraction — tracked in codebase-readability roadmap"
 )]

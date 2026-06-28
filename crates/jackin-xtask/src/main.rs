@@ -18,6 +18,7 @@
 
 mod construct;
 mod docs;
+mod lint;
 mod pr;
 mod pty_fixture;
 mod schema;
@@ -67,6 +68,20 @@ enum Command {
     ///
     /// Use as `cargo xtask schema-check --base origin/main`.
     SchemaCheck(schema::SchemaCheckArgs),
+    /// File-size ratchet gate (Workstream B of codebase-health-enforcement).
+    ///
+    /// Use as `cargo xtask lint files` (enforce) or
+    /// `cargo xtask lint files --print-budget` (refresh the budget file).
+    Lint {
+        #[command(subcommand)]
+        command: LintCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum LintCommand {
+    /// Enforce the file-size ratchet from `file-size-budget.toml`.
+    Files(lint::LintFilesArgs),
 }
 
 fn main() -> ExitCode {
@@ -79,6 +94,9 @@ fn main() -> ExitCode {
         Command::Research(cmd) => docs::run_research(cmd),
         Command::Roadmap(cmd) => docs::run_roadmap(cmd),
         Command::SchemaCheck(args) => schema::run(args),
+        Command::Lint { command } => match command {
+            LintCommand::Files(args) => lint::run(args),
+        },
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

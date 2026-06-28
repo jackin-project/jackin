@@ -21,6 +21,10 @@ pub enum Color {
 
 /// Cell attributes (a subset of SGR properties the capsule reads).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct Attrs {
     pub foreground: Color,
     pub background: Color,

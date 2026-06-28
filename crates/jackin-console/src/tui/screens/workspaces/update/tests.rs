@@ -214,6 +214,10 @@ fn apply_workspace_tree_disclosure_plan_routes_mutations() {
     );
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Default)]
 struct TestListSelection {
     cleared_role: bool,

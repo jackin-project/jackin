@@ -460,6 +460,10 @@ pub const fn filter_reset_selection_for_stage(
     }
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldStageBackPlan {
     pub stage: OpPickerStage,
@@ -492,6 +496,10 @@ pub const fn field_stage_back_plan(mode: &OpPickerMode) -> FieldStageBackPlan {
     }
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldStageRefreshPlan {
     pub clear_fields: bool,
@@ -509,6 +517,10 @@ pub const fn field_stage_refresh_plan(mode: &OpPickerMode) -> FieldStageRefreshP
     }
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SectionStageBackPlan {
     pub stage: OpPickerStage,

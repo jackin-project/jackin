@@ -34,10 +34,6 @@ use crate::tui::update::{DismissibleModalPlan, dismissible_modal_plan};
 type ValidateAuthSourceFolder =
     dyn Fn(Option<crate::tui::auth::AuthKind>, &std::path::Path) -> Result<(), String>;
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub fn handle_key(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,

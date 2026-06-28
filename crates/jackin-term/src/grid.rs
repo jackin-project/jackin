@@ -86,6 +86,10 @@ pub enum MouseProtocolEncoding {
 /// Call `process(bytes)` to feed raw PTY output.  The grid records which
 /// spans changed via the dirty tracker.  Call `dirty_spans()` to retrieve
 /// and clear the dirty set before rendering.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct DamageGrid {
     // ── Parser — must persist across process() calls to handle split sequences ──
     // vte::Parser maintains internal state for multi-byte escape sequences.

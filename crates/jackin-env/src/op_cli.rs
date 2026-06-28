@@ -540,10 +540,6 @@ struct RawCreatedItemField {
 }
 
 impl OpWriteRunner for OpCli {
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending extraction — tracked in codebase-readability roadmap"
-    )]
     fn item_create(&self, params: OpItemCreateParams<'_>) -> anyhow::Result<OpRef> {
         use std::io::Write;
         use std::process::{Command, Stdio};

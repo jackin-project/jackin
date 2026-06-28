@@ -450,10 +450,6 @@ impl RoleState {
     /// foreground launch path passes the full `manifest.supported_agents()` set;
     /// [`Self::prepare`] is a convenience wrapper that does the same.
     #[tracing::instrument(skip_all, fields(container = container_name, agent = agent.slug()))]
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "provisions agent auth state from independent paths/manifest/auth-context inputs"
-    )]
     pub fn prepare_for_agents(
         paths: &JackinPaths,
         container_name: &str,

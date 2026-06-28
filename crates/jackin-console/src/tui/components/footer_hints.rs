@@ -48,6 +48,10 @@ pub enum WorkspaceListFooterMode {
     },
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListFooterFacts {
     pub inline_agent_picker: bool,
@@ -65,6 +69,10 @@ pub struct WorkspaceListFooterFacts {
     pub show_open_in_github: bool,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListFooterInputFacts {
     pub selected_row: ManagerListRow,
@@ -146,6 +154,10 @@ pub const fn workspace_list_footer_facts(
     }
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceFooterScrollFacts {
     pub inline_agent_picker: bool,

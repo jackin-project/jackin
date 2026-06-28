@@ -70,6 +70,10 @@ pub enum Osc8Policy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct SupportedSgr {
     pub bold: bool,
     pub dim: bool,

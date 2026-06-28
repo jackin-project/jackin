@@ -303,6 +303,10 @@ pub enum ConsoleInputDispatchPlan {
     Stage(ConsoleManagerStageRoute),
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConsoleInputDispatchFacts {
     pub list_modal_open: bool,
@@ -320,6 +324,10 @@ pub struct ConsoleInputDispatchFacts {
     pub stage_route: ConsoleManagerStageRoute,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ConsoleStageModalFacts {
     pub editor_modal_open: bool,
@@ -2413,6 +2421,10 @@ impl CreatePreludeTextInputTarget for crate::tui::screens::editor::model::TextIn
     }
 }
 
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[must_use]
 pub const fn create_prelude_modal_step(
     file_browser_src: bool,

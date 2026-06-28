@@ -162,6 +162,10 @@ pub struct ClientTerminal {
 /// `session::OscPolicy` and the terminal profile, not these flags. They are the
 /// forward contract for capability-driven downsampling (deferred per roadmap).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct AttachCapabilities {
     pub pointer_shapes: bool,
     pub truecolor: bool,
@@ -173,6 +177,10 @@ pub struct AttachCapabilities {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct AttachCapabilitySources {
     pub handshake_identity: bool,
     pub terminfo_name: bool,

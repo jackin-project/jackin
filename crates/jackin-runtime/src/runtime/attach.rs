@@ -581,7 +581,10 @@ pub async fn spawn_shell_session(
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
 
-#[expect(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub async fn spawn_agent_session(
     paths: &JackinPaths,
     container_name: &str,

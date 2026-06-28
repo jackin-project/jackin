@@ -268,7 +268,6 @@ pub async fn prewarm_role_images(
     Ok(rows)
 }
 
-#[expect(clippy::too_many_arguments)]
 pub(super) async fn decide_role_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -899,10 +898,6 @@ pub(crate) fn image_recipe_label_map_for_test(
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "test helper builds an image recipe label map from the same independent inputs as the recipe builder"
-)]
 fn image_recipe_label_map_for_install_test(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
@@ -1422,7 +1417,10 @@ async fn prewarm_agent_image(
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "tracked in codebase-health-enforcement"
+)]
 async fn prewarm_agent_image_from_validated_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -1711,7 +1709,7 @@ fn agent_binary_prepare_summary(
 /// them.
 #[expect(
     clippy::too_many_arguments,
-    reason = "threads the same inputs as the build path"
+    reason = "tracked in codebase-health-enforcement"
 )]
 async fn ensure_local_role_base(
     selector: &RoleSelector,
@@ -1883,7 +1881,10 @@ async fn ensure_local_role_base(
 }
 
 /// Build the Docker image for the role. Returns the image name.
-#[expect(clippy::too_many_arguments, clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub(super) async fn build_agent_image(
     paths: &JackinPaths,
     selector: &RoleSelector,

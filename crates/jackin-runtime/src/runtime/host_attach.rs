@@ -188,7 +188,6 @@ where
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 async fn run_attach_protocol<R, W, I, O>(
     mut server_reader: R,
     mut server_writer: W,

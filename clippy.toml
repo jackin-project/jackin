@@ -2,6 +2,15 @@ allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-print-in-tests = true
 allow-unwrap-in-tests = true
+# Function-length / complexity / nesting thresholds. Measured against the
+# pre-Workstream-A baseline (2026-06-28) and set just above the current maxima
+# so the lints fire no warnings on day one. Ratchet these down over time;
+# every new violation is either refactored or grandfathered with a narrow
+# `#[expect(clippy::<lint>, reason = "tracked in codebase-health-enforcement")]`.
+too-many-lines-threshold = 450
+cognitive-complexity-threshold = 100
+excessive-nesting-threshold = 8
+too-many-arguments-threshold = 9
 disallowed-methods = [
     { path = "std::process::Command::output", reason = "blocking subprocess output must not run on render/runtime threads; use async process helpers or spawn_blocking" },
     { path = "std::thread::sleep", reason = "blocking sleep must not run on render/runtime threads; use async sleep, polling hooks, or an owned OS thread" },

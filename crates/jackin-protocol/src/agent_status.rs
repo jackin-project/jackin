@@ -56,6 +56,10 @@ pub enum AgentStatusSource {
 /// and rendered by the host console. Every field is computed from arbitration
 /// inputs, never from the output state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct AgentStatusReport {
     pub raw_state: AgentRawState,
     pub source: AgentStatusSource,

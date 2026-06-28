@@ -46,10 +46,6 @@ pub fn handle_prelude_key(
     InputOutcome::Continue
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub fn handle_prelude_modal(
     prelude: &mut crate::tui::state::CreatePreludeState<'_>,
     key: KeyEvent,

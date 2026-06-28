@@ -226,6 +226,10 @@ pub const fn settings_general_key_plan(key: KeyCode, is_dirty: bool) -> Settings
     }
 }
 
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[must_use]
 pub const fn settings_env_key_plan(
     key: KeyCode,
@@ -1138,6 +1142,10 @@ pub struct SettingsTrustRowSelectPlan {
     pub content_focused: bool,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsScrollFocusPlan {
     pub mounts: bool,
@@ -1178,6 +1186,10 @@ pub const fn settings_scroll_focus_plan(
     }
 }
 
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[must_use]
 pub const fn settings_modal_open(
     error_popup_open: bool,

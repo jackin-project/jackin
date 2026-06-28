@@ -255,10 +255,6 @@ fn rich_exit_dialog(
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "session finalization inherently needs all of: name, path, outcome, interactive flag, policy, prompt, docker, runner"
-)]
 pub async fn finalize_foreground_session(
     container_name: &str,
     container_state_dir: &Path,

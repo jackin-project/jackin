@@ -80,6 +80,10 @@ pub struct StageView {
 }
 
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct LaunchView {
     pub identity: Option<LaunchIdentity>,
     pub stages: Vec<StageView>,

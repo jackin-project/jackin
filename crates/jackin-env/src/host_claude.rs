@@ -178,10 +178,6 @@ pub fn capture_setup_token() -> anyhow::Result<secrecy::SecretString> {
     capture_setup_token_with_binary(CLAUDE_DEFAULT_BIN)
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub fn capture_setup_token_with_binary(binary: &str) -> anyhow::Result<secrecy::SecretString> {
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
     use secrecy::SecretString;

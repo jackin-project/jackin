@@ -34,6 +34,10 @@ pub(crate) fn run(command: PrCommand) -> Result<()> {
 
 /// Which categories of file the diff touches; each gates a verify-locally block.
 #[derive(Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 struct Categories {
     rust: bool,
     docs: bool,

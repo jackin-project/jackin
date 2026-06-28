@@ -6,10 +6,6 @@ use crate::cli;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub(super) fn handle_claude_token(
     paths: &JackinPaths,
     config: &mut AppConfig,

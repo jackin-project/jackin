@@ -24,6 +24,10 @@ use crate::{
 ///
 /// All fields are owned so the snapshot is independent of the grid's lifetime.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct SnapCell {
     /// The grapheme cluster at this position. Empty string = blank/space.
     pub text: String,

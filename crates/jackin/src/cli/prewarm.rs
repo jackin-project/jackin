@@ -16,6 +16,10 @@ use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
     styles = HELP_STYLES,
     about = "Prewarm jackin-owned runtime caches before launch"
 )]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct PrewarmArgs {
     /// Agent runtime binary to prewarm. Repeat to choose several. Defaults to all agents.
     #[arg(long = "agent", value_parser = parse_agent)]

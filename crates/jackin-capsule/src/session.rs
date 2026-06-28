@@ -134,6 +134,10 @@ const ENV_OSC_NOTIFY: &str = "JACKIN_OSC_NOTIFY";
 const ENV_OSC_HYPERLINK: &str = "JACKIN_OSC_HYPERLINK";
 
 #[derive(Debug, Clone, Copy)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct OscPolicy {
     allow_title: bool,
     allow_osc52: bool,

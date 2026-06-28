@@ -14,7 +14,7 @@ use crate::workspace::{
 
 #[expect(
     clippy::too_many_lines,
-    reason = "workspace command dispatcher — one match arm per WorkspaceCommand variant; further splitting would require passing context through many levels"
+    reason = "tracked in codebase-health-enforcement"
 )]
 pub(super) async fn handle(
     command: WorkspaceCommand,

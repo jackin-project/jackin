@@ -54,7 +54,6 @@ pub(super) fn print_env_table(vars: &[(String, String)]) {
     println!("{table}");
 }
 
-#[expect(clippy::too_many_lines, reason = "config command dispatcher")]
 pub(super) fn handle(
     cmd: ConfigCommand,
     config: &mut AppConfig,

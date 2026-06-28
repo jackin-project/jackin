@@ -59,6 +59,10 @@ pub struct ScreenEvidence {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct ProcessEvidence {
     pub process_exited: bool,
     pub foreground_returned_to_shell: bool,
@@ -82,6 +86,10 @@ pub struct ActivityEvidence {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub struct EvidenceSummary {
     pub raw_state: RawAgentState,
     pub confidence: AgentStatusConfidence,
