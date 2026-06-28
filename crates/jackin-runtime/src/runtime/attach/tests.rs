@@ -62,6 +62,30 @@ fn host_attach_transport_falls_back_when_socket_path_is_missing() {
 }
 
 #[test]
+fn host_attach_transport_surfaces_over_sun_len_socket_path() {
+    // Bug 10: a socket path at/over the sun_path limit can never connect
+    // directly; instead of a swallowed generic connect error, the plan must fall
+    // back to the proxy with an explicit, descriptive reason (not silent).
+    let (_tmp, paths) = short_test_paths();
+    let long_container = format!("jk-{}", "x".repeat(110));
+
+    let plan = select_host_attach_transport(&paths, &long_container);
+
+    match plan {
+        HostAttachTransportPlan::AttachProxy { direct_error, .. } => {
+            let reason = direct_error.expect("explicit over-limit reason");
+            assert!(
+                reason.contains("sun_path"),
+                "reason must name the sun_path limit: {reason}"
+            );
+        }
+        other @ HostAttachTransportPlan::DirectSocket { .. } => {
+            panic!("an over-limit path must not use the direct socket, got {other:?}")
+        }
+    }
+}
+
+#[test]
 fn host_attach_transport_uses_direct_socket_when_connect_succeeds() {
     let (_tmp, paths) = short_test_paths();
     let socket_path = ensure_socket_parent(&paths, "jk-agent-smith");

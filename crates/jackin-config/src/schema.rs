@@ -424,6 +424,7 @@ pub struct DockerConfig {
 /// The binary's `workspace::resolve` builds it from an `AppConfig`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedWorkspace {
+    pub name: String,
     pub label: String,
     pub workdir: String,
     pub mounts: Vec<MountConfig>,

@@ -32,6 +32,8 @@ pub const TAB_GAP: u16 = 1;
 pub enum HintSpan<'a> {
     /// Hotkey glyph(s) — white + bold in rendered output.
     Key(&'a str),
+    /// Runtime hotkey glyph(s) — white + bold in rendered output.
+    DynKey(String),
     /// Action label following a key — phosphor green in rendered output.
     Text(&'a str),
     /// Runtime action label whose text is only known at render time —
@@ -66,6 +68,7 @@ impl HintSpan<'_> {
     pub fn display_cols(&self) -> usize {
         match self {
             Self::Key(k) => k.chars().count(),
+            Self::DynKey(k) => k.chars().count(),
             Self::Text(t) => 1 + t.chars().count(),
             Self::Dyn(t) => 1 + t.chars().count(),
             Self::Sep | Self::GroupSep => 3,

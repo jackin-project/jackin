@@ -450,6 +450,7 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::Hint
     for span in visible {
         let (text, style): (String, Style) = match span {
             jackin_tui::HintSpan::Key(k) => ((*k).to_owned(), key_style),
+            jackin_tui::HintSpan::DynKey(k) => (k.clone(), key_style),
             jackin_tui::HintSpan::Text(t) => (format!(" {t}"), text_style),
             jackin_tui::HintSpan::Dyn(t) => (format!(" {t}"), dyn_style),
             jackin_tui::HintSpan::Sep => (" · ".to_owned(), sep_style),

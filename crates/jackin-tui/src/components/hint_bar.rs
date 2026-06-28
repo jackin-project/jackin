@@ -63,6 +63,7 @@ pub fn line(spans: &[HintSpan<'_>]) -> Line<'static> {
     for span in spans {
         match span {
             HintSpan::Key(k) => out.push(Span::styled((*k).to_owned(), key)),
+            HintSpan::DynKey(k) => out.push(Span::styled(k.clone(), key)),
             HintSpan::Text(t) => out.push(Span::styled(format!(" {t}"), text)),
             HintSpan::Dyn(t) => out.push(Span::styled(format!(" {t}"), dim)),
             HintSpan::Sep => out.push(Span::styled(" · ", sep)),
@@ -113,6 +114,10 @@ fn wrapped_lines(spans: &[HintSpan<'_>], width: u16) -> Vec<Line<'static>> {
             HintSpan::Key(k) => {
                 cur_w += span.display_cols();
                 cur.push(Span::styled((*k).to_owned(), key));
+            }
+            HintSpan::DynKey(k) => {
+                cur_w += span.display_cols();
+                cur.push(Span::styled(k.clone(), key));
             }
             HintSpan::Text(t) => {
                 cur_w += span.display_cols();

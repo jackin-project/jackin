@@ -12,6 +12,201 @@ fn container_init_marker_is_container_local() {
 }
 
 #[test]
+fn apply_forwarded_credential_first_seed_reseed_and_no_clobber() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forwarded = tmp.path().join("forwarded.json");
+    let target = tmp.path().join("auth.json");
+    fs::write(&forwarded, b"FORWARDED").expect("write forwarded");
+    // `api_key_envs: &[]` keeps the policy deterministic — no env reads.
+    let spec = ForwardedCredential {
+        label: "test",
+        forwarded: &forwarded,
+        target: &target,
+        api_key_envs: &[],
+    };
+
+    // First seed with a forwarded file: seeds the target.
+    apply_forwarded_credential(true, &spec).expect("first seed");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "FORWARDED");
+
+    // Later launch with the target present: a token the agent refreshed
+    // in-container is never clobbered.
+    fs::write(&target, b"REFRESHED").unwrap();
+    apply_forwarded_credential(false, &spec).expect("no-clobber");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "REFRESHED");
+
+    // Later launch with the target missing but forwarded present: re-seeds.
+    fs::remove_file(&target).unwrap();
+    apply_forwarded_credential(false, &spec).expect("re-seed");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "FORWARDED");
+
+    // First seed with no forwarded file and no api key: clears the stale target.
+    fs::write(&target, b"STALE").unwrap();
+    fs::remove_file(&forwarded).unwrap();
+    apply_forwarded_credential(true, &spec).expect("first seed without forward");
+    assert!(!target.exists(), "stale target must be removed");
+}
+
+// ── Agent config-dir env resolution ─────────────────────────────────
+// Pure `_from` cores so no process-global env mutation is needed.
+
+#[test]
+fn claude_paths_default_when_config_dir_unset() {
+    // Unset: credentials live inside ~/.claude, but .claude.json sits at the
+    // home root — the asymmetry jackin must preserve.
+    assert_eq!(
+        claude_config_dir_from(None),
+        PathBuf::from("/home/agent/.claude")
+    );
+    assert_eq!(
+        claude_account_path_from(None),
+        PathBuf::from("/home/agent/.claude.json")
+    );
+}
+
+#[test]
+fn claude_paths_follow_config_dir_when_set() {
+    // Set: BOTH .credentials.json and .claude.json move inside the dir. This is
+    // the regression fix — previously .claude.json stayed at the home root and
+    // the CLI fell back to the login screen.
+    let dir = "/home/agent/.claude-work";
+    assert_eq!(claude_config_dir_from(Some(dir)), PathBuf::from(dir));
+    assert_eq!(
+        claude_account_path_from(Some(dir)),
+        PathBuf::from("/home/agent/.claude-work/.claude.json")
+    );
+    assert_eq!(
+        claude_config_dir_from(Some(dir)).join(".credentials.json"),
+        PathBuf::from("/home/agent/.claude-work/.credentials.json")
+    );
+}
+
+#[test]
+fn codex_home_honors_env_else_defaults() {
+    assert_eq!(codex_home_from(None), PathBuf::from("/home/agent/.codex"));
+    assert_eq!(
+        codex_home_from(Some("/home/agent/.codex-alt")).join("auth.json"),
+        PathBuf::from("/home/agent/.codex-alt/auth.json")
+    );
+}
+
+// ── claude_plugin_fingerprint ────────────────────────────────────────
+
+#[test]
+fn fingerprint_empty_config_is_empty() {
+    let config = jackin_protocol::CapsuleConfig::default();
+    assert_eq!(claude_plugin_fingerprint(&config), "");
+}
+
+#[test]
+fn fingerprint_marketplace_no_sparse() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_marketplaces: vec![jackin_protocol::ClaudeMarketplace {
+            source: "org/repo".to_owned(),
+            sparse: vec![],
+        }],
+        ..Default::default()
+    };
+    assert_eq!(claude_plugin_fingerprint(&config), "m:org/repo\n");
+}
+
+#[test]
+fn fingerprint_marketplace_with_sparse_paths() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_marketplaces: vec![jackin_protocol::ClaudeMarketplace {
+            source: "org/repo".to_owned(),
+            sparse: vec!["tools/a".to_owned(), "tools/b".to_owned()],
+        }],
+        ..Default::default()
+    };
+    assert_eq!(
+        claude_plugin_fingerprint(&config),
+        "m:org/repo tools/a tools/b\n"
+    );
+}
+
+#[test]
+fn fingerprint_plugin_only() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_plugins: vec!["my-plugin".to_owned()],
+        ..Default::default()
+    };
+    assert_eq!(claude_plugin_fingerprint(&config), "p:my-plugin\n");
+}
+
+#[test]
+fn fingerprint_mixed_marketplace_and_plugins() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_marketplaces: vec![jackin_protocol::ClaudeMarketplace {
+            source: "org/tools".to_owned(),
+            sparse: vec!["fmt".to_owned()],
+        }],
+        claude_plugins: vec!["fmt-plugin".to_owned(), "lint-plugin".to_owned()],
+        ..Default::default()
+    };
+    assert_eq!(
+        claude_plugin_fingerprint(&config),
+        "m:org/tools fmt\np:fmt-plugin\np:lint-plugin\n"
+    );
+}
+
+#[test]
+fn xdg_data_home_drives_amp_and_opencode() {
+    assert_eq!(
+        xdg_data_home_from(None),
+        PathBuf::from("/home/agent/.local/share")
+    );
+    let xdg = "/home/agent/.xdg-data";
+    assert_eq!(
+        xdg_data_home_from(Some(xdg)).join("amp/secrets.json"),
+        PathBuf::from("/home/agent/.xdg-data/amp/secrets.json")
+    );
+    assert_eq!(
+        xdg_data_home_from(Some(xdg)).join("opencode/auth.json"),
+        PathBuf::from("/home/agent/.xdg-data/opencode/auth.json")
+    );
+}
+
+#[test]
+fn seed_home_dir_absent_dst_uses_atomic_rename() {
+    // When dst does not exist, seed_home_dir must create it atomically (via a
+    // staging dir + rename) and signal FirstSeed. Tests the rename path missed
+    // by the other seed tests which pre-create dst.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src = tmp.path().join("src");
+    let dst = tmp.path().join("dst"); // NOT created — exercises the rename path
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("config.json"), b"{}").unwrap();
+
+    let outcome = seed_home_dir(&src, &dst).expect("atomic seed should succeed");
+    assert_eq!(outcome, SeedOutcome::FirstSeed);
+    assert!(
+        dst.join("config.json").exists(),
+        "renamed tree must contain seeded file"
+    );
+    // No stale staging dirs should remain beside dst after a successful rename.
+    let siblings: Vec<_> = fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(std::result::Result::ok)
+        .collect();
+    assert!(
+        !siblings
+            .iter()
+            .any(|e| e.file_name().to_string_lossy().starts_with(".jackin-seed")),
+        "staging dir must be cleaned up after successful rename"
+    );
+}
+
+#[test]
+fn is_dir_empty_treats_read_error_as_nonempty() {
+    // A path that does not exist causes read_dir to fail; must return false
+    // (non-empty = conservative) rather than true (empty = would trigger first-seed).
+    assert!(!is_dir_empty(Path::new(
+        "/nonexistent/path/that/cannot/exist"
+    )));
+}
+
+#[test]
 fn runtime_setup_runs_agent_setup_while_container_init_is_foreground() {
     // A two-party Barrier proves the foreground and agent-setup closures run
     // concurrently without a flaky bounded spin: foreground cannot pass the

@@ -44,7 +44,9 @@ ENV XDG_CACHE_HOME=\"/home/agent/.cache\"
 RUN --mount=type=cache,id=jackin-agent-fallback-{version_check_bin},target=/home/agent/.cache,uid=1000,gid=1000,sharing=locked \\
     set -euxo pipefail && \\
     : \"${{JACKIN_CACHE_BUST}}\" && \\
-    {install_command} && \\
+    {{ {install_command}; }} || \\
+    {{ sleep 5; {install_command}; }} || \\
+    {{ sleep 10; {install_command}; }} && \\
     {version_check_bin} --version
 "
     )

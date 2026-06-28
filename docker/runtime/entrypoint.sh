@@ -71,7 +71,7 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
         # Activate the provider's model catalog (real metadata + context window)
         # if runtime-setup wrote one. Passed as -c, not a profile-file key: a
         # profile-file model_catalog_json trips a Codex config-parse bug.
-        catalog="$HOME/.codex/${JACKIN_CODEX_PROFILE}.models.json"
+        catalog="${CODEX_HOME:-$HOME/.codex}/${JACKIN_CODEX_PROFILE}.models.json"
         if [ -f "$catalog" ]; then
             LAUNCH+=(-c "model_catalog_json=$catalog")
         fi

@@ -85,6 +85,8 @@ fn hint_span_display_cols_match_render_contract() {
     // Separators occupy three columns each.
     assert_eq!(HintSpan::Sep.display_cols(), 3);
     assert_eq!(HintSpan::GroupSep.display_cols(), 3);
+    // DynKey renders like Key — no leading space, char count.
+    assert_eq!(HintSpan::DynKey("^\\".to_owned()).display_cols(), 2);
     // Multi-byte / wide glyphs use char count, not byte len.
     assert_eq!(HintSpan::Key("↑↓").display_cols(), 2);
 }

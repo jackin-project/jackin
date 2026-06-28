@@ -86,9 +86,9 @@ pub use select_list::{
     render_picker_lines, render_picker_list, render_select_list, select_list_hint_spans,
 };
 pub use status_footer::{
-    StatusFooter, StatusFooterHover, StatusRightGroup, compact_usage_status_label,
-    render_status_footer, render_status_footer_right_group, status_footer_debug_chip_rect,
-    status_footer_right_chip_rect, status_right_group_layout,
+    StatusFooter, StatusFooterHover, StatusRightChunk, StatusRightGroup,
+    compact_usage_status_label, render_status_footer, render_status_footer_right_group,
+    status_footer_debug_chip_rect, status_footer_right_chip_rect, status_right_group_layout,
 };
 pub use status_popup::{StatusPopupState, render_status_popup};
 pub use tab_strip::{TabStrip, tab_cell_style, tab_label_line, tab_underline_line};

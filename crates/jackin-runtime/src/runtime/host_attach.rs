@@ -1104,8 +1104,15 @@ fn outer_terminal_reset_sequence() -> Vec<u8> {
 }
 
 fn enter_host_attach_terminal(stdout: &mut std::io::Stdout) -> Result<RawModeGuard> {
-    crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
-    let cleanup = RawModeGuard;
+    // Only enter raw mode when stdin is a real terminal. In a headless context
+    // (CI, piped stdio, tests) `enable_raw_mode` fails with "Device not
+    // configured (os error 6)"; skipping it lets the non-interactive path proceed
+    // and the guard no-ops its raw-mode teardown on drop.
+    let raw_mode = std::io::IsTerminal::is_terminal(&std::io::stdin());
+    if raw_mode {
+        crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
+    }
+    let cleanup = RawModeGuard { raw_mode };
     if jackin_diagnostics::host_screen_owned() {
         stdout.write_all(RESET_CLEAR_HOME)?;
     } else {
@@ -1117,7 +1124,11 @@ fn enter_host_attach_terminal(stdout: &mut std::io::Stdout) -> Result<RawModeGua
     Ok(cleanup)
 }
 
-struct RawModeGuard;
+struct RawModeGuard {
+    /// Whether `enter_host_attach_terminal` actually enabled raw mode (only on a
+    /// real terminal); the drop teardown disables it only when it was enabled.
+    raw_mode: bool,
+}
 
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
@@ -1128,7 +1139,9 @@ impl Drop for RawModeGuard {
         {
             tracing::warn!("host attach: failed to write terminal reset on detach: {err}");
         }
-        if let Err(err) = crossterm::terminal::disable_raw_mode() {
+        if self.raw_mode
+            && let Err(err) = crossterm::terminal::disable_raw_mode()
+        {
             tracing::warn!("host attach: failed to disable raw mode on detach: {err}");
         }
     }

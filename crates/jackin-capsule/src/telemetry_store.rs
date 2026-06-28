@@ -440,6 +440,9 @@ pub(crate) fn focused_usage_view(
     let mut buckets = rows
         .iter()
         .map(|row| QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: row.window_kind.clone(),
             used_label: row.used_label.clone(),
             limit_label: row.limit_label.clone(),

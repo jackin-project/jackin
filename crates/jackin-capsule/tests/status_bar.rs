@@ -16,7 +16,7 @@ fn draw(
 ) -> (StatusBar, Buffer) {
     let backend = TestBackend::new(cols, 2);
     let mut terminal = Terminal::new(backend).unwrap();
-    let plan = status_bar_plan(cols, tabs, active, states, prefix_mode, None);
+    let plan = status_bar_plan(cols, tabs, active, states, prefix_mode);
     terminal
         .draw(|frame| {
             frame.render_widget(

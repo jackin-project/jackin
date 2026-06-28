@@ -17,8 +17,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use chrono::{DateTime, Local, TimeZone, Utc};
 use jackin_protocol::control::{
-    AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, QuotaBucketView, StatusSlot,
-    UsageConfidence, UsageProviderTab, UsageSnapshotStatus, UsageSource,
+    AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView,
+    StatusSlot, UsageConfidence, UsageProviderTab, UsageSeverity, UsageSnapshotStatus, UsageSource,
 };
 use serde::{Deserialize, Serialize};
 
@@ -78,6 +78,13 @@ pub(crate) struct UsageRefreshTarget {
 impl UsageRefreshTarget {
     fn cache_key(&self) -> String {
         canonical_usage_cache_key(&self.agent, self.provider.as_deref())
+    }
+
+    /// Key for the host-shared snapshot/cooldown files: scoped to the resolved
+    /// account, not just the provider surface, so same-account instances across
+    /// containers coordinate while different accounts never collide (Class III).
+    fn shared_account_key(&self) -> String {
+        shared_usage_account_key(&self.agent, self.provider.as_deref())
     }
 }
 
@@ -251,6 +258,14 @@ impl UsageCache {
         Some(view)
     }
 
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = "usage:refresh_accounts",
+            active = active_targets.len(),
+            focused = focused.is_some(),
+        )
+    )]
     pub(crate) fn refresh_active_account_snapshots(
         &mut self,
         active_targets: &[UsageRefreshTarget],
@@ -266,10 +281,58 @@ impl UsageCache {
             return;
         }
         self.refresh_schedule.in_flight = true;
-        let due_targets = targets
-            .into_iter()
-            .filter(|target| self.refresh_schedule.should_refresh(target, now))
-            .collect::<Vec<_>>();
+        let snapshots_dir = shared_usage_snapshots_dir();
+        let mut due_targets = Vec::new();
+        for target in targets {
+            // Seed the in-memory cache from the account-scoped shared snapshot
+            // (as Stale) the first time this instance sees a target, so a fresh
+            // instance shows real last-known numbers immediately instead of
+            // "refreshing" — whether the target is due (about to fetch in the
+            // background) or not (cooldown active). The shared key is
+            // account-scoped so a different account's data on the same provider
+            // surface is never read in (Class III-C). Keyed in memory by provider
+            // (per-container), one account per agent.
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                self.snapshots.entry(target.cache_key())
+                && let Some(view) =
+                    read_shared_usage_snapshot(&snapshots_dir, &target.shared_account_key())
+            {
+                e.insert(CachedUsage {
+                    view: stale_shared_view(view, now_epoch()),
+                });
+            }
+            if self.refresh_schedule.should_refresh(&target, now) {
+                due_targets.push(target);
+            }
+        }
+        if due_targets.is_empty() {
+            self.refresh_schedule.in_flight = false;
+            return;
+        }
+        // For each due target, in one pass (resolving the account key — which reads
+        // credential files — exactly once): take the cross-container per-account
+        // refresh lock, then write the pre-fetch advisory marker for the targets
+        // we keep. A target held by another instance is dropped — it is being
+        // refreshed there, and this instance already seeded the shared snapshot
+        // above (Class III-D). The pre-fetch marker makes other instances that
+        // reach `should_refresh` after this point skip, closing the race window to
+        // ~RAM latency. The held lock handles live until the end of this method
+        // (released on drop), spanning the fetch and the shared-snapshot write so
+        // no other instance re-fetches the same account in that window.
+        let cooldown_dir = shared_usage_cooldown_dir();
+        let prefetch_until = now_epoch()
+            .saturating_add(i64::try_from(PROVIDER_PROBE_TIMEOUT.as_secs()).unwrap_or(i64::MAX));
+        let mut refresh_locks = Vec::new();
+        due_targets.retain(|target| {
+            let account_key = target.shared_account_key();
+            match acquire_account_refresh_lock(&account_key) {
+                RefreshLockOutcome::Held => return false,
+                RefreshLockOutcome::Acquired(file) => refresh_locks.push(file),
+                RefreshLockOutcome::Unavailable => {}
+            }
+            write_shared_usage_cooldown_marker(&cooldown_dir, &account_key, prefetch_until, "ok");
+            true
+        });
         if due_targets.is_empty() {
             self.refresh_schedule.in_flight = false;
             return;
@@ -334,6 +397,10 @@ impl UsageCache {
             self.accounts_materialize_failed,
             materialize,
         );
+        // Release the per-account refresh locks only now — after the shared
+        // snapshot has been written — so a waiting instance that next wins the
+        // lock sees fresh shared data rather than re-fetching (Class III-D).
+        drop(refresh_locks);
         self.refresh_schedule.in_flight = false;
     }
 
@@ -388,7 +455,21 @@ where
         let tx = tx.clone();
         let probe = Arc::clone(&probe);
         thread::spawn(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| probe(target)));
+            // One span per provider probe so the refresh lifecycle is visible in
+            // telemetry — each provider's fetch duration (e.g. the slow Amp CLI
+            // fallback) shows directly instead of being lost in the render
+            // firehose (Class VI: the usage path had no spans).
+            let agent = target.agent.clone();
+            let provider = target.provider.clone().unwrap_or_default();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let span = tracing::info_span!(
+                    "usage.provider_probe",
+                    otel.name = "usage:provider_probe",
+                    agent = %agent,
+                    provider = %provider,
+                );
+                span.in_scope(|| probe(target))
+            }));
             match result {
                 Ok(result) => {
                     drop(tx.send(result));
@@ -492,14 +573,37 @@ impl UsageRefreshSchedule {
         now: Instant,
         cooldown_dir: &Path,
     ) -> bool {
+        // `next_due` is per-instance scheduling (provider-keyed, in-memory); the
+        // shared cooldown markers are cross-container and account-scoped so a
+        // refresh by any instance on the same account suppresses the others
+        // (Class III).
         let key = target.cache_key();
-        if shared_usage_cooldown_active(cooldown_dir, &key, now_epoch()) {
-            return false;
-        }
         match self.next_due.get(&key).copied() {
+            // Common steady-state case: scheduled and not yet due. Returns without
+            // resolving the account key, which would read credential files.
             Some(due) if due > now => false,
-            Some(_) => true,
+            Some(_) => {
+                // Scheduled or explicit mark_due refresh: only hard rate-limit
+                // cooldowns (429 backoff from Anthropic) block; advisory success
+                // cooldowns are skipped so user-triggered and timer-driven refreshes
+                // always proceed when due.
+                !shared_usage_rate_limit_cooldown_active(
+                    cooldown_dir,
+                    &target.shared_account_key(),
+                    now_epoch(),
+                )
+            }
             None => {
+                // First check for this instance: consult all shared cooldowns
+                // (both 429 and success markers) to avoid thundering herd when
+                // parallel instances all start simultaneously with empty next_due.
+                if shared_usage_cooldown_active(
+                    cooldown_dir,
+                    &target.shared_account_key(),
+                    now_epoch(),
+                ) {
+                    return false;
+                }
                 self.next_due.insert(key, now);
                 true
             }
@@ -512,7 +616,13 @@ impl UsageRefreshSchedule {
         now: Instant,
         view: &FocusedUsageView,
     ) {
-        self.mark_refreshed_with_cooldown_dir(target, now, view, &shared_usage_cooldown_dir());
+        self.mark_refreshed_with_cooldown_dir(
+            target,
+            now,
+            view,
+            &shared_usage_cooldown_dir(),
+            &shared_usage_snapshots_dir(),
+        );
     }
 
     fn mark_refreshed_with_cooldown_dir(
@@ -521,8 +631,13 @@ impl UsageRefreshSchedule {
         now: Instant,
         view: &FocusedUsageView,
         cooldown_dir: &Path,
+        snapshots_dir: &Path,
     ) {
+        // `key` schedules this instance (provider-keyed, in-memory); `account_key`
+        // names the cross-container shared files so the cooldown/snapshot a refresh
+        // produces is visible to other instances on the same account (Class III).
         let key = target.cache_key();
+        let account_key = target.shared_account_key();
         if let Some(error) = view.last_error.as_deref()
             && usage_error_is_rate_limited(error)
         {
@@ -534,12 +649,20 @@ impl UsageRefreshSchedule {
             let delay = usage_rate_limit_delay(error, *failures);
             let until_epoch =
                 now_epoch().saturating_add(i64::try_from(delay.as_secs()).unwrap_or(i64::MAX));
-            write_shared_usage_cooldown_marker(cooldown_dir, &key, until_epoch, error);
+            write_shared_usage_cooldown_marker(cooldown_dir, &account_key, until_epoch, error);
             self.next_due.insert(key, now + delay);
         } else {
             self.rate_limit_failures.remove(&key);
-            self.next_due
-                .insert(key.clone(), now + refresh_interval_for_key(&key));
+            let refresh_interval = refresh_interval_for_key(&key);
+            self.next_due.insert(key.clone(), now + refresh_interval);
+            // Write success marker so parallel instances starting within the base
+            // interval skip re-fetching the same provider — eliminating the
+            // thundering herd where all instances fire simultaneously on startup.
+            let success_until = now_epoch().saturating_add(
+                i64::try_from(USAGE_REFRESH_BASE_INTERVAL.as_secs()).unwrap_or(i64::MAX),
+            );
+            write_shared_usage_cooldown_marker(cooldown_dir, &account_key, success_until, "ok");
+            write_shared_usage_snapshot(snapshots_dir, &account_key, view);
         }
     }
 }
@@ -577,15 +700,113 @@ fn stable_usage_hash(value: &str) -> u64 {
     })
 }
 
+/// Resolve a directory from an env override, else a path under the container
+/// home — the one shape every shared-usage dir (and the cred-home resolvers)
+/// use. Runtime points the `JACKIN_USAGE_*_DIR` vars at the host-shared volume
+/// (Class III-B); unset falls back to the per-container default.
+fn env_dir_or_home(env_var: &str, home_default: &str) -> PathBuf {
+    std::env::var(env_var).map_or_else(|_| home_path(home_default), PathBuf::from)
+}
+
 fn shared_usage_cooldown_dir() -> PathBuf {
-    std::env::var("JACKIN_USAGE_COOLDOWN_DIR").map_or_else(
-        |_| home_path(".jackin/data/daemon/usage-cooldowns"),
-        PathBuf::from,
+    env_dir_or_home(
+        "JACKIN_USAGE_COOLDOWN_DIR",
+        ".jackin/data/daemon/usage-cooldowns",
     )
 }
 
+fn shared_usage_snapshots_dir() -> PathBuf {
+    env_dir_or_home(
+        "JACKIN_USAGE_SNAPSHOTS_DIR",
+        ".jackin/data/daemon/usage-snapshots",
+    )
+}
+
+fn shared_usage_lock_dir() -> PathBuf {
+    env_dir_or_home("JACKIN_USAGE_LOCK_DIR", ".jackin/data/daemon/usage-locks")
+}
+
+/// Outcome of trying to take the cross-container per-account refresh lock.
+#[derive(Debug)]
+enum RefreshLockOutcome {
+    /// Won the lock — hold the handle for the refresh + shared-write window.
+    Acquired(fs::File),
+    /// Locking infra is absent (no shared volume / lock dir): proceed without a
+    /// lock so single-container/dev runs still refresh. Best-effort, never gates.
+    Unavailable,
+    /// Another instance holds the lock (it is refreshing this account now): skip
+    /// the network and rely on the shared snapshot already seeded into memory.
+    Held,
+}
+
+/// Try to take the account's exclusive refresh lock (non-blocking). `flock` on
+/// the bind-mounted shared volume shares the inode across same-kernel containers,
+/// so exactly one instance refreshes a given account while the rest read the
+/// shared snapshot — ending the N×-instances rate-limit storm (Class III-D). A
+/// stale lock self-heals: `flock` releases when the holding process exits.
+fn acquire_account_refresh_lock(account_key: &str) -> RefreshLockOutcome {
+    acquire_account_refresh_lock_in(&shared_usage_lock_dir(), account_key)
+}
+
+fn acquire_account_refresh_lock_in(dir: &Path, account_key: &str) -> RefreshLockOutcome {
+    use fs2::FileExt as _;
+    if fs::create_dir_all(dir).is_err() {
+        return RefreshLockOutcome::Unavailable;
+    }
+    let path = shared_usage_file_path(dir, account_key, "lock");
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "advisory lock file; the usage refresh runs on the blocking pool (spawn_blocking), not the render thread"
+    )]
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&path);
+    match file {
+        Ok(file) => match file.try_lock_exclusive() {
+            Ok(()) => RefreshLockOutcome::Acquired(file),
+            Err(_) => RefreshLockOutcome::Held,
+        },
+        Err(_) => RefreshLockOutcome::Unavailable,
+    }
+}
+
+/// `<dir>/usage-<account-hash>.<ext>` — the per-account shared-file naming scheme
+/// shared by the snapshot, cooldown marker, and refresh lock. Centralized so all
+/// three hash the account key the same way; cross-container files for one account
+/// must collide on name for the coordination to work (Class III).
+fn shared_usage_file_path(dir: &Path, key: &str, ext: &str) -> PathBuf {
+    dir.join(format!("usage-{:016x}.{ext}", stable_usage_hash(key)))
+}
+
+fn shared_usage_snapshot_path(snapshots_dir: &Path, key: &str) -> PathBuf {
+    shared_usage_file_path(snapshots_dir, key, "snapshot.json")
+}
+
+fn write_shared_usage_snapshot(snapshots_dir: &Path, key: &str, view: &FocusedUsageView) {
+    let Ok(json) = serde_json::to_string(view) else {
+        return;
+    };
+    if let Err(error) = fs::create_dir_all(snapshots_dir) {
+        crate::clog!("usage snapshot dir create failed for {key}: {error}");
+        return;
+    }
+    let path = shared_usage_snapshot_path(snapshots_dir, key);
+    if let Err(error) = fs::write(path, json) {
+        crate::clog!("usage snapshot write failed for {key}: {error}");
+    }
+}
+
+fn read_shared_usage_snapshot(snapshots_dir: &Path, key: &str) -> Option<FocusedUsageView> {
+    let path = shared_usage_snapshot_path(snapshots_dir, key);
+    let json = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&json).ok()
+}
+
 fn shared_usage_cooldown_marker_path(cooldown_dir: &Path, key: &str) -> PathBuf {
-    cooldown_dir.join(format!("usage-{:016x}.cooldown", stable_usage_hash(key)))
+    shared_usage_file_path(cooldown_dir, key, "cooldown")
 }
 
 fn shared_usage_cooldown_active(cooldown_dir: &Path, key: &str, now_epoch: i64) -> bool {
@@ -600,6 +821,27 @@ fn shared_usage_cooldown_active(cooldown_dir: &Path, key: &str, now_epoch: i64) 
         .trim()
         .parse::<i64>()
         .is_ok_and(|until_epoch| until_epoch > now_epoch)
+}
+
+/// Like `shared_usage_cooldown_active`, but returns `true` only when the marker
+/// represents a mandatory rate-limit (429) backoff, not an advisory success
+/// cooldown.  The file format is `{until_epoch}\n{reason}\n`; reason `"ok"`
+/// denotes a success marker, any other reason (e.g. the 429 response body) is
+/// a rate-limit marker.
+fn shared_usage_rate_limit_cooldown_active(cooldown_dir: &Path, key: &str, now_epoch: i64) -> bool {
+    let path = shared_usage_cooldown_marker_path(cooldown_dir, key);
+    let Ok(text) = fs::read_to_string(path) else {
+        return false;
+    };
+    let mut lines = text.lines();
+    let until = lines
+        .next()
+        .and_then(|s| s.trim().parse::<i64>().ok())
+        .unwrap_or(0);
+    if until <= now_epoch {
+        return false;
+    }
+    lines.next().map_or("", str::trim) != "ok"
 }
 
 fn write_shared_usage_cooldown_marker(
@@ -628,6 +870,14 @@ fn usage_error_is_rate_limited(error: &str) -> bool {
         || lower.contains("rate limit")
         || lower.contains("retry-after")
         || lower.contains("retry after")
+}
+
+/// True when a provider fetch failed because the token was rejected (expired or
+/// revoked), as opposed to a transient/network error. Drives the honest
+/// `NeedsLogin` status so a stale on-disk token reads as "login", not "stale".
+fn usage_error_is_unauthorized(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    lower.contains("http 401") || lower.contains("http 403") || lower.contains("unauthorized")
 }
 
 fn usage_rate_limit_delay(error: &str, failures: u32) -> Duration {
@@ -661,6 +911,67 @@ fn usage_backoff_delay(base: Duration, failures: u32) -> Duration {
     let shift = failures.saturating_sub(1).min(8);
     let multiplier = 1u64.checked_shl(shift).unwrap_or(u64::MAX);
     Duration::from_secs(base.as_secs().saturating_mul(multiplier)).min(USAGE_REFRESH_BACKOFF_CAP)
+}
+
+/// Cross-container account identity for the shared snapshot/cooldown files
+/// (Class III). Resolves the OAuth account identity from the credential for the
+/// multi-account OAuth surfaces (Claude email, Codex `account_id`) and scopes the
+/// key to it, so two containers on the same provider but different accounts (e.g.
+/// two Claude logins) get distinct keys — no cross-account
+/// collision, and same-account instances coordinate. Surfaces with no resolvable
+/// OAuth identity (API-key providers, today single-credential per container) fall
+/// back to the provider surface, preserving prior behavior.
+fn shared_usage_account_key(agent: &str, focused_provider: Option<&str>) -> String {
+    let surface = resolve_surface(agent, focused_provider);
+    let identity = match surface {
+        UsageSurface::Claude => claude_account_identity(),
+        UsageSurface::Codex => codex_account_identity(),
+        _ => None,
+    };
+    match identity {
+        Some(id) => format!("{}#{:016x}", surface.label(), stable_usage_hash(&id)),
+        None => canonical_usage_cache_key(agent, focused_provider),
+    }
+}
+
+/// Claude OAuth credential candidates, home-first — the single source of truth
+/// for the path precedence, shared by `claude_snapshot` (token + identity) and
+/// `claude_account_identity` (the shared-cache key) so the list can't drift.
+fn claude_oauth_candidates(config: &Path) -> [PathBuf; 4] {
+    [
+        config.join(".credentials.json"),
+        home_path(".claude/.credentials.json"),
+        home_path(".claude.json"),
+        PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
+    ]
+}
+
+/// Codex auth credential candidates (home auth first, forwarded handoff last) —
+/// shared by `codex_snapshot` and `codex_account_identity`.
+fn codex_auth_candidates(codex_home: &Path) -> [PathBuf; 2] {
+    [
+        codex_home.join("auth.json"),
+        PathBuf::from(CODEX_HANDOFF_AUTH_PATH),
+    ]
+}
+
+/// Claude account identity (the `oauthAccount` email) from the same credential
+/// candidates `claude_snapshot` uses, without fetching usage.
+fn claude_account_identity() -> Option<String> {
+    let config = env_dir_or_home("CLAUDE_CONFIG_DIR", ".claude");
+    claude_oauth_candidates(&config)
+        .iter()
+        .find_map(|path| load_claude_account_email(path))
+}
+
+/// Codex account identity (`account_id`, else the account label) from the same
+/// auth candidates `codex_snapshot` uses, without fetching usage.
+fn codex_account_identity() -> Option<String> {
+    let codex_home = env_dir_or_home("CODEX_HOME", ".codex");
+    codex_auth_candidates(&codex_home).iter().find_map(|path| {
+        let creds = codex_oauth_from_value(&read_json_file(path)?)?;
+        creds.account_id.or(creds.account_label)
+    })
 }
 
 fn canonical_usage_cache_key(agent: &str, focused_provider: Option<&str>) -> String {
@@ -1011,8 +1322,7 @@ fn provider_outcome(
 }
 
 fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsageView {
-    let config =
-        std::env::var("CLAUDE_CONFIG_DIR").map_or_else(|_| home_path(".claude"), PathBuf::from);
+    let config = env_dir_or_home("CLAUDE_CONFIG_DIR", ".claude");
     // Resolve the Claude OAuth token, home credentials first (the agent CLI
     // keeps the live token there and refreshes it in place). `~/.claude.json`
     // only carries `oauthAccount` metadata, never the token. The runtime-
@@ -1020,21 +1330,21 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
     // fallback — mirroring the other providers (Codex/Amp/Kimi/Grok) — so the
     // snapshot does not silently drop to the impoverished CLI path when the
     // home copy lacks `claudeAiOauth.accessToken`. Matches CodexBar's order.
-    let oauth_candidates = [
-        config.join(".credentials.json"),
-        home_path(".claude/.credentials.json"),
-        home_path(".claude.json"),
-        PathBuf::from(CLAUDE_HANDOFF_CREDENTIALS_PATH),
-    ];
-    // One home-first walk yields both the OAuth token (with its winning path, for
+    let oauth_candidates = claude_oauth_candidates(&config);
+    // One home-first walk yields the OAuth token (with its winning path, for
     // the `Auth:` origin — there is no keychain reader in the capsule, so the
-    // origin names the file) and the `oauthAccount` email, reading each file
-    // once. account_label is the real email identity — empty when none, never a
+    // origin names the file), the `oauthAccount` email, and the
+    // `oauthAccount.organizationType` tier label, reading each file once.
+    // account_label is the real email identity — empty when none, never a
     // fabricated auth-method string; the auth source lives on `credential_origin`.
-    let (oauth_resolved, account_email) = resolve_identity(
+    // `organizationType` (e.g. "claude_enterprise", "claude_max") is the account
+    // tier; Enterprise/Team accounts carry a billing-mode `subscriptionType`
+    // ("API Usage Billing") in the credentials file that is useless as a plan label.
+    let (oauth_resolved, account_email, organization_type) = resolve_identity_with_extra(
         &oauth_candidates,
         claude_oauth_from_value,
         claude_email_from_value,
+        claude_organization_type_from_value,
     );
     let (oauth_path, oauth) = oauth_resolved.unzip();
     let api_key = std::env::var("ANTHROPIC_API_KEY")
@@ -1120,7 +1430,8 @@ fn claude_snapshot(agent: &str, provider: Option<&str>, now: i64) -> FocusedUsag
         surface: UsageSurface::Claude,
         account_label: account,
         username: None,
-        plan_label: oauth.and_then(|credentials| credentials.subscription_type),
+        plan_label: organization_type
+            .or_else(|| oauth.and_then(|credentials| credentials.subscription_type)),
         credential_origin,
         buckets,
         status,
@@ -1228,14 +1539,11 @@ fn codex_snapshot(
     now: i64,
     rpc_gate: &mut ManagedCliLaunchGate,
 ) -> FocusedUsageView {
-    let codex_home =
-        std::env::var("CODEX_HOME").map_or_else(|_| home_path(".codex"), PathBuf::from);
-    let auth_path = codex_home.join("auth.json");
-    let handoff_auth_path = Path::new(CODEX_HANDOFF_AUTH_PATH);
+    let codex_home = env_dir_or_home("CODEX_HOME", ".codex");
     // Home auth first, runtime-forwarded handoff last; one walk yields the
     // credential (with its winning path, for the `Auth:` origin) and the account
     // label, reading each file once.
-    let codex_candidates = [auth_path, handoff_auth_path.to_path_buf()];
+    let codex_candidates = codex_auth_candidates(&codex_home);
     let (resolved, account_from_file) = resolve_identity(
         &codex_candidates,
         codex_oauth_from_value,
@@ -1263,7 +1571,7 @@ fn codex_snapshot(
     };
     let rpc_quota = rpc_usage.as_ref().map(|usage| &usage.response);
     let (oauth_quota, oauth_error) = split_fetch(credentials.as_ref().map(|credentials| {
-        fetch_codex_oauth_usage(credentials, &codex_home).map(|mut usage| {
+        fetch_codex_oauth_usage_refreshing(credentials, &codex_home).map(|mut usage| {
             usage.reset_credits = fetch_codex_oauth_reset_credits(credentials, &codex_home)
                 .inspect_err(|error| {
                     crate::cdebug!("codex reset-credits fetch failed: {error}");
@@ -1283,6 +1591,16 @@ fn codex_snapshot(
         UsageSnapshotStatus::NeedsLogin
     } else if quota.is_some() {
         UsageSnapshotStatus::Fresh
+    } else if provider_error
+        .as_deref()
+        .is_some_and(usage_error_is_unauthorized)
+    {
+        // The on-disk token is present but rejected (expired/revoked). Codex
+        // refreshes its own token on launch; jackin reads the token as-is, so a
+        // stale `auth.json` 401s here. Surface an honest "login" rather than a
+        // blank/stale meter — the root cause (no in-process refresh) is named in
+        // FINDINGS §9.2 E2.
+        UsageSnapshotStatus::NeedsLogin
     } else {
         UsageSnapshotStatus::Stale
     };
@@ -1897,6 +2215,27 @@ fn usage_view(input: UsageViewInput<'_>) -> FocusedUsageView {
     }
 }
 
+/// Monetary spend for the status-bar headline, read from the `Spend`-slot
+/// bucket and rendered `<used> of <limit>` with the currency shown once
+/// (e.g. `SGD 78 of 260`). `None` unless a fresh/stale bucket carries
+/// structured [`Money`], so the headline shows nothing rather than a stale or
+/// zeroed figure.
+fn spend_headline_label(buckets: &[QuotaBucketView]) -> Option<String> {
+    let spend = buckets.iter().find(|bucket| {
+        bucket.status_slot == Some(StatusSlot::Spend) && status_bar_fresh_or_stale(bucket)
+    })?;
+    let used = spend.used_money.as_ref()?;
+    // Drop zero spend from the compact headline (Bug 8): `$0 spent` / `$0 of N`
+    // carries no signal in the status bar. The dialog still shows `$0.00 spent`.
+    if used.amount_minor == 0 {
+        return None;
+    }
+    Some(match spend.limit_money.as_ref() {
+        Some(limit) => format!("{} of {}", used.format_compact(), limit.major_amount()),
+        None => format!("{} spent", used.format_compact()),
+    })
+}
+
 fn status_bar_label(
     surface: UsageSurface,
     _account_label: &str,
@@ -1924,7 +2263,10 @@ fn status_bar_headline_for_surface(
     if surface == UsageSurface::Amp {
         amp_status_bar_headline(buckets)
     } else {
-        let labels = status_bar_quota_labels(buckets);
+        // Session/Weekly percentages, then the monetary spend, all in one
+        // ` · `-joined headline (e.g. `Session 89% · Weekly 73% · SGD 78 of 260`).
+        let mut labels = status_bar_quota_labels(buckets);
+        labels.extend(spend_headline_label(buckets));
         (!labels.is_empty()).then(|| labels.join(" · "))
     }
 }
@@ -1981,8 +2323,12 @@ fn status_bar_quota_labels(buckets: &[QuotaBucketView]) -> Vec<String> {
             .iter()
             .find(|bucket| bucket.status_slot == Some(slot) && status_bar_fresh_or_stale(bucket))
             .and_then(|bucket| {
+                // Drop a zero window from the compact headline (Bug 8, operator
+                // decision: omit every zero-value segment from the status bar;
+                // the dialog still shows `0% left`).
                 bucket
                     .remaining_percent
+                    .filter(|&remaining| remaining != 0)
                     .map(|remaining| format!("{label} {remaining}%"))
             })
     })
@@ -2058,11 +2404,28 @@ fn provider_matches_usage_label(provider: &str, account_provider: &str) -> bool 
 }
 
 fn most_constrained_fresh_bucket(buckets: &[QuotaBucketView]) -> Option<&QuotaBucketView> {
+    // Prefer a rolling-window bucket that actually carries a reset, excluding the
+    // monetary Spend slot (already shown as money in the status bar, and it has
+    // no rolling reset). Tightest remaining wins; ties break to the soonest reset
+    // so the overview row always carries a reset column (Bug 5: a reset-less spend
+    // bucket must not win the headline and blank the reset). Fall back to the old
+    // "any fresh bucket with a remaining" only when no windowed+reset bucket
+    // exists, so a provider that genuinely has only reset-less windows still shows.
     buckets
         .iter()
         .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
-        .filter(|bucket| bucket.remaining_percent.is_some())
-        .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
+        .filter(|bucket| bucket.status_slot != Some(StatusSlot::Spend))
+        .filter(|bucket| bucket.remaining_percent.is_some() && bucket.resets_at.is_some())
+        // Both keys are `Some` (filtered), so a plain tuple key orders by tightest
+        // remaining, then soonest reset.
+        .min_by_key(|bucket| (bucket.remaining_percent, bucket.resets_at))
+        .or_else(|| {
+            buckets
+                .iter()
+                .filter(|bucket| bucket.status == UsageSnapshotStatus::Fresh)
+                .filter(|bucket| bucket.remaining_percent.is_some())
+                .min_by_key(|bucket| bucket.remaining_percent.unwrap_or(u8::MAX))
+        })
 }
 
 fn preserve_cached_quota_on_failed_refresh(view: &mut FocusedUsageView, cached: &FocusedUsageView) {
@@ -2108,6 +2471,24 @@ fn preserve_cached_quota_on_failed_refresh(view: &mut FocusedUsageView, cached: 
         view.status,
         &view.buckets,
     );
+}
+
+/// Present a shared-snapshot view as this instance's last-known **Stale** data:
+/// it was fetched by some other instance earlier, not freshly by us. Keeps the
+/// numbers, marks the view and its buckets Stale, sources from cache, and sets an
+/// "as of" relative label (Class III-C). With Bug 1's marker, the status bar then
+/// reads `Updated Xm ago · refreshing...` while this instance's background fetch
+/// runs, upgrading to Fresh on completion — never a blank "refreshing" cold start.
+fn stale_shared_view(mut view: FocusedUsageView, now: i64) -> FocusedUsageView {
+    view.status = UsageSnapshotStatus::Stale;
+    view.source = UsageSource::Cache;
+    for bucket in &mut view.buckets {
+        if bucket.status == UsageSnapshotStatus::Fresh {
+            bucket.status = UsageSnapshotStatus::Stale;
+        }
+    }
+    view.updated_label = relative_updated_label(view.fetched_at_epoch, now);
+    view
 }
 
 fn provider_tabs(active: UsageSurface) -> Vec<UsageProviderTab> {
@@ -2230,6 +2611,9 @@ fn bucket(
         status_slot: None,
         pace_label: pace_label.map(str::to_owned),
         status,
+        used_money: None,
+        limit_money: None,
+        severity: UsageSeverity::default(),
     }
 }
 
@@ -2345,9 +2729,29 @@ fn claude_email_from_value(value: &serde_json::Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-#[cfg(test)]
+/// Claude account tier from `oauthAccount.organizationType` in `~/.claude.json`.
+///
+/// Enterprise/Team accounts store their billing model in `subscriptionType`
+/// ("API Usage Billing"), not the account tier. `organizationType` carries the
+/// tier directly (e.g. `"claude_enterprise"`, `"claude_max"`, `"claude_team"`) and is
+/// the authoritative source for the plan label shown in the TUI header.
+fn claude_organization_type_from_value(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("oauthAccount")?
+        .get("organizationType")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(humanize_plan_label)
+}
+
 fn load_claude_account_email(path: &Path) -> Option<String> {
     claude_email_from_value(&read_json_file(path)?)
+}
+
+#[cfg(test)]
+fn load_claude_organization_type(path: &Path) -> Option<String> {
+    claude_organization_type_from_value(&read_json_file(path)?)
 }
 
 fn claude_oauth_from_value(value: &serde_json::Value) -> Option<ClaudeOAuthCredentials> {
@@ -2389,10 +2793,26 @@ fn resolve_identity<T>(
     extract_credential: impl Fn(&serde_json::Value) -> Option<T>,
     extract_label: impl Fn(&serde_json::Value) -> Option<String>,
 ) -> (Option<(PathBuf, T)>, Option<String>) {
+    let (result, label, _) =
+        resolve_identity_with_extra(candidates, extract_credential, extract_label, |_| {
+            None::<String>
+        });
+    (result, label)
+}
+
+/// Like `resolve_identity` but also extracts a third field in the same walk,
+/// avoiding a second pass over the candidate files.
+fn resolve_identity_with_extra<T>(
+    candidates: &[PathBuf],
+    extract_credential: impl Fn(&serde_json::Value) -> Option<T>,
+    extract_label: impl Fn(&serde_json::Value) -> Option<String>,
+    extract_extra: impl Fn(&serde_json::Value) -> Option<String>,
+) -> (Option<(PathBuf, T)>, Option<String>, Option<String>) {
     let mut credential = None;
     let mut label = None;
+    let mut extra = None;
     for path in candidates {
-        if credential.is_some() && label.is_some() {
+        if credential.is_some() && label.is_some() && extra.is_some() {
             break;
         }
         let Some(value) = read_json_file(path) else {
@@ -2406,8 +2826,11 @@ fn resolve_identity<T>(
         if label.is_none() {
             label = extract_label(&value);
         }
+        if extra.is_none() {
+            extra = extract_extra(&value);
+        }
     }
-    (credential, label)
+    (credential, label, extra)
 }
 
 #[derive(Debug, Deserialize)]
@@ -2432,6 +2855,48 @@ struct ClaudeOAuthUsageResponse {
     seven_day_routines: Option<ClaudeOAuthUsageWindow>,
     #[serde(rename = "extra_usage")]
     extra_usage: Option<ClaudeOAuthExtraUsage>,
+    // The newer, self-describing money object. Preferred over `extra_usage`
+    // because it states the unit scale (`exponent`) and currency explicitly, so
+    // a minor-unit amount can never be mis-scaled. `extra_usage` is kept as a
+    // fallback for responses that predate `spend`.
+    #[serde(rename = "spend")]
+    spend: Option<ClaudeOAuthSpend>,
+    // Catch-all for the remaining keys — chiefly the rotating-codename dollar
+    // budget windows (`amber_ladder`, `omelette_promotional`, …). Capturing
+    // them generically, rather than enumerating each ephemeral name, is what
+    // lets enterprise dollar budgets surface instead of being silently dropped
+    // by a fixed-field struct.
+    #[serde(flatten)]
+    other_windows: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeOAuthSpend {
+    used: Option<ClaudeOAuthMoney>,
+    limit: Option<ClaudeOAuthMoney>,
+    percent: Option<u8>,
+    severity: Option<String>,
+    enabled: Option<bool>,
+    #[serde(rename = "disabled_reason")]
+    disabled_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeOAuthMoney {
+    #[serde(rename = "amount_minor")]
+    amount_minor: Option<i64>,
+    currency: Option<String>,
+    exponent: Option<u8>,
+}
+
+impl ClaudeOAuthMoney {
+    fn into_money(self) -> Option<Money> {
+        Some(Money::new(
+            self.amount_minor?,
+            self.currency.unwrap_or_else(|| "credits".to_owned()),
+            self.exponent.unwrap_or(2),
+        ))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -2439,6 +2904,13 @@ struct ClaudeOAuthUsageWindow {
     utilization: Option<f64>,
     #[serde(rename = "resets_at")]
     resets_at: Option<String>,
+    // Dollar-denominated budget windows (enterprise contractual allocations,
+    // carried under rotating codename keys like `amber_ladder`). Named in
+    // major-unit dollars by the API, so no `exponent` is supplied.
+    #[serde(rename = "limit_dollars")]
+    limit_dollars: Option<f64>,
+    #[serde(rename = "used_dollars")]
+    used_dollars: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2451,6 +2923,13 @@ struct ClaudeOAuthExtraUsage {
     used_credits: Option<f64>,
     utilization: Option<f64>,
     currency: Option<String>,
+    // Unit scale for `used_credits`/`monthly_limit`: they are MINOR units
+    // (e.g. cents), so the major value is `value / 10^decimal_places`. Ignoring
+    // this is what produced the 100×-too-large spend display.
+    #[serde(rename = "decimal_places")]
+    decimal_places: Option<u8>,
+    #[serde(rename = "disabled_reason")]
+    disabled_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2532,33 +3011,174 @@ impl ClaudeOAuthUsageResponse {
             self.seven_day_routines,
             now,
         );
-        if let Some(extra) = self.extra_usage
-            && extra.is_enabled.unwrap_or(true)
-        {
-            // surface Claude credits as spent vs cap only —
-            // `<currency> <spent> spent` + `NN% used`, against the monthly cap.
-            let remaining_percent = extra.utilization.and_then(remaining_from_fraction);
-            let currency = extra.currency.unwrap_or_else(|| "credits".to_owned());
-            let used = extra
-                .used_credits
-                .map(|used| format!("{} spent", format_extra_usage_amount(used, &currency)));
-            let limit = extra
-                .monthly_limit
-                .map(|limit| format_extra_usage_amount(limit, &currency));
-            let pace = remaining_percent
-                .map(|remaining| format!("{}% used", 100u8.saturating_sub(remaining)));
-            buckets.push(bucket(
-                "Extra usage",
-                used,
-                limit,
-                remaining_percent,
-                None,
-                pace.as_deref(),
-                UsageSnapshotStatus::Fresh,
-            ));
+        if let Some(spend) = claude_spend_bucket(self.spend, self.extra_usage) {
+            buckets.push(spend);
         }
+        push_claude_dollar_windows(&mut buckets, self.other_windows, now);
         buckets
     }
+}
+
+/// Surface rotating-codename dollar-budget windows (`amber_ladder` etc.) that a
+/// fixed-field struct would drop. Each captured key is parsed as a window; only
+/// those carrying a positive `limit_dollars` are real allocations and become a
+/// (non-headline) dollar bucket labelled by the title-cased codename (the API
+/// supplies no human name for these windows).
+fn push_claude_dollar_windows(
+    buckets: &mut Vec<QuotaBucketView>,
+    other: BTreeMap<String, serde_json::Value>,
+    now: i64,
+) {
+    for (key, value) in other {
+        let Ok(window) = serde_json::from_value::<ClaudeOAuthUsageWindow>(value) else {
+            continue;
+        };
+        let Some(limit) = window.limit_dollars.filter(|limit| *limit > 0.0) else {
+            continue;
+        };
+        // `*_dollars` are major-unit dollars; scale to minor for Money.
+        let used = window.used_dollars.unwrap_or(0.0).max(0.0);
+        let used_money = Money::new((used * 100.0).round() as i64, "USD", 2);
+        let limit_money = Money::new((limit * 100.0).round() as i64, "USD", 2);
+        // `limit > 0.0` holds (filtered above), so the fraction is well-defined.
+        let remaining_percent =
+            Some(((1.0 - (used / limit).clamp(0.0, 1.0)) * 100.0).round() as u8);
+        let reset_at = window.resets_at.as_deref().and_then(parse_iso_epoch);
+        let mut view = timed_bucket(
+            &humanize_window_label(&key),
+            Some(format!("{used_money} spent")),
+            Some(limit_money.to_string()),
+            remaining_percent,
+            reset_at,
+            now,
+            remaining_percent
+                .map(|remaining| format!("{}% used", 100u8.saturating_sub(remaining)))
+                .as_deref(),
+            UsageSnapshotStatus::Fresh,
+        );
+        view.used_money = Some(used_money);
+        view.limit_money = Some(limit_money);
+        buckets.push(view);
+    }
+}
+
+/// The normalized inputs for the monetary "Extra usage" bucket, derived from
+/// whichever source the API provided.
+struct ClaudeSpend {
+    used: Money,
+    limit: Option<Money>,
+    /// Percent of the cap already spent (0..=100).
+    used_percent: Option<u8>,
+    enabled: bool,
+    disabled_reason: Option<String>,
+    severity: UsageSeverity,
+}
+
+/// Build the monetary spend bucket from the API response.
+///
+/// Prefers the self-describing `spend{}` object (it carries `amount_minor` +
+/// `exponent`, so the scale is unambiguous); falls back to `extra_usage`,
+/// scaling `used_credits`/`monthly_limit` by `decimal_places`. Both paths feed
+/// one [`Money`]-typed builder, so spend can never be rendered 100× too large
+/// regardless of source. A disabled (e.g. out-of-credits) bucket is still
+/// surfaced — with its reason — rather than silently dropped, so the cap stays
+/// visible the way the web console shows it.
+fn claude_spend_bucket(
+    spend: Option<ClaudeOAuthSpend>,
+    extra: Option<ClaudeOAuthExtraUsage>,
+) -> Option<QuotaBucketView> {
+    let spend = normalize_claude_spend(spend, extra)?;
+    let remaining_percent = spend.used_percent.map(|used| 100u8.saturating_sub(used));
+    let used_label = Some(format!("{} spent", spend.used));
+    let limit_label = spend.limit.as_ref().map(Money::to_string);
+    let pace = if spend.enabled {
+        spend.used_percent.map(|used| format!("{used}% used"))
+    } else {
+        Some(match &spend.disabled_reason {
+            Some(reason) => format!("disabled · {}", humanize_reason(reason)),
+            None => "disabled".to_owned(),
+        })
+    };
+    let mut view = bucket(
+        "Extra usage",
+        used_label,
+        limit_label,
+        remaining_percent,
+        None,
+        pace.as_deref(),
+        UsageSnapshotStatus::Fresh,
+    );
+    view.status_slot = Some(StatusSlot::Spend);
+    view.severity = spend.severity;
+    view.used_money = Some(spend.used);
+    view.limit_money = spend.limit;
+    Some(view)
+}
+
+fn normalize_claude_spend(
+    spend: Option<ClaudeOAuthSpend>,
+    extra: Option<ClaudeOAuthExtraUsage>,
+) -> Option<ClaudeSpend> {
+    if let Some(spend) = spend
+        && let Some(used) = spend.used.and_then(ClaudeOAuthMoney::into_money)
+    {
+        return Some(ClaudeSpend {
+            used,
+            limit: spend.limit.and_then(ClaudeOAuthMoney::into_money),
+            used_percent: spend.percent.map(|percent| percent.min(100)),
+            enabled: spend.enabled.unwrap_or(true),
+            disabled_reason: spend.disabled_reason,
+            severity: severity_from_label(spend.severity.as_deref()),
+        });
+    }
+    let extra = extra?;
+    let used_credits = extra.used_credits?;
+    let exponent = extra.decimal_places.unwrap_or(2);
+    let currency = extra.currency.unwrap_or_else(|| "credits".to_owned());
+    let used = Money::new(used_credits.round() as i64, &currency, exponent);
+    let limit = extra
+        .monthly_limit
+        .map(|limit| Money::new(limit.round() as i64, &currency, exponent));
+    Some(ClaudeSpend {
+        used,
+        limit,
+        used_percent: extra.utilization.and_then(used_percent_from_fraction),
+        enabled: extra.is_enabled.unwrap_or(true),
+        disabled_reason: extra.disabled_reason,
+        severity: UsageSeverity::Normal,
+    })
+}
+
+fn severity_from_label(label: Option<&str>) -> UsageSeverity {
+    match label.map(str::to_ascii_lowercase).as_deref() {
+        Some("warn" | "warning" | "elevated") => UsageSeverity::Warn,
+        Some("danger" | "critical" | "exceeded") => UsageSeverity::Danger,
+        _ => UsageSeverity::Normal,
+    }
+}
+
+/// Turn an API reason slug (`out_of_credits`) into a human phrase
+/// (`out of credits`) for the disabled-spend pace label.
+fn humanize_reason(reason: &str) -> String {
+    reason.replace(['_', '-'], " ")
+}
+
+/// Title-case a codename window key (`amber_ladder` → `Amber Ladder`) for use as
+/// a bucket label. Distinct from [`humanize_reason`] (which yields a lowercase
+/// phrase for inline pace text); a window label is a proper-noun-style heading
+/// shown beside `Session`/`Weekly`.
+fn humanize_window_label(key: &str) -> String {
+    key.split(['_', '-'])
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn push_claude_window(
@@ -2618,10 +3238,18 @@ fn fetch_claude_oauth_usage(access_token: &str) -> Result<ClaudeOAuthUsageRespon
 }
 
 fn claude_code_user_agent() -> String {
-    claude_code_user_agent_with(|command, args, timeout| {
-        run_cli_with_timeout_full(command, args, timeout)
-    })
-    .unwrap_or_else(|| CLAUDE_CODE_USER_AGENT_FALLBACK.to_owned())
+    // The Claude Code version is stable for the process lifetime, so resolve the
+    // UA once instead of spawning `claude --version` on every usage fetch — that
+    // per-probe subprocess was a measurable slice of the load latency (Bug 3).
+    static CACHED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            claude_code_user_agent_with(|command, args, timeout| {
+                run_cli_with_timeout_full(command, args, timeout)
+            })
+            .unwrap_or_else(|| CLAUDE_CODE_USER_AGENT_FALLBACK.to_owned())
+        })
+        .clone()
 }
 
 fn claude_code_user_agent_with<F>(mut runner: F) -> Option<String>
@@ -2656,6 +3284,10 @@ struct CodexOAuthCredentials {
     access_token: String,
     account_id: Option<String>,
     account_label: Option<String>,
+    /// OAuth refresh token, when present, used to re-mint a rejected
+    /// `access_token` in place for a single retry (see
+    /// `fetch_codex_oauth_usage_refreshing`).
+    refresh_token: Option<String>,
 }
 
 #[cfg(test)]
@@ -2673,6 +3305,8 @@ fn codex_oauth_from_value(value: &serde_json::Value) -> Option<CodexOAuthCredent
             access_token: api_key.trim().to_owned(),
             account_id: None,
             account_label: Some("OPENAI_API_KEY".to_owned()),
+            // A static API key cannot be refreshed; there is nothing to re-mint.
+            refresh_token: None,
         });
     }
     let tokens = value.get("tokens")?;
@@ -2706,10 +3340,18 @@ fn codex_oauth_from_value(value: &serde_json::Value) -> Option<CodexOAuthCredent
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
         });
+    let refresh_token = tokens
+        .get("refresh_token")
+        .or_else(|| tokens.get("refreshToken"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
     Some(CodexOAuthCredentials {
         access_token,
         account_id,
         account_label,
+        refresh_token,
     })
 }
 
@@ -3976,6 +4618,83 @@ fn fetch_codex_oauth_usage(
     )
 }
 
+/// `OpenAI` OAuth token endpoint and the Codex CLI's public client id (the same
+/// values the CLI uses for its own refresh grant — neither is a secret).
+const CODEX_OAUTH_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
+const CODEX_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+
+/// Body for the `refresh_token` grant. Pure so the request shape is unit-tested
+/// without a live endpoint.
+fn codex_refresh_request_body(refresh_token: &str) -> serde_json::Value {
+    serde_json::json!({
+        "client_id": CODEX_OAUTH_CLIENT_ID,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "scope": "openid profile email",
+    })
+}
+
+/// Extract the re-minted access token from a token-endpoint response. Pure.
+fn codex_access_token_from_response(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("access_token")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(str::to_owned)
+}
+
+fn refresh_codex_access_token(refresh_token: &str) -> Result<String, String> {
+    let client = provider_http_client()?;
+    let response = client
+        .post(CODEX_OAUTH_TOKEN_URL)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header(reqwest::header::ACCEPT, "application/json")
+        .json(&codex_refresh_request_body(refresh_token))
+        .send()
+        .map_err(|err| format!("Codex token refresh request failed: {err}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Codex token refresh HTTP {status}"));
+    }
+    let value: serde_json::Value = response
+        .json()
+        .map_err(|err| format!("Codex token refresh decode failed: {err}"))?;
+    codex_access_token_from_response(&value)
+        .ok_or_else(|| "Codex token refresh response missing access_token".to_owned())
+}
+
+/// Fetch Codex usage, transparently re-minting the access token once if the
+/// on-disk token is rejected (HTTP 401/403).
+///
+/// Root cause this addresses: jackin' reads `auth.json` as-is, while the Codex
+/// CLI refreshes that token only on its own launch — so a token that expired
+/// since the last CLI run would 401 here indefinitely. The refresh is used only
+/// for this read-only fetch and deliberately NOT written back to `auth.json`
+/// (avoiding any risk of corrupting the operator's live credential file); the
+/// CLI re-mints and persists its own copy on next launch.
+fn fetch_codex_oauth_usage_refreshing(
+    credentials: &CodexOAuthCredentials,
+    codex_home: &Path,
+) -> Result<CodexUsageResponse, String> {
+    match fetch_codex_oauth_usage(credentials, codex_home) {
+        Err(error) if usage_error_is_unauthorized(&error) => {
+            let Some(refresh_token) = credentials.refresh_token.as_deref() else {
+                return Err(error);
+            };
+            let access_token = refresh_codex_access_token(refresh_token)?;
+            let refreshed = CodexOAuthCredentials {
+                access_token,
+                account_id: credentials.account_id.clone(),
+                account_label: credentials.account_label.clone(),
+                refresh_token: credentials.refresh_token.clone(),
+            };
+            fetch_codex_oauth_usage(&refreshed, codex_home)
+        }
+        other => other,
+    }
+}
+
 fn fetch_codex_oauth_reset_credits(
     credentials: &CodexOAuthCredentials,
     codex_home: &Path,
@@ -4915,13 +5634,9 @@ fn env_value(name: &str) -> Option<String> {
 /// never fabricated into a full meter (`remaining_from_fraction(-0.5)` would
 /// otherwise yield `Some(100)` — a "100% left" row for data that is absent).
 fn used_percent_from_fraction(value: f64) -> Option<u8> {
-    if !value.is_finite() || value < 0.0 {
-        return None;
-    }
-    let used = if value <= 1.0 { value * 100.0 } else { value }
-        .round()
-        .clamp(0.0, 100.0) as u8;
-    Some(used)
+    // The clamped-to-100 sibling of `used_percent_uncapped`: same fraction/percent
+    // heuristic and absent-value guard, capped at 100 for the `% left` meter.
+    used_percent_uncapped(value).map(|used| used.min(100) as u8)
 }
 
 fn remaining_from_fraction(value: f64) -> Option<u8> {
@@ -4929,7 +5644,24 @@ fn remaining_from_fraction(value: f64) -> Option<u8> {
 }
 
 fn used_percent_label(value: f64) -> Option<String> {
-    used_percent_from_fraction(value).map(|used| format!("{used}% used"))
+    // Surface over-cap usage truthfully: a window the API reports above its limit
+    // renders e.g. `150% used` rather than being clamped to `100% used` (Bug 11 —
+    // the clamp silently discarded the overage the API provided). `remaining`
+    // stays clamped at 0 (nothing left / bar full); only the used side carries the
+    // overage.
+    used_percent_uncapped(value).map(|used| format!("{used}% used"))
+}
+
+/// Used-percent without the upper clamp `used_percent_from_fraction` applies, so
+/// an over-cap window keeps its true figure (e.g. `150`). Treats a value `<= 1.0`
+/// as a fraction (×100) and a larger value as an already-scaled percent, matching
+/// the fraction/percent heuristic the rest of the module uses.
+fn used_percent_uncapped(value: f64) -> Option<u16> {
+    if !value.is_finite() || value < 0.0 {
+        return None;
+    }
+    let used = if value <= 1.0 { value * 100.0 } else { value };
+    Some(used.round().clamp(0.0, f64::from(u16::MAX)) as u16)
 }
 
 fn parse_iso_epoch(value: &str) -> Option<i64> {
@@ -5079,14 +5811,6 @@ fn format_amount_with_unit(value: f64, unit: &str) -> String {
         format!("{value:.2}")
     };
     format!("{amount} {unit}")
-}
-
-fn format_extra_usage_amount(value: f64, unit: &str) -> String {
-    if unit.len() == 3 && unit.chars().all(|ch| ch.is_ascii_uppercase()) {
-        format!("{unit} {value:.2}")
-    } else {
-        format_amount_with_unit(value, unit)
-    }
 }
 
 #[derive(Debug, Clone, Default)]
