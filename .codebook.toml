@@ -1002,4 +1002,8 @@ words = [
   "vminitd",
   "vmnet",
   "daemonizes",
+  "recompiles",
+  "Cranelift",
+  "Bazel",
+  "gha",
 ]
