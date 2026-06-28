@@ -110,7 +110,7 @@ Worked example — the `build_log` inversion (P2): define `trait BuildLogSink` i
 
 ### W1 — Architecture & boundaries (the core restructuring)
 
-Behavior-preserving moves that make the layout match the target. Sequence with Workstream 5 (each god-crate carve is also a decomposition).
+Behavior-preserving moves that make the layout match the target. This section is the *thematic* summary; the **ordered, per-PR execution** of these moves is the [Implementation plan](#implementation-plan) below — Phase A (boundary fixes) through Phase F (naming), with the god-crate carves in Phases C and E.
 
 - [ ] **Relocate the misplaced types that cause the inverted dependencies (P2).** Move `PromptResult` into `jackin-core` (a domain value). Replace `jackin-docker`'s direct `build_log::push_line` calls with an emit **port** the runtime owns (Docker emits a log event; the launch UI subscribes) — a [Branch by Abstraction](https://martinfowler.com/bliki/BranchByAbstraction.html) move. Result: `jackin-env` and `jackin-docker` no longer depend on `jackin-launch`.
 - [ ] **Rename `jackin-launch` → a name that screams "launch cockpit UI"** (e.g. `jackin-launch-tui`), or merge it into the shared TUI crate; move its non-UI `progress`/`build_log` value types to a neutral layer (P3).
@@ -185,14 +185,89 @@ Manage this as continuous, disciplined refactoring — [Fowler's](https://martin
 
 Every PR under this item is structure-only and must land with the existing test suite and behavioral specs (the `runtime-launch` and `op-picker` specs are the oracle) **green and unmodified** — that is the proof behavior is unchanged. A move that forces a test edit changed behavior; back it out.
 
-## Rollout
+## Implementation plan
 
-1. **Phase 0 — measure & pin.** W2.0 lint measurement; add characterization tests where coverage is thin around the W1 targets.
-2. **Phase 1 — gates green.** Ship W2 (baseline thresholds + `#[expect]`), W3 (ratchet seeded from today), W4 unused-dep — nothing breaks, the ceiling stops getting worse.
-3. **Phase 2 — restructure (W1) + decompose (W5)**, one independently-shippable PR at a time: relocate inverted types → rename `jackin-launch` → delete shims → carve god-crates → dedup homes. Each PR deletes budget entries / `#[expect]`s and adds the matching `cargo-deny` ban so the fix can't regress.
-4. **Phase 3 — unify TUI (W6)** and tighten thresholds toward target (files ≤ 1500L, fns ≤ 150 logical lines).
+The ordered, followable backbone. **Each numbered slice below is one shippable, behavior-preserving PR.** Slices are grouped into phases by risk and dependency; within a phase the order is flexible unless a slice names a prerequisite. Every slice satisfies the **Per-PR checklist** and the **structure-only** invariant. Status: `[x]` shipped on this branch, `[ ]` open.
 
-Open until the layout matches the target, the gates are enforced, and the backlog is cleared.
+### Per-PR checklist (applies to every slice)
+
+- [ ] Scope is exactly one slice — structure-only: no logic, control-flow, behavior, or performance change.
+- [ ] `cargo fmt --check` · `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` · `cargo nextest run --all-features` all green.
+- [ ] Behavioral specs (`runtime-launch`, `op-picker`) pass **unmodified**; no test rewritten to accommodate a move (a forced test edit means behavior changed → back out).
+- [ ] `cargo xtask lint files` green; if a file dropped under cap, refresh the budget via `--print-budget` and delete its entry.
+- [ ] Any new or renamed crate carries `[lints] workspace = true` and an Architecture-Invariant `//!` header naming its allowed dependencies.
+- [ ] Docs synced in the same PR: `PROJECT_STRUCTURE.md` + [Codebase Map](/reference/getting-oriented/codebase-map/), and this item's slice checkbox.
+- [ ] DCO sign-off (`-s`); push immediately.
+- [ ] *(carve / hot-path slices only)* the launch/attach benchmark shows no regression vs the recorded baseline.
+
+### Reusable recipe — carve a subsystem into its own crate
+
+Used by every C/E slice. Pure move; contents are not rewritten.
+
+1. Create `crates/<new>/` with a `Cargo.toml` that has `[lints] workspace = true`, the minimal dependency set, and a `//!` Architecture-Invariant header.
+2. `git mv` the subsystem's modules across verbatim — byte-identical bodies.
+3. Adjust visibility only as the boundary forces: the crate's public surface becomes `pub`; everything else stays `pub(crate)`. No signature or logic edits.
+4. Repoint importers to the new crate root ([Parallel Change](https://martinfowler.com/bliki/ParallelChange.html) — add the new path, migrate callers, delete the old).
+5. Add the crate to the workspace `members`; add the old crate's dependency on it only if it still calls inward.
+6. Add the `cargo-deny` ban entries that encode the new allowed edges (W4), so the boundary cannot invert later.
+7. Update `PROJECT_STRUCTURE.md` + Codebase Map.
+8. Run the Per-PR checklist. For a hot-path carve, run the launch/attach benchmark against the E0 baseline and attach the numbers to the PR.
+
+### Phase A — boundary fixes (small; unblock the W4 dependency bans)
+
+- [x] **A0 — `PromptResult` → `jackin-core`.** *(shipped)* Broke the `jackin-env → jackin-launch` edge for this type.
+- [ ] **A1 — `build_log` trait port (D2).** Moves: define `pub trait BuildLogSink` in `jackin-core`; `jackin-docker` shell runner takes `&dyn BuildLogSink` and calls `push_line`; `jackin-launch(-tui)` implements it; `jackin-runtime` injects the UI sink at the call site. How: [Branch by Abstraction](https://martinfowler.com/bliki/BranchByAbstraction.html). Verify: build-log pane renders identically; tests green. Done when `jackin-docker` no longer names `jackin_launch`.
+- [ ] **A2 — `progress` value types → `jackin-core`.** Moves: relocate the launch `progress` value types out of `jackin-launch`; the streaming progress updates use the same port shape as A1. Done when `jackin-runtime`/`jackin-env` no longer depend on `jackin-launch` for types.
+- [ ] **A3 — presentation helpers out of `jackin-core` (P7).** Moves: `ansi_text`, `prune_output`, `url_text` → `jackin-tui` (presentation). Done when `jackin-core` has no rendering code.
+- [ ] **A4 — terminal-ownership state out of `jackin-diagnostics` (P7).** Moves: `rich_surface_active` / `host_screen_owned` state → a presentation/terminal crate; `jackin-diagnostics` keeps observability only. Done when no domain crate depends on `jackin-diagnostics` for terminal state.
+- [ ] **A5 — land the W4 dependency-direction bans + invariant headers.** Prereq: A1–A4. Adds the `cargo-deny` bans (`jackin-docker`/`jackin-env`/`jackin-runtime` ↛ presentation; domain ↛ infra/presentation) and the per-crate `//!` headers. This freezes the boundary fixes so they cannot regress; every later phase runs against it.
+
+### Phase B — rename + shim removal (mechanical, no logic)
+
+- [ ] **B1 — rename `jackin-launch` → `jackin-launch-tui` (D4).** Prereq: A1/A2 (types already left). Crate dir + `Cargo.toml` `name` + every dependent's `Cargo.toml`/`use`; add the UI-only `//!` header.
+- [ ] **B2 — delete the 19 binary shims (D6).** Parallel Change per shim: repoint callers from `crate::<x>` to the owning crate root (`jackin_<x>::…`), delete the shim file, remove the `mod` line. Fix the memorize-this exceptions (`DriftDetection`). Can ship as a few grouped PRs (by owning crate) rather than one mega-diff.
+
+### Phase C — cold carves (ungated; use the recipe)
+
+- [ ] **C1 — carve `jackin-host`** out of `jackin-runtime`: desktop, clipboard, caffeinate/keep-awake. Cold path — no perf gate.
+- [ ] **C2 — carve `jackin-usage`** out of `jackin-capsule`: usage/pricing/telemetry + token monitors. Cold path — no perf gate. (Also retires the capsule's largest non-PID1 subsystem.)
+
+### Phase D — collapse duplicated homes (P5)
+
+- [ ] **D1 — absorb `runtime/image.rs` into `jackin-image`** (also the W5 decomposition of that 2811L file): image build orchestration lives in `jackin-image`; `jackin-runtime` calls it. Splits the file along the way (Dockerfile gen / build / cache-inspection).
+- [ ] **D2 — env-resolution dedup:** one home for the env-resolution types (`jackin-env` vs `jackin-core/env_model`); loser becomes a re-export or is deleted.
+- [ ] **D3 — `op_cache` dedup:** one `op_cache` (currently in both `jackin-core` and `jackin-console`).
+- [ ] **D4 — resource-naming dedup:** one home for the `*-dind`/`*-net`/volume naming (currently `instance/naming.rs` and `runtime/naming.rs`).
+
+### Phase E — hot-path carves (GATED — D1/D3 binding condition)
+
+- [ ] **E0 — benchmark + `lto = "thin"` (prerequisite).** Add a representative `jackin load` / attach benchmark; enable `lto = "thin"` in the release profile; record the baseline numbers. Nothing carves until this lands.
+- [ ] **E1 — carve `jackin-isolation`** (mount isolation: shared/worktree/clone) via the recipe **+ perf gate**: PR must show no regression vs the E0 baseline.
+- [ ] **E2 — carve `jackin-instance`** (identity/manifest/index/recovery) via the recipe **+ perf gate**.
+
+### Phase F — naming normalization (P8)
+
+- [ ] **F1 — `app_config_*` → `app_config/` coordinator + siblings** (`app_config.rs` + `app_config/{mounts,persist,roles,workspaces}.rs`).
+- [ ] **F2 — TUI stem normalization** — retire `state.rs`/`render.rs` synonyms for the canonical TEA stems; folds into Phase G as each stack migrates.
+
+### Phase G — unify the TUI runtime (W6; largest)
+
+- [ ] **G0 — design + build the shared contract in `jackin-tui` (D5).** `Model`/`Message`/`update` + a `Component`/`View` contract; one central `update` per app. No stack migrated yet — just the runtime + a doc'd contract.
+- [ ] **G1 — migrate `jackin-launch-tui`** onto it (smallest stack; proves the contract).
+- [ ] **G2 — migrate the capsule TUI** onto it.
+- [ ] **G3 — migrate `jackin-console`**, landing [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/) on the shared contract so the editor + settings models become one implementation.
+
+### Ongoing — W5 file decompositions
+
+Interleave anytime; each rides under the file-size gate and shrinks the budget.
+
+- [x] `usage.rs` → `usage/format.rs` extracted *(shipped)*.
+- [ ] `usage.rs` remaining slices: `usage/{claude,codex,grok,zai,kimi,minimax,amp}.rs`, then `usage/{view,refresh}.rs`; `usage.rs` stays the coordinator.
+- [ ] `tui/app.rs`, `screens/editor/model.rs`, `screens/settings/model.rs` — decompose with G3 / unify-settings (split the unified surface, not the duplicated pair).
+
+### Critical-path ordering
+
+`A1–A4 → A5 (bans) → everything else`. `E0 → E1, E2`. `G0 → G1 → G2 → G3`. `B1` needs `A1/A2`. The cold carves (C), dedups (D), and W5 slices have no cross-dependencies and can land in any order once A5 is in. The item stays **open** until every box above is checked, the gates are enforced, and the lint/file-size backlogs are cleared; then tighten thresholds toward target (files ≤ 1500L, fns ≤ 150 logical lines).
 
 ## Tooling debt
 

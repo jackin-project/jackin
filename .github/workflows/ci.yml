@@ -435,6 +435,11 @@ jobs:
       # entries in file-size-budget.toml may only decrease. See the file header
       # and `roadmap/codebase-health-enforcement` for the rule.
       - run: cargo run -p jackin-xtask --locked -- lint files
+      # Gate: dependency-direction violations across workspace crates. Reports
+      # the known P2 inversions today (informational, exits 0); each cleanup
+      # PR flips one off the forbidden list, and `--strict` is the eventual
+      # hard mode once all P2 cleanups land.
+      - run: cargo run -p jackin-xtask --locked -- lint arch
 
   clippy:
     needs: [changes, matrix-setup, cargo-registry-warmup]

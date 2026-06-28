@@ -16,6 +16,7 @@
 //! declarative build graph stays in `docker-bake.hcl`, which this binary
 //! invokes rather than reimplementing in flag assembly.
 
+mod arch;
 mod construct;
 mod docs;
 mod lint;
@@ -68,10 +69,12 @@ enum Command {
     ///
     /// Use as `cargo xtask schema-check --base origin/main`.
     SchemaCheck(schema::SchemaCheckArgs),
-    /// File-size ratchet gate (Workstream B of codebase-health-enforcement).
+    /// File-size ratchet gate (Workstream B) and dependency-direction gate
+    /// (Workstream 4) of codebase-health-enforcement.
     ///
-    /// Use as `cargo xtask lint files` (enforce) or
+    /// Use as `cargo xtask lint files` (enforce file sizes) or
     /// `cargo xtask lint files --print-budget` (refresh the budget file).
+    /// `cargo xtask lint arch` enforces the dependency-direction bans.
     Lint {
         #[command(subcommand)]
         command: LintCommand,
@@ -82,6 +85,8 @@ enum Command {
 enum LintCommand {
     /// Enforce the file-size ratchet from `file-size-budget.toml`.
     Files(lint::LintFilesArgs),
+    /// Dependency-direction gate (Workstream 4).
+    Arch(arch::LintArchArgs),
 }
 
 fn main() -> ExitCode {
@@ -96,6 +101,7 @@ fn main() -> ExitCode {
         Command::SchemaCheck(args) => schema::run(args),
         Command::Lint { command } => match command {
             LintCommand::Files(args) => lint::run(args),
+            LintCommand::Arch(args) => arch::run(args),
         },
     };
     match result {
