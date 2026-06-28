@@ -204,7 +204,7 @@ The ordered, followable backbone. **Each numbered slice below is one shippable, 
 
 Used by every C/E slice. Pure move; contents are not rewritten.
 
-1. Create `crates/<new>/` with a `Cargo.toml` that has `[lints] workspace = true`, the minimal dependency set, and a `//!` Architecture-Invariant header.
+1. Create `crates/<new>/` with a manifest (`[lints] workspace = true`, minimal dependency set) and a `//!` Architecture-Invariant header.
 2. `git mv` the subsystem's modules across verbatim — byte-identical bodies.
 3. Adjust visibility only as the boundary forces: the crate's public surface becomes `pub`; everything else stays `pub(crate)`. No signature or logic edits.
 4. Repoint importers to the new crate root ([Parallel Change](https://martinfowler.com/bliki/ParallelChange.html) — add the new path, migrate callers, delete the old).
@@ -224,7 +224,7 @@ Used by every C/E slice. Pure move; contents are not rewritten.
 
 ### Phase B — rename + shim removal (mechanical, no logic)
 
-- [ ] **B1 — rename `jackin-launch` → `jackin-launch-tui` (D4).** Prereq: A1/A2 (types already left). Crate dir + `Cargo.toml` `name` + every dependent's `Cargo.toml`/`use`; add the UI-only `//!` header.
+- [ ] **B1 — rename `jackin-launch` → `jackin-launch-tui` (D4).** Prereq: A1/A2 (types already left). Crate dir + the manifest `name` field + every dependent's manifest and `use` paths; add the UI-only `//!` header.
 - [ ] **B2 — delete the 19 binary shims (D6).** Parallel Change per shim: repoint callers from `crate::<x>` to the owning crate root (`jackin_<x>::…`), delete the shim file, remove the `mod` line. Fix the memorize-this exceptions (`DriftDetection`). Can ship as a few grouped PRs (by owning crate) rather than one mega-diff.
 
 ### Phase C — cold carves (ungated; use the recipe)
