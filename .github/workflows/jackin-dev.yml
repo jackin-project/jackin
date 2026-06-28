@@ -13,8 +13,6 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/actions/sign-and-attest-archive/**"
-      - ".github/workflows/jackin-dev.yml"
       - "crates/jackin-dev/**"
   workflow_dispatch:
     inputs:
