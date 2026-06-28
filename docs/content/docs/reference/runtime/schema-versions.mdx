@@ -62,13 +62,47 @@ version = "v1alpha8"
 | Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml</RepoFile> |
 | Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml">crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml</RepoFile> |
 
-**Summary**: adds optional global and per-workspace Docker security profile/grants config. This is additive with serde defaults, so existing files round-trip cleanly and the migration is a no-op restamp.
+**Summary**: introduces selectable container backends and on-demand credential metadata, and adds optional global and per-workspace Docker security profile and grants config. Config gains an optional `[runtime].default_backend` field selecting the host-wide backend (`docker` default, or `apple-container`). Workspace files gain an optional `[runtime].backend` per-workspace override plus optional `on_demand` env metadata that marks a credential for exec-time injection rather than launch-time injection. Config and workspace also gain optional `[docker].profile` and `[docker.grants]` for Docker security policy. All fields are additive with `serde` defaults, so existing files round-trip cleanly through a no-op restamp.
 
-**Example with explicit policy**:
+**Before** (v1alpha6 config):
+
+```toml
+version = "v1alpha6"
+data_dir = "/tmp/jackin"
+```
+
+**After** (v1alpha7 — no change needed; `default_backend` defaults to `docker`):
 
 ```toml
 version = "v1alpha7"
-dirty_exit_policy = "keep"
+data_dir = "/tmp/jackin"
+```
+
+**Example with an explicit backend and an on-demand credential**:
+
+```toml
+# config.toml
+version = "v1alpha7"
+
+[runtime]
+default_backend = "apple-container"
+```
+
+```toml
+# workspaces/prod.toml
+version = "v1alpha7"
+
+[env]
+GH_TOKEN = { value = "$GH_TOKEN", on_demand = true }
+```
+
+**Example with explicit Docker security policy**:
+
+```toml
+version = "v1alpha7"
+
+[docker]
+profile = "hardened"
 ```
 
 ### Manifest `v1alpha5` — 2026-06-10
@@ -146,35 +180,6 @@ version = "v1alpha6"
 [claude]
 auth_forward = "sync"
 sync_source_dir = "/Users/alice/company/.claude"
-```
-
-### `v1alpha7` — 2026-06-09
-
-| File kind | Predecessor | Migration mode | Fixture |
-|---|---|---|---|
-| Config (`config.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml" /> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha6` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> |
-
-**Summary**: introduces `[docker].profile` (optional string: `locked`, `hardened`, `standard`, `compat`) and `[docker].grants` (optional table with per-dimension capability overrides) on both `config.toml` and workspace files. Both fields are additive with serde defaults — absent means no profile override / no grants. The migration is a no-op restamp for both file kinds.
-
-**Before** (v1alpha6 config):
-
-```toml
-version = "v1alpha6"
-
-[roles.the-architect]
-git = "https://github.com/jackin-project/jackin-the-architect.git"
-trusted = true
-```
-
-**After** (v1alpha7):
-
-```toml
-version = "v1alpha7"
-
-[roles.the-architect]
-git = "https://github.com/jackin-project/jackin-the-architect.git"
-trusted = true
 ```
 
 ### Manifest `v1alpha6` — 2026-06-18

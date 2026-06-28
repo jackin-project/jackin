@@ -91,9 +91,9 @@ fn file_url_path(href: &str) -> Option<&str> {
 }
 mod input;
 use input::{
-    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, export_file_handle_key,
-    first_selectable_idx, picker_filtered_rows, printable_filter_char, rename_tab_handle_key,
-    split_direction_filtered_indices, step_selectable,
+    PickerRow, close_target_filtered_indices, dialog_list_row_clickable, exec_picker_handle_key,
+    export_file_handle_key, first_selectable_idx, picker_filtered_rows, printable_filter_char,
+    rename_tab_handle_key, split_direction_filtered_indices, step_selectable,
 };
 mod hint;
 pub(crate) use hint::main_view_hint;
@@ -267,6 +267,12 @@ pub enum Dialog {
         selected: usize,
         intent: PickerIntent,
     },
+    /// Operator credential picker for a `jackin-exec` invocation. The daemon
+    /// builds it from the workspace's on-demand bindings, stashes the control
+    /// reply channel, and drives confirm/cancel through `DialogAction`. Space
+    /// toggles the row under the cursor, ↑/↓ move, Enter confirms (resolve the
+    /// selected credentials + run the command), Esc cancels (deny, run nothing).
+    ExecPicker(crate::exec::ExecPickerState),
     /// Last-session dirty-exit modal (in-capsule). Shows a per-repo summary plus
     /// the four choice rows. `Esc` is ignored — the operator must pick a row.
     ExitDirty {
@@ -413,6 +419,17 @@ pub enum DialogAction {
     SwitchUsageProvider { provider_label: String },
     /// Dialog is still open; redraw.
     Redraw,
+    /// Operator confirmed a `jackin-exec` credential picker (Enter). Carries
+    /// the command + the selected credentials; the daemon resolves them via the
+    /// host socket, runs the command, and replies `ExecResult`.
+    ExecConfirm {
+        command: String,
+        args: Vec<String>,
+        selected: Vec<jackin_protocol::ExecBinding>,
+    },
+    /// Operator cancelled the `jackin-exec` picker (Esc) — daemon replies
+    /// `ExecDenied` and runs nothing.
+    ExecCancel,
     /// Mouse event lands somewhere with no semantic effect (border,
     /// padding row). Swallow it so it does not reach the focused pane.
     Consume,
@@ -1187,6 +1204,11 @@ impl Dialog {
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
         }
+        // The exec credential picker is multi-select (Space toggles), so it
+        // intercepts keys before the shared single-select arrow/dismiss logic.
+        if let Self::ExecPicker(state) = self {
+            return exec_picker_handle_key(state, key);
+        }
         if let Self::ExportFile {
             input,
             reveal_after_export,
@@ -1424,7 +1446,8 @@ impl Dialog {
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
-                    | Self::ConfirmAction { .. } => {}
+                    | Self::ConfirmAction { .. }
+                    | Self::ExecPicker(_) => {}
                     Self::ExitDirty { selected, .. } => {
                         if *selected > 0 {
                             *selected -= 1;
@@ -1485,7 +1508,8 @@ impl Dialog {
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
-                    | Self::ConfirmAction { .. } => {}
+                    | Self::ConfirmAction { .. }
+                    | Self::ExecPicker(_) => {}
                     Self::ExitDirty { selected, .. } => {
                         if *selected + 1 < EXIT_DIRTY_ROWS.len() {
                             *selected += 1;
@@ -1813,6 +1837,7 @@ impl Dialog {
             | Self::Usage { .. }
             | Self::ConfirmAction { .. }
             | Self::ProviderPicker { .. }
+            | Self::ExecPicker(_)
             | Self::ExitDirty { .. }
             | Self::ExitInspect { .. } => 0,
         };
@@ -1886,6 +1911,7 @@ impl Dialog {
             | Self::Usage { .. }
             | Self::ConfirmAction { .. }
             | Self::ProviderPicker { .. }
+            | Self::ExecPicker(_)
             | Self::ExitDirty { .. }
             | Self::ExitInspect { .. } => DialogAction::Consume,
         }
@@ -1915,7 +1941,7 @@ impl Dialog {
             return false;
         }
         match self {
-            Self::RenameTab { .. } | Self::ExportFile { .. } => false,
+            Self::RenameTab { .. } | Self::ExportFile { .. } | Self::ExecPicker(_) => false,
             Self::ContainerInfo { .. } => {
                 let area = ratatui::layout::Rect {
                     x: box_col,
@@ -2066,6 +2092,9 @@ impl Dialog {
             },
             // No filter row: top border + items + bottom border.
             Self::ProviderPicker { providers, .. } => providers.len() as u16 + 2,
+            // Top border + command line + separator + one row per credential +
+            // hint + bottom border.
+            Self::ExecPicker(state) => state.items.len() as u16 + 5,
             Self::ExitDirty { summary, .. } => (summary.len() + EXIT_DIRTY_ROWS.len()) as u16 + 4,
             Self::ExitInspect { lines, .. } => lines.len() as u16 + 4,
         };
@@ -2103,7 +2132,8 @@ impl Dialog {
             Self::CommandPalette { .. } => palette_hint(),
             Self::SplitDirectionPicker { .. }
             | Self::AgentPicker { .. }
-            | Self::CloseTargetPicker { .. } => picker_hint(),
+            | Self::CloseTargetPicker { .. }
+            | Self::ExecPicker(_) => picker_hint(),
             Self::ProviderPicker { .. } => provider_hint(),
             Self::RenameTab { .. } => rename_hint(),
             Self::ExportFile { .. } => export_file_hint(),

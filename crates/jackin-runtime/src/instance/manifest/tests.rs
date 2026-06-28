@@ -2,6 +2,56 @@
 use super::*;
 use tempfile::tempdir;
 
+#[test]
+fn manifest_v2_backend_roundtrips_and_legacy_v1_deserializes() {
+    let manifest = InstanceManifest::new_with_backend(
+        NewInstanceManifest {
+            container_base: "jackin-x",
+            workspace_name: Some("ws"),
+            workspace_label: "ws",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:t",
+            role_key: "org/agent",
+            role_display_name: "Agent",
+            agent_runtime: Agent::Claude,
+            role_source_git: "https://example.invalid/role.git",
+            role_source_ref: Some("main"),
+            image_tag: "img",
+            docker: DockerResources::from_container_name("jackin-x"),
+            role_git_sha: None,
+            base_image_ref: None,
+            base_image_digest: None,
+            supported_agents: vec![],
+        },
+        BackendResources::AppleContainer(AppleContainerResources {
+            container_name: "jackin-x".to_owned(),
+            role_image_ref: "img".to_owned(),
+            inner_docker_enabled: false,
+        }),
+    );
+    // A v2 apple-container manifest survives a serialize -> deserialize round trip.
+    let json = serde_json::to_string(&manifest).unwrap();
+    assert_eq!(
+        serde_json::from_str::<InstanceManifest>(&json).unwrap(),
+        manifest
+    );
+    assert!(matches!(
+        manifest.backend,
+        Some(BackendResources::AppleContainer(_))
+    ));
+
+    // A legacy v1 manifest (no `backend` key) still deserializes — `backend`
+    // defaults to None so every pre-existing on-disk instance keeps loading.
+    let mut obj = serde_json::to_value(&manifest)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .clone();
+    obj.remove("backend");
+    let legacy: InstanceManifest = serde_json::from_value(serde_json::Value::Object(obj)).unwrap();
+    assert_eq!(legacy.backend, None);
+}
+
 fn sample_manifest() -> InstanceManifest {
     InstanceManifest::new(NewInstanceManifest {
         container_base: "jk-k7p9m2xq-workspace-agent",
@@ -59,7 +109,7 @@ fn writes_manifest_under_jackin_state_dir() {
     manifest.write(temp.path()).unwrap();
 
     let body = std::fs::read_to_string(temp.path().join(".jackin/instance.json")).unwrap();
-    assert!(body.contains(r#""version": 1"#));
+    assert!(body.contains(r#""version": 2"#));
     assert!(body.contains(r#""status": "running""#));
     assert!(body.contains(r#""role_key": "org/agent""#));
 }
@@ -279,7 +329,7 @@ fn instance_manifest_write_replaces_partial_file() {
     std::fs::write(state_dir.join(".jackin/instance.json"), b"{ partial").unwrap();
     sample_manifest().write(state_dir).unwrap();
     let body = std::fs::read_to_string(state_dir.join(".jackin/instance.json")).unwrap();
-    assert!(body.contains(r#""version": 1"#));
+    assert!(body.contains(r#""version": 2"#));
     assert!(!body.contains("partial"));
 }
 

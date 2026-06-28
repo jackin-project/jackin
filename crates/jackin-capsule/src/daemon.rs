@@ -180,6 +180,13 @@ pub struct Multiplexer {
     content_rows: u16,
     available_agents: Vec<String>,
     launch_config: CapsuleConfig,
+    /// Control-channel reply slot for an in-flight `jackin-exec` credential
+    /// picker. Set when an `ExecCommand` opens the `Dialog::ExecPicker`; the
+    /// confirm/cancel handlers take it to send `ExecResult` / `ExecDenied`. A
+    /// new `ExecCommand` arriving while one is pending denies the prior reply
+    /// with `ExecDenied { reason: "superseded …" }` (in `begin_exec_picker`) so
+    /// that client gets a structured answer rather than a dropped connection.
+    pending_exec_reply: Option<tokio::sync::oneshot::Sender<ServerMsg>>,
     /// Set by the dirty-exit modal's keep/discard rows; the event loop writes
     /// the host exit-action file and drains on the next iteration.
     exit_request: Option<jackin_protocol::ExitAction>,
@@ -505,6 +512,7 @@ impl Multiplexer {
             content_rows,
             available_agents: agents,
             launch_config,
+            pending_exec_reply: None,
             exit_request: None,
             env_passthrough,
             event_tx,
@@ -965,8 +973,15 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
             }
 
             Some(request) = control_rx.recv() => {
-                let reply = control_reply_for_request(&mut mux, request.msg);
-                drop(request.reply_tx.send(reply));
+                // `jackin-exec` is the one control message with a deferred reply:
+                // it opens the operator credential picker and answers only after
+                // confirm/cancel resolves. Every other message replies inline.
+                if let ClientMsg::ExecCommand { command, args } = request.msg {
+                    mux.begin_exec_picker(command, args, request.reply_tx);
+                } else {
+                    let reply = control_reply_for_request(&mut mux, request.msg);
+                    drop(request.reply_tx.send(reply));
+                }
             }
 
             // Validated attach handshake from the spawned handshake task.
@@ -1518,6 +1533,15 @@ fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> ServerMsg
         ClientMsg::UsageAccountList => ServerMsg::UsageAccounts {
             accounts: mux.usage_cache.account_snapshot_views(),
         },
+        ClientMsg::ExecCommand { .. } => {
+            // Defensive only: `ExecCommand` is intercepted by the control loop
+            // (it opens `Dialog::ExecPicker` and replies after the operator
+            // confirms/cancels), so it never reaches this synchronous path.
+            // Fail closed if it ever does.
+            ServerMsg::ExecDenied {
+                reason: "jackin-exec must be dispatched through the credential picker".to_owned(),
+            }
+        }
         ClientMsg::TokenUsage { session_id } => ServerMsg::TokenUsage {
             summary: mux
                 .token_monitor

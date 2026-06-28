@@ -2274,6 +2274,55 @@ fn agent_picker_section_labels_are_bare_not_dash_padded() {
 }
 
 #[test]
+fn exec_picker_space_toggles_enter_confirms_esc_cancels() {
+    use crate::exec::ExecPickerState;
+    let bindings = vec![
+        jackin_protocol::ExecBinding {
+            name: "GH_TOKEN".into(),
+            kind: jackin_protocol::ExecKind::Env,
+            source: "$GH_TOKEN".into(),
+        },
+        jackin_protocol::ExecBinding {
+            name: "API_KEY".into(),
+            kind: jackin_protocol::ExecKind::Op,
+            source: "op://v/i/f".into(),
+        },
+    ];
+    let state = ExecPickerState::from_bindings("ssh".into(), vec!["sentry".into()], &bindings);
+    // Two unselected rows, cursor at the top.
+    assert_eq!(state.items.len(), 2);
+    assert!(state.items.iter().all(|i| !i.selected));
+
+    let mut dialog = Dialog::ExecPicker(state);
+    // Space toggles the row under the cursor (GH_TOKEN) on.
+    assert_eq!(dialog.handle_key(b" ", None), DialogAction::Redraw);
+    // Enter confirms, carrying the command + only the selected credential.
+    let action = dialog.handle_key(b"\r", None);
+    let DialogAction::ExecConfirm {
+        command,
+        args,
+        selected,
+    } = action
+    else {
+        panic!("expected ExecConfirm, got {action:?}");
+    };
+    assert_eq!(command, "ssh");
+    assert_eq!(args, vec!["sentry".to_owned()]);
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].name, "GH_TOKEN");
+    assert_eq!(selected[0].kind, jackin_protocol::ExecKind::Env);
+    assert_eq!(selected[0].source, "$GH_TOKEN");
+
+    // Esc cancels with no command run.
+    let mut cancel = Dialog::ExecPicker(ExecPickerState::from_bindings(
+        "deploy".into(),
+        vec![],
+        &bindings,
+    ));
+    assert_eq!(cancel.handle_key(b"\x1b", None), DialogAction::ExecCancel);
+}
+
+#[test]
 fn exit_dirty_enter_routes_each_row() {
     let expected = [
         ExitDirtyRow::StartNewAgent,

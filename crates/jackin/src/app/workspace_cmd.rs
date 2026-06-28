@@ -84,6 +84,7 @@ pub(super) async fn handle(
                 grok: None,
                 github: None,
                 git_pull_on_entry: git_pull,
+                runtime: jackin_config::WorkspaceRuntimeConfig::default(),
                 dirty_exit_policy: None,
                 docker: None,
             };

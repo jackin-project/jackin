@@ -308,6 +308,17 @@ fn github_env_value_kind(value: &jackin_core::EnvValue) -> &'static str {
             "host"
         }
         jackin_core::EnvValue::Plain(_) => "literal",
+        jackin_core::EnvValue::Extended(e)
+            if e.value
+                .strip_prefix("${")
+                .is_some_and(|rest| rest.ends_with('}'))
+                || e.value
+                    .strip_prefix('$')
+                    .is_some_and(|rest| !rest.is_empty()) =>
+        {
+            "host"
+        }
+        jackin_core::EnvValue::Extended(_) => "literal",
     }
 }
 

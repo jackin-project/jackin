@@ -260,6 +260,7 @@ pub fn resolve_op_uri_to_ref(
         op: op_uri,
         path: display_path,
         account: account.map(str::to_owned),
+        on_demand: false,
     })
 }
 
@@ -406,6 +407,45 @@ where
     )
 }
 
+/// Collect the on-demand credential bindings for a `(role, workspace)`
+/// selection — every env entry flagged `on_demand`, with the `(name, kind,
+/// source)` triple the host credential resolver needs. `kind` is `"op"`
+/// (resolve via `op read <source>`), `"env"` (read host env named by the
+/// `$VAR` source), or `"literal"` (return the source verbatim).
+///
+/// These are exactly the values [`resolve_operator_env_with_matching`] drops
+/// from launch-time injection: they are resolved later, at `jackin-exec` time,
+/// after the operator approves them in the picker. Returned sorted by name.
+#[must_use]
+pub fn collect_on_demand_bindings(
+    config: &AppConfig,
+    role_selector: Option<&str>,
+    workspace_name: Option<&str>,
+) -> Vec<jackin_protocol::ExecBinding> {
+    // BTreeMap iteration is already ordered by key, so the result is sorted.
+    build_attributed_layers(config, role_selector, workspace_name)
+        .into_iter()
+        .filter(|(_, (_, v))| v.is_on_demand())
+        .map(|(name, (_, value))| {
+            use jackin_protocol::ExecKind;
+            let (kind, source) = match value {
+                EnvValue::OpRef(r) => (ExecKind::Op, r.op),
+                EnvValue::Extended(e) => {
+                    if parse_host_ref(&e.value).is_some() {
+                        (ExecKind::Env, e.value)
+                    } else {
+                        (ExecKind::Literal, e.value)
+                    }
+                }
+                // Plain is never on_demand, so the filter excludes it; map
+                // defensively as a literal rather than panicking.
+                EnvValue::Plain(s) => (ExecKind::Literal, s),
+            };
+            jackin_protocol::ExecBinding { name, kind, source }
+        })
+        .collect()
+}
+
 /// `?Sized` so callers can pass `&dyn OpRunner` (used by
 /// `LoadOptions::op_runner` in `src/runtime/launch.rs`).
 pub fn resolve_operator_env_with<R, H>(
@@ -446,6 +486,12 @@ where
 {
     let mut attributed = build_attributed_layers(config, role_selector, workspace_name);
     attributed.retain(|key, _| include_key(key));
+    // On-demand credentials are never resolved at launch — that would run
+    // `op read` (and a Touch ID prompt) for a value the agent should only get
+    // through the operator picker at `jackin-exec` time. Drop them here so they
+    // are not injected into the container env; the names are surfaced separately
+    // via `collect_on_demand_bindings` for the host resolver.
+    attributed.retain(|_, (_, v)| !v.is_on_demand());
 
     let mut resolved = std::collections::BTreeMap::new();
     let mut errors: Vec<String> = Vec::new();
@@ -647,13 +693,18 @@ impl ValueKind {
     fn of_env_value(value: &EnvValue) -> Self {
         match value {
             EnvValue::OpRef(_) => Self::Op,
-            EnvValue::Plain(s) => {
-                if parse_host_ref(s).is_some() {
-                    Self::Host
-                } else {
-                    Self::Literal
-                }
-            }
+            // An Extended value carries a literal or `$VAR` string, same as
+            // Plain — classify it by whether it is a host ref.
+            EnvValue::Plain(s) => Self::of_str(s),
+            EnvValue::Extended(e) => Self::of_str(&e.value),
+        }
+    }
+
+    fn of_str(s: &str) -> Self {
+        if parse_host_ref(s).is_some() {
+            Self::Host
+        } else {
+            Self::Literal
         }
     }
 
@@ -672,13 +723,18 @@ impl ValueKind {
 fn classify_env_value(value: &EnvValue) -> String {
     match value {
         EnvValue::OpRef(r) => r.op.clone(),
-        EnvValue::Plain(s) => {
-            if parse_host_ref(s).is_some() {
-                s.clone()
-            } else {
-                "literal".to_owned()
-            }
-        }
+        EnvValue::Plain(s) => classify_str(s),
+        EnvValue::Extended(e) => classify_str(&e.value),
+    }
+}
+
+/// `$NAME` host refs are returned verbatim; literals collapse to `"literal"`
+/// so the value never reaches stderr.
+fn classify_str(s: &str) -> String {
+    if parse_host_ref(s).is_some() {
+        s.to_owned()
+    } else {
+        "literal".to_owned()
     }
 }
 
@@ -697,6 +753,98 @@ mod tests {
         fn read(&self, reference: &str) -> anyhow::Result<String> {
             Ok(format!("secret-for-{reference}"))
         }
+    }
+
+    #[test]
+    fn collect_on_demand_bindings_extracts_kinds_and_excludes_always_available() {
+        let mut config = AppConfig::default();
+        // Always-available values must never appear as on-demand bindings.
+        config
+            .env
+            .insert("PLAIN".to_owned(), EnvValue::Plain("v".to_owned()));
+        config.env.insert(
+            "OP_ALWAYS".to_owned(),
+            EnvValue::OpRef(OpRef {
+                op: "op://v/i/f".to_owned(),
+                path: "V/I/F".to_owned(),
+                account: None,
+                on_demand: false,
+            }),
+        );
+        // One on-demand value per kind.
+        config.env.insert(
+            "OP_DEMAND".to_owned(),
+            EnvValue::OpRef(OpRef {
+                op: "op://v/i/key".to_owned(),
+                path: "V/I/Key".to_owned(),
+                account: None,
+                on_demand: true,
+            }),
+        );
+        config.env.insert(
+            "ENV_DEMAND".to_owned(),
+            EnvValue::Extended(jackin_core::Extended {
+                value: "$HOST_TOK".to_owned(),
+                on_demand: true,
+            }),
+        );
+        config.env.insert(
+            "LIT_DEMAND".to_owned(),
+            EnvValue::Extended(jackin_core::Extended {
+                value: "literal".to_owned(),
+                on_demand: true,
+            }),
+        );
+
+        let bindings = collect_on_demand_bindings(&config, None, None);
+        assert_eq!(
+            bindings,
+            vec![
+                jackin_protocol::ExecBinding {
+                    name: "ENV_DEMAND".to_owned(),
+                    kind: jackin_protocol::ExecKind::Env,
+                    source: "$HOST_TOK".to_owned(),
+                },
+                jackin_protocol::ExecBinding {
+                    name: "LIT_DEMAND".to_owned(),
+                    kind: jackin_protocol::ExecKind::Literal,
+                    source: "literal".to_owned(),
+                },
+                jackin_protocol::ExecBinding {
+                    name: "OP_DEMAND".to_owned(),
+                    kind: jackin_protocol::ExecKind::Op,
+                    source: "op://v/i/key".to_owned(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_operator_env_skips_on_demand_vars() {
+        let mut config = AppConfig::default();
+        config
+            .env
+            .insert("ALWAYS".to_owned(), EnvValue::Plain("here".to_owned()));
+        // An on-demand op ref must NOT be resolved at launch — that would run
+        // `op read` for a credential the agent should only get via jackin-exec.
+        config.env.insert(
+            "SECRET".to_owned(),
+            EnvValue::OpRef(OpRef {
+                op: "op://v/i/f".to_owned(),
+                path: "V/I/F".to_owned(),
+                account: None,
+                on_demand: true,
+            }),
+        );
+        let resolved = resolve_operator_env_with(&config, None, None, &FakeOpRunner, |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .expect("resolution must succeed");
+        assert_eq!(resolved.get("ALWAYS").map(String::as_str), Some("here"));
+        assert!(
+            !resolved.contains_key("SECRET"),
+            "on_demand var must be filtered out of launch-time resolution"
+        );
     }
 
     #[test]
@@ -848,6 +996,7 @@ mod tests {
                 op: "op://vault/item/field".to_owned(),
                 path: "Vault/Item/Field".to_owned(),
                 account: None,
+                on_demand: false,
             }),
         );
 
@@ -896,6 +1045,7 @@ mod tests {
                     op: format!("op://vault/item/{key}"),
                     path: format!("Vault/Item/{key}"),
                     account: None,
+                    on_demand: false,
                 }),
             );
         }

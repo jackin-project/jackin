@@ -1159,6 +1159,55 @@ agents = ["amp"]
     );
 }
 
+#[test]
+fn exec_binding_names_joins_names_in_order() {
+    let bindings = vec![
+        jackin_protocol::ExecBinding {
+            name: "A".to_owned(),
+            kind: jackin_protocol::ExecKind::Op,
+            source: "op://x".to_owned(),
+        },
+        jackin_protocol::ExecBinding {
+            name: "B".to_owned(),
+            kind: jackin_protocol::ExecKind::Literal,
+            source: "v".to_owned(),
+        },
+    ];
+    // This string is the contract the in-container picker reads; pin it so the
+    // two launch paths can't drift on the format.
+    assert_eq!(exec_binding_names(&bindings), "A,B");
+    assert_eq!(exec_binding_names(&[]), "");
+}
+
+#[test]
+fn resolve_backend_defaults_docker_and_workspace_overrides_config() {
+    let mut config = jackin_config::AppConfig::default();
+    // No selection anywhere → Docker.
+    assert_eq!(resolve_backend(&config, None).unwrap(), Backend::Docker);
+    // Host-wide default applies.
+    config.runtime.default_backend = Some("apple-container".to_owned());
+    assert_eq!(
+        resolve_backend(&config, None).unwrap(),
+        Backend::AppleContainer
+    );
+    // Per-workspace backend overrides the host-wide default.
+    let mut ws = jackin_config::WorkspaceConfig::default();
+    ws.runtime.backend = Some("docker".to_owned());
+    config.workspaces.insert("prod".to_owned(), ws);
+    assert_eq!(
+        resolve_backend(&config, Some("prod")).unwrap(),
+        Backend::Docker
+    );
+    // A workspace without an override falls back to the host-wide default.
+    assert_eq!(
+        resolve_backend(&config, Some("absent")).unwrap(),
+        Backend::AppleContainer
+    );
+    // An unrecognised backend fails closed instead of silently launching Docker.
+    config.runtime.default_backend = Some("aple-container".to_owned());
+    assert!(resolve_backend(&config, None).is_err());
+}
+
 /// Build the docker mounts for a single agent in Ignore mode (no auth handoff),
 /// so assertions isolate the derived durable-home mounts from
 /// `push_agent_home_mounts`. Covers the agent-enum consolidation: a regression
@@ -3557,6 +3606,7 @@ async fn valid_image_decision_runs_before_operator_env_resolution() {
             op: "op://vault/item/field".to_owned(),
             path: "Vault/Item/Field".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
     let selector = RoleSelector::new(None, "agent-smith");
@@ -3869,6 +3919,7 @@ async fn load_agent_skips_non_required_operator_credential_refs() {
             op: "op://vault/openai/key".to_owned(),
             path: "Vault/OpenAI/key".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
     let selector = RoleSelector::new(None, "agent-smith");
@@ -4068,6 +4119,7 @@ async fn load_agent_skips_github_env_resolution_when_github_auth_ignored() {
             op: "op://vault/github/token".to_owned(),
             path: "Vault/GitHub/token".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
     config.github = Some(jackin_config::GithubAuthConfig {
@@ -4147,6 +4199,7 @@ async fn load_agent_skips_unused_github_env_resolution() {
             op: "op://vault/github/unused".to_owned(),
             path: "Vault/GitHub/unused".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
     config.github = Some(jackin_config::GithubAuthConfig {
@@ -4444,6 +4497,7 @@ async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
             op: "op://vault/item/restore-secret".to_owned(),
             path: "Vault/Item/restore secret".to_owned(),
             account: None,
+            on_demand: false,
         }),
     );
     let selector = RoleSelector::new(None, "agent-smith");
@@ -8092,6 +8146,7 @@ async fn build_env_layer_states_classifies_present_vs_absent() {
             op: "op://uuid/test/field".into(),
             path: "Test/api/key".into(),
             account: None,
+            on_demand: false,
         }),
     );
     let mut ws = WorkspaceConfig::default();
@@ -8523,6 +8578,7 @@ async fn resolve_github_env_map_reads_independent_op_refs_concurrently() {
                 op: format!("op://vault/item/{key}"),
                 path: format!("Vault/Item/{key}"),
                 account: None,
+                on_demand: false,
             }),
         );
     }

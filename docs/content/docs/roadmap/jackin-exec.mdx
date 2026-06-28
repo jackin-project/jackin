@@ -1,0 +1,373 @@
+---
+title: "jackin-exec: Secure Execution Wrapper"
+---
+
+**Status**: Partially implemented — the plumbing has landed and is wired end to end except the operator picker. Shipped and compiled: the `ExecCommand`/`ExecResult`/`ExecDenied` control protocol, the `jackin-exec` argv0/subcommand dispatch in the capsule, the host-side `op read`/host-env/literal resolver on `host.sock` (started by the launch path and bind-mounted to `/jackin/run/host.sock`), launch-time on-demand filtering (on-demand credentials are never resolved at launch) with `JACKIN_EXEC_BINDINGS` injection and the entrypoint system-prompt block, the `jackin_exec` MCP server (`jackin-capsule mcp-server`) registered from `runtime_setup`, and the `EnvValue::Extended` / `OpRef.on_demand` schema (`v1alpha7`).
+
+**The operator credential picker is now wired.** `Dialog::ExecPicker` exists and is driven from the daemon: an `ExecCommand` opens the picker (built from the workspace's on-demand bindings), the control reply is deferred while the operator toggles credentials (Space) and confirms (Enter) or cancels (Esc); on confirm the daemon resolves the selected credentials through `host.sock`, runs the command with them injected, redacts the output, and replies `ExecResult`; on cancel (or any resolver/spawn error) it replies `ExecDenied` and runs nothing — fail-closed at the daemon dispatch path. The picker state machine, selection→confirm dispatch, and binding construction are unit-tested.
+
+**Boundary caveat (Phase 1 hardening remaining).** The picker is the operator-facing approval, enforced daemon-side. The host resolver on `host.sock` enforces an allow-list — it resolves only the operator-*configured* on-demand bindings, never arbitrary refs — but it does not yet enforce per-use *approval*: `/jackin/run/host.sock` is reachable by any in-container process, so a compromised agent could connect directly and resolve the configured set without a picker. Binding the socket to the daemon (`SO_PEERCRED` / a one-time per-confirm token) is remaining hardening; the future jackin' daemon that replaces this ad-hoc listener subsumes it.
+
+**Remaining work:** the interactive render/keystroke fidelity is verified only by a live `jackin load` (per the capsule smoke mandate — the multiplexer runs as PID 1 inside a container and cannot be exercised headless), and **temp-file materialization for key-type credentials** (writing an SSH private key to `/jackin/run/secrets/<uuid>` + `SSH_KEY_FILE`, deleting after exit) is still Phase 2.
+
+## What This Is
+
+`jackin-exec` is a subcommand of `jackin-capsule`. The agent calls `jackin-exec ssh sentry`; under the hood this is `jackin-capsule exec ssh sentry`. Before the command runs, the operator sees a picker dialog in the TUI listing every `on_demand = true` env var configured for that workspace. The operator selects which credentials to inject, presses Enter, the host resolves them via `op read`, and the command runs with those values injected ephemerally. Raw credential values never appear in the agent's process environment.
+
+`jackin-exec` is a symlink to `jackin-capsule` — no separate binary, no separate release artifact, no separate build job.
+
+Works on top of any jackin' backend. Does not require the Apple Container backend to land first. See [Agent isolation architecture](/roadmap/agent-isolation-architecture/) for the complete picture.
+
+## The Problem
+
+Current jackin' model injects all credentials as container env vars at `docker run` time. Every process inside the container can call `printenv` and see raw API keys. The operator wants credentials available to commands without being permanently visible to the agent.
+
+## Two Tiers — Same `env` Map, One New Flag
+
+The `on_demand` flag extends the existing `EnvValue` enum. No new sections, no migration required for existing configs. The flag simply changes when and whether a value is injected.
+
+### Tier 1 — always-available (default, unchanged)
+
+```toml
+[env]
+PUBLIC_ENDPOINT = "https://api.example.com"                                  # plain literal
+BUILD_ENV       = "${BUILD_ENV}"                                              # host env expansion
+ADMIN_KEY       = { op = "op://abc.../def.../fld...", path = "Work/Admin/key" }  # 1Password
+```
+
+Injected into the container at `docker run` time. Agent sees via `printenv`. Current behavior.
+
+### Tier 2 — on-demand
+
+Add `on_demand = true` to any env value. The env var is **not** injected at launch, does not appear in `printenv`, and is only materialized during a `jackin-capsule exec` call when the operator explicitly selects it in the picker.
+
+```toml
+[env]
+# Always-available (unchanged):
+PUBLIC_ENDPOINT = "https://api.example.com"
+ADMIN_KEY       = { op = "op://abc.../def.../fld...", path = "Work/Admin/key" }
+
+# On-demand — not in container env, only via picker:
+API_KEY  = { op = "op://abc.../def.../fld...", path = "Work/Anthropic/api key", on_demand = true }
+SSH_KEY  = { op = "op://abc.../def.../fld...", path = "Personal/SSH/key",        on_demand = true }
+GH_TOKEN = { value = "$GH_TOKEN",             on_demand = true }
+STG_URL  = { value = "https://staging.internal", on_demand = true }
+```
+
+**Toggle behavior**: when the operator sets `on_demand = false` (or removes it) via the TUI config editor, jackin' serializes back to the compact plain form:
+- `{ value = "https://staging.internal", on_demand = false }` → `"https://staging.internal"`
+- `{ op = "...", path = "...", on_demand = false }` → `{ op = "...", path = "..." }`
+
+When toggled to `on_demand = true`, jackin' serializes to the table form. This conversion happens in the config editor only — no data migration required.
+
+## Rust Type Changes
+
+All type changes live in <RepoFile path="crates/jackin-core/src/env_value.rs" />.
+
+### 1. New `Extended` variant in `EnvValue`
+
+```rust
+#[serde(untagged)]
+pub enum EnvValue {
+    OpRef(OpRef),       // discriminated by `op` field — must stay first
+    Extended(Extended), // NEW — discriminated by `value` field
+    Plain(String),      // scalar fallback — must stay last
+}
+```
+
+```rust
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Extended {
+    pub value: String,
+    #[serde(default)]
+    pub on_demand: bool,
+}
+```
+
+```rust
+fn default_on_demand() -> bool { false }
+```
+
+Serde untagged discrimination order:
+1. `OpRef` has `#[serde(deny_unknown_fields)]` — rejects `{ value = ... }` (unknown field) → falls through
+2. `Extended` has `#[serde(deny_unknown_fields)]` — rejects anything without `value` field → falls through
+3. `Plain(String)` — scalar fallback
+
+`{ value = "..." }` without `on_demand` defaults to `false`; on-demand values must opt in explicitly.
+
+**Exhaustive match methods — must add `Extended` arm to all of them:**
+
+```rust
+// as_persisted_str(): returns the unexpanded source string
+EnvValue::Extended(e) => e.value.as_str(),
+
+// as_display_str(): same — display the value string
+EnvValue::Extended(e) => e.value.as_str(),
+```
+
+**`resolve_env_value` launch-time behavior — new arm:**
+
+```rust
+EnvValue::Extended(e) => {
+    if e.on_demand {
+        // on_demand=true: never resolved at launch; filtered out before
+        // container env injection (see is_on_demand() below).
+        // This arm should not be reached during normal launch.
+        Err(anyhow::anyhow!("{layer_label} env var {var_name:?}: on_demand var reached resolve_env_value — this is a bug"))
+    } else {
+        // on_demand=false: treat as Plain
+        dispatch_plain(layer_label, var_name, &e.value, host_env)
+    }
+}
+```
+
+**New method on `EnvValue` — used by launch to skip on-demand vars:**
+
+```rust
+impl EnvValue {
+    /// Returns true if this env var should NOT be injected at container launch.
+    /// on_demand vars are resolved at exec time via jackin-capsule exec instead.
+    pub fn is_on_demand(&self) -> bool {
+        match self {
+            Self::OpRef(r) => r.on_demand,
+            Self::Extended(e) => e.on_demand,
+            Self::Plain(_) => false,
+        }
+    }
+}
+```
+
+In <RepoFile path="crates/jackin-env/src/resolve.rs" />, launch-time env resolution skips `on_demand` vars before container env injection:
+
+```rust
+// Before building -e flags, filter out on_demand vars:
+let launch_env = resolved_env.vars.iter()
+    .filter(|(_, v)| !v.is_on_demand())
+    // ... existing rest of loop
+```
+
+On-demand vars are still read from the workspace config (to build `JACKIN_EXEC_BINDINGS`), but they are not passed as `-e` flags to `docker run`.
+
+`Extended { on_demand: false }` runtime behavior: treated as always-available, resolves via `dispatch_plain` at launch. Config editor prevents this state by converting back to `Plain(String)` when toggling off, but the runtime arm above handles it defensively.
+
+### 2. Add `on_demand` to `OpRef`
+
+```rust
+pub struct OpRef {
+    pub op: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    // NEW:
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_demand: bool,   // false = always-available (current behavior), true = on-demand
+}
+```
+
+`skip_serializing_if = "std::ops::Not::not"` means: omit from TOML when `false`. Existing OpRef tables without `on_demand` parse with `on_demand = false` — no change to behavior. Only when `on_demand = true` does the field appear in the serialized TOML.
+
+## The Picker Dialog
+
+Every `jackin-exec` call triggers the picker. No pre-selection, no patterns. All `on_demand = true` vars appear. Operator picks what they need, presses Enter.
+
+```
+┌─ Select credentials to attach ────────────────────────────────────┐
+│  Command: ssh sentry                                               │
+│                                                                    │
+│  [ ] API_KEY    Work/Anthropic/api key       (1Password)          │
+│  [ ] SSH_KEY    Personal/SSH/key             (1Password)          │
+│  [ ] GH_TOKEN   host env: $GH_TOKEN                              │
+│  [ ] STG_URL    https://staging.internal     (literal)            │
+│                                                                    │
+│  Space: toggle  ↑↓: navigate  Enter: execute  Esc: cancel        │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+`OpRef` values show `path` (human-readable display). `Extended` values show their `value` string. No credential values are shown — display is always the label or source, not the resolved secret.
+
+After Enter: capsule sends the selected refs to the host process → host resolves via `op read` for each selected 1Password ref, or reads host env for `$VAR` refs → values sent back to capsule → injected as env vars on the spawned command's `CommandBuilder` → command runs → output scanned for leaked values → process exits (env vars die with it, no explicit cleanup needed).
+
+**Credential injection mechanism (Phase 1)**: All resolved values are injected as environment variables on the `CommandBuilder` for the spawned command — using the binding name as the key (e.g., `GH_TOKEN=resolved_value`, `AWS_ACCESS_KEY_ID=resolved_value`). The command inherits only these specific injected vars plus its standard env. This works for token-style credentials (GitHub, AWS, API keys). **Known Phase 1 limitation**: raw private key strings (SSH private keys from `op read`) cannot be consumed directly by the `ssh` binary via an env var. Phase 1 documents this: if an operator selects an SSH key credential, it is injected as `SSH_KEY=<pem_content>`. The agent must write it to a temp file itself or use `GIT_SSH_COMMAND`. Phase 2 will add temp-file materialization for key-type credentials (write to `/jackin/run/secrets/<uuid>`, set `SSH_KEY_FILE=/jackin/run/secrets/<uuid>`, delete after command exits).
+
+**Edge cases:**
+- **No on-demand vars configured** (`JACKIN_EXEC_BINDINGS` is empty): `jackin-exec` runs the command immediately without showing the picker. No dialog, no delay.
+- **host.sock unavailable** (host process died or listener failed): capsule returns `ExecDenied { reason: "host credential resolver unavailable" }`. Agent sees the error message. No silent failure.
+- **`op read` fails** (1Password auth expired, item not found): host.sock returns an error for that specific ref. Capsule returns `ExecDenied { reason: "credential resolution failed: <op error message>" }`.
+- **`op` Touch ID / biometric prompt**: blocks the host.sock listener task until the OS prompt completes. This is expected and intentional — the user explicitly wanted the 1Password window to appear on their macOS host.
+
+## Host Process Callback (Phase 1 Design)
+
+On-demand credentials are resolved at exec time, not at container launch. Capsule (inside the container) calls back to the host to resolve credentials.
+
+### host.sock Protocol
+
+Length-prefixed JSON (same framing as the control channel: `[4-byte BE length][JSON body]`). One request/response exchange per `jackin-exec` invocation.
+
+**Request** (capsule → host):
+```json
+{
+  "refs": [
+    { "name": "GH_TOKEN",  "kind": "op",  "source": "op://uuid/uuid/uuid" },
+    { "name": "SSH_KEY",   "kind": "op",  "source": "op://uuid/uuid/uuid" },
+    { "name": "BUILD_ENV", "kind": "env", "source": "$BUILD_ENV" },
+    { "name": "STG_URL",   "kind": "literal", "source": "https://staging.internal" }
+  ]
+}
+```
+
+`kind`: `"op"` → call `op read <source>`; `"env"` → read host env var from `source`; `"literal"` → return `source` verbatim (no host call needed).
+
+**Response** (host → capsule):
+```json
+{
+  "values": {
+    "GH_TOKEN":  "ghp_xxxx",
+    "SSH_KEY":   "-----BEGIN OPENSSH PRIVATE KEY-----\n...",
+    "BUILD_ENV": "production",
+    "STG_URL":   "https://staging.internal"
+  }
+}
+```
+
+**Error response**:
+```json
+{ "error": "op read failed for GH_TOKEN: biometric auth cancelled" }
+```
+
+On error, capsule sends `ExecDenied` to the agent — no command is executed.
+
+**Phase 1 mechanism**: `jackin load` host process stays running for the lifetime of the session. After the role container starts, the host immediately attaches to it through the selected backend, which blocks for the interactive session. The host.sock listener runs as a separate task alongside that attach call. The socket path `~/.jackin/sockets/<container>/host.sock` is bind-mounted into the container at `/jackin/run/host.sock` for Docker and passed through the apple-container launch path when that backend is selected. When capsule sends a resolution request, the host task reads it, runs `op read` for each 1Password ref, reads host env vars, writes values back. Capsule injects them ephemerally and executes.
+
+**This is the Phase 1 ad-hoc design.** The host process listening on a socket is not a daemon — it is the `jackin load` process staying alive. Future migration: the jackin' daemon ([Host bridge](/roadmap/host-bridge/), [jackin' daemon](/roadmap/jackin-daemon/)) will handle all credential resolution requests from all running containers. The per-process host.sock approach will be retired when the daemon ships.
+
+## Binary: Symlink + Subcommand
+
+`jackin-exec` is handled by `jackin-capsule` argv dispatch. The symlink/install surface is part of the capsule runtime setup rather than a separate binary or release artifact.
+
+When capsule is invoked as `jackin-exec` (argv[0] check) or with `exec` as first arg, it routes to the exec subcommand. The dispatch in `main.rs` (after the PID-1 and prepare-commit-msg checks):
+
+```rust
+Some("exec") | None if invoked_as_jackin_exec(&args) => exec::run(&args).await,
+```
+
+`invoked_as_jackin_exec` function body (follows the pattern of `invoked_as_prepare_commit_msg_hook` at line 91):
+
+```rust
+fn invoked_as_jackin_exec(args: &[String]) -> bool {
+    args.first()
+        .and_then(|a| std::path::Path::new(a).file_name())
+        .is_some_and(|n| n == "jackin-exec")
+}
+```
+
+The `None` branch (no subcommand, but invoked as `jackin-exec`) makes `jackin-exec <command> [args...]` work — `args[0]` is `jackin-exec`, remaining args are the command.
+
+**New control protocol variants in <RepoFile path="crates/jackin-protocol/src/control.rs" />:**
+
+`ClientMsg` and `ServerMsg` both have an `#[serde(other)]` `Unknown` sink variant **that must remain last**. Insert new variants **before** `Unknown`:
+
+```rust
+// In ClientMsg — add before Unknown:
+ExecCommand { command: String, args: Vec<String> }
+
+// In ServerMsg — add before Unknown:
+ExecResult { exit_code: i32, stdout: String, stderr: String, redacted_count: u32 }
+ExecDenied { reason: String }
+```
+
+`stdout`/`stderr` are lossy UTF-8 strings. Capsule caps each stream and redacts selected secret values before returning the result.
+
+## Output Filtering
+
+All resolved credential values (returned from `op read` or host env) are added to the redaction set for that command's output. Capsule scans stdout + stderr before returning to the agent:
+- Exact value match → `[redacted by jackin']`
+- PEM blocks → `[key material redacted by jackin']`
+
+Full unredacted output logged to diagnostics run file under `JACKIN_DEBUG`.
+
+## How the Agent Learns to Use `jackin-exec`
+
+`JACKIN_EXEC_BINDINGS` is injected as an always-available container env var at launch — listing the names of all on-demand vars (not their values):
+
+```
+JACKIN_EXEC_BINDINGS=API_KEY,SSH_KEY,GH_TOKEN,STG_URL
+```
+
+The entrypoint (<RepoFile path="docker/runtime/entrypoint.sh" />) uses this to append a system prompt block for every agent runtime. Also exposed as a `jackin_exec` MCP tool for Claude Code / Codex.
+
+## Schema Migration Footprint
+
+| Surface | File kind | Type touched | Action |
+|---|---|---|---|
+| `EnvValue::Extended` (new variant) + `OpRef.on_demand` (new field) | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` → `EnvValue` | bumped `CURRENT_WORKSPACE_VERSION` `v1alpha6` → `v1alpha7` in <RepoFile path="crates/jackin-config/src/migrations.rs" />; no-op restamp; fixture <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> |
+
+Both changes are additive with serde defaults. Existing TOML files parse identically.
+
+## Implementation Phases
+
+### Phase 1 — exec subcommand + picker + host.sock resolution
+
+**New source files:**
+- `crates/jackin-capsule/src/exec.rs` — exec client: argv[0] detection, connect to control channel, send ExecCommand, receive result
+- <RepoFile path="crates/jackin-runtime/src/exec_host.rs" /> — host.sock listener: stays alive for session duration, runs `op read`, responds to capsule credential requests
+
+**Modified files:**
+- <RepoFile path="crates/jackin-core/src/env_value.rs" /> — add `Extended` variant to `EnvValue`; add `on_demand: bool` to `OpRef`
+- <RepoFile path="crates/jackin-capsule/src/main.rs" /> — add `exec` subcommand dispatch + argv[0] detection
+- <RepoFile path="crates/jackin-protocol/src/control.rs" /> — add `ExecCommand`, `ExecResult`, `ExecDenied`
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — dispatch `ExecCommand`; push a new `Dialog::ExecPicker(ExecPickerState)` variant onto the existing `dialog_stack` (`Vec<Dialog>` at line 78; `dialog_push()` at line 832; input routed via `dispatch_to_dialog_top()` at line 2678; render via existing backdrop+overlay path at line 3087). `ExecPickerState` shape:
+
+  ```rust
+  pub struct ExecPickerState {
+      pub command: String,
+      pub args: Vec<String>,
+      pub items: Vec<ExecPickerItem>,
+      pub cursor: usize,
+  }
+
+  pub struct ExecPickerItem {
+      pub name: String,       // env var name e.g. "GH_TOKEN"
+      pub display: String,    // OpRef.path or Extended.value — human label
+      pub kind: ExecItemKind,
+      pub source: String,     // op:// URI, $VAR name, or literal
+      pub selected: bool,
+  }
+
+  pub enum ExecItemKind { Op, Env, Literal }
+  ```
+
+  When `ExecCommand` arrives: build `ExecPickerState` from workspace on-demand vars (read from the capsule's loaded config), push onto dialog_stack. Dialog handles Space=toggle, ↑↓=cursor, Enter=confirm (read selected items → connect to `/jackin/run/host.sock` → resolve → inject → execute), Esc=cancel (send `ExecDenied`). Connect to host.sock; inject resolved values as env vars on the `CommandBuilder`; output filter; send `ExecResult`.
+- <RepoFile path="crates/jackin-capsule/src/socket.rs" /> — route `ExecCommand` in control dispatcher
+- <RepoFile path="crates/jackin-config/src/migrations.rs" /> — bump `CURRENT_WORKSPACE_VERSION` to `v1alpha7`; no-op restamp
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> + <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — start the host.sock listener for Docker launches and inject `JACKIN_EXEC_BINDINGS=name1,name2,...` as an always-available env var. The actual `is_on_demand()` filtering happens upstream in <RepoFile path="crates/jackin-env/src/resolve.rs" /> (`resolve_operator_env_with_matching` drops on-demand vars before resolution, so they are never `op read` at launch), with `collect_on_demand_bindings` collecting the names beside it
+- <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" /> — pass the host.sock path and `JACKIN_EXEC_BINDINGS` through the apple-container launch path
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — use `JACKIN_EXEC_BINDINGS` for system prompt block
+- Add <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> plus matching `before.toml` and `after.toml`
+
+### Phase 2 — MCP tool
+
+- Expose `jackin_exec` MCP tool from jackin-capsule using the same exec subcommand handler. Initial support lives in <RepoFile path="crates/jackin-capsule/src/mcp_server.rs" /> and is registered from <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />.
+
+## Related Files
+
+- <RepoFile path="crates/jackin-core/src/env_value.rs" /> — `EnvValue` enum + `OpRef` struct; all type changes here
+- <RepoFile path="crates/jackin-capsule/src/main.rs" /> — add `exec` subcommand
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — ExecCommand dispatch, picker overlay, host.sock callback, temp env injection, output filtering
+- <RepoFile path="crates/jackin-protocol/src/control.rs" /> — ExecCommand + ExecResult + ExecDenied
+- <RepoFile path="crates/jackin-config/src/migrations.rs" /> — `CURRENT_WORKSPACE_VERSION` bump
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — host.sock listener + `JACKIN_EXEC_BINDINGS`
+- <RepoFile path="crates/jackin-runtime/src/exec_host.rs" /> — host-side credential resolver
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — system prompt injection for `JACKIN_EXEC_BINDINGS`
+
+## Related Roadmap Items
+
+| Item | Relationship |
+|---|---|
+| [Agent isolation architecture](/roadmap/agent-isolation-architecture/) | Master architecture doc; jackin-exec is Layer 3 |
+| [Container credential exposure](/roadmap/container-credential-exposure/) | The problem this item solves |
+| [jackin' daemon](/roadmap/jackin-daemon/) | Future: daemon replaces the Phase 1 ad-hoc host.sock listener |
+| [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) | Future daemon-based credential resolution that retires host.sock |
+| [Process-level sandboxing](/roadmap/process-level-sandboxing/) | Complementary — zerobox handles per-operation filesystem/network policy |
+| [Apple Container backend](/roadmap/apple-container-backend/) | jackin-exec works on any backend |
+| [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | jackin-exec calls and picker selections should appear in session contract output |

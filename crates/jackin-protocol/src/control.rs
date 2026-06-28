@@ -46,6 +46,11 @@ pub enum ClientMsg {
     UsageRefreshFocused,
     /// Return every account/quota snapshot currently known to the daemon cache.
     UsageAccountList,
+    /// `jackin-exec <command> [args…]` — run a command with operator-approved
+    /// on-demand credentials injected at exec time. The daemon shows the
+    /// credential picker, resolves selections via the host socket, runs the
+    /// command, and replies with `ExecResult` or `ExecDenied`.
+    ExecCommand { command: String, args: Vec<String> },
     /// Request the per-session token-spend summary for one session, read from
     /// the daemon's token monitor (provider JSONL/SQLite totals).
     TokenUsage { session_id: u64 },
@@ -64,6 +69,8 @@ impl ServerMsg {
             Self::AgentRegistry { .. } => "AgentRegistry",
             Self::UsageFocused { .. } => "UsageFocused",
             Self::UsageAccounts { .. } => "UsageAccounts",
+            Self::ExecResult { .. } => "ExecResult",
+            Self::ExecDenied { .. } => "ExecDenied",
             Self::TokenUsage { .. } => "TokenUsage",
             Self::Ack => "Ack",
             Self::Unknown => "Unknown",
@@ -95,6 +102,19 @@ pub enum ServerMsg {
     UsageAccounts {
         accounts: Vec<AccountUsageSnapshotView>,
     },
+    /// Result of a `jackin-exec` invocation: the child's exit code and its
+    /// (capped, secret-redacted) stdout/stderr. `redacted_count` reports how
+    /// many secret patterns were scrubbed from the output.
+    ExecResult {
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+        redacted_count: u32,
+    },
+    /// A `jackin-exec` invocation the daemon refused to run (operator cancelled
+    /// the picker, the host resolver was unavailable, or `op read` failed). No
+    /// command was executed.
+    ExecDenied { reason: String },
     /// Per-session token-spend summary; `None` when the session is unknown to
     /// the token monitor (never registered, or already exited).
     TokenUsage { summary: Option<TokenUsageSummary> },

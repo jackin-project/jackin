@@ -374,6 +374,19 @@ fn setup_claude() -> Result<()> {
             &["mcp", "add", "shellfirm", "--", "shellfirm", "mcp"],
         );
     }
+    if std::env::var_os("JACKIN_EXEC_BINDINGS").is_some_and(|v| !v.is_empty()) {
+        run_optional_command(
+            "claude",
+            &[
+                "mcp",
+                "add",
+                "jackin-exec",
+                "--",
+                "jackin-capsule",
+                "mcp-server",
+            ],
+        );
+    }
     setup_claude_plugins();
     Ok(())
 }

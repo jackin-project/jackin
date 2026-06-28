@@ -224,6 +224,7 @@ pub(super) fn build_env_layer_states(
     const fn classify(value: &jackin_core::EnvValue) -> EnvLayerState {
         match value {
             jackin_core::EnvValue::Plain(_) => EnvLayerState::ResolvedLiteral,
+            jackin_core::EnvValue::Extended(_) => EnvLayerState::ResolvedLiteral,
             jackin_core::EnvValue::OpRef(_) => EnvLayerState::ResolvedOpRef,
         }
     }

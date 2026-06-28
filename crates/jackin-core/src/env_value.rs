@@ -11,13 +11,21 @@
 /// - `Plain`: a literal string or `$VAR` / `${VAR}` expansion reference
 ///
 /// Untagged serde: serde picks the variant by structural shape — inline TOML
-/// table → `OpRef`, scalar string → `Plain`. Legacy bare `op://...` strings
+/// table with an `op` key → `OpRef`, inline table with a `value` key →
+/// `Extended`, scalar string → `Plain`. Legacy bare `op://...` strings
 /// deserialize as `Plain` and are passed through to the container as literals
 /// (no resolution attempt).
+///
+/// Variant order is load-bearing for untagged discrimination: `OpRef`
+/// (`deny_unknown_fields`) rejects a `{ value = … }` table and falls through to
+/// `Extended` (`deny_unknown_fields`), which rejects anything without a `value`
+/// field and falls through to the `Plain` scalar fallback. `OpRef` must stay
+/// first and `Plain` must stay last.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum EnvValue {
     OpRef(OpRef),
+    Extended(Extended),
     Plain(String),
 }
 
@@ -31,6 +39,7 @@ impl EnvValue {
         match self {
             Self::Plain(s) => s.as_str(),
             Self::OpRef(r) => r.op.as_str(),
+            Self::Extended(e) => e.value.as_str(),
         }
     }
 
@@ -41,6 +50,18 @@ impl EnvValue {
         match self {
             Self::Plain(s) => s.as_str(),
             Self::OpRef(r) => r.path.as_str(),
+            Self::Extended(e) => e.value.as_str(),
+        }
+    }
+
+    /// Whether this value is injected on demand (at `jackin-exec` time) rather
+    /// than at container launch. On-demand values are filtered out of the
+    /// launch env and resolved later through the operator credential picker.
+    pub const fn is_on_demand(&self) -> bool {
+        match self {
+            Self::OpRef(r) => r.on_demand,
+            Self::Extended(e) => e.on_demand,
+            Self::Plain(_) => false,
         }
     }
 }
@@ -83,6 +104,33 @@ pub struct OpRef {
     /// resolve correctly.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
+
+    /// `true` = inject on demand at `jackin-exec` time via the operator
+    /// credential picker, never at container launch. `false` (default) =
+    /// always-available, injected at launch (current behavior). Omitted from
+    /// serialized TOML when `false` so existing refs round-trip unchanged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_demand: bool,
+}
+
+/// A literal/`$VAR` env value carrying optional on-demand metadata.
+///
+/// This is the table form of a `Plain` value: `{ value = "…" }`. It exists so
+/// a literal or host-env-expansion value can opt into on-demand injection
+/// (`{ value = "$GH_TOKEN", on_demand = true }`) without becoming a 1Password
+/// reference. A table without `on_demand` (or with `on_demand = false`) is
+/// semantically identical to the equivalent `Plain` scalar; the config editor
+/// collapses it back to the scalar form when on-demand is toggled off.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Extended {
+    /// The literal value or `$VAR` / `${VAR}` expansion reference.
+    pub value: String,
+
+    /// `true` = inject on demand at `jackin-exec` time; `false` (default) =
+    /// inject at launch. Omitted from serialized TOML when `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_demand: bool,
 }
 
 /// Which field an `item_field_set` write targets in an existing item.

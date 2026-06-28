@@ -682,6 +682,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         .expect("reload must see ANTHROPIC_API_KEY in workspace env");
     match env_value {
         jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "sk-ant-test"),
+        jackin::operator_env::EnvValue::Extended(e) => assert_eq!(e.value, "sk-ant-test"),
         jackin::operator_env::EnvValue::OpRef(_) => {
             panic!("expected literal credential, got OpRef")
         }
@@ -1348,6 +1349,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         .expect("GH_TOKEN must land on the workspace github env block");
     match value {
         jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
+        jackin::operator_env::EnvValue::Extended(e) => assert_eq!(e.value, "ghp_round_trip"),
         jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
     }
     assert!(
@@ -1391,6 +1393,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         .expect("reload must see GH_TOKEN on the github env block");
     match env_value {
         jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
+        jackin::operator_env::EnvValue::Extended(e) => assert_eq!(e.value, "ghp_round_trip"),
         jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
     }
     // GH_TOKEN must NOT leak into the regular workspace env map after

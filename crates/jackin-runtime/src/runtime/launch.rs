@@ -349,6 +349,55 @@ fn build_workspace_mount_strings(
     out
 }
 
+/// The container backend selected for a launch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Backend {
+    Docker,
+    AppleContainer,
+}
+
+/// Resolve the container backend for a launch. A per-workspace
+/// `[runtime].backend` overrides the host-wide `[runtime].default_backend`,
+/// which defaults to Docker when unset.
+///
+/// The backend fields are free-text strings in the config schema, so an
+/// unrecognised value is rejected here rather than silently falling through to
+/// Docker — a typo must fail closed, not launch the wrong (weaker-isolation)
+/// backend behind the operator's back.
+pub(super) fn resolve_backend(
+    config: &AppConfig,
+    workspace_name: Option<&str>,
+) -> anyhow::Result<Backend> {
+    let selected = workspace_name
+        .and_then(|name| config.workspaces.get(name))
+        .and_then(|ws| ws.runtime.backend.as_deref())
+        .or(config.runtime.default_backend.as_deref());
+    match selected {
+        None | Some(crate::apple_container_client::DOCKER_BACKEND_NAME) => Ok(Backend::Docker),
+        Some(crate::apple_container_client::BACKEND_NAME) => Ok(Backend::AppleContainer),
+        Some(other) => anyhow::bail!(
+            "unknown runtime backend {other:?}: expected `{}` or `{}`",
+            crate::apple_container_client::DOCKER_BACKEND_NAME,
+            crate::apple_container_client::BACKEND_NAME,
+        ),
+    }
+}
+
+/// Translate a [`MaterializedWorkspace`] into `(host, guest)` mount pairs for
+/// the apple-container backend (which formats its own `-v host:container`
+/// flags via the `container` CLI). Mirrors [`build_workspace_mount_strings`]
+/// but yields typed path pairs. Read-only flags and the worktree-mode `.git`
+/// override entries are not yet carried — tracked as apple-container Phase 0
+/// work, since they need empirical validation inside an apple/container VM.
+pub(super) fn build_workspace_mount_pairs(
+    workspace: &crate::isolation::materialize::MaterializedWorkspace,
+) -> Vec<(PathBuf, PathBuf)> {
+    crate::isolation::materialize::mount_order_for_docker(workspace)
+        .into_iter()
+        .map(|mount| (PathBuf::from(&mount.bind_src), PathBuf::from(&mount.dst)))
+        .collect()
+}
+
 pub(super) struct LaunchContext<'a> {
     container_name: &'a str,
     image: &'a str,
@@ -540,9 +589,45 @@ pub(super) fn capsule_config(
         initial_provider,
         claude_marketplaces: Vec::new(),
         claude_plugins: Vec::new(),
+        // Populated by the launch pipeline once the operator env is known; the
+        // manifest alone does not carry on-demand workspace credentials.
+        exec_bindings: Vec::new(),
         dirty_exit_policy: Some(dirty_exit_policy.to_owned()),
         isolated_worktrees,
     }
+}
+
+/// Comma-join the on-demand credential binding names for the
+/// `JACKIN_EXEC_BINDINGS` env var. Shared by the Docker and apple-container
+/// launch paths so the two cannot format the list differently.
+#[must_use]
+pub(super) fn exec_binding_names(bindings: &[jackin_protocol::ExecBinding]) -> String {
+    bindings
+        .iter()
+        .map(|b| b.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Create the per-container socket dir and write Capsule's launch config
+/// (`agent.toml`) into it. The dir is bind-mounted to `/jackin/run`, so the
+/// in-container capsule reads `agent.toml` at startup and the host.sock
+/// credential-resolver socket lands beside it. Shared by both launch paths:
+/// the apple-container path (`apple_container::launch`) and the Docker path
+/// (`launch_role_runtime`, which calls it inside its socket-dir `spawn_blocking`
+/// alongside the extrausers passwd write). The dir is created under the default
+/// umask; it is tightened to `0o700` only when the `exec_host` listener binds
+/// the socket, which happens only for workspaces that declare on-demand
+/// credentials.
+pub(super) fn prepare_socket_dir(
+    socket_dir: &Path,
+    capsule_config_contents: &str,
+) -> std::io::Result<()> {
+    std::fs::create_dir_all(socket_dir)?;
+    std::fs::write(
+        socket_dir.join(jackin_protocol::CAPSULE_CONFIG_FILENAME),
+        capsule_config_contents,
+    )
 }
 
 /// Launch the role container after the caller has prepared the private network
@@ -1208,6 +1293,19 @@ pub(super) async fn launch_role_runtime(
         },
     );
     prepare_socket_dir_result?;
+    // Start the jackin-exec host credential resolver for this container's
+    // on-demand bindings. Its socket lands in the dir just prepared (bind-
+    // mounted to /jackin/run), so the in-container capsule reaches it at
+    // /jackin/run/host.sock. Spawned detached: the task runs independently of
+    // this handle, for the host process's lifetime alongside the interactive
+    // attach. No-op when the workspace declares no on-demand credentials.
+    if !ctx.capsule_config.exec_bindings.is_empty() {
+        drop(crate::exec_host::start_for_container(
+            &ctx.paths.jackin_home,
+            ctx.container_name,
+            &ctx.capsule_config.exec_bindings,
+        ));
+    }
     // `Display` is lossy on non-UTF-8 paths — docker would silently mount a
     // different host dir than the one we just created. Bail rather than
     // smuggle U+FFFD into a `-v` argument.

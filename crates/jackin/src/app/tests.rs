@@ -502,6 +502,7 @@ fn workspace_show_includes_isolation_column() {
         grok: None,
         github: None,
         git_pull_on_entry: false,
+        runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         dirty_exit_policy: None,
         docker: None,
     };
@@ -762,12 +763,14 @@ fn delete_prior_op_item_with_op_ref_calls_writer_with_parsed_uuids() {
             op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
             path: "Personal/Prior/token".into(),
             account: None,
+            on_demand: false,
         },
     ));
     let new_ref = crate::operator_env::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: None,
+        on_demand: false,
     };
     let writer = FakeOpWriter::new();
     delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
@@ -786,12 +789,14 @@ fn delete_prior_op_item_spares_operator_adopted_item() {
             op: "op://VAULT_UUID/SHARED_ITEM/token".into(),
             path: "Personal/My Vault Item/token".into(),
             account: None,
+            on_demand: false,
         },
     ));
     let new_ref = crate::operator_env::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: None,
+        on_demand: false,
     };
     let writer = FakeOpWriter::adopted();
     delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
@@ -811,12 +816,14 @@ fn delete_prior_op_item_skips_delete_on_tag_read_error() {
             op: "op://VAULT_UUID/OLD_ITEM/token".into(),
             path: "Personal/Prior/token".into(),
             account: None,
+            on_demand: false,
         },
     ));
     let new_ref = crate::operator_env::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: None,
+        on_demand: false,
     };
     let writer = FakeOpWriter::tag_read_fails();
     delete_prior_op_item_with_runner(prior, &new_ref, &writer)
@@ -838,12 +845,14 @@ fn delete_prior_op_item_targets_prior_refs_account() {
             op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
             path: "Personal/Prior/token".into(),
             account: Some("account-A".into()),
+            on_demand: false,
         },
     ));
     let new_ref = crate::operator_env::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: Some("account-B".into()),
+        on_demand: false,
     };
     // The OpCli is pinned to the NEW account; the per-call override
     // (the prior ref's account) must still win.
@@ -869,6 +878,7 @@ fn delete_prior_op_item_skips_when_prior_is_none_or_literal() {
         op: "op://V/I/F".into(),
         path: "Personal/New/token".into(),
         account: None,
+        on_demand: false,
     };
     let writer = FakeOpWriter::new();
     delete_prior_op_item_with_runner(None, &new_ref, &writer).unwrap();
@@ -894,6 +904,7 @@ fn delete_prior_op_item_skips_when_new_ref_equals_prior() {
         op: "op://V/I/F".into(),
         path: "Personal/Item/token".into(),
         account: None,
+        on_demand: false,
     };
     let writer = FakeOpWriter::new();
     delete_prior_op_item_with_runner(
@@ -915,12 +926,14 @@ fn delete_prior_op_item_propagates_err_with_actionable_hint() {
             op: "op://V_UUID/I_UUID/F".into(),
             path: "Personal/Prior/token".into(),
             account: None,
+            on_demand: false,
         },
     ));
     let new_ref = crate::operator_env::OpRef {
         op: "op://V_UUID/I_NEW/F".into(),
         path: "Personal/New/token".into(),
         account: None,
+        on_demand: false,
     };
     let writer = FakeOpWriter::failing();
     let err = delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap_err();

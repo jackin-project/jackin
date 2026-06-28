@@ -2815,11 +2815,12 @@ dependencies = [
 
 [[package]]
 name = "jackin-dev"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "clap",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -2874,6 +2875,7 @@ dependencies = [
  "jackin-core",
  "jackin-diagnostics",
  "jackin-launch",
+ "jackin-protocol",
  "portable-pty",
  "secrecy",
  "serde",

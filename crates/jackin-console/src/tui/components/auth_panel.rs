@@ -614,6 +614,7 @@ impl AuthCredential for jackin_core::EnvValue {
     fn into_credential_input(self) -> CredentialInput<Self::Ref> {
         match self {
             Self::Plain(value) => CredentialInput::Literal(value),
+            Self::Extended(e) => CredentialInput::Literal(e.value),
             Self::OpRef(value) => CredentialInput::OpRef(value),
         }
     }

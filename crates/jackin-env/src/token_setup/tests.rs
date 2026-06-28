@@ -47,6 +47,7 @@ impl FakeOpWriter {
                 op: "op://_/_/_".into(),
                 path: "_/_/_".into(),
                 account: None,
+                on_demand: false,
             },
             recorded_value: RefCell::new(None),
             recorded_field_id: RefCell::new(None),
@@ -191,6 +192,7 @@ fn dummy_op_ref() -> OpRef {
         op: "op://VID/IID/FID".into(),
         path: "Personal/jackin · proj · claude-token/token".into(),
         account: None,
+        on_demand: false,
     }
 }
 
@@ -630,6 +632,7 @@ fn run_setup_with_runner_reuse_path_surfaces_validation_error() {
                 op: "op://Other/Item/Field".into(),
                 path: "Other/Item/Field".into(),
                 account: None,
+                on_demand: false,
             }),
             ..Default::default()
         },
@@ -665,6 +668,7 @@ fn run_setup_with_runner_reuse_path_skips_capture_and_no_expiry_stamp() {
                 op: "op://VID/IID/FID".into(),
                 path: "Personal/Existing/token".into(),
                 account: None,
+                on_demand: false,
             }),
             ..Default::default()
         },
@@ -773,6 +777,7 @@ fn run_setup_with_runner_plain_text_with_reuse_bails() {
                 op: "op://Other/Item/Field".into(),
                 path: "Other/Item/Field".into(),
                 account: None,
+                on_demand: false,
             }),
             ..Default::default()
         },
@@ -852,6 +857,7 @@ fn run_revoke_clears_slot_mode_and_expiry_cache() {
             op: "op://VID/IID/FID".into(),
             path: "Personal/Item/token".into(),
             account: None,
+            on_demand: false,
         }),
     );
     cfg.workspaces.insert("proj".into(), ws);
@@ -890,6 +896,7 @@ fn vault_for_rotate_falls_back_to_prior_op_ref_vault() {
         op: "op://VAULT_UUID/ITEM_UUID/FIELD_UUID".into(),
         path: "Personal/jackin · proj · claude-token/token".into(),
         account: None,
+        on_demand: false,
     });
     assert_eq!(
         vault_for_rotate(None, Some(&prior)),
@@ -907,6 +914,7 @@ fn vault_for_rotate_prefers_explicit_cli_vault() {
         op: "op://OldVault/ITEM/FIELD".into(),
         path: "OldVault/Item/token".into(),
         account: None,
+        on_demand: false,
     });
     assert_eq!(
         vault_for_rotate(Some("NewVault".into()), Some(&prior)),
@@ -1001,6 +1009,7 @@ fn run_doctor_op_read_failure_wraps_error() {
             op: "op://VID/IID/FID".into(),
             path: "Personal/Item/token".into(),
             account: None,
+            on_demand: false,
         }),
     );
     cfg.workspaces.insert("proj".into(), ws);
@@ -1029,6 +1038,7 @@ fn run_revoke_with_runner_delete_op_item_calls_writer_with_parsed_uuids() {
             op: "op://VAULT_UUID/ITEM_UUID/FIELD_UUID".into(),
             path: "Personal/Item/token".into(),
             account: None,
+            on_demand: false,
         }),
     );
     cfg.workspaces.insert("proj".into(), ws);
@@ -1108,6 +1118,7 @@ fn run_revoke_with_runner_delete_op_item_failure_does_not_save_config() {
             op: "op://VID/IID/FID".into(),
             path: "Personal/Item/token".into(),
             account: None,
+            on_demand: false,
         }),
     );
     cfg.workspaces.insert("proj".into(), ws);
@@ -1176,6 +1187,7 @@ fn run_setup_with_runner_post_write_unparseable_op_ref_skips_delete_call() {
         op: "garbage-not-an-op-uri".into(),
         path: "Personal/Item/token".into(),
         account: None,
+        on_demand: false,
     };
     let writer = FakeOpWriter::new(bogus_ref);
     let reader = FakeOpReader::err("op read failed: bogus URI");

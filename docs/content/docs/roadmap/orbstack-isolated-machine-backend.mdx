@@ -2,7 +2,68 @@
 title: "OrbStack Isolated Machine Backend"
 ---
 
-**Status**: Open — research and design proposal
+**Status**: Deferred — shared-kernel architecture does not address the kernel isolation gap for the current macOS ARM audience; see [smolvm backend research](/roadmap/smolvm-backend-research/) for the active VM isolation track
+
+## Why This Item Is Deferred
+
+Status changed June 2026 after a deep research pass against the current operator audience, the OrbStack architecture, and the broader AI-agent sandboxing landscape. Three compounding reasons drive the deferral.
+
+### The actual boundary for all current users already exists
+
+jackin' is macOS ARM-only. Every active operator uses OrbStack as their Docker backend. The role container's existing runtime boundary is already:
+
+```
+macOS ARM → OrbStack Linux VM → Docker daemon → role container + jackin-capsule
+```
+
+OrbStack's Linux VM boundary already exists at launch time. The role container is already isolated from macOS by OrbStack's hypervisor layer. Adding an OrbStack isolated machine between the VM and the inner Docker daemon produces:
+
+```
+macOS ARM → OrbStack Linux VM → isolated machine (same kernel, different namespace) → inner Docker → role container
+```
+
+This is namespace-within-namespace isolation on the same kernel. The outer VM boundary that OrbStack already provides is not improved.
+
+### OrbStack isolated machines are namespaces, not a new kernel
+
+OrbStack explicitly documents that its machines — including isolated machines — share a Linux kernel. They use cgroups and namespaces, not a hypervisor boundary per workload. The wording "isolated" in OrbStack's product language means filesystem-isolated (no automatic Mac filesystem passthrough), not kernel-isolated.
+
+The industry moves toward microVMs for AI agents because of concrete, exploitable weaknesses in the shared-kernel model:
+
+- **runc vulnerabilities (November 2025)**: three high-severity CVEs allowing container escape to the host system, affecting Docker, containerd, and every managed Kubernetes service.
+- **CVE-2026-34040**: Docker authorization bypass via oversized HTTP request — allows creating containers with full host access, fixed in Docker Engine 29.3.1.
+- **CVE-2024-1086**: use-after-free in Linux's netfilter subsystem, confirmed actively exploited in ransomware campaigns (October 2025 CISA advisory).
+- **DinD `--privileged`**: the DinD sidecar jackin' runs today requires `--privileged`, giving it near-full access to the OrbStack VM kernel. A compromised DinD container can escape to the VM kernel — and an OrbStack isolated machine surrounding it uses the same kernel.
+
+Namespace isolation does not change any of these attack surfaces. The kernel is the attack surface, and the kernel is shared.
+
+### What actually addresses the kernel boundary problem
+
+As of June 2026, three paths give a true per-workload kernel boundary on macOS ARM:
+
+**Docker Sandboxes** (Docker Inc., launched January 2026): each sandbox runs in a dedicated microVM using a proprietary VMM built on Apple Hypervisor.framework on macOS. The host Docker daemon cannot see sandboxes in `docker ps`. Each sandbox has its own private Docker daemon and its own kernel. Credentials are proxied outside the VM boundary. Explicitly supports Claude Code, Codex CLI, GitHub Copilot CLI, Gemini CLI, OpenCode, Kiro, and Docker Agent. This is the shape jackin' needs: private Docker daemon inside a true hypervisor boundary, not a shared-kernel namespace. Covered in the [smolvm backend research](/roadmap/smolvm-backend-research/) comparison.
+
+**smolvm** (open-source, Apache-2.0): uses libkrun and Hypervisor.framework on macOS to give each workload its own kernel. Network off by default. OCI image input. Direct active research track in [smolvm backend research](/roadmap/smolvm-backend-research/), including a full comparison against Docker Sandboxes.
+
+**Apple Container framework** (announced with macOS 26 Tahoe, 2026): each OCI container runs inside its own lightweight VM via Virtualization.framework, natively on Apple Silicon. Sub-second start times. True hypervisor isolation per container, not namespace isolation. OCI-compatible. This is the native macOS ARM path closest to what this roadmap item originally sought — a first-class isolation layer without needing Docker or OrbStack machinery at the VM level. Needs evaluation once macOS 26 operator adoption reaches a usable threshold.
+
+**gVisor** (Google): syscall interception in userspace — no KVM required. However: confirmed broken on OrbStack macOS ARM in v2.1.3 ([orbstack/orbstack#2362](https://github.com/orbstack/orbstack/issues/2362) — `/tmp → /private/tmp` symlink causes runsc to crash immediately), and Claude Code hangs indefinitely in gVisor on macOS ARM ([anthropics/claude-code#35454](https://github.com/anthropics/claude-code/issues/35454)). Not viable on the current platform stack.
+
+### The OrbStack isolated machine CLI surface is not ready
+
+Even setting aside the shared-kernel architecture issue, the isolated machine CLI has blocking gaps as of v2.1.3:
+
+- `orb push` / `orb pull` broken on isolated machines ([orbstack/orbstack#2469](https://github.com/orbstack/orbstack/issues/2469)) — forces the `docker save | orb -m <name> sh -c 'cat > /tmp/img.tar && docker load && rm'` stream-import workaround for every image transfer.
+- PTY allocation, SIGWINCH forwarding, and detach-key behavior of `orb -m <name> <cmd>`: completely undocumented. This is the make-or-break question for the attach transport — without empirical confirmation, the entire attach design is a guess.
+- Network host/machine blocking and SSH agent forwarding controls: documented in v2.1.2 release notes but GUI-only with no confirmed CLI surface in v2.1.3.
+
+### When to revisit
+
+- OrbStack documents a true hypervisor boundary (not shared-kernel) for isolated machines, AND the CLI surfaces for selective shares, network blocking, and SSH agent forwarding stabilize, AND `orb push` is fixed.
+- OR: smolvm research proves insufficient for macOS ARM and OrbStack isolated machines become the next-best open alternative.
+- OR: the operator base expands beyond OrbStack macOS ARM to setups where the existing Docker backend does not already have an outer VM boundary.
+
+Until then, the effective isolation roadmap for the current audience is: **Docker runtime hardening contract** (near-term, improves the existing backend) → **smolvm backend research** (true per-workload kernel via libkrun/Hypervisor.framework) → **Apple Container framework evaluation** (native macOS 26 path, once adoption allows).
 
 ## Problem
 

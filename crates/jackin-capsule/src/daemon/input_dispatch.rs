@@ -77,6 +77,33 @@ impl Multiplexer {
                 self.dialog_pop_one();
             }
             DialogAction::Redraw | DialogAction::Consume => {}
+            DialogAction::ExecConfirm {
+                command,
+                args,
+                selected,
+            } => {
+                // Operator approved. Close the picker, then resolve the chosen
+                // credentials through the host socket and run the command off
+                // the event loop so the daemon keeps rendering; the spawned task
+                // owns the deferred control reply and answers when the command
+                // finishes (or fails closed).
+                self.dialog_pop_one();
+                if let Some(reply_tx) = self.pending_exec_reply.take() {
+                    tokio::spawn(async move {
+                        drop(reply_tx.send(run_exec_selected(command, args, selected).await));
+                    });
+                }
+            }
+            DialogAction::ExecCancel => {
+                self.dialog_pop_one();
+                if let Some(reply_tx) = self.pending_exec_reply.take() {
+                    drop(
+                        reply_tx.send(jackin_protocol::control::ServerMsg::ExecDenied {
+                            reason: "operator cancelled credential selection".to_owned(),
+                        }),
+                    );
+                }
+            }
             DialogAction::ExitDirty(row) => {
                 use crate::tui::components::dialog::ExitDirtyRow;
                 match row {
@@ -305,6 +332,37 @@ impl Multiplexer {
             paste.extend_from_slice(b"\x1b[201~");
         }
         self.send_bytes_to_focused_pane(&paste)
+    }
+
+    /// Open the `jackin-exec` credential picker for a `command`, stashing the
+    /// control reply channel so confirm/cancel can answer it later. Built from
+    /// the workspace's on-demand bindings (carried on the launch config); the
+    /// container only ever sees binding names + sources, never resolved values.
+    pub(super) fn begin_exec_picker(
+        &mut self,
+        command: String,
+        args: Vec<String>,
+        reply_tx: tokio::sync::oneshot::Sender<jackin_protocol::control::ServerMsg>,
+    ) {
+        // Supersede any picker already in flight: deny its deferred reply (so
+        // that client gets an answer instead of a closed socket) and drop its
+        // now-stale dialog so confirm/cancel can't act on it.
+        if let Some(prev) = self.pending_exec_reply.take() {
+            drop(prev.send(jackin_protocol::control::ServerMsg::ExecDenied {
+                reason: "superseded by a newer jackin-exec request".to_owned(),
+            }));
+            if matches!(self.dialog_top(), Some(Dialog::ExecPicker(_))) {
+                self.dialog_pop_one();
+            }
+        }
+        let state = crate::exec::ExecPickerState::from_bindings(
+            command,
+            args,
+            &self.launch_config.exec_bindings,
+        );
+        self.pending_exec_reply = Some(reply_tx);
+        self.dialog_push(Dialog::ExecPicker(state));
+        self.invalidate(FullRedrawReason::DialogChange);
     }
 
     pub(super) fn apply_action(&mut self, action: Action) {
@@ -999,5 +1057,45 @@ pub(super) fn tab_bar_focus_key(bytes: &[u8]) -> Option<TabBarFocusKey> {
         b"\x1b[C" | b"\x1bOC" => Some(TabBarFocusKey::Next), // Right
         b"\x1b[B" | b"\x1bOB" | b"\x1b" => Some(TabBarFocusKey::Exit), // Down / Esc
         _ => None,
+    }
+}
+
+/// Resolve the operator-selected credentials through the host socket and run the
+/// command with them injected as env vars, returning the framed control reply.
+///
+/// Fails closed (`ExecDenied`) on any resolver or spawn error — the command is
+/// never run with a partially-resolved credential set. The container reaches the
+/// host resolver at `/jackin/run/host.sock` (bind-mounted by the launch path).
+async fn run_exec_selected(
+    command: String,
+    args: Vec<String>,
+    selected: Vec<jackin_protocol::ExecBinding>,
+) -> jackin_protocol::control::ServerMsg {
+    use jackin_protocol::control::ServerMsg;
+
+    let resolved =
+        match crate::exec::resolve_credentials(jackin_protocol::HOST_SOCK_CONTAINER_PATH, selected)
+            .await
+        {
+            Ok(map) => map,
+            Err(error) => {
+                return ServerMsg::ExecDenied {
+                    reason: format!("credential resolution failed: {error}"),
+                };
+            }
+        };
+    // Redaction set borrows the resolved values — no second copy of secret
+    // material; the strings already live in `resolved` for the env injection.
+    let secrets: Vec<&str> = resolved.values().map(String::as_str).collect();
+    match crate::exec::execute_command(&command, &args, &resolved, &secrets).await {
+        Ok((exit_code, stdout, stderr, redacted_count)) => ServerMsg::ExecResult {
+            exit_code,
+            stdout,
+            stderr,
+            redacted_count,
+        },
+        Err(error) => ServerMsg::ExecDenied {
+            reason: format!("command execution failed: {error}"),
+        },
     }
 }

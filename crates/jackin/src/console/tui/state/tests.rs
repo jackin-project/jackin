@@ -834,6 +834,7 @@ fn editor_with_one_shared_mount() -> EditorState<'static> {
         grok: None,
         github: None,
         git_pull_on_entry: false,
+        runtime: jackin_config::WorkspaceRuntimeConfig::default(),
         dirty_exit_policy: None,
     };
     let mut e = EditorState::new_edit("ws".into(), ws);

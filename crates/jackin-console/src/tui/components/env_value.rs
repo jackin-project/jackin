@@ -7,6 +7,9 @@ pub fn secret_display(
         jackin_core::EnvValue::Plain(value) => {
             crate::tui::components::editor_rows::SecretValueDisplay::Plain(value)
         }
+        jackin_core::EnvValue::Extended(e) => {
+            crate::tui::components::editor_rows::SecretValueDisplay::Plain(&e.value)
+        }
         jackin_core::EnvValue::OpRef(op_ref) => {
             crate::tui::components::editor_rows::SecretValueDisplay::OpRefPath(&op_ref.path)
         }

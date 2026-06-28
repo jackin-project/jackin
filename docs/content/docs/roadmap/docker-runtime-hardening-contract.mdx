@@ -189,6 +189,8 @@ WP0 (test matrix harness) ─┬─> WP1 (egress) ─┬─> WP2 (internal net) 
 
 **Goal:** make every `DindGrant` tier (`none` / `rootless` / `privileged`) a real, operator-selectable option — the capability-grant model applied to DinD. No tier is removed: privileged DinD stays available; `none` skips the sidecar; `rootless` is newly wired. Rootless is *selectable* now, validated against the WP0 matrix, but is **not** any profile's default until that matrix is green and `standard` becomes the default (WP6). It requires cgroup v2 and must fail with a clear error (not silently) on v1 hosts.
 
+Roles build their own images, today on the host Docker engine. The build phase is also code execution. This contract scopes runtime hardening only; build-time hardening (rootless BuildKit, build context constraints, hermetic builders) is tracked separately and will land alongside the [Apple Container backend](/roadmap/apple-container-backend/) work where machine-local builds inside the VM become possible. V1 of this contract does not change the build path.
+
 **Part A — DinD-free (`none`) and per-profile defaults (Decision 12):** stop starting the sidecar when the resolved grant is `None`, and set the defaults so DinD is off everywhere except `compat`.
 - <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />, `profile_base_grants` — `compat` = `Privileged` (unchanged); change `standard` from `Privileged` to **`None`**; `hardened`/`locked` stay `None`. Recommended-tier-when-enabled is policy, not a default: a `standard`/`hardened` launch that grants DinD without naming a tier resolves to `Rootless`; `privileged` under `hardened`/`locked` is allowed only by explicit grant and emits the partial-enforcement warning.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — grant resolution already downgrades `dind` to `None` when the role declares it; with the new defaults, only `compat` (or an explicit grant) reaches a DinD sidecar.
@@ -329,6 +331,7 @@ No work package in #528 requires a schema bump — the config/workspace/manifest
 | Item | Relationship |
 |---|---|
 | [Selectable sandbox backends](/roadmap/selectable-sandbox-backends/) | Umbrella for Docker, OrbStack, Kubernetes, and future microVM backends. |
+| [Apple Container backend](/roadmap/apple-container-backend/) | macOS 26 ARM VM backend. Rootless DinD (this contract's Phase B) is the prerequisite for Apple Container Phase 0. |
 | [OrbStack isolated machine backend](/roadmap/orbstack-isolated-machine-backend/) | macOS backend that still needs Docker-compatible inner workflows. |
 | [Network egress policy](/roadmap/network-egress-policy/) | V2 proxy-sidecar egress enforcement and connection logs beyond the IPv4 allowlist. |
 | [Declarative resource limits](/roadmap/declarative-resource-limits/) | Supplies resource budget schema and parser. |
