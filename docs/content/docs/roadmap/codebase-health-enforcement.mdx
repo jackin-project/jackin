@@ -85,6 +85,12 @@ Worked example — the `build_log` inversion (P2): define `trait BuildLogSink` i
 
 **Decision:** once its value types relocate to `jackin-core` (D2/D3) the crate holds only the launch-cockpit UI; rename it `jackin-launch-tui`. **Why:** the name then announces it is a presentation surface, so no one expects the launch *logic* (which lives in `jackin-runtime`) here — resolving P3 fully rather than relying on a doc comment. Establishes a `-tui` suffix convention for app UI surfaces, distinct from the shared `jackin-tui` design-system crate. Not folded into `jackin-console`: the launch cockpit and the interactive console are separate surfaces with independent lifecycles, and folding would bloat the already-oversized console crate.
 
+### D5 — TUI runtime (W6): one in-house shared Elm runtime in `jackin-tui`, not `tui-realm`
+
+**Decision:** build the shared runtime in-house — distill the common `Model`/`Message`/`update` plus a `Component`/`View` contract out of the four existing Elm stacks into `jackin-tui`; the stacks (`jackin-console`, the capsule TUI, `jackin-launch-tui`, and the per-screen `editor`/`settings`/`workspaces` stacks) become components/screens on that one runtime. Do **not** adopt `tui-realm`. **Why:** jackin❯ already has substantial *custom* terminal infrastructure (`jackin-term`'s VT model, the capsule re-emitting multiplexer, the attach-capability matrix) that an opinionated external framework would have to coexist with and could fight; in-house keeps full control, fits that model exactly, adds no dependency to clear against the strict `deny.toml` license/supply-chain gate, and is incremental (four working implementations already exist to distill). The research's own framing: the *pattern*, not the `tui-realm` dependency, is the takeaway.
+
+**Contract shape.** The runtime centers on **one** `update(&mut Model, Message)` per app (canonical TEA), with components translating input events → messages — *not* per-component co-located update loops (the "co-location reduces duplication" claim was adversarially refuted; the single central `update` is the actual de-duplication). Sequence with [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/), which already collapses two of the four stacks (editor + settings) and is the first consumer of the shared contract.
+
 ## Workstreams
 
 ### W1 — Architecture & boundaries (the core restructuring)
