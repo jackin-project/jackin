@@ -1176,12 +1176,16 @@ html.theme-init *::after {
   }
 }
 
+/* Match the layout's sidebar column (15.25rem, set on #nd-docs-layout). When
+   this was 18rem the sidebar *content* was wider than its column, overflowing ~44px
+   off the left edge and clipping the logo + nav labels (worse as the window
+   narrows). Keep both in lockstep. */
 #nd-sidebar:not([data-collapsed='true']) {
-  --fd-sidebar-width: 18rem;
+  --fd-sidebar-width: 15.25rem;
 }
 
 #nd-sidebar[data-collapsed='true'][data-hovered='true'] {
-  --fd-sidebar-width: 18rem;
+  --fd-sidebar-width: 15.25rem;
 }
 
 #nd-sidebar:not([data-collapsed='true']) > div:first-child,
