@@ -8,6 +8,10 @@ The umbrella tracker for keeping jackin❯ reviewable as it grows. The thesis: *
 
 Three workstreams, in order: **A. stricter lints**, **B. a file-size ratchet gate** (the part Clippy cannot do), **C. decompose the current offenders** so they pass A and B. A and B are the lasting change; C is the one-time remediation they force.
 
+<Aside type="caution">
+**Structure only — never behavior.** Every change under this item is a pure structural reorganization: moving code between files, tightening lint config, adding a CI gate. It must not alter business logic, control flow, public behavior, or anything an operator can observe. Usability and workability stay byte-for-byte identical. The reorganization is *correct* only if the existing test suite and behavioral specs pass unchanged — no test is rewritten to accommodate a move, no logic is "improved" along the way. If a real bug or genuine logic improvement is spotted during a split, it is filed separately and fixed in its own behavior-changing PR, never folded into a structural one.
+</Aside>
+
 ## Problem
 
 The repository is large and still growing. Today a reviewer opening a PR cannot quickly answer "what does this change and why" because the edited lines sit inside modules far past what anyone holds in their head: `usage.rs` is 6374L, `tui/app.rs` is 5083L, and several functions inside them are hundreds of lines each. The existing crate boundaries do not constrain intra-crate file or function size at all. Every previous fix has been a manual one-off split; the files grew back or new ones took their place (see [What shipped in Phase 2](#what-shipped-in-phase-2) — four files were split, five new ones now exceed the old thresholds). One-off cleanups do not hold. Only an enforced ceiling does.
@@ -103,7 +107,7 @@ The lesson driving this item: those splits were correct but unguarded, so the fi
 
 1. **Phase 0 — measure (A0).** Apply the A1–A4 lints locally and capture violation counts + current maxima. Pick non-breaking initial thresholds.
 2. **Phase 1 — land the gates green.** Ship A1–A5 at baseline thresholds with `#[expect]` grandfathering, and the Workstream B ratchet seeded from today's offenders. Nothing breaks; the ceiling stops getting worse from this point.
-3. **Phase 2 — remediate (C).** Decompose offenders one PR at a time (`usage.rs` first — largest, most self-contained; then `runtime/image.rs`; then the console targets alongside [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/)). Each PR deletes budget entries and `#[expect]`s.
+3. **Phase 2 — remediate (C).** Decompose offenders one PR at a time (`usage.rs` first — largest, most self-contained; then `runtime/image.rs`; then the console targets alongside [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/)). Each PR deletes budget entries and `#[expect]`s. Every such PR is **structure-only** — it must land with the existing test suite and behavioral specs (the `runtime-launch` and `op-picker` specs are the oracle) green and unmodified, which is the proof that behavior is unchanged. A move that forces a test edit is a move that changed behavior; back it out.
 4. **Phase 3 — tighten.** Once the backlog is small, ratchet thresholds and the file cap toward target (proposed: files ≤ 1500L, functions ≤ 150 logical lines) and delete the now-empty allowlist.
 
 The item stays open until the gates are enforced and the Phase 2 (current) offenders and `#[expect]` backlog are cleared.
