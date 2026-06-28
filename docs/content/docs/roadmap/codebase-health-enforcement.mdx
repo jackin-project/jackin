@@ -81,6 +81,10 @@ Worked example — the `build_log` inversion (P2): define `trait BuildLogSink` i
 
 **Binding condition — `jackin-instance` and `jackin-isolation` are on the launch hot path.** Unlike the cold `jackin-host`/`jackin-usage` carves, these split a tight `jackin load` sequence across crate boundaries, so per D1: enable `lto = "thin"` in the release profile **and** establish a launch/attach benchmark **before** these two crates land; the carve PR must show no measurable regression. The cold carves (`jackin-host`, `jackin-usage`) carry no such gate. `jackin-console`'s own internal carve rides with [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/), not this topology change.
 
+### D4 — `jackin-launch` → `jackin-launch-tui`
+
+**Decision:** once its value types relocate to `jackin-core` (D2/D3) the crate holds only the launch-cockpit UI; rename it `jackin-launch-tui`. **Why:** the name then announces it is a presentation surface, so no one expects the launch *logic* (which lives in `jackin-runtime`) here — resolving P3 fully rather than relying on a doc comment. Establishes a `-tui` suffix convention for app UI surfaces, distinct from the shared `jackin-tui` design-system crate. Not folded into `jackin-console`: the launch cockpit and the interactive console are separate surfaces with independent lifecycles, and folding would bloat the already-oversized console crate.
+
 ## Workstreams
 
 ### W1 — Architecture & boundaries (the core restructuring)
