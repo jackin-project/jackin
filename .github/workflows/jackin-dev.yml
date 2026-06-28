@@ -15,11 +15,7 @@ on:
     paths:
       - ".github/actions/sign-and-attest-archive/**"
       - ".github/workflows/jackin-dev.yml"
-      - "Cargo.lock"
-      - "Cargo.toml"
       - "crates/jackin-dev/**"
-      - "mise.toml"
-      - "rust-toolchain.toml"
   workflow_dispatch:
     inputs:
       lanes:
@@ -28,6 +24,10 @@ on:
         type: choice
         default: github
         options: [github, velnor, both]
+
+concurrency:
+  group: jackin-dev-publish
+  cancel-in-progress: true
 
 jobs:
   validate-version-bump:
@@ -186,6 +186,7 @@ jobs:
         run: echo "jackin-dev version publication is checked only on main"
 
   build:
+    if: github.event_name != 'pull_request'
     needs: [version, matrix-setup, assert-version]
     runs-on: ${{ fromJSON(matrix.config.runner) }}
     timeout-minutes: 60
@@ -325,6 +326,9 @@ jobs:
     needs: [version, matrix-setup, assert-version, build]
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    concurrency:
+      group: homebrew-tap-publish
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -354,6 +358,7 @@ jobs:
           path: homebrew-tap
       - name: Rewrite jackin-dev formula
         env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           read_sha() {
@@ -407,5 +412,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Formula/jackin-dev.rb
-          git commit -m "Update jackin-dev to ${VERSION}"
-          git push origin main
+          if git diff --cached --quiet --exit-code; then
+            echo "jackin-dev formula already up to date for ${VERSION}"
+            exit 0
+          fi
+          branch="jackin-dev/formula-${VERSION}"
+          git switch -c "$branch"
+          git commit -m "chore: update jackin-dev to ${VERSION}"
+          git push -u origin "$branch"
+          pr_url=$(gh pr create \
+            --repo jackin-project/homebrew-tap \
+            --title "chore: update jackin-dev to ${VERSION}" \
+            --body "Automated formula update for jackin-dev ${VERSION}. Release: https://github.com/jackin-project/jackin/releases/tag/jackin-dev-v${VERSION}" \
+            --base main \
+            --head "$branch")
+          echo "Opened PR: $pr_url"
+          gh pr merge "$pr_url" --squash --delete-branch
