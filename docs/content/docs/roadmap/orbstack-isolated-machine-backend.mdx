@@ -2,7 +2,7 @@
 title: "OrbStack Isolated Machine Backend"
 ---
 
-**Status**: Deferred — shared-kernel architecture does not address the kernel isolation gap for the current macOS ARM audience; see [smolvm backend research](/reference/roadmap/smolvm-backend-research/) for the active VM isolation track
+**Status**: Deferred — shared-kernel architecture does not address the kernel isolation gap for the current macOS ARM audience; see [smolvm backend research](/roadmap/smolvm-backend-research/) for the active VM isolation track
 
 ## Why This Item Is Deferred
 
@@ -41,9 +41,9 @@ Namespace isolation does not change any of these attack surfaces. The kernel is 
 
 As of June 2026, three paths give a true per-workload kernel boundary on macOS ARM:
 
-**Docker Sandboxes** (Docker Inc., launched January 2026): each sandbox runs in a dedicated microVM using a proprietary VMM built on Apple Hypervisor.framework on macOS. The host Docker daemon cannot see sandboxes in `docker ps`. Each sandbox has its own private Docker daemon and its own kernel. Credentials are proxied outside the VM boundary. Explicitly supports Claude Code, Codex CLI, GitHub Copilot CLI, Gemini CLI, OpenCode, Kiro, and Docker Agent. This is the shape jackin' needs: private Docker daemon inside a true hypervisor boundary, not a shared-kernel namespace. Covered in the [smolvm backend research](/reference/roadmap/smolvm-backend-research/) comparison.
+**Docker Sandboxes** (Docker Inc., launched January 2026): each sandbox runs in a dedicated microVM using a proprietary VMM built on Apple Hypervisor.framework on macOS. The host Docker daemon cannot see sandboxes in `docker ps`. Each sandbox has its own private Docker daemon and its own kernel. Credentials are proxied outside the VM boundary. Explicitly supports Claude Code, Codex CLI, GitHub Copilot CLI, Gemini CLI, OpenCode, Kiro, and Docker Agent. This is the shape jackin' needs: private Docker daemon inside a true hypervisor boundary, not a shared-kernel namespace. Covered in the [smolvm backend research](/roadmap/smolvm-backend-research/) comparison.
 
-**smolvm** (open-source, Apache-2.0): uses libkrun and Hypervisor.framework on macOS to give each workload its own kernel. Network off by default. OCI image input. Direct active research track in [smolvm backend research](/reference/roadmap/smolvm-backend-research/), including a full comparison against Docker Sandboxes.
+**smolvm** (open-source, Apache-2.0): uses libkrun and Hypervisor.framework on macOS to give each workload its own kernel. Network off by default. OCI image input. Direct active research track in [smolvm backend research](/roadmap/smolvm-backend-research/), including a full comparison against Docker Sandboxes.
 
 **Apple Container framework** (announced with macOS 26 Tahoe, 2026): each OCI container runs inside its own lightweight VM via Virtualization.framework, natively on Apple Silicon. Sub-second start times. True hypervisor isolation per container, not namespace isolation. OCI-compatible. This is the native macOS ARM path closest to what this roadmap item originally sought — a first-class isolation layer without needing Docker or OrbStack machinery at the VM level. Needs evaluation once macOS 26 operator adoption reaches a usable threshold.
 
