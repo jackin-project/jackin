@@ -24,10 +24,11 @@ const WHITE = '#ffffff'
 const GREEN = '#5cf07a'
 const DARK = '#0a0a0a'
 const GREY = '#9ca8a1'
-// Light-surface variant: dark word + AA accent chevron + darker byline, for the
-// logo on white chrome (docs header/sidebar, landing footer) in light mode.
+// Light-surface variant: dark word + the SAME brand-green chevron as dark mode
+// (#5cf07a) + darker byline, for the logo on white chrome (docs header/sidebar,
+// landing footer) in light mode. Only the word darkens for contrast; the chevron
+// stays the canonical brand green.
 const DARK_WORD = '#15181c'
-const ACCENT = '#0b774e'
 const GREY_DARK = '#5d6460'
 const round = (n: number) => Math.round(n * 100) / 100
 
@@ -141,7 +142,7 @@ console.log('wrote public/brand/jackin-monogram.svg')
 
 // Light-surface variant (dark word + accent chevron) for white chrome in light
 // mode. Same geometry as the white wordmark, so no separate alignment assert.
-const wordmarkOnlight = wordmarkSvg('jackin', 200, DARK_WORD, ACCENT, true, GREY_DARK)
+const wordmarkOnlight = wordmarkSvg('jackin', 200, DARK_WORD, GREEN, true, GREY_DARK)
 writeFileSync(join(brandDir, 'jackin-wordmark-onlight.svg'), wordmarkOnlight)
 console.log('wrote public/brand/jackin-wordmark-onlight.svg')
 writeFileSync(join(brandDir, 'jackin-lockup-onlight.svg'), wordmarkOnlight)
