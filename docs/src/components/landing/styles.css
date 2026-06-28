@@ -107,20 +107,19 @@
    deep-forest accent. */
 :root[data-theme='light'] {
   --landing-bg: #ffffff;
-  --landing-bg-deep: #e9edeb;
-  --landing-panel: #f6f8f7;
-  --landing-text: #1a1c1b;
-  --landing-text-dim: #5d6460;
-  --landing-text-ghost: #8a928e;
-  --landing-accent: #1d9e75;    /* deep forest — matches docs --jk-accent (AA on white) */
+  --landing-bg-deep: #e8eaee;
+  --landing-panel: #f4f5f7;
+  --landing-text: #15181c;
+  --landing-text-dim: #535a61;
+  --landing-text-ghost: #828b93;
+  --landing-accent: #0b774e;    /* AA on white (~5:1) — matches docs --jk-accent */
   --landing-danger: #b0183a;
-  --landing-ui: rgba(0, 0, 0, 0.08);
-  --landing-ui-strong: rgba(0, 0, 0, 0.18);
-  --landing-ui-subtle: rgba(0, 0, 0, 0.04);
+  --landing-ui: rgba(17, 24, 39, 0.1);   /* neutral border family — matches docs */
+  --landing-ui-strong: rgba(17, 24, 39, 0.2);
+  --landing-ui-subtle: rgba(17, 24, 39, 0.05);
 
-  /* Juicy mid-green (docs --jk-brand) for borders and accent washes in
-     the body — stays visible at low alpha on white panels. */
-  --landing-accent-rgb: 29 158 117;
+  /* rgb of --landing-accent (#0b774e) for low-alpha washes/glows. */
+  --landing-accent-rgb: 11 119 78;
 
   --landing-page-bg: var(--landing-bg);
 
@@ -130,11 +129,9 @@
      separate display:none rule. */
   --landing-grid-dot: transparent;
 
-  /* Green-tinted card shadows mirror the phosphor-bleed of dark mode
-     so cards feel like they're lifting out of a jackin' halo, not
-     casting a plain black drop. */
-  --landing-card-shadow-soft: 0 14px 32px rgba(10, 80, 30, 0.12);
-  --landing-card-shadow-strong: 0 20px 48px rgba(10, 80, 30, 0.18);
+  /* Neutral card shadows — no green tint on the white page. */
+  --landing-card-shadow-soft: 0 14px 32px rgba(17, 24, 39, 0.1);
+  --landing-card-shadow-strong: 0 20px 48px rgba(17, 24, 39, 0.16);
   --landing-terminal-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.12),
     0 1px 1px rgba(0, 0, 0, 0.04),

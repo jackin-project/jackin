@@ -182,27 +182,27 @@
   color-scheme: light;
 
   --jk-bg:         #ffffff;
-  --jk-bg-deep:    #e2e9e5;   /* recessed state (active toggle, pressed badge) */
-  --jk-panel:      #f2f6f3;   /* lifted surface (cards, pills, modals) */
-  --jk-text:       #111513;
-  --jk-prose:      #242b27;
-  --jk-text-dim:   #4b554f;
-  --jk-text-ghost: #76817b;
-  --jk-accent:     #1d9e75;
-  --jk-accent-dim: #12664c;
-  --jk-brand:      #5cf07a;
-  --jk-brand-muted: #1d9e75;
-  --jk-ui:         rgba(5, 20, 12, 0.1);
-  --jk-ui-strong:  rgba(5, 20, 12, 0.22);
-  --jk-ui-subtle:  rgba(5, 20, 12, 0.055);
+  --jk-bg-deep:    #e8eaee;   /* recessed state (active toggle, pressed badge) — neutral */
+  --jk-panel:      #f4f5f7;   /* lifted surface (cards, pills, modals) — neutral grey */
+  --jk-text:       #15181c;
+  --jk-prose:      #262b30;
+  --jk-text-dim:   #535a61;
+  --jk-text-ghost: #828b93;
+  --jk-accent:     #0b774e;   /* AA on white (~5:1): links, active, borders, icons */
+  --jk-accent-dim: #0a5e3d;
+  --jk-brand:      #5cf07a;   /* phosphor — DARK MODE ONLY, never on a light surface */
+  --jk-brand-muted: #0b774e;
+  --jk-ui:         rgba(17, 24, 39, 0.1);   /* one neutral border family */
+  --jk-ui-strong:  rgba(17, 24, 39, 0.2);
+  --jk-ui-subtle:  rgba(17, 24, 39, 0.05);
   --jk-code-bg:    #070807;
   --jk-code-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 0 0 1px rgba(24, 92, 48, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(17, 24, 39, 0.14),
     0 1px 1px rgba(0, 0, 0, 0.04),
-    0 16px 34px rgba(4, 9, 6, 0.14),
-    0 5px 14px rgba(4, 9, 6, 0.1);
-  --jk-sidebar-hover-bg: rgba(0, 111, 34, 0.095);
+    0 16px 34px rgba(17, 24, 39, 0.12),
+    0 5px 14px rgba(17, 24, 39, 0.08);
+  --jk-sidebar-hover-bg: rgba(17, 24, 39, 0.05);
   --jk-sidebar-hover-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.72),
     0 1px 1px rgba(0, 0, 0, 0.04);
@@ -221,7 +221,7 @@
 
   --sl-color-bg-inline-code: var(--jk-panel);
 
-  --sl-color-accent-low:  rgba(0, 111, 34, 0.15);
+  --sl-color-accent-low:  rgba(11, 119, 78, 0.14);
   --sl-color-accent:      var(--jk-accent);
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
@@ -232,7 +232,7 @@
   --color-fd-muted-foreground: var(--jk-text-dim);
   --color-fd-card: var(--jk-panel);
   --color-fd-card-foreground: var(--jk-text);
-  --color-fd-popover: #f7f8f6;
+  --color-fd-popover: #fbfbfc;
   --color-fd-popover-foreground: var(--jk-text);
   --color-fd-primary: var(--jk-accent);
   --color-fd-primary-foreground: var(--jk-bg);
