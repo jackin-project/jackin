@@ -50,6 +50,10 @@ impl From<Color> for ColorSnap {
 
 /// A comparable snapshot of a single screen cell.
 #[derive(Debug, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 struct CellSnapshot {
     contents: String,
     is_wide: bool,

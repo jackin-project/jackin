@@ -166,7 +166,7 @@ where
 
 #[expect(
     clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
+    reason = "tracked in codebase-health-enforcement"
 )]
 pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     mut config: AppConfig,
