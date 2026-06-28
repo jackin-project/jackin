@@ -151,11 +151,12 @@ pub struct StageLabelTransition {
     pub start_frame: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PromptResult {
-    Value(String),
-    Skipped,
-}
+// Re-exported from `jackin_core` (Workstream 1 — architecture/boundaries:
+// the type was here because `jackin_launch` was a TUI, not the launch
+// orchestrator. Lower crates (`jackin_env::env_resolver`) needed
+// `PromptResult` and had to depend upward on this crate purely for the
+// type. Both directions now point inward through `jackin_core`.)
+pub use jackin_core::PromptResult;
 
 #[derive(Debug, Clone)]
 pub struct LaunchIdentity {

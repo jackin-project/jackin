@@ -8,7 +8,10 @@
 use jackin_core::manifest::EnvVarDecl;
 use std::collections::BTreeMap;
 
-pub use jackin_launch::PromptResult;
+// Moved to `jackin_core` (Workstream 1, architecture/boundaries). The
+// `jackin_env -> jackin_launch` edge was the P2 inverted dependency; both
+// now read the type from `jackin_core`.
+pub use jackin_core::PromptResult;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedEnv {
