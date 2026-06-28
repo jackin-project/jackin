@@ -66,6 +66,20 @@ Worked example — the `build_log` inversion (P2): define `trait BuildLogSink` i
 
 **Scope clarification.** This pattern governs only the *streaming sinks* — `build_log` and the launch `progress` updates. The other inversions are **misplaced types, not data flows**, and are fixed by plain relocation, no port needed: `PromptResult` (env → launch) and the `progress` value types (runtime → tui) move to `jackin-core`; the terminal-ownership / debug-surface state moves out of `jackin-diagnostics` to a presentation/terminal crate (P7). A trait port is used *only* where a lower layer actively pushes data upward at runtime.
 
+### D3 — Target crate graph: full carve into four new crates
+
+**Decision:** the end-state topology adds **four new crates** by carving the two god-crates, plus relocations/dedup. Layers, with dependencies pointing strictly inward (L0 lowest):
+
+- **L0 domain (IO-free, owns the ports):** `jackin-core` (cleaned of presentation helpers; gains the trait ports + relocated `PromptResult`/`progress` types), `jackin-config` (schema), `jackin-manifest`, `jackin-protocol`.
+- **L1 application/orchestration:** `jackin-runtime` (shrinks to the launch/bootstrap pipeline), **`jackin-instance`** *(new — instance identity/manifest/index/recovery)*, **`jackin-isolation`** *(new — mount isolation: shared/worktree/clone)*, `jackin-env`, `jackin-image` (absorbs `runtime/image.rs`, killing P5).
+- **L2 infrastructure/adapters:** `jackin-docker` (implements the ports), **`jackin-host`** *(new — host OS integration: desktop, clipboard, caffeinate/keep-awake)*, `jackin-diagnostics` (observability only), `jackin-term`.
+- **L3 presentation:** `jackin-tui` (design system + unified Elm runtime), `jackin-launch` (renamed/folded — see D4), `jackin-console`.
+- **L4 entry/glue:** `jackin` (CLI; shim maze deleted), `jackin-capsule` (PID1 + PTY daemon), **`jackin-usage`** *(new — usage/pricing/telemetry/token monitors)*.
+
+**Why full carve over the cooler hybrid:** it is the only option that makes every crate name a true subsystem boundary, which is the goal; the navigability win on `instance`/`isolation` is worth the cost.
+
+**Binding condition — `jackin-instance` and `jackin-isolation` are on the launch hot path.** Unlike the cold `jackin-host`/`jackin-usage` carves, these split a tight `jackin load` sequence across crate boundaries, so per D1: enable `lto = "thin"` in the release profile **and** establish a launch/attach benchmark **before** these two crates land; the carve PR must show no measurable regression. The cold carves (`jackin-host`, `jackin-usage`) carry no such gate. `jackin-console`'s own internal carve rides with [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/), not this topology change.
+
 ## Workstreams
 
 ### W1 — Architecture & boundaries (the core restructuring)
