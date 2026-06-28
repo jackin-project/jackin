@@ -39,7 +39,7 @@ pub(crate) fn main_view_hint(
     if prefix_awaiting {
         let mut spans = PREFIX_COMMAND_KEYMAP.hint_spans(); // all Shown prefix keys
         spans.push(HintSpan::GroupSep);
-        spans.push(HintSpan::Dyn(format_key_glyph(palette_key))); // dynamic palette key glyph
+        spans.push(HintSpan::DynKey(format_key_glyph(palette_key))); // dynamic palette key glyph
         spans.push(HintSpan::Text("palette"));
         spans.push(HintSpan::GroupSep);
         spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans()); // Ctrl-Q quit
@@ -54,14 +54,14 @@ pub(crate) fn main_view_hint(
         spans.push(HintSpan::Key("Esc"));
         spans.push(HintSpan::Text("exit scrollback"));
         spans.push(HintSpan::GroupSep);
-        spans.push(HintSpan::Dyn(format_key_glyph(palette_key)));
+        spans.push(HintSpan::DynKey(format_key_glyph(palette_key)));
         spans.push(HintSpan::Text("menu"));
         spans.push(HintSpan::GroupSep);
         spans.extend(CAPSULE_GLOBAL_KEYMAP.hint_spans());
         spans
     } else {
         let mut spans = vec![
-            HintSpan::Dyn(format_key_glyph(palette_key)),
+            HintSpan::DynKey(format_key_glyph(palette_key)),
             HintSpan::Text("menu"),
         ];
         let scroll = jackin_tui::components::scroll_hint_spans(axes);

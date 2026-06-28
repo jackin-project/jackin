@@ -134,7 +134,7 @@ impl VirtualTerminalProfile {
     }
 }
 
-/// Width of one accepted cluster in the jackin' virtual terminal profile.
+/// Width of one accepted cluster in the jackin❯ virtual terminal profile.
 #[must_use]
 pub fn display_width(cluster: &str) -> u16 {
     if cluster.is_empty() {

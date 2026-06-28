@@ -2,7 +2,7 @@
 title: "Capsule Terminal Model"
 ---
 
-jackin' Capsule uses `jackin-term` as its owned terminal model. This page records why the old `vt100` dependency was retired and what `jackin-term` owns.
+jackin❯ Capsule uses `jackin-term` as its owned terminal model. This page records why the old `vt100` dependency was retired and what `jackin-term` owns.
 
 ## The Job
 
@@ -27,7 +27,7 @@ PTY bytes
   -> ClientWriter synchronized frame
 ```
 
-`vte` is still an external dependency because parsing terminal escape bytes is a solved parser problem. jackin' owns the grid, damage tracking, snapshots, passthrough stream, and capsule-facing API.
+`vte` is still an external dependency because parsing terminal escape bytes is a solved parser problem. jackin❯ owns the grid, damage tracking, snapshots, passthrough stream, and capsule-facing API.
 
 ## Why `vt100` Was The First Choice
 
@@ -45,7 +45,7 @@ The retired path depended on a fork pinned to a git SHA, not the crates.io relea
 vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715..." }
 ```
 
-The fork existed for capsule-specific behavior, especially scrollback clearing. The upstream maintenance signal made that fork effectively permanent: the upstream crate had gone quiet, had multiple old unmerged PRs, and the exact scrollback-clearing patch jackin' needed was still not merged. Continuing with `vt100` meant carrying an ad hoc fork indefinitely.
+The fork existed for capsule-specific behavior, especially scrollback clearing. The upstream maintenance signal made that fork effectively permanent: the upstream crate had gone quiet, had multiple old unmerged PRs, and the exact scrollback-clearing patch jackin❯ needed was still not merged. Continuing with `vt100` meant carrying an ad hoc fork indefinitely.
 
 The bigger technical issue was fit. The Capsule no longer used `vt100`'s defining emit API. The old live path read the entire `vt100::Screen`, rebuilt pane snapshots, allocated strings for cell contents, diffed those snapshots itself, and only then emitted changes. That meant `vt100` supplied a parser and readable grid, but it did not supply the data the live renderer actually needed: source-recorded damage.
 
@@ -111,12 +111,12 @@ The key measurement evidence recorded during the PR:
 
 The evaluated alternatives each helped clarify the design, but none replaced the need for `jackin-term`:
 
-- `alacritty_terminal` has a fast grid and damage ideas, but it is built for GPU terminal rendering and does not provide jackin's re-emitting multiplexer API.
+- `alacritty_terminal` has a fast grid and damage ideas, but it is built for GPU terminal rendering and does not provide jackin❯ re-emitting multiplexer API.
 - `termwiz` has useful surface/diff API ideas, but brings a heavier WezTerm-shaped model and still does not own Capsule-specific passthrough and control semantics.
 - Zellij proves the architecture: `vte` plus an owned grid plus damage-aware terminal output. Its implementation is application-internal, not a small reusable crate.
 - libvterm and Ghostty are valuable references, but non-Rust libraries are not acceptable dependencies for this project. Their ideas can be reimplemented in Rust with attribution; their binaries are not linked.
 
-The result is intentionally hybrid: depend on `vte` for the parser, borrow proven grid/damage ideas from mature terminals and multiplexers, and keep jackin's capsule-specific model in a small Rust crate that the workspace controls.
+The result is intentionally hybrid: depend on `vte` for the parser, borrow proven grid/damage ideas from mature terminals and multiplexers, and keep jackin❯ capsule-specific model in a small Rust crate that the workspace controls.
 
 ## The emit side: one frame model, one writer
 

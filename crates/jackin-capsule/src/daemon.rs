@@ -82,8 +82,8 @@ use crate::tui::components::branch_context_bar::branch_context_bar_layout;
 #[cfg(test)]
 use crate::tui::components::dialog::ConfirmKind;
 use crate::tui::components::dialog::{
-    Dialog, DialogAction, GithubContextView, PaletteCloseLabel, PaletteCommand, PickerIntent,
-    SplitDirection, github_context_view_from_state,
+    Dialog, DialogAction, GithubContextView, InspectRow, PaletteCloseLabel, PaletteCommand,
+    PickerIntent, SplitDirection, github_context_view_from_state,
 };
 use crate::tui::components::status_bar::prefix_mode_for_mux_mode;
 use crate::tui::components::status_bar::{STATUS_BAR_ROWS, StatusBar};
@@ -180,6 +180,9 @@ pub struct Multiplexer {
     content_rows: u16,
     available_agents: Vec<String>,
     launch_config: CapsuleConfig,
+    /// Set by the dirty-exit modal's keep/discard rows; the event loop writes
+    /// the host exit-action file and drains on the next iteration.
+    exit_request: Option<jackin_protocol::ExitAction>,
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
@@ -470,8 +473,6 @@ impl Multiplexer {
             .collect();
 
         let input_bindings = crate::services::input_bindings::resolve_input_bindings();
-        let palette_glyph =
-            crate::services::input_bindings::palette_key_glyph(input_bindings.palette_key);
         let input_parser = InputParser::new(input_bindings.prefix, input_bindings.palette_key);
         let workdir = PathBuf::from(&launch_config.workdir);
         let workdir_context = WorkdirContext::resolve(&workdir);
@@ -489,7 +490,6 @@ impl Multiplexer {
             status_identity.instance_id,
         );
         status_bar.set_prefix_enabled(input_parser.prefix_enabled());
-        status_bar.palette_key_glyph = palette_glyph;
 
         let ratatui_terminal =
             ratatui::Terminal::new(crate::tui::socket_backend::SocketBackend::new(cols, rows))?;
@@ -505,6 +505,7 @@ impl Multiplexer {
             content_rows,
             available_agents: agents,
             launch_config,
+            exit_request: None,
             env_passthrough,
             event_tx,
             event_rx,
@@ -725,6 +726,74 @@ fn classify_clipboard_image_error(message: &str) -> &'static str {
 #[cfg(test)]
 use crate::client_writer::scan_emitted_frame;
 
+/// Build the read-only Inspect rows for the dirty-exit modal: a section header
+/// per dirty repo followed by its `<status> <path>` change rows.
+fn build_exit_inspect_rows(repos: &[crate::exit_assess::DirtyRepo]) -> Arc<[InspectRow]> {
+    use crate::tui::components::dialog::InspectRow;
+    let mut rows = Vec::new();
+    for repo in repos {
+        rows.push(InspectRow::Repo(repo.label().to_owned()));
+        for f in &repo.changed {
+            rows.push(InspectRow::File(format!("{} {}", f.status, f.path)));
+        }
+    }
+    rows.into()
+}
+
+/// Handle the last live session exiting. Returns `true` when the daemon should
+/// exit and `false` to keep the event loop running — either because a dirty-exit
+/// modal was just opened, or because the modal flow is already in progress
+/// (re-entry guard). With policy `ask` and dirty isolated work the modal is
+/// shown (no teardown); otherwise the container drains and exits, preserving the
+/// original non-clean-exit reason.
+async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>) -> bool {
+    // Called from two sites: the session-exit event handler (once, on last-session
+    // exit) and the client-frame handler (on every frame while no sessions remain).
+    // The guard below handles the client-frame re-entry case: if a dialog is already
+    // open (modal, Inspect view, or New-tab picker launched from "Start a new agent")
+    // the dirty-exit flow is already active. Re-entering would push a fresh modal
+    // and re-run the git assessment on every keypress, resetting selection to 0 —
+    // so the operator could never move past the first row. Defer until resolved.
+    if mux.dialog_open() {
+        return false;
+    }
+    match crate::exit_assess::decide_exit(&mux.launch_config).await {
+        crate::exit_assess::ExitDecision::Drain => {
+            if let Some(ref r) = reason {
+                crate::clog!("session: final session exited: {r}");
+            }
+            drain_and_exit_with_reason(mux, reason).await;
+            true
+        }
+        crate::exit_assess::ExitDecision::DrainWithAction(action) => {
+            // Policy keep/discard: record the action for the host, no prompt.
+            // Write failure is logged but does not block exit — a configured
+            // policy path cannot stall indefinitely waiting for a broken fs.
+            if let Err(error) = crate::exit_assess::write_exit_action(action) {
+                crate::output::stderr_line(format_args!(
+                    "[daemon] exit: failed to write exit-action file, policy will not be applied: {error}"
+                ));
+            }
+            drain_and_exit_with_reason(mux, reason).await;
+            true
+        }
+        crate::exit_assess::ExitDecision::ShowModal(repos) => {
+            crate::clog!(
+                "exit: {} dirty repo(s) with policy ask — showing in-capsule dirty-exit modal",
+                repos.len()
+            );
+            let summary = repos
+                .iter()
+                .map(crate::exit_assess::DirtyRepo::summary_line)
+                .collect();
+            let inspect_rows = build_exit_inspect_rows(&repos);
+            mux.dialog_push(Dialog::new_exit_dirty(summary, inspect_rows));
+            mux.invalidate(FullRedrawReason::DialogChange);
+            false
+        }
+    }
+}
+
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
 pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
     crate::pid1::install_sigchld_reaper();
@@ -829,6 +898,23 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
     // `?2026` brackets, not from pacing.
     let mut last_frame_at: Option<tokio::time::Instant> = None;
     loop {
+        // The dirty-exit modal's keep/discard rows set `exit_request`; record
+        // the operator's choice for the host, then drain and exit.
+        if let Some(action) = mux.exit_request.take() {
+            if let Err(error) = crate::exit_assess::write_exit_action(action) {
+                // The operator explicitly chose keep/discard. Draining without
+                // writing the file would lose their choice and silently apply
+                // the wrong host cleanup. Log to stderr (operator-visible) and
+                // retry next loop iteration instead of draining.
+                crate::output::stderr_line(format_args!(
+                    "[daemon] exit: failed to write exit-action file, retrying: {error}"
+                ));
+                mux.exit_request = Some(action);
+            } else {
+                drain_and_exit(&mut mux).await;
+                return Ok(());
+            }
+        }
         if mux.input_parser.esc_pending() {
             if esc_deadline.is_none() {
                 esc_deadline = Some(tokio::time::Instant::now() + escape_time);
@@ -1052,8 +1138,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     mux.detach_requested = false;
                     detach_client(&mut mux).await;
                 }
-                if mux.no_live_sessions() {
-                    drain_and_exit(&mut mux).await;
+                if mux.no_live_sessions()
+                    && handle_last_session_exit(&mut mux, None).await
+                {
                     cleanup_clipboard_run_dir();
                     return Ok(());
                 }
@@ -1138,13 +1225,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         // the agent crashed — there is nothing left to
                         // attach to. Tear down the container so the
                         // host cleanup path fires.
-                        if mux.no_live_sessions() {
-                            if let Some(reason) = reason {
-                                crate::clog!("session {session_id}: final session exited: {reason}");
-                                drain_and_exit_with_reason(&mut mux, Some(reason)).await;
-                            } else {
-                                drain_and_exit(&mut mux).await;
-                            }
+                        if mux.no_live_sessions()
+                            && handle_last_session_exit(&mut mux, reason).await
+                        {
                             return Ok(());
                         }
                     }

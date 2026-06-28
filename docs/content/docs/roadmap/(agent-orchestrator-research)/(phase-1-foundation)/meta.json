@@ -1,0 +1,11 @@
+{
+  "title": "Fleet phase 1 — Foundation gaps",
+  "defaultOpen": false,
+  "pages": [
+    "../../workspace-description",
+    "../../operator-handler-system",
+    "../../declarative-resource-limits",
+    "../../ephemeral-mount-modes",
+    "../../source-branch-policy-isolated-mounts"
+  ]
+}

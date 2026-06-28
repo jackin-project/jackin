@@ -24,7 +24,7 @@ pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
 pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 /// Per-container opt-out for host browser-open affordances. `deny`, `off`,
-/// and `no` suppress explicit jackin' host-open URL actions while leaving
+/// and `no` suppress explicit jackin❯ host-open URL actions while leaving
 /// normal terminal OSC 8 passthrough under `JACKIN_OSC_HYPERLINK`.
 pub const JACKIN_OPEN_LINKS_ENV_NAME: &str = "JACKIN_OPEN_LINKS";
 pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";

@@ -23,11 +23,12 @@ fn recorded_role_container_name(run_cmd: &str) -> &str {
         .expect("role docker run should include --name")
 }
 
-fn assert_amp_not_baked(dockerfile: &str) {
-    // Agent binaries are mounted read-only at run time, not baked into the image.
+fn assert_amp_not_staged_without_install_recipe(dockerfile: &str) {
+    // This direct build-context helper call does not pass an agent install
+    // recipe. The full launch path prepares and bakes supported agents.
     assert!(
         !dockerfile.contains("agent-binaries"),
-        "amp binary must not be baked into the derived image; got: {dockerfile}"
+        "direct build context must not stage an amp binary without an install recipe; got: {dockerfile}"
     );
 }
 
@@ -77,10 +78,11 @@ agents = ["amp"]
         jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None, None)
             .unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
-    assert_amp_not_baked(&dockerfile);
+    assert_amp_not_staged_without_install_recipe(&dockerfile);
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let workspace = ResolvedWorkspace {
+        name: String::new(),
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
         mounts: vec![MountConfig {
@@ -124,8 +126,8 @@ agents = ["amp"]
         "initial agent must be passed as container argv; got: {run_cmd}"
     );
     assert!(
-        run_cmd.contains(":/home/agent/.amp/bin/amp:ro"),
-        "amp binary must be bind-mounted read-only at run time; got: {run_cmd}"
+        !run_cmd.contains(":/home/agent/.amp/bin/amp:ro"),
+        "amp binary is baked into the image and must not be bind-mounted at run time; got: {run_cmd}"
     );
     assert!(!run_cmd.contains("-e JACKIN_ROLE="), "{run_cmd}");
     assert!(run_cmd.contains("-e AMP_API_KEY=test-amp-key"), "{run_cmd}");
@@ -198,6 +200,7 @@ agents = ["amp"]
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let workspace = ResolvedWorkspace {
+        name: String::new(),
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
         mounts: vec![MountConfig {

@@ -8,7 +8,7 @@ fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
         .into_iter()
         .filter_map(|item| match item {
             HintSpan::Key(value) | HintSpan::Text(value) => Some(value.to_owned()),
-            HintSpan::Dyn(value) => Some(value),
+            HintSpan::Dyn(value) | HintSpan::DynKey(value) => Some(value),
             HintSpan::Sep | HintSpan::GroupSep => None,
         })
         .collect()
@@ -51,9 +51,43 @@ fn workspace_list_footer_role_picker_includes_quit() {
 #[test]
 fn workspace_list_footer_instance_snapshot_can_enter_preview() {
     let labels = labels(workspace_list_footer_items(
-        WorkspaceListFooterMode::InstanceRow { has_snapshot: true },
+        WorkspaceListFooterMode::InstanceRow {
+            has_snapshot: true,
+            is_live: true,
+        },
     ));
     assert!(labels.windows(2).any(|pair| pair == ["⇥", "into preview"]));
+}
+
+#[test]
+fn workspace_list_footer_failed_instance_offers_restart_and_delete() {
+    let labels = labels(workspace_list_footer_items(
+        WorkspaceListFooterMode::InstanceRow {
+            has_snapshot: false,
+            is_live: false,
+        },
+    ));
+    // A failed/stopped instance restarts via the restore ladder and can be
+    // deleted; live-only verbs (new session / shell / stop) are absent (D15).
+    assert!(labels.iter().any(|l| l == "restart"));
+    assert!(labels.iter().any(|l| l == "delete"));
+    assert!(!labels.iter().any(|l| l == "new session"));
+    assert!(!labels.iter().any(|l| l == "shell"));
+    assert!(!labels.iter().any(|l| l == "stop"));
+}
+
+#[test]
+fn workspace_list_footer_live_instance_offers_session_actions() {
+    let labels = labels(workspace_list_footer_items(
+        WorkspaceListFooterMode::InstanceRow {
+            has_snapshot: false,
+            is_live: true,
+        },
+    ));
+    assert!(labels.iter().any(|l| l == "reconnect"));
+    assert!(labels.iter().any(|l| l == "new session"));
+    assert!(labels.iter().any(|l| l == "stop"));
+    assert!(!labels.iter().any(|l| l == "restart"));
 }
 
 #[test]
@@ -65,6 +99,7 @@ fn workspace_list_footer_facts_prioritize_inline_pickers() {
             selected_instance: true,
             preview_focused: true,
             selected_instance_has_snapshot: true,
+            selected_instance_is_live: true,
             selected_saved_workspace: true,
             selected_new_workspace: false,
             show_prewarm: true,
@@ -88,6 +123,7 @@ fn workspace_list_footer_facts_derive_row_flags_from_input() {
             inline_role_picker: true,
             preview_focused: true,
             selected_instance_has_snapshot: true,
+            selected_instance_is_live: false,
             show_expand: false,
             show_collapse: true,
             workspace_scroll_axes: ScrollAxes {
@@ -102,6 +138,7 @@ fn workspace_list_footer_facts_derive_row_flags_from_input() {
             selected_instance: false,
             preview_focused: true,
             selected_instance_has_snapshot: true,
+            selected_instance_is_live: false,
             selected_saved_workspace: true,
             selected_new_workspace: false,
             show_prewarm: true,
@@ -181,6 +218,7 @@ fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
             selected_instance: true,
             preview_focused: true,
             selected_instance_has_snapshot: true,
+            selected_instance_is_live: true,
             selected_saved_workspace: false,
             selected_new_workspace: false,
             show_prewarm: false,
@@ -199,6 +237,7 @@ fn workspace_list_footer_facts_route_instance_preview_and_new_workspace() {
             selected_instance: false,
             preview_focused: false,
             selected_instance_has_snapshot: false,
+            selected_instance_is_live: false,
             selected_saved_workspace: false,
             selected_new_workspace: true,
             show_prewarm: false,

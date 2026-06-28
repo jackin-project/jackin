@@ -14,7 +14,7 @@
 /// click regions from the same `status_bar_plan` the widget uses to paint.
 /// The visible shape mirrors the jackin console TUI's tab strip:
 ///
-/// - Row 0: ` jackin' ` brand pill, then tab cells.
+/// - Row 0: ` jackin❯ ` brand pill, then tab cells.
 /// - Row 1: a thick `━` underline beneath the active tab cell only;
 ///   blank elsewhere. The underline carries the operator's focus
 ///   signal — the same pattern the console uses below "General /
@@ -23,7 +23,7 @@
 /// Inactive tab cells get a subtle dark-grey background so they stand
 /// out against the terminal's default-black background. The active tab
 /// uses a slightly lifted graphite background instead of the brand
-/// green, so it stays distinct from the ` jackin' ` brand pill, plus
+/// green, so it stays distinct from the ` jackin❯ ` brand pill, plus
 /// the row-1 white underline.
 ///
 /// Layout columns come from `jackin_tui::lay_out_tabs`, so the
@@ -44,7 +44,7 @@ fn display_cols(s: &str) -> u16 {
     u16::try_from(jackin_tui::display_cols(s)).unwrap_or(u16::MAX)
 }
 
-const BRAND_TEXT: &str = " jackin' ";
+const BRAND_TEXT: &str = " jackin❯ ";
 const BRAND_PAD_COLS: u16 = 1; // single space between brand pill and first tab
 const TAB_GLYPH_PLACEHOLDER: &str = " X";
 
@@ -82,9 +82,6 @@ pub struct StatusBar {
     /// lossy short form `thearchitect`, not the canonical
     /// `the-architect` selector the operator typed).
     pub role: String,
-    /// Short display label for the configured palette key (e.g. `"C-\\"` for
-    /// the default `Ctrl+\`). `None` if the palette shortcut is disabled.
-    pub palette_key_glyph: Option<String>,
 }
 
 impl Default for StatusBar {
@@ -115,7 +112,6 @@ impl StatusBar {
             identity_label,
             instance_id_label,
             role,
-            palette_key_glyph: Some("C-\\".to_owned()),
         }
     }
 
@@ -203,17 +199,10 @@ pub struct StatusBarPlan {
     pub(crate) overflow_col: Option<u16>,
 }
 
-pub(crate) fn button_text_for(prefix_mode: PrefixMode, palette_key_glyph: Option<&str>) -> String {
+pub(crate) fn button_text_for(prefix_mode: PrefixMode) -> &'static str {
     match prefix_mode {
-        PrefixMode::Idle => match palette_key_glyph {
-            // Show configured shortcut key in the label so the operator can see
-            // which chord opens the palette — meaningful when JACKIN_PALETTE_KEY
-            // is overridden from the default Ctrl+\.
-            Some(glyph) => format!(" {glyph} Menu "),
-            // Palette shortcut disabled — fall back to the visual ☰ icon only.
-            None => " ☰Menu ".to_owned(),
-        },
-        PrefixMode::Awaiting => " prefix… ".to_owned(),
+        PrefixMode::Idle => " ☰Menu ",
+        PrefixMode::Awaiting => " prefix… ",
     }
 }
 
@@ -226,10 +215,9 @@ pub fn status_bar_plan(
     active_tab: usize,
     sessions_state: &[(u64, VisibleAgentState)],
     prefix_mode: PrefixMode,
-    palette_key_glyph: Option<&str>,
 ) -> StatusBarPlan {
-    let hint_text = button_text_for(prefix_mode, palette_key_glyph);
-    let hint_cols = display_cols(&hint_text);
+    let hint_text = button_text_for(prefix_mode);
+    let hint_cols = display_cols(hint_text);
     let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
 
     let resolved: Vec<(String, TabGlyph, bool)> = tabs
@@ -283,7 +271,7 @@ pub fn status_bar_plan(
 
     StatusBarPlan {
         cells,
-        hint_text,
+        hint_text: hint_text.to_owned(),
         hint_cols,
         hint_start,
         overflow_col,

@@ -43,7 +43,7 @@ export JACKIN_STATUS_SOURCE="${JACKIN_STATUS_SOURCE:-wrapper-${JACKIN_SESSION_ID
 export JACKIN_AGENT_RUNTIME="${JACKIN_AGENT:-unknown}"
 
 # ── Network allowlist (allowlist tier) ────────────────────────────────
-# The firewall (`jackin-capsule firewall-apply`) is run by jackin' via
+# The firewall (`jackin-capsule firewall-apply`) is run by jackin❯ via
 # `docker exec --user root` AFTER this entrypoint starts but BEFORE the agent
 # session begins, not here in the entrypoint. This avoids a conflict with
 # --security-opt no-new-privileges (docker exec as root needs no setuid
@@ -71,7 +71,7 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
         # Activate the provider's model catalog (real metadata + context window)
         # if runtime-setup wrote one. Passed as -c, not a profile-file key: a
         # profile-file model_catalog_json trips a Codex config-parse bug.
-        catalog="$HOME/.codex/${JACKIN_CODEX_PROFILE}.models.json"
+        catalog="${CODEX_HOME:-$HOME/.codex}/${JACKIN_CODEX_PROFILE}.models.json"
         if [ -f "$catalog" ]; then
             LAUNCH+=(-c "model_catalog_json=$catalog")
         fi

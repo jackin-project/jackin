@@ -84,6 +84,7 @@ pub(super) async fn handle(
                 grok: None,
                 github: None,
                 git_pull_on_entry: git_pull,
+                dirty_exit_policy: None,
                 docker: None,
             };
             let mut editor = crate::config::ConfigEditor::open(paths)?;
@@ -159,7 +160,7 @@ pub(super) async fn handle(
                     })
                     .collect();
                 let mut table = Table::new(rows);
-                table.with(Style::modern_rounded());
+                table.with(Style::modern());
                 println!("{table}");
                 println!();
                 tui::hint("Run ", "jackin workspace show <name>", " for details.");

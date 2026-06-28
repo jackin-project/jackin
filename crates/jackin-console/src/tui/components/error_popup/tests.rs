@@ -37,11 +37,11 @@ fn role_load_error_messages_name_configured_or_repository_source() {
     );
     assert_eq!(
         invalid_role_repository_message("missing jackin.role.toml"),
-        "Repository is not a valid jackin' role: missing jackin.role.toml.",
+        "Repository is not a valid jackin❯ role: missing jackin.role.toml.",
     );
     assert_eq!(
         generic_role_repository_error_message(),
-        "Repository could not be used as a jackin' role.",
+        "Repository could not be used as a jackin❯ role.",
     );
     assert_eq!(
         missing_role_repository_file_message("jackin.role.toml"),

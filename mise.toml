@@ -13,8 +13,8 @@ cargo-binstall = "1.20.1"
 "cargo:sccache" = "0.16.0"
 cosign = "3.1.1"
 shellcheck = "0.11.0"
-node = "24.17.0"
-syft = "1.45.1"
+node = "24.18.0"
+syft = "1.46.0"
 zig = "0.16.0"
 # rust is read from `rust-toolchain.toml` via the `idiomatic_version_file`
 # setting below — single source of truth for the toolchain channel and components.
@@ -22,6 +22,7 @@ zig = "0.16.0"
 [settings]
 cargo.binstall = true
 idiomatic_version_file_enable_tools = ["rust"]
+lockfile = true
 
 # Construct image tasks. Each delegates to the `jackin-xtask` Rust binary
 # via `cargo xtask construct <sub>`; all task logic lives in Rust, not shell.

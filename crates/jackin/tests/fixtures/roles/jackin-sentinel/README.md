@@ -1,6 +1,6 @@
 # jackin-sentinel
 
-Internal jackin' role for manual smoke checks and future PTY, functional, and
+Internal jackin❯ role for manual smoke checks and future PTY, functional, and
 Docker E2E coverage.
 
 The canonical manual-test repository is:
@@ -49,7 +49,7 @@ Manual verification checklist:
 Recommended test tiers:
 
 1. PTY tests drive the rich launch dialogs and assert the visible screen.
-2. Functional tests run jackin' commands against this role with fake or stubbed
+2. Functional tests run jackin❯ commands against this role with fake or stubbed
    external dependencies.
 3. Docker E2E tests launch the role with a real Docker daemon and assert the
    sentinel report, hook markers, env resolution, and diagnostics/build output.

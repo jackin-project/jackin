@@ -684,6 +684,7 @@ mod subpanel_padding {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            dirty_exit_policy: None,
             docker: None,
         }
     }

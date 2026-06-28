@@ -16,7 +16,7 @@ The defects were symptoms of two deeper design mistakes:
 - **The physical terminal had become an untracked fourth model.** `DamageGrid` knew the pane state, Ratatui knew only frames it had emitted, the patch tier knew recently dirtied pane rows, and raw append sites knew about local chrome or mode assertions. None of those models could prove what the operator's terminal actually held after interleaved writes.
 - **Rendering policy leaked into input and event handlers.** Wheel movement, focus swaps, dialogs, PTY feeds, selection, resize, and spawn failures each had to request the right repaint tier. Missing one flag could leave body, footer, cursor, and mode state disagreeing even when the underlying pane model was correct.
 
-This is why the accepted fix is structural. The problem was not that the dirty-patch tier was poorly optimized or that one append site forgot a reset; the problem was that multiple emit paths made the client screen impossible to reason about. jackin' is a single-operator, in-container multiplexer, so correctness and debuggability matter more than minimizing bytes for the common 80x24 stream.
+This is why the accepted fix is structural. The problem was not that the dirty-patch tier was poorly optimized or that one append site forgot a reset; the problem was that multiple emit paths made the client screen impossible to reason about. jackin❯ is a single-operator, in-container multiplexer, so correctness and debuggability matter more than minimizing bytes for the common 80x24 stream.
 
 ## Decision
 

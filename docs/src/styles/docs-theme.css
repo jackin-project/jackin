@@ -35,23 +35,31 @@
      phosphor green while light mode uses a juicy-but-usable mid-green.
      Per-theme values live in the [data-theme='*'] blocks below; this
      fallback matches the dark-mode default for pre-theme-set renders. */
-  --jk-brand:      #00ff41;
+  --jk-brand:      #5cf07a;
+  --jk-brand-muted: #1d9e75;
+
+  /* Logo lockup: the mark is always a phosphor-green block with black
+     letters and a white chevron, on every surface and in both themes.
+     Square corners only — terminals cannot round, so neither do we. */
+  --jk-logo-block:   #00ff41;
+  --jk-logo-ink:     #0a0a0a;
+  --jk-logo-chevron: #ffffff;
 
   /* Fallback --jk-* tokens (dark). Ensures tokens resolve before
      data-theme gets applied to <html>. */
-  --jk-bg:         #0a0b0a;
-  --jk-bg-deep:    #050605;
+  --jk-bg:         #0a0a0a;
+  --jk-bg-deep:    #050505;
   --jk-panel:      #0f1110;
   --jk-text:       #f4f7f5;
   --jk-prose:      #dce4e0;
   --jk-text-dim:   #9ca8a1;
   --jk-text-ghost: #5e6a64;
-  --jk-accent:     #00ff41;
-  --jk-accent-dim: #00b82f;
+  --jk-accent:     #5cf07a;
+  --jk-accent-dim: #1d9e75;
   --jk-ui:         rgba(244, 247, 245, 0.1);
   --jk-ui-strong:  rgba(244, 247, 245, 0.22);
   --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
-  --jk-code-bg:    #050605;
+  --jk-code-bg:    #050505;
   --jk-code-radius: 6px;
   --jk-code-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.07),
@@ -93,16 +101,17 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --jk-bg:         #0a0b0a;
-  --jk-bg-deep:    #050605;
+  --jk-bg:         #0a0a0a;
+  --jk-bg-deep:    #050505;
   --jk-panel:      #0f1110;
   --jk-text:       #f4f7f5;
   --jk-prose:      #dce4e0;
   --jk-text-dim:   #9ca8a1;
   --jk-text-ghost: #5e6a64;
-  --jk-accent:     #00ff41;
-  --jk-accent-dim: #00b82f;
-  --jk-brand:      #00ff41;   /* bright phosphor green on dark surfaces */
+  --jk-accent:     #5cf07a;
+  --jk-accent-dim: #1d9e75;
+  --jk-brand:      #5cf07a;   /* canonical bright chevron green */
+  --jk-brand-muted: #1d9e75;
   --jk-ui:         rgba(244, 247, 245, 0.1);
   --jk-ui-strong:  rgba(244, 247, 245, 0.22);
   --jk-ui-subtle:  rgba(244, 247, 245, 0.05);
@@ -129,7 +138,7 @@
 
   --sl-color-bg-inline-code: var(--jk-panel);
 
-  --sl-color-accent-low:  rgba(0, 255, 65, 0.15);
+  --sl-color-accent-low:  rgba(92, 240, 122, 0.15);
   --sl-color-accent:      var(--jk-accent);
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
@@ -172,27 +181,30 @@
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --jk-bg:         #fbfcfb;
-  --jk-bg-deep:    #e2e9e5;   /* recessed state (active toggle, pressed badge) */
-  --jk-panel:      #f2f6f3;   /* lifted surface (cards, pills, modals) */
-  --jk-text:       #111513;
-  --jk-prose:      #242b27;
-  --jk-text-dim:   #4b554f;
-  --jk-text-ghost: #76817b;
-  --jk-accent:     #006f22;   /* deep forest green — AA contrast on white */
-  --jk-accent-dim: #004f18;   /* deeper still for pressed/active highlights */
-  --jk-brand:      #10a846;   /* saturated mid-green for active chips + accents */
-  --jk-ui:         rgba(5, 20, 12, 0.1);
-  --jk-ui-strong:  rgba(5, 20, 12, 0.22);
-  --jk-ui-subtle:  rgba(5, 20, 12, 0.055);
+  --jk-bg:         #ffffff;
+  --jk-bg-deep:    #e8eaee;   /* recessed state (active toggle, pressed badge) — neutral */
+  --jk-panel:      #f4f5f7;   /* lifted surface (cards, pills, modals) — neutral grey */
+  --jk-text:       #15181c;
+  --jk-prose:      #262b30;
+  --jk-text-dim:   #535a61;
+  --jk-text-ghost: #828b93;
+  --jk-accent:     #0b774e;   /* AA on white (~5:1): links, active, borders, icons */
+  --jk-accent-dim: #0a5e3d;
+  --jk-brand:      #0b774e;   /* light = accent. Phosphor #5cf07a is dark-mode only;
+                                 no light surface renders it, so this resolves to
+                                 the AA accent (fixes TOC active, tabs, diagrams). */
+  --jk-brand-muted: #0b774e;
+  --jk-ui:         rgba(17, 24, 39, 0.1);   /* one neutral border family */
+  --jk-ui-strong:  rgba(17, 24, 39, 0.2);
+  --jk-ui-subtle:  rgba(17, 24, 39, 0.05);
   --jk-code-bg:    #070807;
   --jk-code-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 0 0 1px rgba(24, 92, 48, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(17, 24, 39, 0.14),
     0 1px 1px rgba(0, 0, 0, 0.04),
-    0 16px 34px rgba(4, 9, 6, 0.14),
-    0 5px 14px rgba(4, 9, 6, 0.1);
-  --jk-sidebar-hover-bg: rgba(0, 111, 34, 0.095);
+    0 16px 34px rgba(17, 24, 39, 0.12),
+    0 5px 14px rgba(17, 24, 39, 0.08);
+  --jk-sidebar-hover-bg: rgba(17, 24, 39, 0.05);
   --jk-sidebar-hover-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.72),
     0 1px 1px rgba(0, 0, 0, 0.04);
@@ -211,7 +223,7 @@
 
   --sl-color-bg-inline-code: var(--jk-panel);
 
-  --sl-color-accent-low:  rgba(0, 111, 34, 0.15);
+  --sl-color-accent-low:  rgba(11, 119, 78, 0.14);
   --sl-color-accent:      var(--jk-accent);
   --sl-color-accent-high: var(--jk-accent);
   --sl-color-text-accent: var(--jk-accent);
@@ -222,7 +234,7 @@
   --color-fd-muted-foreground: var(--jk-text-dim);
   --color-fd-card: var(--jk-panel);
   --color-fd-card-foreground: var(--jk-text);
-  --color-fd-popover: #f7f8f6;
+  --color-fd-popover: #fbfbfc;
   --color-fd-popover-foreground: var(--jk-text);
   --color-fd-primary: var(--jk-accent);
   --color-fd-primary-foreground: var(--jk-bg);
@@ -258,29 +270,66 @@ body {
   background: var(--jk-bg);
 }
 
+/* Canonical brand lockup is a single inline SVG (see BrandMark.tsx) so every
+   placement — header, sidebar, mobile nav, landing, footer — is pixel-identical
+   and scales by the element's font-size. The wrapper only handles layout; the
+   green block, letters, and chevron all live inside the SVG. */
+.jk-brand-mark,
 .jk-site-title,
 .jk-sidebar-wordmark {
-  font-family: 'Inter Black', 'Inter', sans-serif;
-  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
   line-height: 1;
-  letter-spacing: -0.04em;
-  color: var(--jk-text);
   user-select: none;
 }
 
+.jk-brand-mark__svg-wrap {
+  display: inline-flex;
+}
+
+.jk-brand-mark__svg {
+  display: block;
+  height: 1.5em;
+  width: auto;
+}
+
+/* Variant switch: white-word mark on dark surfaces (default), dark-word mark on
+   white chrome in light mode. The hero canvas stays dark in light mode, so its
+   logo (.landing-logo) keeps the white-word variant. */
+.jk-brand-mark__svg--onlight {
+  display: none;
+}
+:root[data-theme='light'] .jk-brand-mark__svg--ondark {
+  display: none;
+}
+:root[data-theme='light'] .jk-brand-mark__svg--onlight {
+  display: block;
+}
+:root[data-theme='light'] .landing-logo .jk-brand-mark__svg--ondark {
+  display: block;
+}
+:root[data-theme='light'] .landing-logo .jk-brand-mark__svg--onlight {
+  display: none;
+}
+
+/* Lockup = mark with the "by tailrocks" byline stacked beneath it. */
+.jk-brand-mark--lockup {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45em;
+}
+
 .jk-site-title {
-  font-size: 1.375rem;
+  font-size: 1.5rem;
 }
 
-.jk-site-title .tick,
-.jk-sidebar-wordmark .tick {
-  color: #00ff41;
-  text-shadow: 0 0 0.2em rgba(0, 255, 65, 0.45);
-}
-
-:root[data-theme='light'] .jk-site-title .tick,
-:root[data-theme='light'] .jk-sidebar-wordmark .tick {
-  text-shadow: none;
+.jk-brand-mark__byline {
+  font-family: var(--sl-font-mono);
+  font-size: 0.2em;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--jk-text-dim);
+  letter-spacing: 0;
 }
 
 .jk-social-link {
@@ -315,7 +364,7 @@ body {
   gap: 0;
   padding: 2px;
   border: 1px solid var(--jk-ui);
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--jk-panel);
 }
 
@@ -327,7 +376,7 @@ body {
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: var(--jk-text-ghost);
   cursor: pointer;
@@ -340,7 +389,7 @@ body {
 
 .jk-theme-toggle button[aria-pressed='true'] {
   color: var(--jk-accent);
-  background: var(--jk-bg-deep);
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
 }
 
 .jk-page-title {
@@ -358,6 +407,25 @@ body {
   margin-top: 0.875rem;
   padding-bottom: 1.5rem;
   border-bottom: 1px solid var(--jk-ui);
+}
+
+/* Page-action buttons (Copy Markdown / Open) use the green accent like the rest. */
+.jk-page-actions button {
+  border-color: color-mix(in srgb, var(--jk-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
+  color: var(--jk-accent);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.2s, color 0.15s;
+}
+.jk-page-actions button svg {
+  color: var(--jk-accent) !important;
+}
+.jk-page-actions button:hover,
+.jk-page-actions button:focus-visible,
+.jk-page-actions button[data-state='open'] {
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+  border-color: var(--jk-accent);
+  color: var(--jk-accent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
 }
 
 .jk-page-footer {
@@ -380,15 +448,23 @@ body {
 .jk-page-footer > a:hover,
 .jk-page-footer > a:focus-visible {
   background: var(--jk-sidebar-hover-bg);
-  box-shadow: var(--jk-sidebar-hover-shadow);
+  box-shadow: inset 0 0 0 1px var(--jk-accent), 0 4px 16px color-mix(in srgb, var(--jk-accent) 18%, transparent);
+}
+/* Light: hover tints the panel green (a lift, not a wash to lighter grey) so both
+   cards hover identically and consistently with the green secondary-button tier. */
+:root[data-theme='light'] .jk-page-footer > a:hover,
+:root[data-theme='light'] .jk-page-footer > a:focus-visible {
+  background: color-mix(in srgb, var(--jk-accent) 6%, var(--jk-panel));
+  box-shadow:
+    inset 0 0 0 1px var(--jk-accent),
+    0 4px 14px color-mix(in srgb, var(--jk-accent) 12%, transparent);
 }
 
 :root[data-theme='light'] .jk-page-footer > a {
-  background: #ffffff;
+  background: var(--jk-panel);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.88),
-    inset 0 0 0 1px rgba(31, 36, 33, 0.12),
-    0 1px 1px rgba(0, 0, 0, 0.04);
+    inset 0 0 0 1px var(--jk-ui-strong),
+    0 1px 2px rgba(17, 24, 39, 0.04);
 }
 
 @media (max-width: 640px) {
@@ -401,25 +477,6 @@ body {
   }
 }
 
-:root[data-theme='light'] .jk-page-actions button {
-  border-color: rgba(17, 24, 39, 0.12);
-  background: #f5f6f4;
-  color: #1f2421;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 1px 1px rgba(0, 0, 0, 0.04);
-}
-
-:root[data-theme='light'] .jk-page-actions button:hover,
-:root[data-theme='light'] .jk-page-actions button:focus-visible,
-:root[data-theme='light'] .jk-page-actions button[data-state='open'] {
-  background: #ecefeb;
-  color: #111513;
-}
-
-:root[data-theme='light'] .jk-page-actions button svg {
-  color: #66716b !important;
-}
 
 :root[data-theme='light'] [data-radix-popper-content-wrapper] > [data-side][data-align] {
   border-color: rgba(17, 24, 39, 0.12);
@@ -432,7 +489,7 @@ body {
 }
 
 :root[data-theme='light'] [data-radix-popper-content-wrapper] > [data-side][data-align] a:hover {
-  background: #ecefeb;
+  background: var(--jk-panel);
   color: #111513;
 }
 
@@ -449,11 +506,6 @@ body {
 :root[data-theme='dark'] [data-radix-popper-content-wrapper] > [data-side][data-align] a:hover {
   background: rgba(244, 247, 245, 0.08);
   color: var(--jk-text);
-}
-
-.jk-name {
-  color: var(--jk-brand);
-  font-weight: 700;
 }
 
 #nd-page :is(h1, h2, h3, h4) {
@@ -476,14 +528,14 @@ body {
   border: 1px solid var(--jk-ui);
   background: var(--jk-panel);
   color: var(--jk-accent);
-  border-radius: 6px;
+  border-radius: 0;
   padding: 0.12em 0.35em;
 }
 
 #nd-page table {
   width: 100%;
   border: 1px solid var(--jk-ui);
-  border-radius: 10px;
+  border-radius: 0;
   border-collapse: separate;
   border-spacing: 0;
   overflow: hidden;
@@ -508,7 +560,7 @@ body {
 .jk-arch-panel {
   background: var(--jk-bg-deep);
   border: 1px solid var(--jk-ui);
-  border-radius: 10px;
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -524,7 +576,7 @@ body {
 .jk-arch-dot {
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  border-radius: 0;
   background: var(--jk-ui-strong);
 }
 
@@ -607,7 +659,7 @@ body {
   padding: 4px 12px;
   background: var(--jk-panel);
   border: 1px solid var(--jk-ui);
-  border-radius: 999px;
+  border-radius: 0;
   font-size: 0.82rem;
   font-weight: 600;
 }
@@ -632,7 +684,7 @@ body {
 
 .jk-arch-service {
   padding: 14px 16px;
-  border-radius: 8px;
+  border-radius: 0;
   margin: 0;
 }
 
@@ -703,11 +755,11 @@ body {
 }
 
 .jk-layer:first-child {
-  border-radius: 10px 10px 0 0;
+  border-radius: 0;
 }
 
 .jk-layer:last-child {
-  border-radius: 0 0 10px 10px;
+  border-radius: 0;
 }
 
 .jk-layer::before {
@@ -922,7 +974,7 @@ html.theme-init *::after {
   width: 100%;
   table-layout: auto;
   border: 1px solid color-mix(in srgb, var(--jk-text) 13%, transparent);
-  border-radius: 8px;
+  border-radius: 0;
   border-collapse: separate;
   border-spacing: 0;
   overflow: hidden;
@@ -966,23 +1018,23 @@ html.theme-init *::after {
 
 :root[data-theme='light'] .sl-markdown-content table:not(:where(.not-content *)) {
   background: #ffffff;
-  border-color: rgba(31, 36, 33, 0.13);
+  border-color: var(--jk-ui);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.78),
     0 1px 1px rgba(17, 24, 39, 0.03);
 }
 
 :root[data-theme='light'] .sl-markdown-content table :is(th, td):not(:where(.not-content *)) {
-  border-bottom-color: rgba(31, 36, 33, 0.1);
+  border-bottom-color: var(--jk-ui);
 }
 
 :root[data-theme='light'] .sl-markdown-content thead:not(:where(.not-content *)) {
-  background: #ecefed;
+  background: var(--jk-panel);
 }
 
 :root[data-theme='light'] .sl-markdown-content th:not(:where(.not-content *)) {
-  border-bottom-color: rgba(31, 36, 33, 0.16);
-  color: #222725;
+  border-bottom-color: var(--jk-ui-strong);
+  color: var(--jk-prose);
 }
 
 .sl-markdown-content td:not(:where(.not-content *)) {
@@ -998,7 +1050,7 @@ html.theme-init *::after {
   color: var(--jk-text);
   background: var(--jk-panel);
   border: 1px solid var(--jk-ui);
-  border-radius: 4px;
+  border-radius: 0;
   padding: 0.125em 0.4em;
   font-size: 0.875em;
   font-family: var(--sl-font-mono);
@@ -1016,7 +1068,7 @@ html.theme-init *::after {
   display: block;
   background: #2a1a07;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   color: #fff7ed;
   padding: 18px 20px;
   box-shadow:
@@ -1050,14 +1102,11 @@ html.theme-init *::after {
 }
 
 :root[data-theme='light'] .jk-early-development-notice {
-  background: #fff3c4;
+  background: color-mix(in srgb, #d97706 9%, var(--jk-bg));
   color: #2f1d05;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.86),
-    inset 0 0 0 1px rgba(146, 64, 14, 0.2),
-    0 1px 1px rgba(0, 0, 0, 0.04),
-    0 18px 42px rgba(146, 64, 14, 0.12),
-    0 6px 16px rgba(146, 64, 14, 0.08);
+    inset 0 0 0 1px color-mix(in srgb, #d97706 28%, transparent),
+    0 1px 2px rgba(17, 24, 39, 0.04);
 }
 
 :root[data-theme='light'] .jk-early-development-notice-label {
@@ -1127,12 +1176,16 @@ html.theme-init *::after {
   }
 }
 
+/* Match the layout's sidebar column (15.25rem, set on #nd-docs-layout). When
+   this was 18rem the sidebar *content* was wider than its column, overflowing ~44px
+   off the left edge and clipping the logo + nav labels (worse as the window
+   narrows). Keep both in lockstep. */
 #nd-sidebar:not([data-collapsed='true']) {
-  --fd-sidebar-width: 18rem;
+  --fd-sidebar-width: 15.25rem;
 }
 
 #nd-sidebar[data-collapsed='true'][data-hovered='true'] {
-  --fd-sidebar-width: 18rem;
+  --fd-sidebar-width: 15.25rem;
 }
 
 #nd-sidebar:not([data-collapsed='true']) > div:first-child,
@@ -1142,7 +1195,10 @@ html.theme-init *::after {
 }
 
 #nd-sidebar:not([data-collapsed='true']) [data-radix-scroll-area-viewport] {
-  padding-inline-start: 0 !important;
+  /* Small left gutter so nav rows + their hover blocks aren't flush against the
+     screen edge (combined with the per-level insets below, top-level rows align
+     with the 16px header/search gutter). */
+  padding-inline-start: 0.5rem !important;
   padding-inline-end: 0.375rem !important;
 }
 
@@ -1155,7 +1211,7 @@ html.theme-init *::after {
 #nd-sidebar a[data-active],
 #nd-sidebar button[data-state] {
   color: var(--jk-text-dim);
-  border-radius: 8px;
+  border-radius: 0;
   padding-block: 0.35rem !important;
   transition: color 0.12s, background-color 0.12s, box-shadow 0.12s;
 }
@@ -1173,74 +1229,77 @@ html.theme-init *::after {
 }
 
 #nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(2 * var(--spacing))'] {
-  padding-inline-start: 0.625rem !important;
+  padding-inline-start: 0.5rem !important;
 }
 
 #nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(5 * var(--spacing))'] {
-  padding-inline-start: 1.25rem !important;
+  padding-inline-start: 1rem !important;
 }
 
 #nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(8 * var(--spacing))'] {
-  padding-inline-start: 1.875rem !important;
+  padding-inline-start: 1.5rem !important;
 }
 
 #nd-sidebar:not([data-collapsed='true']) :is(a, button, p)[style*='calc(11 * var(--spacing))'] {
-  padding-inline-start: 2.5rem !important;
+  padding-inline-start: 2rem !important;
 }
 
 #nd-sidebar:not([data-collapsed='true']) [class*='before:inset-s-2.5']::before {
   inset-inline-start: 0.5rem !important;
 }
 
+/* Hover is a faint green wash — a lighter version of the active item's green
+   wash — so the whole sidebar shares one brand/green language. fumadocs'
+   hover:bg-fd-accent (= the sidebar surface in light) is overridden here. Same
+   concept in both themes; --jk-accent adapts (#5cf07a dark, #0b774e light). */
+#nd-sidebar a:hover,
+#nd-sidebar a:focus-visible,
 #nd-sidebar a[data-active]:hover,
 #nd-sidebar a[data-active]:focus-visible,
 #nd-sidebar button[data-state]:hover,
 #nd-sidebar button[data-state]:focus-visible {
   color: var(--jk-text);
-  background-color: var(--jk-sidebar-hover-bg);
-  box-shadow: var(--jk-sidebar-hover-shadow);
+  background-color: color-mix(in srgb, var(--jk-accent) 8%, transparent);
+  box-shadow: none;
 }
 
+/* Section ancestor (the folder-index leaf fumadocs flags `aria-current`
+   while you browse a child): only the true current page gets the wash + bar,
+   so the ancestor stays quiet — a faint brand text tint, no background, no
+   bar — to mark "you're in this section" without reading as a 2nd selection. */
 #nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']) {
-  color: color-mix(in oklab, var(--jk-brand) 58%, var(--jk-text-dim));
-  background-color: color-mix(in srgb, var(--jk-brand) 8%, transparent);
-  font-weight: 500;
-}
-
-#nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true'])::before {
-  content: "";
-  position: absolute;
-  width: 2px;
-  inset-block: 0.7rem;
-  inset-inline-start: 0.55rem;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--jk-brand) 66%, transparent);
+  color: color-mix(in oklab, var(--jk-brand) 45%, var(--jk-text-dim));
+  font-weight: 400;
 }
 
 #nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']):hover,
 #nd-sidebar a:is([data-status='active'], [aria-current='page']):not([data-active='true']):focus {
-  color: color-mix(in oklab, var(--jk-brand) 76%, var(--jk-text));
-  background-color: color-mix(in srgb, var(--jk-brand) 11%, transparent);
+  color: color-mix(in oklab, var(--jk-brand) 70%, var(--jk-text));
+  background-color: var(--jk-sidebar-hover-bg);
 }
 
+/* Selected page: quiet brand treatment (green text, faint green wash, thin
+   accent bar) — matches the status-active style instead of the old heavy
+   solid-fill pill. Font family/weight left as-is on purpose. */
 #nd-sidebar a[data-active='true'],
 #nd-sidebar a[data-active='true']:hover,
 #nd-sidebar a[data-active='true']:focus {
-  color: var(--sl-color-text-invert);
-  background-color: var(--jk-accent);
+  color: color-mix(in oklab, var(--jk-brand) 76%, var(--jk-text));
+  background-color: color-mix(in srgb, var(--jk-brand) 12%, transparent);
   box-shadow: none;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 :root[data-theme='light'] #nd-sidebar a[data-active='true'],
 :root[data-theme='light'] #nd-sidebar a[data-active='true']:hover,
 :root[data-theme='light'] #nd-sidebar a[data-active='true']:focus {
-  color: #ffffff;
+  color: var(--jk-brand-muted);
 }
 
-#nd-sidebar a[data-active='true']::before {
-  display: none;
-}
+/* The active left bar is left to fumadocs' own per-item rule
+   (data-[active=true]:before:*, positioned per indent via before:inset-s-2.5 →
+   remapped to 0.5rem above). A single fixed-inset bar here mispositioned it on
+   top-level items (e.g. the "Overview" root index), so it's not overridden. */
 
 /* ==========================================================================
    Mobile menu footer (social icons + theme toggle + language select).
@@ -1287,7 +1346,7 @@ html.theme-init *::after {
 }
 
 #nd-toc a {
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: var(--jk-text-dim);
   font-size: 0.8125rem;
@@ -1360,7 +1419,7 @@ html.theme-init *::after {
 #nd-toc a[class*='ps-6'],
 #nd-toc a[class*='ps-8'] {
   border-inline-start: 1px solid color-mix(in srgb, var(--jk-text) 13%, transparent);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0;
 }
 
 #nd-toc a[class*='ps-6']:hover,
@@ -1382,28 +1441,24 @@ html.theme-init *::after {
   border-inline-start-color: transparent;
 }
 
+/* Decorative wordmark at the foot of the TOC rail. Uses the generated asset
+   (public/brand/jackin-wordmark.svg) so it's the same mark as everywhere else —
+   never a hand-typed glyph. */
 #nd-toc::after {
-  content: "jackin'";
+  content: "";
   display: block;
   margin-top: auto;
-  padding-top: 2rem;
-  padding-bottom: 1rem;
-  font-family: var(--sl-font);
-  font-size: var(--jk-toc-wordmark-size);
-  font-weight: 900;
-  line-height: 0.82;
-  letter-spacing: 0;
-  background: linear-gradient(
-    90deg,
-    var(--jk-text) 0 5.9ch,
-    var(--jk-brand) 5.9ch 100%
-  );
-  background-clip: text;
-  color: transparent;
-  max-width: 100%;
-  overflow: hidden;
+  margin-bottom: 1rem;
+  width: 100%;
+  height: var(--jk-toc-wordmark-size);
+  background: url("/brand/jackin-wordmark.svg") left bottom / auto 100% no-repeat;
   pointer-events: none;
   user-select: none;
+}
+/* Light mode: use the dark-word variant so the watermark isn't an invisible
+   white word on white. */
+:root[data-theme='light'] #nd-toc::after {
+  background-image: url("/brand/jackin-wordmark-onlight.svg");
 }
 
 /* ==========================================================================
@@ -1421,9 +1476,9 @@ header.header {
    ========================================================================== */
 
 .site-title {
-  font-family: var(--sl-font);
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-family: var(--sl-font-mono);
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--sl-color-white);
 }
 
@@ -1543,7 +1598,7 @@ header.header {
   padding: 0.45rem 0.85rem;
   font-size: 0.875rem;
   position: relative;
-  border-radius: 7px;
+  border-radius: 0;
   border-bottom: 0;
   box-shadow: none;
 }
@@ -1594,7 +1649,7 @@ header.header {
 
 .sl-markdown-content .tablist-wrapper[data-overflow] .tab > [role='tab'] {
   border: 1px solid var(--jk-ui-strong);
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--jk-panel);
   padding: 0.35rem 0.875rem;
   font-size: 0.8125rem;
@@ -1640,7 +1695,7 @@ header.header {
 .expressive-code .frame {
   box-shadow: var(--jk-code-shadow);
   border: 0 !important;
-  border-radius: var(--jk-code-radius);
+  border-radius: 0;
   overflow: hidden;
   /* Code blocks keep a dark surface in BOTH page modes:
      - Dark mode: slightly deeper than the page (recessed feel)
@@ -1675,7 +1730,7 @@ header.header {
 #nd-page figure.shiki {
   background: var(--jk-code-bg) !important;
   border: 0 !important;
-  border-radius: var(--jk-code-radius);
+  border-radius: 0;
   box-shadow: var(--jk-code-shadow) !important;
   color-scheme: dark;
 }
@@ -1702,14 +1757,14 @@ header.header {
 .sl-markdown-content figure.shiki button[data-checked],
 #nd-page figure.shiki button[data-checked] {
   background: rgba(244, 247, 245, 0.14);
-  color: #f4f7f5;
+  color: var(--jk-accent);
 }
 
 .sl-markdown-content pre:not(:where(.expressive-code *)),
 #nd-page pre:not(:where(.expressive-code *)) {
   background: var(--jk-code-bg) !important;
   border: 0 !important;
-  border-radius: var(--jk-code-radius);
+  border-radius: 0;
   box-shadow: var(--jk-code-shadow);
   color-scheme: dark;
   overflow: auto;
@@ -1719,7 +1774,7 @@ header.header {
 #nd-page div[role='region'].fd-scroll-container:has(> pre):not(:where(figure.shiki *)) {
   background: var(--jk-code-bg) !important;
   border: 0 !important;
-  border-radius: var(--jk-code-radius);
+  border-radius: 0;
   box-shadow: var(--jk-code-shadow);
   color-scheme: dark;
 }
@@ -1759,7 +1814,7 @@ header.header {
   .expressive-code .copy button {
     width: 1.5rem;
     height: 1.5rem;
-    border-radius: 0.15rem;
+    border-radius: 0;
   }
   /* The icon itself is drawn via mask-image with a `margin` inset from
      the button edges. Scale that inset down with the button so the icon
@@ -1781,7 +1836,7 @@ header.header {
   gap: 12px;
   align-items: center;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   background: color-mix(in srgb, var(--jk-aside-color) 7%, var(--jk-panel));
   padding: 14px 16px !important;
   box-shadow:
@@ -1799,7 +1854,7 @@ header.header {
   width: 28px;
   height: 28px;
   padding: 5px;
-  border-radius: 7px;
+  border-radius: 0;
   background: color-mix(in srgb, var(--jk-aside-color) 14%, transparent);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 28%, transparent),
@@ -1833,11 +1888,10 @@ header.header {
 }
 
 :root[data-theme='light'] .jk-aside {
-  background: color-mix(in srgb, var(--jk-aside-color) 8%, var(--jk-bg));
+  background: color-mix(in srgb, var(--jk-aside-color) 7%, var(--jk-bg));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 1px 1px rgba(0, 0, 0, 0.04),
-    0 10px 24px color-mix(in srgb, var(--jk-aside-color) 12%, transparent);
+    inset 0 0 0 1px color-mix(in srgb, var(--jk-aside-color) 22%, transparent),
+    0 1px 2px rgba(17, 24, 39, 0.04);
 }
 
 :root[data-theme='light'] .jk-aside svg {
@@ -1889,12 +1943,12 @@ site-search button[data-open-modal] {
   site-search button[data-open-modal] {
     background-color: var(--jk-panel);
     border: 1px solid var(--jk-ui);
-    border-radius: 10px;
+    border-radius: 0;
     transition: border-color 0.15s, color 0.15s;
   }
 
   site-search button[data-open-modal]:hover {
-    border-color: var(--sl-color-text-accent);
+    border-color: var(--jk-accent);
     color: var(--jk-text);
   }
 }
@@ -1935,17 +1989,17 @@ site-search dialog {
      (black-alpha 0.08 on near-white bg). Same width across modes for
      consistency. */
   border: 2px solid var(--jk-ui-strong);
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--jk-panel);
   color: var(--jk-text-dim);
-  box-shadow: none;
-  transition: border-color 0.15s, color 0.15s, transform 0.15s;
+  transition: border-color 0.15s, color 0.15s, transform 0.15s, box-shadow 0.2s;
 }
 
 .pagination-links a:hover {
-  border-color: var(--jk-brand);
+  border-color: var(--jk-accent);
   color: var(--jk-text);
   transform: translateY(-1px);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 18%, transparent);
 }
 
 .pagination-links a .link-title {
@@ -1976,31 +2030,110 @@ site-search dialog {
   color: var(--jk-brand);
 }
 
-/* Brand-styled inline name for "jackin'" — automatically wrapped
-   by the `rehype-jk` plugin (see docs/scripts/rehype-jk.ts). Uses
-   `--jk-text` so the name reads white-on-dark and black-on-light
-   (theme-aware) and stays maximally legible in long prose. The
-   weight bump distinguishes it from the surrounding paragraph
-   without using a saturated brand colour mid-sentence. Skips code
-   blocks. */
+/* Inline brand name for "jackin❯" in prose — auto-wrapped by the
+   `rehype-jk` plugin (docs/scripts/rehype-jk.ts). The loud green block is
+   reserved for the actual logo lockup (.jk-brand-mark in the sidebar,
+   landing, splash). In running text that block repeats dozens of times and
+   turns the page into highlighter soup, so here the mark is quiet: it reads
+   as plain text, just set in semibold with a muted-green chevron as the only
+   brand accent — enough to mark the name without fighting the prose. */
 .jk-name {
-  color: var(--jk-text);
-  font-weight: 500;
+  display: inline;
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .jk-name:hover {
   text-decoration: none;
 }
 
-/* Inside headings the existing heading weight wins so we do not
-   double-bold. Colour still inherits the heading's own colour, which
-   is `--jk-text` in both themes by default. */
+.jk-name__text {
+  color: inherit;
+}
+
+.jk-name__chevron {
+  /* The chevron is always the canonical brand green — one identical chevron color
+     everywhere (logo + inline mark), in both themes. */
+  color: #5cf07a;
+  font-weight: inherit;
+}
+
+/* Don't double-bold inside headings, which are already heavy. */
 :where(h1, h2, h3, h4, h5, h6) .jk-name {
   font-weight: inherit;
 }
 
-/* Inside links the link colour wins so the name stays underlined
-   without competing against the surrounding link text. */
-a .jk-name {
-  color: inherit;
+/* ── Doc-root switcher (Fumadocs sidebar-tabs dropdown trigger) ──────────
+   The default trigger is a heavy bordered box, and fumadocs never forces
+   `size-full` on the trigger icon, so the 24px lucide glyph overflows its
+   20px slot. Restyle into a quiet brand-tinted control and size the icon to
+   its slot. Scoped to the tabs trigger; search triggers are excluded. */
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) {
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 0.625rem;
+  border-color: color-mix(in srgb, var(--jk-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]):hover,
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full])[data-state="open"] {
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+  border-color: var(--jk-accent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
+}
+
+/* Icon slot: fixed compact square, brand-green glyph that fills it. */
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > div:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  color: var(--jk-accent);
+}
+
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > div:first-child svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Title sits a touch stronger; up/down chevrons pick up the brand tint. */
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) p {
+  font-weight: 600;
+}
+
+#nd-sidebar button[aria-haspopup="dialog"]:not([data-search]):not([data-search-full]) > svg:last-child {
+  color: var(--jk-accent);
+  opacity: 0.65;
+}
+
+/* The dropdown panel's option tiles share the same oversized-icon bug and
+   should match the trigger: compact brand-green glyph, tidy hover. */
+[data-radix-popper-content-wrapper] [role="dialog"] a[href] > div:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--jk-brand);
+}
+
+[data-radix-popper-content-wrapper] [role="dialog"] a[href] > div:first-child svg {
+  width: 100%;
+  height: 100%;
+}
+
+[data-radix-popper-content-wrapper] [role="dialog"] a[href]:hover {
+  background: color-mix(in srgb, var(--jk-brand) 12%, transparent);
 }

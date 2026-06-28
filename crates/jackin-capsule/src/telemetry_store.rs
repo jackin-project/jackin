@@ -5,13 +5,15 @@
 //! not by opening this database. The schema mirrors the roadmap V1 account
 //! snapshot shape so the later host-daemon store can reuse the same rows.
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
+use jackin_core::account_key::account_key_hash;
 use jackin_protocol::control::{FocusedUsageView, QuotaBucketView};
 #[cfg(test)]
 use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
-use sha2::{Digest, Sha256};
 use turso::{Connection, Row, params};
 
 const SCHEMA_VERSION: &str = "4";
@@ -66,10 +68,23 @@ fn block_on_store<T, Fut>(future: Fut) -> Result<T, String>
 where
     Fut: Future<Output = Result<T, String>>,
 {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()
-        .map_err(|err| format!("create telemetry store runtime failed: {err}"))?;
+    // One process-wide current-thread runtime, reused across every store call.
+    // Callers run inside `spawn_blocking` (no enclosing runtime), so `block_on`
+    // never nests; sequential reuse avoids rebuilding a runtime per snapshot
+    // write. Build errors propagate without panicking. INVARIANT: never call the
+    // store functions from inside the async runtime — route them through
+    // `spawn_blocking`, or `block_on` panics ("Cannot start a runtime from within
+    // a runtime").
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    let runtime = if let Some(runtime) = RUNTIME.get() {
+        runtime
+    } else {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .map_err(|err| format!("create telemetry store runtime failed: {err}"))?;
+        RUNTIME.get_or_init(move || runtime)
+    };
     runtime.block_on(future)
 }
 
@@ -86,7 +101,18 @@ async fn open_store(path: &Path) -> Result<Connection, String> {
     let conn = db
         .connect()
         .map_err(|err| format!("connect telemetry store failed: {err}"))?;
-    initialize_schema(&conn).await?;
+    // Schema creation + the ALTER-based migration are idempotent but not free;
+    // run them once per database path per process. Keyed by the resolved turso
+    // path so distinct stores (e.g. each test's temp DB) each migrate once.
+    static INITIALIZED_DBS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let initialized = INITIALIZED_DBS.get_or_init(|| Mutex::new(HashSet::new()));
+    let already_initialized = initialized.lock().is_ok_and(|set| set.contains(&path));
+    if !already_initialized {
+        initialize_schema(&conn).await?;
+        if let Ok(mut set) = initialized.lock() {
+            set.insert(path.clone());
+        }
+    }
     Ok(conn)
 }
 
@@ -156,7 +182,7 @@ async fn ensure_account_snapshot_columns(conn: &Connection) -> Result<(), String
         .query("PRAGMA table_info(account_usage_snapshots)", ())
         .await
         .map_err(|err| format!("inspect telemetry snapshot schema failed: {err}"))?;
-    let mut columns = std::collections::HashSet::new();
+    let mut columns = HashSet::new();
     while let Some(row) = rows
         .next()
         .await
@@ -219,8 +245,12 @@ async fn upsert_account_snapshot_rows(
     conn: &Connection,
     rows: Vec<StoredAccountUsageSnapshot>,
 ) -> Result<(), String> {
+    conn.execute("BEGIN", ())
+        .await
+        .map_err(|err| format!("begin telemetry snapshot transaction failed: {err}"))?;
     for row in rows {
-        conn.execute(
+        if let Err(err) = conn
+            .execute(
             "
             INSERT INTO account_usage_snapshots (
                 provider,
@@ -302,8 +332,18 @@ async fn upsert_account_snapshot_rows(
             ],
         )
         .await
-        .map_err(|err| format!("upsert telemetry account snapshot failed: {err}"))?;
+        {
+            // Roll the whole batch back so a mid-batch failure never leaves a
+            // partially-written snapshot set; surface the original row error.
+            if let Err(rollback_err) = conn.execute("ROLLBACK", ()).await {
+                crate::cdebug!("telemetry snapshot rollback failed: {rollback_err}");
+            }
+            return Err(format!("upsert telemetry account snapshot failed: {err}"));
+        }
     }
+    conn.execute("COMMIT", ())
+        .await
+        .map_err(|err| format!("commit telemetry snapshot transaction failed: {err}"))?;
     Ok(())
 }
 
@@ -375,21 +415,6 @@ fn quota_amounts(bucket: &QuotaBucketView) -> QuotaAmounts {
     }
 }
 
-fn account_key_hash(provider: &str, account_label: &str) -> String {
-    let digest = Sha256::digest(format!("{provider}\0{account_label}").as_bytes());
-    format!("sha256:{}", hex_lower(&digest))
-}
-
-fn hex_lower(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(char::from(HEX[usize::from(byte >> 4)]));
-        out.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    out
-}
-
 #[cfg(test)]
 pub(crate) fn focused_usage_view(
     path: &Path,
@@ -415,6 +440,9 @@ pub(crate) fn focused_usage_view(
     let mut buckets = rows
         .iter()
         .map(|row| QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: row.window_kind.clone(),
             used_label: row.used_label.clone(),
             limit_label: row.limit_label.clone(),

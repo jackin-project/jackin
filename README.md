@@ -1,13 +1,15 @@
-# jackin'
+# jackin❯
+
+![jackin❯ by tailrocks](docs/public/readme-hero.svg)
 
 > [!WARNING]
-> 🚧 jackin' is in active early development.
+> 🚧 jackin❯ is in active early development.
 >
-> jackin' is not production-ready. We are actively refining the core concept, runtime integrations, CLI/TUI workflows, schemas, and documentation, and that will introduce major breaking changes before a stable release. Features may be redesigned, replaced, or removed while we find the shape that makes sense. Early adopters are welcome, but the priority right now is concept quality and fast iteration rather than freezing today's behavior. The docs track the rolling preview channel; open issues and roadmap feedback are welcome, but do not treat the current feature set as a compatibility promise.
+> jackin❯ is not production-ready. We are actively refining the core concept, runtime integrations, CLI/TUI workflows, schemas, and documentation, and that will introduce major breaking changes before a stable release. Features may be redesigned, replaced, or removed while we find the shape that makes sense. Early adopters are welcome, but the priority right now is concept quality and fast iteration rather than freezing today's behavior. The docs track the rolling preview channel; open issues and roadmap feedback are welcome, but do not treat the current feature set as a compatibility promise.
 
-Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.
+Run AI coding agents at full speed inside isolated containers: scoped access, per-agent state, and host boundaries that stay visible.
 
-jackin' is the **ecosystem layer around** AI coding agents — not another agent itself. It runs many agents in parallel, each in its own container, with its own file access, tool profile, and credentials. Every agent runtime ([Claude Code](https://docs.anthropic.com/en/docs/claude-code) `--dangerously-skip-permissions`, [Codex](https://github.com/openai/codex) YOLO, [Amp](https://ampcode.com), Kimi, OpenCode, and the next ones to come) is most productive at full speed — and full speed against your host machine is risky. jackin' moves the boundary off the host, so the runtime can stay fast.
+jackin❯ is the **ecosystem layer around** AI coding agents — not another agent itself. It runs many agents in parallel, each in its own container, with its own file access, tool profile, and credentials. Every agent runtime ([Claude Code](https://docs.anthropic.com/en/docs/claude-code) `--dangerously-skip-permissions`, [Codex](https://github.com/openai/codex) YOLO, [Amp](https://ampcode.com), Kimi, OpenCode, and the next ones to come) is most productive at full speed — and full speed against your host machine is risky. jackin❯ moves the boundary off the host, so the runtime can stay fast.
 
 Documentation: <https://jackin.tailrocks.com/>
 
@@ -22,7 +24,7 @@ Or [build from source](https://jackin.tailrocks.com/getting-started/installation
 
 ## Quick Start
 
-The simplest way to use jackin' is the **operator console** — an interactive TUI that picks workspaces, roles, and agents for you:
+The simplest way to use jackin❯ is the **operator console** — an interactive TUI that picks workspaces, roles, and agents for you:
 
 ```sh
 jackin
@@ -48,7 +50,7 @@ See the [Quick Start guide](https://jackin.tailrocks.com/getting-started/quickst
 - **Supports multiple agents simultaneously** — different tool profiles against the same or different projects
 - **Persists agent state** between sessions (conversation history, GitHub CLI auth, plugins)
 
-Learn more: [Why jackin'?](https://jackin.tailrocks.com/getting-started/why/) · [Core Concepts](https://jackin.tailrocks.com/getting-started/concepts/) · [Security Model](https://jackin.tailrocks.com/guides/security-model/) · [Comparison with Alternatives](https://jackin.tailrocks.com/guides/comparison/)
+Learn more: [Why jackin❯?](https://jackin.tailrocks.com/getting-started/why/) · [Core Concepts](https://jackin.tailrocks.com/getting-started/concepts/) · [Security Model](https://jackin.tailrocks.com/guides/security-model/) · [Comparison with Alternatives](https://jackin.tailrocks.com/guides/comparison/)
 
 ## Ecosystem
 
@@ -56,14 +58,14 @@ Learn more: [Why jackin'?](https://jackin.tailrocks.com/getting-started/why/) ·
 |---|---|
 | [jackin](https://github.com/jackin-project/jackin) | CLI source code (this repo) |
 | [jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) | Default general-purpose role |
-| [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) | Rust development role (used for jackin' development) |
+| [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) | Rust development role (used for jackin❯ development) |
 | [construct image source](https://github.com/jackin-project/jackin/tree/main/docker/construct) | Shared base Docker image for all roles |
 
 ## Documentation
 
 This README is a first impression. The full documentation at **<https://jackin.tailrocks.com/>** is where every detail lives:
 
-- [Why jackin'?](https://jackin.tailrocks.com/getting-started/why/) — the problem and the ecosystem framing
+- [Why jackin❯?](https://jackin.tailrocks.com/getting-started/why/) — the problem and the ecosystem framing
 - [Installation](https://jackin.tailrocks.com/getting-started/installation/) — install methods and prerequisites
 - [Quick Start](https://jackin.tailrocks.com/getting-started/quickstart/) — first-run walkthrough, console + CLI side by side
 - [Core Concepts](https://jackin.tailrocks.com/getting-started/concepts/) — operators, agents, roles, constructs, workspaces
@@ -71,11 +73,11 @@ This README is a first impression. The full documentation at **<https://jackin.t
 - [Commands](https://jackin.tailrocks.com/commands/console/) — full reference (TUI first, then CLI)
 - [Security Model](https://jackin.tailrocks.com/guides/security-model/) — what the boundary protects and what it doesn't
 - [Comparison with Alternatives](https://jackin.tailrocks.com/guides/comparison/) — honest snapshot vs. Docker Sandboxes and others
-- Behind jackin' (Internals) — [Architecture](https://jackin.tailrocks.com/reference/architecture/), [Codebase Map](https://jackin.tailrocks.com/reference/codebase-map/), [Roadmap](https://jackin.tailrocks.com/reference/roadmap/)
+- Behind jackin❯ (Internals) — [Architecture](https://jackin.tailrocks.com/reference/architecture/), [Codebase Map](https://jackin.tailrocks.com/reference/codebase-map/), [Roadmap](https://jackin.tailrocks.com/reference/roadmap/)
 
 ## Development
 
-To develop jackin' itself, use [The Architect](https://github.com/jackin-project/jackin-the-architect) — a dedicated role with the full Rust toolchain:
+To develop jackin❯ itself, use [The Architect](https://github.com/jackin-project/jackin-the-architect) — a dedicated role with the full Rust toolchain:
 
 ```sh
 jackin load the-architect
@@ -83,7 +85,7 @@ jackin load the-architect
 
 ## About this project
 
-jackin' is an independent personal project by Alexey Zhokhov. It is
+jackin❯ is an independent personal project by Alexey Zhokhov. It is
 not affiliated with or endorsed by any employer or client of the
 author.
 

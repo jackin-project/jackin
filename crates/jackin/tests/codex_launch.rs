@@ -21,7 +21,7 @@ fn recorded_docker_build(runner: &FakeRunner) -> &str {
     runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker build "))
+        .find(|call| call.contains("docker build ") || call.contains("docker buildx build "))
         .map(String::as_str)
         .expect("docker build should run")
 }
@@ -62,6 +62,7 @@ fn capsule_config_for_run(paths: &JackinPaths, run_cmd: &str) -> jackin_protocol
 
 fn codex_workspace(repo_dir: &Path) -> ResolvedWorkspace {
     ResolvedWorkspace {
+        name: String::new(),
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
         mounts: vec![MountConfig {
@@ -77,10 +78,11 @@ fn codex_workspace(repo_dir: &Path) -> ResolvedWorkspace {
 }
 
 fn assert_cached_agent_install_blocks(dockerfile: &str) {
-    // Agent binaries are mounted read-only at run time, not baked into the image.
+    // This direct build-context helper call does not pass agent install
+    // recipes. The full launch path prepares and bakes supported agents.
     assert!(
         !dockerfile.contains("agent-binaries"),
-        "agent binaries must not be baked into the derived image; got: {dockerfile}"
+        "direct build context must not stage agent binaries without install recipes; got: {dockerfile}"
     );
 }
 
@@ -171,8 +173,8 @@ model = "gpt-5"
     assert!(!run_cmd.contains("-e JACKIN_ROLE="), "{run_cmd}");
     assert!(!run_cmd.contains("-e JACKIN_WORKDIR="), "{run_cmd}");
     assert!(
-        run_cmd.contains(":/home/agent/.local/bin/codex:ro"),
-        "codex binary must be bind-mounted read-only at run time; got: {run_cmd}"
+        !run_cmd.contains(":/home/agent/.local/bin/codex:ro"),
+        "codex binary is baked into the image and must not be bind-mounted at run time; got: {run_cmd}"
     );
     assert!(
         run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"),
@@ -251,6 +253,7 @@ plugins = []
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
     let workspace = ResolvedWorkspace {
+        name: String::new(),
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_owned(),
         mounts: vec![MountConfig {

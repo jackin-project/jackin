@@ -7,7 +7,7 @@ fn hint_labels(items: Vec<HintSpan<'static>>) -> Vec<String> {
         .into_iter()
         .filter_map(|span| match span {
             HintSpan::Key(value) | HintSpan::Text(value) => Some(value.to_owned()),
-            HintSpan::Dyn(value) => Some(value),
+            HintSpan::Dyn(value) | HintSpan::DynKey(value) => Some(value),
             HintSpan::Sep | HintSpan::GroupSep => None,
         })
         .collect()

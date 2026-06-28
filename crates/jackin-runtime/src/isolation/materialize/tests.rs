@@ -398,6 +398,7 @@ use jackin_config::ResolvedWorkspace;
 
 fn resolved_with_one_isolated(repo: &Path, dst: &str) -> ResolvedWorkspace {
     ResolvedWorkspace {
+        name: String::new(),
         label: "jackin".into(),
         workdir: dst.into(),
         mounts: vec![MountConfig {
@@ -414,6 +415,7 @@ fn resolved_with_one_isolated(repo: &Path, dst: &str) -> ResolvedWorkspace {
 
 fn resolved_with_one_clone(repo: &Path, dst: &str) -> ResolvedWorkspace {
     ResolvedWorkspace {
+        name: String::new(),
         label: "jackin".into(),
         workdir: dst.into(),
         mounts: vec![MountConfig {
@@ -502,6 +504,7 @@ async fn shared_mounts_pass_through_unchanged() {
     let container_dir = data.path().join("jackin-x");
     std::fs::create_dir_all(&container_dir).unwrap();
     let resolved = ResolvedWorkspace {
+        name: String::new(),
         label: "jackin".into(),
         workdir: "/workspace/x".into(),
         mounts: vec![MountConfig {

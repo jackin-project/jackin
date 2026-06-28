@@ -4,6 +4,8 @@
     reason = "binary entrypoint renders clap help and top-level errors"
 )]
 
+use std::io::IsTerminal;
+
 use clap::{CommandFactory, Parser};
 use jackin::cli::Cli;
 use jackin::cli::dispatch::{self, Action};
@@ -13,7 +15,13 @@ use jackin::cli::role::ConsoleArgs;
 async fn main() {
     jackin::install_default_tls_provider();
 
-    let cli = Cli::parse();
+    // `try_parse` instead of `parse` so we can render the frozen-rain banner
+    // for the root `--help`/`--version` ourselves before clap prints the help
+    // body — clap reflows multi-line ANSI art passed through `before_help`.
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => handle_parse_error(err),
+    };
     let debug = cli.debug;
 
     match dispatch::classify(cli, dispatch::is_tui_capable()) {
@@ -38,6 +46,9 @@ async fn main() {
             }
         }
         Action::PrintHelpAndExit => {
+            // Bare `jackin` on a non-interactive stdout: one-line pill (the
+            // root command no longer carries clap's `before_help`), then help.
+            print!("{}", jackin_tui::ansi::BRAND_BANNER);
             let mut cmd = Cli::command();
             drop(cmd.print_help());
             println!();
@@ -53,6 +64,67 @@ async fn main() {
             eprintln!("error: {}", dispatch::CONSOLE_REQUIRES_TTY_ERROR);
             std::process::exit(1);
         }
+    }
+}
+
+/// Handle a clap parse outcome that is not a successful `Cli`.
+///
+/// `--help`/`--version` surface as `Err(DisplayHelp|DisplayVersion)`. For the
+/// root `--help` we print the frozen-rain banner (or the one-line pill on a
+/// narrow/piped terminal) before clap renders the help body; subcommand help
+/// keeps clap's own `before_help` pill. Real usage errors fall through to
+/// clap's default rendering (stderr, exit 2).
+#[expect(
+    clippy::exit,
+    reason = "binary entrypoint — exit after rendering the version splash"
+)]
+fn handle_parse_error(err: clap::Error) -> ! {
+    use clap::error::ErrorKind;
+    match err.kind() {
+        ErrorKind::DisplayHelp | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
+            print_root_help_banner();
+        }
+        ErrorKind::DisplayVersion if std::io::stdout().is_terminal() => {
+            // Interactive `--version`: brand splash instead of clap's plain
+            // `jackin <version>` line. Piped output falls through to clap.
+            let version = Cli::command().get_version().unwrap_or_default().to_owned();
+            print!("{}", jackin_tui::ansi::version_splash(&version));
+            std::process::exit(0);
+        }
+        _ => {}
+    }
+    err.exit();
+}
+
+/// Print the brand banner above the root `jackin --help` output.
+///
+/// No-op for subcommand help (clap's `before_help` pill covers those). On an
+/// interactive terminal wide enough for the art, prints the frozen-rain
+/// banner; otherwise the one-line pill, which survives piping and narrow
+/// widths.
+fn print_root_help_banner() {
+    let cmd = Cli::command();
+    let is_subcommand_help = {
+        let names: Vec<String> = cmd
+            .get_subcommands()
+            .map(|sub| sub.get_name().to_owned())
+            .collect();
+        std::env::args().skip(1).any(|arg| names.contains(&arg))
+    };
+    if is_subcommand_help {
+        return; // clap's `before_help` pill covers subcommand help
+    }
+    // The root command no longer carries clap's pill, so the binary always
+    // prints a brand mark here: the big frozen-rain banner with the centered
+    // lockup on a roomy interactive terminal, otherwise the one-line pill.
+    let interactive = std::io::stdout().is_terminal();
+    match crossterm::terminal::size() {
+        Ok((cols, rows))
+            if interactive && cols >= jackin_tui::ansi::HELP_BANNER_MIN_COLS && rows >= 20 =>
+        {
+            print!("{}", jackin_tui::ansi::help_banner(cols));
+        }
+        _ => print!("{}", jackin_tui::ansi::BRAND_BANNER),
     }
 }
 

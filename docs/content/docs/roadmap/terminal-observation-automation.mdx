@@ -1,0 +1,287 @@
+---
+title: "Terminal Observation and Automation"
+---
+
+**Status**: Open — research and design proposal (Phase 2, [Agent Orchestrator Research Program](/roadmap/agent-orchestrator-research/))
+
+## Problem
+
+jackin❯ already runs agent CLIs inside visible, isolated terminal sessions, but the terminal is still mostly an interactive surface. The operator can attach, watch, and type; the host can ask for session inventory and pane layout; future workflow items expect `session.read`, `session.wait`, and `session.send`; but there is not yet a first-class contract for **programmatic terminal observation and automation**: read the visible cells, wait for a visible condition, inject input, capture an artifact bundle, record a replayable trace, and let external orchestrators drive a Capsule session without scraping `docker exec` output.
+
+The research trigger was [kitlangton/cellshot](https://github.com/kitlangton/cellshot), a small MIT-licensed Rust project that treats terminal state as structured visual data. `cellshot` can launch a CLI in a PTY, wait for text, send key sequences, snapshot the terminal into text/JSON/ANSI/SVG/PNG artifacts, keep a persistent session daemon, and record a timeline that can render to video. That is close to the missing layer for jackin❯ agent orchestration, but the implementation shape is not something jackin❯ should embed wholesale.
+
+## Decision
+
+Borrow the product and protocol ideas from `cellshot` and adjacent terminal-recorder/test tools, but implement them natively inside `jackin-capsule`. Do **not** run `cellshot` as a nested daemon inside role containers and do **not** make it a core runtime dependency.
+
+The reason is simple: `cellshot` builds a PTY daemon because it needs one; jackin❯ already has one. Capsule already owns PTYs, sessions, pane layout, attach takeover, OSC passthrough, jackin-term `DamageGrid` screen state, and the control socket. A nested runtime would create this bad layering:
+
+```text
+jackin host
+  └─ role container
+      └─ jackin-capsule daemon
+          └─ cellshot daemon
+              └─ agent PTY
+```
+
+That would complicate resize, focus, OSC policy, auth/runtime setup, state inference, attach/hijack, and session identity. The native shape is instead:
+
+```text
+jackin host / future daemon / external adapter
+  └─ Capsule control protocol
+      └─ existing session PTY + DamageGrid screen + raw output trace
+```
+
+`cellshot` remains useful as a development/docs/test tool for capturing the outer `jackin console` experience, and selected MIT-licensed implementation ideas can be reused with attribution if they are simpler to port than rewrite. The core orchestration surface should live in `jackin-protocol` and `jackin-capsule`.
+
+## What `cellshot` contributes
+
+`cellshot` is valuable because it packages several terminal-agent primitives into one coherent CLI:
+
+| Capability | Why it matters for jackin❯ |
+|---|---|
+| Structured frame model | A sparse cell grid with text, width, colors, attributes, cursor, foreground, and background is more useful than pixels or raw ANSI alone. It enables text search, cell-level diffing, golden tests, preview panes, and artifact rendering from one source of truth. |
+| `wait-for` visible text | Visible text becomes a synchronization barrier. Scripts can wait until an agent prompt, approval question, or completion marker is actually visible instead of sleeping or parsing logs. |
+| Input token injection | `text:...`, `enter`, arrows, escape, control keys, and paced typing are enough to build deterministic agent/TUI test scripts. |
+| Multi-format snapshots | A single capture emits text, JSON, raw ANSI, SVG, and PNG. Humans, scripts, and bug reports each get the artifact they need. |
+| Persistent session daemon | The `launch` / `wait` / `send` / `snapshot` / `close` split proves that a shell-friendly, one-command-per-action API can orchestrate a long-running TUI without a long-running client. |
+| JSONL recording | Timestamped input/output entries are easy to append, inspect, redact, replay, and convert to video. |
+| Block-character SVG rendering | Rendering Unicode block elements as SVG geometry avoids font artifacts in TUI screenshots and progress bars. |
+
+The feature to copy first is not PNG generation. It is the idea that **a terminal session has a queryable visual state** and that state can be addressed by other tools.
+
+## Adjacent project research
+
+The landscape splits into recorders, scripted demo/test tools, VT emulators, widget test backends, and classic expect-style PTY automation. The recurring design lesson is a two-layer model: timestamp raw PTY bytes for lossless replay, and maintain a VT screen model for queryable state.
+
+| Project | Useful idea | What jackin❯ should borrow | What jackin❯ should avoid |
+|---|---|---|---|
+| [cellshot](https://github.com/kitlangton/cellshot) | PTY capture/session daemon with `wait`, `send`, `snapshot`, structured frames, SVG/PNG/text/JSON/ANSI artifacts, and JSONL recording. | Native Capsule control calls for read/wait/send/snapshot/record; sparse terminal frame schema; artifact bundle shape; block-element SVG rendering. | Nested daemon, binary-crate dependency, duplicated PTY ownership. |
+| [asciinema](https://github.com/asciinema/asciinema), [asciinema-player](https://github.com/asciinema/asciinema-player), [agg](https://github.com/asciinema/agg), and [avt](https://github.com/asciinema/avt) | Standard terminal recording ecosystem: asciicast v2/v3 events, browser player, GIF renderer, Rust VT emulator. | Consider `.cast` export for session recordings; emit marker events for status transitions; evaluate `avt` for offline replay/diff/dump. | Replacing Capsule's live `DamageGrid` + OSC policy with `avt` without solving passthrough and control-protocol needs. |
+| [Charmbracelet VHS](https://github.com/charmbracelet/vhs) | Scripted `.tape` demos with `Type`, `Enter`, `Sleep`, `Wait /regex/`, `Screenshot`, and golden ASCII output. | A future `jackin automate` script shape; regex waits against visible screen text; golden text snapshots for CI. | Chromium/ttyd/xterm.js rendering pipeline inside containers. It is too heavy and host-oriented for Capsule. |
+| [Microsoft tui-test](https://github.com/microsoft/tui-test) | Playwright-like terminal tests: isolated PTY, `getByText`, auto-wait, snapshot assertions, and trace replay. | Query API naming and behavior: `getByText` / `toBeVisible` style waits map directly to Capsule screen rows. Store trace artifacts on failure. | Node/xterm.js runtime dependency for jackin❯ core. |
+| [Netflix go-expect](https://github.com/Netflix/go-expect) and classic `expect` | Minimal PTY automation: `Send`, `Expect`, `ExpectEOF`. | Keep the first jackin❯ automation API small and blocking: send bytes, wait for condition, return match/evidence. | Raw-byte regexes as the primary API. jackin❯ can match the interpreted screen instead of ANSI-noisy output. |
+| [termtosvg](https://github.com/nbedos/termtosvg) | Standalone SVG terminal animation using a VT emulator and templates. | SVG as a scalable docs/demo artifact; themeable terminal-frame rendering. | Depending on an archived Python project or SMIL animation as the runtime format. |
+| `ttyrec`, `script`, and `scriptreplay` | Tiny timestamped raw terminal-byte logs. | Offer a lowest-level raw trace export for audit/debug and converter compatibility. | Treating raw traces as enough for orchestration; they are replayable, not directly queryable. |
+| [pyte](https://github.com/selectel/pyte) | Simple `Screen.display`, `DiffScreen`, and dirty-line tracking. | Dirty-row/delta concepts for efficient control-stream previews and snapshots. | Python dependency and older terminal-feature coverage. |
+| [Ratatui TestBackend](https://github.com/ratatui/ratatui) | In-memory styled-cell buffers and snapshot assertions for TUI widgets. | Golden-buffer testing for jackin❯ renderers and preview widgets; align artifact format with future terminal frames. | Confusing widget-buffer tests with live PTY session observation. |
+
+## Current jackin❯ leverage
+
+Capsule already has the right substrate. It runs as the in-container control plane, owns PTYs and sessions, keeps `DamageGrid` state per session, forwards raw output over the binary attach channel, and exposes a JSON control channel for one-shot queries. The relevant local surfaces are <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/client.rs">crates/jackin-capsule/src/client.rs</RepoFile>, <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile>, and <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile>.
+
+The missing pieces are not another PTY runner. They are typed control messages, stable artifact schemas, recording policy, and host/CLI adapters that can use the live screen state safely.
+
+## Target capabilities
+
+The product shape is **Playwright-like control for live jackin❯ instances**, but against terminal sessions instead of browser pages. A test, workflow runner, or external orchestrator should be able to address an instance, pick a tab/session, wait for visible or semantic state, type into the agent input, press enter, switch focus, capture the resulting terminal moment, and continue from the evidence it receives. The API should feel deterministic and scriptable, while preserving the core jackin❯ promise that the session remains visible, attachable, and hijackable by the operator.
+
+Conceptually:
+
+```text
+jackin instance
+  ├─ select tab/session
+  ├─ wait for visible text or runtime status
+  ├─ type prompt text
+  ├─ send enter / key tokens
+  ├─ wait for progress, blocker, or completion evidence
+  └─ capture text / JSON frame / screenshot / recording marker
+```
+
+### Proposed API surface
+
+The API should model the things operators already see, not Docker internals. The stable resource hierarchy is: **instance → tab → pane/session**. A tab is the operator-visible workspace inside Capsule; a session is the PTY-backed agent or shell running in a pane. The API can start as CLI/control-channel calls and later be exposed through the daemon/MCP adapter without changing the vocabulary.
+
+| API family | Operations | Purpose |
+|---|---|---|
+| Instance discovery | `instance.list`, `instance.describe` | Find running or preserved jackin❯ instances and return instance id, workspace/role labels, supported agents, available providers, tab summary, and active tab. |
+| Tab control | `tab.list`, `tab.select`, `tab.create`, `tab.rename`, `tab.close` | Let automation and future UI tools switch between Capsule tabs, create a fresh tab, name it for a workflow phase, and close tabs when a run is done. `tab.select` changes Capsule focus; every other operation should also be able to target a tab by id without relying on focus. |
+| Session creation | `session.create` with `{ tab_id, kind, agent?, provider?, label?, prompt? }` | Start a new PTY-backed session in the target tab. `kind = agent` requires an agent slug and may include a provider choice; `kind = shell` creates a shell session and should be treated as the shell agent for API consistency. A starting prompt is optional and should be delivered after the session is ready, not pasted before the runtime has rendered its input box. |
+| Provider selection | `provider.list` and `session.create.provider` | Return the providers valid for a chosen agent in this instance, then let the caller choose explicitly. If omitted, jackin❯ applies the same default/last-used/provider-picker policy as the interactive console. The response must record the resolved provider so recordings and workflow evidence say whether Claude Code used Anthropic, Z.AI, or another future backend. |
+| Focus and attach | `session.focus`, `session.attach`, `session.detach` | Jump the operator or an automation client to the exact session/pane. Automation should not need focus for `send` or `read`, but focus changes are still first-class because the visible operator UI matters. |
+| Input | `session.send_text`, `session.send_keys`, `session.submit` | Send literal text, named keys, or text plus enter to a target session. `session.submit` is the high-level convenience for "put this in the agent input and send it"; lower-level key APIs still exist for TUIs, approval prompts, and shell sessions. |
+| Observation | `session.read_visible`, `session.read_frame`, `session.capture`, `session.record_start`, `session.record_stop` | Read visible rows, structured cells, artifact bundles, and recording state from the target session. These calls return evidence ids/revisions so a workflow can cite exactly what it saw. |
+| Waiting | `session.wait` | Wait for visible text/regex, effective runtime status, blocked/waiting details, explicit marker, screen revision, process exit, or timeout. The response should include the matched condition, session revision, status evidence, and whether the wait ended because the operator intervened. |
+| Event stream | `events.subscribe` | Stream tab/session lifecycle, output/screen revisions, effective status changes, blocked/done details, recording markers, and operator intervention events. This is the "listen to what is going on inside the agent" API; polling `read_visible` is only a fallback. |
+
+The minimum useful external flow should read like:
+
+```text
+instance = instance.describe("workspace-or-instance")
+tab = tab.create(instance.id, label: "implement terminal snapshot API")
+providers = provider.list(instance.id, agent: "claude")
+session = session.create(tab.id, kind: agent, agent: "claude", provider: providers.default)
+session.wait(session.id, status: "idle", visible: /How can I help|>/, timeout: 30s)
+session.submit(session.id, "Implement the roadmap item and run the docs checks")
+events.subscribe(instance.id, filter: { session_id: session.id })
+session.wait(session.id, status: "blocked|done", timeout: 30m)
+session.capture(session.id, out: "after-agent-response")
+```
+
+`blocked` and waiting details should not be invented by this API. They come from the [agent runtime status authority](/roadmap/agent-runtime-status/), which uses runtime hooks/plugins, foreground process evidence, visible-screen rules, OSC evidence, shell markers, and process watchdog checks. Terminal observation consumes that status and combines it with the visible screen and trace evidence so callers can both know **that** an agent is waiting and inspect **what** it is waiting on.
+
+### Screen text and frame snapshots
+
+Add a control call that returns the current visible terminal state for a target session. The first version should return plain rows and enough metadata to identify the session, dimensions, revision, and cursor. A later version should add a structured frame with sparse styled cells.
+
+Candidate response shapes:
+
+```rust
+ScreenText {
+    session_id,
+    cols,
+    rows,
+    revision,
+    lines,
+}
+
+TerminalFrame {
+    session_id,
+    cols,
+    rows,
+    revision,
+    cursor,
+    cells,
+}
+```
+
+This should power `jackin session text`, preview panes, golden tests, external MCP tools, and the future workflow runner's evidence model.
+
+### Wait-for-visible condition
+
+Add a blocking control call that waits until a visible-screen condition becomes true or times out. Start with literal text and regex over visible screen rows. Later conditions can include effective runtime status, process exit, explicit marker, cursor readiness, or quiet/stable screen windows.
+
+The important rule: a wait result must return evidence, not just success. The caller should know which session revision matched, which text matched, and whether the source was visible text, status authority, marker, or timeout.
+
+### Input injection
+
+Add a control call that sends bytes or named key tokens to a target session without needing an interactive attach client. It should share the same parser as future automation scripts and should support literal text, enter, escape, tab, arrows, control keys, paste-mode-safe chunks, and optional pacing for demos.
+
+Input injection is powerful and should be scoped by policy. Local CLI use is fine; daemon/MCP/external callers need capability gates so remote tools cannot silently control a session without operator consent.
+
+### Snapshot artifact bundle
+
+Add a CLI command that writes a snapshot bundle from one session:
+
+```text
+<stem>.txt
+<stem>.json
+<stem>.ansi
+<stem>.svg
+<stem>.png
+```
+
+The first shippable cut can be `.txt` and `.json`. Raw ANSI requires either bounded retained output per session or explicit recording mode. SVG/PNG can follow once the frame schema is stable. PNG should be derived from SVG or another deterministic renderer, not captured from the host terminal window.
+
+### Recording and replay
+
+Add opt-in recording at the Capsule/session level. The artifact should be append-only, timestamped, redaction-aware, and useful both for replay and debugging. Two formats are worth supporting:
+
+| Format | Why |
+|---|---|
+| asciicast v2/v3 | Existing player/rendering ecosystem; browser embeds; `agg` GIF rendering; marker events for agent status transitions. |
+| jackin JSONL trace | Native schema can include session id, pane id, input origin, status markers, operator intervention, container/role metadata, and redaction annotations without fighting an external format. |
+
+Raw `ttyrec`-style output is useful as a lowest-level debug export, but the durable jackin❯ recording should know about sessions, inputs, status markers, and operator interventions.
+
+### Automation script surface
+
+After read/wait/send are proven, add a small script runner inspired by VHS and expect. It should be intentionally narrower than a workflow runner:
+
+```text
+Session 2
+Wait /How can I help/
+Type "Run the tests and summarize failures"
+Enter
+Wait /tests passed|tests failed/ Timeout 10m
+Snapshot "after-tests"
+```
+
+This is useful for role smoke tests, docs demos, and reproducing agent runtime issues. It should not decide Git branches, PR lifecycle, merge policy, or task queues; that belongs to [agent workflow orchestration](/roadmap/agent-workflow-orchestration/).
+
+## Architecture
+
+The architecture should keep three surfaces separate:
+
+| Surface | Owns | Does not own |
+|---|---|---|
+| Capsule session runtime | PTY, parser, screen, input routing, raw output events, per-session revisions, recording tap. | Host-level policy, GitHub reporting, cross-container scheduling. |
+| Shared protocol | Stable message and artifact schemas for text/frame/wait/send/recording status. | Rendering implementation or business workflow decisions. |
+| Host CLI / daemon / adapters | User commands, file output, MCP/automation gates, external integrations, docs/demo tooling. | Re-parsing Docker logs or inventing a second terminal truth source. |
+
+The control path should extend the existing length-prefixed JSON control channel rather than adding a second socket. Hot-path interactive attach remains binary raw PTY bytes. Observation/automation calls are one-shot or bounded blocking requests.
+
+## Relationship to runtime status
+
+This item does not replace the [agent runtime status authority](/roadmap/agent-runtime-status/). They complement each other:
+
+| Runtime status authority | Terminal observation and automation |
+|---|---|
+| Decides whether a session is `working`, `blocked`, `done`, `idle`, `unknown`, or stuck. | Reads the visible screen, waits for visible/status conditions, injects input, captures artifacts, and records traces. |
+| Uses runtime hooks/plugins, process ownership, screen evidence, OSC evidence, shell markers, and watchdog checks. | Exposes the live terminal and trace data to scripts, tests, workflow runners, and humans. |
+| Should be conservative and avoid scraping as truth when semantic signals exist. | May use visible text as an explicit caller-requested condition, with evidence and timeout semantics. |
+
+The workflow runner should prefer status/marker waits when it needs semantic lifecycle truth and visible-text waits when the operator or test explicitly cares that text is on screen.
+
+## Phases
+
+### Phase 0 — Prototype against existing Capsule state
+
+Add internal helper methods that extract visible text rows from the current `GridSnapshot` for a session and unit-test them with controlled ANSI streams. No public CLI yet.
+
+### Phase 1 — Text snapshot and visible wait
+
+Extend the control protocol with a target-session text snapshot and a bounded wait-for-visible-text request. Add host-side CLI commands only after the protocol behavior is tested in Capsule. Return match evidence and timeout diagnostics.
+
+### Phase 2 — Tab/session create, select, and input injection
+
+Add tab selection/creation, session creation, provider resolution, named input tokens, literal text sending, and `submit` through the control channel. Reuse the same key-token parser in CLI and future automation scripts. Gate non-interactive/external callers behind explicit policy before exposing through daemon or MCP surfaces.
+
+### Phase 3 — Structured frame schema
+
+Expose sparse styled cells, cursor, dimensions, default colors, and revisions. Keep the schema stable enough for golden tests and downstream renderers. This is the point where `cellshot`'s frame model is most directly relevant.
+
+### Phase 4 — Snapshot artifact bundle
+
+Write `.txt` and `.json` first, then `.ansi`, `.svg`, and `.png`. SVG rendering should borrow the block-character geometry idea from `cellshot`; PNG should be deterministic and generated from the frame model, not from a host-window screenshot.
+
+### Phase 5 — Recording and replay
+
+Add opt-in per-session recording, with local redaction warnings and a clear privacy model. Start with native JSONL trace; add asciicast export when the event model is stable. Emit agent-status and operator-intervention markers so recordings explain why a workflow paused or resumed.
+
+### Phase 6 — Automation scripts and adapter surface
+
+Add a tiny tape/expect-style runner for smoke tests and demos. Then expose the same primitives through the future MCP/daemon adapter surface so external orchestrators can use jackin❯ as a visible, isolated execution substrate.
+
+## Open questions
+
+| Question | Current stance |
+|---|---|
+| Should jackin❯ store raw ANSI for every session by default? | No. Keep bounded in-memory data for live attach/preview and require opt-in recording for durable raw traces because terminal output can contain secrets. |
+| Should visible-text waits support regex immediately? | Yes, but keep the engine simple, bounded, and tested. Regex should run over visible rows or a caller-selected recent window, not unbounded scrollback. |
+| Should snapshots include scrollback? | Not in the first frame API. Start with visible viewport; add explicit recent/scrollback export later with size limits. |
+| Should SVG/PNG rendering be in Capsule or host CLI? | Prefer host CLI for file rendering so Capsule stays focused on runtime state and protocol. Capsule should return text/frame/ANSI; host code renders artifacts. |
+| Should `asciinema/avt` replace jackin-term? | Not now. `avt` is attractive for offline replay and dump/diff APIs, but the jackin❯ live path depends on typed passthrough events, dirty patches, and capsule control semantics. |
+| Should waits be event-driven or polling? | Event-driven when waiting on status markers or session revisions; bounded polling is acceptable for visible-text regex in the first version if it wakes on PTY output rather than fixed tight loops. |
+| How does this interact with operator hijack? | Any automation should record when the operator attaches, types, pauses, or resumes. The terminal remains visible and hijackable; automation is a client of the session, not its owner. |
+| Is a shell an agent? | For API consistency, yes: represent shell sessions as `kind = shell` or a reserved shell agent with no provider. The operator-visible UI can still label it `Shell`; automation should not need a separate resource type. |
+| Who chooses providers when a session is created? | Interactive flows can keep the console provider picker. Automation should either pass an explicit provider or request the resolved default and record it in the session-create response. |
+
+## Implementation notes
+
+- Keep local file references linked with `<RepoFile />` when this roadmap item is updated; the key implementation seams are <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/socket.rs">crates/jackin-capsule/src/socket.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>, and <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs">crates/jackin-runtime/src/runtime/snapshot.rs</RepoFile>.
+- Prefer protocol additions that are useful to both the CLI and the future daemon/MCP surface. Do not add CLI-only shell parsing that the daemon later has to reverse-engineer.
+- Every blocking wait must have a timeout, cancellation behavior, and diagnostic output. A wait that silently hangs is worse than no wait primitive.
+- Add fixture tests for ANSI streams, wide characters, alternate screen behavior, cursor visibility, line wrapping, and OSC passthrough interactions before depending on snapshots for workflow decisions.
+- Treat generated artifacts as potentially sensitive. Terminal screens can contain paths, secrets, tokens, prompts, and command output from mounted workspaces.
+
+## Related roadmap items
+
+- [jackin❯ Capsule control plane](/roadmap/jackin-capsule/) — existing in-container PTY multiplexer and the natural implementation point.
+- [Console agent session control](/roadmap/console-agent-session-control/) — shipped operator UI for discovering instances, starting secondary sessions, opening shells, and attaching to panes; this API is the scriptable counterpart.
+- [Multi-runtime support](/roadmap/multi-runtime-support/) — agent and provider choices in `session.create` must follow the same runtime/provider model as interactive launch.
+- [Agent runtime status authority](/roadmap/agent-runtime-status/) — semantic state source consumed by waits, markers, recordings, and attention prompts.
+- [Agent workflow orchestration](/roadmap/agent-workflow-orchestration/) — future workflow runner that needs session read/wait/send primitives but should not own terminal parsing.
+- [Agent attention prompts](/roadmap/agent-attention-prompts/) — notifications should consume status events and may include snapshot evidence when appropriate.
+- [TUI Design Decisions](/reference/tui//) and [visual snapshot testing (CLI & TUI)](/roadmap/visual-snapshot-testing/) — deterministic renderer/golden-test work that should converge with this terminal-frame artifact model on a shared styled-cell schema; that item asserts render regressions, this one captures live sessions for orchestration.
+- [Persistent storage layer](/roadmap/persistent-storage-layer/) — durable home for recordings, traces, workflow events, and artifact indexes.

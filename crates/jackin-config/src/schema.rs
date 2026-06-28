@@ -28,6 +28,38 @@ const fn is_false(v: &bool) -> bool {
     !*v
 }
 
+// ─── DirtyExitPolicy ─────────────────────────────────────────────────────────
+
+/// What jackin❯ does when a foreground session ends with dirty or unpushed
+/// isolated work (D8). Clean+pushed sessions always auto-clean regardless of
+/// this setting.
+///
+/// Resolution order: per-workspace override → global `AppConfig` default →
+/// built-in `Ask`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DirtyExitPolicy {
+    /// Prompt the operator with the exit dialog (default). (D8)
+    #[default]
+    Ask,
+    /// Auto-preserve the instance for resume — no prompt. (D8)
+    Keep,
+    /// Auto-discard everything including uncommitted edits and unpushed
+    /// commits — no prompt. Explicit operator opt-in for disposable
+    /// workspaces; jackin❯ does not second-guess it (D17).
+    Discard,
+}
+
+impl DirtyExitPolicy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::Keep => "keep",
+            Self::Discard => "discard",
+        }
+    }
+}
+
 // ─── Mount types ─────────────────────────────────────────────────────────────
 
 /// A single workspace mount: a host path bound into the container.
@@ -160,6 +192,10 @@ pub struct WorkspaceConfig {
     pub github: Option<GithubAuthConfig>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub git_pull_on_entry: bool,
+    /// Per-workspace override for the dirty-exit decision policy (D8).
+    /// `None` means inherit from the global `AppConfig::dirty_exit_policy`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dirty_exit_policy: Option<DirtyExitPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docker: Option<WorkspaceDockerConfig>,
 }
@@ -195,6 +231,7 @@ impl Default for WorkspaceConfig {
             grok: None,
             github: None,
             git_pull_on_entry: false,
+            dirty_exit_policy: None,
             docker: None,
         }
     }
@@ -387,6 +424,7 @@ pub struct DockerConfig {
 /// The binary's `workspace::resolve` builds it from an `AppConfig`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedWorkspace {
+    pub name: String,
     pub label: String,
     pub workdir: String,
     pub mounts: Vec<MountConfig>,

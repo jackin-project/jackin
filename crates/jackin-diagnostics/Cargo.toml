@@ -57,7 +57,7 @@ opentelemetry = { version = "0.32", optional = true }
 opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "metrics"], optional = true }
 # gRPC/tonic export is async and cannot run on the stable dedicated-thread batch
 # processors (they `block_on` the export off any reactor -> panic). It needs the
-# async-runtime processors driven by a tokio runtime. jackin's host and capsule
+# async-runtime processors driven by a tokio runtime. jackin❯'s host and capsule
 # both use a *current-thread* tokio main, where neither off-the-shelf runtime
 # fits: plain `rt-tokio` spawns the worker on the app runtime and the
 # `futures_executor::block_on` flush then parks the only thread -> deadlock;
@@ -75,7 +75,7 @@ opentelemetry_sdk = { version = "0.32", features = [
 opentelemetry-appender-tracing = { version = "0.32", optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true }
 # Process metrics (CPU, memory) for the OTLP gauge callbacks.
-sysinfo = { version = "0.38", optional = true, default-features = false, features = ["system"] }
+sysinfo = { version = "0.39", optional = true, default-features = false, features = ["system"] }
 # `rt-multi-thread` powers the dedicated telemetry runtime (see
 # `observability::otlp::otel_runtime`); `Handle::metrics()` feeds the tokio
 # runtime gauges from the app's handle, captured at subscriber init.

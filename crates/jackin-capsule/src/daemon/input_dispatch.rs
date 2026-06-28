@@ -1,5 +1,7 @@
 //! Input dispatch methods for the Multiplexer.
 
+use std::sync::Arc;
+
 use crate::tui::components::branch_context_bar::{branch_context_bar_hit, debug_run_id_label};
 use crate::tui::input::TAB_DOUBLE_CLICK_WINDOW;
 use crate::tui::update::DIALOG_COPY_FEEDBACK_DURATION;
@@ -75,6 +77,39 @@ impl Multiplexer {
                 self.dialog_pop_one();
             }
             DialogAction::Redraw | DialogAction::Consume => {}
+            DialogAction::ExitDirty(row) => {
+                use crate::tui::components::dialog::ExitDirtyRow;
+                match row {
+                    // Open the verbatim New-tab agent picker over the exit modal.
+                    // Picking an agent spawns a session and clears the dialog
+                    // stack (SpawnAgent → dialog_clear), dismissing the modal.
+                    ExitDirtyRow::StartNewAgent => {
+                        self.apply_action(Action::OpenAgentPicker(PickerIntent::NewTab));
+                        return;
+                    }
+                    // Push the read-only changed-files list stored in the
+                    // ExitDirty variant; Arc::clone is O(1). Esc walks back.
+                    ExitDirtyRow::Inspect => {
+                        let rows = match self.dialog_top() {
+                            Some(Dialog::ExitDirty { inspect_rows, .. }) => {
+                                Arc::clone(inspect_rows)
+                            }
+                            _ => return,
+                        };
+                        self.dialog_push(Dialog::new_exit_inspect(rows));
+                        self.invalidate(FullRedrawReason::DialogChange);
+                        return;
+                    }
+                    // Record the operator's choice; the event loop writes the
+                    // exit-action file and drains on the next iteration.
+                    ExitDirtyRow::Keep => {
+                        self.exit_request = Some(jackin_protocol::ExitAction::Keep);
+                    }
+                    ExitDirtyRow::Discard => {
+                        self.exit_request = Some(jackin_protocol::ExitAction::Discard);
+                    }
+                }
+            }
             DialogAction::Command(cmd) => {
                 // `handle_palette_command` decides per-arm whether
                 // the command opens a sub-dialog (push) or finishes
@@ -214,6 +249,10 @@ impl Multiplexer {
             }
         }
         self.invalidate(frame_plan.reason());
+        // Per-keypress selection trace — firehose, gated on JACKIN_DEBUG=1.
+        if let Some(Dialog::ExitDirty { selected, .. }) = self.dialog_top() {
+            crate::cdebug!("exit-dirty: selected={selected}");
+        }
     }
 
     pub(super) fn send_bytes_to_focused_pane(&mut self, bytes: &[u8]) -> bool {

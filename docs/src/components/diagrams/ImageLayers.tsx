@@ -2,7 +2,7 @@ export function ImageLayers() {
   return (
     <figure
       className="jk-layers not-content"
-      aria-label="jackin' image layers: top derived layer owned by jackin', middle agent layer from the agent repo, bottom shared construct base"
+      aria-label="jackin❯ image layers: top derived layer owned by jackin❯, middle agent layer from the agent repo, bottom shared construct base"
     >
       <ol className="jk-layers-stack">
         <li className="jk-layer jk-layer--derived">

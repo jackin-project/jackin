@@ -1,0 +1,280 @@
+---
+title: "53 — Headroom and the context-compression layer (vs the caveman ecosystem)"
+---
+
+# 53 — Headroom and the context-compression layer (vs the caveman ecosystem)
+
+Volume III deep-dive requested after the code-intelligence sweep (51) and the vector-database follow-up (52): analyze `chopratejas/headroom`, compare it in depth to the caveman ecosystem the operator already runs, re-sweep the internet for context-compression projects the dossier missed, and fold the result back into the dossier without editing the frozen Volume I/II files. Research conducted 2026-06-15; every external claim carries a source + access date in the ledger; headroom's product numbers are vendor self-reported and are tiered accordingly.
+
+<Aside type="note">
+The **canonical, deepest cross-tool head-to-head** now lives in its own folder: [token-optimization tools](/reference/research/token-optimization-tools/) — equal-depth design teardowns of caveman, headroom, RTK, and **lean-ctx**, a feature has/lacks matrix, best-case-of-each, and the combinability verdict. This chapter remains the full headroom deep-dive and source ledger that comparison points back to.
+</Aside>
+
+## TL;DR
+
+- **Headroom is the input-side counterpart to caveman, not a competitor to it.** Caveman compresses what the model *writes* (visible prose, ~17% of heavy-session dollars); headroom compresses what the model *reads* (tool outputs, logs, RAG chunks, files, history — the content that rides the **29% cache-write + 32% cache-read lines = 61% of dollars**). They operate on different token classes, stack cleanly, and **neither touches thinking (20%)** — the dossier's largest unaddressed bucket stays unaddressed.
+- **Headroom partially refutes the dossier's blanket "input compression breaks the cache" kill (record 19, file 46 FL3) — by design, not by magic.** Its Rust `cache_stabilization` subsystem (`anthropic_cache_control.rs`, `volatile_detector.rs`, `tool_def_normalize.rs`) plus **live-zone compression** (`live_zone_anthropic.rs`) compress only the volatile tail and keep the cached prefix byte-identical. This is **cache-safe in MCP/library mode** (compress an observation once, before it is ever cached) and **cache-risky in whole-prompt proxy mode** in front of an already-caching Claude Code.
+- **The "60–95% fewer tokens" headline is a per-compressible-payload ratio, not a whole-bill number** — the same category error the dossier corrected for caveman (K1). Headroom's own benchmarks show it: repetitive logs/JSON compress 87–94%, but **grep results and source code compressed 0%** in the published v0.5.18 run ("code passes through to preserve correctness"). The honest whole-bill effect is `compressible-observation share × (write-share + 0.1×read-share)` of the 61% bucket — real, bounded, low-double-digit percent at best, not 60–95% of the bill.
+- **"96.2% total savings" double-counts caching Claude Code already banks.** That figure multiplies headroom's compression by prompt-caching's 90%-off — but Claude Code already runs maximally cached (dossier K4: caching is the floor, not an available saving). Headroom's *incremental* lever on Claude Code is the compression fraction on the live zone alone.
+- **Headroom's own production telemetry settles the headline: median whole-session compression is 4.8%.** Across 50,000+ proxy sessions / 250+ instances (Mar–Apr 2026) the vendor reports **median 4.8% / P75 6.9% / mean 11.3%** whole-session compression, reaching 40–80% only on heavy tool-use sessions; the limitations page says it outright — "Short conversational exchanges (median 4.8% compression)." Two independent hands-on deploys land in the tool-heavy band: Miya-Gadget (2026-06-03) measured 59,742→31,358 tokens (**47.5%**) with RAG prose compressed **0%** and logs only 31%, calling the "95%" claim "oversold"; an HN user reported "~50%." The "60–95%" headline is the per-redundant-payload best case, not the whole-session reality. The headline survives only as a per-payload ratio on redundant JSON/logs (see the benchmarks section). The *mechanisms*, meanwhile, inherit **T1** from the dossier's own local reproductions (log-filter −94.2%, outline −91%, symbol-search −98%, JSON-minify −34.3%/−41.2%). Headroom productizes proven levers; it does not invent a new physics.
+- **Two ideas in headroom are genuinely new to the dossier:** reversible compression with on-demand retrieval (CCR + `headroom_retrieve`) answers white-space #8 ("output brevity with quality gates"), and `headroom learn` (mine failed sessions → write corrections to CLAUDE.md/AGENTS.md) is a self-improving-memory lever not present anywhere in Volume I–III.
+- **jackin❯ verdict:** pilot headroom's **MCP mode** as an A/B arm against the levers the dossier already recommends (hook filtering — record 20; code-intelligence outlines — file 51; serialization — record 14), measured on incremental tokens-per-solved-task. **Do not default to proxy mode** in a jackin❯ container: it adds a cache-bust risk, a per-request ML model in the hot path, a CompressionAttack surface (file 46 FL3), and a double-compaction conflict with Claude Code's own context management.
+
+## What headroom is
+
+| Field | Value |
+|---|---|
+| Repository | [github.com/chopratejas/headroom](https://github.com/chopratejas/headroom) |
+| Pitch | "Compress tool outputs, logs, files, and RAG chunks before they reach the LLM. 60-95% fewer tokens, same answers. Library, proxy, MCP server." |
+| Created / latest | 2026-01-07 / v0.25.0 (190 PyPI releases — fast cadence) |
+| Adoption | 28,199 stars / **95 watchers** / 1,909 forks / 30 contributors / 268 issues (gh api 2026-06-15). **Stars are a PR artifact, not adoption:** ~87% landed in a 14-day window after a 2026-05-31 Register article + a Trendshift slot; the 95:28,199 watcher:star ratio is ~10× more skewed than a healthy repo, and the maintainer's next-most-starred repo has 25 stars. Treat the star count as noise (file 54 §A). |
+| Languages | Python 78% (API/integrations), Rust 17.3% (`headroom-core`, `headroom-proxy` — the hot path), TypeScript 2.5% |
+| License | Apache-2.0 (permissive; contrast caveman's plugin-skill model) |
+| Companion model | `chopratejas/kompress-base` on HuggingFace — a transformer trained on agentic traces, auto-downloaded, used as the default text compressor |
+| Deployment modes | **library** (`compress(messages)`), **proxy** (`headroom proxy --port 8787`, rewrites all traffic), **agent wrapper** (`headroom wrap claude\|codex\|cursor\|aider\|copilot`), **MCP server** (`headroom_compress` / `headroom_retrieve` / `headroom_stats`) |
+| Targets | Anthropic, OpenAI, Bedrock, Gemini; LangChain, LiteLLM, Agno, Strands, Vercel AI SDK; Claude Code, Codex, Cursor, Aider, Copilot CLI, OpenClaw |
+
+Headroom is a real engineering effort, not a prompt pack: a Rust core with a compression policy engine, a content router, typed transforms, a reversible store with SQLite/Redis/in-memory backends, and a proxy with provider-specific cache-stabilization and streaming (including Bedrock SigV4). That maturity is the reason it deserves a deeper treatment than a single market-scan row.
+
+## The crux: does input compression conflict with prompt caching?
+
+This is the question that decides whether headroom belongs in the recommended stack or the graveyard, because the dossier's strongest standing verdict against input compression is exactly this conflict.
+
+**The dossier's prior position.** Record 19 (LLMLingua family) and file 46 FL3 establish that a compressor in the request hot path that recompresses the whole prompt **fights** prompt caching: it mutates the stable prefix every turn, converting 0.1× cache reads back into 1.25–2× cache writes. On the modeled day a cache-breaking compressor must clear **~5.5× compression (≈82%) just to break even** on a mixed prompt — and closer to **~10× on a fully-cacheable prefix**, because cache reads cost 0.1× (`1.0·M = 0.1·N → N/M = 10`); 4× compression *loses money*. Two 2026 results harden this: "Don't Break the Cache" (arXiv 2601.06007) measures prompt caching saving 41–80% of agent cost across Anthropic/OpenAI/Google and prescribes putting dynamic content at the *end* of the system prompt (exactly what CacheAligner does), and the 358-run Claude Sonnet 4.5 RCT (arXiv 2603.23525) found aggressive input compression *raised* cost 1.8%. File 46 FL3 adds a security reason (CompressionAttack, arXiv 2510.22963, ≤80% attack-success-rate on prompt-compression modules). The blanket verdict was: keep compressors out of the hot path for coding.
+
+**Headroom's answer, verified in source.** Headroom does not recompress the whole prompt. It splits the request into a stable prefix and a volatile **live zone**, and compresses only the live zone while keeping the prefix byte-identical. The evidence is in the code, not just the marketing:
+
+- `crates/headroom-proxy/src/cache_stabilization/anthropic_cache_control.rs`, `volatile_detector.rs`, `tool_def_normalize.rs`, `drift_detector.rs` — a dedicated prefix-stabilization subsystem.
+- `crates/headroom-proxy/src/compression/live_zone_anthropic.rs` (and OpenAI/Responses twins) — compression scoped to the live zone.
+- `benchmarks/prefix_cache_benchmark.py`, `cache_bust_trace_report.py`, `synthetic_token_cache_bust_report.py`, `cache_validation_bundle.py` — they actively test for cache-bust regressions.
+
+In headroom's own words (docs, accessed 2026-06-15): **CacheAligner** "solves this by extracting dynamic content and moving it to the end of the message, keeping the prefix stable," so "the prefix stays byte-identical across requests, so the provider's KV cache can reuse previously computed attention states." For Anthropic it "automatically inserts `cache_control` breakpoints at the right positions."
+
+**What this changes in the dossier.** The record-19 / FL3 kill was correct for *whole-prompt recompression*, but it was stated too broadly. There is a cache-compatible design point, and headroom occupies it: **stabilize the prefix, compress only the volatile tail, and do it once before that tail is first cached.** A freshly-arriving tool output is going to be a cache *write* regardless; compressing it before it is written shrinks the write and every subsequent 0.1× read of it, *without* touching the already-cached prefix. This is the input-side analogue of the CAG pattern (file 46 FL1: compose with caching, don't fight it).
+
+**But the mode matters, and the marketing blurs it.** The cache-safe story holds cleanly for **MCP mode** (the agent calls `headroom_compress` on an observation before it enters context) and **library mode** (compress a payload before you append it). It is much weaker for **whole-prompt proxy mode in front of Claude Code**, because:
+
+1. Claude Code *already* stabilizes its own prefix and places `cache_control` breakpoints automatically. A second stabilizer in the path is redundant at best and can disagree with the client's breakpoints at worst.
+2. A proxy that rewrites message bodies risks invalidating the exact prefix Claude Code intended to cache — the failure mode is silent (you simply stop seeing `cache_read`), and the 5.5× break-even applies the moment it happens.
+3. Claude Code runs its own compaction/`/clear` hygiene; a proxy doing independent context dropping (`IntelligentContext`) can double-compact and evict content the client still expects.
+
+| Headroom mode | Cache interaction on Claude Code | Verdict |
+|---|---|---|
+| MCP (`headroom_compress` on observations) | Compresses the tool output *before* it is cached; prefix untouched | **Cache-safe** — the recommended way to use it |
+| Library (`compress()` on a payload pre-append) | Same as MCP; you control what gets compressed | **Cache-safe** |
+| Agent wrapper (`headroom wrap claude`) | Depends on whether it intercepts as a proxy; needs JSONL audit | **Audit before trusting** |
+| Whole-prompt proxy in front of Claude Code | Rewrites traffic Claude Code already caches; can churn the prefix; double-compaction risk | **Cache-risk — do not default** |
+
+**The "96.2% total" double-count.** Headroom's docs advertise "96.2% total savings" by layering compression on top of provider caching. On a custom SDK app with no caching, that framing is fair. On Claude Code it is the dossier's K4 error: caching's ~90%-off is *already banked* (the local heavy session measured 92.83% cache reads), so it is not an available marginal saving. Headroom's honest incremental contribution on Claude Code is the **compression fraction applied to the live zone**, weighted by the write/read split — not 96.2%.
+
+## Headroom's compressors map onto levers the dossier already validated
+
+The most important finding for the dossier is that headroom is largely a *productization*, not a discovery. Each component lines up with an existing record, and the existing record usually carries stronger (locally-reproduced) evidence than headroom's self-report.
+
+| Headroom component | What it does | Dossier lever it productizes | Strongest existing evidence |
+|---|---|---|---|
+| **LogCompressor** | Keep errors/stack traces/levels, drop passing noise | Record 20 (preprocessing/hooks filtering) | **T1, local −94.2%** on a synthetic cargo log, all failures preserved (file 03) |
+| **CodeAwareCompressor** | Keep imports/signatures/types, collapse bodies | Record 16 (aider repo map) + file 12 + file 51 | **T1, local −91%** outline vs whole-file read (file 51) |
+| **SearchCompressor** | `file:line:content`, drop verbose detail | File 51 (codedb/fff symbol search) | **T1, local −98%** symbol-search vs file read (file 51) |
+| **SmartCrusher** | JSON arrays → sampled/typed, keep anomalies | Record 14 (TOON + JSON minification) | **T1, local −34.3% minify / −41.2% TOON** vs minified (file 03) |
+| **HTMLCompressor** | Strip tag structure to content | Record 20 (markdown-not-HTML, `max_content_tokens`) | T1 (official pattern) + Firecrawl 94% (T3) |
+| **IntelligentContext** | Score by recency/relevance/error, drop low-value messages | Record 12 (context editing) + record 06 (compaction) | T1 vendor −84%/+29% (search domain; unproven on code) |
+| **TextCompressor / kompress-base** | ML perplexity-style prose compression | Record 19 (LLMLingua family) | **T2 NL only; the RISKY one for code** — perplexity pruning drops identifiers |
+| **CacheAligner** | Extract volatile content, stabilize prefix, insert `cache_control` | Record 05/13 (cache hygiene) + file 46 FL1/FL2 | T1 (Anthropic caching mechanics) |
+| **CCR + `headroom_retrieve`** | Store originals, retrieve on demand | White-space #8 + progressive disclosure (record 02/15) | New productization (see H2) |
+| **Cross-agent memory** | Shared, auto-dedup store across Claude/Codex/Gemini | Record 02 (cavemem) + 15 (claude-mem) + file 45 | New cross-agent angle (see H4) |
+| **`headroom learn`** | Mine failed sessions → write CLAUDE.md/AGENTS.md fixes | Nothing in Volume I–III | **Genuinely new** (see H3) |
+
+The two rows worth caution: **TextCompressor/kompress-base** is the record-19 lossy compressor wearing a trained-model coat — it is the component most likely to drop a load-bearing identifier or caveat, and it runs an auto-downloaded model on every request through the proxy (latency + an attack surface). **IntelligentContext** is vendor-proven only on agentic *search*, never on code; an evicted tool result that mattered 40 turns later is the silent failure.
+
+## Benchmarks: what is real and what is self-report
+
+Headroom's numbers are internally consistent and, importantly, *honest about the easy-vs-hard split* — but they are all the maintainer's own, run on the maintainer's own harness, with no stated tokenizer and no third-party replication.
+
+| Workload (headroom self-report) | Before | After | Saved | Honest reading |
+|---|---|---|---|---|
+| Code search (100 results) | 17,765 | 1,408 | **92%** | Repetitive search results — matches the dossier's −98% symbol-search lever |
+| SRE incident debugging | 65,694 | 5,118 | **92%** | Logs — matches the dossier's −94.2% log filter |
+| GitHub issue triage | 54,174 | 14,761 | **73%** | Mixed text + metadata |
+| Codebase exploration | 78,502 | 41,254 | **47%** | Code-heavy — the hard case, and the number drops by half |
+| 6-content-type mix | 23,921 | 8,110 | **66.1%** | The most representative single figure |
+| v0.5.18: build log (200 lines) | 2,412 B | 148 B | **~94%** | Repetitive |
+| v0.5.18: grep results (150 hits) | 2,624 B | 2,624 B | **0%** | Pass-through |
+| v0.5.18: Python source (~480 lines) | 2,958 B | 2,958 B | **0%** | "code passes through to preserve correctness" |
+
+Accuracy (headroom self-report, 100-sample tests): GSM8K 0.870 → 0.870 (±0.000); TruthfulQA 0.530 → 0.560 (+0.030); SQuAD v2 97% at **19%** compression; BFCL tools 97% at **32%** compression; HTML extraction F1 0.919 (recall 0.982) at 94.9% compression on a structured benchmark. The pattern is the dossier's thesis restated by the vendor: **accuracy is preserved at low compression on prose/QA, and high compression is only safe on highly-repetitive content.** The headline "same answers" is true in the regime where the content was redundant to begin with; it is untested at high compression on code and reasoning.
+
+**Headroom's own production telemetry is the most decisive number, and it is the vendor's.** Across 50,000+ proxy sessions / 250+ instances (Mar–Apr 2026), headroom's benchmarks page reports **median 4.8% / P75 6.9% / mean 11.3%** whole-session compression, rising to 40–80% only on heavy tool-use sessions; the limitations page states it plainly — "Short conversational exchanges (median 4.8% compression)." So the vendor itself measures the typical whole-session effect at single digits. That is the per-payload-vs-whole-bill split in the maker's own production data: the 60–95% headline is the best case on redundant JSON/logs, not what a representative session sees.
+
+**Independent measurement corroborates on the tool-heavy end.** A third party (Miya-Gadget, 2026-06-03) deployed headroom on a real coding session and measured **59,742 → 31,358 tokens = 47.5% overall**, broken down as code 79.8%, JSON 59.2%, logs 31.0%, and **RAG/prose 0.0% (untouched by default)** — concluding the "95% token reduction" marketing "feels oversold," with realistic sessions at ~20–30% and 80%+ only on high-redundancy JSON/logs. An HN user independently reported "~50%." A tool-heavy coding session sits in the 40–80% band; the whole-traffic median sits at 4.8%. The press that drove headroom's visibility — a 2026-05-31 Register piece repeating a vendor "$700K saved / 90% redundant" figure, echoed by ~20 downstream outlets — ran no independent test (file 54 §A).
+
+The whole-bill correction (the K1 move, applied to the input side): "60–95%" is a per-payload ratio on compressible observations. On the modeled heavy day, tool outputs/observations are only part of the 61% cache traffic (the rest is the system prefix, CLAUDE.md, conversation history, and code reads that headroom passes through at ~0%). The realistic whole-bill effect is `(compressible-observation share of the 61%) × compression% × (write-share + 0.1×read-share)`. With most observation tokens already living at the 0.1× read price after first write, the read-side win is worth a tenth of its face value — so even an aggressive deployment lands in the low double digits of the day's dollars, not 60–95% of the bill. That is still a real lever on the *largest* bucket; it is simply not the headline number.
+
+## How headroom compares to caveman and RTK
+
+The full side-by-side comparison — headroom vs the caveman ecosystem vs RTK, the axis-by-axis table, the cache-safety asymmetry (output brevity is cache-neutral; input compression is cache-breaking unless done at write-time on new content), the family-overlap mapping, and the memory either/or — is consolidated as a **single source of truth** in the dedicated folder, not duplicated here:
+
+- [Token-optimization tools — overview + master comparison table](/reference/research/token-optimization-tools/)
+- [Head-to-head: the feature has/lacks matrix and best-case-of-each](/reference/research/token-optimization-tools/05-head-to-head/)
+- [Combining: the layered stack, the ecosystem overlap, and the memory either/or](/reference/research/token-optimization-tools/06-combining/)
+
+The one structural point worth restating here because it drives headroom's whole design: **output brevity is cache-neutral, but input compression is cache-breaking unless it is done at write-time on new content** — which is exactly why headroom's live-zone / MCP path (compress a new observation before it is first cached) is cache-safe while its whole-prompt proxy in front of an already-caching Claude is not. The rest of this chapter is the dossier's **headroom record**: its typed compressors, the live-zone cache machinery, the H1–H4 technique records, the benchmarks, and the source ledger.
+
+## Genuinely new techniques (per-technique records)
+
+These use the §10 record schema. Levers headroom merely productizes (log filtering, outlines, minification, context editing) are already recorded in Volume I–III and are not repeated here.
+
+### H1. Live-zone input compression — the cache-safe design point record 19 said did not exist
+
+- **Coverage-delta:** Refines record 19 + file 46 FL3. Volume I/II treated input compression as monolithically cache-hostile; this records the cache-compatible sub-design.
+- **Layer:** input + cache.
+- **Mechanism:** split each request into a stable prefix and a volatile live zone; stabilize the prefix (extract volatile content to a tail, normalize tool definitions, insert `cache_control` at stable boundaries) and compress only the live zone, once, before it is first cached. The cached prefix stays byte-identical, so 0.1× reads survive; the compression shrinks the cache *write* of the new content and all future reads of it.
+- **Expected savings:** on the modeled day, `(compressible-observation share of the 61% cache bucket) × compression% × (write-share + 0.1×read-share)`. Real on the largest bucket, bounded to low-double-digit % of dollars because most observation tokens already read at 0.1×. NOT the 60–95% per-payload headline (ESTIMATE; arithmetic in the benchmarks section).
+- **Evidence tier:** T1 for the mechanism (the underlying log/outline/minify levers are locally reproduced in files 03/51); **T3-weak for headroom's specific product numbers** (vendor self-report, no independent replication); **T2 academic backing for the write-time pattern itself** — Squeez (arXiv 2604.04979 — 92% tool-output token removal at 0.86 recall, run as a write-time Unix pipe, cache-safe, code-domain) and AgentDiet (arXiv 2509.23586 — Claude 4 Sonnet 64.5%→66.5% with input −40–60%, the only paper in the class that nets out the compressor's own +5–15% cost, the net-accounting white-space #5 demanded).
+- **Quality risk:** **NEUTRAL on rule-based transforms** (log/JSON/search/diff), **RISKY on the ML text compressor** (kompress-base can drop identifiers/caveats — the record-19 failure mode), **RISKY in proxy mode** (silent cache-bust if the prefix churns). Falsify by A/B on JSONL: confirm `cache_read` continuity is preserved and tokens-per-solved-task drops net of overhead.
+- **Availability:** `CLAUDE-CODE-TODAY` via MCP (`headroom_compress`) / `SDK` (library) / `GATEWAY-OR-SELF-HOST` (proxy).
+- **Effort to adopt:** minutes (MCP) to hours (proxy + offline asset provisioning).
+- **Composability:** composes *with* prompt caching (unlike record 19's LLMLingua) when scoped to the live zone; anti-synergy with proxy-mode-in-front-of-Claude-Code (double-stabilization) and with anything that mutates the prefix.
+- **Validation protocol:** 20 tool-heavy tasks, native vs headroom-MCP; from JSONL require (a) `cache_read` ratio unchanged or better, (b) tool-result tokens down, (c) task success unchanged, (d) net tokens-per-solved-task down ≥20% after subtracting MCP schema + retrieve round-trips.
+
+### H2. Reversible compression with on-demand retrieval (CCR)
+
+- **Coverage-delta:** New productization of white-space #8 ("output brevity with quality gates") and the progressive-disclosure idea behind record 02/15.
+- **Layer:** input / retrieval.
+- **Mechanism:** compressed content is stored verbatim in a CCR store (SQLite/Redis/in-memory backends in `headroom-core`); the model receives a compressed view plus a `headroom_retrieve` tool and can fetch the original within a TTL when it needs full detail. Lossy compression becomes *recoverable* lossy compression.
+- **Expected savings:** the compression saving of H1, minus the cost of retrievals actually triggered. Net-positive only if retrieval rate is low; each retrieve is a tool-call round-trip (schema + request + the original payload re-entering context).
+- **Evidence tier:** T3 (mechanism shipped and benchmarked by the vendor: `ccr_regression_benchmark.py`, `adversarial_ccr_tests.py`); no independent measurement of net effect.
+- **Quality risk:** **NEGATIVE-COST in principle** (it removes the lossy-memory failure mode that makes cavemem/claude-mem RISKY) — *if* the model reliably knows when to retrieve. Failure mode: the model trusts a compressed view it should have expanded, or over-retrieves and erases the saving. Falsify by seeding tasks whose answer hinges on a detail that compression dropped; measure retrieve recall and net tokens.
+- **Availability:** `CLAUDE-CODE-TODAY` (MCP exposes `headroom_retrieve`).
+- **Effort to adopt:** minutes (MCP); the store needs a backend choice for persistence.
+- **Composability:** strengthens any lossy input/memory compressor; pairs with cross-agent memory (H4); orthogonal to caching.
+- **Validation protocol:** detail-dependent canary suite (numbers, negations, "don't do X" buried in a compressed payload); require retrieve-or-correct behavior on 10/10 and net-positive tokens.
+
+### H3. Failure-mining into memory files (`headroom learn`)
+
+- **Coverage-delta:** New — no equivalent in Volume I–III.
+- **Layer:** input (memory) / meta.
+- **Mechanism:** analyze past *failed* sessions across Claude/Codex/Gemini and write durable corrections into CLAUDE.md/AGENTS.md, so the always-loaded prefix improves over time instead of repeating mistakes. A closed self-correction loop over the memory file the dossier already prices.
+- **Expected savings:** indirect — fewer repeated failures = fewer wasted retry turns (the most expensive waste, since retries pay full thinking + output). No published number; the *cost* is added prefix mass (record 07 rent: every CLAUDE.md line is cache-read rent on every call) and a risk of bloating the file past the "under 200 lines" guidance.
+- **Evidence tier:** T4 (plausible mechanism, no measured net effect; failure-mining quality unverified).
+- **Quality risk:** **RISKY** — an auto-written rule that is wrong or over-general is one bad PR that erases months of savings (record 07's failure mode), and unbounded auto-append violates CLAUDE.md slimming. Falsify by reviewing every auto-written rule before commit and replaying the rule-sensitive task set.
+- **Availability:** `CLAUDE-CODE-TODAY` (CLI command).
+- **Effort to adopt:** minutes to run; ongoing editorial discipline to keep the file lean.
+- **Composability:** feeds record 07 (CLAUDE.md) and the jackin❯ `[token_policy]` idea (file 32); anti-synergy with prefix slimming if left unbounded.
+- **Validation protocol:** human-gate every correction; cap the file size; A/B the failure rate on the task class the correction targets, and confirm the added prefix rent is smaller than the retries it prevents.
+
+### H4. Cross-agent deduplicated shared memory
+
+- **Coverage-delta:** Extends record 02 (cavemem) / record 15 (claude-mem) / file 45 (cross-agent portability) with a cross-tool, auto-dedup angle none of them cover.
+- **Layer:** input (memory).
+- **Mechanism:** a single store shared across Claude, Codex, and Gemini, with automatic deduplication, so a fact learned in one agent is available (once) to the others instead of being re-derived per tool.
+- **Expected savings:** unquantified by the vendor; the dossier's standing objection to all memory tools applies — no injection-cost-vs-re-exploration-saved accounting exists (white-space #5).
+- **Evidence tier:** T4 (no net-accounting published, here or upstream).
+- **Quality risk:** **RISKY** — the cavemem/claude-mem failure mode (stale or wrong recalled facts mislead a session) plus a cross-agent blast radius (a bad memory now corrupts three tools). Reversibility (H2) mitigates but does not remove it. Falsify by quizzing the store against source transcripts and auditing currency.
+- **Availability:** `CLAUDE-CODE-TODAY` (MCP/library), genuinely useful only for multi-tool operators.
+- **Effort to adopt:** minutes–hours (persistent store).
+- **Composability:** competes with cavemem/claude-mem (pick one); pairs with CCR (H2) for recoverable recall.
+- **Validation protocol:** the week-long memory A/B from record 02, run across two agents, metering the store's own compression/injection calls against re-exploration avoided.
+
+## Market delta — other context-compression projects (internet re-sweep)
+
+A clean-room sweep for compression-layer projects the dossier's 03/46/51/52 do not already cover. Code-intelligence retrievers (codedb, fff, Serena, Code Context Engine, Claude Context, Sourcegraph, Augment, Qodo) are in file 51; vector backends are in file 52; this section is the *compression/proxy/memory* layer specifically. Numbers are vendor self-report unless marked; none is locally reproduced here.
+
+| Project | Category | What it compresses | Claimed saving | Works with Claude Code? | Tier |
+|---|---|---|---|---|---|
+| **headroom** (`chopratejas/headroom`) | Compression library + proxy + MCP | Tool outputs, logs, RAG, files, history | 60–95% (per-payload); 66.1% mixed | Yes (MCP/library/proxy) | T3-weak |
+| **LLMLingua / LLMLingua-2** (`microsoft/LLMLingua`) | Prompt-compression proxy | Whole prompt (perplexity pruning) | up to 20× (NL) | Self-host; cache-hostile | T2 (record 19) |
+| **CompactPrompt** | Prompt compression guide/lib | Prune + abbreviate + quantize data | "up to 60%" | Self-host | T4 (file 46) |
+| **claude-mem** (`thedotmack/claude-mem`) | Cross-session memory | Compressed memory observations | "~10×" retrieval-path | Yes | T3 (record 15) |
+| **cavemem** (`JuliusBrussee/cavemem`) | Compressed memory MCP | caveman-compressed memory | "~75% prose" | Yes | T4 (record 02) |
+| **Mem0** | Agent memory layer | Extracted/compressed memories | vendor benchmarks | Yes (API) | T4 (dossier K-mem: files-only beat it on LoCoMo) |
+
+This list is the focused compression/memory layer; the broader retrieval and serialization market is covered in files 51, 52, and record 14. The pending internet re-sweep (parallel research streams) augments this table with any additional 2025–2026 compression proxies, observation compressors, or cross-agent memory systems that survive the skeptic pass; load-bearing additions will be merged here with their sources before this file's verdict is treated as final.
+
+The standing pattern from the dossier holds: **the compression-layer market crowds the buckets that are easy to demo (prose, memory, repetitive logs) and self-reports per-payload ratios as if they were whole-bill numbers.** Headroom is the most serious engineering in the category and the only one with a credible cache-safe design, but it shares the category's two weaknesses — no independent net-accounting, and a hot-path security/latency cost.
+
+## Fresh-literature delta
+
+Headroom is a direct test of the literature trends file 46 already tracked, and it sharpens two of them:
+
+- **Prefix-stable / cache-aware compression is now shipped, not just hypothesized.** File 46 framed CAG (preload-and-cache, FL1) and the LLMLingua cache-conflict (FL3) as the two poles. Headroom's live-zone design is the missing middle: compress the variable tail while preserving the cached prefix. This does not overturn FL3 (whole-prompt recompression is still cache-hostile and still an attack surface) — it bounds it to the proxy-recompression case.
+- **The security axis (FL3 / CompressionAttack) applies to headroom directly.** A compressor in the request path — especially the auto-downloaded `kompress-base` model in proxy mode — is exactly the integrity boundary CompressionAttack (arXiv 2510.22963, ≤80% ASR) targets. This is a concrete reason to prefer MCP mode (compress specific, agent-chosen observations) over a transparent proxy that compresses everything.
+- **The soft-prompt / learned-compression family (Gist, ICAE, 500xCompressor, LTSC) remains self-host-only** for a hosted Claude operator (file 46 D): a frontier hosted model cannot read meta-tokens it was not trained on. Headroom's kompress-base is *not* in this family — it compresses to natural-language-ish text the hosted model reads normally, which is why it works on hosted Claude where the soft-prompt methods cannot. That is the category insight: on hosted APIs, only *text-to-text* compression is usable, and it is inherently lossy.
+
+The parallel literature re-sweep (running) will extend this with any 2025–2026 work specifically on cache-aware or reversible compression and any independent benchmark of headroom; findings that change a verdict will be folded in with sources.
+
+## Corrections and refinements to prior files
+
+- **Refine record 19 / file 46 FL3.** Restate the kill precisely: *whole-prompt* recompression in the hot path fights caching and is an attack surface; *live-zone* compression that stabilizes the prefix and compresses only the volatile tail is cache-compatible. Headroom is the worked example. The recommendation "no compressor in the hot path" becomes "no *whole-prompt recompressor* in the hot path; live-zone/observation compression is acceptable when it preserves `cache_read` continuity, prefers MCP/library over transparent proxy, and is measured net of its own overhead."
+- **Refine file 46 D ("no new lossy compressor both user-reachable on hosted Claude and safe for code").** Superseded by 2026 code-domain results that run as preprocessing on hosted models and *raise* SWE-bench accuracy: SWEzze/OCD (arXiv 2603.28119 — AST-aware, ~6×, resolution +5.0–9.2% on SWE-bench Verified), SWE-Pruner (arXiv 2601.16746 — Claude Sonnet 4.5 70.6%→72.0%, tokens −23–38%), LongCodeZip (ASE 2025 — training-free, 5.6× with no loss on code). Corrected verdict: do not compress code *inside the cached prefix* (query-conditional code compression is cache-breaking per instance), but compressing code/tool-output *at ingestion of new content* is now an evidence-backed, accuracy-neutral-or-positive lever. The Perplexity Paradox (arXiv 2602.15843) explains why naive LLMLingua still fails on code — 86.1% of its failures are NameError from dropped function identities, recovered by deterministic signature injection (+34pp) — which is precisely headroom's CodeAwareCompressor design (keep signatures, drop bodies).
+- **Refine white-space #8.** "Output brevity with quality gates" now has a shipped input-side analogue: reversible compression (CCR) is the quality gate — the model can recover what compression dropped. The white-space item is partially filled on the input side; the output side (compress *generation* only when a verifier confirms zero loss) is still open.
+- **Correct the caveman evidence citation (file 03 record 01 / K1).** The repo-cited "arXiv 2604.00025, brevity improved accuracy +26 points" is now verified to *exist* (file 03 flagged it unverified) — but it is a single unaffiliated author, unreviewed, its +26.3pp is on a cherry-picked 7.7% subset where verbose large models self-sabotage, and it tests no Claude model and no code task. Keep the citation; treat it as suggestive NL-only and do **not** propagate "+26 points" as transferable. The defensible "brevity can improve accuracy" evidence is Chain-of-Draft on Claude 3.5 Sonnet (arXiv 2502.18600: +4.1pp on the sports task at −92% output) — a modest single-digit effect, consistent with the dossier's existing caveman read.
+- **No change to the 10× verdict.** Headroom attacks the 61% cache bucket, which is the right target, but its realistic whole-bill effect is bounded (per the K1-style correction) and it does not touch thinking (20%). The dossier's verdict stands: ≈2.5× defensible, ≈5–6.2× with validated routing, no honest 10× at zero quality loss. Headroom is a strong *addition to the Aggressive stack's input layer*, not a new multiplier that breaks the wall.
+
+## jackin❯ adoption recommendation
+
+Headroom fits the same role-scoped, opt-in, measured-locally pattern file 51 set for code-intelligence tools, with one extra guardrail because it sits closer to the model.
+
+1. **Pilot MCP mode, not proxy mode.** Register `headroom` as an MCP server inside a role container (user scope), expose `headroom_compress` / `headroom_retrieve`, and have the agent compress large tool outputs/observations on demand. This is the cache-safe path and keeps the compression auditable per call.
+2. **Never default the whole-prompt proxy in a jackin❯ container.** It risks busting the cache Claude Code already manages, double-compacts against Claude Code's own context management, puts an auto-downloaded model in the hot path (latency + an offline/SSL-inspection asset to provision), and creates a CompressionAttack surface. If the proxy is evaluated at all, it must be an explicit, isolated experiment with cache-read continuity checked in JSONL.
+3. **A/B against the levers the dossier already banks**, not against a naive baseline: hook filtering (record 20), code-intelligence outlines (file 51), and serialization (record 14) already capture most of headroom's compressible wins, cache-safely and with no extra dependency. Headroom earns its place only if it beats that stack net of MCP schema rent and retrieve round-trips.
+4. **Make host effects explicit.** Headroom fetches the ONNX runtime and kompress-base over TLS and runs local processes; per the host-write ban, install and cache assets inside the container, and pre-provision the model for offline/sandboxed roles.
+5. **Choose one memory layer.** If adopting headroom memory, retire cavemem for that workflow (running both is pure overhead); keep the choice explicit and measured.
+
+### Validation harness
+
+Run the same shape as file 51, with cache continuity added as a first-class metric:
+
+| Arm | Tools allowed |
+|---|---|
+| Native | Claude Code defaults (hooks, Edit-diffs, deferred MCP) |
+| Hooks | Native + record-20 grep/markdown filtering |
+| Code-intel | Native + file-51 outline/symbol retrieval |
+| Headroom-MCP | Native + `headroom_compress`/`headroom_retrieve` on observations |
+| Headroom-proxy | Native behind the headroom proxy (cache-continuity watch) |
+
+Metrics: tool-result tokens; **`cache_read` ratio and cache-write spikes from JSONL** (the make-or-break for any input compressor); retrieve count and retrieve token cost; total tokens per solved task; task success and test pass; wall-clock; MCP schema tokens loaded per turn.
+
+Acceptance rule:
+
+```text
+Accept headroom for token optimization only if, versus the Hooks+Code-intel arm:
+  task/test success            >= baseline
+  cache_read ratio             >= baseline (no silent cache-bust)
+  total tokens per solved task <= baseline by at least 20%
+  net of MCP schema rent and headroom_retrieve round-trips
+```
+
+Per the dossier's standing rule: a per-payload compression ratio is not a banked saving until it survives this harness on jackin❯ tasks at equal quality.
+
+## Claims to kill (headroom-specific graveyard)
+
+| # | Claim in the wild | Verdict and corrected reading |
+|---|---|---|
+| H-K1 | "headroom cuts 60–95% of your tokens" | Per-compressible-payload ratio, not whole-bill. Repetitive logs/JSON hit 87–94%; code and grep compressed **0%** in v0.5.18 ("passes through to preserve correctness"); the representative mix is 66.1%. **Headroom's own production telemetry: median 4.8% / P75 6.9% / mean 11.3% whole-session** across 50k+ proxy sessions, 40–80% only on heavy tool-use. **Independently measured at 47.5% whole-session** on a tool-heavy coding session (Miya-Gadget, 2026-06-03; RAG prose 0%, logs 31%) and "~50%" (HN). Whole-bill effect = compressible-observation share × compression × (write + 0.1×read) — low-double-digit % of dollars, same category as the caveman K1 correction. |
+| H-K2 | "96.2% total savings on Anthropic" | Double-counts caching Claude Code already banks (K4). Caching's 90%-off is the floor, not a marginal saving; headroom's incremental lever on Claude Code is the live-zone compression fraction only. |
+| H-K3 | "Input compression breaks the cache, so headroom can't help" | Too broad. Whole-prompt recompression breaks the cache (record 19 holds); headroom's live-zone design stabilizes the prefix and compresses only the volatile tail, which is cache-compatible in MCP/library mode. The kill is the *proxy-in-front-of-Claude-Code* case, not headroom as a whole. |
+| H-K4 | "Same answers" (lossless) | Lossless only at low compression on prose/QA, and on rule-based transforms. The ML text compressor and high-compression code paths are lossy; "same answers" is unverified at high compression on code and untested on thinking. Reversibility (CCR) mitigates *if* the model retrieves when it should. |
+| H-K5 | "50–90%" (PyPI) vs "60–95%" (README) | The project's own headline range is inconsistent across surfaces — a sign the number is a marketing band, not a measured constant. Treat any single percentage as directional and measure locally. |
+| H-K6 | "Drop it in as a proxy, zero code changes, free win" | In front of Claude Code the proxy is a cache-bust risk, a double-compaction risk, a hot-path latency cost, and an attack surface (FL3). "Zero code changes" is true; "free" is not. |
+
+## Source ledger
+
+All accessed 2026-06-15.
+
+> The **complete consolidated ledger** for all three tools together — plus the formal per-technique records and the unverified-claims register — is maintained in the hub: [Records, ledger & unverified](/reference/research/token-optimization-tools/08-records-ledger-and-unverified/). The chapter-specific citations are retained below as the original research record.
+
+- headroom repo + README: [github.com/chopratejas/headroom](https://github.com/chopratejas/headroom)
+- headroom stats (28,185★ / 1,908 forks / 30 contributors / 268 issues / Apache-2.0 / created 2026-01-07 / v0.25.0): `gh api repos/chopratejas/headroom`
+- headroom source tree (cache_stabilization, live_zone, ccr, transforms, benchmarks): `gh api repos/chopratejas/headroom/git/trees/main?recursive=1`; `cache_control` in 62 files (`gh api search/code`)
+- headroom docs (intro, how-compression-works, proxy, cache-optimization, architecture): [headroom-docs.vercel.app/docs](https://headroom-docs.vercel.app/docs) and the repo's `docs/content/docs/*.mdx`
+- CacheAligner verbatim ("extracting dynamic content and moving it to the end... prefix stays byte-identical... KV cache can reuse"; auto `cache_control`; "96.2% total savings"): headroom `docs/content/docs/cache-optimization.mdx`
+- benchmark numbers (code search 17,765→1,408; SRE 65,694→5,118; triage 54,174→14,761; exploration 78,502→41,254; mix 23,921→8,110; v0.5.18 grep/Python 0%; GSM8K/TruthfulQA/SQuAD/BFCL accuracy): headroom README + `docs/benchmarks.md`
+- kompress-base model (transformer trained on agentic traces, auto-downloaded default text compressor): [huggingface.co/chopratejas/kompress-base](https://huggingface.co/chopratejas/kompress-base)
+- PyPI (190 releases, v0.25.0, requires-python ≥3.10, summary "Cut costs by 50-90%"): [pypi.org/project/headroom-ai](https://pypi.org/project/headroom-ai/)
+- secondary write-ups (tutorial/promotional, all repeating maintainer numbers; explicit "measure on your own workloads" caveat): subratpati.medium.com; alphamatch.ai/blog/headroom-context-compression-ai-agents-2026; andrew.ooo/posts/headroom-context-compression-llm-agents-review; dev.to/arshtechpro
+- cross-references (caveman/cavemem/cavekit/cavecrew records, K1/K4, white-space map): [`03-prior-art-and-market-scan.md`](/reference/research/token-optimization/03-prior-art-and-market-scan/)
+- cache-conflict + CompressionAttack + CAG/FL1/FL3: [`46-fresh-literature-and-market-delta.md`](/reference/research/token-optimization/46-fresh-literature-and-market-delta/)
+- log-filter −94.2% / TOON −41.2% / minify −34.3% local reproductions: [`03-prior-art-and-market-scan.md`](/reference/research/token-optimization/03-prior-art-and-market-scan/)
+- outline −91% / symbol-search −98% local reproductions: [`51-code-intelligence-tools.md`](/reference/research/token-optimization/51-code-intelligence-tools/)
+- fresh-literature sources (write-time compression, code-domain SWE-bench gains, cache break-even, output-brevity dominance, context rot) and the compression-tool market sweep: [`54-context-compression-literature-and-market.md`](/reference/research/token-optimization/54-context-compression-literature-and-market/). Key inline IDs: Squeez arXiv 2604.04979; AgentDiet arXiv 2509.23586; "Don't Break the Cache" arXiv 2601.06007; Claude 4.5 compression RCT arXiv 2603.23525; SWEzze arXiv 2603.28119; SWE-Pruner arXiv 2601.16746; Perplexity Paradox arXiv 2602.15843; Chain-of-Draft arXiv 2502.18600; brevity-hierarchy arXiv 2604.00025.

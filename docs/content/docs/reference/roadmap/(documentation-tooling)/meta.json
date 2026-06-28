@@ -1,9 +1,0 @@
-{
-  "title": "Documentation tooling",
-  "defaultOpen": false,
-  "pages": [
-    "../brand-identity-system",
-    "../docs-markdown-linting",
-    "../docs-separate-repository"
-  ]
-}

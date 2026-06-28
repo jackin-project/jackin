@@ -1,0 +1,178 @@
+---
+title: Design Principles
+description: The non-negotiable rules jackin❯ follows so it stays predictable across every feature
+---
+
+
+jackin❯ makes a small number of strict promises that shape every
+feature in the project. Knowing them up front explains why some
+things work the way they do (and why some shortcuts you might
+expect — *"jackin❯ could just fix that on my host for me"* — don't
+exist on purpose).
+
+These principles apply project-wide. If you ever observe jackin❯
+behaving in a way that contradicts one of them, that's a bug —
+please open an issue.
+
+## Never mutate the host machine silently
+
+**The operator's host is their property. jackin❯ never writes to
+host-side state to make a container work.**
+
+Container containment cuts both ways. Agents can't escape the
+container — and jackin❯ itself doesn't reach back out. Every piece
+of "make this work" plumbing happens **inside the container**, in
+jackin❯ state directory, or in the container's process env.
+Your host repos, dotfiles, git remotes, shell rc files, and CLI
+configs (`gh`, `claude`, `codex`, `git`) are read but never
+written.
+
+Concrete examples of what this rule blocks:
+
+- **No rewriting your git remotes.** When a host repo's `origin`
+  is `git@github.com:owner/repo` (SSH) and the container has no
+  SSH key, jackin❯ rewrites the URL to HTTPS *inside the
+  container's git config only*. Your host repo's `.git/config`
+  is untouched. Run `git push` on the host afterwards and SSH
+  still works the way you expect.
+- **No `gh auth setup-git` on your host.** The container can run
+  it inside its own writable layer. Your host's git credential
+  helper stays exactly as you configured it.
+- **No edits to `~/.gitconfig`, `~/.ssh/config`, `~/.config/gh/`,
+  `~/.claude/`, or `~/.codex/`.** jackin❯ reads from these to
+  forward auth into the container, but never writes back.
+- **No background `git fetch` / `git pull` / `git prune` on your
+  host repos as a side effect.** Pull-on-launch only happens
+  when you explicitly opt in per workspace, and only against the
+  repos that workspace mounts.
+- **No in-container token rotation flowing back to your host.**
+  If an agent inside the container runs `gh auth refresh` or
+  `claude /login`, the new credentials stay in the container.
+  Bidirectional sync (token refresh in the container reaching
+  back to your host) is planned, but it will be explicit opt-in
+  surfaced in the launch summary, never silent.
+
+### When jackin❯ does need to act on the host
+
+A few jackin❯ commands legitimately operate against the host —
+for example, `jackin load` clones role repos into jackin❯ own
+data directory, and `git_pull_on_entry` (when you enable it)
+runs `git pull` on the workspace's mounted repos before the
+agent starts. Whenever an action like this happens, jackin❯
+follows two rules:
+
+1. **Stay scoped.** Touch only the things the operator
+   explicitly opted into (a workspace they configured, a
+   subcommand they invoked, a flag they passed). No "while we're
+   here" side effects.
+2. **Surface it.** The action is visible — printed in the launch
+   summary, returned in the command output, or documented as
+   part of the flag. Operators should never have to grep
+   `git reflog` to discover what jackin❯ did.
+
+If you're reading a design proposal that wants jackin❯ to write
+to a new host-side location, look for an explicit "Host-side
+effects" section that names the action, the opt-in path, and the
+launch-summary line. Proposals without that section get rejected
+at review.
+
+## Operator-only configuration boundaries
+
+Auth forwarding, env vars, mount selection, and the choice of
+which agent runtime to use belong to the **operator**. They are
+configured through `jackin console`, `jackin config`, or
+`jackin workspace`. They are deliberately not addressable from
+inside a role's manifest.
+
+This means an untrusted role you pulled from a public registry
+cannot:
+
+- Force a credential-forwarding mode the operator didn't
+  approve.
+- Mount a host directory the operator didn't pick.
+- Switch the agent runtime out from under the operator.
+
+The role manifest controls what runs *inside* the container
+(toolchain, plugins, default working directory, role's own
+`Dockerfile`). Everything that crosses the
+host ↔ container boundary is the operator's call.
+
+## Configuration is plain files, version-control friendly
+
+Operator configuration lives as plain TOML files you can put under version control or manage with a dotfile manager. When the format changes between releases jackin❯ upgrades your files for you, so you do not hand-edit TOML to recover. The [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design) reference covers the layout; [Schema Versions](/reference/runtime/schema-versions/) covers the upgrade story.
+
+## In-container "full speed" is by design
+
+`Claude Code`'s `--dangerously-skip-permissions`, `Codex`'s
+`workspace-write` + `--dangerously-bypass-approvals-and-sandbox`
+(aliased `--yolo`), `Amp`'s `--dangerously-allow-all`, and the
+equivalents shipping in every other agent runtime — jackin❯
+enables all of them by default.
+
+The reason this is safe: the container, not the in-runtime
+prompt, is the trust boundary. Once you've decided to drop an
+agent into a workspace, in-runtime "are you sure?" prompts add
+friction without changing what the agent can reach. Container
+mounts, the network policy, and the Docker-in-Docker sidecar
+already define the blast radius. The agent gets to move fast
+*inside* that boundary; the boundary itself stays in place.
+
+This is the same reason `git_pull_on_entry`, secret forwarding,
+and persisted state all live at the workspace / role level
+rather than being asked about per-action mid-session.
+
+## Container is the trust boundary, not the prompt
+
+A corollary to the previous principle, but worth calling out
+separately: **the security model is the container plus the
+mount and network policy, not how cooperative the agent is.**
+
+This shapes the rest of the design:
+
+- Mounts are minimal by default. The agent only sees what you
+  mount.
+- Each agent gets its own Docker-in-Docker sidecar, so any
+  containers it builds or runs cannot escape into your host
+  Docker daemon.
+- Failures inside the container do not propagate to your host.
+  `jackin purge` discards the persisted state cleanly without
+  touching the host.
+
+If a feature can be implemented inside the container, it goes
+inside the container. If it has to be host-side, it follows the
+"Stay scoped" + "Surface it" rules above.
+
+## Predictable over clever
+
+When two implementations are functionally equivalent, jackin❯
+picks the one with fewer surprises:
+
+- **Atomic file writes** — credential files are written
+  tmp-file + rename, never half-written.
+- **Read-then-skip** — when a generated file's content matches
+  what's already on disk, jackin❯ doesn't rewrite it, so file
+  watchers and mtime-sensitive tools see no churn.
+- **Symlink rejection at trust boundaries** — provisioned
+  credential paths refuse to follow symlinks so a compromised
+  role can't redirect a write through the link.
+- **Typed errors at launch** — when something fails (missing
+  credential, broken host login, malformed config), jackin❯
+  prints the actual reason instead of a generic catch-all, so
+  you can tell *"my host login expired"* apart from *"jackin❯ is
+  silently broken"*.
+
+## How these principles inform feature design
+
+When you're reading a feature page in this guide and wondering
+*"why does jackin❯ do it this way and not the obvious shortcut?"*
+— the answer is almost always one of the principles above.
+
+- The container fixing up its own git remote instead of jackin❯
+  fixing your host repo's `origin` → "Never mutate the host."
+- An untrusted role not being able to flip auth-forward mode →
+  "Operator-only configuration."
+- Auth tokens being copied into the container instead of
+  re-prompted from inside → "Container is the trust boundary."
+
+If a feature appears to violate one of these principles, that's
+a regression — please open an issue.

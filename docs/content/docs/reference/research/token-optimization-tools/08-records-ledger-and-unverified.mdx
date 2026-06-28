@@ -1,0 +1,200 @@
+---
+title: "08 — Per-technique records, source ledger, and unverified-claims register"
+---
+
+# 08 — Per-technique records, source ledger, and unverified-claims register
+
+This page makes the hub self-contained as the single source of truth: it carries the **formal per-technique records** for all four tools (the structured schema the dossier uses), the **full consolidated source ledger** (every citation, with access dates), and an explicit **unverified-claims register** — the place where vague, vendor-only, or unreplicated numbers are *kept* (not deleted) and clearly marked "not proven," per the research mandate that no previously gathered information is lost. Nothing here references out for the underlying detail; the dossier chapters ([10](/reference/research/token-optimization/10-style-and-language-compression/), [03](/reference/research/token-optimization/03-prior-art-and-market-scan/), [53](/reference/research/token-optimization/53-headroom-and-context-compression/), [54](/reference/research/token-optimization/54-context-compression-literature-and-market/), [56](/reference/research/token-optimization/56-rtk-and-write-time-observation-compression/)) now reference *this* hub.
+
+Evidence tiers used throughout: **T1** shipped + locally reproduced · **T2** peer-reviewed · **T3** community-replicated · **T4** single-source vendor self-report, no replication. "Not proven" = T3-weak or T4 retained for completeness but not independently confirmed.
+
+## Per-technique records
+
+These use the dossier's record schema (Layer / Mechanism / Expected savings / Evidence tier / Quality risk / Availability / Effort / Composability / Validation protocol). They are reproduced here so the hub holds the full structured detail, not just the prose teardowns in [01](/reference/research/token-optimization-tools/01-caveman-design/)–[04](/reference/research/token-optimization-tools/04-leanctx-design/).
+
+### C1 — Register-ladder output compression (caveman)
+
+- **Layer:** output (visible assistant prose).
+- **Mechanism:** a Claude Code output-style / skill prompt makes the model drop politeness, preamble, and function words from visible replies; BPE token count tracks word count, so deleting words is what saves. Delivered as a session-resident instruction (output styles "directly modify Claude Code's system prompt"); changes take effect after `/clear` and invalidate the cached system-prompt prefix, so do not toggle mid-session.
+- **Expected savings:** 50–67% of visible-output tokens (local register ladder); phase-0 session-level caveman-ultra **58.5%**. On the modeled profile ≈ **10% of session dollars**, hard-capped at the 17% visible-output share (ESTIMATE, arithmetic in [10](/reference/research/token-optimization/10-style-and-language-compression/)).
+- **Evidence tier:** T1 (local tokenizer method) + phase-0 session measurement + live product docs for the mechanism.
+- **Quality risk:** NEGATIVE-COST to NEUTRAL at filler-strip/telegraphic rungs; **RISKY at caveman-ultra / wenyan** — no benchmark measures register-compressed *agent* output against task success; degradation = dropped caveats, skipped rationale, altered tool-call behavior. Failure to set `keep-coding-instructions: true` on a custom style silently drops the built-in coding instructions.
+- **Availability:** `CLAUDE-CODE-TODAY` (`~/.claude/output-styles/*.md` or the caveman plugin). **Effort:** minutes.
+- **Composability:** stacks with effort (different slice: style→visible, effort→thinking + tool calls) and with subagent delegation (cavecrew). Anti-synergy: mid-session style switches break the prompt cache.
+- **Validation protocol:** 20 fixed repo tasks (10 bugfix, 10 refactor), default vs telegraphic style, same effort, fresh sessions; record `usage.output_tokens`, visible-block tokens (split thinking via `count_tokens`), tool-call count, tests-pass, and a blinded completeness rating. Pass = visible tokens −45% or better, tests-pass within noise, tool-call count ±10%. Run once at caveman-ultra to price the extra rung.
+
+### H1 — Live-zone input compression (headroom) — the cache-safe design point
+
+- **Coverage-delta:** refines the dossier's record 19 / file 46 FL3, which had treated input compression as monolithically cache-hostile.
+- **Layer:** input + cache.
+- **Mechanism:** split each request into a stable prefix and a volatile **live zone**; stabilize the prefix (extract volatile content to a tail, normalize tool definitions, insert `cache_control` at stable boundaries) and compress only the live zone, once, before it is first cached. The cached prefix stays byte-identical, so 0.1× reads survive; the compression shrinks the cache *write* of the new content and all future reads of it.
+- **Expected savings:** on the modeled day, `(compressible-observation share of the 61% cache bucket) × compression% × (write-share + 0.1×read-share)` — real on the largest bucket, bounded to low-double-digit % of dollars. **NOT** the 60–95% per-payload headline (ESTIMATE).
+- **Evidence tier:** T1 for the mechanism (underlying log/outline/minify levers locally reproduced); **T3-weak for headroom's product numbers**; **T2 academic backing for the write-time pattern** (Squeez arXiv 2604.04979 — 92% tool-output removal at 0.86 recall; AgentDiet arXiv 2509.23586 — Claude 4 Sonnet 64.5%→66.5% with input −40–60%, nets out its own +5–15% cost).
+- **Quality risk:** NEUTRAL on rule-based transforms (log/JSON/search/diff); **RISKY on the ML text compressor** (`kompress-base` can drop identifiers/caveats); **RISKY in proxy mode** (silent cache-bust if the prefix churns).
+- **Availability:** `CLAUDE-CODE-TODAY` via MCP (`headroom_compress`) / `SDK` (library) / `GATEWAY-OR-SELF-HOST` (proxy). **Effort:** minutes (MCP) to hours (proxy + offline asset provisioning).
+- **Composability:** composes *with* prompt caching when scoped to the live zone; anti-synergy with proxy-mode-in-front-of-Claude-Code (double-stabilization).
+- **Validation protocol:** 20 tool-heavy tasks, native vs headroom-MCP; from JSONL require `cache_read` continuity preserved, tool-result tokens down, task success unchanged, net tokens-per-solved-task down ≥20% after subtracting MCP schema + retrieve round-trips.
+
+### H2 — Reversible compression with on-demand retrieval (CCR, headroom)
+
+- **Coverage-delta:** new productization of "output brevity with quality gates" / progressive disclosure.
+- **Layer:** input / retrieval.
+- **Mechanism:** compressed content is stored verbatim in a CCR store (SQLite/Redis/in-memory); the model receives a compressed view plus a `headroom_retrieve` tool and can fetch the original within a TTL. Lossy compression becomes *recoverable* lossy compression.
+- **Expected savings:** the H1 saving minus the cost of retrievals actually triggered; net-positive only if retrieval rate is low (each retrieve is a tool-call round-trip).
+- **Evidence tier:** T3 (mechanism shipped + vendor-benchmarked: `ccr_regression_benchmark.py`, `adversarial_ccr_tests.py`); no independent net-effect measurement.
+- **Quality risk:** **NEGATIVE-COST in principle** (removes the lossy-memory "confidently-wrong recalled fact" failure mode) *if* the model reliably knows when to retrieve. Failure: trusts a compressed view it should have expanded, or over-retrieves and erases the saving.
+- **Availability:** `CLAUDE-CODE-TODAY` (MCP exposes `headroom_retrieve`). **Effort:** minutes.
+- **Composability:** strengthens any lossy input/memory compressor; pairs with cross-agent memory (H4); orthogonal to caching.
+- **Validation protocol:** detail-dependent canary suite (numbers, negations, "don't do X" buried in a compressed payload); require retrieve-or-correct behavior on 10/10 and net-positive tokens.
+
+### H3 — Failure-mining into memory files (`headroom learn`)
+
+- **Coverage-delta:** new — no equivalent in the dossier.
+- **Layer:** input (memory) / meta.
+- **Mechanism:** analyze past *failed* sessions across Claude/Codex/Gemini and write durable corrections into CLAUDE.md/AGENTS.md, so the always-loaded prefix improves over time. A closed self-correction loop.
+- **Expected savings:** indirect — fewer repeated failures = fewer wasted retry turns (the most expensive waste). No published number; the *cost* is added prefix mass (every CLAUDE.md line is cache-read rent on every call).
+- **Evidence tier:** **T4** (plausible mechanism, no measured net effect; failure-mining quality unverified). **Not proven.**
+- **Quality risk:** **RISKY** — an auto-written rule that is wrong or over-general is one bad PR that erases months of savings; unbounded auto-append violates CLAUDE.md slimming.
+- **Availability:** `CLAUDE-CODE-TODAY` (CLI command). **Effort:** minutes to run; ongoing editorial discipline.
+- **Composability:** feeds the CLAUDE.md lever; anti-synergy with prefix slimming if left unbounded.
+- **Validation protocol:** human-gate every correction; cap file size; A/B the failure rate on the targeted task class; confirm added prefix rent < retries prevented.
+
+### H4 — Cross-agent deduplicated shared memory (headroom)
+
+- **Coverage-delta:** extends cavemem / claude-mem / cross-agent portability with a cross-tool, auto-dedup angle none of them cover.
+- **Layer:** input (memory).
+- **Mechanism:** a single store shared across Claude, Codex, and Gemini with automatic deduplication, so a fact learned in one agent is available once to the others instead of being re-derived per tool.
+- **Expected savings:** **unquantified by the vendor**; the standing objection to all memory tools applies — no injection-cost-vs-re-exploration-saved accounting exists.
+- **Evidence tier:** **T4** (no net-accounting published). **Not proven.**
+- **Quality risk:** **RISKY** — the lossy-memory failure mode plus a cross-agent blast radius (a bad memory now corrupts three tools). Reversibility (H2) mitigates but does not remove it.
+- **Availability:** `CLAUDE-CODE-TODAY` (MCP/library), genuinely useful only for multi-tool operators. **Effort:** minutes–hours.
+- **Composability:** competes with cavemem/claude-mem (pick one); pairs with CCR (H2).
+- **Validation protocol:** week-long memory A/B across two agents, metering the store's own compression/injection calls against re-exploration avoided.
+
+### R1 — Deterministic write-time command-output compression (RTK)
+
+- **Coverage-delta:** productizes hook/preprocessing filtering + JSON sampling as a turnkey binary; the deterministic, Claude-Code-native worked example of the cache-safe write-time-observation-compression class (which used headroom-MCP as its example).
+- **Layer:** input + cache (write-time, at the tool boundary).
+- **Mechanism:** a PreToolUse hook rewrites the agent's shell command to `rtk <cmd>`; RTK runs it and returns filtered/grouped/truncated/deduplicated output. Because the compressed text is what enters context, the cache write shrinks and every later 0.1× read of it shrinks, and the cached prefix is never touched.
+- **Expected savings:** `(Bash-command-output share of the 61% cache bucket) × compression% × (write-share + 0.1×read-share)` — bounded to low-double-digit % of dollars because most observation tokens already read at 0.1× and RTK reaches only Bash output. **NOT** the 60–90% per-command headline (ESTIMATE).
+- **Evidence tier:** **T1 for the mechanism** (filter/dedup/group/JSON-sample levers locally reproduced — log filter −94.2%, JSON minify −34.3%); **T4 for RTK's specific product numbers** (vendor self-report through its own `rtk gain` counter, no whole-session telemetry, no independent replication). **Product numbers not proven.**
+- **Quality risk:** **NEUTRAL on dedup/grouping** of genuinely redundant output; **RISKY on truncation** — a truncated-but-successful command can silently drop the one line the agent needed, and tee-recovery only fires on failure.
+- **Availability:** `CLAUDE-CODE-TODAY` (hook + binary). **Effort:** minutes to install; the real cost is reconciling its hook registration with caveman's and scoping it to a container.
+- **Composability:** stacks with caveman (different token class) and with code-intelligence outlines (different mechanism); diminishing returns (not anti-synergy) stacking headroom on the same Bash bytes; hook-registration anti-synergy with caveman's hooks (both write agent config).
+- **Validation protocol:** 20 Bash-heavy tasks (test/build/git/log), native vs RTK-hook; from JSONL require (a) `cache_read` continuity preserved, (b) tool-result tokens down, (c) task success unchanged, (d) no rise in command re-runs, (e) net tokens-per-solved-task down ≥20%.
+
+### L1 — Integrated context runtime (lean-ctx)
+
+- **Coverage-delta:** new — the first *superset* data point in the hub. Spans R1's write-time-shell-compression class *and* headroom's H1 broad-input class *and* the persistent-code-graph lever the dossier's [code-intelligence chapter](/reference/research/token-optimization/51-code-intelligence-tools/) tracks (which the three-way said none of caveman/headroom/RTK had), plus a verification layer (signed savings ledger, Context Proof) with no prior analog.
+- **Layer:** input + cache + retrieval + memory + verification (everything except output).
+- **Mechanism:** one long-lived Rust runtime that intercepts at three points — a shell hook (56 pattern modules, write-time), MCP `ctx_read` (10 modes: tree-sitter signatures/map/entropy/lines, content-addressed ~13-tok handle re-reads), and an opt-in proxy (frozen-region prose rewrite). Below the read it maintains a persistent property graph (imports/calls/exports/type_ref), a BM25 index, and an opt-in dense-embedding index fused by RRF. A Context Field Theory layer scores each item by Φ (relevance + surprise + graph + history bandit − cost − redundancy) and a knapsack compiler selects views under budget pressure. Savings are bounce-netted and written to a tamper-evident SHA-256 ledger.
+- **Expected savings:** on code-read-heavy work, large (`map`/`signatures` 96–99% per code read, reproduced); on prose/config-heavy work, small (&lt;10%). Whole-bill bounded identically to R1/H1: `(compressible-read share of the 61%) × compression% × (write + 0.1×read)` — **NOT** the "up to 99%" per-read/cache-handle headline (ESTIMATE).
+- **Evidence tier:** **T1 for the mechanism** (built from source and benchmarked this round: read modes, shell compression, BM25/graph search, bounce-netting all reproduce); **T4 for the product percentages** (self-measured on a GPT tokenizer, per-read/per-session best cases, no independent third-party benchmark, youngest project). **Product numbers not proven externally.**
+- **Quality risk:** **NEUTRAL** on deterministic modes (signatures at 95.9% self-rated quality); **RISKY on `map`** (97.8% compression at only **77%** quality — drops structure; mitigated by the bounce tracker auto-upgrading modes); **RISKY in proxy mode** (lossy prose rewrite, headroom's risk); embeddings/proxy are opt-in so the default core avoids the ML risk.
+- **Availability:** `CLAUDE-CODE-TODAY` (MCP + shell hook). **Effort:** minutes to install; the real cost is the footprint (64.7 MB binary, daemon, dashboard, SQLite stores) and reconciling host writes across up to 34 agent targets with the host-write ban.
+- **Composability:** stacks with caveman (output, different class); **anti-synergy with RTK** (two shell-rewrite paths over the same Bash bytes — run one); diminishing returns stacking headroom's proxy on lean-ctx's proxy; its code graph occupies the "prevent reads" layer a standalone code-intelligence MCP otherwise would.
+- **Validation protocol:** 20 tasks split code-read-heavy vs prose/config-heavy, native vs lean-ctx (MCP + hook, no proxy); from JSONL require `cache_read` continuity preserved, tool-result tokens down, **bounce/re-read rate not worse** (cross-check against lean-ctx's own `adjusted_total_saved`), task success unchanged, net tokens-per-solved-task down ≥20% after the 77-tool schema rent. Run a second arm at `map` mode to price the 77%-quality risk against `signatures`.
+
+## Unverified-claims register (kept, marked "not proven")
+
+Per the mandate to preserve every previously gathered number even when it cannot be confirmed, these claims are retained here rather than deleted. Each is a real datapoint from the prior research; each is flagged with why it is not proven. None should be propagated as fact.
+
+| Claim | Source | Why not proven | Honest reading |
+|---|---|---|---|
+| caveman "~75% of output tokens" | caveman README | pooled benchmark ratio on a tiktoken approximation vs an "Answer concisely." baseline | per-task mean 65%; local Claude-tokenizer replication 58.5% |
+| caveman-compress "~46% input tokens" | caveman README | no independent replication | directional; instruction-side bills at cache-read rates (~50× less valuable/token) |
+| cavecrew "~60% fewer tokens than vanilla" | caveman README | dossier measured −43.9% | use 43.9% |
+| caveman-code "~2× fewer tokens than Codex" | caveman README | no methodology published | unverified |
+| cavemem "~75% fewer prose tokens" | cavemem README | no benchmark table, one worked example | expect ~55–60% on stored prose (ESTIMATE); **T4** |
+| cavekit token claims | cavekit README | inherited from caveman encoding; no cavekit-vs-vanilla measurement | **T4**; the loop can *increase* total calls — net sign unknown |
+| headroom "60–95% fewer tokens" | headroom README/docs | per-payload ratio; code/grep compress 0%; production median 4.8% | per-redundant-payload best case only |
+| headroom "96.2% total savings" | headroom docs | double-counts caching Claude Code already banks | incremental lever is the live-zone fraction only |
+| headroom "$700K saved / 90% redundant" | Register article (2026-05-31), echoed by ~20 outlets | press repeated a vendor figure; no independent test | **T4** marketing |
+| `headroom learn` / cross-agent memory savings | headroom | no net-accounting published (H3/H4) | **T4 — not proven** |
+| RTK "60–90% on common dev commands" | RTK README | vendor `rtk gain` counter (~4-chars/token, not Claude BPE); no whole-session telemetry; no independent benchmark | per-command best case on verbose commands |
+| RTK "30-minute session −80%" (~118k→~23.9k) | RTK README | assumes a Bash-heavy command mix; not a measured whole-session distribution | per-command best case extrapolated |
+| RTK "89% of CLI noise across 2,900+ commands"; "15,720 commands → 138M tokens" | rtk-ai.app/savings | all via `rtk gain`; vendor page | **T4** |
+| RTK user self-reports 83.7% / 79.3% / 89% | Hacker News | self-reported through RTK's own counter | **T4** |
+| RTK hook "raised Claude Code cost 18%" (issue #582); "#886 bypasses permission prompts" | RTK issue tracker | single-config reports, not a controlled study | cautionary; output-rewriting hooks have edges |
+| RTK Cloud — "Free for open-source, Teams from $15/dev/month" team analytics | rtk-ai.app (2026-06-20) | announced/waitlist, not shipped; **roadmap** | the only one of the three with a stated monetization path |
+| third-party RTK↔MCP bridge (mcpmarket.com) | search snippet | could not fetch (429); not in the official repo | **not proven**; official RTK is hook + CLI only |
+| RTK version: site/footer `v0.42.4` vs README verification text `rtk 0.28.2` | rtk-ai.app + repo | doc drift on a 212-release cadence | trust the higher/site number; treat docs as lagging |
+| lean-ctx "up to 99% / 60–90% fewer tokens" | lean-ctx README/crate desc | per-read on code / cache-handle; prose/config compress &lt;10%; GPT tokenizer; no independent benchmark | locally reproduced on code reads (96–99%); whole-bill correction applies |
+| lean-ctx "86% on a 30-min session" | `BENCHMARKS.md` | code-read-heavy mix, `o200k_base`, not a measured whole-session distribution | per-session best case (RTK-"80%-session" category) |
+| lean-ctx "single binary, no runtime dependencies" | README | the release binary is **64.7 MB** and runs a daemon + dashboard + SQLite stores | one binary, but a heavyweight runtime — not RTK-class minimalism |
+| lean-ctx "cl100k within ~3% of Claude's tokenizer" | `core/tokens.rs` | cl100k/o200k are GPT tokenizers, not Claude BPE; 3% is more optimistic than the dossier's Fable/Opus finding | treat percentages as directional |
+| lean-ctx "200+ releases" vs 30 `git tag` (default page) | README + `gh api` | tag pagination / release vs tag distinction unresolved | **not confirmed**; created 2026-03, fast cadence is plausible |
+| lean-ctx Lean 4 proof crate covers load-bearing invariants | `lean/` dir | proofs present but their coverage/significance not audited | **not proven**; the *direction* (formal verification) is novel regardless |
+| lean-ctx Pro $9/mo · Team $18/seat/mo; "local free forever (CI-enforced)" | leanctx.com/pricing | shipped pricing page; "CI-enforced invariant" is a vendor claim | open-core, cleaner than RTK Cloud (never gates local) — but "forever" only time tests |
+| caveman brevity "+26 points accuracy" (arXiv 2604.00025) | repo-cited paper | verified to exist, but solo/unreviewed, +26.3pp on a cherry-picked 7.7% subset, no Claude, no code | **do not propagate**; defensible brevity-helps-accuracy evidence is Chain-of-Draft (+4.1pp at −92% output, Claude 3.5 Sonnet) |
+| SWE-Pruner arXiv 2601.16746; structural-graph 2603.27277 | file 54 ledger | arXiv IDs could not be independently confirmed | treat IDs as tentative; the GitHub repos are real |
+
+## Additional preserved detail (benchmarks, integrations, ecosystem stats)
+
+Captured here so the hub loses none of the prior research's specifics.
+
+**Headroom accuracy benchmarks (vendor self-report, 100-sample tests).** GSM8K 0.870 → 0.870 (±0.000); TruthfulQA 0.530 → 0.560 (+0.030); SQuAD v2 97% at **19%** compression; BFCL tools 97% at **32%** compression; HTML extraction F1 0.919 (recall 0.982) at **94.9%** compression on a structured benchmark. The pattern is the dossier thesis restated by the vendor: accuracy is preserved at *low* compression on prose/QA, and *high* compression is only safe on highly-repetitive content.
+
+**Headroom v0.5.18 per-payload byte tests.** build log (200 lines) 2,412 B → 148 B (~94%); grep results (150 hits) 2,624 B → 2,624 B (**0%**, pass-through); Python source (~480 lines) 2,958 B → 2,958 B (**0%**, "code passes through to preserve correctness").
+
+**Headroom cache-bust regression tests** (the prefix-safety guards that make the live-zone design auditable): `prefix_cache_benchmark.py`, `cache_bust_trace_report.py`, `synthetic_token_cache_bust_report.py`, `cache_validation_bundle.py`.
+
+**RTK 14-platform integration, with the hook mechanism each uses.** Claude Code (PreToolUse hook), Copilot VS Code (PreToolUse) / Copilot CLI (deny-with-suggestion), Cursor (preToolUse), Gemini CLI (BeforeTool), Codex (AGENTS.md + RTK.md instructions, **no hook**), Windsurf / Cline / Kilo / Antigravity (rule files), OpenCode / OpenClaw / Pi (TS plugins), Hermes (Python). Aider appears in blog write-ups but **not** in the README integration table.
+
+**Caveman-family and memory-competitor adoption (point-in-time; all PR-inflated in this niche — rank by evidence, not stars).** caveman 74,446★ (2026-06-18; was 72,759★ on 2026-06-15); cavemem 521★; cavekit 1,014★; fff 8,351★. The cross-session-memory competitor `thedotmack/claude-mem` (81,976★ — larger than caveman) is what cavemem and headroom's memory layer compete against; none publishes injection-cost-vs-re-exploration-saved net accounting. Headroom grew 28,199★ (2026-06-15) → 33,359★ (2026-06-18). Broader-market compressors (`microsoft/LLMLingua`, CompactPrompt, Mem0, and the code-domain literature — SWE-Pruner 70.6%→72.0%, the Perplexity Paradox's 86.1%-NameError finding, etc.) are catalogued in the dossier's [03](/reference/research/token-optimization/03-prior-art-and-market-scan/) and [54](/reference/research/token-optimization/54-context-compression-literature-and-market/) chapters, which this hub references rather than duplicates.
+
+**lean-ctx architecture specifics (source-audited + locally built, `v3.8.9`, 2026-06-20).** One Rust binary (~1,200 source files) that is shell hook + MCP server (77 tools, 5 unified) + HTTP/team server + daemon + proxy + dashboard. 10 read modes; 56 shell-pattern modules; tree-sitter for 18 languages. Compression core deterministic (`core/compressor.rs` entropy/attention/TF-IDF, `core/signatures.rs`, `core/patterns/`); embeddings opt-in (`core/dense_backend.rs` feature-gated, `Local`/`qdrant` backends, `core/embeddings/download.rs`); proxy prose rewrite opt-in (`proxy/prose.rs`) and cache-safe-by-design (`proxy/cache_safety.rs` — frozen-region `[cached_prefix_len, boundary)`, measured ratio). Code intelligence: `core/property_graph/` (imports/calls/exports/type_ref, weighted BFS), `core/bm25_index.rs`, `core/hybrid_search.rs` (RRF), LSP via `lsp/` (rust-analyzer/typescript-language-server/pylsp/gopls). Memory: `core/session.rs` (CCP), `core/knowledge.rs`, episodic/procedural/prospective, `core/context_os/` (SQLite-WAL bus, A2A HMAC transport). Verification: `core/evidence_ledger.rs`, `core/context_proof.rs`, 20 versioned contracts, a Lean 4 crate (`lean/`). Tokenizer `core/tokens.rs` (o200k/cl100k, GPT not Claude BPE). Bounce-netting `core/bounce_tracker.rs` → `adjusted_total_saved()`. Local build measured **64.7 MB** release binary; `cargo test --lib tokens` 48/48 pass.
+
+## Full source ledger (all four tools)
+
+Consolidated from the dossier chapters; vendor numbers are self-reported unless marked. Adoption stats and live numbers re-pulled 2026-06-18 (lean-ctx 2026-06-20); headroom/market literature swept 2026-06-15.
+
+### Caveman
+
+- Repository + README (headline "~75%", per-task mean 65% / pooled 75.8%, "Answer concisely." baseline, "thinking… untouched", "cost savings a bonus", caveman-compress ~46%, cavecrew ~60%, caveman-code ~2× vs Codex, arXiv 2604.00025 "+26 points"): `JuliusBrussee/caveman` `README.md`.
+- Plugin internals (markdown `SKILL.md` register-shift engine, no compression code; `plugin.json` declares a `SessionStart` `caveman-activate.js` + `UserPromptSubmit` `caveman-mode-tracker.js` hook; `bin/lib/settings.js` idempotent writes into `~/.claude/settings.json` with `hasCavemanHook` / `removeCavemanHooks`; `evals/measure.py` tiktoken `o200k_base` vs "Answer concisely." over 10 prompts; issue #484): direct read of installed `JuliusBrussee/caveman` `v1.9.0` (2026-06-18).
+- Local tokenizer measurements (ultra 58.5%; wenyan-full 56.6% token / 80.9% char; wenyan-ultra 74.5%; abbreviation/glyph/arrow costs; register ladder −54/−60/−67%): dossier [10](/reference/research/token-optimization/10-style-and-language-compression/) and [03](/reference/research/token-optimization/03-prior-art-and-market-scan/) (`/tmp/ct.py` `count_tokens`, method shown there).
+- Family positioning (cavekit orchestrates / caveman compresses output / cavemem compresses memory): getcaveman.dev; cavemem README; independent ~4% whole-session estimate: mayhemcode.com (2026-04).
+- Adoption (2026-06-18): 74,446★ / 166 watchers / `v1.9.0` (`gh api repos/JuliusBrussee/caveman`).
+
+### Headroom
+
+- Repository + README + docs ("60–95% fewer tokens, same answers"; library/proxy/MCP/agent-wrapper; CacheAligner verbatim "extracting dynamic content… prefix stays byte-identical… KV cache can reuse"; "96.2% total savings"): `chopratejas/headroom`; headroom-docs.vercel.app/docs.
+- Source tree (the cache-safety machinery): `cache_stabilization/` (`anthropic_cache_control.rs`, `volatile_detector.rs`, `tool_def_normalize.rs`, `drift_detector.rs`), `compression/live_zone_anthropic.rs`, the CCR store, the typed compressors (`LogCompressor`, `CodeAwareCompressor`, `SearchCompressor`, `SmartCrusher`, `HTMLCompressor`, `IntelligentContext`); `cache_control` in 62 files (`gh api search/code`); `benchmarks/prefix_cache_benchmark.py` etc.
+- Companion model: `chopratejas/kompress-base` on HuggingFace (transformer trained on agentic traces, auto-downloaded default text compressor).
+- Benchmarks (code search 17,765→1,408 = 92%; SRE 65,694→5,118 = 92%; triage 54,174→14,761 = 73%; exploration 78,502→41,254 = 47%; 6-type mix 23,921→8,110 = 66.1%; v0.5.18 build-log ~94%, grep/Python 0%; GSM8K/TruthfulQA/SQuAD/BFCL accuracy): headroom README + `docs/benchmarks.md`.
+- Production telemetry (median 4.8% / P75 6.9% / mean 11.3% whole-session across 50k+ sessions / 250+ instances; "Short conversational exchanges (median 4.8%)"): headroom limitations/benchmarks pages.
+- Latency telemetry (proxy P50 52 ms / P90 309 ms / P99 4,172 ms / mean 161 ms; internal pipeline 16.9 ms median; ContentRouter 11.7 ms = 91–98%; SmartCrusher 50.1 ms; TextCompressor 32.0 ms; v0.5.18): headroom-docs.vercel.app/docs/benchmarks (2026-06-18).
+- Independent measurement: Miya-Gadget (2026-06-03) 59,742→31,358 = **47.5%** whole-session (code 79.8%, JSON 59.2%, logs 31.0%, RAG/prose 0%), "95%… oversold"; HN "~50%". Press origin: theregister.com (2026-05-31).
+- headroom-tracks-RTK corroboration (`tokens_saved_rtk` data plane + "RTK metrics + Rust observability"): headroom releases `v0.22.4` (2026-06-01).
+- PyPI (190 releases, summary "Cut costs by 50-90%"): pypi.org/project/headroom-ai. Adoption (2026-06-18): 33,359★ / 111 watchers / `v0.26.0` (`gh api repos/chopratejas/headroom`).
+
+### RTK
+
+- Repository + README ("60–90% on common dev commands"; single Rust binary, zero deps; four strategies; PreToolUse auto-rewrite; `<10 ms`; tee recovery; `rtk init`/`gain`/`discover`/`session`; 14-platform integration table; per-command + "30-min session" savings): `github.com/rtk-ai/rtk` (README on `develop`/`master`; `main` 404s); official site rtk-ai.app.
+- Internals (six-phase PARSE→ROUTE→EXECUTE→FILTER→PRINT→TRACK; 12 strategies; `src/core/filter.rs` None/Minimal/Aggressive code filter across 8 languages; SQLite `~/.local/share/rtk/history.db` with ~4-chars/token heuristic; exit-code preservation; fail-safe fallback; `-vvv`; ~4.1 MB binary / ~5–15 ms per command; package-manager sniffing): RTK `docs/contributing/ARCHITECTURE.md` (2026-06-18).
+- Vendor "measured" page (89% of CLI noise across 2,900+ commands; one dev 15,720 commands → 138M tokens; all via `rtk gain`): rtk-ai.app/savings.
+- Most balanced third-party write-up (figures vendor-sourced; estimates only; Bash-calls-only; "could theoretically strip context the agent needed"): dev.to/arshtechpro.
+- HN engagement (Show HN id 46974740; second thread id 47189599 = 18 pts / 3 comments; naming-collision criticism; self-reports 83.7% / 79.3% / 89% via RTK's counter): news.ycombinator.com + hn.algolia.com.
+- Issue tracker cautions (#582 hook raised cost 18% in a config; #886 bypassed permission prompts): github.com/rtk-ai/rtk/issues.
+- Adoption (2026-06-18): 63,608★ / 146 watchers / 3,913 forks / 1,254 issues / Apache-2.0 / created 2026-01-22 / `v0.42.4` (`gh api repos/rtk-ai/rtk`).
+
+### lean-ctx
+
+- Repository + README ("Context intelligence layer"; "60–90% fewer tokens, cached 99%"; 77 MCP tools; 10 read modes; 56/95+ shell patterns; CCP memory; property graph; hybrid RRF search; LSP refactor; multi-agent Context OS; signed savings ledger; "no telemetry by default"; 30+ agents): `github.com/yvgude/lean-ctx` `README.md`, crate description (`rust/Cargo.toml`).
+- Internals (the three interception points; deterministic core vs opt-in embeddings/proxy; CFT Φ-function + knapsack compiler + context handles; bounce-netting; cache-safe proxy frozen-region; multi-tokenizer o200k/cl100k = GPT not Claude BPE): `ARCHITECTURE.md` (1,192 lines, 5 mermaid diagrams), `LEANCTX_FEATURE_CATALOG.md` (SSOT), direct source read of `v3.8.9` (modules enumerated in "Additional preserved detail" above).
+- Benchmark (vendor `lean-ctx benchmark report`, `o200k_base`, competitor numbers are *published figures* not re-measured — self-favorable, same category as RTK's own counter): `BENCHMARKS.md` (map 97.7% / signatures 97.0% / session 86.4% on the lean-ctx repo). **Locally reproduced this round** (`cargo build --release` → 64.7 MB binary; `benchmark report .` → code 96–99%, prose/config 0.8–30%, map quality 77%; `cargo test --lib tokens` 48/48 pass).
+- Pricing/commercial (Free local Apache-2.0 "forever", Pro $9/mo cloud sync, Team $18/seat/mo; "Free is a CI-enforced invariant"): leanctx.com/pricing, leanctx.com/compare.
+- Adoption (2026-06-20): 2,800★ / 19 watchers / 278 forks / 13 open issues / Apache-2.0 / created 2026-03-23 / `v3.8.9` (`gh api repos/yvgude/lean-ctx`). README claims "2,600+ stars / 200+ releases" — roughly consistent with the live pull (least-inflated of the four).
+
+### Cross-tool, stack, and literature
+
+- Published RTK-vs-headroom head-to-head (one month production TS/Next.js, self-measured via each tool's counter: RTK 1,327,700,000 tok / headroom 189,014,601 tok at 96% prefix-cache-hit / combined 1,516,714,601; ~200–500-tok passthrough overhead): andrewpatterson.dev/posts/token-savings-rtk-headroom.
+- Four-layer community stack model (CBM → context-mode → caveman → headroom/RTK; "complementary layers, not overlapping"; 47–92%; "30 min → 3+ hr"): `sgaabdu4/claude-code-tips` via DeepWiki.
+- Independent caveats corroborating the RTK kills (no controlled baseline, no variance, Bash-bounded, "significantly below headline"): candido.ai/blog/claude-code-token-optimization; stack write-up paul-hackenberger.medium.com.
+- Cache-economics + write-time-vs-whole-prompt classification: "Don't Break the Cache" arXiv 2601.06007; Claude 4.5 compression RCT arXiv 2603.23525; CompressionAttack arXiv 2510.22963. Write-time / code-domain compressors: Squeez arXiv 2604.04979; AgentDiet arXiv 2509.23586; SWEzze/OCD arXiv 2603.28119; SWE-Pruner arXiv 2601.16746 (ID tentative); LongCodeZip ASE 2025; Perplexity Paradox arXiv 2602.15843. Output brevity: Chain-of-Draft arXiv 2502.18600; TALE arXiv 2412.18547. Full literature ledger: dossier [54](/reference/research/token-optimization/54-context-compression-literature-and-market/).
+- jackin❯ hook/host-state hazard and the role-scoped registration pattern: [architect code-intelligence tooling roadmap](/roadmap/architect-code-intelligence-tooling/).
+
+---
+
+This page, with the rest of the hub, is the complete record. The dossier chapters retain their broader-topic context and point here for the per-tool detail. Back to the [overview](/reference/research/token-optimization-tools/).

@@ -6,7 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
-use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
+use crate::theme::{BRAND_BLOCK, PHOSPHOR_DARK, WHITE};
 
 #[derive(Debug, Clone, Copy)]
 pub struct BrandHeader<'a> {
@@ -30,14 +30,14 @@ impl Widget for BrandHeader<'_> {
 
 #[must_use]
 pub fn brand_header_line(label: &str) -> Line<'static> {
+    // The mark is a green block: black word, white chevron, square edges.
+    let block = Style::default()
+        .bg(BRAND_BLOCK)
+        .add_modifier(Modifier::BOLD);
     Line::from(vec![
-        Span::styled(
-            " jackin' ",
-            Style::default()
-                .bg(PHOSPHOR_GREEN)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Span::styled(" jackin", block.fg(Color::Black)),
+        Span::styled("❯", block.fg(WHITE)),
+        Span::styled(" ", block),
         Span::styled(" · ", Style::default().fg(PHOSPHOR_DARK)),
         Span::styled(label.to_owned(), crate::theme::DIM),
     ])

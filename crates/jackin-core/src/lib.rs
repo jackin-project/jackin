@@ -1,12 +1,13 @@
-//! jackin-core: universal vocabulary types shared across all jackin' crates.
+//! jackin-core: universal vocabulary types shared across all jackin❯ crates.
 //!
-//! This is a leaf crate — it has no jackin' dependencies, no tokio, no
+//! This is a leaf crate — it has no jackin❯ dependencies, no tokio, no
 //! subprocess, no filesystem access. Every higher crate depends on this one,
 //! never the reverse.
 //!
 //! Public surface: `Agent`, `MountIsolation`, `AuthForwardMode`, and shared
 //! string constants.
 
+pub mod account_key;
 pub mod agent;
 pub mod ansi_text;
 pub mod auth;
@@ -28,6 +29,7 @@ pub mod prune_output;
 pub mod runner;
 pub mod selector;
 pub mod url_text;
+pub mod worktree_dirty;
 
 pub use agent::{
     Agent, ParseAgentError,

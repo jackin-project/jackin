@@ -1,0 +1,140 @@
+---
+title: "10 — First-party measurements (this repo + a built lean-ctx)"
+---
+
+# 10 — First-party measurements
+
+Most numbers in pages 01–09 are vendor or community self-report. This page holds the **first-party** measurements this research actually ran: (1) real token and tool data parsed from this project's own Claude Code session transcripts, and (2) a from-source build and benchmark of **lean-ctx v3.8.9** — the one tool light enough to compile and exercise inside a research session. Together they are a *partial* execution of the [validation harness](/reference/research/token-optimization-tools/07-evidence-and-claims/) — the measurable-without-a-full-A/B subset. The full controlled multi-arm A/B (Native / Caveman / Hooks / RTK / Headroom-MCP / lean-ctx / full stack) still requires the operator to run the tools installed over many sessions; that part is marked **INCOMPLETE** below, with the runnable method provided.
+
+## Method
+
+Parsed all session JSONL transcripts for this project at `~/.claude/projects/<project>/*.jsonl` (3 sessions, 1,203 lines, 498 assistant messages — the very sessions that produced this hub). Token classes are summed from the exact `message.usage` fields (`input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `output_tokens`). Tool-result sizes are attributed to the producing tool by mapping each `tool_use_id` → tool name, then summing the `tool_result` content length. Sizes are in **characters, with approximate tokens = chars ÷ 4** — a GPT-style heuristic, **not** Claude's BPE (so treat magnitudes as directional, the same caveat that applies to RTK's own counter). Measured 2026-06-20.
+
+**Workload caveat (load-bearing):** these sessions are a **docs/research workload** — heavy `Read` of large `.mdx` files, `Edit`/`Write`, and `git`/`grep`/validation through `Bash`, plus web research. They are **light on `cargo test` / `pytest` / build output**. A test/build-heavy coding session would shift the Bash share substantially upward. The numbers below are real, but they are *this workload's* numbers, not a universal constant — which is itself the point.
+
+## Token decomposition (exact, from `usage`)
+
+| Token class | Tokens | Share of volume |
+|---|---:|---:|
+| uncached input | 257,248 | 0.2% |
+| cache write | 5,510,738 | 4.9% |
+| **cache read** | **106,486,561** | **94.0%** |
+| output (incl. thinking) | 1,026,081 | 0.9% |
+| **Total** | **113,280,628** | 100% |
+
+This is **token volume, not dollars** (output bills ~5× input, cache-read bills 0.1×). The shape confirms the dossier's central measured invariant directly on this repo: **cache reads dominate token volume (94%)**, output is a tiny fraction of *volume* (0.9%) even though it is the most expensive per token. Any input compressor (RTK, headroom) is aiming at the 94% + 4.9% = 98.9% input side; caveman is aiming at a slice of the 0.9% output volume (worth more per token, but small in volume).
+
+## Tool usage and the observation-token split (the RTK reach bound)
+
+Tool calls over the 3 sessions: `Bash` 89, `Edit` 52, `Read` 24, `Write` 17, `WebFetch` 9, `WebSearch` 7, `ToolSearch` 3, `Agent` 2, `TaskCreate` 1.
+
+Where the **observation tokens** (tool-result content the model must read) actually came from:
+
+| Producing tool | Tool-result chars | ~tokens | Share | RTK can intercept? |
+|---|---:|---:|---:|---|
+| **`Read`** (native) | 632,090 | ~158,022 | **76.2%** | **No** — native, bypasses RTK |
+| **`Bash`** | 136,938 | ~34,234 | **16.5%** | **Yes** — RTK's reachable max |
+| `WebSearch` | 22,995 | ~5,748 | 2.8% | No |
+| `WebFetch` | 18,840 | ~4,710 | 2.3% | No |
+| `Edit` | 12,017 | ~3,004 | 1.4% | No |
+| `Write` | 3,073 | ~768 | 0.4% | No |
+| `Agent` / `TaskCreate` / `ToolSearch` | 3,105 | ~776 | 0.4% | No |
+| **Total** | 829,058 | ~207,264 | 100% | |
+
+```text
+   OBSERVATION TOKENS BY SOURCE (this repo, docs/research workload)
+
+   Read   ████████████████████████████████████████████  76.2%  ← RTK blind; headroom's territory
+   Bash   ██████████                                     16.5%  ← RTK's reach CEILING here
+   web    ██                                              5.1%  ← RTK blind
+   Edit   ▌                                               1.4%
+   other  ▌                                               0.9%
+```
+
+**The finding:** on this workload, **RTK could touch at most 16.5% of observation tokens**, while **native `Read` alone is 76.2%** — and RTK cannot intercept native `Read`. The single largest observation source here is large native file reads (the dossier `.mdx` chapters), which is exactly **headroom's** territory (it acts on the API request, so it sees native reads) and **not** RTK's. This empirically confirms the page-03 reach limit *and* quantifies it: for read-heavy work, headroom's broad reach beats RTK's deterministic Bash filter on coverage, and the lean "caveman + RTK" recommendation from page 05 inverts toward "caveman + headroom" when the workload is `Read`-dominated rather than `Bash`-dominated. **Measure your own split before choosing** — on a `cargo test`-heavy session the Bash bar would be far taller.
+
+## lean-ctx, built and benchmarked first-party
+
+Unlike caveman/headroom/RTK (whose installation would change live sessions), lean-ctx could be **compiled from source and exercised directly** this round. Method: `git clone` + `cargo build --release` of `lean-ctx v3.8.9` (a **64.7 MB** binary; `cargo test --lib tokens` → 48/48 pass), then `lean-ctx benchmark report .` on the lean-ctx repo itself (tiktoken `o200k_base`, 50 files / 479K raw tokens) plus individual `lean-ctx read` calls.
+
+**Read-mode compression, by language (measured):**
+
+| Language | Raw tokens | Best mode | Compressed | Savings |
+|---|---:|---|---:|---:|
+| Rust | 150.2K | map | 5.8K | **96.1%** |
+| JavaScript | 100.8K | map | 0.8K | **99.2%** |
+| TypeScript | 20.8K | map | 0.7K | **96.8%** |
+| Python | 15.4K | map | 1.1K | **92.7%** |
+| **Markdown** | 90.4K | aggressive | 83.6K | **7.5%** |
+| **JSON** | 41.7K | aggressive | 28.9K | **30.6%** |
+| **CSS** | 27.5K | aggressive | 26.4K | **4.1%** |
+| **HTML** | 26.4K | aggressive | 24.6K | **6.8%** |
+| **TOML** | 3.0K | aggressive | 3.0K | **0.8%** |
+
+**Mode performance (measured):** `signatures` 96.5% at **95.9%** self-rated quality; `map` 97.8% at only **77%** quality; `aggressive` 10.3% (strips comments only); `entropy` 0.5%; cache-handle re-read ~13 tokens (99.7%).
+
+```text
+   LEAN-CTX COMPRESSION BY CONTENT TYPE (measured, this build)
+
+   code (rs/js/ts/py)  ████████████████████████████████████████████  92–99%  ← its strength
+   JSON                █████████████                                  30.6%
+   Markdown            ███                                             7.5%
+   HTML                ███                                             6.8%
+   CSS                 ██                                              4.1%
+   TOML                ▌                                               0.8%   ← prose/config: barely touched
+```
+
+**The finding:** lean-ctx is, empirically, a **code compressor** — its tree-sitter `map`/`signatures` modes crush source (92–99%) and barely touch prose, config, or data (0.8–30%). This is the exact inverse of headroom (which compresses logs/JSON and passes code through at 0%) and it interacts pointedly with the [transcript measurement above](#tool-usage-and-the-observation-token-split-the-rtk-reach-bound): this repo's observation tokens are **76.2% native `.mdx` reads** — i.e. prose, the content lean-ctx helps *least* on. lean-ctx's headline shines on a `.rs`/`.ts`-heavy coding session and fades on a docs/research one, the same workload-dependence the page's central caveat names. The 30-minute "session simulation" reproduced at **86–87%** (672K → 87.7K) — a code-read-heavy per-session best case, not a whole-bill figure. And every percentage is on `o200k_base` (GPT), not Claude BPE — directional, like the rest of this page.
+
+**What this is not:** a controlled A/B against the other tools, or a measurement on *this* repo's actual Claude Code traffic. It is a faithful reproduction of lean-ctx's own benchmark mechanism on real files, confirming the mechanism is genuine (T1) while leaving its whole-bill effect to the harness.
+
+## Thinking share (partially measurable → still needs `count_tokens`)
+
+Thinking is **redacted** in the JSONL (149 thinking blocks, all with empty/redacted text), confirming the dossier's note that transcripts hide thinking content. So the exact thinking share of `output` cannot be read from JSONL alone — it needs a `count_tokens` pass on the visible text subtracted from `usage.output_tokens`. What *is* visible: total visible assistant text is only ~51,953 chars (~13k tokens) across all 3 sessions — tiny, partly because caveman-ultra was active and because the large authored content lives inside `Write`/`Edit` tool-use arguments (which also bill as output), not in visible text. So output's 1,026,081 tokens are dominated by thinking + tool-use arguments, with visible prose a sliver. **The dossier's n=1 estimate (thinking ≈ 54.8% of output, ≈ 20% of dollars) stands as the best available figure; an exact first-party split remains open** (see [page 08](/reference/research/token-optimization-tools/09-gaps-open-questions-and-next-brief/)). The qualitative implication is already visible: caveman's only target (visible prose) is empirically a small slice of output here.
+
+## Reproduce it
+
+The measurement needs no installed tools — only the local transcripts. The parser:
+
+```python
+import json, glob, collections
+files = glob.glob("~/.claude/projects/<project>/*.jsonl")  # expanduser as needed
+usage, calls, tr_chars, id2name = collections.Counter(), collections.Counter(), collections.Counter(), {}
+for f in files:
+    for line in open(f):
+        line = line.strip()
+        if not line: continue
+        try: o = json.loads(line)
+        except: continue
+        m = o.get("message") or {}; role = m.get("role") or o.get("type")
+        c = m.get("content"); c = c if isinstance(c, list) else []
+        if role == "assistant":
+            u = m.get("usage") or {}
+            for k_src, k_dst in [("input_tokens","input"),("cache_creation_input_tokens","cw"),("cache_read_input_tokens","cr"),("output_tokens","out")]:
+                usage[k_dst] += u.get(k_src, 0)
+            for b in c:
+                if isinstance(b, dict) and b.get("type") == "tool_use":
+                    calls[b.get("name","?")] += 1; id2name[b.get("id")] = b.get("name","?")
+        elif role == "user":
+            for b in c:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    nm = id2name.get(b.get("tool_use_id"), "?")
+                    cont = b.get("content")
+                    tr_chars[nm] += len(cont) if isinstance(cont, str) else sum(len(x.get("text","")) for x in cont if isinstance(x, dict))
+print(usage); print(calls.most_common()); print(tr_chars.most_common())
+```
+
+## What is still INCOMPLETE (and why)
+
+The **full controlled multi-arm A/B cannot be self-run inside one agent session.** It requires installing caveman, RTK, headroom, and lean-ctx; running ≥10 matched coding tasks per arm as separate fresh Claude Code sessions; and diffing the resulting transcripts — days of operator-driven runs with the tools actually present, not something a single research session can fabricate. (lean-ctx was *built and benchmarked* this round, but a benchmark of its compression mechanism is not the same as an A/B of tokens-per-solved-task on live traffic.) Producing invented numbers for those arms would violate the dossier's no-invented-numbers rule. So this page ships the real local-transcript measurement and the lean-ctx build measurement (above), and the [harness](/reference/research/token-optimization-tools/07-evidence-and-claims/) ships the runnable protocol; the per-arm tokens-per-solved-task table stays **INCOMPLETE** until the operator runs it. When they do, those numbers become the hub's primary evidence and the vendor self-reports drop to corroboration.
+
+## Caveats on this page's own data
+
+- **n = 3 sessions, one operator, one docs/research workload** — not a distribution. The Bash share especially is workload-specific.
+- **chars ÷ 4 ≈ tokens** is a heuristic, not Claude BPE; magnitudes are directional. The `usage` token *classes* (the decomposition table) are exact.
+- **cache-read volume is cumulative** — each turn re-reads the growing prefix, so the 94% reflects long multi-turn sessions (expected, and the reason caching is the floor).
+- Thinking share is **not** measured here (redacted); the 54.8%/20% figures are the dossier's n=1.
+
+---
+
+Back to the [overview](/reference/research/token-optimization-tools/) · the [harness](/reference/research/token-optimization-tools/07-evidence-and-claims/) · the [gaps](/reference/research/token-optimization-tools/09-gaps-open-questions-and-next-brief/).

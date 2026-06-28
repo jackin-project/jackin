@@ -1,0 +1,302 @@
+---
+title: Creating a Role
+description: Build your own role repo with a custom toolchain
+---
+
+<Aside type="note">
+This page is **for role authors** — a step-by-step walkthrough of
+creating your own role repository. Role authoring is a normal
+user-facing activity (a developer building a backend-engineer,
+docs-writer, or security-reviewer role with their preferred
+toolchain and plugins) — you do not need to know how jackin❯ is
+implemented to follow it. If you only want to *load* existing
+roles, see the [Operator Guide](/guides/workspaces/) instead.
+</Aside>
+
+## Overview
+
+Creating a custom agent lets you define a specialized environment for a specific type of work. A Rust agent includes the Rust toolchain. A Python data science agent includes Jupyter, pandas, and scipy. You define the tools — jackin❯ handles the rest.
+
+## Step by step
+
+<Steps>
+1. **Create the role scaffold**
+
+   ```bash
+   jackin role create ChainArgos/Rustacean "$HOME/Projects"
+   cd "$HOME/Projects/chainargos/jackin-rustacean"
+   ```
+
+   The generated repository includes a minimal manifest, Dockerfile, README, ignore files, and a validation workflow. jackin❯ lowercases the selector, so `ChainArgos/Rustacean` becomes `chainargos/rustacean`.
+
+2. **Edit the Dockerfile**
+
+   Start from the generated file and add the tools your role needs:
+
+   ```dockerfile
+   FROM projectjackin/construct:0.4-trixie
+
+   # Install Rust via mise
+   RUN mise install rust@stable && mise use --global rust@stable
+
+   # Install additional Rust tools
+   RUN cargo install cargo-nextest cargo-watch
+   ```
+
+3. **Validate locally**
+
+   ```bash
+   jackin role validate .
+   ```
+
+4. **Create a GitHub repository and push**
+
+   ```bash
+   git init
+   git branch -M main
+   git add -A
+   git commit -m "Initial role setup"
+   gh repo create chainargos/jackin-rustacean --source=. --remote=origin --push
+   ```
+
+5. **Load your agent**
+
+   ```bash
+   jackin load chainargos/rustacean . --debug
+   ```
+
+6. **Migrate when the manifest schema changes**
+
+   ```bash
+   jackin role migrate .
+   ```
+</Steps>
+
+Use `jackin role migrate` on your own desktop when you are updating a checked-out role repo. CI workflows should keep using the generated validation workflow and the standalone `jackin-role` binary instead of the full `jackin` operator CLI.
+
+## Dockerfile guidelines
+
+### The construct base is required
+
+Your final stage **must** start from the construct image:
+
+```dockerfile
+FROM projectjackin/construct:0.4-trixie
+```
+
+<Aside type="caution">
+The final stage must use a versioned construct tag (e.g. `projectjackin/construct:0.4-trixie`). The floating `:trixie` tag, `:latest`, or any other non-versioned tag fails validation. Renovate can track version bumps automatically — the generated role repo includes a Renovate configuration with a regex versioning rule for construct version pins.
+</Aside>
+### Multi-stage builds are supported
+
+Use earlier stages for compilation or asset preparation:
+
+```dockerfile
+# Build stage — use any base image
+FROM rust:1.95.0-slim AS builder
+WORKDIR /build
+COPY tools/ .
+RUN cargo build --release
+
+# Final stage — must use the construct
+FROM projectjackin/construct:0.4-trixie
+COPY --from=builder /build/target/release/my-tool /usr/local/bin/
+```
+
+### Use mise for language management
+
+The construct ships with [mise](https://mise.jdx.dev/) — a polyglot version manager. Use it to install languages:
+
+```dockerfile
+# Node.js
+RUN mise install node@22 && mise use --global node@22
+
+# Python
+RUN mise install python@3.12 && mise use --global python@3.12
+
+# Go
+RUN mise install go@1.23 && mise use --global go@1.23
+
+# Multiple languages
+RUN mise install node@22 python@3.12 go@1.23 && \
+    mise use --global node@22 python@3.12 go@1.23
+```
+
+### Install packages as the agent user
+
+The construct switches to the `agent` user. Your Dockerfile commands run as that user. If you need root access:
+
+```dockerfile
+USER root
+RUN apt-get update && apt-get install -y some-package
+USER agent
+```
+
+## Claude plugins
+
+Role repos can declare Claude Code plugins to install. Add them to the `[claude]` section in your manifest:
+
+```toml title="jackin.role.toml"
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+
+[claude]
+model = "sonnet"
+plugins = ["code-review@claude-plugins-official"]
+
+[identity]
+name = "My Agent"
+```
+
+These plugin IDs are written into the agent's runtime state and installed automatically when the container starts.
+
+If you need plugins from a custom marketplace, declare the marketplace separately and keep plugin IDs fully qualified:
+
+```toml title="jackin.role.toml"
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = [
+  "code-review@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+
+[identity]
+name = "My Agent"
+```
+
+jackin adds each declared marketplace at container startup, then installs each plugin ID exactly as written.
+
+## Supporting multiple agents
+
+An role can support more than one agent while keeping one shared Dockerfile:
+
+```toml title="jackin.role.toml"
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex", "amp", "kimi", "opencode"]
+
+[claude]
+plugins = ["code-review@claude-plugins-official"]
+
+[codex]
+model = "gpt-5"
+
+[amp]
+
+[identity]
+name = "My Agent"
+```
+
+The workspace chooses the default agent:
+
+```bash
+jackin workspace create my-app --workdir ~/Projects/my-app --default-agent amp
+```
+
+You can override it for one launch:
+
+```bash
+jackin load my-agent my-app --agent claude
+```
+
+## Testing your agent
+
+### Testing the default branch
+
+The fastest way to test is to load it:
+
+```bash
+jackin load your-agent-name --rebuild
+```
+
+The `--rebuild` flag forces a fresh image build, picking up Dockerfile changes and refreshing agent install layers. Agent binaries are resolved and cached by jackin❯ on the host, so unchanged versions are copied into the build context instead of downloaded again. If jackin❯ cannot reach an agent's release metadata service but already has an executable cached for that agent, launch continues with the cached binary and records a warning in the diagnostics run.
+
+Use `--debug` to see raw Docker output if something goes wrong:
+
+```bash
+jackin load your-agent-name --rebuild --debug
+```
+
+### Testing a branch (your own work or someone else's PR)
+
+When you have changes that are **not yet on the default branch** — your
+own feature branch, a fork's branch you want to try, or a contributor's
+pull request you want to verify before approving — pass `--role-branch`
+to load that branch instead of the role repo's default:
+
+```bash
+# Test your own branch on a role you own
+jackin load your-agent-name --role-branch feat/some-change --rebuild
+
+# Test someone else's PR branch (their fork must be the role's
+# configured remote, or you opened the PR against your fork)
+jackin load your-agent-name --role-branch their-feature --rebuild
+```
+
+`--role-branch` always triggers an interactive **branch trust gate**,
+even when the role itself is already trusted (`trusted = true` in
+your config). The reason is in [Security Model →
+Branch trust gate](/guides/security-model/#branch-trust-gate): a
+`trusted = true` flag records that you reviewed the role's *default*
+branch, and an unmerged branch may contain a Dockerfile or scripts
+that would run during the image build but were never reviewed. The
+prompt asks you to confirm you have read the diff before continuing,
+and it cannot be skipped — there is no `--force-branch` and
+non-interactive shells fail rather than defaulting to yes.
+
+The recommended flow when reviewing someone else's role-repo PR:
+
+1. Fetch the PR branch into a checkout of the role repo and read the
+   diff yourself, especially `Dockerfile`, any runtime hook scripts,
+   and the `jackin.role.toml` manifest.
+2. Run the load command above with `--role-branch <PR-branch-name>`
+   and `--rebuild`.
+3. When the trust prompt appears, confirm only after the diff review
+   is complete.
+4. Inside the container, exercise the change — install the toolchain
+   the PR claims to add, run a representative project, etc.
+5. `jackin eject your-agent-name` when finished. The branch's cached
+   checkout is kept around so the next `--role-branch` load of the
+   same branch is fast; `jackin purge` for that container clears it.
+
+### Testing your changes from a fork
+
+If you do not have write access to the upstream role repo, the
+standard fork-and-PR flow works without any extra jackin❯ configuration.
+On your **own** fork:
+
+1. Push the branch to your fork.
+2. Point jackin❯ at your fork as the role's source. The cleanest way
+   is to give the role a namespaced selector that matches your fork
+   (for example `your-org/your-role` resolving to
+   `https://github.com/your-org/jackin-your-role.git`); jackin❯
+   resolves the source from the selector. If you want the role's
+   short name (`your-role`) to load from your fork instead of the
+   upstream, use `jackin config trust grant <selector>` and any
+   selector-source helpers your jackin❯ release exposes — see the
+   [Configuration File](/reference/runtime/configuration/) internals
+   reference if you need the on-disk schema.
+3. Run `jackin load <role> --role-branch <branch> --rebuild`.
+4. When the change is ready, open a PR against the upstream role
+   repo from the same fork branch. Reviewers can then verify it
+   against their own checkout using the same `--role-branch` flow.
+
+## Example agents
+
+| Agent | Purpose | Repository |
+|---|---|---|
+| **Agent Smith** | Default general-purpose agent | [jackin-project/jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) |
+| **The Architect** | Rust development (used for jackin❯ itself) | [jackin-project/jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) |
+
+These repos are good starting points when creating your own agent. Agent Smith is intentionally minimal, while The Architect shows a more involved setup with Rust tooling and build dependencies.

@@ -1,11 +1,11 @@
 ---
 title: Capsule Session Lifecycle
-description: Technical reference for how jackin' creates, manages, and tears down Capsule-managed sessions
+description: Technical reference for how jackin❯ creates, manages, and tears down Capsule-managed sessions
 ---
 
 ## Overview
 
-Every role container runs the jackin' Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/jackin/run/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /jackin/runtime/jackin-capsule` client. See [jackin' Capsule](/reference/capsule//) for the control-plane design and wire protocol.
+Every role container runs the jackin❯ Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/jackin/run/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /jackin/runtime/jackin-capsule` client. See [jackin❯ Capsule](/reference/capsule//) for the control-plane design and wire protocol.
 
 There are two session types:
 
@@ -41,7 +41,7 @@ Implementation: <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">cra
 
 ## Session Inventory
 
-jackin' queries the daemon through its socket by executing:
+jackin❯ queries the daemon through its socket by executing:
 
 ```bash
 /jackin/runtime/jackin-capsule status
@@ -73,7 +73,7 @@ When the operator detaches or the terminal closes while sessions are still alive
 
 ### Crash Or Forced Stop
 
-If the role container exits non-zero or is OOM-killed, jackin' records crash state and removes the DinD sidecar, network, and certs volume. If Docker sends `SIGTERM` to the role container, PID 1 shuts down the daemon and sessions as the container namespace exits.
+If the role container exits non-zero or is OOM-killed, jackin❯ records crash state and removes the DinD sidecar, network, and certs volume. If Docker sends `SIGTERM` to the role container, PID 1 shuts down the daemon and sessions as the container namespace exits.
 
 ## What Persists Across Session Exit
 

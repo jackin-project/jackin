@@ -5,7 +5,7 @@ description: "Key binding roles, W3C Tabs pattern, navigation hints, focusabilit
 
 ## Navigation conventions
 
-jackin' TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed interfaces and the corresponding area-scoped arrow-key model everywhere else.
+jackin❯ TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed interfaces and the corresponding area-scoped arrow-key model everywhere else.
 
 ### Key roles
 
@@ -67,14 +67,14 @@ Rules:
 
 Any TUI action that can take noticeable time, waits on I/O, talks to Docker, touches git/network state, waits on a background worker, or otherwise keeps the operator from immediately seeing the result **must show an in-surface progress or status state for the whole wait**. A static unchanged screen after an operator commits an action is a bug: it makes the interface feel stuck even when work is happening correctly.
 
-This rule is the TUI version of visibility of system status. Nielsen Norman Group's [visibility-of-system-status heuristic](https://www.nngroup.com/articles/visibility-system-status/) says systems should keep people informed through timely feedback, and specifically calls out progress indicators for work that needs longer to finish. Material's [progress-indicator guidance](https://material-web.dev/components/progress/) defines progress indicators as the component that informs users about ongoing processes such as loading or submitting work. jackin' applies that guidance to terminal UI: the operator must be able to glance at the screen and answer "what is happening now?"
+This rule is the TUI version of visibility of system status. Nielsen Norman Group's [visibility-of-system-status heuristic](https://www.nngroup.com/articles/visibility-system-status/) says systems should keep people informed through timely feedback, and specifically calls out progress indicators for work that needs longer to finish. Material's [progress-indicator guidance](https://material-web.dev/components/progress/) defines progress indicators as the component that informs users about ongoing processes such as loading or submitting work. jackin❯ applies that guidance to terminal UI: the operator must be able to glance at the screen and answer "what is happening now?"
 
 Required implementation shape:
 
 1. **Foreground waits get a foreground status surface.** If the action blocks the current flow, show a modal/status popup, launch cockpit, progress rail, spinner, or equivalent visual state. The role editor's `Loading role` popup and the launch cockpit are the exemplars: the operator sees the action has started, the UI remains alive, and completion transitions to the next decision or error surface.
 2. **Background work still needs a visible owner.** If a worker thread, async task, Docker command, git clone, cache refresh, token mint, or diagnostics-producing command is running because of an operator action, the screen that accepted the action owns the loading state until the worker reports success or failure. Do not leave the previous input modal, list row, or unchanged editor frame on screen while the work happens.
 3. **Use determinate progress when it is real, otherwise use indeterminate status.** A stage rail, percent, or progress bar is appropriate only when the implementation has meaningful progress signals. Unknown duration uses an indeterminate spinner/status text such as `Loading role`, `Building image`, or `Minting token`; do not fake percentages.
-4. **Name the work in operator language.** The status text should say what jackin' is doing now, not expose implementation plumbing. Use `Loading role`, `Building derived image`, `Opening hardline`, or `Refreshing 1Password items`; avoid raw command names as the primary status.
+4. **Name the work in operator language.** The status text should say what jackin❯ is doing now, not expose implementation plumbing. Use `Loading role`, `Building derived image`, `Opening hardline`, or `Refreshing 1Password items`; avoid raw command names as the primary status.
 5. **Completion must transition visibly.** Success moves to the next visible state (for example a trust prompt, updated row, opened session, or saved confirmation). Failure moves to the shared red error surface with the same diagnostics/error detail rules as the rest of the TUI. A worker result must never silently close the screen or leave the operator guessing whether anything changed.
 6. **Motion is optional; status is not.** `JACKIN_NO_MOTION=1` and low-capability renderers may freeze animation or replace a spinner with static text, but they must keep the same explicit "work is happening" state.
 
@@ -82,7 +82,7 @@ Review checklist: whenever a PR adds or changes a TUI action that can wait, revi
 
 ### Clickable targets must look clickable (hover + hand pointer — non-negotiable)
 
-This mirrors the web/W3C convention: on a website you know something is clickable because (1) the cursor turns into a hand pointer over it, and (2) it changes appearance on hover. Every jackin' TUI element that performs an action on click **must** expose both, plus a distinct resting style:
+This mirrors the web/W3C convention: on a website you know something is clickable because (1) the cursor turns into a hand pointer over it, and (2) it changes appearance on hover. Every jackin❯ TUI element that performs an action on click **must** expose both, plus a distinct resting style:
 
 1. **Hand pointer on hover.** When the pointer is over a clickable element, the terminal cursor must switch to the hand/pointer shape via OSC 22 (`\x1b]22;pointer\x1b\\`); it returns to the default shape (`\x1b]22;default`) when the pointer leaves. This is the single most important "you can click this" signal. Both surfaces already own the mechanism — the in-container multiplexer's `PointerShape` in <RepoFile path="crates/jackin-capsule/src/tui/app.rs">crates/jackin-capsule/src/tui/app.rs</RepoFile>, OSC 22 encoder in <RepoFile path="crates/jackin-capsule/src/tui/terminal.rs">crates/jackin-capsule/src/tui/terminal.rs</RepoFile>, and `update_pointer_shape_for_mouse` in <RepoFile path="crates/jackin-capsule/src/daemon/mouse_input.rs">crates/jackin-capsule/src/daemon/mouse_input.rs</RepoFile>, plus the console's pointer handling — so a new clickable wires into the existing hover→pointer-shape resolution rather than inventing its own.
 2. **Hover style change.** The element must visibly change while hovered — a lifted background, brighter foreground, or equivalent — modest but unmistakable, matching the website's "this is interactive" clarity without overpowering the surrounding chrome. The **gold-standard exemplar is the tab strip**: hovering a tab lifts its background (`TAB_BG_INACTIVE_HOVER` / `TAB_BG_ACTIVE_HOVER`) and the console + multiplexer share the same hit-test (`jackin_tui::lay_out_tabs` + `tab_at_column`) so hover and click stay in lock-step. Model new clickables on it.
@@ -100,7 +100,7 @@ This rule applies to every TUI surface: list view, workspace editor (all tabs), 
 
 **`Enter`** is the key for **action** semantics (activate a button, open a dialog, confirm a choice, navigate into detail, submit a form). It is also the key for shortcut-letter bindings (`Y` yes, `N` no, `S` save, `D` discard, etc.) on confirmation dialogs.
 
-Binding both `Space` and `Enter` to the same toggle action is a W3C violation — Space is sufficient and Enter would collide with its role as the action key. Binding both to a button widget is acceptable (W3C requires both on standard buttons), but jackin' button-strip widgets use letter shortcuts + Enter to avoid this; don't add Space to them.
+Binding both `Space` and `Enter` to the same toggle action is a W3C violation — Space is sufficient and Enter would collide with its role as the action key. Binding both to a button widget is acceptable (W3C requires both on standard buttons), but jackin❯ button-strip widgets use letter shortcuts + Enter to avoid this; don't add Space to them.
 
 Summary:
 - Toggle row (keep_awake, git_pull, trusted, allowed role): `Space` only.
@@ -324,7 +324,7 @@ The workspace mounts formula uses `.max(1)` because an empty mount list renders 
 
 Input hit-testing, focusability, cursor-follow scrolling, selected-list windowing, scrollbar dragging, wheel/key max-offset math, right-padding content width, and scrollbar rendering must flow through `jackin_tui::scroll` in <RepoFile path="crates/jackin-tui/src/scroll.rs">crates/jackin-tui/src/scroll.rs</RepoFile> and its Ratatui adapter in <RepoFile path="crates/jackin-tui/src/components/scrollable_panel.rs">crates/jackin-tui/src/components/scrollable_panel.rs</RepoFile>. Those modules are the source of truth for clamping, top-relative offsets, tail-relative offsets, full-cell thumb conversion, and `tui-scrollbar` metrics / interaction types. Do not reimplement `area.width - 2`, `area.height - 2`, `content - viewport`, cursor-follow viewport offsets, selected-list slicing, proportional thumb sizing, trailing scroll padding, scrollbar hit areas, track-position formulas, or wheel/key offset math in input handlers or widget renderers; drift between input geometry and renderer geometry is a scroll bug.
 
-The shared model does **not** make every scrollbar look the same. jackin' owns renderer output: console horizontal scrollbars keep dotted tracks with `━` thumbs, console vertical scrollbars keep dotted tracks with `█` thumbs, and capsule panes paint only `█` thumb cells into the right border column. Do not adopt `tui-scrollbar`'s fractional glyph renderer, arrows, or default styles for these surfaces unless this decision is explicitly revisited.
+The shared model does **not** make every scrollbar look the same. jackin❯ owns renderer output: console horizontal scrollbars keep dotted tracks with `━` thumbs, console vertical scrollbars keep dotted tracks with `█` thumbs, and capsule panes paint only `█` thumb cells into the right border column. Do not adopt `tui-scrollbar`'s fractional glyph renderer, arrows, or default styles for these surfaces unless this decision is explicitly revisited.
 
 Signature:
 ```rust

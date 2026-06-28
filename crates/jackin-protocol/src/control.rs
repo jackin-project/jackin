@@ -146,6 +146,9 @@ pub struct FocusedUsageView {
     pub confidence: UsageConfidence,
     pub fetched_at_epoch: i64,
     pub updated_label: String,
+    /// Status-bar headline. Carries the percentage windows and, when the
+    /// focused account has a monetary spend window, the spend joined in:
+    /// `Session 89% · Weekly 73% · SGD 78 of 260`.
     pub status_bar_label: String,
     pub tabs: Vec<UsageProviderTab>,
     pub last_error: Option<String>,
@@ -219,6 +222,92 @@ pub struct FocusedAccountHeader {
 pub enum StatusSlot {
     Session,
     Weekly,
+    /// Monetary spend against a cap (Claude `extra_usage`/`spend`, Codex credits).
+    /// Rendered in the status bar as money (`$53/$300`) from the bucket's
+    /// [`QuotaBucketView::used_money`]/[`limit_money`], not as a `%`.
+    Spend,
+}
+
+/// A monetary amount with explicit scale, so a value sourced in minor units
+/// (cents) is never mis-rendered as major units. The Claude/OpenAI usage APIs
+/// report money as `{ amount_minor, currency, exponent }`; carrying that shape
+/// end-to-end removes the whole class of "100×-too-large" formatting bugs that
+/// a bare `f64 + currency` representation invited.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Money {
+    /// Amount in the currency's minor unit (e.g. cents). `5331` with
+    /// `exponent = 2` is `53.31`.
+    pub amount_minor: i64,
+    /// ISO-4217 code (`"USD"`, `"SGD"`) or a non-standard credits label.
+    pub currency: String,
+    /// Decimal places: minor = major × 10^exponent. Almost always `2`.
+    pub exponent: u8,
+}
+
+impl Money {
+    #[must_use]
+    pub fn new(amount_minor: i64, currency: impl Into<String>, exponent: u8) -> Self {
+        Self {
+            amount_minor,
+            currency: currency.into(),
+            exponent,
+        }
+    }
+
+    /// Major-unit value (e.g. `53.31`). Pure scale conversion; no rounding loss
+    /// for the `<= 2` exponents these APIs use.
+    #[must_use]
+    pub fn major(&self) -> f64 {
+        self.amount_minor as f64 / 10f64.powi(i32::from(self.exponent))
+    }
+
+    /// Compact label for the width-constrained status bar: no minor units
+    /// (`$53`, `SGD 78`), rounded to the nearest major unit. The full-precision
+    /// form is the [`Display`](std::fmt::Display) impl.
+    #[must_use]
+    pub fn format_compact(&self) -> String {
+        self.format_with_precision(0)
+    }
+
+    /// Bare major-unit amount, rounded, with no currency (`260`). Used for the
+    /// limit side of a `<used> of <limit>` headline where the currency is
+    /// already shown on the used side.
+    #[must_use]
+    pub fn major_amount(&self) -> i64 {
+        self.major().round() as i64
+    }
+
+    fn format_with_precision(&self, prec: usize) -> String {
+        let value = self.major();
+        match self.currency.as_str() {
+            "USD" => format!("${value:.prec$}"),
+            code if code.len() == 3 && code.chars().all(|c| c.is_ascii_uppercase()) => {
+                format!("{code} {value:.prec$}")
+            }
+            other => format!("{value:.prec$} {other}"),
+        }
+    }
+}
+
+/// Full-precision label. `USD` renders with a leading `$` (`$53.31`); any other
+/// ISO-4217 three-letter code renders as `CODE 53.31` (e.g. `SGD 78.49`); a
+/// non-standard label (credits) renders as `53.31 credits`.
+impl std::fmt::Display for Money {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.format_with_precision(usize::from(self.exponent)))
+    }
+}
+
+/// Severity of a quota/spend window, mirrored from the API so the meter and
+/// status bar can color-grade approaching limits instead of inferring from a
+/// raw percentage.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageSeverity {
+    #[default]
+    Normal,
+    Warn,
+    Danger,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -238,6 +327,18 @@ pub struct QuotaBucketView {
     pub status_slot: Option<StatusSlot>,
     pub pace_label: Option<String>,
     pub status: UsageSnapshotStatus,
+    /// Structured spent amount behind `used_label`, when the window is monetary
+    /// (the `Spend` slot). Carried as [`Money`] so the status bar can format
+    /// `$53/$300` at the edge instead of trusting a preformatted string — this
+    /// is what keeps minor-unit values from rendering 100× too large.
+    #[serde(default)]
+    pub used_money: Option<Money>,
+    /// Structured cap behind `limit_label`, when monetary. `None` = uncapped.
+    #[serde(default)]
+    pub limit_money: Option<Money>,
+    /// API-reported severity for color-grading the meter / status chip.
+    #[serde(default)]
+    pub severity: UsageSeverity,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

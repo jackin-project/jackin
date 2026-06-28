@@ -264,7 +264,7 @@ pub fn fatal_body_lines(fatal: &OpPickerFatalState) -> Vec<Line<'static>> {
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "jackin' uses your existing op session — there is no separate jackin' auth.",
+                "jackin❯ uses your existing op session — there is no separate jackin❯ auth.",
                 jackin_tui::theme::DIM,
             )),
         ],

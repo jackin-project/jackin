@@ -12,66 +12,198 @@ fn container_init_marker_is_container_local() {
 }
 
 #[test]
-fn claude_plugin_fingerprint_changes_with_config() {
-    let base = jackin_protocol::CapsuleConfig {
-        claude_plugins: vec!["code-review@official".to_owned()],
+fn apply_forwarded_credential_first_seed_reseed_and_no_clobber() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forwarded = tmp.path().join("forwarded.json");
+    let target = tmp.path().join("auth.json");
+    fs::write(&forwarded, b"FORWARDED").expect("write forwarded");
+    // `api_key_envs: &[]` keeps the policy deterministic — no env reads.
+    let spec = ForwardedCredential {
+        label: "test",
+        forwarded: &forwarded,
+        target: &target,
+        api_key_envs: &[],
+    };
+
+    // First seed with a forwarded file: seeds the target.
+    apply_forwarded_credential(true, &spec).expect("first seed");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "FORWARDED");
+
+    // Later launch with the target present: a token the agent refreshed
+    // in-container is never clobbered.
+    fs::write(&target, b"REFRESHED").unwrap();
+    apply_forwarded_credential(false, &spec).expect("no-clobber");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "REFRESHED");
+
+    // Later launch with the target missing but forwarded present: re-seeds.
+    fs::remove_file(&target).unwrap();
+    apply_forwarded_credential(false, &spec).expect("re-seed");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "FORWARDED");
+
+    // First seed with no forwarded file and no api key: clears the stale target.
+    fs::write(&target, b"STALE").unwrap();
+    fs::remove_file(&forwarded).unwrap();
+    apply_forwarded_credential(true, &spec).expect("first seed without forward");
+    assert!(!target.exists(), "stale target must be removed");
+}
+
+// ── Agent config-dir env resolution ─────────────────────────────────
+// Pure `_from` cores so no process-global env mutation is needed.
+
+#[test]
+fn claude_paths_default_when_config_dir_unset() {
+    // Unset: credentials live inside ~/.claude, but .claude.json sits at the
+    // home root — the asymmetry jackin must preserve.
+    assert_eq!(
+        claude_config_dir_from(None),
+        PathBuf::from("/home/agent/.claude")
+    );
+    assert_eq!(
+        claude_account_path_from(None),
+        PathBuf::from("/home/agent/.claude.json")
+    );
+}
+
+#[test]
+fn claude_paths_follow_config_dir_when_set() {
+    // Set: BOTH .credentials.json and .claude.json move inside the dir. This is
+    // the regression fix — previously .claude.json stayed at the home root and
+    // the CLI fell back to the login screen.
+    let dir = "/home/agent/.claude-work";
+    assert_eq!(claude_config_dir_from(Some(dir)), PathBuf::from(dir));
+    assert_eq!(
+        claude_account_path_from(Some(dir)),
+        PathBuf::from("/home/agent/.claude-work/.claude.json")
+    );
+    assert_eq!(
+        claude_config_dir_from(Some(dir)).join(".credentials.json"),
+        PathBuf::from("/home/agent/.claude-work/.credentials.json")
+    );
+}
+
+#[test]
+fn codex_home_honors_env_else_defaults() {
+    assert_eq!(codex_home_from(None), PathBuf::from("/home/agent/.codex"));
+    assert_eq!(
+        codex_home_from(Some("/home/agent/.codex-alt")).join("auth.json"),
+        PathBuf::from("/home/agent/.codex-alt/auth.json")
+    );
+}
+
+// ── claude_plugin_fingerprint ────────────────────────────────────────
+
+#[test]
+fn fingerprint_empty_config_is_empty() {
+    let config = jackin_protocol::CapsuleConfig::default();
+    assert_eq!(claude_plugin_fingerprint(&config), "");
+}
+
+#[test]
+fn fingerprint_marketplace_no_sparse() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_marketplaces: vec![jackin_protocol::ClaudeMarketplace {
+            source: "org/repo".to_owned(),
+            sparse: vec![],
+        }],
         ..Default::default()
     };
-    // Same config → same fingerprint (marker matches → install skipped).
+    assert_eq!(claude_plugin_fingerprint(&config), "m:org/repo\n");
+}
+
+#[test]
+fn fingerprint_marketplace_with_sparse_paths() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_marketplaces: vec![jackin_protocol::ClaudeMarketplace {
+            source: "org/repo".to_owned(),
+            sparse: vec!["tools/a".to_owned(), "tools/b".to_owned()],
+        }],
+        ..Default::default()
+    };
     assert_eq!(
-        claude_plugin_fingerprint(&base),
-        claude_plugin_fingerprint(&base)
-    );
-    // Adding a plugin changes the fingerprint, so a stale marker no longer
-    // matches and install re-runs — the regression this guards against.
-    let mut changed = base.clone();
-    changed.claude_plugins.push("security@official".to_owned());
-    assert_ne!(
-        claude_plugin_fingerprint(&base),
-        claude_plugin_fingerprint(&changed)
-    );
-    // A new marketplace also re-triggers.
-    let mut with_market = base.clone();
-    with_market.claude_marketplaces = vec![jackin_protocol::ClaudeMarketplace {
-        source: "org/market".to_owned(),
-        sparse: vec![],
-    }];
-    assert_ne!(
-        claude_plugin_fingerprint(&base),
-        claude_plugin_fingerprint(&with_market)
+        claude_plugin_fingerprint(&config),
+        "m:org/repo tools/a tools/b\n"
     );
 }
 
 #[test]
-fn agent_auth_marker_is_agent_scoped() {
-    assert_eq!(AGENT_AUTH_MARKER_DIR, "/jackin/state/agent-auth");
-    for agent in ["claude", "codex", "amp", "kimi", "opencode", "grok"] {
-        assert_eq!(
-            agent_auth_marker_path(agent),
-            PathBuf::from(format!("/jackin/state/agent-auth/{agent}.done"))
-        );
-    }
+fn fingerprint_plugin_only() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_plugins: vec!["my-plugin".to_owned()],
+        ..Default::default()
+    };
+    assert_eq!(claude_plugin_fingerprint(&config), "p:my-plugin\n");
 }
 
 #[test]
-fn agent_auth_marker_records_one_bootstrap_per_agent() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let claude_marker = dir.path().join("claude.done");
-    let codex_marker = dir.path().join("codex.done");
+fn fingerprint_mixed_marketplace_and_plugins() {
+    let config = jackin_protocol::CapsuleConfig {
+        claude_marketplaces: vec![jackin_protocol::ClaudeMarketplace {
+            source: "org/tools".to_owned(),
+            sparse: vec!["fmt".to_owned()],
+        }],
+        claude_plugins: vec!["fmt-plugin".to_owned(), "lint-plugin".to_owned()],
+        ..Default::default()
+    };
+    assert_eq!(
+        claude_plugin_fingerprint(&config),
+        "m:org/tools fmt\np:fmt-plugin\np:lint-plugin\n"
+    );
+}
 
-    assert!(!claude_marker.exists(), "claude auth should copy first");
-    assert!(!codex_marker.exists(), "codex auth should copy first");
+#[test]
+fn xdg_data_home_drives_amp_and_opencode() {
+    assert_eq!(
+        xdg_data_home_from(None),
+        PathBuf::from("/home/agent/.local/share")
+    );
+    let xdg = "/home/agent/.xdg-data";
+    assert_eq!(
+        xdg_data_home_from(Some(xdg)).join("amp/secrets.json"),
+        PathBuf::from("/home/agent/.xdg-data/amp/secrets.json")
+    );
+    assert_eq!(
+        xdg_data_home_from(Some(xdg)).join("opencode/auth.json"),
+        PathBuf::from("/home/agent/.xdg-data/opencode/auth.json")
+    );
+}
 
-    mark_agent_auth_initialized(&claude_marker, "claude").expect("mark claude initialized");
+#[test]
+fn seed_home_dir_absent_dst_uses_atomic_rename() {
+    // When dst does not exist, seed_home_dir must create it atomically (via a
+    // staging dir + rename) and signal FirstSeed. Tests the rename path missed
+    // by the other seed tests which pre-create dst.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src = tmp.path().join("src");
+    let dst = tmp.path().join("dst"); // NOT created — exercises the rename path
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("config.json"), b"{}").unwrap();
 
-    assert!(claude_marker.exists(), "claude auth should be initialized");
+    let outcome = seed_home_dir(&src, &dst).expect("atomic seed should succeed");
+    assert_eq!(outcome, SeedOutcome::FirstSeed);
     assert!(
-        !codex_marker.exists(),
-        "codex auth must stay independently uninitialized"
+        dst.join("config.json").exists(),
+        "renamed tree must contain seeded file"
     );
+    // No stale staging dirs should remain beside dst after a successful rename.
+    let siblings: Vec<_> = fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(std::result::Result::ok)
+        .collect();
+    assert!(
+        !siblings
+            .iter()
+            .any(|e| e.file_name().to_string_lossy().starts_with(".jackin-seed")),
+        "staging dir must be cleaned up after successful rename"
+    );
+}
 
-    mark_agent_auth_initialized(&codex_marker, "codex").expect("mark codex initialized");
-    assert!(codex_marker.exists(), "codex auth should be initialized");
+#[test]
+fn is_dir_empty_treats_read_error_as_nonempty() {
+    // A path that does not exist causes read_dir to fail; must return false
+    // (non-empty = conservative) rather than true (empty = would trigger first-seed).
+    assert!(!is_dir_empty(Path::new(
+        "/nonexistent/path/that/cannot/exist"
+    )));
 }
 
 #[test]
@@ -119,59 +251,149 @@ fn runtime_setup_surfaces_agent_setup_failure_after_foreground_work() {
 }
 
 #[test]
-fn should_copy_auth_flips_after_marker_written() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let marker = dir.path().join("claude.done");
-    assert!(
-        should_copy_auth(&marker),
-        "absent marker -> copy on first setup"
+fn seed_home_dir_empty_dst_seeds_from_src_and_signals_first_seed() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src = tmp.path().join("src");
+    let dst = tmp.path().join("dst");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("config.json"), b"{}").unwrap();
+    fs::create_dir(&dst).unwrap(); // empty
+
+    let outcome = seed_home_dir(&src, &dst).expect("seed should succeed");
+    assert_eq!(outcome, SeedOutcome::FirstSeed, "empty dst → first seed");
+    assert!(dst.join("config.json").exists(), "file copied to dst");
+}
+
+#[test]
+fn seed_home_dir_nonempty_dst_skips_and_signals_already_seeded() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src = tmp.path().join("src");
+    let dst = tmp.path().join("dst");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("default.json"), b"{}").unwrap();
+    fs::create_dir_all(&dst).unwrap();
+    // dst has a user file → non-empty
+    fs::write(dst.join("user.json"), b"{}").unwrap();
+
+    let outcome = seed_home_dir(&src, &dst).expect("skip should succeed");
+    assert_eq!(
+        outcome,
+        SeedOutcome::AlreadySeeded,
+        "non-empty dst → already seeded"
     );
-    mark_agent_auth_initialized(&marker, "claude").expect("mark initialized");
     assert!(
-        !should_copy_auth(&marker),
-        "present marker -> skip on later tabs"
+        !dst.join("default.json").exists(),
+        "src files not copied into non-empty dst"
     );
 }
 
 #[test]
-fn should_copy_auth_decision_is_per_agent() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let claude = dir.path().join("claude.done");
-    let codex = dir.path().join("codex.done");
-    mark_agent_auth_initialized(&claude, "claude").expect("mark claude");
-    assert!(!should_copy_auth(&claude), "claude marked -> skip");
-    assert!(
-        should_copy_auth(&codex),
-        "codex still unmarked -> first setup copies"
+fn seed_home_dir_absent_src_still_signals_first_seed() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src = tmp.path().join("src-absent");
+    let dst = tmp.path().join("dst");
+    fs::create_dir(&dst).unwrap(); // empty
+
+    let outcome = seed_home_dir(&src, &dst).expect("no-src seed should succeed");
+    assert_eq!(
+        outcome,
+        SeedOutcome::FirstSeed,
+        "absent src + empty dst → still first seed (auth may be copied)"
     );
 }
 
 #[test]
-fn agent_live_credential_path_maps_file_based_agents() {
+fn seed_agent_home_seeds_data_and_paired_config_in_one_transaction() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data_src = tmp.path().join("default/data");
+    let cfg_src = tmp.path().join("default/config");
+    let data_dst = tmp.path().join("home/data");
+    let cfg_dst = tmp.path().join("home/config");
+    fs::create_dir_all(&data_src).unwrap();
+    fs::create_dir_all(&cfg_src).unwrap();
+    fs::write(data_src.join("state.json"), b"{}").unwrap();
+    fs::write(cfg_src.join("settings.json"), b"{}").unwrap();
+    fs::create_dir_all(&data_dst).unwrap(); // empty
+    fs::create_dir_all(&cfg_dst).unwrap(); // empty
+
+    let outcome = seed_agent_home(
+        data_src.to_str().unwrap(),
+        data_dst.to_str().unwrap(),
+        Some((cfg_src.to_str().unwrap(), cfg_dst.to_str().unwrap())),
+    )
+    .expect("seed should succeed");
     assert_eq!(
-        agent_live_credential_path("claude"),
-        Some("/home/agent/.claude/.credentials.json")
+        outcome,
+        SeedOutcome::FirstSeed,
+        "empty data root → first seed"
     );
+    assert!(data_dst.join("state.json").exists(), "data root seeded");
+    assert!(cfg_dst.join("settings.json").exists(), "config root seeded");
+}
+
+#[test]
+fn seed_agent_home_nonempty_config_root_leaves_both_untouched() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data_src = tmp.path().join("default/data");
+    let cfg_src = tmp.path().join("default/config");
+    let data_dst = tmp.path().join("home/data");
+    let cfg_dst = tmp.path().join("home/config");
+    fs::create_dir_all(&data_src).unwrap();
+    fs::create_dir_all(&cfg_src).unwrap();
+    fs::write(data_src.join("state.json"), b"{}").unwrap();
+    fs::create_dir_all(&data_dst).unwrap(); // empty data root
+    fs::create_dir_all(&cfg_dst).unwrap();
+    fs::write(cfg_dst.join("user.json"), b"{}").unwrap(); // durable config content
+
+    let outcome = seed_agent_home(
+        data_src.to_str().unwrap(),
+        data_dst.to_str().unwrap(),
+        Some((cfg_src.to_str().unwrap(), cfg_dst.to_str().unwrap())),
+    )
+    .expect("skip should succeed");
     assert_eq!(
-        agent_live_credential_path("codex"),
-        Some("/home/agent/.codex/auth.json")
+        outcome,
+        SeedOutcome::AlreadySeeded,
+        "non-empty config root → treat as durable, no seed/auth"
     );
-    assert_eq!(
-        agent_live_credential_path("amp"),
-        Some("/home/agent/.local/share/amp/secrets.json")
+    assert!(
+        !data_dst.join("state.json").exists(),
+        "data root left untouched when config root holds durable state"
     );
+}
+
+#[test]
+fn seed_agent_home_no_config_root_seeds_data_only() {
+    // The single-root agents (claude/codex/grok/kimi) call seed_agent_home with
+    // config = None; that branch must seed the data root and signal first seed.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data_src = tmp.path().join("default/data");
+    let data_dst = tmp.path().join("home/data");
+    fs::create_dir_all(&data_src).unwrap();
+    fs::write(data_src.join("state.json"), b"{}").unwrap();
+    fs::create_dir_all(&data_dst).unwrap(); // empty
+
+    let outcome = seed_agent_home(data_src.to_str().unwrap(), data_dst.to_str().unwrap(), None)
+        .expect("seed should succeed");
     assert_eq!(
-        agent_live_credential_path("opencode"),
-        Some("/home/agent/.local/share/opencode/auth.json")
+        outcome,
+        SeedOutcome::FirstSeed,
+        "empty data root → first seed"
     );
+    assert!(data_dst.join("state.json").exists(), "data root seeded");
+
+    // A second call now sees a non-empty data root → already seeded, no re-copy.
+    fs::write(data_src.join("new.json"), b"{}").unwrap();
+    let again = seed_agent_home(data_src.to_str().unwrap(), data_dst.to_str().unwrap(), None)
+        .expect("second call should succeed");
     assert_eq!(
-        agent_live_credential_path("grok"),
-        Some("/home/agent/.grok/auth.json")
+        again,
+        SeedOutcome::AlreadySeeded,
+        "non-empty data root → skip"
     );
-    assert_eq!(
-        agent_live_credential_path("kimi"),
-        None,
-        "kimi auth is a directory / env-key only"
+    assert!(
+        !data_dst.join("new.json").exists(),
+        "second seed must not copy into a non-empty durable home"
     );
 }
 

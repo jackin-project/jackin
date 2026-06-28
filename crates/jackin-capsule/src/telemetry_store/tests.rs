@@ -20,6 +20,9 @@ fn usage_view() -> FocusedUsageView {
         },
         buckets: vec![
             QuotaBucketView {
+                used_money: None,
+                limit_money: None,
+                severity: jackin_protocol::control::UsageSeverity::default(),
                 label: "Session".to_owned(),
                 used_label: Some("63% used".to_owned()),
                 limit_label: Some("100%".to_owned()),
@@ -31,6 +34,9 @@ fn usage_view() -> FocusedUsageView {
                 status: UsageSnapshotStatus::Fresh,
             },
             QuotaBucketView {
+                used_money: None,
+                limit_money: None,
+                severity: jackin_protocol::control::UsageSeverity::default(),
                 label: "Credits".to_owned(),
                 used_label: None,
                 limit_label: None,
@@ -72,6 +78,9 @@ fn provider_usage_view(
             credential_origin: None,
         },
         buckets: vec![QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: bucket.to_owned(),
             used_label: Some(format!("{}% used", 100_u8.saturating_sub(remaining))),
             limit_label: Some("100%".to_owned()),
@@ -318,12 +327,18 @@ fn focused_usage_view_sorts_provider_buckets_canonically() {
     let base_bucket = view.buckets[0].clone();
     view.buckets.extend([
         QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "MCP".to_owned(),
             remaining_percent: Some(100),
             pace_label: Some("0 / 100 (100 remaining)".to_owned()),
             ..base_bucket.clone()
         },
         QuotaBucketView {
+            used_money: None,
+            limit_money: None,
+            severity: jackin_protocol::control::UsageSeverity::default(),
             label: "Tokens".to_owned(),
             remaining_percent: Some(99),
             ..base_bucket

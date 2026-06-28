@@ -47,7 +47,7 @@
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
-  --landing-accent: #00ff41;
+  --landing-accent: #5cf07a;
   --landing-danger: #ff5e7a;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
@@ -57,7 +57,7 @@
      every border/wash/bloom/glow in the stylesheet. One token controls
      the hue of every accented surface: bright phosphor in dark mode,
      juicy mid-green (#16a34a) in light mode. */
-  --landing-accent-rgb: 0 255 65;
+  --landing-accent-rgb: 92 240 122;
 
   /* Page-level bg kept unscoped — the hero's bottom-fade gradient uses
      this to blend into whatever the page is (dark or light), even though
@@ -107,20 +107,19 @@
    deep-forest accent. */
 :root[data-theme='light'] {
   --landing-bg: #ffffff;
-  --landing-bg-deep: #e9edeb;
-  --landing-panel: #f6f8f7;
-  --landing-text: #1a1c1b;
-  --landing-text-dim: #5d6460;
-  --landing-text-ghost: #8a928e;
-  --landing-accent: #007a22;    /* deep forest — matches docs --jk-accent (AA on white) */
+  --landing-bg-deep: #e8eaee;
+  --landing-panel: #f4f5f7;
+  --landing-text: #15181c;
+  --landing-text-dim: #535a61;
+  --landing-text-ghost: #828b93;
+  --landing-accent: #0b774e;    /* AA on white (~5:1) — matches docs --jk-accent */
   --landing-danger: #b0183a;
-  --landing-ui: rgba(0, 0, 0, 0.08);
-  --landing-ui-strong: rgba(0, 0, 0, 0.18);
-  --landing-ui-subtle: rgba(0, 0, 0, 0.04);
+  --landing-ui: rgba(17, 24, 39, 0.1);   /* neutral border family — matches docs */
+  --landing-ui-strong: rgba(17, 24, 39, 0.2);
+  --landing-ui-subtle: rgba(17, 24, 39, 0.05);
 
-  /* Juicy mid-green (docs --jk-brand) for borders and accent washes in
-     the body — stays visible at low alpha on white panels. */
-  --landing-accent-rgb: 22 163 74;
+  /* rgb of --landing-accent (#0b774e) for low-alpha washes/glows. */
+  --landing-accent-rgb: 11 119 78;
 
   --landing-page-bg: var(--landing-bg);
 
@@ -130,11 +129,9 @@
      separate display:none rule. */
   --landing-grid-dot: transparent;
 
-  /* Green-tinted card shadows mirror the phosphor-bleed of dark mode
-     so cards feel like they're lifting out of a jackin' halo, not
-     casting a plain black drop. */
-  --landing-card-shadow-soft: 0 14px 32px rgba(10, 80, 30, 0.12);
-  --landing-card-shadow-strong: 0 20px 48px rgba(10, 80, 30, 0.18);
+  /* Neutral card shadows — no green tint on the white page. */
+  --landing-card-shadow-soft: 0 14px 32px rgba(17, 24, 39, 0.1);
+  --landing-card-shadow-strong: 0 20px 48px rgba(17, 24, 39, 0.16);
   --landing-terminal-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.12),
     0 1px 1px rgba(0, 0, 0, 0.04),
@@ -228,8 +225,8 @@
   --landing-text: #f4f7f5;
   --landing-text-dim: #9ca8a1;
   --landing-text-ghost: #5e6a64;
-  --landing-accent: #00ff41;
-  --landing-accent-rgb: 0 255 65;
+  --landing-accent: #5cf07a;
+  --landing-accent-rgb: 92 240 122;
   --landing-ui: rgba(244, 247, 245, 0.1);
   --landing-ui-strong: rgba(244, 247, 245, 0.22);
   --landing-ui-subtle: rgba(244, 247, 245, 0.05);
@@ -306,10 +303,26 @@
   --landing-accent-rgb: 0 255 65;
 }
 
-/* Primary CTA sits in the content zone (green bg) — override the
-   token-driven default so the button reads as dark pill + white label
-   instead of inheriting --landing-text (which we set to near-black
-   for the green bg) as its background. */
+/* Topnav sits on the green hero canvas in light mode — the secondary buttons use
+   --jk-accent (dark green) which would vanish on green. Switch them to a white
+   treatment, matching the hero's white accent, so they read against the canvas. */
+:root[data-theme='light'] nav.landing-topnav .landing-star {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.12);
+}
+:root[data-theme='light'] nav.landing-topnav .landing-star-icon {
+  color: #ffffff;
+}
+:root[data-theme='light'] nav.landing-topnav .landing-star:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: #ffffff;
+  box-shadow: none;
+}
+
+/* Light-mode hero is a green canvas, so a green primary button would vanish on
+   it — the one necessary exception: dark pill + white label for contrast. Every
+   other primary (dark mode, and light mode outside the hero) is --jk-accent. */
 :root[data-theme='light'] .landing-hero-stage .landing-btn-primary {
   background: #0a1f12;
   color: #ffffff;
@@ -505,29 +518,38 @@ html.theme-init *::after {
   gap: 6px;
   cursor: pointer;
   letter-spacing: -0.01em;
-  transition: box-shadow 0.2s, background 0.15s, border-color 0.15s;
+  transition: box-shadow 0.2s, background 0.15s, border-color 0.15s, filter 0.15s;
   text-decoration: none;
 }
+/* Solid green buttons using the docs accent (--jk-accent), so the landing CTAs
+   match the green used across the docs pages. Dark ink reads on it in both themes. */
 .landing-btn-primary {
-  background: var(--landing-text);
-  color: var(--landing-bg-deep);
-  border: 1px solid var(--landing-text);
+  background: var(--jk-accent);
+  color: #0a0a0a;
+  border: 1px solid var(--jk-accent);
 }
 .landing-btn-primary:hover {
-  box-shadow: 0 0 0 1px rgb(var(--landing-accent-rgb) / 0.35), 0 6px 20px rgb(var(--landing-accent-rgb) / 0.25);
+  filter: brightness(1.08);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 30%, transparent);
 }
+/* Secondary tier: green-accent outline. Same geometry as primary (inherits the
+   shared base: Inter 14px/600, padding 13px 22px, radius 5px). */
 .landing-btn-ghost {
-  background: transparent;
-  color: var(--landing-text);
-  border: 1px solid var(--landing-ui-strong);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  font-weight: 500;
+  background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
+  color: var(--jk-accent);
+  border: 1px solid color-mix(in srgb, var(--jk-accent) 35%, transparent);
 }
 .landing-btn-ghost:hover {
-  background: var(--landing-surface-hover-4);
-  border-color: var(--landing-text);
-  box-shadow: 0 0 0 1px rgb(var(--landing-accent-rgb) / 0.2), 0 6px 20px rgb(var(--landing-accent-rgb) / 0.15);
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+  border-color: var(--jk-accent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
+}
+/* Light mode: the solid primary fill is the darker light accent (#0b774e); dark
+   ink would vanish on it, so use white. The hero primary keeps its dark-pill
+   override (more specific), so this doesn't touch it. */
+:root[data-theme='light'] .landing-btn-primary,
+:root[data-theme='light'] .landing-invite-cta {
+  color: #ffffff;
 }
 
 /* Footer (wordmark + meta) */
@@ -536,10 +558,10 @@ html.theme-init *::after {
   padding: 60px 40px 0;
   overflow: hidden;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
+  text-align: center;
+  gap: 28px;
   border-top: 1px solid var(--landing-ui);
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
@@ -927,21 +949,23 @@ html.theme-init *::after {
   line-height: 1.55;
   max-width: 580px;
 }
+/* Primary tier — same geometry as .landing-btn-primary. */
 .landing-invite-cta {
   display: inline-flex; align-items: center; gap: 6px;
-  color: var(--landing-accent);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px; font-weight: 500;
-  text-decoration: none; letter-spacing: 0.02em;
-  border: 1px solid rgb(var(--landing-accent-rgb) / 0.45);
-  padding: 10px 16px; border-radius: 5px;
-  transition: gap 0.2s ease-out, border-color 0.2s, background 0.2s;
+  background: var(--jk-accent);
+  color: #0a0a0a;
+  border: 1px solid var(--jk-accent);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px; font-weight: 600;
+  text-decoration: none; letter-spacing: -0.01em;
+  padding: 13px 22px; border-radius: 5px;
+  transition: gap 0.2s ease-out, filter 0.15s, box-shadow 0.2s;
   white-space: nowrap;
 }
 .landing-invite-cta:hover {
   gap: 10px;
-  border-color: var(--landing-accent);
-  background: rgb(var(--landing-accent-rgb) / 0.1);
+  filter: brightness(1.08);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 30%, transparent);
 }
 
 @media (max-width: 880px) {
@@ -1313,7 +1337,7 @@ nav.landing-topnav {
 }
 nav.landing-topnav .landing-logo,
 nav.landing-topnav .landing-star {
-  text-shadow: 0 0 8px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.9);
+  text-shadow: none;
 }
 .landing-logo {
   font-family: var(--landing-wordmark-stack);
@@ -1333,29 +1357,31 @@ nav.landing-topnav .landing-star {
 .landing-nav-right { display: flex; gap: 14px; align-items: center; }
 .landing-star {
   padding: 7px 14px;
-  border: 1px solid var(--landing-ui-strong);
-  border-radius: 4px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--landing-text);
+  border: 1px solid color-mix(in srgb, var(--jk-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--jk-accent) 8%, transparent);
+  border-radius: 5px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--jk-accent);
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: box-shadow 0.2s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.2s;
 }
 /* Shared star icon — used in topnav "Star on GitHub" + install-block CTA.
    SVG path uses currentColor so we colour it via `color`. filter: drop-shadow
    gives a softer, cleaner glow than text-shadow on text-based stars. */
 .landing-star-icon {
-  color: var(--landing-accent);
-  filter: drop-shadow(0 0 6px rgb(var(--landing-accent-rgb) / 0.55));
+  color: var(--jk-accent);
   flex-shrink: 0;
 }
 
 .landing-star:hover {
-  border-color: var(--landing-text);
-  box-shadow: 0 0 0 1px rgb(var(--landing-accent-rgb) / 0.25), 0 6px 20px rgb(var(--landing-accent-rgb) / 0.18);
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
+  border-color: var(--jk-accent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--jk-accent) 22%, transparent);
 }
 
 /* Landing-specific theme toggle — sits in the topnav over the always-dark
@@ -1388,12 +1414,19 @@ nav.landing-topnav .landing-star {
 }
 .landing-theme-toggle button:hover { color: var(--landing-text); }
 .landing-theme-toggle button[aria-pressed='true'] {
-  color: var(--landing-accent);
-  background: var(--landing-bg-deep);
+  color: var(--jk-accent);
+  background: color-mix(in srgb, var(--jk-accent) 16%, transparent);
 }
 .landing-theme-toggle button:focus-visible {
   outline: 2px solid var(--landing-accent);
   outline-offset: 2px;
+}
+/* The toggle floats over the hero's fade-to-white in light mode and inherits the
+   hero's heavy dark border. Give it a neutral light pill with a subtle lift. */
+:root[data-theme='light'] .landing-theme-toggle {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(17, 24, 39, 0.16);
+  box-shadow: 0 2px 8px rgba(17, 24, 39, 0.08);
 }
 
 .landing-hero-stage {
@@ -1465,9 +1498,11 @@ nav.landing-topnav .landing-star {
 }
 
 :root[data-theme='light'] .landing-dev-warning {
-  background: #fff1b8;
+  background: color-mix(in srgb, #d97706 9%, var(--landing-bg));
   color: #2f1d05;
-  box-shadow: 0 16px 34px rgba(120, 53, 15, 0.11);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #d97706 28%, transparent),
+    0 1px 2px rgba(17, 24, 39, 0.04);
 }
 
 :root[data-theme='light'] .landing-dev-warning-label {
@@ -1497,7 +1532,9 @@ h1.landing-hero-headline {
   color: var(--landing-text);
   max-width: 780px;
 }
-h1.landing-hero-headline .accent { color: var(--landing-accent); }
+h1.landing-hero-headline .accent { color: var(--jk-accent); }
+/* Light-mode hero is a green canvas — keep the accent white there for contrast. */
+:root[data-theme='light'] .landing-hero-stage h1.landing-hero-headline .accent { color: #ffffff; }
 h1.landing-hero-headline .soft { color: var(--landing-text-dim); font-weight: 300; }
 
 .landing-hero-deck {

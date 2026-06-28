@@ -1,0 +1,555 @@
+---
+title: Role Manifest
+description: "The jackin.role.toml file that defines a role"
+---
+
+<Aside type="note">
+This page is **for role authors** — it documents the schema of the
+`jackin.role.toml` file inside a role repository. Role authoring is
+a user-facing activity: you do not need to know how jackin❯ is
+implemented to use this page. Operators who only *load* existing
+roles never edit this file.
+</Aside>
+
+## Overview
+
+Every role repo must contain a `jackin.role.toml` file at the repository root. This manifest tells jackin❯ how to build, configure, and identify the agent.
+
+jackin❯ enforces **strict parsing** — unknown fields are rejected with an error. This catches typos and prevents silent misconfiguration. Top-level `version` records the minimum manifest schema the file requires; older stamps remain valid until the manifest uses a newer field or enum value. On a desktop, use `jackin role migrate <role-repo-path>` to update a local manifest before adopting newer schema features. In CI and automated migration workflows, use the standalone `jackin-role migrate <role-repo-path>` binary instead of the full `jackin` operator CLI. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
+
+## Full schema
+
+```toml title="jackin.role.toml"
+version = "v1alpha6"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex", "amp", "kimi", "opencode"]
+
+[docker]
+min_profile = "standard"          # refuse to run under locked/hardened
+# dind absent = DinD controlled by operator profile (default)
+allowed_hosts = ["crates.io"]      # extra hosts for allowlist network mode
+
+[identity]
+name = "The Architect"
+
+[claude]
+model = "sonnet"
+plugins = [
+  "code-review@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+
+[codex]
+model = "gpt-5"
+
+[amp]
+
+[kimi]
+model = "kimi-k2"
+
+[opencode]
+
+[hooks]
+setup_once = "hooks/setup-once.sh"
+source = "hooks/source.sh"
+preflight = "hooks/preflight.sh"
+
+[env.PROJECT]
+interactive = true
+options = ["project1", "project2"]
+prompt = "Select a project:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
+```
+
+## Top-level fields
+
+| Field | Required | Description |
+|---|---|---|
+| `version` | Yes | Manifest schema version. Current value is `v1alpha4`. |
+| `dockerfile` | Yes | Relative path to the Dockerfile within the repo |
+| `agents` | No | Non-empty list of agent slugs this role supports: `"claude"`, `"codex"`, `"amp"`, `"kimi"`, or `"opencode"`. When omitted, jackin❯ treats the manifest as Claude-only. |
+
+The Dockerfile path must:
+
+- Be relative (no absolute paths)
+- Stay inside the repository (no `../` escapes)
+- Point to a valid Dockerfile
+- Have a final stage that starts with `FROM projectjackin/construct:0.4-trixie` (a versioned construct tag — the floating `:trixie` tag fails validation)
+
+Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex", "amp", "kimi", "opencode"]` needs `[claude]`, `[codex]`, `[amp]`, `[kimi]`, and `[opencode]`.
+
+```toml title="jackin.role.toml"
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex", "amp", "kimi", "opencode"]
+
+[claude]
+plugins = []
+
+[codex]
+model = "gpt-5"
+
+[amp]
+
+[kimi]
+model = "kimi-k2"
+
+[opencode]
+```
+
+## `[claude]`
+
+| Field | Required | Description |
+|---|---|---|
+| `model` | No | Optional Claude Code model passed to `claude --model` at launch |
+| `plugins` | No | List of Claude plugin identifiers to install in the derived image |
+| `marketplaces` | No | List of marketplace registrations to add before plugin installation |
+
+Example values:
+
+```toml title="jackin.role.toml"
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+
+[claude]
+model = "sonnet"
+plugins = [
+  "code-review@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+```
+
+Each `[[claude.marketplaces]]` block maps to `claude plugin marketplace add <source>`. If `sparse` is set, jackin passes those paths as `claude plugin marketplace add <source> --sparse path1 path2`.
+
+## `[codex]`
+
+The `[codex]` table is required when `"codex"` appears in `agents`.
+
+| Field | Required | Description |
+|---|---|---|
+| `model` | No | Optional Codex model passed to `codex -m` at launch |
+
+```toml title="jackin.role.toml"
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["codex"]
+
+[codex]
+model = "gpt-5"
+```
+
+## `[amp]`
+
+The `[amp]` table is required when `"amp"` appears in `agents`. It is empty today and reserved for future Amp-specific settings.
+
+```toml title="jackin.role.toml"
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["amp"]
+
+[amp]
+```
+
+## `[kimi]`
+
+The `[kimi]` table is required when `"kimi"` appears in `agents`.
+
+| Field | Required | Description |
+|---|---|---|
+| `model` | No | Optional Kimi model passed to `kimi --model` at launch |
+
+Kimi authenticates via host `~/.kimi-code` state in `sync` mode. jackin forwards `~/.kimi-code/config.toml`, files under `~/.kimi-code/credentials/`, and `~/.kimi-code/device_id` into the container before Kimi starts. jackin launches Kimi with `--yolo` by default; `model` is appended as `kimi --model <model>` when set. `api_key` mode uses `KIMI_API_KEY`; `oauth_token` is not supported.
+
+```toml title="jackin.role.toml"
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["kimi"]
+
+[kimi]
+model = "kimi-k2"
+```
+
+## `[opencode]`
+
+The `[opencode]` table is required when `"opencode"` appears in `agents`.
+
+| Field | Required | Description |
+|---|---|---|
+| `model` | No | Optional OpenCode model passed to `opencode -m` at launch, in `provider/model` format (e.g. `zai-coding-plan/glm-5.1`) |
+
+OpenCode is a terminal-based AI coding agent installed from [GitHub Releases](https://github.com/opencode-ai/opencode/releases). It authenticates via `~/.local/share/opencode/auth.json`, which stores provider-level credentials — for example, a Z.AI Coding Plan subscription (see [z.ai/subscribe](https://z.ai/subscribe)). jackin forwards these credentials into the container using the same `sync` / `api_key` / `ignore` auth-forwarding modes as the other agents. The `OPENCODE_API_KEY` env var is used for `api_key` mode.
+
+```toml title="jackin.role.toml"
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["opencode"]
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+```
+
+## `[<agent>.providers.<provider>]`
+
+Claude Code, Codex, and OpenCode can run against alternative providers chosen from the provider picker at session launch. By default each provider uses jackin❯ built-in model for that agent. A `[<agent>.providers.<provider>]` table overrides the model used **when that provider is the selected provider**, without changing the agent's own `model` default. This matters most for OpenCode, which has no model of its own and resolves its model entirely from the selected provider.
+
+| Field | Required | Description |
+|---|---|---|
+| `model` | No | Model used when this provider is selected for the agent. For OpenCode, the `provider/model` string passed to `opencode -m`; for Claude and Codex, the provider's model name |
+
+`<provider>` is the provider's lowercase id: `anthropic`, `openai`, `zai`, `minimax`, or `kimi`. Resolution order when a provider is picked: the `[<agent>.providers.<provider>]` model, then jackin❯ built-in default for that pair, then the agent's own `model`.
+
+```toml title="jackin.role.toml"
+[claude]
+model = "claude-sonnet-4-6"
+
+# Pin a different model when MiniMax is picked for Claude.
+[claude.providers.minimax]
+model = "MiniMax-M3"
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+
+# OpenCode routes through the selected provider's block, so the model names
+# its provider id as well.
+[opencode.providers.minimax]
+model = "minimax/MiniMax-M3"
+
+[opencode.providers.zai]
+model = "zai-coding-plan/glm-5.1"
+```
+
+### `[[claude.marketplaces]]`
+
+Each marketplace block declares one Claude marketplace source to register before plugin installation.
+
+| Field | Required | Description |
+|---|---|---|
+| `source` | Yes | Raw marketplace source passed to `claude plugin marketplace add` |
+| `sparse` | No | Optional sparse-checkout paths for monorepo-backed marketplaces |
+
+Example:
+
+```toml title="jackin.role.toml"
+[claude]
+plugins = [
+  "code-review@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+```
+
+## `[identity]`
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | No | Human-readable display name for the role |
+
+When omitted, jackin❯ uses the role selector name.
+
+## `[hooks]`
+
+| Field | Required | Description |
+|---|---|---|
+| `setup_once` | No | Relative path to a bash script executed once per container before the agent starts |
+| `source` | No | Relative path to a bash script sourced into the entrypoint shell before the agent starts |
+| `preflight` | No | Relative path to a bash script executed before every agent start |
+
+Runtime hooks run inside the container after jackin has injected runtime metadata and resolved environment variables. Claude plugins declared in the manifest are already baked into the derived image by this point.
+
+- `setup_once` is executed as a child process and gated by a marker file in jackin❯ per-instance runtime state. It runs again only if the previous run failed or the instance state was purged. Treat it as "run once per jackin instance, not once per process restart." Use it for installs, downloads, and one-time config writes that are still safe to repeat after state is intentionally discarded. Environment exports from this script do not reach the agent.
+- `source` is sourced into the entrypoint shell on every container start. Use it for `export` statements, `PATH` changes, and other shell state that must be inherited by the launched agent. Keep it small; because it mutates the entrypoint shell, avoid installs, downloads, broad traps, and permanent directory changes. Use `return`, not `exit` — a sourced `exit` kills the entrypoint before the agent launches. Avoid embedding plaintext secrets: under `JACKIN_DEBUG=1` the entrypoint suspends `xtrace` around the dot-source so expanded values do not leak to the operator's terminal, but anything the script itself prints is still visible. Mount secret files via the role repo and read them into env vars instead of inlining them.
+- `preflight` is executed as a child process on every container start. Use it for validation, diagnostics, and idempotent per-start setup. Environment exports from this script do not reach the agent.
+
+Hook paths must:
+
+- Be relative (no absolute paths)
+- Stay inside the repository (no `../` escapes)
+- Point to an existing, non-empty file
+- Not be a symlink
+
+Example:
+
+```toml title="jackin.role.toml"
+[hooks]
+setup_once = "hooks/setup-once.sh"
+source = "hooks/source.sh"
+preflight = "hooks/preflight.sh"
+```
+
+```bash title="hooks/source.sh"
+#!/bin/bash
+set -euo pipefail
+
+if [ -n "${JACKIN_DIND_HOSTNAME:-}" ]; then
+    export POSTGRESQL_DB_HOST="$JACKIN_DIND_HOSTNAME"
+fi
+```
+
+```bash title="hooks/preflight.sh"
+#!/bin/bash
+set -euo pipefail
+
+# Configure Context7 MCP if API key is available
+if [ -n "${CONTEXT7_API_KEY:-}" ]; then
+    ctx7 setup --claude --mcp --api-key "$CONTEXT7_API_KEY" -y
+fi
+```
+
+## `[docker]`
+
+Declare Docker security requirements for this role. All fields are optional — absence means "accept whatever the operator's profile provides."
+
+| Field | Type | Description |
+|---|---|---|
+| `min_profile` | string | Minimum security profile this role requires. Launch fails if the active profile is below this value. Valid values: `locked`, `hardened`, `standard`, `compat`. |
+| `dind` | string | DinD tier this role needs: `"none"` = skip DinD entirely (even under `standard`/`compat`), `"rootless"` = requires rootless DinD, `"privileged"` = requires privileged DinD. Omit = DinD controlled by operator profile. |
+| `allowed_hosts` | array of strings | Extra hosts/IPs merged into `JACKIN_ALLOWED_HOSTS` when the operator's network grant is `allowlist`. Same format as `[docker.grants] allowed_hosts` in config. Each entry is a domain, IPv4/IPv6 CIDR, wildcard subdomain (`*.example.com`), or `domain:port`. |
+| `capabilities_add` | array of strings | Linux capabilities to add beyond the profile's base set (`--cap-add`). Each entry is a cap name without `CAP_` prefix, case-insensitive (e.g. `"NET_RAW"`, `"SYS_PTRACE"`). Validated against the full list at launch — unknown names fail loudly. |
+
+**Profile ordering (ascending capability):** `locked < hardened < standard < compat`. `min_profile = "standard"` means the role refuses to run under `locked` or `hardened`.
+
+**Practical use:**
+
+```toml title="jackin.role.toml — role that needs DinD and ptrace"
+version = "v1alpha6"
+dockerfile = "Dockerfile"
+
+[docker]
+min_profile = "standard"
+dind = "rootless"
+capabilities_add = ["SYS_PTRACE"]
+allowed_hosts = ["registry.npmjs.org", "crates.io", "static.crates.io"]
+```
+
+```toml title="jackin.role.toml — pure read-only analysis role"
+version = "v1alpha6"
+dockerfile = "Dockerfile"
+
+[docker]
+min_profile = "locked"
+dind = "none"  # skip DinD sidecar
+```
+
+```toml title="jackin.role.toml — role that doesn't need DinD under any profile"
+version = "v1alpha6"
+dockerfile = "Dockerfile"
+
+[docker]
+dind = "none"  # skip DinD sidecar
+```
+
+**Validation errors at launch:**
+
+- `min_profile = "standard"` + operator uses `--docker-profile hardened` → `"role declares min_profile = \"standard\"; the active profile \"hardened\" is below that minimum"`
+- Unknown capability in `capabilities_add` → `"unknown Linux capability \"CAP_MAGIC\" — valid values: AUDIT_CONTROL, …"`
+
+For full documentation of profiles, grants, and operator-level configuration, see [Docker Security Profiles](/guides/docker-profiles/).
+
+## `[env.<NAME>]`
+
+Declare environment variables that the agent needs at runtime. Each variable is a TOML table under `[env]`.
+
+### Fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `default` | String | — | Default value (used if no prompt or user accepts default) |
+| `interactive` | bool | `false` | Whether to prompt the user at launch time |
+| `skippable` | bool | `false` | Whether the user can skip this prompt |
+| `prompt` | String | Variable name | Text shown when prompting |
+| `options` | String[] | `[]` | Options for a select-style prompt |
+| `depends_on` | String[] | `[]` | Variables that must be resolved first (use `env.` prefix) |
+
+### Validation rules
+
+- Variable names must contain only ASCII letters, digits, and underscores, and cannot start with a digit
+- A non-interactive variable **must** have a `default` value
+- `options` requires `interactive = true`
+- `options` cannot contain `${env.*}` interpolation — options are always static
+- `depends_on` entries must use the `env.` prefix (e.g., `"env.PROJECT"`)
+- `depends_on` must reference variables declared in the same manifest
+- `${env.*}` references in `prompt` and `default` must point to declared variables that are listed in `depends_on`
+- Reserved runtime names (see [Reserved names](/guides/environment-variables/#reserved-names) for the canonical list) cannot be declared in `[env]`
+- Circular dependencies are rejected
+
+### Runtime-managed variables
+
+jackin❯ sets a small set of variables automatically inside the container — most notably `JACKIN=1` (which marks that the process is running inside a jackin-managed runtime) and `JACKIN_DIND_HOSTNAME` (which agents use to reach published services started via the Docker-in-Docker daemon). The full set of reserved runtime names is documented under [Reserved names](/guides/environment-variables/#reserved-names) and must not be declared in `[env]`.
+
+### Interactive text input
+
+Prompt the user for a free-text value:
+
+```toml
+[env.GIT_BRANCH]
+interactive = true
+prompt = "Branch name:"
+
+[env.BRANCH_WITH_DEFAULT]
+interactive = true
+prompt = "Branch name:"
+default = "main"
+```
+
+### Interactive select
+
+Present a list of options:
+
+```toml
+[env.PROJECT]
+interactive = true
+options = ["frontend", "backend", "infra"]
+prompt = "Select a project:"
+```
+
+### Skippable prompts
+
+Allow the user to skip a prompt. The variable won't be set:
+
+```toml
+[env.API_KEY]
+interactive = true
+skippable = true
+prompt = "API key (optional):"
+```
+
+### Dependencies
+
+Control prompt ordering and skip cascading:
+
+```toml
+[env.PROJECT]
+interactive = true
+skippable = true
+options = ["frontend", "backend"]
+prompt = "Select a project:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch to work on:"
+default = "main"
+```
+
+If a skippable variable is skipped, all variables that depend on it are also skipped — regardless of their own `skippable` setting.
+
+### Interpolation
+
+Use `${env.VAR_NAME}` in `prompt` and `default` fields to reference the resolved value of a dependency:
+
+```toml
+[env.PROJECT]
+interactive = true
+options = ["frontend", "backend"]
+prompt = "Select a project:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
+```
+
+When the user selects `frontend`, the branch prompt becomes `"Branch for frontend:"` with default `"feature/frontend"`.
+
+Interpolation rules:
+
+- Only `${env.*}` references are resolved — other `${...}` forms are preserved as-is
+- Every `${env.*}` reference must point to a variable declared in the same manifest **and** listed in `depends_on`
+- `options` arrays cannot contain `${env.*}` references — options are always static
+- Resolved values are never re-interpreted, so a value containing `${env.*}` is treated as literal text
+
+<Aside type="tip">
+Interactive prompts happen before the Docker image build, so you won't wait through a build before being asked questions. If you cancel, no build resources are wasted.
+</Aside>
+## Minimal example
+
+The smallest valid manifest:
+
+```toml title="jackin.role.toml"
+version = "v1alpha6"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+```
+
+## Complete example
+
+```toml title="jackin.role.toml"
+version = "v1alpha6"
+dockerfile = "docker/Dockerfile.agent"
+
+[identity]
+name = "The Architect"
+
+[claude]
+plugins = [
+  "code-review@claude-plugins-official",
+  "feature-dev@claude-plugins-official",
+  "superpowers@superpowers-marketplace",
+  "jackin-dev@jackin-marketplace",
+]
+
+[[claude.marketplaces]]
+source = "obra/superpowers-marketplace"
+sparse = ["plugins", ".claude-plugin"]
+
+[[claude.marketplaces]]
+source = "jackin-project/jackin-marketplace"
+
+[hooks]
+source = "hooks/source.sh"
+preflight = "hooks/preflight.sh"
+
+[env.CONTEXT7_API_KEY]
+interactive = true
+skippable = true
+prompt = "Context7 API key:"
+
+[env.PROJECT]
+interactive = true
+options = ["frontend", "backend", "infra"]
+prompt = "Select a project to clone:"
+
+[env.BRANCH]
+interactive = true
+depends_on = ["env.PROJECT"]
+prompt = "Branch for ${env.PROJECT}:"
+default = "feature/${env.PROJECT}"
+```
+
+<Aside type="tip">
+Keep manifests focused. The Dockerfile installs tools, the manifest declares what configuration the role needs at launch time.
+</Aside>

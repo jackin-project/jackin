@@ -1,0 +1,213 @@
+---
+title: "07 — Evidence, benchmarks, and the claim graveyard"
+---
+
+# 07 — Evidence, benchmarks, and the claim graveyard
+
+This page is the skeptic's appendix to the comparison: what is actually measured versus self-reported for each tool, the one correction that applies to all four headlines, the consolidated graveyard of claims that do not survive a tokenizer check, and the runnable harness that converts any of these tools' marketed ratios into your own numbers. The governing rule throughout, inherited from the dossier: **a per-payload compression ratio is not a banked dollar saving until it survives a validation harness on real tasks at equal quality.**
+
+## The evidence-tier scheme
+
+Every claim in this folder carries one of four tiers:
+
+| Tier | Meaning |
+|---|---|
+| **T1** | Shipped product with published or locally reproduced measurements |
+| **T2** | Peer-reviewed research |
+| **T3** | Community-replicated (multiple independent write-ups with numbers) |
+| **T4** | Theoretical/speculative, or single-source vendor self-report with no replication |
+
+## The one correction that applies to all four: per-payload ≠ whole-bill
+
+All four tools advertise a big percentage, and all four percentages are the *same kind* of number — a best-case ratio on a favorable payload — not a share of the dollar bill. The correction is identical in each case:
+
+```text
+   THE HEADLINE                    THE WHOLE-BILL REALITY
+   ────────────                    ──────────────────────
+   caveman:  "~75%"        ──►  per-payload on visible prose; prose is ~17% of
+                                $; realistic whole-bill ~4–6%/day, hard cap 17%
+
+   headroom: "60–95%"      ──►  per-payload on redundant logs/JSON; code & grep
+                                compress 0%; production median 4.8% whole-session
+
+   RTK:      "60–90%"      ──►  per-command on verbose commands; only Bash output;
+                                whole-bill = Bash-share × compression × (write+0.1×read)
+
+   lean-ctx: "up to 99%"   ──►  per-read on CODE (map/signatures 96–99%) or the
+                                ~13-tok cache-handle; prose/config compress <10%;
+                                "86% session" is a code-read-heavy best case
+```
+
+Two structural facts drive the gap between headline and bill, and they apply to every input tool (RTK, headroom, lean-ctx) equally:
+
+1. **Most input tokens already read at 0.1×.** After a token is first written to the cache, every later read costs a tenth of input price. So compressing a token that will mostly be *read* saves a tenth of its face value. The dollar win is concentrated on the first *write*, not the many reads.
+2. **None of the four touches thinking (20% of dollars).** The headline percentage, whatever it is, applies to at most the output bucket (caveman, 17%) or the compressible-observation slice of the input bucket (RTK/headroom/lean-ctx, part of 61%) — never to the whole bill.
+
+The result: even an aggressive deployment of any one of these lands in the **low double digits of dollars** at best, not at its headline percentage. That is still a real lever on a real bucket; it is simply not the marketed number.
+
+## Per-tool benchmarks: what is real, what is self-report
+
+### Caveman
+
+| Measurement | Value | Source / tier |
+|---|---|---|
+| README headline | "~75%" (pooled benchmark ratio) | vendor, T3 |
+| Per-task mean (same table) | 65% (range 22–87%) | vendor, T3 |
+| Local re-measure, Claude tokenizer | **58.5%** output tokens (ultra) | locally reproduced, T1 |
+| wenyan-full | 80.9% **char** cut = 56.6% **token** cut | locally reproduced, T1 |
+| wenyan-ultra | 74.5% token cut (the ceiling) | locally reproduced, T1 |
+| Agentic-task quality benchmark | **none exists** | open gap |
+
+### Headroom
+
+| Measurement | Value | Source / tier |
+|---|---|---|
+| README headline | "60–95% fewer tokens" (per-payload) | vendor, T3-weak |
+| Representative mixed figure | 66.1% | vendor, T3-weak |
+| Code / grep payloads | **0%** ("passes through to preserve correctness") | vendor, T1 (self-disclosed) |
+| Production telemetry (50k+ sessions) | **median 4.8% / P75 6.9% / mean 11.3%** whole-session | vendor, T3 |
+| Independent deploy (Miya-Gadget) | **47.5%** whole-session, tool-heavy (RAG 0%, logs 31%) | independent, T3 |
+| Independent (HN user) | "~50%" | independent, T3 |
+| Prefix-cache-hit (1-month deploy) | **96%** (live-zone design holds) | independent, T3 |
+| Proxy latency (v0.5.18) | P50 52 ms / P90 309 ms / P99 4,172 ms | vendor, T1 |
+
+### RTK
+
+| Measurement | Value | Source / tier |
+|---|---|---|
+| README headline | "60–90% on common dev commands" (per-command) | vendor, T4 |
+| `git status` / `git diff` | −80% / −75% | self-counter, T4 |
+| `cargo`/`npm`/`pytest`/`go test` | −90% | self-counter, T4 |
+| "30-minute session" | ~118k → ~23.9k = −80% | self-counter, **assumes Bash-heavy mix**, T4 |
+| Month-long head-to-head (Bash-heavy TS/Next.js) | 1.327B tokens (alone), additive with headroom | self-counter, T4 |
+| Whole-session production telemetry | **none** | gap (weaker than headroom) |
+| Independent third-party benchmark | **none** | gap (weaker than headroom) |
+| Token counter basis | ~4 chars/token GPT-style heuristic, **not Claude BPE** | caveat |
+
+The underlying *levers* RTK uses are nonetheless T1 (locally reproduced in the dossier): the log filter at −94.2%, JSON minify at −34.3%. RTK's mechanism is T1; RTK's specific product numbers are T4.
+
+### lean-ctx
+
+All figures below are **locally reproduced in this round** by building `lean-ctx v3.8.9` from source and running `lean-ctx benchmark report .` on the lean-ctx repo (tiktoken `o200k_base`, 50 files / ~479K raw tokens) and on individual reads — the same "build it and measure" tier the dossier applies to caveman.
+
+| Measurement | Value | Source / tier |
+|---|---|---|
+| README headline | "60–90% fewer tokens (cached: up to 99%)" (per-read) | vendor, T4 |
+| `map` mode on code | **96–99%** (Rust 96.1%, JS 99.2%, TS 96.8%, Python 92.7%) at **77% self-rated quality** | locally reproduced, T1 |
+| `signatures` mode on code | **96.5%** at **95.9% quality** (the honest sweet spot) | locally reproduced, T1 |
+| `map`/`signatures` on **prose/config** | **Markdown 7.5%, JSON 30.6%, CSS 4.1%, HTML 6.8%, TOML 0.8%** | locally reproduced, T1 |
+| `aggressive` mode | **10.3%** (strips comments only — misnamed) | locally reproduced, T1 |
+| cache-handle re-read | ~13 tokens (99.7% on a repeat read) | locally reproduced, T1 |
+| "30-minute coding session" sim | 672K → 87.7K = **86–87%** (code-read-heavy mix) | self-counter, T4 |
+| Whole-session production telemetry | **none published** (local dashboard only) | gap |
+| Independent third-party benchmark | **none** | gap (youngest tool) |
+| Token counter basis | tiktoken `o200k_base` / `cl100k_base` — **GPT tokenizers, not Claude BPE** (claims cl100k "within ~3%") | caveat |
+| Savings honesty | **bounce-netted** (`adjusted_total_saved` deducts wasted re-reads) + tamper-evident SHA-256 ledger | the most honest self-accounting of the four |
+
+lean-ctx's mechanism is **T1** (the read modes, shell compression, and BM25/graph search all reproduce here); its specific product percentages are **T4** (self-measured, GPT tokenizer, per-read/per-session best cases, no independent replication). Its asymmetry mirrors headroom's inverted: where headroom compresses logs/JSON and passes code through, **lean-ctx crushes code and barely touches prose/config** — so the "right" headline depends entirely on whether your reads are source code or documents.
+
+## Adoption stats — and why to ignore them
+
+Three repos carry large, PR-inflated star counts with abnormally low watcher ratios; lean-ctx is the youngest and least-inflated but has no external evidence. In this niche stars are a marketing artifact, not adoption; rank by evidence, forks, and issue activity instead.
+
+| Tool | Stars | Watchers | Star:watcher | Signal |
+|---|---:|---:|---:|---|
+| caveman | 74,446 | 166 | ~448:1 | ~10× more skewed than a healthy repo |
+| RTK | 63,608 | 146 | ~436:1 | best HN thread 18 points / 3 comments; zero independent benchmarks |
+| headroom | 33,359 | 111 | ~301:1 | ~87% of stars landed in a 14-day window after a press article |
+| **lean-ctx** | **2,800** | **19** | ~147:1 | least skewed and README-honest (claims "2,600+"), but youngest (created 2026-03), no independent benchmark, no fleet telemetry |
+
+A healthy repo's star:watcher ratio is roughly an order of magnitude lower. The takeaway is uniform: **do not read these star counts as proof of quality or adoption.** Headroom is the best *externally* instrumented (production telemetry + one independent measurement); caveman is the most transparent (the mechanism is a readable prompt); lean-ctx is the best *self*-instrumented (bounce-netted, signed ledger, 2,900+ tests) but the least externally verified; RTK is the least verified of all.
+
+## The consolidated claim graveyard
+
+Every popular-but-overstated claim about the three, with the corrected reading, in one table.
+
+| # | Claim in the wild | Verdict and corrected reading |
+|---|---|---|
+| **Caveman** | | |
+| C-K1 | "caveman cuts ~75% of your tokens" | 75% is the *pooled* benchmark ratio; per-task mean is 65%; local Claude-tokenizer replication is 58.5% (ultra). Targets visible prose only (~17% of dollars) → whole-bill ~4–6%. README calls the cost saving "a bonus." |
+| C-K2 | "wenyan/Classical-Chinese saves ~80%" | Character-token confusion: 80.9% **char** cut = 56.6% **token** cut. wenyan-ultra reaches 74.5% tokens only at maximum lossiness; on short phrases it can cost *more* than English. |
+| C-K3 | "a terse style cuts your bill proportionally" | Visible output is 17% of dollars; thinking (20%) is billed in full though displayed summarized. The hard cap is 17%, the realistic figure ~10%. |
+| **Headroom** | | |
+| H-K1 | "headroom cuts 60–95% of your tokens" | Per-payload ratio. Logs/JSON hit 87–94%; **code and grep compress 0%**; representative mix 66.1%. Production telemetry: **median 4.8% whole-session**; independently measured at **47.5%** on a tool-heavy session. |
+| H-K2 | "96.2% total savings on Anthropic" | Double-counts caching Claude Code already banks. The 90%-off is the floor, not a marginal saving; headroom's incremental lever is the live-zone compression fraction only. |
+| H-K3 | "input compression breaks the cache, so headroom can't help" | Too broad. *Whole-prompt* recompression breaks the cache; headroom's live-zone design stabilizes the prefix and is cache-safe in MCP/library mode. The kill is the *proxy-in-front-of-Claude-Code* case, not headroom as a whole. |
+| H-K4 | "same answers" (lossless) | Lossless only at low compression on prose/QA and on rule-based transforms. The ML text compressor and high-compression code paths are lossy; reversibility (CCR) mitigates *if* the model retrieves when it should. |
+| H-K6 | "drop it in as a proxy, zero code changes, free win" | In front of Claude Code the proxy is a cache-bust risk, a double-compaction risk, a hot-path latency cost, and an attack surface. "Zero code changes" is true; "free" is not. |
+| **RTK** | | |
+| R-K1 | "RTK cuts 60–90% of your tokens" | Per-command best case, not whole-bill. No whole-session telemetry exists; the "80% session" assumes a Bash-heavy mix. Whole-bill = Bash-output share × compression × (write + 0.1×read) — low double digits of dollars. |
+| R-K2 | "works with your agent's file tools" | **No — Bash calls only.** Claude Code's native `Read`/`Edit`/`Grep`/`Glob` do not run through a shell, so RTK never sees them. |
+| R-K3 | "63.5k stars = a proven, widely-adopted tool" | PR-inflated (146 watchers, best HN 18 points / 3 comments, zero independent benchmarks). Rank by evidence. |
+| R-K4 | "drop-in hook, `<10 ms`, free win" | Compute is cheap and cache-safety is real, but it writes a PreToolUse hook into agent config (a host-state mutation) and can silently truncate a needed line on a *successful* command (tee fires on failure only). One issue even reports the hook *raising* cost 18% in a misconfiguration. |
+| R-K5 | "same output, just smaller" (lossless) | Lossless only where the dropped content was genuinely redundant (dedup/grouping). Truncation is lossy; on a successful command there is no recovery path. |
+| **lean-ctx** | | |
+| L-K1 | "up to 99% / 60–90% fewer tokens" | Reproduced — but 99% is the ~13-tok cache-handle and 96–99% is `map`/`signatures` on **code**; prose/config compress 0.8–30%. Whole-bill correction applies exactly as for the others. |
+| L-K2 | "86% on a 30-minute session" | A code-read-heavy per-session best case (same category as RTK's "80% session"), not a whole-bill dollar figure. |
+| L-K3 | "single Rust binary, no runtime dependencies" | One binary, but **64.7 MB**, running a daemon, dashboard, HTTP server, optional LSP subprocesses, and SQLite stores — far larger runtime footprint than RTK's genuinely tiny binary. |
+| L-K4 | "cl100k is within ~3% of Claude's tokenizer" | Counts Claude traffic with GPT tokenizers (`cl100k_base`/`o200k_base`), not Claude BPE. Treat every percentage as directional, the same caveat as RTK/caveman. |
+| L-K5 | "proxy is cache-safe" | True *by design* (frozen-region rewrites, instrumented ratio) — but the proxy's prose rewrite is **lossy**; cache-safe ≠ lossless, and the deterministic safety lives in the MCP/hook layers, not the proxy. |
+| L-K6 | "2,800★ = small / unproven" vs the others' 30–74k | Inverted from the others: lean-ctx's star count is the *least* inflated and roughly matches its README — but low stars are not evidence of quality either. It simply has **no independent benchmark**; rank it on the reproduced mechanism, not the count. |
+
+## The validation harness
+
+This is how to turn any of the three (or the stack) from a marketed ratio into a banked, quality-verified saving on your own workload. It is a paired-task benchmark with cache continuity and command-re-run rate as first-class metrics.
+
+<Aside type="note">
+**Run status:** the *measurable-without-installing* subset has been run on this repo's own session transcripts, and **lean-ctx was additionally built from source and benchmarked** this round — see [10 — First-party measurements](/reference/research/token-optimization-tools/10-first-party-measurements/) (token decomposition; RTK's reach ceiling at 16.5% of observation tokens; lean-ctx 96–99% on code reads vs &lt;10% on prose). The **full controlled multi-arm A/B remains INCOMPLETE**: it requires installing caveman/RTK/headroom/lean-ctx and running matched tasks as separate fresh sessions — operator-driven, not self-runnable in one agent session. The protocol below is ready to run.
+</Aside>
+
+
+**Arms** (run the same fixed task suite through each, fresh sessions, same effort):
+
+| Arm | Tools allowed |
+|---|---|
+| Native | Claude Code defaults (native Read/Grep, Edit-diffs, deferred MCP) |
+| Caveman | Native + caveman output register |
+| Hooks | Native + a hand-written log/grep filter hook (the lever RTK productizes) |
+| RTK | Native + the RTK PreToolUse hook |
+| Headroom-MCP | Native + `headroom_compress` / `headroom_retrieve` on observations |
+| lean-ctx | Native + lean-ctx MCP + shell hook (deterministic mode, no proxy) |
+| Stack | Caveman + one input path (RTK *or* lean-ctx) + headroom-MCP — confirm additive, not redundant; never two shell paths |
+
+**Metrics** (read from session JSONL `usage` fields):
+
+- tool-result tokens, and total tokens per *solved* task (not per task);
+- **`cache_read` ratio and cache-write spikes** — the make-or-break for any input compressor;
+- **command re-run / bounce rate** — did the agent re-run a command or re-read a file in full after a compressed read? (the dropped-context tell for RTK, and exactly what lean-ctx's `adjusted_total_saved` already nets out — cross-check its self-report against your own count);
+- fraction of observation tokens that flow through Bash at all (bounds what RTK can even touch);
+- retrieve count and retrieve token cost (headroom CCR `headroom_retrieve`, lean-ctx `ctx_expand`);
+- task success / tests pass (objective where possible); wall-clock.
+
+**Canary tasks** targeting known compression failure modes: negation preservation ("don't do X"), ordering-sensitive instructions, numeric precision, and a detail buried in a payload that compression is likely to drop (to test whether the model knows to retrieve, for headroom, or re-runs, for RTK).
+
+**Acceptance rule** (per tool, versus the appropriate baseline arm):
+
+```text
+Accept a compressor for token optimization only if, versus the baseline arm:
+  task / test success           >= baseline
+  cache_read ratio              >= baseline   (no silent cache-bust)
+  command re-run rate           <= baseline   (no silent dropped-context cost; RTK)
+  total tokens per solved task  <= baseline by at least 20%
+  net of the tool's own overhead (MCP schema rent, retrieve round-trips,
+  hook-registration / host-write, ~200-500 tok proxy metadata)
+```
+
+For RTK specifically, A/B against the **Hooks** arm (a hand-written filter), not the Native arm — RTK earns its place only if its 100+-command coverage beats a filter you could write yourself, net of the dropped-context risk and the hook-conflict surface with caveman.
+
+## Source ledger
+
+The **full consolidated source ledger** (every citation, with access dates), the **formal per-technique records** (C1 / H1–H4 / R1 / L1), and the **unverified-claims register** now live in [08 — Records, ledger & unverified](/reference/research/token-optimization-tools/08-records-ledger-and-unverified/) — the hub's single complete reference. Key sources, summarized:
+
+- **Caveman** — repo `JuliusBrussee/caveman`; the family records, the tokenizer measurement battery, and the folklore ledger: dossier [03 — prior-art and market scan](/reference/research/token-optimization/03-prior-art-and-market-scan/) and [10 — style and language compression](/reference/research/token-optimization/10-style-and-language-compression/).
+- **Headroom** — repo `chopratejas/headroom`; companion model `chopratejas/kompress-base`; the source audit, benchmark tables, H1–H4 records, and headroom-specific graveyard: dossier [53 — headroom and context compression](/reference/research/token-optimization/53-headroom-and-context-compression/).
+- **RTK** — repo `rtk-ai/rtk`; the architecture doc, the per-command tables, the integration matrix, and the RTK-specific graveyard: dossier [56 — RTK and write-time observation compression](/reference/research/token-optimization/56-rtk-and-write-time-observation-compression/).
+- **lean-ctx** — repo `yvgude/lean-ctx` (`v3.8.9`); site `leanctx.com` (compare/pricing); `ARCHITECTURE.md`, `BENCHMARKS.md`, `LEANCTX_FEATURE_CATALOG.md`; locally built + benchmarked this round. The full L1 record, source audit, and lean-ctx graveyard live in the [records page](/reference/research/token-optimization-tools/08-records-ledger-and-unverified/) and the [design teardown](/reference/research/token-optimization-tools/04-leanctx-design/).
+- **The compression market and cache-safety classification** (including the published RTK-vs-headroom head-to-head, the independent headroom measurements, and the "rank by evidence not stars" rule): dossier [54 — context-compression literature and market](/reference/research/token-optimization/54-context-compression-literature-and-market/).
+- **The structural alternative** RTK and headroom are *not* (persistent symbol index): dossier [51 — code-intelligence tools](/reference/research/token-optimization/51-code-intelligence-tools/).
+- **The economics and the 10× verdict** these percentages sit inside: dossier [index](/reference/research/token-optimization/) and [00 — executive summary](/reference/research/token-optimization/00-executive-summary/).
+- **The container-adoption hazards** (host-write ban, hook reconciliation, role-scoping): [architect code-intelligence tooling roadmap](/roadmap/architect-code-intelligence-tooling/).
+
+---
+
+Next: [08 — Records, ledger & unverified](/reference/research/token-optimization-tools/08-records-ledger-and-unverified/) for the formal per-technique records and the full source ledger. Back to the [overview](/reference/research/token-optimization-tools/), or up to the [token-optimization dossier](/reference/research/token-optimization/) for the surrounding economics.

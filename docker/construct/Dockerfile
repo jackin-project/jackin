@@ -5,14 +5,14 @@ ARG SHELLFIRM_VERSION
 # the final image. Building inside Docker — rather than prebuilding on the host —
 # keeps it off the host's mise/cargo-binstall environment and produces the
 # binary for the target image architecture.
-FROM rust:1.96.0-trixie AS shellfirm-builder
+FROM rust:1.96.0-trixie@sha256:6df234c1eb92b0545468fab8c18fc5f9adfb994e7d4f67d81d45fe2fcabf5657 AS shellfirm-builder
 
 ARG SHELLFIRM_VERSION
 
 RUN cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked --root /opt/shellfirm && \
     /opt/shellfirm/bin/shellfirm --version | grep -F "${SHELLFIRM_VERSION}"
 
-FROM debian:trixie-20260610@sha256:fe7312b5f05bf5f43fad76bcd8945642e4e47a68aefd1b73f447615899d0fac1
+FROM debian:trixie-20260623@sha256:d07d1b51c39f51188e60be9b64e6bf769fa94e187f092bc32b91305cfa34ba5a
 
 ARG SHELLFIRM_VERSION
 
@@ -23,7 +23,6 @@ RUN chmod 0755 /usr/local/bin/shellfirm && \
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG UID=1000
-ARG GID=1000
 
 # Install core system packages. zsh is the default login shell for
 # the `agent` user; fish is installed alongside as an opt-in
@@ -61,14 +60,14 @@ RUN apt-get update && \
            /var/cache/apt/* \
            /tmp/*
 
-# Resolve the `agent` user by its runtime host UID. The image bakes `agent` at
-# UID 1000, but containers run as the host operator's UID (`docker run --user`)
-# so host-owned bind-mounts are transparently writable. libnss-extrausers reads
-# an extra passwd file (bind-mounted at runtime) so `getpwuid(host_uid)` still
-# resolves to `agent` with HOME=/home/agent — keeping shells, git, and the
-# Node-based agent CLIs (which call getpwuid) happy. See
+# Resolve the `agent` user/group by the runtime host UID/GID. The image bakes
+# `agent` at UID 1000, but containers run as the host operator's UID/GID
+# (`docker run --user`) so host-owned bind-mounts are transparently writable.
+# libnss-extrausers reads extra passwd/group files (bind-mounted at runtime) so
+# `getpwuid(host_uid)` resolves to `agent` with HOME=/home/agent and host GIDs
+# can resolve when the base image has no matching group. See
 # /reference/roadmap/construct-user-creation/.
-RUN sed -ri 's/^(passwd:.*)$/\1 extrausers/' /etc/nsswitch.conf && \
+RUN sed -ri 's/^(passwd:.*)$/\1 extrausers/; s/^(group:.*)$/\1 extrausers/' /etc/nsswitch.conf && \
     install -d -m 0755 /var/lib/extrausers && \
     : > /var/lib/extrausers/passwd && \
     : > /var/lib/extrausers/group
@@ -134,16 +133,19 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # `docker exec --user root jackin-capsule sudo-provision`, only for profiles
 # that grant it (JACKIN_SUDO=1). The `sudo` package stays installed so the
 # grant can write /etc/sudoers.d/agent at launch.
-RUN groupadd -g "$GID" agent && \
-    useradd -m -u "$UID" -g "$GID" -s /bin/zsh agent && \
-    install -d -o agent -g agent /home/agent/.claude /home/agent/.codex /home/agent/.jackin
+RUN useradd -m -u "$UID" -g 0 -s /bin/zsh agent && \
+    chmod 0775 /home/agent && \
+    install -d -m 0775 -o agent -g 0 /home/agent/.claude /home/agent/.codex /home/agent/.jackin
+
+RUN printf 'umask 0002\n' > /etc/jackin-build-env
+ENV BASH_ENV=/etc/jackin-build-env
 
 # Install starship prompt as root so the installer can write to /usr/local/bin
 # without needing to escalate privileges.
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 # Default to a UTF-8 locale so shell prompts and CLI output render correctly,
-# including `docker exec` sessions that bypass jackin's runtime entrypoint.
+# including `docker exec` sessions that bypass the jackin runtime entrypoint.
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
@@ -155,10 +157,13 @@ ENV PATH="/home/agent/.local/share/mise/shims:/home/agent/.local/bin:${PATH}"
 RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
     git clone https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-/home/agent/.oh-my-zsh/custom}/plugins/zsh-autosuggestions
 
-COPY --chown=agent:agent zshrc /home/agent/.zshrc
+COPY --chown=agent:0 --chmod=0664 zshrc /home/agent/.zshrc
 
 # Fish config — opt-in alternative shell. Same Starship prompt and
 # auto-title behaviour as zsh so the operator's pane border title
 # does not regress when switching shells.
-RUN mkdir -p /home/agent/.config/fish
-COPY --chown=agent:agent fish-config.fish /home/agent/.config/fish/config.fish
+# install -d creates /home/agent/.config/ here so the starship.toml
+# COPY below does not auto-create it as root-owned.
+RUN install -d -o agent -g 0 -m 0775 /home/agent/.config /home/agent/.config/fish
+COPY --chown=agent:0 --chmod=0664 fish-config.fish /home/agent/.config/fish/config.fish
+COPY --chown=agent:0 --chmod=0664 starship.toml /home/agent/.config/starship.toml

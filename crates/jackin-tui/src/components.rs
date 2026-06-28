@@ -1,4 +1,4 @@
-//! Reusable Ratatui components shared by jackin' terminal surfaces.
+//! Reusable Ratatui components shared by jackin❯ terminal surfaces.
 
 pub mod bottom_chrome;
 pub mod brand_header;
@@ -6,6 +6,7 @@ pub mod button_strip;
 pub mod confirm_dialog;
 pub mod container_info;
 pub mod dialog_layout;
+pub mod diff_view;
 pub mod error_dialog;
 pub mod filter_input;
 pub mod focus_owner;
@@ -49,6 +50,7 @@ pub use dialog_layout::{
     dialog_inner_height, dialog_scroll_axes, mouse_scroll_delta, render_dialog_shell,
     render_scrollable_dialog_body, scroll_hint_spans,
 };
+pub use diff_view::{DiffViewState, SinglePaneKind, diff_view_hint_spans, render_diff_view};
 pub use error_dialog::{
     ERROR_POPUP_KEYMAP, ErrorPopupAction, ErrorPopupState, error_popup_hint_spans,
     estimated_message_rows, render_error_dialog, render_error_dialog_in, required_height,
@@ -84,9 +86,9 @@ pub use select_list::{
     render_picker_lines, render_picker_list, render_select_list, select_list_hint_spans,
 };
 pub use status_footer::{
-    StatusFooter, StatusFooterHover, StatusRightGroup, compact_usage_status_label,
-    render_status_footer, render_status_footer_right_group, status_footer_debug_chip_rect,
-    status_footer_right_chip_rect, status_right_group_layout,
+    StatusFooter, StatusFooterHover, StatusRightChunk, StatusRightGroup,
+    compact_usage_status_label, render_status_footer, render_status_footer_right_group,
+    status_footer_debug_chip_rect, status_footer_right_chip_rect, status_right_group_layout,
 };
 pub use status_popup::{StatusPopupState, render_status_popup};
 pub use tab_strip::{TabStrip, tab_cell_style, tab_label_line, tab_underline_line};

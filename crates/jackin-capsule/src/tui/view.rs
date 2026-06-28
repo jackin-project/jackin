@@ -79,7 +79,7 @@ pub(crate) struct CapsuleRatatuiFrame<'a> {
 /// Paint the scrollback scrollbar on a pane's right border through the shared
 /// `scrollable_panel` component — `┃` thumb on a `·` track in the shared
 /// dialog-scrollbar colors, glyph-identical to every other scrollbar in
-/// jackin'. The pane's tail-relative offset is bridged to the component's
+/// jackin❯. The pane's tail-relative offset is bridged to the component's
 /// top-relative offset via `TailScroll::to_top_offset` over the same
 /// `filled + interior` content length `tail_vertical_thumb` uses, so wheel
 /// scrolling and the painted thumb can never disagree.

@@ -135,7 +135,11 @@ pub struct HardlineArgs {
 /// on entry, outro rain on the last container's exit. There is nothing to
 /// disable, so this carries no flags.
 #[derive(Debug, Args, PartialEq, Eq, Default, Clone)]
-#[command(before_help = BANNER, styles = HELP_STYLES)]
+// No `before_help` here: as the flattened root args it would leak the pill onto
+// the root `jackin --help`, which instead shows the binary's frozen-rain banner
+// with the centered lockup. The `Console` command variant re-adds the pill for
+// `console --help`.
+#[command(styles = HELP_STYLES)]
 pub struct ConsoleArgs {}
 
 /// Validate, migrate, and scaffold role repositories
