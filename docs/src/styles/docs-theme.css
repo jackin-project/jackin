@@ -1241,22 +1241,19 @@ html.theme-init *::after {
   inset-inline-start: 0.5rem !important;
 }
 
+/* Hover is a faint green wash — a lighter version of the active item's green
+   wash — so the whole sidebar shares one brand/green language. fumadocs'
+   hover:bg-fd-accent (= the sidebar surface in light) is overridden here. Same
+   concept in both themes; --jk-accent adapts (#5cf07a dark, #0b774e light). */
+#nd-sidebar a:hover,
+#nd-sidebar a:focus-visible,
 #nd-sidebar a[data-active]:hover,
 #nd-sidebar a[data-active]:focus-visible,
 #nd-sidebar button[data-state]:hover,
 #nd-sidebar button[data-state]:focus-visible {
   color: var(--jk-text);
-  background-color: var(--jk-sidebar-hover-bg);
-  box-shadow: var(--jk-sidebar-hover-shadow);
-}
-
-/* Regular nav links: fumadocs' hover:bg-fd-accent equals the sidebar surface
-   (--jk-panel) in light mode, so the hover was invisible. Use the same hover
-   token as active items — visible and consistent in both themes. */
-#nd-sidebar a:hover,
-#nd-sidebar a:focus-visible {
-  color: var(--jk-text);
-  background-color: var(--jk-sidebar-hover-bg);
+  background-color: color-mix(in srgb, var(--jk-accent) 8%, transparent);
+  box-shadow: none;
 }
 
 /* Section ancestor (the folder-index leaf fumadocs flags `aria-current`
