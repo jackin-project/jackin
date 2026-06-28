@@ -1,0 +1,127 @@
+---
+title: "Codebase health: enforce reviewability"
+---
+
+**Status**: Open — proposal. This page is the plan only; the opening PR ships the roadmap item, no code. Each workstream below lands later as its own PR-sized slice.
+
+The umbrella tracker for keeping jackin❯ reviewable as it grows. The thesis: **a reviewable codebase is enforced, not remembered.** Crate separation already exists and helps, but nothing stops a single file or function from growing without bound, and that is what makes pull requests hard to read — a real change hides inside a 6000-line file and the diff gives no help locating it. The fix is to make "stays small enough to review" a CI gate, then bring the current offenders under it.
+
+Three workstreams, in order: **A. stricter lints**, **B. a file-size ratchet gate** (the part Clippy cannot do), **C. decompose the current offenders** so they pass A and B. A and B are the lasting change; C is the one-time remediation they force.
+
+## Problem
+
+The repository is large and still growing. Today a reviewer opening a PR cannot quickly answer "what does this change and why" because the edited lines sit inside modules far past what anyone holds in their head: `usage.rs` is 6374L, `tui/app.rs` is 5083L, and several functions inside them are hundreds of lines each. The existing crate boundaries do not constrain intra-crate file or function size at all. Every previous fix has been a manual one-off split; the files grew back or new ones took their place (see [What shipped in Phase 2](#what-shipped-in-phase-2) — four files were split, five new ones now exceed the old thresholds). One-off cleanups do not hold. Only an enforced ceiling does.
+
+## What is already enforced
+
+The lint baseline is already strong — this plan extends it, it does not start from zero. Recorded so we do not propose redundant work. From <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> `[workspace.lints]` and <RepoFile path="clippy.toml">clippy.toml</RepoFile>, enforced in CI by `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`:
+
+- `clippy::all` = deny; `clippy::pedantic` and `clippy::cargo` = warn, promoted to errors by the `-D warnings` gate. So **a lint set to `warn` is effectively denied in CI** — flipping a currently-`allow` lint to `warn` is all it takes to enforce it.
+- Hygiene denied: `unwrap_used`, `expect_used`, `panic`, `print_stdout`, `print_stderr`, `dbg_macro`, `todo`, `unimplemented`, `mod_module_files`, `disallowed_methods` (blocking I/O on render threads), plus the Rust `unused`/`dead_code`/`unreachable_pub`/`unsafe_code = forbid` set.
+- Suppression discipline already mandates narrow `#[expect(..., reason = "...")]` over blanket `#[allow]` (see `crates/AGENTS.md`).
+
+## Gap analysis — the reviewability levers that are OFF
+
+These bear directly on "can a human review this," and every one is currently disabled:
+
+| Lever | Current | What it constrains | Clippy can do it? |
+|---|---|---|---|
+| `clippy::too_many_lines` | **`allow`** | function body length | yes (pedantic) |
+| `clippy::cognitive_complexity` | not set | branching/nesting density per fn | yes (nursery, cherry-pick) |
+| `clippy::excessive_nesting` | not set | block nesting depth | yes (nursery, needs threshold > 0) |
+| `clippy::fn_params_excessive_bools` | **`allow`** | boolean-soup signatures | yes (pedantic) |
+| `clippy::struct_excessive_bools` | **`allow`** | boolean-soup structs | yes (pedantic) |
+| **per-file line ceiling** | **none** | whole-file size | **no — needs a custom CI gate** |
+
+The last row is the important one: **Clippy has no maximum-file-length lint.** The single most direct constraint on "is this file reviewable" cannot be expressed in Clippy at all and must be a bespoke CI check (Workstream B).
+
+## Workstream A — stricter Clippy
+
+Each item: flip the lint, set the threshold in `clippy.toml`, then run Clippy to count current violations and grandfather each with a narrow `#[expect(clippy::<lint>, reason = "tracked in codebase-health-enforcement")]` so CI stays green from day one. The `#[expect]` count is the burn-down backlog — every one removed is a function brought under the bar. Never blanket-`allow`.
+
+- [ ] **A1 — enable `too_many_lines`.** Flip `too_many_lines = "allow"` → `"warn"` in `[workspace.lints.clippy]`. Set `too-many-lines-threshold` in `clippy.toml` to the **current maximum** (measure first — see A0), so nothing breaks, then ratchet the number down over time. This is the primary lever against giant functions (`build_snapshot`, the `run()` dispatch match, etc.).
+- [ ] **A2 — enable `cognitive_complexity`** (nursery; cherry-pick `cognitive_complexity = "warn"`). Set `cognitive-complexity-threshold`. Catches functions that are short but deeply branched — the ones `too_many_lines` misses.
+- [ ] **A3 — enable `excessive_nesting`** (nursery). Set `excessive-nesting-threshold` (default 0 disables it; pick e.g. 5 and ratchet). Deep nesting is a top reviewability killer.
+- [ ] **A4 — flip `fn_params_excessive_bools` and `struct_excessive_bools`** `allow` → `warn`. Forces builders / enums over positional-bool signatures, which are a common source of silent call-site bugs.
+- [ ] **A5 — tune existing thresholds in `clippy.toml`.** `too-many-arguments-threshold` (default 7), `type-complexity-threshold`, `enum-variant-size-threshold` (relates to the 3-enum modal taxonomy in [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/)). Decide target values; baseline-then-ratchet.
+- [ ] **A0 (do first) — measure.** Apply A1–A4 locally at default thresholds and capture the violation count per lint and the current maximum for each metric. These numbers set the initial (non-breaking) thresholds and size the `#[expect]` backlog. This measurement is the only "code" step in Phase 0 and produces the real plan numbers.
+
+**Open decision:** test modules (`*/tests.rs`) routinely exceed function/length limits by their nature. Clippy has no per-target threshold, so either grandfather them with `#[expect]` or accept the noise. Recommend: enforce on production code, `#[expect]` the large test fns, and address test-file size under Workstream B's separate test budget.
+
+## Workstream B — file-size ratchet gate
+
+The mechanism Clippy cannot provide. A small deterministic CI checker (same shape as the existing `bun run check:roadmap-sidebar` and the repo-link checker) that enforces two rules over `crates/**/*.rs`:
+
+- [ ] **B1 — hard ceiling.** No file may exceed an absolute cap (proposed: production `.rs` ≤ 2000L). A PR that pushes any file over the cap fails. New files are born under the cap.
+- [ ] **B2 — high-water-mark allowlist (the ratchet).** A committed budget file (e.g. `file-size-budget.toml`, or a `cargo xtask lint files` subcommand) lists every file currently over the cap with its present line count. The gate fails if a listed file **grows** beyond its recorded count, and fails if a file not on the list exceeds the cap. The recorded numbers may only ever decrease; when a file drops under the cap its entry is deleted. This is what makes decomposition self-enforcing: **you literally cannot add lines to an already-too-big file**, and the list can only shrink.
+- [ ] **B3 — wire into CI.** Add the gate as a required job in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> (and/or `hygiene.yml`). Seed the allowlist from today's offenders. Document the "lines only go down" rule beside the budget file.
+- [ ] **B4 — separate test-file budget.** `*/tests.rs` are huge by design (`launch/tests.rs` 8603L, `daemon/tests.rs` 7612L). Give them their own budget table (or a higher cap) so production enforcement is not blocked on the test-infra work — which is tracked separately under [Test infrastructure & behavioral specs](/roadmap/test-infra-behavioral-specs/).
+
+**Why a custom gate and not a tool:** the deterministic-checker pattern already exists in this repo, has zero new dependencies, and the high-water-mark semantics (a budget that can only shrink) are exactly what off-the-shelf line counters lack.
+
+## Workstream C — decompose the current offenders
+
+The one-time remediation that brings today's files under the Workstream A/B gates. Current largest production (non-test) modules, each with a proposed split direction:
+
+| File | Lines | Proposed split |
+|---|---|---|
+| <RepoFile path="crates/jackin-capsule/src/usage.rs">usage.rs</RepoFile> | 6374 | `usage/{claude,codex,grok,zai,kimi,minimax,amp}.rs` (provider DTOs + fetch/parse), `usage/format.rs` (formatting/CLI leaf helpers), `usage/view.rs` (snapshot rendering), `usage/refresh.rs` (orchestration + locking); `usage.rs` stays the coordinator (constants, `UsageCache`, `build_snapshot` dispatcher, re-exports) |
+| <RepoFile path="crates/jackin-console/src/tui/app.rs">tui/app.rs</RepoFile> | 5083 | split the `ConsoleModal` dispatch and per-screen update handlers; coupled to [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/) |
+| <RepoFile path="crates/jackin-console/src/tui/screens/editor/model.rs">screens/editor/model.rs</RepoFile> | 4176 | the duplication core of [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/); decompose alongside it, not independently |
+| <RepoFile path="crates/jackin-console/src/tui/screens/settings/model.rs">screens/settings/model.rs</RepoFile> | 3852 | as above — split the unified surface, not the two duplicated ones |
+| <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">runtime/image.rs</RepoFile> | 2811 | separate Dockerfile generation, image build orchestration, and image-cache / inspection |
+
+**Split pattern** (the convention every decomposition follows, proven by the Phase 2 splits):
+
+- Keep the original file as the module **coordinator** — public surface, constants, dispatch entry points.
+- Move each cluster into a sibling `<module>/<name>.rs`.
+- A child module can already read its ancestor's private items, so a moved cluster pulls the coordinator's helpers via explicit `use super::...` (no wildcard — `clippy::wildcard_imports` is denied under pedantic).
+- Items moved out that the coordinator or siblings call get `pub(super)`; where the module's `tests.rs` (which uses `use super::*`) must still see them, re-export from the coordinator with `pub(crate) use self::<name>::...`.
+- Tests stay in the existing `<module>/tests.rs`. No `mod.rs` (workspace hard rule). One file = one reviewable concern.
+
+**Carried-over cleanups from Phase 2** (low-severity; most Phase 2 DRY findings already shipped — DinD sidecar dedup, the shared breadcrumb component, `DockerResources`/`naming.rs`. These remain, verify before acting):
+
+- [ ] Confirm `build_mode_resolution` in <RepoFile path="crates/jackin-runtime/src/runtime/launch/auth_error.rs">launch/auth_error.rs</RepoFile> now delegates to `resolve_mode_with_trace` in <RepoFile path="crates/jackin-config/src/app_config_roles.rs">app_config_roles.rs</RepoFile> rather than re-implementing the 3-layer × 4-agent match.
+- [ ] Two inline `{base}-dind` / `{base}-net` derivations in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs">launch_dind.rs</RepoFile> should use the canonical helpers in <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs">runtime/naming.rs</RepoFile>.
+- [ ] `config_with_agents` test helper is copied across three test files — extract one shared utility.
+- [ ] `FakeOpWriter` test helper exists in both `app/tests.rs` and `jackin-env/src/token_setup/tests.rs` — share one.
+
+## What shipped in Phase 2
+
+The four original split items are **resolved** — recorded here so the history survives their retired pages. Each kept the original file as a coordinator and moved clusters into sibling files:
+
+| Original file | Was | Now | Split into |
+|---|---|---|---|
+| `runtime/launch.rs` | 7966L | 2833L | `launch_pipeline.rs`, `launch_dind.rs`, `launch_slot.rs`, `trust.rs`, `restore.rs`, `progress_helpers.rs` |
+| `tui/input/editor.rs` | 4002L | 1146L | `editor/{agents,general,secrets,modal}.rs` |
+| `jackin/src/app.rs` | 2932L | 379L | `app/{config_cmd,workspace_cmd,load_cmd,token_cmd,prune_cmd,restore,helpers,context}.rs` |
+| `jackin-env/src/resolve.rs` | 3573L | 1065L | `op_cli.rs`, `op_runner.rs`, `op_struct.rs`, `picker.rs`, `env_layer.rs`, `env_resolver.rs`, `parse_helpers.rs`, `output.rs`, `host_claude.rs` |
+
+The lesson driving this item: those splits were correct but unguarded, so the file population simply turned over. Workstreams A and B exist so it cannot turn over again.
+
+## Rollout plan
+
+1. **Phase 0 — measure (A0).** Apply the A1–A4 lints locally and capture violation counts + current maxima. Pick non-breaking initial thresholds.
+2. **Phase 1 — land the gates green.** Ship A1–A5 at baseline thresholds with `#[expect]` grandfathering, and the Workstream B ratchet seeded from today's offenders. Nothing breaks; the ceiling stops getting worse from this point.
+3. **Phase 2 — remediate (C).** Decompose offenders one PR at a time (`usage.rs` first — largest, most self-contained; then `runtime/image.rs`; then the console targets alongside [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/)). Each PR deletes budget entries and `#[expect]`s.
+4. **Phase 3 — tighten.** Once the backlog is small, ratchet thresholds and the file cap toward target (proposed: files ≤ 1500L, functions ≤ 150 logical lines) and delete the now-empty allowlist.
+
+The item stays open until the gates are enforced and the Phase 2 (current) offenders and `#[expect]` backlog are cleared.
+
+## Tooling debt
+
+`cargo xtask change new` and `cargo xtask roadmap audit` are broken: they resolve the roadmap at `docs/content/docs/reference/roadmap`, but it moved to `docs/content/docs/roadmap`. Fix `ROADMAP_REL` in <RepoFile path="crates/jackin-xtask/src/docs.rs">jackin-xtask/src/docs.rs</RepoFile> to `"roadmap"`. Until then, validate the sidebar with `bun run check:roadmap-sidebar` from `docs/`. If Workstream B is implemented as a `cargo xtask lint files` subcommand, this is the same file to extend.
+
+## Why it matters
+
+Reviewability is the bottleneck on a large repo, and it decays silently. Stricter Clippy plus a file-size ratchet turn "keep it small" from a habit the maintainer has to remember into a gate CI enforces on every PR — and the decomposition workstream brings the existing code under that gate. The payoff is concrete: a reviewer asked "is the Codex usage parser correct?" reads `usage/codex.rs` (~600L), not 6374L of mixed-provider code, and no future PR can quietly recreate the 6374-line file.
+
+## Related files
+
+- <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> — `[workspace.lints]`, the lint levels to change (Workstream A)
+- <RepoFile path="clippy.toml">clippy.toml</RepoFile> — Clippy thresholds to add/tune (Workstream A)
+- <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> — clippy gate + where the file-size gate is wired (Workstream B)
+- <RepoFile path="crates/jackin-xtask/src/docs.rs">crates/jackin-xtask/src/docs.rs</RepoFile> — candidate home for a `lint files` subcommand; also the broken roadmap path
+- <RepoFile path="crates/jackin-capsule/src/usage.rs">crates/jackin-capsule/src/usage.rs</RepoFile> — largest offender, first decomposition slice (6374L)
+
+Coupled to [Unify settings & editor surfaces](/roadmap/unify-settings-editor-surfaces/) (drives the console targets), and continues the now-retired Phase 2 file-split program.

@@ -2,6 +2,7 @@
   "title": "Codebase health",
   "defaultOpen": false,
   "pages": [
+    "../codebase-health-enforcement",
     "../pr-verification",
     "../rust-ci-tooling",
     "../test-infra-behavioral-specs",

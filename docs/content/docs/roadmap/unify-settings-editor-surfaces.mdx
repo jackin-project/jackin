@@ -131,7 +131,7 @@ Infra modals that the editor shares with non-auth flows (`TextInput` for mount d
 
 ## Module placement
 
-Per the [TUI architecture](/reference/tui/): shared config-surface model + the `ConfigModal` enum live in `jackin-console` beside the existing shared components; pure decision/flatten logic lives in the screens' update modules (already partly there); the dispatch/apply helpers move into a shared `jackin-console` update module over time. The current handlers live in the app crate's input layer (<RepoFile path="crates/jackin-console/src/tui/input/editor.rs">input/editor.rs</RepoFile>, <RepoFile path="crates/jackin-console/src/tui/input/global_mounts.rs">input/global_mounts.rs</RepoFile>); the move toward the `jackin-console` update layer is staged so each slice stays small and reviewable. This also relates to the existing [Split input/editor.rs](/roadmap/split-input-editor/) and [Split app/mod](/roadmap/split-app-mod/) items — the unification should land before or alongside those splits so the splits divide one implementation, not two.
+Per the [TUI architecture](/reference/tui/): shared config-surface model + the `ConfigModal` enum live in `jackin-console` beside the existing shared components; pure decision/flatten logic lives in the screens' update modules (already partly there); the dispatch/apply helpers move into a shared `jackin-console` update module over time. The current handlers live in the app crate's input layer (<RepoFile path="crates/jackin-console/src/tui/input/editor.rs">input/editor.rs</RepoFile>, <RepoFile path="crates/jackin-console/src/tui/input/global_mounts.rs">input/global_mounts.rs</RepoFile>); the move toward the `jackin-console` update layer is staged so each slice stays small and reviewable. This also relates to the [Codebase health: enforce reviewability](/roadmap/codebase-health-enforcement/) decomposition work — the unification should land before or alongside the console-model splits so they divide one implementation, not two.
 
 ## Feasibility
 
@@ -202,4 +202,4 @@ Cross-cutting and remaining domains (each its own commit):
 
 - [Auth source-folder sync spec](/reference/developer-reference/specs/auth-source-folder-sync/) — the behavioral invariants the auth slice must preserve.
 - [Auth reliability program](/roadmap/auth-reliability-program/) — the feature whose Phase 1 hardening surfaced the duplication.
-- [Split input/editor.rs](/roadmap/split-input-editor/) and [Split app/mod](/roadmap/split-app-mod/) — sibling codebase-health items on the same input/modal layer; sequence the unification with these so the splits divide one implementation.
+- [Codebase health: enforce reviewability](/roadmap/codebase-health-enforcement/) — the decomposition program covering the console models; sequence the unification with it so the splits divide one implementation.
