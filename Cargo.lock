@@ -2856,7 +2856,6 @@ dependencies = [
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
- "jackin-launch",
  "reqwest",
  "serde",
  "serde_json",

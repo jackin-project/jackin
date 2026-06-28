@@ -117,8 +117,8 @@ impl RichDriver {
                     }
                     let snapshot = match view.lock() {
                         Ok(mut v) => {
-                            let build_log_lines = crate::build_log::snapshot();
-                            let build_log_active = crate::build_log::is_active();
+                            let build_log_lines = jackin_diagnostics::build_log::snapshot();
+                            let build_log_active = jackin_diagnostics::build_log::is_active();
                             let build_log_area = if v.build_log_open {
                                 Some(current_terminal_area())
                             } else {

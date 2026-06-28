@@ -1850,7 +1850,7 @@ async fn ensure_local_role_base(
         p.stage_progress(LaunchStage::DerivedImage, "Building role base image");
     }
     emit_non_containerd_image_store_note(runner).await;
-    jackin_launch::build_log::begin();
+    jackin_diagnostics::build_log::begin();
     let build_options = RunOptions {
         capture_stderr: true,
         capture_stdout: true,
@@ -1865,7 +1865,7 @@ async fn ensure_local_role_base(
         Some(p) => p.while_waiting(build_future).await,
         None => build_future.await,
     };
-    jackin_launch::build_log::end();
+    jackin_diagnostics::build_log::end();
     jackin_diagnostics::active_timing_done(
         "derived image",
         "build_role_base",
@@ -2181,7 +2181,7 @@ pub(super) async fn build_agent_image(
     // process-global ACTIVE flag is reset before the next launch. The
     // `while_waiting` branch returns `Err` on cancel, which we capture in
     // `build_result` and only `?`-propagate after calling `end()`.
-    jackin_launch::build_log::begin();
+    jackin_diagnostics::build_log::begin();
     jackin_diagnostics::active_timing_started("derived image", "docker_build", None);
     let build_options = RunOptions {
         capture_stderr: true,
@@ -2202,7 +2202,7 @@ pub(super) async fn build_agent_image(
         Some(p) => p.while_waiting(build_future).await,
         None => build_future.await,
     };
-    jackin_launch::build_log::end();
+    jackin_diagnostics::build_log::end();
     jackin_diagnostics::active_timing_done(
         "derived image",
         "docker_build",

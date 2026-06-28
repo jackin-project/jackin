@@ -494,12 +494,12 @@ fn build_log_lines_wrap_with_visible_continuation() {
 
 #[test]
 fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
-    let _guard = jackin_launch::build_log::TEST_LOCK.lock().unwrap();
-    jackin_launch::build_log::begin();
-    jackin_launch::build_log::push_line(
+    let _guard = jackin_diagnostics::build_log::TEST_LOCK.lock().unwrap();
+    jackin_diagnostics::build_log::begin();
+    jackin_diagnostics::build_log::push_line(
         "#4 FROM docker.io/projectjackin/jackin-the-architect:latest@sha256:08d62f4027f941d8f5ee1742b6b0ba9e8a3e276ab7626967b0e1de27917a0e94",
     );
-    jackin_launch::build_log::end();
+    jackin_diagnostics::build_log::end();
 
     let backend = TestBackend::new(56, 12);
     let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -513,12 +513,12 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
         build_log_open: true,
         build_log_scroll: jackin_tui::scroll::TailScroll::default(),
         build_log_scroll_dragging: false,
-        build_log_lines: jackin_launch::build_log::snapshot(),
+        build_log_lines: jackin_diagnostics::build_log::snapshot(),
         build_log_wrapped_lines: Vec::new(),
         build_log_wrapped_width: 0,
         build_log_viewport_height: 0,
         build_log_filled: 0,
-        build_log_active: jackin_launch::build_log::is_active(),
+        build_log_active: jackin_diagnostics::build_log::is_active(),
         footer_hover: StatusFooterHover::default(),
         label_transition: None,
         failure_copy_hover: None,
@@ -551,15 +551,15 @@ fn build_log_dialog_wraps_long_lines_without_horizontal_scrollbar() {
 
 #[test]
 fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
-    let _guard = jackin_launch::build_log::TEST_LOCK.lock().unwrap();
-    jackin_launch::build_log::begin();
+    let _guard = jackin_diagnostics::build_log::TEST_LOCK.lock().unwrap();
+    jackin_diagnostics::build_log::begin();
     for idx in 0..20 {
-        jackin_launch::build_log::push_line(&format!("line {idx:02}"));
+        jackin_diagnostics::build_log::push_line(&format!("line {idx:02}"));
     }
-    jackin_launch::build_log::end();
+    jackin_diagnostics::build_log::end();
 
     let area = Rect::new(0, 0, 40, 8);
-    let lines = jackin_launch::build_log::snapshot();
+    let lines = jackin_diagnostics::build_log::snapshot();
     let metrics = build_log_scroll_metrics(area, &lines);
     let filled = metrics.filled;
     assert!(filled > 1);
@@ -578,7 +578,7 @@ fn build_log_scroll_down_from_saturated_top_moves_visible_content() {
         build_log_wrapped_width: 0,
         build_log_viewport_height: 0,
         build_log_filled: 0,
-        build_log_active: jackin_launch::build_log::is_active(),
+        build_log_active: jackin_diagnostics::build_log::is_active(),
         footer_hover: StatusFooterHover::default(),
         label_transition: None,
         failure_copy_hover: None,
