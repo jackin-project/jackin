@@ -1421,6 +1421,13 @@ nav.landing-topnav .landing-star {
   outline: 2px solid var(--landing-accent);
   outline-offset: 2px;
 }
+/* The toggle floats over the hero's fade-to-white in light mode and inherits the
+   hero's heavy dark border. Give it a neutral light pill with a subtle lift. */
+:root[data-theme='light'] .landing-theme-toggle {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(17, 24, 39, 0.16);
+  box-shadow: 0 2px 8px rgba(17, 24, 39, 0.08);
+}
 
 .landing-hero-stage {
   position: relative;
