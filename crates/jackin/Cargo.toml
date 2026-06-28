@@ -62,6 +62,7 @@ jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
 [dev-dependencies]
 assert_cmd = "=2.2.2"
 jackin-config = { version = "0.6.0-dev", path = "../jackin-config", features = ["test-support"] }
+jackin-env = { version = "0.6.0-dev", path = "../jackin-env", features = ["test-support"] }
 jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime", features = ["test-support"] }
 criterion = { version = "=0.8.2", features = ["html_reports"] }
 predicates = "=3.1.4"
@@ -84,6 +85,10 @@ e2e = []
 # `otlp` enables the OpenTelemetry OTLP span, log, and metric export layer in
 # jackin-diagnostics (runtime-gated on the endpoint env vars above).
 otlp = ["jackin-diagnostics/otlp"]
+# Enables `crate::operator_env::test_support::*` (the shared FakeOpWriter
+# fake used by rotate-cleanup tests). Mirrors the test-support features
+# in jackin-config, jackin-env, and jackin-runtime.
+test-support = ["jackin-env/test-support"]
 
 [lints]
 workspace = true

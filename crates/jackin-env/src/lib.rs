@@ -16,6 +16,9 @@ pub mod picker;
 pub mod resolve;
 pub mod token_setup;
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
+
 pub use env_layer::{EnvLayer, merge_layers};
 pub use env_resolver::{
     EnvPrompter, PromptResult, ResolvedEnv, resolve_env, resolve_env_with_overrides,

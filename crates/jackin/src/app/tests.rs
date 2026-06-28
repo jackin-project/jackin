@@ -663,96 +663,10 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
     assert!(out.contains("chainargos/*"), "{out}");
 }
 
-/// Test fake for [`crate::operator_env::OpWriteRunner`] used by
-/// the rotate-cleanup tests below.
-struct FakeOpWriter {
-    /// Records every `item_delete` call as `(vault, item, account)`
-    /// so the rotate-cleanup tests can assert the per-call account
-    /// override (the account the prior item lives in).
-    deletes: std::cell::RefCell<Vec<(String, String, Option<String>)>>,
-    fail_delete: bool,
-    /// Tags returned by `item_tags`. Defaults to jackin-owned so the
-    /// rotate-cleanup tests exercise the delete; set empty to model an
-    /// operator-adopted item the delete guard must spare.
-    tags: Vec<String>,
-    /// When `true`, `item_tags` returns `Err` to exercise the rotate
-    /// guard's fail-safe (skip delete) path.
-    fail_tags: bool,
-}
-impl FakeOpWriter {
-    fn new() -> Self {
-        Self {
-            deletes: std::cell::RefCell::new(Vec::new()),
-            fail_delete: false,
-            tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_owned()],
-            fail_tags: false,
-        }
-    }
-    fn failing() -> Self {
-        Self {
-            deletes: std::cell::RefCell::new(Vec::new()),
-            fail_delete: true,
-            tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_owned()],
-            fail_tags: false,
-        }
-    }
-    fn adopted() -> Self {
-        Self {
-            deletes: std::cell::RefCell::new(Vec::new()),
-            fail_delete: false,
-            tags: Vec::new(),
-            fail_tags: false,
-        }
-    }
-    fn tag_read_fails() -> Self {
-        Self {
-            deletes: std::cell::RefCell::new(Vec::new()),
-            fail_delete: false,
-            tags: Vec::new(),
-            fail_tags: true,
-        }
-    }
-}
-impl crate::operator_env::OpWriteRunner for FakeOpWriter {
-    fn item_create(
-        &self,
-        _params: crate::operator_env::OpItemCreateParams<'_>,
-    ) -> Result<crate::operator_env::OpRef> {
-        anyhow::bail!("rotate-cleanup tests do not exercise item_create")
-    }
-    fn item_delete(&self, item_id: &str, vault_id: &str, account: Option<&str>) -> Result<()> {
-        self.deletes.borrow_mut().push((
-            vault_id.to_owned(),
-            item_id.to_owned(),
-            account.map(str::to_owned),
-        ));
-        if self.fail_delete {
-            anyhow::bail!("simulated item_delete failure");
-        }
-        Ok(())
-    }
-    fn item_field_set(
-        &self,
-        _item_id: &str,
-        _vault_id: &str,
-        _target: &crate::operator_env::FieldTarget,
-        _value: &str,
-        _section: Option<&str>,
-    ) -> Result<crate::operator_env::OpRef> {
-        anyhow::bail!("rotate-cleanup tests do not exercise item_field_set")
-    }
-    fn item_tags(
-        &self,
-        _item_id: &str,
-        _vault_id: &str,
-        _account: Option<&str>,
-    ) -> Result<Vec<String>> {
-        if self.fail_tags {
-            anyhow::bail!("simulated item_tags read failure");
-        }
-        Ok(self.tags.clone())
-    }
-}
+/// Test fake for [`crate::operator_env::OpWriteRunner`] used by the
+/// rotate-cleanup tests below. Shared with `jackin-env` via
+/// `jackin_env::test_support::FakeOpWriter` (Phase 2 dedup).
+use crate::operator_env::test_support::FakeOpWriter;
 
 /// Rotate's prior-item cleanup parses the prior op:// reference,
 /// issues a delete with the parsed UUIDs, and returns Ok.
@@ -776,7 +690,11 @@ fn delete_prior_op_item_with_op_ref_calls_writer_with_parsed_uuids() {
     delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
     assert_eq!(
         *writer.deletes.borrow(),
-        vec![("VAULT_UUID".to_owned(), "OLD_ITEM".to_owned(), None)],
+        vec![("VAULT_UUID".to_owned(), "OLD_ITEM".to_owned())],
+    );
+    assert_eq!(
+        *writer.delete_accounts.borrow(),
+        vec![None],
     );
 }
 
@@ -860,11 +778,11 @@ fn delete_prior_op_item_targets_prior_refs_account() {
     delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
     assert_eq!(
         *writer.deletes.borrow(),
-        vec![(
-            "VAULT_UUID".to_owned(),
-            "OLD_ITEM".to_owned(),
-            Some("account-A".to_owned()),
-        )],
+        vec![("VAULT_UUID".to_owned(), "OLD_ITEM".to_owned())],
+    );
+    assert_eq!(
+        *writer.delete_accounts.borrow(),
+        vec![Some("account-A".to_owned())],
         "delete must target the account the prior item actually lives in"
     );
 }

@@ -24,3 +24,9 @@ pub use jackin_env::{
     print_launch_diagnostic, resolve_op_uri_to_ref, resolve_operator_env,
     resolve_operator_env_with, validate_reserved_names,
 };
+
+/// Re-export of `jackin_env::test_support` (the shared `FakeOpWriter`
+/// fake used by rotate-cleanup tests). Available under `test-support`
+/// or when compiling tests (dev-dependencies enable the feature).
+#[cfg(any(test, feature = "test-support"))]
+pub use jackin_env::test_support;

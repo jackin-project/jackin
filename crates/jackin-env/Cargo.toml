@@ -33,5 +33,11 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tempfile = "=3.27.0"
 toml = "=1.1.2"
 
+[features]
+# Exposes `jackin_env::test_support::*` helpers to consumers that enable
+# `jackin-env/test-support` from their own test-support feature (mirrors
+# the pattern in `jackin-config` and `jackin-runtime`).
+test-support = []
+
 [lints]
 workspace = true
