@@ -2429,7 +2429,7 @@ fn amp_cli_usage_parser_maps_free_and_credit_rows() {
 
 #[test]
 fn cli_output_collector_treats_reaped_child_as_success() {
-    let output = collect_cli_output(
+    let output = format::collect_cli_output(
         "amp",
         None,
         thread::spawn(|| Ok("usage rows".to_owned())),

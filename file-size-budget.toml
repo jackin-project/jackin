@@ -30,7 +30,7 @@ test_cap = 10000
 # Grandfathered production files (current line counts; may only decrease):
 [[production]]
 path = "crates/jackin-capsule/src/usage.rs"
-lines = 6374
+lines = 5983
 
 [[production]]
 path = "crates/jackin-console/src/tui/app.rs"

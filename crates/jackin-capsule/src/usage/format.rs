@@ -9,11 +9,13 @@
 //! helper directly; tests under `usage/tests.rs` see them through
 //! `super::*` and do not need their own re-exports.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
-use serde_json;
-
-use super::now_epoch;
+use chrono::{DateTime, Local, TimeZone, Utc};
 
 pub(super) fn env_value(name: &str) -> Option<String> {
     std::env::var(name)
@@ -210,11 +212,11 @@ pub(super) fn format_amount_with_unit(value: f64, unit: &str) -> String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CliOutput {
-    success: bool,
-    exit_code: Option<i32>,
-    stdout: String,
-    stderr: String,
+pub(super) struct CliOutput {
+    pub(super) success: bool,
+    pub(super) exit_code: Option<i32>,
+    pub(super) stdout: String,
+    pub(super) stderr: String,
 }
 
 pub(super) fn run_cli_with_timeout(command: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
@@ -388,6 +390,16 @@ pub(super) fn oauth_origin(path: &Path) -> String {
         "OAuth · {}",
         jackin_tui::shorten_home(&path.to_string_lossy())
     )
+}
+pub(super) fn titlecase_ascii(value: &str) -> String {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    let mut out = String::new();
+    out.extend(first.to_uppercase());
+    out.push_str(chars.as_str());
+    out
 }
 pub(super) fn compact_count(value: u64) -> String {
     if value >= 1_000_000_000 {
