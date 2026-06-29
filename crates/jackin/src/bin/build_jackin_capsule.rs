@@ -43,8 +43,8 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{Context, Result};
-use jackin::binary_artifact::{chmod_executable, container_arch};
-use jackin::capsule_binary::REQUIRED_VERSION;
+use jackin_image::binary_artifact::{chmod_executable, container_arch};
+use jackin_image::capsule_binary::REQUIRED_VERSION;
 use jackin::paths::JackinPaths;
 
 // Compile-time crate manifest dir. Now that the binary lives in crates/jackin/,

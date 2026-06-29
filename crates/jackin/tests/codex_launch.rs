@@ -129,7 +129,7 @@ model = "gpt-5"
     .unwrap();
     let validated = jackin::repo::validate_role_repo(&repo_dir).unwrap();
     let build =
-        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None, None)
+        jackin_image::derived_image::create_derived_build_context(&repo_dir, &validated, None, None)
             .unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
     assert_cached_agent_install_blocks(&dockerfile);

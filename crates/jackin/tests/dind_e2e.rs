@@ -23,7 +23,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use fs2::FileExt as _;
-use jackin::derived_image::shell_quote;
+use jackin_image::derived_image::shell_quote;
 use jackin::instance::naming::is_dns_label;
 use tempfile::tempdir;
 

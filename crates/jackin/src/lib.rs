@@ -18,14 +18,14 @@
 )]
 
 pub mod agent;
-pub mod agent_binary;
+
 mod app;
-pub mod binary_artifact;
-pub mod capsule_binary;
+
+
 pub mod cli;
 pub mod config;
 pub mod console;
-pub mod derived_image;
+
 pub(crate) mod diagnostics;
 pub mod docker;
 pub mod docker_client;
