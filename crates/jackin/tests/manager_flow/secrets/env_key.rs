@@ -97,7 +97,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             src: host_path.clone(),
             dst: host_path,
             readonly: false,
-            isolation: jackin::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         }],
         roles,
         ..Default::default()

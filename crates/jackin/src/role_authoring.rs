@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 
 use crate::cli::role::{RoleCommand, RoleCreateArgs, RolePublishLabelsArgs, RoleRepoPathArgs};
-use crate::manifest::migrations::CURRENT_MANIFEST_VERSION;
 use jackin_core::RoleSelector;
+use jackin_manifest::migrations::CURRENT_MANIFEST_VERSION;
 use jackin_manifest::repo::validate_role_repo;
 use jackin_manifest::repo_contract::{DOCKERFILE_NAME, MANIFEST_FILENAME};
 
@@ -79,7 +79,7 @@ fn publish_labels(args: RolePublishLabelsArgs) -> anyhow::Result<()> {
 fn migrate(args: RoleRepoPathArgs) -> anyhow::Result<()> {
     let repo_dir = resolve_repo_path(args.path)?;
     let manifest_path = repo_dir.join(MANIFEST_FILENAME);
-    match crate::manifest::migrations::migrate_manifest_file(&manifest_path)? {
+    match jackin_manifest::migrations::migrate_manifest_file(&manifest_path)? {
         Some((old, new)) => println!("Migrated manifest {old} -> {new}"),
         None => println!("Manifest already at current version"),
     }

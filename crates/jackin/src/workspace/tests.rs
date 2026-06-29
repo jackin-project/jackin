@@ -50,7 +50,7 @@ fn workspace_with_workdir_and_dst(workdir: &str, dst: &str) -> WorkspaceConfig {
             src: "/tmp/src".to_owned(),
             dst: dst.to_owned(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         }],
         ..Default::default()
     }
@@ -251,13 +251,13 @@ fn validate_workdir_parent_of_any_mount_dst() {
                 src: "/tmp/a".to_owned(),
                 dst: "/other/path".to_owned(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             },
             MountConfig {
                 src: "/tmp/b".to_owned(),
                 dst: "/workspace/project".to_owned(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             },
         ],
         ..Default::default()
@@ -265,7 +265,7 @@ fn validate_workdir_parent_of_any_mount_dst() {
     validate_workspace_config("test", &ws).unwrap();
 }
 
-use crate::isolation::MountIsolation;
+use jackin_core::MountIsolation;
 
 #[test]
 fn mount_config_defaults_isolation_to_shared() {

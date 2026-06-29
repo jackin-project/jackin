@@ -7,7 +7,7 @@ use clap::{Args, Subcommand};
 use std::str::FromStr;
 
 use super::{BANNER, HELP_STYLES};
-use crate::isolation::MountIsolation;
+use jackin_core::MountIsolation;
 
 fn parse_mount_isolation(s: &str) -> anyhow::Result<(String, MountIsolation)> {
     let (dst, ty) = s

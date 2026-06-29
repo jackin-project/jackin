@@ -82,7 +82,7 @@ impl EnvPrompter for SentinelPrompter {
 
 #[test]
 fn sentinel_role_covers_supported_agents_hooks_and_env_shapes() {
-    let manifest = jackin::manifest::load_role_manifest(&sentinel_dir()).unwrap();
+    let manifest = jackin_manifest::load_role_manifest(&sentinel_dir()).unwrap();
 
     assert_eq!(
         manifest.supported_agents(),
@@ -120,7 +120,7 @@ fn sentinel_role_covers_supported_agents_hooks_and_env_shapes() {
 
 #[test]
 fn sentinel_env_resolution_exercises_defaults_interpolation_and_skip_cascade() {
-    let manifest = jackin::manifest::load_role_manifest(&sentinel_dir()).unwrap();
+    let manifest = jackin_manifest::load_role_manifest(&sentinel_dir()).unwrap();
     let prompter = SentinelPrompter::new();
 
     let resolved = resolve_env(&manifest.env, &prompter).unwrap();

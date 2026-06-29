@@ -23,8 +23,6 @@ pub mod cli;
 pub mod console;
 
 pub mod error;
-pub mod isolation;
-pub mod manifest;
 pub(crate) mod preflight;
 pub mod prompt;
 pub mod role_authoring;

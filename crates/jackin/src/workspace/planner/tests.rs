@@ -7,7 +7,7 @@ fn mount(src: &str, dst: &str) -> MountConfig {
         src: src.to_owned(),
         dst: dst.to_owned(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     }
 }
 
@@ -144,7 +144,7 @@ fn covers_is_false_for_equal_mounts() {
         src: "/a".into(),
         dst: "/a".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     let b = a.clone();
     assert!(!covers(&a, &b));
@@ -156,13 +156,13 @@ fn covers_is_true_for_exact_ancestor_with_matching_suffix() {
         src: "/a".into(),
         dst: "/a".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     let child = MountConfig {
         src: "/a/b".into(),
         dst: "/a/b".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     assert!(covers(&parent, &child));
 }
@@ -173,13 +173,13 @@ fn covers_is_true_for_deep_ancestor_with_matching_suffix() {
         src: "/a".into(),
         dst: "/a".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     let child = MountConfig {
         src: "/a/b/c/d".into(),
         dst: "/a/b/c/d".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     assert!(covers(&parent, &child));
 }
@@ -190,13 +190,13 @@ fn covers_is_true_when_src_and_dst_differ_but_offsets_match() {
         src: "/host/root".into(),
         dst: "/container/root".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     let child = MountConfig {
         src: "/host/root/sub".into(),
         dst: "/container/root/sub".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     assert!(covers(&parent, &child));
 }
@@ -207,13 +207,13 @@ fn covers_is_false_when_src_nests_but_dst_offsets_differ() {
         src: "/host/root".into(),
         dst: "/container/a".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     let child = MountConfig {
         src: "/host/root/sub".into(),
         dst: "/container/b/sub".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     assert!(!covers(&parent, &child));
 }
@@ -224,13 +224,13 @@ fn covers_is_false_when_src_does_not_nest() {
         src: "/a".into(),
         dst: "/a".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     let b = MountConfig {
         src: "/b".into(),
         dst: "/b".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     assert!(!covers(&a, &b));
 }
@@ -242,13 +242,13 @@ fn covers_is_false_for_sibling_prefix_match() {
         src: "/a".into(),
         dst: "/a".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     let child = MountConfig {
         src: "/a-x".into(),
         dst: "/a-x".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     assert!(!covers(&parent, &child));
 }
@@ -259,13 +259,13 @@ fn covers_normalizes_trailing_slashes() {
         src: "/a/".into(),
         dst: "/a/".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     let child = MountConfig {
         src: "/a/b".into(),
         dst: "/a/b".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     assert!(covers(&parent, &child));
 }
@@ -277,13 +277,13 @@ fn covers_handles_different_readonly_flags() {
         src: "/a".into(),
         dst: "/a".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     let child = MountConfig {
         src: "/a/b".into(),
         dst: "/a/b".into(),
         readonly: true,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     };
     assert!(covers(&parent, &child));
 }
@@ -293,7 +293,7 @@ fn mk(src: &str, dst: &str, ro: bool) -> MountConfig {
         src: src.into(),
         dst: dst.into(),
         readonly: ro,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     }
 }
 
@@ -465,31 +465,22 @@ fn apply_isolation_overrides_updates_matching_dst() {
             src: "/tmp/a".into(),
             dst: "/workspace/x".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         },
         MountConfig {
             src: "/tmp/b".into(),
             dst: "/workspace/y".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         },
     ];
     apply_isolation_overrides(
         &mut mounts,
-        &[(
-            "/workspace/y".into(),
-            crate::isolation::MountIsolation::Worktree,
-        )],
+        &[("/workspace/y".into(), jackin_core::MountIsolation::Worktree)],
     )
     .unwrap();
-    assert_eq!(
-        mounts[1].isolation,
-        crate::isolation::MountIsolation::Worktree
-    );
-    assert_eq!(
-        mounts[0].isolation,
-        crate::isolation::MountIsolation::Shared
-    );
+    assert_eq!(mounts[1].isolation, jackin_core::MountIsolation::Worktree);
+    assert_eq!(mounts[0].isolation, jackin_core::MountIsolation::Shared);
 }
 
 #[test]
@@ -498,11 +489,11 @@ fn apply_isolation_overrides_unknown_dst_errors() {
         src: "/tmp/a".into(),
         dst: "/workspace/x".into(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     }];
     let err = apply_isolation_overrides(
         &mut mounts,
-        &[("/nope".into(), crate::isolation::MountIsolation::Worktree)],
+        &[("/nope".into(), jackin_core::MountIsolation::Worktree)],
     )
     .unwrap_err();
     assert!(err.to_string().contains("unknown destination `/nope`"));

@@ -478,13 +478,13 @@ fn workspace_show_includes_isolation_column() {
                 src: worktree_src.display().to_string(),
                 dst: "/workspace/jackin".into(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Worktree,
+                isolation: jackin_core::MountIsolation::Worktree,
             },
             crate::workspace::MountConfig {
                 src: cache_src.display().to_string(),
                 dst: "/workspace/cache".into(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             },
         ],
         allowed_roles: vec![],
@@ -531,7 +531,7 @@ fn workspace_show_splits_workspace_and_global_mount_groups() {
             src: global_src.display().to_string(),
             dst: "/home/agent/.gradle/caches".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         },
         None,
     );
@@ -542,7 +542,7 @@ fn workspace_show_splits_workspace_and_global_mount_groups() {
             src: work_src.display().to_string(),
             dst: "/workspace/jackin".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         }],
         allowed_roles: vec!["agent-smith".into()],
         ..Default::default()
@@ -607,7 +607,7 @@ fn workspace_show_explains_ambiguous_role_scoped_global_mounts() {
             src: global_src.display().to_string(),
             dst: "/secrets".into(),
             readonly: true,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         },
         Some("alpha"),
     );
@@ -641,7 +641,7 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
             src: global_src.display().to_string(),
             dst: "/secrets".into(),
             readonly: true,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         },
         Some("chainargos/*"),
     );

@@ -76,7 +76,7 @@ pub(super) fn handle(
                     src: resolved_src,
                     dst: dst.clone(),
                     readonly,
-                    isolation: crate::isolation::MountIsolation::Shared,
+                    isolation: jackin_core::MountIsolation::Shared,
                 };
                 crate::workspace::validate_mounts(std::slice::from_ref(&mount))?;
                 let sensitive =

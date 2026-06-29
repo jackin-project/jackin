@@ -252,7 +252,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             src: host_path.clone(),
             dst: host_path,
             readonly: false,
-            isolation: jackin::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         }],
         roles,
         ..Default::default()

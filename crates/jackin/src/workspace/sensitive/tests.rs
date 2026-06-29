@@ -6,7 +6,7 @@ fn mount(src: &str) -> MountConfig {
         src: src.to_owned(),
         dst: "/container/path".to_owned(),
         readonly: false,
-        isolation: crate::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     }
 }
 

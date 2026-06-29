@@ -50,7 +50,7 @@ fn seed_override_picker_workspace(
             src: host_path.clone(),
             dst: host_path,
             readonly: false,
-            isolation: jackin::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         }],
         allowed_roles: allowed.iter().map(|s| (*s).to_owned()).collect(),
         roles: roles_map,

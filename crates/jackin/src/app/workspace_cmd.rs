@@ -405,9 +405,11 @@ pub(super) async fn handle(
             // exist. Connecting first ensures the daemon is reachable
             // before we query it; skip the connection entirely when there
             // is nothing to check (common in fresh or test environments).
-            let has_records =
-                crate::isolation::state::list_records_for_workspace(&paths.data_dir, &name)
-                    .is_ok_and(|r| !r.is_empty());
+            let has_records = jackin_runtime::isolation::state::list_records_for_workspace(
+                &paths.data_dir,
+                &name,
+            )
+            .is_ok_and(|r| !r.is_empty());
             let detection = if has_records {
                 let docker = connect_docker()?;
                 crate::runtime::drift::detect_workspace_edit_drift(
@@ -441,7 +443,7 @@ pub(super) async fn handle(
                 }
                 for rec in &detection.stopped_records {
                     let container_dir = paths.data_dir.join(&rec.container_name);
-                    crate::isolation::cleanup::force_cleanup_isolated(
+                    jackin_runtime::isolation::cleanup::force_cleanup_isolated(
                         rec,
                         &container_dir,
                         &mut runner,

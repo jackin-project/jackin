@@ -353,7 +353,8 @@ fn hardline_candidate_prompt_label(paths: &JackinPaths, candidate: &HardlineCand
     let Ok(manifest) = instance::InstanceManifest::read(&state_dir) else {
         return format!("{container} - {docker_state} - {session_summary}");
     };
-    let isolation = crate::isolation::state::MountSummary::prompt_label_for_state_dir(&state_dir);
+    let isolation =
+        jackin_runtime::isolation::state::MountSummary::prompt_label_for_state_dir(&state_dir);
     format!(
         "{} - {} - {} - agent:{} - status:{} - {} - {} - {}",
         manifest.container_base,
@@ -543,7 +544,7 @@ pub(crate) fn supported_agents_requiring_prompt(
         return None;
     }
     let cached = jackin_manifest::repo::CachedRepo::new(paths, selector);
-    let supported = crate::manifest::load_role_manifest(&cached.repo_dir)
+    let supported = jackin_manifest::load_role_manifest(&cached.repo_dir)
         .ok()?
         .supported_agents();
     (supported.len() >= 2).then_some(supported)
