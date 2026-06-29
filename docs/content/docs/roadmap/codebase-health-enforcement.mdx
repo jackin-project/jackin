@@ -195,6 +195,8 @@ Every PR under this item is structure-only and must land with the existing test 
 
 The ordered, followable backbone. **Each numbered slice below is one shippable, behavior-preserving PR.** Slices are grouped into phases by risk and dependency; within a phase the order is flexible unless a slice names a prerequisite. Every slice satisfies the **Per-PR checklist** and the **structure-only** invariant. Status: `[x]` shipped on this branch, `[ ]` open.
 
+> **Executor-grade detail lives in the playbook.** This section is the *index*; the mechanical, copy-pasteable per-slice steps (exact files, symbols, line ranges, commands, and the open-decision blockers each slice's code investigation surfaced) are in <RepoFile path="plans/codebase-health-playbook.md">plans/codebase-health-playbook.md</RepoFile> — written so a simple executor can run one slice with no improvisation. Read its **Executor contract** and **Blockers & open decisions** first. Keep the two in sync: this index owns ordering and status; the playbook owns the steps.
+
 ### Per-PR checklist (applies to every slice)
 
 - [ ] Scope is exactly one slice — structure-only: no logic, control-flow, behavior, or performance change.
