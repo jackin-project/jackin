@@ -53,6 +53,23 @@ pub const LABEL_IMAGE_RECIPE_VERSION: &str = "jackin.image.recipe.version";
 /// Diagnostic — not part of the recipe hash.
 pub const LABEL_IMAGE_AGENT_VERSION_PREFIX: &str = "jackin.agent";
 
+/// Capsule binary version baked into the derived image. Lifted from
+/// `jackin-runtime::runtime::image::LABEL_IMAGE_CAPSULE_VERSION` as
+/// part of the D1 PART E `image_recipe` carve — it's an
+/// image-naming label, not a runtime concern.
+pub const LABEL_IMAGE_CAPSULE_VERSION: &str = "jackin.capsule.version";
+
+/// Role-manifest schema version baked into the derived image. Lifted
+/// from `jackin-runtime::runtime::image::LABEL_IMAGE_MANIFEST_VERSION`
+/// for the same reason as `LABEL_IMAGE_CAPSULE_VERSION`.
+pub const LABEL_IMAGE_MANIFEST_VERSION: &str = "jackin.manifest.version";
+
+/// Host-identity strategy baked into the derived image. Lifted from
+/// `jackin-runtime::runtime::image::HOST_IDENTITY_STRATEGY` — it's a
+/// recipe input (changes when the host-identity contract
+/// changes), not a runtime label.
+pub const HOST_IDENTITY_STRATEGY: &str = "construct-agent-user-mutable-home-trees-v1";
+
 /// Number of leading hex chars of the role-repo commit SHA used in the image
 /// tag. Matches the short SHA GitHub renders (e.g. `4f38b4f`).
 const SHORT_GIT_SHA_LEN: usize = 7;

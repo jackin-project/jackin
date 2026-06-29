@@ -34,7 +34,8 @@ use jackin_launch_tui::build_log::DiagnosticsBuildLogSink;
 use jackin_manifest::repo::CachedRepo;
 
 use super::naming::{
-    LABEL_IMAGE_AGENT_VERSION_PREFIX, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION,
+    HOST_IDENTITY_STRATEGY, LABEL_IMAGE_AGENT_VERSION_PREFIX, LABEL_IMAGE_CAPSULE_VERSION,
+    LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_MANIFEST_VERSION,
     LABEL_IMAGE_RECIPE_HASH, LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name,
     image_name_for_branch, role_base_image_name, short_git_sha,
 };
@@ -47,14 +48,6 @@ use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 // `.config`, `.cargo`, `.rustup`, `.npm`) to group 0 + group write, so v6 images
 // may still fail runtime tool installs under `--user UID:GID`.
 const IMAGE_RECIPE_VERSION: &str = "v7";
-/// jackin-capsule version baked into the derived image.
-const LABEL_IMAGE_CAPSULE_VERSION: &str = "jackin.capsule.version";
-/// `jackin.role.toml` schema version (`version = "v1alpha4"`).
-const LABEL_IMAGE_MANIFEST_VERSION: &str = "jackin.manifest.version";
-/// Prefix for per-agent baked-binary version labels: `jackin.agent.<slug>.version`.
-/// Records the version of each agent binary jackin downloaded/cached locally and
-/// baked into the image. Diagnostic — not part of the recipe hash.
-const HOST_IDENTITY_STRATEGY: &str = "construct-agent-user-mutable-home-trees-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ImageInvalidationReason {
