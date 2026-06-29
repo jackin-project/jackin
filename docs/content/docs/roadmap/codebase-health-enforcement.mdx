@@ -238,7 +238,7 @@ Used by every C/E slice. Pure move; contents are not rewritten.
 ### Phase C — cold carves (ungated; use the recipe)
 
 - [x] **C1 — carve `jackin-host`** out of `jackin-runtime`: desktop, clipboard, caffeinate/keep-awake. Cold path — no perf gate. (Carve committed as `157a3420e`; un-park + dependency / helper follow-up landed alongside B2 batch 2 so the workspace builds.)
-- [ ] **C2 — carve `jackin-usage`** out of `jackin-capsule`: usage/pricing/telemetry + token monitors. Cold path — no perf gate. (Also retires the capsule's largest non-PID1 subsystem.)
+- [x] **C2 — carve `jackin-usage`** out of `jackin-capsule`: usage/pricing/telemetry + token monitors. Cold path — no perf gate. (Also retires the capsule's largest non-PID1 subsystem.)
 
 ### Phase D — collapse duplicated homes (P5)
 
