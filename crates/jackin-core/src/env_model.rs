@@ -181,21 +181,4 @@ pub fn topological_env_order(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn open_links_allowed_accepts_unset_and_non_deny_values() {
-        assert!(open_links_allowed(None));
-        assert!(open_links_allowed(Some("")));
-        assert!(open_links_allowed(Some("allow")));
-        assert!(open_links_allowed(Some("yes")));
-    }
-
-    #[test]
-    fn open_links_allowed_rejects_deny_values() {
-        for value in ["deny", "off", "no"] {
-            assert!(!open_links_allowed(Some(value)));
-        }
-    }
-}
+mod tests;
