@@ -2975,6 +2975,7 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "chrono",
+ "criterion",
  "crossterm",
  "dialoguer",
  "directories",

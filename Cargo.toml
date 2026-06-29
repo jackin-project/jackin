@@ -130,6 +130,7 @@ multiple_crate_versions = "allow"
 debug = 1
 
 [profile.release]
+lto = "thin"
 strip = "symbols"
 
 # Symbol-rich capsule build for triage. Select with:
