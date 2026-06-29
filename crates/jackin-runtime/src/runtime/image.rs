@@ -11,7 +11,11 @@ use anyhow::Context as _;
 use futures_util::future::try_join_all;
 use serde::Serialize;
 use sha2::{Digest as _, Sha256};
-use std::{collections::{BTreeMap, HashMap}, path::PathBuf, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use jackin_core::agent::Agent;
 use jackin_core::paths::JackinPaths;

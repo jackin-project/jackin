@@ -44,7 +44,7 @@ fn role_access_accepts_empty_shorthand_or_explicit_membership() {
 
 fn workspace_with_workdir_and_dst(workdir: &str, dst: &str) -> WorkspaceConfig {
     WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: workdir.to_owned(),
         mounts: vec![MountConfig {
             src: "/tmp/src".to_owned(),
@@ -59,7 +59,7 @@ fn workspace_with_workdir_and_dst(workdir: &str, dst: &str) -> WorkspaceConfig {
 #[test]
 fn workspace_serializes_default_agent_when_set() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/tmp/x".to_owned(),
         default_agent: Some(crate::agent::Agent::Codex),
         ..Default::default()
@@ -72,7 +72,7 @@ fn workspace_serializes_default_agent_when_set() {
 #[test]
 fn workspace_omits_default_agent_field_when_unset() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/tmp/x".to_owned(),
         ..Default::default()
     };
@@ -84,7 +84,7 @@ fn workspace_omits_default_agent_field_when_unset() {
 #[test]
 fn workspace_resolves_to_claude_when_unset() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/tmp/x".to_owned(),
         ..Default::default()
     };
@@ -94,7 +94,7 @@ fn workspace_resolves_to_claude_when_unset() {
 #[test]
 fn workspace_resolves_to_codex_when_set() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/tmp/x".to_owned(),
         default_agent: Some(crate::agent::Agent::Codex),
         ..Default::default()
@@ -244,7 +244,7 @@ fn validate_rejects_completely_unrelated_workdir() {
 #[test]
 fn validate_workdir_parent_of_any_mount_dst() {
     let ws = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace".to_owned(),
         mounts: vec![
             MountConfig {
@@ -476,7 +476,7 @@ fn isolation_layout_ignores_trailing_slashes() {
 fn validate_workspace_config_surfaces_isolation_layout_errors() {
     use std::collections::BTreeMap;
     let workspace = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/proj".into(),
         mounts: vec![
             worktree_mount("/tmp/a", "/workspace/proj"),
@@ -527,15 +527,15 @@ auth_forward = "api_key"
     let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
     assert_eq!(
         cfg.claude.as_ref().unwrap().auth_forward,
-        crate::config::AuthForwardMode::ApiKey,
+        jackin_config::AuthForwardMode::ApiKey,
     );
     assert_eq!(
         cfg.codex.as_ref().unwrap().auth_forward,
-        crate::config::AuthForwardMode::Sync,
+        jackin_config::AuthForwardMode::Sync,
     );
     assert_eq!(
         cfg.amp.as_ref().unwrap().auth_forward,
-        crate::config::AuthForwardMode::ApiKey,
+        jackin_config::AuthForwardMode::ApiKey,
     );
 }
 
@@ -585,15 +585,15 @@ auth_forward = "api_key"
     let smith = cfg.roles.get("smith").expect("smith role must be present");
     assert_eq!(
         smith.claude.as_ref().unwrap().auth_forward,
-        crate::config::AuthForwardMode::OAuthToken,
+        jackin_config::AuthForwardMode::OAuthToken,
     );
     assert_eq!(
         smith.codex.as_ref().unwrap().auth_forward,
-        crate::config::AuthForwardMode::Ignore,
+        jackin_config::AuthForwardMode::Ignore,
     );
     assert_eq!(
         smith.amp.as_ref().unwrap().auth_forward,
-        crate::config::AuthForwardMode::ApiKey,
+        jackin_config::AuthForwardMode::ApiKey,
     );
 }
 
@@ -735,7 +735,7 @@ fn workspace_op_ref_round_trips_account() {
         }),
     );
     let original = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/x".into(),
         env,
         ..Default::default()
@@ -767,7 +767,7 @@ fn workspace_op_ref_omits_account_when_none() {
         }),
     );
     let cfg = WorkspaceConfig {
-        version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/x".into(),
         env,
         ..Default::default()

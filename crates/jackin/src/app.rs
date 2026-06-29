@@ -41,19 +41,19 @@ use anyhow::Result;
 
 use crate::cli::role::ConsoleArgs;
 use crate::cli::{Cli, Command};
-use crate::config::{self, AppConfig};
 use crate::docker::ShellRunner;
 use crate::docker_client::{BollardDockerClient, DockerApi};
-use crate::instance;
-use crate::paths::JackinPaths;
 use crate::runtime;
 use crate::selector::RoleSelector;
 use crate::tui;
+use jackin_config::{self, AppConfig};
+use jackin_core::JackinPaths;
+use jackin_runtime::instance;
 
 use self::context::prompt_agent_choice_if_needed;
 
 /// Parse an `auth_forward` mode value as it arrived from the CLI.
-fn parse_auth_forward_mode_from_cli(raw: &str) -> Result<config::AuthForwardMode> {
+fn parse_auth_forward_mode_from_cli(raw: &str) -> Result<jackin_config::AuthForwardMode> {
     raw.parse().map_err(|e: String| anyhow::anyhow!("{e}"))
 }
 
@@ -255,10 +255,10 @@ fn announce_debug_run(diagnostics: &crate::diagnostics::RunDiagnostics) {
     }
 }
 
-fn workspace_env_scope(workspace: String, role: Option<String>) -> config::EnvScope {
+fn workspace_env_scope(workspace: String, role: Option<String>) -> jackin_config::EnvScope {
     match role {
-        Some(a) => config::EnvScope::WorkspaceRole { workspace, role: a },
-        None => config::EnvScope::Workspace(workspace),
+        Some(a) => jackin_config::EnvScope::WorkspaceRole { workspace, role: a },
+        None => jackin_config::EnvScope::Workspace(workspace),
     }
 }
 
@@ -361,11 +361,11 @@ const fn hardline_action_options() -> [(&'static str, HardlineAction); 4] {
 /// runtime in the no-context output until/unless an `--agent` flag is added.
 fn render_auth_show(config: &AppConfig) -> String {
     use std::fmt::Write as _;
-    let claude_mode = config::resolve_mode(config, crate::agent::Agent::Claude, "", "");
-    let codex_mode = config::resolve_mode(config, crate::agent::Agent::Codex, "", "");
-    let amp_mode = config::resolve_mode(config, crate::agent::Agent::Amp, "", "");
-    let kimi_mode = config::resolve_mode(config, crate::agent::Agent::Kimi, "", "");
-    let opencode_mode = config::resolve_mode(config, crate::agent::Agent::Opencode, "", "");
+    let claude_mode = jackin_config::resolve_mode(config, crate::agent::Agent::Claude, "", "");
+    let codex_mode = jackin_config::resolve_mode(config, crate::agent::Agent::Codex, "", "");
+    let amp_mode = jackin_config::resolve_mode(config, crate::agent::Agent::Amp, "", "");
+    let kimi_mode = jackin_config::resolve_mode(config, crate::agent::Agent::Kimi, "", "");
+    let opencode_mode = jackin_config::resolve_mode(config, crate::agent::Agent::Opencode, "", "");
     let mut out = String::new();
     let _unused = writeln!(out, "claude: {claude_mode}");
     let _unused = writeln!(out, "codex:  {codex_mode}");

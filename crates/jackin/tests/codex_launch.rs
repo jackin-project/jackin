@@ -8,12 +8,12 @@ mod common;
 
 use common::{FakeRunner, NoOpDocker, install_agent_binary_stubs, install_capsule_binary_stub};
 use jackin::agent::Agent;
-use jackin::config::AppConfig;
 use jackin::isolation::MountIsolation;
-use jackin::paths::JackinPaths;
 use jackin::runtime::{LoadOptions, load_role};
 use jackin::selector::RoleSelector;
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
+use jackin_config::AppConfig;
+use jackin_core::paths::JackinPaths;
 use std::path::Path;
 use tempfile::tempdir;
 
@@ -106,7 +106,7 @@ trusted = true
     .unwrap();
 
     let selector = RoleSelector::new(None, "agent-smith");
-    let repo_dir = jackin::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
@@ -127,10 +127,11 @@ model = "gpt-5"
 "#,
     )
     .unwrap();
-    let validated = jackin::repo::validate_role_repo(&repo_dir).unwrap();
-    let build =
-        jackin_image::derived_image::create_derived_build_context(&repo_dir, &validated, None, None)
-            .unwrap();
+    let validated = jackin_manifest::repo::validate_role_repo(&repo_dir).unwrap();
+    let build = jackin_image::derived_image::create_derived_build_context(
+        &repo_dir, &validated, None, None,
+    )
+    .unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
     assert_cached_agent_install_blocks(&dockerfile);
 
@@ -230,7 +231,7 @@ trusted = true
     .unwrap();
 
     let selector = RoleSelector::new(None, "agent-smith");
-    let repo_dir = jackin::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),

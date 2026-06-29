@@ -34,7 +34,9 @@ use jackin_launch_tui::tui::components::progress_rail::{
     display_stage_statuses, faded_color, label_edge_fade_factor, label_strip, labels_line,
 };
 #[cfg(test)]
-use jackin_launch_tui::tui::components::prompts::{draw_confirm, draw_error_popup, draw_text_prompt};
+use jackin_launch_tui::tui::components::prompts::{
+    draw_confirm, draw_error_popup, draw_text_prompt,
+};
 #[cfg(test)]
 use jackin_launch_tui::tui::view::render_launch_frame as render_launch_frame_view;
 pub use jackin_launch_tui::{

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use jackin::agent::Agent;
-use jackin::env_resolver::{EnvPrompter, PromptResult, resolve_env};
+use jackin_env::{EnvPrompter, PromptResult, resolve_env};
 
 fn sentinel_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/roles/jackin-sentinel")

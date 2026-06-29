@@ -11,14 +11,14 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::config::AppConfig;
 use crate::docker_client::DockerApi;
-use crate::instance;
-use crate::paths::JackinPaths;
 use crate::runtime;
 use crate::selector::RoleSelector;
 use crate::tui;
 use crate::workspace::{LoadWorkspaceInput, WorkspaceConfig, expand_tilde};
+use jackin_config::AppConfig;
+use jackin_core::JackinPaths;
+use jackin_runtime::instance;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TargetKind {
@@ -543,7 +543,7 @@ pub(crate) fn supported_agents_requiring_prompt(
     if workspace_default.is_some() {
         return None;
     }
-    let cached = crate::repo::CachedRepo::new(paths, selector);
+    let cached = jackin_manifest::repo::CachedRepo::new(paths, selector);
     let supported = crate::manifest::load_role_manifest(&cached.repo_dir)
         .ok()?
         .supported_agents();
@@ -572,7 +572,7 @@ pub(crate) fn remember_last_agent(
     // mutation flows through ConfigEditor). Tests that construct an
     // AppConfig purely in memory must persist it before calling this
     // function — see `remember_last_agent_persists_successful_loads`.
-    let mut editor = match crate::config::ConfigEditor::open(paths) {
+    let mut editor = match jackin_config::ConfigEditor::open(paths) {
         Ok(editor) => editor,
         Err(error) => {
             eprintln!("warning: failed to open config for last-used-role save: {error}");

@@ -3,8 +3,8 @@
 use anyhow::Result;
 
 use crate::cli;
-use crate::config::AppConfig;
-use crate::paths::JackinPaths;
+use jackin_config::AppConfig;
+use jackin_core::JackinPaths;
 
 pub(super) fn handle_claude_token(
     paths: &JackinPaths,

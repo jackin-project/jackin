@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use fs2::FileExt as _;
 use jackin_image::derived_image::shell_quote;
-use jackin::instance::naming::is_dns_label;
+use jackin_runtime::instance::naming::is_dns_label;
 use tempfile::tempdir;
 
 const ROLE_KEY: &str = "jackin-e2e/agent-smith";

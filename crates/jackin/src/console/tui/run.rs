@@ -36,9 +36,9 @@ use jackin_console::tui::run::{
     token_generate_scope_label_for_console, token_generate_status_message,
 };
 
-use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_config::LoadWorkspaceInput;
+use jackin_core::JackinPaths;
 
 pub struct ConsoleRunOptions<'a> {
     pub op_available: bool,

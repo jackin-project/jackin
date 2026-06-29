@@ -12,7 +12,7 @@ use jackin::docker::{CommandRunner, RunOptions};
 use jackin::docker_client::{
     ContainerRow, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
 };
-use jackin::paths::JackinPaths;
+use jackin_core::paths::JackinPaths;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
@@ -22,12 +22,14 @@ use std::path::Path;
 /// integration tests need to call this explicitly because `cfg(test)`
 /// only affects the lib when compiled for the lib's own test target.
 pub fn install_capsule_binary_stub(paths: &JackinPaths) {
-    jackin_image::capsule_binary::install_test_stub(paths).expect("install jackin-capsule test stub");
+    jackin_image::capsule_binary::install_test_stub(paths)
+        .expect("install jackin-capsule test stub");
 }
 
 pub fn install_agent_binary_stubs(paths: &JackinPaths) {
     for agent in jackin::agent::Agent::ALL {
-        jackin_image::agent_binary::install_test_stub(paths, *agent).expect("install agent binary stub");
+        jackin_image::agent_binary::install_test_stub(paths, *agent)
+            .expect("install agent binary stub");
     }
 }
 

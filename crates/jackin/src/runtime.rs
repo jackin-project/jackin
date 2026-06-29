@@ -57,12 +57,15 @@ pub use jackin_runtime::runtime::{
 pub use jackin_runtime::runtime::resolve_supported_agents_for_console;
 
 pub(crate) async fn register_agent_repo(
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     selector: &crate::selector::RoleSelector,
     git_url: &str,
     runner: &mut impl crate::docker::CommandRunner,
     debug: bool,
-) -> anyhow::Result<(crate::repo::CachedRepo, crate::repo::ValidatedRoleRepo)> {
+) -> anyhow::Result<(
+    jackin_manifest::repo::CachedRepo,
+    jackin_manifest::repo::ValidatedRoleRepo,
+)> {
     jackin_runtime::runtime::register_agent_repo(paths, selector, git_url, runner, debug).await
 }
 

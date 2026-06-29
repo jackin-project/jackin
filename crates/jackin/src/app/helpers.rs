@@ -2,13 +2,13 @@
 
 use anyhow::Result;
 
-use crate::config::{AppConfig, WorkspaceConfig};
 use crate::docker_client::DockerApi;
-use crate::instance;
-use crate::paths::JackinPaths;
 use crate::runtime;
 use crate::selector::RoleSelector;
 use crate::tui;
+use jackin_config::{AppConfig, WorkspaceConfig};
+use jackin_core::JackinPaths;
+use jackin_runtime::instance;
 
 pub(super) async fn resolve_role_to_container(
     class: &RoleSelector,
@@ -152,7 +152,7 @@ pub(super) fn render_workspace_show(
         let _unused = writeln!(out, "{mount_table}");
     }
 
-    let render_unscoped_table = |out: &mut String, rows: &[&crate::config::GlobalMountRow]| {
+    let render_unscoped_table = |out: &mut String, rows: &[&jackin_config::GlobalMountRow]| {
         if rows.is_empty() {
             return;
         }
@@ -168,7 +168,7 @@ pub(super) fn render_workspace_show(
     };
 
     match config.workspace_applicable_mount_rows(workspace) {
-        crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
+        jackin_config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
             if rows.is_empty() {
                 return out;
             }
@@ -188,12 +188,12 @@ pub(super) fn render_workspace_show(
             let _unused = writeln!(out, "Global mounts ({role}):");
             let _unused = writeln!(out, "{table}");
         }
-        crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
+        jackin_config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
             // Unscoped global mounts apply regardless of role — render
             // them even when the role is ambiguous. Only the scoped
             // subset depends on role selection.
             let all_rows = config.list_mount_rows();
-            let unscoped: Vec<&crate::config::GlobalMountRow> =
+            let unscoped: Vec<&jackin_config::GlobalMountRow> =
                 all_rows.iter().filter(|row| row.scope.is_none()).collect();
             render_unscoped_table(&mut out, &unscoped);
             if all_rows.iter().any(|row| row.scope.is_some()) {

@@ -3,10 +3,10 @@ use owo_colors::OwoColorize as _;
 
 use crate::agent::Agent;
 use crate::cli::{BANNER, HELP_STYLES};
-use crate::config::AppConfig;
 use crate::docker::ShellRunner;
-use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
+use jackin_config::AppConfig;
+use jackin_core::JackinPaths;
 use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
 
 /// `jackin prewarm` — fill jackin-owned runtime caches before launch.
@@ -83,7 +83,7 @@ pub async fn run(
     print!("{BANNER}");
     println!("prewarm\n");
 
-    let capsule = crate::capsule_binary::ensure_available(paths);
+    let capsule = jackin_image::capsule_binary::ensure_available(paths);
     let agents_result = prewarm_agents(paths, &agents);
     let sidecar_needed = should_prewarm_sidecar_image(args);
     let sidecar_result = async {
@@ -637,7 +637,7 @@ async fn prewarm_agents(
     for agent in agents.iter().copied() {
         let paths = paths.clone();
         tasks.spawn(async move {
-            let result = crate::agent_binary::ensure_available(&paths, agent)
+            let result = jackin_image::agent_binary::ensure_available(&paths, agent)
                 .await
                 .map(|binary| AgentPrewarmRow {
                     agent: binary.agent,

@@ -12,7 +12,7 @@ fn seed_override_picker_workspace(
     for name in allowed {
         config.roles.insert(
             (*name).to_owned(),
-            jackin::config::RoleSource {
+            jackin_config::RoleSource {
                 git: format!("https://example.invalid/{name}.git"),
                 trusted: true,
                 env: std::collections::BTreeMap::new(),

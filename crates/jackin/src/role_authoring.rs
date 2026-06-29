@@ -9,9 +9,9 @@ use anyhow::Context;
 
 use crate::cli::role::{RoleCommand, RoleCreateArgs, RolePublishLabelsArgs, RoleRepoPathArgs};
 use crate::manifest::migrations::CURRENT_MANIFEST_VERSION;
-use crate::repo::validate_role_repo;
-use crate::repo_contract::{DOCKERFILE_NAME, MANIFEST_FILENAME};
 use crate::selector::RoleSelector;
+use jackin_manifest::repo::validate_role_repo;
+use jackin_manifest::repo_contract::{DOCKERFILE_NAME, MANIFEST_FILENAME};
 
 pub fn run(command: RoleCommand) -> anyhow::Result<()> {
     match command {
@@ -59,7 +59,7 @@ fn published_image_repository(args: RoleRepoPathArgs) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("no published_image declared in jackin.role.toml"))?;
     println!(
         "{}",
-        crate::repo_contract::published_image_repository(&image)
+        jackin_manifest::repo_contract::published_image_repository(&image)
     );
     Ok(())
 }
@@ -67,7 +67,7 @@ fn published_image_repository(args: RoleRepoPathArgs) -> anyhow::Result<()> {
 fn publish_labels(args: RolePublishLabelsArgs) -> anyhow::Result<()> {
     let repo_dir = resolve_repo_path(args.path)?;
     let validated = validate_role_repo(&repo_dir)?;
-    for label in crate::repo_contract::published_image_labels(
+    for label in jackin_manifest::repo_contract::published_image_labels(
         &validated.dockerfile.construct_version,
         &args.role_git_sha,
     ) {
@@ -200,7 +200,7 @@ name = "{}"
 }
 
 const fn dockerfile_contents() -> &'static str {
-    crate::repo_contract::BASE_DOCKERFILE_FROM
+    jackin_manifest::repo_contract::BASE_DOCKERFILE_FROM
 }
 
 fn readme_contents(selector: &RoleSelector) -> String {

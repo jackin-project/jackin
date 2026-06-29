@@ -24,7 +24,7 @@ pub(crate) fn op_cli_available() -> bool {
 pub(crate) fn execute_manager_effect(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     effect: ManagerEffect,
 ) -> bool {
     match effect {
@@ -142,7 +142,7 @@ fn execute_container_info_copy(state: &mut ManagerState<'_>, row: usize, payload
 pub fn execute_pending_workspace_save_commit(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     cwd: &std::path::Path,
 ) -> anyhow::Result<bool> {
     let pending = if let ManagerStage::Editor(editor) = &mut state.stage {
@@ -174,7 +174,7 @@ pub fn execute_pending_workspace_save_commit(
 pub(crate) fn execute_remove_workspace(
     state: &mut ManagerState<'_>,
     _config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     cwd: &std::path::Path,
     name: &str,
 ) -> bool {
@@ -219,7 +219,7 @@ fn apply_remove_workspace_result(
 pub(crate) fn apply_role_load_completion(
     state: &mut ManagerState<'_>,
     _config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     load: PendingRoleLoad,
     result: anyhow::Result<()>,
 ) {
@@ -340,7 +340,7 @@ fn apply_role_source_persist_result(
 pub(crate) fn apply_role_load_completion_for_tests(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     load: PendingRoleLoad,
     result: anyhow::Result<()>,
 ) {
@@ -412,7 +412,7 @@ pub(crate) fn apply_role_load_completion_for_tests(
 pub(crate) async fn apply_role_input_with_runner_for_tests(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     value: &str,
     runner: &mut impl crate::docker::CommandRunner,
 ) {
@@ -463,7 +463,7 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
 pub(crate) fn persist_trusted_role_source_for_tests(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     key: &str,
     source: &jackin_config::RoleSource,
 ) {
@@ -480,7 +480,7 @@ pub(crate) fn persist_trusted_role_source_for_tests(
 fn execute_trusted_role_source_persist(
     state: &mut ManagerState<'_>,
     _config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     key: &str,
     mut source: jackin_config::RoleSource,
 ) {
@@ -499,7 +499,7 @@ fn execute_trusted_role_source_persist(
 }
 
 pub(crate) fn execute_token_generate(
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     config: &AppConfig,
     req: &crate::console::tui::state::PendingTokenGenerate,
 ) -> anyhow::Result<jackin_core::EnvValue> {
@@ -512,7 +512,7 @@ pub(crate) use jackin_console::tui::state::update::{
 
 fn execute_role_registration_start(
     state: &mut ManagerState<'_>,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     raw: String,
     key: &str,
     selector: jackin_core::RoleSelector,
@@ -546,7 +546,7 @@ use jackin_console::tui::state::update::execute_op_commit_validation;
 pub(crate) fn execute_workspace_save_effect(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     cwd: &std::path::Path,
     effect: WorkspaceSaveEffect,
 ) {
@@ -618,7 +618,7 @@ pub(crate) fn execute_workspace_save_effect(
 pub(crate) fn execute_workspace_save_write(
     state: &mut ManagerState<'_>,
     _config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     _cwd: &std::path::Path,
     input: WorkspaceSaveWriteInput<'_>,
     exit_on_success: bool,
@@ -706,7 +706,7 @@ fn apply_workspace_save_write_result(
 #[cfg(test)]
 pub(crate) fn execute_role_source_persist(
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     key: &str,
     source: &jackin_config::RoleSource,
 ) -> anyhow::Result<()> {
@@ -716,7 +716,7 @@ pub(crate) fn execute_role_source_persist(
 fn execute_settings_save(
     state: &mut ManagerState<'_>,
     _config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
 ) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
@@ -765,7 +765,7 @@ fn apply_settings_save_result(
 pub fn poll_background_messages(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
 ) -> Vec<ManagerBackgroundEvent> {
     let mut messages = vec![
         ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls),
@@ -830,7 +830,7 @@ pub fn poll_background_messages(
 pub fn apply_background_event(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     cwd: &std::path::Path,
     event: ManagerBackgroundEvent,
 ) -> bool {
@@ -900,7 +900,7 @@ pub(crate) use jackin_console::tui::op_picker::poll_picker_loads;
 
 // ── Role-resolution error helpers ───────────────────────────────────────────
 //
-// These depend on `crate::runtime::RepoError` and `crate::repo` types that
+// These depend on `crate::runtime::RepoError` and `jackin_manifest::repo` types that
 // are not accessible from `jackin-console`. All callers live in this file.
 
 pub(crate) fn open_role_resolution_error(
@@ -950,8 +950,8 @@ fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
     generic_role_repository_error_message().into()
 }
 
-fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> String {
-    use crate::repo::RoleRepoValidationError as V;
+fn humanize_invalid_role_repo(err: &jackin_manifest::repo::RoleRepoValidationError) -> String {
+    use jackin_manifest::repo::RoleRepoValidationError as V;
     match err {
         V::Missing(path) => {
             let file = path
@@ -991,7 +991,7 @@ mod tests {
     #[tokio::test]
     async fn poll_background_messages_routes_file_browser_poll_through_message() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, cwd);
@@ -1007,7 +1007,7 @@ mod tests {
     #[tokio::test]
     async fn execute_manager_effect_requests_instance_refresh() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, cwd);
@@ -1028,7 +1028,7 @@ mod tests {
     #[tokio::test]
     async fn workspace_save_drift_check_starts_worker() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
@@ -1066,7 +1066,7 @@ mod tests {
     #[tokio::test]
     async fn workspace_save_write_starts_config_save_worker() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let original = WorkspaceConfig::default();
@@ -1101,7 +1101,7 @@ mod tests {
     #[tokio::test]
     async fn settings_save_starts_config_save_worker() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let settings = SettingsState::from_config(&config);
@@ -1124,7 +1124,7 @@ mod tests {
     #[tokio::test]
     async fn remove_workspace_starts_config_save_worker() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, cwd);
@@ -1140,7 +1140,7 @@ mod tests {
     #[tokio::test]
     async fn trusted_role_source_persist_starts_config_save_worker() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
@@ -1166,7 +1166,7 @@ mod tests {
     #[tokio::test]
     async fn role_load_completion_starts_role_source_persist_worker() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
@@ -1196,7 +1196,7 @@ mod tests {
     #[tokio::test]
     async fn create_prelude_file_browser_open_starts_listing_worker() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, cwd);
@@ -1221,7 +1221,7 @@ mod tests {
     #[tokio::test]
     async fn file_browser_navigation_starts_listing_worker() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, cwd);
@@ -1256,7 +1256,7 @@ mod tests {
     #[tokio::test]
     async fn file_browser_commit_starts_validation_worker() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let child = cwd.join("child");
         std::fs::create_dir(&child).unwrap();
@@ -1293,7 +1293,7 @@ mod tests {
     #[tokio::test]
     async fn editor_auth_source_folder_open_starts_listing_worker() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, cwd);
@@ -1328,7 +1328,7 @@ mod tests {
     #[tokio::test]
     async fn settings_auth_source_folder_open_starts_listing_worker() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let paths = jackin_core::JackinPaths::for_tests(tmp.path());
         let cwd = tmp.path();
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, cwd);

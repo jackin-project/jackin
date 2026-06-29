@@ -21,24 +21,17 @@ pub mod agent;
 
 mod app;
 
-
 pub mod cli;
-pub mod config;
 pub mod console;
 
 pub(crate) mod diagnostics;
 pub mod docker;
 pub mod docker_client;
-pub mod env_resolver;
 pub mod error;
-pub mod instance;
 pub mod isolation;
 pub mod manifest;
 pub mod operator_env;
-pub mod paths;
 pub(crate) mod preflight;
-pub mod repo;
-pub(crate) mod repo_contract;
 pub mod role_authoring;
 pub mod runtime;
 pub mod selector;

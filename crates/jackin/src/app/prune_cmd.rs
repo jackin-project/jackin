@@ -7,9 +7,9 @@ use crate::cli::PruneCommand;
 use crate::cli::cleanup::PurgeArgs;
 use crate::docker::ShellRunner;
 use crate::docker_client::BollardDockerClient;
-use crate::paths::JackinPaths;
 use crate::runtime;
 use crate::selector::Selector;
+use jackin_core::JackinPaths;
 
 use super::{resolve_instance_reference, resolve_role_to_container};
 

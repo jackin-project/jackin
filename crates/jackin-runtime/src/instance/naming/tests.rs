@@ -103,7 +103,10 @@ fn no_workspace_long_role_fits_dns_budget() {
 
 #[test]
 fn dind_certs_volume_derives_from_container_name() {
-    assert_eq!(dind_certs_volume("jk-agent-smith"), "jk-agent-smith-dind-certs");
+    assert_eq!(
+        dind_certs_volume("jk-agent-smith"),
+        "jk-agent-smith-dind-certs"
+    );
     assert_eq!(
         dind_certs_volume("jk-k7p9m2xq-chainargos-thearchitect"),
         "jk-k7p9m2xq-chainargos-thearchitect-dind-certs"

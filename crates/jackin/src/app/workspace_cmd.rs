@@ -3,14 +3,14 @@
 use anyhow::Result;
 
 use crate::cli::{self, WorkspaceCommand};
-use crate::config::AppConfig;
 use crate::docker::ShellRunner;
 use crate::docker_client::BollardDockerClient;
-use crate::paths::JackinPaths;
 use crate::tui;
 use crate::workspace::{
     self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved, resolve_path,
 };
+use jackin_config::AppConfig;
+use jackin_core::JackinPaths;
 
 #[expect(
     clippy::too_many_lines,
@@ -64,7 +64,7 @@ pub(super) async fn handle(
             }
             let mount_count = plan.final_mounts.len();
             let ws = WorkspaceConfig {
-                version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+                version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
                 workdir: expanded_workdir,
                 mounts: plan.final_mounts,
                 allowed_roles,
@@ -88,7 +88,7 @@ pub(super) async fn handle(
                 dirty_exit_policy: None,
                 docker: None,
             };
-            let mut editor = crate::config::ConfigEditor::open(paths)?;
+            let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.create_workspace(&name, ws)?;
             editor.save()?;
             println!(
@@ -451,7 +451,7 @@ pub(super) async fn handle(
                 }
             }
 
-            let mut editor = crate::config::ConfigEditor::open(paths)?;
+            let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.edit_workspace(
                 &name,
                 WorkspaceEdit {
@@ -519,7 +519,7 @@ pub(super) async fn handle(
 
             let remove_dsts: Vec<String> =
                 plan.removed.iter().map(|r| r.child.dst.clone()).collect();
-            let mut editor = crate::config::ConfigEditor::open(paths)?;
+            let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.edit_workspace(
                 &name,
                 WorkspaceEdit {
@@ -535,7 +535,7 @@ pub(super) async fn handle(
             Ok(())
         }
         WorkspaceCommand::Remove { name } => {
-            let mut editor = crate::config::ConfigEditor::open(paths)?;
+            let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.remove_workspace(&name)?;
             editor.save()?;
             println!("Removed workspace {name:?}.");
@@ -569,7 +569,7 @@ pub(super) async fn handle(
                 }
                 let env_value = super::config_cmd::resolve_env_value_for_cli(&value)?;
                 let scope = super::workspace_env_scope(workspace, role);
-                let mut editor = crate::config::ConfigEditor::open(paths)?;
+                let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 editor.set_env_var(&scope, &key, env_value)?;
                 if let Some(ref c) = comment {
                     editor.set_env_comment(&scope, &key, Some(c));
@@ -593,7 +593,7 @@ pub(super) async fn handle(
                 if key == crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV
                     && role.is_none()
                     && ws.claude.as_ref().map(|c| c.auth_forward)
-                        == Some(crate::config::AuthForwardMode::OAuthToken)
+                        == Some(jackin_config::AuthForwardMode::OAuthToken)
                 {
                     anyhow::bail!(
                         "CLAUDE_CODE_OAUTH_TOKEN is managed by \
@@ -603,7 +603,7 @@ pub(super) async fn handle(
                     );
                 }
                 let scope = super::workspace_env_scope(workspace, role);
-                let mut editor = crate::config::ConfigEditor::open(paths)?;
+                let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 if editor.remove_env_var(&scope, &key) {
                     editor.save()?;
                     println!("Removed {key}.");

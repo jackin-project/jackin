@@ -68,8 +68,8 @@ use super::attach::{ContainerState, reconnect_or_create_session_with_focus};
 use super::discovery::list_running_agent_names;
 use super::identity::GitIdentity;
 use super::naming::{LABEL_KEEP_AWAKE, LABEL_KIND_ROLE, LABEL_MANAGED};
-use crate::instance::naming::dind_certs_volume;
 use super::universe::ExitClaim;
+use crate::instance::naming::dind_certs_volume;
 use jackin_docker::docker_client::DockerApi;
 
 #[expect(

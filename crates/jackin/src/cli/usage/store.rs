@@ -5,7 +5,7 @@ use jackin_core::account_key::account_key_hash;
 use jackin_protocol::control::AccountUsageSnapshotView;
 use turso::{Connection, Row, params};
 
-use crate::paths::JackinPaths;
+use jackin_core::JackinPaths;
 
 const SCHEMA_VERSION: &str = "1";
 

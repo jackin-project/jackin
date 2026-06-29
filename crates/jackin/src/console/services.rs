@@ -2,7 +2,7 @@
 
 pub(super) mod agents {
     pub(crate) async fn resolve_supported_for_console(
-        paths: &crate::paths::JackinPaths,
+        paths: &jackin_core::JackinPaths,
         config: &jackin_config::AppConfig,
         role: &jackin_core::RoleSelector,
         runner: &mut impl crate::docker::CommandRunner,
@@ -11,7 +11,7 @@ pub(super) mod agents {
     }
 
     pub(crate) async fn load_inline_picker_choices(
-        paths: &crate::paths::JackinPaths,
+        paths: &jackin_core::JackinPaths,
         config: &jackin_config::AppConfig,
         role: &jackin_core::RoleSelector,
         runner: &mut impl crate::docker::CommandRunner,
@@ -26,13 +26,13 @@ pub(super) mod agents {
 pub(super) mod config {
     //! Non-TUI config persistence services.
 
-    use crate::paths::JackinPaths;
     use jackin_config::GlobalMountRow;
     use jackin_config::WorkspaceConfig;
     use jackin_config::{AppConfig, RoleSource};
     use jackin_console::services::config_save::{
         WorkspaceSaveDiffOp, build_workspace_edit, workspace_save_diff_plan,
     };
+    use jackin_core::JackinPaths;
 
     pub(crate) use jackin_console::services::config_save::{SettingsSaveInput, save_settings};
 
@@ -326,9 +326,9 @@ pub(super) mod instances {
     use jackin_console::tui::state::ManagerInstanceRefreshSnapshot;
 
     pub(crate) fn load_instance_refresh_snapshot(
-        paths: &crate::paths::JackinPaths,
+        paths: &jackin_core::JackinPaths,
     ) -> Result<ManagerInstanceRefreshSnapshot, String> {
-        let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
+        let index = jackin_runtime::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
             .map_err(|error| error.to_string())?;
         let mut instances = index.instances;
         reconcile_live_running_instances(paths, &mut instances);
@@ -340,10 +340,11 @@ pub(super) mod instances {
         for entry in &instances {
             if matches!(
                 entry.status,
-                crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
+                jackin_runtime::instance::InstanceStatus::Active
+                    | jackin_runtime::instance::InstanceStatus::Running
             ) {
                 let state_dir = paths.data_dir.join(&entry.container_base);
-                match crate::instance::InstanceManifest::read(&state_dir) {
+                match jackin_runtime::instance::InstanceManifest::read(&state_dir) {
                     Ok(manifest) if !manifest.sessions.is_empty() => {
                         sessions.insert(entry.container_base.clone(), manifest.sessions);
                     }
@@ -415,8 +416,8 @@ pub(super) mod instances {
     }
 
     fn reconcile_live_running_instances(
-        paths: &crate::paths::JackinPaths,
-        instances: &mut Vec<crate::instance::InstanceIndexEntry>,
+        paths: &jackin_core::JackinPaths,
+        instances: &mut Vec<jackin_runtime::instance::InstanceIndexEntry>,
     ) {
         let running = match running_role_containers() {
             Ok(running) => running,
@@ -436,8 +437,8 @@ pub(super) mod instances {
     }
 
     pub(crate) fn overlay_running_instances(
-        paths: &crate::paths::JackinPaths,
-        instances: &mut Vec<crate::instance::InstanceIndexEntry>,
+        paths: &jackin_core::JackinPaths,
+        instances: &mut Vec<jackin_runtime::instance::InstanceIndexEntry>,
         running_containers: &[String],
     ) {
         if running_containers.is_empty() {
@@ -453,12 +454,12 @@ pub(super) mod instances {
                 .iter_mut()
                 .find(|entry| entry.container_base == *container)
             {
-                entry.status = crate::instance::InstanceStatus::Running;
+                entry.status = jackin_runtime::instance::InstanceStatus::Running;
                 continue;
             }
 
             let state_dir = paths.data_dir.join(container);
-            let Some(manifest) = crate::instance::InstanceManifest::read_or_log(
+            let Some(manifest) = jackin_runtime::instance::InstanceManifest::read_or_log(
                 &state_dir,
                 "overlay_running_instances",
             ) else {
@@ -468,13 +469,13 @@ pub(super) mod instances {
                 continue;
             }
             let mut entry = manifest.to_index_entry();
-            entry.status = crate::instance::InstanceStatus::Running;
+            entry.status = jackin_runtime::instance::InstanceStatus::Running;
             instances.push(entry);
         }
     }
 
     fn fetch_snapshots_parallel(
-        paths: &crate::paths::JackinPaths,
+        paths: &jackin_core::JackinPaths,
         targets: &[String],
     ) -> Vec<(
         String,
@@ -541,7 +542,7 @@ pub(super) mod role_load {
     use jackin_tui::runtime::BlockingSubscription;
 
     pub(crate) fn start_role_registration(
-        paths: crate::paths::JackinPaths,
+        paths: jackin_core::JackinPaths,
         selector: jackin_core::RoleSelector,
         git_url: String,
     ) -> BlockingSubscription<anyhow::Result<()>> {
@@ -564,7 +565,7 @@ pub(super) mod role_load {
     }
 
     pub(crate) async fn register_with_runner(
-        paths: &crate::paths::JackinPaths,
+        paths: &jackin_core::JackinPaths,
         selector: &jackin_core::RoleSelector,
         git_url: &str,
         runner: &mut impl crate::docker::CommandRunner,
@@ -598,7 +599,7 @@ pub(super) mod workspace_save {
 
     /// Start the Docker-backed drift check for an edited workspace.
     pub(crate) fn start_drift_check(
-        paths: crate::paths::JackinPaths,
+        paths: jackin_core::JackinPaths,
         workspace_name: String,
         prospective_mounts: Vec<jackin_config::MountConfig>,
     ) -> BlockingSubscription<anyhow::Result<crate::runtime::drift::DriftDetection>> {
@@ -619,7 +620,7 @@ pub(super) mod workspace_save {
 
     /// Start cleanup for isolated mount records removed by a workspace save.
     pub(crate) fn start_isolation_cleanup(
-        paths: crate::paths::JackinPaths,
+        paths: jackin_core::JackinPaths,
         records: Vec<jackin_runtime::isolation::state::IsolationRecord>,
     ) -> BlockingSubscription<anyhow::Result<()>> {
         jackin_tui::runtime::spawn_named_async_subscription(

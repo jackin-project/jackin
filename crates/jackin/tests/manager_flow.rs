@@ -11,7 +11,6 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin::{
-    config::{AppConfig, ConfigEditor},
     console::{
         ConsoleStage,
         effects::{
@@ -23,10 +22,11 @@ use jackin::{
             state::{AuthRow, EditorState, EditorTab, FieldFocus, Modal},
         },
     },
-    paths::JackinPaths,
     workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride},
 };
+use jackin_config::{AppConfig, ConfigEditor};
 use jackin_console::tui::auth::AuthKind;
+use jackin_core::JackinPaths;
 use jackin_core::env_model;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -248,7 +248,7 @@ fn seed_config_with_agents(
     for key in agent_keys {
         config.roles.insert(
             (*key).to_owned(),
-            jackin::config::RoleSource {
+            jackin_config::RoleSource {
                 git: format!("https://example.invalid/jackin-{key}.git"),
                 trusted: true,
                 env: std::collections::BTreeMap::new(),
@@ -637,7 +637,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     let pending = &editor(&state).pending;
     assert_eq!(
         pending.claude.as_ref().map(|c| c.auth_forward),
-        Some(jackin::config::AuthForwardMode::ApiKey),
+        Some(jackin_config::AuthForwardMode::ApiKey),
         "form commit must set workspace × claude mode in pending"
     );
     assert!(
@@ -673,7 +673,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         .expect("workspace must still exist on disk");
     assert_eq!(
         ws_on_disk.claude.as_ref().map(|c| c.auth_forward),
-        Some(jackin::config::AuthForwardMode::ApiKey),
+        Some(jackin_config::AuthForwardMode::ApiKey),
         "reload must see [claude] auth_forward = api_key in the workspace file"
     );
     let env_value = ws_on_disk
@@ -831,8 +831,8 @@ fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
 
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let over = WorkspaceRoleOverride {
-        claude: Some(jackin::config::AgentAuthConfig {
-            auth_forward: jackin::config::AuthForwardMode::Ignore,
+        claude: Some(jackin_config::AgentAuthConfig {
+            auth_forward: jackin_config::AuthForwardMode::Ignore,
             ..Default::default()
         }),
         ..Default::default()
@@ -864,12 +864,12 @@ fn auth_role_header_d_clears_selected_auth_kind_override() -> Result<()> {
 
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let over = WorkspaceRoleOverride {
-        claude: Some(jackin::config::AgentAuthConfig {
-            auth_forward: jackin::config::AuthForwardMode::Ignore,
+        claude: Some(jackin_config::AgentAuthConfig {
+            auth_forward: jackin_config::AuthForwardMode::Ignore,
             ..Default::default()
         }),
-        codex: Some(jackin::config::AgentAuthConfig {
-            auth_forward: jackin::config::AuthForwardMode::ApiKey,
+        codex: Some(jackin_config::AgentAuthConfig {
+            auth_forward: jackin_config::AuthForwardMode::ApiKey,
             ..Default::default()
         }),
         ..Default::default()
@@ -917,12 +917,12 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
 
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let over = WorkspaceRoleOverride {
-        claude: Some(jackin::config::AgentAuthConfig {
-            auth_forward: jackin::config::AuthForwardMode::Ignore,
+        claude: Some(jackin_config::AgentAuthConfig {
+            auth_forward: jackin_config::AuthForwardMode::Ignore,
             ..Default::default()
         }),
-        codex: Some(jackin::config::AgentAuthConfig {
-            auth_forward: jackin::config::AuthForwardMode::ApiKey,
+        codex: Some(jackin_config::AgentAuthConfig {
+            auth_forward: jackin_config::AuthForwardMode::ApiKey,
             ..Default::default()
         }),
         ..Default::default()
@@ -1083,8 +1083,8 @@ fn auth_workspace_source_d_is_noop() -> Result<()> {
     let cwd = temp.path();
 
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
-    ws.claude = Some(jackin::config::AgentAuthConfig {
-        auth_forward: jackin::config::AuthForwardMode::ApiKey,
+    ws.claude = Some(jackin_config::AgentAuthConfig {
+        auth_forward: jackin_config::AuthForwardMode::ApiKey,
         ..Default::default()
     });
     ws.env.insert(
@@ -1342,7 +1342,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         .github
         .as_ref()
         .expect("workspace github block must be set in pending");
-    assert_eq!(github.auth_forward, jackin::config::GithubAuthMode::Token);
+    assert_eq!(github.auth_forward, jackin_config::GithubAuthMode::Token);
     let value = github
         .env
         .get("GH_TOKEN")
@@ -1385,7 +1385,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         .expect("[github] block must be on disk after save");
     assert_eq!(
         github_on_disk.auth_forward,
-        jackin::config::GithubAuthMode::Token
+        jackin_config::GithubAuthMode::Token
     );
     let env_value = github_on_disk
         .env
@@ -1434,8 +1434,8 @@ fn github_role_header_d_clears_github_role_override() -> Result<()> {
 
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let over = WorkspaceRoleOverride {
-        github: Some(jackin::config::GithubAuthConfig {
-            auth_forward: jackin::config::GithubAuthMode::Ignore,
+        github: Some(jackin_config::GithubAuthConfig {
+            auth_forward: jackin_config::GithubAuthMode::Ignore,
             ..Default::default()
         }),
         ..Default::default()
@@ -1492,8 +1492,8 @@ fn github_role_override_picker_filters_already_overridden_roles_via_dispatcher()
     ws.roles.insert(
         "the-architect".into(),
         WorkspaceRoleOverride {
-            github: Some(jackin::config::GithubAuthConfig {
-                auth_forward: jackin::config::GithubAuthMode::Ignore,
+            github: Some(jackin_config::GithubAuthConfig {
+                auth_forward: jackin_config::GithubAuthMode::Ignore,
                 ..Default::default()
             }),
             ..Default::default()

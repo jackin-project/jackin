@@ -22,7 +22,7 @@ pub(crate) mod input {
         pub(super) fn poll_role_load(
             editor: &mut crate::console::tui::state::EditorState<'_>,
             config: &mut jackin_config::AppConfig,
-            paths: &crate::paths::JackinPaths,
+            paths: &jackin_core::JackinPaths,
         ) -> bool {
             use crate::console::tui::state::PendingRoleLoad;
             use jackin_console::tui::app::ConsolePendingRoleLoad as _;
@@ -47,8 +47,8 @@ pub(crate) mod input {
 
         use super::InputOutcome;
         use crate::console::tui::state::ManagerState;
-        use crate::paths::JackinPaths;
         use jackin_config::AppConfig;
+        use jackin_core::JackinPaths;
 
         pub fn handle_key(
             state: &mut ManagerState<'_>,

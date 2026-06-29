@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn parse_auth_forward_mode_from_cli_accepts_sync() {
     let mode = parse_auth_forward_mode_from_cli("sync").unwrap();
-    assert_eq!(mode, config::AuthForwardMode::Sync);
+    assert_eq!(mode, jackin_config::AuthForwardMode::Sync);
 }
 
 #[test]
@@ -471,7 +471,7 @@ fn workspace_show_includes_isolation_column() {
     std::fs::create_dir_all(&worktree_src).unwrap();
     std::fs::create_dir_all(&cache_src).unwrap();
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![
             crate::workspace::MountConfig {
@@ -524,7 +524,7 @@ fn workspace_show_splits_workspace_and_global_mount_groups() {
     let mut config = AppConfig::default();
     config
         .roles
-        .insert("agent-smith".into(), config::RoleSource::default());
+        .insert("agent-smith".into(), jackin_config::RoleSource::default());
     config.add_mount(
         "gradle-cache",
         crate::workspace::MountConfig {
@@ -536,7 +536,7 @@ fn workspace_show_splits_workspace_and_global_mount_groups() {
         None,
     );
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![crate::workspace::MountConfig {
             src: work_src.display().to_string(),
@@ -561,7 +561,7 @@ fn workspace_show_splits_workspace_and_global_mount_groups() {
 fn validate_setup_role_rejects_disallowed_and_accepts_allowed() {
     let mut config = AppConfig::default();
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         allowed_roles: vec!["alpha".into(), "beta".into()],
         ..Default::default()
@@ -580,7 +580,7 @@ fn validate_setup_role_rejects_disallowed_and_accepts_allowed() {
 fn validate_setup_role_allows_any_when_allowed_roles_empty() {
     let mut config = AppConfig::default();
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         allowed_roles: vec![],
         ..Default::default()
@@ -597,10 +597,10 @@ fn workspace_show_explains_ambiguous_role_scoped_global_mounts() {
     let mut config = AppConfig::default();
     config
         .roles
-        .insert("alpha".into(), config::RoleSource::default());
+        .insert("alpha".into(), jackin_config::RoleSource::default());
     config
         .roles
-        .insert("beta".into(), config::RoleSource::default());
+        .insert("beta".into(), jackin_config::RoleSource::default());
     config.add_mount(
         "team-secrets",
         crate::workspace::MountConfig {
@@ -612,7 +612,7 @@ fn workspace_show_explains_ambiguous_role_scoped_global_mounts() {
         Some("alpha"),
     );
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![],
         allowed_roles: vec!["alpha".into(), "beta".into()],
@@ -633,7 +633,7 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
     let mut config = AppConfig::default();
     config.roles.insert(
         "chainargos/agent-brown".into(),
-        config::RoleSource::default(),
+        jackin_config::RoleSource::default(),
     );
     config.add_mount(
         "team-secrets",
@@ -646,7 +646,7 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
         Some("chainargos/*"),
     );
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![],
         allowed_roles: vec!["chainargos/agent-brown".into()],

@@ -7,7 +7,7 @@ use std::{
 
 use clap::{Args, Subcommand, ValueEnum};
 
-use crate::paths::JackinPaths;
+use jackin_core::JackinPaths;
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum DiagnosticsCommand {
@@ -1350,7 +1350,7 @@ mod tests {
         startup_baseline_duration, startup_spread_summary, truncate_name, validate_compare_args,
         write_compare_output,
     };
-    use crate::paths::JackinPaths;
+    use jackin_core::JackinPaths;
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;

@@ -29,8 +29,8 @@ use std::process::ExitStatus;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::Context;
 use anstyle_parse::{DefaultCharAccumulator, Parser, Perform};
+use anyhow::Context;
 use owo_colors::OwoColorize;
 use rand::RngExt as _;
 use serde::Serialize;

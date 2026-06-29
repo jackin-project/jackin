@@ -1,6 +1,5 @@
 //! Tests for `context`.
 use super::*;
-use crate::config;
 use crate::workspace;
 use jackin_config::find_saved_workspace_for_cwd;
 
@@ -74,7 +73,7 @@ fn resolve_target_name_workspace_only() {
     config.workspaces.insert(
         "my-ws".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/workspace".to_owned(),
             ..Default::default()
         },
@@ -115,7 +114,7 @@ fn resolve_agent_from_context_matches_workspace_from_nested_mount_path() {
     let mut config = AppConfig::default();
     config.roles.insert(
         "agent-smith".to_owned(),
-        config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
@@ -124,7 +123,7 @@ fn resolve_agent_from_context_matches_workspace_from_nested_mount_path() {
     config.workspaces.insert(
         "my-app".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: project_dir.display().to_string(),
@@ -170,7 +169,7 @@ fn resolve_agent_from_context_matches_workspace_from_host_workdir_root() {
     let mut config = AppConfig::default();
     config.roles.insert(
         "agent-smith".to_owned(),
-        config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
@@ -179,7 +178,7 @@ fn resolve_agent_from_context_matches_workspace_from_host_workdir_root() {
     config.workspaces.insert(
         "my-app".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: workspace_root.display().to_string(),
             mounts: vec![workspace::MountConfig {
                 src: repo_dir.canonicalize().unwrap().display().to_string(),
@@ -224,7 +223,7 @@ fn resolve_agent_from_context_ignores_stale_last_agent() {
     let mut config = AppConfig::default();
     config.roles.insert(
         "agent-smith".to_owned(),
-        config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
@@ -233,7 +232,7 @@ fn resolve_agent_from_context_ignores_stale_last_agent() {
     config.workspaces.insert(
         "my-app".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: project_dir.display().to_string(),
@@ -278,7 +277,7 @@ fn config_with_workspace(
     let mut config = AppConfig::default();
     config.roles.insert(
         "agent-smith".to_owned(),
-        config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
@@ -286,7 +285,7 @@ fn config_with_workspace(
     );
     config.roles.insert(
         "the-architect".to_owned(),
-        config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/jackin-project/jackin-the-architect.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
@@ -295,7 +294,7 @@ fn config_with_workspace(
     config.workspaces.insert(
         "my-app".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: project_dir.display().to_string(),
@@ -638,7 +637,7 @@ fn persisted_config_with_workspace(paths: &JackinPaths, temp_path: &Path) -> App
     config.workspaces.insert(
         "my-app".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: temp_path.display().to_string(),
@@ -715,7 +714,7 @@ fn broad_workdir_does_not_match_unrelated_subdirectory() {
     config.workspaces.insert(
         "jackin-roles".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
             mounts: vec![workspace::MountConfig {
                 src: agent_repo.canonicalize().unwrap().display().to_string(),
@@ -747,7 +746,7 @@ fn workspace_matches_when_cwd_is_under_mount_src() {
     config.workspaces.insert(
         "jackin-roles".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
             mounts: vec![workspace::MountConfig {
                 src: agent_repo.canonicalize().unwrap().display().to_string(),
@@ -780,7 +779,7 @@ fn requires_prompt_when_role_supports_two_agents_and_no_workspace_default() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::parse("the-architect").unwrap();
     write_role_manifest(
-        &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
+        &jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
@@ -806,7 +805,7 @@ fn requires_prompt_includes_amp_when_role_supports_three_agents() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::parse("the-architect").unwrap();
     write_role_manifest(
-        &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
+        &jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp"]
@@ -838,7 +837,7 @@ fn skips_prompt_when_workspace_default_agent_is_set() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::parse("the-architect").unwrap();
     write_role_manifest(
-        &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
+        &jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
@@ -864,7 +863,7 @@ fn skips_prompt_when_role_supports_a_single_agent() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::parse("solo").unwrap();
     write_role_manifest(
-        &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
+        &jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["codex"]
