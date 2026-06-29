@@ -11,6 +11,7 @@ pub mod account_key;
 pub mod agent;
 pub mod ansi_text;
 pub mod auth;
+pub mod build_log_sink;
 pub mod constants;
 pub mod docker;
 pub mod docker_security;
@@ -38,6 +39,7 @@ pub use agent::{
     runtime::{AgentRuntime, AgentStatePaths},
 };
 pub use auth::AuthForwardMode;
+pub use build_log_sink::BuildLogSink;
 pub use docker::{
     ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
 };

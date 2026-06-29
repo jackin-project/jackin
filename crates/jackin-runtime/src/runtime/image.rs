@@ -11,25 +11,23 @@ use anyhow::Context as _;
 use futures_util::future::try_join_all;
 use serde::Serialize;
 use sha2::{Digest as _, Sha256};
-use std::collections::{BTreeMap, HashMap};
+use std::{collections::{BTreeMap, HashMap}, path::PathBuf, sync::Arc};
 
 use jackin_core::agent::Agent;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
-#[cfg(not(test))]
-use jackin_docker::ShellRunner;
-#[cfg(not(test))]
-use jackin_docker::docker_client::BollardDockerClient;
 use jackin_docker::docker_client::DockerApi;
+#[cfg(not(test))]
+use jackin_docker::{ShellRunner, docker_client::BollardDockerClient};
 use jackin_image::capsule_binary;
 use jackin_image::derived_image::{
     AgentInstall, create_derived_build_context_for_agents, create_role_base_build_context,
     render_derived_dockerfile,
 };
 use jackin_image::version_check;
+use jackin_launch::build_log::DiagnosticsBuildLogSink;
 use jackin_manifest::repo::CachedRepo;
-use std::path::PathBuf;
 
 use super::naming::{
     LABEL_IMAGE_AGENT_VERSION_PREFIX, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION,
@@ -1857,6 +1855,7 @@ async fn ensure_local_role_base(
         null_stdin: true,
         stream_captured_output: should_stream_build_output(debug),
         tee_to_build_log: true,
+        build_log_sink: Some(Arc::new(DiagnosticsBuildLogSink)),
         extra_env: docker_build_env(),
         ..RunOptions::default()
     };
@@ -2189,6 +2188,7 @@ pub(super) async fn build_agent_image(
         null_stdin: true,
         stream_captured_output: should_stream_build_output(debug),
         tee_to_build_log: true,
+        build_log_sink: Some(Arc::new(DiagnosticsBuildLogSink)),
         extra_env: docker_build_env(),
         ..RunOptions::default()
     };

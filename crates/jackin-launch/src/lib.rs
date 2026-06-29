@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod build_log;
 pub mod progress;
 pub mod tui;
 

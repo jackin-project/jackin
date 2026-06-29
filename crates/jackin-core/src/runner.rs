@@ -7,6 +7,9 @@
 //! it migrates to `jackin-runtime`.
 
 use std::path::Path;
+use std::sync::Arc;
+
+use crate::build_log_sink::BuildLogSink;
 
 /// Options that control how a command is executed.
 #[allow(clippy::struct_excessive_bools)]
@@ -27,6 +30,10 @@ pub struct RunOptions {
     /// Tee captured output into the build-log sink so the loading cockpit can
     /// show a live view. Only the derived-image `docker build` sets this.
     pub tee_to_build_log: bool,
+    /// The sink that receives tee'd build output when `tee_to_build_log` is
+    /// true. Injected by the runtime entry point (`jackin-runtime`) before
+    /// docker-build invocations; `None` suppresses teeing.
+    pub build_log_sink: Option<Arc<dyn BuildLogSink>>,
 }
 
 impl Default for RunOptions {
@@ -40,6 +47,7 @@ impl Default for RunOptions {
             stream_captured_output: true,
             interactive: false,
             tee_to_build_log: false,
+            build_log_sink: None,
         }
     }
 }
