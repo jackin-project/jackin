@@ -11,13 +11,13 @@
     reason = "runtime cleanup and GC report operator-visible warnings and results"
 )]
 
+use super::prune_output;
 use crate::instance::{DockerResources, InstanceIndex, InstanceManifest, InstanceStatus};
 use fs2::FileExt;
 use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::{ContainerState, DockerApi, RemoveImageOutcome};
-use jackin_tui::prune_output;
 use owo_colors::OwoColorize;
 
 use super::discovery::{list_managed_role_names, list_role_names};

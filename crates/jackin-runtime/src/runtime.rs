@@ -18,6 +18,7 @@ pub mod logs;
 pub mod naming;
 pub mod prewarm_trigger;
 pub mod progress;
+pub mod prune_output;
 pub mod repo_cache;
 pub(crate) mod shared_runner;
 pub mod snapshot;
