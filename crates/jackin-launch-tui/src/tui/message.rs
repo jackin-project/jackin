@@ -3,7 +3,9 @@
 use jackin_tui::components::StatusFooterHover;
 use ratatui::layout::Rect;
 
-use crate::tui::app::{FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchStage, StageStatus};
+use crate::tui::model::{
+    FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchStage, StageStatus,
+};
 
 #[derive(Debug, Clone)]
 pub enum LaunchMessage {

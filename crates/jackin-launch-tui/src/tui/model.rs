@@ -72,3 +72,46 @@ pub struct LaunchView {
 // `PromptResult` and had to depend upward on this crate purely for the
 // type. Both directions now point inward through `jackin_core`.)
 pub use jackin_core::PromptResult;
+
+// G0 contract wiring — `View<LaunchView>` is the shared TEA view half
+// (D5). The render function (`render_launch_frame`) is the long-standing
+// implementation; this wrapper carries the run-context that the shared
+// `View::render` signature cannot reach. The trait impl is a thin
+// delegation so the contract is satisfied at the type level without
+// disturbing the existing render path. The `RichRenderer::render` call
+// site in `tui/run.rs` continues to call `render_launch_frame` directly;
+// migrating it to the trait dispatch is a follow-up tracked in G3.
+#[derive(Debug)]
+pub struct LaunchRenderContext<'a> {
+    pub run_id: &'a str,
+    pub run_log_path: &'a str,
+    pub no_motion: bool,
+    pub rain: Option<&'a crate::tui::components::rain::RainState>,
+    pub debug_mode: bool,
+    pub jackin_version: &'static str,
+}
+
+#[derive(Debug)]
+pub struct LaunchViewView<'a> {
+    pub context: LaunchRenderContext<'a>,
+}
+
+impl jackin_tui::runtime::View<LaunchView> for LaunchViewView<'_> {
+    fn render(
+        &self,
+        model: &LaunchView,
+        frame: &mut ratatui::Frame<'_>,
+        _area: ratatui::layout::Rect,
+    ) {
+        crate::tui::view::render_launch_frame(
+            frame,
+            model,
+            self.context.run_id,
+            self.context.run_log_path,
+            self.context.no_motion,
+            self.context.rain,
+            self.context.debug_mode,
+            self.context.jackin_version,
+        );
+    }
+}

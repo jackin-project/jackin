@@ -1,7 +1,7 @@
-use crate::tui::app::{LaunchIdentity, LaunchTargetKind};
+use crate::tui::model::{LaunchIdentity, LaunchTargetKind};
 use crate::tui::update::initial_view;
 use crate::tui::view::render_launch_frame;
-use crate::{LaunchStage, tui::app::LaunchFailure};
+use crate::{LaunchStage, tui::model::LaunchFailure};
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
 fn row_text(buf: &Buffer, row: u16, width: u16) -> String {

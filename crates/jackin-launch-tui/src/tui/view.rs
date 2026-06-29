@@ -187,7 +187,7 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::LaunchStage;
-    use crate::tui::app::{LaunchFailure, LaunchIdentity, LaunchTargetKind};
+    use crate::tui::model::{LaunchFailure, LaunchIdentity, LaunchTargetKind};
     use crate::tui::update::initial_view;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
