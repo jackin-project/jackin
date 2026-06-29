@@ -25,6 +25,7 @@ pub mod manifest;
 pub mod op_cache;
 pub mod op_reference;
 pub mod op_types;
+pub mod operator_notice;
 pub mod path_text;
 pub mod paths;
 pub mod prompt_result;
@@ -55,6 +56,7 @@ pub use launch_progress::{
     LaunchTargetKind, PromptContextLine, StageLabelTransition, StageStatus, StageView,
     WorktreeInspect,
 };
+pub use operator_notice::{OperatorNoticeSink, emit_compact_line, set_global_sink};
 pub use path_text::shorten_home;
 pub use paths::JackinPaths;
 pub use prompt_result::PromptResult;

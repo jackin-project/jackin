@@ -114,6 +114,12 @@ pub async fn run(cli: Cli) -> Result<()> {
     // id on every span and log record.
     let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, debug, command_name)?;
     let _diagnostics_guard = diagnostics.activate();
+    // Wire the jackin-diagnostics operator-notice sink to the
+    // jackin-core::operator_notice port-trait dispatcher so domain
+    // crates (L0) can call `jackin_core::emit_compact_line` without
+    // depending on the L2 diagnostics layer. Per the A5 unblock
+    // work in `codebase-health-enforcement`.
+    jackin_diagnostics::operator_notice::install_operator_notice_sink();
     jackin_diagnostics::prune_old_runs(&paths);
     if debug {
         announce_debug_run(&diagnostics);

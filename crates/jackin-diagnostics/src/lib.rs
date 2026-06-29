@@ -5,6 +5,7 @@
 pub mod build_log;
 pub mod logging;
 pub mod observability;
+pub mod operator_notice;
 pub mod run;
 pub mod screen;
 pub mod summary;

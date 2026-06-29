@@ -134,7 +134,7 @@ pub fn validate_role_repo(repo_dir: &Path) -> Result<ValidatedRoleRepo, RoleRepo
 
     let warnings = crate::validate::validate_role_manifest(&manifest)?;
     for warning in &warnings {
-        jackin_diagnostics::emit_compact_line("warning", &format!("warning: {}", warning.message));
+        jackin_core::emit_compact_line("warning", &format!("warning: {}", warning.message));
     }
 
     Ok(ValidatedRoleRepo {

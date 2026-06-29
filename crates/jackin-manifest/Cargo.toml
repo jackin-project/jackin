@@ -17,7 +17,6 @@ path = "src/lib.rs"
 [dependencies]
 jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
 jackin-config = { version = "0.6.0-dev", path = "../jackin-config" }
-jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
 anyhow = "1.0"
 toml = "1.1"
 toml_edit = "0.25"
