@@ -250,7 +250,7 @@ Used by every C/E slice. Pure move; contents are not rewritten.
 ### Phase E — hot-path carves (GATED — D1/D3 binding condition)
 
 - [ ] **E0 — benchmark + `lto = "thin"` (prerequisite).** Add a representative `jackin load` / attach benchmark; enable `lto = "thin"` in the release profile; record the baseline numbers. Nothing carves until this lands.
-- [x] **E1 — carve `jackin-isolation`** (mount isolation: shared/worktree/clone) via the recipe **+ perf gate**: PR must show no regression vs the E0 baseline. (Partial carve: 4 of 6 sub-modules — branch / cleanup / materialize / state — landed. `finalize.rs` and `git_inspect.rs` remain in `jackin-runtime` pending the preparatory slice that pre-moves `JACKIN_STATUS_CMD` + `parse_session_count` to `jackin-core`. `WorktreeInspect` / `FileDiff` already moved to `jackin-core` in A2.)
+- [x] **E1 — carve `jackin-isolation`** (mount isolation: shared/worktree/clone) via the recipe **+ perf gate**: PR must show no regression vs the E0 baseline. (Partial carve: 4 of 6 sub-modules — branch / cleanup / materialize / state — landed. `finalize.rs` and `git_inspect.rs` remain in `jackin-runtime` — they reach into L3 (`jackin_launch_tui::progress::standalone_exit_dialog_with_inspect` / `standalone_error_popup`) which would create an inverted L1→L3 dep. Moving them requires either a port-trait relocation per D2 or a different carve strategy (parked separately as **E1-followup**.)
 - [x] **E2 — carve `jackin-instance`** (identity/manifest/index/recovery) via the recipe **+ perf gate**.
 
 ### Phase F — naming normalization (P8)
