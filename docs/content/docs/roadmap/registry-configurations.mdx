@@ -46,14 +46,71 @@ Registry pull-auth is simply the next instance of this class. A correct architec
 
 ## Design
 
-Direction only — to be finalized in `brainstorm`. The structural move is a **configurations layer**: a list of named, scoped endpoint configurations, each carrying a credential sourced through the [`CredentialSource`](/roadmap/credential-source-pattern/) enum (literal, env, command, `op://`, OS keychain, and — new — Docker credential store/helper and an ECR helper). Registry pull-auth is the first consumer: resolve the matching configuration for a `published_image` reference, hand bollard a real `RegistryAuth`, and distinguish auth failure from staleness so the operator gets an actionable message instead of a silent rebuild.
+Direction and candidate solutions — to be finalized in `brainstorm`. The structural move is a **configurations layer**: a list of named, scoped endpoint configurations, each carrying a credential sourced through the [`CredentialSource`](/roadmap/credential-source-pattern/) enum (literal, env, command, `op://`, OS keychain, and — new — Docker credential store/helper and an ECR provider). Registry pull-auth is the first consumer: resolve the matching configuration for a `published_image` reference, hand bollard real credentials, and distinguish auth failure from staleness so the operator gets an actionable message instead of a silent rebuild.
 
-Open questions to settle in `brainstorm`:
+### Pull through bollard, not the docker CLI
+
+The pull path must stay in-process via the bollard API, **not** shell out to the `docker` CLI. The CLI offers no way to hold a session or inject ad-hoc credentials per pull; bollard does, and jackin already calls it. This was verified against the pinned `bollard 0.21.0`:
+
+- `create_image(options, body, credentials: Option<DockerCredentials>)` — the third argument is the injection point. Today it is `None` in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile>. bollard base64-encodes the credentials into the `X-Registry-Auth` header itself — the same mechanism the CLI uses internally.
+- `bollard::auth::DockerCredentials { username, password, auth, email, serveraddress, identitytoken, registrytoken }` — all `Option<String>`. (Note: the type is `DockerCredentials`, not `RegistryAuth`.)
+
+So the only missing piece is *producing* a `DockerCredentials` and passing it. No architecture change, no CLI dependency.
+
+### Resolve credentials lazily, per pull — not at config load
+
+This is the key move that makes "authenticate once, refresh transparently" fall out for free. A provider trait, resolved at the moment of pull:
+
+```rust
+#[async_trait]
+trait RegistryAuthProvider {
+    // `registry` is the host parsed from the image ref,
+    // e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com"
+    async fn credentials(&self, registry: &str) -> anyhow::Result<Option<DockerCredentials>>;
+}
+```
+
+`pull_image(image)` parses the host from the reference, asks the provider, and hands bollard fresh `DockerCredentials`. Because resolution happens at pull time, a refreshed token is simply "the provider returned a newer value this call." Resolving at startup instead would capture a token that expires mid-session — the failure mode to avoid.
+
+### Provider variants map onto `CredentialSource`
+
+| Kind | Source | Refresh |
+|---|---|---|
+| `static` | username/password from env / `op://` / config literal | none needed (e.g. a GHCR or Docker Hub PAT) |
+| `docker-config` | read `~/.docker/config.json` via the [`docker_credential`](https://github.com/keirlawson/docker_credential) crate — honors `credsStore`/`credHelpers` | credential helper re-invoked on each read → free refresh when `docker-credential-ecr-login` is installed |
+| `ecr` (native) | `aws-sdk-ecr` `get_authorization_token` over the default AWS chain (profile / SSO / instance role / IRSA) | token carries `expires_at` (~12h) → cache and refresh on expiry skew |
+
+ECR token decode: the returned `authorizationToken` is base64 of `AWS:<password>`. Set `username = Some("AWS")`, `password = Some(decoded)`, `serveraddress = Some(registry)`.
+
+### Refresh = cache-with-expiry inside the provider
+
+```rust
+struct EcrProvider {
+    ecr: aws_sdk_ecr::Client,
+    cache: Mutex<HashMap<String, (DockerCredentials, SystemTime)>>,
+}
+// credentials(): if cached and now < expiry - skew → reuse;
+// else call get_authorization_token, store { creds, expires_at }.
+```
+
+"Authenticate once" for ECR means the operator configures the AWS profile/SSO **once** (or runs on a role-bearing instance/IRSA); jackin mints fresh ~12h tokens on demand, transparently, with no re-login and — with the native `aws-sdk-ecr` path — no helper binary to install. Static credentials (PATs) need no refresh at all. This is the heart of the desired UX: provide credentials once, never be forced to re-authenticate mid-flow.
+
+### Recommended default + escape hatches
+
+- **Default (zero config):** the `docker-config` provider. If the operator has already run `docker login` or installed the ECR credential helper, jackin works with no jackin-side configuration — this *is* "provide once," reusing the host's existing login.
+- **Native `ecr` config entry:** best UX for the private-ECR forcing case — AWS credential chain plus automatic refresh, no helper install. Recommended for the reported failure.
+- **Explicit `[[registries]]` entries:** env / `op://` / command credential sources for everything else, declarable global or per workspace.
+
+### Concept-validation PoC
+
+Before committing to the design, a ~30-line throwaway (no jackin integration) proves the whole approach: obtain an ECR token (`aws ecr get-login-password` or `aws-sdk-ecr`), build a `DockerCredentials { username: "AWS", password: token, serveraddress: <registry>, .. }`, and call `create_image(.., Some(creds))` to pull a private ECR image. If that pulls clean, bollard + in-process credentials + per-pull resolution is validated end to end.
+
+### Open questions to settle in `brainstorm`
 
 - Naming of the entry type (`registries` vs a broader `endpoints`/`connections`/`configurations`) and whether the first cut is registry-only or born general.
-- Whether to **reuse the host's existing Docker login** (read `~/.docker/config.json` `credsStore`/`credHelpers`, inherit `docker login`) as the zero-config default, vs. a jackin-owned config block, vs. a `jackin registry login` command — and which combination is the lowest-friction first-run experience. (The comparable-tools and ECR usability research commissioned for this item feeds this decision — see Research sources below.)
-- Library choice for the mechanics: bollard already exposes `RegistryAuth`; the [`docker_credential`](https://github.com/keirlawson/docker_credential) crate reads `~/.docker/config.json` plus `credsStore`/`credHelpers`; [`aws-sdk-ecr`](https://crates.io/crates/aws-sdk-ecr) yields ECR tokens directly (vs. shelling out to the credential helper); [`oci-client`/`rust-oci-client`](https://github.com/oras-project/rust-oci-client) is an alternative if pulls ever move off bollard. Decide reuse-vs-build per the "prefer maintained crates" rule.
-- How ECR's 12-hour token expiry is refreshed (credential helper vs. command source re-invoked per pull) and how that behaves in headless/CI environments.
+- Reuse-vs-build for the mechanics: bollard for the pull is settled; for sourcing, choose between the [`docker_credential`](https://github.com/keirlawson/docker_credential) crate, native [`aws-sdk-ecr`](https://crates.io/crates/aws-sdk-ecr), shelling out to the credential helper, and (if pulls ever move off bollard) [`oci-client`/`rust-oci-client`](https://github.com/oras-project/rust-oci-client) — per the "prefer maintained crates" rule.
+- How the `ecr` provider behaves in headless/CI environments (which leg of the AWS chain applies) and how expiry skew is tuned.
+- Whether to also offer a `jackin registry login` command, or rely entirely on host docker login + config entries.
 - Where resolution happens relative to the host-socket daemon, so credentials never enter the container env or image layers (ties to [container credential exposure](/roadmap/container-credential-exposure/)).
 
 ## Tasks
