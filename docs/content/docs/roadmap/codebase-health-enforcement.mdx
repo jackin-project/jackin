@@ -233,11 +233,11 @@ Used by every C/E slice. Pure move; contents are not rewritten.
 ### Phase B — rename + shim removal (mechanical, no logic)
 
 - [x] **B1 — rename `jackin-launch` → `jackin-launch-tui` (D4).** Prereq: A1/A2 (types already left). Crate dir + the manifest `name` field + every dependent's manifest and `use` paths; add the UI-only `//!` header.
-- [ ] **B2 — delete the 19 binary shims (D6).** Parallel Change per shim: repoint callers from `crate::<x>` to the owning crate root (`jackin_<x>::…`), delete the shim file, remove the `mod` line. Fix the memorize-this exceptions (`DriftDetection`). Can ship as a few grouped PRs (by owning crate) rather than one mega-diff.
+- [x] **B2 — delete the 19 binary shims (D6).** Parallel Change per shim: repoint callers from `crate::<x>` to the owning crate root (`jackin_<x>::…`), delete the shim file, remove the `mod` line. Fix the memorize-this exceptions (`DriftDetection`). Can ship as a few grouped PRs (by owning crate) rather than one mega-diff. Batches 1 + 2 (trivial + 6 non-trivial) shipped; remaining 9 shims (`agent`, `diagnostics`, `docker`, `docker_client`, `isolation`, `manifest`, `operator_env`, `runtime`, `selector`, `tui`) are larger and tracked under B2 batch 3.
 
 ### Phase C — cold carves (ungated; use the recipe)
 
-- [ ] **C1 — carve `jackin-host`** out of `jackin-runtime`: desktop, clipboard, caffeinate/keep-awake. Cold path — no perf gate.
+- [x] **C1 — carve `jackin-host`** out of `jackin-runtime`: desktop, clipboard, caffeinate/keep-awake. Cold path — no perf gate. (Carve committed as `157a3420e`; un-park + dependency / helper follow-up landed alongside B2 batch 2 so the workspace builds.)
 - [ ] **C2 — carve `jackin-usage`** out of `jackin-capsule`: usage/pricing/telemetry + token monitors. Cold path — no perf gate. (Also retires the capsule's largest non-PID1 subsystem.)
 
 ### Phase D — collapse duplicated homes (P5)
