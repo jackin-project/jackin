@@ -1,8 +1,8 @@
 //! Tests for `cleanup`.
 use super::*;
-use crate::isolation::MountIsolation;
-use crate::isolation::state::{CleanupStatus, read_records, write_records};
-use crate::runtime::test_support::FakeRunner;
+use crate::MountIsolation;
+use crate::state::{CleanupStatus, read_records, write_records};
+use jackin_runtime::runtime::test_support::FakeRunner;
 use tempfile::TempDir;
 
 fn rec_for(repo: &Path, container_dir: &Path) -> IsolationRecord {

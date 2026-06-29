@@ -1,0 +1,39 @@
+[package]
+name = "jackin-isolation"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Mount isolation subsystem: shared/worktree/clone materialization, cleanup, branch naming, and state persistence."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_isolation"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core        = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-config      = { version = "0.6.0-dev", path = "../jackin-config" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+
+anyhow    = "1.0"
+serde     = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing   = "0.1"
+tempfile  = "3.20"
+directories = "6"
+
+[dev-dependencies]
+jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime", features = ["test-support"] }
+tokio = { version = "=1.52.3", features = ["test-util"] }
+tempfile = "3.20"
+
+[features]
+test-support = []
+
+[lints]
+workspace = true

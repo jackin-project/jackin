@@ -186,7 +186,7 @@ async fn write_git_overrides_is_idempotent() {
     assert_eq!(first, second);
 }
 
-use crate::runtime::test_support::FakeRunner;
+use jackin_runtime::runtime::test_support::FakeRunner;
 use std::collections::VecDeque;
 
 fn fake_with_outputs(outputs: &[&str]) -> FakeRunner {
@@ -393,7 +393,7 @@ async fn clean_tree_passes() {
     preflight_worktree(&m, &ctx(), &mut runner).await.unwrap();
 }
 
-use crate::isolation::state::{CleanupStatus, read_records};
+use crate::state::{CleanupStatus, read_records};
 use jackin_config::ResolvedWorkspace;
 
 fn resolved_with_one_isolated(repo: &Path, dst: &str) -> ResolvedWorkspace {
@@ -847,7 +847,7 @@ async fn clone_reuse_skips_git_ops_when_git_dir_exists() {
     let dst = "/workspace/jackin";
     let cp = clone_path_for(&container_dir, dst, "jackin-x");
     std::fs::create_dir_all(cp.join(".git")).unwrap();
-    crate::isolation::state::write_records(
+    crate::state::write_records(
         &container_dir,
         std::slice::from_ref(&IsolationRecord {
             workspace: "jackin".into(),
@@ -896,7 +896,7 @@ async fn second_materialization_with_existing_record_skips_git_ops() {
     let wt_path = worktree_path_for(&container_dir, dst, "jackin-x");
     std::fs::create_dir_all(&wt_path).unwrap();
     std::fs::write(wt_path.join(".git"), "gitdir: /elsewhere").unwrap();
-    crate::isolation::state::write_records(
+    crate::state::write_records(
         &container_dir,
         std::slice::from_ref(&IsolationRecord {
             workspace: "jackin".into(),
@@ -944,7 +944,7 @@ async fn drift_when_recorded_src_differs_errors_before_git_ops() {
     let dst = "/workspace/jackin";
     let wt_path = worktree_path_for(&container_dir, dst, "jackin-x");
     std::fs::create_dir_all(&wt_path).unwrap();
-    crate::isolation::state::write_records(
+    crate::state::write_records(
         &container_dir,
         std::slice::from_ref(&IsolationRecord {
             workspace: "jackin".into(),

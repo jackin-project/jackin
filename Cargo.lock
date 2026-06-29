@@ -2929,6 +2929,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-isolation"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "directories",
+ "jackin-config",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-runtime",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "jackin-launch-tui"
 version = "0.6.0-dev"
 dependencies = [
@@ -2999,6 +3016,7 @@ dependencies = [
  "jackin-env",
  "jackin-host",
  "jackin-image",
+ "jackin-isolation",
  "jackin-launch-tui",
  "jackin-manifest",
  "jackin-protocol",

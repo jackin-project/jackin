@@ -10,9 +10,9 @@
 //! Not responsible for: finalization or cleanup of existing worktrees
 //! (`isolation/finalize.rs` and `isolation/cleanup.rs`).
 
-use crate::isolation::MountIsolation;
-use crate::isolation::branch::branch_name;
-use crate::isolation::state::{CleanupStatus, IsolationRecord, read_record, upsert_record};
+use crate::MountIsolation;
+use crate::branch::branch_name;
+use crate::state::{CleanupStatus, IsolationRecord, read_record, upsert_record};
 use anyhow::Context;
 use jackin_config::ResolvedWorkspace;
 use jackin_core::CommandRunner;
@@ -156,6 +156,22 @@ pub fn clone_path_for(container_state_dir: &Path, dst: &str, container_name: &st
 fn container_host_git_path(mount_dst: &str) -> String {
     let rel = mount_dst.trim_matches('/');
     format!("/jackin/host/{rel}/.git")
+}
+
+/// Mirror of `jackin_runtime::runtime::repo_cache::normalize_github_url`.
+/// Inlined here (instead of pulling in a runtime dep that would
+/// cycle) because the function is 10 lines and only used at one
+/// call site in this crate. Keeps jackin-isolation's allowed-deps
+/// list (jackin-core / jackin-config / jackin-diagnostics) clean
+/// per the Architecture-Invariant header in lib.rs.
+fn normalize_github_url(url: &str) -> String {
+    if let Some(rest) = url.strip_prefix("git@github.com:") {
+        return format!("https://github.com/{rest}");
+    }
+    if let Some(rest) = url.strip_prefix("ssh://git@github.com/") {
+        return format!("https://github.com/{rest}");
+    }
+    url.to_owned()
 }
 
 /// Drop an embedded `userinfo@` from an HTTP(S) URL so a host-side
@@ -1018,9 +1034,7 @@ async fn materialize_clone(
             if trimmed.is_empty() {
                 None
             } else {
-                Some(strip_userinfo(crate::runtime::normalize_github_url(
-                    trimmed,
-                )))
+                Some(strip_userinfo(normalize_github_url(trimmed)))
             }
         }
         Err(err) => {

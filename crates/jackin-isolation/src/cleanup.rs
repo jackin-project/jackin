@@ -10,7 +10,7 @@
     reason = "isolation cleanup emits operator-visible cleanup warnings"
 )]
 
-use crate::isolation::state::{IsolationRecord, remove_record};
+use crate::state::{IsolationRecord, remove_record};
 use jackin_core::CommandRunner;
 use jackin_diagnostics::debug_log;
 use std::path::Path;
@@ -34,7 +34,7 @@ pub async fn force_cleanup_isolated(
     container_state_dir: &Path,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    if matches!(record.isolation, crate::isolation::MountIsolation::Clone) {
+    if matches!(record.isolation, crate::MountIsolation::Clone) {
         return force_cleanup_clone(record, container_state_dir);
     }
 
@@ -242,7 +242,7 @@ pub async fn purge_isolated_for_container(
     container_state_dir: &Path,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    let records = crate::isolation::state::read_records(container_state_dir)?;
+    let records = crate::state::read_records(container_state_dir)?;
     debug_log!(
         "isolation",
         "purge_isolated_for_container: {n} record(s) under {dir}",
