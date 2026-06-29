@@ -179,7 +179,22 @@ credentials = { ecr = { region = "us-east-1", profile = "prod" } }
 
 `region` may be **derived from the registry host** (`<acct>.dkr.ecr.<region>.amazonaws.com`) so it is optional when the `match` host carries it; `profile` is optional (default chain otherwise). Token caching: store `{ DockerCredentials, expires_at }` per registry, refresh when within a small skew (~5 min) of `expires_at`. This is the "authenticate once" payoff — operator configures AWS once; jackin mints ~12h tokens on demand.
 
-### Open questions to settle in `brainstorm`
+### Decided: `jackin registry login` (keychain-backed)
+
+Ship a `jackin registry login <host>` command for discoverable first-run setup. Constraints that shape it:
+
+- **No plaintext store.** It must **not** write a jackin-owned plaintext credential file (the [GHSA-99pg-grm5-qq3v](https://github.com/docker/cli/security/advisories/GHSA-99pg-grm5-qq3v) pitfall). It stores into the **OS keychain / docker `credsStore` backend** — the same secure store `docker login` uses — so it is a friendly front-end to the standard store, not a second credential home. This keeps it DRY with the `docker-config` read path: what `login` writes, the default fallback reads back.
+- **Host-write opt-in is satisfied by the explicit invocation.** Per `HOST_AND_CONTAINER.md` the no-silent-host-writes rule targets *silent* writes during launch; an operator running `jackin registry login` is explicit consent. The launch path still performs no credential writes.
+- **Complements, does not replace.** Setup options remain: existing `docker login`, `[[registries]]` config entries (env/`op`/`ecr`/`static`), or this command. For ECR specifically the native `ecr` config kind is still the lower-friction path (no per-12h login); `login` is aimed at static-credential registries (GHCR/Docker Hub PATs).
+
+A read-only `jackin registry status` (which registries resolve, from which source, ECR token expiry) is a natural companion for visibility and pairs with the auth health/visibility theme — include if cheap, else note as follow-up.
+
+### Open questions deferred to `plan`
+
+- Network/transient pull-error retry policy.
+- `command` credential kind (post-v1).
+- Exact `registry status` scope and whether it lands in v1.
+- Multi-match tie-breaking precision (longest-host-pattern wins) and `match` glob syntax.
 
 - Naming of the entry type (`registries` vs a broader `endpoints`/`connections`/`configurations`) and whether the first cut is registry-only or born general.
 - Reuse-vs-build for the mechanics: bollard for the pull is settled; for sourcing, choose between the [`docker_credential`](https://github.com/keirlawson/docker_credential) crate, native [`aws-sdk-ecr`](https://crates.io/crates/aws-sdk-ecr), shelling out to the credential helper, and (if pulls ever move off bollard) [`oci-client`/`rust-oci-client`](https://github.com/oras-project/rust-oci-client) — per the "prefer maintained crates" rule.
