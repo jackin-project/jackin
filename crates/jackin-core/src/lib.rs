@@ -18,6 +18,7 @@ pub mod docker_security;
 pub mod env_model;
 pub mod env_value;
 pub mod host_colors;
+pub mod url_text;
 pub mod instance;
 pub mod isolation;
 pub mod isolation_record;
@@ -51,6 +52,7 @@ pub use docker_security::{
 pub use env_value::{EnvValue, Extended, FieldTarget, OpRef};
 pub use host_colors::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, Rgb, owo_rgb};
 pub use isolation::{MountIsolation, ParseMountIsolationError};
+pub use url_text::{has_url_scheme, is_host_open_url, redact_url_for_log};
 pub use isolation_record::{CleanupStatus, DriftDetection, IsolationRecord};
 pub use launch_progress::{
     FailureCopyTarget, FileDiff, LaunchCancelled, LaunchCandidate, LaunchDiagnostics,
