@@ -12,6 +12,7 @@ pub mod agent;
 pub mod auth;
 pub mod build_log_sink;
 pub mod constants;
+pub mod debug_log;
 pub mod docker;
 pub mod docker_security;
 pub mod env_model;
@@ -40,6 +41,7 @@ pub use agent::{
 };
 pub use auth::AuthForwardMode;
 pub use build_log_sink::BuildLogSink;
+pub use debug_log::{DebugLogSink, emit_debug_line, is_debug_mode, set_global_sink};
 pub use docker::{
     ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
 };
@@ -56,7 +58,7 @@ pub use launch_progress::{
     LaunchTargetKind, PromptContextLine, StageLabelTransition, StageStatus, StageView,
     WorktreeInspect,
 };
-pub use operator_notice::{OperatorNoticeSink, emit_compact_line, set_global_sink};
+pub use operator_notice::{OperatorNoticeSink, emit_compact_line};
 pub use path_text::shorten_home;
 pub use paths::JackinPaths;
 pub use prompt_result::PromptResult;

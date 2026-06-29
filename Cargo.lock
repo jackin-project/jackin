@@ -2768,7 +2768,6 @@ dependencies = [
  "anyhow",
  "directories",
  "jackin-core",
- "jackin-diagnostics",
  "serde",
  "tempfile",
  "thiserror 2.0.18",

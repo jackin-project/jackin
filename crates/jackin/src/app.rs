@@ -120,6 +120,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     // depending on the L2 diagnostics layer. Per the A5 unblock
     // work in `codebase-health-enforcement`.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
+    jackin_diagnostics::debug_log::install_debug_log_sink();
     jackin_diagnostics::prune_old_runs(&paths);
     if debug {
         announce_debug_run(&diagnostics);

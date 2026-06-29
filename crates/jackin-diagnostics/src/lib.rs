@@ -3,6 +3,7 @@
 //! from `jackin_tui::ownership`.
 
 pub mod build_log;
+pub mod debug_log;
 pub mod logging;
 pub mod observability;
 pub mod operator_notice;

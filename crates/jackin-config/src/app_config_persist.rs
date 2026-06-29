@@ -41,7 +41,7 @@ pub fn load_split_config(
     if !legacy_workspaces.is_empty() {
         migrate_legacy_workspaces(paths, &config, &legacy_workspaces, &legacy_op_accounts)?;
         // Silent automatic upgrade — record in the run diagnostics log only.
-        jackin_diagnostics::debug_log!(
+        jackin_core::debug_log!(
             "config",
             "migrated saved workspaces into {}",
             paths.workspaces_dir.display()
