@@ -26,11 +26,11 @@ const CTRL_V: u8 = 0x16;
 const MAX_CLIPBOARD_TEXT_PATH_BYTES: usize = 8192;
 
 #[must_use]
-pub(super) fn is_image_paste_trigger(input: &[u8]) -> bool {
+pub fn is_image_paste_trigger(input: &[u8]) -> bool {
     input == [CTRL_V]
 }
 
-pub(super) async fn read_image_for_paste_trigger(input: &[u8]) -> Result<Option<ClipboardImage>> {
+pub async fn read_image_for_paste_trigger(input: &[u8]) -> Result<Option<ClipboardImage>> {
     if !is_image_paste_trigger(input) {
         return Ok(None);
     }
@@ -51,7 +51,7 @@ const IMAGE_PATH_EXTENSIONS: &[&str] = &[".png", ".jpg", ".jpeg", ".gif", ".webp
 /// paste as ordinary terminal text. Resolved once — the value is fixed for the
 /// process.
 #[must_use]
-pub(super) fn paste_image_paths_enabled() -> bool {
+pub fn paste_image_paths_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| paste_image_paths_enabled_for(std::env::var_os(PASTE_IMAGE_PATHS_ENV)))
 }
@@ -59,7 +59,7 @@ pub(super) fn paste_image_paths_enabled() -> bool {
 /// The opt-out decision, split out from the process-wide cache so it is unit
 /// testable: unset → enabled; otherwise the shared truthy/falsy parse.
 fn paste_image_paths_enabled_for(value: Option<std::ffi::OsString>) -> bool {
-    value.is_none_or(|value| super::universe::env_flag_enabled(Some(value)))
+    value.is_none_or(|value| crate::universe::env_flag_enabled(Some(value)))
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -163,7 +163,7 @@ fn unescape_shell_path(text: &str) -> String {
 /// image path can only arrive in a single read via a paste/drop — never
 /// keystroke-by-keystroke — and `looks_like_image_path` still requires the entire
 /// body to be one absolute image path with no other bytes.
-pub(super) async fn read_image_from_pasted_path(
+pub async fn read_image_from_pasted_path(
     input: &[u8],
 ) -> Result<Option<(ClipboardImage, &[u8], &[u8])>> {
     if !paste_image_paths_enabled() {
@@ -226,22 +226,22 @@ async fn spawn_clipboard_probe(
 }
 
 #[cfg(target_os = "macos")]
-pub(super) async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
+pub async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
     spawn_clipboard_probe("macOS clipboard image reader", read_macos_clipboard_image).await
 }
 
 #[cfg(target_os = "linux")]
-pub(super) async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
+pub async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
     spawn_clipboard_probe("Linux clipboard image reader", read_linux_clipboard_image).await
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub(super) async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
+pub async fn read_host_clipboard_image() -> Result<Option<ClipboardImage>> {
     Ok(None)
 }
 
 #[cfg(target_os = "macos")]
-pub(super) async fn read_host_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
+pub async fn read_host_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
     spawn_clipboard_probe(
         "macOS clipboard text-path reader",
         read_macos_clipboard_text_path_image,
@@ -250,7 +250,7 @@ pub(super) async fn read_host_clipboard_text_path_image() -> Result<Option<Clipb
 }
 
 #[cfg(target_os = "linux")]
-pub(super) async fn read_host_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
+pub async fn read_host_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
     spawn_clipboard_probe(
         "Linux clipboard text-path reader",
         read_linux_clipboard_text_path_image,
@@ -259,7 +259,7 @@ pub(super) async fn read_host_clipboard_text_path_image() -> Result<Option<Clipb
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub(super) async fn read_host_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
+pub async fn read_host_clipboard_text_path_image() -> Result<Option<ClipboardImage>> {
     Ok(None)
 }
 

@@ -215,8 +215,8 @@ async fn count_keep_awake_agents(docker: &impl DockerApi) -> anyhow::Result<usiz
     let rows = docker
         .list_containers(
             &[
-                super::naming::LABEL_MANAGED,
-                super::naming::LABEL_KEEP_AWAKE,
+                crate::naming::LABEL_MANAGED,
+                crate::naming::LABEL_KEEP_AWAKE,
             ],
             false,
         )

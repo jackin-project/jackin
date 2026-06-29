@@ -8,3 +8,5 @@
 pub mod caffeinate;
 pub mod host_clipboard;
 pub mod host_desktop;
+pub(crate) mod naming;
+pub(crate) mod universe;

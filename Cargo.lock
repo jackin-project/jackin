@@ -2889,8 +2889,16 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "crossterm",
+ "fs2",
  "jackin-core",
+ "jackin-diagnostics",
+ "jackin-docker",
+ "jackin-protocol",
+ "jackin-tui",
  "nix 0.31.3",
+ "tempfile",
+ "tokio",
+ "url",
 ]
 
 [[package]]
