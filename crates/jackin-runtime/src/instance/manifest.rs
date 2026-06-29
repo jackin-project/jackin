@@ -72,9 +72,9 @@ impl DockerResources {
     pub fn from_container_name(container_name: &str) -> Self {
         Self {
             role_container: container_name.to_owned(),
-            dind_container: Some(crate::runtime::naming::dind_container_name(container_name)),
-            network: crate::runtime::naming::role_network_name(container_name),
-            certs_volume: Some(crate::runtime::naming::dind_certs_volume(container_name)),
+            dind_container: Some(crate::instance::naming::dind_container_name(container_name)),
+            network: crate::instance::naming::role_network_name(container_name),
+            certs_volume: Some(crate::instance::naming::dind_certs_volume(container_name)),
         }
     }
 }

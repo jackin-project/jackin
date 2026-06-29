@@ -1169,8 +1169,8 @@ pub(crate) async fn load_role_with(
         let dind = resources
             .dind_container
             .clone()
-            .unwrap_or_else(|| crate::runtime::naming::dind_container_name(&container_name));
-        let certs_volume = crate::runtime::naming::dind_certs_volume(&container_name);
+            .unwrap_or_else(|| crate::instance::naming::dind_container_name(&container_name));
+        let certs_volume = crate::instance::naming::dind_certs_volume(&container_name);
         let workspace_docker_for_grants = config
             .workspaces
             .get(&workspace.label)

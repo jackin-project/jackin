@@ -23,8 +23,8 @@ use owo_colors::OwoColorize;
 use super::discovery::{list_managed_role_names, list_role_names};
 use super::naming::{
     LABEL_IMAGE_KEY, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, LABEL_ROLE_KEY,
-    dind_certs_volume, role_network_name,
 };
+use crate::instance::naming::{dind_certs_volume, role_network_name};
 
 pub async fn purge_class_data(
     paths: &JackinPaths,
