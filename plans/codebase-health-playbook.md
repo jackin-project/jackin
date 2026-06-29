@@ -50,7 +50,7 @@ If a file dropped under its cap, refresh the ratchet: `cargo run -p jackin-xtask
 
 Critical path: `A1–A4 → A5 → {B, C, D, W5} → F → {E0 → E1, E2} → {G0 → G1 → G2 → G3}`. Cold/dedup/W5 slices are independent once A5 is in.
 
-> **Detailing status:** 21/23 slices detailed from the real code by the playbook workflow. Re-detail pending for: G2, W5-usage. Slices marked ⚠️ in the index carry open questions resolved in **Blockers & open decisions** below.
+> **Detailing status:** 23/23 slices detailed from the real code by the playbook workflow. Slices marked ⚠️ in the index carry open questions resolved in **Blockers & open decisions** below.
 - **A1** — build_log trait port (P2) · _ready_
 - **A2** — Relocate launch `progress` value types to jackin-core · _ready_
 - **A3** — Move presentation helpers out of jackin-core (P7) · ⚠️ _carries open questions — see Blockers_
@@ -70,9 +70,9 @@ Critical path: `A1–A4 → A5 → {B, C, D, W5} → F → {E0 → E1, E2} → {
 - **F1** — app_config_* fan-out → app_config/ coordinator + siblings (P8) · _ready_
 - **G0** — Build shared Elm runtime contract in jackin-tui (D5) · _ready_
 - **G1** — Migrate jackin-launch-tui onto the shared runtime · ⚠️ _carries open questions — see Blockers_
-- **G2** — Migrate the capsule TUI onto the shared runtime · ⚠️ _detailing failed — re-detail before executing_
+- **G2** — Migrate the capsule TUI onto the shared runtime · ⚠️ _carries open questions — see Blockers_
 - **G3** — Migrate jackin-console onto the shared runtime (+ unify-settings) · ⚠️ _carries open questions — see Blockers_
-- **W5-usage** — Decompose jackin-capsule usage.rs into provider modules · ⚠️ _detailing failed — re-detail before executing_
+- **W5-usage** — Decompose jackin-capsule usage.rs into provider modules · ⚠️ _carries open questions — see Blockers_
 - **W5-console** — Decompose console tui/app.rs + editor/settings model.rs · ⚠️ _carries open questions — see Blockers_
 
 ## Slice playbook
@@ -131,19 +131,34 @@ The detailing agents surfaced these by inspecting the real code. **Each is a "do
   - Does G0 provide a shared run-loop that replaces the 41 KB crates/jackin-launch-tui/src/tui/run.rs (RichRenderer + RichDriver), or is G0 purely a trait contract with no shared loop (in which case run.rs is unchanged in G1)?
   - Does G0 define a Component/View contract that any of the launch-local components under crates/jackin-launch-tui/src/tui/components/ must implement in G1, or is that deferred to G2/G3?
   - Has B1 already updated test-layout-allowlist.toml from crates/jackin-launch/src/tui/view.rs to crates/jackin-launch-tui/src/tui/view.rs? If not, G1 must include that path string replacement.
+- **G2 — Migrate the capsule TUI onto the shared runtime**
+  - After G0 ships: `InputParser::parse(&mut self, bytes: &[u8]) -> Vec<InputEvent>` (tui/input.rs:335) returns multiple events per call, but `Component<Ev,Msg>::handle_event` returns `Option<Msg>`. What is the correct mapping for the capsule multiplexer surface? Read the G1 PR wiring pattern — do not guess from G0 alone.
+  - After G0 ships: `render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleRatatuiFrame<'_>)` (tui/view.rs:164) takes the model by value, but `View<Model>::render` takes `model: &Model`. `CapsuleRatatuiFrame<'a>` has reference fields and is not Copy. How is this reconciled without logic changes? Read the G1 pattern.
+  - Should `crates/jackin-capsule/src/tui/render.rs` (contains `CellSnapshot`, `RowSnapshot`, `DisplayCell`, `pane_content_from_damagegrid`) be renamed in G2 to avoid any name ambiguity with the canonical `view.rs` TEA stem? If yes, determine the new name (candidate: `pane_snapshot.rs`) and the 6 import-site rewrites needed in `session.rs`, `tui/selection.rs`, `tui/selection/tests.rs`, `daemon/mouse_input.rs`, `daemon/file_export.rs`, and `tui.rs` mod declaration.
+  - Line numbers cited for steps 15–21 reflect HEAD at investigation time; any prior landed slice (A1–G1) may have shifted them — verify each against the live file before editing.
 - **G3 — Migrate jackin-console onto the shared runtime (+ unify-settings)**
-  - What are the exact trait names and signatures added to `crates/jackin-tui/src/runtime.rs` by G0? G3 is blocked until G0 ships and these are known.
-  - Does the unified modal type stay as `ConsoleModal` in `crates/jackin-console/src/tui/app.rs` (line 762), or does a new `ConfigModal` type get introduced in a shared location within `jackin-console`? The unify-settings doc says 'leaning jackin-console, beside the shared widgets' but this decision is not locked.
-  - Do the per-panel modal type params on `GlobalMountsState<Row, Modal>`, `SettingsEnvState<EnvValue, Modal>`, `SettingsAuthState<EnvValue, Modal, PendingOpCommit>` get removed entirely (replaced by one `modal: Option<ConsoleModal>` + `modal_parents: Vec<ConsoleModal>` on `SettingsState` itself, matching EditorState), or do the per-panel slots stay but change type to `ConsoleModal`?
-  - How is the trust asymmetry reconciled: promote the editor to a `Trust` tab matching `SettingsTab::Trust` in `settings/model.rs` line 24, or keep the editor's `ConfirmTarget::TrustRoleSource` confirm flow and add the same pattern to settings?
-  - What are the exact cluster boundaries for splitting `app.rs` (5095 L) after the modal collapse — which symbols move to sibling `app/` files and which stay in `app.rs` as the coordinator?
-  - Which portions of `crates/jackin/src/console/tui/run.rs` (827 L) are absorbed by the G0 shared runtime event-loop helper vs which remain as console-specific glue after the G0 wiring?
-  - The auth mouse-row-click asymmetry (`EditorState.auth_expanded` BTreeSet + row-click in the editor vs `SettingsAuthState.selected_kind` detail-rows with no row-click in settings) — is this an intentional per-surface affordance to preserve, or a behavior gap to reconcile in G3?
+  - G0 has NOT shipped. The exact names and type parameters of `Component` and `View` as they will appear in `crates/jackin-tui/src/runtime.rs` must be read from the actual code after G0 lands before Phase 3d wiring can be specified.
+  - G1 and G2 have NOT shipped. The exact wiring pattern they establish — which concrete structs implement `Component`/`View`, and whether G0 provides a shared event-loop runner — cannot be known until those migrations land. Phase 3d (console event-loop wiring) is entirely blocked on G1/G2 as wiring proof.
+  - After the modal collapse, should the per-panel `Modal` type parameters on `GlobalMountsState<Row, Modal>`, `SettingsEnvState<EnvValue, Modal>`, `SettingsAuthState<EnvValue, Modal, PendingOpCommit>` be removed entirely (replaced by a single modal slot on `SettingsState`) or stay but be retyped to `ConsoleModal`? This governs the total number of type-parameter deletions from `state.rs`.
+  - Does `TextInputTarget` in `crates/jackin-console/src/tui/screens/editor/model.rs` already cover all `GlobalMountTextTarget` variants, or do new enum variants need to be added to `TextInputTarget` before step 10 can run without breaking the editor?
+  - Where exactly does the unified `ConfigSurfaceHost` trait and `ConfigModal` enum live — new `crates/jackin-console/src/tui/config_surface.rs`, or folded into existing `app.rs`? The roadmap says 'leaning jackin-console, beside the shared widgets' but this is not locked.
+  - How is the trust asymmetry reconciled — promote editor to a first-class Trust tab matching `SettingsTab::Trust`, or model both through one trust-confirm flow?
+  - The auth mouse-row-click asymmetry (`EditorState.auth_expanded: BTreeSet` + row-click vs `SettingsAuthState.selected_kind` with no row-click) — preserve as a deliberate per-surface affordance or reconcile both to the same interaction model?
+  - After Phase 3b's modal collapse, `app.rs` will shrink from 5095 L. What are the exact cluster boundaries (final line ranges) for the Phase 3e splits into `app/modal.rs`, `app/stage.rs`, `app/launch.rs`, `app/dispatch.rs`? Cannot be determined until the collapse is complete.
+  - Which portions of `crates/jackin/src/console/tui/run.rs` (827 L) are absorbed by a G0 shared event-loop runner vs which stay as console-specific glue? Cannot be answered until G0 scope is known.
+- **W5-usage — Decompose jackin-capsule usage.rs into provider modules**
+  - TODO(investigate): Verify the `use super::...` import lists in each new provider module skeleton by running `cargo check -p jackin-capsule` after Phase 0–1 and adding/removing imports to clear each error. Static analysis cannot guarantee completeness.
+  - TODO(investigate): Scan all 2919 lines of `usage/tests.rs` to confirm every symbol accessed via `use super::*` is covered by the coordinator re-exports added in step 52. The analysis above covers the first ~2800 lines but may miss tail-of-file usages.
+  - TODO(investigate): The `#[cfg(test)]` guard on `fn load_codex_oauth_credentials` (L3304) and `fn load_claude_oauth_credentials` (L2792) must be preserved in the target module files; their coordinator re-exports must also carry `#[cfg(test)]` to avoid dead-code warnings in release builds. Confirm the exact attribute placement after the move.
+  - TODO(investigate): Confirm that `fn grok_account_label_or_presence` (L5931) which is in the grok DTO/fetch block can see `grok_account_label` (also in grok.rs) and `format::first_string_key` — these are module-local after the move, so no extra imports needed, but verify during compile.
+  - TODO(investigate): `fn collect_usage_refresh_results_with_timeout` (L445) uses `cached_unavailable_view` (L523) which stays in coordinator. After moving to refresh.rs, this import becomes `use super::cached_unavailable_view;`. Confirm coordinator exposes `cached_unavailable_view` as `pub(super)` (step 23 covers this via `decorate_surface_view` and related helpers, but double-check `cached_unavailable_view` specifically is in the list).
 - **W5-console — Decompose console tui/app.rs + editor/settings model.rs**
-  - Phase B (editor/settings model splits) cannot be executed until G3 (unify-settings) merges. The post-G3 unified file structure is unknown; the executor must re-derive cluster boundaries from the actual merged content before writing Phase B file-creation steps. Do not split the current duplicated pair.
-  - modal.rs imports: the full set of `use crate::tui::auth_config::*` and `use crate::tui::update::*` items needed in `app/modal.rs` must be derived from compiler errors after the move — the original `app.rs` referenced many auth_config and update module items inline (e.g. `crate::tui::auth_config::ModalAuthFormGenerate`) without top-level use statements. The playbook lists only the imports visible in the original header; additional ones must be added to make modal.rs compile.
-  - Confirm that `crate::tui::debug::ConsoleStageDebug` (referenced in manager_stage.rs line 672 region) has not been relocated by any prior slice. If it has moved, update the `use` in `app/manager_stage.rs`.
-  - The `#[allow(clippy::large_enum_variant)]` attributes on `ConsoleManagerStage` (original line 254) and `ConsoleModal` (original line 760) must be preserved verbatim when those definitions move to their respective sibling files — clippy::large_enum_variant is not suppressed workspace-wide.
+  - app/stage.rs: Does `anyhow::Result` appear bare (without `anyhow::` prefix) in any `poll_pending_*` impl return type in the stage cluster (lines 253–682)? If yes, add `use anyhow::Result;` to stage.rs.
+  - app/modal.rs: Is `ModalConfirmSavePrepareState` actually used in the modal cluster body or only in the existing top-level use block in app.rs? Read each use site in lines 684–2321 before copying the import.
+  - app/create_prelude.rs: Which exact debug traits are implemented for `ConsoleCreatePreludeState` at lines 2361–2374? Confirm names before writing the import block in create_prelude.rs.
+  - app/modal.rs: Verify that `create_prelude_modal_step` is the only free function from the create_prelude cluster called inside the modal cluster body (lines 684–2321). Any others also need `super::` path calls.
+  - app.rs coordinator ConsoleApp impl bodies (lines 2730–2789): Are `quit_confirm_state`, `quit_confirm_plan`, `QuitConfirmPlan`, `no_modal_blocks_base_surface`, `ModalBlockState` used as bare names or always qualified with `crate::tui::run::`? If bare, add explicit `use crate::tui::run::...` in the coordinator.
+  - Sub-slice B (editor/model.rs + settings/model.rs): What does the unified model type look like after G3 (unify-settings-editor-surfaces)? The split boundaries in steps 12–13 are proposals based on the current duplicated files; the executor must re-read the unified file after G3 lands before executing any split, and must NOT execute steps 12–14 before G3 is complete.
 
 ---
 
@@ -5759,215 +5774,963 @@ After the git mv, `crate` inside each moved file refers to `jackin_instance`, so
 
 ### G2 — Migrate the capsule TUI onto the shared runtime
 
-> **Not yet detailed.** The detailing agent for this slice failed mid-run. Re-detail it before executing (re-run the codebase-health-playbook workflow). The strategy page describes the intended shape; do **not** improvise from the summary.
+- **Goal:** Apply the D7 stem rename (`tui/app.rs` → `tui/model.rs`) to the capsule TUI and implement the G0 `Component`/`View` traits on the appropriate capsule TUI types.
+- **Preconditions:** G0 (shared `Component<Ev,Msg>` and `View<Model>` traits added to `crates/jackin-tui/src/runtime.rs`), G1 (`jackin-launch-tui` migrated; use G1's wiring as the template for Part B below)
+- **Pattern:** Parallel Change (rename module path; all callers updated in the same commit) for Part A; Branch by Abstraction (implement G0 traits on existing types without altering logic) for Part B
+- **Touches:**
+  - `crates/jackin-capsule/src/tui.rs` — mod declaration updated
+  - `crates/jackin-capsule/src/tui/app.rs` — renamed to `model.rs` (git mv; body unchanged)
+  - `crates/jackin-capsule/src/tui/app/tests.rs` — directory renamed to `model/` (git mv)
+  - `crates/jackin-capsule/src/tui/components/status_bar.rs` — import path updated
+  - `crates/jackin-capsule/src/tui/components/chrome.rs` — three import path occurrences updated
+  - `crates/jackin-capsule/src/tui/view.rs` — import path updated
+  - `crates/jackin-capsule/src/tui/view/tests.rs` — import path updated
+  - `crates/jackin-capsule/src/tui/components/branch_context_bar/tests.rs` — four occurrence import path updated
+  - `crates/jackin-capsule/src/daemon.rs` — multi-line import path updated
+  - `crates/jackin-capsule/src/daemon/compositor.rs` — three occurrence import path updated
+  - `crates/jackin-capsule/src/daemon/compositor/tests.rs` — import path updated
+  - `crates/jackin-capsule/src/daemon/pane_layout.rs` — two occurrence import path updated
+  - `crates/jackin-capsule/src/daemon/session_lifecycle.rs` — two occurrence import path updated
+  - `crates/jackin-capsule/src/daemon/tests.rs` — import path updated
+  - `crates/jackin-capsule/src/tui/model.rs` — G0 trait impls added (Part B — see open questions)
+  - `docs/content/docs/reference/getting-oriented/codebase-map.mdx` — RepoFile path reference updated
+  - `docs/content/docs/roadmap/codebase-health-enforcement.mdx` — G2 checkbox ticked (Part A + B complete)
+
+**Steps** (each step is one mechanical action — exact paths, exact symbol names, exact edit):
+
+**Part A — D7 stem normalization (`app.rs` → `model.rs`)**
+
+1. Run `git mv crates/jackin-capsule/src/tui/app.rs crates/jackin-capsule/src/tui/model.rs`. File body is unchanged; only the filename moves.
+
+2. Run `git mv crates/jackin-capsule/src/tui/app crates/jackin-capsule/src/tui/model`. This moves the `app/` directory (which contains `tests.rs`) to `model/`. After this step `crates/jackin-capsule/src/tui/model/tests.rs` exists and the `app/` directory no longer exists.
+
+3. In `crates/jackin-capsule/src/tui.rs` at line 7, replace:
+   ```
+   pub mod app;
+   ```
+   with:
+   ```
+   pub mod model;
+   ```
+   All other `pub mod` lines in `tui.rs` remain unchanged.
+
+4. In `crates/jackin-capsule/src/tui/components/status_bar.rs` at line 34, replace:
+   ```rust
+   use crate::tui::app::{MuxMode, VisibleAgentState};
+   ```
+   with:
+   ```rust
+   use crate::tui::model::{MuxMode, VisibleAgentState};
+   ```
+
+5. In `crates/jackin-capsule/src/tui/components/chrome.rs` at line 203, replace:
+   ```rust
+       pub(crate) hover_target: Option<crate::tui::app::HoverTarget>,
+   ```
+   with:
+   ```rust
+       pub(crate) hover_target: Option<crate::tui::model::HoverTarget>,
+   ```
+
+6. In `crates/jackin-capsule/src/tui/components/chrome.rs` at line 308, replace:
+   ```rust
+       hover_target: Option<crate::tui::app::HoverTarget>,
+   ```
+   with:
+   ```rust
+       hover_target: Option<crate::tui::model::HoverTarget>,
+   ```
+
+7. In `crates/jackin-capsule/src/tui/components/chrome.rs` at line 310, replace:
+   ```rust
+       use crate::tui::app::HoverTarget;
+   ```
+   with:
+   ```rust
+       use crate::tui::model::HoverTarget;
+   ```
+
+8. In `crates/jackin-capsule/src/tui/view.rs` at line 4, replace:
+   ```rust
+   use crate::tui::app::{HoverTarget, VisiblePane};
+   ```
+   with:
+   ```rust
+   use crate::tui::model::{HoverTarget, VisiblePane};
+   ```
+
+9. In `crates/jackin-capsule/src/tui/view/tests.rs` at line 7, replace:
+   ```rust
+   use crate::tui::app::HoverTarget;
+   ```
+   with:
+   ```rust
+   use crate::tui::model::HoverTarget;
+   ```
+
+10. In `crates/jackin-capsule/src/tui/components/branch_context_bar/tests.rs` at line 24, replace:
+    ```rust
+        hover: Option<crate::tui::app::HoverTarget>,
+    ```
+    with:
+    ```rust
+        hover: Option<crate::tui::model::HoverTarget>,
+    ```
+
+11. In `crates/jackin-capsule/src/tui/components/branch_context_bar/tests.rs` at line 326, replace:
+    ```rust
+            Some(crate::tui::app::HoverTarget::BranchContext),
+    ```
+    with:
+    ```rust
+            Some(crate::tui::model::HoverTarget::BranchContext),
+    ```
+
+12. In `crates/jackin-capsule/src/tui/components/branch_context_bar/tests.rs` at line 337, replace:
+    ```rust
+            Some(crate::tui::app::HoverTarget::Container),
+    ```
+    with:
+    ```rust
+            Some(crate::tui::model::HoverTarget::Container),
+    ```
+
+13. In `crates/jackin-capsule/src/tui/components/branch_context_bar/tests.rs` at line 354, replace:
+    ```rust
+            Some(crate::tui::app::HoverTarget::UsageStatus),
+    ```
+    with:
+    ```rust
+            Some(crate::tui::model::HoverTarget::UsageStatus),
+    ```
+
+14. In `crates/jackin-capsule/src/daemon.rs` at lines 74–79, replace:
+    ```rust
+    use crate::tui::app::{
+        ChromeHitState, CursorVisibilityState, DragState, HoverState, HoverTarget, MuxMode,
+        MuxModeState, PointerShape, PointerShapeState, VisiblePane, chrome_hover_target_for_state,
+        cursor_visible_for_state, hover_target_for_state, mux_mode_for_state, pointer_shape_for_state,
+        visible_panes_for_layout,
+    };
+    ```
+    with:
+    ```rust
+    use crate::tui::model::{
+        ChromeHitState, CursorVisibilityState, DragState, HoverState, HoverTarget, MuxMode,
+        MuxModeState, PointerShape, PointerShapeState, VisiblePane, chrome_hover_target_for_state,
+        cursor_visible_for_state, hover_target_for_state, mux_mode_for_state, pointer_shape_for_state,
+        visible_panes_for_layout,
+    };
+    ```
+
+15. In `crates/jackin-capsule/src/daemon/compositor.rs` at line 586, replace:
+    ```rust
+        panes: &[crate::tui::app::VisiblePane],
+    ```
+    with:
+    ```rust
+        panes: &[crate::tui::model::VisiblePane],
+    ```
+    Repeat the same replacement at lines 646 and 664 (same text on each line). Confirm with `grep -n "tui::app::VisiblePane" crates/jackin-capsule/src/daemon/compositor.rs` before editing; if the three occurrences are not exact duplicates of the old string, edit each individually.
+
+16. In `crates/jackin-capsule/src/daemon/compositor/tests.rs` at line 5, replace:
+    ```rust
+    use crate::tui::app::VisiblePane;
+    ```
+    with:
+    ```rust
+    use crate::tui::model::VisiblePane;
+    ```
+
+17. In `crates/jackin-capsule/src/daemon/pane_layout.rs` at line 294, replace:
+    ```rust
+                crate::tui::app::visible_tab_pane_kind(crate::tui::app::VisibleTabPaneFacts {
+    ```
+    with:
+    ```rust
+                crate::tui::model::visible_tab_pane_kind(crate::tui::model::VisibleTabPaneFacts {
+    ```
+
+18. In `crates/jackin-capsule/src/daemon/pane_layout.rs` at line 300, replace:
+    ```rust
+            crate::tui::app::tab_auto_label(pane_count, panes)
+    ```
+    with:
+    ```rust
+            crate::tui::model::tab_auto_label(pane_count, panes)
+    ```
+
+19. In `crates/jackin-capsule/src/daemon/session_lifecycle.rs` at line 256, replace:
+    ```rust
+                    let label = crate::tui::app::visible_agent_label(Some(slug), provider_label);
+    ```
+    with:
+    ```rust
+                    let label = crate::tui::model::visible_agent_label(Some(slug), provider_label);
+    ```
+
+20. In `crates/jackin-capsule/src/daemon/session_lifecycle.rs` at line 269, replace:
+    ```rust
+                    label: crate::tui::app::visible_agent_label(None, None),
+    ```
+    with:
+    ```rust
+                    label: crate::tui::model::visible_agent_label(None, None),
+    ```
+
+21. In `crates/jackin-capsule/src/daemon/tests.rs` at line 6628, replace:
+    ```rust
+    use crate::tui::app::{CursorVisibilityState, cursor_visible_for_state};
+    ```
+    with:
+    ```rust
+    use crate::tui::model::{CursorVisibilityState, cursor_visible_for_state};
+    ```
+
+22. Confirm no remaining `tui::app` references exist in `crates/jackin-capsule/src/`:
+    ```
+    grep -rn "tui::app\b" crates/jackin-capsule/src/
+    ```
+    Must return zero lines. If any hit remains, apply the same `tui::app` → `tui::model` rename to each.
+
+**Part B — G0 contract implementation**
+
+> **BLOCKED on G0 and G1 shipping.** The `Component<Ev, Msg>` and `View<Model>` traits do not yet exist in `crates/jackin-tui/src/runtime.rs` (they are added by G0). Read the G0 PR's output and the G1 PR's wiring before writing any code in this part. Do not guess from G0 alone; the G1 migration is the proof-of-pattern that this step must follow.
+
+23. TODO(investigate): Read `crates/jackin-tui/src/runtime.rs` after G0 ships and confirm the exact names and signatures of the `Component<Ev, Msg>` and `View<Model>` traits. If G0 added any run-loop helper beyond the two traits, assess whether it applies to the capsule TUI's in-container multiplexer architecture.
+
+24. TODO(investigate): Determine which capsule TUI type(s) implement `Component<Ev, Msg>`. The primary candidate is `InputParser` (defined in `crates/jackin-capsule/src/tui/input.rs` at line 257). Its existing method `pub fn parse(&mut self, bytes: &[u8]) -> Vec<InputEvent>` (line 335) returns multiple events per call, which does not directly match `handle_event(&mut self, event: &Ev) -> Option<Msg>`. Decide one of: (a) implement `Component<Vec<u8>, Vec<InputEvent>>` with a different return adapter; (b) introduce a newtype wrapper that buffers events and returns one per call; (c) implement at a higher abstraction where `Ev = Vec<u8>` and `Msg = Action` using the existing dispatch chain. Confirm from the G1 pattern which approach was used for `jackin-launch-tui` before choosing.
+
+25. TODO(investigate): Determine which capsule TUI type(s) implement `View<Model>`. The primary candidate is a new zero-sized struct (e.g., `pub struct CapsuleView;`) that delegates to `render_capsule_ratatui_frame` in `crates/jackin-capsule/src/tui/view.rs` (line 164). The existing function signature is `pub(crate) fn render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleRatatuiFrame<'_>)` — it takes `view` by value. The G0 `View::render` takes `model: &Model`. Reconcile the discrepancy: `CapsuleRatatuiFrame<'a>` has reference fields (e.g., `tabs: &'a [Tab]`, `pane_screens: &'a [(u64, PaneScreen<'a>)]`) and is not `Copy`. Decide whether to (a) change `render_capsule_ratatui_frame` to accept `view: &CapsuleRatatuiFrame<'_>` and adjust its body to borrow rather than move (structure-only if no logic changes); (b) add a thin `render_capsule_ratatui_frame_ref` overload that delegates; or (c) use a different model type. Confirm from the G1 pattern.
+
+26. TODO(investigate): Resolve whether `crates/jackin-capsule/src/tui/render.rs` (containing `CellSnapshot`, `RowSnapshot`, `DisplayCell`, `pane_content_from_damagegrid`) should be renamed as part of D7 compliance in G2. The file is not a TEA-view synonym (the canonical TEA view is `view.rs`), but the name `render.rs` coexists with `view.rs` in the same `tui/` module. If a rename is required (e.g., to `pane_snapshot.rs`), update the four import sites: `crates/jackin-capsule/src/session.rs` (lines 40, 833), `crates/jackin-capsule/src/tui/selection.rs` (line 8), `crates/jackin-capsule/src/tui/selection/tests.rs` (line 91), `crates/jackin-capsule/src/daemon/mouse_input.rs` (line 10), `crates/jackin-capsule/src/daemon/file_export.rs` (line 14).
+
+**Part C — Docs and housekeeping**
+
+27. In `docs/content/docs/reference/getting-oriented/codebase-map.mdx` at line 239, replace the exact substring:
+    ```
+    <RepoFile path="crates/jackin-capsule/src/tui/app.rs">crates/jackin-capsule/src/tui/app.rs</RepoFile>
+    ```
+    with:
+    ```
+    <RepoFile path="crates/jackin-capsule/src/tui/model.rs">crates/jackin-capsule/src/tui/model.rs</RepoFile>
+    ```
+    The surrounding prose ("Capsule visible TUI model vocabulary lives in ...") and all other `<RepoFile>` components on that line are unchanged.
+
+28. After both Part A and Part B are complete, in `docs/content/docs/roadmap/codebase-health-enforcement.mdx` at line 265, replace:
+    ```
+    - [ ] **G2 — migrate the capsule TUI** onto it.
+    ```
+    with:
+    ```
+    - [x] **G2 — migrate the capsule TUI** onto it.
+    ```
+    Do not tick this checkbox until Part B steps (23–26) are also resolved and implemented.
+
+29. Run `cargo run -p jackin-xtask --locked -- lint files --print-budget` and `cargo run -p jackin-xtask --locked -- lint tests --print-allowlist`. If any file dropped under its cap or any allowlist violation was resolved by this PR, delete the entry from `file-size-budget.toml` or `test-layout-allowlist.toml` respectively. (No capsule TUI module is currently in `file-size-budget.toml`; no `tui/app` entry exists in `test-layout-allowlist.toml`. No change expected unless Part B introduces new files.)
+
+**Verify** (run in order; STOP and revert on the first failure):
+- `cargo fmt --check` → exits 0, no diff
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` → no warnings
+- `cargo nextest run -p jackin-capsule` → all tests pass unmodified
+- `cargo nextest run --workspace` → entire workspace green
+- `cargo run -p jackin-xtask --locked -- lint` → file-size + test-layout + dependency-direction all OK
+- behavioral specs `runtime-launch` and `op-picker` pass UNMODIFIED — no test source lines changed
+
+**Done when:**
+- `crates/jackin-capsule/src/tui/app.rs` no longer exists; `crates/jackin-capsule/src/tui/model.rs` exists with identical byte content
+- `crates/jackin-capsule/src/tui/model/tests.rs` exists (moved from `app/tests.rs`)
+- `crates/jackin-capsule/src/tui.rs` reads `pub mod model;` at line 7
+- `grep -rn "tui::app\b" crates/jackin-capsule/src/` returns zero hits
+- G0 `Component` and `View` traits are implemented on the resolved capsule TUI types (Part B)
+- Full workspace CI green; behavioral specs pass unmodified
+
+**Rollback:** `git restore crates/jackin-capsule/src/tui.rs crates/jackin-capsule/src/tui/components/status_bar.rs crates/jackin-capsule/src/tui/components/chrome.rs crates/jackin-capsule/src/tui/view.rs crates/jackin-capsule/src/tui/view/tests.rs crates/jackin-capsule/src/tui/components/branch_context_bar/tests.rs crates/jackin-capsule/src/daemon.rs crates/jackin-capsule/src/daemon/compositor.rs crates/jackin-capsule/src/daemon/compositor/tests.rs crates/jackin-capsule/src/daemon/pane_layout.rs crates/jackin-capsule/src/daemon/session_lifecycle.rs crates/jackin-capsule/src/daemon/tests.rs docs/content/docs/reference/getting-oriented/codebase-map.mdx docs/content/docs/roadmap/codebase-health-enforcement.mdx` then `git mv crates/jackin-capsule/src/tui/model.rs crates/jackin-capsule/src/tui/app.rs` and `git mv crates/jackin-capsule/src/tui/model crates/jackin-capsule/src/tui/app`, then undo any G0 trait impls added in Part B.
+
+**Open questions:**
+1. After G0 ships: `InputParser::parse(&mut self, bytes: &[u8]) -> Vec<InputEvent>` (line 335 of `tui/input.rs`) returns multiple events per call, but `Component::handle_event` returns `Option<Msg>`. What is the correct mapping for the capsule's multiplexer surface? The executor MUST read the G1 PR's wiring pattern and not guess from G0 alone.
+2. After G0 ships: `render_capsule_ratatui_frame(frame: &mut Frame<'_>, view: CapsuleRatatuiFrame<'_>)` (line 164 of `tui/view.rs`) takes the model by value, but `View<Model>::render` takes `model: &Model`. `CapsuleRatatuiFrame<'a>` has reference fields and is not `Copy`. How is this discrepancy resolved without changing logic? The executor MUST read the G1 pattern.
+3. Should `crates/jackin-capsule/src/tui/render.rs` (pane content snapshots: `CellSnapshot`, `RowSnapshot`, `DisplayCell`, `pane_content_from_damagegrid`) be renamed in G2 to avoid any ambiguity with the canonical `view.rs` TEA stem? If yes, what is the new name (candidate: `pane_snapshot.rs`) and the exact 6 import-site rewrites needed (in `session.rs`, `tui/selection.rs`, `tui/selection/tests.rs`, `daemon/mouse_input.rs`, `daemon/file_export.rs`, `tui.rs` mod declaration)?
+4. Line numbers quoted in steps 15–21 reflect HEAD at investigation time; verify each against the live file before applying the edit (prior slices may have shifted line numbers).
 
 ---
 
 ### G3 — Migrate jackin-console onto the shared runtime (+ unify-settings)
 
-- **Goal:** Migrate the `jackin-console` Elm loop onto the G0 shared runtime contract and, in the same PR, collapse the settings surface's three modal enums into the editor's unified `ConsoleModal`, making editor + settings one implementation per the `unify-settings-editor-surfaces` design.
-- **Preconditions:** G0 (shared contract in `jackin-tui` — `Model`/`Message`/`update`/`Component`/`View` traits defined and published), G1 (`jackin-launch-tui` migrated), G2 (capsule TUI migrated). None of G0–G2 are shipped as of the current codebase; G3 is blocked until they are.
-- **Pattern:** Parallel Change + Branch by Abstraction — introduce the unified modal type and `ConfigSurfaceHost` trait, migrate settings callers, delete the three settings-only modal enums; then wire the console `run.rs` event loop to the G0 runtime contract in a second inner step.
+- **Goal:** Migrate the `jackin-console` Elm loop onto the G0 shared `Component`/`View` runtime contract and, in the same PR, collapse the settings surface's three modal enums (`SettingsEnvModal`, `GlobalMountModal`, `SettingsAuthModal`) into the editor's unified `ConsoleModal`, making editor + settings one implementation per the `unify-settings-editor-surfaces` design.
+- **Preconditions:** G0 (shared `Component`/`View` traits published in `crates/jackin-tui/src/runtime.rs`), G1 (`jackin-launch-tui` migrated, proving the wiring pattern), G2 (capsule TUI migrated, second wiring proof). **All three are currently `[ ]` in `docs/content/docs/roadmap/codebase-health-enforcement.mdx`; G3 is blocked until they land.** The executor must confirm G0, G1, G2 are `[x]` before beginning any step below.
+- **Pattern:** Parallel Change (modal collapse: expand→migrate→delete) + Branch by Abstraction (ConfigSurfaceHost trait) + file-split (W5 Phase 3e after the surfaces are unified)
 - **Touches:**
-  - `crates/jackin-tui/src/runtime.rs` — TODO(investigate): G0 may add `Model`/`Component`/`View` traits here
-  - `crates/jackin-console/src/tui/app.rs` (5095 L, grandfathered in `file-size-budget.toml` at L39)
-  - `crates/jackin-console/src/tui/screens/editor/model.rs` (4176 L, grandfathered at L43)
-  - `crates/jackin-console/src/tui/screens/settings/model.rs` (3852 L, grandfathered at L47)
+  - `crates/jackin-tui/src/runtime.rs` — read-only: verify `pub trait Component<Ev, Msg>` and `pub trait View<Model>` exist (added by G0)
+  - `crates/jackin-console/src/tui/app.rs` (5095 L; grandfathered in `file-size-budget.toml` at `lines = 5095`) — Phase 3b dispatch plan enum + Phase 3e splits
+  - `crates/jackin-console/src/tui/screens/settings/model.rs` (3852 L; grandfathered at `lines = 3852`) — Phase 3b: delete `SettingsEnvModal` (line 576), `GlobalMountModal` (line 1073), `SettingsAuthModal` (line 1613); remove `SettingsState.error_popup` field (line 74)
+  - `crates/jackin-console/src/tui/screens/editor/model.rs` (4176 L; grandfathered at `lines = 4176`) — unified surface after Phase 3b/3c
+  - `crates/jackin-console/src/tui/screens/editor/view.rs` (2389 L; grandfathered at `lines = 2389`)
   - `crates/jackin-console/src/tui/screens/editor/update.rs` (892 L)
-  - `crates/jackin-console/src/tui/screens/editor/view.rs` (2389 L, grandfathered at L59)
   - `crates/jackin-console/src/tui/screens/settings/update.rs` (1717 L)
   - `crates/jackin-console/src/tui/screens/settings/view.rs` (1635 L)
   - `crates/jackin-console/src/tui/screens/workspaces/update.rs` (1430 L)
-  - `crates/jackin-console/src/tui/screens/workspaces/view.rs`
-  - `crates/jackin-console/src/tui/input/editor.rs` (1138 L)
-  - `crates/jackin-console/src/tui/input/global_mounts.rs` (1336 L)
-  - `crates/jackin-console/src/tui/state.rs` (446 L)
-  - `crates/jackin-console/src/tui/console.rs` (63 L)
-  - `crates/jackin-console/src/tui/run.rs` (611 L)
-  - `crates/jackin-console/src/tui/update.rs` (918 L)
-  - `crates/jackin-console/src/tui/view.rs` (754 L)
+  - `crates/jackin-console/src/tui/input/editor.rs` (1138 L) — Phase 3c edit-flow twins
+  - `crates/jackin-console/src/tui/input/global_mounts.rs` (1336 L) — Phase 3c edit-flow twins; `dismiss_error_popup`/`open_error_popup` callers at lines 1236–1249
+  - `crates/jackin-console/src/tui/input/dispatch.rs` — `settings_error_popup_open` at line 54; `settings.error_popup` at line 209; `SettingsEnvModal`/`SettingsAuthModal` dispatch variants at lines 82–83, 252, 260, 300–301, 463, 466, 3806, 3814
+  - `crates/jackin-console/src/tui/input/mouse.rs` — `settings.error_popup.is_some()` at line 1106
+  - `crates/jackin-console/src/tui/file_browser.rs` — `GlobalMountModal::FileBrowser`/`MountDstChoice`/`SourceFolderPicker` sites at lines 198, 214, 224, 233, 239, 413, 482, 635, 647, 709, 719, 789, 793, 842, 844
+  - `crates/jackin-console/src/tui/input/global_mounts/auth.rs` — `SettingsAuthModal` sites at lines 75, 91, 117, 143, 168, 190, 213, 243, 250, 255, 265
+  - `crates/jackin-console/src/tui/state.rs` (445 L) — type aliases `SettingsEnvModal<'a>` (lines 137–144), `SettingsAuthModal<'a>` (lines 152–160), `GlobalMountModal<'a>` (lines 162–170); `SettingsEnvState<'a>` (line 134), `SettingsAuthState` (line 146), `GlobalMountsState<'a>` (line 107)
+  - `crates/jackin-console/src/tui/state/update.rs` — `settings.dismiss_error_popup()` at line 382; `settings.open_error_popup(title, message)` at line 393
+  - `crates/jackin-console/src/tui/console.rs` (63 L) — `ConsoleState` type alias at line 15; `ConsoleStage` at line 14
+  - `crates/jackin-console/src/tui/run.rs` (611 L) — Phase 3d: G0 runtime wiring
+  - `crates/jackin-console/src/tui/update.rs` (918 L) — `ConsoleUpdate<E> = UpdateResult<E>` at line 12
   - `crates/jackin-console/src/tui/message.rs` (519 L)
   - `crates/jackin-console/src/tui/subscriptions.rs` (248 L)
-  - `crates/jackin/src/console/tui/run.rs` (827 L)
+  - `crates/jackin/src/console/tui/run.rs` (827 L) — Phase 3d: event loop; G0 absorption vs console-specific glue unknown until G0 ships
   - `crates/jackin/src/console/tui.rs` (162 L)
-  - `crates/jackin/src/console/effects.rs` (1365 L)
-  - `file-size-budget.toml`
-  - `docs/content/docs/roadmap/codebase-health-enforcement.mdx`
-  - `docs/content/docs/roadmap/unify-settings-editor-surfaces.mdx`
+  - `crates/jackin/src/console/effects.rs` (1365 L) — `SettingsAuthModal` at lines 982, 1339, 1362
+  - `file-size-budget.toml` — update after Phase 3e splits
+  - `docs/content/docs/roadmap/codebase-health-enforcement.mdx` — check box for G3; update W5 + W6 Phase G checklists
+  - `docs/content/docs/roadmap/unify-settings-editor-surfaces.mdx` — advance Status
 
 **Steps** (each step is one mechanical action — exact paths, exact symbol names, exact edit):
 
-**Phase 3a — Resolve open design decisions (MUST precede any code change)**
+**Phase 0 — Precondition gate (MUST pass before any code change)**
 
-1. TODO(investigate): Confirm the exact G0 contract traits published by `crates/jackin-tui/src/runtime.rs` after G0 ships — specifically the names and signatures of any `Model`, `Component`, `View`, or event-loop helper traits added there. Every subsequent wiring step depends on these exact names.
+1. Confirm G0 is shipped: open `crates/jackin-tui/src/runtime.rs` and verify both `pub trait Component<Ev, Msg>` and `pub trait View<Model>` are present as top-level exported items. If absent, STOP — G3 is blocked.
 
-2. TODO(investigate): Settle the three open decisions from `unify-settings-editor-surfaces.mdx` ("Open (raise before the relevant slice)"):
-   - (a) Whether the shared `ConfigModal` / `AuthModal` types live in `jackin-console` beside the shared widgets, or fold directly into the existing `ConsoleModal` enum in `crates/jackin-console/src/tui/app.rs` at line 762.
-   - (b) Whether the per-domain shared dispatch/apply helpers (`handle_auth_modal<H>`, etc.) live in a new `jackin-console/src/tui/config_surface/` module versus the existing `input/editor.rs` + `input/global_mounts.rs`.
-   - (c) How to reconcile the trust asymmetry (settings has a first-class `Trust` tab via `SettingsTab::Trust` and `SettingsTrustState`; the editor only has a confirm flow via `Modal::Confirm { target: ConfirmTarget::TrustRoleSource { .. }, .. }`) — promote editor to a Trust tab, or model both through one trust-confirm flow.
+2. Confirm G1 is shipped: check that `crates/jackin-launch-tui/` exists and its `lib.rs` or `run.rs` implements the G0 `Component`/`View` traits. If absent, STOP.
 
-**Phase 3b — Collapse the modal taxonomy (step 7 of unify-settings sequencing)**
+3. Confirm G2 is shipped: check that `crates/jackin-capsule/src/tui/` (or its equivalent after G2) implements the G0 traits. If absent, STOP.
 
-3. In `crates/jackin-console/src/tui/screens/settings/model.rs`, study the three modal enums:
-   - `pub enum SettingsEnvModal<TextInputState, SourcePickerState, OpPickerState, RolePickerState, ScopePickerState, ConfirmState>` at line 576 — variants: `Text`, `SourcePicker`, `OpPicker`, `RolePicker`, `ScopePicker`, `Confirm`.
-   - `pub enum GlobalMountModal<TextInputState, FileBrowserState, MountDstChoiceState, ScopePickerState, RolePickerState, ConfirmState, ConfirmSaveState>` at line 1073.
-   - `pub enum SettingsAuthModal<TextInputState, SourcePickerState, OpPickerState, FileBrowserState, AuthFormTarget, AuthForm, AuthFormFocus>` at line 1613.
-   All variants have exact counterparts in `ConsoleModal` at `crates/jackin-console/src/tui/app.rs` line 762. Confirm the variant-by-variant match using the table in `unify-settings-editor-surfaces.mdx` (section "Modal taxonomy — same concepts, 1 enum vs 3") before making any change.
+4. TODO(investigate): Read the concrete G0 trait signatures as they actually landed in `crates/jackin-tui/src/runtime.rs` and write them down; every Phase 3d wiring step depends on the exact names and type parameters.
 
-4. TODO(investigate): Determine the concrete plan for collapsing the per-panel modal slots. Currently `SettingsEnvState<EnvValue, Modal>`, `SettingsAuthState<EnvValue, Modal, PendingOpCommit>`, and `GlobalMountsState<Row, Modal>` each carry their own `Modal` type parameter (confirmed from `state.rs` lines 107–170). After the collapse, all three panels share `ConsoleModal` (or the resolved `ConfigModal`) as their modal type, OR the per-panel modal slots are removed in favor of ONE `modal: Option<ConsoleModal>` + `modal_parents: Vec<ConsoleModal>` on `SettingsState` itself (matching `EditorState.modal` + `EditorState.modal_parents` at `editor/model.rs` lines 263–264). The choice must be made before step 5.
+5. TODO(investigate): Read the G1 migration of `jackin-launch-tui` and the G2 migration of the capsule TUI. Identify the concrete wiring pattern (which structs implement `Component`, which implement `View`, how the event loop in the binary connects the two). Use those two patterns as the template for Phase 3d.
 
-5. **After decisions in steps 2 and 4 are resolved**: In `crates/jackin-console/src/tui/screens/settings/model.rs`, replace the `ErrorPopup` type parameter in `SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>` with a unified modal slot per the agreed design. Remove the `pub error_popup: Option<ErrorPopup>` field (line 73) from `SettingsState`. All callers at `crates/jackin-console/src/tui/state.rs` (line 112) and in `crates/jackin/src/console/effects.rs` must be updated in the same step.
+**Phase 3a — Design decisions (MUST be settled before Phase 3b code changes)**
 
-6. **After step 5**: Update all `SettingsState.dismiss_error_popup` and `SettingsState.open_error_popup` call sites (currently `settings/model.rs` lines 120–296 and callers in `settings/update.rs`, `input/global_mounts.rs`) to use the unified modal variant (`ConsoleModal::ErrorPopup { .. }`) via the single agreed modal slot. Confirm via `grep -rn "dismiss_error_popup\|open_error_popup" crates/jackin-console/src/` for the exhaustive call-site list.
+6. TODO(investigate): Decide where the unified `ConfigModal` / `AuthModal` types live. The `unify-settings-editor-surfaces.mdx` leans toward `jackin-console` beside the existing shared widgets; confirm this is the chosen location and record which module file hosts it (likely a new `crates/jackin-console/src/tui/config_modal.rs` or folded directly into `crates/jackin-console/src/tui/app.rs` as an extension of the existing `ConsoleModal` enum).
 
-7. **After step 6**: In `crates/jackin-console/src/tui/state.rs`, delete the three type aliases:
-   - `pub type SettingsEnvModal<'a> = crate::tui::screens::settings::model::SettingsEnvModal<...>` (lines 137–144)
-   - `pub type SettingsAuthModal<'a> = crate::tui::screens::settings::model::SettingsAuthModal<...>` (lines 152–160)
-   - `pub type GlobalMountModal<'a> = crate::tui::screens::settings::model::GlobalMountModal<...>` (lines 162–170)
-   Update the downstream type aliases `GlobalMountsState<'a>` (line 107), `SettingsEnvState<'a>` (line 134), and `SettingsAuthState` (line 146) to use the unified modal type. These are the only callers; confirm with `grep -rn "SettingsEnvModal\|SettingsAuthModal\|GlobalMountModal" crates/`.
+7. TODO(investigate): Decide whether the per-panel modal type parameters on `GlobalMountsState<Row, Modal>` (line 1243 of `screens/settings/model.rs`), `SettingsEnvState<EnvValue, Modal>` (line 751), and `SettingsAuthState<EnvValue, Modal, PendingOpCommit>` (line 1744) are (a) replaced by a single `modal: Option<ConsoleModal>` on `SettingsState` (matching `EditorState.modal` + `EditorState.modal_parents`), or (b) the per-panel `Modal` type param stays but its concrete type becomes the shared `ConsoleModal`. The concrete type aliases in `crates/jackin-console/src/tui/state.rs` at lines 107–170 must be updated accordingly.
 
-8. **After step 7**: Delete `pub enum SettingsEnvModal<...>` (line 576), `pub enum GlobalMountModal<...>` (line 1073), and `pub enum SettingsAuthModal<...>` (line 1613) from `crates/jackin-console/src/tui/screens/settings/model.rs`. Confirm no remaining usages: `grep -rn "SettingsEnvModal\|GlobalMountModal\|SettingsAuthModal" crates/` must return zero results before this step is committed.
+8. TODO(investigate): Decide how to reconcile the trust asymmetry — settings has `SettingsTab::Trust` + `SettingsTrustState` (a first-class tab); editor has only `ConfirmTarget::TrustRoleSource { .. }` (a confirm flow). Options: promote editor to a Trust tab, or model both through one trust-confirm flow. This decision gates Phase 3c trust unification.
 
-**Phase 3c — Per-domain edit-flow unification (steps 8–12 of unify-settings sequencing)**
+9. TODO(investigate): Decide how to reconcile the auth mouse-row-click asymmetry — `EditorState.auth_expanded: BTreeSet<_>` with row-click in `input/editor.rs` vs `SettingsAuthState` using `selected_kind` detail-rows without row-click. Preserve as a deliberate per-surface affordance, or add row-click to settings.
 
-9. TODO(investigate): Specify the exact `ConfigSurfaceHost` trait definition and placement (decision 2b above). The design doc gives the shape at `unify-settings-editor-surfaces.mdx` lines 98–105:
-   ```rust
-   pub trait ConfigSurfaceHost {
-       fn scopes(&self) -> &[ConfigScope];
-       fn stash_modal(&mut self, child: ConfigModal);
-       fn restore_modal(&mut self);
-       fn show_error(&mut self, reason: String);
-   }
-   ```
-   but the concrete `ConfigScope` and `ConfigModal` types must be resolved from decision 2a.
+**Phase 3b — Collapse the modal taxonomy**
 
-10. TODO(investigate): For each domain (mounts, env/secrets, trust, general), specify the exact twin-function pairs from the duplication map in `unify-settings-editor-surfaces.mdx` (section "Largest twinned function families") that will be collapsed. Each twin pair becomes one generic function over `H: ConfigSurfaceHost`. The pairs involve symbols in `input/editor.rs` (editor side) and `input/global_mounts.rs` (settings side). Enumerate every `fn open_*`, `fn apply_*`, `fn restore_*`, `fn persist_*`, `fn clear_*` twin pair — there are at least 20 such pairs documented in the roadmap — and map each to the file and line range in the current code.
+The three settings modal enums in `crates/jackin-console/src/tui/screens/settings/model.rs` map variant-for-variant onto the existing `ConsoleModal` enum (line 762, `crates/jackin-console/src/tui/app.rs`). Steps 10–17 implement the Parallel Change: introduce the unified type at each call site, then delete the old enums.
 
-**Phase 3d — Wire console event loop to G0 runtime contract**
+10. In `crates/jackin-console/src/tui/input/global_mounts.rs`, replace every `GlobalMountModal::Text { target, state }` construction and match arm with the equivalent `ConsoleModal::TextInput { target: /* mapped GlobalMountTextTarget */, state }`. Exact construction sites (file confirmed by grep): lines 551, 555, 564; match arms throughout the `handle_global_mounts_modal_key` function. Similarly replace `GlobalMountModal::FileBrowser`, `GlobalMountModal::MountDstChoice`, `GlobalMountModal::ScopePicker`, `GlobalMountModal::RolePicker`, `GlobalMountModal::Confirm`, and `GlobalMountModal::PreviewSave` with their `ConsoleModal` counterparts (`FileBrowser`, `MountDstChoice`, `ScopePicker`, `RolePicker`, `Confirm`, `ConfirmSave`). For each replacement, the `target` field of `ConsoleModal::TextInput` must carry a variant that covers `GlobalMountTextTarget` — if `TextInputTarget` (the editor's target enum in `crates/jackin-console/src/tui/screens/editor/model.rs`) lacks a `GlobalMountText` variant, add one before this step. TODO(investigate): Enumerate all `GlobalMountTextTarget` variants and check whether `TextInputTarget` in `editor/model.rs` already covers them or whether new variants must be added first.
 
-11. TODO(investigate): After G0 ships, read the G0 shared runtime contract (the `Model`/`Component`/`View`/event-loop helper traits in `crates/jackin-tui/src/runtime.rs`). Map the existing `crates/jackin-console/src/tui/run.rs` `ConsoleScreenStage`, `ConsoleApp`, `ManagerState` onto those traits. The concrete wiring points are:
-    - `crates/jackin-console/src/tui/console.rs` line 15: `pub type ConsoleState = ConsoleApp<ManagerState<'static>, LoadWorkspaceInput, RoleSelector, Rc<RefCell<OpCache>>>`
-    - `crates/jackin-console/src/tui/update.rs` line 12: `pub type ConsoleUpdate<E> = UpdateResult<E>` (already uses `jackin_tui::runtime::UpdateResult`)
-    - `crates/jackin/src/console/tui/run.rs` (827 L) — the full event loop; identify which portions the G0 shared runtime absorbs vs which must remain as console-specific glue.
+11. In `crates/jackin-console/src/tui/file_browser.rs`, replace the `GlobalMountModal::FileBrowser` / `GlobalMountModal::MountDstChoice` pattern-match sites (lines 198, 482, 635, 647, 709, 789, 793, 842, 844) with the equivalent `ConsoleModal::FileBrowser` / `ConsoleModal::MountDstChoice` arms. Replace `SettingsAuthModal::SourceFolderPicker` / `SettingsAuthModal::AuthForm` sites (lines 214, 224, 233, 239, 413, 719) with `ConsoleModal::FileBrowser` (for `SourceFolderPicker`) and `ConsoleModal::AuthForm` (for `AuthForm`).
 
-12. TODO(investigate): After G1 and G2 ship, diff `jackin-launch-tui`'s wiring to G0 and the capsule TUI's wiring to G0. Use those two proven patterns as the template for the console wiring in step 11. Do not guess the pattern from G0 alone; the two prior migrations are the proof of the approach.
+12. In `crates/jackin-console/src/tui/input/global_mounts.rs`, replace every `SettingsEnvModal::Text`, `SettingsEnvModal::SourcePicker`, `SettingsEnvModal::OpPicker`, `SettingsEnvModal::RolePicker`, `SettingsEnvModal::ScopePicker`, `SettingsEnvModal::Confirm` construction and match arm with their `ConsoleModal` counterparts.
+
+13. In `crates/jackin-console/src/tui/input/global_mounts/auth.rs`, replace every `SettingsAuthModal::AuthForm`, `SettingsAuthModal::SourcePicker`, `SettingsAuthModal::OpPicker`, `SettingsAuthModal::TextInput`, `SettingsAuthModal::SourceFolderPicker` site with the corresponding `ConsoleModal` variant. Exact construction lines confirmed: 75, 91, 117, 143, 168, 190, 213, 243, 250, 255, 265.
+
+14. In `crates/jackin/src/console/effects.rs`, replace the `SettingsAuthModal::AuthForm { .. }` construction at line 1339 and the match at line 1362 with `ConsoleModal::AuthForm { .. }`. Remove the `SettingsAuthModal` import at line 982.
+
+15. In `crates/jackin-console/src/tui/app.rs`, remove `SettingsEnvModal` and `SettingsAuthModal` from the `ConsoleInputDispatchPlan` enum variants (currently at lines 300–301) and update all `match` arms on this enum that handle `ConsoleInputDispatchPlan::SettingsEnvModal` (lines 82–83 in dispatch.rs, 252, 260 in dispatch.rs, 463, 466, 3806, 3814 in app.rs). TODO(investigate): After the modal collapse, settings env/auth modals are handled the same as editor modals — determine what the dispatch plan variants become (likely absorbed into the existing `EditorModal` variant or a new unified variant).
+
+16. After steps 10–15 compile cleanly and all tests pass: confirm no remaining references to `SettingsEnvModal`, `GlobalMountModal`, `SettingsAuthModal` outside `model.rs` and `state.rs`:
+    ```
+    grep -rn "SettingsEnvModal\|GlobalMountModal\|SettingsAuthModal" crates/
+    ```
+    The only hits must be the three `pub enum` definitions in `screens/settings/model.rs` and the three type aliases in `state.rs`.
+
+17. In `crates/jackin-console/src/tui/screens/settings/model.rs`, delete the three enum definitions:
+    - `pub enum SettingsEnvModal<...>` starting at line 576 through its closing `}` (approximately line 604)
+    - `pub enum GlobalMountModal<...>` starting at line 1073 through its closing `}` (approximately line 1105)
+    - `pub enum SettingsAuthModal<...>` starting at line 1613 through its closing `}` (approximately line 1640)
+    Also delete any `impl ... ConsoleAnimationTick for SettingsEnvModal<...>`, `impl ... ConsoleAnimationTick for GlobalMountModal<...>`, `impl ... ConsoleAnimationTick for SettingsAuthModal<...>` blocks that follow each enum.
+
+18. In `crates/jackin-console/src/tui/state.rs`, delete the three type aliases:
+    - `pub type SettingsEnvModal<'a> = ...` (lines 137–144)
+    - `pub type SettingsAuthModal<'a> = ...` (lines 152–160)
+    - `pub type GlobalMountModal<'a> = ...` (lines 162–170)
+    Update the three dependent aliases `GlobalMountsState<'a>` (line 107), `SettingsEnvState<'a>` (line 134), and `SettingsAuthState` (line 146) to use the unified modal type agreed in step 7.
+
+19. Migrate `SettingsState.error_popup` to the unified modal slot. In `crates/jackin-console/src/tui/screens/settings/model.rs`, remove `pub error_popup: Option<ErrorPopup>` (line 74) from `SettingsState`, remove the `ErrorPopup` type parameter from `SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>`, update `dismiss_error_popup` (line 120) and `open_error_popup` (line 292) to use the unified modal slot per the design decision in step 7. Update the `SettingsState<'a>` type alias in `state.rs` (lines 112–119) to drop the `ErrorPopupState` parameter. Update `state/update.rs` (lines 382, 393), `input/dispatch.rs` (lines 54, 209), `input/mouse.rs` (line 1106), and `app.rs` line 2139 (`settings_error_popup_open: self.error_popup.is_some()`) to use the new modal slot.
+
+**Phase 3c — Per-domain edit-flow unification**
+
+20. TODO(investigate): For each domain (auth, mounts, env/secrets, trust, general), enumerate the exact twin function pairs in `input/editor.rs` (editor side) and `input/global_mounts.rs` + `input/global_mounts/auth.rs` (settings side) that the `unify-settings-editor-surfaces.mdx` documents. Read the "Largest twinned function families" section of that file (lines 67–69) and map each named twin (`open_auth_form_modal`/`open_settings_auth_form`, `restore_auth_form_after_op_picker_cancel`/`restore_settings_auth_form`, etc.) to its current line range in the code. At minimum 20 twin pairs are documented; list all before collapsing any.
+
+21. TODO(investigate): Define the `ConfigSurfaceHost` trait. The shape given in `unify-settings-editor-surfaces.mdx` lines 98–105 is:
+    ```rust
+    pub trait ConfigSurfaceHost {
+        fn scopes(&self) -> &[ConfigScope];
+        fn stash_modal(&mut self, child: ConfigModal);
+        fn restore_modal(&mut self);
+        fn show_error(&mut self, reason: String);
+    }
+    ```
+    The concrete `ConfigScope` and `ConfigModal` types must be resolved from step 6. Determine the module in `jackin-console` where this trait lives (candidate: a new `crates/jackin-console/src/tui/config_surface.rs`). Write the trait definition as a new file once the types are resolved.
+
+22. TODO(investigate): For each twin pair identified in step 20, collapse the pair into one generic function over `H: ConfigSurfaceHost`. Start with the auth domain (the proved slice per the roadmap). Replace both of the twin functions with one; implement `ConfigSurfaceHost` for `EditorState` and for `SettingsState`; run the full suite at each collapse to confirm no behavior change. Repeat for mounts, env/secrets, trust, general in that order.
+
+**Phase 3d — Wire the console event loop to the G0 runtime contract**
+
+23. TODO(investigate): After reading the concrete G0 contract (step 4) and the G1/G2 migration patterns (step 5), map the existing console Elm stack onto the G0 traits:
+    - `crates/jackin-console/src/tui/console.rs` line 14: `ConsoleState = ConsoleApp<ManagerState<'static>, ...>` — this is the `Model`; identify which G0 `Model` trait (if any) it must implement.
+    - `crates/jackin-console/src/tui/update.rs` line 12: `ConsoleUpdate<E> = UpdateResult<E>` already uses `jackin_tui::runtime::UpdateResult` — this is already on the G0 contract for the update return type.
+    - `crates/jackin-console/src/tui/run.rs` (611 L) — identify which functions become implementations of `Component<crossterm::event::Event, ConsoleMessage>` and which become `View<ConsoleState>`.
+    - `crates/jackin/src/console/tui/run.rs` (827 L) — the host event loop; identify which portion is absorbed by the G0 shared runtime runner (if G0 provides one) and which must remain as console-specific glue.
+
+24. TODO(investigate): Implement `Component<crossterm::event::Event, ...>` and `View<ConsoleState>` on the appropriate console structs, following the exact pattern established by G1 and G2. Do not guess the pattern; read the two shipped migrations first.
 
 **Phase 3e — W5 file splits on the unified surface**
 
-13. After phases 3b–3d are complete and the two duplicated surfaces are ONE implementation, apply the W5 split pattern to `crates/jackin-console/src/tui/app.rs` (5095 L), `crates/jackin-console/src/tui/screens/editor/model.rs` (now the unified surface), and `crates/jackin-console/src/tui/screens/settings/model.rs` (now smaller after the modal collapse). The roadmap's instruction: "split the unified surface, not the duplicated pair." Follow the project split pattern (crates/AGENTS.md): keep the original file as coordinator; move clusters to sibling `<module>/<name>.rs`; use `pub(super)` for moved items; re-export with `pub(crate) use self::<name>::...`; no `mod.rs`; no wildcard imports. Specific sibling targets for `app.rs`:
-    - TODO(investigate): The exact cluster boundaries within `app.rs` (5095 L) — `ConsoleModal` (lines 762–851), `ConsoleManagerStage` (lines 255–268), dispatch helpers (`console_input_dispatch_plan`, lines 432–471), `LaunchAgentPromptState`/`LaunchRolePromptState`/`LaunchProviderPickerState` trait families (lines 33–250) — must be confirmed against the final state of `app.rs` after the modal collapse in phase 3b.
+25. TODO(investigate): After phases 3b–3d are complete, determine the split cluster boundaries within `crates/jackin-console/src/tui/app.rs` (5095 L). The playbook identifies four candidate clusters:
+    - `ConsoleModal` (current lines 762–851) — likely moves to `crates/jackin-console/src/tui/app/modal.rs`
+    - `ConsoleManagerStage` (current lines 255–268) — likely moves to `crates/jackin-console/src/tui/app/stage.rs`
+    - Dispatch helpers (current lines 432–471) — likely moves to `crates/jackin-console/src/tui/app/dispatch.rs`
+    - `LaunchAgentPromptState` / `LaunchRolePromptState` / `LaunchProviderPickerState` trait families (current lines 33–250) — likely moves to `crates/jackin-console/src/tui/app/launch.rs`
+    Confirm the final line ranges AFTER the modal collapse in Phase 3b (the line numbers will shift). Apply the project split pattern: keep `app.rs` as the coordinator; move each cluster to a sibling `app/<name>.rs`; use `pub(super)` for moved items; re-export with `pub(crate) use self::<name>::...`; no `mod.rs`; no wildcard imports.
 
-14. After all splits in step 13, update `file-size-budget.toml`: run `cargo run -p jackin-xtask --locked -- lint files --print-budget` and delete the entries for any file that now sits under the 2000 L production cap. Commit the refreshed budget in the same PR.
+26. After step 25 splits land: apply the W5 split pattern to `screens/editor/model.rs` (unified surface, new line count after Phase 3b/3c). Move clusters to sibling `editor/model/<name>.rs` files following the same coordinator pattern. Do not split until the surface is unified (i.e., after Phase 3b/3c).
+
+27. After step 26: run `cargo run -p jackin-xtask --locked -- lint files --print-budget`. For any entry in `file-size-budget.toml` whose file now sits under the 2000 L cap, delete that entry from `file-size-budget.toml`. Commit the refreshed budget in the same PR. Affected entries (as of the current budget):
+    - `crates/jackin-console/src/tui/app.rs` at `lines = 5095`
+    - `crates/jackin-console/src/tui/screens/editor/model.rs` at `lines = 4176`
+    - `crates/jackin-console/src/tui/screens/settings/model.rs` at `lines = 3852`
+    - `crates/jackin-console/src/tui/screens/editor/view.rs` at `lines = 2389` (if split as part of this PR)
 
 **Phase 3f — Docs and roadmap update**
 
-15. In `docs/content/docs/roadmap/codebase-health-enforcement.mdx`, check the box for slice G3 and update the W5 ongoing-decompositions list (lines 165–173) to reflect which files are now under cap. Update the W6 Phase G checklist (lines 260–264) marking G3 done. No hard-wrap in prose paragraphs.
+28. In `docs/content/docs/roadmap/codebase-health-enforcement.mdx`, locate the Phase G checklist (lines 263–266). Change `- [ ] **G3 — migrate \`jackin-console\``...` to `- [x]`. Also update the W5 ongoing-decompositions list (lines 271–274): mark the `tui/app.rs`, `screens/editor/model.rs`, and `screens/settings/model.rs` entries as done. No hard-wrap in prose paragraphs.
 
-16. In `docs/content/docs/roadmap/unify-settings-editor-surfaces.mdx`, advance the **Status** line from "Partially implemented" to "Implemented" if all steps 1–12 of the sequencing (lines 169–185) are completed in this PR; otherwise mark which steps landed. Update the **Definition of done** checklist (lines 195–199).
+29. In `docs/content/docs/roadmap/unify-settings-editor-surfaces.mdx`, advance **Status** from "Partially implemented" to "Implemented" if all sequencing steps 1–12 (lines 169–185) are complete in this PR; otherwise mark which steps landed. Update the Definition of done checklist (lines 195–199).
 
-17. Update `PROJECT_STRUCTURE.md` and the [Codebase Map](/reference/getting-oriented/codebase-map/) page if any new sibling modules were created in step 13.
+30. If any new sibling modules were created in Phase 3e (e.g. `app/modal.rs`, `app/stage.rs`, `app/launch.rs`, `editor/model/<name>.rs`), update `PROJECT_STRUCTURE.md` and `docs/content/docs/reference/getting-oriented/codebase-map.mdx` to list them.
 
 **Verify** (run in order; STOP and revert on the first failure):
-- `cargo fmt --check` → zero diff
-- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` → no warnings
-- `cargo nextest run -p jackin-console` → all tests pass
-- `cargo nextest run -p jackin` → all tests pass (includes `jackin/src/console/tui/input/editor/tests.rs` 2636 L and `state/tests.rs` 893 L)
+- `cargo fmt --check` → exits 0, no diff
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` → exits 0, zero warnings
+- `cargo nextest run -p jackin-console` → all tests pass (test-layout-allowlist in `test-layout-allowlist.toml` includes `crates/jackin-console/src/tui/app.rs`, `crates/jackin-console/src/tui/screens/editor/model.rs`, `crates/jackin-console/src/tui/screens/settings/model.rs` — if any tests in those files were relocated by Phase 3e splits, run `cargo run -p jackin-xtask --locked -- lint tests --print-allowlist` and update `test-layout-allowlist.toml` to remove the now-fixed entry)
+- `cargo nextest run -p jackin` → all tests pass (covers `crates/jackin/src/console/` including `effects.rs` and `tui/run.rs`)
 - `cargo nextest run --workspace --all-features` → entire workspace green
 - `cargo run -p jackin-xtask --locked -- lint` → file-size + test-layout + dependency-direction all OK
-- `cargo run -p jackin-xtask --locked -- lint files --print-budget` → run and compare; delete any grandfathered entry now under the 2000 L cap
-- behavioral specs `runtime-launch` and `op-picker` pass **unmodified** — no test source lines changed
+- `cargo run -p jackin-xtask --locked -- lint files --print-budget` → compare output; delete any grandfathered `file-size-budget.toml` entry now under the 2000 L cap
+- behavioral specs `runtime-launch` and `op-picker` pass UNMODIFIED — no test source lines changed
 
 **Done when:**
-- `SettingsEnvModal`, `GlobalMountModal`, and `SettingsAuthModal` enums are deleted from `crates/jackin-console/src/tui/screens/settings/model.rs`; `grep -rn "SettingsEnvModal\|GlobalMountModal\|SettingsAuthModal" crates/` returns zero hits
-- `SettingsState.error_popup` field is gone; settings errors surface through `ConsoleModal::ErrorPopup`
+- `grep -rn "SettingsEnvModal\|GlobalMountModal\|SettingsAuthModal" crates/` returns zero hits
+- `SettingsState.error_popup` field is gone from `screens/settings/model.rs`; settings errors surface through the unified modal slot
 - One `open_sub_modal`/`pop_modal_chain`/`clear_modal_chain` implementation serves both editor and settings
-- The console's `run.rs` event loop passes through the G0 shared runtime contract (confirmed by G0 trait name)
+- The console's event loop in `crates/jackin/src/console/tui/run.rs` passes through the G0 shared runtime contract (confirmed by the G0 `Component`/`View` trait names)
 - `file-size-budget.toml` entries for `app.rs`, `editor/model.rs`, and `settings/model.rs` are either deleted (if under 2000 L) or reduced to their new line counts
-- Full workspace CI green; specs pass unmodified
+- Full workspace CI green; behavioral specs pass unmodified
 
-**Rollback:** `git restore crates/jackin-console/src/tui/ crates/jackin/src/console/ crates/jackin-tui/src/runtime.rs file-size-budget.toml` — or, if this is a PR branch, `git checkout main` and delete the branch.
+**Rollback:** `git restore crates/jackin-console/src/tui/ crates/jackin/src/console/ crates/jackin-tui/src/runtime.rs file-size-budget.toml docs/content/docs/roadmap/codebase-health-enforcement.mdx docs/content/docs/roadmap/unify-settings-editor-surfaces.mdx` — or delete the PR branch and reset to `main`.
 
 **Open questions:**
-1. What are the exact trait names and signatures added to `crates/jackin-tui/src/runtime.rs` by G0? (G0 has not shipped; G3 is blocked until this is known.)
-2. Does the unified modal type stay as `ConsoleModal` in `app.rs`, or does a new `ConfigModal` type get introduced in a shared location? The design doc says "leaning `jackin-console`, beside the shared widgets" but this is not locked.
-3. Do the per-panel modal type params on `GlobalMountsState`, `SettingsEnvState`, `SettingsAuthState` get removed entirely (replaced by one `modal: Option<ConsoleModal>` on `SettingsState`), or do the per-panel slots stay but change type to `ConsoleModal`?
-4. How is the trust asymmetry reconciled: promote editor to a `Trust` tab matching `SettingsTab::Trust`, or keep editor's `ConfirmTarget::TrustRoleSource` flow and add the same pattern to settings?
-5. What are the exact file-size boundaries for splitting `app.rs` (5095 L) after the modal collapse — what clusters move to sibling files and what stays as coordinator?
-6. Which portions of `crates/jackin/src/console/tui/run.rs` (827 L) are absorbed by the G0 shared runtime loop vs which remain as console-specific glue?
-7. The auth mouse-row-click asymmetry (`editor.auth_expanded` set + row-click vs settings `selected_kind` detail-rows with no row-click) — is this an intentional per-surface affordance to preserve, or a behavior gap to reconcile in G3?
+1. G0 has NOT shipped. What are the exact names and type parameters of `Component` and `View` as they will appear in `crates/jackin-tui/src/runtime.rs` after G0 lands? (The playbook's G0 section gives the planned names `Component<Ev, Msg>` and `View<Model>`, but the executor must read the actual code before wiring.)
+2. G1 and G2 have NOT shipped. What is the exact wiring pattern they establish — which concrete structs implement `Component` and `View`, and does G0 provide a shared event-loop runner that replaces the per-surface `run.rs` logic, or only the two trait definitions? G3's Phase 3d is entirely blocked on this.
+3. After the modal collapse, should the per-panel `Modal` type parameters on `GlobalMountsState<Row, Modal>`, `SettingsEnvState<EnvValue, Modal>`, `SettingsAuthState<EnvValue, Modal, PendingOpCommit>` be removed entirely (replaced by a single `modal: Option<ConsoleModal>` on `SettingsState`), or do the per-panel slots stay but their concrete type becomes `ConsoleModal`? This governs how many `Modal` type parameters disappear from `state.rs`.
+4. Does `TextInputTarget` in `crates/jackin-console/src/tui/screens/editor/model.rs` already cover all `GlobalMountTextTarget` variants, or do new variants need to be added before step 10 can run?
+5. Where exactly does the unified `ConfigSurfaceHost` trait and `ConfigModal` enum live — new `crates/jackin-console/src/tui/config_surface.rs`, or folded into `app.rs`? The `unify-settings-editor-surfaces.mdx` says "leaning `jackin-console` beside the shared widgets" but this is not locked.
+6. How is the trust asymmetry reconciled — promote editor to a `SettingsTab::Trust`-style tab, or model both through one trust-confirm flow?
+7. The auth mouse-row-click asymmetry (`editor.auth_expanded: BTreeSet<_>` + row-click vs `SettingsAuthState`'s `selected_kind` with no row-click) — preserve as deliberate per-surface affordance or reconcile?
+8. After Phase 3e splits, what are the exact cluster boundaries in `app.rs` given its final line count after Phase 3b's modal collapse? The four candidate clusters (ConsoleModal, ConsoleManagerStage, dispatch helpers, launch-prompt trait families) are identified, but their line ranges will shift after Phase 3b.
+9. Which portions of `crates/jackin/src/console/tui/run.rs` (827 L) are absorbed by the G0 shared runtime runner (if G0 ships such a runner) vs which must stay as console-specific glue? Cannot be answered until G0's scope is known.
 
 ---
 
 ### W5-usage — Decompose jackin-capsule usage.rs into provider modules
 
-> **Not yet detailed.** The detailing agent for this slice failed mid-run. Re-detail it before executing (re-run the codebase-health-playbook workflow). The strategy page describes the intended shape; do **not** improvise from the summary.
+- **Goal:** Split `crates/jackin-capsule/src/usage.rs` (5 981 L) into nine sibling modules (`usage/claude.rs`, `usage/codex.rs`, `usage/amp.rs`, `usage/grok.rs`, `usage/kimi.rs`, `usage/minimax.rs`, `usage/zai.rs`, `usage/view.rs`, `usage/refresh.rs`) so that `usage.rs` shrinks to ≤ 2 000 L and holds only constants, `UsageCache`, `build_snapshot`, shared cross-provider utilities, and re-exports.
+- **Preconditions:** The format.rs slice (already shipped, `usage/format.rs` 414 L, `mod format;` in coordinator) must be DONE first; `usage/tests.rs` (2 919 L) must exist.
+- **Pattern:** File-split (Strangler Fig on the coordinator); original file stays as coordinator; clusters move to self-named siblings; no `mod.rs`.
+- **Touches:** `crates/jackin-capsule/src/usage.rs` (modified, coordinator), new files `usage/claude.rs`, `usage/codex.rs`, `usage/amp.rs`, `usage/grok.rs`, `usage/kimi.rs`, `usage/minimax.rs`, `usage/zai.rs`, `usage/view.rs`, `usage/refresh.rs`; `file-size-budget.toml` (updated).
+
+---
+
+#### Per-provider sub-table (current line numbers in the UNMODIFIED usage.rs)
+
+All line numbers are in `crates/jackin-capsule/src/usage.rs` as it exists after the format.rs slice (5 981 L total). Lines are shown for the ORIGINAL file; work bottom-to-top so earlier cuts do not shift later anchors.
+
+| Provider | Snapshot fn / range | DTO + fetch ranges (non-contiguous) |
+|---|---|---|
+| **claude** | `fn claude_snapshot` L1334–L1485 | `struct ClaudeOAuthCredentials` L2667–L2682 ▸ `fn claude_email_from_value` through `fn load_claude_oauth_credentials` L2731–L2800 ▸ `struct ClaudeOAuthUsageResponse` through `fn claude_code_version_from_text` L2846–L3291 ▸ `pub(crate) struct ClaudeUsageDiagnostic` through `fn run_claude_usage_diagnostic_with` L5823–L5868 ▸ `fn parse_claude_usage_output` L5898–L5912 |
+| **codex** | `fn codex_plan_display_name` through `fn codex_snapshot` L1492–L1702 | `struct CodexOAuthCredentials` through `fn codex_rpc_notification` L3292–L3946 ▸ `fn fetch_codex_oauth_usage` through `fn parse_chatgpt_base_url` L4612–L4810 |
+| **grok** | `fn grok_snapshot` + `fn grok_snapshot_from_rpc_result` L1817–L1924 | `struct GrokBillingResponse` through `fn grok_rpc_request_payload` L3947–L4597 ▸ `fn grok_account_label` through `fn grok_account_label_or_presence` L5913–L5948 |
+| **zai** | `fn provider_key_snapshot` L2058–L2123 | `struct ZaiQuotaResponse` through `fn zai_quota_host` L4851–L5055 |
+| **kimi** | `fn kimi_snapshot` L1926–L1996 | `struct KimiUsageResponse` through `fn json_epoch_seconds` L5057–L5267 |
+| **minimax** | `fn minimax_snapshot` L1998–L2057 | `struct MiniMaxUsageResponse` through `fn epoch_seconds_from_maybe_ms` L5269–L5598 |
+| **amp** | `fn amp_snapshot` L1703–L1815 | `struct AmpApiUsage` through `fn fetch_amp_cli_usage` L5620–L5821 ▸ `fn parse_amp_usage_output` L5869–L5896 |
+
+**view.rs** receives the contiguous block: `struct UsageViewInput` through end of `fn timed_bucket` — **L2171–L2665**.
+
+**refresh.rs** receives four non-contiguous blocks (move bottom-to-top):
+- `struct MaterializedUsageAccounts` through `fn atomic_write_usage_json` — L1135–L1200
+- `fn shared_usage_cooldown_dir` through `fn usage_backoff_delay` — L721–L933
+- `fn ordered_refresh_targets` + `fn refresh_interval_for_key` — L680–L705
+- `fn collect_usage_refresh_results` through `fn log_persist_transition` — L435–L556
+- `static MATERIALIZED_TMP_COUNTER: AtomicU64` — L53 (single line)
+
+**Shared utilities that STAY in coordinator** (only add `pub(super)` keyword to each `fn`/`struct`/`impl`):
+
+| Lines | Items | Reason |
+|---|---|---|
+| L707–L715 | `fn stable_usage_hash` | called by refresh.rs (refresh_interval_for_key, shared_usage_file_path) AND coordinator (shared_usage_account_key) |
+| L717–L719 | `fn env_dir_or_home` | called by refresh.rs candidates AND claude.rs AND codex.rs AND coordinator |
+| L934–L948 | `fn shared_usage_account_key` | called by `UsageRefreshTarget::shared_account_key` (L97) which is in coordinator |
+| L2683–L2730 | `fn first_credential_with_path`, `fn first_credential`, `fn read_json_file` | used by amp.rs, codex.rs, kimi.rs, grok.rs, and claude.rs |
+| L2801–L2844 | `fn resolve_identity`, `fn resolve_identity_with_extra` | used by claude.rs (L1353) and codex.rs (L1557) |
+| L3466–L3497 | `struct ManagedCliLaunchGate` + `impl ManagedCliLaunchGate` | field type in `UsageCache` (L58–L59); passed to codex.rs and grok.rs snapshot fns |
+| L4598–L4610 | `fn write_json_line` | used by codex.rs (codex_rpc_request L3897, codex_rpc_notification L3939) AND grok.rs (grok_rpc_request L4552) |
+| L4812–L4850 | `fn provider_http_client`, `fn get_json_bearer` | used by every network provider module |
+| L5599–L5619 | `fn normalize_url_or_host` | used by zai.rs (L5040, L5043, L5047) AND minimax.rs (L5559, L5577) |
+
+---
+
+**Steps** (each step is one mechanical action; work BOTTOM-TO-TOP within sections to avoid line-number drift):
+
+**Phase 0 — Create nine empty skeleton files**
+
+1. Create `crates/jackin-capsule/src/usage/claude.rs` with content:
+   ```rust
+   //! Claude / Anthropic usage snapshot — DTOs, OAuth fetch, CLI diagnostic.
+   use std::collections::BTreeMap;
+   use std::io::{BufRead, BufReader, Write};
+   use std::path::{Path, PathBuf};
+   use std::process::{Command, Stdio};
+   use std::time::Duration;
+   use base64::Engine as _;
+   use serde::{Deserialize, Serialize};
+   use jackin_protocol::control::{
+       FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
+       UsageSnapshotStatus, UsageSource,
+   };
+   use crate::cdebug;
+   use super::format::{
+       CliOutput, compact_duration_label, dollar_amounts, expiry_label, format_amount_with_unit,
+       format_cents, format_currency, home_path, humanize_plan_label, humanize_words_with,
+       local_timestamp_label, oauth_origin, parse_iso_epoch, percent_before_used,
+       quota_pace_label, remaining_from_fraction, reset_label, run_cli_with_timeout,
+       run_cli_with_timeout_full, titlecase_ascii, used_percent_from_fraction, used_percent_label,
+       window_minutes_label,
+   };
+   use super::{
+       CLAUDE_CODE_USER_AGENT_FALLBACK, CLAUDE_HANDOFF_CREDENTIALS_PATH,
+       CLAUDE_VERSION_TIMEOUT, PROVIDER_CLI_TIMEOUT, PROVIDER_HTTP_TIMEOUT,
+       UsageSurface, UsageSnapshotStatus as _, // re-check actual needed symbols
+       bucket, timed_bucket, with_status_slot, usage_view, UsageViewInput,
+       env_dir_or_home, first_credential, first_credential_with_path, read_json_file,
+       resolve_identity_with_extra, get_json_bearer, provider_http_client,
+       split_fetch, ProviderPresence, provider_outcome, now_epoch,
+       claude_oauth_candidates,
+   };
+   // TODO(investigate): verify this import list compiles; add or remove symbols
+   // based on the first `cargo check -p jackin-capsule` run.
+   ```
+
+2. Create `crates/jackin-capsule/src/usage/codex.rs` with content:
+   ```rust
+   //! Codex / OpenAI usage snapshot — DTOs, OAuth fetch, RPC fetch.
+   use std::collections::BTreeMap;
+   use std::io::{BufRead, BufReader, Write};
+   use std::path::{Path, PathBuf};
+   use std::time::Duration;
+   use serde::{Deserialize, Serialize};
+   use jackin_protocol::control::{
+       FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+   };
+   use super::format::{
+       codex_account_from_value, home_path, humanize_words_with, oauth_origin,
+       run_cli_with_timeout, titlecase_ascii,
+   };
+   use super::{
+       CODEX_HANDOFF_AUTH_PATH, CODEX_RPC_INIT_TIMEOUT, CODEX_RPC_LAUNCH_COOLDOWN,
+       CODEX_RPC_REQUEST_TIMEOUT, PROVIDER_HTTP_TIMEOUT,
+       ManagedCliLaunchGate, UsageSurface,
+       bucket, timed_bucket, with_status_slot, usage_view, UsageViewInput,
+       env_dir_or_home, read_json_file, resolve_identity,
+       get_json_bearer, provider_http_client, write_json_line,
+       split_fetch, ProviderPresence, provider_outcome,
+       codex_auth_candidates, usage_error_is_unauthorized,
+   };
+   // TODO(investigate): verify import list; CODEX_RPC_* constants may need
+   // adding to coordinator pub(super) set.
+   ```
+
+3. Create `crates/jackin-capsule/src/usage/amp.rs` with content:
+   ```rust
+   //! Amp usage snapshot — API usage, CLI usage, parse helpers.
+   use std::path::{Path, PathBuf};
+   use jackin_protocol::control::{
+       FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence,
+       UsageSnapshotStatus, UsageSource,
+   };
+   use super::format::{
+       dollar_amounts, first_number_key, first_string_key, home_path,
+       run_cli_with_timeout,
+   };
+   use super::{
+       AMP_HANDOFF_SECRETS_PATH, PROVIDER_HTTP_TIMEOUT,
+       bucket, timed_bucket, with_status_slot, usage_view, UsageViewInput,
+       first_credential_with_path, provider_http_client,
+       split_fetch, ProviderPresence, provider_outcome,
+       now_epoch,
+   };
+   // TODO(investigate): verify import list on first compile.
+   ```
+
+4. Create `crates/jackin-capsule/src/usage/grok.rs` with content:
+   ```rust
+   //! Grok / xAI usage snapshot — billing DTOs, RPC fetch, web fetch.
+   use std::collections::BTreeMap;
+   use std::io::Write;
+   use std::path::{Path, PathBuf};
+   use std::time::Duration;
+   use base64::Engine as _;
+   use serde::{Deserialize, Serialize};
+   use jackin_protocol::control::{
+       FocusedUsageView, Money, QuotaBucketView, StatusSlot, UsageConfidence,
+       UsageSnapshotStatus, UsageSource,
+   };
+   use super::format::{
+       first_string_key, home_path, run_cli_with_timeout,
+   };
+   use super::{
+       GROK_HANDOFF_AUTH_PATH, GROK_RPC_INIT_TIMEOUT, GROK_RPC_REQUEST_TIMEOUT,
+       PROVIDER_HTTP_TIMEOUT,
+       ManagedCliLaunchGate,
+       bucket, timed_bucket, with_status_slot, usage_view, UsageViewInput,
+       read_json_file, provider_http_client, write_json_line,
+       split_fetch, ProviderPresence, provider_outcome,
+       now_epoch,
+   };
+   // TODO(investigate): verify import list; GROK_RPC_* constants need pub(super).
+   ```
+
+5. Create `crates/jackin-capsule/src/usage/kimi.rs` with content:
+   ```rust
+   //! Kimi usage snapshot — DTOs and API fetch.
+   use std::path::PathBuf;
+   use serde::Deserialize;
+   use jackin_protocol::control::{
+       FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+   };
+   use super::format::{home_path, parse_iso_epoch};
+   use super::{
+       KIMI_HANDOFF_HOME, PROVIDER_HTTP_TIMEOUT,
+       bucket, timed_bucket, with_status_slot, usage_view, UsageViewInput,
+       read_json_file, get_json_bearer,
+       split_fetch, ProviderPresence, provider_outcome, now_epoch,
+   };
+   // TODO(investigate): verify import list.
+   ```
+
+6. Create `crates/jackin-capsule/src/usage/minimax.rs` with content:
+   ```rust
+   //! MiniMax usage snapshot — DTOs and API fetch.
+   use serde::Deserialize;
+   use jackin_protocol::control::{
+       FocusedUsageView, QuotaBucketView, UsageConfidence, UsageSnapshotStatus, UsageSource,
+   };
+   use super::format::{first_string_key, json_number};
+   use super::{
+       PROVIDER_HTTP_TIMEOUT,
+       bucket, timed_bucket, with_status_slot, usage_view, UsageViewInput,
+       normalize_url_or_host, provider_http_client,
+       split_fetch, ProviderPresence, provider_outcome, now_epoch,
+   };
+   // TODO(investigate): verify import list.
+   ```
+
+7. Create `crates/jackin-capsule/src/usage/zai.rs` with content:
+   ```rust
+   //! Z.AI / GLM usage snapshot — DTOs and API fetch.
+   use serde::Deserialize;
+   use jackin_protocol::control::{
+       FocusedUsageView, QuotaBucketView, StatusSlot, UsageConfidence,
+       UsageSnapshotStatus, UsageSource,
+   };
+   use super::format::{
+       expiry_label, format_cents, home_path, local_timestamp_label, parse_iso_epoch,
+       quota_pace_label, remaining_from_fraction, reset_label, used_percent_from_fraction,
+       used_percent_label, window_minutes_label,
+   };
+   use super::{
+       bucket, with_status_slot, usage_view, UsageViewInput, UsageSurface,
+       get_json_bearer, normalize_url_or_host,
+       split_fetch, ProviderPresence, provider_outcome, now_epoch,
+   };
+   // TODO(investigate): verify import list.
+   ```
+
+8. Create `crates/jackin-capsule/src/usage/view.rs` with content:
+   ```rust
+   //! View-building and rendering helpers shared by all providers.
+   //!
+   //! Contains UsageViewInput, usage_view, status_bar_*, bucket helpers,
+   //! provider_tabs, and the quota/preserve helpers. All items are pub(super)
+   //! so the coordinator can re-export them to tests and provider modules.
+   use std::collections::HashMap;
+   use jackin_protocol::control::{
+       AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, Money,
+       QuotaBucketView, StatusSlot, UsageConfidence, UsageProviderTab,
+       UsageSeverity, UsageSnapshotStatus, UsageSource,
+   };
+   use super::{
+       CachedUsage, UsageSurface,
+       relative_updated_label, now_epoch,
+       usage_status_storage_label, usage_source_storage_label, usage_confidence_storage_label,
+   };
+   use super::format::{quota_pace_label, percent_before_used, expiry_label, reset_label};
+   // TODO(investigate): verify the full super:: list needed by moved functions.
+   ```
+
+9. Create `crates/jackin-capsule/src/usage/refresh.rs` with content:
+   ```rust
+   //! Refresh orchestration: scheduling, cooldown, shared filesystem sync,
+   //! materialized-account persistence.
+   use std::collections::{HashMap, HashSet};
+   use std::fs;
+   use std::io::Write;
+   use std::path::{Path, PathBuf};
+   use std::sync::atomic::{AtomicU64, Ordering};
+   use std::sync::{Arc, mpsc};
+   use std::thread;
+   use std::time::{Duration, Instant};
+   use fs2::FileExt;
+   use sha2::{Digest, Sha256};
+   use serde::{Deserialize, Serialize};
+   use jackin_protocol::control::FocusedUsageView;
+   use super::{
+       ManagedCliLaunchGate, UsageRefreshResult, UsageRefreshTarget,
+       UsageSnapshotStatus, PROVIDER_PROBE_TIMEOUT, USAGE_REFRESH_BASE_INTERVAL,
+       USAGE_REFRESH_BACKOFF_CAP, USAGE_REFRESH_JITTER,
+       cached_unavailable_view, now_epoch,
+       env_dir_or_home, stable_usage_hash,
+   };
+   // TODO(investigate): verify import list; PROVIDER_PROBE_TIMEOUT and
+   // USAGE_REFRESH_* constants need pub(super) in coordinator.
+   ```
+
+**Phase 1 — Add `pub(super)` to shared utilities in usage.rs (no code moves yet)**
+
+10. In `usage.rs` at L707, change `fn stable_usage_hash` → `pub(super) fn stable_usage_hash`.
+11. In `usage.rs` at L717, change `fn env_dir_or_home` → `pub(super) fn env_dir_or_home`.
+12. In `usage.rs` at L934, change `fn shared_usage_account_key` → `pub(super) fn shared_usage_account_key`.
+13. In `usage.rs` at L2683, change `fn first_credential_with_path` → `pub(super) fn first_credential_with_path`.
+14. In `usage.rs` at L2693, change `fn first_credential` → `pub(super) fn first_credential`.
+15. In `usage.rs` at L2703, change `fn read_json_file` → `pub(super) fn read_json_file`.
+16. In `usage.rs` at L2801, change `fn resolve_identity` → `pub(super) fn resolve_identity`.
+17. In `usage.rs` at L2815, change `fn resolve_identity_with_extra` → `pub(super) fn resolve_identity_with_extra`.
+18. In `usage.rs` at L3466, change `struct ManagedCliLaunchGate` → `pub(super) struct ManagedCliLaunchGate`.
+19. In `usage.rs` at L4598, change `fn write_json_line` → `pub(super) fn write_json_line`.
+20. In `usage.rs` at L4812, change `fn provider_http_client` → `pub(super) fn provider_http_client`.
+21. In `usage.rs` at L4825, change `fn get_json_bearer` → `pub(super) fn get_json_bearer`.
+22. In `usage.rs` at L5599, change `fn normalize_url_or_host` → `pub(super) fn normalize_url_or_host`.
+23. In `usage.rs`, also add `pub(super)` to: `fn split_fetch` (L1287), `struct ProviderPresence` (L1297), `fn provider_outcome` (L1306), `fn now_epoch` (L5953), `fn claude_oauth_candidates` (L950), `fn codex_auth_candidates` (L961), `fn claude_account_identity` (L970), `fn codex_account_identity` (L979), `fn canonical_usage_cache_key` (L987), `fn decorate_surface_view` (L1007), `fn cached_unavailable_view` (L1021), `fn cached_refreshing_view` (L1033), `fn mark_active_tab` (L1044), `fn account_snapshot_views_from_cache` (L1052), `fn quota_amounts_for_account_snapshot` (L1089).
+24. In `usage.rs`, add `pub(super)` to all constants used across modules: `PROVIDER_HTTP_TIMEOUT` (L35), `PROVIDER_CLI_TIMEOUT` (L36), `PROVIDER_PROBE_TIMEOUT` (L37), `CODEX_RPC_INIT_TIMEOUT` (L38), `CODEX_RPC_REQUEST_TIMEOUT` (L39), `CODEX_RPC_LAUNCH_COOLDOWN` (L40), `CLAUDE_VERSION_TIMEOUT` (L41), `CLAUDE_CODE_USER_AGENT_FALLBACK` (L42), `GROK_RPC_INIT_TIMEOUT` (L43), `GROK_RPC_REQUEST_TIMEOUT` (L44), `CODEX_HANDOFF_AUTH_PATH` (L46), `AMP_HANDOFF_SECRETS_PATH` (L47), `KIMI_HANDOFF_HOME` (L48), `GROK_HANDOFF_AUTH_PATH` (L49), `CLAUDE_HANDOFF_CREDENTIALS_PATH` (L50).
+
+**Phase 2 — Move DTO/fetch blocks (bottom-to-top)**
+
+Work strictly bottom-to-top. After each cut, line numbers for ALREADY-CUT positions remain as originally stated (cuts below do not affect numbers above).
+
+25. Cut `fn parse_claude_usage_output` (L5898–L5912) from `usage.rs`; paste into `usage/claude.rs` as `pub(super) fn parse_claude_usage_output`.
+26. Cut `fn parse_amp_usage_output` (L5869–L5896) from `usage.rs`; paste into `usage/amp.rs` as `pub(super) fn parse_amp_usage_output`.
+27. Cut `pub(crate) struct ClaudeUsageDiagnostic` through `fn run_claude_usage_diagnostic_with` (L5823–L5868) from `usage.rs`; paste into `usage/claude.rs` (keep `pub(crate)` on `ClaudeUsageDiagnostic` and `run_claude_usage_diagnostic`; make `fn fetch_claude_cli_usage` and `fn run_claude_usage_diagnostic_with` `pub(super)`).
+28. Cut `fn grok_account_label` through `fn grok_account_label_or_presence` (L5913–L5948) from `usage.rs`; paste into `usage/grok.rs` as `pub(super)` functions.
+29. Cut `struct AmpApiUsage` through `fn fetch_amp_cli_usage` (L5620–L5821) from `usage.rs`; paste into `usage/amp.rs` (make `struct AmpApiUsage`, `struct AmpCliUsage` and their `impl`s `pub(super)`).
+30. Cut `struct MiniMaxUsageResponse` through `fn epoch_seconds_from_maybe_ms` (L5269–L5598) from `usage.rs`; paste into `usage/minimax.rs` (make all structs, enums, fns `pub(super)`).
+31. Cut `struct KimiUsageResponse` through `fn json_epoch_seconds` (L5057–L5267) from `usage.rs`; paste into `usage/kimi.rs`.
+32. Cut `struct ZaiQuotaResponse` through `fn zai_quota_host` (L4851–L5055) from `usage.rs`; paste into `usage/zai.rs`.
+33. Cut `fn fetch_codex_oauth_usage` through `fn parse_chatgpt_base_url` (L4612–L4810) from `usage.rs`; paste into `usage/codex.rs`.
+34. Cut `struct GrokBillingResponse` through `fn grok_rpc_request_payload` (L3947–L4597) from `usage.rs`; paste into `usage/grok.rs`.
+35. Cut `struct CodexOAuthCredentials` through `fn codex_rpc_notification` (L3292–L3946) from `usage.rs`; paste into `usage/codex.rs`.
+36. Cut `struct ClaudeOAuthUsageResponse` through `fn claude_code_version_from_text` (L2846–L3291) from `usage.rs`; paste into `usage/claude.rs`.
+37. Cut `fn claude_email_from_value` through `fn load_claude_oauth_credentials` (L2731–L2800) from `usage.rs`; paste into `usage/claude.rs` (make `fn load_claude_oauth_credentials` `pub(super)` so tests can access it via coordinator re-export; it currently has `#[cfg(test)]` — preserve that attribute).
+38. Cut `struct ClaudeOAuthCredentials` (L2667–L2682) from `usage.rs`; paste into `usage/claude.rs` as `pub(super) struct ClaudeOAuthCredentials`.
+
+**Phase 3 — Move view.rs block**
+
+39. Cut `struct UsageViewInput` through end of `fn timed_bucket` (L2171–L2665) from `usage.rs`; paste into `usage/view.rs`. Make all items `pub(super)` (structs, fns, including `usage_view`, `bucket`, `timed_bucket`, `with_status_slot`, `provider_tabs`, `enrich_provider_tabs`, `status_bar_label`, etc.).
+
+**Phase 4 — Move provider snapshot functions (bottom-to-top within 1334–2124)**
+
+40. Cut `fn provider_key_snapshot` (L2058–L2123) from `usage.rs`; paste into `usage/zai.rs` as `pub(super) fn provider_key_snapshot`.
+41. Cut `fn minimax_snapshot` (L1998–L2057) from `usage.rs`; paste into `usage/minimax.rs` as `pub(super) fn minimax_snapshot`.
+42. Cut `fn kimi_snapshot` (L1926–L1996) from `usage.rs`; paste into `usage/kimi.rs` as `pub(super) fn kimi_snapshot`.
+43. Cut `fn grok_snapshot` + `fn grok_snapshot_from_rpc_result` (L1817–L1924) from `usage.rs`; paste into `usage/grok.rs` as `pub(super)` fns.
+44. Cut `fn amp_snapshot` (L1703–L1815) from `usage.rs`; paste into `usage/amp.rs` as `pub(super) fn amp_snapshot`.
+45. Cut `fn codex_plan_display_name` through end of `fn codex_snapshot` (L1492–L1702) from `usage.rs`; paste into `usage/codex.rs` as `pub(super)` fns; make `codex_plan_display_name`, `codex_plan_exact_display`, `codex_plan_word_display` `pub(super)` (tests reference `codex_plan_display_name`).
+46. Cut `fn claude_snapshot` (L1334–L1485) from `usage.rs`; paste into `usage/claude.rs` as `pub(super) fn claude_snapshot`.
+
+**Phase 5 — Move refresh.rs blocks (bottom-to-top)**
+
+47. Cut `struct MaterializedUsageAccounts` through `fn atomic_write_usage_json` (L1135–L1200) from `usage.rs`; paste into `usage/refresh.rs`. Make `struct MaterializedUsageAccounts` and `fn write_materialized_usage_accounts` `pub(super)` (tests reference both).
+48. Cut `fn shared_usage_cooldown_dir` through `fn usage_backoff_delay` (L721–L933) from `usage.rs`; paste into `usage/refresh.rs`. Make `fn collect_usage_refresh_results_with_timeout`, `fn refresh_interval_for_key`, `fn write_shared_usage_cooldown_marker`, `fn read_shared_usage_snapshot`, `fn write_shared_usage_snapshot`, `fn shared_usage_cooldown_dir`, `fn shared_usage_snapshots_dir`, `fn shared_usage_rate_limit_cooldown_active`, `fn shared_usage_cooldown_active`, `fn acquire_account_refresh_lock`, `fn usage_error_is_rate_limited`, `fn usage_error_is_unauthorized` all `pub(super)`.
+49. Cut `fn ordered_refresh_targets` + `fn refresh_interval_for_key` (L680–L705) from `usage.rs`; paste into `usage/refresh.rs` as `pub(super)`.
+50. Cut `fn collect_usage_refresh_results` through `fn log_persist_transition` (L435–L556) from `usage.rs`; paste into `usage/refresh.rs` as `pub(super)`.
+51. Cut `static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);` (L53) from `usage.rs`; paste into `usage/refresh.rs` as `pub(super) static MATERIALIZED_TMP_COUNTER`.
+
+**Phase 6 — Wire coordinator**
+
+52. In `usage.rs`, immediately after the `mod format;` declaration (L24), insert the nine module declarations and re-exports:
+
+```rust
+mod view;
+mod refresh;
+mod claude;
+mod codex;
+mod amp;
+mod grok;
+mod kimi;
+mod minimax;
+mod zai;
+
+// Re-exports needed by `impl UsageCache`, coordinator helpers, and tests.rs
+// (which uses `use super::*`).
+pub(super) use self::view::{
+    UsageViewInput, usage_view, bucket, timed_bucket, with_status_slot,
+    provider_tabs, enrich_provider_tabs, status_bar_label, stale_shared_view,
+    preserve_cached_quota_on_failed_refresh, mark_active_tab,
+    provider_matches_usage_label, contains_word, surface_from_text,
+    most_constrained_fresh_bucket, compact_account_identity,
+    usage_tab_source_label, usage_tab_status_label,
+    spend_headline_label, status_bar_headline_for_surface,
+    amp_status_bar_headline, amp_credit_status_label, status_bar_quota_labels,
+    status_bar_fresh_or_stale,
+};
+pub(super) use self::refresh::{
+    collect_usage_refresh_results, collect_usage_refresh_results_with_timeout,
+    log_persist_transition,
+    ordered_refresh_targets, refresh_interval_for_key,
+    shared_usage_cooldown_dir, shared_usage_snapshots_dir, shared_usage_lock_dir,
+    RefreshLockOutcome, acquire_account_refresh_lock,
+    write_shared_usage_snapshot, read_shared_usage_snapshot,
+    shared_usage_cooldown_active, shared_usage_rate_limit_cooldown_active,
+    write_shared_usage_cooldown_marker,
+    usage_error_is_rate_limited, usage_error_is_unauthorized,
+    usage_rate_limit_delay, parse_retry_after_seconds, usage_backoff_delay,
+    MaterializedUsageAccounts, write_materialized_usage_accounts,
+    atomic_write_usage_json, MATERIALIZED_TMP_COUNTER,
+};
+// Items from provider modules needed by tests.rs
+pub(super) use self::claude::{
+    ClaudeOAuthCredentials, ClaudeOAuthUsageResponse, ClaudeCliUsage,
+    load_claude_oauth_credentials, run_claude_usage_diagnostic_with,
+    parse_claude_usage_output, fetch_claude_cli_usage,
+    ClaudeUsageDiagnostic,
+};
+pub(crate) use self::claude::{run_claude_usage_diagnostic};
+pub(super) use self::codex::{
+    codex_oauth_from_value, codex_plan_display_name, CodexOAuthCredentials,
+    CodexUsageResponse, CodexWindowSnapshot, CodexCreditDetails,
+    ManagedCliLaunchGate as _,  // keep ManagedCliLaunchGate in coordinator scope for UsageCache
+};
+pub(super) use self::grok::GrokBillingResponse;
+pub(super) use self::amp::{AmpApiUsage, parse_amp_usage_output};
+pub(super) use self::zai::ZaiQuotaResponse;
+pub(super) use self::kimi::KimiUsageResponse;
+pub(super) use self::minimax::MiniMaxUsageResponse;
+```
+
+**Note:** `ManagedCliLaunchGate` STAYS in coordinator (step 18 added `pub(super)` to it; it was NOT moved). Remove any re-export of it from codex.rs above. The coordinator accesses codex.rs snapshot fn as `codex::codex_snapshot(...)` without a use statement.
+
+53. In `usage.rs` `build_snapshot`, update the dispatch calls to use qualified module paths:
+    - `claude_snapshot(...)` → `claude::claude_snapshot(...)`
+    - `codex_snapshot(...)` → `codex::codex_snapshot(...)`
+    - `amp_snapshot(...)` → `amp::amp_snapshot(...)`
+    - `grok_snapshot(...)` → `grok::grok_snapshot(...)`
+    - `kimi_snapshot(...)` → `kimi::kimi_snapshot(...)`
+    - `minimax_snapshot(...)` → `minimax::minimax_snapshot(...)`
+    - `provider_key_snapshot(...)` → `zai::provider_key_snapshot(...)`
+    (opencode_snapshot and unsupported_snapshot stay in coordinator)
+
+54. In `usage.rs` `impl UsageCache` and `impl UsageRefreshSchedule`, update any function calls to moved items so they use the re-exported names (the re-exports in step 52 make them visible in coordinator scope without qualification, so NO changes needed to function call sites in coordinator — they call `enrich_provider_tabs(...)`, `stale_shared_view(...)` etc. directly as before because the re-export brings them into coordinator scope).
+
+55. Verify `usage.rs` still has `use format::{...}` import block after the `mod format;` declaration (L25–L33 in original); it should remain unchanged.
+
+**Phase 7 — Add `//! Architecture-Invariant` header to each new file**
+
+56. At the top of `usage/claude.rs` add (before `use` statements):
+    ```rust
+    //! Architecture-Invariant: allowed deps: `jackin_protocol`, `jackin_capsule` crate internals via `super::`, `serde`, `base64`, `reqwest`. No I/O outside filesystem reads. No direct dep on `jackin_diagnostics`.
+    ```
+    (Apply equivalent one-liner to each new module file.)
+
+**Phase 8 — Update file-size budget**
+
+57. Run `cargo run -p jackin-xtask --locked -- lint files --print-budget` and paste the refreshed budget section for the affected files into `file-size-budget.toml`, replacing the existing entry for `crates/jackin-capsule/src/usage.rs`. The new entry's `lines` value will be the post-split coordinator line count. Add entries for each new sibling file that exceeds 2 000 L (expected: `usage/claude.rs` ~700 L, `usage/codex.rs` ~900 L, `usage/grok.rs` ~850 L; these are under cap, so no new entries needed unless the print-budget output says otherwise). Remove the existing grandfathered `usage.rs` entry if the coordinator is now under 2 000 L.
+
+**Coordinator after all moves (expected residual):** constants (L35–L52), `UsageCache` struct, `CachedUsage`, `UsageRefreshResult`, `UsageRefreshTarget`, `UsageRefreshSchedule`, `UsageSurface`, `impl UsageCache`, `impl Default for UsageCache`, `impl UsageRefreshSchedule`, `build_snapshot`, `resolve_surface`, `split_fetch`, `ProviderPresence`, `provider_outcome`, shared credential utilities (`claude_oauth_candidates`, `codex_auth_candidates`, identity helpers, `canonical_usage_cache_key`, `decorate_surface_view`, `cached_unavailable_view`, `cached_refreshing_view`, `mark_active_tab`, `account_snapshot_views_from_cache`, `quota_amounts_for_account_snapshot`, `usage_status_storage_label`, `usage_source_storage_label`, `usage_confidence_storage_label`), the nine `pub(super)` shared utility functions listed in step 12–24, the `ManagedCliLaunchGate` struct+impl, `write_json_line`, `provider_http_client`, `get_json_bearer`, `normalize_url_or_host`, `now_epoch`, `relative_updated_label`, `refresh_cached_updated_label`, `opencode_snapshot`, `unsupported_snapshot`, and `mod tests;`. Target: ≈ 1 100–1 400 L (well under 2 000 L cap).
+
+**C2 reconciliation note:** The nine new `usage/*.rs` files are immediately compatible with the planned `jackin-usage` crate carve (D3). When that carve lands, each `usage/<provider>.rs` becomes a module of the new crate; imports change from `use super::...` to `use jackin_usage_shared::...` or similar. No design conflict introduced here.
+
+---
+
+**Verify** (run in order; STOP and revert on the first failure):
+- `cargo fmt --check` → no output (no formatting violations)
+- `cargo check -p jackin-capsule --all-targets` → zero errors (use this first, faster than clippy)
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` → no warnings
+- `cargo nextest run -p jackin-capsule` → all tests pass UNMODIFIED (no edits to `usage/tests.rs`)
+- `cargo run -p jackin-xtask --locked -- lint` → file-size gate + test-layout gate both pass; check `usage.rs` is no longer in the over-cap grandfathered list (or its entry decreased)
+- behavioral specs `runtime-launch` and `op-picker` pass UNMODIFIED
+
+**Done when:**
+1. `cargo nextest run -p jackin-capsule` green with no test edits.
+2. `cargo run -p jackin-xtask --locked -- lint` passes and the `usage.rs` line count in `file-size-budget.toml` is reduced (ideally removed if coordinator is ≤ 2 000 L).
+3. `usage/claude.rs`, `usage/codex.rs`, `usage/amp.rs`, `usage/grok.rs`, `usage/kimi.rs`, `usage/minimax.rs`, `usage/zai.rs`, `usage/view.rs`, `usage/refresh.rs` all exist with non-trivial content.
+
+**Rollback:** `git restore crates/jackin-capsule/src/usage.rs file-size-budget.toml && rm -f crates/jackin-capsule/src/usage/{claude,codex,amp,grok,kimi,minimax,zai,view,refresh}.rs`
+
+**Open questions:**
+1. TODO(investigate): The `use super::...` import lists in each new provider module file are best-effort from static analysis and must be verified with a `cargo check -p jackin-capsule` compilation round. The first compile will surface every missing or extra import; adjust the skeleton files accordingly.
+2. TODO(investigate): Scan all 2 919 lines of `usage/tests.rs` to confirm every symbol accessed via `use super::*` is covered by the coordinator re-exports in step 52. The scan above is exhaustive for the first ~2 800 lines but may miss edge cases.
+3. TODO(investigate): Confirm that `CODEX_RPC_LAUNCH_COOLDOWN` (constant used inside `ManagedCliLaunchGate::record_launch_failure`) is correctly kept in coordinator alongside `ManagedCliLaunchGate`; no move is needed, but the constant is currently defined at L40 in the coordinator's constant block, so it is already accessible.
+4. TODO(investigate): `fn grok_account_label_or_presence` (L5931–L5948) calls `grok_account_label` (L5913) and the string-building functions from `format::`. Verify the grok.rs import list covers these after the cut.
+5. TODO(investigate): The `#[cfg(test)]` attribute on `fn load_codex_oauth_credentials` (L3304) and `fn load_claude_oauth_credentials` (L2792) must be preserved in the respective provider modules and the coordinator re-exports for those symbols must also be wrapped in `#[cfg(test)]` to avoid dead-code lint in release builds.
 
 ---
 
 ### W5-console — Decompose console tui/app.rs + editor/settings model.rs
 
-- **Goal:** Shrink three over-cap files in `jackin-console` by extracting cohesive clusters to sibling modules, bringing every production file under the 2000-line ratchet cap and relocating inline test blocks to `tests.rs` siblings per the test-layout rule.
-- **Preconditions:** none for Phase A (app.rs); Phase B (editor/settings) requires unify-settings (roadmap G3) to be merged first — see Open questions.
-- **Pattern:** file-split (coordinator + sibling files, proven by the existing `tui/input/editor.rs` split)
-- **Touches:** `crates/jackin-console/src/tui/app.rs` (split, Phase A), `crates/jackin-console/src/tui/app/launch_prompt.rs` (create, Phase A), `crates/jackin-console/src/tui/app/manager_stage.rs` (create, Phase A), `crates/jackin-console/src/tui/app/modal.rs` (create, Phase A), `crates/jackin-console/src/tui/app/create_prelude.rs` (create, Phase A), `crates/jackin-console/src/tui/app/tests.rs` (create, Phase A); `file-size-budget.toml` (update); `test-layout-allowlist.toml` (update). Phase B touches `screens/editor/model.rs`, `screens/settings/model.rs` and their new sibling dirs — **deferred to post-G3**.
-
----
-
-## Phase A — Split `tui/app.rs` (5095 lines) into coordinator + four siblings
-
-**Current cluster map** (exact line ranges in the 5095-line file):
-
-| Lines | Cluster | Destination |
-|---|---|---|
-| 1–24 | File header + `use` imports | Replaced by coordinator header |
-| 27–31 | `ConsoleAppStage` enum | Stays in coordinator |
-| 33–251 | Launch-prompt traits, plan fns, `ConsoleApp` impls | `app/launch_prompt.rs` |
-| 253–682 | `ConsoleManagerStage`, dispatch types, traits, fn, `ConsoleManagerStage` impls | `app/manager_stage.rs` |
-| 683–2321 | `ConsoleModal` enum + all impl blocks + private `footer_items_for_mode` fn | `app/modal.rs` |
-| 2323–2336 | `ConsoleApp` struct | Stays in coordinator |
-| 2338–2725 | `ConsoleCreatePreludeState` struct + `impl` blocks + `CreatePrelude*` plan types and fns | `app/create_prelude.rs` |
-| 2727–2789 | `ConsoleApp` simple `impl` blocks (`new`, `quit_confirm_*`, `base_surface_unblocked`) | Stays in coordinator |
-| 2791–5095 | Inline `#[cfg(test)] mod tests { … }` body | `app/tests.rs` |
+- **Goal:** Bring `crates/jackin-console/src/tui/app.rs` (5095 L), `screens/editor/model.rs` (4176 L), and `screens/settings/model.rs` (3852 L) under the 2000 L production cap by splitting each into a coordinator + sibling files, sequencing editor/settings after the unify-settings-editor-surfaces (G3) milestone.
+- **Preconditions:** app.rs split — none (can run now); editor/model.rs + settings/model.rs splits — G3 (unify-settings-editor-surfaces) must land first (see Open questions).
+- **Pattern:** file-split (coordinator + siblings per the W5 split pattern: keep original as coordinator, move clusters to self-named siblings, re-export from coordinator, move inline tests to sibling tests.rs).
+- **Touches:** `crates/jackin-console/src/tui/app.rs` (edit in place as coordinator); new files `app/launch_prompt.rs`, `app/stage.rs`, `app/modal.rs`, `app/create_prelude.rs`, `app/tests.rs`; `test-layout-allowlist.toml` (remove app.rs entry); `file-size-budget.toml` (remove app.rs entry after verifying under cap); editor/model.rs and settings/model.rs splits are design-only in this slice (see Steps 12–14 and Open questions).
 
 **Steps** (each step is one mechanical action — exact paths, exact symbol names, exact edit):
 
-1. Create directory `crates/jackin-console/src/tui/app/` (it does not exist yet).
+**Sub-slice A — Split `tui/app.rs` (run now; no preconditions)**
 
-2. Create `crates/jackin-console/src/tui/app/launch_prompt.rs` with the content of **lines 33–251** of the current `app.rs`, prepended with the imports those lines need:
+1. Identify the five symbol clusters in `crates/jackin-console/src/tui/app.rs` using the line ranges confirmed by code reading:
+   - **launch_prompt cluster** (production code lines 33–251): `LaunchAgentPromptManagerState`, `open_launch_agent_prompt_plan`, `LaunchAgentPromptState`, impl `LaunchAgentPromptState` for `ConsoleApp`, `LaunchRolePromptManagerState`, `LaunchProviderPickerManagerState`, `open_launch_role_prompt_plan`, `clear_pending_launch_plan`, `clear_pending_launch_role_plan`, `take_pending_launch_plan`, `take_pending_launch_and_role_plan`, `store_pending_launch_plan`, `open_launch_provider_picker_plan`, `LaunchRolePromptState`, `LaunchProviderPickerState`, impl `LaunchRolePromptState` for `ConsoleApp`, impl `LaunchProviderPickerState` for `ConsoleApp`.
+   - **stage cluster** (lines 253–682): `ConsoleManagerStage` enum + all its impl blocks, `ConsoleManagerStageRoute`, `ConsoleManagerStageState`, `apply_manager_stage`, `ConsoleInputDispatchPlan`, `ConsoleInputDispatchFacts`, `ConsoleStageModalFacts`, `ConsoleEditorModalPresence`, `ConsoleEditorFooterHeight`, `ConsoleSettingsModalPresence`, `ConsoleSettingsFooterHeight`, `ConsolePendingTokenGenerate`, `ConsolePendingRoleLoad`, `ConsolePendingDriftCheck`, `ConsolePendingIsolationCleanup`, `ConsolePendingOpCommit`, `ConsolePendingOpCommitOrigin`, `ConsolePendingOpCommitResolution`, `ConsoleAnimationTick`, `ConsoleCreatePreludeModalPresence`, `ConsoleManagerModalBlockPresence`, `console_input_dispatch_plan`.
+   - **modal cluster** (lines 684–2321): impl `ConsoleAnimationTick` for `ConsoleModal` (starting line 684, declared before the enum itself), `ConsoleModal` enum (line 762), all impl blocks on `ConsoleModal` (lines 853–2317), private `footer_items_for_mode` fn (lines 2319–2321).
+   - **create_prelude cluster** (lines 2338–2725): `ConsoleCreatePreludeState` struct + its impl blocks, `CreatePreludeCompletionStatus`, `CreatePreludeKeyPlan`, `CreatePreludeModalStep`, `CreatePreludeFileBrowserTarget` trait + impl for `editor::model::FileBrowserTarget`, `CreatePreludeTextInputTarget` trait + impl for `editor::model::TextInputTarget`, `CreatePrelude*Plan` enums and their `create_prelude_*_plan` free fns.
+   - **coordinator remainder** (lines 1–26 header+imports, 27–31 `ConsoleAppStage`, 2323–2336 `ConsoleApp` struct, 2727–2789 `ConsoleApp` impl blocks): stays in `app.rs`.
+   - **tests** (lines 2791–5095): inline `#[cfg(test)] mod tests { ... }` block → move body (lines 2793–5094) to `app/tests.rs`.
+
+2. Create `crates/jackin-console/src/tui/app/launch_prompt.rs` containing the launch_prompt cluster (lines 33–251). Add at the top of the new file:
    ```rust
-   //! Launch-prompt traits, plan functions, and their `ConsoleApp` impls.
+   //! Launch-prompt trait definitions and ConsoleApp implementations.
 
    use super::{ConsoleApp, ConsoleAppStage};
-
-   // All `crate::tui::components::*` paths used in those lines stay as-is
-   // (they are already written as `crate::tui::components::agent_choice::AgentChoice`
-   //  etc. in the source — no import rewriting required).
    ```
-   The symbols this file defines (all must remain `pub`):
-   `LaunchAgentPromptManagerState`, `LaunchAgentPromptState`, `LaunchRolePromptManagerState`, `LaunchProviderPickerManagerState`, `LaunchRolePromptState`, `LaunchProviderPickerState`, `open_launch_agent_prompt_plan`, `open_launch_role_prompt_plan`, `clear_pending_launch_plan`, `clear_pending_launch_role_plan`, `take_pending_launch_plan`, `take_pending_launch_and_role_plan`, `store_pending_launch_plan`, `open_launch_provider_picker_plan`.
+   Keep all inline fully-qualified paths (`crate::tui::components::agent_choice::...`, `crate::tui::components::role_picker::...`, `crate::tui::components::provider_picker::...`) as they appear in the impl bodies — no additional top-level imports needed beyond `super::{ConsoleApp, ConsoleAppStage}`.
 
-3. Create `crates/jackin-console/src/tui/app/manager_stage.rs` with the content of **lines 253–682** of the current `app.rs`, prepended with:
+3. Create `crates/jackin-console/src/tui/app/stage.rs` containing the stage cluster (lines 253–682). Add at the top:
    ```rust
-   //! ConsoleManagerStage and all dispatch/trait definitions.
+   //! ConsoleManagerStage, input-dispatch plan types, and per-screen polling traits.
 
    use crate::tui::debug::{
-       ConsoleCreatePreludeDebugFacts, ConsoleEditorDebugFacts, ConsoleSettingsDebugFacts,
-       ConsoleStageDebug,
+       ConsoleCreatePreludeDebugFacts, ConsoleEditorDebugFacts, ConsoleModalDebugKind,
+       ConsoleSettingsDebugFacts, ConsoleStageDebug,
    };
-   use crate::tui::view::StageFooterHeightFacts;
    ```
-   The symbols this file defines (all remain `pub`):
-   `ConsoleManagerStage`, `ConsoleManagerStageRoute`, `ConsoleManagerStageState`, `ConsoleInputDispatchPlan`, `ConsoleInputDispatchFacts`, `ConsoleStageModalFacts`, `ConsoleEditorModalPresence`, `ConsoleEditorFooterHeight`, `ConsoleSettingsModalPresence`, `ConsoleSettingsFooterHeight`, `ConsolePendingTokenGenerate`, `ConsolePendingRoleLoad`, `ConsolePendingDriftCheck`, `ConsolePendingIsolationCleanup`, `ConsolePendingOpCommit`, `ConsolePendingOpCommitOrigin`, `ConsolePendingOpCommitResolution`, `ConsoleAnimationTick`, `ConsoleCreatePreludeModalPresence`, `ConsoleManagerModalBlockPresence`, `apply_manager_stage`, `console_input_dispatch_plan`.
+   All other references inside the cluster (`crate::tui::view::StageFooterHeightFacts`, `anyhow::Result`) use fully-qualified inline paths already — confirm this by reading each impl body; add an explicit import for any type that appears as a bare name.
+   TODO(investigate): Confirm whether `anyhow::Result` appears as a bare name in the `poll_pending_*` impl signatures or always fully-qualified; if bare, add `use anyhow::Result;`.
 
-4. Create `crates/jackin-console/src/tui/app/modal.rs` with the content of **lines 683–2321** of the current `app.rs` (includes the `ConsoleModal` enum, all its impl blocks, and the private `footer_items_for_mode` fn), prepended with:
+4. Create `crates/jackin-console/src/tui/app/modal.rs` containing the modal cluster (lines 684–2321). Add at the top:
    ```rust
-   //! ConsoleModal enum and all trait implementations.
-
-   use std::path::PathBuf;
+   //! ConsoleModal enum and all its trait implementations.
 
    use ratatui::layout::Rect;
-
-   use super::ConsoleAnimationTick;
    use crate::tui::components::footer_hints::{
        ModalAuthFormFooterState, ModalConfirmSaveFooterState, ModalContainerInfoFooterState,
        ModalFileBrowserFooterState, ModalFooterMode, ModalOpPickerFooterState,
@@ -5982,71 +6745,44 @@ After the git mv, `crate` inside each moved file refers to `jackin_instance`, so
        CreateStep, EditorErrorPopupModal, EditorRoleOverridePickerModal, EditorSaveDiscardModal,
        EditorStatusPopupModal,
    };
+   use super::{
+       ConsoleAnimationTick, CreatePreludeFileBrowserTarget, CreatePreludeModalStep,
+       CreatePreludeTextInputTarget,
+   };
    ```
-   (`use super::ConsoleAnimationTick` resolves via coordinator re-export of `manager_stage::ConsoleAnimationTick`.)
-   Remove the top-level `use crate::tui::debug::ConsoleModalDebugKind` line that exists in `app.rs` (line 17 in original) since `modal.rs` declares its own; the coordinator will no longer import this.
-   The symbol this file defines (remains `pub`): `ConsoleModal`.
+   In the body of `ConsoleModal::create_prelude_step()`, the call to `create_prelude_modal_step(...)` becomes `super::create_prelude_modal_step(...)` (a path call, not a use-import, to avoid a wildcard).
+   TODO(investigate): Verify that `ModalConfirmSavePrepareState` is actually used in the modal cluster — it appears in the current app.rs top-level imports; if unused after the split, omit it to avoid a dead `unused_imports` lint.
 
-5. Create `crates/jackin-console/src/tui/app/create_prelude.rs` with the content of **lines 2338–2725** of the current `app.rs`, prepended with:
+5. Create `crates/jackin-console/src/tui/app/create_prelude.rs` containing the create_prelude cluster (lines 2338–2725). Add at the top:
    ```rust
-   //! ConsoleCreatePreludeState and CreatePrelude plan types and functions.
+   //! ConsoleCreatePreludeState and the CreatePrelude* plan types and free functions.
 
    use std::path::PathBuf;
-
-   use super::{ConsoleCreatePreludeModalPresence};
    use crate::tui::debug::{ConsoleCreatePreludeDebugFacts, ConsoleModalDebugKind, ConsoleStageDebug};
-   use crate::tui::screens::editor::model::{CreateStep, FileBrowserTarget, TextInputTarget};
+   use crate::tui::screens::editor::model::CreateStep;
+   use super::ConsoleCreatePreludeModalPresence;
    ```
-   (`ConsoleCreatePreludeModalPresence` resolves via coordinator re-export of `manager_stage::ConsoleCreatePreludeModalPresence`.)
-   The symbols this file defines (all remain `pub`):
-   `ConsoleCreatePreludeState`, `CreatePreludeCompletionStatus`, `CreatePreludeKeyPlan`, `CreatePreludeModalStep`, `CreatePreludeFileBrowserPlan`, `CreatePreludeWorkdirCancelPlan`, `CreatePreludeWorkdirPickPlan`, `CreatePreludeMountDstChoicePlan`, `CreatePreludeTextInputDstPlan`, `CreatePreludeTextInputNamePlan`, `CreatePreludeFileBrowserTarget`, `CreatePreludeTextInputTarget`, `create_prelude_modal_step`, `create_prelude_text_input_dst_plan`, `create_prelude_text_input_name_plan`, `create_prelude_workdir_pick_plan`, `create_prelude_file_browser_plan`, `create_prelude_mount_dst_choice_plan`, `create_prelude_workdir_cancel_plan`, `create_prelude_key_plan`, `create_prelude_completion_status`.
+   All other references in the cluster body (`jackin_config::MountConfig`, `jackin_config::WorkspaceConfig`, `crate::tui::screens::workspaces::view::create_prelude_mount_destination_default`, `crate::services::workspace::shared_mount_config`, `crossterm::event::KeyCode`, `jackin_tui::ModalOutcome`, `crate::tui::components::file_browser::FileBrowserOutcome`, `crate::tui::components::mount_dst_choice::MountDstChoice`) are already fully-qualified in the source — keep them as inline paths.
+   TODO(investigate): Confirm `ConsoleCreatePreludeDebugFacts` is the trait being implemented for `ConsoleCreatePreludeState`; check the exact impl at line 2361 to see which debug traits are imported.
 
-6. Create `crates/jackin-console/src/tui/app/tests.rs` by extracting the **body** of the inline `#[cfg(test)] mod tests { … }` block (lines 2793–5094 inclusive — the content between the outer braces, not including the `mod tests {` and closing `}`). The file begins directly with the imports and helper structs. The existing `use super::{ … }` import in the test block remains unchanged; `super::` will now resolve to the coordinator `app.rs` which re-exports all needed symbols.
+6. Create `crates/jackin-console/src/tui/app/tests.rs` by extracting the body of the `mod tests { ... }` block: copy lines 2793–5094 from `app.rs` verbatim. The `use super::...` import lines inside the block are already correct because `super` from `tests.rs` resolves to the `tui::app` module (the coordinator `app.rs`), which re-exports every moved symbol.
 
-7. Replace the entire content of `crates/jackin-console/src/tui/app.rs` with the new coordinator:
+7. Edit `crates/jackin-console/src/tui/app.rs` — replace the entire file with:
    ```rust
    //! Top-level console TUI app model.
 
-   pub(super) mod launch_prompt;
-   pub(super) mod manager_stage;
-   pub(super) mod modal;
-   pub(super) mod create_prelude;
+   mod create_prelude;
+   mod launch_prompt;
+   mod modal;
+   mod stage;
+
+   pub use self::create_prelude::*;
+   pub use self::launch_prompt::*;
+   pub use self::modal::*;
+   pub use self::stage::*;
+
    #[cfg(test)]
    mod tests;
-
-   pub use self::launch_prompt::{
-       LaunchAgentPromptManagerState, LaunchAgentPromptState, LaunchRolePromptManagerState,
-       LaunchProviderPickerManagerState, LaunchRolePromptState, LaunchProviderPickerState,
-       open_launch_agent_prompt_plan, open_launch_role_prompt_plan, clear_pending_launch_plan,
-       clear_pending_launch_role_plan, take_pending_launch_plan, take_pending_launch_and_role_plan,
-       store_pending_launch_plan, open_launch_provider_picker_plan,
-   };
-
-   pub use self::manager_stage::{
-       ConsoleManagerStage, ConsoleManagerStageRoute, ConsoleManagerStageState,
-       ConsoleInputDispatchPlan, ConsoleInputDispatchFacts, ConsoleStageModalFacts,
-       ConsolePendingOpCommitOrigin, ConsolePendingOpCommitResolution,
-       ConsoleEditorModalPresence, ConsoleEditorFooterHeight,
-       ConsoleSettingsModalPresence, ConsoleSettingsFooterHeight,
-       ConsolePendingTokenGenerate, ConsolePendingRoleLoad, ConsolePendingDriftCheck,
-       ConsolePendingIsolationCleanup, ConsolePendingOpCommit,
-       ConsoleAnimationTick, ConsoleCreatePreludeModalPresence, ConsoleManagerModalBlockPresence,
-       apply_manager_stage, console_input_dispatch_plan,
-   };
-
-   pub use self::modal::ConsoleModal;
-
-   pub use self::create_prelude::{
-       ConsoleCreatePreludeState,
-       CreatePreludeCompletionStatus, CreatePreludeKeyPlan, CreatePreludeModalStep,
-       CreatePreludeFileBrowserPlan, CreatePreludeWorkdirCancelPlan, CreatePreludeWorkdirPickPlan,
-       CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan,
-       CreatePreludeTextInputNamePlan, CreatePreludeFileBrowserTarget, CreatePreludeTextInputTarget,
-       create_prelude_modal_step, create_prelude_text_input_dst_plan,
-       create_prelude_text_input_name_plan, create_prelude_workdir_pick_plan,
-       create_prelude_file_browser_plan, create_prelude_mount_dst_choice_plan,
-       create_prelude_workdir_cancel_plan, create_prelude_key_plan, create_prelude_completion_status,
-   };
 
    /// Single-variant today; kept as `enum` so future stages can land without
    /// churning every match site.
@@ -6056,85 +6792,79 @@ After the git mv, `crate` inside each moved file refers to `jackin_instance`, so
        Manager(Manager),
    }
 
-   // ConsoleApp struct (lines 2323–2336 of original app.rs) — paste verbatim.
-   // ConsoleApp impl blocks (lines 2727–2789 of original app.rs) — paste verbatim.
-   // These impl blocks reference `ConsoleManagerModalBlockPresence` which is
-   // available as a re-export from `manager_stage` above.
+   #[derive(Debug)]
+   pub struct ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache> {
+       pub stage: ConsoleAppStage<Manager>,
+       pub pending_launch: Option<LaunchInput>,
+       pub pending_launch_role: Option<RoleSelector>,
+       pub op_cache: OpCache,
+       pub op_available: bool,
+       pub quit_confirm: Option<jackin_tui::components::ConfirmState>,
+   }
+
+   impl<Manager, LaunchInput, RoleSelector, OpCache>
+       ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache>
+   {
+       // ... (copy lines 2730–2769 verbatim from the original)
+   }
+
+   impl<Manager, LaunchInput, RoleSelector, OpCache>
+       ConsoleApp<Manager, LaunchInput, RoleSelector, OpCache>
+   where
+       Manager: ConsoleManagerModalBlockPresence,
+   {
+       // ... (copy lines 2777–2789 verbatim from the original)
+   }
    ```
-   No caller files need editing: all `crate::tui::app::X` import paths continue to resolve through this coordinator's `pub use` re-exports.
+   Copy the exact bodies of the two ConsoleApp impl blocks (lines 2730–2769 and lines 2777–2789) without modification. The import `use crate::tui::run::{quit_confirm_state, quit_confirm_plan, QuitConfirmPlan, no_modal_blocks_base_surface, ModalBlockState}` must be added if any of those names appear unqualified in the impl bodies; otherwise keep inline paths as-is. `ConsoleManagerModalBlockPresence` is re-exported from `self::stage` so no extra import is needed in coordinator.
 
-8. In `file-size-budget.toml`: delete the three entries for `crates/jackin-console/src/tui/app.rs` (lines = 5095). The coordinator after the split is ~175 lines — under the 2000-line production cap, so no entry is needed. Alternatively run `cargo xtask lint files --print-budget` after the split and paste the refreshed budget.
+8. Edit `test-layout-allowlist.toml`: remove the line `"crates/jackin-console/src/tui/app.rs",`. The inline-test violation is fixed by step 6.
 
-9. In `test-layout-allowlist.toml`: delete the entry `"crates/jackin-console/src/tui/app.rs"` — the inline test block is gone, replaced by `app/tests.rs`.
+9. Run `cargo xtask lint files --print-budget` and confirm `crates/jackin-console/src/tui/app.rs` no longer appears in output (it is now under the 2000 L cap). Edit `file-size-budget.toml`: delete the `[[production]]` entry whose `path = "crates/jackin-console/src/tui/app.rs"`. None of the new sibling files exceed 2000 L (modal.rs ≈ 1638 L; all others < 500 L), so no new entries are needed.
 
----
+10. Run `cargo fmt --check`. Fix any formatting issues introduced by the new file headers or reorganised use blocks.
 
-## Phase B — Split `screens/editor/model.rs` and `screens/settings/model.rs` (DEFERRED — precondition: unify-settings G3)
+11. Run `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`. Fix any `unused_imports`, `dead_code`, or path-resolution errors that arise. The most likely issues are: (a) `ModalConfirmSavePrepareState` unused in modal.rs (remove it); (b) any `use super::X` that resolves to a re-export ambiguity.
 
-> **Sequencing constraint (from roadmap W5):** "decompose with G3 / unify-settings (split the unified surface, not the duplicated pair)." Do NOT execute the steps below until after the unify-settings PR (roadmap G3) merges `editor/model.rs` and `settings/model.rs` into a single unified surface. The boundaries below describe the CURRENT per-file structure for planning purposes only.
+**Sub-slice B — editor/model.rs + settings/model.rs (BLOCKED on G3; design proposal only — do NOT execute until G3 lands)**
 
-#### Current `screens/editor/model.rs` boundaries (4176 lines)
+12. **Design note for `screens/editor/model.rs` (4176 L, production code lines 1–2291, inline tests lines 2292–4176):** After G3 (unify-settings-editor-surfaces) merges editor and settings into a single surface, the resulting unified model file should be split into the following siblings:
+   - `model/tabs.rs` (≈ lines 1–238 of current editor/model.rs): `EditorTab`, `EditorFocusTarget`, `EditorHoverTarget`, all key-plan enums (`EditorEscapeKeyPlan`, `EditorSaveKeyPlan`, `EditorEnterKeyPlan`, `EditorMountGithubOpenPlan`, `EditorHorizontalScrollKeyPlan`, `EditorFieldSelectionKeyPlan`, `EditorNavigationKeyPlan`, `EditorTopLevelKeyPlan`, `EditorImmediateActionKeyPlan`, `EditorRoleActionKeyPlan`, `EditorMountActionKeyPlan`, `EditorSecretsActionKeyPlan`, `EditorAuthActionKeyPlan`, `EditorTabActionKeyPlan`).
+   - `model/mode.rs` (≈ lines 200–238): `EditorMode`, `EditorSaveModePlan`, `editor_save_mode_plan`, `EditorStatusPopupModal`, `EditorRoleOverridePickerModal`, `EditorSaveDiscardModal`, `EditorErrorPopupModal`.
+   - `model/state.rs` (≈ lines 240–2134): `EditorState` struct and all its impl blocks (≈ 1894 L — within cap).
+   - `model/row_model.rs` (≈ lines 2136–2291): `FieldFocus`, `SecretsScopeTag`, `SecretsRow`, `SecretsEnterPlan`, `AuthRow`, `PendingSaveCommit`, `EditorSaveFlow`, `ConfirmTarget`, `TextInputTarget`, `FileBrowserTarget`, `ExitIntent`, `CreateStep`.
+   - `model/tests.rs`: body of the current inline `mod tests { }` block (lines 2293–4175).
+   TODO(investigate): The post-G3 unified surface may have different type names, new types, or merged fields that change these boundaries. The executor must re-read the unified model file after G3 lands before executing any split.
 
-| Lines | Content | Proposed destination (post-G3) |
-|---|---|---|
-| 1–5 | File header | Coordinator header |
-| 7–10 | `use` imports | Each sibling declares its own |
-| 13–239 | Key-plan enums, plan fn, modal traits: `EditorTab`, `EditorFocusTarget`, `EditorHoverTarget`, `RoleHeaderExpansionPlan`, `EditorRoleHeaderExpansionKeyPlan`, `AuthEnterPlan`, `EditorEnterKeyPlan`, `EditorEscapeKeyPlan`, `EditorSaveKeyPlan`, `EditorMountGithubOpenPlan`, `EditorHorizontalScrollKeyPlan`, `EditorFieldSelectionKeyPlan`, `EditorNavigationKeyPlan`, `EditorTopLevelKeyPlan`, `EditorImmediateActionKeyPlan`, `EditorRoleActionKeyPlan`, `EditorMountActionKeyPlan`, `EditorSecretsActionKeyPlan`, `EditorAuthActionKeyPlan`, `EditorTabActionKeyPlan`, `EditorMode`, `EditorSaveModePlan`, `editor_save_mode_plan`, `EditorStatusPopupModal`, `EditorRoleOverridePickerModal`, `EditorSaveDiscardModal`, `EditorErrorPopupModal` | `model/key_plans.rs` (~239 L) |
-| 241–2136 | `EditorState` struct + all its `impl` blocks | `model/state.rs` (~1896 L) |
-| 2137–2291 | Row model types: `FieldFocus`, `SecretsScopeTag`, `SecretsRow`, `SecretsEnterPlan`, `AuthRow`, `PendingSaveCommit`, `EditorSaveFlow`, `ConfirmTarget`, `TextInputTarget`, `FileBrowserTarget`, `ExitIntent`, `CreateStep` | `model/rows.rs` (~155 L) |
-| 2292–4176 | Inline `#[cfg(test)] mod tests` body | `model/tests.rs` (~1885 L) |
-| — | Coordinator | `model.rs` (~60 L with `mod` decls + explicit `pub use` re-exports) |
+13. **Design note for `screens/settings/model.rs` (3852 L, production code lines 1–2354, inline tests 2355–3852):** After G3 the unified surface replaces this file. If settings types survive as siblings, the natural clusters are:
+   - `model/general.rs` (≈ lines 2258–2354): `SettingsGeneralState`, `SettingsGeneralSaveRefs`.
+   - `model/env.rs` (≈ lines 707–1053): `SettingsEnvConfig`, `SettingsEnvState`, `SettingsEnvSaveRefs`, `SettingsEnvModal` + all impls.
+   - `model/mounts.rs` (≈ lines 1053–1457): `GlobalMountConfirm`, `GlobalMountTextTarget`, `GlobalMountModal`, `GlobalMountsState`, `GlobalMountsSaveRefs` + all impls.
+   - `model/trust.rs` (≈ lines 1457–1613): `SettingsTrustRow`, `SettingsTrustState`, `SettingsTrustSaveRefs` + all impls + `settings_trust_rows_from_app_config`.
+   - `model/auth.rs` (≈ lines 1613–2257): `SettingsAuthModal`, `SettingsAuthState`, `SettingsAuthSaveRefs` + all impls.
+   - `model/tests.rs`: body of inline `mod tests { }` (lines 2356–3851).
+   TODO(investigate): G3 may unify these with editor types or rename them; re-read the unified file before executing.
 
-Note: `model/state.rs` at ~1896 L is near the 2000 L cap. TODO(investigate): verify that `EditorState` impl blocks cannot be sub-split across `state/general_impls.rs` etc. without creating logic cross-dependencies; if the file lands at 1896 L it is still under cap.
-
-#### Current `screens/settings/model.rs` boundaries (3852 lines)
-
-| Lines | Content | Proposed destination (post-G3) |
-|---|---|---|
-| 1–5 | File header | Coordinator header |
-| 7–17 | `use` imports | Each sibling declares its own |
-| 21–475 | `SettingsTab` + `SettingsState` struct + all its `impl` blocks + `SettingsAfterEventOutcome` + `SettingsHoverTarget` + panel traits (`SettingsPanelDirty`, `SettingsPanelChangeCount`, `SettingsPanelDiscard`, `SettingsPanelMarkSaved`) + `SettingsPanelTakeError`, `SettingsAuthRestorePendingForm`, `SettingsMountsTakeExit`, `SettingsModalSlot`, `SettingsAuthModalSlot` | `model/state.rs` (~455 L) |
-| 494–705 | Auth-form types + `SettingsAuthModal` enum + its impls + private `footer_items_for_mode` fn: `AuthFormFocus`, `AuthFormTarget`, `SettingsAuthRow`, `SettingsEnvScope`, `SettingsEnvConfirm`, `SettingsEnvTextTarget`, `SettingsEnvEnterPlan`, `SettingsEnvRow`, `SettingsAuthModal`, `AuthFormTarget` impl | `model/auth_form.rs` (~212 L) |
-| 707–1051 | `SettingsEnvConfig` + fn + `SettingsEnvState` + `SettingsEnvSaveRefs` + all `SettingsEnvState` impls | `model/env.rs` (~345 L) |
-| 1053–1604 | `GlobalMountConfirm` + `GlobalMountTextTarget` + `GlobalMountModal` + its impls + `GlobalMountsState` + `GlobalMountsSaveRefs` + impls + `GlobalMountDraft` | `model/mounts.rs` (~552 L) |
-| 1613–2257 | `SettingsAuthModal` (re-check line range) + `SettingsAuthState` + `SettingsAuthSaveRefs` + all `SettingsAuthState` impls | `model/auth.rs` (~645 L) |
-| 2258–2353 | `SettingsGeneralState` + `SettingsGeneralSaveRefs` + `SettingsGeneralState` impls | `model/general.rs` (~96 L) |
-| 2355–3852 | Inline `#[cfg(test)] mod tests` body | `model/tests.rs` (~1498 L) |
-| — | Coordinator | `model.rs` (~60 L with `mod` decls + explicit `pub use` re-exports) |
-
-TODO(investigate): After G3 merges the two model files into one unified surface, the above two tables become obsolete; the merged file's cluster boundaries must be re-derived from the actual merged content before executing Phase B steps.
-
----
-
-**Steps** (Phase B, template only — do NOT execute until G3 merges):
-
-B1. After G3 merge, derive the exact cluster map from the unified `editor/model.rs` (settings model will be folded in or eliminated by G3).
-B2. Create `screens/editor/model/` directory.
-B3. Create each sibling `*.rs` file with the appropriate cluster content from the unified file, each prepended with a `//!` doc comment and the exact `use` imports those lines require.
-B4. Replace `screens/editor/model.rs` with the coordinator: `mod` declarations + explicit `pub use` re-exports for every public symbol.
-B5. Create `screens/editor/model/tests.rs` from the extracted inline test body.
-B6. Delete entries for `screens/editor/model.rs` and `screens/settings/model.rs` from `file-size-budget.toml`; run `cargo xtask lint files --print-budget` to refresh.
-B7. Delete entries for `screens/editor/model.rs` and `screens/settings/model.rs` from `test-layout-allowlist.toml`.
-
----
+14. Remove `"crates/jackin-console/src/tui/screens/editor/model.rs"` and `"crates/jackin-console/src/tui/screens/settings/model.rs"` from `test-layout-allowlist.toml` and from `file-size-budget.toml` only after the corresponding splits land (each file's inline tests have been relocated and the coordinator falls under 2000 L).
 
 **Verify** (run in order; STOP and revert on the first failure):
-
-- `cargo fmt --check` → no diff
+- `cargo fmt --check` → exits 0, no diff
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` → no warnings
-- `cargo nextest run -p jackin-console` → all pass
-- `cargo run -p jackin-xtask --locked -- lint` → file-size + test-layout OK (after budget/allowlist edits)
-- `cargo run -p jackin-xtask --locked -- lint files --print-budget` → paste output, delete the `app.rs` entry from budget if it appears
+- `cargo nextest run -p jackin-console` → all tests pass
+- `cargo nextest run -p jackin` → all tests pass (confirms external callers of `jackin_console::tui::app::clear_pending_launch_role_plan`, `take_pending_launch_plan`, `ConsolePendingRoleLoad` still resolve)
+- `cargo run -p jackin-xtask --locked -- lint` → file-size gate green (app.rs now under cap), test-layout gate green (app.rs inline test removed from allowlist), arch informational
+- `cargo run -p jackin-xtask --locked -- lint files --print-budget` → `crates/jackin-console/src/tui/app.rs` entry absent from output; none of the new `app/*.rs` files appear (all under 2000 L)
+- `cargo run -p jackin-xtask --locked -- lint tests --print-allowlist` → `crates/jackin-console/src/tui/app.rs` absent from output
 - behavioral specs `runtime-launch` and `op-picker` pass UNMODIFIED
 
-**Done when:**
-- Phase A: `crates/jackin-console/src/tui/app.rs` is ≤ 200 lines (coordinator only); four sibling files exist each under 2000 lines; `app/tests.rs` exists; no inline `#[cfg(test)] mod tests` remains in `app.rs`; `cargo nextest run -p jackin-console` is green; `app.rs` is removed from both `file-size-budget.toml` and `test-layout-allowlist.toml`.
-- Phase B: deferred to post-G3.
+**Done when:** `crates/jackin-console/src/tui/app.rs` is under 2000 L and absent from `file-size-budget.toml`; the five sibling files (`launch_prompt.rs`, `stage.rs`, `modal.rs`, `create_prelude.rs`, `tests.rs`) exist under `tui/app/`; `app.rs` is removed from `test-layout-allowlist.toml`; all tests green; `cargo xtask lint` green.
 
-**Rollback:** `git restore crates/jackin-console/src/tui/app.rs file-size-budget.toml test-layout-allowlist.toml && git rm -r crates/jackin-console/src/tui/app/`
+**Rollback:** `git restore crates/jackin-console/src/tui/app.rs test-layout-allowlist.toml file-size-budget.toml && git rm -r crates/jackin-console/src/tui/app/`
 
 **Open questions:**
-1. The exact cluster boundaries for Phase B (editor + settings model splits) cannot be determined until G3 (unify-settings) merges; executor must re-derive them from the actual post-G3 unified file before writing any Phase B step. Do not attempt to split the current duplicated pair — the roadmap explicitly says to split the unified surface.
-2. `modal.rs` imports: the exact set of `use crate::tui::auth_config::*` and `use crate::tui::update::*` items needed by `ConsoleModal`'s impl blocks should be derived from compiler errors after the mechanical move (the original `app.rs` used `crate::tui::auth_config::X` inline paths, not top-level imports, so `modal.rs` may need additional explicit `use` lines that are not listed above).
-3. `manager_stage.rs` line 682 references `ConsoleStageDebug` from `crate::tui::debug`. Confirm `crate::tui::debug::ConsoleStageDebug` is still the correct import path (not moved by any prior slice).
-4. The `#[allow(clippy::large_enum_variant)]` attributes on `ConsoleManagerStage` (line 254) and `ConsoleModal` (line 760) must be preserved verbatim when their definitions move to their respective sibling files.
+1. `app/stage.rs`: Does `anyhow::Result` appear bare (without `anyhow::` prefix) in any `poll_pending_*` impl return type in the stage cluster (lines 253–682)? If yes, add `use anyhow::Result;` to stage.rs.
+2. `app/modal.rs`: Is `ModalConfirmSavePrepareState` actually used in the modal cluster body or only in the top-level `use` in the existing app.rs? Read each use site before copying the import.
+3. `app/create_prelude.rs`: Which exact debug traits are implemented for `ConsoleCreatePreludeState` at lines 2361–2374? Confirm names before writing the import block.
+4. `app/modal.rs`: The `ConsoleModal::create_prelude_step()` call to `create_prelude_modal_step(...)` must become `super::create_prelude_modal_step(...)`. Verify no other free functions from `create_prelude.rs` are called inside the modal cluster body.
+5. `app.rs` coordinator `ConsoleApp` impl bodies (lines 2730–2789): Are `quit_confirm_state`, `quit_confirm_plan`, `QuitConfirmPlan`, `no_modal_blocks_base_surface`, `ModalBlockState` used as bare names or always qualified with `crate::tui::run::`? If bare, add an explicit `use crate::tui::run::...` in the coordinator.
+6. Sub-slice B (editor + settings): What does the unified model type look like after G3 (unify-settings-editor-surfaces)? The split boundaries in steps 12–13 are proposals based on the current duplicated files; the executor must re-read the unified file after G3 lands before executing any split, and must not execute steps 12–14 before G3 is complete.
