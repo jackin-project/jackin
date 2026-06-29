@@ -9,7 +9,6 @@
 
 pub mod account_key;
 pub mod agent;
-pub mod ansi_text;
 pub mod auth;
 pub mod build_log_sink;
 pub mod constants;
@@ -20,6 +19,7 @@ pub mod env_value;
 pub mod instance;
 pub mod isolation;
 pub mod isolation_record;
+pub mod launch_progress;
 pub mod manifest;
 pub mod op_cache;
 pub mod op_reference;
@@ -27,10 +27,8 @@ pub mod op_types;
 pub mod path_text;
 pub mod paths;
 pub mod prompt_result;
-pub mod prune_output;
 pub mod runner;
 pub mod selector;
-pub mod url_text;
 pub mod worktree_dirty;
 
 pub use agent::{
@@ -49,6 +47,12 @@ pub use docker_security::{
 pub use env_value::{EnvValue, Extended, FieldTarget, OpRef};
 pub use isolation::{MountIsolation, ParseMountIsolationError};
 pub use isolation_record::{CleanupStatus, DriftDetection, IsolationRecord};
+pub use launch_progress::{
+    FailureCopyTarget, FileDiff, LaunchCancelled, LaunchCandidate, LaunchDiagnostics,
+    LaunchDialogResult, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchStage,
+    LaunchTargetKind, PromptContextLine, StageLabelTransition, StageStatus, StageView,
+    WorktreeInspect,
+};
 pub use path_text::shorten_home;
 pub use paths::JackinPaths;
 pub use prompt_result::PromptResult;

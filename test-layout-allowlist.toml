@@ -19,7 +19,6 @@ files = [
     "crates/jackin-console/src/tui/screens/workspaces/model.rs",
     "crates/jackin-console/src/tui/screens/workspaces/view/list/tests.rs",
     "crates/jackin-core/src/env_model.rs",
-    "crates/jackin-core/src/url_text.rs",
     "crates/jackin-env/src/resolve.rs",
     "crates/jackin-launch/src/tui/view.rs",
     "crates/jackin-runtime/src/instance/auth/tests.rs",

@@ -20,6 +20,7 @@ pub mod runtime;
 pub mod scroll;
 pub mod terminal_modes;
 pub mod theme;
+pub mod url_text;
 
 pub use components::text_input::TextField;
 pub use geometry::{

@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 pub(super) fn open_host_url(url: &str) -> Result<()> {
     let (program, args) =
         host_open_command(url).ok_or_else(|| anyhow::anyhow!("unsupported URL or host OS"))?;
-    let redacted = jackin_core::url_text::redact_url_for_log(url);
+    let redacted = jackin_tui::url_text::redact_url_for_log(url);
     run_host_desktop_command(program, args, "host URL opener")
         .with_context(|| format!("starting host URL opener for {redacted:?}"))
 }
@@ -76,7 +76,7 @@ pub(super) fn host_open_command_with_policy(
     if !jackin_core::env_model::open_links_allowed(open_links) {
         return None;
     }
-    if !jackin_core::url_text::is_host_open_url(url) {
+    if !jackin_tui::url_text::is_host_open_url(url) {
         return None;
     }
     if cfg!(target_os = "macos") {

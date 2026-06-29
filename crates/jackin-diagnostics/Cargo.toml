@@ -46,6 +46,11 @@ anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 crossterm = "0.29"
+# Inlined from `jackin_core::ansi_text` (A3) and `jackin_core::prune_output`
+# (A3) so this crate (L1, depended on by 8 L0/L1/L2 crates) does not need
+# to pull `jackin-tui` (L3) for the two small helpers `prune_all_runs` uses.
+anstyle-parse = "1.0"
+owo-colors = { version = "4", features = ["supports-colors"] }
 # OTLP export (optional — only compiled in with `--features otlp`)
 opentelemetry = { version = "0.32", optional = true }
 # gRPC/tonic is the ONLY transport. It is the reference backend's (Parallax)

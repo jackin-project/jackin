@@ -39,7 +39,7 @@ impl Multiplexer {
             );
             return;
         }
-        if !jackin_core::url_text::is_host_open_url(&url) {
+        if !jackin_tui::url_text::is_host_open_url(&url) {
             self.set_clipboard_image_notice(
                 "Host link rejected: unsupported URL scheme".to_owned(),
             );

@@ -2801,11 +2801,9 @@ dependencies = [
 name = "jackin-core"
 version = "0.6.0-dev"
 dependencies = [
- "anstyle-parse",
  "anyhow",
  "directories",
  "hex",
- "owo-colors 4.3.0",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -2827,6 +2825,7 @@ dependencies = [
 name = "jackin-diagnostics"
 version = "0.6.0-dev"
 dependencies = [
+ "anstyle-parse",
  "anyhow",
  "crossterm",
  "jackin-core",
@@ -2834,6 +2833,7 @@ dependencies = [
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "owo-colors 4.3.0",
  "rand 0.10.1",
  "serde",
  "serde_json",

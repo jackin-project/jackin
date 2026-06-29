@@ -1208,7 +1208,7 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
         TAG_HOST_OPEN_URL => {
             let url = std::str::from_utf8(&payload)
                 .map_err(|_| anyhow::anyhow!("host-open-url payload is not valid UTF-8"))?;
-            if !jackin_core::url_text::is_host_open_url(url) {
+            if !is_host_open_url_scheme(url) {
                 bail!("host-open-url payload must use an allowlisted scheme");
             }
             ServerFrame::HostOpenUrl(url.to_owned())
@@ -1396,6 +1396,15 @@ impl<'a> PayloadCursor<'a> {
         self.pos = end;
         Ok(bytes)
     }
+}
+
+/// Returns true when `url` uses one of the schemes the host-side opener
+/// accepts: `http://`, `https://`, or `mailto:`. Inlined here so the
+/// protocol layer (L0) does not depend on `jackin-tui` (L3) for a
+/// three-line policy check.
+fn is_host_open_url_scheme(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
 }
 
 #[cfg(test)]
