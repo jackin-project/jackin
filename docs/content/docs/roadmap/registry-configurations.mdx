@@ -1,0 +1,110 @@
+---
+title: "Registry configurations"
+---
+
+**Status**: Open — design proposal
+
+## Problem
+
+Running `jackin` against a role whose `published_image` lives in a **private** registry fails silently and expensively. The operator sees only:
+
+```text
+jackin: warning: docker pull docker.io/chainargos/jackin-agent-brown:latest failed (pulling image docker.io/chainargos/jackin-agent-brown:latest); treating published image as stale and rebuilding from workspace Dockerfile
+```
+
+`docker pull` of the same reference confirms the cause is authentication, not staleness:
+
+```text
+Error response from daemon: pull access denied for chainargos/jackin-agent-brown, repository does not exist or may require 'docker login'
+```
+
+jackin never sends registry credentials when pulling. The pull path in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> calls bollard `create_image` with the `RegistryAuth` argument hard-coded to `None`. Because the freshness check in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> treats *any* pull failure as "image is stale", an auth failure is indistinguishable from a genuinely outdated image — so jackin falls through to a full workspace rebuild from the Dockerfile (13+ minutes in the report above) and never tells the operator the real problem was a missing login.
+
+### Root cause — the bug class, not the missing argument
+
+The `auth: None` argument is the symptom. The structural cause is that **jackin has no place for an operator to declare credentials for an external endpoint**. There is no `[registry]`/`[[registries]]` block in the config schema (<RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> defines `AppConfig` and `WorkspaceConfig` with auth blocks only for the agent API key and the GitHub token). Because there is no general credential-source layer, every external secret jackin has ever needed was solved as a one-off:
+
+- Agent API keys and GitHub token — bespoke fields in <RepoFile path="crates/jackin-config/src/auth.rs">crates/jackin-config/src/auth.rs</RepoFile>.
+- 1Password / env references — resolved ad hoc through the host-socket daemon in <RepoFile path="crates/jackin-capsule/src/exec.rs">crates/jackin-capsule/src/exec.rs</RepoFile>.
+- A general [`CredentialSource`](/roadmap/credential-source-pattern/) abstraction was *designed* but never built.
+
+Registry pull-auth is simply the next instance of this class. A correct architecture would have absorbed it without a new code path. Patching only `create_image` would leave the enabling condition — no credential-source layer, no per-endpoint configuration surface — in place, and the next external endpoint (a second ECR account, a private GHCR, a proxy) would reproduce the same gap.
+
+### Operator-shaped requirements (from design discussion)
+
+- This is **not** "authentication" and must not surface as an auth tab. It is a **configurations** surface: credentials are one attribute of a configured endpoint, not the headline concept.
+- An operator must be able to configure **multiple endpoints at once**, each with its own credentials — e.g. an ECR account, a private Docker Hub org, and a GHCR namespace simultaneously.
+- Configurations must be declarable at the **global** level *and* **per workspace**, with per-workspace entries overriding/extending global. This maps onto the existing `AppConfig` (global) / `WorkspaceConfig` (per-workspace) split — no new scoping machinery required.
+- The forcing case — and first real consumer — is **Amazon ECR private registries**, whose 12-hour tokens make a static stored secret insufficient and force the credential-source layer to support *refreshable/command-sourced* credentials, not just literals.
+
+## Why It Matters
+
+- **Correctness over silent fallback.** An auth failure currently masquerades as staleness and triggers a multi-minute rebuild with no actionable message. The operator cannot tell that one `docker login`-equivalent step would have fixed it.
+- **Private images are table stakes.** Teams ship their role/agent images to private ECR, GHCR, or Docker Hub repos. Without pull auth, the published-image fast path is unusable for them and every launch pays the full local-build cost.
+- **Removes a recurring bug class.** A single credential/configuration layer means the next external endpoint plugs in instead of growing another bespoke field. It also gives [`CredentialSource`](/roadmap/credential-source-pattern/) a concrete first consumer, turning a stalled proposal into shipped infrastructure.
+- **Consolidates a scattered surface.** Registry auth, agent tokens, the GitHub token, and 1Password references are today separate concepts in separate places. A configurations layer is where they converge, and it interlocks with [container credential exposure](/roadmap/container-credential-exposure/) (resolved secrets must not leak into image layers, `docker inspect`, or logs) and the [workspace registry cache](/roadmap/workspace-registry-cache/) (a pull-through cache still needs upstream credentials).
+
+## Design
+
+Direction only — to be finalized in `brainstorm`. The structural move is a **configurations layer**: a list of named, scoped endpoint configurations, each carrying a credential sourced through the [`CredentialSource`](/roadmap/credential-source-pattern/) enum (literal, env, command, `op://`, OS keychain, and — new — Docker credential store/helper and an ECR helper). Registry pull-auth is the first consumer: resolve the matching configuration for a `published_image` reference, hand bollard a real `RegistryAuth`, and distinguish auth failure from staleness so the operator gets an actionable message instead of a silent rebuild.
+
+Open questions to settle in `brainstorm`:
+
+- Naming of the entry type (`registries` vs a broader `endpoints`/`connections`/`configurations`) and whether the first cut is registry-only or born general.
+- Whether to **reuse the host's existing Docker login** (read `~/.docker/config.json` `credsStore`/`credHelpers`, inherit `docker login`) as the zero-config default, vs. a jackin-owned config block, vs. a `jackin registry login` command — and which combination is the lowest-friction first-run experience. (The comparable-tools and ECR usability research commissioned for this item feeds this decision — see Research sources below.)
+- Library choice for the mechanics: bollard already exposes `RegistryAuth`; the [`docker_credential`](https://github.com/keirlawson/docker_credential) crate reads `~/.docker/config.json` plus `credsStore`/`credHelpers`; [`aws-sdk-ecr`](https://crates.io/crates/aws-sdk-ecr) yields ECR tokens directly (vs. shelling out to the credential helper); [`oci-client`/`rust-oci-client`](https://github.com/oras-project/rust-oci-client) is an alternative if pulls ever move off bollard. Decide reuse-vs-build per the "prefer maintained crates" rule.
+- How ECR's 12-hour token expiry is refreshed (credential helper vs. command source re-invoked per pull) and how that behaves in headless/CI environments.
+- Where resolution happens relative to the host-socket daemon, so credentials never enter the container env or image layers (ties to [container credential exposure](/roadmap/container-credential-exposure/)).
+
+## Tasks
+
+To be enumerated in `brainstorm` / `plan`. High-level shape: define the configurations schema (global + per-workspace) → build/land `CredentialSource` resolution → add Docker-config and ECR credential sources → thread `RegistryAuth` into the bollard pull → separate auth-failure from staleness in the freshness check with a clear operator message → docs (operator setup page + internals).
+
+## Related roadmap items
+
+- [Credential source pattern](/roadmap/credential-source-pattern/) — the unified sourcing abstraction this item makes concrete and consumes.
+- [Container credential exposure](/roadmap/container-credential-exposure/) — resolved credentials must not leak into layers, `docker inspect`, or logs.
+- [Workspace registry cache](/roadmap/workspace-registry-cache/) — a pull-through cache still needs upstream registry credentials.
+- [1Password integration](/roadmap/onepassword-integration/) — one credential source among several.
+
+## Research sources
+
+Sources gathered and individually verified during scoping (the automated synthesis pass degenerated and produced no usable prose summary; these primary/secondary sources are the durable output and should be mined directly during `brainstorm`).
+
+ECR auth flows & token-refresh pain:
+
+- [amazon-ecr-credential-helper](https://github.com/awslabs/amazon-ecr-credential-helper)
+- [ECR private registry authentication](https://docs.aws.amazon.com/AmazonECR/latest/userguide/registry_auth.html)
+- [`aws ecr get-login-password`](https://docs.aws.amazon.com/cli/latest/reference/ecr/get-login-password.html)
+
+Docker credential storage model:
+
+- [docker-credential-helpers](https://github.com/docker/docker-credential-helpers)
+- [`docker login` reference](https://docs.docker.com/reference/cli/docker/login/)
+- [Docker credential storage deep dive](https://oscarchou.com/posts/explanation/docker-credential-deep-dive/)
+
+Comparable tools:
+
+- [nerdctl registry auth](https://github.com/containerd/nerdctl/blob/main/docs/registry.md)
+- [Tilt personal registry](https://docs.tilt.dev/personal_registry.html)
+
+Security pitfalls:
+
+- [Docker CLI plaintext-credential advisory (GHSA-99pg-grm5-qq3v)](https://github.com/docker/cli/security/advisories/GHSA-99pg-grm5-qq3v)
+- [Dockerfile secrets persist in layers](https://xygeni.io/blog/dockerfile-secrets-why-layers-keep-your-sensitive-data-forever/)
+
+Rust library options:
+
+- [`docker_credential` crate](https://github.com/keirlawson/docker_credential)
+- [`oci-client` docs](https://docs.rs/oci-client/latest/oci_client/struct.Client.html)
+- [`rust-oci-client`](https://github.com/oras-project/rust-oci-client)
+- [`aws-sdk-ecr` crate](https://crates.io/crates/aws-sdk-ecr)
+
+## Related Files
+
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> — `pull_image`; bollard `create_image` with `RegistryAuth` currently `None`.
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> — published-image freshness check that conflates auth failure with staleness.
+- <RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> — `AppConfig` / `WorkspaceConfig`; where a configurations block would live.
+- <RepoFile path="crates/jackin-config/src/auth.rs">crates/jackin-config/src/auth.rs</RepoFile> — existing bespoke auth blocks (agent key, GitHub token).
+- <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile> — `RoleManifest.published_image`.
+- <RepoFile path="crates/jackin-capsule/src/exec.rs">crates/jackin-capsule/src/exec.rs</RepoFile> — host-socket credential resolution in use today.

@@ -5,6 +5,7 @@
     "../architect-code-intelligence-tooling",
     "../instant-launch-architecture",
     "../construct-user-creation",
+    "../registry-configurations",
     "../workspace-registry-cache",
     "../platform-support-and-freshness"
   ]
