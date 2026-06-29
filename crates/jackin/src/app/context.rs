@@ -12,7 +12,6 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::runtime;
-use crate::tui;
 use crate::workspace::{LoadWorkspaceInput, WorkspaceConfig, expand_tilde};
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
@@ -78,7 +77,7 @@ pub(crate) fn resolve_target_name(
 ) -> Result<LoadWorkspaceInput> {
     resolve_target_name_with_choice(name, config, cwd, |message, options| {
         let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-        tui::prompt_choice(message, &option_refs)
+        crate::prompt::prompt_choice(message, &option_refs)
     })
 }
 
@@ -156,7 +155,7 @@ pub(crate) fn resolve_agent_from_context(
 ) -> Result<(RoleSelector, LoadWorkspaceInput)> {
     resolve_agent_from_context_with_choice(config, cwd, |message, options| {
         let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-        tui::prompt_choice(message, &option_refs)
+        crate::prompt::prompt_choice(message, &option_refs)
     })
 }
 
@@ -290,7 +289,7 @@ pub(crate) async fn resolve_running_container_from_context(
         _ => {
             let options = hardline_candidate_prompt_options(paths, &candidates);
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-            let choice = tui::prompt_choice(
+            let choice = crate::prompt::prompt_choice(
                 &format!("Workspace {name:?} has multiple matching instances. Select one:"),
                 &option_refs,
             )?;
@@ -314,7 +313,7 @@ async fn resolve_ad_hoc_container_from_context(
         _ => {
             let options = hardline_candidate_prompt_options(paths, &candidates);
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-            let choice = tui::prompt_choice(
+            let choice = crate::prompt::prompt_choice(
                 "Current directory has multiple ad-hoc instances. Select one:",
                 &option_refs,
             )?;

@@ -3,7 +3,6 @@
 use anyhow::Result;
 
 use crate::runtime;
-use crate::tui;
 use jackin_config::{AppConfig, WorkspaceConfig};
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
@@ -107,7 +106,7 @@ pub(super) fn render_workspace_show(
     let default_role = workspace.default_role.as_deref().unwrap_or("none");
     let agent = workspace.resolved_agent().slug();
 
-    let short_workdir = tui::shorten_home(&workspace.workdir);
+    let short_workdir = jackin_core::shorten_home(&workspace.workdir);
     let mut info: Vec<(&str, &str)> = vec![
         ("Name", name),
         ("Workdir", short_workdir.as_str()),
@@ -215,10 +214,10 @@ pub(super) fn mount_mode(readonly: bool) -> String {
 }
 
 pub(super) fn mount_display(src: &str, dst: &str) -> String {
-    let short_dst = tui::shorten_home(dst);
+    let short_dst = jackin_core::shorten_home(dst);
     if src == dst {
         short_dst
     } else {
-        format!("{}\nhost: {}", short_dst, tui::shorten_home(src))
+        format!("{}\nhost: {}", short_dst, jackin_core::shorten_home(src))
     }
 }

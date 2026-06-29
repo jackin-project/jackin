@@ -19,7 +19,7 @@ pub fn confirm_sensitive_mounts(sensitive: &[SensitiveMount]) -> anyhow::Result<
         return Ok(true);
     }
 
-    crate::tui::require_interactive_stdin(
+    crate::prompt::require_interactive_stdin(
         "sensitive mount paths detected but stdin is not a terminal — cannot prompt for confirmation",
     )?;
 

@@ -42,7 +42,6 @@ use anyhow::Result;
 use crate::cli::role::ConsoleArgs;
 use crate::cli::{Cli, Command};
 use crate::runtime;
-use crate::tui;
 use jackin_config::{self, AppConfig};
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
@@ -89,7 +88,7 @@ async fn play_construct_intro_if_needed(
 
 pub async fn run(cli: Cli) -> Result<()> {
     let debug = cli.debug;
-    tui::set_debug_mode(debug);
+    jackin_diagnostics::set_debug_mode(debug);
 
     // Fail fast and loud on an unsupported OTLP protocol: jackin exports over
     // gRPC only. An OTLP endpoint configured with a non-grpc protocol would
@@ -310,7 +309,7 @@ fn prompt_hardline_action_with_prompt(prompt: &str) -> Result<HardlineAction> {
 
     let options = hardline_action_options();
     let labels: Vec<&str> = options.iter().map(|(label, _)| *label).collect();
-    let choice = tui::prompt_choice(prompt, &labels)?;
+    let choice = crate::prompt::prompt_choice(prompt, &labels)?;
     Ok(options[choice].1)
 }
 

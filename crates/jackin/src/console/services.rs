@@ -350,7 +350,7 @@ pub(super) mod instances {
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        crate::debug_log!(
+                        jackin_diagnostics::debug_log!(
                             "console",
                             "manifest read failed for {}: {e:#}",
                             entry.container_base
@@ -371,7 +371,10 @@ pub(super) mod instances {
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    crate::debug_log!("console", "snapshot fetch failed for {container}: {e:#}");
+                    jackin_diagnostics::debug_log!(
+                        "console",
+                        "snapshot fetch failed for {container}: {e:#}"
+                    );
                 }
             }
         }
@@ -550,14 +553,14 @@ pub(super) mod role_load {
             "jackin-role-registration",
             async move {
                 let mut runner = jackin_docker::ShellRunner {
-                    debug: crate::tui::is_debug_mode(),
+                    debug: jackin_diagnostics::is_debug_mode(),
                 };
                 register_with_runner(
                     &paths,
                     &selector,
                     &git_url,
                     &mut runner,
-                    crate::tui::is_debug_mode(),
+                    jackin_diagnostics::is_debug_mode(),
                 )
                 .await
             },

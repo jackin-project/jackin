@@ -26,9 +26,9 @@ pub mod error;
 pub mod isolation;
 pub mod manifest;
 pub(crate) mod preflight;
+pub mod prompt;
 pub mod role_authoring;
 pub mod runtime;
-pub mod tui;
 pub mod warp;
 pub mod workspace;
 

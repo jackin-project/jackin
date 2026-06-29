@@ -36,19 +36,19 @@ pub mod terminal {
 
     impl jackin_console::ConsoleHostTerminal for HostConsoleTerminal {
         fn begin_debug_buffering(&self) {
-            crate::tui::begin_debug_buffering();
+            jackin_diagnostics::begin_debug_buffering();
         }
 
         fn end_debug_buffering(&self) {
-            crate::tui::end_debug_buffering();
+            jackin_diagnostics::end_debug_buffering();
         }
 
         fn set_host_screen_owned(&self, owned: bool) {
-            crate::tui::set_host_screen_owned(owned);
+            jackin_tui::ownership::set_host_screen_owned(owned);
         }
 
         fn host_screen_owned(&self) -> bool {
-            crate::tui::host_screen_owned()
+            jackin_tui::ownership::host_screen_owned()
         }
     }
 

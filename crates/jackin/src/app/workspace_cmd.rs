@@ -3,7 +3,6 @@
 use anyhow::Result;
 
 use crate::cli::{self, WorkspaceCommand};
-use crate::tui;
 use crate::workspace::{
     self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved, resolve_path,
 };
@@ -51,11 +50,11 @@ pub(super) async fn handle(
                 let removed_list: Vec<String> = plan
                     .collapsed
                     .iter()
-                    .map(|r| tui::shorten_home(&r.child.src))
+                    .map(|r| jackin_core::shorten_home(&r.child.src))
                     .collect();
                 // Parent paths in a single create are all the same set; pick
                 // the first for the summary headline.
-                let parent = tui::shorten_home(&plan.collapsed[0].covered_by.src);
+                let parent = jackin_core::shorten_home(&plan.collapsed[0].covered_by.src);
                 eprintln!(
                     "collapsed {} redundant mount(s) under {parent}: {}",
                     plan.collapsed.len(),
@@ -93,7 +92,7 @@ pub(super) async fn handle(
             editor.save()?;
             println!(
                 "Created workspace {name:?} (workdir: {}, {mount_count} mount(s)).",
-                tui::shorten_home(&workdir)
+                jackin_core::shorten_home(&workdir)
             );
             Ok(())
         }
@@ -149,7 +148,7 @@ pub(super) async fn handle(
                     .iter()
                     .map(|(name, ws)| Row {
                         name: (*name).to_owned(),
-                        workdir: tui::shorten_home(&ws.workdir),
+                        workdir: jackin_core::shorten_home(&ws.workdir),
                         mounts: ws.mounts.len(),
                         allowed: if ws.allowed_roles.is_empty() {
                             "any role".to_owned()
@@ -164,7 +163,7 @@ pub(super) async fn handle(
                 table.with(Style::modern());
                 println!("{table}");
                 println!();
-                tui::hint("Run ", "jackin workspace show <name>", " for details.");
+                jackin_tui::output::hint("Run ", "jackin workspace show <name>", " for details.");
             }
             Ok(())
         }
@@ -263,8 +262,8 @@ pub(super) async fn handle(
                     .map(|r| {
                         format!(
                             "{} covered by {}",
-                            tui::shorten_home(&r.child.src),
-                            tui::shorten_home(&r.covered_by.src),
+                            jackin_core::shorten_home(&r.child.src),
+                            jackin_core::shorten_home(&r.covered_by.src),
                         )
                     })
                     .collect();
@@ -284,7 +283,7 @@ pub(super) async fn handle(
             // If there are any collapses to apply, prompt (or bail on
             // non-TTY without --yes).
             if !all_collapses.is_empty() && !assume_yes {
-                tui::require_interactive_stdin(
+                crate::prompt::require_interactive_stdin(
                     "refusing to collapse mounts without confirmation; pass --yes to proceed non-interactively",
                 )?;
 
@@ -294,7 +293,7 @@ pub(super) async fn handle(
                         plan.edit_driven_collapses.len()
                     );
                     for r in &plan.edit_driven_collapses {
-                        eprintln!("  • {}", tui::shorten_home(&r.child.src));
+                        eprintln!("  • {}", jackin_core::shorten_home(&r.child.src));
                     }
                 }
                 if !plan.pre_existing_collapses.is_empty() {
@@ -303,7 +302,7 @@ pub(super) async fn handle(
                         plan.pre_existing_collapses.len()
                     );
                     for r in &plan.pre_existing_collapses {
-                        eprintln!("  • {}", tui::shorten_home(&r.child.src));
+                        eprintln!("  • {}", jackin_core::shorten_home(&r.child.src));
                     }
                 }
                 eprintln!("These will be removed from the workspace.");
@@ -321,30 +320,30 @@ pub(super) async fn handle(
             // summary output, plus collapse lines).
             let mut changes: Vec<String> = Vec::new();
             if let Some(ref w) = workdir {
-                changes.push(format!("workdir → {}", tui::shorten_home(w)));
+                changes.push(format!("workdir → {}", jackin_core::shorten_home(w)));
             }
             for m in &upsert_mounts {
                 if all_collapses.iter().any(|r| r.child.dst == m.dst) {
                     continue;
                 }
                 if m.src == m.dst {
-                    changes.push(format!("added mount {}", tui::shorten_home(&m.src)));
+                    changes.push(format!("added mount {}", jackin_core::shorten_home(&m.src)));
                 } else {
                     changes.push(format!(
                         "added mount {} → {}",
-                        tui::shorten_home(&m.src),
-                        tui::shorten_home(&m.dst)
+                        jackin_core::shorten_home(&m.src),
+                        jackin_core::shorten_home(&m.dst)
                     ));
                 }
             }
             for dst in &remove_destinations {
-                changes.push(format!("removed mount {}", tui::shorten_home(dst)));
+                changes.push(format!("removed mount {}", jackin_core::shorten_home(dst)));
             }
             for r in &all_collapses {
                 changes.push(format!(
                     "collapsed {} under {}",
-                    tui::shorten_home(&r.child.src),
-                    tui::shorten_home(&r.covered_by.src)
+                    jackin_core::shorten_home(&r.child.src),
+                    jackin_core::shorten_home(&r.covered_by.src)
                 ));
             }
             if no_workdir_mount {
@@ -494,7 +493,7 @@ pub(super) async fn handle(
             }
 
             if !assume_yes {
-                tui::require_interactive_stdin(
+                crate::prompt::require_interactive_stdin(
                     "refusing to collapse mounts without confirmation; pass --yes to proceed non-interactively",
                 )?;
                 eprintln!(
@@ -504,8 +503,8 @@ pub(super) async fn handle(
                 for r in &plan.removed {
                     eprintln!(
                         "  • {} (covered by {})",
-                        tui::shorten_home(&r.child.src),
-                        tui::shorten_home(&r.covered_by.src),
+                        jackin_core::shorten_home(&r.child.src),
+                        jackin_core::shorten_home(&r.covered_by.src),
                     );
                 }
                 let confirmed = dialoguer::Confirm::new()

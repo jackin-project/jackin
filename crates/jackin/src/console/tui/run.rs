@@ -298,7 +298,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         {
             let full_area: ratatui::layout::Rect = terminal.size()?.into();
             let (main_area, debug_bar_area) =
-                split_debug_area(full_area, crate::tui::is_debug_mode());
+                split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
             // If the Debug-info dialog's raw overlay was painted last frame and
             // the dialog has since closed, force a full clear so the OSC 8 link
             // residue (which Ratatui's diff does not track) is wiped.
@@ -433,7 +433,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     {
                         continue;
                     }
-                    crate::debug_log!(
+                    jackin_diagnostics::debug_log!(
                         "tui",
                         "key={} location={}",
                         jackin_console::tui::debug::key_debug_name_for_input(
@@ -632,7 +632,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                                         let full_area = frame.area();
                                         let (main_area, _debug_bar) = split_debug_area(
                                             full_area,
-                                            crate::tui::is_debug_mode(),
+                                            jackin_diagnostics::is_debug_mode(),
                                         );
                                         crate::console::tui::render(
                                             frame, main_area, ms, &config, cwd,
@@ -672,7 +672,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                 Event::Mouse(mouse) => {
                     last_mouse_event_at = Some(std::time::Instant::now());
                     if should_debug_log_mouse(mouse) {
-                        crate::debug_log!(
+                        jackin_diagnostics::debug_log!(
                             "tui",
                             "mouse={mouse:?} location={}",
                             console_location_debug(&state)
@@ -690,7 +690,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     let modal_plan = {
                         let full_area: ratatui::layout::Rect = term_size;
                         let (main_area, _) =
-                            split_debug_area(full_area, crate::tui::is_debug_mode());
+                            split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
                         let quit_confirm_rect = state
                             .quit_confirm_state()
                             .map(|confirm| quit_confirm_area(main_area, confirm));
