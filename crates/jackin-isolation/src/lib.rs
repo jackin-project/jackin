@@ -15,6 +15,12 @@
 //! finalized post-attach). Sub-modules: `materialize` (bind-spec production),
 //! `cleanup` (forced removal), `state` (`IsolationRecord` persistence),
 //! `branch` (worktree branch naming).
+//!
+//! Note: `finalize.rs` and `git_inspect.rs` remain in `jackin-runtime` — they
+//! call presentation-layer helpers (`jackin_launch_tui::progress::standalone_*`)
+//! and lifted-to-core symbols (`jackin_core::constants::JACKIN_STATUS_CMD`),
+//! which would create an L1→L3 inverted dep. Moving them requires either a
+//! port-trait relocation or a different carve strategy (parked separately).
 
 pub mod branch;
 pub mod cleanup;
