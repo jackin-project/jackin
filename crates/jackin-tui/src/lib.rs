@@ -7,6 +7,20 @@
 //! [`components`], with color adapters in [`theme`]. Surface crates
 //! own domain state and compose these pieces instead of re-declaring
 //! palette values or reimplementing visual primitives.
+//!
+//! # Architecture Invariant
+//!
+//! `jackin-tui` is a **presentation-layer** design-system crate.
+//! Allowed upstream dependencies: `jackin-core` (domain vocabulary only).
+//! Must **not** depend on any application, infrastructure, or entry crate
+//! (`jackin-runtime`, `jackin-env`, `jackin-docker`, `jackin-launch*`,
+//! `jackin-console`, `jackin-capsule`, or `jackin`).
+//!
+//! The shared Elm runtime contract lives in [`runtime`]: one
+//! [`runtime::UpdateResult`] return per `update` call,
+//! [`runtime::Component`] for event→message translation, and
+//! [`runtime::View`] for model→frame rendering. Surface crates
+//! implement these traits; `jackin-tui` only defines them.
 
 pub mod animation;
 pub mod ansi_text;
