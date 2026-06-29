@@ -87,6 +87,16 @@ impl RoleSelector {
     }
 }
 
+/// Derive the role's canonical runtime slug (used for image-tag and
+/// repo-lock-file naming). A namespaced role becomes `namespace_name`;
+/// a bare role becomes `name`.
+pub fn runtime_slug(selector: &RoleSelector) -> String {
+    selector.namespace.as_ref().map_or_else(
+        || selector.name.clone(),
+        |namespace| format!("{namespace}_{}", selector.name),
+    )
+}
+
 impl TryFrom<&str> for RoleSelector {
     type Error = SelectorError;
 

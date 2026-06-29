@@ -14,12 +14,7 @@ use sha2::{Digest, Sha256};
 const INSTANCE_ID_LEN: usize = 8;
 const ROLE_BASE_DNS_BUDGET: usize = 58;
 
-pub fn runtime_slug(selector: &RoleSelector) -> String {
-    selector.namespace.as_ref().map_or_else(
-        || selector.name.clone(),
-        |namespace| format!("{namespace}_{}", selector.name),
-    )
-}
+pub use jackin_core::runtime_slug;
 
 pub fn new_container_name(workspace_name: Option<&str>, selector: &RoleSelector) -> String {
     container_name_with_id(workspace_name, selector, &random_instance_id())

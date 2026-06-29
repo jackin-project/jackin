@@ -57,4 +57,4 @@ pub use path_text::shorten_home;
 pub use paths::JackinPaths;
 pub use prompt_result::PromptResult;
 pub use runner::{CommandRunner, RunOptions};
-pub use selector::{RoleSelector, Selector, SelectorError};
+pub use selector::{RoleSelector, Selector, SelectorError, runtime_slug};
