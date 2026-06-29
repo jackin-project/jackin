@@ -2805,6 +2805,7 @@ dependencies = [
  "anyhow",
  "directories",
  "hex",
+ "owo-colors 4.3.0",
  "serde",
  "serde_json",
  "sha2 0.11.0",
