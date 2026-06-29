@@ -9,7 +9,7 @@ files = [
     "crates/jackin-capsule/src/pr_context.rs",
     "crates/jackin-capsule/src/tui/components/dialog_widgets.rs",
     "crates/jackin-capsule/src/tui/selection/tests.rs",
-    "crates/jackin-console/src/tui/app.rs",
+    "crates/jackin-console/src/tui/model.rs",
     "crates/jackin-console/src/tui/components/file_browser.rs",
     "crates/jackin-console/src/tui/console/tests.rs",
     "crates/jackin-console/src/tui/input.rs",

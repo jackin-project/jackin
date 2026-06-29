@@ -25,7 +25,7 @@ pub(crate) mod input {
             paths: &jackin_core::JackinPaths,
         ) -> bool {
             use crate::console::tui::state::PendingRoleLoad;
-            use jackin_console::tui::app::ConsolePendingRoleLoad as _;
+            use jackin_console::tui::model::ConsolePendingRoleLoad as _;
             let Some((load, result)): Option<(PendingRoleLoad, anyhow::Result<()>)> =
                 editor.poll_pending_role_load()
             else {

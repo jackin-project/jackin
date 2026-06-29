@@ -5,8 +5,8 @@
 
 use ratatui::layout::Rect;
 
-use crate::tui::app::apply_manager_stage;
 use crate::tui::auth::AuthKind;
+use crate::tui::model::apply_manager_stage;
 use crate::tui::screens::editor::update::{
     clear_editor_auth_kind_plan, editor_field_selection_plan, editor_mount_row_select_plan,
     editor_tab_bar_focus_plan, editor_tab_horizontal_scroll_plan, editor_tab_move_plan,

@@ -15,12 +15,12 @@ use jackin_tui::components::{
 };
 use ratatui::layout::Rect;
 
-use crate::tui::app::ConsoleManagerStageRoute;
 use crate::tui::components::auth_panel;
 use crate::tui::components::confirm_save;
 use crate::tui::components::file_browser::FileBrowserState;
 use crate::tui::components::op_picker::OpPickerRenderState;
 use crate::tui::components::op_picker::OpPickerStage;
+use crate::tui::model::ConsoleManagerStageRoute;
 use crate::tui::screens::settings::model::AuthFormFocus;
 use crate::tui::screens::workspaces::model::ManagerListRow;
 

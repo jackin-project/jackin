@@ -300,7 +300,7 @@ impl<
     PendingDriftCheck,
     PendingIsolationCleanup,
     PendingOpCommit,
-> crate::tui::app::ConsoleEditorModalPresence
+> crate::tui::model::ConsoleEditorModalPresence
     for EditorState<
         WorkspaceConfig,
         MountInfoCache,
@@ -332,7 +332,7 @@ impl<
     PendingDriftCheck,
     PendingIsolationCleanup,
     PendingOpCommit,
-> crate::tui::app::ConsoleAnimationTick
+> crate::tui::model::ConsoleAnimationTick
     for EditorState<
         WorkspaceConfig,
         MountInfoCache,
@@ -347,12 +347,12 @@ impl<
         PendingOpCommit,
     >
 where
-    Modal: crate::tui::app::ConsoleAnimationTick,
+    Modal: crate::tui::model::ConsoleAnimationTick,
 {
     fn tick_active_animation(&mut self) -> bool {
         self.modal
             .as_mut()
-            .is_some_and(crate::tui::app::ConsoleAnimationTick::tick_active_animation)
+            .is_some_and(crate::tui::model::ConsoleAnimationTick::tick_active_animation)
     }
 }
 
@@ -368,7 +368,7 @@ impl<
     PendingDriftCheck,
     PendingIsolationCleanup,
     OpRef,
-> crate::tui::app::ConsolePendingOpCommit
+> crate::tui::model::ConsolePendingOpCommit
     for EditorState<
         WorkspaceConfig,
         MountInfoCache,
@@ -414,7 +414,7 @@ impl<
     SavePlan,
     PendingIsolationCleanup,
     PendingOpCommit,
-> crate::tui::app::ConsolePendingDriftCheck
+> crate::tui::model::ConsolePendingDriftCheck
     for EditorState<
         WorkspaceConfig,
         MountInfoCache,
@@ -465,7 +465,7 @@ impl<
     PendingDriftCheck,
     SavePlan,
     PendingOpCommit,
-> crate::tui::app::ConsolePendingIsolationCleanup
+> crate::tui::model::ConsolePendingIsolationCleanup
     for EditorState<
         WorkspaceConfig,
         MountInfoCache,
@@ -512,7 +512,7 @@ impl<
     PendingDriftCheck,
     PendingIsolationCleanup,
     PendingOpCommit,
-> crate::tui::app::ConsolePendingRoleLoad
+> crate::tui::model::ConsolePendingRoleLoad
     for EditorState<
         WorkspaceConfig,
         MountInfoCache,
@@ -557,7 +557,7 @@ impl<
     PendingDriftCheck,
     PendingIsolationCleanup,
     PendingOpCommit,
-> crate::tui::app::ConsolePendingTokenGenerate
+> crate::tui::model::ConsolePendingTokenGenerate
     for EditorState<
         WorkspaceConfig,
         MountInfoCache,
@@ -591,7 +591,7 @@ impl<
     PendingDriftCheck,
     PendingIsolationCleanup,
     PendingOpCommit,
-> crate::tui::app::ConsoleEditorFooterHeight
+> crate::tui::model::ConsoleEditorFooterHeight
     for EditorState<
         WorkspaceConfig,
         MountInfoCache,

@@ -4,9 +4,9 @@ use ratatui::layout::Rect;
 use std::path::PathBuf;
 
 use super::workspace_screen_footer_items_for_state;
-use crate::tui::app::ConsoleManagerStage;
 use crate::tui::components::file_browser::FileBrowserState;
 use crate::tui::components::footer_hints::editor_footer_items;
+use crate::tui::model::ConsoleManagerStage;
 use crate::tui::screens::settings::view::settings_screen_footer_for_state;
 use crate::tui::state::{
     CreatePreludeState, FileBrowserTarget, GlobalMountModal, ManagerState, Modal,

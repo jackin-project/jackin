@@ -1,7 +1,7 @@
 // Tests for `view`.
 
 use super::*;
-use crate::tui::app::{ConsoleManagerStageRoute, ConsoleStageModalFacts};
+use crate::tui::model::{ConsoleManagerStageRoute, ConsoleStageModalFacts};
 
 #[test]
 fn console_main_frame_plan_routes_workspace_and_fullscreen_stages() {

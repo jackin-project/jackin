@@ -18,11 +18,11 @@ use super::list::{
 };
 use super::prelude::{PreludeModalOutcome, handle_prelude_key, handle_prelude_modal};
 use super::save::begin_editor_save;
-use crate::tui::app::{
+use crate::tui::effect::{ConsoleEffect, FileBrowserEffectContext};
+use crate::tui::model::{
     ConsoleInputDispatchFacts, ConsoleInputDispatchPlan, ConsoleManagerStageRoute,
     CreatePreludeCompletionStatus, console_input_dispatch_plan, create_prelude_completion_status,
 };
-use crate::tui::effect::{ConsoleEffect, FileBrowserEffectContext};
 use crate::tui::screens::workspaces::update::{
     InstancePurgeKeyPlan, WorkspaceDeleteKeyPlan, instance_purge_key_plan,
     workspace_delete_key_plan,

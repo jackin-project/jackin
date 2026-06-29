@@ -36,7 +36,7 @@ lines = 5986
 # view,refresh}.rs is the W5 follow-up that brings this below 2000L.
 
 [[production]]
-path = "crates/jackin-console/src/tui/app.rs"
+path = "crates/jackin-console/src/tui/model.rs"
 lines = 5095
 
 [[production]]

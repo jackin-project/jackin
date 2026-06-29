@@ -10,7 +10,6 @@ use crate::console::terminal::{
     resume_console_terminal, suspend_console_terminal,
 };
 use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
-use jackin_console::tui::app::{clear_pending_launch_role_plan, take_pending_launch_plan};
 use jackin_console::tui::components::error_popup::{
     instance_action_failed_error_message, instance_action_failed_error_title,
 };
@@ -20,6 +19,7 @@ use jackin_console::tui::components::status_popup::{
 use jackin_console::tui::debug::console_location_debug;
 use jackin_console::tui::message::PromptOutcome;
 use jackin_console::tui::message::launch_prompt_should_probe_agents;
+use jackin_console::tui::model::{clear_pending_launch_role_plan, take_pending_launch_plan};
 use jackin_console::tui::prompts::{
     ConcreteAgentPickerChoices as AgentPickerChoices,
     ConcreteLaunchPromptDispatch as LaunchPromptDispatch,

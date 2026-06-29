@@ -367,7 +367,7 @@ impl OpPickerState {
     }
 }
 
-impl crate::tui::app::ConsoleAnimationTick for OpPickerState {
+impl crate::tui::model::ConsoleAnimationTick for OpPickerState {
     fn tick_active_animation(&mut self) -> bool {
         self.tick()
     }

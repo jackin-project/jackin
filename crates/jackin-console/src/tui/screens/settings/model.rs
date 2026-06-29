@@ -276,7 +276,7 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 }
 
 impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
-    crate::tui::app::ConsolePendingTokenGenerate
+    crate::tui::model::ConsolePendingTokenGenerate
     for SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 {
     type PendingTokenGenerate = PendingToken;
@@ -296,10 +296,10 @@ impl<Mounts, Env, Auth, Trust, PendingToken>
     }
 }
 
-impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> crate::tui::app::ConsolePendingOpCommit
+impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> crate::tui::model::ConsolePendingOpCommit
     for SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 where
-    Auth: crate::tui::app::ConsolePendingOpCommit,
+    Auth: crate::tui::model::ConsolePendingOpCommit,
 {
     type OpRef = Auth::OpRef;
 
@@ -308,13 +308,13 @@ where
     }
 }
 
-impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> crate::tui::app::ConsoleAnimationTick
+impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> crate::tui::model::ConsoleAnimationTick
     for SettingsState<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken>
 where
     Env: SettingsModalSlot,
-    Env::Modal: crate::tui::app::ConsoleAnimationTick,
+    Env::Modal: crate::tui::model::ConsoleAnimationTick,
     Auth: SettingsAuthModalSlot,
-    Auth::Modal: crate::tui::app::ConsoleAnimationTick,
+    Auth::Modal: crate::tui::model::ConsoleAnimationTick,
 {
     fn tick_active_animation(&mut self) -> bool {
         let mut dirty = false;
@@ -610,7 +610,7 @@ impl<
     RolePickerState,
     ScopePickerState,
     ConfirmState,
-> crate::tui::app::ConsoleAnimationTick
+> crate::tui::model::ConsoleAnimationTick
     for SettingsEnvModal<
         TextInputState,
         SourcePickerState,
@@ -620,7 +620,7 @@ impl<
         ConfirmState,
     >
 where
-    OpPickerState: crate::tui::app::ConsoleAnimationTick,
+    OpPickerState: crate::tui::model::ConsoleAnimationTick,
 {
     fn tick_active_animation(&mut self) -> bool {
         match self {
@@ -1647,7 +1647,7 @@ impl<
     AuthFormTarget,
     AuthForm,
     AuthFormFocus,
-> crate::tui::app::ConsoleAnimationTick
+> crate::tui::model::ConsoleAnimationTick
     for SettingsAuthModal<
         TextInputState,
         SourcePickerState,
@@ -1658,7 +1658,7 @@ impl<
         AuthFormFocus,
     >
 where
-    OpPickerState: crate::tui::app::ConsoleAnimationTick,
+    OpPickerState: crate::tui::model::ConsoleAnimationTick,
 {
     fn tick_active_animation(&mut self) -> bool {
         match self {
@@ -2019,7 +2019,7 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthRestorePendingForm
     }
 }
 
-impl<EnvValue, Modal, OpRef> crate::tui::app::ConsolePendingOpCommit
+impl<EnvValue, Modal, OpRef> crate::tui::model::ConsolePendingOpCommit
     for SettingsAuthState<EnvValue, Modal, crate::tui::subscriptions::PendingOpCommit<OpRef>>
 {
     type OpRef = OpRef;
@@ -2124,7 +2124,7 @@ impl<
     Trust,
     ErrorPopup,
     PendingToken,
-> crate::tui::app::ConsoleSettingsModalPresence
+> crate::tui::model::ConsoleSettingsModalPresence
     for SettingsState<
         GlobalMountsState<MountRow, MountModal>,
         SettingsEnvState<EnvValue, EnvModal>,
@@ -2134,13 +2134,13 @@ impl<
         PendingToken,
     >
 {
-    fn settings_modal_facts(&self) -> crate::tui::app::ConsoleStageModalFacts {
-        crate::tui::app::ConsoleStageModalFacts {
+    fn settings_modal_facts(&self) -> crate::tui::model::ConsoleStageModalFacts {
+        crate::tui::model::ConsoleStageModalFacts {
             settings_error_popup_open: self.error_popup.is_some(),
             settings_mounts_modal_open: self.mounts.modal.is_some(),
             settings_env_modal_open: self.env.modal.is_some(),
             settings_auth_modal_open: self.auth.has_modal(),
-            ..crate::tui::app::ConsoleStageModalFacts::default()
+            ..crate::tui::model::ConsoleStageModalFacts::default()
         }
     }
 }
@@ -2156,7 +2156,7 @@ impl<
     Trust,
     ErrorPopup,
     PendingToken,
-> crate::tui::app::ConsoleSettingsFooterHeight
+> crate::tui::model::ConsoleSettingsFooterHeight
     for SettingsState<
         GlobalMountsState<MountRow, MountModal>,
         SettingsEnvState<EnvValue, EnvModal>,

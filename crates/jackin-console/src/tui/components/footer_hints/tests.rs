@@ -1,6 +1,6 @@
 //! Tests for `footer_hints`.
 use super::*;
-use crate::tui::app::ConsoleManagerStageRoute;
+use crate::tui::model::ConsoleManagerStageRoute;
 use ratatui::layout::Rect;
 
 fn labels(items: Vec<HintSpan<'static>>) -> Vec<String> {

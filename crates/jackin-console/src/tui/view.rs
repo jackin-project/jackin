@@ -5,8 +5,8 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
 };
 
-use crate::tui::app::ConsoleManagerStageRoute;
-use crate::tui::app::ConsoleStageModalFacts;
+use crate::tui::model::ConsoleManagerStageRoute;
+use crate::tui::model::ConsoleStageModalFacts;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceFrameAreas {
@@ -467,9 +467,9 @@ pub fn prepare_for_render(
     cwd: &std::path::Path,
     area: Rect,
 ) {
-    use crate::tui::app::ConsoleManagerStage;
     use crate::tui::components::footer_hints::editor_footer_items;
     use crate::tui::layout::list::clamp_list_scroll_for_area;
+    use crate::tui::model::ConsoleManagerStage;
     use crate::tui::screens::editor::view::{editor_frame_areas, prepare_editor_for_render};
     use crate::tui::screens::settings::view::{
         settings_frame_areas, settings_screen_footer_for_state,
@@ -506,7 +506,7 @@ pub fn prepare_for_render(
 }
 
 fn prepare_visible_modal(area: Rect, state: &mut crate::tui::state::ManagerState<'_>) {
-    use crate::tui::app::ConsoleManagerStage;
+    use crate::tui::model::ConsoleManagerStage;
 
     let areas = visible_modal_prepare_areas_for_stage_facts(
         area,
