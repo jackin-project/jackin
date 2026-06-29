@@ -40,10 +40,10 @@ truth is worse:
 1. **We never used `vt100`'s emit.** `rg "contents_diff|contents_formatted" crates/jackin-capsule/src`
    returns **nothing**. The defining feature of `vt100` — "diff two screens, serialize to escapes"
    — is dead code for us. We replaced it with our own snapshot+diff+emit in
-   `crates/jackin-capsule/src/tui/render.rs` because `vt100`'s emit knows nothing about our
+   `crates/jackin-capsule/src/tui/pane_snapshot.rs` because `vt100`'s emit knows nothing about our
    pane offsets, borders, or dialog overlays.
 
-2. **`vt100` exposes no damage.** To find what changed, our `render.rs` re-reads and re-diffs
+2. **`vt100` exposes no damage.** To find what changed, our `pane_snapshot.rs` re-reads and re-diffs
    **the entire grid** every frame — O(rows × cols) even when 3 lines changed. This is because
    `vt100` has no damage-tracking API; damage must be recomputed from a full snapshot compare.
 

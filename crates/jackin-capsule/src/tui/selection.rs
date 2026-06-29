@@ -5,7 +5,7 @@
 //! highlight overlay that the compositor writes on top of pane bodies.
 
 use crate::tui::layout::{Rect, local_mouse_position};
-use crate::tui::render::{DisplayCell, RowSnapshot};
+use crate::tui::pane_snapshot::{DisplayCell, RowSnapshot};
 
 /// Active mouse text selection on a pane.
 ///

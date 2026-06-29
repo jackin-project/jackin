@@ -37,7 +37,7 @@ use tokio::sync::mpsc;
 use crate::agent_status::SessionStatus;
 use crate::protocol::AgentState;
 use crate::pull_request::PullRequestInfo;
-use crate::tui::render::RowSnapshot;
+use crate::tui::pane_snapshot::RowSnapshot;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -830,7 +830,7 @@ impl Session {
     }
 
     pub(crate) fn render_content_snapshot(&self, viewport_cols: u16) -> Vec<RowSnapshot> {
-        crate::tui::render::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
+        crate::tui::pane_snapshot::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
     }
 
     pub(crate) fn diagnostic_tail(&self, max_rows: usize) -> Option<String> {

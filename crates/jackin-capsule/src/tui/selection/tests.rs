@@ -88,7 +88,7 @@ fn same_cell_selection_is_not_a_drag() {
 mod word_fixtures {
     use unicode_width::UnicodeWidthChar;
 
-    use crate::tui::render::{CellSnapshot, RowSnapshot};
+    use crate::tui::pane_snapshot::{CellSnapshot, RowSnapshot};
     use crate::tui::selection::word_bounds_in_row;
 
     pub(super) fn row(text: &str) -> RowSnapshot {

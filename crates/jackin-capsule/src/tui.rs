@@ -12,7 +12,7 @@ pub(crate) mod keymap;
 pub mod layout;
 pub mod message;
 pub mod model;
-pub mod render;
+pub mod pane_snapshot;
 pub mod run;
 pub mod runtime;
 pub mod selection;

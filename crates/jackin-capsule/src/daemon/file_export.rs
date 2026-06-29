@@ -11,7 +11,7 @@ use jackin_protocol::attach::{
 use sha2::{Digest, Sha256};
 
 use super::Multiplexer;
-use crate::tui::render::RowSnapshot;
+use crate::tui::pane_snapshot::RowSnapshot;
 use crate::tui::selection::{selection_text, word_bounds_in_row};
 
 const JACKIN_RUN_DIR: &str = "/jackin/run";

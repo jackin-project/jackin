@@ -7,7 +7,7 @@ use ratatui::layout::Rect;
 use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, ColRange, branch_context_bar_layout, debug_run_id_label,
 };
-use crate::tui::render::RowSnapshot;
+use crate::tui::pane_snapshot::RowSnapshot;
 use crate::tui::terminal::osc22_pointer_shape;
 use crate::tui::view::encode_osc52_clipboard_write;
 
