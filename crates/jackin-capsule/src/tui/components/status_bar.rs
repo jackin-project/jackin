@@ -31,7 +31,7 @@
 /// click-region maths.
 use jackin_tui::components::TabStrip;
 
-use crate::tui::app::{MuxMode, VisibleAgentState};
+use crate::tui::model::{MuxMode, VisibleAgentState};
 use crate::tui::layout::Tab;
 
 /// Column width in terminal cells for a label, measured with

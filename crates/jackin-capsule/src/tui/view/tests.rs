@@ -4,7 +4,7 @@ use super::{
     spawn_failure_agent_label, spawn_failure_message, spawn_request_failure_message,
     tab_limit_failure_message,
 };
-use crate::tui::app::HoverTarget;
+use crate::tui::model::HoverTarget;
 use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
 use crate::tui::components::status_bar::{PrefixMode, STATUS_BAR_ROWS};
 use crate::tui::layout::Tab;

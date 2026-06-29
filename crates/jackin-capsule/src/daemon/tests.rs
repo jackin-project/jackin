@@ -6625,7 +6625,7 @@ fn reattach_updates_capabilities_without_resetting_model_palette() {
 // fixing PR. Recorded fixtures land in `tests/fixtures/pty/` once a Stage-0
 // operator run id exists; until then the byte streams below are synthetic.
 
-use crate::tui::app::{CursorVisibilityState, cursor_visible_for_state};
+use crate::tui::model::{CursorVisibilityState, cursor_visible_for_state};
 use jackin_term::{Cell, DamageGrid};
 
 /// The outer terminal: a second `DamageGrid` sized to the attach client.

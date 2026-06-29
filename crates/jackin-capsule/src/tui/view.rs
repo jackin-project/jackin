@@ -1,7 +1,7 @@
 //! Rendering helper types and functions for the capsule multiplexer.
 
 use crate::pull_request::PullRequestInfo;
-use crate::tui::app::{HoverTarget, VisiblePane};
+use crate::tui::model::{HoverTarget, VisiblePane};
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
