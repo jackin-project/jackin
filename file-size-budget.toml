@@ -53,7 +53,14 @@ lines = 2833
 
 [[production]]
 path = "crates/jackin-runtime/src/runtime/image.rs"
-lines = 2812
+lines = 2816
+# +4 over budget after A1 build_log trait port (Branch by Abstraction
+# introduced the new RunOptions::build_log_sink field and the
+# DiagnosticsBuildLogSink injection at the two tee_to_build_log: true
+# sites, net 0 spec but +4 once rustfmt 2024 style edition reformats
+# the merged std import to five lines). Ratchet now at 2816; a follow-up
+# D1 absorb (absorbs runtime/image.rs into jackin-image) brings it
+# under cap.
 
 [[production]]
 path = "crates/jackin-console/src/tui/screens/editor/view.rs"

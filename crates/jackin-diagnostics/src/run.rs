@@ -983,3 +983,30 @@ pub(crate) fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
         remove_jsonl_run(&path);
     }
 }
+
+// Adapter from the `RunDiagnostics` JSONL run object to the `LaunchDiagnostics`
+// port trait defined in `jackin_core::launch_progress`. Lifted here from
+// `jackin_launch` because the orphan rule (impl of a foreign trait on a
+// foreign type) requires the impl to live in either the trait's crate or
+// the type's crate; `RunDiagnostics` lives here, so the impl lives here too.
+impl jackin_core::LaunchDiagnostics for RunDiagnostics {
+    fn run_id(&self) -> &str {
+        &self.run_id
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn command_output_path(&self, name: &str) -> PathBuf {
+        Self::command_output_path(self, name)
+    }
+
+    fn compact(&self, kind: &str, message: &str) {
+        crate::observability::emit_jsonl_event(&self.run_id, kind, message, None, None);
+    }
+
+    fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
+        Self::stage(self, kind, stage, message, detail);
+    }
+}

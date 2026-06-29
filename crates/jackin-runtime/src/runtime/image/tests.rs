@@ -2,6 +2,7 @@
 use super::*;
 use crate::runtime::test_support::{FakeDockerClient, FakeRunner, TEST_DOCKERFILE_FROM};
 use jackin_core::agent::Agent;
+use jackin_manifest::repo::ValidatedRoleRepo;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, MutexGuard};
 
@@ -780,7 +781,7 @@ fn local_role_base_reuse_rejects_stale_construct_label() {
 fn validated_test_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
-) -> (CachedRepo, jackin_manifest::repo::ValidatedRoleRepo) {
+) -> (CachedRepo, ValidatedRoleRepo) {
     let cached_repo = CachedRepo::new(paths, selector);
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
