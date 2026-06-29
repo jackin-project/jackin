@@ -138,15 +138,15 @@ fn random_instance_id() -> String {
 
 /// Docker volume name for the TLS client certificates shared between the
 /// `DinD` sidecar (writer) and the role container (reader).
-pub(crate) fn dind_certs_volume(container_name: &str) -> String {
+pub fn dind_certs_volume(container_name: &str) -> String {
     format!("{container_name}-dind-certs")
 }
 
-pub(crate) fn dind_container_name(container_name: &str) -> String {
+pub fn dind_container_name(container_name: &str) -> String {
     format!("{container_name}-dind")
 }
 
-pub(crate) fn role_network_name(container_name: &str) -> String {
+pub fn role_network_name(container_name: &str) -> String {
     format!("{container_name}-net")
 }
 

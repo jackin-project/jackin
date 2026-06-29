@@ -72,9 +72,9 @@ impl DockerResources {
     pub fn from_container_name(container_name: &str) -> Self {
         Self {
             role_container: container_name.to_owned(),
-            dind_container: Some(crate::instance::naming::dind_container_name(container_name)),
-            network: crate::instance::naming::role_network_name(container_name),
-            certs_volume: Some(crate::instance::naming::dind_certs_volume(container_name)),
+            dind_container: Some(crate::naming::dind_container_name(container_name)),
+            network: crate::naming::role_network_name(container_name),
+            certs_volume: Some(crate::naming::dind_certs_volume(container_name)),
         }
     }
 }
@@ -174,11 +174,9 @@ impl InstanceManifest {
         let now = now_rfc3339();
         Self {
             version: INSTANCE_MANIFEST_VERSION,
-            instance_id: crate::instance::naming::instance_id_from_container_base(
-                input.container_base,
-            )
-            .unwrap_or(input.container_base)
-            .to_owned(),
+            instance_id: crate::naming::instance_id_from_container_base(input.container_base)
+                .unwrap_or(input.container_base)
+                .to_owned(),
             container_base: input.container_base.to_owned(),
             created_at: now.clone(),
             updated_at: now,
@@ -564,7 +562,6 @@ impl InstanceIndex {
     }
 
     /// Errors if the file is missing or unreadable.
-    #[cfg(any(test, feature = "test-support"))]
     pub fn read(data_dir: &Path) -> anyhow::Result<Self> {
         Self::read_optional(data_dir)?
             .ok_or_else(|| anyhow::anyhow!("instance index missing at {}", data_dir.display()))

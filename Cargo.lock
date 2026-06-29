@@ -2929,6 +2929,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-instance"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "directories",
+ "fs2",
+ "hex",
+ "jackin-config",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-manifest",
+ "rand 0.10.1",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "sha2 0.11.0",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "jackin-isolation"
 version = "0.6.0-dev"
 dependencies = [
@@ -3016,6 +3038,7 @@ dependencies = [
  "jackin-env",
  "jackin-host",
  "jackin-image",
+ "jackin-instance",
  "jackin-isolation",
  "jackin-launch-tui",
  "jackin-manifest",

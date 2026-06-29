@@ -22,6 +22,7 @@ members = [
     "crates/jackin-pr-trailers",
     "crates/jackin-usage",
     "crates/jackin-isolation",
+    "crates/jackin-instance",
 ]
 resolver = "3"
 

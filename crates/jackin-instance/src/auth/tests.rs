@@ -1,5 +1,5 @@
 //! Tests for `instance/auth` — tests.
-use crate::instance::{AuthProvisionOutcome, PrepareResolvers, RoleState};
+use crate::{AuthProvisionOutcome, PrepareResolvers, RoleState};
 use jackin_config::AuthForwardMode;
 use jackin_core::paths::JackinPaths;
 use tempfile::tempdir;
@@ -34,7 +34,7 @@ const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refres
 // ── Source-folder validation ────────────────────────────────────────
 
 mod source_validation {
-    use crate::instance::validate_sync_source_dir;
+    use crate::validate_sync_source_dir;
     use jackin_core::agent::Agent;
     use tempfile::tempdir;
 
@@ -1899,7 +1899,7 @@ fn surfaces_unreadable_host_auth_json_as_error() {
 // fallback is the only path exercised here. See
 // `read_host_gh_token` source for the gate.
 use super::{GithubAuthMode, parse_gh_hosts_yml};
-use crate::instance::{
+use crate::{
     GithubAuthContext, GithubProvisionKind, GithubProvisionOutcome, GithubTokenSource,
     HostMissingReason,
 };

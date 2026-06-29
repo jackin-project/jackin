@@ -26,6 +26,7 @@ jackin-launch-tui = { version = "0.6.0-dev", path = "../jackin-launch-tui" }
 jackin-host = { version = "0.6.0-dev", path = "../jackin-host" }
 jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
 jackin-isolation = { version = "0.6.0-dev", path = "../jackin-isolation" }
+jackin-instance = { version = "0.6.0-dev", path = "../jackin-instance" }
 jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 
 tracing = "0.1"

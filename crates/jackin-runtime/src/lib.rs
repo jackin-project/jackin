@@ -8,10 +8,13 @@
 
 pub mod apple_container_client;
 pub mod exec_host;
-pub mod instance;
 pub mod isolation;
 pub mod runtime;
 pub mod spin_wait;
+
+// Re-export jackin_instance as `instance` so existing call sites
+// (crate::instance::X) continue to compile unchanged.
+pub use jackin_instance as instance;
 
 // Re-export the key public items to match what the binary's src/runtime/mod.rs exposes.
 pub use runtime::{
