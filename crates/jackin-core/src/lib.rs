@@ -4,6 +4,12 @@
 //! subprocess, no filesystem access. Every higher crate depends on this one,
 //! never the reverse.
 //!
+//! **Architecture Invariant:** L0 domain crate. Allowed dependencies: none
+//! inside the workspace. Owns the universal types plus the port traits
+//! (`BuildLogSink`, `DebugLogSink`, `OperatorNoticeSink`) and shared widget
+//! stubs (`TailScroll`, `DialogBodyScroll`, etc.) that let higher layers
+//! talk upward without depending on a presentation crate.
+//!
 //! Public surface: `Agent`, `MountIsolation`, `AuthForwardMode`, and shared
 //! string constants.
 

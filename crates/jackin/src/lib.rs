@@ -4,6 +4,15 @@
 //! integration tests. The crate is simultaneously a binary (via `main.rs`) and
 //! a library (via `lib.rs`); `pub mod` entries here are the public compatibility
 //! boundary, while `pub(crate)` entries are root-crate-only shims.
+//!
+//! **Architecture Invariant:** L4 entry/glue crate. Allowed dependencies:
+//! `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-docker`,
+//! `jackin-diagnostics`, `jackin-env`, `jackin-image`, `jackin-runtime`,
+//! `jackin-tui`, `jackin-console`, `jackin-protocol`. This is the only
+//! crate allowed to depend on every other workspace crate (it wires the
+//! `ConsoleHostTerminal` impl, the `BuildLogSink` adapter, and the
+//! runtime command dispatch). The shim-maze pattern (D6) is gone;
+//! callers import directly from the owning crate root.
 
 #![allow(clippy::redundant_pub_crate)]
 #![expect(

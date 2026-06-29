@@ -68,9 +68,7 @@ pub struct FullCellThumb {
 ///
 /// Externally `0` means "live tail / newest content". Internally the helper
 /// clamps through the same top-relative `tui-scrollbar` metrics used by normal
-
 /// panels before converting back to the tail-relative representation.
-
 fn metrics(
     content_len: usize,
     viewport_len: usize,

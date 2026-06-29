@@ -3,6 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Smoke-test the forbidden-edge extraction: build a synthetic deps map and
 /// assert the gate flags only the entries on the `FORBIDDEN_EDGES` list.
+///
+/// After the A5 prep slices broke `jackin-config → jackin-diagnostics`
+/// and `jackin-manifest → jackin-diagnostics` (via the
+/// `DebugLogSink` / `OperatorNoticeSink` port traits), only
+/// `jackin-runtime → jackin-tui` remains on the forbidden list. The
+/// synthetic graph below exercises that single remaining entry.
 #[test]
 fn synthetic_graph_flags_only_listed_forbidden_edges() {
     let mut deps: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -12,11 +18,11 @@ fn synthetic_graph_flags_only_listed_forbidden_edges() {
     );
     deps.insert(
         "jackin-config".into(),
-        BTreeSet::from(["jackin-core".into(), "jackin-diagnostics".into()]),
+        BTreeSet::from(["jackin-core".into()]),
     );
     deps.insert(
         "jackin-manifest".into(),
-        BTreeSet::from(["jackin-diagnostics".into()]),
+        BTreeSet::from(["jackin-core".into(), "jackin-config".into()]),
     );
 
     let mut problems = Vec::new();
@@ -28,14 +34,7 @@ fn synthetic_graph_flags_only_listed_forbidden_edges() {
         }
     }
     problems.sort();
-    assert_eq!(
-        problems,
-        vec![
-            "jackin-config → jackin-diagnostics",
-            "jackin-manifest → jackin-diagnostics",
-            "jackin-runtime → jackin-tui",
-        ]
-    );
+    assert_eq!(problems, vec!["jackin-runtime → jackin-tui"]);
 }
 
 #[test]

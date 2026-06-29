@@ -7,6 +7,15 @@
 //! [`components`], with color adapters in [`theme`]. Surface crates
 //! own domain state and compose these pieces instead of re-declaring
 //! palette values or reimplementing visual primitives.
+//!
+//! **Architecture Invariant:** L3 presentation crate (design system).
+//! Allowed dependencies: `jackin-core` (for the re-exported widget stubs
+//! `TailScroll`, `DialogBodyScroll`, `StatusFooterHover`, etc., plus
+//! shared tokens `Rgb`, `owo_rgb`, the `PHOSPHOR_*` palette, and
+//! `shorten_home`). Must NOT depend on infrastructure or higher-layer
+//! presentation surfaces (`jackin-launch-tui`, `jackin-console`,
+//! `jackin-capsule`). Surface crates depend on this one, never the
+//! reverse.
 
 pub mod animation;
 pub mod ansi_text;

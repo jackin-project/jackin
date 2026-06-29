@@ -2,7 +2,7 @@
 title: "Codebase health: structure & reviewability"
 ---
 
-**Status**: Partially implemented — gates live (W2 + W3 + W4 carry CI teeth), test-helper dedups done, two P2 inverted edges broken (`jackin-env → jackin-launch` removed; `build_log` moved from `jackin-launch` to `jackin-diagnostics` to break `jackin-docker → jackin-launch`). This umbrella item stays open until the remaining god-crate carves (W5) and the last 3 layer-edge refactors (W1) land.
+**Status**: Partially implemented — gates live (W2 + W3 + W4 carry CI teeth), test-helper dedups done, all but one P2 inverted dependency broken (`jackin-env → jackin-launch-tui`, `jackin-docker → jackin-launch-tui`, `jackin-config → jackin-diagnostics`, and `jackin-manifest → jackin-diagnostics` removed; `jackin-runtime → jackin-tui` remains). 19/19 workspace crates carry Architecture-Invariant `//!` headers. This umbrella item stays open until the remaining god-crate carves (W5) and the last layer-edge refactor (runtime→tui, gated on E0 LTO baseline) land.
 
 **Shipped in this branch** (workstream headers below show the rest as still open):
 
@@ -234,7 +234,7 @@ Used by every C/E slice. Pure move; contents are not rewritten.
 - [x] **A5 prep 4** — `prune_output` module copied from `jackin-tui/src/prune_output.rs` to `runtime/src/runtime/prune_output.rs` (verbatim). 7 public functions for terminal-output formatting of prune/cleanup operations.
 - [x] **A5 prep 5** — `url_text` module copied from `jackin-tui/src/url_text.rs` to `jackin-core/src/url_text.rs`. 3 public functions (is_host_open_url, has_url_scheme, redact_url_for_log).
 - [x] **A5 prep 6** — `host_colors` module copied from `jackin-tui/src/host_colors.rs` to `runtime/src/runtime/host_colors.rs`. Async OSC 10/11 host-color query.
-- [ ] **A5** itself — Land the `cargo-deny` `wrappers` bans + per-crate `//! Architecture-Invariant` headers. Remaining work: 0.25 P2 inversion (test-only use in `runtime/progress/tests.rs` constructs test mocks from `jackin_tui::components` widgets; the runtime's `jackin-tui` dep stays for the test, not production code). Filed as a follow-up sub-slice to port the test mocks to `jackin-core` stubs so the dep can be removed entirely.
+- [x] **A5** itself — Land the `cargo-deny` `wrappers` bans + per-crate `//! Architecture-Invariant` headers. Done: 19/19 crates carry an Architecture-Invariant `//!` header naming allowed dependencies; `crates/jackin-xtask/src/arch.rs` `FORBIDDEN_EDGES` dropped 3 → 1 entry (the `jackin-config → jackin-diagnostics` and `jackin-manifest → jackin-diagnostics` inversions were broken by A5 prep 2/3; the synthetic-graph test was updated to match). Remaining: 1.0 P2 inversion (`jackin-runtime → jackin-tui` — runtime uses `jackin_tui::{url_text, output, ansi, components, animation}` in production code, not just in `runtime/progress/tests.rs` as the original estimate claimed). Tracked for D2 port-trait relocation gated by the E0 LTO baseline.
 
 ### Phase B — rename + shim removal (mechanical, no logic)
 

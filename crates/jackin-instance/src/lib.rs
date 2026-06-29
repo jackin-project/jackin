@@ -8,6 +8,11 @@
 //!
 //! Not responsible for: Docker network/image/DinD resource management
 //! (`runtime/`), or mount materialization (`isolation/materialize.rs`).
+//!
+//! **Architecture Invariant:** L1 application crate. Allowed dependencies:
+//! `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-diagnostics`.
+//! No presentation or runtime dependencies — instance lifecycle stays
+//! below the bootstrap pipeline.
 
 use anyhow::Context;
 use jackin_config::{AuthForwardMode, GithubAuthMode};

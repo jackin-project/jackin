@@ -3,6 +3,12 @@
 //! Provides derived-image Dockerfile generation, agent binary acquisition and
 //! caching, jackin-capsule binary acquisition, shared artifact helpers, and
 //! cached image version checks.
+//!
+//! **Architecture Invariant:** L1 application crate (image subsystem).
+//! Allowed dependencies: `jackin-core`, `jackin-manifest`, `jackin-docker`,
+//! `jackin-diagnostics`. Single home for image build/naming/decision logic
+//! — `runtime/image.rs` (and its split-out sub-modules `image_recipe`,
+//! `image_decision`, `image_build`) live here after D1 PARTs E/F/G.
 
 pub mod agent_binary;
 pub mod binary_artifact;

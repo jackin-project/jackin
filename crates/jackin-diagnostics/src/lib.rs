@@ -1,6 +1,16 @@
 //! Host observability substrate: structured JSONL run diagnostics, debug-mode
 //! flag, and the `debug_log!` macro. Terminal-ownership guards are re-exported
 //! from `jackin_tui::ownership`.
+//!
+//! **Architecture Invariant:** L2 infrastructure crate. Allowed
+//! dependencies: `jackin-core`, `jackin-tui` (for terminal-ownership
+//! re-exports only). The `jackin-diagnostics → jackin-tui` edge is a
+//! re-export-only read path (no logic); flips to a P2 inversion if any
+//! diagnostic code starts calling presentation helpers. Build-log and
+//! debug-log sinks are global process state by design — caller crates
+//! route through the port traits in `jackin-core` (`BuildLogSink`,
+//! `DebugLogSink`, `OperatorNoticeSink`) rather than reaching into this
+//! crate's globals directly.
 
 pub mod build_log;
 pub mod debug_log;

@@ -7,11 +7,14 @@
 //!
 //! | From → To | Why forbidden |
 //! | --- | --- |
-//! | jackin-env → jackin-launch-tui | launch-tui is a TUI; env is infra. |
-//! | jackin-docker → jackin-launch-tui | docker is infra; launch-tui is a TUI. |
-//! | jackin-runtime → jackin-tui | runtime is infra; tui is presentation. |
-//! | jackin-config → jackin-diagnostics | config is domain; diagnostics carries presentation concerns. |
-//! | jackin-manifest → jackin-diagnostics | same as config. |
+//! | jackin-runtime → jackin-tui | runtime is L1 application; tui is L3 presentation. Open P2 inversion — tracked for D2 port-trait relocation under the E0 LTO gate. |
+//!
+//! Previously-tracked entries that have been broken (kept here as
+//! historical record):
+//!
+//! - `jackin-env → jackin-launch-tui` — broken by A0 (`PromptResult` lifted to `jackin-core`).
+//! - `jackin-docker → jackin-launch-tui` — broken by A1 (`BuildLogSink` port trait).
+//! - `jackin-config → jackin-diagnostics` and `jackin-manifest → jackin-diagnostics` — broken by A5 prep 2/3 (`OperatorNoticeSink` / `DebugLogSink` port traits).
 //!
 //! Inverted edges trip the gate even if the original motivation has
 //! been removed — the bans are the lasting change, the exceptions are
@@ -31,16 +34,22 @@ use crate::docs::repo_root;
 
 /// Forbid edges (from, to). `from` is not allowed to depend on `to`.
 /// Stored as `(from, to)` so symmetric blocks are easy to read.
+///
+/// Two P2 inversions were broken by the A5 prep slices (port-trait
+/// relocations through `jackin_core::{DebugLogSink, OperatorNoticeSink}`):
+/// `jackin-config → jackin-diagnostics` and `jackin-manifest →
+/// jackin-diagnostics`. The remaining entry, `jackin-runtime →
+/// jackin-tui`, is an L1→L3 inversion — runtime uses presentation helpers
+/// (`jackin_tui::url_text`, `jackin_tui::output`, `jackin_tui::ansi`,
+/// `jackin_tui::components`, `jackin_tui::animation`) in production code.
+/// Flipping it requires a port-trait relocation gated by the E0 LTO
+/// baseline (D2 binding condition), so it stays on the forbidden list
+/// until the carve/relocate PR lands.
 const FORBIDDEN_EDGES: &[(&str, &str)] = &[
-    // Domain infra lifting logs into the diagnostics sink. Will move to a
-    // port-trait indirection once the debug telemetry refactor lands — the
-    // log calls themselves stay, only the layer edge flips.
-    ("jackin-config", "jackin-diagnostics"),
-    ("jackin-manifest", "jackin-diagnostics"),
-    // Presentation/infra leak — runtime owns the bootstrap pipeline and
-    // currently reaches upward into the TUI for the build log and launch
-    // view. W1 follow-up adds a port trait that runtime owns and the TUI
-    // subscribes to.
+    // L1 application → L3 presentation. Open P2 inversion; runtime uses
+    // `jackin_tui::{url_text, output, ansi, components, animation}` in
+    // production code. Tracked in codebase-health-enforcement W1
+    // follow-up + E0 LTO baseline.
     ("jackin-runtime", "jackin-tui"),
 ];
 

@@ -76,6 +76,10 @@ impl DialogBodyScroll {
 }
 
 /// Status-footer hover state.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement W2; bit-field mirrors the L3 status-footer layout"
+)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StatusFooterHover {
     pub left: bool,
