@@ -204,7 +204,7 @@ fn rich_exit_dialog(
     records: &[(IsolationRecord, PreservedReason)],
 ) -> ExitDialogChoice {
     // D24: pre-fetch changed-file lists for each preserved worktree.
-    let worktrees_per_record: Vec<Vec<jackin_launch::WorktreeInspect>> = records
+    let worktrees_per_record: Vec<Vec<jackin_launch_tui::WorktreeInspect>> = records
         .iter()
         .map(|(rec, _)| {
             vec![crate::isolation::git_inspect::worktree_inspect(

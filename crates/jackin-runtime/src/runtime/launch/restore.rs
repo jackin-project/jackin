@@ -14,7 +14,7 @@ fn launch_candidate_for_manifest(
     paths: &JackinPaths,
     manifest: &InstanceManifest,
     label: String,
-) -> jackin_launch::LaunchCandidate {
+) -> jackin_launch_tui::LaunchCandidate {
     let state_dir = paths.data_dir.join(&manifest.container_base);
     let records = crate::isolation::state::read_records(&state_dir).unwrap_or_default();
     let is_dirty = records.iter().any(|r| {
@@ -28,7 +28,7 @@ fn launch_candidate_for_manifest(
         .iter()
         .map(|rec| crate::isolation::git_inspect::worktree_inspect(&rec.worktree_path))
         .collect();
-    jackin_launch::LaunchCandidate {
+    jackin_launch_tui::LaunchCandidate {
         label,
         is_dirty,
         inspect,
@@ -50,7 +50,7 @@ pub(super) fn present_restore_choice(
     related: &[RelatedRestoreCandidate],
 ) -> anyhow::Result<RestoreResolution> {
     // Build candidate list (same-role first, then related).
-    let mut launch_candidates: Vec<jackin_launch::LaunchCandidate> = candidates
+    let mut launch_candidates: Vec<jackin_launch_tui::LaunchCandidate> = candidates
         .iter()
         .map(|manifest| {
             launch_candidate_for_manifest(paths, manifest, restore_candidate_label(paths, manifest))
@@ -78,17 +78,17 @@ pub(super) fn present_restore_choice(
         progress.launch_dialog_progress("Unfinished jackin instances", &launch_candidates)?;
 
     match result {
-        jackin_launch::LaunchDialogResult::StartFresh => {
+        jackin_launch_tui::LaunchDialogResult::StartFresh => {
             supersede_restore_candidates(paths, candidates)?;
             Ok(RestoreResolution::StartFresh)
         }
-        jackin_launch::LaunchDialogResult::Restore(i) if i < candidates.len() => Ok(
+        jackin_launch_tui::LaunchDialogResult::Restore(i) if i < candidates.len() => Ok(
             RestoreResolution::RestoreCurrentRole(candidates[i].container_base.clone()),
         ),
-        jackin_launch::LaunchDialogResult::Restore(i) => {
+        jackin_launch_tui::LaunchDialogResult::Restore(i) => {
             recover_related_restore_candidate(&related[i - candidates.len()])
         }
-        jackin_launch::LaunchDialogResult::Delete(i) => {
+        jackin_launch_tui::LaunchDialogResult::Delete(i) => {
             let container = if i < candidates.len() {
                 candidates[i].container_base.clone()
             } else {

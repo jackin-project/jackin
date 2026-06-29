@@ -7,8 +7,8 @@
 //!
 //! | From → To | Why forbidden |
 //! | --- | --- |
-//! | jackin-env → jackin-launch | launch is a TUI; env is infra. |
-//! | jackin-docker → jackin-launch | docker is infra; launch is a TUI. |
+//! | jackin-env → jackin-launch-tui | launch-tui is a TUI; env is infra. |
+//! | jackin-docker → jackin-launch-tui | docker is infra; launch-tui is a TUI. |
 //! | jackin-runtime → jackin-tui | runtime is infra; tui is presentation. |
 //! | jackin-config → jackin-diagnostics | config is domain; diagnostics carries presentation concerns. |
 //! | jackin-manifest → jackin-diagnostics | same as config. |

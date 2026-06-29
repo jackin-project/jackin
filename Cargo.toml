@@ -13,7 +13,7 @@ members = [
     "crates/jackin-image",
     "crates/jackin-manifest",
     "crates/jackin-protocol",
-    "crates/jackin-launch",
+    "crates/jackin-launch-tui",
     "crates/jackin-runtime",
     "crates/jackin-term",
     "crates/jackin-tui",

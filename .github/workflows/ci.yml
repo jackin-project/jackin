@@ -119,7 +119,7 @@ jobs:
               - 'crates/jackin-capsule/**'
               - 'crates/jackin-docker/**'
               - 'crates/jackin-image/**'
-              - 'crates/jackin-launch/**'
+              - 'crates/jackin-launch-tui/**'
               - 'crates/jackin-runtime/**'
             workflows:
               - '.github/workflows/**'

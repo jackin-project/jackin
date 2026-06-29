@@ -67,17 +67,17 @@ pub fn working_content_sync(worktree_path: &str, rel_path: &str) -> Option<Strin
 /// its HEAD and working-tree content. The single source of truth for the
 /// inspect shape, shared by the exit dialog (`finalize`) and the launch dialog
 /// (`restore`) so the two surfaces never drift.
-pub fn worktree_inspect(worktree_path: &str) -> jackin_launch::WorktreeInspect {
+pub fn worktree_inspect(worktree_path: &str) -> jackin_launch_tui::WorktreeInspect {
     let files = changed_files_sync(worktree_path)
         .iter()
-        .map(|f| jackin_launch::FileDiff {
+        .map(|f| jackin_launch_tui::FileDiff {
             status: f.status,
             path: f.path.clone(),
             before: head_content_sync(worktree_path, &f.path),
             after: working_content_sync(worktree_path, &f.path),
         })
         .collect();
-    jackin_launch::WorktreeInspect {
+    jackin_launch_tui::WorktreeInspect {
         label: worktree_path.to_owned(),
         files,
     }

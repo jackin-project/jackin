@@ -8,36 +8,36 @@ use std::io::Write;
 #[cfg(test)]
 use std::time::Duration;
 
-pub use jackin_launch::LaunchCancelled;
-use jackin_launch::LaunchHostTerminal;
-pub use jackin_launch::progress::LaunchProgress;
+pub use jackin_launch_tui::LaunchCancelled;
+use jackin_launch_tui::LaunchHostTerminal;
+pub use jackin_launch_tui::progress::LaunchProgress;
 #[cfg(test)]
-use jackin_launch::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
+use jackin_launch_tui::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
 #[cfg(test)]
-use jackin_launch::tui::components::build_log_dialog::{
+use jackin_launch_tui::tui::components::build_log_dialog::{
     build_log_scroll_metrics, refresh_build_log_layout, render_build_log_dialog,
     wrap_build_log_lines,
 };
 #[cfg(test)]
-use jackin_launch::tui::components::failure_dialog::failure_popup_hyperlink_overlay;
+use jackin_launch_tui::tui::components::failure_dialog::failure_popup_hyperlink_overlay;
 #[cfg(test)]
-use jackin_launch::tui::components::failure_dialog::{
+use jackin_launch_tui::tui::components::failure_dialog::{
     failure_copy_payload, failure_copy_target_at,
 };
 #[cfg(test)]
-use jackin_launch::tui::components::failure_dialog::{
+use jackin_launch_tui::tui::components::failure_dialog::{
     failure_popup_rect_for_rows, failure_popup_rows, failure_popup_value_rect,
 };
 #[cfg(test)]
-use jackin_launch::tui::components::progress_rail::{
+use jackin_launch_tui::tui::components::progress_rail::{
     LABEL_SLIDE_FRAMES, LABEL_VIEW_WIDTH, PROGRESS_RAIL_WIDTH, animated_label_center,
     display_stage_statuses, faded_color, label_edge_fade_factor, label_strip, labels_line,
 };
 #[cfg(test)]
-use jackin_launch::tui::components::prompts::{draw_confirm, draw_error_popup, draw_text_prompt};
+use jackin_launch_tui::tui::components::prompts::{draw_confirm, draw_error_popup, draw_text_prompt};
 #[cfg(test)]
-use jackin_launch::tui::view::render_launch_frame as render_launch_frame_view;
-pub use jackin_launch::{
+use jackin_launch_tui::tui::view::render_launch_frame as render_launch_frame_view;
+pub use jackin_launch_tui::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchMessage, LaunchStage, LaunchTargetKind,
     LaunchView, PromptContextLine, StageLabelTransition, StageStatus, StageView,
     active_stage_index, initial_view, update_launch_view, update_stage,
@@ -136,7 +136,7 @@ pub fn prelaunch_select_choice(
     title: &str,
     items: Vec<String>,
 ) -> anyhow::Result<usize> {
-    jackin_launch::progress::prelaunch_select_choice(
+    jackin_launch_tui::progress::prelaunch_select_choice(
         no_motion,
         title,
         items,
@@ -155,7 +155,7 @@ pub fn standalone_select_with_context(
     context: &[PromptContextLine],
     items: Vec<String>,
 ) -> anyhow::Result<usize> {
-    jackin_launch::progress::standalone_select_with_context(
+    jackin_launch_tui::progress::standalone_select_with_context(
         title,
         context,
         items,
@@ -167,7 +167,7 @@ pub fn standalone_select_with_context(
 /// Standalone error popup for launch-adjacent failures that need operator
 /// acknowledgement in the same rich surface.
 pub fn standalone_error_popup(title: &str, message: &str) -> anyhow::Result<()> {
-    jackin_launch::progress::standalone_error_popup(
+    jackin_launch_tui::progress::standalone_error_popup(
         title,
         message,
         host_terminal(),
@@ -180,9 +180,9 @@ pub fn standalone_exit_dialog_with_inspect(
     title: &str,
     context: &[PromptContextLine],
     options: Vec<String>,
-    worktrees_per_record: &[Vec<jackin_launch::WorktreeInspect>],
+    worktrees_per_record: &[Vec<jackin_launch_tui::WorktreeInspect>],
 ) -> anyhow::Result<usize> {
-    jackin_launch::progress::standalone_exit_dialog_with_inspect(
+    jackin_launch_tui::progress::standalone_exit_dialog_with_inspect(
         title,
         context,
         options,
@@ -195,9 +195,9 @@ pub fn standalone_exit_dialog_with_inspect(
 /// D23/D21 standalone launch dialog with delete-in-place support.
 pub fn standalone_launch_dialog(
     title: &str,
-    candidates: &[jackin_launch::LaunchCandidate],
-) -> anyhow::Result<jackin_launch::LaunchDialogResult> {
-    jackin_launch::progress::standalone_launch_dialog(
+    candidates: &[jackin_launch_tui::LaunchCandidate],
+) -> anyhow::Result<jackin_launch_tui::LaunchDialogResult> {
+    jackin_launch_tui::progress::standalone_launch_dialog(
         title,
         candidates,
         host_terminal(),
@@ -206,7 +206,7 @@ pub fn standalone_launch_dialog(
 }
 
 pub fn rich_terminal_supported() -> bool {
-    jackin_launch::tui::terminal::rich_terminal_supported()
+    jackin_launch_tui::tui::terminal::rich_terminal_supported()
 }
 
 /// Bail with the canonical rich-terminal requirement message unless the
@@ -220,7 +220,7 @@ fn render_launch_frame(
     run_id: &str,
     run_log_path: &str,
     no_motion: bool,
-    rain: Option<&jackin_launch::tui::components::rain::RainState>,
+    rain: Option<&jackin_launch_tui::tui::components::rain::RainState>,
 ) {
     render_launch_frame_view(
         frame,

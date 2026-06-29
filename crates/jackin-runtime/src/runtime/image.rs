@@ -26,7 +26,7 @@ use jackin_image::derived_image::{
     render_derived_dockerfile,
 };
 use jackin_image::version_check;
-use jackin_launch::build_log::DiagnosticsBuildLogSink;
+use jackin_launch_tui::build_log::DiagnosticsBuildLogSink;
 use jackin_manifest::repo::CachedRepo;
 
 use super::naming::{

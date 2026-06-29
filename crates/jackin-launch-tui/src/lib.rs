@@ -1,8 +1,11 @@
-//! Launch progress surface model and UI ownership.
+//! Launch cockpit TUI — the presentation surface for `jackin load`.
 //!
-//! This crate owns the launch cockpit boundary. Non-visual launch
-//! orchestration lives in `progress`, build-log capture lives in `build_log`,
-//! and model/message/update/run/view code lives under `tui`.
+//! Architecture Invariant: this crate is a **presentation** crate.
+//! Allowed dependencies: `jackin-core`, `jackin-diagnostics`, `jackin-tui`.
+//! Infrastructure crates (`jackin-docker`, `jackin-env`, `jackin-runtime`)
+//! must NOT depend on this crate; use the port traits in `jackin-core` instead.
+//! Model/message/update/run/view code lives under `tui`; progress helpers
+//! live under `progress`.
 
 use std::path::{Path, PathBuf};
 

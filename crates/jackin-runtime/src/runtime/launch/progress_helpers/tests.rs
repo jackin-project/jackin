@@ -1,6 +1,6 @@
 use super::StepCounter;
 use crate::runtime::progress::LaunchProgress;
-use jackin_launch::{LaunchCancelled, LaunchDiagnostics};
+use jackin_launch_tui::{LaunchCancelled, LaunchDiagnostics};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

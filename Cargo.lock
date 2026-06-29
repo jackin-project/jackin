@@ -2909,7 +2909,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "jackin-launch"
+name = "jackin-launch-tui"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
@@ -2978,7 +2978,7 @@ dependencies = [
  "jackin-docker",
  "jackin-env",
  "jackin-image",
- "jackin-launch",
+ "jackin-launch-tui",
  "jackin-manifest",
  "jackin-protocol",
  "jackin-tui",
