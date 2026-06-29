@@ -392,7 +392,7 @@ pub(super) fn oauth_origin(path: &Path) -> String {
     // allocates for non-UTF-8 container paths; `&Cow<str>` coerces to `&str`.
     format!(
         "OAuth · {}",
-        jackin_tui::shorten_home(&path.to_string_lossy())
+        jackin_core::shorten_home(&path.to_string_lossy())
     )
 }
 pub(super) fn titlecase_ascii(value: &str) -> String {

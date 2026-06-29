@@ -2741,6 +2741,7 @@ dependencies = [
  "jackin-protocol",
  "jackin-term",
  "jackin-tui",
+ "jackin-usage",
  "nix 0.31.3",
  "portable-pty",
  "procfs",
@@ -3059,6 +3060,29 @@ dependencies = [
  "crossterm",
  "jackin-tui",
  "ratatui",
+]
+
+[[package]]
+name = "jackin-usage"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "chrono",
+ "dhat",
+ "fs2",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-protocol",
+ "nix 0.31.3",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "turso",
+ "url",
 ]
 
 [[package]]

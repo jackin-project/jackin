@@ -22,7 +22,6 @@ pub mod exec;
 pub mod exit_assess;
 pub mod firewall;
 pub mod git_context;
-pub mod logging;
 pub mod mcp_server;
 pub mod output;
 pub mod pid1;
@@ -34,12 +33,25 @@ pub mod services;
 pub mod session;
 pub mod socket;
 pub mod sudo_provision;
-pub mod telemetry;
-pub(crate) mod telemetry_store;
-pub(crate) mod token_monitor;
-pub(crate) mod usage;
 pub mod util;
 
 /// Terminal-rendering code — all UI paint/layout lives here.
 pub mod tui;
 pub mod wordlist;
+
+// Logging infrastructure lives in jackin-usage; re-export so all
+// capsule modules that call crate::clog! / crate::cdebug! still work —
+// $crate in the macro expands to jackin_usage, which has write_line.
+pub mod logging {
+    pub use jackin_usage::logging::*;
+}
+pub use jackin_usage::{cdebug, clog};
+pub mod telemetry {
+    pub use jackin_usage::telemetry::*;
+}
+pub mod token_monitor {
+    pub use jackin_usage::token_monitor::*;
+}
+pub mod usage {
+    pub use jackin_usage::usage::*;
+}

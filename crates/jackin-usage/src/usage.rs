@@ -48,12 +48,12 @@ const AMP_HANDOFF_SECRETS_PATH: &str = "/jackin/amp/secrets.json";
 const KIMI_HANDOFF_HOME: &str = "/jackin/kimi-code";
 const GROK_HANDOFF_AUTH_PATH: &str = "/jackin/grok/auth.json";
 const CLAUDE_HANDOFF_CREDENTIALS_PATH: &str = "/jackin/claude/credentials.json";
-pub(crate) const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db";
+pub const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db";
 
 static MATERIALIZED_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone)]
-pub(crate) struct UsageCache {
+pub struct UsageCache {
     snapshots: HashMap<String, CachedUsage>,
     codex_rpc_gate: ManagedCliLaunchGate,
     grok_rpc_gate: ManagedCliLaunchGate,
@@ -80,9 +80,9 @@ struct UsageRefreshResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UsageRefreshTarget {
-    pub(crate) agent: String,
-    pub(crate) provider: Option<String>,
+pub struct UsageRefreshTarget {
+    pub agent: String,
+    pub provider: Option<String>,
 }
 
 impl UsageRefreshTarget {
@@ -186,13 +186,18 @@ impl UsageSurface {
 }
 
 impl UsageCache {
-    #[cfg(test)]
-    pub(crate) fn set_telemetry_store_path(&mut self, path: PathBuf) {
+    /// Test-only helper: pin the snapshot path. Kept `pub` (not `#[cfg(test)]`)
+    /// because `jackin-capsule`'s `daemon/tests.rs` uses it from a separate
+    /// crate and Rust's `cfg(test)` does not propagate across crates.
+    #[doc(hidden)]
+    pub fn set_telemetry_store_path(&mut self, path: PathBuf) {
         self.telemetry_store_path = path;
     }
 
-    #[cfg(test)]
-    pub(crate) fn insert_snapshot_for_test(
+    /// Test-only helper: seed a snapshot into the cache. Kept `pub` for the
+    /// same cross-crate reason as `set_telemetry_store_path`.
+    #[doc(hidden)]
+    pub fn insert_snapshot_for_test(
         &mut self,
         agent: &str,
         focused_provider: Option<&str>,
@@ -204,7 +209,7 @@ impl UsageCache {
         );
     }
 
-    pub(crate) fn focused_status_bar_label(
+    pub fn focused_status_bar_label(
         &self,
         focused_agent: Option<&str>,
         focused_provider: Option<&str>,
@@ -224,11 +229,11 @@ impl UsageCache {
         Some("refreshing".to_owned())
     }
 
-    pub(crate) fn account_snapshot_views(&self) -> Vec<AccountUsageSnapshotView> {
+    pub fn account_snapshot_views(&self) -> Vec<AccountUsageSnapshotView> {
         account_snapshot_views_from_cache(&self.snapshots)
     }
 
-    pub(crate) fn focused_snapshot(
+    pub fn focused_snapshot(
         &mut self,
         focused_agent: Option<&str>,
         focused_provider: Option<&str>,
@@ -276,7 +281,7 @@ impl UsageCache {
             focused = focused.is_some(),
         )
     )]
-    pub(crate) fn refresh_active_account_snapshots(
+    pub fn refresh_active_account_snapshots(
         &mut self,
         active_targets: &[UsageRefreshTarget],
         focused: Option<UsageRefreshTarget>,
@@ -414,7 +419,7 @@ impl UsageCache {
         self.refresh_schedule.in_flight = false;
     }
 
-    pub(crate) fn request_account_refresh(&mut self, target: &UsageRefreshTarget, now: Instant) {
+    pub fn request_account_refresh(&mut self, target: &UsageRefreshTarget, now: Instant) {
         self.refresh_schedule.mark_due(target, now);
     }
 
@@ -993,7 +998,7 @@ fn canonical_usage_cache_key(agent: &str, focused_provider: Option<&str>) -> Str
 }
 
 #[cfg(test)]
-pub(crate) fn resolved_usage_provider_label(
+pub fn resolved_usage_provider_label(
     agent: &str,
     focused_provider: Option<&str>,
 ) -> Option<&'static str> {
@@ -1100,7 +1105,7 @@ fn quota_amounts_for_account_snapshot(
     )
 }
 
-pub(crate) fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {
+pub fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'static str {
     match status {
         UsageSnapshotStatus::Fresh => "fresh",
         UsageSnapshotStatus::Stale => "stale",
@@ -1112,7 +1117,7 @@ pub(crate) fn usage_status_storage_label(status: UsageSnapshotStatus) -> &'stati
     }
 }
 
-pub(crate) fn usage_source_storage_label(source: UsageSource) -> &'static str {
+pub fn usage_source_storage_label(source: UsageSource) -> &'static str {
     match source {
         UsageSource::ProviderApi => "provider_api",
         UsageSource::Cli => "cli",
@@ -1122,7 +1127,7 @@ pub(crate) fn usage_source_storage_label(source: UsageSource) -> &'static str {
     }
 }
 
-pub(crate) fn usage_confidence_storage_label(confidence: UsageConfidence) -> &'static str {
+pub fn usage_confidence_storage_label(confidence: UsageConfidence) -> &'static str {
     match confidence {
         UsageConfidence::Authoritative => "authoritative",
         UsageConfidence::Estimated => "estimated",
@@ -5821,7 +5826,7 @@ fn fetch_amp_cli_usage() -> Result<AmpCliUsage, String> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ClaudeUsageDiagnostic {
+pub struct ClaudeUsageDiagnostic {
     pub command: String,
     pub args: Vec<String>,
     pub success: bool,
@@ -5831,7 +5836,7 @@ pub(crate) struct ClaudeUsageDiagnostic {
     pub fetched_at_epoch: i64,
 }
 
-pub(crate) fn run_claude_usage_diagnostic() -> Result<ClaudeUsageDiagnostic, String> {
+pub fn run_claude_usage_diagnostic() -> Result<ClaudeUsageDiagnostic, String> {
     run_claude_usage_diagnostic_with(|command, args, timeout| {
         run_cli_with_timeout_full(command, args, timeout)
     })
@@ -5956,7 +5961,7 @@ fn now_epoch() -> i64 {
         .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
-pub(crate) fn relative_updated_label(fetched_at: i64, now_epoch: i64) -> String {
+pub fn relative_updated_label(fetched_at: i64, now_epoch: i64) -> String {
     let age = now_epoch.saturating_sub(fetched_at).max(0);
     if age < 60 {
         "Updated just now".to_owned()

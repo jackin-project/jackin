@@ -19,7 +19,7 @@ use turso::{Connection, Row, params};
 const SCHEMA_VERSION: &str = "4";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct StoredAccountUsageSnapshot {
+pub struct StoredAccountUsageSnapshot {
     pub provider: String,
     pub account_key_hash: String,
     pub account_label: String,
@@ -48,11 +48,11 @@ pub(crate) struct StoredAccountUsageSnapshot {
 }
 
 #[cfg(test)]
-pub(crate) fn store_usage_snapshot(path: &Path, view: &FocusedUsageView) -> Result<(), String> {
+pub fn store_usage_snapshot(path: &Path, view: &FocusedUsageView) -> Result<(), String> {
     store_usage_snapshots(path, std::slice::from_ref(view))
 }
 
-pub(crate) fn store_usage_snapshots(path: &Path, views: &[FocusedUsageView]) -> Result<(), String> {
+pub fn store_usage_snapshots(path: &Path, views: &[FocusedUsageView]) -> Result<(), String> {
     let path = path.to_path_buf();
     let rows = views
         .iter()
@@ -416,7 +416,7 @@ fn quota_amounts(bucket: &QuotaBucketView) -> QuotaAmounts {
 }
 
 #[cfg(test)]
-pub(crate) fn focused_usage_view(
+pub fn focused_usage_view(
     path: &Path,
     focused_agent: Option<&str>,
     focused_provider: Option<&str>,
@@ -769,7 +769,7 @@ fn stored_account_snapshots(path: &Path) -> Result<Vec<StoredAccountUsageSnapsho
 }
 
 #[cfg(test)]
-pub(crate) fn schema_version(path: &Path) -> Result<Option<String>, String> {
+pub fn schema_version(path: &Path) -> Result<Option<String>, String> {
     let path = path.to_path_buf();
     block_on_store(async move {
         let conn = open_store(&path).await?;

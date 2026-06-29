@@ -33,6 +33,7 @@ jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
 # host injects. Pulls the opentelemetry stack into the capsule image.
 jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics", features = ["otlp"] }
 jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
+jackin-usage = { version = "0.6.0-dev", path = "../jackin-usage" }
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

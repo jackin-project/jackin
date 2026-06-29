@@ -1,0 +1,42 @@
+[package]
+name = "jackin-usage"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Usage, pricing, telemetry, and token-monitor subsystem for the jackin-capsule in-container daemon."
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "jackin_usage"
+path = "src/lib.rs"
+
+[features]
+default = []
+dhat-heap = ["dep:dhat"]
+
+[dependencies]
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics", features = ["otlp"] }
+anyhow = "1.0"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+fs2 = "0.4"
+nix = { version = "0.31", features = ["term"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["rt", "sync", "macros", "time", "net"] }
+tracing = "0.1"
+turso = { version = "0.7.0-pre.7", default-features = false }
+url = "2"
+dhat = { version = "0.3.3", optional = true }
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+[lints]
+workspace = true

@@ -6,12 +6,12 @@
 //! tick (self-throttled to a 30s/60s cadence); totals are served on demand
 //! through the `ClientMsg::TokenUsage` control reply.
 
-pub(crate) mod amp;
-pub(crate) mod claude;
-pub(crate) mod codex;
-pub(crate) mod kimi;
-pub(crate) mod opencode;
-pub(crate) mod pricing;
+pub mod amp;
+pub mod claude;
+pub mod codex;
+pub mod kimi;
+pub mod opencode;
+pub mod pricing;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -23,18 +23,18 @@ use jackin_protocol::control::TokenUsageSummary;
 
 /// Aggregated token totals for one session.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct TokenTotals {
-    pub(crate) input_tokens: u64,
-    pub(crate) output_tokens: u64,
-    pub(crate) cache_read_tokens: u64,
-    pub(crate) cache_write_tokens: u64,
+pub struct TokenTotals {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_tokens: u64,
     /// Pre-calculated cost when the provider stream provides it directly, or the
     /// pricing-table estimate filled in after a poll.
-    pub(crate) cost_usd: Option<f64>,
+    pub cost_usd: Option<f64>,
     /// Most recently used model in this session.
-    pub(crate) model: Option<String>,
+    pub model: Option<String>,
     /// Start of the current 5-hour billing window (Claude-specific).
-    pub(crate) window_start: Option<SystemTime>,
+    pub window_start: Option<SystemTime>,
 }
 
 /// Recompute accumulator shared by the sum-per-message adapters (Claude, Kimi,
@@ -43,15 +43,15 @@ pub(crate) struct TokenTotals {
 /// never double-counts. (Codex keeps its own accumulator — its wire format is a
 /// monotonic cumulative, not a per-message sum.)
 #[derive(Debug, Default)]
-pub(crate) struct SpendAcc {
-    pub(crate) input: u64,
-    pub(crate) output: u64,
-    pub(crate) cache_read: u64,
-    pub(crate) cache_write: u64,
-    pub(crate) cost: f64,
-    pub(crate) has_cost: bool,
-    pub(crate) model: Option<String>,
-    pub(crate) seen: bool,
+pub struct SpendAcc {
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_write: u64,
+    pub cost: f64,
+    pub has_cost: bool,
+    pub model: Option<String>,
+    pub seen: bool,
 }
 
 impl SpendAcc {
@@ -59,7 +59,7 @@ impl SpendAcc {
     /// so polling the same logs twice yields the same totals. A model/cost is
     /// only written when this pass actually resolved one, so a model-less pass
     /// never clobbers a previously-resolved model. Returns whether anything moved.
-    pub(crate) fn commit(self, totals: &mut TokenTotals) -> bool {
+    pub fn commit(self, totals: &mut TokenTotals) -> bool {
         let cost = self.has_cost.then_some(self.cost);
         let changed = self.input != totals.input_tokens
             || self.output != totals.output_tokens
@@ -83,7 +83,7 @@ impl SpendAcc {
 }
 
 impl TokenTotals {
-    pub(crate) fn to_summary(&self) -> TokenUsageSummary {
+    pub fn to_summary(&self) -> TokenUsageSummary {
         TokenUsageSummary {
             input_tokens: self.input_tokens,
             output_tokens: self.output_tokens,
@@ -97,19 +97,19 @@ impl TokenTotals {
 
 /// Per-session token monitor state.
 #[derive(Debug)]
-pub(crate) struct TokenSession {
-    pub(crate) agent: Agent,
-    pub(crate) totals: TokenTotals,
+pub struct TokenSession {
+    pub agent: Agent,
+    pub totals: TokenTotals,
     /// Last rowid seen in `SQLite` (for `OpenCode` incremental reads).
-    pub(crate) last_rowid: i64,
+    pub last_rowid: i64,
     /// Time of last poll.
-    pub(crate) last_polled: Instant,
+    pub last_polled: Instant,
     /// Consecutive polls with no new data (for back-off).
-    pub(crate) silent_polls: u32,
+    pub silent_polls: u32,
 }
 
 impl TokenSession {
-    pub(crate) fn new(agent: Agent) -> Self {
+    pub fn new(agent: Agent) -> Self {
         Self {
             agent,
             totals: TokenTotals::default(),
@@ -121,17 +121,17 @@ impl TokenSession {
 
     /// Poll interval considering back-off.
     /// Base: 30s; after 5 consecutive silent polls: 60s.
-    pub(crate) fn poll_interval_secs(&self) -> u64 {
+    pub fn poll_interval_secs(&self) -> u64 {
         if self.silent_polls >= 5 { 60 } else { 30 }
     }
 
     /// Returns true if a poll is due.
-    pub(crate) fn poll_due(&self) -> bool {
+    pub fn poll_due(&self) -> bool {
         self.last_polled.elapsed().as_secs() >= self.poll_interval_secs()
     }
 
     /// Poll for new token data. Returns `true` when totals changed.
-    pub(crate) async fn poll(&mut self) -> bool {
+    pub async fn poll(&mut self) -> bool {
         self.last_polled = Instant::now();
         let changed = match self.agent {
             Agent::Claude => claude::poll_session(self),
@@ -169,20 +169,20 @@ impl TokenSession {
 /// Read a `u64` field from a JSON object, defaulting to 0 when the key is
 /// absent or not an unsigned integer. Folds the `get(..).and_then(as_u64)
 /// .unwrap_or(0)` chain repeated across every provider's usage parse.
-pub(crate) fn json_u64(v: &serde_json::Value, key: &str) -> u64 {
+pub fn json_u64(v: &serde_json::Value, key: &str) -> u64 {
     v.get(key).and_then(serde_json::Value::as_u64).unwrap_or(0)
 }
 
 /// Default recursion bound for providers that nest session logs (Claude one
 /// level `projects/<dir>/*.jsonl`, Codex three `sessions/YYYY/MM/DD/*.jsonl`);
 /// also a guard against a pathological tree.
-pub(crate) const PROVIDER_WALK_DEPTH: usize = 8;
+pub const PROVIDER_WALK_DEPTH: usize = 8;
 
 /// Walk `base_dirs` up to `max_depth` levels deep and return every file with
 /// extension `ext`. `max_depth = 0` reads only the top level of each base dir
 /// (Amp's flat `threads/*.json`); deeper providers pass [`PROVIDER_WALK_DEPTH`].
 /// A missing or unreadable directory yields no files, never an error.
-pub(crate) fn find_provider_files(
+pub fn find_provider_files(
     base_dirs: &[&str],
     ext: &str,
     max_depth: usize,
@@ -219,7 +219,7 @@ pub(crate) fn find_provider_files(
 /// that as "the file is empty" and recompute a smaller total — under the SET
 /// model that would silently regress a monotonic counter. Callers abort the
 /// recompute on `Err` and keep the prior totals instead.
-pub(crate) fn read_file_text(path: &Path) -> std::io::Result<Option<String>> {
+pub fn read_file_text(path: &Path) -> std::io::Result<Option<String>> {
     match std::fs::read_to_string(path) {
         Ok(text) => Ok(Some(text)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -236,7 +236,7 @@ pub(crate) fn read_file_text(path: &Path) -> std::io::Result<Option<String>> {
 /// `label` + path). Both collapse to the same caller action: keep the prior
 /// totals rather than SET a partial recompute that could regress a monotonic
 /// counter. `Some(acc)` is a complete pass the caller commits.
-pub(crate) fn recompute_spend(
+pub fn recompute_spend(
     files: &[std::path::PathBuf],
     label: &str,
     mut fold: impl FnMut(&str, &mut SpendAcc),
@@ -257,31 +257,31 @@ pub(crate) fn recompute_spend(
 
 /// The token monitor manages per-session polling.
 #[derive(Debug, Default)]
-pub(crate) struct TokenMonitor {
+pub struct TokenMonitor {
     sessions: HashMap<u64, TokenSession>,
 }
 
 impl TokenMonitor {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
         }
     }
 
     /// Register a new session for monitoring.
-    pub(crate) fn register_session(&mut self, session_id: u64, agent: Agent) {
+    pub fn register_session(&mut self, session_id: u64, agent: Agent) {
         self.sessions.insert(session_id, TokenSession::new(agent));
     }
 
     /// Deregister a session when it exits.
-    pub(crate) fn deregister_session(&mut self, session_id: u64) {
+    pub fn deregister_session(&mut self, session_id: u64) {
         self.sessions.remove(&session_id);
     }
 
     /// Reconcile the tracked set against the currently live agent sessions:
     /// register any newly-seen `(id, agent)` and drop any that have exited.
     /// One robust sync point beats hooking every session spawn/close site.
-    pub(crate) fn reconcile_sessions(&mut self, live: &[(u64, Agent)]) {
+    pub fn reconcile_sessions(&mut self, live: &[(u64, Agent)]) {
         let live_ids: std::collections::HashSet<u64> = live.iter().map(|(id, _)| *id).collect();
         for &(id, agent) in live {
             if !self.sessions.contains_key(&id) {
@@ -300,7 +300,7 @@ impl TokenMonitor {
     }
 
     /// Poll all sessions that are due. Returns session IDs whose totals changed.
-    pub(crate) async fn poll_due_sessions(&mut self) -> Vec<u64> {
+    pub async fn poll_due_sessions(&mut self) -> Vec<u64> {
         let due: Vec<u64> = self
             .sessions
             .iter()
@@ -319,12 +319,12 @@ impl TokenMonitor {
     }
 
     /// Get current totals for a session.
-    pub(crate) fn totals(&self, session_id: u64) -> Option<&TokenTotals> {
+    pub fn totals(&self, session_id: u64) -> Option<&TokenTotals> {
         self.sessions.get(&session_id).map(|s| &s.totals)
     }
 
     #[cfg(test)]
-    pub(crate) fn contains_session(&self, session_id: u64) -> bool {
+    pub fn contains_session(&self, session_id: u64) -> bool {
         self.sessions.contains_key(&session_id)
     }
 }
