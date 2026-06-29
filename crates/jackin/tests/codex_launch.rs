@@ -7,13 +7,13 @@
 mod common;
 
 use common::{FakeRunner, NoOpDocker, install_agent_binary_stubs, install_capsule_binary_stub};
-use jackin::runtime::{LoadOptions, load_role};
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
 use jackin_config::AppConfig;
 use jackin_core::Agent;
 use jackin_core::MountIsolation;
 use jackin_core::RoleSelector;
 use jackin_core::paths::JackinPaths;
+use jackin_runtime::runtime::{LoadOptions, load_role};
 use std::path::Path;
 use tempfile::tempdir;
 

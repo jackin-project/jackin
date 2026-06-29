@@ -2,7 +2,6 @@
 
 use anyhow::{Context, Result};
 
-use crate::runtime;
 use crate::workspace::{self, resolve_path};
 use jackin_config::{AppConfig, LoadWorkspaceInput};
 use jackin_core::JackinPaths;
@@ -11,6 +10,7 @@ use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::BollardDockerClient;
 use jackin_docker::docker_client::DockerApi;
 use jackin_runtime::instance;
+use jackin_runtime::runtime;
 
 use crate::console;
 

@@ -900,7 +900,7 @@ pub(crate) use jackin_console::tui::op_picker::poll_picker_loads;
 
 // ── Role-resolution error helpers ───────────────────────────────────────────
 //
-// These depend on `crate::runtime::RepoError` and `jackin_manifest::repo` types that
+// These depend on `jackin_runtime::runtime::RepoError` and `jackin_manifest::repo` types that
 // are not accessible from `jackin-console`. All callers live in this file.
 
 pub(crate) fn open_role_resolution_error(
@@ -933,16 +933,16 @@ fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
 
     if let Some(repo_err) = err
         .chain()
-        .find_map(|cause| cause.downcast_ref::<crate::runtime::RepoError>())
+        .find_map(|cause| cause.downcast_ref::<jackin_runtime::runtime::RepoError>())
     {
         return match repo_err {
-            crate::runtime::RepoError::CloneFailed(_) => {
+            jackin_runtime::runtime::RepoError::CloneFailed(_) => {
                 role_repository_unavailable_message().into()
             }
-            crate::runtime::RepoError::RemoteMismatch => {
+            jackin_runtime::runtime::RepoError::RemoteMismatch => {
                 role_repository_remote_mismatch_message().into()
             }
-            crate::runtime::RepoError::InvalidRoleRepo(detail) => {
+            jackin_runtime::runtime::RepoError::InvalidRoleRepo(detail) => {
                 invalid_role_repository_message(humanize_invalid_role_repo(detail))
             }
         };

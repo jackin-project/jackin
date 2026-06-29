@@ -11,13 +11,13 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::runtime;
 use crate::workspace::{LoadWorkspaceInput, WorkspaceConfig, expand_tilde};
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
 use jackin_runtime::instance;
+use jackin_runtime::runtime;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TargetKind {

@@ -146,7 +146,7 @@ pub async fn run(
         if let Ok(row) = result.as_ref()
             && row.kept
         {
-            crate::runtime::write_prewarmed_dind_state(paths, row)?;
+            jackin_runtime::runtime::write_prewarmed_dind_state(paths, row)?;
         }
         print_sidecar_container_result(result)?;
     }
@@ -205,7 +205,7 @@ enum SidecarImagePrewarmStatus {
 
 async fn prewarm_sidecar_image_status() -> anyhow::Result<SidecarImagePrewarmStatus> {
     let docker = BollardDockerClient::connect()?;
-    let image = crate::runtime::DIND_IMAGE;
+    let image = jackin_runtime::runtime::DIND_IMAGE;
     let tags = docker.list_image_tags(image).await?;
     if tags.is_empty() {
         docker.pull_image(image).await?;
@@ -217,9 +217,9 @@ async fn prewarm_sidecar_image_status() -> anyhow::Result<SidecarImagePrewarmSta
 
 async fn prewarm_sidecar_container_status(
     keep: bool,
-) -> anyhow::Result<crate::runtime::DindSidecarPrewarm> {
+) -> anyhow::Result<jackin_runtime::runtime::DindSidecarPrewarm> {
     let docker = BollardDockerClient::connect()?;
-    crate::runtime::prewarm_dind_sidecar_container(&docker, keep).await
+    jackin_runtime::runtime::prewarm_dind_sidecar_container(&docker, keep).await
 }
 
 fn print_sidecar_image_result(
@@ -227,7 +227,7 @@ fn print_sidecar_image_result(
 ) -> anyhow::Result<()> {
     println!();
     println!("sidecar");
-    let image = crate::runtime::DIND_IMAGE;
+    let image = jackin_runtime::runtime::DIND_IMAGE;
     match result {
         Ok(SidecarImagePrewarmStatus::Pulled) => {
             println!("  {}  {:<8} pulled", "✓".green(), image);
@@ -245,7 +245,7 @@ fn print_sidecar_image_result(
 }
 
 fn print_sidecar_container_result(
-    result: anyhow::Result<crate::runtime::DindSidecarPrewarm>,
+    result: anyhow::Result<jackin_runtime::runtime::DindSidecarPrewarm>,
 ) -> anyhow::Result<()> {
     println!();
     println!("sidecar container");
@@ -254,7 +254,7 @@ fn print_sidecar_container_result(
             println!(
                 "  {}  {:<8} {:<13} {}ms  {}",
                 "✓".green(),
-                crate::runtime::DIND_IMAGE,
+                jackin_runtime::runtime::DIND_IMAGE,
                 if row.kept {
                     "ready+kept"
                 } else {
@@ -269,7 +269,7 @@ fn print_sidecar_container_result(
             println!(
                 "  {}  {:<8} {error:#}",
                 "✗".red().bold(),
-                crate::runtime::DIND_IMAGE
+                jackin_runtime::runtime::DIND_IMAGE
             );
             Err(error)
         }
@@ -290,7 +290,7 @@ async fn prewarm_role_repos(
         tasks.spawn(async move {
             let mut runner = ShellRunner { debug };
             let selector = target.selector;
-            let result = crate::runtime::register_agent_repo(
+            let result = jackin_runtime::runtime::register_agent_repo(
                 &paths,
                 &selector,
                 &target.role_git,
@@ -468,7 +468,7 @@ async fn prewarm_images(
                 label,
                 is_agent_narrowed: _,
             } = target;
-            let rows = crate::runtime::prewarm_role_images(
+            let rows = jackin_runtime::runtime::prewarm_role_images(
                 &paths,
                 &selector,
                 &role_git,
@@ -495,11 +495,13 @@ async fn prewarm_images(
     Ok(())
 }
 
-fn print_image_prewarm_rows(rows: Vec<crate::runtime::RoleImagePrewarmRow>) -> anyhow::Result<()> {
+fn print_image_prewarm_rows(
+    rows: Vec<jackin_runtime::runtime::RoleImagePrewarmRow>,
+) -> anyhow::Result<()> {
     for row in rows {
         let status = match row.status {
-            crate::runtime::ImagePrewarmStatus::Reused => "reused",
-            crate::runtime::ImagePrewarmStatus::Built => "built",
+            jackin_runtime::runtime::ImagePrewarmStatus::Reused => "reused",
+            jackin_runtime::runtime::ImagePrewarmStatus::Built => "built",
         };
         println!(
             "  {}  {:<8} {:<6} {}",

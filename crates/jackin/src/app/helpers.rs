@@ -2,12 +2,12 @@
 
 use anyhow::Result;
 
-use crate::runtime;
 use jackin_config::{AppConfig, WorkspaceConfig};
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
 use jackin_runtime::instance;
+use jackin_runtime::runtime;
 
 pub(super) async fn resolve_role_to_container(
     class: &RoleSelector,

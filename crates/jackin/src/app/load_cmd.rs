@@ -5,7 +5,6 @@ use anyhow::{Context, Result};
 use crate::cli::cleanup::EjectArgs;
 use crate::cli::role::{HardlineArgs, LoadArgs};
 use crate::console;
-use crate::runtime;
 use crate::workspace::{LoadWorkspaceInput, parse_mount_spec_resolved, resolve_load_workspace};
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
@@ -13,6 +12,7 @@ use jackin_core::{RoleSelector, Selector};
 use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::BollardDockerClient;
 use jackin_runtime::instance;
+use jackin_runtime::runtime;
 
 use super::{
     ConsoleInPlaceHandler, HardlineAction,

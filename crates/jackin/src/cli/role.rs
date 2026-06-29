@@ -63,7 +63,7 @@ pub struct LoadArgs {
     pub role_branch: Option<String>,
     /// Docker security profile for this launch.
     #[arg(long, value_name = "PROFILE", value_parser = parse_docker_profile)]
-    pub docker_profile: Option<crate::runtime::DockerSecurityProfile>,
+    pub docker_profile: Option<jackin_runtime::runtime::DockerSecurityProfile>,
     /// Print the resolved launch plan (workspace, role, mounts, auth decisions,
     /// derived image) and exit without spawning any containers.
     #[arg(long)]
@@ -83,9 +83,9 @@ fn parse_agent(s: &str) -> Result<jackin_core::Agent, String> {
         .map_err(|e: jackin_core::ParseAgentError| e.to_string())
 }
 
-fn parse_docker_profile(s: &str) -> Result<crate::runtime::DockerSecurityProfile, String> {
+fn parse_docker_profile(s: &str) -> Result<jackin_runtime::runtime::DockerSecurityProfile, String> {
     s.parse()
-        .map_err(|e: crate::runtime::docker_profile::ParseProfileError| e.to_string())
+        .map_err(|e: jackin_runtime::runtime::docker_profile::ParseProfileError| e.to_string())
 }
 
 /// Reattach to a running role's session

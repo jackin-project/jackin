@@ -5,9 +5,9 @@ use serde::Serialize;
 
 use crate::cli::format::{OutputEnvelope, OutputFormat};
 use crate::cli::{BANNER, HELP_STYLES};
-use crate::runtime::snapshot;
 use jackin_core::JackinPaths;
 use jackin_runtime::instance::{InstanceIndex, InstanceStatus};
+use jackin_runtime::runtime::snapshot;
 
 mod store;
 

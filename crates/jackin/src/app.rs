@@ -41,13 +41,13 @@ use anyhow::Result;
 
 use crate::cli::role::ConsoleArgs;
 use crate::cli::{Cli, Command};
-use crate::runtime;
 use jackin_config::{self, AppConfig};
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
 use jackin_runtime::instance;
+use jackin_runtime::runtime;
 
 use self::context::prompt_agent_choice_if_needed;
 

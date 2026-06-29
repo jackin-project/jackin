@@ -7,7 +7,8 @@ pub(super) mod agents {
         role: &jackin_core::RoleSelector,
         runner: &mut impl jackin_docker::CommandRunner,
     ) -> anyhow::Result<Vec<jackin_core::Agent>> {
-        crate::runtime::resolve_supported_agents_for_console(paths, config, role, runner).await
+        jackin_runtime::runtime::resolve_supported_agents_for_console(paths, config, role, runner)
+            .await
     }
 
     pub(crate) async fn load_inline_picker_choices(
@@ -482,7 +483,7 @@ pub(super) mod instances {
         targets: &[String],
     ) -> Vec<(
         String,
-        anyhow::Result<Option<crate::runtime::snapshot::InstanceSnapshot>>,
+        anyhow::Result<Option<jackin_runtime::runtime::snapshot::InstanceSnapshot>>,
     )> {
         const SNAPSHOT_FANOUT_CHUNK: usize = 8;
         let mut results = Vec::with_capacity(targets.len());
@@ -494,8 +495,9 @@ pub(super) mod instances {
                     .map(|container| {
                         let container = container.clone();
                         s.spawn(move || {
-                            let result =
-                                crate::runtime::snapshot::fetch_snapshot(paths, &container);
+                            let result = jackin_runtime::runtime::snapshot::fetch_snapshot(
+                                paths, &container,
+                            );
                             (container, result)
                         })
                     })
@@ -575,7 +577,8 @@ pub(super) mod role_load {
         debug: bool,
     ) -> anyhow::Result<()> {
         std::panic::AssertUnwindSafe(async {
-            crate::runtime::register_agent_repo(paths, selector, git_url, runner, debug).await?;
+            jackin_runtime::runtime::register_agent_repo(paths, selector, git_url, runner, debug)
+                .await?;
             Ok::<_, anyhow::Error>(())
         })
         .catch_unwind()
@@ -605,11 +608,11 @@ pub(super) mod workspace_save {
         paths: jackin_core::JackinPaths,
         workspace_name: String,
         prospective_mounts: Vec<jackin_config::MountConfig>,
-    ) -> BlockingSubscription<anyhow::Result<crate::runtime::drift::DriftDetection>> {
+    ) -> BlockingSubscription<anyhow::Result<jackin_runtime::runtime::drift::DriftDetection>> {
         jackin_tui::runtime::spawn_named_async_subscription("jackin-drift-check", async move {
             async {
                 let docker = jackin_docker::docker_client::BollardDockerClient::connect()?;
-                crate::runtime::drift::detect_workspace_edit_drift(
+                jackin_runtime::runtime::drift::detect_workspace_edit_drift(
                     &paths,
                     &workspace_name,
                     &prospective_mounts,

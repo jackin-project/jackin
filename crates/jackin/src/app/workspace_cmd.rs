@@ -412,7 +412,7 @@ pub(super) async fn handle(
             .is_ok_and(|r| !r.is_empty());
             let detection = if has_records {
                 let docker = connect_docker()?;
-                crate::runtime::drift::detect_workspace_edit_drift(
+                jackin_runtime::runtime::drift::detect_workspace_edit_drift(
                     paths,
                     &name,
                     &prospective_mounts,
@@ -420,7 +420,7 @@ pub(super) async fn handle(
                 )
                 .await?
             } else {
-                crate::runtime::drift::DriftDetection::default()
+                jackin_runtime::runtime::drift::DriftDetection::default()
             };
             if !detection.running_containers.is_empty() {
                 anyhow::bail!(

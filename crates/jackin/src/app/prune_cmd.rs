@@ -5,11 +5,11 @@ use owo_colors::OwoColorize;
 
 use crate::cli::PruneCommand;
 use crate::cli::cleanup::PurgeArgs;
-use crate::runtime;
 use jackin_core::JackinPaths;
 use jackin_core::Selector;
 use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::BollardDockerClient;
+use jackin_runtime::runtime;
 
 use super::{resolve_instance_reference, resolve_role_to_container};
 
