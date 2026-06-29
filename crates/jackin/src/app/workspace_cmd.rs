@@ -590,7 +590,7 @@ pub(super) async fn handle(
                 // CLAUDE_CODE_OAUTH_TOKEN under oauth_token mode is owned
                 // by the claude-token orchestrator; an unset here would
                 // silently break auth at the next launch.
-                if key == crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV
+                if key == jackin_env::CLAUDE_OAUTH_TOKEN_ENV
                     && role.is_none()
                     && ws.claude.as_ref().map(|c| c.auth_forward)
                         == Some(jackin_config::AuthForwardMode::OAuthToken)

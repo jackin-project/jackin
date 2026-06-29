@@ -562,7 +562,7 @@ OLD = "op://Vault/Item/Field"
     let ws: WorkspaceConfig = toml::from_str(toml_input).expect("must parse");
     assert_eq!(
         ws.env.get("OLD").expect("OLD env var present"),
-        &crate::operator_env::EnvValue::Plain("op://Vault/Item/Field".into()),
+        &jackin_core::EnvValue::Plain("op://Vault/Item/Field".into()),
         "bare op:// scalar must deserialize as Plain, not OpRef",
     );
 }
@@ -723,7 +723,7 @@ allowed_roles = ["smith"]
 /// An `op://` env value round-trips its per-ref `account`.
 #[test]
 fn workspace_op_ref_round_trips_account() {
-    use crate::operator_env::{EnvValue, OpRef};
+    use jackin_core::{EnvValue, OpRef};
     let mut env = std::collections::BTreeMap::new();
     env.insert(
         "TOKEN".to_owned(),
@@ -755,7 +755,7 @@ fn workspace_op_ref_round_trips_account() {
 /// An `op://` env value with no account omits the `account` key.
 #[test]
 fn workspace_op_ref_omits_account_when_none() {
-    use crate::operator_env::{EnvValue, OpRef};
+    use jackin_core::{EnvValue, OpRef};
     let mut env = std::collections::BTreeMap::new();
     env.insert(
         "TOKEN".to_owned(),

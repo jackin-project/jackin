@@ -25,7 +25,6 @@ pub mod console;
 pub mod error;
 pub mod isolation;
 pub mod manifest;
-pub mod operator_env;
 pub(crate) mod preflight;
 pub mod role_authoring;
 pub mod runtime;

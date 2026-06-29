@@ -663,24 +663,22 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
     assert!(out.contains("chainargos/*"), "{out}");
 }
 
-/// Test fake for [`crate::operator_env::OpWriteRunner`] used by the
+/// Test fake for [`jackin_env::OpWriteRunner`] used by the
 /// rotate-cleanup tests below. Shared with `jackin-env` via
 /// `jackin_env::test_support::FakeOpWriter` (Phase 2 dedup).
-use crate::operator_env::test_support::FakeOpWriter;
+use jackin_env::test_support::FakeOpWriter;
 
 /// Rotate's prior-item cleanup parses the prior op:// reference,
 /// issues a delete with the parsed UUIDs, and returns Ok.
 #[test]
 fn delete_prior_op_item_with_op_ref_calls_writer_with_parsed_uuids() {
-    let prior = Some(crate::operator_env::EnvValue::OpRef(
-        crate::operator_env::OpRef {
-            op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
-            path: "Personal/Prior/token".into(),
-            account: None,
-            on_demand: false,
-        },
-    ));
-    let new_ref = crate::operator_env::OpRef {
+    let prior = Some(jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+        op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
+        path: "Personal/Prior/token".into(),
+        account: None,
+        on_demand: false,
+    }));
+    let new_ref = jackin_core::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: None,
@@ -699,15 +697,13 @@ fn delete_prior_op_item_with_op_ref_calls_writer_with_parsed_uuids() {
 /// deleted on rotate — it may hold the operator's other fields.
 #[test]
 fn delete_prior_op_item_spares_operator_adopted_item() {
-    let prior = Some(crate::operator_env::EnvValue::OpRef(
-        crate::operator_env::OpRef {
-            op: "op://VAULT_UUID/SHARED_ITEM/token".into(),
-            path: "Personal/My Vault Item/token".into(),
-            account: None,
-            on_demand: false,
-        },
-    ));
-    let new_ref = crate::operator_env::OpRef {
+    let prior = Some(jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+        op: "op://VAULT_UUID/SHARED_ITEM/token".into(),
+        path: "Personal/My Vault Item/token".into(),
+        account: None,
+        on_demand: false,
+    }));
+    let new_ref = jackin_core::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: None,
@@ -726,15 +722,13 @@ fn delete_prior_op_item_spares_operator_adopted_item() {
 /// still return Ok so the freshly-wired token stands.
 #[test]
 fn delete_prior_op_item_skips_delete_on_tag_read_error() {
-    let prior = Some(crate::operator_env::EnvValue::OpRef(
-        crate::operator_env::OpRef {
-            op: "op://VAULT_UUID/OLD_ITEM/token".into(),
-            path: "Personal/Prior/token".into(),
-            account: None,
-            on_demand: false,
-        },
-    ));
-    let new_ref = crate::operator_env::OpRef {
+    let prior = Some(jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+        op: "op://VAULT_UUID/OLD_ITEM/token".into(),
+        path: "Personal/Prior/token".into(),
+        account: None,
+        on_demand: false,
+    }));
+    let new_ref = jackin_core::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: None,
@@ -755,15 +749,13 @@ fn delete_prior_op_item_skips_delete_on_tag_read_error() {
 /// account — otherwise the prior item is orphaned.
 #[test]
 fn delete_prior_op_item_targets_prior_refs_account() {
-    let prior = Some(crate::operator_env::EnvValue::OpRef(
-        crate::operator_env::OpRef {
-            op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
-            path: "Personal/Prior/token".into(),
-            account: Some("account-A".into()),
-            on_demand: false,
-        },
-    ));
-    let new_ref = crate::operator_env::OpRef {
+    let prior = Some(jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+        op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
+        path: "Personal/Prior/token".into(),
+        account: Some("account-A".into()),
+        on_demand: false,
+    }));
+    let new_ref = jackin_core::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: Some("account-B".into()),
@@ -789,7 +781,7 @@ fn delete_prior_op_item_targets_prior_refs_account() {
 /// the literal came from.
 #[test]
 fn delete_prior_op_item_skips_when_prior_is_none_or_literal() {
-    let new_ref = crate::operator_env::OpRef {
+    let new_ref = jackin_core::OpRef {
         op: "op://V/I/F".into(),
         path: "Personal/New/token".into(),
         account: None,
@@ -801,7 +793,7 @@ fn delete_prior_op_item_skips_when_prior_is_none_or_literal() {
 
     let writer = FakeOpWriter::new();
     delete_prior_op_item_with_runner(
-        Some(crate::operator_env::EnvValue::Plain("literal".into())),
+        Some(jackin_core::EnvValue::Plain("literal".into())),
         &new_ref,
         &writer,
     )
@@ -815,7 +807,7 @@ fn delete_prior_op_item_skips_when_prior_is_none_or_literal() {
 /// loss until the operator runs `doctor`.
 #[test]
 fn delete_prior_op_item_skips_when_new_ref_equals_prior() {
-    let same = crate::operator_env::OpRef {
+    let same = jackin_core::OpRef {
         op: "op://V/I/F".into(),
         path: "Personal/Item/token".into(),
         account: None,
@@ -823,7 +815,7 @@ fn delete_prior_op_item_skips_when_new_ref_equals_prior() {
     };
     let writer = FakeOpWriter::new();
     delete_prior_op_item_with_runner(
-        Some(crate::operator_env::EnvValue::OpRef(same.clone())),
+        Some(jackin_core::EnvValue::OpRef(same.clone())),
         &same,
         &writer,
     )
@@ -836,15 +828,13 @@ fn delete_prior_op_item_skips_when_new_ref_equals_prior() {
 /// automation surfaces the orphan.
 #[test]
 fn delete_prior_op_item_propagates_err_with_actionable_hint() {
-    let prior = Some(crate::operator_env::EnvValue::OpRef(
-        crate::operator_env::OpRef {
-            op: "op://V_UUID/I_UUID/F".into(),
-            path: "Personal/Prior/token".into(),
-            account: None,
-            on_demand: false,
-        },
-    ));
-    let new_ref = crate::operator_env::OpRef {
+    let prior = Some(jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+        op: "op://V_UUID/I_UUID/F".into(),
+        path: "Personal/Prior/token".into(),
+        account: None,
+        on_demand: false,
+    }));
+    let new_ref = jackin_core::OpRef {
         op: "op://V_UUID/I_NEW/F".into(),
         path: "Personal/New/token".into(),
         account: None,

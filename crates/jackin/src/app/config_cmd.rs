@@ -16,14 +16,14 @@ pub(super) struct EnvRow {
     value: String,
 }
 
-pub(super) fn resolve_env_value_for_cli(value: &str) -> Result<crate::operator_env::EnvValue> {
+pub(super) fn resolve_env_value_for_cli(value: &str) -> Result<jackin_core::EnvValue> {
     if !value.starts_with("op://") {
-        return Ok(crate::operator_env::EnvValue::Plain(value.to_owned()));
+        return Ok(jackin_core::EnvValue::Plain(value.to_owned()));
     }
 
     // Probe op CLI availability before attempting structural queries.
-    let op_cli = crate::operator_env::OpCli::new();
-    crate::operator_env::OpRunner::probe(&op_cli).map_err(|e| {
+    let op_cli = jackin_env::OpCli::new();
+    jackin_env::OpRunner::probe(&op_cli).map_err(|e| {
         anyhow::anyhow!(
             "`op` CLI not available; cannot resolve `op://...` reference. \
              Install 1Password CLI, or use a non-op:// value.\n\
@@ -31,8 +31,8 @@ pub(super) fn resolve_env_value_for_cli(value: &str) -> Result<crate::operator_e
         )
     })?;
 
-    let op_ref = crate::operator_env::resolve_op_uri_to_ref(value, &op_cli, None)?;
-    Ok(crate::operator_env::EnvValue::OpRef(op_ref))
+    let op_ref = jackin_env::resolve_op_uri_to_ref(value, &op_cli, None)?;
+    Ok(jackin_core::EnvValue::OpRef(op_ref))
 }
 
 pub(super) fn print_env_table(vars: &[(String, String)]) {

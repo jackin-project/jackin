@@ -11,8 +11,8 @@ pub(super) fn handle_claude_token(
     config: &mut AppConfig,
     action: cli::WorkspaceClaudeTokenCommand,
 ) -> Result<()> {
-    use crate::operator_env::OpRef;
     use crate::workspace::token_setup;
+    use jackin_core::OpRef;
 
     fn parse_reuse(input: &str, account: Option<&str>) -> Result<OpRef> {
         if !input.starts_with("op://") {
@@ -27,8 +27,8 @@ pub(super) fn handle_claude_token(
         // so multi-1P-account operators resolve `--reuse` against the
         // pinned account; otherwise a coincidentally-named item in
         // the default account could swap in for the intended one.
-        let probe = crate::operator_env::OpCli::new();
-        crate::operator_env::resolve_op_uri_to_ref(input, &probe, account)
+        let probe = jackin_env::OpCli::new();
+        jackin_env::resolve_op_uri_to_ref(input, &probe, account)
     }
 
     match action {
@@ -204,20 +204,20 @@ pub(super) fn handle_claude_token(
 /// and on a credential-revocation rotation the old token would
 /// remain live in 1P.
 fn delete_prior_op_item(
-    prior: Option<crate::operator_env::EnvValue>,
-    new_ref: &crate::operator_env::OpRef,
+    prior: Option<jackin_core::EnvValue>,
+    new_ref: &jackin_core::OpRef,
     account: Option<String>,
 ) -> Result<()> {
-    let op_cli = crate::operator_env::OpCli::new().with_account(account);
+    let op_cli = jackin_env::OpCli::new().with_account(account);
     delete_prior_op_item_with_runner(prior, new_ref, &op_cli)
 }
 
 pub(crate) fn delete_prior_op_item_with_runner(
-    prior: Option<crate::operator_env::EnvValue>,
-    new_ref: &crate::operator_env::OpRef,
-    op_writer: &dyn crate::operator_env::OpWriteRunner,
+    prior: Option<jackin_core::EnvValue>,
+    new_ref: &jackin_core::OpRef,
+    op_writer: &dyn jackin_env::OpWriteRunner,
 ) -> Result<()> {
-    let Some(crate::operator_env::EnvValue::OpRef(prior_ref)) = prior else {
+    let Some(jackin_core::EnvValue::OpRef(prior_ref)) = prior else {
         return Ok(());
     };
     if prior_ref.op == new_ref.op {
@@ -228,7 +228,7 @@ pub(crate) fn delete_prior_op_item_with_runner(
         );
         return Ok(());
     }
-    let Some(parts) = crate::operator_env::parse_op_reference(&prior_ref.op) else {
+    let Some(parts) = jackin_core::op_reference::parse_op_reference(&prior_ref.op) else {
         eprintln!(
             "[jackin] rotate: prior slot {path:?} ({op}) is not in UUID form; \
              delete by hand if desired",
@@ -404,8 +404,8 @@ fn prompt_interactive_token_store(
     workspace: &str,
     op_account: Option<String>,
 ) -> Result<crate::workspace::token_setup::TokenSetupArgs> {
-    use crate::operator_env::{OpCli, OpStructRunner};
     use crate::workspace::token_setup;
+    use jackin_env::{OpCli, OpStructRunner};
     use std::io::IsTerminal;
 
     if !std::io::stdin().is_terminal() {
@@ -521,13 +521,15 @@ fn prompt_interactive_token_store(
 /// existing field was picked (so the write targets that exact field and
 /// preserves its placement), `New` for an appended field.
 fn prompt_existing_item_section_and_field(
-    op: &crate::operator_env::OpCli,
+    op: &jackin_env::OpCli,
     account_id: Option<&str>,
     vault_id: &str,
     item_id: &str,
-) -> Result<(Option<String>, crate::operator_env::FieldTarget)> {
-    use crate::operator_env::{FieldTarget, OpStructRunner, parse_op_reference};
+) -> Result<(Option<String>, jackin_core::FieldTarget)> {
     use crate::workspace::token_setup;
+    use jackin_core::FieldTarget;
+    use jackin_core::op_reference::parse_op_reference;
+    use jackin_env::OpStructRunner;
 
     let fields = op.item_get(item_id, vault_id, account_id)?;
 
@@ -564,7 +566,7 @@ fn prompt_existing_item_section_and_field(
     };
 
     // Fields scoped to the chosen section.
-    let scoped: Vec<&crate::operator_env::OpField> = fields
+    let scoped: Vec<&jackin_env::OpField> = fields
         .iter()
         .filter(|f| {
             parse_op_reference(&f.reference)
