@@ -15,6 +15,7 @@ pub mod geometry;
 pub mod host_colors;
 pub mod keymap;
 pub mod output;
+pub mod ownership;
 pub mod prune_output;
 pub mod runtime;
 pub mod scroll;

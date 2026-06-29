@@ -34,8 +34,9 @@ pub use summary::{
 };
 pub use terminal::{
     host_screen_owned, reassert_alt_screen, rich_surface_active, rich_terminal_owned,
-    set_host_screen_owned, set_rich_surface_active, set_terminal_title, shorten_home,
+    set_host_screen_owned, set_rich_surface_active, set_terminal_title,
 };
+pub use jackin_core::shorten_home;
 
 /// Verbose-trace helper for `--debug` runs. No-op when the flag is off.
 ///
