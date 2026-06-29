@@ -17,16 +17,11 @@
     reason = "primary CLI crate still carries state-machine invariants under the strict lint transition"
 )]
 
-pub mod agent;
-
 mod app;
 
 pub mod cli;
 pub mod console;
 
-pub(crate) mod diagnostics;
-pub mod docker;
-pub mod docker_client;
 pub mod error;
 pub mod isolation;
 pub mod manifest;
@@ -34,7 +29,6 @@ pub mod operator_env;
 pub(crate) mod preflight;
 pub mod role_authoring;
 pub mod runtime;
-pub mod selector;
 pub mod tui;
 pub mod workspace;
 

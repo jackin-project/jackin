@@ -61,7 +61,7 @@ fn workspace_serializes_default_agent_when_set() {
     let ws = WorkspaceConfig {
         version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/tmp/x".to_owned(),
-        default_agent: Some(crate::agent::Agent::Codex),
+        default_agent: Some(jackin_core::Agent::Codex),
         ..Default::default()
     };
 
@@ -88,7 +88,7 @@ fn workspace_resolves_to_claude_when_unset() {
         workdir: "/tmp/x".to_owned(),
         ..Default::default()
     };
-    assert_eq!(ws.resolved_agent(), crate::agent::Agent::Claude);
+    assert_eq!(ws.resolved_agent(), jackin_core::Agent::Claude);
 }
 
 #[test]
@@ -96,10 +96,10 @@ fn workspace_resolves_to_codex_when_set() {
     let ws = WorkspaceConfig {
         version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/tmp/x".to_owned(),
-        default_agent: Some(crate::agent::Agent::Codex),
+        default_agent: Some(jackin_core::Agent::Codex),
         ..Default::default()
     };
-    assert_eq!(ws.resolved_agent(), crate::agent::Agent::Codex);
+    assert_eq!(ws.resolved_agent(), jackin_core::Agent::Codex);
 }
 
 #[test]

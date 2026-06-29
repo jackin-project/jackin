@@ -414,7 +414,7 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
     config: &mut AppConfig,
     paths: &jackin_core::JackinPaths,
     value: &str,
-    runner: &mut impl crate::docker::CommandRunner,
+    runner: &mut impl jackin_docker::CommandRunner,
 ) {
     let raw = value.trim();
     crate::debug_log!("role", "resolving role loader input: raw={raw:?}");

@@ -41,13 +41,13 @@ use anyhow::Result;
 
 use crate::cli::role::ConsoleArgs;
 use crate::cli::{Cli, Command};
-use crate::docker::ShellRunner;
-use crate::docker_client::{BollardDockerClient, DockerApi};
 use crate::runtime;
-use crate::selector::RoleSelector;
 use crate::tui;
 use jackin_config::{self, AppConfig};
 use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
+use jackin_docker::ShellRunner;
+use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
 use jackin_runtime::instance;
 
 use self::context::prompt_agent_choice_if_needed;
@@ -58,7 +58,7 @@ fn parse_auth_forward_mode_from_cli(raw: &str) -> Result<jackin_config::AuthForw
 }
 
 /// Parse an agent slug as it arrived from the CLI.
-fn parse_agent_from_cli(raw: &str) -> Result<crate::agent::Agent> {
+fn parse_agent_from_cli(raw: &str) -> Result<jackin_core::Agent> {
     raw.parse()
         .map_err(|_| anyhow::anyhow!("unknown agent {raw:?}; expected one of: claude, codex, amp"))
 }
@@ -96,7 +96,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     // otherwise build an exporter that silently never delivers — surface it as a
     // structured fatal error at startup rather than running with broken
     // telemetry the operator believes is working.
-    if let Some(requested) = crate::diagnostics::unsupported_otlp_protocol() {
+    if let Some(requested) = jackin_diagnostics::unsupported_otlp_protocol() {
         return Err(crate::error::JackinError::UnsupportedOtlpProtocol { requested }.into());
     }
 
@@ -113,9 +113,9 @@ pub async fn run(cli: Cli) -> Result<()> {
     // Installs the global tracing subscriber (Defect 47.1 foundation) with
     // the freshly minted run id, so OTLP export (when configured) stamps the
     // id on every span and log record.
-    let diagnostics = crate::diagnostics::RunDiagnostics::start(&paths, debug, command_name)?;
+    let diagnostics = jackin_diagnostics::RunDiagnostics::start(&paths, debug, command_name)?;
     let _diagnostics_guard = diagnostics.activate();
-    crate::diagnostics::prune_old_runs(&paths);
+    jackin_diagnostics::prune_old_runs(&paths);
     if debug {
         announce_debug_run(&diagnostics);
     }
@@ -219,7 +219,7 @@ const fn command_name(command: &Command) -> &'static str {
 /// terminal, gate on Enter so the id is read before the normal flow (rich
 /// or CLI, per terminal capability) takes over. Debug evidence itself is
 /// written only to the run file, never echoed here.
-fn announce_debug_run(diagnostics: &crate::diagnostics::RunDiagnostics) {
+fn announce_debug_run(diagnostics: &jackin_diagnostics::RunDiagnostics) {
     use owo_colors::OwoColorize as _;
     use std::io::{IsTerminal, Write};
     let mut err = std::io::stderr();
@@ -239,7 +239,7 @@ fn announce_debug_run(diagnostics: &crate::diagnostics::RunDiagnostics) {
             "[jackin] diagnostics file: off (OTLP active; set JACKIN_DIAGNOSTICS_FILE=1 to also write it)"
         );
     }
-    match crate::diagnostics::configured_endpoint_summary() {
+    match jackin_diagnostics::configured_endpoint_summary() {
         Some(endpoint) => {
             let _unused = writeln!(err, "[jackin] OTLP endpoint: {endpoint}");
         }
@@ -324,7 +324,7 @@ pub(super) fn resolve_new_session_agent(
     paths: &JackinPaths,
     config: &AppConfig,
     manifest: &instance::InstanceManifest,
-) -> Result<crate::agent::Agent> {
+) -> Result<jackin_core::Agent> {
     let class = RoleSelector::parse(&manifest.role_key)?;
     let workspace_default_agent = manifest
         .workspace_name
@@ -361,11 +361,11 @@ const fn hardline_action_options() -> [(&'static str, HardlineAction); 4] {
 /// runtime in the no-context output until/unless an `--agent` flag is added.
 fn render_auth_show(config: &AppConfig) -> String {
     use std::fmt::Write as _;
-    let claude_mode = jackin_config::resolve_mode(config, crate::agent::Agent::Claude, "", "");
-    let codex_mode = jackin_config::resolve_mode(config, crate::agent::Agent::Codex, "", "");
-    let amp_mode = jackin_config::resolve_mode(config, crate::agent::Agent::Amp, "", "");
-    let kimi_mode = jackin_config::resolve_mode(config, crate::agent::Agent::Kimi, "", "");
-    let opencode_mode = jackin_config::resolve_mode(config, crate::agent::Agent::Opencode, "", "");
+    let claude_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Claude, "", "");
+    let codex_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Codex, "", "");
+    let amp_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Amp, "", "");
+    let kimi_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Kimi, "", "");
+    let opencode_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Opencode, "", "");
     let mut out = String::new();
     let _unused = writeln!(out, "claude: {claude_mode}");
     let _unused = writeln!(out, "codex:  {codex_mode}");

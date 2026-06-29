@@ -5,7 +5,7 @@ pub(super) mod agents {
         paths: &jackin_core::JackinPaths,
         config: &jackin_config::AppConfig,
         role: &jackin_core::RoleSelector,
-        runner: &mut impl crate::docker::CommandRunner,
+        runner: &mut impl jackin_docker::CommandRunner,
     ) -> anyhow::Result<Vec<jackin_core::Agent>> {
         crate::runtime::resolve_supported_agents_for_console(paths, config, role, runner).await
     }
@@ -14,7 +14,7 @@ pub(super) mod agents {
         paths: &jackin_core::JackinPaths,
         config: &jackin_config::AppConfig,
         role: &jackin_core::RoleSelector,
-        runner: &mut impl crate::docker::CommandRunner,
+        runner: &mut impl jackin_docker::CommandRunner,
     ) -> anyhow::Result<Option<Vec<jackin_core::Agent>>> {
         let agents = resolve_supported_for_console(paths, config, role, runner).await?;
         if agents.len() < 2 {
@@ -549,7 +549,7 @@ pub(super) mod role_load {
         jackin_tui::runtime::spawn_named_async_subscription(
             "jackin-role-registration",
             async move {
-                let mut runner = crate::docker::ShellRunner {
+                let mut runner = jackin_docker::ShellRunner {
                     debug: crate::tui::is_debug_mode(),
                 };
                 register_with_runner(
@@ -568,7 +568,7 @@ pub(super) mod role_load {
         paths: &jackin_core::JackinPaths,
         selector: &jackin_core::RoleSelector,
         git_url: &str,
-        runner: &mut impl crate::docker::CommandRunner,
+        runner: &mut impl jackin_docker::CommandRunner,
         debug: bool,
     ) -> anyhow::Result<()> {
         std::panic::AssertUnwindSafe(async {
@@ -605,7 +605,7 @@ pub(super) mod workspace_save {
     ) -> BlockingSubscription<anyhow::Result<crate::runtime::drift::DriftDetection>> {
         jackin_tui::runtime::spawn_named_async_subscription("jackin-drift-check", async move {
             async {
-                let docker = crate::docker_client::BollardDockerClient::connect()?;
+                let docker = jackin_docker::docker_client::BollardDockerClient::connect()?;
                 crate::runtime::drift::detect_workspace_edit_drift(
                     &paths,
                     &workspace_name,
@@ -629,7 +629,7 @@ pub(super) mod workspace_save {
                 async {
                     for rec in records {
                         let container_dir = paths.data_dir.join(&rec.container_name);
-                        let mut runner = crate::docker::ShellRunner::default();
+                        let mut runner = jackin_docker::ShellRunner::default();
                         jackin_runtime::isolation::cleanup::force_cleanup_isolated(
                             &rec,
                             &container_dir,

@@ -147,7 +147,7 @@ fn parses_workspace_create_with_default_agent() {
     .unwrap();
     match cli.command {
         Some(Command::Workspace(WorkspaceCommand::Create { default_agent, .. })) => {
-            assert_eq!(default_agent, Some(crate::agent::Agent::Codex));
+            assert_eq!(default_agent, Some(jackin_core::Agent::Codex));
         }
         other => panic!("unexpected command {other:?}"),
     }
@@ -221,7 +221,7 @@ fn parses_workspace_edit_with_default_agent() {
     .unwrap();
     match cli.command {
         Some(Command::Workspace(WorkspaceCommand::Edit { default_agent, .. })) => {
-            assert_eq!(default_agent, Some(crate::agent::Agent::Codex));
+            assert_eq!(default_agent, Some(jackin_core::Agent::Codex));
         }
         other => panic!("unexpected command {other:?}"),
     }

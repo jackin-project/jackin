@@ -3,10 +3,10 @@
 use anyhow::Result;
 
 use crate::cli::{self, ConfigCommand};
-use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
 use jackin_config::{self, AppConfig};
 use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 
 #[derive(tabled::Tabled)]
 pub(super) struct EnvRow {

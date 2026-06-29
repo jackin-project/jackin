@@ -94,7 +94,7 @@ async fn execute_launch_prompt<B>(
     paths: &JackinPaths,
     config: &AppConfig,
     cwd: &std::path::Path,
-    runner: &mut impl crate::docker::CommandRunner,
+    runner: &mut impl jackin_docker::CommandRunner,
     request: LaunchPromptRequest,
 ) -> anyhow::Result<Option<ConsoleOutcome>>
 where
@@ -148,7 +148,7 @@ async fn execute_launch_prompt_dispatch<B>(
     paths: &JackinPaths,
     config: &AppConfig,
     cwd: &std::path::Path,
-    runner: &mut impl crate::docker::CommandRunner,
+    runner: &mut impl jackin_docker::CommandRunner,
     dispatch: LaunchPromptDispatch,
 ) -> anyhow::Result<Option<ConsoleOutcome>>
 where
@@ -174,7 +174,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     cwd: &std::path::Path,
     options: ConsoleRunOptions<'_>,
     action_handler: &mut H,
-    runner: &mut impl crate::docker::CommandRunner,
+    runner: &mut impl jackin_docker::CommandRunner,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
@@ -343,7 +343,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                 }
                 chrome_hover_tracker.clear();
                 if let Some(bar_area) = debug_bar_area {
-                    let active_run = crate::diagnostics::active_run();
+                    let active_run = jackin_diagnostics::active_run();
                     let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
                     let run_id = debug_run_id_label(
                         active_run.as_ref().map(|r| r.run_id()),
@@ -748,7 +748,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                             mouse.row,
                             &ConsoleChromeHover::DebugChip,
                         );
-                        let active_run = crate::diagnostics::active_run();
+                        let active_run = jackin_diagnostics::active_run();
                         if debug_chip_activation_allowed(
                             mouse,
                             no_modal_open,

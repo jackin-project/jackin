@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use jackin::agent::Agent;
+use jackin_core::Agent;
 use jackin_env::{EnvPrompter, PromptResult, resolve_env};
 
 fn sentinel_dir() -> PathBuf {

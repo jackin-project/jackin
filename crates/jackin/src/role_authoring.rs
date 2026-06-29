@@ -9,7 +9,7 @@ use anyhow::Context;
 
 use crate::cli::role::{RoleCommand, RoleCreateArgs, RolePublishLabelsArgs, RoleRepoPathArgs};
 use crate::manifest::migrations::CURRENT_MANIFEST_VERSION;
-use crate::selector::RoleSelector;
+use jackin_core::RoleSelector;
 use jackin_manifest::repo::validate_role_repo;
 use jackin_manifest::repo_contract::{DOCKERFILE_NAME, MANIFEST_FILENAME};
 

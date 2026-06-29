@@ -195,7 +195,7 @@ fn agent_picker_lists_all_allowed_agents_not_filtered_by_existing_overrides() ->
             let mut keys: Vec<String> = picker
                 .roles
                 .iter()
-                .map(jackin::selector::RoleSelector::key)
+                .map(jackin_core::RoleSelector::key)
                 .collect();
             keys.sort();
             assert_eq!(

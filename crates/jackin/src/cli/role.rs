@@ -54,7 +54,7 @@ pub struct LoadArgs {
     /// workspace's `default_agent` field for this launch only. When
     /// neither is set, defaults to claude.
     #[arg(long, value_parser = parse_agent)]
-    pub agent: Option<crate::agent::Agent>,
+    pub agent: Option<jackin_core::Agent>,
     /// Check out a specific branch of the role repository for local testing.
     /// The published image is ignored and the image is built from the branch's
     /// Dockerfile using Docker's layer cache. Useful for verifying a PR before
@@ -78,9 +78,9 @@ pub struct LoadArgs {
     pub format: String,
 }
 
-fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
+fn parse_agent(s: &str) -> Result<jackin_core::Agent, String> {
     s.parse()
-        .map_err(|e: crate::agent::ParseAgentError| e.to_string())
+        .map_err(|e: jackin_core::ParseAgentError| e.to_string())
 }
 
 fn parse_docker_profile(s: &str) -> Result<crate::runtime::DockerSecurityProfile, String> {
@@ -121,7 +121,7 @@ pub struct HardlineArgs {
     pub new: bool,
     /// Agent runtime for `--new` (claude, codex, amp, kimi, or opencode). Defaults to the instance manifest.
     #[arg(long, value_parser = parse_agent, requires = "new")]
-    pub agent: Option<crate::agent::Agent>,
+    pub agent: Option<jackin_core::Agent>,
     /// Open a zsh shell in the selected running instance without an agent slug.
     #[arg(long, conflicts_with_all = ["inspect", "new"])]
     pub shell: bool,

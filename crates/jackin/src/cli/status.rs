@@ -19,8 +19,8 @@ where
 
 use crate::cli::BANNER;
 use crate::cli::format::OutputFormat;
-use crate::docker_client::{BollardDockerClient, ContainerState, DockerApi};
 use jackin_core::JackinPaths;
+use jackin_docker::docker_client::{BollardDockerClient, ContainerState, DockerApi};
 use jackin_runtime::instance::manifest::InstanceIndex;
 
 /// Command string for querying the agent registry over the capsule socket.

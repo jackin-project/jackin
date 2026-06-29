@@ -200,7 +200,7 @@ fn parses_prewarm_agent_filters() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.agents == [crate::agent::Agent::Claude, crate::agent::Agent::Kimi]
+            if args.agents == [jackin_core::Agent::Claude, jackin_core::Agent::Kimi]
     ));
 }
 
@@ -227,7 +227,7 @@ fn parses_prewarm_image_role_filters() {
                 && args.role.as_deref() == Some("agent-smith")
                 && args.role_git.as_deref() == Some("https://example.invalid/agent-smith.git")
                 && args.role_branch.as_deref() == Some("feat/launch-speed")
-                && args.agents == [crate::agent::Agent::Codex]
+                && args.agents == [jackin_core::Agent::Codex]
     ));
 }
 
@@ -340,7 +340,7 @@ fn parses_prewarm_image_workspace_filters() {
                 && args.role.is_none()
                 && args.role_git.is_none()
                 && args.role_branch.as_deref() == Some("feat/launch-speed")
-                && args.agents == [crate::agent::Agent::Claude]
+                && args.agents == [jackin_core::Agent::Claude]
     ));
 }
 

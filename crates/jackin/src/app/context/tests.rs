@@ -325,8 +325,10 @@ fn config_with_workspace(
     config
 }
 
-fn fake_docker_with_running_agents(names: &[&str]) -> crate::docker_client::FakeDockerClient {
-    use crate::docker_client::{ContainerRow, FakeDockerClient};
+fn fake_docker_with_running_agents(
+    names: &[&str],
+) -> jackin_runtime::runtime::test_support::FakeDockerClient {
+    use jackin_docker::docker_client::ContainerRow;
     let rows: Vec<ContainerRow> = names
         .iter()
         .map(|name| ContainerRow {
@@ -334,7 +336,7 @@ fn fake_docker_with_running_agents(names: &[&str]) -> crate::docker_client::Fake
             labels: std::collections::HashMap::default(),
         })
         .collect();
-    FakeDockerClient {
+    jackin_runtime::runtime::test_support::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([rows])),
         ..Default::default()
     }
@@ -398,7 +400,7 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -417,9 +419,9 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
     // inspect returns Running → indexed candidate is live
-    let docker = crate::docker_client::FakeDockerClient {
+    let docker = jackin_runtime::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            crate::docker_client::ContainerState::Running,
+            jackin_docker::docker_client::ContainerState::Running,
         ])),
         ..Default::default()
     };
@@ -449,7 +451,7 @@ async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
         host_workdir_fingerprint: &instance::manifest::host_path_fingerprint(&project),
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -468,9 +470,9 @@ async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
     // inspect returns Running → ad-hoc indexed candidate is live
-    let docker = crate::docker_client::FakeDockerClient {
+    let docker = jackin_runtime::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            crate::docker_client::ContainerState::Running,
+            jackin_docker::docker_client::ContainerState::Running,
         ])),
         ..Default::default()
     };
@@ -495,7 +497,7 @@ fn hardline_candidate_prompt_label_includes_manifest_and_docker_state() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -543,7 +545,7 @@ fn hardline_candidate_prompt_label_counts_running_agent_sessions() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Codex,
+        agent_runtime: jackin_core::Agent::Codex,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -795,7 +797,7 @@ plugins = []
         .expect("multi-agent role with no workspace default must trigger a prompt");
     assert_eq!(
         agents,
-        vec![crate::agent::Agent::Claude, crate::agent::Agent::Codex]
+        vec![jackin_core::Agent::Claude, jackin_core::Agent::Codex]
     );
 }
 
@@ -824,9 +826,9 @@ plugins = []
     assert_eq!(
         agents,
         vec![
-            crate::agent::Agent::Claude,
-            crate::agent::Agent::Codex,
-            crate::agent::Agent::Amp,
+            jackin_core::Agent::Claude,
+            jackin_core::Agent::Codex,
+            jackin_core::Agent::Amp,
         ]
     );
 }
@@ -850,7 +852,7 @@ plugins = []
     );
 
     let result =
-        supported_agents_requiring_prompt(&paths, &selector, Some(crate::agent::Agent::Codex));
+        supported_agents_requiring_prompt(&paths, &selector, Some(jackin_core::Agent::Codex));
     assert!(
         result.is_none(),
         "explicit workspace default_agent must short-circuit the prompt"

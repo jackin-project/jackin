@@ -1518,7 +1518,7 @@ fn github_role_override_picker_filters_already_overridden_roles_via_dispatcher()
     let labels: Vec<String> = picker
         .roles
         .iter()
-        .map(jackin::selector::RoleSelector::key)
+        .map(jackin_core::RoleSelector::key)
         .collect();
     assert!(
         !labels.iter().any(|s| s == "the-architect"),

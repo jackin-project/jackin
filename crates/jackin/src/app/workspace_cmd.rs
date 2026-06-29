@@ -3,14 +3,14 @@
 use anyhow::Result;
 
 use crate::cli::{self, WorkspaceCommand};
-use crate::docker::ShellRunner;
-use crate::docker_client::BollardDockerClient;
 use crate::tui;
 use crate::workspace::{
     self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved, resolve_path,
 };
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
+use jackin_docker::ShellRunner;
+use jackin_docker::docker_client::BollardDockerClient;
 
 #[expect(
     clippy::too_many_lines,

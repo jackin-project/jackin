@@ -11,13 +11,13 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::docker_client::DockerApi;
 use crate::runtime;
-use crate::selector::RoleSelector;
 use crate::tui;
 use crate::workspace::{LoadWorkspaceInput, WorkspaceConfig, expand_tilde};
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
+use jackin_docker::docker_client::DockerApi;
 use jackin_runtime::instance;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -504,8 +504,8 @@ fn preferred_indexed_container(
 pub(crate) fn prompt_agent_choice_if_needed(
     paths: &JackinPaths,
     selector: &RoleSelector,
-    workspace_default: Option<crate::agent::Agent>,
-) -> Result<Option<crate::agent::Agent>> {
+    workspace_default: Option<jackin_core::Agent>,
+) -> Result<Option<jackin_core::Agent>> {
     use std::io::IsTerminal;
 
     let Some(supported) = supported_agents_requiring_prompt(paths, selector, workspace_default)
@@ -538,8 +538,8 @@ pub(crate) fn prompt_agent_choice_if_needed(
 pub(crate) fn supported_agents_requiring_prompt(
     paths: &JackinPaths,
     selector: &RoleSelector,
-    workspace_default: Option<crate::agent::Agent>,
-) -> Option<Vec<crate::agent::Agent>> {
+    workspace_default: Option<jackin_core::Agent>,
+) -> Option<Vec<jackin_core::Agent>> {
     if workspace_default.is_some() {
         return None;
     }

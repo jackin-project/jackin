@@ -1,12 +1,12 @@
 use clap::Args;
 use owo_colors::OwoColorize as _;
 
-use crate::agent::Agent;
 use crate::cli::{BANNER, HELP_STYLES};
-use crate::docker::ShellRunner;
-use crate::selector::RoleSelector;
 use jackin_config::AppConfig;
+use jackin_core::Agent;
 use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
+use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
 
 /// `jackin prewarm` — fill jackin-owned runtime caches before launch.
@@ -64,7 +64,7 @@ pub struct PrewarmArgs {
 
 fn parse_agent(s: &str) -> Result<Agent, String> {
     s.parse()
-        .map_err(|e: crate::agent::ParseAgentError| e.to_string())
+        .map_err(|e: jackin_core::ParseAgentError| e.to_string())
 }
 
 pub async fn run(

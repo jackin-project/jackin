@@ -4,7 +4,7 @@
 //! and a human-readable hint for fixing failures. The `preflight` function
 //! runs a slice of check names, fails on any `Fail`, and returns `Ok(())`
 //! when all pass or warn.
-use crate::docker_client::DockerApi;
+use jackin_docker::docker_client::DockerApi;
 use owo_colors::OwoColorize;
 use std::path::Path;
 
@@ -200,7 +200,7 @@ pub(crate) async fn preflight(
 // ── Individual check implementations ────────────────────────────────────────
 
 async fn check_docker_daemon() -> CheckResult {
-    match crate::docker_client::BollardDockerClient::connect() {
+    match jackin_docker::docker_client::BollardDockerClient::connect() {
         Ok(docker) => {
             // Attempt a lightweight operation (list_containers with empty filter)
             // to verify the daemon is actually reachable.
@@ -433,7 +433,7 @@ fn check_clock_skew() -> CheckResult {
 }
 
 async fn check_orphaned_containers(paths: &jackin_core::JackinPaths) -> CheckResult {
-    use crate::docker_client::{BollardDockerClient, DockerApi};
+    use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
     use jackin_runtime::runtime::naming::LABEL_MANAGED;
 
     let Ok(docker) = BollardDockerClient::connect() else {
