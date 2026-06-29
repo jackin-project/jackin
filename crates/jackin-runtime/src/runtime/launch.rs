@@ -1430,7 +1430,7 @@ pub(super) async fn launch_role_runtime(
     // Reconcile keep_awake AFTER the role container is running but
     // BEFORE the foreground session blocks. This is the only window in
     // which an interactive `jackin load` can spawn caffeinate.
-    super::caffeinate::reconcile(paths, docker, runner).await;
+    jackin_host::caffeinate::reconcile(paths, docker, runner).await;
 
     // Emit a structured container_started event so the run JSONL points at
     // the capsule log regardless of whether the session succeeds (Defect 41).

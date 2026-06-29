@@ -711,7 +711,7 @@ pub async fn prune_all_instances(
     );
     exile_all(paths, docker).await?;
 
-    super::caffeinate::reconcile(paths, docker, runner).await;
+    jackin_host::caffeinate::reconcile(paths, docker, runner).await;
 
     let index = prune_output::start("Reading", "instance index")
         .complete(InstanceIndex::read_or_rebuild(&paths.data_dir), |error| {

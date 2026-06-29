@@ -23,6 +23,7 @@ jackin-docker = { version = "0.6.0-dev", path = "../jackin-docker" }
 jackin-image = { version = "0.6.0-dev", path = "../jackin-image" }
 jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
 jackin-launch-tui = { version = "0.6.0-dev", path = "../jackin-launch-tui" }
+jackin-host = { version = "0.6.0-dev", path = "../jackin-host" }
 jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
 jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 

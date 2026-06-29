@@ -1,0 +1,25 @@
+[package]
+name = "jackin-host"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Host OS integration for jackin: desktop, clipboard, caffeinate/keep-awake. L2 infrastructure."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_host"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+anyhow = "1.0"
+crossterm = "0.29"
+nix = { version = "0.31", features = ["term"] }
+
+[lints]
+workspace = true

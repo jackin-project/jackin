@@ -99,7 +99,7 @@ impl LaunchHostTerminal for HostTerminal {
     }
 
     fn reveal_file(&self, path: &std::path::Path) -> bool {
-        match super::host_desktop::reveal_host_file(path) {
+        match jackin_host::host_desktop::reveal_host_file(path) {
             Ok(()) => true,
             Err(err) => {
                 jackin_diagnostics::emit_compact_line(
@@ -112,7 +112,7 @@ impl LaunchHostTerminal for HostTerminal {
     }
 
     fn open_file(&self, path: &std::path::Path) -> bool {
-        match super::host_desktop::open_host_file(path) {
+        match jackin_host::host_desktop::open_host_file(path) {
             Ok(()) => true,
             Err(err) => {
                 jackin_diagnostics::emit_compact_line(

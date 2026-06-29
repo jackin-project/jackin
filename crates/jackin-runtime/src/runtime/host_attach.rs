@@ -31,11 +31,11 @@ use tokio::signal::unix::{SignalKind, signal};
 use super::attach::{
     HostAttachTransportPlan, attach_proxy_exec_args, select_host_attach_transport,
 };
-use super::host_clipboard::{
+use jackin_host::host_clipboard::{
     is_image_paste_trigger, read_host_clipboard_image, read_host_clipboard_text_path_image,
     read_image_for_paste_trigger, read_image_from_pasted_path,
 };
-use super::host_desktop::{open_host_file, open_host_url, reveal_host_file};
+use jackin_host::host_desktop::{open_host_file, open_host_url, reveal_host_file};
 
 pub const JACKIN_HOST_ATTACH_ENV: &str = "JACKIN_HOST_ATTACH";
 

@@ -2884,6 +2884,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-host"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "jackin-core",
+ "nix 0.31.3",
+]
+
+[[package]]
 name = "jackin-image"
 version = "0.6.0-dev"
 dependencies = [
@@ -2977,6 +2987,7 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-docker",
  "jackin-env",
+ "jackin-host",
  "jackin-image",
  "jackin-launch-tui",
  "jackin-manifest",

@@ -456,7 +456,7 @@ pub(super) async fn start_or_reconnect_capsule_client(
             );
         }
     }
-    super::caffeinate::reconcile(paths, docker, runner).await;
+    jackin_host::caffeinate::reconcile(paths, docker, runner).await;
     reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await
 }
 
@@ -522,7 +522,7 @@ pub async fn spawn_shell_session(
     .await?;
 
     set_role_terminal_title(paths, container_name);
-    super::caffeinate::reconcile(paths, docker, runner).await;
+    jackin_host::caffeinate::reconcile(paths, docker, runner).await;
     if super::host_attach::host_attach_enabled() {
         let result = super::host_attach::run_host_attach_session(
             paths,
@@ -611,7 +611,7 @@ pub async fn spawn_agent_session(
     // git policy toggles are session env consumed by the spawned entrypoint.
     // Each transport encodes them only on the path that consumes it.
     set_role_terminal_title(paths, container_name);
-    super::caffeinate::reconcile(paths, docker, runner).await;
+    jackin_host::caffeinate::reconcile(paths, docker, runner).await;
     if super::host_attach::host_attach_enabled() {
         let mut session_env_overrides: Vec<(String, String)> =
             git_policy_env_pairs(git_coauthor_trailer, git_dco)
@@ -734,7 +734,7 @@ pub async fn hardline_agent_with_focus(
     );
     let attach_outcome = match container_state {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-            super::caffeinate::reconcile(paths, docker, runner).await;
+            jackin_host::caffeinate::reconcile(paths, docker, runner).await;
             reconnect_or_create_session_with_focus(
                 paths,
                 container_name,
