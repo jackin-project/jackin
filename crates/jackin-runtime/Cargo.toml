@@ -57,6 +57,7 @@ url = "2"
 nix = { version = "0.31", features = ["user"] }
 
 [dev-dependencies]
+criterion = { version = "=0.8.2", features = ["html_reports"] }
 tokio = { version = "=1.52.3", features = ["test-util"] }
 
 [build-dependencies]
@@ -64,6 +65,10 @@ jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
 
 [features]
 test-support = []
+
+[[bench]]
+name = "launch_attach"
+harness = false
 
 [lints]
 workspace = true
