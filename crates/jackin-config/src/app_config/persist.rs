@@ -8,7 +8,7 @@ use anyhow::Context as _;
 use jackin_core::JackinPaths;
 use toml_edit::DocumentMut;
 
-use crate::app_config::AppConfig;
+use super::AppConfig;
 use crate::editor::ConfigEditor;
 use crate::migrations;
 use crate::persist::{atomic_write, validate_workspace_file_stem};
@@ -289,7 +289,7 @@ impl AppConfig {
                 atomic_write(&paths.config_file, &contents)?;
             }
             let mut editor = ConfigEditor::open(paths)?;
-            for &(name, git) in crate::app_config_roles::BUILTIN_ROLES {
+            for &(name, git) in super::roles::BUILTIN_ROLES {
                 editor.upsert_builtin_agent(name, git);
             }
             // Take save()'s post-write parse: it preserves [roles.X.env] that

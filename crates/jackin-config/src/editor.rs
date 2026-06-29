@@ -13,7 +13,7 @@ use jackin_core::{Agent, AuthForwardMode, EnvValue, JackinPaths};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::app_config::AppConfig;
-use crate::app_config_persist::{load_split_config, validate_reserved_env_names};
+use crate::app_config::persist::{load_split_config, validate_reserved_env_names};
 use crate::auth::GithubAuthMode;
 use crate::migrations;
 use crate::persist::{atomic_write, validate_workspace_file_stem};

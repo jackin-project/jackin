@@ -2,9 +2,8 @@
 //!
 //! Defines the `AppConfig` struct and its `Default` implementation.
 //! Behavior (load, save, workspace CRUD, mount resolution, role
-//! resolution) lives in the sibling `app_config_persist`,
-//! `app_config_workspaces`, `app_config_mounts`, and `app_config_roles`
-//! modules.
+//! resolution) lives in the child modules `mounts`, `persist`,
+//! `roles`, and `workspaces`.
 
 use std::collections::BTreeMap;
 
@@ -162,6 +161,11 @@ impl Default for AppConfig {
         }
     }
 }
+
+pub mod mounts;
+pub mod persist;
+pub mod roles;
+pub mod workspaces;
 
 #[cfg(test)]
 mod tests;

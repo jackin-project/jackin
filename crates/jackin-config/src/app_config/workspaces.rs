@@ -1,6 +1,6 @@
 //! `AppConfig` workspace CRUD impl blocks.
 
-use crate::app_config::AppConfig;
+use super::AppConfig;
 use crate::planner::plan_collapse;
 use crate::schema::{WorkspaceConfig, WorkspaceEdit};
 use crate::validation::validate_workspace_config;

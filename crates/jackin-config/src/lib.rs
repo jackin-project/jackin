@@ -14,10 +14,6 @@
 //! config→diagnostics inversion never returns.
 
 pub mod app_config;
-pub mod app_config_mounts;
-pub mod app_config_persist;
-pub mod app_config_roles;
-pub mod app_config_workspaces;
 pub mod auth;
 pub mod editor;
 pub mod migrations;
@@ -35,11 +31,11 @@ pub mod versions;
 pub mod test_support;
 
 pub use app_config::AppConfig;
-pub use app_config_mounts::{GlobalMountRow, WorkspaceGlobalMountRows};
-pub use app_config_persist::{
+pub use app_config::mounts::{GlobalMountRow, WorkspaceGlobalMountRows};
+pub use app_config::persist::{
     config_needs_split_migration, load_split_config, validate_reserved_env_names,
 };
-pub use app_config_roles::{
+pub use app_config::roles::{
     BUILTIN_ROLES, build_github_env_layers, resolve_github_mode, resolve_mode,
     resolve_mode_with_trace, resolve_sync_source_dir,
 };
