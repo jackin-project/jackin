@@ -91,14 +91,9 @@ fn seed_config_with_env(
     // WorkspaceConfig's workdir-must-equal-or-be-covered-by-mount-dst
     // validation passes.
     let host_path = temp_dir.display().to_string();
-    let env_map: std::collections::BTreeMap<String, jackin::operator_env::EnvValue> = env
+    let env_map: std::collections::BTreeMap<String, jackin_core::EnvValue> = env
         .into_iter()
-        .map(|(k, v)| {
-            (
-                k.to_owned(),
-                jackin::operator_env::EnvValue::Plain(v.to_owned()),
-            )
-        })
+        .map(|(k, v)| (k.to_owned(), jackin_core::EnvValue::Plain(v.to_owned())))
         .collect();
     let ws = WorkspaceConfig {
         workdir: host_path.clone(),
@@ -681,9 +676,9 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         .get(env_model::ANTHROPIC_API_KEY_ENV_NAME)
         .expect("reload must see ANTHROPIC_API_KEY in workspace env");
     match env_value {
-        jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "sk-ant-test"),
-        jackin::operator_env::EnvValue::Extended(e) => assert_eq!(e.value, "sk-ant-test"),
-        jackin::operator_env::EnvValue::OpRef(_) => {
+        jackin_core::EnvValue::Plain(s) => assert_eq!(s, "sk-ant-test"),
+        jackin_core::EnvValue::Extended(e) => assert_eq!(e.value, "sk-ant-test"),
+        jackin_core::EnvValue::OpRef(_) => {
             panic!("expected literal credential, got OpRef")
         }
     }
@@ -1089,7 +1084,7 @@ fn auth_workspace_source_d_is_noop() -> Result<()> {
     });
     ws.env.insert(
         env_model::ANTHROPIC_API_KEY_ENV_NAME.into(),
-        jackin::operator_env::EnvValue::Plain("k".into()),
+        jackin_core::EnvValue::Plain("k".into()),
     );
 
     let mut state = ManagerState::from_config(&config, cwd);
@@ -1348,9 +1343,9 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         .get("GH_TOKEN")
         .expect("GH_TOKEN must land on the workspace github env block");
     match value {
-        jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
-        jackin::operator_env::EnvValue::Extended(e) => assert_eq!(e.value, "ghp_round_trip"),
-        jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
+        jackin_core::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
+        jackin_core::EnvValue::Extended(e) => assert_eq!(e.value, "ghp_round_trip"),
+        jackin_core::EnvValue::OpRef(_) => panic!("expected literal credential"),
     }
     assert!(
         !pending.env.contains_key("GH_TOKEN"),
@@ -1392,9 +1387,9 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
         .get("GH_TOKEN")
         .expect("reload must see GH_TOKEN on the github env block");
     match env_value {
-        jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
-        jackin::operator_env::EnvValue::Extended(e) => assert_eq!(e.value, "ghp_round_trip"),
-        jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
+        jackin_core::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
+        jackin_core::EnvValue::Extended(e) => assert_eq!(e.value, "ghp_round_trip"),
+        jackin_core::EnvValue::OpRef(_) => panic!("expected literal credential"),
     }
     // GH_TOKEN must NOT leak into the regular workspace env map after
     // reload (the kind-scoped layer is the only place it should live).

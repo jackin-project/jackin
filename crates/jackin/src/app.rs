@@ -82,7 +82,7 @@ async fn play_construct_intro_if_needed(
     {
         // The intro is two screens: the opening phrase/brand screen, then the
         // accelerating warp into the Construct.
-        tui::warp_intro();
+        crate::warp::warp_intro(jackin_tui::ownership::host_screen_owned());
     }
     claim
 }

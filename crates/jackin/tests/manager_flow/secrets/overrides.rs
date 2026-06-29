@@ -27,7 +27,7 @@ fn seed_override_picker_workspace(
         let mut env = std::collections::BTreeMap::new();
         env.insert(
             "LOG_LEVEL".into(),
-            jackin::operator_env::EnvValue::Plain("debug".into()),
+            jackin_core::EnvValue::Plain("debug".into()),
         );
         roles_map.insert(
             (*name).into(),
@@ -402,7 +402,7 @@ fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()
             .unwrap()
             .env
             .get("API_TOKEN")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("secret"),
         "the committed key/value must land in the role's env map"
     );

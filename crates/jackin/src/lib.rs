@@ -29,6 +29,7 @@ pub(crate) mod preflight;
 pub mod role_authoring;
 pub mod runtime;
 pub mod tui;
+pub mod warp;
 pub mod workspace;
 
 pub use app::run;
