@@ -3,7 +3,7 @@
 use jackin_tui::components::StatusFooterHover;
 use jackin_tui::runtime::UpdateResult;
 
-use crate::tui::app::{LaunchStage, LaunchView, StageLabelTransition, StageStatus, StageView};
+use crate::tui::model::{LaunchStage, LaunchView, StageLabelTransition, StageStatus, StageView};
 use crate::tui::components::build_log_dialog::refresh_build_log_layout;
 use crate::tui::effect::LaunchEffect;
 use crate::tui::message::LaunchMessage;

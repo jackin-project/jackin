@@ -1,8 +1,8 @@
 //! Launch cockpit view helpers.
 
-pub mod app;
 pub mod components;
 pub mod effect;
+pub mod model;
 pub mod input;
 pub mod keymap;
 pub mod message;

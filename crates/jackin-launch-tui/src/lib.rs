@@ -13,7 +13,7 @@ pub mod build_log;
 pub mod progress;
 pub mod tui;
 
-pub use tui::app::{
+pub use tui::model::{
     FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchStage, LaunchTargetKind, LaunchView,
     PromptContextLine, PromptResult, StageLabelTransition, StageStatus, StageView,
 };

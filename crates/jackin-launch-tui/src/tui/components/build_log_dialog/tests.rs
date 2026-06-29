@@ -1,5 +1,5 @@
 use super::*;
-use crate::tui::app::{LaunchIdentity, LaunchTargetKind};
+use crate::tui::model::{LaunchIdentity, LaunchTargetKind};
 use ratatui::{Terminal, backend::TestBackend};
 
 fn row_text(buf: &ratatui::buffer::Buffer, row: u16, width: u16) -> String {
