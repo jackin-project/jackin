@@ -340,7 +340,7 @@ pub use jackin_core::op_types::{OpField as OpPickerField, OpItem as OpPickerItem
 
 /// Session-scoped metadata cache for picker drill-down panes.
 pub type OpPickerCache =
-    crate::op_cache::OpCache<OpPickerAccount, OpPickerVault, OpPickerItem, OpPickerField>;
+    jackin_core::op_cache::OpCache<OpPickerAccount, OpPickerVault, OpPickerItem, OpPickerField>;
 
 /// A single row in the field-picker display list.
 #[derive(Debug, Clone)]
