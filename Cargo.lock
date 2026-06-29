@@ -2829,6 +2829,7 @@ dependencies = [
  "anyhow",
  "crossterm",
  "jackin-core",
+ "jackin-tui",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",

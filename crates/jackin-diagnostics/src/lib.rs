@@ -1,5 +1,6 @@
 //! Host observability substrate: structured JSONL run diagnostics, debug-mode
-//! flag, terminal-ownership guards, and the `debug_log!` macro.
+//! flag, and the `debug_log!` macro. Terminal-ownership guards are re-exported
+//! from `jackin_tui::ownership`.
 
 pub mod build_log;
 pub mod logging;

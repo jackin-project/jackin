@@ -39,6 +39,7 @@ otlp = [
 
 [dependencies]
 jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
+jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rand = "0.10"
