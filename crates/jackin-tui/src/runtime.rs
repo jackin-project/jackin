@@ -234,5 +234,37 @@ impl<E> UpdateResult<E> {
     }
 }
 
+/// TEA component contract: translates raw terminal input events into typed
+/// messages for the app's central `update` function.
+///
+/// `Ev` is the surface-specific event type (e.g. [`crossterm::event::Event`]
+/// for keyboard/mouse-driven surfaces; raw bytes or a decoded action type for
+/// the in-container multiplexer). `Msg` is the domain message the central
+/// `update` consumes. Components maintain their own sub-state (e.g. cursor
+/// position, focus) but must not mutate app model state; they only produce
+/// messages.
+///
+/// # Contract
+///
+/// - `handle_event` is non-blocking and must not perform I/O.
+/// - Returning `None` means the event was not consumed; the runtime may
+///   offer the event to the next component in the chain.
+/// - Returning `Some(msg)` means the event was consumed; the runtime calls
+///   the central `update` with `msg`.
+pub trait Component<Ev, Msg> {
+    fn handle_event(&mut self, event: &Ev) -> Option<Msg>;
+}
+
+/// TEA view contract: renders an app model into one rectangular region of a
+/// ratatui [`ratatui::Frame`].
+///
+/// Implementations are observational: they read `model` but must not mutate
+/// it. All visible output (widget painting, cursor positioning, scroll
+/// indicators) flows through the `frame` and `area` arguments. `View` never
+/// drives subscriptions or spawns work.
+pub trait View<Model> {
+    fn render(&self, model: &Model, frame: &mut ratatui::Frame<'_>, area: ratatui::layout::Rect);
+}
+
 #[cfg(test)]
 mod tests;

@@ -16,6 +16,14 @@
 //! presentation surfaces (`jackin-launch-tui`, `jackin-console`,
 //! `jackin-capsule`). Surface crates depend on this one, never the
 //! reverse.
+//!
+//! # Shared TEA runtime contract
+//!
+//! The Elm-style runtime lives in [`runtime`]: one
+//! [`runtime::UpdateResult`] per `update` call, [`runtime::Component`]
+//! for event→message translation, and [`runtime::View`] for
+//! model→frame rendering. Surface crates (host, launch, capsule,
+//! console) implement these traits; `jackin-tui` only defines them.
 
 pub mod animation;
 pub mod ansi_text;
