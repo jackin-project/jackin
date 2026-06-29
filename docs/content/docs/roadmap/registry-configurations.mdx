@@ -137,6 +137,48 @@ When an image reference matches no `[[registries]]` entry, jackin falls back to 
 
 Precedence: an explicit matching `[[registries]]` entry wins over the host-config fallback; a per-workspace entry wins over a global entry for the same host.
 
+### Decided: separate auth failure from staleness — fail fast, opt-in fallback
+
+The root pain is that <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">image.rs</RepoFile>'s `published_image_freshness` maps **every** pull error to `Stale`, so an auth failure silently triggers a multi-minute rebuild. The fix splits the conflated states: a pull failure is classified, not assumed stale.
+
+- **Auth failure** (HTTP 401/403, `pull access denied`, `requires 'docker login'`, `no basic auth credentials`, `unauthorized`) → by default **fail fast** with an actionable message naming the registry and the fix (add a `[[registries]]` entry / `docker login` / install the ECR helper). No rebuild — rebuilding masks a one-line config error, and the construct base image may itself be private and also unpullable. Why default-fail: correctness over a silent expensive fallback that hides the real problem.
+- **Manifest/tag not found** (`manifest unknown`, repo reachable but no such tag) → genuinely no published image → fall back to building from the workspace Dockerfile, as today. This is the one legitimate "stale/missing" case.
+- **Network / transient** → surfaced as an error (not masked as stale); retry policy TBD in `plan`.
+
+Escape hatch — a global key for operators who legitimately lack registry access and want the local build:
+
+```toml
+[registry]
+on_auth_failure = "fail"   # default; "build" falls back to the workspace Dockerfile
+```
+
+### Decided: v1 credential kinds
+
+The `CredentialSource` members built in this item:
+
+| Kind | v1 | Notes |
+|---|---|---|
+| `docker-config` | ✅ | implicit fallback; reads `~/.docker/config.json` + helpers |
+| `ecr` | ✅ | native, forcing case; AWS chain + auto-refresh |
+| `op` | ✅ | reuses the shipped host-socket 1Password resolution (<RepoFile path="crates/jackin-capsule/src/exec.rs">exec.rs</RepoFile>) |
+| `env` | ✅ | named env var; essential for CI/headless |
+| `static` (literal user/pass) | ✅ | plaintext-on-disk — **docs must discourage** beyond local testing (registry-credential plaintext is the [GHSA-99pg-grm5-qq3v](https://github.com/docker/cli/security/advisories/GHSA-99pg-grm5-qq3v) pitfall); never log/echo it |
+| `command` | ⛔ deferred | generic refresh escape hatch; add post-v1 if a custom-SSO need appears |
+
+### Decided: single injection point, host-side resolution
+
+One `BollardDockerClient` (host daemon via `DOCKER_HOST`/defaults, <RepoFile path="crates/jackin-docker/src/docker_client.rs">docker_client.rs</RepoFile>) drives **every** pull — the published-image freshness check (<RepoFile path="crates/jackin-runtime/src/runtime/image.rs">image.rs</RepoFile>) and the DinD sidecar image pull (<RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs">launch_dind.rs</RepoFile>). So credential resolution threads into `pull_image` itself — a single injection point that covers role images *and* the DinD base image (which may also be private). Why this is clean: creds are produced host-side and handed only to the docker daemon via bollard's `X-Registry-Auth` header; they never cross into a container's env or image layers, satisfying `container-credential-exposure` without extra plumbing. The provider is constructed once and passed down to the docker client.
+
+### Decided: ECR provider mechanics
+
+The native `ecr` kind uses `aws-sdk-ecr` `get_authorization_token` over the **default AWS credential provider chain** — env vars, shared `~/.aws` profile (`profile` field selects it), SSO (cached from a prior `aws sso login`), ECS container creds, EC2 IMDS instance role, and EKS web-identity/IRSA. This means headless/CI works with no interactive step whenever the environment carries any chain leg (env keys, instance role, IRSA); only SSO needs a prior login, which is the AWS-standard flow. Config:
+
+```toml
+credentials = { ecr = { region = "us-east-1", profile = "prod" } }
+```
+
+`region` may be **derived from the registry host** (`<acct>.dkr.ecr.<region>.amazonaws.com`) so it is optional when the `match` host carries it; `profile` is optional (default chain otherwise). Token caching: store `{ DockerCredentials, expires_at }` per registry, refresh when within a small skew (~5 min) of `expires_at`. This is the "authenticate once" payoff — operator configures AWS once; jackin mints ~12h tokens on demand.
+
 ### Open questions to settle in `brainstorm`
 
 - Naming of the entry type (`registries` vs a broader `endpoints`/`connections`/`configurations`) and whether the first cut is registry-only or born general.
