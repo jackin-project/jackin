@@ -105,6 +105,38 @@ struct EcrProvider {
 
 Before committing to the design, a ~30-line throwaway (no jackin integration) proves the whole approach: obtain an ECR token (`aws ecr get-login-password` or `aws-sdk-ecr`), build a `DockerCredentials { username: "AWS", password: token, serveraddress: <registry>, .. }`, and call `create_image(.., Some(creds))` to pull a private ECR image. If that pulls clean, bollard + in-process credentials + per-pull resolution is validated end to end.
 
+### Decided: config surface — narrow surface, general guts
+
+The first cut is a **registry-specific** TOML block, but each entry's credential field **is** the shared [`CredentialSource`](/roadmap/credential-source-pattern/) enum — concrete surface, general internals. This ships the ECR fix without over-designing a universal endpoint layer, and the `credentials` value generalizes for free. Why: avoids speculative `[[configurations]]` schema risk while still being DRY; a broader endpoint/connections layer can wrap this later without reshaping the credential guts.
+
+```toml
+# global config.toml
+[[registries]]
+name = "prod-ecr"
+match = "*.dkr.ecr.us-east-1.amazonaws.com"
+credentials = { ecr = { region = "us-east-1", profile = "prod" } }
+
+[[registries]]
+name = "ghcr"
+match = "ghcr.io"
+credentials = { op = "op://vault/ghcr/token" }
+
+# per-workspace entries extend/override global
+[workspaces.acme]
+[[workspaces.acme.registries]]
+name = "acme-ecr"
+match = "*.dkr.ecr.eu-west-1.amazonaws.com"
+credentials = { ecr = { region = "eu-west-1" } }
+```
+
+Each entry: `name` (operator label), `match` (host pattern for resolving an image ref to an entry), `credentials` (a `CredentialSource`). Declarable in global `AppConfig` and per-workspace `WorkspaceConfig`, reusing the existing scope split.
+
+### Decided: zero-config default — auto-read host docker config
+
+When an image reference matches no `[[registries]]` entry, jackin falls back to the host's `~/.docker/config.json`, honoring `credsStore` and `credHelpers` (via the [`docker_credential`](https://github.com/keirlawson/docker_credential) crate). Why: this is exactly how docker, buildkit, and skopeo already behave, so it is least-surprise; an operator who has run `docker login` or installed `docker-credential-ecr-login` gets working private pulls with zero jackin configuration — the "provide once" promise. Reading `~/.docker/config.json` is a host **read**, allowed under `HOST_AND_CONTAINER.md` (no opt-in needed; no host writes). Resolution stays host-side and credentials are handed only to the docker daemon via bollard's auth header — they never enter the container env or image layers (`container-credential-exposure`).
+
+Precedence: an explicit matching `[[registries]]` entry wins over the host-config fallback; a per-workspace entry wins over a global entry for the same host.
+
 ### Open questions to settle in `brainstorm`
 
 - Naming of the entry type (`registries` vs a broader `endpoints`/`connections`/`configurations`) and whether the first cut is registry-only or born general.
