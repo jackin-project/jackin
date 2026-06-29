@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::Context as _;
 use jackin_core::{MountIsolation, RoleSelector};
 
-use crate::app_config::AppConfig;
+use super::AppConfig;
 use crate::paths::expand_tilde;
 use crate::schema::validate_mounts;
 use crate::schema::{GlobalMountConfig, MountConfig, MountEntry};

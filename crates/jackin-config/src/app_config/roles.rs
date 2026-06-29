@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use jackin_core::{Agent, AuthForwardMode, EnvValue, RoleSelector};
 
-use crate::app_config::AppConfig;
+use super::AppConfig;
 use crate::auth::GithubAuthMode;
 use crate::schema::RoleSource;
 

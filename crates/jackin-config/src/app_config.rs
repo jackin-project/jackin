@@ -163,5 +163,10 @@ impl Default for AppConfig {
     }
 }
 
+pub mod mounts;
+pub mod persist;
+pub mod roles;
+pub mod workspaces;
+
 #[cfg(test)]
 mod tests;
