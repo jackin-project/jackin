@@ -1,83 +1,12 @@
 //! Launch cockpit model types shared with runtime orchestration.
 
-use std::path::PathBuf;
-
 use jackin_tui::components::StatusFooterHover;
 use ratatui::text::Line;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PromptContextLine {
-    Emphasis(String),
-    Muted(String),
-    Path(String),
-    Plain(String),
-    Blank,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-pub enum LaunchStage {
-    Identity,
-    Role,
-    Credentials,
-    Construct,
-    AgentBinaries,
-    DerivedImage,
-    Workspace,
-    Network,
-    Sidecar,
-    Capsule,
-    Hardline,
-}
-
-impl LaunchStage {
-    pub const ALL: [Self; 11] = [
-        Self::Identity,
-        Self::Role,
-        Self::Credentials,
-        Self::Construct,
-        Self::AgentBinaries,
-        Self::DerivedImage,
-        Self::Workspace,
-        Self::Network,
-        Self::Sidecar,
-        Self::Capsule,
-        Self::Hardline,
-    ];
-
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Identity => "identity",
-            Self::Role => "role",
-            Self::Credentials => "credentials",
-            Self::Construct => "construct",
-            Self::AgentBinaries => "agent binaries",
-            Self::DerivedImage => "derived image",
-            Self::Workspace => "workspace",
-            Self::Network => "network",
-            Self::Sidecar => "sidecar",
-            Self::Capsule => "capsule",
-            Self::Hardline => "hardline",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StageStatus {
-    Queued,
-    Running,
-    Done,
-    Skipped,
-    Failed,
-    Blocked,
-}
-
-#[derive(Debug, Clone)]
-pub struct StageView {
-    pub stage: LaunchStage,
-    pub status: StageStatus,
-    pub detail: String,
-}
+pub use jackin_core::launch_progress::{
+    FailureCopyTarget, LaunchFailure, LaunchIdentity, LaunchStage, LaunchTargetKind,
+    PromptContextLine, StageLabelTransition, StageStatus, StageView,
+};
 
 #[derive(Debug, Clone)]
 #[expect(
@@ -137,63 +66,9 @@ pub struct LaunchView {
     pub quit_confirm: Option<jackin_tui::components::ConfirmState>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FailureCopyTarget {
-    RunId,
-    DiagnosticsPath,
-    CommandOutputPath,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct StageLabelTransition {
-    pub from: usize,
-    pub to: usize,
-    pub start_frame: usize,
-}
-
 // Re-exported from `jackin_core` (Workstream 1 — architecture/boundaries:
 // the type was here because `jackin_launch` was a TUI, not the launch
 // orchestrator. Lower crates (`jackin_env::env_resolver`) needed
 // `PromptResult` and had to depend upward on this crate purely for the
 // type. Both directions now point inward through `jackin_core`.)
 pub use jackin_core::PromptResult;
-
-#[derive(Debug, Clone)]
-pub struct LaunchIdentity {
-    pub role: String,
-    pub agent: String,
-    pub target_kind: LaunchTargetKind,
-    pub target_label: String,
-    /// Mounts whose host source differs from the container destination,
-    /// pre-formatted for display. Same-path mounts are omitted upstream.
-    pub mounts: Vec<String>,
-    pub image: Option<String>,
-    pub container: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct LaunchFailure {
-    pub title: String,
-    pub summary: String,
-    pub detail: Option<String>,
-    pub next_step: Option<String>,
-    pub stage: LaunchStage,
-    pub diagnostics_path: Option<PathBuf>,
-    pub command_output_path: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LaunchTargetKind {
-    Workspace,
-    Directory,
-}
-
-impl LaunchTargetKind {
-    #[must_use]
-    pub const fn launch_preposition(self) -> &'static str {
-        match self {
-            Self::Workspace => "into workspace",
-            Self::Directory => "in directory",
-        }
-    }
-}

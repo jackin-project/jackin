@@ -8,8 +8,8 @@ use std::io::Write;
 #[cfg(test)]
 use std::time::Duration;
 
-pub use jackin_launch_tui::LaunchCancelled;
-use jackin_launch_tui::LaunchHostTerminal;
+pub use jackin_core::launch_progress::LaunchCancelled;
+use jackin_core::launch_progress::LaunchHostTerminal;
 pub use jackin_launch_tui::progress::LaunchProgress;
 #[cfg(test)]
 use jackin_launch_tui::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
@@ -182,7 +182,7 @@ pub fn standalone_exit_dialog_with_inspect(
     title: &str,
     context: &[PromptContextLine],
     options: Vec<String>,
-    worktrees_per_record: &[Vec<jackin_launch_tui::WorktreeInspect>],
+    worktrees_per_record: &[Vec<jackin_core::launch_progress::WorktreeInspect>],
 ) -> anyhow::Result<usize> {
     jackin_launch_tui::progress::standalone_exit_dialog_with_inspect(
         title,
@@ -197,8 +197,8 @@ pub fn standalone_exit_dialog_with_inspect(
 /// D23/D21 standalone launch dialog with delete-in-place support.
 pub fn standalone_launch_dialog(
     title: &str,
-    candidates: &[jackin_launch_tui::LaunchCandidate],
-) -> anyhow::Result<jackin_launch_tui::LaunchDialogResult> {
+    candidates: &[jackin_core::launch_progress::LaunchCandidate],
+) -> anyhow::Result<jackin_core::launch_progress::LaunchDialogResult> {
     jackin_launch_tui::progress::standalone_launch_dialog(
         title,
         candidates,

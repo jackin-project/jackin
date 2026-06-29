@@ -32,7 +32,7 @@ impl StepCounter {
         // Ctrl+C can go unobserved to a single step. The bail unwinds through
         // the pipeline's normal `Err` cleanup, same as any leaf race.
         if self.is_cancelled() {
-            return Err(jackin_launch_tui::LaunchCancelled::err());
+            return Err(jackin_core::launch_progress::LaunchCancelled::err());
         }
         if let (Some(progress), Some(stage)) = (&mut self.progress, self.current_stage) {
             progress.stage_done(stage, completion_label(stage));
