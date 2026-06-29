@@ -18,7 +18,6 @@ pub mod docker_security;
 pub mod env_model;
 pub mod env_value;
 pub mod host_colors;
-pub mod url_text;
 pub mod instance;
 pub mod isolation;
 pub mod isolation_record;
@@ -33,6 +32,8 @@ pub mod paths;
 pub mod prompt_result;
 pub mod runner;
 pub mod selector;
+pub mod tui_widgets;
+pub mod url_text;
 pub mod worktree_dirty;
 
 pub use agent::{
@@ -52,7 +53,6 @@ pub use docker_security::{
 pub use env_value::{EnvValue, Extended, FieldTarget, OpRef};
 pub use host_colors::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, Rgb, owo_rgb};
 pub use isolation::{MountIsolation, ParseMountIsolationError};
-pub use url_text::{has_url_scheme, is_host_open_url, redact_url_for_log};
 pub use isolation_record::{CleanupStatus, DriftDetection, IsolationRecord};
 pub use launch_progress::{
     FailureCopyTarget, FileDiff, LaunchCancelled, LaunchCandidate, LaunchDiagnostics,
@@ -66,3 +66,8 @@ pub use paths::JackinPaths;
 pub use prompt_result::PromptResult;
 pub use runner::{CommandRunner, RunOptions};
 pub use selector::{RoleSelector, Selector, SelectorError, runtime_slug};
+pub use tui_widgets::{
+    BOTTOM_CHROME_ROWS, BottomChromeAreas, DialogBodyScroll, StatusFooterHover, TailScroll,
+    bottom_chrome_areas, is_scrollable, max_line_width, max_offset,
+};
+pub use url_text::{has_url_scheme, is_host_open_url, redact_url_for_log};

@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use super::host_colors::query_host_terminal_colors;
 use anyhow::{Context, Result, bail};
 use directories::UserDirs;
 use jackin_core::paths::JackinPaths;
@@ -21,7 +22,6 @@ use jackin_protocol::attach::{
     MAX_CLIPBOARD_IMAGE_BYTES, MAX_CLIPBOARD_IMAGE_CHUNK_BYTES, MAX_CLIPBOARD_IMAGE_ERROR_BYTES,
     MAX_HOST_NOTICE_BYTES, ServerFrame, SpawnRequest, encode_client, read_server_frame,
 };
-use jackin_tui::host_colors::query_host_terminal_colors;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
