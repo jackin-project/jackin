@@ -31,8 +31,8 @@
 /// click-region maths.
 use jackin_tui::components::TabStrip;
 
-use crate::tui::app::{MuxMode, VisibleAgentState};
 use crate::tui::layout::Tab;
+use crate::tui::model::{MuxMode, VisibleAgentState};
 
 /// Column width in terminal cells for a label, measured with
 /// `unicode-width`. Saturates to `u16::MAX` for absurdly wide labels

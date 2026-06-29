@@ -6,7 +6,7 @@
 use std::time::Instant;
 
 use crate::tui::{
-    app::{VisibleAgentState, visible_agent_state_from_protocol},
+    model::{VisibleAgentState, visible_agent_state_from_protocol},
     socket_backend::SgrMetadata,
 };
 
@@ -583,7 +583,7 @@ impl Multiplexer {
 /// while extension stays allocation-free — the hyperlink path would otherwise
 /// allocate a `String` per cell.
 fn pane_cell_runs<T>(
-    panes: &[crate::tui::app::VisiblePane],
+    panes: &[crate::tui::model::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
     allow_pane: impl Fn(u64) -> bool,
     probe: impl Fn(&jackin_term::Cell) -> Option<T>,
@@ -643,7 +643,7 @@ fn cell_safe_uri(cell: &jackin_term::Cell) -> Option<&str> {
 }
 
 fn pane_hyperlink_regions(
-    panes: &[crate::tui::app::VisiblePane],
+    panes: &[crate::tui::model::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
     sessions: &std::collections::HashMap<u64, crate::session::Session>,
 ) -> Vec<(ratatui::layout::Rect, String)> {
@@ -661,7 +661,7 @@ fn pane_hyperlink_regions(
 }
 
 fn pane_sgr_regions(
-    panes: &[crate::tui::app::VisiblePane],
+    panes: &[crate::tui::model::VisiblePane],
     pane_screens: &[(u64, crate::tui::view::PaneScreen<'_>)],
 ) -> Vec<(ratatui::layout::Rect, SgrMetadata)> {
     pane_cell_runs(

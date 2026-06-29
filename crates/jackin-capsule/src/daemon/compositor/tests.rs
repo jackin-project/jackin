@@ -2,8 +2,8 @@
 use jackin_term::{DamageGrid, UnderlineStyle};
 
 use super::{SgrMetadata, pane_sgr_regions};
-use crate::tui::app::VisiblePane;
 use crate::tui::layout::Rect;
+use crate::tui::model::VisiblePane;
 use crate::tui::view::PaneScreen;
 
 /// Run `bytes` through `pane_sgr_regions` for a single pane with the given

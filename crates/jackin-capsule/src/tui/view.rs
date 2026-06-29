@@ -1,11 +1,11 @@
 //! Rendering helper types and functions for the capsule multiplexer.
 
 use crate::pull_request::PullRequestInfo;
-use crate::tui::app::{HoverTarget, VisiblePane};
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
 use crate::tui::layout::{self, Tab};
+use crate::tui::model::{HoverTarget, VisiblePane};
 use jackin_tui::components::FocusOwner;
 use ratatui::{Frame, layout::Rect as RatatuiRect, style::Modifier};
 
@@ -32,6 +32,7 @@ pub(crate) enum PaneScreen<'a> {
     clippy::struct_excessive_bools,
     reason = "tracked in codebase-health-enforcement"
 )]
+#[derive(Clone)]
 pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) tabs: &'a [Tab],
     /// Row-0 layout computed once per frame and shared by the status-bar

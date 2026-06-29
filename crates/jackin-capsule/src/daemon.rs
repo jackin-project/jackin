@@ -71,12 +71,6 @@ use crate::session::{
 };
 use crate::socket;
 use crate::token_monitor::{TokenMonitor, TokenTotals};
-use crate::tui::app::{
-    ChromeHitState, CursorVisibilityState, DragState, HoverState, HoverTarget, MuxMode,
-    MuxModeState, PointerShape, PointerShapeState, VisiblePane, chrome_hover_target_for_state,
-    cursor_visible_for_state, hover_target_for_state, mux_mode_for_state, pointer_shape_for_state,
-    visible_panes_for_layout,
-};
 #[cfg(test)]
 use crate::tui::components::branch_context_bar::branch_context_bar_layout;
 #[cfg(test)]
@@ -107,6 +101,12 @@ use crate::tui::message::{
     input_event_action, mouse_chrome_update_action, mouse_release_action, palette_command_route,
     palette_toggle_route, pane_button_motion_action, prefix_command_action,
     status_bar_click_action,
+};
+use crate::tui::model::{
+    ChromeHitState, CursorVisibilityState, DragState, HoverState, HoverTarget, MuxMode,
+    MuxModeState, PointerShape, PointerShapeState, VisiblePane, chrome_hover_target_for_state,
+    cursor_visible_for_state, hover_target_for_state, mux_mode_for_state, pointer_shape_for_state,
+    visible_panes_for_layout,
 };
 use crate::tui::selection::{
     SelectionState, move_selection_end, selection_start_for_inner_rect, selection_text,

@@ -253,7 +253,7 @@ impl Multiplexer {
         let cwd = self.workdir.as_path();
         match agent {
             Some(slug) => {
-                let label = crate::tui::app::visible_agent_label(Some(slug), provider_label);
+                let label = crate::tui::model::visible_agent_label(Some(slug), provider_label);
                 SessionLaunch {
                     label,
                     cmd: build_agent_command(
@@ -266,7 +266,7 @@ impl Multiplexer {
                 }
             }
             None => SessionLaunch {
-                label: crate::tui::app::visible_agent_label(None, None),
+                label: crate::tui::model::visible_agent_label(None, None),
                 cmd: build_shell_command(env_passthrough, cwd, codename),
             },
         }
