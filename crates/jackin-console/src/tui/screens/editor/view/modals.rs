@@ -83,7 +83,7 @@ pub(crate) fn secret_scope_picker_state() -> crate::tui::components::scope_picke
 
 #[must_use]
 #[allow(unreachable_pub)]
-pub(crate) fn secret_new_key_label(scope: &SecretsScopeTag) -> String {
+pub fn secret_new_key_label(scope: &SecretsScopeTag) -> String {
     match scope {
         SecretsScopeTag::Workspace => "New workspace environment key".to_owned(),
         SecretsScopeTag::Role(role) => format!("New {role} environment key"),

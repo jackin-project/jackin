@@ -38,7 +38,11 @@ pub struct PrewarmArgs {
     pub role_branch: Option<String>,
 }
 
-/// Flags for `jackin prewarm` (flattened into PrewarmArgs for CLI ergonomics).
+/// Flags for `jackin prewarm` (flattened into `PrewarmArgs` for CLI ergonomics).
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tracked in codebase-health-enforcement"
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::Args)]
 pub struct PrewarmFlags {
     #[arg(long)]

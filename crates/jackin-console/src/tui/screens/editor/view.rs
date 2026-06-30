@@ -98,10 +98,11 @@ pub(crate) use modals::{
     editor_header_title, editor_name_value, isolated_state_save_confirm_state,
     role_trust_confirm_state, secret_delete_confirm_prompt, secret_delete_confirm_state,
     secret_empty_key_label, secret_key_input_state, secret_key_input_state_from_pending,
-    secret_new_key_after_picker_label, secret_new_key_label, secret_new_value_input_state,
+    secret_new_key_after_picker_label, secret_new_value_input_state,
     secret_scope_picker_state, secret_source_picker_state, secret_value_current_text,
     secret_value_input_state, secrets_forbidden_label, secrets_scope_label,
 };
+pub use modals::secret_new_key_label;
 
 mod frame;
 #[allow(unused_imports)]
