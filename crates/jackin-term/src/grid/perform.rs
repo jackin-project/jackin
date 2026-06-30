@@ -411,10 +411,10 @@ impl vte::Perform for DamageGrid {
                 self.current_attrs = Attrs::default();
                 self.scroll_top = 0;
                 self.scroll_bottom = self.rows.saturating_sub(1);
-                self.pending_wrap = false;
-                self.hide_cursor = false;
-                self.application_cursor = false;
-                self.bracketed_paste = false;
+                self.mode_flags &= !super::PENDING_WRAP;
+                self.mode_flags &= !super::HIDE_CURSOR;
+                self.mode_flags &= !super::APPLICATION_CURSOR;
+                self.mode_flags &= !super::BRACKETED_PASTE;
                 self.saved_cursor_row = self.cursor_row;
                 self.saved_cursor_col = self.cursor_col;
             }
@@ -494,8 +494,8 @@ impl vte::Perform for DamageGrid {
                 let blank = make_blank_grid(self.rows, self.cols, self.primary.arena.clone());
                 self.primary = blank.clone();
                 self.alternate = blank;
-                self.alt_screen = false;
-                self.pending_wrap = false;
+                self.mode_flags &= !super::ALT_SCREEN;
+                self.mode_flags &= !super::PENDING_WRAP;
                 self.cursor_row = 0;
                 self.cursor_col = 0;
                 self.current_attrs = Attrs::default();

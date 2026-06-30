@@ -86,10 +86,14 @@ pub enum MouseProtocolEncoding {
 /// Call `process(bytes)` to feed raw PTY output.  The grid records which
 /// spans changed via the dirty tracker.  Call `dirty_spans()` to retrieve
 /// and clear the dirty set before rendering.
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
-)]
+const ALT_SCREEN: u8 = 1 << 0;
+const HIDE_CURSOR: u8 = 1 << 1;
+const BRACKETED_PASTE: u8 = 1 << 2;
+const APPLICATION_CURSOR: u8 = 1 << 3;
+const FOCUS_EVENTS: u8 = 1 << 4;
+const PENDING_WRAP: u8 = 1 << 5;
+const MUTATED_SINCE_PRESERVE: u8 = 1 << 6;
+
 pub struct DamageGrid {
     // ── Parser — must persist across process() calls to handle split sequences ──
     // vte::Parser maintains internal state for multi-byte escape sequences.
@@ -106,8 +110,6 @@ pub struct DamageGrid {
     primary: RowStore,
     /// Alternate screen cells (activated by `?1049h`).
     alternate: RowStore,
-    /// True when the alternate screen is active.
-    alt_screen: bool,
     /// Scrollback buffer (primary screen only). Newest entry = last item.
     scrollback: RowStore,
     /// Max scrollback rows kept.
@@ -120,26 +122,14 @@ pub struct DamageGrid {
     cursor_col: u16,
     saved_cursor_row: u16,
     saved_cursor_col: u16,
-    /// DECAWM deferred wrap. A printable written in the last column does NOT
-    /// move the cursor; it parks here with `pending_wrap` armed. The next
-    /// printable performs the wrap first; any explicit cursor move (CR, LF,
-    /// CUP, CHA, …) cancels it. Eager-wrapping instead drifts the cursor one
-    /// row down per last-column write, which is how box-drawing TUIs (Claude
-    /// Code, Amp) desynced and corrupted the screen.
-    pending_wrap: bool,
+    // (pending_wrap and other mode bools bundled in mode_flags)
 
-    // ── Modes ─────────────────────────────────────────────────────────────────
+    // ── Modes (bundled) ──
     mouse_mode: MouseProtocolMode,
     mouse_encoding: MouseProtocolEncoding,
-    hide_cursor: bool,
     /// DECSCUSR cursor style (`CSI {n} SP q`): 0 = default. Reconciled to the
     /// outer terminal per frame by the capsule encoder; never forwarded raw.
     cursor_style: u16,
-    /// True when visible-screen content changed since the last ED2/ED0-home
-    /// preserve; with the byte-equality check below this makes preserve-on-
-    /// clear exactly-once (scrollback retention decision, capsule rendering
-    /// plan §3.7 candidate (b)).
-    mutated_since_preserve: bool,
     /// The exact rows the last preserve pushed, for byte-equality dedupe.
     last_preserved_block: Option<Vec<Vec<Cell>>>,
     /// Active OSC 8 token while writing cells.
@@ -150,9 +140,8 @@ pub struct DamageGrid {
     hyperlink_targets: HashMap<u32, String>,
     /// Next hyperlink token to allocate.
     next_hyperlink_token: u32,
-    bracketed_paste: bool,
-    application_cursor: bool,
-    focus_events: bool,
+    /// mode_flags bundles the mode bools (alt_screen, hide_cursor, bracketed_paste, application_cursor, focus_events, pending_wrap, mutated_since_preserve)
+    mode_flags: u8,
 
     // ── Reported default colors (OSC 10/11 query replies) ────────────────────
     /// Foreground/background RGB the grid reports when the program queries
@@ -191,16 +180,16 @@ impl std::fmt::Debug for DamageGrid {
         f.debug_struct("DamageGrid")
             .field("rows", &self.rows)
             .field("cols", &self.cols)
-            .field("alt_screen", &self.alt_screen)
+            .field("alt_screen", &(self.mode_flags & ALT_SCREEN != 0))
             .field("scrollback_len", &self.scrollback.len())
             .field("scrollback_limit", &self.scrollback_limit)
             .field("scrollback_offset", &self.scrollback_offset)
             .field("cursor_row", &self.cursor_row)
             .field("cursor_col", &self.cursor_col)
-            .field("hide_cursor", &self.hide_cursor)
-            .field("bracketed_paste", &self.bracketed_paste)
-            .field("application_cursor", &self.application_cursor)
-            .field("focus_events", &self.focus_events)
+            .field("hide_cursor", &(self.mode_flags & HIDE_CURSOR != 0))
+            .field("bracketed_paste", &(self.mode_flags & BRACKETED_PASTE != 0))
+            .field("application_cursor", &(self.mode_flags & APPLICATION_CURSOR != 0))
+            .field("focus_events", &(self.mode_flags & FOCUS_EVENTS != 0))
             .field("kitty_kb_stack_depth", &self.kitty_kb_stack.len())
             .field("dirty", &self.dirty)
             .finish_non_exhaustive()
@@ -421,7 +410,6 @@ impl DamageGrid {
             cols,
             primary: blank.clone(),
             alternate: blank,
-            alt_screen: false,
             scrollback: RowStore {
                 rows: VecDeque::new(),
                 wraps: VecDeque::new(),
@@ -433,20 +421,15 @@ impl DamageGrid {
             cursor_col: 0,
             saved_cursor_row: 0,
             saved_cursor_col: 0,
-            pending_wrap: false,
             mouse_mode: MouseProtocolMode::None,
             mouse_encoding: MouseProtocolEncoding::Default,
-            hide_cursor: false,
             cursor_style: 0,
-            mutated_since_preserve: false,
             last_preserved_block: None,
             active_hyperlink_token: 0,
             osc8_id_to_token: HashMap::new(),
             hyperlink_targets: HashMap::new(),
             next_hyperlink_token: 1,
-            bracketed_paste: false,
-            application_cursor: false,
-            focus_events: false,
+            mode_flags: 0,
             reported_fg,
             reported_bg,
             current_attrs: Attrs::default(),
@@ -523,7 +506,7 @@ impl DamageGrid {
 
     /// Build a borrowed dirty patch from a previously drained dirty-span set.
     pub fn dirty_patch_from(&self, dirty: DirtySpans) -> crate::snapshot::GridPatch<'_> {
-        let screen = if self.alt_screen {
+        let screen = if self.mode_flags & ALT_SCREEN != 0 {
             &self.alternate
         } else {
             &self.primary
@@ -532,7 +515,7 @@ impl DamageGrid {
             self.rows,
             self.cols,
             (self.cursor_row, self.cursor_col),
-            self.alt_screen,
+            self.mode_flags & ALT_SCREEN != 0,
             screen,
             dirty,
         )
@@ -549,7 +532,7 @@ impl DamageGrid {
     /// Concept borrowed from `avt` (MIT, Marcin Kulik / asciinema). Implementation
     /// is our own — `avt` is not a dependency. Attribution in `snapshot.rs`.
     pub fn dump(&self) -> crate::snapshot::GridSnapshot {
-        let screen = if self.alt_screen {
+        let screen = if self.mode_flags & ALT_SCREEN != 0 {
             &self.alternate
         } else {
             &self.primary
@@ -565,7 +548,7 @@ impl DamageGrid {
             rows: self.rows,
             cols: self.cols,
             cursor: (self.cursor_row, self.cursor_col),
-            alternate_screen: self.alt_screen,
+            alternate_screen: (self.mode_flags & ALT_SCREEN != 0),
             cells,
             row_wraps,
         }
@@ -589,7 +572,7 @@ impl DamageGrid {
     /// full viewport is occupied.
     #[must_use]
     pub fn scroll_affordance_metrics(&self) -> (u16, u16, u16, u16, u16) {
-        let screen = if self.alt_screen {
+        let screen = if self.mode_flags & ALT_SCREEN != 0 {
             &self.alternate
         } else {
             &self.primary
@@ -699,7 +682,7 @@ impl DamageGrid {
         offset: usize,
         viewport_rows: u16,
     ) -> crate::snapshot::GridView<'_> {
-        let screen = if self.alt_screen {
+        let screen = if self.mode_flags & ALT_SCREEN != 0 {
             &self.alternate
         } else {
             &self.primary
@@ -710,7 +693,7 @@ impl DamageGrid {
                 rows: self.rows,
                 cols: self.cols,
                 cursor,
-                alternate_screen: self.alt_screen,
+                alternate_screen: (self.mode_flags & ALT_SCREEN != 0),
                 screen,
                 scrollback: &self.scrollback,
                 scrollback_start: 0,
@@ -727,7 +710,7 @@ impl DamageGrid {
             rows: rows_to_draw,
             cols: self.cols,
             cursor,
-            alternate_screen: self.alt_screen,
+            alternate_screen: (self.mode_flags & ALT_SCREEN != 0),
             screen,
             scrollback: &self.scrollback,
             scrollback_start: start,
@@ -764,7 +747,7 @@ impl DamageGrid {
 
     /// Get a cell reference. Returns `None` if out of bounds.
     pub fn cell(&self, row: u16, col: u16) -> Option<&Cell> {
-        let screen = if self.alt_screen {
+        let screen = if self.mode_flags & ALT_SCREEN != 0 {
             &self.alternate
         } else {
             &self.primary
@@ -779,7 +762,7 @@ impl DamageGrid {
 
     /// Whether the alternate screen is active.
     pub fn alternate_screen(&self) -> bool {
-        self.alt_screen
+        self.mode_flags & ALT_SCREEN != 0
     }
 
     /// Set the scrollback view offset. 0 = live tail; `scrollback_limit` = oldest.
@@ -831,15 +814,15 @@ impl DamageGrid {
     }
 
     pub fn hide_cursor(&self) -> bool {
-        self.hide_cursor
+        self.mode_flags & HIDE_CURSOR != 0
     }
 
     pub fn bracketed_paste(&self) -> bool {
-        self.bracketed_paste
+        self.mode_flags & BRACKETED_PASTE != 0
     }
 
     pub fn application_cursor(&self) -> bool {
-        self.application_cursor
+        self.mode_flags & APPLICATION_CURSOR != 0
     }
 
     /// Whether the terminal has enabled focus-event reporting (DEC 1004).
@@ -847,7 +830,7 @@ impl DamageGrid {
     /// Mirrors the DEC mode state tracked internally so callers do not need
     /// to maintain their own copy by draining `PassthroughEvent::FocusEvents`.
     pub fn focus_events(&self) -> bool {
-        self.focus_events
+        self.mode_flags & FOCUS_EVENTS != 0
     }
 
     /// Reset the poll-based terminal modes to their power-on defaults.
@@ -859,10 +842,10 @@ impl DamageGrid {
     pub(crate) fn reset_modes(&mut self) {
         self.mouse_mode = MouseProtocolMode::None;
         self.mouse_encoding = MouseProtocolEncoding::Default;
-        self.hide_cursor = false;
-        self.bracketed_paste = false;
-        self.application_cursor = false;
-        self.focus_events = false;
+        self.mode_flags &= !HIDE_CURSOR;
+        self.mode_flags &= !BRACKETED_PASTE;
+        self.mode_flags &= !APPLICATION_CURSOR;
+        self.mode_flags &= !FOCUS_EVENTS;
         self.scrollback_offset = 0;
         self.clear_active_hyperlink_state();
     }
@@ -883,7 +866,7 @@ impl DamageGrid {
     // ── Internal grid helpers ─────────────────────────────────────────────────
 
     fn active_grid(&mut self) -> &mut RowStore {
-        if self.alt_screen {
+        if self.mode_flags & ALT_SCREEN != 0 {
             &mut self.alternate
         } else {
             &mut self.primary
@@ -905,7 +888,7 @@ impl DamageGrid {
 
     fn active_content_row_cells(&self, content_row: usize) -> Option<&[Cell]> {
         if self.scrollback_offset == 0 {
-            let screen = if self.alt_screen {
+            let screen = if self.mode_flags & ALT_SCREEN != 0 {
                 &self.alternate
             } else {
                 &self.primary
@@ -913,7 +896,7 @@ impl DamageGrid {
             return screen.get(content_row).map(Vec::as_slice);
         }
 
-        let screen = if self.alt_screen {
+        let screen = if self.mode_flags & ALT_SCREEN != 0 {
             &self.alternate
         } else {
             &self.primary
@@ -953,7 +936,7 @@ impl DamageGrid {
     /// Write a character at the current cursor position, advance cursor.
     fn write_char_at_cursor(&mut self, ch: char) {
         let width = self.profile.char_width(ch);
-        self.mutated_since_preserve = true;
+        self.mode_flags |= MUTATED_SINCE_PRESERVE;
 
         // Grapheme clustering: zero-width input (combining marks, variation
         // selectors, ZWJ) joins the previously written cell instead of
@@ -967,8 +950,8 @@ impl DamageGrid {
         // DECAWM deferred wrap: a previous last-column write parked here. Now
         // that a new printable (not a cluster continuation) has arrived,
         // perform the wrap before writing.
-        if self.pending_wrap {
-            self.pending_wrap = false;
+        if self.mode_flags & PENDING_WRAP != 0 {
+            self.mode_flags &= !PENDING_WRAP;
             self.cursor_col = 0;
             self.newline_action_with_wrap(RowWrap::Soft);
         }
@@ -1037,7 +1020,7 @@ impl DamageGrid {
             // any explicit cursor move cancels it. Eager wrapping here is what
             // drifted the cursor one row down per border line.
             self.cursor_col = self.cols;
-            self.pending_wrap = true;
+            self.mode_flags |= PENDING_WRAP;
         }
     }
 
@@ -1046,7 +1029,7 @@ impl DamageGrid {
     /// Returns true when the character was absorbed.
     fn append_to_previous_cluster(&mut self, ch: char, width: u16) -> bool {
         let zero_width = width == 0;
-        let target_col = if self.pending_wrap || self.cursor_col >= self.cols {
+        let target_col = if (self.mode_flags & PENDING_WRAP != 0) || self.cursor_col >= self.cols {
             self.cols.saturating_sub(1)
         } else if self.cursor_col > 0 {
             self.cursor_col - 1
@@ -1102,12 +1085,12 @@ impl DamageGrid {
             self.cursor_col = (col as u16 + new_width).min(self.cols);
         }
         if self.cursor_row == row as u16
-            && (self.pending_wrap || self.cursor_col >= self.cols)
+            && ((self.mode_flags & PENDING_WRAP != 0) || self.cursor_col >= self.cols)
             && col as u16 == self.cols.saturating_sub(1)
             && new_width > old_width
         {
             self.cursor_col = self.cols;
-            self.pending_wrap = true;
+            self.mode_flags |= PENDING_WRAP;
         }
         let mark_start = col as u16;
         let mark_end = mark_start.saturating_add(old_width.max(new_width).max(1));
@@ -1117,7 +1100,7 @@ impl DamageGrid {
 
     /// Scroll the active scroll region up by `n` rows, pushing content to scrollback.
     fn scroll_up(&mut self, n: u16, inserted_wrap: RowWrap) {
-        self.mutated_since_preserve = true;
+        self.mode_flags |= MUTATED_SINCE_PRESERVE;
         let top = self.scroll_top as usize;
         let bottom = self.scroll_bottom as usize;
         let cols = self.cols;
@@ -1135,7 +1118,7 @@ impl DamageGrid {
             }
             // top == 0 with no bottom margin is the common case (plain line feed
             // with no DECSTBM region); scrollback only collects primary rows.
-            let to_scrollback = !self.alt_screen && top == 0 && self.scrollback_limit > 0;
+            let to_scrollback = !(self.mode_flags & ALT_SCREEN != 0) && top == 0 && self.scrollback_limit > 0;
             // Scroll-introduced blank lines use the DEFAULT background, not the
             // current one — xterm applies back-colour-erase to the explicit
             // erase ops (EL/ED/ECH), never to scroll/insert-line.
@@ -1192,7 +1175,7 @@ impl DamageGrid {
     /// transcript. No-op on the alternate screen — full-screen apps own
     /// their display and do not contribute scrollback.
     fn preserve_visible_rows_to_scrollback(&mut self) {
-        if self.alt_screen || self.scrollback_limit == 0 {
+        if (self.mode_flags & ALT_SCREEN != 0) || self.scrollback_limit == 0 {
             return;
         }
         // Retention decision (capsule rendering plan §3.7, candidate (b)):
@@ -1202,7 +1185,7 @@ impl DamageGrid {
         // nothing — repeated ED2 repaint cycles cannot duplicate the
         // transcript (D11) while cleared-but-never-scrolled screens stay
         // recoverable.
-        if !self.mutated_since_preserve {
+        if !(self.mode_flags & MUTATED_SINCE_PRESERVE != 0) {
             return;
         }
         let Some(first) = self
@@ -1230,7 +1213,7 @@ impl DamageGrid {
                     .all(|(prev_row, idx)| prev_row.as_slice() == self.primary[idx].as_slice())
         });
         if unchanged {
-            self.mutated_since_preserve = false;
+            self.mode_flags &= !MUTATED_SINCE_PRESERVE;
             return;
         }
         let block: Vec<Vec<Cell>> = (first..=last)
@@ -1243,7 +1226,7 @@ impl DamageGrid {
             self.scrollback.push_back(row.clone());
         }
         self.last_preserved_block = Some(block);
-        self.mutated_since_preserve = false;
+        self.mode_flags &= !MUTATED_SINCE_PRESERVE;
     }
 
     /// Newline action: move down or scroll.
@@ -1274,7 +1257,7 @@ impl DamageGrid {
     /// back into the addressable range so the subsequent move computes from a
     /// valid column.
     fn clear_pending_wrap(&mut self) {
-        self.pending_wrap = false;
+        self.mode_flags &= !PENDING_WRAP;
         if self.cursor_col >= self.cols {
             self.cursor_col = self.cols.saturating_sub(1);
         }
@@ -1605,10 +1588,10 @@ impl DamageGrid {
     fn set_dec_mode(&mut self, mode: u16, enabled: bool) {
         match mode {
             // Show/hide cursor.
-            25 => self.hide_cursor = !enabled,
+            25 => if enabled { self.mode_flags |= HIDE_CURSOR; } else { self.mode_flags &= !HIDE_CURSOR; },
             // Application/normal cursor keys — emit for passthrough.
             1 => {
-                self.application_cursor = enabled;
+                if enabled { self.mode_flags |= APPLICATION_CURSOR; } else { self.mode_flags &= !APPLICATION_CURSOR; }
                 self.passthrough
                     .push(PassthroughEvent::ApplicationCursorKeys(enabled));
             }
@@ -1616,13 +1599,13 @@ impl DamageGrid {
             47 => self.set_alt_screen(enabled),
             // Focus events — track state and emit for passthrough.
             1004 => {
-                self.focus_events = enabled;
+                if enabled { self.mode_flags |= FOCUS_EVENTS; } else { self.mode_flags &= !FOCUS_EVENTS; }
                 self.passthrough
                     .push(PassthroughEvent::FocusEvents(enabled));
             }
             // Bracketed paste — emit for passthrough.
             2004 => {
-                self.bracketed_paste = enabled;
+                if enabled { self.mode_flags |= BRACKETED_PASTE; } else { self.mode_flags &= !BRACKETED_PASTE; }
                 self.passthrough
                     .push(PassthroughEvent::BracketedPaste(enabled));
             }
@@ -1710,7 +1693,7 @@ impl DamageGrid {
     }
 
     fn set_alt_screen(&mut self, active: bool) {
-        self.alt_screen = active;
+        if active { self.mode_flags |= ALT_SCREEN; } else { self.mode_flags &= !ALT_SCREEN; }
         self.clear_active_hyperlink_state();
         self.dirty.mark_all();
     }
