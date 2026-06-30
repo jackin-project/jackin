@@ -38,8 +38,8 @@ lines = 3852
 
 [[production]]
 path = "crates/jackin-runtime/src/runtime/launch.rs"
-lines = 255
-# R4 File1: load_cleanup.rs + restore_resolve.rs + launch_runtime.rs extracted (coordinator now coordinator-only). Partial File1 complete.
+lines = 269
+# R4 File1/2: launch/ siblings extracted; reexports added for launch/tests.rs `use super::*;` (ExitPhase, RoleState, Instance*, pull_*, etc.) + hygiene. Size reflects complete test-glob preservation.
 
 # Grandfathered test files (current line counts; may only decrease):
 [[test]]
