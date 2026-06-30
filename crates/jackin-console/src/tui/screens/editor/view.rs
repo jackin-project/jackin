@@ -1,6 +1,14 @@
 //! Editor screen view helpers.
 
 use super::model::{EditorState, EditorTab};
+pub use super::model::{SecretsRow, SecretsScopeTag};
+
+pub use crate::tui::mount_display::MountDisplayRow;
+pub use crate::tui::state::EditorMode;
+
+pub use crate::tui::components::editor_rows::{
+    AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, SecretValueDisplay,
+};
 
 use ratatui::{
     layout::Rect,
@@ -61,6 +69,8 @@ pub(crate) use general_tab::{
 };
 
 mod mounts_tab;
+#[allow(unused_imports)]
+pub(crate) use mounts_tab::{editor_mount_add_row_width, mount_lines};
 
 mod roles_tab;
 #[allow(unused_imports)]
@@ -96,9 +106,9 @@ pub(crate) use modals::{
 mod frame;
 #[allow(unused_imports)]
 pub(crate) use frame::{
-    editor_contextual_footer_items, editor_frame_areas, prepare_editor_for_render,
-    prepare_editor_tab_for_area, render_editor_with_footer, render_general_tab, render_roles_tab,
-    render_secrets_tab,
+    editor_body_area, editor_contextual_footer_items, editor_frame_areas,
+    prepare_editor_for_render, prepare_editor_tab_for_area, render_editor_with_footer,
+    render_general_tab, render_roles_tab, render_secrets_tab,
 };
 
 #[must_use]

@@ -140,7 +140,8 @@ pub struct DamageGrid {
     hyperlink_targets: HashMap<u32, String>,
     /// Next hyperlink token to allocate.
     next_hyperlink_token: u32,
-    /// mode_flags bundles the mode bools (alt_screen, hide_cursor, bracketed_paste, application_cursor, focus_events, pending_wrap, mutated_since_preserve)
+    /// `mode_flags` bundles the mode bools (`alt_screen`, `hide_cursor`, `bracketed_paste`,
+    /// `application_cursor`, `focus_events`, `pending_wrap`, `mutated_since_preserve`).
     mode_flags: u8,
 
     // ── Reported default colors (OSC 10/11 query replies) ────────────────────
@@ -1122,7 +1123,7 @@ impl DamageGrid {
             // top == 0 with no bottom margin is the common case (plain line feed
             // with no DECSTBM region); scrollback only collects primary rows.
             let to_scrollback =
-                !(self.mode_flags & ALT_SCREEN != 0) && top == 0 && self.scrollback_limit > 0;
+                (self.mode_flags & ALT_SCREEN == 0) && top == 0 && self.scrollback_limit > 0;
             // Scroll-introduced blank lines use the DEFAULT background, not the
             // current one — xterm applies back-colour-erase to the explicit
             // erase ops (EL/ED/ECH), never to scroll/insert-line.
@@ -1189,7 +1190,7 @@ impl DamageGrid {
         // nothing — repeated ED2 repaint cycles cannot duplicate the
         // transcript (D11) while cleared-but-never-scrolled screens stay
         // recoverable.
-        if !(self.mode_flags & MUTATED_SINCE_PRESERVE != 0) {
+        if self.mode_flags & MUTATED_SINCE_PRESERVE == 0 {
             return;
         }
         let Some(first) = self

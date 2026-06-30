@@ -442,7 +442,13 @@ R6 progress (this branch):
 - DamageGrid (term): bundled 7 mode bools → mode_flags u8, expect removed, check/clippy/test-build green (uses new()), committed+pushed.
 2 done. 54 remaining (live).
 
-Note: safe low-fan-out items with no test source impact (no bool field literals or direct asserts in *tests.rs) are limited. Many console/term/protocol/xtask/runtime ones couple to tests. Per contract, only do items where tests continue to compile unchanged (use of helpers/new()/Default only). See /tmp/grok-goal-.../implementer/ for status.
+Investigation (re-confirm + grep *test*.rs + tests.rs for field: inits and .field reads on bools):
+- Tried: Categories (xtask), StatusFooterHover (tui + launch-tui test literals), MuxModeState/PointerShapeState/CursorVisibilityState (capsule model/tests.rs heavy literals), LaunchView (launch-tui/update/tests.rs), AttachCapabilities/Sources (daemon/tests.rs direct .pointer_shapes reads), RunOptions (docker shell tests), Workspace*Facts / SidebarFacts / save_preview (view/tests + list_geometry/tests), etc.
+- All remaining low-fan-out struct_excessive_bools candidates have either struct literals naming the bool fields or direct .bool reads inside test sources. Per executor contract: no test edits allowed → these are not safe mechanical R6 slices.
+- too_many_lines on launch fns post-R4 extract still fire on the large remaining fns (e.g. launch_role_runtime ~924L); no trivial attr deletions.
+- No additional safe zero-impact R6 item identified. Flagged. Higher-fanout clusters or operator-directed next required for further burn-down.
+
+Note: safe low-fan-out items with no test source impact (no bool field literals or direct asserts in *tests.rs) are limited. Many console/term/protocol/xtask/runtime ones couple to tests. Per contract, only do items where tests continue to compile unchanged (use of helpers/new()/Default only). See /tmp/grok-goal-975a0946ca7b/implementer/ for status.
 
 ### `struct_excessive_bools` (40)
 
