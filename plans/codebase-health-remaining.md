@@ -437,9 +437,12 @@ structure-only; delete the `#[expect]` once the lint passes. Cluster PRs by crat
 site) mechanical; `ModalOverlayState` (7, all-bool) clean enum candidate;
 `EvidenceSummary` (31 sites) + `ConsoleInputDispatchFacts` (16 sites) last.
 
-R6 progress (this branch): OscPolicy (4 bools, capsule) converted to u8 flags + consts (like SupportedSgr pattern); expect removed; prod-only ctors/getters updated; lib+test-build green; no test edits; committed. 1/~40 struct_bools.
+R6 progress (this branch): 
+- OscPolicy (capsule, 4 bools): flags, safe (no test edits), committed+pushed.
+- DamageGrid (term): bundled 7 mode bools → mode_flags u8, expect removed, check/clippy/test-build green (uses new()), committed+pushed.
+2 done. 54 remaining (live).
 
-Note: several other low-fan-out candidates (DamageGrid, MuxModeState etc, Attach*, Categories) require either bundling additional bools (larger edit) or would touch test sources with struct literals (forbidden per executor contract "no test edits"). Honest status in implementer/R6-status*.txt. Safe contained items are limited.
+Note: safe low-fan-out items with no test source impact (no bool field literals or direct asserts in *tests.rs) are limited. Many console/term/protocol/xtask/runtime ones couple to tests. Per contract, only do items where tests continue to compile unchanged (use of helpers/new()/Default only). See /tmp/grok-goal-.../implementer/ for status.
 
 ### `struct_excessive_bools` (40)
 
