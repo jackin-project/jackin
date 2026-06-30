@@ -212,16 +212,18 @@ pub(super) async fn handle_console(
             drop(screen);
             let args = crate::cli::PrewarmArgs {
                 agents: Vec::new(),
-                image: true,
-                roles: false,
-                sidecar: false,
-                sidecar_container: false,
-                keep_sidecar_container: false,
-                daemon: false,
+                flags: crate::cli::prewarm::PrewarmFlags {
+                    image: true,
+                    daemon: false,
+                    roles: false,
+                    sidecar: false,
+                    sidecar_container: false,
+                    keep_sidecar_container: false,
+                    all_workspaces: false,
+                    all_roles: false,
+                },
                 role: None,
                 workspace: Some(name),
-                all_workspaces: false,
-                all_roles: false,
                 role_git: None,
                 role_branch: None,
             };
