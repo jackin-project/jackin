@@ -157,10 +157,23 @@ impl OscPolicy {
     /// into a focused shell.
     pub fn from_env() -> Self {
         Self {
-            flags: (if !is_env_deny(ENV_OSC_TITLE) { ALLOW_TITLE } else { 0 })
-                | (if !is_env_deny(ENV_OSC52) { ALLOW_OSC52 } else { 0 })
-                | (if !is_env_deny(ENV_OSC_NOTIFY) { ALLOW_NOTIFY } else { 0 })
-                | (if !is_env_deny(ENV_OSC_HYPERLINK) { ALLOW_HYPERLINK } else { 0 }),
+            flags: (if !is_env_deny(ENV_OSC_TITLE) {
+                ALLOW_TITLE
+            } else {
+                0
+            }) | (if !is_env_deny(ENV_OSC52) {
+                ALLOW_OSC52
+            } else {
+                0
+            }) | (if !is_env_deny(ENV_OSC_NOTIFY) {
+                ALLOW_NOTIFY
+            } else {
+                0
+            }) | (if !is_env_deny(ENV_OSC_HYPERLINK) {
+                ALLOW_HYPERLINK
+            } else {
+                0
+            }),
         }
     }
 
@@ -186,9 +199,7 @@ impl OscPolicy {
     /// invocation that integration tests rely on.
     #[doc(hidden)]
     pub fn for_test_deny_all() -> Self {
-        Self {
-            flags: 0,
-        }
+        Self { flags: 0 }
     }
 }
 

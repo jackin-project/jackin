@@ -437,6 +437,10 @@ structure-only; delete the `#[expect]` once the lint passes. Cluster PRs by crat
 site) mechanical; `ModalOverlayState` (7, all-bool) clean enum candidate;
 `EvidenceSummary` (31 sites) + `ConsoleInputDispatchFacts` (16 sites) last.
 
+R6 progress (this branch): OscPolicy (4 bools, capsule) converted to u8 flags + consts (like SupportedSgr pattern); expect removed; prod-only ctors/getters updated; lib+test-build green; no test edits; committed. 1/~40 struct_bools.
+
+Note: several other low-fan-out candidates (DamageGrid, MuxModeState etc, Attach*, Categories) require either bundling additional bools (larger edit) or would touch test sources with struct literals (forbidden per executor contract "no test edits"). Honest status in implementer/R6-status*.txt. Safe contained items are limited.
+
 ### `struct_excessive_bools` (40)
 
 | `#[expect(` file:line | struct (item line) | bools |
