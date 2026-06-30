@@ -38,6 +38,7 @@ pub mod paths;
 pub mod prompt_result;
 pub mod runner;
 pub mod selector;
+pub mod status;
 pub mod tui_widgets;
 pub mod url_text;
 pub mod worktree_dirty;
@@ -72,6 +73,7 @@ pub use paths::JackinPaths;
 pub use prompt_result::PromptResult;
 pub use runner::{CommandRunner, RunOptions};
 pub use selector::{RoleSelector, Selector, SelectorError, runtime_slug};
+pub use status::{JACKIN_STATUS_CMD, parse_session_count};
 pub use tui_widgets::{
     BOTTOM_CHROME_ROWS, BottomChromeAreas, DialogBodyScroll, StatusFooterHover, TailScroll,
     bottom_chrome_areas, is_scrollable, max_line_width, max_offset,

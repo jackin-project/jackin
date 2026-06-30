@@ -26,10 +26,10 @@
 
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
-use crate::runtime::attach::JACKIN_STATUS_CMD;
 use crate::runtime::progress::PromptContextLine;
 use jackin_config::DirtyExitPolicy;
 use jackin_core::CommandRunner;
+use jackin_core::JACKIN_STATUS_CMD;
 use jackin_diagnostics::debug_log;
 use std::path::Path;
 
@@ -329,7 +329,7 @@ async fn has_jackin_sessions(
         .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
-        Ok(output) => match crate::runtime::attach::parse_session_count(&output) {
+        Ok(output) => match jackin_core::parse_session_count(&output) {
             Some(0) => false,
             Some(_) => true,
             None => {
