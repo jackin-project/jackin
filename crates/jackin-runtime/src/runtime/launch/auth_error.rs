@@ -286,7 +286,7 @@ pub(super) fn is_proxy_env_name(key: &str) -> bool {
     PROXY_VAR_NAMES.contains(&key)
 }
 
-pub(super) fn append_no_proxy_host(value: &str, host: &str) -> String {
+pub(crate) fn append_no_proxy_host(value: &str, host: &str) -> String {
     if value
         .split(',')
         .map(str::trim)

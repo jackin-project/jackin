@@ -84,6 +84,10 @@ where
 }
 
 #[allow(dead_code)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "tracked in codebase-health-enforcement"
+)]
 pub(super) async fn run_launch_core<D, R>(ctx: LaunchCore<'_, D, R>) -> anyhow::Result<String>
 where
     D: DockerApi,
@@ -961,6 +965,7 @@ where
             role_key: &role_key,
         },
     };
+    #[allow(clippy::needless_borrow)]
     let launch_result = super::super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
     if launch_result.is_err() {
         // FailedSetup write error must not abort cleanup; surface to stderr

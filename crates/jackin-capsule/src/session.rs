@@ -157,22 +157,22 @@ impl OscPolicy {
     /// into a focused shell.
     pub fn from_env() -> Self {
         Self {
-            flags: (if !is_env_deny(ENV_OSC_TITLE) {
+            flags: (if is_env_deny(ENV_OSC_TITLE) {
+                0
+            } else {
                 ALLOW_TITLE
-            } else {
+            }) | (if is_env_deny(ENV_OSC52) {
                 0
-            }) | (if !is_env_deny(ENV_OSC52) {
+            } else {
                 ALLOW_OSC52
-            } else {
+            }) | (if is_env_deny(ENV_OSC_NOTIFY) {
                 0
-            }) | (if !is_env_deny(ENV_OSC_NOTIFY) {
+            } else {
                 ALLOW_NOTIFY
-            } else {
+            }) | (if is_env_deny(ENV_OSC_HYPERLINK) {
                 0
-            }) | (if !is_env_deny(ENV_OSC_HYPERLINK) {
+            } else {
                 ALLOW_HYPERLINK
-            } else {
-                0
             }),
         }
     }

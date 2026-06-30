@@ -12,7 +12,7 @@
 //!
 //! The 4 production modules (branch / cleanup / materialize / state) now
 //! live in the `jackin-isolation` crate (C2 carve); they are re-exported
-//! here (R3: finalize/git_inspect now in jackin-isolation with shims for
+//! here (R3: `finalize/git_inspect` now in jackin-isolation with shims for
 //! unchanged call sites).
 
 pub mod finalize {

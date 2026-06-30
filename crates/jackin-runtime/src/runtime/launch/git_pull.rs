@@ -12,7 +12,7 @@ pub(crate) enum GitPullResult {
 }
 
 #[cfg(test)]
-pub fn pull_workspace_repos_with_git(
+pub(crate) fn pull_workspace_repos_with_git(
     workspace: &jackin_config::ResolvedWorkspace,
     debug: bool,
     git_program: &Path,

@@ -50,8 +50,16 @@ use super::discovery::list_running_agent_names;
 #[cfg(test)]
 use crate::instance::InstanceStatus;
 #[cfg(test)]
-pub(crate) use crate::instance::{DockerResources, NewInstanceManifest};
+pub(crate) use crate::instance::{
+    DockerResources, InstanceIndex, InstanceManifest, NewInstanceManifest, RoleState,
+};
+#[cfg(test)]
+pub(crate) use crate::runtime::attach::ContainerState;
 use jackin_core::selector::RoleSelector;
+#[cfg(test)]
+pub(crate) use jackin_docker::docker_client::DockerApi;
+#[cfg(test)]
+pub(crate) use std::path::Path;
 
 #[cfg(test)]
 pub(crate) use launch_pipeline::emit_auth_provision_launch_plan;
@@ -186,10 +194,14 @@ pub(crate) use mounts::{
 
 pub(crate) use capsule_setup::{capsule_config, exec_binding_names, prepare_socket_dir};
 
+#[cfg(test)]
+pub(crate) use exit_diagnosis::{ExitPhase, diagnose_premature_exit, read_text_tail};
 pub(crate) use exit_diagnosis::{
     attach_failure_error, diagnose_with_state, inspect_attach_outcome,
 };
 
+#[cfg(test)]
+pub(crate) use git_pull::pull_workspace_repos_with_git;
 pub(crate) use git_pull::{
     git_pull_sources, print_git_pull_results, pull_git_sources_with_git, record_git_pull_results,
 };
@@ -220,8 +232,8 @@ pub(crate) use restore_resolve::{
 mod launch_runtime;
 #[allow(unused_imports)]
 pub(crate) use launch_runtime::{
-    LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm, launch_role_runtime,
-    spawn_sibling_auth_prewarm,
+    LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm, debug_runtime_envs,
+    host_runtime_passthrough_env, launch_role_runtime, spawn_sibling_auth_prewarm,
 };
 
 /// Present the stale-instance decision. "Start fresh" is always the
@@ -247,6 +259,8 @@ mod auth_error;
 use auth_error::LaunchError;
 #[cfg(not(test))]
 use auth_error::LaunchError;
+#[cfg(test)]
+pub(crate) use auth_error::append_no_proxy_host;
 use auth_error::{
     EnvLayerState, auth_token_source_reference, build_env_layer_states, build_mode_resolution,
 };

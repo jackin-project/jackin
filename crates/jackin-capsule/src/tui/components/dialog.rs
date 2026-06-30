@@ -414,7 +414,6 @@ impl Dialog {
     /// Mutable body-scroll state for the read-only info dialogs whose content
     /// can overflow (`ContainerInfo`, `GitHubContext`). `None` for dialogs that do
     /// not scroll. Lets the daemon route mouse-wheel events to the dialog body.
-
     /// Handle a raw key byte and return the resulting action.
     pub fn handle_key(
         &mut self,
@@ -1347,7 +1346,6 @@ impl Dialog {
     /// by the caller from the rendered snapshot + rect), so the scrollable info
     /// dialogs advertise only the scroll direction(s) the operator can move —
     /// never both axes when the body fits one.
-
     pub fn set_usage_tab_hover(
         &mut self,
         row: u16,

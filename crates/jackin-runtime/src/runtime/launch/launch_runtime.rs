@@ -1,6 +1,6 @@
-//! LaunchContext + prewarm types + spawn_sibling_auth_prewarm + launch_role_runtime
+//! `LaunchContext` + prewarm types + `spawn_sibling_auth_prewarm` + `launch_role_runtime`
 //! (+ host passthrough + debug env helpers) extracted from launch coordinator (File1).
-//! All items pub(crate) re-exported from the coordinator to preserve super:: / use super::* .
+//! All items `pub(crate)` re-exported from the coordinator to preserve `super::` / `use super::*` .
 
 #![allow(private_interfaces)]
 

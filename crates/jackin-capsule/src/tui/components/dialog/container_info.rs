@@ -1,4 +1,4 @@
-//! ContainerInfo dialog constructors and state helpers extracted from the
+//! `ContainerInfo` dialog constructors and state helpers extracted from the
 //! main coordinator impl. `ContainerInfoDiagnostics` is re-exported at the
 //! parent level.
 

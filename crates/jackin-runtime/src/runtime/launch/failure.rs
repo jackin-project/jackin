@@ -1,4 +1,4 @@
-//! Launch failure title, diagnosis, CLI error, source resolve, and render_exit extracted.
+//! Launch failure title, diagnosis, CLI error, source resolve, and `render_exit` extracted.
 
 use jackin_diagnostics;
 use jackin_docker::docker_client::DockerApi;

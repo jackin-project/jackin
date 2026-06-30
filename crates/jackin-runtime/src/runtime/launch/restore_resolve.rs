@@ -1,7 +1,7 @@
 //! Restore candidate resolution logic extracted from the launch coordinator
 //! (the ~508L cluster of resolve_* fns + Restore* types). All public items
 //! re-exported from the parent launch coordinator to preserve `super::` call
-//! sites in launch_pipeline.rs and any `use super::*` in tests.
+//! sites in `launch_pipeline.rs` and any `use super::*` in tests.
 
 use crate::instance::InstanceManifest;
 use crate::runtime::attach::ContainerState;

@@ -1,4 +1,4 @@
-//! LoadCleanup coordinator helper and atomic-write guard extracted from the
+//! `LoadCleanup` coordinator helper and atomic-write guard extracted from the
 //! launch coordinator. All items re-exported from the parent to preserve
 //! `super::` call sites in `launch_role_runtime` (via the write calls inside
 //! the capsule socket prep) and in `launch_pipeline.rs`.
