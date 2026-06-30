@@ -14,6 +14,7 @@ pub mod agent_binary;
 pub mod binary_artifact;
 pub mod capsule_binary;
 pub mod derived_image;
+pub mod image_decision;
 pub mod image_recipe;
 pub mod naming;
 pub mod version_check;
