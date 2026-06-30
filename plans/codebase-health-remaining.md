@@ -258,8 +258,8 @@ sibling `<module>/<name>.rs`; child reads ancestor privates via explicit `use su
 
 **Over-cap production files (verified `wc -l`):**
 
-- [ ] `crates/jackin-runtime/src/runtime/launch.rs` — **2833L** (siblings go under the
-      existing `runtime/launch/` dir, beside `launch_pipeline.rs`). (budget updated; decomp pending, File2 heavy flagged)
+- [ ] `crates/jackin-runtime/src/runtime/launch.rs` — **2199L** (siblings go under the
+      existing `runtime/launch/` dir, beside `launch_pipeline.rs`). (partial mechanical split done: mounts, capsule_setup, exit_diagnosis, git_pull extracted with reexports; launch_runtime etc pending; budget updated; File2 heavy flagged for operator).
 - [ ] `crates/jackin-console/src/tui/screens/editor/view.rs` — **2389L**.
 - [ ] `crates/jackin-capsule/src/tui/components/dialog.rs` — **2265L**.
 - [ ] `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs` — **2213L**.
