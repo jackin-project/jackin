@@ -21,7 +21,6 @@ files = [
     "crates/jackin-env/src/resolve.rs",
     "crates/jackin-launch-tui/src/tui/view.rs",
     "crates/jackin-instance/src/auth/tests.rs",
-    "crates/jackin-runtime/src/instance/auth/tests.rs",
     "crates/jackin-runtime/src/runtime/drift.rs",
     "crates/jackin-runtime/src/runtime/identity.rs",
     "crates/jackin-runtime/src/runtime/launch/launch_dind.rs",
@@ -31,6 +30,5 @@ files = [
     "crates/jackin/src/console/effects.rs",
     "crates/jackin/src/console/services.rs",
     "crates/jackin/src/console/tui.rs",
-    "crates/jackin/src/runtime.rs",
 ]
 
