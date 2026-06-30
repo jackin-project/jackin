@@ -30,7 +30,7 @@ The mechanical, copy-pasteable per-slice steps (exact files, symbols, line range
 
 ### Lint backlog (W2) — burn down the grandfathers
 
-- [ ] **R6 — clear the 58 `#[expect(clippy::…, reason = "tracked in codebase-health-enforcement")]`.** Breakdown: 40 `struct_excessive_bools` (bundle bool fields into a flags struct / state enum — biggest single win), 10 `fn_params_excessive_bools` (options struct or enum variants), 4 `too_many_lines` (extract helpers; overlaps R4), 4 `too_many_arguments` (params struct). Cluster by crate (`jackin-console` ×13 files, `jackin-capsule` ×5, `jackin-term` ×4, `jackin-runtime` ×4, …). Each refactor is structure-only; delete the `#[expect]` once the lint passes.
+- [ ] **R6 — clear the 58 `#[expect(clippy::…, reason = "tracked in codebase-health-enforcement")]`.** Breakdown: 40 `struct_excessive_bools` (bundle bool fields into a flags struct / state enum — biggest single win), 10 `fn_params_excessive_bools` (options struct or enum variants), 4 `too_many_lines` (extract helpers; overlaps R4), 4 `too_many_arguments` (params struct). Cluster by crate (`jackin-console` ×13 files, `jackin-capsule` ×5, `jackin-term` ×4, `jackin-runtime` ×4, …). Each refactor is structure-only; delete the `#[expect]` once the lint passes. Progress on branch: 2 low-fan-out safe slices completed + 1 pre-converted (SupportedSgr); remaining limited by test-source coupling (no test edits allowed per contract). See plans/codebase-health-remaining.md.
 
 ### Final tightening (only after R4 + R6)
 
