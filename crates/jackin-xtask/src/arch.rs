@@ -7,7 +7,7 @@
 //!
 //! | From → To | Why forbidden |
 //! | --- | --- |
-//! | jackin-runtime → jackin-tui | runtime is L1 application; tui is L3 presentation. Open P2 inversion — tracked for D2 port-trait relocation under the E0 LTO gate. |
+//! (none — all resolved; see R1/R2)
 //!
 //! Previously-tracked entries that have been broken (kept here as
 //! historical record):
@@ -35,23 +35,11 @@ use crate::docs::repo_root;
 /// Forbid edges (from, to). `from` is not allowed to depend on `to`.
 /// Stored as `(from, to)` so symmetric blocks are easy to read.
 ///
-/// Two P2 inversions were broken by the A5 prep slices (port-trait
-/// relocations through `jackin_core::{DebugLogSink, OperatorNoticeSink}`):
-/// `jackin-config → jackin-diagnostics` and `jackin-manifest →
-/// jackin-diagnostics`. The remaining entry, `jackin-runtime →
-/// jackin-tui`, is an L1→L3 inversion — runtime uses presentation helpers
-/// (`jackin_tui::url_text`, `jackin_tui::output`, `jackin_tui::ansi`,
-/// `jackin_tui::components`, `jackin_tui::animation`) in production code.
-/// Flipping it requires a port-trait relocation gated by the E0 LTO
-/// baseline (D2 binding condition), so it stays on the forbidden list
-/// until the carve/relocate PR lands.
-const FORBIDDEN_EDGES: &[(&str, &str)] = &[
-    // L1 application → L3 presentation. Open P2 inversion; runtime uses
-    // `jackin_tui::{url_text, output, ansi, components, animation}` in
-    // production code. Tracked in codebase-health-enforcement W1
-    // follow-up + E0 LTO baseline.
-    ("jackin-runtime", "jackin-tui"),
-];
+/// After R2, `FORBIDDEN_EDGES` is empty; the architecture is now
+/// machine-enforced via `lint --strict` in CI. Historical P2 inversions
+/// (including the former `jackin-runtime → jackin-tui`) were resolved by
+/// prior slices (port traits + R1).
+const FORBIDDEN_EDGES: &[(&str, &str)] = &[];
 
 #[derive(Args, Debug)]
 pub(crate) struct LintArchArgs {

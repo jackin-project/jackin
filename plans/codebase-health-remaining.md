@@ -160,7 +160,7 @@ from `jackin-runtime/Cargo.toml [dependencies]`.
 
 ---
 
-## R2 — Flip the dependency-direction gate to `--strict` in CI
+## [x] R2 — Flip the dependency-direction gate to `--strict` in CI (done)
 
 **Goal.** Make the architecture machine-enforced once R1 lands. **Precondition: R1 merged.**
 

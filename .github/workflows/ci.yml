@@ -438,7 +438,7 @@ jobs:
       #     are cleaned up; `lint --strict` is the eventual hard mode).
       # Grandfathered entries in each ratchet file may only ever shrink. See
       # `roadmap/codebase-health-enforcement`.
-      - run: cargo run -p jackin-xtask --locked -- lint
+      - run: cargo run -p jackin-xtask --locked -- lint --strict
 
   clippy:
     needs: [changes, matrix-setup, cargo-registry-warmup]
