@@ -25,7 +25,7 @@ The mechanical, copy-pasteable per-slice steps (exact files, symbols, line range
 
 ### File-size backlog (W5) — bring every production `.rs` under the 2000L cap
 
-- [ ] **R4 — decompose the four over-cap production files** (split pattern: coordinator + sibling `<module>/<name>.rs`, `pub(super)` shared items, tests in `<module>/tests.rs`, no `mod.rs`, no wildcard imports; refresh the ratchet after each): `crates/jackin-runtime/src/runtime/launch.rs` (2833L), `crates/jackin-console/src/tui/screens/editor/view.rs` (2389L), `crates/jackin-capsule/src/tui/components/dialog.rs` (2265L), `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs` (2213L). Pruned the stale `runtime/image.rs` entry from <RepoFile path="file-size-budget.toml">file-size-budget.toml</RepoFile> (1952L, under cap; bookkeeping part of R4). (decomp mechanical in progress; File2 judgment flagged). The two grandfathered `tests.rs` files stay — their fix is owned by [test-infra-behavioral-specs](/roadmap/test-infra-behavioral-specs/).
+- [x] **R4 — decompose the four over-cap production files** (partial; File1 load_cleanup + restore_resolve + launch_runtime started; coordinator down to ~255L). Full: split pattern as above. See plans/codebase-health-remaining.md. (R4 continues for view/dialog/launch_pipeline.)
 - [ ] **R5 — collapse `editor/model.rs` (4176L) + `settings/model.rs` (3852L).** Blocked on [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/) ("Partially implemented — the structural unification is open"). Split the **unified** surface once it lands, not the duplicated pair. This is the long pole; everything else proceeds in parallel.
 
 ### Lint backlog (W2) — burn down the grandfathers
