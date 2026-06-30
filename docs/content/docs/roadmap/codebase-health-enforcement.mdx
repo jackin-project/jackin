@@ -248,7 +248,7 @@ Used by every C/E slice. Pure move; contents are not rewritten.
 
 ### Phase D — collapse duplicated homes (P5)
 
-- [x] **D1 PART B** — absorb the image-naming cluster into `jackin-image/src/naming.rs`. PARTs E/F/G (`image_recipe` / `image_decision` / `image_build` split out of `runtime/image.rs`) remain — each is a substantial mechanical move (~600-1000 LOC) and is filed as a follow-up slice. PART A (`runtime_slug` → jackin-core) was landed at f7e422adc.
+- [x] **D1 PART B** — absorb the image-naming cluster into `jackin-image/src/naming.rs`. PARTs E/F/G (`image_recipe` / `image_decision` / `image_build` split out of `runtime/image.rs`) remain — each is a substantial mechanical move (~600-1000 LOC) and is filed as a follow-up slice. PART A (`runtime_slug` → jackin-core) was landed at f7e422adc. **(Parked together as one D1 PARTs-E+F+G+H-M slice.** Recipe-cluster tests transitively call `classify_image_labels` + `ImageInvalidationReason` (PART F symbols), so PART E cannot land alone without moving PART F; combined with PART G the slice reorganises ~3000 LOC plus a jackin-image ⇄ jackin-runtime test-support dev-dep cycle — exceeds the safe autonomous single-PASS slice budget.)**
 - [x] **D2 — env-resolution dedup:** one home for the env-resolution types (`jackin-env` vs `jackin-core/env_model`); loser becomes a re-export or is deleted.
 - [x] **D3 — `op_cache` dedup:** one `op_cache` (currently in both `jackin-core` and `jackin-console`).
 - [x] **D4 — resource-naming dedup:** one home for the `*-dind`/`*-net`/volume naming (currently `instance/naming.rs` and `runtime/naming.rs`).
@@ -277,7 +277,7 @@ Interleave anytime; each rides under the file-size gate and shrinks the budget.
 
 - [x] `usage.rs` → `usage/format.rs` extracted *(shipped)*.
 - [x] `usage.rs` remaining slices: `usage/{claude,codex,grok,zai,kimi,minimax,amp}.rs` + `usage/{view,refresh}.rs`; `usage.rs` 5986L → 1466L coordinator under the 2000L production cap.
-- [ ] `tui/app.rs`, `screens/editor/model.rs`, `screens/settings/model.rs` — decompose with G3 / unify-settings (split the unified surface, not the duplicated pair).
+- [ ] `tui/model.rs` (5095L), `screens/editor/model.rs` (4176L), `screens/settings/model.rs` (3852L) — decompose with G3 / unify-settings (split the unified surface, not the duplicated pair). **Parked.** The W5-console playbook recipes reference a pre-G3 file structure (`tui/app.rs` does not exist; the G3 migration folded it into `tui/model.rs`); the editor + settings settings/models were never unified into the single surface G3 nominally delivered, so `unify-settings-editor-surfaces` remains a prerequisite the carve recipe assumes has shipped. Rewrite the playbook slice against the post-G3 file layout before executing.
 
 ### Critical-path ordering
 
