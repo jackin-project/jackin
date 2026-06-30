@@ -440,7 +440,8 @@ site) mechanical; `ModalOverlayState` (7, all-bool) clean enum candidate;
 R6 progress (this branch): 
 - OscPolicy (capsule, 4 bools): flags, safe (no test edits), committed+pushed.
 - DamageGrid (term): bundled 7 mode bools → mode_flags u8, expect removed, check/clippy/test-build green (uses new()), committed+pushed.
-2 done. 54 remaining (live).
+- SupportedSgr (term, 13 bools): already converted to flags u16 + accessors (1 construction site in Default, per plan risk order); expect already absent in live tree, lint satisfied.
+3 accounted. 53 remaining live with the tracked expect attr. Low-fan-out safe set exhausted per greps (see investigation note).
 
 Investigation (re-confirm + grep *test*.rs + tests.rs for field: inits and .field reads on bools):
 - Tried: Categories (xtask), StatusFooterHover (tui + launch-tui test literals), MuxModeState/PointerShapeState/CursorVisibilityState (capsule model/tests.rs heavy literals), LaunchView (launch-tui/update/tests.rs), AttachCapabilities/Sources (daemon/tests.rs direct .pointer_shapes reads), RunOptions (docker shell tests), Workspace*Facts / SidebarFacts / save_preview (view/tests + list_geometry/tests), etc.
@@ -490,7 +491,7 @@ Note: safe low-fan-out items with no test source impact (no bool field literals 
 | jackin-term/src/cell.rs:24 | Attrs (28) | 9 |
 | jackin-term/src/grid.rs:89 | DamageGrid (93) | 3 | [done R6] |
 | jackin-term/src/snapshot.rs:29 | SnapCell (31) | 12 |
-| jackin-term/src/width.rs:75 | SupportedSgr (77) | 13 |
+| jackin-term/src/width.rs:75 | SupportedSgr (77) | 13 | [done pre-R6; converted to flags, 1 construction site, no expect remains] |
 | jackin-tui/src/components/status_footer.rs:15 | StatusFooterHover (17) | 4 |
 | jackin/src/cli/prewarm.rs:20 | PrewarmArgs (23) | 8 (clap `#[arg]`) |
 | jackin-xtask/src/pr.rs:39 | Categories (41) | 4 |
