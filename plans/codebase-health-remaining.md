@@ -451,7 +451,7 @@ Note: safe low-fan-out items with no test source impact (no bool field literals 
 | jackin-capsule/src/agent_status/evidence.rs:62 | ProcessEvidence (66) | 6 |
 | jackin-capsule/src/agent_status/evidence.rs:89 | EvidenceSummary (93) | 10 |
 | jackin-capsule/src/daemon.rs:162 | Multiplexer (166) | 4 |
-| jackin-capsule/src/session.rs:137 | OscPolicy (141) | 4 |
+| jackin-capsule/src/session.rs:137 | OscPolicy (141) | 4 | [done R6] |
 | jackin-capsule/src/tui/model.rs:32 | MuxModeState (36) | 4 |
 | jackin-capsule/src/tui/model.rs:58 | PointerShapeState (62) | 6 |
 | jackin-capsule/src/tui/model.rs:159 | CursorVisibilityState (163) | 5 |
@@ -482,7 +482,7 @@ Note: safe low-fan-out items with no test source impact (no bool field literals 
 | jackin-protocol/src/attach.rs:180 | AttachCapabilitySources (184) | 5 |
 | jackin-term/tests/conformance.rs:55 | CellSnapshot (57) | 6 |
 | jackin-term/src/cell.rs:24 | Attrs (28) | 9 |
-| jackin-term/src/grid.rs:89 | DamageGrid (93) | 3 |
+| jackin-term/src/grid.rs:89 | DamageGrid (93) | 3 | [done R6] |
 | jackin-term/src/snapshot.rs:29 | SnapCell (31) | 12 |
 | jackin-term/src/width.rs:75 | SupportedSgr (77) | 13 |
 | jackin-tui/src/components/status_footer.rs:15 | StatusFooterHover (17) | 4 |

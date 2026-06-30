@@ -188,7 +188,10 @@ impl std::fmt::Debug for DamageGrid {
             .field("cursor_col", &self.cursor_col)
             .field("hide_cursor", &(self.mode_flags & HIDE_CURSOR != 0))
             .field("bracketed_paste", &(self.mode_flags & BRACKETED_PASTE != 0))
-            .field("application_cursor", &(self.mode_flags & APPLICATION_CURSOR != 0))
+            .field(
+                "application_cursor",
+                &(self.mode_flags & APPLICATION_CURSOR != 0),
+            )
             .field("focus_events", &(self.mode_flags & FOCUS_EVENTS != 0))
             .field("kitty_kb_stack_depth", &self.kitty_kb_stack.len())
             .field("dirty", &self.dirty)
@@ -1118,7 +1121,8 @@ impl DamageGrid {
             }
             // top == 0 with no bottom margin is the common case (plain line feed
             // with no DECSTBM region); scrollback only collects primary rows.
-            let to_scrollback = !(self.mode_flags & ALT_SCREEN != 0) && top == 0 && self.scrollback_limit > 0;
+            let to_scrollback =
+                !(self.mode_flags & ALT_SCREEN != 0) && top == 0 && self.scrollback_limit > 0;
             // Scroll-introduced blank lines use the DEFAULT background, not the
             // current one — xterm applies back-colour-erase to the explicit
             // erase ops (EL/ED/ECH), never to scroll/insert-line.
@@ -1588,10 +1592,20 @@ impl DamageGrid {
     fn set_dec_mode(&mut self, mode: u16, enabled: bool) {
         match mode {
             // Show/hide cursor.
-            25 => if enabled { self.mode_flags |= HIDE_CURSOR; } else { self.mode_flags &= !HIDE_CURSOR; },
+            25 => {
+                if enabled {
+                    self.mode_flags |= HIDE_CURSOR;
+                } else {
+                    self.mode_flags &= !HIDE_CURSOR;
+                }
+            }
             // Application/normal cursor keys — emit for passthrough.
             1 => {
-                if enabled { self.mode_flags |= APPLICATION_CURSOR; } else { self.mode_flags &= !APPLICATION_CURSOR; }
+                if enabled {
+                    self.mode_flags |= APPLICATION_CURSOR;
+                } else {
+                    self.mode_flags &= !APPLICATION_CURSOR;
+                }
                 self.passthrough
                     .push(PassthroughEvent::ApplicationCursorKeys(enabled));
             }
@@ -1599,13 +1613,21 @@ impl DamageGrid {
             47 => self.set_alt_screen(enabled),
             // Focus events — track state and emit for passthrough.
             1004 => {
-                if enabled { self.mode_flags |= FOCUS_EVENTS; } else { self.mode_flags &= !FOCUS_EVENTS; }
+                if enabled {
+                    self.mode_flags |= FOCUS_EVENTS;
+                } else {
+                    self.mode_flags &= !FOCUS_EVENTS;
+                }
                 self.passthrough
                     .push(PassthroughEvent::FocusEvents(enabled));
             }
             // Bracketed paste — emit for passthrough.
             2004 => {
-                if enabled { self.mode_flags |= BRACKETED_PASTE; } else { self.mode_flags &= !BRACKETED_PASTE; }
+                if enabled {
+                    self.mode_flags |= BRACKETED_PASTE;
+                } else {
+                    self.mode_flags &= !BRACKETED_PASTE;
+                }
                 self.passthrough
                     .push(PassthroughEvent::BracketedPaste(enabled));
             }
@@ -1693,7 +1715,11 @@ impl DamageGrid {
     }
 
     fn set_alt_screen(&mut self, active: bool) {
-        if active { self.mode_flags |= ALT_SCREEN; } else { self.mode_flags &= !ALT_SCREEN; }
+        if active {
+            self.mode_flags |= ALT_SCREEN;
+        } else {
+            self.mode_flags &= !ALT_SCREEN;
+        }
         self.clear_active_hyperlink_state();
         self.dirty.mark_all();
     }
