@@ -13,12 +13,8 @@ use crate::tui::components::env_value::secret_display;
 use crate::tui::components::footer_hints::{
     EditorContextFooterMode, editor_contextual_row_footer_items,
 };
-use crate::tui::components::mount_rows::{
-    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, render_mount_header,
-};
-use crate::tui::mount_display::{
-    MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
-};
+
+
 use crate::tui::view::{
     effective_footer_height, measured_footer_height, render_footer, render_header,
 };
@@ -105,6 +101,8 @@ mod general_tab;
 pub(crate) use general_tab::{
     editor_general_content_width, editor_row_width, general_lines, general_row_widths,
 };
+
+mod mounts_tab;
 
 pub fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
     let chunks = Layout::default()
@@ -654,7 +652,7 @@ pub fn editor_mount_lines_for_state<
     let show_cursor = !state.tab_bar_focused()
         && state.workspace_mounts_scroll_focused()
         && state.modal.is_none();
-    mount_state_lines(state, show_cursor)
+    mounts_tab::mount_state_lines(state, show_cursor)
 }
 
 #[allow(clippy::type_complexity)]
@@ -857,7 +855,7 @@ pub fn editor_tab_geometry<
 ) -> EditorTabContentGeometry {
     match state.active_tab {
         EditorTab::General => general_tab::general_state_geometry(state),
-        EditorTab::Mounts => mount_state_geometry(state),
+        EditorTab::Mounts => mounts_tab::mount_state_geometry(state),
         EditorTab::Roles => role_state_geometry(state, config.roles.keys()),
         EditorTab::Secrets => {
             secret_state_geometry(state, area.width, |role| config.roles.contains_key(role))
@@ -1057,51 +1055,6 @@ pub fn editor_body_area(area: Rect, footer_h: u16) -> Rect {
 }
 
 #[must_use]
-pub fn editor_mount_add_row_width() -> usize {
-    text_width("  + Add mount")
-}
-
-#[must_use]
-#[allow(clippy::type_complexity)]
-pub fn mount_state_geometry<
-    Modal,
-    SaveFlow,
-    EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
-    PendingRoleLoad,
-    PendingDriftCheck,
-    PendingIsolationCleanup,
-    PendingOpCommit,
->(
-    state: &WorkspaceEditorState<
-        Modal,
-        SaveFlow,
-        EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
-        PendingRoleLoad,
-        PendingDriftCheck,
-        PendingIsolationCleanup,
-        PendingOpCommit,
-    >,
-) -> EditorTabContentGeometry {
-    let content_height = if state.pending.mounts.is_empty() {
-        2
-    } else {
-        crate::tui::mount_display::workspace_config_mounts_content_height(&state.pending.mounts) + 2
-    };
-    EditorTabContentGeometry {
-        content_width: crate::tui::mount_display::workspace_config_mounts_content_width_with_cache(
-            &state.pending.mounts,
-            &state.mount_info_cache,
-        )
-        .max(editor_mount_add_row_width()),
-        content_height,
-    }
-}
-
-#[must_use]
 pub fn editor_roles_status_width(is_all: bool, allowed_count: usize, total_count: usize) -> usize {
     if is_all {
         text_width("  Allowed roles:    all  ")
@@ -1120,107 +1073,6 @@ pub fn editor_role_row_width(role_name: &str) -> usize {
 #[must_use]
 pub fn editor_role_load_row_width() -> usize {
     text_width("  + Load role")
-}
-
-#[must_use]
-pub fn mount_lines(
-    rows: &[MountDisplayRow],
-    cursor: usize,
-    hovered_row: Option<usize>,
-    show_cursor: bool,
-) -> Vec<Line<'static>> {
-    let path_w = mount_path_width(rows);
-    let mut lines: Vec<Line<'_>> = vec![render_mount_header(path_w)];
-
-    for (i, row) in rows.iter().enumerate() {
-        let selected = show_cursor && (i == cursor);
-        let hovered = !selected && hovered_row == Some(i);
-        let hb = |s: Style| {
-            if hovered {
-                s.bg(jackin_tui::theme::TAB_BG_INACTIVE_HOVER)
-            } else {
-                s
-            }
-        };
-        let prefix = if selected { "\u{25b8} " } else { "  " };
-        let base_style = if selected {
-            Style::default()
-                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
-        };
-        let dim_style = Style::default()
-            .fg(jackin_tui::theme::PHOSPHOR_DIM)
-            .add_modifier(Modifier::ITALIC);
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("{prefix}{:<path_w$}  ", row.destination),
-                hb(base_style),
-            ),
-            Span::styled(
-                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                hb(Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM)),
-            ),
-            Span::styled("  ", hb(Style::default())),
-            Span::styled(
-                format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
-                hb(Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM)),
-            ),
-            Span::styled("  ", hb(Style::default())),
-            Span::styled(row.kind.clone(), hb(dim_style)),
-        ]));
-        if let Some(host_source) = &row.host_source {
-            lines.push(Line::from(Span::styled(
-                format!("  {host_source:<path_w$}"),
-                Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM),
-            )));
-        }
-    }
-
-    let sentinel_idx = rows.len();
-    let sentinel_selected = show_cursor && (cursor == sentinel_idx);
-    let sentinel_prefix = if sentinel_selected { "\u{25b8} " } else { "  " };
-    if !rows.is_empty() {
-        lines.push(Line::from(""));
-    }
-    lines.push(Line::from(Span::styled(
-        format!("{sentinel_prefix}+ Add mount"),
-        action_row_style(sentinel_selected),
-    )));
-
-    lines
-}
-
-#[must_use]
-#[allow(clippy::type_complexity)]
-pub fn mount_state_lines<
-    Modal,
-    SaveFlow,
-    EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
-    PendingRoleLoad,
-    PendingDriftCheck,
-    PendingIsolationCleanup,
-    PendingOpCommit,
->(
-    state: &WorkspaceEditorState<
-        Modal,
-        SaveFlow,
-        EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
-        PendingRoleLoad,
-        PendingDriftCheck,
-        PendingIsolationCleanup,
-        PendingOpCommit,
-    >,
-    show_cursor: bool,
-) -> Vec<Line<'static>> {
-    let FieldFocus::Row(cursor) = state.active_field;
-    let rows = format_config_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
-    mount_lines(&rows, cursor, state.hovered_mount_row(), show_cursor)
 }
 
 #[must_use]
