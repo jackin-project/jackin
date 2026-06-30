@@ -1,378 +1,486 @@
 # Codebase health — remaining work to close the roadmap item
 
-Clean, verified-against-code plan of **everything still open** under
+Executor-grade worklist of **everything still open** under
 [Codebase health: structure & reviewability](/roadmap/codebase-health-enforcement/).
-This file is the live worklist. Slices A1–G3 of the original execution playbook
-have all shipped (their mechanical per-slice log lives in git history); only the
-open set below remains.
+Written so an agent can run one slice with **zero improvisation**: exact files, exact
+`file:line`, exact symbols, exact repoints, exact commands, exact done-when.
 
-**Verification basis:** every item below was checked against the actual tree on
-branch `feature/private-registry-auth` (HEAD at writing), **not** against roadmap
-checkboxes. Where the roadmap `[x]` and the code disagree, the code wins and the
-discrepancy is called out.
+This file is the live worklist. Slices A1–G3 of the original execution playbook have all
+shipped (their per-slice log lives in git history); only the open set below remains.
 
-The invariant from the roadmap still governs every slice: **structure only — never
-behavior.** No logic, control-flow, signature, or performance change. The existing
-test suite + the `runtime-launch` / `op-picker` behavioral specs must pass
-**unmodified**; a forced test edit means behavior changed → back out.
+**Verification basis.** Every fact below was checked against the live tree (branch
+`refactor/codebase-health-decomposition`, HEAD at writing), **not** against roadmap
+checkboxes. Line numbers were accurate at investigation time — an executor must
+re-confirm each against the file before editing (any prior landed slice shifts them);
+where a step says "verify before editing," that is mandatory, not optional.
 
----
-
-## Definition of done (when this roadmap item finally closes)
-
-From the roadmap's critical-path closer: the item stays **open** until **all** of:
-
-1. The last inverted edge `jackin-runtime → jackin-tui` is broken (R1) and the
-   dependency-direction gate runs in **`--strict`** mode in CI (R2).
-2. Every god-crate carve is complete — E1 finished (R3); E2 done.
-3. The W5 file-size backlog is cleared: no production `.rs` over the 2000L cap (R4),
-   including the editor/settings models once W6/unify lands (R5).
-4. The W2 clippy grandfather backlog is burned down: zero
-   `#[expect(clippy::…, reason = "tracked in codebase-health-enforcement")]` remain (R6).
-5. Then — and only then — thresholds tighten toward target: files ≤ 1500L,
-   fns ≤ 150 logical lines, clippy thresholds ratcheted down (R7).
-
-R8–R11 are durability / hygiene / bookkeeping that ride alongside and must also land
-before the umbrella tracker is checked off.
+**The invariant (non-negotiable).** **Structure only — never behavior.** No logic,
+control-flow, signature, or performance change. The existing test suite + the
+`runtime-launch` / `op-picker` behavioral specs must pass **unmodified**. A move that
+forces a test edit changed behavior → **stop, back out, report.**
 
 ---
 
-## Snapshot — what is DONE (no action; listed so the open set is unambiguous)
+## Executor contract (read once, obey every slice)
 
-- **A0–A5** boundary fixes + `cargo-deny` workspace-dep hygiene + 19/19 crate
-  Architecture-Invariant headers. `FORBIDDEN_EDGES` dropped 3 → **1**.
-- **B1** `jackin-launch` → `jackin-launch-tui` (old crate dir gone, confirmed).
-- **B2** all 19 binary shim modules deleted.
-- **C1/C2** `jackin-host`, `jackin-usage` carved (crates exist).
-- **D1–D4** image/env/op_cache/naming dedups.
-- **E0** `lto = "thin"` + launch/attach baseline. **E2** `jackin-instance` carved.
-- **E1 (partial)** — `branch`/`cleanup`/`materialize`/`state` moved into
-  `jackin-isolation`; **`finalize.rs` + `git_inspect.rs` did NOT move → see R3.**
-- **F1/F2** `app_config/` coordinator + TEA stem normalization.
-- **G0–G3** shared `jackin-tui` Elm runtime + all four stacks migrated.
-- **W5** `usage.rs` fully decomposed; `tui/model.rs` split (coordinator 101L).
-- **W2** clippy lints flipped to `warn` with thresholds; **W3** file-size ratchet gate;
-  **W4** arch gate + `cargo-deny` + `cargo-shear` trio (machete/udeps deliberately not adopted).
+1. **One slice = one PR.** Do exactly the slice; do not bundle the next one.
+2. **Structure only.** See above. If a step seems to need a test edit to pass — stop.
+3. **Respect preconditions.** R2 needs R1. R5 needs the external unify-settings item.
+   R7 needs R4 + R6. Confirm prerequisites are merged before starting.
+4. **Run Verify in order; stop on first red.** Never force past a gate.
+5. **Do not guess.** Re-confirm line numbers; if code doesn't match the step, stop and report.
+6. **Conventions:** no `mod.rs`; tests in a sibling `tests.rs`; every crate
+   `[lints] workspace = true`; **no wildcard imports** (`clippy::wildcard_imports` denied).
+7. **Commit:** Conventional Commit `refactor(<scope>): <slice>`, sign off (`-s`), push immediately.
 
----
+### Standard Verify (every slice unless overridden)
 
-## The open set
+```
+cargo fmt --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo nextest run --all-features
+cargo run -p jackin-xtask --locked -- lint        # file-size + test-layout + arch
+# behavioral specs runtime-launch + op-picker pass UNMODIFIED
+```
+After a file drops under its cap, refresh the ratchet and prune the entry:
+`cargo run -p jackin-xtask --locked -- lint files --print-budget` (over `file-size-budget.toml`)
+/ `lint tests --print-allowlist` (over `test-layout-allowlist.toml`).
 
-> Legend per slice: **Goal · State (verified) · Touches · Steps · Verify · Done-when**.
-> Standard Verify (run in order, stop on first red) unless a slice overrides:
-> `cargo fmt --check` · `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
-> · `cargo nextest run --all-features` · `cargo run -p jackin-xtask --locked -- lint`
-> · behavioral specs `runtime-launch` + `op-picker` pass **unmodified**.
+### Crate-carve recipe (referenced by R3)
 
----
-
-### R1 — Break the last inverted dependency: `jackin-runtime → jackin-tui`  ⟵ gate-keeper
-
-- [ ] **Goal.** Remove every production use of `jackin_tui::*` from `jackin-runtime`
-  so the L1→L3 edge disappears, per **D2** (trait ports for data flows; plain
-  relocation for misplaced values). E0 LTO baseline shipped, so the perf gate that
-  parked this is **lifted** — this is unblocked.
-
-- **State (verified).** `FORBIDDEN_EDGES` in `crates/jackin-xtask/src/arch.rs:53`
-  still lists `("jackin-runtime", "jackin-tui")`; the `//!` table at `arch.rs:10`
-  flags it as the one open P2 inversion. Production uses (test files excluded):
-
-  | File | Symbol | Kind | Target per D2 |
-  |---|---|---|---|
-  | `runtime/host_attach.rs` | `jackin_tui::url_text::redact_url_for_log` | pure fn | **relocate-repoint** — `url_text` already exists in `jackin-core` (A5 prep 5). Repoint to `jackin_core::url_text::redact_url_for_log`. Trivial. |
-  | `runtime/progress.rs` | `jackin_tui::theme::DANGER_RED` | const color | **relocate** — move const to `jackin-core` (same pattern as A5 prep 1 lifted `Rgb`/PHOSPHOR palette). |
-  | `runtime/progress.rs` | `jackin_tui::ansi::{POINTER_HAND, POINTER_DEFAULT}` | const str | **relocate** to `jackin-core` (pure escape-sequence constants, no ratatui). |
-  | `runtime/progress.rs` | `jackin_tui::ansi::encode_osc52_clipboard_write` | pure fn | **relocate** to `jackin-core` (string transform, no ratatui dep). |
-  | `runtime/progress.rs` | `jackin_tui::components::{ErrorPopupState, TextInputState, ConfirmState}` | UI state structs | **port or relocate** — these are presentation state. Decide: (a) relocate the plain-data state structs to `jackin-core` if they carry no ratatui types, or (b) hide construction behind a progress port the runtime already owns (A1/A2 established the `LaunchDiagnostics`/`LaunchHostTerminal` port pattern in `jackin-core/src/launch_progress.rs` — extend it). Inspect the structs' fields first. |
-  | `runtime/launch.rs` | `jackin_tui::output::{step_fail, print_deploying}` | terminal side-effect | **port** — define `trait LaunchOutputSink` in `jackin-core` (`step_fail(&str)`, `print_deploying(&str)`); `jackin-tui` impls; `jackin` binary injects. Branch-by-Abstraction. |
-  | `runtime/launch.rs` | `jackin_tui::animation::{warp_out, warp_end_caption}` | terminal animation | **port** — same sink trait or a sibling `LaunchAnimator` port; impl in `jackin-tui`, injected at entry. |
-
-- **Touches.** `crates/jackin-core/src/` (new const/fn relocations + port trait(s)),
-  `crates/jackin-runtime/src/runtime/{host_attach.rs, progress.rs, launch.rs, lib.rs}`,
-  `crates/jackin-tui/src/` (port impls), `crates/jackin/src/` (port injection at the
-  launch call site), `crates/jackin-xtask/src/arch.rs` (drop the edge — done in R2).
-
-- **Steps.**
-  1. **Quick win first:** repoint `host_attach.rs` to `jackin_core::url_text::redact_url_for_log`; delete the `jackin_tui::url_text` use. Verify the symbol is byte-identical in core.
-  2. Relocate pure consts/fns (`DANGER_RED`, `POINTER_*`, `encode_osc52_clipboard_write`) into `jackin-core` (a `progress_tokens.rs` or extend an existing module); leave a `pub use` re-export in `jackin-tui` so its own callers compile unchanged (Parallel Change). Repoint `progress.rs` to the core path.
-  3. Inspect `ErrorPopupState`/`TextInputState`/`ConfirmState` field types. If plain data → relocate to core + re-export from tui. If they embed ratatui types → keep in tui and hide the runtime's construction behind a port.
-  4. Define the launch-output port: `pub trait LaunchOutputSink` in `jackin-core` covering `step_fail` / `print_deploying` / `warp_out` / `warp_end_caption` (or split into output vs animator ports if cleaner). `jackin-runtime` takes `&dyn LaunchOutputSink`; `jackin-tui` provides the impl; `jackin` injects it at the launch call site — mirror exactly how A1's `BuildLogSink` / A2's `LaunchDiagnostics` are wired.
-  5. Remove the now-dead `jackin-tui` dependency line from `crates/jackin-runtime/Cargo.toml` (and the `lib.rs` doc-comment references to `jackin_tui::output`/`components`).
-- **Verify.** Standard Verify **+** `cargo run -p jackin-xtask --locked -- lint arch --strict`
-  now passes with the edge gone. Launch cockpit + progress panes render identically;
-  run the `runtime-launch` spec. If a hot path crossed a new boundary, re-run the E0
-  launch/attach benchmark and attach numbers (no regression).
-- **Done-when.** `grep -rn 'jackin_tui' crates/jackin-runtime/src` returns **zero**
-  production hits (test-only, if any, also removed); `jackin-tui` no longer in
-  `jackin-runtime/Cargo.toml`.
+1. Target crate exists or create `crates/<new>/` (`[lints] workspace = true` + `//!`
+   Architecture-Invariant header). 2. `git mv` modules verbatim (byte-identical bodies).
+3. Visibility-only: public surface `pub`, rest `pub(crate)` — no signature/logic edits.
+4. Repoint importers (Parallel Change: add new path, migrate, delete old). 5. Wire
+   `Cargo.toml` members/deps. 6. Add arch-gate / `cargo-deny` entries for new edges.
+7. Update `PROJECT_STRUCTURE.md` + Codebase Map. 8. Verify; hot-path carve → E0 benchmark.
 
 ---
 
-### R2 — Flip the dependency-direction gate to `--strict` in CI
+## Definition of done (the item closes when ALL hold)
 
-- [ ] **Goal.** Make the architecture machine-enforced: once R1 lands, the gate fails
-  on any forbidden edge instead of merely reporting.
-- **State.** `arch.rs:48` `FORBIDDEN_EDGES` has 1 entry (the R1 edge). Gate runs
-  non-strict (`arch::check(strict)` with `strict=false` on the normal path;
-  `arch.rs:63` comment: "exits 0 … while the inversions are still" present).
-  `run_all_lints(strict)` in `crates/jackin-xtask/src/main.rs:111` threads the flag.
-- **Touches.** `crates/jackin-xtask/src/arch.rs` (empty `FORBIDDEN_EDGES` to `&[]`),
-  `crates/jackin-xtask/src/arch/tests.rs` (the `synthetic_graph_flags_only_listed_forbidden_edges`
-  assertion — verify exact expected count after R1), `.github/workflows/ci.yml`
-  (call `cargo xtask lint --strict` on the file-size-gate job).
-- **Steps.**
-  1. After R1: set `FORBIDDEN_EDGES = &[]` (or keep the synthetic-test fixtures and
-     assert zero real violations).
-  2. Update the arch synthetic-graph test to the post-R1 reality.
-  3. Switch the CI invocation to `cargo xtask lint --strict` so a reintroduced
-     inversion fails the PR.
-- **Verify.** Standard Verify; `cargo xtask lint --strict` green; deliberately add a
-  throwaway bad edge locally and confirm it now **fails** (then revert).
-- **Done-when.** CI runs `--strict`; no production inversion remains.
+1. R1 breaks `jackin-runtime → jackin-tui`; R2 runs the arch gate `--strict` in CI.
+2. R3 finishes the isolation carve (E1 complete).
+3. R4 + R5 clear the file-size backlog (no production `.rs` over 2000L).
+4. R6 burns down the 58 clippy grandfathers (zero remain).
+5. **Then** R7 tightens thresholds to target (files ≤ 1500L, fns ≤ 150 lines).
+6. R8–R10 (hygiene/decision) land alongside; R11 bookkeeping done.
 
 ---
 
-### R3 — Finish E1: move `finalize.rs` + `git_inspect.rs` into `jackin-isolation`
+## Snapshot — DONE (no action; listed so the open set is unambiguous)
 
-- [ ] **Goal.** Complete the isolation carve so `jackin-runtime` owns no isolation code.
-- **State (verified).** `crates/jackin-runtime/src/isolation/finalize.rs` and
-  `…/isolation/git_inspect.rs` are still in `jackin-runtime`; the other four
-  isolation sub-modules already live in `crates/jackin-isolation/src/`. The L1→L3
-  inversion that originally parked them is **closed** (both now route dialogs through
-  `jackin_core::exit_dialog_with_inspect` / `jackin_core::error_popup`, with
-  `jackin_launch_tui::install_standalone_dialog_sink` installing the impl at CLI
-  start-up — per roadmap E1 note). The only remaining blocker was the in-place tests
-  depending on `jackin_runtime::test_support::FakeRunner`.
-- **Touches.** `git mv` the two files + their `tests.rs` into `crates/jackin-isolation/src/`;
-  `crates/jackin-isolation/Cargo.toml` (add a `[dev-dependencies]` on `jackin-runtime`
-  with `features = ["test-support"]` to reach `FakeRunner`, OR move `FakeRunner` to a
-  shared `jackin-isolation` test-support module); importer repoints in `jackin-runtime`;
-  `crates/jackin-isolation/src/lib.rs` (`pub mod` + re-export); `PROJECT_STRUCTURE.md`
-  + Codebase Map.
-- **Steps.** Follow the crate-carve recipe (playbook stub references it):
-  1. `git mv` `finalize.rs`, `git_inspect.rs`, and their sibling `tests.rs` verbatim.
-  2. Resolve the `FakeRunner` access: prefer a `jackin-isolation` `[dev-dependencies]`
-     edge on `jackin-runtime` (`features = ["test-support"]`) exposing
-     `jackin_runtime::runtime::test_support::FakeRunner`. Run `cargo check --workspace`
-     immediately — if Cargo rejects a cycle, fall back to a local fake in
-     `jackin-isolation` test-support.
-  3. Check `finalize.rs`'s old use of `crate::runtime::attach::JACKIN_STATUS_CMD`
-     (`pub const`) and `parse_session_count` (`pub(crate)` — **not** reachable
-     cross-crate). If still referenced, relocate those two to `jackin-core` in a
-     prep step first; do **not** guess — verify against the file before moving.
-  4. Repoint `jackin-runtime` importers to `jackin_isolation::{finalize, git_inspect}`;
-     delete the now-empty `runtime/isolation/` shim if any remains.
-- **Verify.** Standard Verify + `cargo nextest run -p jackin-isolation -p jackin-runtime`;
-  E0 benchmark (isolation is on the launch hot path) — no regression vs baseline.
-- **Done-when.** `crates/jackin-runtime/src/isolation/` is gone; `grep -rn 'mod finalize\|mod git_inspect' crates/jackin-runtime` is empty.
+A0–A5 boundary fixes + `cargo-deny` hygiene + 19/19 Architecture-Invariant headers
+(`FORBIDDEN_EDGES` 3 → 1) · B1 rename · B2 19 shims deleted · C1/C2 + E2 carves
+(`jackin-host`/`jackin-usage`/`jackin-instance`) · D1–D4 dedups · E0 `lto="thin"` +
+baseline · E1 **partial** (4 of 6 isolation modules; **finalize/git_inspect open → R3**)
+· F1/F2 naming · G0–G3 shared TUI runtime + all four stacks migrated · W5 `usage.rs` +
+`tui/model.rs` decomposed · W2 clippy thresholds + W3 file-size gate + W4 arch/deny/shear trio.
 
 ---
 
-### R4 — W5 production file decompositions (bring every prod `.rs` under 2000L)
-
-- [ ] **Goal.** Clear the file-size grandfather list so the cap holds with no exceptions.
-- **State (verified, `file-size-budget.toml` + live `wc -l`).** Production files still
-  over the 2000L cap, each a decomposition slice (split pattern: keep the file as the
-  coordinator, move clusters to sibling `<module>/<name>.rs`, `pub(super)` what the
-  coordinator/siblings call, tests in `<module>/tests.rs`, no `mod.rs`, no wildcard):
-
-  - [ ] `crates/jackin-runtime/src/runtime/launch.rs` — **2834L**. Split the launch
-        coordinator clusters (the +1-over-budget note in the manifest is here; this
-        slice should drop it well under cap).
-  - [ ] `crates/jackin-console/src/tui/screens/editor/view.rs` — **2389L**.
-  - [ ] `crates/jackin-capsule/src/tui/components/dialog.rs` — **2265L**.
-  - [ ] `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs` — **2213L**.
-  - [ ] `crates/jackin-console/src/tui/screens/editor/model.rs` — **4176L** → **R5** (W6-gated).
-  - [ ] `crates/jackin-console/src/tui/screens/settings/model.rs` — **3852L** → **R5** (W6-gated).
-  - [ ] **Stale budget entry:** `crates/jackin-runtime/src/runtime/image.rs` is
-        **1952L < 2000 cap** — it is *under* the cap yet still grandfathered. Per the
-        ratchet rule ("delete an entry when its file drops under the cap"), **prune
-        this `[[production]]` block from `file-size-budget.toml`** (bookkeeping, no
-        code move). Roadmap W5 table also still prints it as `2811L` — see R11.
-
-  Test files (`launch/tests.rs` 8603L, `daemon/tests.rs` 7612L) are **under** the
-  10000L test cap — not this item's blocker; their real fix is tracked in
-  [test-infra-behavioral-specs](/roadmap/test-infra-behavioral-specs/). Leave grandfathered.
-- **Steps (per file).** Apply the proven split pattern; after each split refresh the
-  ratchet: `cargo run -p jackin-xtask --locked -- lint files --print-budget` over
-  `file-size-budget.toml`, prune the now-fixed entry. One file = one PR.
-- **Verify.** Standard Verify; `cargo xtask lint files` green; the split file's
-  `tests.rs` passes unmodified.
-- **Done-when.** `file-size-budget.toml` `[[production]]` list is empty (only the two
-  test entries, if still present, remain).
+# The open set
 
 ---
 
-### R5 — editor + settings model collapse (W6 / unify-settings dependency)
+## R1 — Break the last inverted dependency: `jackin-runtime → jackin-tui`  ⟵ gate-keeper
 
-- [ ] **Goal.** Bring `editor/model.rs` (4176L) and `settings/model.rs` (3852L) under
-  cap by splitting the **unified** surface, not the duplicated pair.
-- **State.** **Blocked** on
-  [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/), which is
-  "Partially implemented — structural unification of the two config-editing screens is
-  open." Splitting the duplicated pair now would split work that's about to be merged.
-- **Prerequisite.** unify-settings lands the single config-editing surface on the G0
-  shared contract. Only then split.
-- **Steps.** After unify lands: re-read the unified model file; split along its real
-  cluster boundaries into coordinator + siblings; refresh the budget ratchet.
-- **Done-when.** Both `editor/model.rs` and `settings/model.rs` (or their unified
-  successor) sit under 2000L; W6 checkbox closes.
+**Goal.** Remove every **production** use of `jackin_tui::*` from `jackin-runtime` so the
+L1→L3 edge disappears. E0 LTO baseline shipped → the perf gate that parked this is lifted.
 
-> This is the one open item that depends on a **separate** roadmap item. Track it as
-> the long-pole; everything else (R1–R4, R6–R11) is independent.
+**Verified scope correction.** Only **8 production call sites** (not 11). The
+`components::*State` structs + `theme::DANGER_RED` in `progress.rs` are **`#[cfg(test)]`-only**
+— they need no relocation; they fall out when `jackin-tui` moves to `[dev-dependencies]`.
 
----
+**Allowed-edge fact.** `jackin-runtime → jackin-launch-tui` is **permitted** (the arch gate
+bans only `jackin-runtime → jackin-tui`). So the port impl lives in `jackin-launch-tui` and
+runtime injects it directly — **mirror the existing `BuildLogSink`** (injected from
+`runtime/image.rs:1306,1639` via `Arc::new(DiagnosticsBuildLogSink)`) and the existing
+self-owned `host_terminal()` accessor at `progress.rs:132`.
 
-### R6 — Burn down the clippy `#[expect]` grandfather backlog (58 sites)
+### The 8 production sites + exact fix
 
-- [ ] **Goal.** Zero `#[expect(clippy::…, reason = "tracked in codebase-health-enforcement")]`.
-- **State (verified, `grep`).** 58 grandfathers remain:
+| # | site (verify before edit) | symbol | fix |
+|---|---|---|---|
+| 1 | `runtime/host_attach.rs:272` | `jackin_tui::url_text::redact_url_for_log(&url)` | **swap** → `jackin_core::redact_url_for_log(&url)`. Symbol already exists: `jackin-core/src/url_text.rs:29` `pub fn redact_url_for_log(url:&str)->String`, re-exported `jackin-core/src/lib.rs:85`. Identical signature, zero behavior change. |
+| 2 | `runtime/progress.rs:87` | `jackin_tui::ansi::POINTER_HAND` | **relocate const to `jackin-core`** then repoint. Source: `jackin-tui/src/lib.rs:269` `pub const POINTER_HAND:&str="\x1b]22;pointer\x1b\\";` (no ratatui). |
+| 3 | `runtime/progress.rs:89` | `jackin_tui::ansi::POINTER_DEFAULT` | relocate `jackin-tui/src/lib.rs:270` `"\x1b]22;default\x1b\\"` → core; repoint. |
+| 4 | `runtime/progress.rs:98` | `jackin_tui::ansi::encode_osc52_clipboard_write(payload)` | relocate `jackin-tui/src/lib.rs:465` `pub fn encode_osc52_clipboard_write(payload:&str)->Vec<u8>` (body: BASE64 + `\x1b]52;c;`…`\x07`, no ratatui) → core; repoint. |
+| 5 | `runtime/launch.rs:735` | `jackin_tui::output::print_deploying(name).await` | **port** (prints directly; async). |
+| 6 | `runtime/launch.rs:2093` | `jackin_tui::animation::warp_out(host_owned)` | **port** — `animation.rs:295`; calls `warp()` which uses `crossterm::terminal::size()` → **must stay in jackin-tui**. |
+| 7 | `runtime/launch.rs:2094` | `jackin_tui::animation::warp_end_caption(elapsed, host_owned)` | **port** — `animation.rs:302`, crossterm-backed → stay in jackin-tui. |
+| 8 | `runtime/launch.rs:2809,2812,2815,2818,2824` (5 calls) | `jackin_tui::output::step_fail(&format!(...))` | **port** — `output.rs:35` owo_colors stderr helper. |
 
-  | Lint | Count | Fix shape |
-  |---|---|---|
-  | `clippy::struct_excessive_bools` | **40** | bundle the bool fields into a flags struct / state enum, or a typed config struct. Dominant backlog — biggest single win. |
-  | `clippy::fn_params_excessive_bools` | **10** | replace bool params with an options struct or enum variants. |
-  | `clippy::too_many_lines` | **4** | extract helpers (overlaps R4 file splits). |
-  | `clippy::too_many_arguments` | **9 → arg threshold; 4 expects** | introduce a params/builder struct. |
+### Steps
 
-  Carriers by crate: `jackin-console` ×13 files, `jackin-capsule` ×5, `jackin-term` ×4,
-  `jackin-runtime` ×4, `jackin` ×3, `jackin-protocol` ×2, others ×1.
-- **Steps.** Per `#[expect]`: refactor to satisfy the lint (structure-only — a bool
-  bundle is a type change with identical behavior), then delete the `#[expect]`. If a
-  site is genuinely irreducible, escalate to operator for a permanent narrow allow with
-  a *different* reason string (so it leaves the burn-down set). Cluster by crate to
-  keep PRs reviewable.
-- **Verify.** Standard Verify; the touched crate's tests pass unmodified.
-- **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
-  returns zero.
+1. **Quick win (site 1):** repoint `host_attach.rs:272` to `jackin_core::redact_url_for_log`; drop the `jackin_tui::url_text` reference. Build.
+2. **Relocate the pure ansi items (sites 2–4)** into `jackin-core` (e.g. a new
+   `jackin-core/src/ansi_tokens.rs`, `pub mod` + root re-export). Leave a
+   `pub use jackin_core::… as …` re-export in `jackin-tui`'s `ansi` so jackin-tui's own
+   callers compile unchanged (Parallel Change). Repoint `progress.rs:87,89,98` to the core path.
+3. **Define the launch-output port** in `jackin-core/src/launch_progress.rs` (beside the
+   existing `LaunchDiagnostics`/`LaunchHostTerminal` at `:227`/`:235`):
+   ```rust
+   pub trait LaunchOutputSink: Send + Sync {
+       fn print_deploying<'a>(&'a self, role_name: &'a str)
+           -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>; // async via boxed future
+       fn step_fail(&self, msg: &str);
+       fn warp_out(&self, host_screen_owned: bool);
+       fn warp_end_caption(&self, elapsed: Option<std::time::Duration>, host_screen_owned: bool);
+   }
+   ```
+   Re-export from `jackin-core/src/lib.rs` (mirror `:66-67`).
+4. **Impl the port in `jackin-launch-tui`** (it may depend on `jackin-tui`): a unit struct
+   whose methods call `jackin_tui::output::{print_deploying,step_fail}` /
+   `jackin_tui::animation::{warp_out,warp_end_caption}`. Re-export it from the crate root
+   (mirror `jackin-launch-tui/src/build_log.rs:14` `DiagnosticsBuildLogSink`).
+5. **Consume in runtime via a self-owned accessor** — mirror `progress.rs:132`
+   `host_terminal() -> &'static dyn LaunchHostTerminal`. Add a `launch_output() ->
+   &'static dyn LaunchOutputSink` backed by a `static` of the `jackin-launch-tui` impl, and
+   rewrite `launch.rs:735,2093,2094,2809–2824` to call through it. **No `jackin/src/app/load_cmd.rs`
+   edit needed** — runtime owns the accessor, exactly as it owns `host_terminal()`.
+6. **Move the dep:** in `crates/jackin-runtime/Cargo.toml` delete line 30
+   `jackin-tui = { … path = "../jackin-tui" }` from `[dependencies]`. The `#[cfg(test)]`
+   refs at `progress.rs:48-52` + `progress/tests.rs` still need jackin-tui → add
+   `jackin-tui = { path = "../jackin-tui" }` under `[dev-dependencies]` (minimal change;
+   keeps tests compiling, removes the production-dependency inversion). Also fix the
+   `lib.rs:15-16` doc comment that names the removed `jackin_tui::*` uses.
 
----
+### Verify
 
-### R7 — Ratchet thresholds toward target (final tightening)
+Standard Verify **+** `cargo run -p jackin-xtask --locked -- lint arch --strict` passes
+(edge gone). Launch cockpit / progress / clipboard / warp-out render identically; run the
+`runtime-launch` spec. Re-run the E0 launch/attach benchmark (hot path) — no regression.
 
-- [ ] **Goal.** After R4 + R6, tighten the gates so the *target* shape is enforced, not
-  just today's maxima.
-- **State.** `clippy.toml`: `too-many-lines-threshold = 450`,
-  `cognitive-complexity-threshold = 100`, `excessive-nesting-threshold = 8`,
-  `too-many-arguments-threshold = 9`. `file-size-budget.toml`: `production_cap = 2000`.
-  Roadmap target: files ≤ **1500L**, fns ≤ **150** logical lines. ~19 production files
-  currently exceed 1500L (the R4 set plus `cli/diagnostics.rs` 1964, `grid.rs` 1889,
-  `session.rs` 1733, `settings/update.rs` 1717, `daemon.rs` 1670, `settings/view.rs`
-  1635, `tui/model/modal.rs` 1587, `input/mouse.rs` 1558, `footer_hints.rs` 1526,
-  `dialog_widgets.rs` 1510 …).
-- **Steps.** Sequence **after** R4/R6 so nothing breaks on the day of the flip:
-  1. Lower `production_cap` 2000 → 1500 incrementally; decompose the new over-cap set
-     (the 1500–2000L files above) the same way as R4.
-  2. Lower `too-many-lines-threshold` toward 150; refactor/expect as you go.
-  3. Lower `cognitive-complexity`, `excessive-nesting` (8→5), `too-many-arguments`
-     toward target; never blanket-`allow`.
-- **Verify.** Standard Verify at each ratchet notch.
-- **Done-when.** Caps at target with no new grandfathers; the budget/expect lists stay empty.
+### Done-when
 
----
-
-### R8 — Duplicate-version debt burn-down (`deny.toml`)
-
-- [ ] **Goal.** Move `multiple-versions` from `warn` toward `deny` once the transitive
-  duplicate tail is paid down, so version drift can't silently grow.
-- **State (verified).** `deny.toml:111` `multiple-versions = "warn"`; **35** crates in
-  the `[bans] skip` list, each tagged "Existing duplicate-version debt." This is
-  acknowledged debt, not a regression.
-- **Steps.** Periodically: `cargo tree -d` (or `cargo deny check bans`) → for each
-  skipped crate, attempt to unify versions by bumping the lagging dependent; delete the
-  skip entry when the duplicate resolves. When the list is small/irreducible (pure
-  transitive forks), flip `multiple-versions = "deny"` and keep only the unavoidable
-  skips with sharpened reasons.
-- **Done-when.** `skip` list holds only genuinely-irreducible transitive dupes;
-  `multiple-versions = "deny"`.
-
-> Lower priority than R1–R6 (it's hygiene, not navigability), but part of "keep the
-> map durable." Acceptable to land last among the enforcement items.
+`grep -rn 'jackin_tui' crates/jackin-runtime/src --include='*.rs'` returns **zero**
+production hits (test-only refs may remain, served by the dev-dep); `jackin-tui` is gone
+from `jackin-runtime/Cargo.toml [dependencies]`.
 
 ---
 
-### R9 — W4 optional: publish the dependency graph as a CI artifact
+## R2 — Flip the dependency-direction gate to `--strict` in CI
 
-- [ ] **Goal.** Make the layering visible/reviewable (the one unchecked W4 box).
-- **State (verified).** No `cargo-modules` / graph step in `.github/`. Roadmap W4
-  bullet is `[ ]` "Optional: a `cargo-modules` dependency graph published as a CI artifact."
-- **Steps.** Add a non-blocking CI job that runs `cargo modules` (or
-  `cargo depgraph`) and uploads an SVG/DOT artifact per PR. Informational only — does
-  not gate. Reconcile tool choice so it adds no `deny.toml` license burden.
-- **Done-when.** CI uploads a layering graph artifact; roadmap W4 optional box checked
-  (or explicitly closed as "won't do" with a one-line why).
+**Goal.** Make the architecture machine-enforced once R1 lands. **Precondition: R1 merged.**
+
+**Verified facts.** `FORBIDDEN_EDGES` (`crates/jackin-xtask/src/arch.rs:48`) holds the
+single entry `("jackin-runtime","jackin-tui")`. The arch synthetic test
+`crates/jackin-xtask/src/arch/tests.rs:13` (`synthetic_graph_flags_only_listed_forbidden_edges`)
+asserts at `:37` `assert_eq!(problems, vec!["jackin-runtime → jackin-tui"]);`; a clean-graph
+test exists at `:41`. CI runs the gate **non-strict**: `.github/workflows/ci.yml:441`
+`cargo run -p jackin-xtask --locked -- lint` (comment at `:438` flags strict as the eventual flip).
+
+### Steps
+
+1. Set `FORBIDDEN_EDGES = &[]` in `arch.rs:48` (drop the runtime→tui tuple).
+2. Update `arch/tests.rs`: with the list empty, `synthetic_graph_flags_only_listed_forbidden_edges`
+   has nothing to inject — adjust its assertion to expect no problems (or fold it into the
+   existing clean-graph test). Read the test body (`:13-63`) before editing; keep it meaningful.
+3. Change `.github/workflows/ci.yml:441` to `cargo run -p jackin-xtask --locked -- lint --strict`.
+4. Update the `arch.rs:40-56` doc comment (it narrates the now-removed edge).
+
+### Verify
+
+Standard Verify; `cargo xtask lint --strict` green. Sanity: locally add a throwaway
+forbidden edge → confirm the gate now **fails** → revert.
+
+### Done-when
+
+CI invocation carries `--strict`; `FORBIDDEN_EDGES` empty; no production inversion remains.
 
 ---
 
-### R10 — D7 deferred decision: `jackin-config` persistence IO edge
+## R3 — Finish E1: move `finalize.rs` + `git_inspect.rs` into `jackin-isolation`
 
-- [ ] **Goal.** Settle the one still-open D7 sub-decision: does `jackin-config`'s file-IO
-  persistence (`persist.rs`) split into an L2 adapter to keep the schema crate strictly
-  IO-free, or does the schema crate keep a thin, documented IO edge?
-- **State (verified).** `crates/jackin-config/src/persist.rs` exists alongside
-  `app_config.rs`. The other two D7 deferrals are **already resolved**: (b) tool overlap
-  — `cargo-shear` chosen, `cargo-machete`/`udeps` not adopted; (c) `FakeOpWriter` dedup —
-  done into `jackin_env::test_support` (no duplicate remains in `jackin/src/app/tests.rs`).
-  So only the persistence-IO ruling is open.
-- **Steps.** Operator decision. If "split": carve `persist.rs` into an L2 adapter crate
-  / module and leave `jackin-config` schema-only (recipe move). If "keep thin edge":
-  document the exception in the crate's `//!` Architecture-Invariant header and record
-  the decision on the roadmap so it's not re-litigated.
-- **Done-when.** Decision recorded on the roadmap; if "split," the move has shipped and
-  the arch gate reflects it.
+**Goal.** Complete the isolation carve so `jackin-runtime` owns no isolation code.
+**Verified: NO blockers** — every production dep of both files already lives in
+`jackin-core`/`jackin-config`/`jackin-diagnostics` (the three crates `jackin-isolation`
+already depends on). (Correction to an earlier draft: `parse_session_count`/`JACKIN_STATUS_CMD`
+are **already in `jackin-core`** — `jackin-core/src/status.rs:15,21`, re-export `lib.rs:80` —
+and `finalize.rs` already consumes them from there; nothing to relocate.)
+
+### Files (verify with `ls`/`wc -l` first)
+
+```
+crates/jackin-runtime/src/isolation/finalize.rs          586  MOVE
+crates/jackin-runtime/src/isolation/finalize/tests.rs   1683  MOVE
+crates/jackin-runtime/src/isolation/git_inspect.rs        87  MOVE
+crates/jackin-runtime/src/isolation/git_inspect/tests.rs  79  MOVE
+crates/jackin-runtime/src/isolation/tests.rs              50  DO NOT MOVE (tests MountIsolation via super::*)
+```
+
+### Steps
+
+1. `git mv` the four files into `crates/jackin-isolation/src/` (preserve the
+   `finalize/tests.rs`, `git_inspect/tests.rs` subdir layout). Leave `isolation/tests.rs`.
+2. Add to `crates/jackin-isolation/src/lib.rs`: `pub mod finalize;` `pub mod git_inspect;`.
+   Update the stale doc-comment (lib.rs ~`:19-26`) that says they "remain under jackin_runtime::isolation."
+3. In moved `finalize.rs` repoint (3+ sites): `crate::isolation::cleanup`→`crate::cleanup`;
+   `crate::isolation::state`→`crate::state`; `crate::isolation::git_inspect`→`crate::git_inspect`
+   (body `:212`); `crate::instance::naming::instance_id_from_container_base`→
+   `jackin_core::constants::instance_id_from_container_base` at **`:417,454,475`**.
+   `git_inspect.rs` needs **no** path edits (self-contained on jackin-core + std).
+4. In moved `finalize/tests.rs`: `crate::runtime::test_support::{FakeRunner,FakeDockerClient}`
+   → `jackin_runtime::runtime::test_support::{…}` (mirrors existing
+   `jackin-isolation/src/cleanup/tests.rs:5` + `materialize/tests.rs:189`);
+   `crate::isolation::MountIsolation`→`crate::MountIsolation`; `crate::isolation::state`→`crate::state`.
+   `git_inspect/tests.rs` needs no edits (uses `super::*`).
+5. In `crates/jackin-runtime/src/isolation.rs` replace bare `pub mod finalize;` /
+   `pub mod git_inspect;` (`:21-22`) with re-export shims:
+   `pub mod finalize { pub use jackin_isolation::finalize::*; }` (same for git_inspect) — so
+   all ~30 `crate::isolation::finalize::*` call sites across `runtime/{attach,launch/restore,
+   launch/launch_pipeline,launch,apple_container}.rs` compile **unchanged**.
+6. **No Cargo.toml dependency edits** — the dev-dep cycle (`jackin-isolation`
+   `[dev-dependencies] jackin-runtime{features=["test-support"]}`) + `test-support` feature
+   are already present on both sides.
+
+### Verify
+
+Standard Verify + `cargo nextest run -p jackin-isolation -p jackin-runtime`; E0 benchmark
+(isolation is launch hot path) — no regression.
+
+### Done-when
+
+`crates/jackin-runtime/src/isolation/finalize.rs` + `git_inspect.rs` gone;
+`grep -rn 'mod finalize\|mod git_inspect' crates/jackin-runtime/src/isolation.rs` shows only
+the re-export shims.
 
 ---
 
-### R11 — Doc & bookkeeping cleanup (no code)
+## R4 — W5 production decompositions (every prod `.rs` under 2000L)
 
-- [x] **Retire the execution playbook.** *(done)* The 6870-line A1–G3 log
-  `plans/codebase-health-playbook.md` was deleted; this file replaces it (full
-  per-slice detail survives in git history).
-- [x] **Fix the stale W5 line count in the roadmap.** *(done)* `runtime/image.rs`
-  corrected `2811` → `1952L (under cap, D1)` in the roadmap.
-- [x] **Reconcile the W4 `deny.toml` bullet wording.** *(done)* Reworded so the
-  directional teeth read as the `cargo xtask lint arch` gate, not `deny.toml`
-  (`cargo-deny [bans]` cannot express workspace-crate→crate edges).
-- [ ] **Prune the under-cap budget entry.** Remove the `runtime/image.rs` `[[production]]`
-  block from `file-size-budget.toml` (now 1952L < 2000 cap; covered operationally by R4).
-- [ ] **Security-advisory tracking note.** `deny.toml` ignores `RUSTSEC-2023-0071` (rsa
-  Marvin) + `RUSTSEC-2026-0173` with reasons. Not part of this item, but add a one-line
-  "revisit on next sigstore/oci-client bump" tracking note so the ignore doesn't ossify.
-- **Done-when.** Budget entry pruned + advisory note added (the playbook, W5 number,
-  and W4 wording are already done). All under the roadmap's docs-freshness + repo-links
-  gates (`bun run check:roadmap-sidebar`, `bun run check:repo-links`).
+**Goal.** Clear the file-size grandfather list. Split pattern: keep the file as the
+**coordinator** (public surface, constants, dispatch); move each cohesive cluster to a
+sibling `<module>/<name>.rs`; child reads ancestor privates via explicit `use super::…`
+(**no wildcard**); items the coordinator/siblings call get `pub(super)`; tests in
+`<module>/tests.rs`; no `mod.rs`. One file = one PR; refresh the ratchet after each.
+
+**Over-cap production files (verified `wc -l`):**
+
+- [ ] `crates/jackin-runtime/src/runtime/launch.rs` — **2834L** (siblings go under the
+      existing `runtime/launch/` dir, beside `launch_pipeline.rs`).
+- [ ] `crates/jackin-console/src/tui/screens/editor/view.rs` — **2389L**.
+- [ ] `crates/jackin-capsule/src/tui/components/dialog.rs` — **2265L**.
+- [ ] `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs` — **2213L**.
+- [ ] **Bookkeeping:** prune the `runtime/image.rs` `[[production]]` block from
+      `file-size-budget.toml` — it is **1952L < 2000 cap** (stale grandfather; ratchet rule
+      says delete when under cap). No code move.
+
+> **Concrete per-file split-maps (which fn/struct → which sibling) are being finalized by a
+> dedicated investigation and will be appended here before execution.** Until then, an
+> executor must read the target file and derive cluster boundaries using the split pattern
+> above — do **not** start a R4 file split until its split-map row is filled in below.
+>
+> _Split-map: launch.rs — PENDING._
+> _Split-map: editor/view.rs — PENDING._
+> _Split-map: dialog.rs — PENDING._
+> _Split-map: launch_pipeline.rs — PENDING._
+
+The two grandfathered `tests.rs` (`launch/tests.rs` 8603L, `daemon/tests.rs` 7612L) are
+**under** the 10000L test cap — not this item's blocker; their fix is owned by
+[test-infra-behavioral-specs](/roadmap/test-infra-behavioral-specs/). Leave grandfathered.
+
+**Done-when.** `file-size-budget.toml` `[[production]]` list is empty.
+
+---
+
+## R5 — editor + settings model collapse (blocked on unify-settings)
+
+**Goal.** Bring `editor/model.rs` (4176L) + `settings/model.rs` (3852L) under cap by
+splitting the **unified** surface, not the duplicated pair.
+**Blocked** on [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/)
+("Partially implemented — the structural unification is open"). **Long pole** — everything
+else proceeds in parallel. After unify lands: re-read the unified model, split along its
+real cluster boundaries, refresh the budget. **Done-when** both files (or their unified
+successor) sit under 2000L and W6 closes.
+
+---
+
+## R6 — Burn down the 58 clippy `#[expect]` grandfathers
+
+**Goal.** Zero `#[expect(clippy::…, reason = "tracked in codebase-health-enforcement")]`.
+All 58 are **item-level** (each on one struct/fn); none module-level. Verified totals:
+`struct_excessive_bools` 40 · `fn_params_excessive_bools` 10 · `too_many_arguments` 4 ·
+`too_many_lines` 4.
+
+**Fix strategy (important).** Many `struct_excessive_bools` sites are `*Facts`/`*Plan`
+parameter-objects that were *created* to dodge `fn_params_excessive_bools` — naively
+"bundle bools into a struct" just **moves the lint**. Correct fix = model mutually-exclusive
+bool clusters as **enums** (state machines). Example: `ModalOverlayState` (9 modal-open
+bools, mutually exclusive) → one `enum OpenModal { None, List, Editor, … }`. For genuinely
+independent flags (`SupportedSgr`), a single bitflags/flags type is fine. Each refactor is
+structure-only; delete the `#[expect]` once the lint passes. Cluster PRs by crate.
+
+**Risk order:** do low-fan-out first, high-fan-out last. `SupportedSgr` (1 construction
+site) mechanical; `ModalOverlayState` (7, all-bool) clean enum candidate;
+`EvidenceSummary` (31 sites) + `ConsoleInputDispatchFacts` (16 sites) last.
+
+### `struct_excessive_bools` (40)
+
+| `#[expect(` file:line | struct (item line) | bools |
+|---|---|---|
+| jackin-capsule/src/agent_status/evidence.rs:62 | ProcessEvidence (66) | 6 |
+| jackin-capsule/src/agent_status/evidence.rs:89 | EvidenceSummary (93) | 10 |
+| jackin-capsule/src/daemon.rs:162 | Multiplexer (166) | 4 |
+| jackin-capsule/src/session.rs:137 | OscPolicy (141) | 4 |
+| jackin-capsule/src/tui/model.rs:32 | MuxModeState (36) | 4 |
+| jackin-capsule/src/tui/model.rs:58 | PointerShapeState (62) | 6 |
+| jackin-capsule/src/tui/model.rs:159 | CursorVisibilityState (163) | 5 |
+| jackin-capsule/src/tui/view.rs:31 | CapsuleRatatuiFrame<'a> (36) | 6 |
+| jackin-console/src/tui/components/footer_hints.rs:51 | WorkspaceListFooterFacts (56) | 12 |
+| jackin-console/src/tui/components/footer_hints.rs:72 | WorkspaceListFooterInputFacts (77) | 8 |
+| jackin-console/src/tui/components/footer_hints.rs:157 | WorkspaceFooterScrollFacts (162) | 5 |
+| jackin-console/src/tui/components/op_picker.rs:463 | FieldStageBackPlan (468) | 5 |
+| jackin-console/src/tui/components/op_picker.rs:499 | FieldStageRefreshPlan (504) | 4 |
+| jackin-console/src/tui/components/op_picker.rs:520 | SectionStageBackPlan (525) | 4 |
+| jackin-console/src/tui/components/save_preview.rs:22 | WorkspaceSavePreview (27) | 4 |
+| jackin-console/src/tui/components/save_preview.rs:645 | SettingsGeneralPreview (650) | 4 |
+| jackin-console/src/tui/model/stage.rs:61 | ConsoleInputDispatchFacts (66) | 12 |
+| jackin-console/src/tui/model/stage.rs:82 | ConsoleStageModalFacts (87) | 7 |
+| jackin-console/src/tui/screens/editor/update.rs:160 | EditorTabSelectPlan (165) | 4 |
+| jackin-console/src/tui/screens/settings/update.rs:1145 | SettingsScrollFocusPlan (1150) | 4 |
+| jackin-console/src/tui/screens/workspaces/update.rs:780 | WorkspaceListSelectionPlan (785) | 6 |
+| jackin-console/src/tui/screens/workspaces/update/tests.rs:217 | TestListSelection (222) | 6 |
+| jackin-console/src/tui/screens/workspaces/view.rs:51 | WorkspaceListDisplayRow (56) | 4 |
+| jackin-console/src/tui/screens/workspaces/view.rs:65 | WorkspaceListDisplayRowFacts (70) | 4 |
+| jackin-console/src/tui/screens/workspaces/view.rs:108 | WorkspaceSidebarFacts (113) | 5 |
+| jackin-console/src/tui/update.rs:251 | ListPreRenderScrollResetPlan (256) | 4 |
+| jackin-console/src/tui/update.rs:263 | ListPreRenderFacts (268) | 6 |
+| jackin-console/src/tui/view.rs:18 | ModalOverlayState (23) | 9 |
+| jackin-launch-tui/src/tui/model.rs:12 | LaunchView (16) | 5 |
+| jackin-protocol/src/agent_status.rs:59 | AgentStatusReport (63) | 6 |
+| jackin-protocol/src/attach.rs:165 | AttachCapabilities (169) | 5 |
+| jackin-protocol/src/attach.rs:180 | AttachCapabilitySources (184) | 5 |
+| jackin-term/tests/conformance.rs:55 | CellSnapshot (57) | 6 |
+| jackin-term/src/cell.rs:24 | Attrs (28) | 9 |
+| jackin-term/src/grid.rs:89 | DamageGrid (93) | 3 |
+| jackin-term/src/snapshot.rs:29 | SnapCell (31) | 12 |
+| jackin-term/src/width.rs:75 | SupportedSgr (77) | 13 |
+| jackin-tui/src/components/status_footer.rs:15 | StatusFooterHover (17) | 4 |
+| jackin/src/cli/prewarm.rs:20 | PrewarmArgs (23) | 8 (clap `#[arg]`) |
+| jackin-xtask/src/pr.rs:39 | Categories (41) | 4 |
+
+### `fn_params_excessive_bools` (10)
+
+| `#[expect(` file:line | fn (item line) | bools |
+|---|---|---|
+| jackin-console/src/tui/model/create_prelude.rs:94 | create_prelude_modal_step (99) | 5 |
+| jackin-console/src/tui/screens/settings/update.rs:229 | settings_env_key_plan (234) | 4 |
+| jackin-console/src/tui/screens/settings/update.rs:1189 | settings_modal_open (1194) | 4 |
+| jackin-console/src/tui/screens/settings/view.rs:115 | settings_modal_render_plan (120) | 4 |
+| jackin-console/src/tui/screens/workspaces/update.rs:980 | workspace_list_scroll_focus_plan (985) | 6 |
+| jackin-console/src/tui/screens/workspaces/view.rs:181 | current_directory_display_row (186) | 4 |
+| jackin-console/src/tui/update.rs:331 | list_modal_key_target (336) | 4 |
+| jackin-console/src/tui/update.rs:372 | shared_modal_scroll_target (377) | 5 |
+| jackin-console/src/tui/update.rs:463 | list_pre_render_focus_plan (468) | 4 |
+| jackin-host/src/host_clipboard.rs:619 | validate_linux_clipboard_backend (623) | 4 |
+
+### `too_many_arguments` (4)
+
+| `#[expect(` file:line | fn (item line) |
+|---|---|
+| jackin-runtime/src/runtime/attach.rs:567 | spawn_agent_session (571) |
+| jackin-runtime/src/runtime/image.rs:866 | prewarm_agent_image_from_validated_repo (870) |
+| jackin-runtime/src/runtime/image.rs:1156 | ensure_local_role_base (1160) |
+| jackin-runtime/src/runtime/image.rs:1331 | build_agent_image (1335) |
+
+### `too_many_lines` (4) — overlaps R4 file splits
+
+| `#[expect(` file:line | fn (item line) |
+|---|---|
+| jackin/src/app/workspace_cmd.rs:14 | handle (18) |
+| jackin/src/console/tui/run.rs:167 | run_console (171) |
+| jackin-runtime/src/runtime/launch.rs:636 | launch_role_runtime (640) |
+| jackin-runtime/src/runtime/launch/launch_pipeline.rs:160 | load_role_with (164) |
+
+**Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
+returns zero.
+
+---
+
+## R7 — Ratchet thresholds to target (ONLY after R4 + R6)
+
+**Goal.** Enforce the *target* shape: files ≤ 1500L, fns ≤ 150 logical lines.
+**Verified band (1500–2000L production, the next decomposition wave):**
+`jackin/src/cli/diagnostics.rs` 1964 · `jackin-term/src/grid.rs` 1889 ·
+`jackin-capsule/src/session.rs` 1733 · `jackin-console/src/tui/screens/settings/update.rs` 1717 ·
+`jackin-capsule/src/daemon.rs` 1670 · `jackin-console/src/tui/screens/settings/view.rs` 1635 ·
+`jackin-console/src/tui/model/modal.rs` 1587 · `jackin-console/src/tui/input/mouse.rs` 1558 ·
+`jackin-console/src/tui/components/footer_hints.rs` 1526 ·
+`jackin-capsule/src/tui/components/dialog_widgets.rs` 1510.
+**Caveat:** `jackin/tests/dind_e2e.rs` (1669) + `manager_flow.rs` (1523) are NOT named
+`tests.rs`, so the gate counts them as **production** — they hit the 1500 cap too.
+
+**Steps (sequence after R4/R6 so nothing breaks on flip day):** lower
+`file-size-budget.toml production_cap` 2000 → 1500 (decompose the band above);
+tighten `clippy.toml` `too-many-lines-threshold` 450 → toward 150, `cognitive-complexity` 100 →,
+`excessive-nesting` 8 → 5, `too-many-arguments` 9 →. Never blanket-`allow`; ratchet in notches.
+
+---
+
+## R8 — Duplicate-version debt (`deny.toml`)
+
+`multiple-versions = "warn"` (`deny.toml:111`) + **35** grandfathered `[bans] skip` entries.
+Pay down transitive dupes (`cargo tree -d`), delete each skip as it resolves, then flip to
+`deny`. Lower priority (hygiene, not navigability) — acceptable to land last.
+
+---
+
+## R9 — W4 optional: dependency-graph CI artifact
+
+No `cargo-modules`/graph step in `.github/`. Add a **non-blocking** CI job publishing a
+`cargo-modules` / `cargo-depgraph` layering graph per PR (informational; no `deny.toml`
+license burden). **Done-when** CI uploads the artifact, or the box is closed as "won't do."
+
+---
+
+## R10 — D7 deferred decision: `jackin-config` persistence IO edge
+
+`crates/jackin-config/src/persist.rs` is only **103L** — pure atomic-write + filename
+validation, with a tight docstring already scoping it. Decide: (a) keep the thin documented
+IO edge in the schema crate, or (b) split it to an L2 adapter for a strictly IO-free schema
+crate. Given its size + clear boundary, (a) is the pragmatic default — but it is an operator
+ruling. **Done-when** the decision is recorded on the roadmap; if (b), the move shipped.
+(The other two D7 deferrals — tool overlap, `FakeOpWriter` dedup — are already resolved.)
+
+---
+
+## R11 — Doc & bookkeeping cleanup
+
+- [x] Retire the execution playbook (deleted; replaced by this file; detail in git history).
+- [x] Fix the stale roadmap W5 line count (`image.rs` 2811 → 1952, under cap).
+- [x] Reconcile the W4 `deny.toml` bullet wording (teeth = arch gate, not `deny.toml`).
+- [ ] Prune the under-cap `runtime/image.rs` entry from `file-size-budget.toml` (covered by R4).
+- [ ] Add a one-line "revisit on next sigstore/oci-client bump" note beside the two
+      `deny.toml` `RUSTSEC-2023-0071` / `RUSTSEC-2026-0173` advisory ignores.
 
 ---
 
 ## Ordering / critical path
 
 ```
-R1 ──▶ R2            (break runtime→tui, then flip arch --strict)
-R3                   (finish E1 — independent, hot-path; needs E0 baseline = shipped)
-R4 ──▶ R7            (clear 2000L backlog, THEN tighten caps to 1500L)
-R6 ──▶ R7            (burn clippy backlog, THEN tighten thresholds)
-R5                   (LONG POLE — blocked on external unify-settings item)
-R8, R9, R10, R11     (independent hygiene/decision/docs — land anytime)
+R1 ──▶ R2          break runtime→tui, then flip arch --strict   (gate-keeper)
+R3                 finish E1 (no blockers; hot path → E0 bench)
+R4 ──▶ R7          clear 2000L backlog, THEN tighten caps to 1500L
+R6 ──▶ R7          burn 58 clippy expects, THEN tighten thresholds
+R5                 LONG POLE — blocked on external unify-settings
+R8, R9, R10, R11   independent hygiene/decision/docs — anytime
 ```
 
-- **Closes the item:** R1+R2 (last inversion enforced) · R3 (E1 done) · R4+R5 (file
-  backlog clear) · R6 (clippy clear) → **then** R7 (target thresholds). R8–R11 ride
-  alongside.
-- **Most-blocking unknown:** R5 waits on `unify-settings-editor-surfaces`. Everything
-  else can proceed in parallel today.
-- **Biggest single lever:** R1 — it's the one architectural edge the whole umbrella
-  has been held open for; landing it + R2 converts the architecture from
-  "reviewer-upheld" to "CI-enforced."
-- **Biggest grind:** R6 (58 expects, 40 of them `struct_excessive_bools`) and R4/R7
-  (file decompositions) — mechanical, parallelizable, one PR each.
+- **Closes the item:** R1+R2 · R3 · R4+R5 · R6 → **then** R7; R8–R10 alongside.
+- **Biggest lever:** R1 — the one edge the umbrella is held open for; R1+R2 converts the
+  architecture from reviewer-upheld to CI-enforced.
+- **Biggest grind:** R6 (58 sites, 40 struct_bools) + R4/R7 (file splits) — mechanical, one PR each.
+- **Only external dependency:** R5 (unify-settings). Everything else proceeds today.
 
-## Per-PR checklist (every slice above)
+## Per-PR checklist (every slice)
 
 - [ ] Scope = exactly one slice; structure-only (no logic/behavior/perf change).
 - [ ] `cargo fmt --check` · clippy `-D warnings` · `cargo nextest run --all-features` green.
 - [ ] Behavioral specs `runtime-launch` + `op-picker` pass **unmodified**.
 - [ ] `cargo xtask lint` green; refresh the relevant ratchet + prune fixed entries.
 - [ ] New/renamed crate: `[lints] workspace = true` + Architecture-Invariant `//!` header.
-- [ ] Docs synced same PR: `PROJECT_STRUCTURE.md` + Codebase Map + the roadmap slice box.
+- [ ] Docs synced same PR: `PROJECT_STRUCTURE.md` + Codebase Map + this file's box + roadmap box.
 - [ ] (carve / hot-path slices) E0 launch/attach benchmark shows no regression.
 - [ ] DCO sign-off (`-s`); push immediately.
