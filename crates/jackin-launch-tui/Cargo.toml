@@ -19,3 +19,6 @@ tokio-util = "0.7"
 
 [lints]
 workspace = true
+
+[build-dependencies]
+jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }

@@ -75,7 +75,7 @@ pub use prompt_result::PromptResult;
 pub use runner::{CommandRunner, RunOptions};
 pub use selector::{RoleSelector, Selector, SelectorError, runtime_slug};
 pub use standalone_dialog::{
-    StandaloneDialogSink, exit_dialog_with_inspect, set_global_dialog_sink,
+    StandaloneDialogSink, error_popup, exit_dialog_with_inspect, set_global_dialog_sink,
 };
 pub use status::{JACKIN_STATUS_CMD, parse_session_count};
 pub use tui_widgets::{

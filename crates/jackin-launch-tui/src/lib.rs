@@ -9,7 +9,10 @@
 
 pub mod build_log;
 pub mod progress;
+pub mod standalone_dialog_sink;
 pub mod tui;
+
+pub use standalone_dialog_sink::install as install_standalone_dialog_sink;
 
 pub use jackin_core::launch_progress::{
     FailureCopyTarget, FileDiff, LaunchCancelled, LaunchCandidate, LaunchDiagnostics,

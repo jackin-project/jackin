@@ -26,10 +26,12 @@
 
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
-use crate::runtime::progress::PromptContextLine;
 use jackin_config::DirtyExitPolicy;
 use jackin_core::CommandRunner;
 use jackin_core::JACKIN_STATUS_CMD;
+use jackin_core::error_popup;
+use jackin_core::exit_dialog_with_inspect;
+use jackin_core::launch_progress::PromptContextLine;
 use jackin_diagnostics::debug_log;
 use std::path::Path;
 
@@ -235,7 +237,7 @@ fn rich_exit_dialog(
         "Discard all and exit".to_owned(),
     ];
 
-    match crate::runtime::progress::standalone_exit_dialog_with_inspect(
+    match exit_dialog_with_inspect(
         "Isolated Worktrees",
         &context,
         options,
@@ -248,8 +250,7 @@ fn rich_exit_dialog(
             let message = format!(
                 "Container {container} has unsaved isolated work.\n\nCould not render the exit dialog:\n{err:#}\n\nAll worktrees will be preserved."
             );
-            let _unused =
-                crate::runtime::progress::standalone_error_popup("Exit Dialog Error", &message);
+            drop(error_popup("Exit Dialog Error", &message));
             ExitDialogChoice::KeepAll
         }
     }

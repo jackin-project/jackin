@@ -121,6 +121,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     // work in `codebase-health-enforcement`.
     jackin_diagnostics::operator_notice::install_operator_notice_sink();
     jackin_diagnostics::debug_log::install_debug_log_sink();
+    jackin_launch_tui::install_standalone_dialog_sink();
     jackin_diagnostics::prune_old_runs(&paths);
     if debug {
         announce_debug_run(&diagnostics);

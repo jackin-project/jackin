@@ -16,11 +16,14 @@
 //! `cleanup` (forced removal), `state` (`IsolationRecord` persistence),
 //! `branch` (worktree branch naming).
 //!
-//! Note: `finalize.rs` and `git_inspect.rs` remain in `jackin-runtime` — they
-//! call presentation-layer helpers (`jackin_launch_tui::progress::standalone_*`)
-//! and lifted-to-core symbols (`jackin_core::constants::JACKIN_STATUS_CMD`),
-//! which would create an L1→L3 inverted dep. Moving them requires either a
-//! port-trait relocation or a different carve strategy (parked separately).
+//! Note: `finalize.rs` and `git_inspect.rs` remain under
+//! `jackin_runtime::isolation`. Their exit-dialog and error-popup calls now
+//! route through the L0 port traits (`jackin_core::exit_dialog_with_inspect` /
+//! `jackin_core::error_popup`) instead of directly into `jackin_launch_tui`,
+//! so the L1→L3 inversion that originally parked them is closed. A full
+//! move into this crate is left for a follow-up slice because the in-place
+//! tests rely on `jackin_runtime::test_support::FakeRunner` and dropping a
+//! duplicate here is mechanical cleanup beyond this slice's scope.
 
 pub mod branch;
 pub mod cleanup;
