@@ -223,7 +223,7 @@ fn parses_prewarm_image_role_filters() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.image
+            if args.flags.image
                 && args.role.as_deref() == Some("agent-smith")
                 && args.role_git.as_deref() == Some("https://example.invalid/agent-smith.git")
                 && args.role_branch.as_deref() == Some("feat/launch-speed")
@@ -246,8 +246,8 @@ fn parses_prewarm_roles_single_role_filter() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.roles
-                && !args.image
+            if args.flags.roles
+                && !args.flags.image
                 && args.role.as_deref() == Some("agent-smith")
                 && args.role_git.as_deref() == Some("https://example.invalid/agent-smith.git")
     ));
@@ -260,11 +260,11 @@ fn parses_prewarm_roles_workspace_filter() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.roles
-                && !args.image
+            if args.flags.roles
+                && !args.flags.image
                 && args.workspace.as_deref() == Some("jackin")
                 && args.role.is_none()
-                && !args.all_workspaces
+                && !args.flags.all_workspaces
     ));
 }
 
@@ -274,11 +274,11 @@ fn parses_prewarm_roles_all_workspaces_filter() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.roles
-                && !args.image
+            if args.flags.roles
+                && !args.flags.image
                 && args.workspace.is_none()
                 && args.role.is_none()
-                && args.all_workspaces
+                && args.flags.all_workspaces
     ));
 }
 
@@ -287,7 +287,7 @@ fn parses_prewarm_sidecar_filter() {
     let cli = Cli::try_parse_from(["jackin", "prewarm", "--sidecar"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Prewarm(ref args)) if args.sidecar && !args.image && !args.roles
+        Some(Command::Prewarm(ref args)) if args.flags.sidecar && !args.flags.image && !args.flags.roles
     ));
 }
 
@@ -303,7 +303,7 @@ fn parses_prewarm_sidecar_container_keep_filter() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.sidecar_container && args.keep_sidecar_container
+            if args.flags.sidecar_container && args.flags.keep_sidecar_container
     ));
 }
 
@@ -313,7 +313,7 @@ fn parses_prewarm_daemon_filter() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.daemon && !args.sidecar && !args.sidecar_container && !args.keep_sidecar_container
+            if args.flags.daemon && !args.flags.sidecar && !args.flags.sidecar_container && !args.flags.keep_sidecar_container
     ));
 }
 
@@ -334,9 +334,9 @@ fn parses_prewarm_image_workspace_filters() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.image
+            if args.flags.image
                 && args.workspace.as_deref() == Some("jackin")
-                && !args.all_workspaces
+                && !args.flags.all_workspaces
                 && args.role.is_none()
                 && args.role_git.is_none()
                 && args.role_branch.as_deref() == Some("feat/launch-speed")
@@ -350,8 +350,8 @@ fn parses_prewarm_image_all_workspaces() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.image
-                && args.all_workspaces
+            if args.flags.image
+                && args.flags.all_workspaces
                 && args.workspace.is_none()
                 && args.role.is_none()
                 && args.role_git.is_none()
