@@ -51,7 +51,7 @@ lines = 2834
 
 [[production]]
 path = "crates/jackin-runtime/src/runtime/image.rs"
-lines = 2816
+lines = 2465
 
 [[production]]
 path = "crates/jackin-console/src/tui/screens/editor/view.rs"
