@@ -261,7 +261,7 @@ sibling `<module>/<name>.rs`; child reads ancestor privates via explicit `use su
 - [x] `crates/jackin-runtime/src/runtime/launch.rs` — now 255L (R4 File1 extracts: load_cleanup, restore_resolve + launch_runtime start; full mechanical split for coordinator + reexports done for these siblings). Remaining over-cap for R4: view, dialog, launch_pipeline.
 - [x] `crates/jackin-console/src/tui/screens/editor/view.rs` — 229L (File3 complete: frame.rs extracted (7 siblings total); all listed items + reexports for test super set; coordinator 229L; frame ~838L; lib green; ratchet clean).
 - [x] `crates/jackin-capsule/src/tui/components/dialog.rs` — 1416L (File4 complete: github_context, usage, constructors, container_info, geometry extracted per map; reexports, pub(super); coordinator small; budget entry pruned; lib green). Remaining R4: launch_pipeline (File2).
-- [ ] `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs` — **2213L**.
+- [x] `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs` — now 1174L (R4 File2: launch_core.rs extracted from the 1948-line load_role_with async seam; ctx struct + path shifts + pub(super) helpers; coordinator + core both under cap).
 - [x] **Bookkeeping:** prune the `runtime/image.rs` `[[production]]` block from
       `file-size-budget.toml` — it is **1952L < 2000 cap** (stale grandfather; ratchet rule
       says delete when under cap). No code move. (done as part of R4)
