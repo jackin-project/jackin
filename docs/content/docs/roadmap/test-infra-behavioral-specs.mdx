@@ -33,7 +33,7 @@ Write behavioral specification documents for every major component, not just `ru
 1. **Capsule daemon** (<RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>) — PID 1 contract, single-attach-client invariant, control channel dispatch, session lifecycle, PTY mutex poison recovery, attach framing, OSC passthrough, mode-state restore, sessions persistence and reattach.
 2. **Operator console** — the TUI state machine: workspace selection → role selection → agent selection → instance lifecycle → session management, keybinding dispatch, dialog stack.
 3. **Launch pipeline** (<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>) — already roadmap'd in [behavioral spec for runtime launch](/roadmap/behavioral-spec-runtime-launch/), but worth confirming coverage.
-4. **Auth forwarding** (<RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile>) — credential provisioning, symlink rejection, refresh flows.
+4. **Auth forwarding** (<RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile>) — credential provisioning, symlink rejection, refresh flows.
 
 Each spec should: list invariants, give the failure mode for each violation, and link to the source line where the invariant is enforced.
 

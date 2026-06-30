@@ -4,7 +4,7 @@ description: Contributor reference for how jackin names containers, images, deri
 ---
 
 
-All naming logic lives in <RepoFile path="crates/jackin-runtime/src/instance/naming.rs">crates/jackin-runtime/src/instance/naming.rs</RepoFile> (container names, instance IDs, role-family matching) and <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs">crates/jackin-runtime/src/runtime/naming.rs</RepoFile> (image tags, derived resource names, display formatting).
+All naming logic lives in <RepoFile path="crates/jackin-instance/src/naming.rs">crates/jackin-instance/src/naming.rs</RepoFile> (container names, instance IDs, role-family matching) and <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs">crates/jackin-runtime/src/runtime/naming.rs</RepoFile> (image tags, derived resource names, display formatting).
 
 ## Container name
 
@@ -120,7 +120,7 @@ Example:
 ~/.jackin/data/jk-1vft0hkh-chainargosblockchainnodes-agentbrown/
 ```
 
-Set once at launch time, never renamed. The Docker container name and the state directory name are always identical — they are derived from the same string in <RepoFile path="crates/jackin-runtime/src/instance.rs">crates/jackin-runtime/src/instance.rs</RepoFile>.
+Set once at launch time, never renamed. The Docker container name and the state directory name are always identical — they are derived from the same string in <RepoFile path="crates/jackin-instance/src/lib.rs">crates/jackin-instance/src/lib.rs</RepoFile>.
 
 ## Repo lock files
 

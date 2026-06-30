@@ -133,7 +133,7 @@ Every backend must eventually implement the same high-level jackin❯ operations
 
 ## Backend-Neutral Instance Registry
 
-Docker container names cannot remain the source of truth once multiple backend families exist. Today (May 2026) per-instance metadata lives in <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile> as `InstanceManifest` (schema v1), with a Docker-specific `DockerResources { role_container, dind_container, network, certs_volume }` field. The registry shape needs to evolve to:
+Docker container names cannot remain the source of truth once multiple backend families exist. Today (May 2026) per-instance metadata lives in <RepoFile path="crates/jackin-instance/src/manifest.rs">crates/jackin-instance/src/manifest.rs</RepoFile> as `InstanceManifest` (schema v1), with a Docker-specific `DockerResources { role_container, dind_container, network, certs_volume }` field. The registry shape needs to evolve to:
 
 ```text
 instance_id
@@ -297,5 +297,5 @@ The decision rule is simple: do not add a backend until jackin❯ can state what
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> - current backend-specific launch orchestration.
 - <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> - role image build path that should stay reusable across backends.
 - <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> - Docker backend API boundary.
-- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile> - instance metadata that needs to become backend-neutral.
+- <RepoFile path="crates/jackin-instance/src/manifest.rs">crates/jackin-instance/src/manifest.rs</RepoFile> - instance metadata that needs to become backend-neutral.
 - <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> - capsule runtime contract that every backend must preserve or intentionally replace.

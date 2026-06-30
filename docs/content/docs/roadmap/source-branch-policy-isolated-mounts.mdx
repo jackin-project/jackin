@@ -240,8 +240,8 @@ The CLI should reject source-branch overrides for unknown destinations the same 
 
 - <RepoFile path="crates/jackin-config/src/schema.rs" /> — extend `MountConfig` with the policy fields and serde defaults.
 - <RepoFile path="crates/jackin-config/src/migrations.rs" /> — workspace schema bump and migration chain.
-- <RepoFile path="crates/jackin-runtime/src/isolation/materialize.rs" /> — resolve the policy before `worktree add` / `clone` materialization and use the resolved commit/ref without mutating the host checkout.
-- <RepoFile path="crates/jackin-runtime/src/isolation/state.rs" /> — confirm the existing `base_commit` remains sufficient; add the resolved policy/ref only if cleanup or diagnostics needs it.
+- <RepoFile path="crates/jackin-isolation/src/materialize.rs" /> — resolve the policy before `worktree add` / `clone` materialization and use the resolved commit/ref without mutating the host checkout.
+- <RepoFile path="crates/jackin-isolation/src/state.rs" /> — confirm the existing `base_commit` remains sufficient; add the resolved policy/ref only if cleanup or diagnostics needs it.
 - <RepoFile path="crates/jackin/src/cli/workspace.rs" /> — parse `--mount-source-branch` for create/edit.
 - <RepoFile path="crates/jackin/src/console/tui.rs" /> — replace isolation cycling with the mount settings dialog, staged mount form, source-folder browser handoff, destination text input, and mode-gated source branch rows (inline `state` and `input::editor` modules).
 - <RepoFile path="crates/jackin-runtime/src/runtime/progress.rs" /> — reuse the existing launch dialog surface for `ask` policies instead of adding a separate prompt renderer.

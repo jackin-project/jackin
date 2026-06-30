@@ -72,7 +72,7 @@ The current expected version is the latest supported Kubernetes-style version ba
 
 ## Config file migration
 
-On every startup, `AppConfig::load_or_init` (in <RepoFile path="crates/jackin-config/src/app_config_persist.rs">crates/jackin-config/src/app_config_persist.rs</RepoFile>) runs the migration step before deserializing into typed structs:
+On every startup, `AppConfig::load_or_init` (in <RepoFile path="crates/jackin-config/src/app_config/persist.rs">crates/jackin-config/src/app_config/persist.rs</RepoFile>) runs the migration step before deserializing into typed structs:
 
 1. Read the raw TOML as `toml_edit::DocumentMut`.
 2. Extract `version` (default `legacy` if absent).
@@ -120,7 +120,7 @@ The migration framework carves out an exception for the three file kinds operato
 
 **Phase 1 — Config file versioning**
 
-1. Add `version` extraction to the raw TOML read layer in <RepoFile path="crates/jackin-config/src/app_config_persist.rs">crates/jackin-config/src/app_config_persist.rs</RepoFile> (before deserialization into `AppConfig`).
+1. Add `version` extraction to the raw TOML read layer in <RepoFile path="crates/jackin-config/src/app_config/persist.rs">crates/jackin-config/src/app_config/persist.rs</RepoFile> (before deserialization into `AppConfig`).
 2. Implement the migration registry and the fold-and-rewrite logic using `toml_edit` (<RepoFile path="crates/jackin-config/src/editor.rs">crates/jackin-config/src/editor.rs</RepoFile>).
 3. Ship with `CURRENT_CONFIG_VERSION = "v1alpha1"` and `CURRENT_WORKSPACE_VERSION = "v1alpha1"`; the legacy→`v1alpha1` migration is a no-op that adds `version = "v1alpha1"` to existing files.
 4. All future breaking config changes bump the version and add a migration function.
@@ -175,10 +175,10 @@ Open design questions:
 
 ## Related files
 
-- <RepoFile path="crates/jackin-config/src/app_config_persist.rs">crates/jackin-config/src/app_config_persist.rs</RepoFile> — `AppConfig::load_or_init`, the migration entry point.
+- <RepoFile path="crates/jackin-config/src/app_config/persist.rs">crates/jackin-config/src/app_config/persist.rs</RepoFile> — `AppConfig::load_or_init`, the migration entry point.
 - <RepoFile path="crates/jackin-config/src/editor.rs">crates/jackin-config/src/editor.rs</RepoFile> — `ConfigEditor`, used for comment-preserving file rewrites.
 - <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile> — `RoleManifest`, the role manifest struct.
-- <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> — `AppConfig` and workspace config structs.
+- <RepoFile path="crates/jackin-config/src/app_config.rs">crates/jackin-config/src/app_config.rs</RepoFile> — `AppConfig` and workspace config structs.
 - [split workspace-file layout](/reference/runtime/configuration/#one-file-per-workspace-by-design) — sibling ergonomics item; migration must handle both the monolithic and split layouts if both can exist in the field.
 - [Agent version pinning](/roadmap/reproducibility-pinning/) — related: pinning roles to tagged versions implies a version relationship between the jackin binary and the role manifest schema.
 - [Configuration File](/reference/runtime/configuration/) — internals reference; covers `version` and migration behavior.

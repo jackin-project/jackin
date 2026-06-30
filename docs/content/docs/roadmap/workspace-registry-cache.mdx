@@ -163,7 +163,7 @@ After stopping a role instance, query how many role containers for that workspac
 
 ### Workspace-level resource tracking
 
-`DockerResources` (in <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile>) is a per-instance struct serialized into each instance's manifest — it is the wrong location for workspace-level resources shared across instances. The registry container and shared network must be tracked separately. The implementation should introduce a `WorkspaceResources` struct (or equivalent) that records `registry_container` and `shared_network` at the workspace level, keyed by workspace name, so teardown and lifecycle queries can locate these resources without coupling them to any single instance.
+`DockerResources` (in <RepoFile path="crates/jackin-instance/src/manifest.rs">crates/jackin-instance/src/manifest.rs</RepoFile>) is a per-instance struct serialized into each instance's manifest — it is the wrong location for workspace-level resources shared across instances. The registry container and shared network must be tracked separately. The implementation should introduce a `WorkspaceResources` struct (or equivalent) that records `registry_container` and `shared_network` at the workspace level, keyed by workspace name, so teardown and lifecycle queries can locate these resources without coupling them to any single instance.
 
 ## Phase 2 (deferred)
 

@@ -36,8 +36,6 @@ anyhow = "1.0"
 thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-rand = "0.10"
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
 owo-colors = { version = "4", features = ["supports-colors"] }
 ratatui = "0.30"
 crossterm = "0.29"
@@ -49,9 +47,7 @@ directories = "6.0"
 toml = "1.1"
 toml_edit = "0.25"
 tabled = "0.21.0"
-serde_yaml_ng = "0.10.0"
 tempfile = "3.20"
-url = "2"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["user"] }

@@ -39,9 +39,9 @@ This file documents each step's load-bearing details, the failure modes, and the
 | `OpWriteRunner` trait + `OpCli` impl (1P CLI driver)            | <RepoFile path="crates/jackin-env/src/resolve.rs">crates/jackin-env/src/resolve.rs</RepoFile> |
 | CLI dispatch (`handle_claude_token`, rotate cleanup)            | <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile> |
 | `clap` subcommand surface                                       | <RepoFile path="crates/jackin/src/cli/workspace.rs">crates/jackin/src/cli/workspace.rs</RepoFile> |
-| Container provisioning of the OAuth-token onboarding skeleton   | <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> |
+| Container provisioning of the OAuth-token onboarding skeleton   | <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> |
 | Launch-time mount selection per `forward_auth`                  | <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> |
-| Expiry banner formatter                                         | <RepoFile path="crates/jackin/src/tui.rs">crates/jackin/src/tui.rs</RepoFile> |
+| Expiry banner formatter                                         | <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile> |
 
 ## PTY capture
 
@@ -144,7 +144,7 @@ The CLI's `config env unset` and the TUI's auth panel both refuse to delete `CLA
 
 ## OAuthToken provisioning inside the container
 
-When the launcher prepares the role-state directory for an agent whose effective `auth_forward` is `oauth_token`, `provision_claude_auth` (in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile>) takes a different shape from the other modes:
+When the launcher prepares the role-state directory for an agent whose effective `auth_forward` is `oauth_token`, `provision_claude_auth` (in <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile>) takes a different shape from the other modes:
 
 - `Sync` — copy host `~/.claude.json` to `account.json`, write host credentials to `credentials.json`, `forward_auth = true`.
 - `OAuthToken` — remove any prior `credentials.json` (revokes forwarded creds from a previous Sync run) and write `{"hasCompletedOnboarding":true}` to `account.json`, `forward_auth = true`. Without that skeleton, the in-container Claude CLI shows its "Select login method" prompt even when `CLAUDE_CODE_OAUTH_TOKEN` is set in env.

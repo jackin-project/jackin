@@ -111,7 +111,7 @@ backend = "apple-container"
 
 ## `AppleContainerResources` — Instance Manifest Shape
 
-<RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> now has a backend-neutral `BackendResources` enum.
+<RepoFile path="crates/jackin-instance/src/manifest.rs" /> now has a backend-neutral `BackendResources` enum.
 
 The `AppleContainerResources` variant needed for this backend:
 
@@ -217,7 +217,7 @@ The script (<RepoFile path="scripts/phase0-apple-container.sh" />) automates all
 
 ### Phase 1 — backend-neutral instance registry
 
-- Add `BackendResources` tagged union to <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> (DockerResources variant, AppleContainerResources variant)
+- Add `BackendResources` tagged union to <RepoFile path="crates/jackin-instance/src/manifest.rs" /> (DockerResources variant, AppleContainerResources variant)
 - Teach `hardline --inspect` to report manifest state for non-Docker backends
 - Extract backend-kind probe from Docker-specific naming in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />
 
@@ -293,7 +293,7 @@ Per the AGENTS.md one-bump-per-PR rule, a single PR introduces exactly one versi
 ## Related Files
 
 - <RepoFile path="crates/jackin-capsule/src/main.rs" /> — PID-1 detection; `JACKIN_CAPSULE_FORCE_DAEMON` patch goes here
-- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> — `InstanceManifest`; `BackendResources` tagged union
+- <RepoFile path="crates/jackin-instance/src/manifest.rs" /> — `InstanceManifest`; `BackendResources` tagged union
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — launch orchestration; backend split point
 - <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" /> — apple-container launch and attach path
 - <RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" /> — Apple Container lifecycle boundary

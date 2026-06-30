@@ -98,7 +98,7 @@ gets a distinct container name, distinct data dir, distinct branch.
 The branch name follows the existing convention from
 [per-mount isolation](/guides/workspaces/#per-mount-isolation):
 `jackin/scratch/<container>` where `<container>` includes the unique
-suffix already produced by <RepoFile path="crates/jackin-runtime/src/instance/naming.rs">crates/jackin-runtime/src/instance/naming.rs</RepoFile>.
+suffix already produced by <RepoFile path="crates/jackin-instance/src/naming.rs">crates/jackin-instance/src/naming.rs</RepoFile>.
 
 ### Task → instance materialization
 
@@ -281,7 +281,7 @@ jackin queue approve <workspace> <id> <gate> # approve publish/review/merge gate
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — invoked by the
   dispatcher per task; small refactor to accept programmatic
   invocation instead of CLI args only
-- <RepoFile path="crates/jackin-runtime/src/instance/naming.rs">crates/jackin-runtime/src/instance/naming.rs</RepoFile> — per-task instance name
+- <RepoFile path="crates/jackin-instance/src/naming.rs">crates/jackin-instance/src/naming.rs</RepoFile> — per-task instance name
   generator extension
 - <RepoFile path="crates/jackin/src/cli/role.rs">crates/jackin/src/cli/role.rs</RepoFile> — `jackin queue` subcommands
 - The persistent-storage module — `tasks` table reads/writes

@@ -9,14 +9,14 @@ This document describes jackin❯ security implementation from a contributor per
 | Threat | Defended? | Where in code | Residual risk |
 |---|---|---|---|
 | Agent reads/writes files on host | Yes | Mount scoping in <RepoFile path="crates/jackin-config/src/mounts.rs">crates/jackin-config/src/mounts.rs</RepoFile> | Explicitly mounted rw paths |
-| Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> | TOCTOU window between symlink check and file use |
+| Credential theft via symlink | Yes | `reject_symlink` in <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> | TOCTOU window between symlink check and file use |
 | Container escape | Out of scope | Docker hardening tracked in [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) and [smolvm backend research](/roadmap/smolvm-backend-research/) | Shared kernel; future microVM work addresses this |
 | Agent exfiltration over network | Needs policy | Tracked in [Network egress policy](/roadmap/network-egress-policy/) | Open egress by default today |
 | Supply chain (capsule binary) | SHA256 + signed manifest | <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> | See [signed releases](/roadmap/security-threat-model-and-signed-releases/) |
 
 ## Security functions
 
-All six functions live in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> and are called during credential provisioning at every `jackin load` / `jackin console` launch.
+All six functions live in <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> and are called during credential provisioning at every `jackin load` / `jackin console` launch.
 
 ### `reject_symlink` (line 925)
 

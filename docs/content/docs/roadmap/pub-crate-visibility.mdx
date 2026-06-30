@@ -13,8 +13,8 @@ title: "pub(crate) visibility pass"
 - **Lint available**: `unreachable_pub` is intentionally *not* in `[lints.rust]` in <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> — it has ~100 remaining violations and `cargo clippy -- -D warnings` would promote them all to errors. Run `RUSTFLAGS='-W unreachable-pub' cargo check` for the advisory pass. When the remaining items are fixed, the lint can be added to `[lints.rust]`.
 - **Low-hanging-fruit items fixed** (all 8 roadmap-specified items, with corrected names):
   - <RepoFile path="crates/jackin-config/src/planner.rs">crates/jackin-config/src/planner.rs</RepoFile> — `WorkspaceCreatePlan`, `WorkspaceEditPlan`, `plan_create`, `plan_edit`, `apply_isolation_overrides` → `pub(crate)`
-  - <RepoFile path="crates/jackin-config/src/app_config_mounts.rs">crates/jackin-config/src/app_config_mounts.rs</RepoFile> — `MountEntry` → `pub(crate)`
-  - <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — `BUILTIN_ROLES` (name changed from `BUILTIN_AGENTS`) → `pub(super)`
+  - <RepoFile path="crates/jackin-config/src/app_config/mounts.rs">crates/jackin-config/src/app_config/mounts.rs</RepoFile> — `MountEntry` → `pub(crate)`
+  - <RepoFile path="crates/jackin-config/src/app_config/roles.rs">crates/jackin-config/src/app_config/roles.rs</RepoFile> — `BUILTIN_ROLES` (name changed from `BUILTIN_AGENTS`) → `pub(super)`
   - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — `inspect_attach_outcome`, `EnvLayerState`, `LaunchError`, `verify_credential_env_present` → `pub(super)`
   - <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> — `JACKIN_STATUS_CMD`, `parse_session_count`, `docker_unavailable_msg` → `pub(crate)` (isolation/finalize.rs and app/mod.rs access these from outside runtime; pub(super) would break those paths)
 

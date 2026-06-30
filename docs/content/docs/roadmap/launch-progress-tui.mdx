@@ -210,7 +210,7 @@ The detailed error, command trace, Docker API trace, captured `docker logs`, bui
 
 ## Diagnostics model
 
-The current `debug_log!` channel in <RepoFile path="crates/jackin/src/tui.rs">crates/jackin/src/tui.rs</RepoFile> writes debug lines to stderr or a temporary buffer while the console TUI is active. Launch progress needs the same split but with a durable diagnostics destination and a hard product boundary: detailed logs are never rendered in the launch UI.
+The current `debug_log!` channel in <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile> writes debug lines to stderr or a temporary buffer while the console TUI is active. Launch progress needs the same split but with a durable diagnostics destination and a hard product boundary: detailed logs are never rendered in the launch UI.
 
 - Compact UI events go to the renderer.
 - Compact launch breadcrumbs go to the diagnostics artifact even without `--debug`.

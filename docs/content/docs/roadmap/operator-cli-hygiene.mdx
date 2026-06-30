@@ -22,7 +22,7 @@ Evidence from the codebase:
 - <RepoFile path="crates/jackin/src/main.rs">crates/jackin/src/main.rs</RepoFile> shows three sites where anyhow chains are rendered via `tui::fatal(&format!("{error:#}"))`. No structured failure-to-friendly-message mapping exists.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — Docker reachability is implicit in the first `bollard` call, not a separate up-front check. The launch pipeline does resolution + execution in one pass (~750 LOC starting at line 1479). `LoadOptions` has `debug`, `rebuild`, `force` — no `dry_run`.
 - No `Cli::Doctor`, `Cli::Status`, `Cli::Init`, or `Cli::Ps` variant in <RepoFile path="crates/jackin/src/cli.rs">crates/jackin/src/cli.rs</RepoFile>.
-- Searched `src/cli/` and `src/app/`; no `status`, `ps`, or top-level `list` subcommand. Instance discovery code exists in <RepoFile path="crates/jackin-runtime/src/runtime/discovery.rs">crates/jackin-runtime/src/runtime/discovery.rs</RepoFile> and <RepoFile path="crates/jackin-runtime/src/instance.rs">crates/jackin-runtime/src/instance.rs</RepoFile>, fully consumable.
+- Searched `src/cli/` and `src/app/`; no `status`, `ps`, or top-level `list` subcommand. Instance discovery code exists in <RepoFile path="crates/jackin-runtime/src/runtime/discovery.rs">crates/jackin-runtime/src/runtime/discovery.rs</RepoFile> and <RepoFile path="crates/jackin-instance/src/lib.rs">crates/jackin-instance/src/lib.rs</RepoFile>, fully consumable.
 - `thiserror::Error` derive count is 6 files total. Almost every public-facing function returns `anyhow::Result<_>`.
 - Only the diagnostics JSONL writer uses JSON externally. No `serde_json::to_string` / `println!.*json` patterns outside test code.
 
@@ -304,7 +304,7 @@ Deferred. `jackin console` already provides a clear flow for creating a workspac
 - <RepoFile path="crates/jackin/src/cli.rs">crates/jackin/src/cli.rs</RepoFile> — CLI command definitions
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — launch pipeline, dry-run insertion point
 - <RepoFile path="crates/jackin-runtime/src/runtime/discovery.rs">crates/jackin-runtime/src/runtime/discovery.rs</RepoFile> — instance discovery for `status`
-- <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> — auth checks that doctor should surface
+- <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> — auth checks that doctor should surface
 - <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> — capsule download verification
 
 ## Cross-references

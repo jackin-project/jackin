@@ -2727,12 +2727,10 @@ name = "jackin-capsule"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
  "chrono",
  "criterion",
  "crossterm",
  "dhat",
- "fs2",
  "hex",
  "insta",
  "jackin-build-meta",
@@ -2747,7 +2745,6 @@ dependencies = [
  "procfs",
  "ratatui",
  "regex",
- "reqwest",
  "semver",
  "serde",
  "serde_json",
@@ -2755,8 +2752,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml 1.1.2+spec-1.1.0",
- "tracing",
- "turso",
  "unicode-width 0.2.2",
  "url",
 ]
@@ -2829,7 +2824,6 @@ version = "0.6.0-dev"
 dependencies = [
  "anstyle-parse",
  "anyhow",
- "crossterm",
  "jackin-core",
  "jackin-tui",
  "opentelemetry",
@@ -2891,14 +2885,12 @@ name = "jackin-host"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
- "crossterm",
  "fs2",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-docker",
  "jackin-protocol",
  "jackin-tui",
- "nix 0.31.3",
  "tempfile",
  "tokio",
  "url",
@@ -2965,7 +2957,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -2978,7 +2969,6 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-tui",
  "ratatui",
- "serde",
  "tokio",
  "tokio-util",
 ]
@@ -3023,7 +3013,6 @@ name = "jackin-runtime"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
- "chrono",
  "criterion",
  "crossterm",
  "dialoguer",
@@ -3047,11 +3036,9 @@ dependencies = [
  "jackin-tui",
  "nix 0.31.3",
  "owo-colors 4.3.0",
- "rand 0.10.1",
  "ratatui",
  "serde",
  "serde_json",
- "serde_yaml_ng",
  "sha2 0.11.0",
  "tabled",
  "tempfile",
@@ -3060,7 +3047,6 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "toml_edit 0.25.12+spec-1.1.0",
  "tracing",
- "url",
 ]
 
 [[package]]
@@ -3108,7 +3094,6 @@ dependencies = [
 name = "jackin-usage"
 version = "0.6.0-dev"
 dependencies = [
- "anyhow",
  "base64 0.22.1",
  "chrono",
  "dhat",

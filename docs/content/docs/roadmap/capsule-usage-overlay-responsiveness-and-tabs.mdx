@@ -24,12 +24,12 @@ This is the single source of truth for the remaining work; it absorbs the former
 
 ### P0a — Claude (regression; diagnose the credential path FIRST)
 
-Symptom: Session/Weekly show `% left` only — no reset, no in-reserve, no `Lasts until reset`; Sonnet and Daily Routines absent. Claude resolves via `push_claude_cli_bucket` (`crates/jackin-capsule/src/usage.rs`), the impoverished path. The rich path is OAuth `/api/oauth/usage` → `push_claude_window` (reset + in-reserve + Sonnet + Daily Routines).
+Symptom: Session/Weekly show `% left` only — no reset, no in-reserve, no `Lasts until reset`; Sonnet and Daily Routines absent. Claude resolves via `push_claude_cli_bucket` (`crates/jackin-usage/src/usage.rs`), the impoverished path. The rich path is OAuth `/api/oauth/usage` → `push_claude_window` (reset + in-reserve + Sonnet + Daily Routines).
 
 The root cause is **not yet pinned — diagnose before fixing.** All seven providers passed in-container on June 24, so Claude OAuth **regressed**. First step, in-container on a debug launch:
 
 - Check the forwarded Claude credential: `~/.claude/.credentials.json`, `$CLAUDE_CONFIG_DIR/.credentials.json`, `~/.claude.json`, and `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` env.
-- If the credential is absent or stale → the OAuth fetch fails and the snapshot falls back to `cli`: the bug is in host→container credential forwarding (`crates/jackin-runtime/src/instance/auth.rs`). `git log` what changed Claude forwarding since the June-24 working state.
+- If the credential is absent or stale → the OAuth fetch fails and the snapshot falls back to `cli`: the bug is in host→container credential forwarding (`crates/jackin-instance/src/auth.rs`). `git log` what changed Claude forwarding since the June-24 working state.
 - If the credential is present but `cli` still wins → the bug is in source selection: the `cli` path is preferred or OAuth is gated. Make OAuth win whenever its credential resolves.
 
 Then restore the Claude sections (in order): **Session, Weekly, Sonnet, Daily Routines** (+ conditional Opus / Extra usage). Session/Weekly carry `Resets in <rel> (<local>)` + in-reserve + `Lasts until reset`; Sonnet carries a reset; Daily Routines shows remaining only. A section appears **only when the API returns data for it** — a `null` window (an unused Sonnet/Opus/Daily Routines) is omitted, never rendered as `100% left` (honest degradation; an intentional divergence from CodexBar, which shows null Daily Routines at 100%).
@@ -146,7 +146,7 @@ Today the header mixes identity with auth method and is inconsistent per provide
 
 ## P2 — Status-bar headline: canonical `Session N% · Weekly N%`, every provider (F13)
 
-`status_bar_quota_labels` (`crates/jackin-capsule/src/usage.rs`) matches only buckets literally named Session/Weekly, so Z.AI / MiniMax / Kimi fall through and render wrong/inconsistent headlines. Add a per-provider mapping of which bucket fills the Session vs Weekly slot, then render the Codex/Claude format everywhere:
+`status_bar_quota_labels` (`crates/jackin-usage/src/usage.rs`) matches only buckets literally named Session/Weekly, so Z.AI / MiniMax / Kimi fall through and render wrong/inconsistent headlines. Add a per-provider mapping of which bucket fills the Session vs Weekly slot, then render the Codex/Claude format everywhere:
 
 | Provider | Session slot | Weekly slot | status bar |
 |---|---|---|---|
@@ -243,7 +243,7 @@ The background refresher resolves a credential, calls the provider usage endpoin
 
 ### Credential delivery into the container
 
-The capsule runs as PID 1 inside the Linux container and cannot read the host Keychain; the runtime reads the host credential (file or Keychain) and forwards it into the container at a fixed path per provider (`crates/jackin-runtime/src/instance/auth.rs`). File-based providers (Claude, Codex, Grok, Amp) depend on that forwarding; env-key providers (Z.AI, Kimi, MiniMax) are carried in as environment variables regardless of mount mode. P0 depends on the Claude OAuth credential being forwarded reliably so the OAuth path can win over `cli`.
+The capsule runs as PID 1 inside the Linux container and cannot read the host Keychain; the runtime reads the host credential (file or Keychain) and forwards it into the container at a fixed path per provider (`crates/jackin-instance/src/auth.rs`). File-based providers (Claude, Codex, Grok, Amp) depend on that forwarding; env-key providers (Z.AI, Kimi, MiniMax) are carried in as environment variables regardless of mount mode. P0 depends on the Claude OAuth credential being forwarded reliably so the OAuth path can win over `cli`.
 
 ---
 
@@ -266,8 +266,8 @@ Each item lands with adapter unit/snapshot tests AND an in-container live check 
 ## Cross-references
 
 - Shared tab widget: <RepoFile path="crates/jackin-tui/src/components/tab_strip.rs" /> · hover infra <RepoFile path="crates/jackin-tui/src/components/hover_tracker.rs" />
-- Provider adapters, snapshot builders, daemon `UsageCache`: <RepoFile path="crates/jackin-capsule/src/usage.rs" />
+- Provider adapters, snapshot builders, daemon `UsageCache`: <RepoFile path="crates/jackin-usage/src/usage.rs" />
 - Overlay render: <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> and <RepoFile path="crates/jackin-capsule/src/tui/components/dialog_widgets.rs" />
 - Quota types / `FocusedUsageView`: <RepoFile path="crates/jackin-protocol/src/control.rs" />
-- Host→container credential forwarding: <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" />
+- Host→container credential forwarding: <RepoFile path="crates/jackin-instance/src/auth.rs" />
 - Data plane this overlay deliberately does not display: [Token & Cost Telemetry](/roadmap/token-cost-telemetry/)

@@ -22,9 +22,7 @@ jackin-docker = { version = "0.6.0-dev", path = "../jackin-docker" }
 jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
 jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 anyhow = "1.0"
-crossterm = "0.29"
 fs2 = "0.4"
-nix = { version = "0.31", features = ["term"] }
 tokio = { version = "1", features = ["rt", "macros", "fs", "io-util", "sync"] }
 url = "2"
 

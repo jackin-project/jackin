@@ -21,7 +21,6 @@ dhat-heap = ["dep:dhat"]
 jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
 jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
 jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics", features = ["otlp"] }
-anyhow = "1.0"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 fs2 = "0.4"

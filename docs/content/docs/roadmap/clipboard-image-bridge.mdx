@@ -718,7 +718,7 @@ A future implementation should start from these existing surfaces:
 - Current terminal client behavior to preserve: `crates/jackin-capsule/src/tui/run.rs`, `crates/jackin-capsule/src/tui/terminal.rs`, `crates/jackin-capsule/src/tui/host_colors.rs`, and `crates/jackin-capsule/src/tui/input.rs`.
 - Pane input/output and OSC policy: `crates/jackin-capsule/src/session.rs`, `crates/jackin-capsule/src/daemon.rs`, and `crates/jackin-capsule/src/daemon/mouse_input.rs`.
 - GitHub context data and dialog UI: `crates/jackin-capsule/src/pr_context.rs`, `crates/jackin-capsule/src/pull_request.rs`, and `crates/jackin-capsule/src/tui/components/dialog.rs`.
-- Existing host-private write posture to reuse conceptually for create-new, permissioned, symlink-safe writes: `crates/jackin-runtime/src/instance/auth.rs`. Do not reuse credential-specific helpers as a generic export API without extracting the policy boundary.
+- Existing host-private write posture to reuse conceptually for create-new, permissioned, symlink-safe writes: `crates/jackin-instance/src/auth.rs`. Do not reuse credential-specific helpers as a generic export API without extracting the policy boundary.
 
 The closest tests to extend are:
 

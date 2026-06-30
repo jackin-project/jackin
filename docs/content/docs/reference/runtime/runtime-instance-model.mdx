@@ -55,7 +55,7 @@ cert volume:     <base>-dind-certs
 
 DNS-sensitive values such as `DOCKER_HOST`, `JACKIN_DIND_HOSTNAME`, `DOCKER_TLS_SAN`, `NO_PROXY`, `no_proxy`, and `TESTCONTAINERS_HOST_OVERRIDE` use the DNS-safe DinD name. The role-container base must fit the DinD label budget because `<base>-dind` is used as a network hostname.
 
-Implementation lives in <RepoFile path="crates/jackin-runtime/src/instance/naming.rs">crates/jackin-runtime/src/instance/naming.rs</RepoFile> and <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs">crates/jackin-runtime/src/runtime/naming.rs</RepoFile>. The full naming reference — including image names, derived resource names, lock files, roles cache layout, CLI selector formats, and worked examples — is in [Instance and Resource Naming](/reference/runtime/instance-resource-naming/).
+Implementation lives in <RepoFile path="crates/jackin-instance/src/naming.rs">crates/jackin-instance/src/naming.rs</RepoFile> and <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs">crates/jackin-runtime/src/runtime/naming.rs</RepoFile>. The full naming reference — including image names, derived resource names, lock files, roles cache layout, CLI selector formats, and worked examples — is in [Instance and Resource Naming](/reference/runtime/instance-resource-naming/).
 
 ## State Layout
 
@@ -84,7 +84,7 @@ data/
 
 `isolation.json` is mount-specific. It records materialized isolated mount state such as original source, mount destination, worktree/clone path, worktree scratch branch when applicable, base commit, selector key, container name, and preservation status. It is owned by the isolation subsystem, not the instance manifest.
 
-Implementation lives in <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile>, <RepoFile path="crates/jackin-runtime/src/isolation/state.rs">crates/jackin-runtime/src/isolation/state.rs</RepoFile>, and <RepoFile path="crates/jackin-runtime/src/instance.rs">crates/jackin-runtime/src/instance.rs</RepoFile>.
+Implementation lives in <RepoFile path="crates/jackin-instance/src/manifest.rs">crates/jackin-instance/src/manifest.rs</RepoFile>, <RepoFile path="crates/jackin-isolation/src/state.rs">crates/jackin-isolation/src/state.rs</RepoFile>, and <RepoFile path="crates/jackin-instance/src/lib.rs">crates/jackin-instance/src/lib.rs</RepoFile>.
 
 ## Lifecycle Statuses
 
@@ -184,13 +184,13 @@ Implementation lives in <RepoFile path="crates/jackin-runtime/src/runtime/cleanu
 
 | Area | Source |
 |---|---|
-| DNS-safe names and instance IDs | <RepoFile path="crates/jackin-runtime/src/instance/naming.rs">crates/jackin-runtime/src/instance/naming.rs</RepoFile> |
+| DNS-safe names and instance IDs | <RepoFile path="crates/jackin-instance/src/naming.rs">crates/jackin-instance/src/naming.rs</RepoFile> |
 | Docker labels and derived resource names | <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs">crates/jackin-runtime/src/runtime/naming.rs</RepoFile> |
-| Instance manifest and rebuildable index | <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile> |
+| Instance manifest and rebuildable index | <RepoFile path="crates/jackin-instance/src/manifest.rs">crates/jackin-instance/src/manifest.rs</RepoFile> |
 | Launch, restore discovery, name claiming | <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> |
 | Attach, inspect, session inventory | <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> |
 | Eject, purge, orphan cleanup | <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile> |
-| Workspace/materialized mount state | <RepoFile path="crates/jackin-runtime/src/isolation/materialize.rs">crates/jackin-runtime/src/isolation/materialize.rs</RepoFile> and <RepoFile path="crates/jackin-runtime/src/isolation/state.rs">crates/jackin-runtime/src/isolation/state.rs</RepoFile> |
+| Workspace/materialized mount state | <RepoFile path="crates/jackin-isolation/src/materialize.rs">crates/jackin-isolation/src/materialize.rs</RepoFile> and <RepoFile path="crates/jackin-isolation/src/state.rs">crates/jackin-isolation/src/state.rs</RepoFile> |
 | Foreground finalizer | <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs">crates/jackin-runtime/src/isolation/finalize.rs</RepoFile> |
 | Console instance rendering/actions | <RepoFile path="crates/jackin-console/src/tui/screens/workspaces/view/list.rs">crates/jackin-console/src/tui/screens/workspaces/view/list.rs</RepoFile> and <RepoFile path="crates/jackin-console/src/tui/input/list.rs">crates/jackin-console/src/tui/input/list.rs</RepoFile> |
 | DinD/Testcontainers smoke coverage | <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile> |

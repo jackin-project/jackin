@@ -118,7 +118,7 @@ This does not require any launch-summary structural changes — it only extends 
 
 ### Probe implementation
 
-The probe is a pure function `probe_auth_health(mode, source_dir, env) -> AuthHealthResult` defined in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> alongside the existing `provision_*_auth` functions. It takes the same resolved inputs that `provision_*_auth` takes — the resolved mode, the resolved source path, and the resolved env — so it can be called from both the pre-launch path and the CLI command without duplicating resolution logic.
+The probe is a pure function `probe_auth_health(mode, source_dir, env) -> AuthHealthResult` defined in <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> alongside the existing `provision_*_auth` functions. It takes the same resolved inputs that `provision_*_auth` takes — the resolved mode, the resolved source path, and the resolved env — so it can be called from both the pre-launch path and the CLI command without duplicating resolution logic.
 
 `AuthHealthResult` carries:
 - `status: AuthHealthStatus` — `Healthy`, `Warning(reason)`, `Error(reason)`, `NotForwarded`

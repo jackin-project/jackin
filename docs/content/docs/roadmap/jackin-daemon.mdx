@@ -89,13 +89,13 @@ The console / TUI gets a one-line daemon-status indicator in its footer, mirrori
 ### Security posture
 
 - **Credential lifetime in memory.** Live auth sync requires the daemon to hold tokens in memory while watching for changes. Document the threat model: any process running as the operator can already read those tokens from the host's stores — the daemon does not widen the attack surface, but it does centralise it.
-- **Secret-redacted logs.** Daemon log output must redact tokens the same way `tracing::debug!` already does for `GithubAuthContext` and `GithubProvisionOutcome` (manual `Debug` impls; see <RepoFile path="crates/jackin-runtime/src/instance.rs">crates/jackin-runtime/src/instance.rs</RepoFile>).
+- **Secret-redacted logs.** Daemon log output must redact tokens the same way `tracing::debug!` already does for `GithubAuthContext` and `GithubProvisionOutcome` (manual `Debug` impls; see <RepoFile path="crates/jackin-instance/src/lib.rs">crates/jackin-instance/src/lib.rs</RepoFile>).
 - **Crash dumps and panic backtraces.** Tokens in memory can leak through coredumps. Either disable coredumps for the daemon process (`prctl(PR_SET_DUMPABLE, 0)` on Linux, equivalent on macOS) or redact tokens before any panic-backtrace path can format them.
 - **Fork-safety.** Daemon does not exec subprocesses with token env vars set; `gh auth token` shellouts use a clean env.
 
 ### Migration of today's reconcilers
 
-- **Keep-awake `caffeinate`.** Today's per-command reconciler (see <RepoFile path="crates/jackin-runtime/src/runtime/caffeinate.rs">crates/jackin-runtime/src/runtime/caffeinate.rs</RepoFile>) becomes a daemon-owned watcher: the daemon subscribes to "any role from a keep-awake workspace running" via Docker events and holds the caffeinate lock. CLI commands no longer reconcile.
+- **Keep-awake `caffeinate`.** Today's per-command reconciler (see <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile>) becomes a daemon-owned watcher: the daemon subscribes to "any role from a keep-awake workspace running" via Docker events and holds the caffeinate lock. CLI commands no longer reconcile.
 - **Live auth sync.** First feature designed to require the daemon — see the [live-auth-sync roadmap item](/roadmap/live-auth-sync/) for the per-axis adapter plan. The daemon hosts the shared store flocks and the host-side watchers.
 - **Desktop Agent Hub.** The native macOS app depends on daemon state rather
   than scraping jackin❯ config or Docker directly. The daemon is the primary
@@ -129,6 +129,6 @@ Rough order of operations — not committed; to be confirmed during the design p
 - [Agent attention prompts](/roadmap/agent-attention-prompts/) — host-side OS notifications when an agent waits on operator input. Plugs into this daemon.
 - [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) — operator-mediated channel for agents to request secrets or invoke host commands. Plugs into this daemon and uses the same approval surface (TouchID / polkit / password) the daemon hosts.
 - [jackin❯ Desktop Agent Hub](/roadmap/jackin-desktop-agent-hub/) — native macOS status bar and desktop companion that consumes daemon state for workspaces, sessions, GitHub PRs, account status, notifications, and approved host actions.
-- <RepoFile path="crates/jackin-runtime/src/runtime/caffeinate.rs">crates/jackin-runtime/src/runtime/caffeinate.rs</RepoFile> — today's per-command keep-awake reconciler; first migration target in Phase 2.
+- <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile> — today's per-command keep-awake reconciler; first migration target in Phase 2.
 - [Reliable Claude authentication strategy](/roadmap/claude-auth-strategy/) — concurrent-session token-drift concerns the live-auth-sync feature ultimately answers, so the daemon hosts the answer.
 - [Credential source pattern](/roadmap/credential-source-pattern/) — future unified credential resolver; the daemon's per-axis adapter trait should be expressible inside that pattern.
