@@ -212,9 +212,9 @@ pub(super) fn format_amount_with_unit(value: f64, unit: &str) -> String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct CliOutput {
-    pub(super) success: bool,
-    pub(super) exit_code: Option<i32>,
+pub(crate) struct CliOutput {
+    pub(crate) success: bool,
+    pub(crate) exit_code: Option<i32>,
     pub(super) stdout: String,
     pub(super) stderr: String,
 }

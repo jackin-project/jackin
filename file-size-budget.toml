@@ -29,13 +29,6 @@ test_cap = 10000
 
 # Grandfathered production files (current line counts; may only decrease):
 [[production]]
-path = "crates/jackin-usage/src/usage.rs"
-lines = 5986
-# God-crate carve C2 — moved from jackin-capsule (was 5983L there).
-# Decomposition of usage/{claude,codex,grok,zai,kimi,minimax,amp,
-# view,refresh}.rs is the W5 follow-up that brings this below 2000L.
-
-[[production]]
 path = "crates/jackin-console/src/tui/model.rs"
 lines = 5095
 
