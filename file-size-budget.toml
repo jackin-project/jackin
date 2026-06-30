@@ -29,10 +29,6 @@ test_cap = 10000
 
 # Grandfathered production files (current line counts; may only decrease):
 [[production]]
-path = "crates/jackin-console/src/tui/model.rs"
-lines = 5095
-
-[[production]]
 path = "crates/jackin-console/src/tui/screens/editor/model.rs"
 lines = 4176
 
