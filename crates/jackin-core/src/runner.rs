@@ -30,7 +30,7 @@ pub struct RunOptions {
     /// Tee captured output into the build-log sink so the loading cockpit can
     /// show a live view. Only the derived-image `docker build` sets this.
     pub tee_to_build_log: bool,
-    /// The sink that receives tee'd build output when `tee_to_build_log` is
+    /// The sink that receives tee-captured build output when `tee_to_build_log` is
     /// true. Injected by the runtime entry point (`jackin-runtime`) before
     /// docker-build invocations; `None` suppresses teeing.
     pub build_log_sink: Option<Arc<dyn BuildLogSink>>,
