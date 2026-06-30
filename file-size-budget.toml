@@ -38,8 +38,8 @@ lines = 3852
 
 [[production]]
 path = "crates/jackin-runtime/src/runtime/launch.rs"
-lines = 2199
-# After partial R4 File1 split (mechanical siblings extracted; reexports preserve call sites). Full decomp + File2 pending (judgment flagged).
+lines = 1979
+# After more R4 File1 split (failure, launch_plan extracted). Still to extract launch_runtime, restore_resolve, load_cleanup. Full decomp pending.
 
 [[production]]
 path = "crates/jackin-console/src/tui/screens/editor/view.rs"
