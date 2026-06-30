@@ -441,7 +441,8 @@ R6 progress (this branch):
 - OscPolicy (capsule, 4 bools): flags, safe (no test edits), committed+pushed.
 - DamageGrid (term): bundled 7 mode bools → mode_flags u8, expect removed, check/clippy/test-build green (uses new()), committed+pushed.
 - SupportedSgr (term, 13 bools): already converted to flags u16 + accessors (1 construction site in Default, per plan risk order); expect already absent in live tree, lint satisfied.
-3 accounted. 53 remaining live with the tracked expect attr. Low-fan-out safe set exhausted per greps (see investigation note).
+- PrewarmArgs (jackin cli, 8 clap bools): bundled to flags + PrewarmFlags; last prod construction site fixed in load_cmd.rs. Expect removed from struct.
+4 accounted. ~51 remaining live with the tracked expect attr. Low-fan-out safe set exhausted per greps (see investigation note).
 
 Investigation (re-confirm + grep *test*.rs + tests.rs for field: inits and .field reads on bools):
 - Tried: Categories (xtask), StatusFooterHover (tui + launch-tui test literals), MuxModeState/PointerShapeState/CursorVisibilityState (capsule model/tests.rs heavy literals), LaunchView (launch-tui/update/tests.rs), AttachCapabilities/Sources (daemon/tests.rs direct .pointer_shapes reads), RunOptions (docker shell tests), Workspace*Facts / SidebarFacts / save_preview (view/tests + list_geometry/tests), etc.
@@ -493,7 +494,7 @@ Note: safe low-fan-out items with no test source impact (no bool field literals 
 | jackin-term/src/snapshot.rs:29 | SnapCell (31) | 12 |
 | jackin-term/src/width.rs:75 | SupportedSgr (77) | 13 | [done pre-R6; converted to flags, 1 construction site, no expect remains] |
 | jackin-tui/src/components/status_footer.rs:15 | StatusFooterHover (17) | 4 |
-| jackin/src/cli/prewarm.rs:20 | PrewarmArgs (23) | 8 (clap `#[arg]`) |
+| jackin/src/cli/prewarm.rs:20 | PrewarmArgs (23) | 8 (clap `#[arg]`) | [done R6] (bundled to flags; last prod call site fixed in load_cmd) |
 | jackin-xtask/src/pr.rs:39 | Categories (41) | 4 |
 
 ### `fn_params_excessive_bools` (10)
