@@ -12,14 +12,15 @@
 //!
 //! The 4 production modules (branch / cleanup / materialize / state) now
 //! live in the `jackin-isolation` crate (C2 carve); they are re-exported
-//! here so existing `crate::isolation::branch::*` etc. call sites keep
-//! compiling without edits. `finalize` and `git_inspect` remain in
-//! `jackin-runtime` for now — they reach into `jackin_runtime::runtime
-//! ::attach` / `jackin_launch_tui::launch_progress` symbols and lifting
-//! those out requires a preparatory slice.
+//! here (R3: finalize/git_inspect now in jackin-isolation with shims for
+//! unchanged call sites).
 
-pub mod finalize;
-pub mod git_inspect;
+pub mod finalize {
+    pub use jackin_isolation::finalize::*;
+}
+pub mod git_inspect {
+    pub use jackin_isolation::git_inspect::*;
+}
 
 pub mod branch {
     pub use jackin_isolation::branch::*;

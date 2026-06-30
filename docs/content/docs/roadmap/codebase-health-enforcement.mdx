@@ -21,7 +21,7 @@ The mechanical, copy-pasteable per-slice steps (exact files, symbols, line range
 
 ### Finish the god-crate carve
 
-- [ ] **R3 — complete E1: move `finalize.rs` + `git_inspect.rs` into `jackin-isolation`.** Four of six isolation modules carved; these two still sit in `crates/jackin-runtime/src/isolation/`. The L1→L3 inversion that originally parked them is closed (both route dialogs through `jackin_core::exit_dialog_with_inspect` / `error_popup`); the only remaining blocker is the in-place tests' use of `jackin_runtime::test_support::FakeRunner` — resolve via a `jackin-isolation` `[dev-dependencies]` edge on `jackin-runtime` (`features = ["test-support"]`). Hot path → E0 benchmark must show no regression. First verify `finalize.rs`'s use of `attach::parse_session_count` (`pub(crate)`, unreachable cross-crate) — relocate it to `jackin-core` in a prep step if still referenced.
+- [x] **R3 — complete E1: move `finalize.rs` + `git_inspect.rs` into `jackin-isolation`.** Moved with re-export shims, added required prod deps (protocol, docker), updated headers/visibility for cross-crate, tests use dev-dep. Shims preserve call sites.
 
 ### File-size backlog (W5) — bring every production `.rs` under the 2000L cap
 

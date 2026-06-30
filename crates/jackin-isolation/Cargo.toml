@@ -19,6 +19,8 @@ path = "src/lib.rs"
 jackin-core        = { version = "0.6.0-dev", path = "../jackin-core" }
 jackin-config      = { version = "0.6.0-dev", path = "../jackin-config" }
 jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+jackin-protocol    = { version = "0.6.0-dev", path = "../jackin-protocol" }
+jackin-docker      = { version = "0.6.0-dev", path = "../jackin-docker" }
 
 anyhow    = "1.0"
 serde     = { version = "1.0", features = ["derive"] }

@@ -191,7 +191,7 @@ CI invocation carries `--strict`; `FORBIDDEN_EDGES` empty; no production inversi
 
 ---
 
-## R3 — Finish E1: move `finalize.rs` + `git_inspect.rs` into `jackin-isolation`
+## [x] R3 — Finish E1: move `finalize.rs` + `git_inspect.rs` into `jackin-isolation` (done)
 
 **Goal.** Complete the isolation carve so `jackin-runtime` owns no isolation code.
 **Verified: NO blockers** — every production dep of both files already lives in

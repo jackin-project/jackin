@@ -2954,6 +2954,8 @@ dependencies = [
  "jackin-config",
  "jackin-core",
  "jackin-diagnostics",
+ "jackin-docker",
+ "jackin-protocol",
  "jackin-runtime",
  "serde",
  "serde_json",

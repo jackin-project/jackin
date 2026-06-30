@@ -24,8 +24,8 @@
 // None require network access. The shared finalizer is safe to call
 // after a hardline-locked attach (offline lockdown).
 
-use crate::isolation::cleanup::force_cleanup_isolated;
-use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
+use crate::cleanup::force_cleanup_isolated;
+use crate::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
 use jackin_config::DirtyExitPolicy;
 use jackin_core::CommandRunner;
 use jackin_core::JACKIN_STATUS_CMD;
@@ -56,7 +56,7 @@ impl AttachOutcome {
         Self::OomKilled
     }
 
-    pub(crate) fn as_label(self) -> String {
+    pub fn as_label(self) -> String {
         match self {
             Self::StillRunning => "still_running".to_owned(),
             Self::Stopped(code) => format!("stopped_{code}"),
@@ -73,7 +73,7 @@ pub enum FinalizeDecision {
 }
 
 impl FinalizeDecision {
-    pub(crate) const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Preserved => "preserved",
             Self::Cleaned => "cleaned",
@@ -208,11 +208,7 @@ fn rich_exit_dialog(
     // D24: pre-fetch changed-file lists for each preserved worktree.
     let worktrees_per_record: Vec<Vec<jackin_core::launch_progress::WorktreeInspect>> = records
         .iter()
-        .map(|(rec, _)| {
-            vec![crate::isolation::git_inspect::worktree_inspect(
-                &rec.worktree_path,
-            )]
-        })
+        .map(|(rec, _)| vec![crate::git_inspect::worktree_inspect(&rec.worktree_path)])
         .collect();
 
     let mut context = vec![
@@ -414,10 +410,9 @@ async fn finalize_clean_exit(
                     eprintln!(
                         "[jackin] warning: discard-policy force-delete of `{wt}` failed ({reason_str}): {e}\n         re-run `jackin purge {short}` to retry",
                         wt = rec.worktree_path,
-                        short = crate::instance::naming::instance_id_from_container_base(
-                            container_name
-                        )
-                        .unwrap_or(container_name),
+                        short =
+                            jackin_core::constants::instance_id_from_container_base(container_name)
+                                .unwrap_or(container_name),
                     );
                     any_failed = true;
                 }
@@ -451,7 +446,7 @@ async fn finalize_clean_exit(
             eprintln!(
                 "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: {reason_str}\n         run `jackin hardline {short}` to return, inspect the path above directly, or `jackin purge {short}` to discard",
                 wt = rec.worktree_path,
-                short = crate::instance::naming::instance_id_from_container_base(container_name)
+                short = jackin_core::constants::instance_id_from_container_base(container_name)
                     .unwrap_or(container_name),
             );
         }
@@ -472,10 +467,9 @@ async fn finalize_clean_exit(
                     eprintln!(
                         "[jackin] warning: force-delete of isolated worktree `{wt}` failed: {e}\n         record retained — re-run `jackin purge {short}` to retry",
                         wt = rec.worktree_path,
-                        short = crate::instance::naming::instance_id_from_container_base(
-                            container_name
-                        )
-                        .unwrap_or(container_name),
+                        short =
+                            jackin_core::constants::instance_id_from_container_base(container_name)
+                                .unwrap_or(container_name),
                     );
                     any_failed = true;
                 }

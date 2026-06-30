@@ -162,7 +162,7 @@ because it has its own materialization lifecycle:
 - <RepoFile path="crates/jackin-isolation/src/materialize.rs">crates/jackin-isolation/src/materialize.rs</RepoFile> — worktree and clone
   materialization + `MaterializedWorkspace`.
 - <RepoFile path="crates/jackin-isolation/src/state.rs">crates/jackin-isolation/src/state.rs</RepoFile> — `isolation.json` IO.
-- <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs">crates/jackin-runtime/src/isolation/finalize.rs</RepoFile> — the post-attach
+- <RepoFile path="crates/jackin-isolation/src/finalize.rs">crates/jackin-isolation/src/finalize.rs</RepoFile> (R3 moved from runtime with shim) — the post-attach
   finalizer that decides between *preserve* / *clean* / *return-to-agent*.
 
 ### "I want to change a config-file shape"
