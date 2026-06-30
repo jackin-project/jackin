@@ -91,7 +91,7 @@ fn attrs_supported_rejects_when_profile_lacks_capability() {
     // method is the false branch — a profile missing a capability must reject
     // an attr that needs it.
     let mut profile = VirtualTerminalProfile::default();
-    profile.supported_sgr.italic = false;
+    profile.supported_sgr.flags &= !(1 << 2);
     let italic = Attrs {
         italic: true,
         ..Attrs::default()
@@ -104,8 +104,7 @@ fn attrs_supported_rejects_when_profile_lacks_capability() {
     // Non-default colors require a color capability; with both off and a
     // truecolor foreground, the color gate must reject.
     let mut mono = VirtualTerminalProfile::default();
-    mono.supported_sgr.color_256 = false;
-    mono.supported_sgr.truecolor = false;
+    mono.supported_sgr.flags &= !((1 << 11) | (1 << 12));
     let colored = Attrs {
         foreground: Color::Rgb(1, 2, 3),
         ..Attrs::default()
