@@ -263,9 +263,9 @@ sibling `<module>/<name>.rs`; child reads ancestor privates via explicit `use su
 - [ ] `crates/jackin-console/src/tui/screens/editor/view.rs` — **2389L**.
 - [ ] `crates/jackin-capsule/src/tui/components/dialog.rs` — **2265L**.
 - [ ] `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs` — **2213L**.
-- [ ] **Bookkeeping:** prune the `runtime/image.rs` `[[production]]` block from
+- [x] **Bookkeeping:** prune the `runtime/image.rs` `[[production]]` block from
       `file-size-budget.toml` — it is **1952L < 2000 cap** (stale grandfather; ratchet rule
-      says delete when under cap). No code move.
+      says delete when under cap). No code move. (done as part of R4)
 
 ### ⚠ CRITICAL mechanic for all four splits — re-export to preserve call sites
 

@@ -46,10 +46,6 @@ lines = 2834
 # cleanup can drop it by re-joining the import block.
 
 [[production]]
-path = "crates/jackin-runtime/src/runtime/image.rs"
-lines = 1952
-
-[[production]]
 path = "crates/jackin-console/src/tui/screens/editor/view.rs"
 lines = 2389
 
