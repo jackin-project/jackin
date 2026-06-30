@@ -122,7 +122,7 @@ pub(crate) fn run(args: LintArchArgs) -> Result<()> {
         }
         let mut workspace_deps = BTreeSet::new();
         for d in &package.dependencies {
-            if workspace_members.contains(d.name.as_str()) {
+            if workspace_members.contains(d.name.as_str()) && d.kind.as_deref() != Some("dev") {
                 workspace_deps.insert(d.name.clone());
             }
         }
@@ -196,6 +196,8 @@ struct Package {
 #[derive(serde::Deserialize)]
 struct Dep {
     name: String,
+    #[serde(default)]
+    kind: Option<String>,
 }
 
 fn read_metadata(root: &std::path::Path) -> Result<Metadata> {

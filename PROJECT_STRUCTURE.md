@@ -65,7 +65,7 @@ CLI source under `src/`; supporting files at repo root:
 | `docker-bake.hcl` | Declarative Docker Bake build graph for construct image |
 | `rust-toolchain.toml` | Pinned Rust toolchain (CI-enforced MSRV) |
 
-For **Rust source tree** — `src/app/`, `src/cli/`, `src/runtime/`, `src/workspace/`, `src/console/`, etc., plus crate-root helpers like `src/derived_image.rs` and `src/env_model.rs` — see [Codebase Map](https://jackin.tailrocks.com/reference/codebase-map/). That page updates in same PR as any module-level structural change, so never falls behind.
+For **Rust source tree** — `src/app/`, `src/cli/`, `src/runtime/`, `src/workspace/`, `src/console/`, etc., plus crate-root helpers like `src/derived_image.rs` and `src/env_model.rs` — see [Codebase Map](https://jackin.tailrocks.com/reference/codebase-map/). That page (and this) updated in same PR as any module-level structural change (R1 added core/ansi_tokens.rs + launch-tui/launch_output.rs), so never falls behind.
 
 ## Documentation site (`docs/`)
 

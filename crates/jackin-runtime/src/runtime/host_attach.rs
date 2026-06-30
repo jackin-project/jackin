@@ -269,7 +269,7 @@ where
                         let message = match open_host_url(&url) {
                             Ok(()) => "Opening URL in host browser".to_owned(),
                             Err(err) => {
-                                let redacted = jackin_tui::url_text::redact_url_for_log(&url);
+                                let redacted = jackin_core::redact_url_for_log(&url);
                                 jackin_diagnostics::debug_log!(
                                     "attach",
                                     "host open URL failed for {redacted:?}: {err:#}"

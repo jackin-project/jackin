@@ -10,12 +10,9 @@
 //! Allowed dependencies: `jackin-core`, `jackin-config`, `jackin-env`,
 //! `jackin-manifest`, `jackin-docker`, `jackin-image`,
 //! `jackin-diagnostics`, `jackin-launch-tui`, `jackin-host`,
-//! `jackin-protocol`, `jackin-isolation`, `jackin-instance`,
-//! `jackin-tui`. The `jackin-tui` edge remains an open P2 inversion
-//! — runtime uses `jackin_tui::url_text`, `jackin_tui::output`,
-//! `jackin_tui::ansi`, and `jackin_tui::components` for production
-//! rendering helpers; tracked for port-trait relocation (D2) once the
-//! hot-path LTO gate lands (see W1 / E0).
+//! `jackin-protocol`, `jackin-isolation`, `jackin-instance`.
+//! (R1: `jackin-tui` production edge removed via pure-item relocation to
+//! core + `LaunchOutputSink` port; only dev-dep remains for tests.)
 
 pub mod apple_container_client;
 pub mod exec_host;

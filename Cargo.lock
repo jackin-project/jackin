@@ -2798,6 +2798,7 @@ name = "jackin-core"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "directories",
  "hex",
  "owo-colors 4.3.0",

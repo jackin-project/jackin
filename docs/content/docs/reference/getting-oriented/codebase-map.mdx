@@ -36,7 +36,8 @@ The Cargo workspace is a tiered DAG — dependencies point only downward. A high
 
 ```text
 Tier 0  jackin-core        vocabulary + traits + manifest types + JackinPaths +
-                           env_model (reserved-name policy) + op_types + constants
+                           env_model (reserved-name policy) + op_types + constants +
+                           ansi_tokens (R1) + launch port traits
         jackin-protocol    capsule↔client wire protocol
         ──  no tokio · no docker · no filesystem (except std::fs in paths)  ──
 
@@ -114,6 +115,7 @@ The container lifecycle lives in `src/runtime/`:
   agent container, attach. It emits structured launch progress stages
   rather than writing raw status directly to the terminal.
 - <RepoFile path="crates/jackin-launch-tui/src/progress.rs">crates/jackin-launch-tui/src/progress.rs</RepoFile> — launch progress event
+- <RepoFile path="crates/jackin-launch-tui/src/launch_output.rs">crates/jackin-launch-tui/src/launch_output.rs</RepoFile> — LaunchTuiOutputSink impl of core port (R1)
   vocabulary plus rich, compact, non-interactive, and test rendering support.
   The rich launch cockpit model, update, subscriptions, terminal checks, and
   Ratatui model/message/update/effect/run/view live under <RepoFile path="crates/jackin-launch-tui/src/tui.rs">crates/jackin-launch-tui/src/tui.rs</RepoFile>,

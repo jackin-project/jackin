@@ -9,7 +9,8 @@ use std::io::Write;
 use std::time::Duration;
 
 pub use jackin_core::launch_progress::LaunchCancelled;
-use jackin_core::launch_progress::LaunchHostTerminal;
+use jackin_core::launch_progress::{LaunchHostTerminal, LaunchOutputSink};
+use jackin_launch_tui::LaunchTuiOutputSink;
 pub use jackin_launch_tui::progress::LaunchProgress;
 #[cfg(test)]
 use jackin_launch_tui::tui::components::build_log_dialog::BUILD_LOG_WRAP_PREFIX;
@@ -84,9 +85,9 @@ impl LaunchHostTerminal for HostTerminal {
 
     fn set_pointer_shape(&self, pointer: bool) {
         let seq = if pointer {
-            jackin_tui::ansi::POINTER_HAND
+            jackin_core::POINTER_HAND
         } else {
-            jackin_tui::ansi::POINTER_DEFAULT
+            jackin_core::POINTER_DEFAULT
         };
         let mut out = std::io::stdout();
         drop(out.write_all(seq.as_bytes()));
@@ -95,7 +96,7 @@ impl LaunchHostTerminal for HostTerminal {
 
     fn copy_to_clipboard(&self, payload: &str) -> bool {
         let mut out = std::io::stdout();
-        out.write_all(&jackin_tui::ansi::encode_osc52_clipboard_write(payload))
+        out.write_all(&jackin_core::encode_osc52_clipboard_write(payload))
             .and_then(|()| out.flush())
             .is_ok()
     }
@@ -131,6 +132,12 @@ static HOST_TERMINAL: HostTerminal = HostTerminal;
 
 pub(crate) fn host_terminal() -> &'static dyn LaunchHostTerminal {
     &HOST_TERMINAL
+}
+
+static LAUNCH_OUTPUT: LaunchTuiOutputSink = LaunchTuiOutputSink;
+
+pub(crate) fn launch_output() -> &'static dyn LaunchOutputSink {
+    &LAUNCH_OUTPUT
 }
 
 pub fn prelaunch_select_choice(

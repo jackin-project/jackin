@@ -8,16 +8,18 @@
 //! live under `progress`.
 
 pub mod build_log;
+pub mod launch_output;
 pub mod progress;
 pub mod standalone_dialog_sink;
 pub mod tui;
 
+pub use launch_output::LaunchTuiOutputSink;
 pub use standalone_dialog_sink::install as install_standalone_dialog_sink;
 
 pub use jackin_core::launch_progress::{
     FailureCopyTarget, FileDiff, LaunchCancelled, LaunchCandidate, LaunchDiagnostics,
-    LaunchDialogResult, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchStage,
-    LaunchTargetKind, PromptContextLine, StageLabelTransition, StageStatus, StageView,
+    LaunchDialogResult, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchOutputSink,
+    LaunchStage, LaunchTargetKind, PromptContextLine, StageLabelTransition, StageStatus, StageView,
     WorktreeInspect,
 };
 pub use tui::message::LaunchMessage;

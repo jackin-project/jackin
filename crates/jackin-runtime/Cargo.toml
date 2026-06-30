@@ -27,7 +27,6 @@ jackin-host = { version = "0.6.0-dev", path = "../jackin-host" }
 jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
 jackin-isolation = { version = "0.6.0-dev", path = "../jackin-isolation" }
 jackin-instance = { version = "0.6.0-dev", path = "../jackin-instance" }
-jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 
 tracing = "0.1"
 tokio = { version = "1", features = ["rt", "process", "io-util", "io-std", "net", "signal", "sync", "macros", "time", "fs"] }
@@ -53,6 +52,7 @@ tempfile = "3.20"
 nix = { version = "0.31", features = ["user"] }
 
 [dev-dependencies]
+jackin-tui = { path = "../jackin-tui" }
 criterion = { version = "=0.8.2", features = ["html_reports"] }
 tokio = { version = "=1.52.3", features = ["test-util"] }
 

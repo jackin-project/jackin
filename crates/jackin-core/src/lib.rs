@@ -15,6 +15,7 @@
 
 pub mod account_key;
 pub mod agent;
+pub mod ansi_tokens;
 pub mod auth;
 pub mod build_log_sink;
 pub mod constants;
@@ -49,6 +50,7 @@ pub use agent::{
     adapters::registry as agent_runtime_registry,
     runtime::{AgentRuntime, AgentStatePaths},
 };
+pub use ansi_tokens::{POINTER_DEFAULT, POINTER_HAND, encode_osc52_clipboard_write};
 pub use auth::AuthForwardMode;
 pub use build_log_sink::BuildLogSink;
 pub use debug_log::{DebugLogSink, emit_debug_line, is_debug_mode, set_global_sink};
@@ -64,8 +66,8 @@ pub use isolation::{MountIsolation, ParseMountIsolationError};
 pub use isolation_record::{CleanupStatus, DriftDetection, IsolationRecord};
 pub use launch_progress::{
     FailureCopyTarget, FileDiff, LaunchCancelled, LaunchCandidate, LaunchDiagnostics,
-    LaunchDialogResult, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchStage,
-    LaunchTargetKind, PromptContextLine, StageLabelTransition, StageStatus, StageView,
+    LaunchDialogResult, LaunchFailure, LaunchHostTerminal, LaunchIdentity, LaunchOutputSink,
+    LaunchStage, LaunchTargetKind, PromptContextLine, StageLabelTransition, StageStatus, StageView,
     WorktreeInspect,
 };
 pub use operator_notice::{OperatorNoticeSink, emit_compact_line};

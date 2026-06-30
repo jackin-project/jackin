@@ -44,8 +44,24 @@ pub(crate) use trust::{
 };
 
 mod launch_pipeline;
+use super::attach::{ContainerState, reconnect_or_create_session_with_focus};
+use super::discovery::list_running_agent_names;
+use super::identity::GitIdentity;
+use super::naming::{LABEL_KEEP_AWAKE, LABEL_KIND_ROLE, LABEL_MANAGED};
+use super::progress::launch_output;
+use super::universe::ExitClaim;
+#[cfg(test)]
+use crate::instance::InstanceStatus;
+use crate::instance::naming::dind_certs_volume;
 #[cfg(test)]
 pub(crate) use crate::instance::{DockerResources, NewInstanceManifest};
+use crate::instance::{InstanceIndex, InstanceManifest, PrepareResolvers, RoleState};
+use anyhow::Context;
+use jackin_config::AppConfig;
+use jackin_core::paths::JackinPaths;
+use jackin_core::selector::RoleSelector;
+use jackin_core::{CommandRunner, RunOptions};
+use jackin_docker::docker_client::DockerApi;
 #[cfg(test)]
 pub(crate) use launch_pipeline::emit_auth_provision_launch_plan;
 #[cfg(test)]
@@ -53,24 +69,7 @@ pub(crate) use launch_pipeline::load_role_with;
 #[cfg(test)]
 pub(crate) use launch_pipeline::manifest_env_timing_detail;
 pub use launch_pipeline::{load_role, resolve_supported_agents_for_console};
-
-#[cfg(test)]
-use crate::instance::InstanceStatus;
-use crate::instance::{InstanceIndex, InstanceManifest, PrepareResolvers, RoleState};
-use anyhow::Context;
-use jackin_config::AppConfig;
-use jackin_core::paths::JackinPaths;
-use jackin_core::selector::RoleSelector;
-use jackin_core::{CommandRunner, RunOptions};
 use std::path::{Path, PathBuf};
-
-use super::attach::{ContainerState, reconnect_or_create_session_with_focus};
-use super::discovery::list_running_agent_names;
-use super::identity::GitIdentity;
-use super::naming::{LABEL_KEEP_AWAKE, LABEL_KIND_ROLE, LABEL_MANAGED};
-use super::universe::ExitClaim;
-use crate::instance::naming::dind_certs_volume;
-use jackin_docker::docker_client::DockerApi;
 
 #[expect(
     missing_debug_implementations,
@@ -732,7 +731,7 @@ pub(super) async fn launch_role_runtime(
     steps.done();
 
     if steps.progress.is_none() {
-        jackin_tui::output::print_deploying(agent_display_name).await;
+        launch_output().print_deploying(agent_display_name).await;
     }
 
     let class_label = format!("jackin.class={}", selector.key());
@@ -2090,8 +2089,8 @@ pub(super) async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
     // reached by a path that did not go through the attach.
     jackin_diagnostics::reassert_alt_screen();
     let host_owned = jackin_diagnostics::host_screen_owned();
-    jackin_tui::animation::warp_out(host_owned);
-    jackin_tui::animation::warp_end_caption(elapsed, host_owned);
+    launch_output().warp_out(host_owned);
+    launch_output().warp_end_caption(elapsed, host_owned);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2806,22 +2805,22 @@ impl LoadCleanup {
         }
 
         if let Err(e) = docker.remove_container(&self.container_name).await {
-            jackin_tui::output::step_fail(&format!("cleanup failed (container): {e}"));
+            launch_output().step_fail(&format!("cleanup failed (container): {e}"));
         }
         if let Err(e) = docker.remove_container(&self.dind).await {
-            jackin_tui::output::step_fail(&format!("cleanup failed (dind): {e}"));
+            launch_output().step_fail(&format!("cleanup failed (dind): {e}"));
         }
         if let Err(e) = docker.remove_volume(&self.certs_volume).await {
-            jackin_tui::output::step_fail(&format!("cleanup failed (certs volume): {e}"));
+            launch_output().step_fail(&format!("cleanup failed (certs volume): {e}"));
         }
         if let Err(e) = docker.remove_network(&self.network).await {
-            jackin_tui::output::step_fail(&format!("cleanup failed (network): {e}"));
+            launch_output().step_fail(&format!("cleanup failed (network): {e}"));
         }
         if self.clean_socket_dir {
             match std::fs::remove_dir_all(&self.socket_dir) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => jackin_tui::output::step_fail(&format!(
+                Err(error) => launch_output().step_fail(&format!(
                     "cleanup failed (socket dir {}): {error}",
                     self.socket_dir.display()
                 )),

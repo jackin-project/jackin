@@ -3,6 +3,7 @@
 //! (`jackin-runtime`) and the presentation layer (`jackin-launch`) with no
 //! dependency on `ratatui` or `jackin-tui`.
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
 
 // --- Stage types ---
@@ -242,4 +243,19 @@ pub trait LaunchHostTerminal: Send + Sync {
     fn copy_to_clipboard(&self, payload: &str) -> bool;
     fn reveal_file(&self, path: &Path) -> bool;
     fn open_file(&self, path: &Path) -> bool;
+}
+
+/// Port for launch-phase terminal side-effects (deploy banner, failure
+/// lines, warp outro animations). Lives in core so `jackin-runtime` can
+/// call without depending on `jackin-tui`. Implemented by an adapter in
+/// `jackin-launch-tui` and injected via static accessor (mirrors
+/// `LaunchHostTerminal` / `host_terminal`).
+pub trait LaunchOutputSink: Send + Sync {
+    fn print_deploying<'a>(
+        &'a self,
+        role_name: &'a str,
+    ) -> std::pin::Pin<Box<dyn Future<Output = ()> + 'a>>;
+    fn step_fail(&self, msg: &str);
+    fn warp_out(&self, host_screen_owned: bool);
+    fn warp_end_caption(&self, elapsed: Option<std::time::Duration>, host_screen_owned: bool);
 }

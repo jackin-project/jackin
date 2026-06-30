@@ -83,7 +83,7 @@ baseline · E1 **partial** (4 of 6 isolation modules; **finalize/git_inspect ope
 
 ---
 
-## R1 — Break the last inverted dependency: `jackin-runtime → jackin-tui`  ⟵ gate-keeper
+## [x] R1 — Break the last inverted dependency: `jackin-runtime → jackin-tui`  ⟵ gate-keeper (done)
 
 **Goal.** Remove every **production** use of `jackin_tui::*` from `jackin-runtime` so the
 L1→L3 edge disappears. E0 LTO baseline shipped → the perf gate that parked this is lifted.
