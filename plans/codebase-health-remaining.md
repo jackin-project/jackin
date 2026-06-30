@@ -267,15 +267,137 @@ sibling `<module>/<name>.rs`; child reads ancestor privates via explicit `use su
       `file-size-budget.toml` — it is **1952L < 2000 cap** (stale grandfather; ratchet rule
       says delete when under cap). No code move.
 
-> **Concrete per-file split-maps (which fn/struct → which sibling) are being finalized by a
-> dedicated investigation and will be appended here before execution.** Until then, an
-> executor must read the target file and derive cluster boundaries using the split pattern
-> above — do **not** start a R4 file split until its split-map row is filled in below.
->
-> _Split-map: launch.rs — PENDING._
-> _Split-map: editor/view.rs — PENDING._
-> _Split-map: dialog.rs — PENDING._
-> _Split-map: launch_pipeline.rs — PENDING._
+### ⚠ CRITICAL mechanic for all four splits — re-export to preserve call sites
+
+Each coordinator's existing siblings and `tests.rs` reach its items via `super::<item>` or
+`use super::*`. **Every item that moves OUT of a coordinator MUST be re-exported from that
+coordinator** (`pub(crate) use <sibling>::{A, B, …};` — explicit name list, never wildcard).
+This keeps all existing `super::X` call sites and `use super::*` test globs working with
+**zero edits to call sites**. Do the moves, then add one re-export line per moved item.
+Skipping this breaks every test glob. (Files 1/3/4 are mechanical once this is done; File 2
+is a single-function extraction — see its note.)
+
+---
+
+#### Split-map — File 1: `crates/jackin-runtime/src/runtime/launch.rs` (2834L) — siblings under `launch/`
+
+The `jackin load` coordinator. Largest item is the 910-line `launch_role_runtime`.
+
+| Sibling (under `launch/`) | Items (source lines) | ~LOC |
+|---|---|---|
+| `launch_runtime.rs` | `LaunchContext`(402), `SelectedImageRefresh`(440), `SiblingPrewarm`(446), `SiblingAuthPrewarm`(453), `spawn_sibling_auth_prewarm`(460), `launch_role_runtime`(640), `host_runtime_passthrough_env`(1550), `debug_runtime_envs`(1567) | ~1090 |
+| `mounts.rs` | `push_agent_home_mounts`(192), `agent_mounts`(211), `github_config_mount`(294), `build_workspace_mount_strings`(331), `Backend`(353), `resolve_backend`(368), `build_workspace_mount_pairs`(393) | ~190 |
+| `capsule_setup.rs` | `capsule_config`(558), `exec_binding_names`(605), `prepare_socket_dir`(623) | ~85 |
+| `exit_diagnosis.rs` | `ExitPhase`(1589), `diagnose_premature_exit`(1600), `diagnose_with_state`(1615), `read_text_tail`(1716), `attach_failure_error`(1725), `inspect_attach_outcome`(1755) | ~204 |
+| `git_pull.rs` | `GitPullResult`(1793), `pull_workspace_repos_with_git`(1801), `git_pull_sources`(1809), `pull_git_sources_with_git`(1820), `print_git_pull_results`(1874), `print_git_pull_stdout`(1896), `record_git_pull_results`(1903) | ~152 |
+| `failure.rs` | `launch_failure_title`(1945), `short_launch_diagnosis`(1965), `docker_build_output_artifact`(1981), `launch_failure_cli_error`(1986), `resolve_launch_role_source`(2017), `render_exit`(2036) | ~152 |
+| `launch_plan.rs` | `RestoreResolution`(2097), `LaunchPlan`+impl(2110), `emit_launch_plan`(2131), `emit_prewarm_launch_plan`(2149), `emit_image_materialization_plan`(2153), `emit_rejected_launch_plan`(2180) | ~108 |
+| `restore_resolve.rs` | `resolve_restore_candidate`(2205), `resolve_current_restore_candidate_timed`(2298), `resolve_unselected_current_restore_candidate_timed`(2347), `UnselectedCurrentRestoreResolution`(2369), `resolve_unselected_current_restore_candidate_with_agent_timed`(2376), `current_restore_timing_detail`(2421), `resolve_unselected_current_restore_candidate_with_agent`(2430), `resolve_current_restore_candidate`(2606) | ~508 |
+| `load_cleanup.rs` | `write_if_changed_atomic`(2739), `LoadCleanup`+impl(2752) | ~95 |
+
+**Stays in coordinator (~250L):** module doc; all `mod`/`use`/`pub use` (24-73) + new sibling
+`mod` decls + re-exports; `LoadOptions`+impl(75-157); `validate_agent_supported`(158); the
+`mod restore;`/`mod auth_error;` block (2713-2738). **Promote to `pub(super)`:** `agent_mounts`,
+`github_config_mount`, `build_workspace_mount_strings`, `write_if_changed_atomic`,
+`capsule_config`, `prepare_socket_dir`, `diagnose_premature_exit`, `diagnose_with_state`,
+`attach_failure_error`, `emit_prewarm_launch_plan` (all called by `launch_role_runtime` or
+`launch_pipeline.rs`). Re-export everything `launch_pipeline.rs` reaches via `super::` so its
+calls keep resolving. Tests (`launch/tests.rs`, `use super::*`) need the re-exports — no test edits.
+
+#### Split-map — File 3: `crates/jackin-console/src/tui/screens/editor/view.rs` (2389L) — siblings under `view/`
+
+Pure render helpers, all free fns, no giant fn. Cleanest of the four.
+
+| Sibling (under `view/`) | Items (lines) | ~LOC |
+|---|---|---|
+| `frame.rs` | `editor_frame_areas`(103), `render_editor_screen`(122), `editor_contextual_footer_items`(200), `editor_context_footer_mode`(232), `workspace_mount_scroll_axes`(336), `render_{general,mounts,roles,secrets,auth}_tab`(371-568), `editor_tab_content_focused`(571), `editor_*_lines_for_state`×5(598-746), `prepare_editor_for_render`(749), `prepare_editor_tab_for_area`(779), `editor_tab_geometry`(827), `editor_body_area`(1049), `clamp_editor_scroll_for_frame`(1020), `render_editor_with_footer`(2376) | ~640 |
+| `general_tab.rs` | `general_lines`(1180), `general_state_lines`(1208), `general_row_widths`(1246), `general_state_geometry`(1077), `editor_general_content_width`(1058), `editor_row_width`(1053) | ~150 |
+| `mounts_tab.rs` | `mount_lines`(1271), `mount_state_lines`(1342), `mount_state_geometry`(1120), `editor_mount_add_row_width`(1114) | ~150 |
+| `roles_tab.rs` | `EditorRoleRow`(36), `role_lines`(1372), `role_state_lines`(1446), `role_state_geometry`(1498), `editor_roles_status_width`(1159), `editor_role_row_width`(1170), `editor_role_load_row_width`(1175) | ~220 |
+| `secrets_tab.rs` | `secret_lines`(1549), `secret_state_lines`(1633), `secret_state_geometry`(1693), `editor_secret_line_width`(1758), `secret_key_line_width`(1808) | ~300 |
+| `auth_tab.rs` | `EditorAuthLineRow`(43), `auth_lines`(1853), `auth_display_row`(1865), `auth_state_lines`(1932), `auth_state_geometry`(1974), `editor_auth_source_display`(2015), `editor_auth_line_width`(2048), `render_auth_line`(2083), `source_folder_line_width`(2146), `render_source_folder_line`(2158), `source_folder_display_text`(2184), `auth_source_line_width`(2192), `render_auth_source_line`(2216) | ~420 |
+| `modals.rs` | the modal/input-state constructors (864-1018 + 2326-2369): `editor_header_title`, `editor_name_value`, `secret_delete_confirm_*`, `*_input_state`/`*_picker_state` family, `role_trust_confirm_state`, `isolated_state_save_confirm_state`, `secrets_scope_label`, `secrets_forbidden_label`, `secret_key_input_state*` | ~230 |
+
+**Stays in coordinator (~120L):** doc + `use` block (1-31); shared types `EditorScrollGeometry`(57),
+`EditorTabContentGeometry`(65), `EditorFrameAreas`(71), `WorkspaceEditorState` alias(79); width
+primitives `padded_width`(2302), `padded_width_cols`(2309), `text_width`(2313),
+`render_editor_row`(2273), `tab_labels`(2318); sibling `mod` + `pub use` re-exports. Keep
+`modals.rs`'s `use super::update::forbidden_secret_keys`. Tests (`view/tests.rs`) reference
+`super::{render_general_tab, render_roles_tab, render_secrets_tab, render_editor_with_footer,
+prepare_editor_tab_for_area}` — **grep `view/tests.rs` for `super::` and re-export exactly that set.**
+
+#### Split-map — File 4: `crates/jackin-capsule/src/tui/components/dialog.rs` (2265L) — siblings under `dialog/`
+
+One ~1809-line `impl Dialog` block. Methods move as separate `impl Dialog { … }` blocks per
+sibling (inherent impls are legal in child modules; `Dialog::method` keeps resolving). Existing
+siblings are `input.rs`/`hint.rs` — new stems must avoid those names.
+
+| Sibling (under `dialog/`) | Items (lines) | ~LOC |
+|---|---|---|
+| `keys.rs` | `handle_key`(1195) | ~465 |
+| `pointer.rs` | `handle_click`(1660), `clickable_at`(1923) | ~372 |
+| `usage.rs` | `UsageDialogTab`(438) + usage method family(685-994, 1002-1021, 2206): `usage_*`, `money_cap_part`, `new_usage`, `new_usage_with_tab`, `set_usage_tab_hover` | ~370 |
+| `geometry.rs` | `body_scroll_mut`(1022), `clamp_body_scroll`(1033), `body_scroll_axes`(1090), `box_rect`(2032), `footer_hint_spans`(2126) | ~270 |
+| `container_info.rs` | `new_container_info`(514), `container_info_state`(542), `container_info_state_with_debug`(548), `set_container_info_hover`(2179) | ~120 |
+| `github_context.rs` | `GithubContextView`(34), `github_context_view_from_state`(40), `PullRequestStatus`+`loaded`(57), `github_context_state`(609), `new_github_context`(995) | ~135 |
+| `constructors.rs` | `new_command_palette`(457), `new_rename_tab`(465), `new_export_file*`(470-492), `new_split_direction_picker`(493), `new_close_target_picker`(500), `new_confirm_action`(507), `new_provider_picker`(1146), `new_agent_picker`(1166), `new_exit_dirty`(1180), `new_exit_inspect`(1190) | ~120 |
+
+**Stays in coordinator (~480L):** doc; URL-row consts(83-87); `file_url_path`(89); existing
+`mod input;`/`mod hint;` + new sibling decls/re-exports; all type defs — `PickerIntent`(105),
+`SplitDirection`+impl(117), `ProviderChoice`+impl(139), `MAX_CUSTOM_LABEL_LEN`(156), `Dialog`
+enum(159), `ExitDirtyRow`+`EXIT_DIRTY_ROWS`(298), `InspectRow`(321), `ConfirmKind`+impl+
+`CLOSE_TARGET_ITEMS`(329), `DialogAction`(361), `SPLIT_DIRECTION_ITEMS`(449); trivial
+`clear_copy_feedback`(2237)+`has_copy_feedback`(2253). **Promote to `pub(super)`:**
+`usage_tab_index_at` (called by `pointer.rs`+`usage.rs`), `usage_provider_tab_target` (called
+by `keys.rs`). `box_rect` is already `pub(crate)` — no change. Tests (`dialog/tests.rs`,
+`use super::*`): `Dialog::method` keeps working regardless of which sibling holds the impl;
+**re-export the moved free types** (`GithubContextView`, `github_context_view_from_state`,
+`PullRequestStatus`, `UsageDialogTab`) from the coordinator — grep `dialog/tests.rs` first.
+
+#### Split-map — File 2: `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs` (2213L) — ⚠ JUDGMENT-HEAVY
+
+**This is NOT a bag-of-items move.** The bulk is one ~1948-line fn `load_role_with`(164-2110).
+Movable standalone helpers total only ~250L; peeling them leaves the fn at ~1950L, still over
+cap. **The split MUST extract part of the function itself.**
+
+Clean seam: lines **1001-2071** are a self-contained `let load_result: anyhow::Result<String> =
+async { … }.await;` block — every `?` short-circuits only that inner async. Extract verbatim into:
+
+| Sibling (under `launch_pipeline/`) | Cluster | What moves | ~LOC |
+|---|---|---|---|
+| `launch_core.rs` | build → run → finalize → teardown | the inner `async { … }` body (1001-2071), lifted into `pub(super) async fn run_launch_core(ctx: LaunchCore<'_>) -> anyhow::Result<String>` | ~1070 |
+
+**Two real hazards (a weak agent must compile-check after each):**
+1. **~30 captured locals** must be threaded in — use a `pub(super) struct LaunchCore<'a>` context
+   struct, NOT 30 positional args. Captured set (from reading 1001-2071): moved/by-value —
+   `image_decision`, `repo_lock`(mut, `.take()`d), `restoring`, `container_name`, `exec_bindings`,
+   `recipe_role_git_sha`, `recipe_base_image_ref`, `selected_refresh_reason`, `resolved_env`,
+   `host_workdir_fingerprint`; mut borrows — `steps`(`&mut StepCounter`), `runner`(`&mut impl
+   CommandRunner`); shared/Copy — `paths`, `config`, `selector`, `workspace`, `workspace_name`,
+   `role_key`, `agent`, `supported_agents`, `cached_repo`, `validated_repo`, `source`,
+   `agent_display_name`, `auth_mode`, `git`, `docker`, `opts`, `backend`. NOT inputs (computed
+   inside the block): `github_mode`, `github_env_decls`, `github_resolved_env`.
+2. **`super::` path-depth shift (+1 level).** `launch_pipeline.rs` is `launch::launch_pipeline`,
+   so its `super::` = `launch`. The new `launch_core.rs` is `launch::launch_pipeline::launch_core`,
+   so inside the moved block **every `super::X` (referring to `launch.rs` items) must become
+   `super::super::X`** (or absolute `crate::runtime::launch::X`). This is the main correctness
+   risk — rewrite all of them.
+
+Coordinator-side helpers the block calls → mark `pub(super)`, `use super::{…}` in `launch_core.rs`:
+`tag_errors`, `tagged_grant_errors`, `bail_on_grant_errors`, `emit_auth_provision_launch_plan`,
+`purge_or_mark_clean_exited`. **Stays in coordinator (~1140L):** `load_role`(28), `git_pull_program`
+×2(50), `restore_current_role_now`(62), `resolve_supported_agents_for_console`(80), the three
+`*grant*`/`tag_errors`(132-154), `load_role_with` reduced to preamble(164-1000) + the
+`run_launch_core(…).await` call + success/error tail(2073-2109), and trailing helpers
+(`emit_auth_provision_launch_plan`(2112), `manifest_env_timing_detail`(2138),
+`credential_key_needed_for_role`(2157), `known_agent_credential_env`(2173),
+`purge_or_mark_clean_exited`(2190)). Tests (`launch_pipeline/tests.rs`) only touch the three
+`*grant*` helpers that STAY — no re-export needed for tests here.
+
+**Per-file PR order:** Files 1, 3, 4 first (mechanical). File 2 last (compile-check-driven
+single-function extraction). All target siblings land under 2000L; only `launch_runtime.rs`
+(~1090), `launch_core.rs` (~1070), `view/frame.rs` (~640) exceed the 300-800 aim — each has a
+noted optional secondary seam, none required to clear the cap.
 
 The two grandfathered `tests.rs` (`launch/tests.rs` 8603L, `daemon/tests.rs` 7612L) are
 **under** the 10000L test cap — not this item's blocker; their fix is owned by
