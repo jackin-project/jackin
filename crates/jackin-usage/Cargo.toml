@@ -15,7 +15,6 @@ path = "src/lib.rs"
 
 [features]
 default = []
-dhat-heap = ["dep:dhat"]
 
 [dependencies]
 jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
@@ -32,7 +31,7 @@ tokio = { version = "1", features = ["rt", "sync", "macros", "time", "net"] }
 tracing = "0.1"
 turso = { version = "0.7.0-pre.7", default-features = false }
 url = "2"
-dhat = { version = "0.3.3", optional = true }
+
 
 [dev-dependencies]
 tempfile = "=3.27.0"

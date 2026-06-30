@@ -3096,7 +3096,6 @@ version = "0.6.0-dev"
 dependencies = [
  "base64 0.22.1",
  "chrono",
- "dhat",
  "fs2",
  "jackin-core",
  "jackin-diagnostics",

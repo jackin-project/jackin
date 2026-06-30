@@ -154,6 +154,20 @@ skip = [
     { crate = "wit-bindgen@0.51.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
 ]
 
+# Workspace-dependency hygiene: fails the gate when a workspace member
+# declares another workspace member as a `path =` dependency but never
+# consumes any item from it. Combines with the cargo-shear unlinked-
+# file + unused-dep scans (CI-enforced at `cargo shear --deny-warnings`)
+# and the `cargo xtask lint arch` dependency-direction gate to make the
+# workspace crate map durable — a reintroduced shim or god-crate
+# recurrence fails one of these three checks instead of being a
+# reviewer's memory burden. See
+# docs/content/docs/roadmap/codebase-health-enforcement.mdx (W4).
+[bans.workspace-dependencies]
+duplicates = "warn"
+include-path-dependencies = true
+unused = "deny"
+
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
