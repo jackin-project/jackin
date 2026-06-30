@@ -23,10 +23,6 @@ pub struct PrewarmArgs {
     #[command(flatten)]
     pub flags: PrewarmFlags,
 
-
-
-
-
     /// Role selector whose repo cache and/or derived image(s) should be prewarmed.
     #[arg(long, conflicts_with_all = ["workspace"])]
     pub role: Option<String>,
@@ -34,13 +30,33 @@ pub struct PrewarmArgs {
     #[arg(long, conflicts_with_all = ["role"])]
     pub workspace: Option<String>,
 
-
     /// Role git URL override for role/image prewarm. Defaults to configured role source.
     #[arg(long, requires = "role", conflicts_with_all = ["workspace"])]
     pub role_git: Option<String>,
     /// Role branch to prewarm. Uses branch-scoped image tags.
     #[arg(long, requires = "image")]
     pub role_branch: Option<String>,
+}
+
+/// Flags for `jackin prewarm` (flattened into PrewarmArgs for CLI ergonomics).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::Args)]
+pub struct PrewarmFlags {
+    #[arg(long)]
+    pub image: bool,
+    #[arg(long)]
+    pub daemon: bool,
+    #[arg(long)]
+    pub roles: bool,
+    #[arg(long)]
+    pub sidecar: bool,
+    #[arg(long)]
+    pub sidecar_container: bool,
+    #[arg(long)]
+    pub keep_sidecar_container: bool,
+    #[arg(long)]
+    pub all_workspaces: bool,
+    #[arg(long)]
+    pub all_roles: bool,
 }
 
 fn parse_agent(s: &str) -> Result<Agent, String> {
@@ -681,23 +697,17 @@ mod tests {
         let args = PrewarmArgs {
             agents: Vec::new(),
             flags: PrewarmFlags {
-                
-                
-                
-                keep_
-                
-                
-                all_
+                image: true,
+                daemon: false,
+                roles: false,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: false,
+                all_roles: false,
             },
-            
-            
-            
-            keep_
-            
             role: None,
             workspace: Some("jackin".to_owned()),
-            
-            all_
             role_git: None,
             role_branch: None,
         };
@@ -716,23 +726,17 @@ mod tests {
         let args = PrewarmArgs {
             agents: Vec::new(),
             flags: PrewarmFlags {
-                
-                
-                
-                keep_
-                
-                
-                all_
+                image: true,
+                daemon: false,
+                roles: false,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: false,
+                all_roles: false,
             },
-            
-            
-            
-            keep_
-            
             role: Some("agent-smith".to_owned()),
             workspace: None,
-            
-            all_
             role_git: None,
             role_branch: None,
         };
@@ -768,23 +772,17 @@ mod tests {
         let args = PrewarmArgs {
             agents: Vec::new(),
             flags: PrewarmFlags {
-                
-                
-                
-                keep_
-                
-                
-                all_
+                image: true,
+                daemon: false,
+                roles: false,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: true,
+                all_roles: false,
             },
-            
-            
-            
-            keep_
-            
             role: None,
             workspace: None,
-            all_workspaces: true,
-            all_
             role_git: None,
             role_branch: None,
         };
@@ -811,23 +809,17 @@ mod tests {
         let args = PrewarmArgs {
             agents: Vec::new(),
             flags: PrewarmFlags {
-                
-                
-                
-                keep_
-                
-                
-                all_
+                image: true,
+                daemon: false,
+                roles: false,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: false,
+                all_roles: true,
             },
-            
-            
-            
-            keep_
-            
             role: None,
             workspace: None,
-            
-            all_roles: true,
             role_git: None,
             role_branch: None,
         };
@@ -847,23 +839,17 @@ mod tests {
         let args = PrewarmArgs {
             agents: vec![Agent::Kimi],
             flags: PrewarmFlags {
-                
-                
-                
-                keep_
-                
-                
-                all_
+                image: true,
+                daemon: false,
+                roles: false,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: false,
+                all_roles: true,
             },
-            
-            
-            
-            keep_
-            
             role: None,
             workspace: None,
-            
-            all_roles: true,
             role_git: None,
             role_branch: None,
         };
@@ -880,16 +866,18 @@ mod tests {
         let config = config_with_workspace_default(Some(Agent::Codex));
         let args = PrewarmArgs {
             agents: Vec::new(),
-            image: false,
-            roles: true,
-            
-            
-            keep_
-            
+            flags: PrewarmFlags {
+                image: false,
+                daemon: false,
+                roles: true,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: false,
+                all_roles: false,
+            },
             role: None,
             workspace: None,
-            
-            all_
             role_git: None,
             role_branch: None,
         };
@@ -904,23 +892,17 @@ mod tests {
         let args = PrewarmArgs {
             agents: Vec::new(),
             flags: PrewarmFlags {
-                
-                
-                
-                keep_
-                
-                
-                all_
+                image: true,
+                daemon: false,
+                roles: false,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: false,
+                all_roles: false,
             },
-            
-            
-            
-            keep_
-            
             role: Some("agent-smith".to_owned()),
             workspace: None,
-            
-            all_
             role_git: None,
             role_branch: None,
         };
@@ -932,16 +914,18 @@ mod tests {
     fn sidecar_prewarm_can_run_without_image_targets() {
         let args = PrewarmArgs {
             agents: Vec::new(),
-            image: false,
-            
-            sidecar: true,
-            
-            keep_
-            
+            flags: PrewarmFlags {
+                image: false,
+                daemon: false,
+                roles: false,
+                sidecar: true,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: false,
+                all_roles: false,
+            },
             role: None,
             workspace: None,
-            
-            all_
             role_git: None,
             role_branch: None,
         };
@@ -953,16 +937,18 @@ mod tests {
     fn sidecar_container_prewarm_uses_container_path_image_lookup() {
         let args = PrewarmArgs {
             agents: Vec::new(),
-            image: false,
-            
-            
-            sidecar_container: true,
-            keep_
-            
+            flags: PrewarmFlags {
+                image: false,
+                daemon: false,
+                roles: false,
+                sidecar: false,
+                sidecar_container: true,
+                keep_sidecar_container: false,
+                all_workspaces: false,
+                all_roles: false,
+            },
             role: None,
             workspace: None,
-            
-            all_
             role_git: None,
             role_branch: None,
         };
@@ -976,16 +962,18 @@ mod tests {
     fn daemon_prewarm_keeps_sidecar_without_duplicate_image_lookup() {
         let args = PrewarmArgs {
             agents: Vec::new(),
-            image: false,
-            
-            
-            
-            keep_
-            daemon: true,
+            flags: PrewarmFlags {
+                image: false,
+                daemon: true,
+                roles: false,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: true,
+                all_workspaces: false,
+                all_roles: false,
+            },
             role: None,
             workspace: None,
-            
-            all_
             role_git: None,
             role_branch: None,
         };
@@ -1025,16 +1013,18 @@ mod tests {
         let config = config_with_workspace_default(Some(Agent::Codex));
         let args = PrewarmArgs {
             agents: Vec::new(),
-            image: false,
-            roles: true,
-            
-            
-            keep_
-            
+            flags: PrewarmFlags {
+                image: false,
+                daemon: false,
+                roles: true,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: false,
+                all_roles: false,
+            },
             role: Some("agent-smith".to_owned()),
             workspace: None,
-            
-            all_
             role_git: None,
             role_branch: None,
         };
@@ -1053,16 +1043,18 @@ mod tests {
         let config = config_with_workspace_default(Some(Agent::Codex));
         let args = PrewarmArgs {
             agents: Vec::new(),
-            image: false,
-            roles: true,
-            
-            
-            keep_
-            
+            flags: PrewarmFlags {
+                image: false,
+                daemon: false,
+                roles: true,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: false,
+                all_roles: false,
+            },
             role: None,
             workspace: Some("jackin".to_owned()),
-            
-            all_
             role_git: None,
             role_branch: None,
         };
@@ -1090,16 +1082,18 @@ mod tests {
         );
         let args = PrewarmArgs {
             agents: Vec::new(),
-            image: false,
-            roles: true,
-            
-            
-            keep_
-            
+            flags: PrewarmFlags {
+                image: false,
+                daemon: false,
+                roles: true,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: true,
+                all_roles: false,
+            },
             role: None,
             workspace: None,
-            all_workspaces: true,
-            all_
             role_git: None,
             role_branch: None,
         };
@@ -1114,16 +1108,18 @@ mod tests {
         let config = AppConfig::default();
         let args = PrewarmArgs {
             agents: Vec::new(),
-            image: false,
-            roles: true,
-            
-            
-            keep_
-            
+            flags: PrewarmFlags {
+                image: false,
+                daemon: false,
+                roles: true,
+                sidecar: false,
+                sidecar_container: false,
+                keep_sidecar_container: false,
+                all_workspaces: false,
+                all_roles: false,
+            },
             role: Some("agent-smith".to_owned()),
             workspace: None,
-            
-            all_
             role_git: Some("https://example.invalid/custom.git".to_owned()),
             role_branch: None,
         };
