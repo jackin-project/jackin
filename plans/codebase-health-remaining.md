@@ -442,7 +442,7 @@ R6 progress (this branch):
 - DamageGrid (term): bundled 7 mode bools → mode_flags u8, expect removed, check/clippy/test-build green (uses new()), committed+pushed.
 - SupportedSgr (term, 13 bools): already converted to flags u16 + accessors (1 construction site in Default, per plan risk order); expect already absent in live tree, lint satisfied.
 - PrewarmArgs (jackin cli, 8 clap bools): bundled to flags + PrewarmFlags; last prod construction site fixed in load_cmd.rs. Expect removed from struct.
-4 accounted. 55 live with the tracked expect attr (as of 2026-06-30). Low-fan-out safe set exhausted per greps (see investigation note). Higher-fanout or direction needed for remaining.
+4 accounted. 56 live with the tracked expect attr (as of 2026-06-30; +1 for PrewarmFlags expect after bundling). Low-fan-out safe set exhausted per greps (see investigation note). Higher-fanout or direction needed for remaining.
 
 Investigation (re-confirm + grep *test*.rs + tests.rs for field: inits and .field reads on bools):
 - Tried: Categories (xtask), StatusFooterHover (tui + launch-tui test literals), MuxModeState/PointerShapeState/CursorVisibilityState (capsule model/tests.rs heavy literals), LaunchView (launch-tui/update/tests.rs), AttachCapabilities/Sources (daemon/tests.rs direct .pointer_shapes reads), RunOptions (docker shell tests), Workspace*Facts / SidebarFacts / save_preview (view/tests + list_geometry/tests), etc.
