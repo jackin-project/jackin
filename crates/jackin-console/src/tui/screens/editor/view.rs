@@ -100,6 +100,12 @@ pub type WorkspaceEditorState<
     PendingOpCommit,
 >;
 
+mod general_tab;
+#[allow(unused_imports)]
+pub(crate) use general_tab::{
+    editor_general_content_width, editor_row_width, general_lines, general_row_widths,
+};
+
 pub fn editor_frame_areas(area: Rect, footer_h: u16) -> EditorFrameAreas {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -618,7 +624,7 @@ pub fn editor_general_lines_for_state<
         PendingOpCommit,
     >,
 ) -> Vec<Line<'static>> {
-    general_state_lines(state, editor_tab_content_focused(state))
+    general_tab::general_state_lines(state, editor_tab_content_focused(state))
 }
 
 #[allow(clippy::type_complexity)]
@@ -850,7 +856,7 @@ pub fn editor_tab_geometry<
     config: &jackin_config::AppConfig,
 ) -> EditorTabContentGeometry {
     match state.active_tab {
-        EditorTab::General => general_state_geometry(state),
+        EditorTab::General => general_tab::general_state_geometry(state),
         EditorTab::Mounts => mount_state_geometry(state),
         EditorTab::Roles => role_state_geometry(state, config.roles.keys()),
         EditorTab::Secrets => {
@@ -1050,66 +1056,6 @@ pub fn editor_body_area(area: Rect, footer_h: u16) -> Rect {
     editor_frame_areas(area, footer_h).body
 }
 
-pub fn editor_row_width(label: &str, value: &str) -> usize {
-    padded_width(&format!("  {label:15}{value}"))
-}
-
-#[must_use]
-pub fn editor_general_content_width(
-    name_value: &str,
-    workdir_display: &str,
-    keep_awake_enabled: bool,
-    git_pull_on_entry: bool,
-) -> usize {
-    general_row_widths(
-        name_value,
-        workdir_display,
-        keep_awake_enabled,
-        git_pull_on_entry,
-    )
-    .into_iter()
-    .max()
-    .unwrap_or(0)
-}
-
-#[must_use]
-#[allow(clippy::type_complexity)]
-pub fn general_state_geometry<
-    Modal,
-    SaveFlow,
-    EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
-    PendingRoleLoad,
-    PendingDriftCheck,
-    PendingIsolationCleanup,
-    PendingOpCommit,
->(
-    state: &WorkspaceEditorState<
-        Modal,
-        SaveFlow,
-        EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
-        PendingRoleLoad,
-        PendingDriftCheck,
-        PendingIsolationCleanup,
-        PendingOpCommit,
-    >,
-) -> EditorTabContentGeometry {
-    let name_value = editor_name_value(&state.mode, state.pending_name.as_deref(), "(new)");
-    let workdir_display = jackin_tui::shorten_home(&state.pending.workdir);
-    EditorTabContentGeometry {
-        content_width: editor_general_content_width(
-            &name_value,
-            &workdir_display,
-            state.pending.keep_awake.enabled,
-            state.pending.git_pull_on_entry,
-        ),
-        content_height: 4,
-    }
-}
-
 #[must_use]
 pub fn editor_mount_add_row_width() -> usize {
     text_width("  + Add mount")
@@ -1174,97 +1120,6 @@ pub fn editor_role_row_width(role_name: &str) -> usize {
 #[must_use]
 pub fn editor_role_load_row_width() -> usize {
     text_width("  + Load role")
-}
-
-#[must_use]
-pub fn general_lines(
-    cursor: usize,
-    show_cursor: bool,
-    name_value: &str,
-    workdir_display: &str,
-    keep_awake_enabled: bool,
-    git_pull_on_entry: bool,
-) -> Vec<Line<'static>> {
-    let keep_awake_display = if keep_awake_enabled {
-        "enabled (macOS only)"
-    } else {
-        "disabled"
-    };
-    let git_pull_display = if git_pull_on_entry {
-        "enabled"
-    } else {
-        "disabled"
-    };
-    vec![
-        render_editor_row(0, cursor, "Name", name_value, show_cursor),
-        render_editor_row(1, cursor, "Working dir", workdir_display, show_cursor),
-        render_editor_row(2, cursor, "Keep awake", keep_awake_display, show_cursor),
-        render_editor_row(3, cursor, "Git pull", git_pull_display, show_cursor),
-    ]
-}
-
-#[must_use]
-#[allow(clippy::type_complexity)]
-pub fn general_state_lines<
-    Modal,
-    SaveFlow,
-    EnvValue,
-    AuthFormTarget,
-    PendingTokenGenerate,
-    PendingRoleLoad,
-    PendingDriftCheck,
-    PendingIsolationCleanup,
-    PendingOpCommit,
->(
-    state: &WorkspaceEditorState<
-        Modal,
-        SaveFlow,
-        EnvValue,
-        AuthFormTarget,
-        PendingTokenGenerate,
-        PendingRoleLoad,
-        PendingDriftCheck,
-        PendingIsolationCleanup,
-        PendingOpCommit,
-    >,
-    show_cursor: bool,
-) -> Vec<Line<'static>> {
-    let FieldFocus::Row(cursor) = state.active_field;
-    let name_value = editor_name_value(&state.mode, state.pending_name.as_deref(), "(new)");
-    let workdir_display = jackin_tui::shorten_home(&state.pending.workdir);
-
-    general_lines(
-        cursor,
-        show_cursor,
-        &name_value,
-        &workdir_display,
-        state.pending.keep_awake.enabled,
-        state.pending.git_pull_on_entry,
-    )
-}
-
-fn general_row_widths(
-    name_value: &str,
-    workdir_display: &str,
-    keep_awake_enabled: bool,
-    git_pull_on_entry: bool,
-) -> [usize; 4] {
-    let keep_awake_display = if keep_awake_enabled {
-        "enabled (macOS only)"
-    } else {
-        "disabled"
-    };
-    let git_pull_display = if git_pull_on_entry {
-        "enabled"
-    } else {
-        "disabled"
-    };
-    [
-        editor_row_width("Name", name_value),
-        editor_row_width("Working dir", workdir_display),
-        editor_row_width("Keep awake", keep_awake_display),
-        editor_row_width("Git pull", git_pull_display),
-    ]
 }
 
 #[must_use]
@@ -2270,7 +2125,7 @@ fn render_auth_source_line(
     Line::from(spans)
 }
 
-fn render_editor_row(
+pub(crate) fn render_editor_row(
     row: usize,
     cursor: usize,
     label: &str,

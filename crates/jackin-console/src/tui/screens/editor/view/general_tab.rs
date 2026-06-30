@@ -1,0 +1,162 @@
+//! General tab content lines, widths, and geometry extracted from the view
+//! coordinator. All items re-exported from parent to preserve `super::` call
+//! sites in `frame.rs` (via render_general_tab) and `view/tests.rs`.
+
+use ratatui::text::Line;
+
+use crate::tui::screens::editor::model::FieldFocus;
+
+use super::WorkspaceEditorState;
+use super::render_editor_row;
+use super::{editor_name_value, padded_width};
+
+pub(crate) fn editor_row_width(label: &str, value: &str) -> usize {
+    padded_width(&format!("  {label:15}{value}"))
+}
+
+#[must_use]
+pub(crate) fn editor_general_content_width(
+    name_value: &str,
+    workdir_display: &str,
+    keep_awake_enabled: bool,
+    git_pull_on_entry: bool,
+) -> usize {
+    general_row_widths(
+        name_value,
+        workdir_display,
+        keep_awake_enabled,
+        git_pull_on_entry,
+    )
+    .into_iter()
+    .max()
+    .unwrap_or(0)
+}
+
+#[must_use]
+#[allow(clippy::type_complexity)]
+pub(crate) fn general_state_geometry<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+) -> super::EditorTabContentGeometry {
+    let name_value = editor_name_value(&state.mode, state.pending_name.as_deref(), "(new)");
+    let workdir_display = jackin_tui::shorten_home(&state.pending.workdir);
+    super::EditorTabContentGeometry {
+        content_width: editor_general_content_width(
+            &name_value,
+            &workdir_display,
+            state.pending.keep_awake.enabled,
+            state.pending.git_pull_on_entry,
+        ),
+        content_height: 4,
+    }
+}
+
+#[must_use]
+pub(crate) fn general_lines(
+    cursor: usize,
+    show_cursor: bool,
+    name_value: &str,
+    workdir_display: &str,
+    keep_awake_enabled: bool,
+    git_pull_on_entry: bool,
+) -> Vec<Line<'static>> {
+    let keep_awake_display = if keep_awake_enabled {
+        "enabled (macOS only)"
+    } else {
+        "disabled"
+    };
+    let git_pull_display = if git_pull_on_entry {
+        "enabled"
+    } else {
+        "disabled"
+    };
+    vec![
+        render_editor_row(0, cursor, "Name", name_value, show_cursor),
+        render_editor_row(1, cursor, "Working dir", workdir_display, show_cursor),
+        render_editor_row(2, cursor, "Keep awake", keep_awake_display, show_cursor),
+        render_editor_row(3, cursor, "Git pull", git_pull_display, show_cursor),
+    ]
+}
+
+#[must_use]
+#[allow(clippy::type_complexity)]
+pub(crate) fn general_state_lines<
+    Modal,
+    SaveFlow,
+    EnvValue,
+    AuthFormTarget,
+    PendingTokenGenerate,
+    PendingRoleLoad,
+    PendingDriftCheck,
+    PendingIsolationCleanup,
+    PendingOpCommit,
+>(
+    state: &WorkspaceEditorState<
+        Modal,
+        SaveFlow,
+        EnvValue,
+        AuthFormTarget,
+        PendingTokenGenerate,
+        PendingRoleLoad,
+        PendingDriftCheck,
+        PendingIsolationCleanup,
+        PendingOpCommit,
+    >,
+    show_cursor: bool,
+) -> Vec<Line<'static>> {
+    let FieldFocus::Row(cursor) = state.active_field;
+    let name_value = editor_name_value(&state.mode, state.pending_name.as_deref(), "(new)");
+    let workdir_display = jackin_tui::shorten_home(&state.pending.workdir);
+
+    general_lines(
+        cursor,
+        show_cursor,
+        &name_value,
+        &workdir_display,
+        state.pending.keep_awake.enabled,
+        state.pending.git_pull_on_entry,
+    )
+}
+
+pub(crate) fn general_row_widths(
+    name_value: &str,
+    workdir_display: &str,
+    keep_awake_enabled: bool,
+    git_pull_on_entry: bool,
+) -> [usize; 4] {
+    let keep_awake_display = if keep_awake_enabled {
+        "enabled (macOS only)"
+    } else {
+        "disabled"
+    };
+    let git_pull_display = if git_pull_on_entry {
+        "enabled"
+    } else {
+        "disabled"
+    };
+    [
+        editor_row_width("Name", name_value),
+        editor_row_width("Working dir", workdir_display),
+        editor_row_width("Keep awake", keep_awake_display),
+        editor_row_width("Git pull", git_pull_display),
+    ]
+}
