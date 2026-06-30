@@ -134,24 +134,19 @@ const ENV_OSC_NOTIFY: &str = "JACKIN_OSC_NOTIFY";
 const ENV_OSC_HYPERLINK: &str = "JACKIN_OSC_HYPERLINK";
 
 #[derive(Debug, Clone, Copy)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
-)]
 pub struct OscPolicy {
-    allow_title: bool,
-    allow_osc52: bool,
-    allow_notify: bool,
-    allow_hyperlink: bool,
+    flags: u8,
 }
+
+const ALLOW_TITLE: u8 = 1 << 0;
+const ALLOW_OSC52: u8 = 1 << 1;
+const ALLOW_NOTIFY: u8 = 1 << 2;
+const ALLOW_HYPERLINK: u8 = 1 << 3;
 
 impl Default for OscPolicy {
     fn default() -> Self {
         Self {
-            allow_title: true,
-            allow_osc52: true,
-            allow_notify: true,
-            allow_hyperlink: true,
+            flags: ALLOW_TITLE | ALLOW_OSC52 | ALLOW_NOTIFY | ALLOW_HYPERLINK,
         }
     }
 }
@@ -162,24 +157,24 @@ impl OscPolicy {
     /// into a focused shell.
     pub fn from_env() -> Self {
         Self {
-            allow_title: !is_env_deny(ENV_OSC_TITLE),
-            allow_osc52: !is_env_deny(ENV_OSC52),
-            allow_notify: !is_env_deny(ENV_OSC_NOTIFY),
-            allow_hyperlink: !is_env_deny(ENV_OSC_HYPERLINK),
+            flags: (if !is_env_deny(ENV_OSC_TITLE) { ALLOW_TITLE } else { 0 })
+                | (if !is_env_deny(ENV_OSC52) { ALLOW_OSC52 } else { 0 })
+                | (if !is_env_deny(ENV_OSC_NOTIFY) { ALLOW_NOTIFY } else { 0 })
+                | (if !is_env_deny(ENV_OSC_HYPERLINK) { ALLOW_HYPERLINK } else { 0 }),
         }
     }
 
     pub fn allow_title(self) -> bool {
-        self.allow_title
+        self.flags & ALLOW_TITLE != 0
     }
     pub fn allow_osc52(self) -> bool {
-        self.allow_osc52
+        self.flags & ALLOW_OSC52 != 0
     }
     pub fn allow_notify(self) -> bool {
-        self.allow_notify
+        self.flags & ALLOW_NOTIFY != 0
     }
     pub fn allow_hyperlink(self) -> bool {
-        self.allow_hyperlink
+        self.flags & ALLOW_HYPERLINK != 0
     }
 
     /// Test-only constructor with every passthrough gate closed.
@@ -192,10 +187,7 @@ impl OscPolicy {
     #[doc(hidden)]
     pub fn for_test_deny_all() -> Self {
         Self {
-            allow_title: false,
-            allow_osc52: false,
-            allow_notify: false,
-            allow_hyperlink: false,
+            flags: 0,
         }
     }
 }
