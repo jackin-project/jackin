@@ -2,8 +2,9 @@
 
 Clean, verified-against-code plan of **everything still open** under
 [Codebase health: structure & reviewability](/roadmap/codebase-health-enforcement/).
-This file is the live worklist; it supersedes the historical execution log in
-`plans/codebase-health-playbook.md` (slices A1–G3 shipped — see that file's stub).
+This file is the live worklist. Slices A1–G3 of the original execution playbook
+have all shipped (their mechanical per-slice log lives in git history); only the
+open set below remains.
 
 **Verification basis:** every item below was checked against the actual tree on
 branch `feature/private-registry-auth` (HEAD at writing), **not** against roadmap
@@ -324,27 +325,22 @@ before the umbrella tracker is checked off.
 
 ### R11 — Doc & bookkeeping cleanup (no code)
 
-- [ ] **Archive the execution playbook.** `plans/codebase-health-playbook.md` is a
-  6870-line pre-execution log for slices A1–G3 that have all shipped; its "Blockers &
-  open decisions" are resolved history. Replace its body with a short superseded-notice
-  stub pointing here (done in the same change that lands this file).
-- [ ] **Fix the stale W5 line count in the roadmap.** `roadmap/codebase-health-enforcement.mdx`
-  W5 table still prints `runtime/image.rs … 2811`; the file is **1952L** after D1.
-  Update the number (and note it's now under cap).
-- [ ] **Reconcile the W4 `deny.toml` bullet wording.** The W4 bullet's lead text says
-  "deny `jackin-env`/`jackin-docker` → `jackin-launch*` … in `deny.toml`," but its own
-  trailing *Note* (correctly) says `cargo-deny [bans]` can't express
-  workspace-crate→crate edges, so directional enforcement lives in `cargo xtask lint arch`.
-  `deny.toml` has **no** such directional ban (verified). Rewrite the bullet lead so it
-  doesn't contradict the Note — the directional teeth are the arch gate, not `deny.toml`.
+- [x] **Retire the execution playbook.** *(done)* The 6870-line A1–G3 log
+  `plans/codebase-health-playbook.md` was deleted; this file replaces it (full
+  per-slice detail survives in git history).
+- [x] **Fix the stale W5 line count in the roadmap.** *(done)* `runtime/image.rs`
+  corrected `2811` → `1952L (under cap, D1)` in the roadmap.
+- [x] **Reconcile the W4 `deny.toml` bullet wording.** *(done)* Reworded so the
+  directional teeth read as the `cargo xtask lint arch` gate, not `deny.toml`
+  (`cargo-deny [bans]` cannot express workspace-crate→crate edges).
 - [ ] **Prune the under-cap budget entry.** Remove the `runtime/image.rs` `[[production]]`
-  block from `file-size-budget.toml` (covered operationally by R4).
+  block from `file-size-budget.toml` (now 1952L < 2000 cap; covered operationally by R4).
 - [ ] **Security-advisory tracking note.** `deny.toml` ignores `RUSTSEC-2023-0071` (rsa
   Marvin) + `RUSTSEC-2026-0173` with reasons. Not part of this item, but add a one-line
   "revisit on next sigstore/oci-client bump" tracking note so the ignore doesn't ossify.
-- **Done-when.** Playbook stubbed; roadmap W5 number + W4 wording corrected; budget
-  pruned. All under the roadmap's docs-freshness + repo-links gates (`bun run
-  check:roadmap-sidebar`, `bun run check:repo-links`).
+- **Done-when.** Budget entry pruned + advisory note added (the playbook, W5 number,
+  and W4 wording are already done). All under the roadmap's docs-freshness + repo-links
+  gates (`bun run check:roadmap-sidebar`, `bun run check:repo-links`).
 
 ---
 
