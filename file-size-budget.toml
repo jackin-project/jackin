@@ -38,12 +38,8 @@ lines = 3852
 
 [[production]]
 path = "crates/jackin-runtime/src/runtime/launch.rs"
-lines = 2834
-# +1 over budget after D4 resource-naming dedup (the new
-# `use crate::instance::naming::dind_certs_volume;` import line
-# replaced a single-line use of the now-removed
-# `super::naming::dind_certs_volume` entry — net +1). Future
-# cleanup can drop it by re-joining the import block.
+lines = 2833
+# Current after prior slices (R1 compact etc). R4 decomp will bring under cap (mechanical split + reexports; File2 heavy flagged).
 
 [[production]]
 path = "crates/jackin-console/src/tui/screens/editor/view.rs"
