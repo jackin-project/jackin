@@ -259,7 +259,7 @@ sibling `<module>/<name>.rs`; child reads ancestor privates via explicit `use su
 **Over-cap production files (verified `wc -l`):**
 
 - [x] `crates/jackin-runtime/src/runtime/launch.rs` — now 255L (R4 File1 extracts: load_cleanup, restore_resolve + launch_runtime start; full mechanical split for coordinator + reexports done for these siblings). Remaining over-cap for R4: view, dialog, launch_pipeline.
-- [ ] `crates/jackin-console/src/tui/screens/editor/view.rs` — 1456L (File3: 5 siblings extracted; lib green).
+- [ ] `crates/jackin-console/src/tui/screens/editor/view.rs` — 1026L (File3: auth_tab.rs + 5 prior siblings extracted (6 total); coordinator 1026L; lib green).
 - [ ] `crates/jackin-capsule/src/tui/components/dialog.rs` — **2265L**.
 - [ ] `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs` — **2213L**.
 - [x] **Bookkeeping:** prune the `runtime/image.rs` `[[production]]` block from

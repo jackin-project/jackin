@@ -161,4 +161,3 @@ pub(crate) fn mount_state_lines<
     let rows = format_config_mount_rows_with_cache(&state.pending.mounts, &state.mount_info_cache);
     mount_lines(&rows, cursor, state.hovered_mount_row(), show_cursor)
 }
-

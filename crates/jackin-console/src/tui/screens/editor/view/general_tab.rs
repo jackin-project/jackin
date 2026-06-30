@@ -1,6 +1,6 @@
 //! General tab content lines, widths, and geometry extracted from the view
 //! coordinator. All items re-exported from parent to preserve `super::` call
-//! sites in `frame.rs` (via render_general_tab) and `view/tests.rs`.
+//! sites in `frame.rs` (via `render_general_tab`) and `view/tests.rs`.
 
 use ratatui::text::Line;
 

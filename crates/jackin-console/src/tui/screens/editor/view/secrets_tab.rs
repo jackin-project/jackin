@@ -299,8 +299,10 @@ pub(crate) fn secret_key_line_width(
     } else {
         NO_MARKER
     };
-    let prefix_width =
-        super::text_width("  ") + super::text_width(marker) + super::text_width(&format!("{key:label_width$}")) + 2;
+    let prefix_width = super::text_width("  ")
+        + super::text_width(marker)
+        + super::text_width(&format!("{key:label_width$}"))
+        + 2;
     let value_width = if let Some(parts) = op_breadcrumb.as_ref() {
         crate::tui::op_breadcrumb::breadcrumb_display_width(parts)
     } else if masked {

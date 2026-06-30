@@ -1,5 +1,5 @@
 //! Modal and input-state constructors extracted from the view coordinator.
-//! Keep the use of forbidden_secret_keys from update as specified.
+//! Keep the use of `forbidden_secret_keys` from update as specified.
 
 use crate::tui::screens::editor::model::{EditorMode, SecretsScopeTag};
 
@@ -56,7 +56,9 @@ pub(crate) fn secret_value_current_text(value: Option<&str>) -> String {
 
 #[must_use]
 #[allow(unreachable_pub)]
-pub(crate) fn secret_new_value_input_state<'a>(key: &str) -> jackin_tui::components::TextInputState<'a> {
+pub(crate) fn secret_new_value_input_state<'a>(
+    key: &str,
+) -> jackin_tui::components::TextInputState<'a> {
     jackin_tui::components::TextInputState::new_allow_empty(
         format!("Value for {key}"),
         String::new(),
@@ -74,7 +76,8 @@ pub(crate) fn secret_source_picker_state(
 
 #[must_use]
 #[allow(unreachable_pub)]
-pub(crate) fn secret_scope_picker_state() -> crate::tui::components::scope_picker::ScopePickerState {
+pub(crate) fn secret_scope_picker_state() -> crate::tui::components::scope_picker::ScopePickerState
+{
     crate::tui::components::scope_picker::ScopePickerState::new()
 }
 

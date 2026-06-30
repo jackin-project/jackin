@@ -42,10 +42,6 @@ lines = 255
 # R4 File1: load_cleanup.rs + restore_resolve.rs + launch_runtime.rs extracted (coordinator now coordinator-only). Partial File1 complete.
 
 [[production]]
-path = "crates/jackin-console/src/tui/screens/editor/view.rs"
-lines = 2389
-
-[[production]]
 path = "crates/jackin-capsule/src/tui/components/dialog.rs"
 lines = 2265
 

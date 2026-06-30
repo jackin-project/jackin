@@ -1,6 +1,6 @@
-//! Roles tab lines, geometry, widths, and EditorRoleRow extracted from the
+//! Roles tab lines, geometry, widths, and `EditorRoleRow` extracted from the
 //! view coordinator. All items re-exported from parent to preserve `super::`
-//! call sites (e.g. in frame.rs via render_roles_tab and in tests via
+//! call sites (e.g. in frame.rs via `render_roles_tab` and in tests via
 //! `use super::*`).
 
 use ratatui::{
@@ -21,7 +21,11 @@ pub(crate) struct EditorRoleRow {
 }
 
 #[must_use]
-pub(crate) fn editor_roles_status_width(is_all: bool, allowed_count: usize, total_count: usize) -> usize {
+pub(crate) fn editor_roles_status_width(
+    is_all: bool,
+    allowed_count: usize,
+    total_count: usize,
+) -> usize {
     if is_all {
         super::text_width("  Allowed roles:    all  ")
     } else {
