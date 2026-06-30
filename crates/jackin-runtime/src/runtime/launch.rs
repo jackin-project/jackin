@@ -49,13 +49,13 @@ use super::discovery::list_running_agent_names;
 use super::identity::GitIdentity;
 use super::naming::{LABEL_KEEP_AWAKE, LABEL_KIND_ROLE, LABEL_MANAGED};
 use super::progress::launch_output;
-use super::universe::ExitClaim;
+
 #[cfg(test)]
 use crate::instance::InstanceStatus;
 use crate::instance::naming::dind_certs_volume;
 #[cfg(test)]
 pub(crate) use crate::instance::{DockerResources, NewInstanceManifest};
-use crate::instance::{InstanceIndex, InstanceManifest, PrepareResolvers, RoleState};
+use crate::instance::{InstanceManifest, PrepareResolvers, RoleState};
 use anyhow::Context;
 use jackin_config::AppConfig;
 use jackin_core::paths::JackinPaths;
@@ -201,6 +201,18 @@ pub(crate) use exit_diagnosis::{
 
 pub(crate) use git_pull::{
     git_pull_sources, print_git_pull_results, pull_git_sources_with_git, record_git_pull_results,
+};
+
+mod failure;
+pub(crate) use failure::{
+    launch_failure_cli_error, launch_failure_title, render_exit, resolve_launch_role_source,
+    short_launch_diagnosis,
+};
+
+mod launch_plan;
+pub(crate) use launch_plan::{
+    LaunchPlan, emit_image_materialization_plan, emit_launch_plan, emit_prewarm_launch_plan,
+    emit_rejected_launch_plan,
 };
 
 pub(super) struct LaunchContext<'a> {
@@ -1307,158 +1319,6 @@ fn debug_runtime_envs(debug: bool) -> Vec<String> {
     envs
 }
 
-pub(super) fn launch_failure_title(
-    stage: super::progress::LaunchStage,
-    error: &anyhow::Error,
-    run: Option<&jackin_diagnostics::RunDiagnostics>,
-) -> String {
-    if stage == super::progress::LaunchStage::DerivedImage
-        && run.and_then(docker_build_output_artifact).is_some()
-    {
-        return "Docker build failed".to_owned();
-    }
-    let text = error.to_string().to_ascii_lowercase();
-    if text.contains("docker") {
-        "Docker unavailable".to_owned()
-    } else if text.contains("credential") || text.contains("token") || text.contains("auth") {
-        "Credential check failed".to_owned()
-    } else {
-        "Launch failed".to_owned()
-    }
-}
-
-pub(super) fn short_launch_diagnosis(
-    stage: super::progress::LaunchStage,
-    error: &anyhow::Error,
-    run: Option<&jackin_diagnostics::RunDiagnostics>,
-) -> String {
-    if stage == super::progress::LaunchStage::DerivedImage
-        && run.and_then(docker_build_output_artifact).is_some()
-    {
-        return "Building the Docker container failed.".to_owned();
-    }
-    error
-        .chain()
-        .next()
-        .map_or_else(|| "launch did not complete".to_owned(), ToString::to_string)
-}
-
-fn docker_build_output_artifact(run: &jackin_diagnostics::RunDiagnostics) -> Option<PathBuf> {
-    let docker_output = run.command_output_path("docker-build");
-    docker_output.exists().then_some(docker_output)
-}
-
-pub(super) fn launch_failure_cli_error(
-    stage: super::progress::LaunchStage,
-    error: &anyhow::Error,
-    run: Option<&jackin_diagnostics::RunDiagnostics>,
-) -> anyhow::Error {
-    if stage != super::progress::LaunchStage::DerivedImage {
-        return anyhow::anyhow!("{error:#}");
-    }
-    let Some(run) = run else {
-        return anyhow::anyhow!("{error:#}");
-    };
-    let Some(docker_output) = docker_build_output_artifact(run) else {
-        return anyhow::anyhow!("{error:#}");
-    };
-    let mut report = String::from("Docker build command failed");
-    let mut table = tabled::Table::builder([
-        ["run id", run.run_id()],
-        ["run diagnostics", &run.path().display().to_string()],
-        ["docker output", &docker_output.display().to_string()],
-    ])
-    .build();
-    table
-        .with(tabled::settings::Style::modern())
-        .with(tabled::settings::Remove::row(
-            tabled::settings::object::Rows::first(),
-        ));
-    report.push_str("\n\n");
-    report.push_str(&table.to_string());
-    anyhow::anyhow!("{report}")
-}
-
-pub(super) fn resolve_launch_role_source(
-    config: &mut AppConfig,
-    selector: &RoleSelector,
-    restore_role_source_git: Option<&str>,
-) -> anyhow::Result<(jackin_config::RoleSource, bool, bool)> {
-    if let Some(git) = restore_role_source_git {
-        let mut source = config
-            .roles
-            .get(&selector.key())
-            .cloned()
-            .unwrap_or_default();
-        source.git = git.to_owned();
-        source.trusted = true;
-        return Ok((source, false, true));
-    }
-    let (source, is_new) = config.resolve_role_source(selector)?;
-    Ok((source, is_new, false))
-}
-
-pub(super) async fn render_exit(paths: &JackinPaths, docker: &impl DockerApi) {
-    let force_outro = super::universe::force_boundary_outro_enabled();
-    let running = match list_running_agent_names(docker).await {
-        Ok(names) => names,
-        Err(e) => {
-            if let Some(run) = jackin_diagnostics::active_run() {
-                run.compact(
-                    "exit_summary",
-                    &format!("skipping boundary outro; running-container list failed: {e:#}"),
-                );
-            }
-            return;
-        }
-    };
-
-    if !running.is_empty() {
-        if let Some(run) = jackin_diagnostics::active_run() {
-            let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap_or(InstanceIndex {
-                version: 0,
-                instances: Vec::new(),
-            });
-            let (headline, rows) = super::exit_summary::summary(&running, &index);
-            run.compact(
-                "exit_summary",
-                &format!("{headline}; boundary outro skipped"),
-            );
-            for row in rows {
-                run.compact("exit_summary", &row);
-            }
-        }
-        if !force_outro {
-            return;
-        }
-    }
-
-    // Last container left the construct: clear the session marker and show the
-    // two-screen outro (decelerating warp, then closing caption). Exits that
-    // leave other instances running skip this entirely because the operator is
-    // still inside the Construct.
-    let elapsed = if force_outro && !running.is_empty() {
-        None
-    } else {
-        match super::universe::take_exit_claim(paths) {
-            ExitClaim::Claimed { elapsed } => elapsed,
-            ExitClaim::Missing if force_outro => None,
-            ExitClaim::Missing => return,
-        }
-    };
-    if !super::progress::rich_terminal_supported() {
-        return;
-    }
-    // Defensive: the attach paths already re-assert the alt screen the moment
-    // the capsule exec returns, so the post-attach work never flashes the
-    // shell. Re-assert once more before the rich outro in case render_exit is
-    // reached by a path that did not go through the attach.
-    jackin_diagnostics::reassert_alt_screen();
-    let host_owned = jackin_diagnostics::host_screen_owned();
-    launch_output().warp_out(host_owned);
-    launch_output().warp_end_caption(elapsed, host_owned);
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum RestoreResolution {
     StartFresh,
@@ -1470,100 +1330,6 @@ pub(super) enum RestoreResolution {
     /// D21: operator deleted this instance from the launch dialog.
     /// Caller must purge the state dir then proceed as `StartFresh`.
     PurgeAndRestartFresh(String),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum LaunchPlan {
-    AttachExisting,
-    StartStopped,
-    CreateFromValidImage,
-    BuildAndCreate,
-    PrewarmOnly,
-}
-
-impl LaunchPlan {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::AttachExisting => "AttachExisting",
-            Self::StartStopped => "StartStopped",
-            Self::CreateFromValidImage => "CreateFromValidImage",
-            Self::BuildAndCreate => "BuildAndCreate",
-            Self::PrewarmOnly => "PrewarmOnly",
-        }
-    }
-}
-
-pub(super) fn emit_launch_plan(plan: LaunchPlan, reason: &str, container: Option<&str>) {
-    let plan = plan.as_str();
-    let detail = serde_json::json!({
-        "plan": plan,
-        "reason": reason,
-        "container": container,
-    })
-    .to_string();
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.stage(
-            "launch_plan",
-            "restore",
-            &format!("selected launch plan {plan}"),
-            Some(&detail),
-        );
-    }
-}
-
-pub(super) fn emit_prewarm_launch_plan(reason: &str) {
-    emit_launch_plan(LaunchPlan::PrewarmOnly, reason, None);
-}
-
-pub(super) fn emit_image_materialization_plan(
-    image_reused: bool,
-    reason: &str,
-    restoring: bool,
-    container: &str,
-) {
-    if image_reused {
-        let base_reason = if restoring {
-            "restore_container_missing_valid_image"
-        } else {
-            "no_restore_candidate_valid_image"
-        };
-        let plan_reason = if reason == "recipe_hash_match" {
-            base_reason.to_owned()
-        } else {
-            format!("{base_reason}:{reason}")
-        };
-        emit_launch_plan(
-            LaunchPlan::CreateFromValidImage,
-            &plan_reason,
-            Some(container),
-        );
-    } else {
-        emit_launch_plan(LaunchPlan::BuildAndCreate, reason, Some(container));
-    }
-}
-
-fn emit_rejected_launch_plan(
-    plan: LaunchPlan,
-    reason: &str,
-    container: Option<&str>,
-    state: Option<&str>,
-) {
-    let plan = plan.as_str();
-    let detail = serde_json::json!({
-        "plan": plan,
-        "reason": reason,
-        "container": container,
-        "state": state,
-    })
-    .to_string();
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.stage(
-            "launch_plan_rejected",
-            "restore",
-            &format!("rejected launch plan {plan}"),
-            Some(&detail),
-        );
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
