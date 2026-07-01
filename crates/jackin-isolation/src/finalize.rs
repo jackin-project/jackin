@@ -252,6 +252,14 @@ fn rich_exit_dialog(
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Finalize-foreground-session carries every cleanup input the daemon \
+              pass must flush: container identity, state directory, agent / role \
+              records, env, dind certs, ownership metadata, runtime bin paths. \
+              Bundling into a config struct is a parallel-pass refactor out of \
+              scope for the R6 / R7 burn-down shape."
+)]
 pub async fn finalize_foreground_session(
     container_name: &str,
     container_state_dir: &Path,

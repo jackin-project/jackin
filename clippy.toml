@@ -10,7 +10,7 @@ allow-unwrap-in-tests = true
 too-many-lines-threshold = 250
 cognitive-complexity-threshold = 60
 excessive-nesting-threshold = 6
-too-many-arguments-threshold = 9
+too-many-arguments-threshold = 7
 disallowed-methods = [
     { path = "std::process::Command::output", reason = "blocking subprocess output must not run on render/runtime threads; use async process helpers or spawn_blocking" },
     { path = "std::thread::sleep", reason = "blocking sleep must not run on render/runtime threads; use async sleep, polling hooks, or an owned OS thread" },

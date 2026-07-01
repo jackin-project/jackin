@@ -332,6 +332,12 @@ pub fn image_recipe_label_map_for_test(
 /// Test-only label-map builder that takes an explicit install variant.
 #[cfg_attr(not(test), allow(dead_code, reason = "test-only API surface"))]
 #[allow(clippy::expect_used, reason = "test-only API surface")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Test-only API surface: passes the full recipe input set to the \
+              label-map builder. Each arg is a real recipe input; bundling is a \
+              parallel-pass refactor."
+)]
 pub fn image_recipe_label_map_for_install_test(
     cached_repo: &CachedRepo,
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
