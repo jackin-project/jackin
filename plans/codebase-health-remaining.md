@@ -608,6 +608,16 @@ mutually-exclusive settings-tab focus flags describing which sub-pane is focusab
 Both are consumed by direct model-update code where named-field reads are clearer
 than enum-variant rebuilds. `#[expect]` count: 45 → **43**.
 
+TestListSelection (jackin-console/src/tui/screens/workspaces/update/tests.rs:222) —
+bundled the 5 inline-picker-clear bools into a new `ClearedPickers` struct
+holding (role, agent, new_session, provider, launch_provider), with
+`#[allow(...)]` carrying a durable justification naming the trait-method
+each bool records. TestListSelection itself now has only `cleared:
+ClearedPickers`, `reset_scroll: bool`, `selected: Option<usize>` — the
+`#[expect]` is gone (under threshold). The 7 test sites that asserted
+`state.cleared_role` etc. migrated to `state.cleared.role` etc.
+`#[expect]` count: 43 → **42**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

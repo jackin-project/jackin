@@ -214,40 +214,51 @@ fn apply_workspace_tree_disclosure_plan_routes_mutations() {
     );
 }
 
-#[expect(
+/// Captures which inline-picker clears the test list-selection plan hit.
+/// Bundled so `TestListSelection` keeps the `struct_excessive_bools` clippy gate
+/// quiet while assertions can inspect the call set as a single group.
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Bundled 5 inline-picker clear flags carried by the test fixture — \
+              each tracks one of role / agent / new_session / provider / \
+              launch_provider independently, and named-field reads match the \
+              trait-method names this struct records."
 )]
+#[derive(Debug, Default, PartialEq, Eq)]
+struct ClearedPickers {
+    role: bool,
+    agent: bool,
+    new_session: bool,
+    provider: bool,
+    launch_provider: bool,
+}
+
 #[derive(Default)]
 struct TestListSelection {
-    cleared_role: bool,
-    cleared_agent: bool,
-    cleared_new_session: bool,
-    cleared_provider: bool,
-    cleared_launch_provider: bool,
+    cleared: ClearedPickers,
     reset_scroll: bool,
     selected: Option<usize>,
 }
 
 impl WorkspaceListSelectionState for TestListSelection {
     fn clear_inline_role_picker(&mut self) {
-        self.cleared_role = true;
+        self.cleared.role = true;
     }
 
     fn clear_inline_agent_picker(&mut self) {
-        self.cleared_agent = true;
+        self.cleared.agent = true;
     }
 
     fn clear_inline_new_session_picker(&mut self) {
-        self.cleared_new_session = true;
+        self.cleared.new_session = true;
     }
 
     fn clear_inline_provider_picker(&mut self) {
-        self.cleared_provider = true;
+        self.cleared.provider = true;
     }
 
     fn clear_launch_provider_picker(&mut self) {
-        self.cleared_launch_provider = true;
+        self.cleared.launch_provider = true;
     }
 
     fn reset_list_scroll(&mut self) {
@@ -276,11 +287,11 @@ fn apply_workspace_list_selection_plan_clears_and_selects() {
         },
     );
 
-    assert!(state.cleared_role);
-    assert!(state.cleared_agent);
-    assert!(state.cleared_new_session);
-    assert!(state.cleared_provider);
-    assert!(state.cleared_launch_provider);
+    assert!(state.cleared.role);
+    assert!(state.cleared.agent);
+    assert!(state.cleared.new_session);
+    assert!(state.cleared.provider);
+    assert!(state.cleared.launch_provider);
     assert!(state.reset_scroll);
     assert_eq!(state.selected, Some(4));
 }
@@ -302,7 +313,7 @@ fn apply_workspace_list_selection_plan_keeps_selection_when_unchanged() {
         },
     );
 
-    assert!(state.cleared_role);
+    assert!(state.cleared.role);
     assert!(!state.reset_scroll);
     assert_eq!(state.selected, None);
 }
