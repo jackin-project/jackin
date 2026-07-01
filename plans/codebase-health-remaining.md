@@ -561,6 +561,13 @@ bitflags would lose naming at the read site without changing observable behavior
 the honest fix is to mark them as intentional rather than mechanical. `#[expect]` count:
 54 → **51**.
 
+CellSnapshot (jackin-term/tests/conformance.rs:57) — bundled the 4 orthogonal SGR
+attribute bools (bold, italic, underline, inverse) into a new `CellAttributes`
+struct, with `#[allow(...)]` carrying a durable justification that these are
+the standard CSI SGR bit-mask and named-field construction reads better than
+bit-position lookups in a conformance harness. `CellSnapshot` keeps 2 non-attribute
+bools (is_wide, is_wide_continuation) under the threshold. `#[expect]` count: 51 → **50**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
