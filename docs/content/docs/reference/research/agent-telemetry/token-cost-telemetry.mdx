@@ -285,7 +285,7 @@ not yet the host-global daemon API or final `account/list` / `account/refresh`
 4. **Shared daemon endpoints.** Expose account list, refresh, workspace summary, and session summary; include source, confidence, freshness, and last-error fields in every response.
 5. **CLI.** Ship `jackin usage --json` and a compact human view before the Desktop/Capsule work so the data contract can be tested without a native UI.
 6. **Console and Desktop surfaces.** Add compact badges, then account/detail panels. Badges must carry both axes — `UsageConfidence` for provenance and `UsageSnapshotStatus` for lifecycle — before shipping percentage-only displays.
-7. **Capsule focused signal.** The Capsule/control/TUI bridge has landed: Capsule can request a normalized focused usage view, render a compact focused-provider status label, and open the read-only prefix `u` overlay from a daemon-owned account snapshot cache. Provider-authoritative quota adapters and scheduled refresh/backoff for the in-container overlay have shipped. The remaining work is to replace the Capsule-local account cache with the final host-global account snapshot service described above. Rendering contract lives in [Capsule usage overlay](/roadmap/capsule-usage-overlay-responsiveness-and-tabs/).
+7. **Capsule focused signal.** The Capsule/control/TUI bridge has landed: Capsule can request a normalized focused usage view, render a compact focused-provider status label, and open the read-only prefix `u` overlay from a daemon-owned account snapshot cache. Provider-authoritative quota adapters and scheduled refresh/backoff for the in-container overlay have shipped. The remaining work is to replace the Capsule-local account cache with the final host-global account snapshot service described above. Rendering contract lives in [Capsule usage overlay](/reference/capsule/).
 8. **Amp/Kimi/OpenCode research adapters.** Add provider rows only after each runtime has a non-interactive source contract or an explicit fallback UX. Until then, render honest unsupported/local-estimate states.
 
 ### Surface contract
@@ -304,7 +304,7 @@ Surfaces consuming the cache:
 - **Desktop app.** Accounts view is the full inspection surface: every account, provider, source, current availability, reset time, confidence, last refresh, active workspaces, repair actions. Running Agents view shows focused-account quota and workspace/session spend inline.
 - **macOS status bar.** Most-constrained active account by default — see the [most-constrained ordering](#most-constrained-ordering) rule below. Provider glyph plus remaining percent or `stale` / `login` state. Menu expands to all accounts with reset timers, source labels, and repair actions.
 - **`jackin console` Accounts / Usage.** Lists every known account with source, current availability, reset time, last refresh, and which workspaces currently use it. Workspace and running-agent rows carry compact badges for the attached account.
-- **Capsule multiplexer.** Focused-tab provider only — see [Capsule usage overlay](/roadmap/capsule-usage-overlay-responsiveness-and-tabs/) for the rendering contract (status-line layout, prefix `u`, modal contents, daemon-disconnected and needs-login fallbacks).
+- **Capsule multiplexer.** Focused-tab provider only — see [Capsule usage overlay](/reference/capsule/) for the rendering contract (status-line layout, prefix `u`, modal contents, daemon-disconnected and needs-login fallbacks).
 - **CLI / automation.** `jackin usage` exposes account, workspace, and session views with `--json`, including freshness and provenance so scripts do not mistake local estimates for provider-enforced limits.
 
 The contract must answer, for the focused agent: which built-in-runtime accounts jackin❯ knows about, which one this agent is using, how much quota remains, when it resets, how much this workspace/session burned today/this week/lifetime, and which confidence + status pair the displayed limit carries.
@@ -385,7 +385,7 @@ $ jackin usage the-architect --json
 - Console "Cost (today)" column when the resource panel is open.
 - Compact quota badges on Desktop running-agent rows, `jackin console` workspace/agent rows, and macOS status item.
 - Console / Desktop account panel showing all accounts, quota windows, reset time, workspace attribution, and stale/login-needed state.
-- Capsule multiplexer quota signal — Capsule's rendering contract lives in [Capsule usage overlay](/roadmap/capsule-usage-overlay-responsiveness-and-tabs/).
+- Capsule multiplexer quota signal — Capsule's rendering contract lives in [Capsule usage overlay](/reference/capsule/).
 - `jackin usage <selector>` CLI with `--json` and human-readable
   formatting.
 - Cost computed at sample time and stored, not recomputed on render —
@@ -438,6 +438,6 @@ $ jackin usage the-architect --json
 - [Agent runtime status](/roadmap/agent-runtime-status/) —
   parallel consumer of the same input stream
 - [Console resource panel](/roadmap/console-resource-panel/) — rendering home
-- [Capsule usage overlay](/roadmap/capsule-usage-overlay-responsiveness-and-tabs/) — Capsule TUI rendering contract
+- [Capsule usage overlay](/reference/capsule/) — Capsule TUI rendering contract
 - [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) — desktop account/quota rendering home
 - [Autonomous task queue](/roadmap/autonomous-task-queue/) — future budget-gating consumer
