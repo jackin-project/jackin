@@ -1,10 +1,10 @@
 import { readdir, readFile } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Every MDX file under content/docs/roadmap/ (excluding index.mdx and
-// files inside parenthesized group subdirectories) must be referenced in at least
-// one meta.json under the same directory tree, so it appears in the docs sidebar.
+// Every MDX file under content/docs/roadmap/ (excluding index.mdx) must be
+// referenced in at least one meta.json under the same directory tree, so it
+// appears in the docs sidebar.
 // This script enforces that invariant both ways: no MDX without a meta.json entry,
 // and no meta.json entry without a matching MDX file.
 
@@ -28,58 +28,61 @@ async function collectMetaJsonFiles(dir: string): Promise<string[]> {
   return results
 }
 
-// Collect all roadmap-root page slugs referenced across all meta.json files.
-// Page references are relative to the meta.json's directory; we resolve them
-// and keep only those that land directly in roadmapDir (not in subdirectories).
-async function collectSidebarSlugs(metaFiles: string[]): Promise<Set<string>> {
-  const slugs = new Set<string>()
+// Collect all roadmap page paths referenced across all meta.json files. Page
+// references are relative to the meta.json's directory; we resolve them and keep
+// references that land under roadmapDir.
+async function collectSidebarPages(metaFiles: string[]): Promise<Set<string>> {
+  const pages = new Set<string>()
   for (const metaFile of metaFiles) {
     const metaDir = dirname(metaFile)
     const raw = await readFile(metaFile, 'utf8')
     const meta = JSON.parse(raw) as MetaJson
     for (const page of meta.pages ?? []) {
-      if (!page.startsWith('.')) continue // skip group dirs and 'index'
+      if (page === 'index' || page.startsWith('(')) continue
       const absolute = resolve(metaDir, page)
       const rel = relative(roadmapDir, absolute)
-      // Only include pages that sit directly in roadmapDir (no path separator = no subdir)
-      if (!rel.includes('/') && !rel.includes('\\') && !rel.startsWith('..')) {
-        slugs.add(rel)
+      if (!rel.startsWith('..')) {
+        pages.add(`${rel}.mdx`)
       }
     }
   }
-  return slugs
+  return pages
 }
 
-// Collect all MDX file slugs in the roadmap root (exclude index, exclude subdirs).
-async function collectRoadmapSlugs(): Promise<Set<string>> {
-  const entries = await readdir(roadmapDir, { withFileTypes: true })
-  const slugs = new Set<string>()
+async function collectRoadmapPages(dir = roadmapDir): Promise<Set<string>> {
+  const entries = await readdir(dir, { withFileTypes: true })
+  const pages = new Set<string>()
   for (const entry of entries) {
-    if (entry.isFile() && entry.name.endsWith('.mdx') && entry.name !== 'index.mdx') {
-      slugs.add(basename(entry.name, '.mdx'))
+    const absolute = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      for (const page of await collectRoadmapPages(absolute)) {
+        pages.add(page)
+      }
+    } else if (entry.name.endsWith('.mdx') && absolute !== join(roadmapDir, 'index.mdx')) {
+      pages.add(relative(roadmapDir, absolute))
     }
   }
-  return slugs
+  return pages
 }
 
 const failures: string[] = []
 
 const metaFiles = await collectMetaJsonFiles(roadmapDir)
-const [sidebarSlugs, roadmapSlugs] = await Promise.all([
-  collectSidebarSlugs(metaFiles),
-  collectRoadmapSlugs(),
+const [sidebarPages, roadmapPages] = await Promise.all([
+  collectSidebarPages(metaFiles),
+  collectRoadmapPages(),
 ])
 
-for (const slug of [...roadmapSlugs].sort()) {
-  if (!sidebarSlugs.has(slug)) {
-    failures.push(`MDX file not in any sidebar meta.json: content/docs/roadmap/${slug}.mdx`)
+for (const page of [...roadmapPages].sort()) {
+  if (!sidebarPages.has(page)) {
+    failures.push(`MDX file not in any sidebar meta.json: content/docs/roadmap/${page}`)
   }
 }
 
-for (const slug of [...sidebarSlugs].sort()) {
-  if (!roadmapSlugs.has(slug)) {
+for (const page of [...sidebarPages].sort()) {
+  if (!roadmapPages.has(page)) {
     failures.push(
-      `meta.json references non-existent MDX file: content/docs/roadmap/${slug}.mdx`,
+      `meta.json references non-existent MDX file: content/docs/roadmap/${page}`,
     )
   }
 }
@@ -93,5 +96,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `Checked ${roadmapSlugs.size} roadmap pages against ${metaFiles.length} meta.json files. Sidebar is complete.`,
+  `Checked ${roadmapPages.size} roadmap pages against ${metaFiles.length} meta.json files. Sidebar is complete.`,
 )

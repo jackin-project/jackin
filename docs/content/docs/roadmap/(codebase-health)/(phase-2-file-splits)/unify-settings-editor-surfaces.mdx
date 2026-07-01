@@ -1,0 +1,31 @@
+---
+title: "Unify the settings and workspace-editor surfaces"
+---
+
+**Status**: Partially implemented — the auth source-folder validation and the shared error dialog have shipped on both surfaces; the structural unification of the two config-editing screens (one modal enum, one per-domain edit subsystem) is still open.
+
+## Shipped facts
+
+The global **Settings** screen and the workspace **Editor** screen edit the same config domains — auth, mounts, env/secrets, trust, general — but remain two separate surfaces with twinned modal enums, row models, flatten/validation, render, edit-flow, and mouse/footer code. The one structural convergence landed so far is auth source-folder validation: both the editor and settings commit paths now route through the same `validate_auth_source_folder` (<RepoFile path="crates/jackin/src/console.rs" />), which wraps the runtime gate `validate_sync_source_dir` (<RepoFile path="crates/jackin-runtime/src/instance/auth.rs" />), and both surfaces render rejection through the same shared `error_popup` widget rather than diverging inline-vs-silent behavior.
+
+Everything else the item originally scoped is still duplicated in source as verified today: the editor's single `ConsoleModal` enum (<RepoFile path="crates/jackin-console/src/tui/app.rs" />) coexists with settings' three separate enums `GlobalMountModal`, `SettingsEnvModal`, `SettingsAuthModal` (<RepoFile path="crates/jackin-console/src/tui/screens/settings/model.rs" />) plus a screen-level `error_popup` field; `SettingsAuthModal::SourceFolderPicker` has not been collapsed into the shared file-browser shape; and the proposed `ConfigSurfaceHost` host trait, `ConfigModal`/`AuthModal` shared enums, and `decide_auth_source_folder` typed decision function are design proposals, not landed code. The trust asymmetry (a first-class `SettingsTrustState` tab in settings versus a `ConfirmTarget::TrustRoleSource` confirm flow in the editor) also remains unchanged.
+
+The full duplication inventory (modal-taxonomy table, twinned function families, target host-trait architecture, proposed code shapes) is written up in [Unifying the Settings and Editor Config Surfaces](/reference/research/operator-surface/settings-editor-surface-unification-design/); this item tracks only what is left to build.
+
+## Remaining work
+
+1. Collapse settings' three modal enums (`GlobalMountModal`, `SettingsEnvModal`, `SettingsAuthModal`) and the screen-level error-popup field into the editor's single `ConsoleModal` taxonomy, including retiring `SettingsAuthModal::SourceFolderPicker` in favor of the shared file-browser shape.
+2. Introduce the shared per-domain edit subsystem (row model, flatten/validation, render, edit-flow handlers) behind a host trait so settings and editor differ only in which config layers/scopes they read and write.
+3. Collapse the remaining auth edit-flow twins (plain credential, 1Password source, op-picker family, open/restore/persist/clear) into one generic implementation.
+4. Converge the mounts, env/secrets, trust, and general domains onto the same shared row model, flatten, render, and edit flow, reconciling the settings `Global`/`Role` vs editor `Workspace`/`Role` scope split and the trust tab-vs-confirm-flow asymmetry.
+5. Converge the remaining cross-cutting code: modal-stack methods, tab strip, footer hints, and mouse hit-testing, currently copy-pasted across `EditorState`, `SettingsEnvState`, `GlobalMountsState`, and `SettingsAuthState`.
+6. Add cross-surface equivalence tests per domain (open, each apply, validate, error, cancel, persist) so a change to shared code is provably identical on both screens.
+7. Update the [Auth source-folder sync spec](/reference/developer-reference/specs/auth-source-folder-sync/) as each slice lands.
+
+## Related work
+
+- [Unifying the Settings and Editor Config Surfaces](/reference/research/operator-surface/settings-editor-surface-unification-design/) — duplication map and target architecture design rationale.
+- [Auth source-folder sync spec](/reference/developer-reference/specs/auth-source-folder-sync/) — the behavioral invariants the auth slice must preserve.
+- [Auth reliability program](/roadmap/auth-reliability-program/) — the feature whose Phase 1 hardening surfaced the duplication.
+- [Split input/editor.rs](/roadmap/split-input-editor/) — sibling codebase-health item on the same input/modal layer; sequence the unification with it so the split divides one implementation.
+- [TUI architecture](/reference/tui/) — the model/decision/view split both screens must follow.

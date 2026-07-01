@@ -1,0 +1,9 @@
+{
+  "title": "Infrastructure",
+  "defaultOpen": false,
+  "pages": [
+    "code-intelligence",
+    "jackin-daemon-design",
+    "platform-support-and-freshness-policy"
+  ]
+}

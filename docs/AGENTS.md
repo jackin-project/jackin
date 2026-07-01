@@ -95,7 +95,7 @@ bun install --frozen-lockfile
 - `check:repo-links` exists because lychee only checks real links in rendered HTML. Plain code spans like `src/runtime/launch.rs` aren't links, so lychee can't detect renames/deletions. The source check forces `<RepoFile />`, then lychee verifies the generated URL.
 - `mailto:` links are lychee-checked; use real intentional addresses, not placeholders.
 - Sidebar + top-nav configured via `meta.json` files and `src/lib/layout.shared.tsx`.
-- **Roadmap sidebar discipline.** Every MDX file under `content/docs/roadmap/` must be referenced in at least one `meta.json` under the roadmap tree (nested group structure: root `meta.json` points to group dirs; each group's `meta.json` points to pages via `../slug` or `../../slug`). On any add/rename/delete/status-change of a roadmap item — or directory restructure — verify sidebar still matches directory contents in same PR. Operators discover open work via sidebar (not overview prose), so an item reachable only via direct URL or overview is effectively hidden. Audit from `docs/`:
+- **Roadmap sidebar discipline.** Every MDX file under `content/docs/roadmap/` must be referenced in at least one `meta.json` under the roadmap tree (nested group structure: root `meta.json` points to group dirs; each group's `meta.json` points to pages stored in that same category/subcategory directory). On any add/rename/delete/status-change of a roadmap item — or directory restructure — verify sidebar still matches directory contents in same PR. Operators discover open work via sidebar (not overview prose), so an item reachable only via direct URL or overview is effectively hidden. Audit from `docs/`:
 
   ```sh
   bun run check:roadmap-sidebar
@@ -120,14 +120,14 @@ bun install --frozen-lockfile
   Audit which roadmap items are missing from overview:
 
   ```sh
-  ls docs/content/docs/roadmap/*.mdx \
+  find docs/content/docs/roadmap -name '*.mdx' \
     | xargs -n1 basename -s .mdx | grep -v '^index$' | sort > /tmp/roadmap-files
   grep -oE 'roadmap/[a-z0-9-]+' docs/content/docs/roadmap/index.mdx \
     | sed 's|roadmap/||' | sort -u > /tmp/roadmap-overview
   comm -23 /tmp/roadmap-files /tmp/roadmap-overview
   ```
 
-  Output lists items in directory but missing from overview. Must be empty *unless* missing items are intentionally umbrella-covered by a parent program entry (e.g. Agent Orchestrator Research leaves, Codebase readability program leaves) — then the program entry itself must appear in overview and explicitly say it covers them.
+  Output lists items in directory but missing from overview. Must be empty *unless* missing items are intentionally umbrella-covered by a parent program entry (e.g. Agent Orchestration leaves, Codebase readability program leaves) — then the program entry itself must appear in overview and explicitly say it covers them.
 - Use MDX components from `src/components/mdx.tsx` for callouts (`<Aside type="note|tip|caution">`), steps (`<Steps>` around an `<ol>`), tabs (`<Tabs><TabItem>`). Global in MDX.
 - Every page needs a `title:` frontmatter field.
 - **Do not hard-wrap MDX prose, or any markdown the docs site renders, or AGENTS.md / PULL_REQUESTS.md / CLAUDE.md / README.md / CHANGELOG.md / any other prose markdown in the repo.** Each paragraph = one long line. Fumadocs, GitHub's renderer, every reasonable editor wrap at display width; hard-wrapping at ~70 cols makes one-word edits touch every line and splits sentences across meaningless boundaries. Exception: content with meaningful line breaks — code fences, list bullets, table cells, frontmatter values. Unwrap existing hard-wrapped paragraphs as part of the edit that brings you there. The PR-body rule in `PULL_REQUESTS.md` is the same rule applied to every prose markdown surface.

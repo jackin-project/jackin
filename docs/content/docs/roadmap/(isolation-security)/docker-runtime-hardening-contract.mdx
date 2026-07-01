@@ -1,0 +1,57 @@
+---
+title: "Docker Runtime Hardening Contract"
+---
+
+**Status**: Partially implemented — Docker profile enforcement is wired; Tier-2 workload matrix, `compat` → `standard` default flip, credential env-only posture, and rootless-default research remain
+
+## Shipped evidence
+
+The hardening contract is no longer just a model. The launch path applies the profile decisions and the core decisions are unit-tested through pure launch-plan helpers.
+
+Shipped pieces:
+
+- Four profiles exist (`compat`, `standard`, `hardened`, `locked`) with profile/grant defaults and runtime env names reserved against role-manifest override.
+- `no-new-privileges` is applied when sudo is off; sudo is provisioned at runtime only when the effective grant enables it.
+- cgroup/AppArmor probes run before launch; cgroup v1 fails closed for `hardened`/`locked` where the promised resource enforcement cannot be delivered.
+- Egress allowlist enforcement is wired through `firewall-apply` and fails closed under `hardened`/`locked` if the firewall cannot install the policy.
+- `locked` uses a Docker-internal role network.
+- DinD is tier-aware: `none`, `rootless`, and `privileged` are selectable; rootless uses `docker:dind-rootless` and fails closed where cgroup v2 is required.
+- The session contract and compact/debug telemetry report the effective profile decisions before launch.
+- Host Docker socket exclusion has a regression test.
+- Schema, guide, and runtime reference docs for the shipped fields exist in [Docker Security Profiles](/guides/docker-profiles/), [Role manifest](/developing/role-manifest/), [Configuration](/reference/runtime/configuration/), and [Schema Versions](/reference/runtime/schema-versions/).
+
+## Remaining work
+
+1. **Tier-2 workload matrix.** Run and keep green the real-workload matrix for supported agents/profiles: build workloads, package installs, GitHub flows, DinD build/Compose/Testcontainers where allowed, and named-error assertions where a profile intentionally rejects a workflow. This is Docker-daemon work and belongs in CI/nightly, not unit tests.
+
+2. **`compat` → `standard` default flip.** Flip the compiled-in default only after the matrix is green and release notes call out the behavior change. Until then `compat` stays default so existing workflows are not changed silently.
+
+3. **Credential env-only posture.** Under `hardened`/`locked`, prefer env-only or otherwise reduced credential exposure and emit a `credential_posture` decision per agent auth type. Coordinate with [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).
+
+4. **Rootless default research.** Rootless DinD is selectable, but making it the standard default remains research until the workload matrix proves it across supported hosts. Sysbox is dropped unless rootless proves insufficient.
+
+## Constraints that stay true
+
+- Agent bypass flags remain enabled; Docker is the enforceable boundary, not the agent's own permission model.
+- Host Docker socket exclusion is a hard rule.
+- Hardened Docker is still a shared-kernel boundary; do not describe it as hostile multi-tenant isolation.
+- OTLP host egress remains jackin❯-owned infrastructure and is always allowlisted for telemetry.
+
+## Related files
+
+- <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> — profile/grant model, flag emission, session contract.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — role container, DinD, network, launch orchestration.
+- <RepoFile path="crates/jackin-capsule/src/firewall.rs" /> — in-container firewall apply primitive.
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> — typed Docker API boundary.
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — runtime startup and agent bypass flags.
+- <RepoFile path="docker/construct/Dockerfile" /> — base runtime image and sudo package posture.
+
+## Related roadmap items
+
+| Item | Relationship |
+|---|---|
+| [Apple Container backend](/roadmap/apple-container-backend/) | macOS 26 VM backend; rootless DinD validation informs Apple Container viability. |
+| [Network egress policy](/roadmap/network-egress-policy/) | Future proxy-sidecar egress and connection logs beyond Docker firewall rules. |
+| [Declarative resource limits](/roadmap/declarative-resource-limits/) | Resource-budget schema and parser. |
+| [Process-level sandboxing](/reference/research/security/process-sandboxing/process-level-sandboxing/) | Per-command isolation inside any Docker profile. |
+| [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | Active profile inspection before launch. |

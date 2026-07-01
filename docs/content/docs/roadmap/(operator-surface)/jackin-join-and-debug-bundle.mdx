@@ -1,0 +1,39 @@
+---
+title: "jackin join & Debug Export"
+---
+
+**Status**: Open — diagnostics JSONL, reveal, and open surfaces exist; project join and redacted debug bundles remain unimplemented
+
+## Shipped facts
+
+jackin❯ now writes diagnostics JSONL for runs and exposes reveal/open affordances for those host-side diagnostic artifacts from launch failure and Debug info surfaces. That makes it easier for an operator to find the raw evidence for a failed run. It is not yet a redacted, shareable bundle.
+
+## Remaining work
+
+### 1. Redacted debug bundle
+
+Add a diagnostic export command, name still open (`jackin debug export <run-id>`, `jackin diagnostics export <run-id>`, or similar), that packages a local `.tar.zst` bundle for a run-id. The bundle should include redacted workspace config, redacted role manifest, redacted env/auth summary, diagnostics JSONL, jackin❯ and Capsule versions, OS info, and container runtime details.
+
+Redaction must hide token/API-key values and 1Password vault/item/field specifics while preserving enough structure to debug resolution failures. Bundles stay local; no upload service and no import/replay command in this item.
+
+### 2. `jackin join` research
+
+Research project-level onboarding separately from debug export. `jackin join <org>/<project>` would let a repo publish jackin❯ workspace setup information, then guide a new contributor through trust, workspace choice, credentials, clone/setup, and first launch. Open questions remain: config file shape, private-repo auth, trust model, multi-workspace monorepos, and whether prerequisites are installed or only diagnosed.
+
+## Non-goals
+
+- Do not implement `jackin join` before the project-config trust model is designed.
+- Do not treat diagnostics JSONL reveal/open as a debug bundle; it is raw evidence only.
+- Do not store bundles remotely.
+
+## Related files
+
+- <RepoFile path="crates/jackin-diagnostics/src/run.rs" /> — diagnostics framework.
+- <RepoFile path="crates/jackin-env/src/resolve.rs" /> — env resolution and redaction source.
+- <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" /> — credential locations that bundle redaction must understand.
+
+## Cross-references
+
+- [Operator CLI Hygiene](/roadmap/operator-cli-hygiene/) — `doctor`, `status`, JSON output, and dry-run complement debug export.
+- [/reference/research/agent-orchestration/program-research/](/reference/research/agent-orchestration/program-research/) — workspace-as-code context.
+- [/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) — desktop hub could consume debug bundles.

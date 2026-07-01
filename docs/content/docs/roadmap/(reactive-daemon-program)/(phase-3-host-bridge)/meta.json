@@ -1,8 +1,7 @@
 {
-  "title": "Phase 3 — Operator-mediated host bridge",
+  "title": "Phase 3 \u2014 Operator-mediated host bridge",
   "defaultOpen": false,
   "pages": [
-    "../../host-bridge",
-    "../../container-credential-exposure"
+    "host-bridge"
   ]
 }

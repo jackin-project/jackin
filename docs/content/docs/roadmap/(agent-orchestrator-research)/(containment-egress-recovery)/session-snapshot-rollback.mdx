@@ -1,0 +1,32 @@
+---
+title: "Session Snapshot and Rollback"
+---
+
+**Status**: Open — the `Snapshot` / `StatusCapture` control-channel calls that exist today are diagnostic tab/pane capture only; no reversible filesystem snapshot, no `[workspaces.*.recovery]` config, and no `jackin recovery` command exist yet (Containment track, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Shipped baseline
+
+<RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs">crates/jackin-runtime/src/runtime/snapshot.rs</RepoFile> and the `Snapshot`/`StatusCapture` control-channel messages in `jackin-protocol` fetch the in-container Capsule daemon's tab/pane state for the host TUI's preview pane. That is read-only diagnostic capture — it has no relationship to filesystem contents, no rollback semantics, and no persisted history.
+
+Per-mount isolation (<RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile>, <RepoFile path="crates/jackin-config/src/resolve.rs">crates/jackin-config/src/resolve.rs</RepoFile>) and worktree cleanup cover the common source-control recovery path, but they do not help when a mount isn't a Git repo, when generated files/caches need reverting, or when agent/auth/tool state gets poisoned across a session. No `jackin recovery` subcommand exists in `crates/jackin/src/cli.rs`, and no `[workspaces.*.recovery]` config key exists in `jackin-config`.
+
+## Remaining work
+
+1. Metadata-only recovery index: record resolved mounts, isolated worktree paths, base commits, dirty status, and cleanup policy; add `jackin recovery show <instance>` for post-session inspection (no file-content copy yet).
+2. Project snapshots: opt-in snapshot for non-git mounts and dirty working trees, using integration-provided excludes from [stack integration contracts](/roadmap/stack-integration-contracts/); store under the jackin❯ data directory, not inside the project; add diff/list commands before restore.
+3. State snapshots: snapshot selected jackin-managed state (agent config, plugin state, auth delivery artifacts) when the active auth mode makes that safe, without writing secret values into a broader-readable archive — integrate with [container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).
+4. Remote/Kubernetes recovery: map the same contract onto SSH remote directories and Kubernetes volumes, preferring platform-native snapshots where available.
+5. Restore command: `jackin recovery restore <instance>` must refuse to run against an active instance, print the exact host paths it will mutate, require explicit confirmation, and take an emergency snapshot of the paths it's about to overwrite before mutating them.
+
+## Out of scope
+
+- Replacing a real host backup system — this is scoped, opt-in, session-relative recovery, not continuous backup.
+- Live session restore after a crash/power-off — that's the opposite direction, handled by [Session keep and resume](/roadmap/session-keep-and-resume/).
+
+## Related work
+
+- Research: [Session snapshot and rollback design](/reference/research/agent-orchestration/recovery/session-snapshot-rollback/) — Hazmat/Docker Sandboxes inspiration, config shape, phased design rationale.
+- [Session keep and resume](/roadmap/session-keep-and-resume/) — forward-recovery counterpart; restores a killed session rather than undoing one.
+- [Stack integration contracts](/roadmap/stack-integration-contracts/) — source of per-stack snapshot excludes.
+- [Persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) — candidate metadata store for the recovery index.
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
