@@ -863,9 +863,14 @@ async fn prewarm_agent_image(
     .await
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Prewarming the agent image needs every caller-supplied input \
+              (paths, selector, cached + validated repos, branch override, \
+              agent, docker, runner, repo_lock, debug) to flow into the build \
+              pipeline; bundling into a config struct would be a parallel pass \
+              that requires restructuring the image-build path. Named-arg reads \
+              match the per-input propagation idiom."
 )]
 async fn prewarm_agent_image_from_validated_repo(
     paths: &JackinPaths,
@@ -1153,9 +1158,13 @@ fn agent_binary_prepare_summary(
 /// published-image construct version label — so the heavy role layers are built
 /// or tagged once per (role commit, construct) and overlay rebuilds don't touch
 /// them.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Resolving the local role base needs every caller-supplied input \
+              (selector, branch + head sha, cached + validated repos, published \
+              base, rebuild, debug, docker, runner) to flow through to the pull- \
+              or-build branch. Named-arg reads match the per-input propagation \
+              idiom the role-base resolver walks."
 )]
 async fn ensure_local_role_base(
     selector: &RoleSelector,
@@ -1328,9 +1337,14 @@ async fn ensure_local_role_base(
 }
 
 /// Build the Docker image for the role. Returns the image name.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Building the agent image needs every caller-supplied input \
+              (paths, selector, cached + validated repos, agent, runtime \
+              binaries, rebuild + reason + base override, debug + branch override, \
+              docker, runner, repo_lock, known head sha, progress) to flow into \
+              the build pipeline. Named-arg reads match the per-input propagation \
+              idiom the image builder walks."
 )]
 pub(super) async fn build_agent_image(
     paths: &JackinPaths,

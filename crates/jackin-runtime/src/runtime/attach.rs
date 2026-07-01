@@ -564,9 +564,14 @@ pub async fn spawn_shell_session(
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Spawning a single agent session requires every caller-supplied \
+              parameter (paths, container_name, manifest, agent, provider_label, \
+              env_overrides, git config, docker, runner, ...) to flow through to \
+              the container bring-up path; bundling into a config struct would be \
+              a parallel pass that requires restructuring the spawn path. Named- \
+              arg reads match the per-input propagation idiom."
 )]
 pub async fn spawn_agent_session(
     paths: &JackinPaths,

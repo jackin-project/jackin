@@ -705,6 +705,15 @@ all_workspaces, all_roles), each an independent `--flag` the operator can
 pass. Named-field reads match the per-flag CLI ergonomics this struct flattens.
 `#[expect]` count: 21 → **20**.
 
+spawn_agent_session (runtime/attach.rs:571) + prewarm_agent_image_from_validated_repo
+(image.rs:870) + ensure_local_role_base (image.rs:1160) + build_agent_image
+(image.rs:1335) — all four `#[expect(clippy::too_many_arguments)]`
+converted to `#[allow(... reason = "...")]` with per-fn durable justifications
+naming the inputs each fn propagates through to its caller-supplied
+container-build pipeline. Bundling into a config struct is a separate
+parallel pass that requires restructuring the spawn/build paths. `#[expect]`
+count: 20 → **16**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
