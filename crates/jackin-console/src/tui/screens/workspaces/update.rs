@@ -777,9 +777,13 @@ pub fn selected_index(selected: usize, row_count: usize) -> usize {
     crate::tui::focus::selected_index(selected, row_count)
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Five orthogonal inline-picker clear flags on the list-selection \
+              plan (role / agent / new_session / provider / launch_provider) — \
+              each tracks an independent clear-mutation the plan applies to the \
+              state. Named-field reads match the per-trait-method dispatch this \
+              plan parallelizes."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListSelectionPlan {

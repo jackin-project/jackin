@@ -629,6 +629,25 @@ pull_request_loading, scrollback_active) consumed by compositor branches.
 Both are independent bit-sets where named-field reads match the direct
 mutation idiom. `#[expect]` count: 42 → **40**.
 
+WorkspaceListDisplayRow (jackin-console/src/tui/screens/workspaces/view.rs:55) —
+replaced the two `expanded: bool` + `has_instances: bool` fields with a single
+`disclosure: Disclosure` field (the existing `Disclosure` enum at view.rs:16
+with `None` / `Collapsed` / `Expanded` variants). The original two bools were
+the inputs to `Disclosure::for_instances(has, expanded)`; storing the derived
+disclosure is the more honest model. 4 test sites + 3 builder sites migrate
+construction to `disclosure: Disclosure::for_instances(has, expanded)` and
+read sites to `row.disclosure`. `#[expect]` count: 40 → **39**.
+
+WorkspaceListSelectionPlan (jackin-console/src/tui/screens/workspaces/update.rs:785) +
+WorkspaceListDisplayRowFacts (jackin-console/src/tui/screens/workspaces/view.rs:70) +
+WorkspaceSidebarFacts (jackin-console/src/tui/screens/workspaces/view.rs:113) —
+converted `#[expect]` to `#[allow]` on all three with per-struct durable
+justifications. Each carries 4–5 orthogonal flags (inline-picker clears, focus
++ disclosure signals, sidebar picker visibility) consumed individually at
+the read site. The `fn_params_excessive_bools` expect on
+`current_directory_display_row` (4 bools) is also gone — its signature is now
+3 args (disclosure + selected + hovered). `#[expect]` count: 39 → **35**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
