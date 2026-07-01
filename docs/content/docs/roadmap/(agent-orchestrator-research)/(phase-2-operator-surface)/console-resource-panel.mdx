@@ -1,0 +1,31 @@
+---
+title: "Console Resource Panel (machine + per-agent live usage)"
+---
+
+**Status**: Open — observability substrate exists (debug-only host process RSS/CPU sampling, OTLP process-metric export), but the operator-visible `jackin console` resource panel is entirely unimplemented (Phase 2, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Shipped baseline
+
+jackin❯ already samples resource data in two narrow, non-operator-facing ways. The capsule daemon has a debug-only RSS/CPU sampler for its own host process (<RepoFile path="crates/jackin-capsule/src/daemon/resource_metrics.rs" />), gated behind `JACKIN_DEBUG=1` and logged via `cdebug!` — it is not surfaced to the operator. Separately, the OTLP exporter in <RepoFile path="crates/jackin-diagnostics/src/observability.rs" /> emits `process.cpu.utilization` and `process.memory.usage` metrics sampled via `sysinfo`, for whoever is scraping the configured OTLP endpoint — again, not rendered in the console. Neither of these is a per-agent or machine-summary view, and no `DockerApi` stats endpoint, console panel module, or panel keybinding exists anywhere in the tree today.
+
+## Remaining work
+
+1. **Per-agent live usage.** CPU%, RAM (current + limit-relative), OOM kill count, and file-descriptor pressure per running agent container, sampled via Docker stats (or a new typed stats endpoint on `DockerApi`) every ~2 seconds while the panel is open.
+2. **Machine summary.** Total host CPU%, total host RAM used/free, and `~/.jackin/data/` disk usage/free space.
+3. **Console panel + keybinding.** A new optional panel toggled by keystroke, sampling paused while collapsed; degrade sample failures to "?" cells rather than error dialogs.
+4. **Status column integration.** Once built, the per-agent table should surface a status column from the now-shipped [agent runtime status authority](/roadmap/agent-runtime-status/).
+
+Full design exploration (multicode's sampling approach, sampling-backend abstraction questions, deferred scope like historical graphs and alert thresholds): [Console Resource Panel: Design Exploration](/reference/research/agent-orchestration/resource-limits/console-resource-panel-design/).
+
+## Out of scope (for now)
+
+- Network I/O and disk I/O per agent.
+- Historical graphs / rolling sample buffers — depends on a persistent storage layer landing first.
+- Alert thresholds and CSV/Prometheus export.
+
+## Related work
+
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
+- [Declarative resource limits](/roadmap/declarative-resource-limits/) — the configured-limit value the panel would render alongside live usage
+- [Agent runtime status](/roadmap/agent-runtime-status/) — status column would live in the same per-agent table
+- [Token & Cost Telemetry](/reference/research/agent-telemetry/token-cost-telemetry/) — later turns the per-agent column into a richer telemetry view

@@ -1,0 +1,25 @@
+---
+title: "Workspace Skills Mount (cross-runtime customization)"
+---
+
+**Status**: Open — blocked on the [Native APM Support](/reference/research/agent-runtimes/package-manager-support/native-apm-role-support/) decision; no `[skills]` config, collection layer, or mount implementation exists yet.
+
+## Shipped facts
+
+Role repos can declare Claude plugin marketplaces and plugin IDs in `jackin.role.toml`; jackin❯ bakes those Claude plugins into the derived image rather than mounting runtime plugin state during launch. The role manifest reference documents `[claude].plugins` and `[[claude.marketplaces]]`, and the Rust manifest schema (<RepoFile path="crates/jackin-core/src/manifest.rs" />) still carries those fields.
+
+The runtime already has per-agent durable home mounts for Claude, Codex, Amp, Kimi, OpenCode, and Grok, plus workspace/global bind-mount plumbing (<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />) for normal workspace mounts. It does not have a `[skills]` or `[workspaces.<name>.skills]` config schema (<RepoFile path="crates/jackin-config/src/schema.rs" /> has mounts and runtime/auth fields only), a skill-collection layer, per-runtime workspace skill destinations, or skill-name conflict handling.
+
+## Remaining work
+
+1. Land or reject the APM role-support design first — that decision determines whether this item proceeds at all.
+2. If APM local-path dependencies cover the local/team skill case, shrink this item to documenting and exposing that path rather than building a parallel jackin❯ skill package system.
+3. If APM cannot cover workspace-local skills without mutating the host project or role repo, revive the narrower filesystem-mount-only design — see the research page below for the worked-out shape.
+
+## Related work
+
+- Research: [Workspace Skills Mount: Design Options](/reference/research/agent-runtimes/package-manager-support/workspace-skills-mount-design/) — problem statement, fallback mount-only design, and deferred scope.
+- [Native APM Support for jackin❯ Agent Roles](/reference/research/agent-runtimes/package-manager-support/native-apm-role-support/) — the strategic direction this item is blocked on.
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
+- [Multi-runtime support](/roadmap/multi-runtime-support/) — per-runtime launch and adapter boundaries
+- [Agent tag protocol](/roadmap/agent-tag-protocol/) — possible user of skill bundles or APM packages

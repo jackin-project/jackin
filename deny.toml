@@ -18,8 +18,8 @@ confidence-threshold = 0.8
 exceptions = [
     { crate = "adler2@2.0.1", allow = ["0BSD", "MIT", "Apache-2.0"] },
     { crate = "aho-corasick@1.1.4", allow = ["Unlicense", "MIT"] },
-    { crate = "aws-lc-rs@1.17.0", allow = ["ISC", "Apache-2.0"] },
-    { crate = "aws-lc-sys@0.41.0", allow = ["ISC", "Apache-2.0", "MIT", "BSD-3-Clause", "MIT-0"] },
+    { crate = "aws-lc-rs@1.17.1", allow = ["ISC", "Apache-2.0"] },
+    { crate = "aws-lc-sys@0.42.0", allow = ["ISC", "Apache-2.0", "MIT", "BSD-3-Clause", "MIT-0"] },
     { crate = "bindgen@0.69.5", allow = ["BSD-3-Clause"] },
     { crate = "bindgen@0.72.1", allow = ["BSD-3-Clause"] },
     { crate = "const_format@0.2.36", allow = ["Zlib"] },

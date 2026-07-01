@@ -1,0 +1,174 @@
+---
+title: "Orca ADE research"
+---
+
+**Status**: Open — proposed research item (benchmarking reference for UX and worktree-native agent orchestration)
+
+## Goal
+
+Document what [Orca](https://github.com/stablyai/orca) gets right as a desktop Agent Development Environment so jackin❯ can borrow its strongest UX ideas without adopting its weaker isolation model.
+
+Orca and jackin❯ are solving adjacent problems. Orca is a native GUI app that treats the git worktree as the unit of agent isolation and wraps it in a rich multi-agent interface. jackin❯ is a CLI/TUI orchestrator that treats the Docker container as the isolation unit and wraps that in a role-manifest system. The overlap is large enough that Orca's design decisions are directly relevant to the jackin❯ fleet-operations and operator-surface roadmap.
+
+## What is Orca?
+
+Orca (by [Stably AI](https://github.com/stablyai/orca)) is a desktop Agent Development Environment (ADE) whose core premise is: AI-assisted development means running many agents in parallel, and the tooling should be designed from the ground up for that. Its tagline is "Ship 100x With The Agent IDE."
+
+- **Language**: TypeScript (97.6%) + Swift (macOS-specific native layer)
+- **Architecture**: Electron-style desktop app with WebGL terminal rendering, embedded Chromium per worktree, and a VS Code editor component
+- **Agent runtimes**: 30+ built-in CLI agents — Claude Code, Codex, Gemini, Grok, Amp, OpenCode, Cursor CLI, GitHub Copilot CLI, and others
+- **License**: MIT — fully open source, no SaaS account required, no data pipeline
+- **Distribution**: Homebrew cask, AUR, direct download (.dmg, AppImage, .exe), GitHub Releases
+- **Companion**: iOS + Android apps for remote monitoring and task management
+- **Activity**: ~3,100 GitHub stars as of May 2026; multiple releases per week; v1.4.x is the active series
+
+## Core features
+
+**Worktree-per-task isolation.** Every task gets its own git worktree. Agents run in those worktrees independently — no branch juggling, no stashing, no cross-contamination between concurrent tasks. Up to N agents can work simultaneously on different features.
+
+**Unified terminal management.** Tabbed and paned WebGL-rendered terminals, one per agent session. Visual indicators for active/interrupted/stalled agents. Infinite scrollback with persistence across restarts and full-text search.
+
+**Diff annotation feedback loop.** The single most distinctive feature. Operators add Markdown comments to specific diff lines, batch them, and send the batch back to the agent as structured feedback. Turns code review into a directed feedback queue rather than a copy-paste loop.
+
+**Embedded Chromium per worktree (Design Mode).** A real browser window is associated with each worktree's dev server. Agents can be asked to look at the live UI from inside Orca without the operator switching contexts.
+
+**Orca CLI (agent-driven control).** Agents running inside Orca can call back into Orca programmatically — open a new pane, navigate, surface results. This inverts the standard model where the IDE drives the agent; here the agent can drive the IDE surface.
+
+**Built-in source control.** Inline diff review, line-level annotation, commit workflow, and branch comparison without leaving Orca.
+
+**GitHub and Linear integration.** PRs, issues, GitHub Actions checks, and Linear tasks are surfaced directly inside the worktree view, giving agents immediate link context.
+
+**SSH remote worktrees.** Agents running on a remote machine with file editing, git support, port forwarding, and auto-reconnect. Surfaced ports appear in a ports panel.
+
+**Multi-account management.** Claude Pro, Codex, Gemini, and other subscriptions tracked in one place with usage monitoring and rate-limit visibility.
+
+**Quick Commands surface.** Palette of shortcuts for common actions (introduced in v1.4.21).
+
+**Mobile companion apps.** iOS and Android for monitoring agents and managing tasks remotely.
+
+## Why people like it
+
+1. **Right abstraction level.** The worktree-per-task model matches how experienced git users want to work with parallel agents — complete isolation, zero noise between tasks.
+2. **Desktop-native ambition.** Most "AI coding tools" are VS Code extensions or web apps. Orca is a full native application with its own terminal stack, embedded browser, and mobile companion.
+3. **No lock-in.** Users bring their own subscriptions. MIT license. No data routed through Stably's servers. This matters strongly in the "parallel agent fleet" use case.
+4. **Active maintenance.** Three releases in two days (May 22–23, 2026) with 30–50 changes each; issues get fixed quickly; release notes are detailed with contributor attribution.
+5. **The diff annotation loop lands.** Users who try it find it hard to give up — it makes code review a directed structured workflow.
+
+## jackin❯ values filter
+
+Every borrowed idea must survive the values filter from the [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/#jackin-values-used-for-evaluation).
+
+| Orca idea | Passes values filter? | Notes |
+|---|---|---|
+| Worktree-per-task visual orchestration | Yes | jackin❯ already has worktree/clone per-mount isolation; the UX around naming, status, and post-session review is the gap |
+| Diff annotation → agent feedback batch | Yes | Pure UX — no isolation model change needed |
+| Embedded Chromium per worktree | Partial | GUI-only; useful as a roadmap target for a future desktop companion, not a CLI feature |
+| Orca CLI (agent-driven pane control) | Yes | Analogous to the [operator handler system](/roadmap/operator-handler-system/) and [agent tag protocol](/roadmap/agent-tag-protocol/); agents signalling state rather than driving UI |
+| 30+ built-in agent runtimes, zero config | Yes | Aligns with [multi-runtime support](/roadmap/multi-runtime-support/) goal; jackin❯ should match this runtime breadth |
+| Mobile companion (monitor, manage) | Yes | Lower priority; relevant to [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) |
+| Host-native worktrees as isolation unit | **No** | The core isolation model is the reason jackin❯ uses containers. Host-native agents run as the host user; the hard rule against host-side mutations blocks this as a default |
+| Same-process agent and IDE surface | **No** | Orca runs agents directly on the host machine. The Capsule model is the reason jackin❯ exists |
+
+## Comparison: Orca vs jackin
+
+| Dimension | Orca | jackin❯ |
+|---|---|---|
+| Primary isolation unit | Git worktree | Docker container |
+| What is isolated | Git state (working tree, branch) | Full runtime environment (filesystem, network, tools, credentials) |
+| Agent execution context | Host machine, host user | Container — agent cannot reach host filesystem without explicit mount |
+| Host mutation risk | High — agents run as host user | Low by design — host-side writes are hard-blocked |
+| Security boundary | Process-level | Container-level |
+| Configuration surface | GUI-first, no role/manifest concept | Role manifests (`jackin.role.toml`), `config.toml`, per-workspace config |
+| Reproducibility | Worktrees share host-installed tools | Container image pins the full toolchain |
+| Target workflow | Developer who trusts agents and wants parallel throughput | Operator who wants a clean, reproducible, auditable agent environment |
+| Primary UI | Full desktop GUI with terminal embeds | CLI with `jackin console` as TUI |
+| Agent runtime breadth | 30+ pre-configured, zero config | 5 built-in (Claude Code, Codex, Amp, Kimi, OpenCode); see [multi-runtime](/roadmap/multi-runtime-support/) |
+| Diff review loop | Annotation → batch feedback to agent | Not yet in jackin |
+| Mobile companion | iOS + Android | Not yet; see [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) |
+| Port / service visibility | Ports panel per worktree | Not yet explicit; tracked in [network egress policy](/roadmap/network-egress-policy/) |
+| License | MIT, no SaaS | Apache 2.0, no SaaS |
+
+## Ideas worth borrowing
+
+These Orca patterns are UX-transferable to jackin❯ without adopting its isolation model.
+
+### Diff annotation → agent feedback batch
+
+The workflow of marking up diff lines with comments and sending the batch to the agent as structured feedback is pure UX — it does not depend on where the agent runs. The [operator handler system](/roadmap/operator-handler-system/) and the console's session control surface are the right home for this. A future operator action could batch annotated diff hunks into a follow-up agent prompt inside the same container.
+
+### Worktree-session visual table
+
+Orca's main view is a table of worktrees with live agent status. The jackin❯ console workspace tree is the analog. The status-richness gap is now addressed by the shipped [agent runtime status](/roadmap/agent-runtime-status/) authority; remaining Orca-inspired work is how the console and Desktop Agent Hub present those signals across a fleet.
+
+### Named port panel per session
+
+Orca surfaces which ports a dev server published inside each worktree session. jackin❯ should do the same for container-exposed ports, and it belongs as a section in the [session contract and explain mode](/roadmap/session-contract-explain-mode/) — "which ports are exposed and to what host address."
+
+### Agent-driven notification / callback
+
+The Orca CLI gives agents programmatic control of the UI surface. In the jackin❯ model, the equivalent is [agent tag protocol](/roadmap/agent-tag-protocol/) (structured tags agents emit) and [agent attention prompts](/roadmap/agent-attention-prompts/) (OS notifications when agents stall). These are the container-compatible analogs.
+
+### Runtime breadth (30+ agents, zero config)
+
+Orca's zero-config 30+ agent support is the user expectation jackin❯ should match in the built-in runtime list. [Multi-runtime support](/roadmap/multi-runtime-support/) tracks this.
+
+### Mobile companion
+
+The iOS/Android companion for remote monitoring and task management is an idea for the [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) roadmap item, which uses the daemon as its state/event backend.
+
+## What is incomplete in Orca
+
+Current gaps visible in Orca's issue tracker and release notes (May 2026):
+
+- **Self-hosted relay server** for mobile-desktop connections — multiple open requests; critical for security-sensitive users
+- **SSH `Include` directive support** in SSH config import
+- **Multi-select / batch operations** on worktrees
+- **Agent Teams / subagent visibility** — when Claude Code spawns subagents (Agent Teams), they create hidden tmux sessions that don't appear as native Orca panes
+- **Subagent permission request UI** — when a subagent awaits a permission prompt, the workspace status does not update; operators miss stalled agents
+- **LSP integration** — community-requested but not yet designed
+- **Windows edge cases** — Antigravity CLI key input does not propagate correctly inside Orca's terminal on Windows
+- **Workspace/worktree decoupling** — some users want to create a workspace without immediately creating a worktree
+
+Several of these gaps — subagent visibility, permission-stall detection — are exactly what the Capsule model can solve cleanly because the container boundary gives jackin❯ a uniform observation point for agent lifecycle events.
+
+## Why not copy Orca directly
+
+Orca's core bet is that worktrees are sufficient isolation. That works for a developer who trusts their agents and wants parallel throughput on one machine. It does not work for the jackin❯ model where:
+
+- The operator's host machine must not be mutated silently (hard rule in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>)
+- Credentials must not leak between agents or sessions without explicit forwarding
+- The agent environment must be reproducible from a role manifest across machines
+- Isolation must be explained and auditable before launch (see [session contract and explain mode](/roadmap/session-contract-explain-mode/))
+
+Orca is richer in UX and lighter in isolation. jackin❯ is the reverse. The UX ideas above are the ones that survive the transplant; the isolation model cannot be borrowed without collapsing the core product value.
+
+## Research questions
+
+1. **Diff annotation UX.** Is the annotation-batch-to-agent pattern implementable as a console action without a GUI? What is the minimal operator surface — a file with annotated hunks, a structured prompt template, or something else?
+2. **Runtime breadth.** What is the blocking work to reach 10+ supported runtimes in jackin❯? Does it require per-runtime launch config or can a generic exec-based launcher cover most cases?
+3. **Subagent visibility.** How does Orca's hidden-tmux-session problem map to the Capsule model? jackin❯ can observe container process trees; is that sufficient to detect and surface subagent sessions?
+4. **Port panel.** What is the minimum viable port-visibility surface for the console? A ports column in the workspace table? A dedicated pane? A session contract section?
+5. **Self-hosted relay.** Orca's mobile-companion relay is a separate infrastructure concern. Does the jackin❯ daemon design (see [jackin❯ daemon](/roadmap/jackin-daemon/)) make self-hosted relay a natural Phase 2 feature or an unrelated problem?
+
+## Relationship to the research program
+
+This item extends [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/) with a UX-first desktop tool. Orca does not fit neatly into Track A (fleet ops, multicode-style) or Track B (containment, Hazmat/Docker Sandboxes-style). It is a third reference point: what the user-facing layer looks like when the isolation concern is handed off to git instead of containers.
+
+The strongest cross-references:
+
+| This item | Related roadmap item |
+|---|---|
+| Diff annotation feedback loop | [Operator handler system](/roadmap/operator-handler-system/) |
+| Worktree/session status table | [Agent runtime status](/roadmap/agent-runtime-status/), [Console agent session control](/roadmap/console-agent-session-control/) |
+| Port panel per session | [Session contract and explain mode](/roadmap/session-contract-explain-mode/), [Network egress policy](/roadmap/network-egress-policy/) |
+| Agent-driven callback | [Agent tag protocol](/roadmap/agent-tag-protocol/), [Agent attention prompts](/roadmap/agent-attention-prompts/) |
+| Runtime breadth | [Multi-runtime support](/roadmap/multi-runtime-support/) |
+| Mobile companion | [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) |
+| Subagent visibility | [jackin-capsule: in-container control plane](/roadmap/jackin-capsule/) |
+
+## Source materials
+
+Research snapshot: May 2026.
+
+- [`stablyai/orca`](https://github.com/stablyai/orca) — active reference implementation
+- [Orca releases](https://github.com/stablyai/orca/releases) — release cadence and feature log (v1.4.x active series as of May 2026)

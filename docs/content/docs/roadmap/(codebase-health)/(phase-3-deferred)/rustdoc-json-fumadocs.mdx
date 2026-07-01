@@ -1,0 +1,34 @@
+---
+title: "rustdoc JSON → Fumadocs API pipeline"
+---
+
+**Status**: Deferred — Phase 3; not started, no `gen-rust-api.ts`, no CI nightly step, no generated API pages exist yet; blocked on [module contracts](/roadmap/module-contracts/) reaching sufficient `//!` coverage first
+
+## Shipped facts
+
+Nothing has shipped. `cargo doc` HTML output is still never published — it lives in `target/doc/` and is hard to navigate. The idea: replace `cargo doc` with a bun TypeScript build script that consumes `rustdoc --output-format json` and generates Fumadocs MDX pages under the contributor reference tree, so `//!` module contracts (once written) get a browsable, searchable home instead of an `/internal/` route.
+
+Intended pipeline:
+
+```
+cargo +nightly rustdoc --output-format json -p jackin --document-private-items
+→ target/doc/jackin.json
+→ docs/scripts/gen-rust-api.ts  (new bun TypeScript script)
+→ docs/content/docs/reference/developer-reference/api/<module>/<Item>.mdx  (gitignored)
+```
+
+Deliberately deferred behind [module contracts](/roadmap/module-contracts/): the pipeline's value scales with `//!` coverage, and that item's own 2026-07-01 audit still finds production crate files without leading `//!` docs.
+
+## Remaining work
+
+1. **Build `docs/scripts/gen-rust-api.ts`** to turn rustdoc JSON into Fumadocs MDX pages under `docs/content/docs/reference/developer-reference/api/`.
+2. **Decide scope**: all `pub` items, or `pub` items plus private items that carry `//!`/`///` docs.
+3. **Decide the URL/IA shape** under `/reference/developer-reference/api/` — match it to whatever the contributor-reference IA looks like at implementation time, not the placeholder above.
+4. **Cross-link generated pages to behavioral specs** (e.g. a type like `OpPickerState` linking to its spec under `/reference/developer-reference/specs/`) once those specs have settled routes.
+5. **Add a nightly CI step** (`dtolnay/rust-toolchain@nightly`) isolated from the stable `check` job, since `rustdoc --output-format json` requires nightly.
+6. **Gitignore generated MDX** and regenerate on each `bun run build`.
+
+## Related work
+
+- [Module contracts (//! docs)](/roadmap/module-contracts/) — prerequisite; this item should not start before that one reaches solid coverage.
+- [Developer Reference](/reference/developer-reference/) — the contributor reference tree the generated API pages would live under.

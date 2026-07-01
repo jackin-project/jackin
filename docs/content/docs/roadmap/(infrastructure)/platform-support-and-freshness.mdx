@@ -1,0 +1,25 @@
+---
+title: "Platform Support Policy & Roadmap Freshness"
+---
+
+**Status**: Open — nothing implemented yet: no `reference/platform-support.mdx` page exists, no `last_reviewed` frontmatter baseline has been applied beyond this item and the roadmap index, and `docs/scripts/check-roadmap-freshness.ts` does not exist
+
+## Shipped facts
+
+Only a thin platform note exists today: `getting-started/installation.mdx` states jackin❯ supports macOS and Linux, with Windows via WSL2 called out as "possible but untested." There is no dedicated platform support policy page, no declared support tier per platform, and no Debian-only base-image rationale documented anywhere. CI (<RepoFile path=".github/workflows/release.yml">.github/workflows/release.yml</RepoFile>) still builds macOS and Linux binaries only — no Windows artifact. The codebase still has a small number of `#[cfg(windows)]` blocks against dozens of `#[cfg(unix)]` blocks, consistent with Windows being effectively unsupported. Roadmap freshness tracking has not started: only this file and `roadmap/index.mdx` carry a `last_reviewed` field, and no CI check reads it.
+
+## Remaining work
+
+1. **Platform support page.** Write `docs/content/docs/reference/platform-support.mdx` declaring per-platform support tiers (macOS primary, Linux experimental, Windows/WSL2 best-effort, Windows native out of scope). Link it from the README install section and from `getting-started/installation.mdx`.
+2. **Base image rationale.** Document the Debian-only construct-image policy (either a section in `developing/construct-image.mdx` or a short standalone page) and how to advocate for change.
+3. **Roadmap freshness frontmatter.** Add `last_reviewed: YYYY-MM-DD` to every roadmap MDX file's frontmatter as a baseline; new items should include it from creation.
+4. **Freshness check script.** Create `docs/scripts/check-roadmap-freshness.ts`, flagging roadmap items whose `last_reviewed` is older than a threshold (6 months, adjustable) or missing entirely. Wire it into <RepoFile path="docs/package.json">docs/package.json</RepoFile> scripts and CI, following the shape of <RepoFile path="docs/scripts/check-roadmap-sidebar.ts">docs/scripts/check-roadmap-sidebar.ts</RepoFile>.
+
+## Related work
+
+- Research: [Platform support policy and roadmap freshness tracking — design rationale](/reference/research/infrastructure/platform-support-and-freshness-policy/) — platform matrix philosophy, Debian rationale, and staleness-check design.
+- <RepoFile path=".github/workflows/release.yml">.github/workflows/release.yml</RepoFile>
+- <RepoFile path="docs/scripts/check-roadmap-sidebar.ts">docs/scripts/check-roadmap-sidebar.ts</RepoFile> (and sibling scripts)
+- [/reference/research/isolation/smolvm-backend/](/reference/research/isolation/smolvm-backend/) — Linux/KVM support affects platform matrix.
+- [/reference/research/isolation/orbstack-isolated-machines/](/reference/research/isolation/orbstack-isolated-machines/) — macOS-only backend.
+- [/reference/research/security/sandbox-backends/selectable-sandbox-backends/](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) — backend selection affects platform support.

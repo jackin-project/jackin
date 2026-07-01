@@ -1,0 +1,29 @@
+---
+title: "Task Source Abstraction"
+---
+
+**Status**: Open — no code has shipped; this is a design proposal for the trait/config seam the autonomous queue needs before it can accept work from more than one source (Phase 4, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)).
+
+## Shipped baseline
+
+No task-source abstraction has shipped yet. Source search found no `TaskSource`, `TaskOutcome`, `TaskPolicy`, `[task_sources]`, `github_issues`, `file_glob`, `stdin_pipe`, or `WorkItemSource` in the Rust crates. <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> and <RepoFile path="crates/jackin/src/workspace.rs">crates/jackin/src/workspace.rs</RepoFile> expose workspace/config schema but no task-source parsing or assignment. The closest shipped adjacent state is Capsule/usage persistence: the Capsule-local Turso `account_usage_snapshots` table (<RepoFile path="crates/jackin-capsule/src/telemetry_store.rs">crates/jackin-capsule/src/telemetry_store.rs</RepoFile>) and the host `jackin usage <instance> accounts --sync-host-cache` flow, documented in the [persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) research. The broader storage layer, task table, workflow run ledger, GitHub reporter, and autonomous dispatch queue this abstraction would feed all remain planned.
+
+## Remaining work
+
+1. Design and land a `TaskSource` trait (poll/report/id/label) plus a shared `Task`/`TaskPolicy` data model, scoped to the future queue/workflow module rather than ad hoc GitHub issue structs.
+2. Ship two low-risk source implementations first — `github_issues` and `file_glob` — deferring `stdin_pipe` unless it lands in the same slice as a queue command.
+3. Add `[task_sources.<name>]` config parsing and per-workspace source assignment, but only once the queue exists to consume it; do not ship inert config no runtime reads.
+4. Store queued tasks in the future persistent storage layer (Turso/SQLite) alongside planned workflow/run tables rather than a separate queue-only database.
+5. Wire task links into the future [Agent tag protocol](/roadmap/agent-tag-protocol/) and [GitHub link tracking](/roadmap/github-link-tracking/) once those seams land.
+6. Keep the `report()` callback as a no-op seam in V1 — no auto-closing issues or posting comments until operator gates and reporter semantics are proven.
+7. Resolve open design questions before implementation: source authentication (route through the [credential source pattern](/roadmap/credential-source-pattern/)), queue-source vs. workflow-source lifecycle sharing, task-identity stability across renames, and which subsystem owns the first durable table.
+
+Full design rationale, the candidate `TaskSource` trait sketch, and the alternatives/open-questions discussion live in [Task source abstraction (design)](/reference/research/agent-orchestration/workflow-systems/task-source-abstraction-design/).
+
+## Related work
+
+- [Autonomous task queue](/roadmap/autonomous-task-queue/) — primary consumer of this abstraction
+- [Credential source pattern](/roadmap/credential-source-pattern/) — per-source credential resolution
+- [Agent tag protocol](/roadmap/agent-tag-protocol/) — emitted task/link metadata
+- [Persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) — task/run storage home
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)

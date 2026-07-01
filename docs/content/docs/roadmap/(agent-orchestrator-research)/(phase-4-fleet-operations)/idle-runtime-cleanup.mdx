@@ -1,0 +1,37 @@
+---
+title: "Idle Runtime Cleanup Hooks"
+---
+
+**Status**: Open — no idle-cleanup mechanism exists yet; only the underlying signals it would build on (clean-exit teardown, agent status reporting) are shipped (Phase 4, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Shipped baseline
+
+Capsule already exits cleanly when the last session ends: reconnect finalization marks the instance `CleanExited` and calls `eject_role` (<RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile>), which lets the host cleanup path tear down the role container, DinD sidecar, cert volume, and network. Instance manifests already record these backend resources.
+
+Agent status reporting is also shipped: Capsule tracks per-session status (`Working`, `Blocked`, `Done`, `Idle`, `Unknown`) and includes it as `agent_status_report` on control-protocol panes (<RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/daemon/multiplexer_utils.rs">crates/jackin-capsule/src/daemon/multiplexer_utils.rs</RepoFile>). A host process can already query a running container's session inventory and status through the Capsule control socket.
+
+None of that adds up to idle-hook cleanup: there is no role-declared idle-command schema, no operator opt-in, no time-based trigger/re-arm supervisor, no restart/recycle semantics, and no cleanup history. This is an unbuilt feature, not a partial one.
+
+## Remaining work
+
+1. `[runtime.idle]` block on `jackin.role.toml` (schema-bumped): `commands`, `delay_seconds`, `interval_seconds`, `restart_after_cleanup`.
+2. Operator opt-in per role (`enable_idle_hooks`, default off).
+3. Idle-detection supervisor that watches Capsule agent status reports and fires after `delay_seconds` of continuous `Idle`, re-arming every `interval_seconds`.
+4. Sequential command execution via `docker exec` with a per-command timeout.
+5. Optional container restart/recycle after cleanup (`restart_after_cleanup`).
+6. Cleanup history persisted (new store, or the future tool-history store if it lands first) and surfaced as "last cleanup" in the console resource panel and `jackin status`.
+
+## Out of scope
+
+- Resource-threshold-based hooks (e.g. "cleanup when memory > X") in addition to time-based triggers.
+- Hooks for states other than `Idle` (busy, question).
+- Per-workspace override of idle config — role-level only for V1.
+- Operator-defined ad-hoc cleanup commands outside the role manifest.
+- Notification on cleanup failure beyond an in-console error dialog.
+
+## Related work
+
+- Research: [Idle runtime cleanup: design notes](/reference/research/agent-orchestration/idle-runtime-cleanup-design/) — multicode precedent, recommended config shape, open questions
+- [Agent runtime status](/roadmap/agent-runtime-status/) — required idle signal
+- [Autonomous task queue](/roadmap/autonomous-task-queue/) — primary beneficiary (queue-warm containers cleaned regularly)
+- [Console resource panel](/roadmap/console-resource-panel/) — intended visibility surface

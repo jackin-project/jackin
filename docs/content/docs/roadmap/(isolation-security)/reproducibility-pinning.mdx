@@ -1,0 +1,24 @@
+---
+title: "Reproducibility and Provenance Pinning"
+---
+
+**Status**: Open — design proposal, nothing shipped yet
+
+## Shipped baseline
+
+Role repos are resolved by clone-then-fetch-and-merge against the default branch on every `jackin load`; there is no commit pin, no `version`/`commit` field on the role-source config entry, and no `--update` flag. Trust is a single boolean that never resets on upstream movement. This matches the design's own starting assumption, so no part of the original proposal has landed.
+
+## Remaining work
+
+1. Add optional `commit`/`version` fields to the role-source config entry, written by the runtime on first resolve.
+2. Switch subsequent loads to fetch + detached-HEAD checkout of the pinned commit instead of fetch+merge.
+3. Add a `jackin load --update` flag that re-pins (tag-preferring resolution) and resets trust.
+4. Bump the config schema version and add the migration-registry entry required for any serde-bearing config struct change (see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>).
+5. Surface the resolved version/SHA in the launch summary.
+
+Design details, schema sketch, and open questions needing operator sign-off before implementation: [Role repo pinning: design](/reference/research/security/supply-chain/role-repo-pinning-design/).
+
+## Related work
+
+- <RepoFile path="crates/jackin-runtime/src/runtime/repo_cache.rs">crates/jackin-runtime/src/runtime/repo_cache.rs</RepoFile> — current clone/fetch/checkout logic this work would change.
+- <RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> — `RoleSource`, the struct that would gain the new fields.

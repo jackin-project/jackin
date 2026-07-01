@@ -1,0 +1,74 @@
+---
+title: "Construct Image: User Creation Responsibility"
+---
+
+
+**Status**: Resolved — runtime UID mapping via `docker run --user` plus host-UID-owned derived homes shipped; the runtime-usermod alternative is documented below for comparison.
+
+## Problem
+
+The construct image (`projectjackin/construct:trixie`) creates the `agent` user at UID/GID 1000 during its build. Every host-owned bind-mount (agent home dirs, auth files, state, sockets, the workspace) is owned by the host operator's UID — which is rarely 1000 (CI runners are often 1001, macOS is 501). For the in-container `agent` to read and write those mounts, the container's effective UID has to match the host UID.
+
+The original design solved this by remapping the user inside the **derived** image at build time: `usermod -o -u $JACKIN_HOST_UID agent` plus a recursive `chown -R agent:agent /home/agent`, with the host UID passed as a `--build-arg`. That worked but was wrong structurally:
+
+- Every distinct host UID produced a distinct ~7 GB derived image, so images could never be shared between users or cached across machines.
+- `usermod` + `chown -R` added real build time to every first launch.
+- The construct's `ARG UID=1000` / `ARG GID=1000` were meaningless because the derived layer always overwrote them.
+
+Removing the build-time remapping (commit `b96d6400`) fixed image sharing but reintroduced the core defect: with the image fixed at UID 1000 and no remapping, host-owned bind-mounts became unreadable/unwritable to the container (`EACCES`). A scatter of symptom-layer patches followed — `chmod 0o1777` on the socket and state dirs, `0o666` on auth files, `0o777` on the test workspace — each opening one path world-writable while leaving the UID mismatch in place. That is a whole *class* of bug: every new bind-mount would need its own world-writable patch.
+
+## Root cause
+
+The container process must run with the **same UID and primary GID as the host operator** so host-owned bind-mounts are transparently owned. The host operator's UID/GID are simply the effective UID/GID of the `jackin` process itself: it creates every bind-mount source under `~/.jackin`, so a runtime `--user` mapping to its own effective identity makes ownership line up everywhere at once, with no per-path permission hacks. The image-baked `/home/agent` tree must also be owned by that runtime UID because group-write is not enough for owner-only syscalls such as `chmod(2)`.
+
+Plain `docker run --user $UID` is not enough on its own, because the container runs Node.js-based agent CLIs (Claude Code, Codex, …): with no `/etc/passwd` entry for an arbitrary UID, `getpwuid()` fails (`os.userInfo()` throws `ENOENT`), `$HOME` falls back to `/`, and the image-baked `/home/agent` (owned by 1000) is not writable by another UID. The two viable runtime designs below each close all of that.
+
+## Shipped design — runtime `--user` + host-UID-owned derived home
+
+This keeps zero per-launch identity work and no root at container start, while accepting that derived images are local per-host-UID artefacts rather than portable blobs.
+
+- **Image (build once per host UID):**
+  - `/home/agent` and baked home/config paths are born **group 0** with group-readable/writable permissions where jackin controls creation: the construct image creates `agent` with primary group 0, makes `/home/agent` group-writable, applies `umask 0002` to build `RUN` steps, and generated role-image `COPY` instructions use `--chown=agent:0`. The derived image no longer runs the old broad `/home/agent` + `/jackin/default-home` recursive `chmod g=u` finalization layer; instead it treats `/home/agent` itself as the runtime-mutable home boundary. After default-home seed state is moved out, the derived image accepts `JACKIN_RUN_UID`, normalizes everything left under `/home/agent` to that UID plus group `0` and group-write, then fails the build if any file or directory in that runtime home is not runtime-UID-owned, group `0`, or group-writable. This is intentionally whole-home because role authors can bake arbitrary tool state under `$HOME`; jackin cannot predict every `.cargo`, `.npm`, `.foo`, or future tool path. See <RepoFile path="docker/construct/Dockerfile">construct/Dockerfile</RepoFile> and <RepoFile path="crates/jackin-image/src/derived_image.rs">derived_image.rs</RepoFile>.
+  - The derived image recipe includes the host UID. Reusing a derived image built for another UID would leave owner-only syscalls broken, so recipe mismatch forces rebuild.
+  - `libnss-extrausers` is installed and `/etc/nsswitch.conf` gains it on the `passwd` and `group` lines, so runtime-supplied passwd/group entries resolve `getpwuid` and host GID lookups. See <RepoFile path="docker/construct/Dockerfile">construct/Dockerfile</RepoFile>.
+- **Runtime (`docker run` / `docker exec`):**
+  - `--user $HOST_UID:$HOST_GID --group-add 0` runs the process as the host UID/GID while keeping supplementary group 0 for image-baked group-writable paths.
+  - `-e HOME=/home/agent` so shells and CLIs resolve the home before any passwd lookup.
+  - a passwd file (`agent:x:$HOST_UID:$HOST_GID:agent:/home/agent:/bin/zsh`) and group file (`agent-host:x:$HOST_GID:agent`) are generated host-side and bind-mounted read-only at `/var/lib/extrausers/passwd` and `/var/lib/extrausers/group`, so `getpwuid($HOST_UID)` resolves to `agent` and host GIDs can resolve when the base image has no matching group. See <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">launch.rs</RepoFile> and <RepoFile path="crates/jackin-runtime/src/runtime/identity.rs">identity.rs</RepoFile>.
+  - every `docker exec` (hardline shell, reconnect, snapshot) carries the same `--user $HOST_UID:$HOST_GID`, so exec shells match PID 1 rather than defaulting to the image's baked UID 1000. See <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">attach.rs</RepoFile>.
+
+Trade-offs: derived images are host-UID-specific, and the process has supplementary group 0 so it can write image-baked group-0 home paths. Files created in bind-mounts land owned by the host UID/GID. The host identity must be threaded into image recipe hashing, every derived image build, and every `docker run`/`docker exec` call site — that is the surface that keeps this design honest, and is covered by `identity::host_run_as_user` plus the `insert_run_as_user` exec helper. `getpwnam("agent")` still resolves to the baked UID 1000 from `/etc/passwd` (only `getpwuid($HOST_UID)` is overridden via extrausers); this is benign for the agent CLIs, which look up by UID.
+
+## Angle B — runtime `usermod` + privilege drop (alternative, not used)
+
+The linuxserver.io PUID/PGID pattern. Most "native" in-container identity, at the cost of per-launch work and a root-start entrypoint.
+
+- **Image:** add `gosu` (or `setpriv`/`su-exec`); the entrypoint starts as `root`.
+- **Runtime:** pass `JACKIN_HOST_UID` / `JACKIN_HOST_GID`; the entrypoint runs `usermod -o -u $HOST_UID agent` + `groupmod -o -g $HOST_GID agent`, `chown`s only the image-baked home paths (host bind-mounts already match the new UID and need no chown), then drops privileges with `gosu agent` before `exec`.
+
+Trade-offs: gives a fully correct `/etc/passwd` entry, `whoami` = `agent`, and host-side files owned by the host's real user **and group**; `docker exec` needs no per-call `--user` because the container's `agent` user *is* the host UID. But it requires the container to start as root and wire privilege-drop through the capsule/multiplexer, and pays a per-launch `usermod` + targeted `chown` — directly counter to the launch-speed goal that motivated removing build-time remapping.
+
+## Comparison
+
+| Dimension | Shipped — `--user` + host-UID-owned derived home | Alternative — `usermod` + `gosu` |
+|---|---|---|
+| Per-launch cost | None (no chown, no usermod) | `usermod` (ms) + targeted `chown` of image-baked home |
+| Root at container start | No | Yes (drops to `agent` via `gosu`) |
+| Image shareable across UIDs | No (host UID participates in recipe hash) | Yes (UID applied at runtime) |
+| `getpwuid` / `$HOME` valid | Yes (extrausers passwd + `-e HOME`) | Yes (real passwd entry) |
+| `whoami` inside container | `agent` (via extrausers for host UID) | `agent` |
+| `docker exec` needs `--user` | Yes (every exec site) | No (container user already remapped) |
+| Files created in bind-mounts owned by | host user **and** host group | host user **and** host group |
+| Capsule/entrypoint changes | None | Root-start + privilege-drop plumbing |
+| Pattern lineage | OpenShift arbitrary-UID | linuxserver.io PUID/PGID |
+
+Both eliminate the build-time `usermod` remapping. The shipped design was chosen for the launch-speed program because it adds zero per-launch work and no root-start while still using the host's primary UID/GID for bind mounts and owning image-baked `/home/agent` as the same UID. The runtime-usermod alternative is retained here as the fallback if a tool hard-requires the mutable `/etc/passwd` entry itself to be rewritten rather than supplied through `libnss-extrausers`.
+
+## Related Files
+
+- <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>
+- <RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile>
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile>
+- <RepoFile path="crates/jackin-runtime/src/runtime/identity.rs">crates/jackin-runtime/src/runtime/identity.rs</RepoFile>
+- [Construct image](/developing/construct-image/)

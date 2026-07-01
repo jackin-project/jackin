@@ -1,0 +1,84 @@
+---
+title: "Idle Runtime Cleanup: Design Notes"
+---
+
+**Status**: Design exploration for [Idle runtime cleanup hooks](/roadmap/idle-runtime-cleanup/) (Phase 4, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)). Nothing here has shipped yet; this page records the problem framing, the multicode precedent, the recommended shape, and the open questions for whoever builds it.
+
+## Problem
+
+A long-running agent container accumulates state outside the agent's own working set: a Java agent leaves Gradle daemons holding onto a few GB of heap; a Node agent leaves npm caches with thousands of file descriptors; the runtime itself caches build artifacts indefinitely. After a few hours of an idle agent sitting open, that's real resource cost — both on disk and in long-lived processes the operator never asked for.
+
+This matters most for the [autonomous task queue](/roadmap/autonomous-task-queue/) (Phase 4), which keeps containers warm waiting for the next task. Without cleanup, those warm containers accumulate state every cycle. It's a small feature with disproportionate impact for long-running fleets, and it generalizes naturally to anything a role wants done while idle (commit checkpoint snapshots, push WIP branches, evict caches).
+
+## Inspiration in multicode
+
+**Sources**:
+- README — [Autonomous queueing](https://github.com/graemerocher/multicode#autonomous-queueing) (the `idle-runtime-cleanup`, `idle-runtime-cleanup-delay-seconds`, `idle-runtime-cleanup-interval-seconds`, and `idle-runtime-restart` knobs are documented here)
+- Config — [`config.toml` `[autonomous]` block](https://github.com/graemerocher/multicode/blob/main/config.toml)
+
+```toml
+[autonomous]
+idle-runtime-cleanup = true
+idle-runtime-cleanup-delay-seconds = 300       # idle for 5 min before first cleanup
+idle-runtime-cleanup-interval-seconds = 900    # re-run every 15 min while still idle
+idle-runtime-restart = false                   # also recycle the container?
+```
+
+multicode runs `gradle --stop` and (optionally) terminates remaining Gradle daemon/worker processes inside Apple-container workspaces. Then, if `idle-runtime-restart = true`, recycles the runtime entirely (stops the container, starts a new one). The implementation watches the workspace status (multicode's equivalent of [agent runtime status](/roadmap/agent-runtime-status/)) and fires when status has been `Idle` for the configured delay.
+
+## Recommended shape
+
+Generalize the concept: roles declare what to run when idle, the operator decides whether to enable it, and a jackin❯ runtime supervisor fires the hook based on observed status.
+
+### Role config
+
+```toml title="jackin.role.toml"
+[runtime.idle]
+commands = [
+  "gradle --stop",
+  "find /home/agent/.cache -atime +1 -delete"
+]
+delay_seconds = 300
+interval_seconds = 900
+restart_after_cleanup = false
+```
+
+`commands` is a list — each runs in sequence inside the agent container via `docker exec`. They're the role's recommendation; the *operator* chooses whether to enable.
+
+### Operator opt-in
+
+```toml
+# operator config
+[roles."the-architect"]
+enable_idle_hooks = true   # default false
+```
+
+Defaults to off because the hooks run inside someone else's container based on the role's declarations, some operators want the warm state preserved, and misconfigured commands could break the running agent.
+
+### Trigger
+
+The supervisor watches the shipped Capsule agent status reports. When an instance has been `Idle` for `delay_seconds` continuously:
+
+1. Run `commands[0]`, `commands[1]`, ... in sequence via `docker exec`. Each command gets a 60-second timeout (configurable).
+2. If `restart_after_cleanup = true`, eject and re-load the instance afterward (preserves the data dir, just recycles the container).
+3. Record the cleanup in persistent storage, likely a dedicated `cleanup_history` table unless a future tool-history store already exists by implementation time.
+4. Re-arm: next cleanup fires `interval_seconds` later if still idle.
+
+A status transition out of `Idle` cancels the pending cleanup.
+
+### Console visibility
+
+The console resource panel (when open) would show "Last cleanup: 4m ago" in the per-agent row. CLI: `jackin status <selector>` would include the last-cleanup time.
+
+## Open questions
+
+- **Default delay/interval values.** multicode uses 300s/900s. Are those sensible jackin defaults, or should roles be more conservative? Leaning toward matching multicode for V1 and tuning from feedback.
+- **Cleanup during foreground operator attach.** If the operator is actively `jackin hardline`'d into an idle session, should cleanup fire? multicode runs it regardless. Leaning toward suppressing when attached — the operator's about-to-type-something signal isn't visible to the status adapter.
+- **Recovery from a cleanup-broken container.** If `restart_after_cleanup` is true and the new container fails to come up, the operator's session is unrecoverable from cleanup alone. Leaning toward one retry, then mark the instance failed and surface it for operator intervention.
+
+## Related work
+
+- [Idle runtime cleanup hooks](/roadmap/idle-runtime-cleanup/) — roadmap item this feeds
+- [Agent runtime status](/roadmap/agent-runtime-status/) — required idle signal
+- [Autonomous task queue](/roadmap/autonomous-task-queue/) — primary beneficiary (queue-warm containers cleaned regularly)
+- [Console resource panel](/roadmap/console-resource-panel/) — intended visibility surface
