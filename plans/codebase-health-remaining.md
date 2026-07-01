@@ -671,6 +671,17 @@ mutually-exclusive modal-input booleans; the second is a capability-matrix
 validator with 4 orthogonal clipboard-backend availability booleans. Both are
 gated by named-arg reads at the call site. `#[expect]` count: 29 → **27**.
 
+MuxModeState (jackin-capsule/src/tui/model.rs:36) + PointerShapeState
+(model.rs:62) + CursorVisibilityState (model.rs:163) — converted `#[expect]` to
+`#[allow]` on all three with per-struct durable justifications. MuxModeState
+carries 4 mutually-exclusive gesture flags routed in priority order by
+`mux_mode_for_state`; PointerShapeState carries 5 orthogonal pointer-shape
+input flags plus 2 chrome inputs routed in priority order by
+`pointer_shape_for_state`; CursorVisibilityState carries 5 orthogonal
+AND-combined cursor-visibility factors fed to `cursor_visible_for_state`.
+All three are independent flag sets where named-field reads match the
+per-input routing / gating idiom. `#[expect]` count: 27 → **24**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

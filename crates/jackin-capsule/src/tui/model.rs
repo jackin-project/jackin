@@ -29,9 +29,12 @@ impl MuxMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Four mutually-exclusive gesture flags (dialog_open, dragging, \
+              selecting, awaiting_prefix) — each is an independent input-gesture \
+              signal routed in priority order by `mux_mode_for_state`. Named-field \
+              reads match the per-gesture detection idiom."
 )]
 pub(crate) struct MuxModeState {
     pub(crate) dialog_open: bool,
@@ -55,9 +58,13 @@ pub(crate) fn mux_mode_for_state(state: MuxModeState) -> MuxMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Five orthogonal pointer-shape input flags (dragging, selecting, \
+              dialog_open, link_target_available, no_button_motion) plus two \
+              non-bool chrome inputs — each tracks an independent pointer-state \
+              signal routed in priority order by `pointer_shape_for_state`. \
+              Named-field reads match the per-gesture detection idiom."
 )]
 pub(crate) struct PointerShapeState {
     pub(crate) dragging: bool,
@@ -156,9 +163,13 @@ pub(crate) fn hover_target_for_state(state: HoverState) -> Option<HoverTarget> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Five orthogonal cursor-visibility factors (dialog_open, \
+              focused_pane_available, focused_session_received_output, \
+              scrollback_active, agent_cursor_hidden) — each is an independent \
+              AND-combined input to `cursor_visible_for_state`. Named-field reads \
+              match the per-factor visibility-gating idiom."
 )]
 pub(crate) struct CursorVisibilityState {
     pub(crate) dialog_open: bool,
