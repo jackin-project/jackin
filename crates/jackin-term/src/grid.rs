@@ -1613,12 +1613,13 @@ impl DamageGrid {
 
     fn set_dec_mode(&mut self, mode: u16, enabled: bool) {
         match mode {
-            // Show/hide cursor.
+            // Show/hide cursor. DECTCEM: ?25h (enabled) = visible (clear hide flag);
+            // ?25l (disabled) = hidden (set hide flag).
             25 => {
                 if enabled {
-                    self.mode_flags |= HIDE_CURSOR;
-                } else {
                     self.mode_flags &= !HIDE_CURSOR;
+                } else {
+                    self.mode_flags |= HIDE_CURSOR;
                 }
             }
             // Application/normal cursor keys — emit for passthrough.
