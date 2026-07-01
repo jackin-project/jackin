@@ -1,0 +1,32 @@
+---
+title: "Operator Handler System (IDE / diff / browser launchers)"
+---
+
+**Status**: Partially implemented — host affordance primitives (safe URL open, verified file export, host reveal/open) are shipped and documented; the configurable named-handler layer (`[handler]` config, `jackin open`/`diff`/`web`, console keybindings) is not built (Phase 1, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Shipped facts
+
+Capsule ships host affordances for the most common cases an operator needs today: safe scheme-limited URL opening, verified file export with reveal/open follow-up, and host reveal/open for launch-failure artifacts and diagnostics — see [Host Affordances](/guides/host-affordances/) for the full operator-facing list. `crates/jackin-runtime/src/runtime/host_desktop.rs` implements the cross-platform `open` / `xdg-open` / `explorer.exe` dispatch these affordances share, and `jackin_core::url_text::is_host_open_url` enforces the `http(s)`/`mailto` scheme allowlist.
+
+What is missing is the configurable handler layer this item is actually about: named operator handlers (`diff`, `web`, `ide`), platform defaults, and CLI/console routing that let an operator wire a diff viewer or IDE the same way multicode's `[handler]`/`[compare]` blocks do. There is no `[handler]` config surface in `jackin-config`, no `jackin open` / `jackin diff` / `jackin web` CLI subcommands (`crates/jackin/src/cli.rs` has no such variants), and no console `o`/`d`/`w` keybindings.
+
+## Remaining work
+
+1. `[handler.diff]`, `[handler.web]`, `[handler.ide]` operator-config blocks with cross-platform defaults for `web` (`open`/`xdg-open`) and `diff` (`git diff` in-terminal fallback).
+2. CLI subcommands `jackin open <selector>`, `jackin diff <selector>`, `jackin web <url>`, resolving the same primary-mount / materialized-worktree path `jackin load` uses.
+3. Console keybindings (`o` open in IDE, `d` diff, `w` web) on a selected workspace row.
+4. IDE well-known table (`vscode`, `intellij`, `zed`, `cursor`, `none`) with an explicit-command override.
+
+## Out of scope
+
+- Per-workspace handler overrides — operator-config-level only for V1.
+- In-console diff renderer — `git diff` in a paged view is enough; external viewers stay external.
+- PTY allocation for the diff handler — defer until a TTY-aware diff tool needs it.
+
+## Related work
+
+- Research: [Operator Handler System: Design Exploration](/reference/research/operator-surface/host-affordances/operator-handler-system-design/) — multicode inspiration, recommended config/CLI/console shape, and open design questions.
+- [Host Affordances](/guides/host-affordances/) — shipped host-open/export/reveal primitives this handler layer reuses.
+- [GitHub link tracking](/roadmap/github-link-tracking/) — consumes the `web` handler.
+- [Agent tag protocol](/roadmap/agent-tag-protocol/) — emitted `<jackin:repo>` tags resolve through `diff` and `ide`.
+- [Custom operator tools](/roadmap/custom-operator-tools/) — also uses the handler resolution machinery.

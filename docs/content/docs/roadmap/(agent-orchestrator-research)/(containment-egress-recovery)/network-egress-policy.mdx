@@ -1,0 +1,27 @@
+---
+title: "Network Egress Policy"
+---
+
+**Status**: Partially implemented — Docker grant-based allowlists, launch-contract enforcement-quality reporting, and the fail-closed Capsule guest firewall exist for the role container; DinD-inner-container coverage, rule editing, connection decision logs, service-port policy, and non-Docker backend parity remain open (Containment track, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Shipped facts
+
+`DockerGrants` carries a `NetworkGrant` tri-state (`none` / `allowlist` / `open`) plus an `allowed_hosts: Vec<String>` allowlist, resolved per Docker security profile (<RepoFile path="crates/jackin-core/src/docker_security.rs">crates/jackin-core/src/docker_security.rs</RepoFile>). Launch renders a session contract that prints both the requested network mode and an honest enforcement-quality label — `full`, `partial (sudo grants iptables access)`, `partial (DinD inner containers bypass host iptables)`, or `n/a` — via `network_enforcement_label` (<RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs">crates/jackin-runtime/src/runtime/docker_profile.rs</RepoFile>), surfaced under `--debug` and exported as `JACKIN_NETWORK_MODE`/`JACKIN_NETWORK_ENFORCEMENT` container env (<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>).
+
+The `firewall-apply` Capsule subcommand installs a fail-closed iptables OUTPUT allowlist from `JACKIN_ALLOWED_HOSTS` (domains resolved via `getaddrinfo`, IPv4 CIDRs/literals allowlisted through an ipset) plus an `ip6tables` deny-all fallback, run host-side via `docker exec` before the agent session starts (<RepoFile path="crates/jackin-capsule/src/firewall.rs">crates/jackin-capsule/src/firewall.rs</RepoFile>). The default-DROP policy and loopback/established accepts install before DNS/allowlist rules, so a mid-apply failure leaves egress closed rather than open. This firewall only applies inside the role container.
+
+## Remaining work
+
+1. **DinD guest enforcement parity.** The firewall is only applied to the role container; the DinD sidecar and any agent-created inner containers have no coverage today, so agent-controlled inner containers can bypass the allowlist entirely.
+2. **Connection decision logs.** No per-connection audit trail exists (timestamp, instance, destination host/IP, port, protocol, rule matched, allow/deny, enforcement backend).
+3. **Rule editing surface.** `allowed_hosts` can only be set by hand-editing `config.toml`/`jackin.role.toml`; there is no CLI or `jackin console` flow to add/inspect/remove allowlist entries before launch.
+4. **Service-port policy.** Published container ports, sandbox-to-host aliases, local dev-server/database access, and model-runner endpoints are not modeled as part of network policy.
+5. **Non-Docker backend parity.** No egress enforcement exists yet for OrbStack, smolvm, Kubernetes, or SSH-remote backends; a host-side proxy design for microVM-style backends and a Kubernetes/remote policy mapping remain unstarted. See [Network egress policy design](/reference/research/security/network-egress/network-egress-policy-design/) for the backend strategy and external references behind this.
+
+## Related work
+
+- [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) — Docker Sandboxes and microVM comparison this item's backend parity depends on
+- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) — sibling Docker profile/grant hardening work
+- [Session contract and explain mode](/roadmap/session-contract-explain-mode/) — the operator-visible contract surface this item feeds
+- [Host bridge](/roadmap/host-bridge/) — candidate home for a future host-side egress proxy
+- [Network egress policy design](/reference/research/security/network-egress/network-egress-policy-design/) — design rationale, enforcement-quality vocabulary, and source materials

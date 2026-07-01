@@ -1,0 +1,33 @@
+---
+title: "Ephemeral Mount Modes (`tmpfs`, `ephemeral`)"
+---
+
+**Status**: Open — per-mount Git isolation (`shared | worktree | clone`) is shipped; storage-kind modes (`tmpfs`, per-instance `ephemeral` volumes) remain an unimplemented design proposal
+
+## Shipped baseline
+
+The <RepoFile path="crates/jackin-core/src/isolation.rs">`MountIsolation`</RepoFile> enum currently has three variants — `Shared`, `Worktree`, `Clone` — and <RepoFile path="crates/jackin-config/src/schema.rs">`MountConfig`</RepoFile> requires a host `src` on every mount. These cover git semantics for the mounted path (bind mount, per-container worktree, full directory copy) but have no way to express **storage kind**: a path that should be per-instance and hidden from the host, or a path that should be tmpfs-backed for speed and guaranteed teardown. Today an operator can only get either behavior by hand-writing a Docker `--mount`/`--tmpfs` flag outside `jackin.role.toml` or the workspace config. Docker's read-only-root security profile (<RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs">`docker_profile.rs`</RepoFile> `tmpfs_paths`) mounts a fixed preset of tmpfs paths for hardened containers, but that's an internal security mechanism, not the declarative per-mount `tmpfs`/`ephemeral` modes described below — it doesn't cover arbitrary operator-declared paths like `~/.gradle/daemon`.
+
+## Remaining work
+
+1. Extend `MountIsolation` to `shared | worktree | clone | tmpfs | ephemeral`.
+2. Extend the workspace mount TOML schema so `tmpfs`/`ephemeral` mounts can omit `src` (host source), and reject `readonly` on those two modes.
+3. Add an optional `size` field on `tmpfs`, reusing the parsing helper from [declarative resource limits](/roadmap/declarative-resource-limits/).
+4. Docker translator: `tmpfs` → `--tmpfs <dst>:size=<n>,mode=1777`; `ephemeral` → `--mount type=volume,source=jackin-<container>-<slug>,target=<dst>`.
+5. Per-instance Docker volume label scheme so `purge` can enumerate and delete `ephemeral` volumes (no such labeling exists in <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">cleanup.rs</RepoFile> today).
+6. Role-level mount defaults via `[[runtime.mounts]]` in `jackin.role.toml`, with workspace mounts overriding by `dst`.
+7. Docs updates for [mount isolation](/guides/workspaces/#per-mount-isolation) and the [Mounts guide](/guides/mounts/#mount-isolation) once shipped.
+
+## Out of scope
+
+- `tmpfs` size enforcement beyond Docker's own default behavior.
+- `ephemeral` mode with operator-managed, non-`purge`-cleaned persistence (would need a distinct `volume = "<name>"` mode).
+- File ownership/mode flags on `tmpfs`.
+- Cross-instance shared ephemeral volumes (handled instead by the existing shared-cache mount pattern).
+
+## Related work
+
+- Research: [Ephemeral mount modes — design proposal](/reference/research/isolation/ephemeral-mount-modes/) (multicode comparison, schema/backend design, open questions)
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
+- [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) — cross-backend translation home for a future Apple-container implementation
+- [Declarative resource limits](/roadmap/declarative-resource-limits/) — shares the size-parsing helper

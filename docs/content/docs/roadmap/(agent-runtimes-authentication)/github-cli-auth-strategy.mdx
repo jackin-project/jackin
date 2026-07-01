@@ -1,0 +1,33 @@
+---
+title: "GitHub CLI Authentication Strategy"
+---
+
+**Status**: Partially implemented — sync / token / ignore modes, launch summary, and console Auth-tab UX are shipped; dedicated CLI subcommand, scope pre-flight, and deeper GHE coverage remain
+
+## Canonical Docs For Shipped Behavior
+
+- [GitHub CLI Authentication](/guides/authentication/github-cli/) — operator-facing modes, launch notices, and host-mutation guarantees.
+- [Authentication](/guides/authentication/) — shared auth model and console Auth-tab workflow.
+- [Configuration File](/reference/runtime/configuration/#github-cli-auth-forward-settings) — `[github]` schema and config shape.
+
+This roadmap item no longer repeats the shipped schema, resolver, console UX, launch, or container-entrypoint details. Keep current behavior in the standard docs above.
+
+## Remaining Work
+
+1. **Dedicated CLI command.** Extend the existing `jackin config auth set <mode> [--agent <agent>]` (in <RepoFile path="crates/jackin/src/cli/config.rs">crates/jackin/src/cli/config.rs</RepoFile>) with a github target — e.g. `jackin config auth set sync --target github` — and matching show/reset behavior if needed, for operators who prefer CLI management of global defaults.
+2. **Scope and expiry pre-flight.** Surface token scopes and expiry when GitHub exposes them, especially for `token` mode, so over-broad or expiring PATs are visible before an agent hits a 401.
+3. **GitHub Enterprise recipe and tests.** `GH_HOST` / `GH_ENTERPRISE_TOKEN` are wired through env injection, but the docs and tests need a full GHE path.
+4. **Bidirectional sync.** Host-to-container `sync` is shipped. Container-to-host or shared-store sync belongs under [Live bidirectional auth sync](/roadmap/live-auth-sync/) and likely depends on [jackin❯ daemon](/roadmap/jackin-daemon/).
+
+## Design Constraints
+
+- jackin❯ must not silently mutate host git config, host GitHub CLI config, or host repo remotes.
+- `[github]` remains operator-owned config; role manifests cannot request or override GitHub auth.
+- Token-mode credentials should keep using the same credential-source / operator-env machinery as the rest of authentication.
+
+## Known Future Questions
+
+- Should host-side `git_pull_on_entry` remain explicitly outside the scoped GitHub auth boundary, or move into a containerized path that can use the workspace token?
+- How should jackin communicate that in-container `gh auth login` changes are overwritten on the next `sync` launch?
+
+(Resolved: `GH_TOKEN` is now always mirrored to `GITHUB_TOKEN` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, so MCP servers and GitHub-Actions-style tooling that only read `GITHUB_TOKEN` work without extra config. This used to be a third open question here.)

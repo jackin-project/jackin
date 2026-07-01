@@ -1,0 +1,100 @@
+---
+title: "Autonomous Task Queue: Design Exploration"
+---
+
+**Status**: Design exploration for [Autonomous task queue](/roadmap/autonomous-task-queue/) (Phase 4, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)). Nothing here has shipped; this page records the problem framing, prior-art comparison, and recommended shape so the roadmap item can stay short.
+
+## Problem
+
+Once the operator surface is observable, storage is durable, and tasks come from a pluggable source, jackin❯ still needs a dispatcher: poll or accept tasks, persist them, claim concurrency slots, turn each task into an isolated agent invocation, recover cleanly on failure, surface progress, and let an operator leave work running unattended.
+
+This is the workflow distinction between an AI coding-agent runner and an AI coding-agent platform. Without it, jackin❯ can launch and observe individual sessions; with it, an operator can hand jackin❯ a backlog and have it safely chip through work.
+
+## Inspiration in multicode
+
+**Sources**:
+- README — [Autonomous queueing](https://github.com/graemerocher/multicode#autonomous-queueing)
+- Config — [`config.toml` `[autonomous]` block](https://github.com/graemerocher/multicode/blob/main/config.toml)
+- Source — [`lib/src/manager.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/manager.rs)
+
+multicode's useful shape is a per-workspace queue with a parallelism cap, periodic source polling, scan-on-startup, and automatic dispatch when a slot frees. jackin❯ should keep those ideas but avoid hardcoded "issue" vocabulary, GitHub-only sources, and shared workspace directories. Every queued task should get its own isolated jackin❯ instance.
+
+## Recommended shape
+
+A queue that is per workspace, dispatches to per-task isolated instances, and reuses existing launch, mount-isolation, status, and telemetry primitives wherever possible.
+
+### Config
+
+```toml
+[workspaces.fix-bugs]
+workdir = "/workspace/example"
+default_role = "the-architect"
+task_sources = ["fix-issues", "review-spec"]
+
+[workspaces.fix-bugs.queue]
+max_parallel = 3
+poll_interval_seconds = 600
+poll_on_startup = true
+budget_usd_per_day = 50.00
+purge_completed_after_days = 14
+manual_gates = ["publish_pr", "mark_ready", "request_review", "merge"]
+```
+
+This schema is not implemented. It depends on the [Task source abstraction](/roadmap/task-source-abstraction/) adding source config and workspace source assignment, and on the [Persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) adding durable task state.
+
+### Task persistence
+
+The queue stores tasks durably before dispatch. The minimum task row needs stable source identity, task kind, title/body/links/labels, discovery time, state (`queued`, `in_progress`, `completed`, `failed`, `cancelled`), claimed instance name, timestamps, outcome, and enough dedupe metadata to make source polling idempotent. V1 should quarantine failed task IDs and require manual retry rather than auto-looping on a bad task.
+
+### Task → instance materialization
+
+When a task is queued and a workspace slot is free, the dispatcher should generate a unique per-task instance name, launch the role as if `jackin load <role> <workspace>` had been invoked programmatically, inject `JACKIN_TASK_ID` and either `JACKIN_TASK_BODY` or a body-file path, seed the first prompt from a source-specific template, mark the task `in_progress`, and subscribe to the instance's runtime status/control stream.
+
+The launch path should reuse existing per-container isolation. The current branch helper produces `jackin/scratch/<selector>` and current container names are compact `jk-<id>-<workspace>-<role>` DNS labels. V1 queue work must decide whether task identity belongs in container display labels/metadata instead of raw container names; long `jackin-fix-bugs-task-<hash>` names from the old proposal do not match the current naming implementation and should not be assumed.
+
+### First prompt
+
+Prompt templates belong to the task-source layer. GitHub issues can render issue URL, title, labels, and body inside a fenced task block; file-glob sources can render the file path and content; stdin tasks can pass the body verbatim. User-controlled task body is a prompt-injection surface, so the template must clearly separate task content from role instructions instead of pretending jackin❯ can sanitize arbitrary work items.
+
+### Completion detection
+
+A task is complete only when both runtime execution and an outcome policy agree. Candidate signals: capsule/container exit status, runtime status transitions, foreground session finalization, tag/protocol emissions such as PR links, and the isolated worktree finalization result. Clean container exit alone is too weak; a task that exits without an expected PR/comment/marker may need `failed` or `needs_review` state. Dirty preserved worktrees and OOM/non-zero exits should mark failure and keep instance data for inspection.
+
+### PR lifecycle and manual gates
+
+Track PR lifecycle separately from task lifecycle. A task can be in progress while a draft PR exists, completed before merge, or blocked on a manual gate. Store PR URL, branch, base branch, draft/ready state, review state, check conclusion, merge SHA, and final disposition when available. Manual gates should be first-class for publish, ready-for-review, request-review, merge, and auto-merge so unattended agents do not mutate upstream without explicit policy.
+
+### Budget enforcement
+
+If `budget_usd_per_day` is set, dispatch checks workspace spend before claiming a new task. This depends on the still-open host-global telemetry substrate: per-instance `usage_samples`, workspace/session summaries, and a reliable cost rollup. Until that lands, the queue can expose the config field only as planned work or must treat budget gates as unavailable.
+
+### Operator surfaces
+
+The console should show queue summary counts per workspace, in-flight task rows, failed/quarantined tasks, gate waits, and per-instance status. A CLI surface should cover list, feed, retry, cancel, pause, resume, and gate approval:
+
+```sh
+jackin queue list <workspace>
+jackin queue feed <workspace>
+jackin queue retry <workspace> <id>
+jackin queue cancel <workspace> <id>
+jackin queue pause <workspace>
+jackin queue resume <workspace>
+jackin queue approve <workspace> <id> <gate>
+```
+
+None of these commands exist today.
+
+## Open questions
+
+- **Daemon mode.** V1 should prefer console/runtime-lifecycle dispatch unless a separate daemon/supervision design lands first. The overnight workflow wants a daemon, but logs, restart behavior, crash recovery, and host process ownership are their own surface.
+- **Failure replay vs failure quarantine.** Recommended: quarantine in V1 and require manual retry.
+- **Task identity placement.** Current runtime names are short DNS labels with random ids. Decide whether queue task IDs belong in labels, manifests, task DB rows, or display names rather than long container names.
+- **Budget gate availability.** Budget enforcement should not ship until per-instance spend can be attributed correctly across concurrent same-provider agents.
+
+## Related work
+
+- [Autonomous task queue](/roadmap/autonomous-task-queue/) — roadmap item this design supports.
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
+- [Task source abstraction](/roadmap/task-source-abstraction/)
+- [Persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/)
+- [Token & Cost Telemetry](/reference/research/agent-telemetry/token-cost-telemetry/)

@@ -1,0 +1,21 @@
+---
+title: "Behavioral spec: runtime/launch.rs"
+---
+
+**Status**: Partially implemented — spec published; the `//!` module doc at the top of <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> summarizes the invariants but does not yet link to the published spec URL
+
+## Shipped facts
+
+<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> is the `jackin load` critical path: `load_role` (public API) calls `load_role_with` (pipeline implementation), split across `launch.rs`, `launch/launch_pipeline.rs`, `launch/launch_dind.rs`, `launch/launch_slot.rs`, and the colocated `launch/tests.rs`.
+The full behavioral contract (INV-1 through INV-6 covering trust confirmation, token-mode fail-fast, container slot claim ordering, foreground-attach finalization, cleanup classification, and `render_exit` on both exit paths), the five-phase pipeline overview, and the test-seam list (`op_runner`, `host_env`, `confirm_trust_for_test`, `confirm_branch_for_test`) are published at [runtime/launch.rs Behavioral Spec](/reference/developer-reference/specs/runtime-launch/) — that page is the oracle, not this roadmap item.
+Current size evidence: `launch.rs` is about 2.8k lines, `launch/launch_pipeline.rs` about 2.2k lines, and `launch/tests.rs` about 8.6k lines; the remaining work on the file itself is tracked separately in [Split runtime/launch.rs](/roadmap/split-runtime-launch/).
+
+## Remaining work
+
+1. Add a link to the [runtime/launch.rs Behavioral Spec](/reference/developer-reference/specs/runtime-launch/) in the `//!` module doc at the top of <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>, keeping implementation detail in the spec rather than duplicated in the module doc.
+2. Use the published spec as the verification oracle when executing the [Split runtime/launch.rs](/roadmap/split-runtime-launch/) refactor.
+
+## Related work
+
+- [Split runtime/launch.rs](/roadmap/split-runtime-launch/) — the file-size reduction this spec exists to protect
+- [runtime/launch.rs Behavioral Spec](/reference/developer-reference/specs/runtime-launch/) — canonical invariant contract

@@ -1,0 +1,228 @@
+---
+title: "Agent Runtime Status: Prior Art And Original Design Proposal"
+---
+
+**Status**: Historical — this is the prior-art review and design proposal that shaped [Agent runtime status authority](/roadmap/agent-runtime-status/), which has since shipped (Phases 0–12). The shipped implementation diverges from several specifics proposed here — see [What shipped differently](#what-shipped-differently) — so treat this page as the rationale record, not as a description of current behavior. For current behavior, read the roadmap page and <RepoFile path="crates/jackin-capsule/src/agent_status.rs" />.
+
+## Why this needed real design
+
+A quiet agent session is ambiguous: it might be thinking, waiting for a human, or genuinely idle. Before this authority existed, jackin❯ inferred "blocked" from silence duration alone, which produces false positives every time an agent legitimately thinks for a while. The fix is not a better timeout; it's an arbitration layer that combines several evidence sources (semantic runtime reports, process ownership, visible screen state, shell markers, cursor probes) and decides which one is authoritative when they disagree. This page reviews prior art for that arbitration problem and proposes an implementation shape for jackin❯.
+
+This design is based on a May 28, 2026 source review of [Herdr](https://github.com/ogulcancelik/herdr) and [multicode](https://github.com/graemerocher/multicode), plus the jackin❯ Capsule runtime surface at the time. Re-check those repositories before reusing this research because both projects move quickly, and the snapshot commits below are already stale relative to their current `main`.
+
+| Project | Snapshot reviewed | License | What mattered |
+|---|---|---|---|
+| Herdr | `ogulcancelik/herdr` commit `2d8b4e2db4642dede084801c03516046f205626b`; latest release observed as `v0.6.4` on May 27, 2026. | AGPL-3.0-or-later | Process ownership, visible-screen fallback, socket reports, central arbitration, and `done` until viewed. |
+| multicode | `graemerocher/multicode` commit `4a9852b4a5ca62134e59bcc78a2dc0fb704d47b4`; pushed May 5, 2026. | Apache-2.0 | Codex app-server status, OpenCode SSE/session APIs, descendant session roll-up, and cooperative state files. |
+
+Herdr is AGPL-3.0 and cannot be embedded in jackin❯ Apache-2.0 code; the implementation was written from scratch. The value is the product shape and signal hierarchy, not source reuse.
+
+Additional referenced projects reviewed on May 28, 2026:
+
+| Project | Snapshot reviewed | What mattered |
+|---|---|---|
+| CCManager | `kbwo/ccmanager` commit `1e123a9`; MIT; latest release observed as `v4.1.18` on May 17, 2026. | `xterm/headless` screen capture, 100ms polling, Claude idle debounce, prompt-box-region parsing, false-positive handling for cursor-addressed redraws, and transition hooks. |
+| Agent Session Manager | `izll/agent-session-manager` commit `7432789`; MIT; latest release observed as `v0.7.8` on January 24, 2026. | `tmux capture-pane` classifiers, waiting-over-busy priority, followed-window aggregation, and Claude prompt-box parsing. |
+| WezTerm Agent Deck | `Eric162/wezterm-agent-deck` commit `0bdd442`; MIT; no release observed. | Foreground process info, child-process fallback, pane-title fallback, short detection caches, recent-line windows, and tests for stale working false positives. |
+| ccmux | `skzv/ccmux` commit `d15277c`; FSL-1.1-MIT; latest release observed as `v0.1.15` on May 27, 2026. | Daemon poll loop over real tmux panes, `needs_input` transition notifications, sleep inhibition while sessions are active, and hermetic tmux e2e tests. |
+| tmux-agent-status | `samleeney/tmux-agent-status` commit `efefbed`; no license metadata observed. | Hook-owned status files, per-pane roll-up, wait/park states, and regression coverage that hook-tracked done state is not reactivated by process polling. |
+| agent-deck | `asheshgoplani/agent-deck` commit `519e9c5`; MIT; latest release observed as `v1.9.42` on May 27, 2026. | Claude/Gemini hook injection, hook freshness windows, fsnotify recovery, status event files, done sentinels, control-pipe revival, and scratch config ownership. |
+| Codeman | `Ark0N/Codeman` commit `2cfccc7`; MIT; latest release observed as `codeman@0.7.0` on May 25, 2026. | Multi-layer idle detection, AI idle checker fallback, circuit breaker/stuck recovery, subagent visualization, and OpenCode plugin/API bridge risk analysis. |
+| Codemux, claudeye, TUICommander, Zylos, VS Code, and Windows Terminal | Official docs or package docs reviewed on May 28, 2026. | Hook-driven status indicators, tmux pane overlays, session-binding environment variables, cursor-position readiness probes, and OSC shell-integration markers. |
+
+## Prior art
+
+### Herdr
+
+[Herdr](https://herdr.dev/) is the strongest public reference for this problem. Its docs describe the operator-facing feature directly: the sidebar shows blocked, working, done, and idle agents; workspaces roll up to their most urgent state; detection works through foreground process and terminal output with zero config, with a socket API for runtimes that expose hooks. Its source confirms that the important behavior is not a single regex or timer; it is the arbitration layer that decides which signal is authoritative when signals disagree.
+
+Concepts to borrow, not code:
+
+- **Process ownership first.** Herdr identifies which agent owns a pane by reading the foreground process group, then matching known agent binaries. It handles wrappers such as `node`, `bun`, `python`, and shells before deciding the real agent label. jackin❯ can do this more cleanly inside the container because it sees the real agent process instead of a host-side terminal wrapper.
+- **Visible terminal evidence is current-screen evidence.** Herdr reads the bottom/recent terminal screen, not arbitrary scrollback. Its default detection window is the last 24 rows, a good starting bound for jackin❯ screen fixtures.
+- **Per-agent visible signals are deliberately narrow.** Herdr separates `visible_blocker`, `visible_idle`, and `visible_working`. Only strong current UI states should override semantic reports.
+- **Semantic reports are primary when fresh and consistent.** Herdr's socket reports carry source, agent label, state, message/custom status, sequence, and session references.
+- **Central arbitration is the product.** Hook authority, visible blockers, visible idle, visible working, process exit, stale reports, and sequence numbers flow through one state machine. The UI consumes the result; it does not re-detect state.
+- **Done is an acknowledgement overlay.** Herdr maps raw idle plus unseen to public `done`; once the pane is viewed, it becomes `idle`.
+- **Attention roll-up prioritizes attention, not activity.** Herdr's effective priority is `blocked > done > working > idle > unknown`. A finished unseen pane deserves attention before a pane that is merely busy in the background.
+
+Herdr's implementation also exposes concrete edge cases: stale hook authority after process exit, stale environment/session references, Codex install-process false positives, blocked transitions during plan/approval flows, wait commands that already start in the target state, release drift for OpenCode-like runtime UIs, and per-agent display variants such as Hermes labels. These motivated source validation, source-specific sequence numbers, process identity checks, and fixture-driven detector tests in the jackin❯ implementation.
+
+#### Herdr detector notes, mapped to jackin❯ runtimes
+
+| Agent family | Useful Herdr signal | jackin❯ implementation note (as proposed) |
+|---|---|---|
+| Claude Code | Permission/proceed/waiting prompts, tab/keyboard amendment prompts, chat/review/interview/selection prompts, spinner/interrupt chrome, visible prompt box idle state. | Use semantic hooks first. Screen fallback should match only visible prompt/approval regions and should not treat old output as a blocker. |
+| Codex | Confirmation prompts such as "press enter to confirm or esc to cancel", yes/no prompts, "allow command?", `• Working (` status text, background terminal wait status, and `›` idle prompt. | Structured Codex app-server or hook state should win when available. Visible detection should explicitly avoid matching Codex installer/update output as an active agent. |
+| OpenCode | Permission-required UI, question prompts with dismiss/enter/select affordances, and interrupt/working chrome. | OpenCode's own API/event surface is a better primary source; screen detection remains the fallback for direct PTY sessions. |
+| Kimi | Approval/request prompts, approve once/session/reject choices, and moon-phase/braille thinking indicators. | Start heuristic-first unless a stable Kimi hook/plugin surface is present in the installed runtime. |
+| Amp | Approval/waiting headers and `esc to cancel` working chrome. | Blocked still matters for auth, questions, and runtime-level prompts even though the launch flags lower tool-approval frequency. |
+
+### multicode
+
+[multicode](https://github.com/graemerocher/multicode) is the best comparison for structured runtime state. It does not solve status as a terminal-observability problem first; it asks the runtime when possible.
+
+- **Codex app-server status.** multicode talks JSON-RPC to `codex app-server` and reads `thread/status/changed` notifications. Codex statuses include `idle`, `systemError`, `notLoaded`, and `active` with flags such as `waitingOnApproval` and `waitingOnUserInput`. multicode maps those waiting flags to a human-input/question state and treats an active turn as busy even if the thread status races back to idle.
+- **OpenCode HTTP/SSE state.** multicode probes OpenCode's HTTP API, subscribes to its global SSE stream, refreshes session status on session/question events, and maps pending questions to `Question` before relying on terminal output.
+- **Descendant session roll-up.** multicode keeps a root session busy while a descendant/subagent session is busy — the same class of bug jackin❯ must avoid when Claude Code, Codex, or OpenCode runs subagents: a parent pane returning to a prompt must not hide child work that is still active.
+- **Cooperative state files.** multicode's autonomous-state skill writes a one-line file such as `working`, `question`, `review`, or `idle`, optionally with a session id, and polls it every two seconds. Useful as a heartbeat/evidence channel for custom roles, but it cannot be proof because the agent can crash, forget, or race stale state.
+
+The main design lesson is ordering: structured runtime APIs and hook reports should outrank terminal text; cooperative files should be evidence with stale handling; descendant/subagent state needs explicit aggregation so root panes do not look done too early.
+
+### Broader comparison lessons
+
+Visual `busy / waiting / idle` indicators are table stakes for multi-agent CLIs, but implementations split into several quality tiers. The wider project list lives in the [Research Watchlist](/reference/research-watchlist/). Lessons that mattered for jackin❯:
+
+- Screen classifiers need fixture tests, debounce, and false-positive fixtures. They should parse visible/current terminal UI, not historical scrollback.
+- Agent identity detection should combine child PID, foreground process group, argv/cmdline, wrapper process handling, and short cache TTLs.
+- Attention notifications should fire on transitions and be rate-limited. Polling or redraw frequency should never become notification frequency.
+- Waiting beats busy, and unseen finished work beats merely working background panes — an operator-attention rule, not a CPU-activity rule.
+- Parent panes must remain working while descendant/subagent work is active.
+- Hook/status-file ideas are useful only when installed inside the container; host-side hook mutation is out of bounds by default.
+- Health scores, circuit breakers, and keep-awake behavior are adjacent follow-ups that should consume the status authority, not become new detectors.
+
+Regex-only and silence-only detectors drift quickly as agent TUIs change. Cooperative state files are useful as heartbeat/evidence channels, but they cannot prove the agent is not stuck. Host-side hook mutation is common in the ecosystem, but jackin❯'s default path stays container-local so the operator's host config is never silently changed.
+
+#### Comparative validation
+
+| Implementation family | Projects that use it | Borrow | Do not borrow |
+|---|---|---|---|
+| External screen/process observation | Herdr, CCManager, Agent Session Manager, WezTerm Agent Deck, ccmux, claudeye, TUICommander | Current-screen windows, foreground process identity, idle debounce, prompt-box-region parsing, recent-line priority, false-positive fixtures, and hermetic PTY/tmux tests. | Observer-first truth model, broad historical regexes, silence-as-input-needed, and independent UI-level terminal parsers. |
+| Host hook/status-file reporting | Codemux, tmux-agent-status, agent-deck | Hook events as semantic transitions, atomic status writes, freshness windows, done/unseen acknowledgement, source-specific stale handling, fsnotify overflow recovery, and hook schema drift repair. | Silent host `~/.claude`, `~/.gemini`, shell rc, tmux, or project-file mutation. |
+| Structured runtime APIs | multicode, OpenCode/Codex integrations in other tools | Runtime-native waiting flags, SSE/JSON-RPC subscriptions, turn lifecycle events, pending-question priority, and descendant/subagent roll-up. | Polling a structured API from the host as a separate truth path. |
+| Agent-written completion/health signals | Codeman, agent-deck | Explicit done sentinels, stuck/circuit-breaker evidence, health consumers, and conservative "when unsure, still working" policy. | Treating an agent-authored line as proof of runtime state without process identity, sequence, and freshness validation. |
+| Terminal protocol readiness | Zylos, VS Code shell integration, Windows Terminal shell integration, Warp-style shell markers | Cursor-position probes, output-stability windows, OSC prompt/command markers, cwd/command metadata, and graceful fallback when probes fail. | Using cursor readiness as a blocker detector for full-screen agent TUIs. |
+
+The conclusion: jackin❯ has a better boundary than most of these projects because it owns the role image, the container filesystem, `/jackin/runtime`, `/jackin/state`, `/jackin/run`, and the container-local agent homes — so it should not copy an observer-first architecture. It should install deterministic in-container reporters and treat screen/process detection as validation and fallback.
+
+### Terminal shell integration
+
+Terminal ecosystems already solved a narrower version of this problem for shell commands. VS Code's terminal shell integration uses custom OSC sequences (prompt start, prompt end, pre-execution, command-finished markers) plus Final Term `OSC 133` prompt markers; Windows Terminal documents the same family. These signals are excellent when the foreground program is an ordinary shell, but they do not fully solve embedded agent TUIs that draw their own prompt, approval UI, or full-screen interface. jackin❯ should still listen for shell-integration markers when they pass through the PTY, for shells, subprocess command boundaries, cwd tracking, and "agent returned to shell" transitions — not as a substitute for agent runtime hooks or visible-agent detection.
+
+### Cursor-position and screen-stability probes
+
+The strongest non-Herdr conceptual work is cursor-position readiness detection: query the PTY cursor position with `CSI 6n`, combine that with a short output-stability window, and infer whether input would land at a prompt. Zylos' research argues this is more robust than prompt regexes because it asks "where will the next character appear?" instead of "does the screen text match this prompt string?" This belongs as a fallback/probe, not the primary blocker detector — full-screen TUIs, nested multiplexers, and terminals that intercept cursor reports can produce false positives, so cursor probes should carry confidence metadata rather than being treated as truth.
+
+## Original design proposal
+
+Everything below is the implementation contract as originally proposed, before the shipped implementation landed. It is kept for the reasoning it captures; several specifics were superseded (see [What shipped differently](#what-shipped-differently)).
+
+### Container injection advantage
+
+jackin❯ can use control that other projects usually lack. Host-side terminal tools must be zero-config observers because they cannot assume they can install files into Claude Code, Codex, OpenCode, Kimi, Amp, tmux, WezTerm, or a user's shell without surprising the operator. jackin❯ builds and launches the role container, so it can install status assets owned by jackin❯ on every launch, repair drift, and keep all mutations inside `/jackin/` plus container-local agent homes.
+
+The proposed default status architecture:
+
+1. Install a small reporter command under `/jackin/runtime/agent-status/` that talks to the existing Capsule socket at `/jackin/run/jackin.sock`.
+2. Launch every built-in agent with stable environment such as `JACKIN_SESSION_ID`, `JACKIN_AGENT_RUNTIME`, `JACKIN_STATUS_SOCKET=/jackin/run/jackin.sock`, and `JACKIN_STATUS_SOURCE=<runtime-or-hook-id>`.
+3. Merge runtime hook/plugin/API bridge configuration into the container-local agent home during `runtime_setup`; repair drift on every launch, but never against the host home.
+4. Let hooks/API bridges report `working`, `blocked`, `idle`, `heartbeat`, `child-start`, `child-stop`, and `clear` events with source id, sequence, timestamp, runtime label, and session id.
+5. Use foreground process, visible screen, shell markers, cursor probes, and weak activity to validate, stale, or repair those reports — guardrails and fallbacks, not the preferred truth source.
+
+This was proposed as the main architectural difference from Herdr, CCManager, ccmux, WezTerm Agent Deck, and tmux-agent-status: their zero-config observation constraint is a product strength for host tools, but not the best default for jackin❯, which can still keep zero *host* setup because the injected reporter lives in the role container and is removed with the container/image state.
+
+### Proposed data model
+
+| Concept | Proposed shape |
+|---|---|
+| `AgentRawState` | `Unknown`, `Working`, `Blocked`, `Idle`. What detectors and reporters produce. |
+| `AgentEffectiveStatus` | `Unknown`, `Working`, `Blocked`, `Done`, `Idle`. What UI, CLI, and host consumers read. |
+| `AgentStatusSource` | `Reported`, `VisibleScreen`, `ForegroundProcess`, `ShellIntegration`, `CursorProbe`, `OutputActivity`, or `None`, with a stable source id for reporter sequence validation. |
+| `AgentStatusConfidence` | `Authoritative`, `Strong`, `Weak`, or `Unknown`. Reported runtime events authoritative only while matching the foreground agent and sequence rules; visible blocker/idle/working matches strong; process/output-only signals weak. |
+| `AgentStatusEvidence` | Detected agent, foreground process group, source id, source sequence, source timestamp, visible blocker/idle/working booleans, process-exited flag, stale-report flag, optional message. |
+| `SessionStatus` | Raw state, effective status, `seen`, authority source, confidence, evidence, monotonic revision, and last-focused/last-acknowledged revision. |
+
+### Proposed signal sources
+
+1. **Semantic reports.** A control-channel method for trusted in-container runtime integrations to report state: source, agent/runtime, raw state, optional message, optional custom status, sequence number, timestamp, and session reference.
+2. **Process ownership.** Track the child PID per session, read Linux `/proc/<pid>/stat` for the foreground terminal process group, scan `/proc` for that group, identify known agent binaries. Process exit should clear hook authority for that agent and transition toward `idle`/`exited`, never leave a stale working/blocking state.
+3. **Visible screen detection.** Read the current screen for the pane and match only strong, current-screen signals: approval prompts, explicit input-required prompts, visible idle input UI, visible working chrome.
+4. **Shell-integration markers.** Capture `OSC 133`, `OSC 633`, `OSC 7`, and related markers for shell prompt/execution boundaries and cwd/title enrichment.
+5. **Cursor-position probes.** Optionally probe `CSI 6n` for readiness/stuck diagnostics, with timeout and fallback; never block the PTY reader, attach channel, or daemon event loop.
+6. **Output activity.** Keep output timestamps as a weak signal only: recent output supports `working`; silence alone does not prove `blocked`.
+
+### Proposed runtime flow
+
+The 1Hz ticker was proposed as the normal recomputation point, with PTY output only marking evidence dirty (never directly deciding `blocked`):
+
+1. Refresh foreground process evidence from `/proc` for live sessions.
+2. Read the current parser screen snapshot for each pane and run the built-in visible detectors for the detected agent.
+3. Drop or stale any reported authority whose process has exited, sequence moved backward, source conflicts with the foreground agent, or age exceeds the source policy.
+4. Run the arbitration function once per session to compute raw state, confidence, and evidence.
+5. Derive effective status from raw state plus `seen`.
+6. Increment the session revision and emit an event only when raw state, effective status, seen status, authority, confidence, or evidence summary changes.
+7. Recompute tab/workspace/fleet roll-up from effective statuses using `blocked > done > working > idle > unknown`.
+
+### Proposed arbitration precedence
+
+1. Hook/API report says `blocked` for the current detected agent and has a valid sequence.
+2. Strong visible blocker for the current detected agent.
+3. Strong visible working can override stale reported `idle`.
+4. Strong visible idle can stale a reported `working` after a short grace window.
+5. Fresh hook/API reported state.
+6. Process/screen fallback state.
+7. Unknown.
+
+### Done, seen, and roll-up
+
+`done` was proposed as derived outside the raw detector: a pane transitioning from `working`/`blocked` to raw `idle` while not focused/visible marks `seen = false` and public status becomes `done`; focusing or explicitly acknowledging the pane marks `seen = true` and status becomes `idle`. Tab/workspace/fleet roll-up uses attention priority `blocked > done > working > idle > unknown`, so the console and Desktop Agent Hub route the operator to the pane that needs action now, not merely the pane doing background work.
+
+### Proposed runtime setup layout
+
+All status assets installed inside a role container were proposed to live under `/jackin/`: reporter binaries/scripts under `/jackin/runtime/agent-status/`, ephemeral sockets/pidfiles under `/jackin/run/`, per-session status cache/sequence state under `/jackin/state/agent-status/`. The setup path may merge container-local agent configuration, create container-local hooks, and copy reporter scripts owned by jackin❯ into the container home. It must not edit host `~/.claude`, host `~/.codex`, host `~/.config/opencode`, host shell rc files, host terminal settings, host git config, or any other host-side state unless the operator explicitly opts in and sees it in the launch summary. It also must not write status plugins into a bind-mounted project directory, such as `.opencode/plugins/`, unless that write is an explicit operator-visible workspace action.
+
+### Proposed per-runtime plan
+
+| Built-in runtime | Primary source (proposed) | Fallback source | Notes |
+|---|---|---|---|
+| Claude Code | Container-local Claude Code hooks when the installed runtime supports the needed events. | Foreground process plus visible prompt/approval/working chrome. | Map permission/auth/model/user-question prompts to `blocked`; map stop/idle prompt to raw `idle`; keep subagent events scoped so a child stop does not mark the parent done early. |
+| Codex | Structured Codex status surfaces (app-server thread status or runtime hooks) when present and tied to the same interactive session. | Foreground process plus visible confirmation/plan/question/working chrome. | Use waiting-on-approval and waiting-on-user-input flags as `blocked`; keep active turn as `working` even if idle status races during turn completion; avoid false positives from installer/update output. |
+| Amp | Runtime hook/plugin API if a stable one exists. | Foreground process plus approval/waiting/interrupt chrome. | Treat auth prompts, operator questions, and runtime modal prompts as blockers; otherwise prefer `unknown` over overfitting Amp text. |
+| Kimi | Runtime hook/plugin API if a stable one exists. | Foreground process plus approval/request prompts, thinking indicators, visible idle prompt. | Start with narrow visible heuristics; add structured integration only after confirming a stable surface. |
+| OpenCode | OpenCode HTTP/SSE/session/question APIs or plugin integration when available inside the same container and scoped to the same session. | Foreground process plus permission/question/working chrome. | Do not write a generated plugin into a bind-mounted project `.opencode/plugins/` directory by default. |
+| Custom role agents | Role-authored reporter over the Capsule socket, or a future role manifest status contract. | Foreground process identity and weak activity detection. | `unknown` remains the default for unsupported runtimes. |
+
+### Stuck detection (proposed)
+
+`stuck` was proposed as a diagnostic overlay driven by expectations, not a normal lifecycle state — examples: a prompt/task submitted, the foreground process still alive, and no reliable `working`/`blocked`/`idle` transition arrived within timeout; a hook source reporting `working` for too long while the visible screen and process state disagree; a process remaining foreground but not responding to cursor/screen probes. Stuck events were proposed to be rate-limited, include the evidence trail, and surface as "inspect this agent" rather than "agent needs approval," to avoid false positives training operators to ignore attention prompts.
+
+### Proposed control protocol
+
+| Surface (proposed) | Purpose |
+|---|---|
+| `session.report_agent_state` | Runtime hook/plugin/API bridge reports raw state and optional metadata for one session. |
+| `session.heartbeat_agent_authority` | Runtime reporter confirms that its source is still alive without changing raw state. |
+| `session.clear_agent_authority` | Runtime hook/plugin/API bridge releases its authority when it exits or knows it is stale. |
+| `session.report_child_agent_state` | Runtime bridge reports descendant/subagent lifecycle so parent panes do not become done while children are still working. |
+| `events.subscribe` | Host/daemon/console subscribe to session lifecycle and effective state transitions. |
+| `wait session-status` | CLI scripts block until a session reaches `blocked`, `done`, `idle`, or `exited` without polling. |
+| `session.read_visible` | Debugging path to read visible/recent pane text when state looks wrong. |
+
+### Proposed phasing
+
+- **Phase 0 — Stop lying with silence.** Remove or demote "silent for N seconds means blocked."
+- **Phase 1 — State model and event stream.** Internal raw state, derived public status, `seen` flag, attention-priority roll-up, `Unknown` protocol state, and event stream.
+- **Phase 2 — Container reporter and process identity.** Install the reporter, add control methods, launch runtimes with stable `JACKIN_*` environment, implement `/proc` foreground-process detection.
+- **Phase 3 — Semantic runtime reports.** Install container-local hook/plugin/API reporters starting with Claude Code, Codex, and OpenCode, extending to Amp and Kimi.
+- **Phase 4 — Screen fallback and readiness diagnostics.** Visible-screen detectors for Claude Code, Codex, and OpenCode plus cursor-position/shell-integration probes.
+- **Phase 5 — Host consumers.** `jackin console`, the daemon, Desktop Agent Hub, attention prompts, autonomous queue, resource panel, and token/cost telemetry consume the event stream.
+
+## What shipped differently
+
+The shipped implementation (see [Agent runtime status authority](/roadmap/agent-runtime-status/) for current facts) kept the product goals above but diverged on several specifics:
+
+- **No `session.report_agent_state` control-message family.** The shipped protocol uses a single `ReportRuntimeEvent` client message (session id, source id, runtime, vendor event name, optional payload) that the daemon maps and gates into raw state — an events-not-states contract, not a states-authored-by-reporter contract. `heartbeat_agent_authority`, `clear_agent_authority`, `report_child_agent_state`, `events.subscribe`, `wait session-status`, and `session.read_visible` as named here do not exist; equivalent needs are covered piecemeal (subagent counting via `SourceGateState.subagents_active`, a `StatusCapture` diagnostic snapshot method) or remain future work tracked by other roadmap items (event streaming: [jackin❯ Capsule](/roadmap/jackin-capsule/) and [jackin❯ daemon](/roadmap/jackin-daemon/); notification consumption: [Agent attention prompts](/roadmap/agent-attention-prompts/)).
+- **Claude Code and Codex hooks became identity-only, not state authorities.** The shipped arbitration treats their hook events as session-identity/freshness signals only; the screen rule-pack engine plus OSC evidence plus the `/proc` physics watchdog own state for those two runtimes (Decision 0a on the roadmap page). This is the opposite of the "hook/API report wins" precedence proposed above — it was chosen because completion-class hook events for these two CLIs are unreliable in order and timing (a `SubagentStop`/recap event can fire after the turn's `Stop` and revive an idle pane).
+- **The arbitration precedence is evidence-class-based, not source-type-based.** The shipped `arbitrate` function orders on process-exit/foreground-return-to-shell (definitive), then screen-freeze, then a blocking dialog match, then authority, then strong visual/OSC, then physics, then unknown — not the "hook beats screen beats process" ladder proposed above.
+- **`stuck` shipped as daemon-internal telemetry, not an operator-facing state or console affordance.** It is a boolean computed from a `WatchdogDemoted` evidence note and logged via `clog!` ("status.stuck: session … demoted to unknown …"); there is no `AgentState::Stuck` wire variant, no console tab glyph, and no rate-limited "inspect this agent" UI as proposed above. A reserved `AMBER` theme color exists for a future stuck glyph but is unused today.
+- **Amp has no reporter at all**, shipped or planned along the originally-proposed shape: Amp does not support the `plugins.json` node-plugin mechanism the OpenCode reporter uses (writing one crashes Amp), so Amp runs on screen rule pack plus `/proc` physics plus watchdog only. A real Amp reporter needs Amp's MCP/toolbox surface, tracked as remaining work on the roadmap page.
+- **The rule engine grew a capability not in this proposal**: a recursive nested `all`/`any`/`not` gate grammar, a `RULE_ENGINE_VERSION` floor, and semver-bounded `validated_versions` per pack — none of which appear in the original signal-source or data-model sketch above, because the co-versioned-pack-per-CLI-version strategy (Decision 0a) was itself a later design choice, not part of this proposal.
+
+## Related work
+
+- [Agent runtime status authority](/roadmap/agent-runtime-status/) — the roadmap item this research fed; current facts, stable contract, and remaining work.
+- [Terminal observation and automation](/reference/research/agent-orchestration/terminal-observation/terminal-observation-automation/) — sibling research on programmatic PTY read/wait/send automation, a related but distinct capability from status arbitration.
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/) — the wider program this and related research items belong to.
+- [Agent attention prompts](/roadmap/agent-attention-prompts/) — the consumer that turns `blocked`/`done` transitions into operator notifications.
+- [jackin❯ Capsule control plane](/roadmap/jackin-capsule/) — owns the event-stream control-channel work this proposal's `events.subscribe` anticipated.
+- [Research Watchlist](/reference/research-watchlist/) — the broader list of agent-status/multiplexer projects tracked for drift.

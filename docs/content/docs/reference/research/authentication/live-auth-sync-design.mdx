@@ -1,0 +1,92 @@
+---
+title: "Live bidirectional auth sync — design rationale"
+---
+
+This page holds the naming analysis, architecture sketch, and conflict-resolution reasoning behind the [Live bidirectional auth sync](/roadmap/live-auth-sync/) roadmap item (Phase 4 of the [Auth reliability and convenience program](/roadmap/auth-reliability-program/)). Read the roadmap item first for current status; read this page for why the feature is shaped the way it is. None of the mechanisms described here exist yet — this is a design proposal, not an implementation record.
+
+## Naming reconsideration
+
+The current mode name `sync` describes "copy the host's current state into the container at launch time." That is not what "sync" means in any other context — sync conventionally implies continuous, bidirectional reconciliation. Today's behaviour is closer to `snapshot`, `forward`, or `mirror-on-launch`.
+
+Options for resolving the naming clash before this feature ships:
+
+| Option | Today's mode renamed to | New live mode named |
+|---|---|---|
+| **A** | `forward` | `sync` (reclaim the word for the live axis) |
+| **B** | `snapshot` | `sync` |
+| **C** | `mirror` | `live-sync` |
+| **D** | (keep `sync`) | `sync-live` (but `sync` keeps misleading name) |
+
+Option A or B is preferable: they make the existing mode's actual behaviour visible from the name and reserve the unmodified `sync` for what operators expect. Pre-release breaking-change policy (see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> → "Project status: pre-release") makes a rename across `[github]` / `[claude]` / `[codex]` configurations cheap. The implementation PR for this roadmap item should rename in lockstep with the daemon's first ship; not beforehand (the rename without the live behaviour would be churn without payoff).
+
+A decision belongs to the design pass that picks the daemon shape; the roadmap item flags the question rather than answering it.
+
+## What "live sync" must do
+
+Per auth axis, when the live mode is active:
+
+1. **Host change → all running containers, near real time.** Within a few seconds of a host-side `gh auth login` / `claude /login` / `codex login`, every opted-in Capsule-managed role container sees the new token. No restart required.
+2. **In-container change → host AND other running containers.** When an agent inside a container refreshes the token, that new token reaches the host's authoritative store and any sibling running containers within seconds.
+3. **Single refresh-token at a time, OAuth-safe.** When an OAuth refresh-token rotation happens, only one party (the agent that triggered the refresh) holds the live grant; everyone else must read the new token before issuing the next API call. The architecture must avoid the parallel-agent invalidation cascade that bit operators on the launch-time `sync` behaviour today.
+4. **Transparent storage abstraction.** macOS host stores `gh` / `claude` tokens in the system Keychain; Linux stores them in plaintext under `~/.config/`. The daemon must bridge those formats — read via `gh auth token` / `security find-generic-password`, write via `security add-generic-password -U` on macOS or atomic file write on Linux — without leaking keychain-only tokens as plaintext on disk.
+5. **Operator-visible.** The launch summary already names the auth source for each axis. The daemon must surface its state too — a status line or `jackin auth status` subcommand (proposed, tracked under [Auth health and operator visibility](/roadmap/auth-health-and-visibility/)) showing which containers are subscribed, when each axis last reconciled, any pending conflicts. The [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) would consume the same daemon state for Claude/Codex/Amp account cards instead of scraping provider files directly from the macOS app.
+6. **Revocable and contained.** Same opt-in / opt-out semantics the existing modes have. Operators must be able to switch a workspace or role to non-live `forward` / `ignore` and have the live channel torn down for that container.
+
+## Architecture sketch
+
+```
+┌────────────── host ──────────────┐         ┌─── running container ────┐
+│ host token store                 │         │  agent-side store        │
+│   gh: Keychain or hosts.yml      │         │   gh: hosts.yml          │
+│   claude: Keychain or .creds     │         │   claude: .creds         │
+│   codex: auth.json               │         │   codex: auth.json       │
+│         ↕                        │         │         ↕                │
+│  live-auth-sync adapter          │  ←──→   │  jackin-auth-watcher     │
+│  (hosted by the jackin❯ daemon)  │         │   (in-container watcher) │
+│   - polls gh auth token          │         │   - inotify per axis     │
+│   - inotify per source file      │         │   - small static binary  │
+│   - polling, with platform       │         │     baked into construct │
+│     change-event hooks where     │         │                          │
+│     available                    │         │                          │
+│   - reconciles shared store      │         │                          │
+└──────────────────────────────────┘         └──────────────────────────┘
+                ↕                                       ↕
+                └─── shared store, flock-protected ─────┘
+                  ~/.jackin/auth-shared/<axis>/<file>
+                    - atomic tmp+rename writes
+                    - mtime + checksum for conflict detection
+                    - bind-mounted into containers
+```
+
+### Components to build
+
+- **Shared store** at `~/.jackin/auth-shared/<axis>/`. Single on-disk source of truth per axis. Atomic tmp+rename writes; flock to serialize concurrent writers.
+- **live-auth-sync adapter — hosted by the [jackin❯ daemon](/roadmap/jackin-daemon/).** Not a separate process. The daemon owns the long-running lifecycle; this item adds one adapter against the daemon's plug-in surface that watches host sources (poll + inotify on Linux; polling, with macOS Keychain change-event hooks where a stable public API exists — `SecKeychainAddCallback` is deprecated, so the macOS path is polling-only until a successor surfaces). Reconciles host → shared store, then shared store → host. Surfaces status to the CLI / TUI through the daemon's control socket.
+- **Container-side watcher** — small static binary baked into the construct image. Inotify on the agent-store paths inside the container. On change, atomically push to the shared store bind-mount.
+- **Mount strategy update.** Today's `sync` bind-mounts a per-container `hosts.yml`. Live mode bind-mounts the shared store path directly so all parties see the same file. The per-container path stays for `forward` / `snapshot` / `ignore` modes that don't opt into live.
+- **macOS Keychain bridge.** Adapter writes tokens back to Keychain via `security add-generic-password -U` so the host user's normal `gh` / `claude` workflow stays consistent. Never leak keychain-only tokens to plaintext files except inside the shared store + container.
+- **Per-axis adapter trait.** Each auth axis has its own source store and on-disk shape. The daemon's plug-in surface defines one trait per axis so adding `Amp` later is one adapter, not a rewrite.
+
+### Conflict resolution
+
+- **Last-writer-wins** by `(mtime, checksum)`.
+- **Agent-induced rotation always wins over a stale host poll.** When the adapter's poll cycle and an in-container refresh land in the same window, the in-container value is the source of truth (it's the OAuth-grant that the server now considers current).
+- **Detected conflict surfaces in `jackin auth status`** so the operator can see drift instead of having one side silently overwrite the other.
+
+## Host-side effects
+
+Per <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> "Never mutate the host machine silently": the live-sync adapter writes to host-side state. Each write would be opt-in via the workspace's chosen mode (`live` / `sync` / `forward` / `ignore`) and would surface in the daemon's status output and the launch summary.
+
+- **macOS Keychain writes.** When an in-container refresh produces a new token, the adapter writes it back to the host Keychain via `security add-generic-password -U` so the host user's normal `gh` / `claude` workflow keeps working. The operator authorizes the write by enabling live mode for the axis; the daemon's status output would name every host write as it happens.
+- **Plaintext shared-store writes.** The adapter writes the current axis token to `~/.jackin/auth-shared/<axis>/<file>` (atomic tmp+rename, flock-protected). Same opt-in contract: live mode is the only mode that produces these files; other modes leave the path empty.
+- **No host repository / dotfile mutations.** The adapter never touches `~/.gitconfig`, `~/.ssh/`, `~/.config/gh/hosts.yml` outside the operator's own `gh` writes, or any user repo's `.git/config`. Read-only access to host source files (e.g. `gh auth token`) is fine; writes target only the Keychain entry the operator's host already owns and the jackin-private shared store.
+- **Opt-out path.** Switching the workspace or role to a non-live mode tears down the adapter for that axis and leaves host state at whatever the most-recent live-mode reconcile produced; no further writes occur.
+
+## Related work
+
+- [Live bidirectional auth sync](/roadmap/live-auth-sync/) — the roadmap item this page supports.
+- [jackin❯ daemon](/roadmap/jackin-daemon/) — the long-running process this design depends on; lifecycle, install, control socket, security posture are decided there.
+- [Auth reliability and convenience program](/roadmap/auth-reliability-program/) — umbrella program; this design is Phase 4.
+- [GitHub CLI authentication strategy](/roadmap/github-cli-auth-strategy/) — current `sync` mode lives here.
+- [Credential source pattern](/roadmap/credential-source-pattern/) — future unified credential resolver; the daemon's per-axis adapter trait should be expressible inside it.
+- [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) — native account/status surface that would read live auth and quota state from the daemon first.

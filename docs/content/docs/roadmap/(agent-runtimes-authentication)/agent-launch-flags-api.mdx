@@ -1,0 +1,33 @@
+---
+title: "Agent Launch Flags API"
+---
+
+**Status**: Open — baseline shipped, override API unimplemented
+
+## Shipped facts
+
+The `AgentRuntime` trait and adapter registry now exist in <RepoFile path="crates/jackin-core/src/agent/runtime.rs">crates/jackin-core/src/agent/runtime.rs</RepoFile> and <RepoFile path="crates/jackin-core/src/agent/adapters.rs">crates/jackin-core/src/agent/adapters.rs</RepoFile>. Agent identity, install blocks, auth env vars, supported auth modes, state paths, default-home exclusions, and version parsing route through that adapter surface. The trait has no launch-argv method yet.
+
+`jackin-capsule runtime-setup` now owns deterministic runtime preparation before every agent exec: container git/GitHub setup, git trailer hook wiring, DCO identity cache, per-agent home/auth handoff, Codex profile/model-catalog setup, provider config, and other idempotent capsule setup. <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> delegates that setup to Rust, then still constructs final launch argv itself via a per-agent shell `case` on `$JACKIN_AGENT`, runs role hooks, and `exec`s the selected agent. No launch-argument override exists anywhere in the manifest: `RoleManifest` and its per-agent config structs (<RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile>) carry no `launch_args` or `safe_mode` field.
+
+The high-autonomy defaults remain documented in [Security implementation](/reference/security-implementation/#high-autonomy-launch-flags). Current built-in defaults cover Claude, Codex, Amp, Kimi, OpenCode, and Grok. OpenCode's approval behavior is partly environment/config based rather than only CLI flags.
+
+Research: [Agent Launch Flags API: Design Options](/reference/research/agent-runtimes/agent-launch-flags-api-design/) has the proposed static-manifest + runtime-API shape, phasing, and open design questions.
+
+## Remaining work
+
+1. Add a launch-argv method (or equivalent) to the `AgentRuntime` trait so each adapter owns its own argv construction.
+2. Add static launch-argument controls (`launch_args` override, `safe_mode` toggle, or similar) to the `jackin.role.toml` schema — a versioned schema change; migration rules apply.
+3. Design and implement a runtime API (construct-image binary) that role hooks can call before agent exec to adjust launch arguments dynamically.
+4. Move final launch-argv construction from <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> bash into the Rust `AgentRuntime` surface, keeping bash only as the hook-compatible wrapper before `exec`.
+
+## Out of scope
+
+- Removing the default dangerous-mode behavior — autonomous agents are the core value proposition.
+- Letting operators pass arbitrary flags the agent runtime doesn't understand.
+- A second launch-dispatch table that bypasses the `AgentRuntime` adapter surface.
+
+## Related work
+
+- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) — hardened profiles may restrict launch flags.
+- Research: [Agent Launch Flags API: Design Options](/reference/research/agent-runtimes/agent-launch-flags-api-design/) — proposal, phasing, open questions.

@@ -1,0 +1,301 @@
+---
+title: "Selectable Sandbox Backends"
+---
+
+**Status**: Deferred — umbrella design, split into focused backend tracks
+
+## Problem
+
+jackin❯ currently has one production runtime backend: Docker with a per-instance role container, per-agent Docker network, and private Docker-in-Docker sidecar. That backend is useful and should remain the default while jackin❯ is local-first.
+
+The broader product should still be able to route an agent session to a backend that matches the workload:
+
+- a hardened Docker container for normal local development
+- an OrbStack isolated machine on macOS when the operator wants a stronger local boundary while preserving Docker workflows
+- a smolvm workload when an open Rust/libkrun VM path is a better fit, with Docker Sandboxes as the benchmark for private-Docker-in-VM agent UX
+- Kubernetes later for cluster/debug workflows
+- true microVM or hypervisor-backed providers later for hostile or multi-tenant workloads
+
+The old version of this page mixed all of those designs together. That made the roadmap hard to act on. This page is now only the umbrella; detailed backend work lives in separate items.
+
+## Product Direction
+
+The opinionated direction is:
+
+1. **Stay Docker-first.** jackin❯ already has a strong local operator experience because Docker matches how role authors package tools, how agents build and test software, and how operators inspect what happened.
+2. **Harden and explain the Docker backend before changing runtime families.** The immediate gap is not that jackin❯ uses Docker; it is that jackin❯ does not yet expose a precise runtime contract for security controls, resources, network behavior, credentials, and DinD risk.
+3. **Treat OrbStack isolated machines as the pragmatic macOS stronger-boundary experiment.** This is the likely first alternate backend because many macOS operators already use OrbStack and because the machine can still run a private Docker-compatible engine.
+4. **Treat smolvm as the open Rust-native VM research track.** smolvm is interesting because it may give jackin❯ a true VM-per-workload path with OCI-image input, network-off defaults, and possible SDK integration. It should not become a default until Docker-in-guest or Docker-free role workflows are proven.
+5. **Use Docker Sandboxes as a benchmark, not as a reason to abandon jackin❯ UX.** Docker Sandboxes' useful idea is not "microVM" as a slogan; it is the combination of a private Docker daemon inside a VM boundary, a host-side network policy proxy, and a credential proxy. jackin❯ can learn from those controls while preserving its richer role/session/operator model.
+
+The core product bet remains:
+
+> jackin❯ should be the orchestration, policy, and session layer. Runtimes are pluggable enforcement providers below that layer.
+
+Do not build a jackin❯-owned runtime until a backend adapter proves that existing providers cannot satisfy a concrete operator problem.
+
+## Current Focus
+
+The next work should happen in this order:
+
+1. [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/)
+   - make the current Docker backend explicit, auditable, and progressively stricter before changing runtime families.
+2. [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/)
+   - research a macOS backend that runs the role container and private Docker engine inside an OrbStack isolated machine.
+3. [smolvm backend research](/reference/research/isolation/smolvm-backend/) - evaluate an open Rust/libkrun VM backend for true VM-per-workload isolation, OCI-image execution, and potential SDK integration; compare it directly with OrbStack isolated machines and Docker Sandboxes.
+4. Kubernetes platform support - future work, not part of the current Docker hardening, OrbStack, or smolvm design pass.
+
+There is no active generic microVM-provider track in this roadmap pass. The VM-style comparison is intentionally limited to OrbStack isolated machines, smolvm, and Docker Sandboxes as captured in the smolvm research item.
+
+## Threat Model Map
+
+Different operators need different boundaries. The backend decision should follow the threat model, not industry fashion.
+
+| Scenario | User problem | Recommended direction | Why |
+|---|---|---|---|
+| Local trusted operator | Run personal agents without trashing the host workflow. | Docker `standard` profile. | Best UX, existing role compatibility, explicit mounts, private DinD, and clear reporting are enough for the usual local trust model. |
+| Suspicious repository | Let an agent inspect/build unknown code without giving it broad host access. | Docker `hardened` first; OrbStack isolated or smolvm if Docker controls are insufficient. | The first wins are network deny/allowlist, resource caps, read-only root, reduced credentials, and no unnecessary DinD. |
+| Long autonomous agent | Limit runaway cost, resource use, network behavior, and credential exposure. | Docker `hardened` plus session contract, network policy, resource limits, and credential broker work. | A VM boundary helps escapes, but most practical failures are still egress, credentials, workspace writes, and resource exhaustion. |
+| Shared workstation or team laptop | Keep one operator's agent from reaching local services, broad files, or shared Docker state. | OrbStack isolated on macOS; Docker Sandboxes-style controls as benchmark; smolvm if it passes compatibility. | The key need is an isolated machine/private daemon plus explicit sharing, not only stricter container flags. |
+| Hosted or multi-tenant future | Run code for strangers or customers. | Do not rely on Docker-only hardening. Require VM/hypervisor-backed isolation plus policy proxy and brokered credentials. | Containers share the host kernel; hostile multi-tenant workloads need a stronger tenant boundary and auditable controls. |
+| Enterprise/regulatory future | Prove boundaries and central policy. | Docker Sandboxes-style governance benchmark; future backend-neutral policy engine. | Enterprises need explainable controls, centralized policy, logs, and compliance language more than another runtime flag. |
+
+This map is why Docker remains the near-term default but not the end of the roadmap. For local trusted work, microVM-first would mostly trade away UX for a threat model the operator may not have. For hosted hostile workloads, Docker-only hardening is the wrong claim.
+
+## Runtime Comparison
+
+| Concern | Hardened Docker | OrbStack isolated machine | smolvm | Docker Sandboxes |
+|---|---|---|---|---|
+| Primary value | Improve the runtime jackin❯ already ships. | Stronger macOS boundary while preserving Docker workflows. | Open Rust/libkrun VM path with OCI-image execution. | Reference design for private-Docker-in-VM agent sandboxing. |
+| Isolation boundary | Containers on selected Docker engine; shared kernel. | Isolated OrbStack machine, but shared OrbStack kernel per docs. | VM per workload with own kernel per smolvm docs. | Dedicated microVM per sandbox per Docker docs. |
+| Docker workflow fit | Excellent; current default. | Likely strong with machine-local Docker. | Unknown until Docker-in-smolvm is validated. | Strong; private Docker Engine is core. |
+| Host Docker risk | No host socket in role container; host daemon still builds/starts resources. | Host Docker can become only a build/export helper; runtime daemon lives in machine. | Potentially no outer Docker daemon for direct OCI mode. | No path to host Docker daemon per Docker docs. |
+| Host filesystem risk | Explicit mounts; writable mounts can still be modified. | Explicit isolated-machine shares required; then inner container mounts. | Directory mounts; read-only and destination behavior need validation. | Scoped workspace mount; same-path live changes. |
+| Network policy | Needs jackin❯ egress work; DinD/inner containers can create partial enforcement. | Host/machine blocking helps; domain egress still needs jackin❯ proxy/policy. | Network off by default and allow-host are promising; DNS/redirects/registries need tests. | Host-side proxy, allow/deny policy, raw non-HTTP blocked per docs. |
+| Credential handling | Current env/file/copy modes; broker/proxy still future. | Same jackin❯ credential story unless a host bridge is added. | SSH agent forwarding exists; model-provider broker still jackin❯ work. | Host-side credential proxy keeps raw model API keys out of sandbox per docs. |
+| Persistence | jackin❯ already has state/reconnect/eject/purge model. | Machine state plus inner Docker state; needs backend-neutral registry. | Persistent machines and `.smolmachine` artifacts may help, but can conflict with purge semantics. | VM and Docker state persist until `sbx rm` per docs. |
+| UX maturity | Highest for current users. | High on macOS if `orb` surfaces needed controls. | Promising, pre-1.0, needs compatibility proof. | Polished sandbox runner, but less aligned with jackin❯ role/session model. |
+| Licensing/control | Docker Engine open; Desktop/provider details vary. | Proprietary. | Apache-2.0 open source. | Docker product surface; paid governance features. |
+| Implementation complexity | Lowest incremental cost. | Medium: machine lifecycle, image transfer, inner Docker, selective shares. | High: CLI/API maturity, guest boot model, Docker compatibility, packaging. | Unknown: depends on whether `sbx` is usable as a backend API, not only an agent runner. |
+
+## What MicroVM Claims Actually Mean
+
+The common claim that "containers are not designed for untrusted code" is directionally correct but incomplete.
+
+Containers isolate processes with namespaces, cgroups, capabilities, seccomp, and LSMs, but they share the host kernel. If the workload is hostile and can exploit the kernel or container runtime, the boundary is weaker than a VM boundary. That matters for hosted, multi-tenant, enterprise, or stranger-code execution.
+
+For jackin❯ local usage, the more common failures are different:
+
+- the agent edits the wrong mounted file
+- the agent reads a token that was copied into the runtime
+- the agent exfiltrates content over the network
+- the agent exhausts CPU, memory, PIDs, disk, or Docker image cache
+- the agent uses the inner Docker daemon to create side effects that jackin❯ does not explain
+- the operator cannot tell what boundary was actually enforced
+
+A VM backend helps with kernel/container escape risk. It does not automatically solve workspace write risk, credential exposure, network policy, resource budgets, or operator explainability. That is why the runtime roadmap must prioritize the policy/session contract alongside backend experiments.
+
+## Backend Vocabulary
+
+Use backend names that describe the boundary honestly:
+
+| Backend | Meaning |
+|---|---|
+| `docker` | Current Docker engine backend, hardened by policy profiles over time. |
+| `orbstack-isolated` | macOS-only OrbStack isolated machine backend. Not a true per-agent microVM. |
+| `smolvm` | Open-source Rust/libkrun VM backend research. Also owns the comparison against Docker Sandboxes for this roadmap pass. |
+| `kubernetes` | Future cluster backend. |
+| `microvm` | Generic future true microVM/hypervisor-backed backend, only after a provider design lands beyond smolvm. |
+
+Avoid using `microvm` as a generic label for OrbStack machines. OrbStack documents that machines share a Linux kernel and are not strictly independent VMs.
+
+## Non-Goals
+
+- Do not replace Docker as the default local backend before the Docker hardening contract lands.
+- Do not claim every backend has the same risk posture.
+- Do not hide provider limitations behind `auto`.
+- Do not silently mutate host state to make a backend work.
+- Do not move Kubernetes into the OrbStack or Docker hardening scope.
+
+## Product Contract
+
+Every backend must eventually implement the same high-level jackin❯ operations:
+
+| Operation | Requirement |
+|---|---|
+| launch | Start a role environment for a workspace/ad-hoc path with resolved mounts, auth, env, and runtime policy. |
+| attach | Connect the operator to the in-runtime capsule session. |
+| inspect | Report instance state without requiring destructive actions. |
+| reconnect | Recover a stopped/running runtime when possible. |
+| eject | Stop runtime resources while preserving recovery state as designed. |
+| purge | Delete jackin❯-owned runtime state for that instance. |
+| explain | Print the exact backend, provider, policy, mounts, credentials, resources, network behavior, and residual risks before launch. |
+
+## Backend-Neutral Instance Registry
+
+Docker container names cannot remain the source of truth once multiple backend families exist. Today (May 2026) per-instance metadata lives in <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile> as `InstanceManifest` (schema v1), with a Docker-specific `DockerResources { role_container, dind_container, network, certs_volume }` field. The registry shape needs to evolve to:
+
+```text
+instance_id
+backend_kind         (docker | orbstack-isolated | smolvm | kubernetes | ...)
+provider_kind        (e.g. "docker-desktop" | "orbstack-context" | "linux-rootful" | "linux-rootless")
+workspace identity or ad-hoc path
+role selector
+agent runtime
+mount materialization handles
+auth/state handles
+backend-specific resource handles (tagged union, one shape per backend_kind)
+created_at
+last_seen_at
+cleanup status
+```
+
+Concrete file layout decision:
+
+- Per-instance manifest stays at `~/.jackin/data/<instance>/manifest.json` (current location). The `DockerResources` field becomes `backend_resources: BackendResources` where `BackendResources` is a tagged union — `DockerResources`, `OrbstackResources { machine_name, machine_distro, role_container_name, role_image_ref, ... }`, `SmolvmResources { machine_name, mode, ... }`.
+- A top-level index at `~/.jackin/data/instances.json` (new) lists `{ instance_id, backend_kind, workspace, last_seen_at }` so `jackin inspect` / `jackin list` does not have to walk every per-instance directory. Index is rebuilt from per-instance manifests if missing or stale.
+- `InstanceManifest` is per-instance ephemeral metadata, not a versioned schema in the <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> sense. It does not need a `CURRENT_INSTANCE_VERSION` constant or migration fixtures because it represents live runtime state — operators do not edit it, and old instances die with the runtime they describe. Add a `manifest_version: u32` field anyway so future shape changes can fall back gracefully when a stale instance manifest is read.
+
+Docker-specific handles, OrbStack machine names, Kubernetes pod names, and smolvm machine IDs are tagged-union variants below this registry, not first-class concepts at the registry level.
+
+## Runtime Capability Contract
+
+Backends differ, but jackin❯ roles still need a predictable minimum:
+
+- shell execution
+- `jackin-capsule` as the session authority
+- role image or equivalent role environment
+- explicit workspace/global mounts
+- configured agent state
+- configured authentication mode
+- Git identity setup
+- network policy reporting
+- resource policy reporting
+- optional Docker-compatible inner engine when the role requires Docker
+
+The optional inner engine is crucial. Some future roles can be Docker-free, but the current ecosystem expects Docker workflows. A backend that cannot provide a private Docker-compatible engine should not be treated as a full replacement for today's Docker backend.
+
+## Experiment Plan
+
+The next research should produce evidence in this order:
+
+1. **Docker hardening smoke matrix**
+   - record current `compat` behavior for each built-in agent runtime
+   - add contract reporting for seccomp, AppArmor/SELinux availability, capabilities, no-new-privileges, resource limits, network mode, DinD status, and credential location
+   - test `no-new-privileges`, resource limits, read-only root candidates, and no-DinD launches against common role workflows
+
+2. **Rootless/private Docker workflow tests**
+   - run `docker:dind-rootless` against `docker build`, Compose, and Java Testcontainers
+   - compare startup time, storage driver behavior, bind mounts, BuildKit, and cleanup against current privileged DinD
+   - decide whether rootless DinD belongs in `standard`, `hardened`, opt-in only, or not at all
+
+3. **OrbStack isolated-machine prototype**
+   - create an isolated machine with no default Mac filesystem integration
+   - add only selected workspace/global shares
+   - install or start machine-local Docker
+   - import a jackin❯ role image and run the role container inside the machine
+   - validate attach/reconnect/eject/purge semantics and report shared-kernel residual risk
+
+4. **smolvm compatibility tests**
+   - boot a simple OCI image with network disabled
+   - test `--allow-host` with package registries, redirects, DNS, and blocked hosts
+   - mount a workspace directory and validate read/write/read-only behavior
+   - try booting the current construct/role image directly
+   - validate Docker-in-smolvm claims before treating smolvm as a normal jackin❯ backend
+
+5. **Docker Sandboxes benchmark**
+   - run the same agent workflow where access/licensing permits
+   - inspect how workspace mount, private Docker Engine, network policy, credential proxy, persistence, and cleanup feel from an operator perspective
+   - decide which controls jackin❯ should implement itself and whether `sbx` has enough lifecycle surface to become a direct backend later
+
+Each experiment must answer two questions:
+
+- What user problem became meaningfully easier or safer?
+- What jackin❯ UX, role compatibility, or debuggability did the backend make worse?
+
+## Relationship To Focused Items
+
+| Item | Scope |
+|---|---|
+| [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) | Docker profiles, DinD hardening, resource limits, network defaults, read-only root, capability policy, session-contract reporting. |
+| [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/) | macOS isolated-machine lifecycle, selective shares, machine-local Docker, image transfer, attach/reconnect/eject/purge. |
+| [smolvm backend research](/reference/research/isolation/smolvm-backend/) | Open Rust/libkrun VM backend research: direct OCI execution, persistent machines, Docker workflow compatibility, network allow-host policy, and SDK embedding. |
+| [Network egress policy](/roadmap/network-egress-policy/) | Backend-neutral egress config and enforcement-quality reporting. |
+| [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | The operator-visible explanation layer every backend must feed. |
+| [Declarative resource limits](/roadmap/declarative-resource-limits/) | Resource budget schema and backend translators. |
+
+## Backend Selection And `--backend auto`
+
+The `--backend` flag introduces a selection surface jackin❯ has never had. The precedence rule below is non-negotiable; ambiguity here will produce silent surprises in production launches.
+
+Precedence (highest wins):
+
+1. **CLI flag** — `jackin load … --backend orbstack-isolated`. Operator-explicit always wins over defaults.
+2. **Workspace override** — `[workspaces.X.runtime] backend = "..."` in the workspace config.
+3. **Role manifest hint** — `[runtime] backend_preference = "..."` in `jackin.role.toml` (advisory, not a constraint; the operator can always override).
+4. **Global default** — `[runtime] default_backend = "..."` in `config.toml`. Ships as `"docker"`.
+
+**Role manifests cannot force a backend.** A role can hint that it prefers Docker (because it needs DinD), or hint that it prefers smolvm (because it is Docker-free and faster to boot in a VM), but the operator's CLI or workspace setting always wins. A separate `min_profile` field in the role manifest handles "this role refuses to run under `locked`" — see the [Docker hardening contract](/roadmap/docker-runtime-hardening-contract/) for that vocabulary.
+
+`--backend auto` decision rule (deterministic, must match this exactly):
+
+```text
+1. If JACKIN_BACKEND env var is set, use it.
+2. Else if a workspace override is set, use it.
+3. Else if a global default is set in config.toml, use it.
+4. Else:
+   - macOS host + OrbStack CLI present + orb-isolated supported on installed version
+     → orbstack-isolated
+   - Linux host + KVM available + smolvm CLI present
+     → smolvm (only if [runtime.smolvm] enabled = true; else fall through)
+   - Any host with Docker available
+     → docker (the safe default)
+   - Otherwise: error with "no backend available" and list what was probed.
+```
+
+The probe results and the chosen backend must be reported in the launch contract with one `debug_log!("backend", ...)` line per probe step and one compact line for the final choice. `auto` is never a backend identity at runtime; the launch contract always names the resolved backend (`docker`, `orbstack-isolated`, etc.).
+
+## TUI / Operator Console Surface
+
+Multi-backend changes what `jackin console` shows per instance. Today the per-instance details pane at <RepoFile path="crates/jackin-console/src/tui/screens/workspaces/view/list.rs">crates/jackin-console/src/tui/screens/workspaces/view/list.rs</RepoFile> renders Docker-specific state (container name, network, DinD). The pane needs a backend-aware variant:
+
+```text
+backend:   orbstack-isolated
+provider:  OrbStack 2.1.3
+machine:   jackin-abcd1234 (debian, isolated)
+shares:    3 explicit, 0 read-only enforced at host
+inner:     docker.io 27.x inside machine
+network:   allowlist (4 hosts), partial enforcement
+attach:    orb-exec, vsock-6000
+```
+
+vs the current Docker shape:
+
+```text
+backend:   docker
+provider:  Docker Desktop 27.x on macOS
+role:      jackin-the-architect-abc
+dind:      jackin-dind-abc (privileged, TLS)
+network:   per-agent bridge, open egress
+attach:    docker exec
+```
+
+Per the docs split rules (no on-disk paths in user-facing pages), the operator console must show backend + provider in plain language without exposing internal struct names or `~/.jackin/` paths. This page is the right place to capture the contract; the actual UI labels live with the TUI design decisions doc.
+
+## Later Provider Research
+
+These remain possible only if a later operator problem justifies them; they are not part of this roadmap pass:
+
+- Kata Containers through containerd or Kubernetes RuntimeClass.
+- gVisor as a syscall-sandboxing container runtime.
+- Docker Sandboxes direct integration, if the `sbx` CLI/API proves suitable as a lifecycle backend rather than only an agent runner.
+
+The decision rule is simple: do not add a backend until jackin❯ can state what operator problem it solves better than hardened Docker, OrbStack isolated machines, or the Docker Sandboxes-style private-Docker-in-VM model captured in the smolvm research item.
+
+## Related Files
+
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> - current backend-specific launch orchestration.
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> - role image build path that should stay reusable across backends.
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> - Docker backend API boundary.
+- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile> - instance metadata that needs to become backend-neutral.
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> - capsule runtime contract that every backend must preserve or intentionally replace.
