@@ -3,8 +3,6 @@
   "defaultOpen": false,
   "pages": [
     "agent-runtime-status",
-    "terminal-observation-automation",
-    "deja-vu",
     "launch-progress-tui",
     "console-agent-session-control",
     "session-keep-and-resume",
@@ -12,7 +10,6 @@
     "console-resource-panel",
     "agent-tag-protocol",
     "github-link-tracking",
-    "public-attribution-and-growth",
     "custom-operator-tools"
   ]
 }

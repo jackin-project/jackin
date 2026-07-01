@@ -2,7 +2,7 @@
 title: "Session Keep and Resume"
 ---
 
-**Status**: Open — design proposal (Phase 2 — Live operator surface, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
+**Status**: Open — design proposal (Phase 2 — Live operator surface, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -388,5 +388,5 @@ Two supporting sweeps close the long tail:
 - [Launch Progress TUI](/roadmap/launch-progress-tui/) — the rich surface the exit cockpit and resume picker render into.
 - [Console agent session control](/roadmap/console-agent-session-control/) — instance discovery and the selection surface; Phase 4 session reconciliation is the in-container continuity counterpart.
 - [Session snapshot and rollback](/roadmap/session-snapshot-rollback/) — the orthogonal direction: *undo* a session back to its pre-launch host state, where this item *resumes* a session forward to continue it. The deferred immutable-snapshot recovery model lives there.
-- [Déjà Vu](/roadmap/deja-vu/) — the backstop for "never lose valuable context": even when a session is unrecoverable, the cross-agent conversation archive survives instance teardown, so the operator can still re-read what was discussed and decided.
+- [Déjà Vu](/reference/research/agent-orchestration/conversation-capture/deja-vu/) — the backstop for "never lose valuable context": even when a session is unrecoverable, the cross-agent conversation archive survives instance teardown, so the operator can still re-read what was discussed and decided.
 - [Runtime Instance Model](/reference/runtime/runtime-instance-model/) — the per-instance host layout this item rebinds on resume.

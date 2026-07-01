@@ -2,7 +2,7 @@
 title: "Session Snapshot and Rollback"
 ---
 
-**Status**: Open — design proposal (Containment track, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
+**Status**: Open — design proposal (Containment track, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -80,7 +80,7 @@ Launch output must print:
   and auth delivery artifacts when the selected auth mode makes that safe.
 - Do not snapshot secret values into a broader-readable archive.
 - Integrate with
-  [container credential exposure](/roadmap/container-credential-exposure/)
+  [container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/)
   so secret handling stays explicit.
 
 ### Phase 4 — Remote and Kubernetes recovery
@@ -123,7 +123,7 @@ guarded by interactive confirmation or an explicit destructive flag.
 - <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> — foreground session finalization
 - <RepoFile path="crates/jackin-config/src/resolve.rs">crates/jackin-config/src/resolve.rs</RepoFile> — resolved workspace mount state
 - [Per-mount isolation](/guides/workspaces/#per-mount-isolation) — isolated worktree/clone design
-- [Persistent storage layer](/roadmap/persistent-storage-layer/) — future metadata store
+- [Persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) — future metadata store
 
 ## Source materials
 
@@ -133,4 +133,4 @@ guarded by interactive confirmation or an explicit destructive flag.
   backup/restore safety and setup/rollback verification notes
 - [Docker Sandboxes usage](https://docs.docker.com/ai/sandboxes/usage/) —
   sandbox lifecycle, branch worktrees, and cleanup behavior
-- [Agent Orchestration Program](/roadmap/agent-orchestrator-research/)
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)

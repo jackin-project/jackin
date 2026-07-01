@@ -10,7 +10,7 @@ This item tracks the implementation of the `apple-container` backend for jackin�
 
 The Apple Container backend is the primary path to close the **kernel boundary gap**: today all jackin❯ sessions share a single OrbStack Linux VM kernel. Apple Container gives each session its own kernel, so a kernel exploit in one session cannot reach other sessions or the host.
 
-For the complete picture of why this backend exists and how it fits with the other security layers, see [Agent isolation architecture](/roadmap/agent-isolation-architecture/).
+For the complete picture of why this backend exists and how it fits with the other security layers, see [Agent isolation architecture](/reference/research/security/isolation-architecture/agent-isolation-architecture/).
 
 ## Prerequisites (Both Must Complete Before Phase 0 Starts)
 
@@ -305,11 +305,11 @@ Per the AGENTS.md one-bump-per-PR rule, a single PR introduces exactly one versi
 
 | Item | Relationship |
 |---|---|
-| [Agent isolation architecture](/roadmap/agent-isolation-architecture/) | Master architecture doc; Apple Container is Layer 2 (VM boundary) |
+| [Agent isolation architecture](/reference/research/security/isolation-architecture/agent-isolation-architecture/) | Master architecture doc; Apple Container is Layer 2 (VM boundary) |
 | [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) | Prerequisite — rootless DinD must validate before Phase 0 starts |
 | [jackin-exec](/roadmap/jackin-exec/) | Layer 3 — credential injection; works on top of any backend including apple-container |
 | [Network egress policy](/roadmap/network-egress-policy/) | Layer 4 — enforced at VM boundary level when apple-container backend is active |
-| [Selectable sandbox backends](/roadmap/selectable-sandbox-backends/) | Umbrella for Docker and Apple Container as the two runtime families |
+| [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) | Umbrella for Docker and Apple Container as the two runtime families |
 | [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | Apple Container backend must feed the session contract with kernel boundary, caps, mounts |
 | [smolvm backend research](/reference/research/isolation/smolvm-backend/) | Fallback if Phase 0 fails; deferred until Apple Container Phase 0 outcome is known |
-| [Process-level sandboxing](/roadmap/process-level-sandboxing/) | Cross-layer zerobox sandboxing; compatibility inside apple-container VM needs validation |
+| [Process-level sandboxing](/reference/research/security/process-sandboxing/process-level-sandboxing/) | Cross-layer zerobox sandboxing; compatibility inside apple-container VM needs validation |

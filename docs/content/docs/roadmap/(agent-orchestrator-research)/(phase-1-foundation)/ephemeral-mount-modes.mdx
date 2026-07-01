@@ -2,7 +2,7 @@
 title: "Ephemeral Mount Modes (`tmpfs`, `ephemeral`)"
 ---
 
-**Status**: Open — design proposal (Phase 1, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
+**Status**: Open — design proposal (Phase 1, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -136,7 +136,7 @@ V1 enum vocabulary becomes: `shared | worktree | tmpfs | ephemeral`
   per-instance cleanup helper already enumerates Docker volumes by
   label; add a label and reuse it).
 - **Apple container** (when [selectable
-  backends](/roadmap/selectable-sandbox-backends/) ships):
+  backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) ships):
   use the equivalent allocation primitives.
 - **bwrap** (if it ever lands): `--tmpfs` for both modes; the
   ephemeral case is bwrap's natural shape.
@@ -229,10 +229,10 @@ gets the right behavior.
 
 ## See Also
 
-- [Agent Orchestration Program](/roadmap/agent-orchestrator-research/)
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
 - [Per-mount isolation](/guides/workspaces/#per-mount-isolation) —
   the existing modes; this leaf extends the enum vocabulary
-- [Selectable sandbox backends](/roadmap/selectable-sandbox-backends/) —
+- [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) —
   cross-backend translation home
 - [Declarative resource limits](/roadmap/declarative-resource-limits/) —
   shares the size-parsing helper

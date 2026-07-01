@@ -2,7 +2,7 @@
 title: "Declarative Resource Limits per Agent"
 ---
 
-**Status**: Open — design proposal (Phase 1, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
+**Status**: Open — design proposal (Phase 1, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -31,7 +31,7 @@ Apple-container backends).
   moment two of them happen to be running `cargo build` simultaneously.
 - **Cross-backend resource translation is the right home for this design.**
   Docker, Apple `container`, and the planned [selectable sandbox
-  backends](/roadmap/selectable-sandbox-backends/) each express
+  backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) each express
   limits differently — a declarative layer means each backend translates
   once.
 
@@ -103,7 +103,7 @@ Each backend implements a `ResourceLimits` translator:
 - **Docker** (today): `--memory`, `--memory-reservation`, `--cpus`,
   `--ulimit nofile=N:N`. `oom_score_adj` if needed for preserve-state.
 - **Apple container** (when [selectable
-  backends](/roadmap/selectable-sandbox-backends/) ships): direct
+  backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) ships): direct
   per-allocation limits.
 - **systemd-run / bwrap** (if it ever lands): cgroups properties.
 
@@ -161,7 +161,7 @@ not a hard error. Operators see the gap; the agent still runs.
 
 ## See Also
 
-- [Selectable sandbox backends](/roadmap/selectable-sandbox-backends/) —
+- [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) —
   cross-backend translator lives here long-term
 - [Console resource panel](/roadmap/console-resource-panel/) —
   consumer of the runtime side (current usage vs configured limit)

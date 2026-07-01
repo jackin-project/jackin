@@ -40,7 +40,7 @@ An operator working with jackin❯ across multiple projects or companies will ev
 
 **7. Credentials are visible in `docker inspect`** (security hygiene). Tokens forwarded via `api_key` mode appear in `docker run -e KEY=VALUE` and are readable by any process with Docker socket access. Sync-mode credential files are plaintext under `~/.jackin/data/<container>/`.
 
-*Addressed in Phase 6 (parallel track). See [Container credential exposure](/roadmap/container-credential-exposure/).*
+*Addressed in Phase 6 (parallel track). See [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).*
 
 ## Why these failures share a root cause
 
@@ -197,7 +197,7 @@ Sub-phase 6c — credential proxy. A Docker Sandboxes-style host-side proxy inte
 
 **Status: Not yet shipped. Sub-phase 6a has no daemon dependency and can start before Phase 3.**
 
-**Detail:** [Container credential exposure](/roadmap/container-credential-exposure/).
+**Detail:** [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).
 
 ---
 
@@ -264,6 +264,6 @@ When all phases are complete the operator experience is:
 | [jackin❯ daemon](/roadmap/jackin-daemon/) | 3 | Open — design questions remain |
 | [Live bidirectional auth sync](/roadmap/live-auth-sync/) | 4 | Open — design complete, awaits daemon |
 | [Credential source pattern](/roadmap/credential-source-pattern/) | 5 | Open — design complete |
-| [Container credential exposure](/roadmap/container-credential-exposure/) | 6 | Open — design complete |
+| [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) | 6 | Open — design complete |
 | [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) | 7 | Open — design complete, awaits daemon |
-| [Reliable Claude authentication strategy](/roadmap/claude-auth-strategy/) | Historical context for current mode design | Deferred |
+| [Reliable Claude authentication strategy](/reference/research/authentication/claude-auth-strategy/) | Historical context for current mode design | Deferred |

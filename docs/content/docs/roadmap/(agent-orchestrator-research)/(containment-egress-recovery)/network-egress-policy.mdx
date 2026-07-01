@@ -2,7 +2,7 @@
 title: "Network Egress Policy"
 ---
 
-**Status**: Open — design proposal (Containment track, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
+**Status**: Open — design proposal (Containment track, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -98,7 +98,7 @@ Examples of `partial` are expected early:
 ### Phase 3 — MicroVM host-side proxy research
 
 - Fold the existing Docker Sandboxes comparison in
-  [selectable sandbox backends](/roadmap/selectable-sandbox-backends/)
+  [selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/)
   into a concrete proxy design.
 - Decide whether the proxy belongs to the
   [host bridge](/roadmap/host-bridge/), the sandbox backend, or a
@@ -123,7 +123,7 @@ out in the session contract before launch.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — runtime launch and Docker network setup
 - <RepoFile path="crates/jackin-docker/src/shell_runner.rs">crates/jackin-docker/src/shell_runner.rs</RepoFile> — Docker CLI boundary
 - <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> — container runtime entrypoint
-- [Selectable sandbox backends](/roadmap/selectable-sandbox-backends/) — Docker Sandboxes and microVM comparison
+- [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) — Docker Sandboxes and microVM comparison
 - [Devcontainer parity](/reference/research/runtime/devcontainer-parity/) — devcontainer firewall comparison
 
 ## Source materials
@@ -136,4 +136,4 @@ out in the session contract before launch.
   risk comparison across tiers
 - [Hazmat Docker Sandboxes tier](https://github.com/dredozubov/hazmat/blob/master/docs/tier3-docker-sandboxes.md) —
   devcontainer/proxy/Compose hardening alternatives
-- [Agent Orchestration Program](/roadmap/agent-orchestrator-research/)
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)

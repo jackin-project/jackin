@@ -185,7 +185,7 @@ Auth-tab rows, N-item picker generalization, per-provider tab labels, and the pe
 2. **Kimi Anthropic auth variable.** Kimi's Claude Code docs use `ANTHROPIC_API_KEY` rather than `ANTHROPIC_AUTH_TOKEN`. Confirm which variable the `api.kimi.com/coding` endpoint honors, and whether Kimi's reported pre-launch "skip Anthropic login" step is needed inside the container or is already covered by jackin❯ launch flags.
 3. **Model-tier mapping per provider.** Z.AI maps Opus/Sonnet/Haiku tiers to GLM-5.1 / GLM-5-Turbo / GLM-4.5-Air. MiniMax exposes a single `MiniMax-M3` (so all three tiers map to one model); Kimi exposes `kimi-for-coding`. Confirm the intended tier maps, especially as MiniMax's Coding Plan model (M2.x) differs from its Token Plan model (M3).
 4. **Region.** International endpoints only. MiniMax's separate China base URL (`api.minimaxi.com`) is out of scope; the catalog hardcodes the international `api.minimax.io` surface and does not expose a region selector.
-5. **Per-provider quota surfacing.** Subscriptions carry 5-hour / weekly / 7-day quota windows. Whether jackin❯ surfaces remaining quota is a separate concern, likely deferred to the [Desktop Agent Hub](/roadmap/jackin-desktop-agent-hub/) account-state work.
+5. **Per-provider quota surfacing.** Subscriptions carry 5-hour / weekly / 7-day quota windows. Whether jackin❯ surfaces remaining quota is a separate concern, likely deferred to the [Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) account-state work.
 
 ## Related files
 
@@ -203,4 +203,4 @@ Auth-tab rows, N-item picker generalization, per-provider tab labels, and the pe
 - [Multi-runtime support](/roadmap/multi-runtime-support/) — the agent runtimes this routing targets
 - [AgentRuntime and Provider registry](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry) — each runtime's provider renderer belongs in its adapter rather than in shared dispatch
 - [Agent launch flags API](/roadmap/agent-launch-flags-api/) — shares the `jackin-capsule runtime-setup` dispatch surface Phase 2 writes into
-- [Reliable Claude authentication strategy](/roadmap/claude-auth-strategy/) — the parallel work for Anthropic's own auth
+- [Reliable Claude authentication strategy](/reference/research/authentication/claude-auth-strategy/) — the parallel work for Anthropic's own auth

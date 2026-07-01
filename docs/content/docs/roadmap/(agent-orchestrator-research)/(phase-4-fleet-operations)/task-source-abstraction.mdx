@@ -2,7 +2,7 @@
 title: "Task Source Abstraction"
 ---
 
-**Status**: Open — design proposal (Phase 4, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
+**Status**: Open — design proposal (Phase 4, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -153,7 +153,7 @@ Doesn't appear in TOML.
 ### Persistence
 
 Sources have config in TOML; the queue's view of *tasks* lives in the
-[persistent storage layer](/roadmap/persistent-storage-layer/),
+[persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/),
 in a `tasks` table:
 
 ```sql
@@ -222,10 +222,10 @@ CREATE TABLE tasks (
 
 ## See Also
 
-- [Agent Orchestration Program](/roadmap/agent-orchestrator-research/)
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
 - [Autonomous task queue](/roadmap/autonomous-task-queue/) —
   primary consumer
-- [Persistent storage layer](/roadmap/persistent-storage-layer/) —
+- [Persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) —
   task storage
 - [Credential source pattern](/roadmap/credential-source-pattern/) —
   per-source credential resolution

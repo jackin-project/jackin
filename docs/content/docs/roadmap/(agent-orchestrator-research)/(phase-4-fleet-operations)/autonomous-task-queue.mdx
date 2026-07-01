@@ -2,7 +2,7 @@
 title: "Autonomous Task Queue"
 ---
 
-**Status**: Open — design proposal (Phase 4, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
+**Status**: Open — design proposal (Phase 4, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -158,7 +158,7 @@ The queue considers a task **complete** when:
 
 Completion writes `tasks.state = 'completed'`, records the outcome
 (PR URL if any, exit code, runtime cost from
-[Token & Cost Telemetry](/roadmap/token-cost-telemetry/)),
+[Token & Cost Telemetry](/reference/research/agent-telemetry/token-cost-telemetry/)),
 and keeps the per-task instance data dir available until the operator purges it
 or the configured completed-instance retention window expires.
 
@@ -288,14 +288,14 @@ jackin queue approve <workspace> <id> <gate> # approve publish/review/merge gate
 
 ## See Also
 
-- [Agent Orchestration Program](/roadmap/agent-orchestrator-research/)
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
 - [Task source abstraction](/roadmap/task-source-abstraction/) —
   required input
-- [Persistent storage layer](/roadmap/persistent-storage-layer/) —
+- [Persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) —
   required state
 - [Agent runtime status](/roadmap/agent-runtime-status/) —
   required completion-detection signal
-- [Token & Cost Telemetry](/roadmap/token-cost-telemetry/) —
+- [Token & Cost Telemetry](/reference/research/agent-telemetry/token-cost-telemetry/) —
   budget gating
 - [Per-mount isolation](/guides/workspaces/#per-mount-isolation) —
   per-task isolation reuses worktree mode

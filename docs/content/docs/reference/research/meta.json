@@ -4,9 +4,20 @@
   "pages": [
     "index",
     "agent-orchestration",
-    "isolation",
-    "runtime",
+    "agent-runtimes",
+    "agent-telemetry",
+    "authentication",
     "backlog",
+    "ci",
+    "desktop",
+    "documentation",
+    "infrastructure",
+    "isolation",
+    "operator-surface",
+    "product-growth",
+    "runtime",
+    "security",
+    "testing",
     "token-optimization",
     "token-optimization-tools"
   ]

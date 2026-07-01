@@ -56,7 +56,7 @@ Orca (by [Stably AI](https://github.com/stablyai/orca)) is a desktop Agent Devel
 
 ## jackin❯ values filter
 
-Every borrowed idea must survive the values filter from the [Agent Orchestration Program](/roadmap/agent-orchestrator-research/#jackin-values-used-for-evaluation).
+Every borrowed idea must survive the values filter from the [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/#jackin-values-used-for-evaluation).
 
 | Orca idea | Passes values filter? | Notes |
 |---|---|---|
@@ -65,7 +65,7 @@ Every borrowed idea must survive the values filter from the [Agent Orchestration
 | Embedded Chromium per worktree | Partial | GUI-only; useful as a roadmap target for a future desktop companion, not a CLI feature |
 | Orca CLI (agent-driven pane control) | Yes | Analogous to the [operator handler system](/roadmap/operator-handler-system/) and [agent tag protocol](/roadmap/agent-tag-protocol/); agents signalling state rather than driving UI |
 | 30+ built-in agent runtimes, zero config | Yes | Aligns with [multi-runtime support](/roadmap/multi-runtime-support/) goal; jackin❯ should match this runtime breadth |
-| Mobile companion (monitor, manage) | Yes | Lower priority; relevant to [jackin❯ Desktop Agent Hub](/roadmap/jackin-desktop-agent-hub/) |
+| Mobile companion (monitor, manage) | Yes | Lower priority; relevant to [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) |
 | Host-native worktrees as isolation unit | **No** | The core isolation model is the reason jackin❯ uses containers. Host-native agents run as the host user; the hard rule against host-side mutations blocks this as a default |
 | Same-process agent and IDE surface | **No** | Orca runs agents directly on the host machine. The Capsule model is the reason jackin❯ exists |
 
@@ -84,7 +84,7 @@ Every borrowed idea must survive the values filter from the [Agent Orchestration
 | Primary UI | Full desktop GUI with terminal embeds | CLI with `jackin console` as TUI |
 | Agent runtime breadth | 30+ pre-configured, zero config | 5 built-in (Claude Code, Codex, Amp, Kimi, OpenCode); see [multi-runtime](/roadmap/multi-runtime-support/) |
 | Diff review loop | Annotation → batch feedback to agent | Not yet in jackin |
-| Mobile companion | iOS + Android | Not yet; see [jackin❯ Desktop Agent Hub](/roadmap/jackin-desktop-agent-hub/) |
+| Mobile companion | iOS + Android | Not yet; see [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) |
 | Port / service visibility | Ports panel per worktree | Not yet explicit; tracked in [network egress policy](/roadmap/network-egress-policy/) |
 | License | MIT, no SaaS | Apache 2.0, no SaaS |
 
@@ -114,7 +114,7 @@ Orca's zero-config 30+ agent support is the user expectation jackin❯ should ma
 
 ### Mobile companion
 
-The iOS/Android companion for remote monitoring and task management is an idea for the [jackin❯ Desktop Agent Hub](/roadmap/jackin-desktop-agent-hub/) roadmap item, which uses the daemon as its state/event backend.
+The iOS/Android companion for remote monitoring and task management is an idea for the [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) roadmap item, which uses the daemon as its state/event backend.
 
 ## What is incomplete in Orca
 
@@ -152,7 +152,7 @@ Orca is richer in UX and lighter in isolation. jackin❯ is the reverse. The UX 
 
 ## Relationship to the research program
 
-This item extends [Agent Orchestration Program](/roadmap/agent-orchestrator-research/) with a UX-first desktop tool. Orca does not fit neatly into Track A (fleet ops, multicode-style) or Track B (containment, Hazmat/Docker Sandboxes-style). It is a third reference point: what the user-facing layer looks like when the isolation concern is handed off to git instead of containers.
+This item extends [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/) with a UX-first desktop tool. Orca does not fit neatly into Track A (fleet ops, multicode-style) or Track B (containment, Hazmat/Docker Sandboxes-style). It is a third reference point: what the user-facing layer looks like when the isolation concern is handed off to git instead of containers.
 
 The strongest cross-references:
 
@@ -163,7 +163,7 @@ The strongest cross-references:
 | Port panel per session | [Session contract and explain mode](/roadmap/session-contract-explain-mode/), [Network egress policy](/roadmap/network-egress-policy/) |
 | Agent-driven callback | [Agent tag protocol](/roadmap/agent-tag-protocol/), [Agent attention prompts](/roadmap/agent-attention-prompts/) |
 | Runtime breadth | [Multi-runtime support](/roadmap/multi-runtime-support/) |
-| Mobile companion | [jackin❯ Desktop Agent Hub](/roadmap/jackin-desktop-agent-hub/) |
+| Mobile companion | [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) |
 | Subagent visibility | [jackin-capsule: in-container control plane](/roadmap/jackin-capsule/) |
 
 ## Source materials

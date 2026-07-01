@@ -489,14 +489,14 @@ Phase 3 also keeps the control-channel work the first attempt completed:
 - Daemon connects to each running container's socket and maintains a live session index across all containers.
 - Desktop app reads from the daemon's aggregated view; each `jackin-capsule` socket is the per-container data source. The multiplexer IS the server; the desktop companion reads what is happening inside the container through it.
 - Advanced commands: session snapshots, resource usage per session, log streaming.
-- See [jackin❯ daemon](/roadmap/jackin-daemon/) and [jackin❯ Desktop Agent Hub](/roadmap/jackin-desktop-agent-hub/).
+- See [jackin❯ daemon](/roadmap/jackin-daemon/) and [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/).
 
 ## Relationship to other roadmap items
 
-- **[Agent Orchestration Program](/roadmap/agent-orchestrator-research/)** — Herdr is evaluated there as the strongest prior art for the multiplexer vision. The full comparative table (Herdr vs. jackin❯ values) lives in the research overview.
+- **[Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)** — Herdr is evaluated there as the strongest prior art for the multiplexer vision. The full comparative table (Herdr vs. jackin❯ values) lives in the research overview.
 - **[Console agent session control](/roadmap/console-agent-session-control/)** — Phase 4 of that item unblocks once Phase 2 of this item ships: the binary exposes live session state, eliminating manifest-snapshot reconciliation.
 - **[Agent runtime status authority](/roadmap/agent-runtime-status/)** — the Phase 3 event stream is the delivery mechanism for blocked/working/done/idle/stuck indicators in the console and hardline.
 - **[Agent attention prompts](/roadmap/agent-attention-prompts/)** — `blocked` events replace PTY polling from the host; `done` events trigger the "ready for review" notification path.
 - **[jackin❯ daemon](/roadmap/jackin-daemon/)** — `jackin-capsule` is the per-container endpoint the daemon subscribes to. Phase 4 of this item and the daemon's container-watch phase are designed together.
-- **[jackin❯ Desktop Agent Hub](/roadmap/jackin-desktop-agent-hub/)** — Phase 3 of this item is the prerequisite: the desktop app's live session view is driven by `jackin-capsule` socket events aggregated by the daemon.
+- **[jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/)** — Phase 3 of this item is the prerequisite: the desktop app's live session view is driven by `jackin-capsule` socket events aggregated by the daemon.
 - **[jackin-remote](/roadmap/jackin-remote/)** — remote containers will need a `jackin-capsule` socket accessible over the tunnel; the socket mount and auth model need to account for the remote path.

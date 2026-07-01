@@ -14,7 +14,7 @@ These are agreed and drive the plan below. Do not re-litigate without flagging i
 2. **PR #528 ships the enforcement bundle, not a skeleton.** #528 does not merge until the opt-in features actually work end to end. Scope: WP0 + WP1 + WP2 + WP3 + WP4 in one PR.
 3. **Fail-closed on firewall failure.** Under `hardened`/`locked`, if `firewall-apply` cannot install the egress allowlist, the launch aborts and the container is torn down with an actionable error. The agent never runs with open egress when the operator asked for a boundary.
 4. **`standard` becomes the default eventually — not now.** The long-term goal is security-by-default (`standard`: resource limits + `no-new-privileges` on). The compiled-in default flip is the one change that alters behavior for non-opt-in users, so it is deferred (WP6). It is no longer blocked on a sudo audit — WP-SUDO handles sudo in #528; only the flip itself waits (for the WP0 matrix + an explicit changelog call-out). Until then `compat` stays the default.
-5. **Deferred out of #528:** credential env-only posture (WP7 → owned by [Container credential exposure](/roadmap/container-credential-exposure/)), making rootless DinD a *default* (WP5 — the rootless *tier* itself ships selectable in WP4), and the `standard` default flip (WP6). Each lands as its own follow-up; none blocks #528.
+5. **Deferred out of #528:** credential env-only posture (WP7 → owned by [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/)), making rootless DinD a *default* (WP5 — the rootless *tier* itself ships selectable in WP4), and the `standard` default flip (WP6). Each lands as its own follow-up; none blocks #528.
 6. **Docs never describe unshipped behavior.** Every WP updates its own docs in the same commit, and a final claim-by-claim audit (WP-DOC) blocks merge. The user-facing guide must not present egress enforcement, the session contract, or telemetry as shipped until the code that backs them lands, must mark deferred work as deferred, and must not leak internal paths or Rust symbols (three-audience rule).
 7. **WP0 ships the full automated matrix now, two-tier.** Profiles must be proven, not spot-checked: Tier 1 mechanism probes gate every PR (fast, no creds/internet, via a local stub host); the full Tier 2 workflow matrix proves real workloads run and must pass once for #528 as the readiness artifact, then runs nightly. Optimized so the full matrix never slows the per-PR signal (image built once, parallel cells, stub host, cheapest workloads).
 8. **DinD is fully configurable — all three tiers, nothing removed.** `none` / `rootless` / `privileged` are all operator-selectable (capability-grant model). Rootless DinD is wired in #528 (WP4) so users can choose it and it gets validated, but privileged stays available and rootless is not forced as any profile's default until the WP0 matrix is green (WP5/WP6). Rootless requires cgroup v2 and fails with a clear error — never a silent fallback — on v1.
@@ -56,7 +56,7 @@ The functional gaps above shared one enabling structure: the model layer (`profi
 
 1. **WP5 — Rootless-as-default** (research; depends on WP4 Part B landing first, then the WP0 Tier 2 matrix going green). Sysbox dropped (Decision 10).
 2. **WP6 — `compat` → `standard` default flip** (the only default-behavior change; waits on the WP0 Tier 2 matrix + an explicit changelog call-out).
-3. **WP7 — Credential env-only posture under `hardened`/`locked`** (owned by [Container credential exposure](/roadmap/container-credential-exposure/); reviewed on its own).
+3. **WP7 — Credential env-only posture under `hardened`/`locked`** (owned by [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/); reviewed on its own).
 4. **WP0 Tier 2 — Real workload matrix** (must pass once as the readiness artifact for WP6; nightly job).
 
 ## Implementation Plan
@@ -274,7 +274,7 @@ After the flip, `compat` remains available as an explicit opt-down for workflows
 
 ### WP7 — Credential posture integration (after WP3)
 
-Under `hardened`/`locked`, prefer env-only credential injection over file copies; emit a `credential_posture` telemetry line per agent auth type. Coordinated with [Container credential exposure](/roadmap/container-credential-exposure/). Depends on WP3 so the posture is reportable in the contract.
+Under `hardened`/`locked`, prefer env-only credential injection over file copies; emit a `credential_posture` telemetry line per agent auth type. Coordinated with [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/). Depends on WP3 so the posture is reportable in the contract.
 
 ### PR breakdown and ordering
 
@@ -295,7 +295,7 @@ Deferred to their own follow-up PRs (Decision 5), none blocking #528:
 
 | Follow-up | Contents | Depends on | Notes |
 |---|---|---|---|
-| F1 | WP7 credential env-only posture | #528 (WP3) | owned by [Container credential exposure](/roadmap/container-credential-exposure/); isolated review of the credential path |
+| F1 | WP7 credential env-only posture | #528 (WP3) | owned by [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/); isolated review of the credential path |
 | F2 | WP6 `compat` → `standard` compiled-in default flip | WP0 matrix green | the only default-behavior change — call out in changelog (sudo + no-new-privileges already handled by WP-SUDO in #528) |
 | — | WP5 rootless-as-default | WP0 matrix green; research | rootless *tier* already in WP4; deferring only making it the `standard` default. Sysbox dropped (Decision 10) |
 
@@ -330,10 +330,10 @@ No work package in #528 requires a schema bump — the config/workspace/manifest
 
 | Item | Relationship |
 |---|---|
-| [Selectable sandbox backends](/roadmap/selectable-sandbox-backends/) | Umbrella for Docker, OrbStack, Kubernetes, and future microVM backends. |
+| [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) | Umbrella for Docker, OrbStack, Kubernetes, and future microVM backends. |
 | [Apple Container backend](/roadmap/apple-container-backend/) | macOS 26 ARM VM backend. Rootless DinD (this contract's Phase B) is the prerequisite for Apple Container Phase 0. |
 | [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/) | macOS backend that still needs Docker-compatible inner workflows. |
 | [Network egress policy](/roadmap/network-egress-policy/) | V2 proxy-sidecar egress enforcement and connection logs beyond the IPv4 allowlist. |
 | [Declarative resource limits](/roadmap/declarative-resource-limits/) | Supplies resource budget schema and parser. |
-| [Process-level sandboxing](/roadmap/process-level-sandboxing/) | Adds per-command isolation inside any Docker profile. |
+| [Process-level sandboxing](/reference/research/security/process-sandboxing/process-level-sandboxing/) | Adds per-command isolation inside any Docker profile. |
 | [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | Makes the active profile inspectable before launch. |

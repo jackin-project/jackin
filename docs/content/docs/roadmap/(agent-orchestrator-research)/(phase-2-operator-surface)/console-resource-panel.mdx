@@ -2,7 +2,7 @@
 title: "Console Resource Panel (machine + per-agent live usage)"
 ---
 
-**Status**: Open — design proposal (Phase 2, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
+**Status**: Open — design proposal (Phase 2, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -110,7 +110,7 @@ per-agent table includes a status column to its left.
 - Network I/O bytes per agent. Useful but lower-priority.
 - Disk I/O per agent. Same.
 - Historical graphs (sparklines, rolling 5-minute window). Defer until
-  [persistent storage layer](/roadmap/persistent-storage-layer/)
+  [persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/)
   ships and we can keep a rolling sample buffer.
 - Alert thresholds ("notify me when an agent exceeds 90% of limit").
   Defer; operators can watch the cell color in V1.
@@ -120,13 +120,13 @@ per-agent table includes a status column to its left.
 
 - **Sampling backend abstraction.** Sample-via-Docker today; sample-via-
   cgroup-files when [selectable
-  backends](/roadmap/selectable-sandbox-backends/) lands. Which
+  backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) lands. Which
   module owns the abstraction? Recommended: *the runtime backend trait
   owns it*, mirroring how each backend already owns mount translation.
 - **Always-on vs on-demand sampling.** multicode samples constantly even
   when the panel isn't visible, because the data feeds usage aggregation.
   jackin❯ V1 doesn't need that yet — pause when closed is the right
-  call. Revisit when [Token & Cost Telemetry](/roadmap/token-cost-telemetry/) needs continuous series.
+  call. Revisit when [Token & Cost Telemetry](/reference/research/agent-telemetry/token-cost-telemetry/) needs continuous series.
 - **Keystroke choice.** `t` for telemetry, `r` for resources, `m` for
   metrics — pick once and document. Defer to console UX review.
 
@@ -140,11 +140,11 @@ per-agent table includes a status column to its left.
 
 ## See Also
 
-- [Agent Orchestration Program](/roadmap/agent-orchestrator-research/)
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
 - [Declarative resource limits](/roadmap/declarative-resource-limits/) —
   the configured-limit value the panel renders alongside live usage
 - [Agent runtime status](/roadmap/agent-runtime-status/) —
   status column lives in the same per-agent table
-- [Token & Cost Telemetry](/roadmap/token-cost-telemetry/) —
+- [Token & Cost Telemetry](/reference/research/agent-telemetry/token-cost-telemetry/) —
   later turns the per-agent column into a richer telemetry view
 - [Codebase Map](/reference/getting-oriented/codebase-map/) — `DockerApi` trait entry covers the typed Docker stats API the sampler will use

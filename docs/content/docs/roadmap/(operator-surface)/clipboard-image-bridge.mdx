@@ -4,7 +4,7 @@ title: "Host Affordance Bridge"
 
 **Status**: Partially implemented — core host screenshot/image paste is ready for operator opt-in testing behind `JACKIN_HOST_ATTACH=1`; Phase 0 complete; opt-in Phase 1A host attach, image staging with chunked large-image transfer, explicit host image paste, explicit image-path staging, Linux clipboard setup diagnostics, first GitHub host-open actions, visible URL open gestures with modifier-hover disclosure, command-palette cursor URL open, host-link opt-out, Debug info host diagnostics path copy/reveal, launch-failure artifact reveal/open, minimal chunked file export, explicit export-and-reveal/open, cursor-path export/reveal/open, selected-text export/reveal/open, and modified-click visible-file export landed
 
-**Preflight gate**: [Host Affordance Bridge Preflight](/roadmap/host-affordance-bridge-preflight/) records the Phase 0 measurements that made the opt-in implementation slice safe to start: Ghostty event capture, OrbStack socket transport, host clipboard backends, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup. The same page now tracks promotion evidence required before `JACKIN_HOST_ATTACH=1` can become default behavior.
+**Preflight gate**: [Host Affordance Bridge Preflight](/reference/research/operator-surface/host-affordances/host-affordance-bridge-preflight/) records the Phase 0 measurements that made the opt-in implementation slice safe to start: Ghostty event capture, OrbStack socket transport, host clipboard backends, Amp `xclip` behavior, binary transfer shape, and GitHub CI URL lookup. The same page now tracks promotion evidence required before `JACKIN_HOST_ATTACH=1` can become default behavior.
 
 ## Implementation Brief For `/goal`
 
@@ -861,7 +861,7 @@ Should directories be supported? Recommended answer: not in V1. Start with regul
 ## Related Work
 
 - [jackin❯ Capsule control plane](/roadmap/jackin-capsule/) — owns the in-container multiplexer and attach protocol this feature extends.
-- [Terminal observation and automation](/roadmap/terminal-observation-automation/) — adjacent host/session control work; this feature adds a typed input payload rather than a screen observation primitive.
+- [Terminal observation and automation](/reference/research/agent-orchestration/terminal-observation/terminal-observation-automation/) — adjacent host/session control work; this feature adds a typed input payload rather than a screen observation primitive.
 - [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) — broader daemon-mediated host request channel. Clipboard image paste should not wait for it, but later daemon/Desktop surfaces can reuse its approval and audit patterns.
 - [jackin❯ daemon](/roadmap/jackin-daemon/) — future host process for reactive features; not required for the first image-paste bridge.
 - [GitHub link tracking](/roadmap/github-link-tracking/) — adjacent link awareness work; host link opening is the low-level operator action that can later power richer PR/issue link surfaces.

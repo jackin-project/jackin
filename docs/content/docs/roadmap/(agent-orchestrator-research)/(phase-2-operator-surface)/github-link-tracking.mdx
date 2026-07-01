@@ -2,7 +2,7 @@
 title: "GitHub Link Tracking & Live Status"
 ---
 
-**Status**: Open — design proposal (Phase 2, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
+**Status**: Open — design proposal (Phase 2, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -63,7 +63,7 @@ The TUI renders icons:
 
 Reuse multicode's polling cadence model verbatim — they did the work to
 calibrate it against real GitHub usage. Use Octocrab as the client.
-Persist via the [persistent storage layer](/roadmap/persistent-storage-layer/).
+Persist via the [persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/).
 
 ### Auth source
 
@@ -122,7 +122,7 @@ icons, with hover/select revealing details. Clicking opens via the
 
 - Octocrab-based fetcher with multicode's cadence table.
 - Per-instance SQLite cache (depends on
-  [persistent storage layer](/roadmap/persistent-storage-layer/)).
+  [persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/)).
 - Console icons for issue/PR state, build, review.
 - Operator-host PAT via the existing credential resolution
   (`op://`, `${env.VAR}`, literal). New backends added when [credential
@@ -170,9 +170,9 @@ icons, with hover/select revealing details. Clicking opens via the
 
 ## See Also
 
-- [Agent Orchestration Program](/roadmap/agent-orchestrator-research/)
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
 - [Agent tag protocol](/roadmap/agent-tag-protocol/) — input
-- [Persistent storage layer](/roadmap/persistent-storage-layer/) —
+- [Persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) —
   cache home
 - [Operator handler system](/roadmap/operator-handler-system/) —
   click-to-open target

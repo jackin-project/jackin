@@ -1,0 +1,8 @@
+{
+  "title": "Ci",
+  "defaultOpen": false,
+  "pages": [
+    "performance",
+    "rust-tooling"
+  ]
+}

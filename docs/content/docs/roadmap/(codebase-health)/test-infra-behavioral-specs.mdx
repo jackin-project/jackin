@@ -24,7 +24,7 @@ Research established Rust patterns for test-support crates (tokio, bevy, cargo, 
 
 **Phase 2 — Split mega-test-files.** `tests/manager_flow.rs` → 8–10 files by scenario family. `tests/dind_e2e.rs` → smaller end-to-end groups. Companion to each source-file Phase 2 split.
 
-**Phase 3 — Snapshot/golden-file infrastructure.** Wire `cargo insta` (from the CI tooling roadmap item) into the test-support crate so every JSON output, derived Dockerfile, and friendly error block can be snapshotted with one helper, and host the shared determinism harness (fixed size/theme/clock, redaction). The styled-SVG visual goldens for TUI screens and CLI output build on this crate but are designed in [Visual snapshot testing (CLI & TUI)](/roadmap/visual-snapshot-testing/); that item owns the artifact format, this item owns the shared `jackin-test-support` crate it lives in.
+**Phase 3 — Snapshot/golden-file infrastructure.** Wire `cargo insta` (from the CI tooling roadmap item) into the test-support crate so every JSON output, derived Dockerfile, and friendly error block can be snapshotted with one helper, and host the shared determinism harness (fixed size/theme/clock, redaction). The styled-SVG visual goldens for TUI screens and CLI output build on this crate but are designed in [Visual snapshot testing (CLI & TUI)](/reference/research/testing/visual-snapshots/visual-snapshot-testing/); that item owns the artifact format, this item owns the shared `jackin-test-support` crate it lives in.
 
 ### 2. Behavioral specs for major components
 
@@ -101,6 +101,6 @@ Schedule `cargo fuzz run <target> -- -max_total_time=300` as a nightly CI job (n
 ## Cross-references
 
 - [Codebase map](/reference/getting-oriented/codebase-map/) — workspace crate structure that the behavioral specs will cover
-- [Rust CI tooling & dependency hygiene](/roadmap/rust-ci-tooling/) — `cargo insta` for snapshot tests, `cargo-llvm-cov` for coverage
+- [Rust CI tooling & dependency hygiene](/reference/research/ci/rust-tooling/rust-ci-tooling/) — `cargo insta` for snapshot tests, `cargo-llvm-cov` for coverage
 - [Behavioral spec for runtime launch](/roadmap/behavioral-spec-runtime-launch/) — existing spec item that this extends to all components
 - [AgentRuntime and Provider registry](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry) — adapter registration reduces the per-agent test matrix

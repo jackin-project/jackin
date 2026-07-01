@@ -16,7 +16,7 @@ title: "jackin-exec: Secure Execution Wrapper"
 
 `jackin-exec` is a symlink to `jackin-capsule` — no separate binary, no separate release artifact, no separate build job.
 
-Works on top of any jackin❯ backend. Does not require the Apple Container backend to land first. See [Agent isolation architecture](/roadmap/agent-isolation-architecture/) for the complete picture.
+Works on top of any jackin❯ backend. Does not require the Apple Container backend to land first. See [Agent isolation architecture](/reference/research/security/isolation-architecture/agent-isolation-architecture/) for the complete picture.
 
 ## The Problem
 
@@ -364,10 +364,10 @@ Both changes are additive with serde defaults. Existing TOML files parse identic
 
 | Item | Relationship |
 |---|---|
-| [Agent isolation architecture](/roadmap/agent-isolation-architecture/) | Master architecture doc; jackin-exec is Layer 3 |
-| [Container credential exposure](/roadmap/container-credential-exposure/) | The problem this item solves |
+| [Agent isolation architecture](/reference/research/security/isolation-architecture/agent-isolation-architecture/) | Master architecture doc; jackin-exec is Layer 3 |
+| [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) | The problem this item solves |
 | [jackin❯ daemon](/roadmap/jackin-daemon/) | Future: daemon replaces the Phase 1 ad-hoc host.sock listener |
 | [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) | Future daemon-based credential resolution that retires host.sock |
-| [Process-level sandboxing](/roadmap/process-level-sandboxing/) | Complementary — zerobox handles per-operation filesystem/network policy |
+| [Process-level sandboxing](/reference/research/security/process-sandboxing/process-level-sandboxing/) | Complementary — zerobox handles per-operation filesystem/network policy |
 | [Apple Container backend](/roadmap/apple-container-backend/) | jackin-exec works on any backend |
 | [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | jackin-exec calls and picker selections should appear in session contract output |

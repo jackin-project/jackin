@@ -1,0 +1,7 @@
+{
+  "title": "Authentication",
+  "defaultOpen": false,
+  "pages": [
+    "claude-auth-strategy"
+  ]
+}

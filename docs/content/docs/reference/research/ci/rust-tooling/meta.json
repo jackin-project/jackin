@@ -1,0 +1,7 @@
+{
+  "title": "Rust Tooling",
+  "defaultOpen": false,
+  "pages": [
+    "rust-ci-tooling"
+  ]
+}

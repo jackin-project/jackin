@@ -2,7 +2,7 @@
 title: "Agent Tag Protocol (`<jackin:*>` operator-surface markers)"
 ---
 
-**Status**: Open — design proposal (Phase 2, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
+**Status**: Open — design proposal (Phase 2, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -148,7 +148,7 @@ runtime; for Claude, that's the `[claude.plugins]` array).
 ## Defer
 
 - Persistence of tag history. V1 in-memory only;
-  [persistent storage layer](/roadmap/persistent-storage-layer/)
+  [persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/)
   adds it later.
 - Tag protocol versioning (`<jackin:repo version="2">...</jackin:repo>`).
   V1 is unversioned; if we ever need to break compatibility, add the
@@ -187,7 +187,7 @@ runtime; for Claude, that's the `[claude.plugins]` array).
 
 ## See Also
 
-- [Agent Orchestration Program](/roadmap/agent-orchestrator-research/)
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
 - [Agent runtime status](/roadmap/agent-runtime-status/) —
   parallel consumer of the same runtime output stream
 - [GitHub link tracking](/roadmap/github-link-tracking/) —

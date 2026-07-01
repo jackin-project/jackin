@@ -9,7 +9,7 @@ description: "A holding pen for researched-but-undesigned ideas that emerged fro
 
 This is a deliberately lightweight collection of ideas that came out of a single roadmap-wide review: each existing item was read, and the result was compared against current practice in the AI-coding-agent ecosystem to find genuine gaps. Every entry below was checked against the existing roadmap and is either absent or only mentioned in passing. None of these is a designed proposal yet — this page exists so the ideas are recorded in one place instead of being lost, and so the strongest ones can be promoted into their own roadmap items when there is appetite to design them.
 
-The flagship idea from the same review, agent-to-agent collaboration with a visible Conductor view, was strong enough to get its own page: see [Agent-to-agent collaboration (Conductor view)](/roadmap/agent-to-agent-collaboration/).
+The flagship idea from the same review, agent-to-agent collaboration with a visible Conductor view, was strong enough to get its own page: see [Agent-to-agent collaboration (Conductor view)](/reference/research/agent-orchestration/multi-agent-collaboration/agent-to-agent-collaboration/).
 
 <Aside type="note">
 These are brainstorm-stage. Before any entry is implemented it should graduate to a dedicated roadmap item with a full Problem / Why It Matters / Design / Related Files treatment, be wired into the sidebar and the overview, and follow the normal documentation discipline.
@@ -27,7 +27,7 @@ These are brainstorm-stage. Before any entry is implemented it should graduate t
 
 ### MCP gateway and tool-call governance
 
-**Gap.** MCP appears in the roadmap only as specific servers (the attention server, the host-bridge secret server, role-declared servers). Nothing inspects the MCP protocol itself. [Process-level sandboxing](/roadmap/process-level-sandboxing/) confines tool calls at the OS layer, but there is no governance layer between an agent and its MCP servers: no tool-poisoning or lookalike-tool detection, no MCP server pinning or signature, no semantic rate limiting, no human-in-the-loop approval for write or execute tool calls, no unified tool-call audit trail.
+**Gap.** MCP appears in the roadmap only as specific servers (the attention server, the host-bridge secret server, role-declared servers). Nothing inspects the MCP protocol itself. [Process-level sandboxing](/reference/research/security/process-sandboxing/process-level-sandboxing/) confines tool calls at the OS layer, but there is no governance layer between an agent and its MCP servers: no tool-poisoning or lookalike-tool detection, no MCP server pinning or signature, no semantic rate limiting, no human-in-the-loop approval for write or execute tool calls, no unified tool-call audit trail.
 
 **Why it fits jackin❯.** A gateway between agent and MCP servers is becoming core agent infrastructure, and jackin❯ already owns the container boundary, the Capsule control socket, and (with the daemon) the operator approval path — the gateway is the missing middle layer, not a new program.
 
@@ -37,7 +37,7 @@ These are brainstorm-stage. Before any entry is implemented it should graduate t
 
 ### Eval and outcome-scoring harness
 
-**Gap.** jackin❯ uniquely runs the same task across many runtime, provider, and role combinations, but it only measures cost (through [token and cost telemetry](/roadmap/token-cost-telemetry/)), never success. "benchmark" in the roadmap means competitive research, not a first-party harness.
+**Gap.** jackin❯ uniquely runs the same task across many runtime, provider, and role combinations, but it only measures cost (through [token and cost telemetry](/reference/research/agent-telemetry/token-cost-telemetry/)), never success. "benchmark" in the roadmap means competitive research, not a first-party harness.
 
 **Why it fits jackin❯.** A small eval harness — run a fixture task, score did-tests-pass or did-the-branch-build, attribute the result to the runtime/provider/role, and combine it with the cost data already captured — would let jackin❯ answer "which agent plus provider plus role finishes this class of task best and cheapest?" That is a category-defining capability for a multi-runtime orchestrator.
 
@@ -45,7 +45,7 @@ These are brainstorm-stage. Before any entry is implemented it should graduate t
 
 ### Budget enforcement, not just budget telemetry
 
-**Gap.** [Token and cost telemetry](/roadmap/token-cost-telemetry/) explicitly states it cannot enforce a per-task or per-day budget and leaves budget gates as future work. With autonomous queues and parallel agents, runaway tool or loop spend is the most-cited operational risk for autonomous agents.
+**Gap.** [Token and cost telemetry](/reference/research/agent-telemetry/token-cost-telemetry/) explicitly states it cannot enforce a per-task or per-day budget and leaves budget gates as future work. With autonomous queues and parallel agents, runaway tool or loop spend is the most-cited operational risk for autonomous agents.
 
 **Why it fits jackin❯.** A hard spend cap that pauses or kills an instance at a configured daily or per-task threshold is a concrete runaway-cost guard. The telemetry plumbing exists; the missing piece is the enforcement hook.
 
@@ -55,7 +55,7 @@ These are brainstorm-stage. Before any entry is implemented it should graduate t
 
 ### First-class OpenTelemetry GenAI export
 
-**Gap.** [Deja Vu](/roadmap/deja-vu/) aligns its capture vocabulary to the OpenTelemetry GenAI conventions, but nothing exports agent telemetry as OTLP. The OpenTelemetry GenAI semantic conventions (including the new MCP span conventions) are now the industry-standard vocabulary that every agent-observability backend ingests.
+**Gap.** [Deja Vu](/reference/research/agent-orchestration/conversation-capture/deja-vu/) aligns its capture vocabulary to the OpenTelemetry GenAI conventions, but nothing exports agent telemetry as OTLP. The OpenTelemetry GenAI semantic conventions (including the new MCP span conventions) are now the industry-standard vocabulary that every agent-observability backend ingests.
 
 **Why it fits jackin❯.** OpenTelemetry crates are already a dependency. A daemon or Capsule OTLP exporter would let operators point jackin❯ at any agent-observability backend with no re-instrumentation, and it composes with the eval harness and the cost telemetry.
 
@@ -65,13 +65,13 @@ These are brainstorm-stage. Before any entry is implemented it should graduate t
 
 **Gap.** Local model engines appear once in the entire roadmap, as a passing "dev server" example. [Alternative LLM providers](/roadmap/alternative-llm-providers/) covers only cloud providers.
 
-**Why it fits jackin❯.** Running a local model engine as a sidecar (the same shape as the existing Docker-in-Docker sidecar) fits jackin❯'s isolation and privacy thesis precisely, and hybrid routing — a cheap or local model for routine work and a frontier cloud model for the hardest fraction — is becoming the default deployment pattern for cost and resilience. It also directly powers the cheap workers in the [Conductor view](/roadmap/agent-to-agent-collaboration/).
+**Why it fits jackin❯.** Running a local model engine as a sidecar (the same shape as the existing Docker-in-Docker sidecar) fits jackin❯'s isolation and privacy thesis precisely, and hybrid routing — a cheap or local model for routine work and a frontier cloud model for the hardest fraction — is becoming the default deployment pattern for cost and resilience. It also directly powers the cheap workers in the [Conductor view](/reference/research/agent-orchestration/multi-agent-collaboration/agent-to-agent-collaboration/).
 
 **Reuses.** The provider catalog and picker, the DinD sidecar pattern, and the per-session model override mechanism.
 
 ### Sandboxed browser and computer-use for agents
 
-**Gap.** Terminal automation is covered by [terminal observation and automation](/roadmap/terminal-observation-automation/), but a sandboxed headless browser inside the container — for web-app build-and-verify loops — is not; it appears only as a competitor's UX in the orchestrator research.
+**Gap.** Terminal automation is covered by [terminal observation and automation](/reference/research/agent-orchestration/terminal-observation/terminal-observation-automation/), but a sandboxed headless browser inside the container — for web-app build-and-verify loops — is not; it appears only as a competitor's UX in the orchestrator research.
 
 **Why it fits jackin❯.** A headless browser (for example via a browser-control MCP server) running as a sidecar gives web-focused agents the ability to see and verify the app they are building, inside the same isolation boundary jackin❯ already provides through DinD.
 

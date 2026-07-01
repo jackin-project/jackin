@@ -2,12 +2,9 @@
   "title": "Isolation & security",
   "defaultOpen": false,
   "pages": [
-    "agent-isolation-architecture",
     "docker-runtime-hardening-contract",
     "apple-container-backend",
     "jackin-exec",
-    "process-level-sandboxing",
-    "selectable-sandbox-backends",
     "reproducibility-pinning",
     "open-review-findings",
     "security-threat-model-and-signed-releases"

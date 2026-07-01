@@ -2,7 +2,7 @@
 title: "smolvm Backend Research"
 ---
 
-**Status**: Deferred — Apple Container backend is the primary macOS 26 VM track; smolvm is the fallback if Apple Container Phase 0 fails the Docker-inside compatibility test. See [Apple Container backend](/roadmap/apple-container-backend/) and [Agent isolation architecture](/roadmap/agent-isolation-architecture/) for the active plan.
+**Status**: Deferred — Apple Container backend is the primary macOS 26 VM track; smolvm is the fallback if Apple Container Phase 0 fails the Docker-inside compatibility test. See [Apple Container backend](/roadmap/apple-container-backend/) and [Agent isolation architecture](/reference/research/security/isolation-architecture/agent-isolation-architecture/) for the active plan.
 
 ## Problem
 
@@ -422,7 +422,7 @@ Best for:
 Risk:
 
 - Integrating per-command smolvm from inside an existing agent session may need a host bridge, not only the current container runtime.
-- It overlaps with [Process-level sandboxing](/roadmap/process-level-sandboxing/), which is likely lower overhead for routine commands.
+- It overlaps with [Process-level sandboxing](/reference/research/security/process-sandboxing/process-level-sandboxing/), which is likely lower overhead for routine commands.
 
 ### Mode B — direct role image backend
 
@@ -754,7 +754,7 @@ These need answers before Phase 0 hands-on work converts to design commitments:
 |---|---|
 | [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) | Near-term default and compatibility baseline. |
 | [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/) | Deferred — shared-kernel namespace isolation insufficient for macOS ARM audience; historical research preserved. |
-| [Selectable sandbox backends](/roadmap/selectable-sandbox-backends/) | Umbrella for backend selection. |
+| [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) | Umbrella for backend selection. |
 | [Network egress policy](/roadmap/network-egress-policy/) | smolvm allow-host behavior may implement part of the policy. |
 | [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | Needed to report whether smolvm or Docker Sandboxes is enforcing each boundary. |
-| [Process-level sandboxing](/roadmap/process-level-sandboxing/) | Lower-overhead alternative for per-operation isolation inside existing Docker sessions. |
+| [Process-level sandboxing](/reference/research/security/process-sandboxing/process-level-sandboxing/) | Lower-overhead alternative for per-operation isolation inside existing Docker sessions. |

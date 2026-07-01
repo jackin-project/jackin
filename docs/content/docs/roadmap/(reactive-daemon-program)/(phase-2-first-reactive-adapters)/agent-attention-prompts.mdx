@@ -46,7 +46,7 @@ The pieces:
   - macOS — `osascript -e 'display notification …'` or the `UserNotifications` framework via a small Swift helper. Sound escalation via `afplay` / `NSSound`.
   - Linux — `notify-send` (libnotify) or the org.freedesktop.Notifications D-Bus API. Sound via `paplay` / `aplay`.
   - Windows — out of scope for the first phase; revisit when jackin❯ supports Windows hosts.
-- **Click-to-focus adapter.** The notification carries an action that, when activated, runs a host-side command to focus the right terminal tab. The first Desktop slice should implement Ghostty only, matching the [jackin❯ Desktop Agent Hub](/roadmap/jackin-desktop-agent-hub/) v1 launch contract. Other terminal emulators get a notification without click focus until their adapters are deliberately added.
+- **Click-to-focus adapter.** The notification carries an action that, when activated, runs a host-side command to focus the right terminal tab. The first Desktop slice should implement Ghostty only, matching the [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) v1 launch contract. Other terminal emulators get a notification without click focus until their adapters are deliberately added.
 
 ## Per-workspace / per-role policy
 
@@ -124,7 +124,7 @@ The bet of jackin❯ is that running many agents safely and conveniently changes
 
 - [jackin❯ daemon](/roadmap/jackin-daemon/) — host-side process this feature plugs into. Phase 1 daemon must ship before this adapter can.
 - [Live bidirectional auth sync](/roadmap/live-auth-sync/) — sibling feature plugging into the same daemon; sets the precedent for per-axis adapters.
-- [jackin❯ Desktop Agent Hub](/roadmap/jackin-desktop-agent-hub/) — native macOS surface that should display attention/ready-for-review state and owns the first Ghostty click-to-focus UX.
+- [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) — native macOS surface that should display attention/ready-for-review state and owns the first Ghostty click-to-focus UX.
 - [Agent runtime status authority](/roadmap/agent-runtime-status/) — canonical source for `blocked`, derived `done`, `idle`, `working`, `unknown`, and stuck diagnostics. Attention prompts consume this stream; they do not infer state independently.
-- [Agent Orchestration Program → Live agent observability](/roadmap/agent-orchestrator-research/) — adjacent work on surfacing what the agent is *doing* in real time. Attention prompts close the loop the other direction (when the agent stops doing things and waits).
+- [Agent Orchestration Program → Live agent observability](/reference/research/agent-orchestration/program-research/) — adjacent work on surfacing what the agent is *doing* in real time. Attention prompts close the loop the other direction (when the agent stops doing things and waits).
 - <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> — current MCP-registration pattern for `tirith` / `shellfirm`. The `jackin-attention` MCP server registers through the same code path.

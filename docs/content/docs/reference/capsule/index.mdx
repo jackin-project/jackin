@@ -114,7 +114,7 @@ states, and provider-child cooldowns stay owned by the PID 1 daemon.
 The usage surface is account-quota-only: the obsolete workspace/session spend
 summary messages and CLI subcommands were removed with the Capsule usage overlay
 cleanup. Per-message token/cost attribution belongs to
-[Token & Cost Telemetry](/roadmap/token-cost-telemetry/), not this
+[Token & Cost Telemetry](/reference/research/agent-telemetry/token-cost-telemetry/), not this
 control surface.
 `jackin-capsule usage claude-cli` is intentionally outside the control channel:
 it is an explicit operator diagnostic that runs `claude -p /usage` on demand and
@@ -433,4 +433,4 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 
 - [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) — the non-negotiable passthrough contract and per-feature verification checklist
 - [jackin-capsule roadmap item](/roadmap/jackin-capsule/) — original problem statement, Herdr evaluation, phased implementation plan
-- [Agent Orchestration Program](/roadmap/agent-orchestrator-research/) — comparative analysis of Herdr and other tools that informed the design
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/) — comparative analysis of Herdr and other tools that informed the design

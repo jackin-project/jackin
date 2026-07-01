@@ -1,0 +1,10 @@
+{
+  "title": "Security",
+  "defaultOpen": false,
+  "pages": [
+    "credential-exposure",
+    "isolation-architecture",
+    "process-sandboxing",
+    "sandbox-backends"
+  ]
+}
