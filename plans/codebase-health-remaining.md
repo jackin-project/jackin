@@ -250,7 +250,7 @@ row's entry.
       757–1087), `content_geometry.rs` (`settings_frame_areas`/`settings_modal_render_plan`/
       `*_content_height`/`clamp_mounts_scroll_x_for_frame` 64–143, 1088–1111, 1571–1598).
       Stays: `render_settings_screen` orchestrator + routing (~260L).
-- [ ] **`crates/jackin-console/src/tui/model/modal.rs`** (1587 → coord ~250). New `modal/` dir.
+- [x] **`crates/jackin-console/src/tui/model/modal.rs`** (1587 → 271). New `modal/` dir.
       Extract: `auth_impls.rs` (all the auth-related trait impls on `ConsoleModal` 282–1346),
       `display.rs` (`rect_mode`/`rect`/`prepare_for_render`/`footer_items*`/
       `footer_items_for_mode` 1349–1587). Stays: `ConsoleModal` enum + core impl methods
