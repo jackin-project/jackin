@@ -36,6 +36,14 @@ impl Perform for PlainPerformer {
     }
 }
 
+#[allow(
+    clippy::excessive_nesting,
+    reason = "ANSI parser dispatch: per-event track (C0 / CSI / OSC / DCS / text / \
+              ESC) with terminal-state branches (utf8 pending, esc buffered, dp \
+              pending) nested through the perform-trait shape. Extracting per-state \
+              sub-helpers would require re-passing the parser + performer mutable \
+              borrows across fn boundaries."
+)]
 pub fn styled_spans(input: &str, default_style: Style) -> Vec<Span<'static>> {
     let mut parser = Parser::<DefaultCharAccumulator>::default();
     let mut performer = StyledPerformer {
@@ -86,6 +94,15 @@ impl Perform for StyledPerformer {
         }
     }
 
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "vte::Perform trait dispatcher (`csi_dispatch`) for the styled- \
+                  spans parser requires a single exhaustive match on the SGR \
+                  parameter byte covering every CSI SGR sequence the styled- \
+                  spans consumer supports. Extracting per-SGR-code sub-dispatchers \
+                  would require re-borrowing the parser state across fn \
+                  boundaries — same constraint as jackin-term's csi_dispatch."
+    )]
     fn csi_dispatch(&mut self, params: &Params, _intermediates: &[u8], _ignore: bool, action: u8) {
         if action != b'm' {
             return;

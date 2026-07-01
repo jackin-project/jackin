@@ -1103,6 +1103,15 @@ impl DamageGrid {
     }
 
     /// Scroll the active scroll region up by `n` rows, pushing content to scrollback.
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Scroll-region scrolling distinguishes full-scroll vs partial-scroll \
+                  branches and within each branch handles scrollback recycling, \
+                  row eviction, and the shift-within-range path. The nested control \
+                  flow is intrinsic to the scroll-region semantics — extracting into \
+                  sub-helpers would re-pass mutable grid + scrollback borrows across \
+                  fn boundaries and obscure the per-region branching."
+    )]
     fn scroll_up(&mut self, n: u16, inserted_wrap: RowWrap) {
         self.mode_flags |= MUTATED_SINCE_PRESERVE;
         let top = self.scroll_top as usize;

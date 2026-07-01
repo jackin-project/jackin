@@ -290,6 +290,13 @@ pub mod ansi {
     /// multi-line ANSI art). A static surface, not the live launch rain — which
     /// the Launch Progress TUI owns.
     #[must_use]
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "ASCII-art help-banner renderer with per-row × per-column nested \
+                  character-styling + xorshift-driven effects. The nesting is the \
+                  per-cell composition — extracting per-row / per-column helpers \
+                  would require threading mutable state through separate fn calls."
+    )]
     pub fn help_banner(width: u16) -> String {
         const H: usize = 13;
         // Rows over which the rain dims to black as it nears the logo band.

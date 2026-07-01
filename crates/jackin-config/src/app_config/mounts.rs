@@ -81,6 +81,14 @@ impl AppConfig {
         WorkspaceGlobalMountRows::Ambiguous { candidates }
     }
 
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Mount-row resolution: per-mount, per-scope (None / Scope / \
+                  Multi-Scope), and per-mount-type (Mount / WorkspaceRef) branches \
+                  nested to apply union-merge semantics. Extracting per-scope \
+                  helpers would re-pass mutable by_name + selector borrows across \
+                  fn boundaries and obscure the per-scope merge logic."
+    )]
     pub fn resolve_mount_rows(&self, selector: &RoleSelector) -> Vec<GlobalMountRow> {
         let mut by_name: BTreeMap<String, GlobalMountRow> = BTreeMap::new();
         let scopes = [

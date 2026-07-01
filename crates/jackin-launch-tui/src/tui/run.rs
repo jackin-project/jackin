@@ -62,6 +62,13 @@ pub struct RichDriver {
 }
 
 impl RichDriver {
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "RichDriver spawn wires the render thread, the tick loop, the \
+                  input loop, and the main task; the nesting is the per-loop-arm \
+                  control flow (input drain / render / stop-check / event-poll) \
+                  intrinsic to the multi-loop driver shape."
+    )]
     pub fn spawn(
         renderer: RichRenderer,
         view: SharedView,

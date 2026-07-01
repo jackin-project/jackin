@@ -235,6 +235,13 @@ fn version_splash_has_mark_version_byline_under_six_lines() {
 }
 
 #[test]
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Test that walks every char of the banner output verifying \
+                  determinism + width + phosphor-prefix — the nested `if ch == ESC` \
+                  + `for c in chars` loop is the ANSI-stripping logic the test \
+                  depends on."
+)]
 fn help_banner_is_deterministic_bounded_phosphor() {
     fn visible_cols(line: &str) -> usize {
         let mut n = 0;
