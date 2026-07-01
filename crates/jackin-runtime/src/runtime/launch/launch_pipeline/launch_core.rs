@@ -93,6 +93,12 @@ where
               launch_role_runtime. Until that slice lands, the inline shape \
               preserves captured-locals across phases."
 )]
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "Same justification as the too_many_lines allow: inner launch async \
+              body branching tracks the preflight / docker_run / wait / teardown \
+              sequence, not algorithmic complexity."
+)]
 pub(super) async fn run_launch_core<D, R>(ctx: LaunchCore<'_, D, R>) -> anyhow::Result<String>
 where
     D: DockerApi,

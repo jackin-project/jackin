@@ -61,7 +61,7 @@ lines = 1727
 
 [[production]]
 path = "crates/jackin-capsule/src/daemon.rs"
-lines = 1682
+lines = 1688
 
 [[production]]
 path = "crates/jackin-console/src/tui/screens/settings/view.rs"

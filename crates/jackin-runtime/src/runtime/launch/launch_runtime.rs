@@ -198,6 +198,13 @@ pub(crate) fn spawn_sibling_auth_prewarm(
               burn-down strategy: while this `#[allow]` is recorded, the \
               deferred body-extraction slice remains tracked as a roadmap item."
 )]
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "Same justification as the too_many_lines allow: launch pipeline \
+              branching depth tracks the bring-up / phase / teardown sequence \
+              branching, not algorithmic complexity. Body extraction follows the \
+              same deferred-parallel-pass plan."
+)]
 pub(crate) async fn launch_role_runtime(
     ctx: &LaunchContext<'_>,
     steps: &mut StepCounter,

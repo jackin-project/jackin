@@ -196,6 +196,12 @@ where
               shape preserves captured socket + reader + writer borrows across \
               the protocol phases."
 )]
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "Same justification as the too_many_lines allow: attach protocol \
+              async loop branching tracks the request/response routing arms, \
+              not algorithmic complexity."
+)]
 async fn run_attach_protocol<R, W, I, O>(
     mut server_reader: R,
     mut server_writer: W,

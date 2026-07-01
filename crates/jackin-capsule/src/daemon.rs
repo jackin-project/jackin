@@ -819,6 +819,12 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
               deferred-parallel-pass plan as the launch fns — the inline shape \
               preserves captured-runtime state across stages."
 )]
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "Same justification as the too_many_lines allow: daemon entry point \
+              branching tracks the spawn → accept → input-parser init sequence, \
+              not algorithmic complexity."
+)]
 pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
     crate::pid1::install_sigchld_reaper();
 

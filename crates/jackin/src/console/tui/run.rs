@@ -172,6 +172,12 @@ where
               fn-of-fns shape with the same overall body. Body remains ~234 lines \
               until a follow-up slice extracts the heaviest arms."
 )]
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "Same justification as the too_many_lines allow: console TUI event \
+              loop carries per-event dispatch arms inline. Branching depth tracks \
+              the per-event-arm richness, not actual algorithmic complexity."
+)]
 pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     mut config: AppConfig,
     paths: &JackinPaths,
