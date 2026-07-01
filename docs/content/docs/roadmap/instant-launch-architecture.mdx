@@ -32,7 +32,7 @@ The split of responsibility: the **capsule** detects dirty/unpushed state and **
 
 The detection logic must be shared, not duplicated, so the capsule and the host can never disagree on what "dirty" means.
 
-- Today the detection lives only host-side, in `assess_cleanup` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> — pure git work (`git -C <path> status --porcelain` for uncommitted/untracked, `rev-list <upstream>..<branch>` for unpushed), coupled only to a worktree path and a command runner.
+- Today the detection lives only host-side, in `assess_cleanup` in <RepoFile path="crates/jackin-isolation/src/finalize.rs" /> — pure git work (`git -C <path> status --porcelain` for uncommitted/untracked, `rev-list <upstream>..<branch>` for unpushed), coupled only to a worktree path and a command runner.
 - Both `jackin-runtime` (host) and `jackin-capsule` (in-container) already depend on `jackin-core`, which already holds the shared `CleanupStatus` and `IsolationRecord` types in <RepoFile path="crates/jackin-core/src/isolation_record.rs" />. `jackin-core` is the natural shared home — no new crate, no new binary.
 - Plan: extract the path-based assessment into `jackin-core` as a function over a repo path returning `Clean | Dirty | Unpushed` (plus the `PreservedReason` it already produces). The host's `assess_cleanup` becomes a thin wrapper over it; the capsule calls the same function in-container against its workdir at last-session-close. One source of truth.
 
@@ -67,7 +67,7 @@ This checklist is the work contract for the implementing agent. Rules: tackle on
 
 - [x] Add a `jackin-core` module (`worktree_dirty`) exposing a path-based assessment: input a repo path + base ref, output `WorktreeState` (`Clean | Dirty | Unpushed`) via `assess_worktree`, plus the per-file change list (`ChangedFile` + `parse_porcelain`/`changed_files`) the Inspect view needs. Drives git through the existing `jackin_core::runner::CommandRunner` seam so the crate stays subprocess-free.
 - [x] Expose the shared result type (`WorktreeState`, `ChangedFile`) in `jackin-core`, driven by the existing `CommandRunner` seam that both host (async) and capsule (in-container) can implement. (`PreservedReason` deliberately stays host-side in `finalize.rs` — it is exit-dialog wording the capsule does not consume; the capsule derives its own summary from `WorktreeState` + the change list.)
-- [x] Rewire host `assess_cleanup` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> to call `jackin_core::worktree_dirty::assess_worktree` with a logger closure that preserves the `--debug` diagnostics — no host behavior change.
+- [x] Rewire host `assess_cleanup` in <RepoFile path="crates/jackin-isolation/src/finalize.rs" /> to call `jackin_core::worktree_dirty::assess_worktree` with a logger closure that preserves the `--debug` diagnostics — no host behavior change.
 - [x] Add `jackin-core` unit tests (scripted `CommandRunner` mock + std-only `block_on`): clean, uncommitted, untracked, branch-ahead-no-upstream, ahead-of-upstream, fully-pushed, `[gone]`-merged, detached-HEAD off/at base, status-failure fail-closed, no-branches fail-closed, multiple repos, and `changed_files`/`parse_porcelain`.
 - [x] Verify: `jackin-core` tests (15) and host `finalize` tests (43) pass; `cargo fmt --check` and `cargo clippy` clean on both crates.
 
@@ -145,7 +145,7 @@ When the operator confirms a group above, move it out of this list with an expli
 
 - <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — multiplexer daemon; the `no_live_sessions()` last-session-close branch is the in-capsule hinge.
 - <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> — capsule dialog system and `new_agent_picker` reused for "Start a new agent".
-- <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> — host `assess_cleanup` (detection to extract) and terminal-outcome / keep-discard execution.
+- <RepoFile path="crates/jackin-isolation/src/finalize.rs" /> — host `assess_cleanup` (detection to extract) and terminal-outcome / keep-discard execution.
 - <RepoFile path="crates/jackin-core/src/isolation_record.rs" /> — shared cleanup types; target home for the extracted detection.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — `launch_role_runtime` load path that must run finalize on clean exit.
 - <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — hardline reconnect path that short-circuits finalize on clean exit.

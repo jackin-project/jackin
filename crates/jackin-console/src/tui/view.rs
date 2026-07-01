@@ -17,7 +17,7 @@ pub struct WorkspaceFrameAreas {
 
 /// Which modal (if any) currently owns the overlay chrome.
 ///
-/// R6 enum-ified from a 9-bool `ModalOverlayState` struct: in practice the
+/// R6 refactored into an enum from a 9-bool `ModalOverlayState` struct: in practice the
 /// console presents exactly one modal at a time, so the OR'd bool set was
 /// always reduced to "which one is on top" by the render layer. The enum
 /// makes that priority order explicit instead of relying on field order in
