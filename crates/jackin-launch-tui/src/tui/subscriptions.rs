@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_lines)] 
+#![allow(clippy::too_many_lines)]
 //! Launch cockpit input handling.
 
 use std::sync::{Arc, Mutex};

@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_lines)] 
+#![allow(clippy::too_many_lines)]
 //! Key handler for the Settings → Global Mounts tab and its modals.
 //!
 //! Dispatches keyboard events to the add/edit/delete flow for global mount

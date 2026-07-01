@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_lines)] 
+#![allow(clippy::too_many_lines)]
 //! Settings Auth tab key and modal handlers.
 
 use super::{

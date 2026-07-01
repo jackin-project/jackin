@@ -1739,6 +1739,5 @@ impl DamageGrid {
 /// top-level params with `;`. Example: `[[1, 2], [3]]` with final `m`
 /// → `\x1b[1:2;3m`.
 
-
 #[cfg(test)]
 mod tests;

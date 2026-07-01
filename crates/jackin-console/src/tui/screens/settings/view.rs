@@ -754,7 +754,6 @@ fn settings_trust_focused<
         && state.mounts.modal.is_none()
 }
 
-
 #[must_use]
 pub fn content_height_with_error_rows(height: usize, has_error: bool) -> usize {
     if has_error {

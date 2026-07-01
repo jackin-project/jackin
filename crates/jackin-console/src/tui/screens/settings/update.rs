@@ -1378,7 +1378,6 @@ pub fn trust_content_width(state: &SettingsTrustState) -> usize {
         .unwrap_or(0)
 }
 
-
 mod env_helpers;
 pub use env_helpers::*;
 

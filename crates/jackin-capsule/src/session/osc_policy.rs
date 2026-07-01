@@ -120,4 +120,3 @@ impl OscPolicy {
 fn is_env_deny(name: &str) -> bool {
     matches!(std::env::var(name).as_deref(), Ok("deny" | "off" | "no"))
 }
-

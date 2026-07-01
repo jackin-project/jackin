@@ -1,23 +1,23 @@
 //! Settings screen state: per-tab state structs for the General, Mounts,
 //! Environments, Auth, and Trust panels.
 
-#[path = "model/env_impls.rs"]
-mod env_impls;
 #[path = "model/auth_impls.rs"]
 mod auth_impls;
-#[path = "model/trust_impls.rs"]
-mod trust_impls;
+#[path = "model/env_impls.rs"]
+mod env_impls;
 #[path = "model/general_impls.rs"]
 mod general_impls;
+#[path = "model/trust_impls.rs"]
+mod trust_impls;
 
-#[allow(unused_imports, unreachable_pub)]
-pub use env_impls::*;
 #[allow(unused_imports, unreachable_pub)]
 pub use auth_impls::*;
 #[allow(unused_imports, unreachable_pub)]
-pub use trust_impls::*;
+pub use env_impls::*;
 #[allow(unused_imports, unreachable_pub)]
 pub use general_impls::*;
+#[allow(unused_imports, unreachable_pub)]
+pub use trust_impls::*;
 
 // Not responsible for: event handling (see `update`) or rendering (see
 // `view`).
@@ -752,7 +752,6 @@ impl<V> SettingsEnvConfig<V> {
 }
 
 #[must_use]
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalMountConfirm {
     Remove,
@@ -1180,7 +1179,6 @@ pub struct SettingsTrustSaveRefs<'a> {
     pub pending: &'a [SettingsTrustRow],
 }
 
-
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct GlobalMountDraft {
     pub name: String,
@@ -1346,7 +1344,6 @@ pub struct SettingsAuthSaveRefs<'a, EnvValue> {
     pub github_env: &'a BTreeMap<String, EnvValue>,
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct SettingsGeneralState {
@@ -1362,4 +1359,3 @@ pub struct SettingsGeneralSaveRefs {
     pub git_coauthor_trailer: bool,
     pub git_dco: bool,
 }
-

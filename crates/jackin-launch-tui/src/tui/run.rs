@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_lines)] 
+#![allow(clippy::too_many_lines)]
 //! Launch rich terminal renderer and modal loops.
 
 use std::io::Write;

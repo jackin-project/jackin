@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_lines)] 
+#![allow(clippy::too_many_lines)]
 //! Attach protocol handshake: initial capability negotiation and session-ID
 //! assignment when a client connects.
 //!

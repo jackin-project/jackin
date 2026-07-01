@@ -1838,6 +1838,5 @@ async fn published_image_is_stale(
     )
 }
 
-
 #[cfg(test)]
 mod tests;
