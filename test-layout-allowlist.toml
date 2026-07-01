@@ -3,6 +3,5 @@
 # Delete an entry when its file is fixed; the list may only shrink.
 files = [
     "crates/jackin-console/src/tui/screens/workspaces/view/list/tests.rs",
-    "crates/jackin-instance/src/auth/tests.rs",
 ]
 

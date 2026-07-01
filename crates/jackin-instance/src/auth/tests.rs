@@ -1,5 +1,6 @@
 //! Tests for `instance/auth` — tests.
-use crate::{AuthProvisionOutcome, PrepareResolvers, RoleState};
+use super::{Agent, AuthProvisionOutcome, RoleState, validate_sync_source_dir};
+use crate::PrepareResolvers;
 use jackin_config::AuthForwardMode;
 use jackin_core::paths::JackinPaths;
 use tempfile::tempdir;
@@ -33,80 +34,72 @@ const TEST_CREDENTIALS: &str = r#"{"claudeAiOauth":{"accessToken":"test","refres
 
 // ── Source-folder validation ────────────────────────────────────────
 
-mod source_validation {
-    use crate::validate_sync_source_dir;
-    use jackin_core::agent::Agent;
-    use tempfile::tempdir;
+#[test]
+fn validate_rejects_non_directory() {
+    let temp = tempdir().unwrap();
+    let missing = temp.path().join("nope");
+    assert!(validate_sync_source_dir(Agent::Codex, &missing, temp.path()).is_err());
+}
 
-    const TEST_CREDENTIALS: &str = super::TEST_CREDENTIALS;
+#[test]
+fn validate_claude_accepts_file_credentials_rejects_bare_folder() {
+    let temp = tempdir().unwrap();
+    let good = temp.path().join("claude-good");
+    std::fs::create_dir_all(&good).unwrap();
+    std::fs::write(good.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
+    assert!(validate_sync_source_dir(Agent::Claude, &good, temp.path()).is_ok());
 
-    #[test]
-    fn validate_rejects_non_directory() {
-        let temp = tempdir().unwrap();
-        let missing = temp.path().join("nope");
-        assert!(validate_sync_source_dir(Agent::Codex, &missing, temp.path()).is_err());
-    }
+    // No .credentials.json file; host_home is a temp dir so the macOS
+    // Keychain probe is skipped — must be rejected, not accepted.
+    let bare = temp.path().join("claude-bare");
+    std::fs::create_dir_all(&bare).unwrap();
+    let err = validate_sync_source_dir(Agent::Claude, &bare, temp.path()).unwrap_err();
+    assert!(err.contains("Claude"), "msg should name the agent: {err}");
+}
 
-    #[test]
-    fn validate_claude_accepts_file_credentials_rejects_bare_folder() {
-        let temp = tempdir().unwrap();
-        let good = temp.path().join("claude-good");
-        std::fs::create_dir_all(&good).unwrap();
-        std::fs::write(good.join(".credentials.json"), TEST_CREDENTIALS).unwrap();
-        assert!(validate_sync_source_dir(Agent::Claude, &good, temp.path()).is_ok());
-
-        // No .credentials.json file; host_home is a temp dir so the macOS
-        // Keychain probe is skipped — must be rejected, not accepted.
-        let bare = temp.path().join("claude-bare");
-        std::fs::create_dir_all(&bare).unwrap();
-        let err = validate_sync_source_dir(Agent::Claude, &bare, temp.path()).unwrap_err();
-        assert!(err.contains("Claude"), "msg should name the agent: {err}");
-    }
-
-    #[test]
-    fn validate_single_file_agents() {
-        let temp = tempdir().unwrap();
-        for (agent, name) in [
-            (Agent::Codex, "auth.json"),
-            (Agent::Grok, "auth.json"),
-            (Agent::Opencode, "auth.json"),
-            (Agent::Amp, "secrets.json"),
-        ] {
-            let dir = temp.path().join(format!("{agent:?}-good"));
-            std::fs::create_dir_all(&dir).unwrap();
-            // Empty file is rejected.
-            std::fs::write(dir.join(name), "").unwrap();
-            assert!(
-                validate_sync_source_dir(agent, &dir, temp.path()).is_err(),
-                "{agent:?}: empty {name} must be rejected"
-            );
-            // Non-empty credential file is accepted.
-            std::fs::write(dir.join(name), "{\"token\":\"x\"}").unwrap();
-            assert!(
-                validate_sync_source_dir(agent, &dir, temp.path()).is_ok(),
-                "{agent:?}: valid {name} must be accepted"
-            );
-            // Wrong folder (no credential file) is rejected.
-            let bad = temp.path().join(format!("{agent:?}-bad"));
-            std::fs::create_dir_all(&bad).unwrap();
-            assert!(validate_sync_source_dir(agent, &bad, temp.path()).is_err());
-        }
-    }
-
-    #[test]
-    fn validate_kimi_requires_config_and_credentials_tree() {
-        let temp = tempdir().unwrap();
-        let good = temp.path().join("kimi-good");
-        std::fs::create_dir_all(good.join("credentials")).unwrap();
-        std::fs::write(good.join("config.toml"), "x = 1\n").unwrap();
-        assert!(validate_sync_source_dir(Agent::Kimi, &good, temp.path()).is_ok());
-
-        // config.toml present but no credentials/ dir → rejected.
-        let bad = temp.path().join("kimi-bad");
+#[test]
+fn validate_single_file_agents() {
+    let temp = tempdir().unwrap();
+    for (agent, name) in [
+        (Agent::Codex, "auth.json"),
+        (Agent::Grok, "auth.json"),
+        (Agent::Opencode, "auth.json"),
+        (Agent::Amp, "secrets.json"),
+    ] {
+        let dir = temp.path().join(format!("{agent:?}-good"));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Empty file is rejected.
+        std::fs::write(dir.join(name), "").unwrap();
+        assert!(
+            validate_sync_source_dir(agent, &dir, temp.path()).is_err(),
+            "{agent:?}: empty {name} must be rejected"
+        );
+        // Non-empty credential file is accepted.
+        std::fs::write(dir.join(name), "{\"token\":\"x\"}").unwrap();
+        assert!(
+            validate_sync_source_dir(agent, &dir, temp.path()).is_ok(),
+            "{agent:?}: valid {name} must be accepted"
+        );
+        // Wrong folder (no credential file) is rejected.
+        let bad = temp.path().join(format!("{agent:?}-bad"));
         std::fs::create_dir_all(&bad).unwrap();
-        std::fs::write(bad.join("config.toml"), "x = 1\n").unwrap();
-        assert!(validate_sync_source_dir(Agent::Kimi, &bad, temp.path()).is_err());
+        assert!(validate_sync_source_dir(agent, &bad, temp.path()).is_err());
     }
+}
+
+#[test]
+fn validate_kimi_requires_config_and_credentials_tree() {
+    let temp = tempdir().unwrap();
+    let good = temp.path().join("kimi-good");
+    std::fs::create_dir_all(good.join("credentials")).unwrap();
+    std::fs::write(good.join("config.toml"), "x = 1\n").unwrap();
+    assert!(validate_sync_source_dir(Agent::Kimi, &good, temp.path()).is_ok());
+
+    // config.toml present but no credentials/ dir → rejected.
+    let bad = temp.path().join("kimi-bad");
+    std::fs::create_dir_all(&bad).unwrap();
+    std::fs::write(bad.join("config.toml"), "x = 1\n").unwrap();
+    assert!(validate_sync_source_dir(Agent::Kimi, &bad, temp.path()).is_err());
 }
 
 /// Set up a fake host auth environment in the temp dir.
@@ -161,7 +154,7 @@ fn ignore_mode_skips_state_when_absent() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -193,7 +186,7 @@ fn sync_mode_copies_host_auth_on_first_run() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -233,7 +226,7 @@ fn sync_source_dir_copies_claude_config_dir_without_nested_home_layout() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -285,7 +278,7 @@ fn sync_source_dir_does_not_fall_back_to_default_host_credentials() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -335,7 +328,7 @@ fn sync_source_dir_uses_source_folder_own_credentials() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -383,7 +376,7 @@ fn sync_source_dir_empty_credentials_file_is_not_treated_as_valid() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -419,7 +412,7 @@ fn sync_mode_falls_back_to_empty_json_when_host_has_none() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -566,7 +559,7 @@ fn sync_mode_overwrites_existing() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
     assert_eq!(outcome1, AuthProvisionOutcome::Synced);
@@ -593,7 +586,7 @@ fn sync_mode_overwrites_existing() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -624,7 +617,7 @@ fn switching_from_sync_to_ignore_revokes_forwarded_credentials() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
     assert!(state.claude_credentials_json().unwrap().exists());
@@ -640,7 +633,7 @@ fn switching_from_sync_to_ignore_revokes_forwarded_credentials() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
     assert_eq!(
@@ -668,7 +661,7 @@ fn token_mode_writes_onboarding_skeleton_and_no_credentials() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -712,7 +705,7 @@ fn api_key_mode_wipes_credentials_and_writes_empty_json() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
     assert!(
@@ -730,7 +723,7 @@ fn api_key_mode_wipes_credentials_and_writes_empty_json() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -764,7 +757,7 @@ fn switching_from_sync_to_token_revokes_forwarded_credentials() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
     assert!(state.claude_credentials_json().unwrap().exists());
@@ -782,7 +775,7 @@ fn switching_from_sync_to_token_revokes_forwarded_credentials() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
     assert_eq!(
@@ -811,7 +804,7 @@ fn switching_from_token_to_sync_forwards_fresh_host_creds() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
     assert_eq!(
@@ -830,7 +823,7 @@ fn switching_from_token_to_sync_forwards_fresh_host_creds() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
     assert!(
@@ -863,7 +856,7 @@ fn switching_from_token_to_ignore_remains_empty() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -878,7 +871,7 @@ fn switching_from_token_to_ignore_remains_empty() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
     assert_eq!(
@@ -907,7 +900,7 @@ fn sync_mode_preserves_container_auth_when_host_file_missing() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -930,7 +923,7 @@ fn sync_mode_preserves_container_auth_when_host_file_missing() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
     assert_eq!(
@@ -960,7 +953,7 @@ fn auth_file_has_restricted_permissions() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -1003,7 +996,7 @@ fn sync_repairs_permissions_on_legacy_permissive_file() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -1029,7 +1022,7 @@ fn sync_repairs_permissions_on_legacy_permissive_file() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -1064,7 +1057,7 @@ fn sync_repairs_permissions_when_host_auth_missing() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -1092,7 +1085,7 @@ fn sync_repairs_permissions_when_host_auth_missing() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
     assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
@@ -1136,7 +1129,7 @@ fn rejects_symlink_at_claude_json() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -1157,7 +1150,7 @@ fn rejects_symlink_at_claude_json() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap_err();
     assert!(
@@ -1188,7 +1181,7 @@ fn rejects_symlink_at_credentials_json() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap();
 
@@ -1210,7 +1203,7 @@ fn rejects_symlink_at_credentials_json() {
         },
         &GithubAuthContext::default(),
         temp.path(),
-        jackin_core::agent::Agent::Claude,
+        Agent::Claude,
     )
     .unwrap_err();
     assert!(
