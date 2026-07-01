@@ -587,8 +587,8 @@ ruling. **Done-when** the decision is recorded on the roadmap; if (b), the move 
 - [x] Retire the execution playbook (deleted; replaced by this file; detail in git history).
 - [x] Fix the stale roadmap W5 line count (`image.rs` 2811 → 1952, under cap).
 - [x] Reconcile the W4 `deny.toml` bullet wording (teeth = arch gate, not `deny.toml`).
-- [ ] Prune the under-cap `runtime/image.rs` entry from `file-size-budget.toml` (covered by R4).
-- [ ] Add a one-line "revisit on next sigstore/oci-client bump" note beside the two
+- [x] Prune the stale `launch.rs` grandfather from `file-size-budget.toml` (was 269L, well under the 2000L cap; never needed the grandfather after R4 File1/2 finished).
+- [x] Add a one-line "revisit on next sigstore/oci-client bump" note beside the two
       `deny.toml` `RUSTSEC-2023-0071` / `RUSTSEC-2026-0173` advisory ignores.
 
 ---

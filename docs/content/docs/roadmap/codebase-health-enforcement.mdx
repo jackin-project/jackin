@@ -38,6 +38,7 @@ The mechanical, copy-pasteable per-slice steps (exact files, symbols, line range
 
 ### Durability, decision, and hygiene
 
+- [x] **R11 — doc & bookkeeping cleanup** (playbook retired, stale W5 line count + W4 `deny.toml` bullet wording reconciled, stale `launch.rs` grandfather pruned from `file-size-budget.toml`, RUSTSEC revisit notes added beside the two `deny.toml` advisory ignores). Remaining housekeeping subsumed by R6 / R8 / R10.
 - [ ] **R8 — duplicate-version debt.** `deny.toml` carries `multiple-versions = "warn"` + 35 grandfathered `[bans] skip` entries. Pay the transitive duplicates down (`cargo tree -d`), delete each skip as it resolves, then flip to `deny`.
 - [ ] **R9 — W4 optional dependency-graph artifact.** Add a non-blocking CI job that publishes a `cargo-modules` / `cargo-depgraph` layering graph per PR. Informational only; adds no `deny.toml` license burden.
 - [ ] **R10 — D7 deferred decision: the `jackin-config` persistence IO edge.** Decide whether `persist.rs` splits into an L2 adapter (keeping the schema crate strictly IO-free) or keeps a thin documented IO edge; record the ruling here. (The other two D7 deferrals — tool overlap and `FakeOpWriter` dedup — are already resolved.)
