@@ -569,6 +569,13 @@ No `cargo-modules`/graph step in `.github/`. Add a **non-blocking** CI job publi
 `cargo-modules` / `cargo-depgraph` layering graph per PR (informational; no `deny.toml`
 license burden). **Done-when** CI uploads the artifact, or the box is closed as "won't do."
 
+**Progress (this branch).** Landed a `workspace-depgraph` job in `.github/workflows/ci.yml`:
+`needs: [changes]`, `if: needs.changes.outputs.rust == 'true'`, `continue-on-error: true`,
+GitHub lane only. Runs `cargo depgraph --workspace-only --all-features --dedup-transitive-deps`
+→ `workspace.dot`, then `dot -Tsvg workspace.dot -o workspace.svg`, then uploads both as
+the 14-day `workspace-depgraph` artifact. Intentionally **not** in the `ci-required`
+aggregator so this can never block merge.
+
 ---
 
 ## R10 — D7 deferred decision: `jackin-config` persistence IO edge
