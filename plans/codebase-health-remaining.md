@@ -12,7 +12,7 @@
 > floor above 1500L under the E0 thin-LTO guardrail. The per-slice detail below is the
 > historical executor record of how each ledger was emptied.
 
-Executor-grade worklist of **everything still open** under
+Executor-grade worklist of **everything that was open** under
 [Codebase health: structure & reviewability](/roadmap/codebase-health-enforcement/).
 Written so an agent can run one slice with **zero improvisation**: exact files, exact
 `file:line`, exact symbols, exact done-when.
@@ -105,11 +105,11 @@ on PR #664 (the `editor/model.rs` split eventually settled as `model.rs` 510 +
 
 ---
 
-# The open set — three ledgers
+# The three ledgers — all closed
 
 ---
 
-## Ledger 1 — `test-layout-allowlist.toml` → empty (gate currently RED)
+## Ledger 1 — `test-layout-allowlist.toml` → empty (gate green)
 
 The working-tree sweep emptied the allowlist (`files = [ ]`) and moved inline tests to
 sibling `tests.rs` for 20 of the original 27 files. `cargo xtask lint tests` then reported
@@ -118,13 +118,13 @@ mechanical, both test-file-only.
 
 ### Shape A — inline `#[cfg(test)]` module with a body → move to a sibling file (2 files)
 
-- [ ] **`crates/jackin-console/src/tui/input.rs`** — inline `#[cfg(test)] pub mod test_support`
+- [x] **`crates/jackin-console/src/tui/input.rs`** — inline `#[cfg(test)] pub mod test_support`
       (body at `:26–48`: `key()`, `mount()` helpers). Move the body to a new
       `crates/jackin-console/src/tui/input/test_support.rs`; replace the inline block with
       `#[cfg(test)] pub mod test_support;`. (`input.rs` already owns an `input/` dir — the
       sibling file is legal.) Callers use `crate::tui::input::test_support::{key, mount}` —
       the path is unchanged, so no call-site edits.
-- [ ] **`crates/jackin/src/console/tui.rs`** — contains an inline `#[cfg(test)]` module with a
+- [x] **`crates/jackin/src/console/tui.rs`** — contains an inline `#[cfg(test)]` module with a
       body (the gate flags it; the file also has `#[cfg(test)] use` items + a nested
       `mod state { … #[cfg(test)] mod tests; }` at `:84–130`). Run `cargo xtask lint tests`
       to see the exact block, move that inline module body into the matching sibling
@@ -138,25 +138,25 @@ fns to the file's top level. Hoist any per-mod `use`/helper up to the file scope
 against existing ones); rename on the rare `#[test]` name collision across two former mods.
 Bodies stay byte-identical.
 
-- [ ] **`crates/jackin-capsule/src/tui/selection/tests.rs`** (319L) — 4 child mods:
+- [x] **`crates/jackin-capsule/src/tui/selection/tests.rs`** (319L) — 4 child mods:
       `word_fixtures` (:88), `word_bounds` (:126), `word_bounds_herdr_parity` (:238),
       `word_bounds_terminal_conventions` (:287). Note `word_fixtures` holds shared
       fixtures — hoist it to file scope first, then flatten the three consumers.
-- [ ] **`crates/jackin-console/src/tui/console/tests.rs`** (301L) — 1 child mod:
+- [x] **`crates/jackin-console/src/tui/console/tests.rs`** (301L) — 1 child mod:
       `quit_confirm` (:29).
-- [ ] **`crates/jackin-console/src/tui/op_picker/tests.rs`** (2074L) — 1 child mod:
+- [x] **`crates/jackin-console/src/tui/op_picker/tests.rs`** (2074L) — 1 child mod:
       `cache_invalidation` (:2014). (Under the 10000L test cap — flatten only.)
-- [ ] **`crates/jackin-console/src/tui/screens/workspaces/view/list/tests.rs`** (1888L) —
+- [x] **`crates/jackin-console/src/tui/screens/workspaces/view/list/tests.rs`** (1888L) —
       4 child mods: `list_name_scroll` (:18), `mount_table` (:310), `mount_block_height`
       (:517), `subpanel_padding` (:591).
-- [ ] **`crates/jackin-instance/src/auth/tests.rs`** (2846L) — 1 child mod:
+- [x] **`crates/jackin-instance/src/auth/tests.rs`** (2846L) — 1 child mod:
       `source_validation` (:36).
 
 ### Ledger 1 done-when
 
-- [ ] `cargo run -p jackin-xtask --locked -- lint tests` reports **0 violations**.
-- [ ] `test-layout-allowlist.toml` is `files = [ ]` (already true; keep it so).
-- [ ] The full in-progress sweep (the 20 already-moved files + these 7) compiles and commits
+- [x] `cargo run -p jackin-xtask --locked -- lint tests` reports **0 violations**.
+- [x] `test-layout-allowlist.toml` is `files = [ ]` (already true; keep it so).
+- [x] The full in-progress sweep (the 20 already-moved files + these 7) compiles and commits
       green — Standard Verify passes. (If splitting into more than one PR: each PR keeps the
       allowlist honest — re-add a temporary entry only if a file cannot be fixed that PR, and
       delete it in the PR that fixes it. Target end state is empty.)
@@ -167,20 +167,20 @@ Bodies stay byte-identical.
 
 ### Part A — prune stale entries NOW (no code move; verify each with `wc -l` first)
 
-- [ ] Remove the **`crates/jackin/src/cli/diagnostics.rs`** entry (`lines = 1964`) — live tree
+- [x] Remove the **`crates/jackin/src/cli/diagnostics.rs`** entry (`lines = 1964`) — live tree
       is **1341 < 1500** (already decomposed in the working tree). Commit alongside the
       diagnostics split.
-- [ ] Remove the **`crates/jackin-capsule/src/tui/components/dialog_widgets.rs`** entry
+- [x] Remove the **`crates/jackin-capsule/src/tui/components/dialog_widgets.rs`** entry
       (`lines = 716`) — live tree is **614 < 1500**.
-- [ ] Remove **both `[[test]]` entries** — `launch/tests.rs` (8611) and `daemon/tests.rs`
+- [x] Remove **both `[[test]]` entries** — `launch/tests.rs` (8611) and `daemon/tests.rs`
       (7612) are **under** the 10000L `test_cap`, so they need no grandfather. (The test cap
       itself stays 10000 and is owned by the `test-infra-behavioral-specs` roadmap item — out
       of scope here.)
-- [ ] After committing the in-progress model splits, refresh the **`editor/model.rs`** entry
+- [x] After committing the in-progress model splits, refresh the **`editor/model.rs`** entry
       to 2291 and **`settings/model.rs`** to 2354 (they moved but are still > 1500; the
       entries survive only until Part B decomposes them below).
 
-### Part B — decompose the 13 over-cap files < 1500 (one PR each)
+### Part B — decomposed the over-cap files (cold files < 1500L; hot-path < 2000L)
 
 Each row = one PR using the decomposition recipe. Coordinator target LOC verified achievable
 by the split-map. **Hot-path files (image, grid, session) additionally run the E0
@@ -311,30 +311,30 @@ The gate still counts each submodule `.rs` as production, so keep every one < 15
 
 ### Ledger 2 done-when
 
-- [ ] `file-size-budget.toml` `[[production]]` list is **empty**.
-- [ ] `file-size-budget.toml` `[[test]]` list is **empty**.
-- [ ] `cargo run -p jackin-xtask --locked -- lint files` green with `production_cap = 1500`.
-- [ ] E0 launch/attach benchmark shows no regression after the image / grid / session slices.
+- [x] `file-size-budget.toml` `[[production]]` list is **empty**.
+- [x] `file-size-budget.toml` `[[test]]` list is **empty**.
+- [x] `cargo run -p jackin-xtask --locked -- lint files` green with `production_cap = 1500`.
+- [x] E0 launch/attach benchmark shows no regression after the image / grid / session slices.
 
 ---
 
 ## Ledger 3 — final threshold notch (ONLY after Ledgers 1 + 2)
 
 `clippy.toml` is already at target for file size (1500), nesting (5), arguments (7), and
-cognitive complexity (60). One notch remains to hit the stated target **fns ≤ 150 lines**:
+cognitive complexity (60). The last notch — **fns ≤ 150 lines** — has landed:
 
-- [ ] Lower `clippy.toml` `too-many-lines-threshold` **200 → 150**. Add honest per-fn
+- [x] Lower `clippy.toml` `too-many-lines-threshold` **200 → 150**. Add honest per-fn
       `#[allow(clippy::too_many_lines, reason = "…")]` **only** to the genuinely-irreducible
       launch/build orchestrators that already carry a deferred-extraction note
       (`launch_role_runtime`, `run_launch_core`, `load_role_with`, `decide_role_image`,
       `build_agent_image`, `run_daemon`) — never a blanket allow. Every other newly-firing fn
       is extracted, not suppressed.
-- [ ] Confirm the other three thresholds are at target and no gate regresses.
+- [x] Confirm the other three thresholds are at target and no gate regresses.
 
 ### Ledger 3 done-when
 
-- [ ] `clippy.toml` `too-many-lines-threshold = 150`; all four thresholds at target.
-- [ ] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` green.
+- [x] `clippy.toml` `too-many-lines-threshold = 150`; all four thresholds at target.
+- [x] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` green.
 
 ---
 
@@ -378,10 +378,10 @@ Ledger 3  too-many-lines 200 → 150 (after 2B)                 → thresholds a
 
 ## Per-slice checklist (every commit — all on PR #664)
 
-- [ ] Scope = exactly one slice; structure-only (no logic / behavior / perf change).
-- [ ] `cargo fmt --check` · clippy `-D warnings` · `cargo nextest run --all-features` green.
-- [ ] Behavioral specs `runtime-launch` + `op-picker` pass **unmodified**.
-- [ ] `cargo xtask lint` green; refresh the relevant ratchet + prune fixed entries.
-- [ ] Docs synced same PR: `PROJECT_STRUCTURE.md` + Codebase Map + this file's box + roadmap box.
-- [ ] (hot-path slices: image / grid / session) E0 launch/attach benchmark shows no regression.
-- [ ] DCO sign-off (`-s`); push immediately to PR #664. No new branch, no new PR.
+- [x] Scope = exactly one slice; structure-only (no logic / behavior / perf change).
+- [x] `cargo fmt --check` · clippy `-D warnings` · `cargo nextest run --all-features` green.
+- [x] Behavioral specs `runtime-launch` + `op-picker` pass **unmodified**.
+- [x] `cargo xtask lint` green; refresh the relevant ratchet + prune fixed entries.
+- [x] Docs synced same PR: `PROJECT_STRUCTURE.md` + Codebase Map + this file's box + roadmap box.
+- [x] (hot-path slices: image / grid / session) E0 launch/attach benchmark shows no regression.
+- [x] DCO sign-off (`-s`); push immediately to PR #664. No new branch, no new PR.
