@@ -153,8 +153,8 @@ Two versioned config surfaces touch this backend. Each requires the five-artifac
 
 | Surface | File kind | Type touched | Change |
 |---|---|---|---|
-| `[runtime] default_backend = "apple-container"` | `config.toml` | `AppConfig` | bumped `CURRENT_CONFIG_VERSION` to `v1alpha7`, fixture <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha6/meta.toml" /> |
-| `[runtime] backend = "apple-container"` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | bumped `CURRENT_WORKSPACE_VERSION` to `v1alpha7`, fixture <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> |
+| `[runtime] default_backend = "apple-container"` | `config.toml` | `AppConfig` | carried by the current config migration chain, now landing at `v1alpha8` with fixtures through <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha7/meta.toml" /> |
+| `[runtime] backend = "apple-container"` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | carried by the current workspace migration chain, now landing at `v1alpha8` with fixtures through <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha7/meta.toml" /> |
 
 Both are additive (new optional fields with serde defaults). One PR per version bump per the one-bump-per-PR rule.
 
@@ -281,10 +281,10 @@ The on-demand credential fields (jackin-exec: `on_demand` on `OpRef`, the `Exten
 
 | Schema change | Source version | Target version |
 |---|---|---|
-| `CURRENT_WORKSPACE_VERSION` (on-demand credentials + runtime backend) | `v1alpha6` | `v1alpha7` |
-| `CURRENT_CONFIG_VERSION` (`[runtime] default_backend`) | `v1alpha6` | `v1alpha7` |
+| `CURRENT_WORKSPACE_VERSION` (on-demand credentials + runtime backend) | landed in the existing migration chain | current `v1alpha8` |
+| `CURRENT_CONFIG_VERSION` (`[runtime] default_backend`) | landed in the existing migration chain | current `v1alpha8` |
 
-Per the AGENTS.md one-bump-per-PR rule, a single PR introduces exactly one version bump per file kind; multiple additive fields land under that one bump. The config and workspace constants are independent, so both transitions land in the same PR. An implementing agent extending this further must check the current value of `CURRENT_WORKSPACE_VERSION` in <RepoFile path="crates/jackin-config/src/migrations.rs" /> when the PR is opened and target the next version.
+Per the AGENTS.md one-bump-per-PR rule, a single PR introduces exactly one version bump per file kind; multiple additive fields land under that one bump. The config and workspace constants are independent, so both transitions land in the same PR. An implementing agent extending this further must check the current values in <RepoFile path="crates/jackin-config/src/versions.rs" /> when the PR is opened and target the next version.
 
 ## Open Before Implementation Can Start
 

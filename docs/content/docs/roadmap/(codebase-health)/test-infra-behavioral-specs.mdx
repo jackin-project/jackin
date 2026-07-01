@@ -2,7 +2,7 @@
 title: "Test Infrastructure & Behavioral Specs"
 ---
 
-**Status**: Open — design proposal
+**Status**: Partially implemented — fuzz infrastructure exists for `jackin-term` and some snapshot tooling is in use; shared `jackin-test-support`, major-component behavioral specs, parser `proptest`, and parser fuzz targets remain open
 
 ## Problem
 
@@ -10,7 +10,7 @@ Three testing gaps block the codebase readability program and increase the risk 
 
 1. **Test file duplication mirrors source duplication.** <RepoFile path="crates/jackin/tests/manager_flow.rs">crates/jackin/tests/manager_flow.rs</RepoFile> is **1,528 lines** and <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile> is **1,669 lines**. There are 4 byte-for-byte-identical `config_with_agents` helpers across 4 test files, 3 independent `FakeRunner` definitions (plus a 4th `ScriptedRunner`), 10 independent mount-helper definitions in 7 files, 45+ copy-pasted role-seeding blocks across 10 files, and 20 inline `ResolvedWorkspace` constructions across 5 files. This blocks the Phase 2 source-file splits because splitting a 7000-line source file means rewriting the 3000-line test file that depends on it.
 
-2. **No behavioral specs for load-bearing components.** The codebase readability roadmap plans a behavioral spec for `runtime/launch.rs`, but not for `jackin-capsule`'s daemon (<RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> — **1,666 lines**, still a load-bearing PID 1 surface, runs as PID 1 in every container). Behavioral specs should be a general practice for all major components.
+2. **Behavioral specs are incomplete.** Specs now exist for some surfaces, but not for `jackin-capsule`'s daemon (<RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> — about 1.7k production lines plus a much larger `daemon/tests.rs` surface), still a load-bearing in-container control plane. Behavioral specs should be a general practice for all major components.
 
 3. **No property-based or fuzz testing for parser surfaces.** <RepoFile path="crates/jackin-manifest/src/validate.rs">crates/jackin-manifest/src/validate.rs</RepoFile> (253 LOC), <RepoFile path="crates/jackin-env/src/env_resolver.rs">crates/jackin-env/src/env_resolver.rs</RepoFile>, and the migration chain (<RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile>, <RepoFile path="crates/jackin-manifest/src/migrations.rs">crates/jackin-manifest/src/migrations.rs</RepoFile>) are parsers of operator/role-author-supplied input, tested only by example-based unit tests. An input the developer didn't think of isn't covered. The migration framework's fixture chain is one of the project's strongest correctness surfaces, but it's still a closed-world test.
 
@@ -39,7 +39,7 @@ Each spec should: list invariants, give the failure mode for each violation, and
 
 ### 3. Property and fuzz tests for parser surfaces
 
-Add two testing layers. Neither `proptest` nor `cargo-fuzz` is currently wired in the workspace:
+Add two testing layers. `cargo-fuzz` exists for `jackin-term`; the remaining fuzz gap is parser surfaces (`manifest`, env resolution, migrations). `proptest` is not yet part of the parser test strategy:
 
 **`proptest` for invariant testing:**
 - `env_resolver`: `${env.VAR}` interpolation is associative, idempotent on no-op substitutions, escapes correctly for every Unicode input.

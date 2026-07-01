@@ -6,9 +6,9 @@ title: "Behavioral spec: runtime/launch.rs"
 
 ## Problem
 
-<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> is the `jackin load` critical path — now **7575L** total (was ~5494L at original analysis — 38% growth). It is targeted for a structural split. Without a behavioral spec, there is no oracle to verify that a refactor preserved the launch pipeline, auth checks, workspace materialization, and post-attach cleanup rules.
+<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> is the `jackin load` critical path. The original single-file bottleneck has been split down to a smaller root API, but the launch surface is still large across `launch.rs`, `launch/launch_pipeline.rs`, and especially `launch/tests.rs`. Without a behavioral spec, there is no oracle to verify that remaining refactors preserve the launch pipeline, auth checks, workspace materialization, and post-attach cleanup rules.
 
-The file has grown significantly due to: instance identity support, Kimi agent runtime, expanded error reporting with mode traces, and additional test coverage.
+Current size evidence: `launch.rs` is about 2.8k lines, `launch/launch_pipeline.rs` about 2.2k lines, and `launch/tests.rs` about 8.6k lines. Remaining work is no longer one monolithic-file split; it is preserving behavior while shrinking the pipeline and test surface.
 
 ## Verified invariants
 
@@ -37,7 +37,7 @@ The file has grown significantly due to: instance identity support, Kimi agent r
 
 ## Why this must come before the split
 
-The spec is the verification oracle. If <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> is split before the spec exists, there is no contract against which to verify the split preserved all invariants. At 7575L, this file is the single most error-prone split in the entire roadmap.
+The spec is the verification oracle. Further launch refactors must be checked against the published contract so the already-split root API, pipeline module, and large test surface keep the same behavior.
 
 ## Key file
 

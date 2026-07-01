@@ -14,9 +14,9 @@ The problem this program addresses is not one bug but a class of failure: **auth
 
 An operator working with jackin❯ across multiple projects or companies will eventually hit each of these. Listed in order of frequency.
 
-**1. Silent 401 after opening a new tab** (most common). The operator opens a second agent tab in a running container. Moments later all sessions in that container — including the one that was already working — receive `401 authentication_error`. Root cause: `jackin-capsule`'s runtime setup ran unconditionally on every `jackin-capsule new` invocation and overwrote the agent's freshly-rotated token with the stale launch-time snapshot. No warning, no indication the new tab caused it.
+**1. Silent 401 after opening a new tab** (fixed for per-container agent setup). The operator opens a second agent tab in a running container. Historically, all sessions in that container — including the one that was already working — could receive `401 authentication_error`. Root cause: `jackin-capsule`'s runtime setup ran unconditionally on every `jackin-capsule new` invocation and overwrote the agent's freshly-rotated token with the stale launch-time snapshot. The shipped per-agent setup marker stops new tabs from overwriting refreshed in-container credentials; live cross-container sync remains Phase 4.
 
-*Fixed in Phase 0 — this PR. See [Auth overwrite on new tab](/roadmap/auth-overwrite-on-new-tab/).*
+*Fixed in Phase 0. See [Auth overwrite on new tab](/roadmap/auth-overwrite-on-new-tab/).*
 
 **2. Auth health visibility is incomplete** (daily friction). Capsule now exposes usage/account-auth-ish status surfaces for running sessions, but jackin❯ still lacks a top-level pre-launch auth probe, `jackin auth status`, config-wide credential checks, and console Auth-tab health glyphs. Bad auth can still be discovered only after launch for those paths.
 
@@ -24,7 +24,7 @@ An operator working with jackin❯ across multiple projects or companies will ev
 
 **3. Multi-company auth used to require manual account switching** (fixed for file-backed agent auth). An operator with a personal Claude account and a company Claude account used to have no way to tell different workspaces to read from different credential directories. Every workspace read from the same hardcoded `~/.claude` path, so the operator had to manually switch accounts on the host before launching each workspace, or all workspaces shared one account.
 
-*Fixed in Phase 1. Source folders are visible as preview rows in the Auth tab and edited through the Auth dialog so workspace and role changes are saved only through the normal workspace save confirmation. See [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) and the schema-version entry for `v1alpha13` in [Schema Versions](/reference/runtime/schema-versions/).*
+*Fixed in Phase 1. Source folders are visible as preview rows in the Auth tab and edited through the Auth dialog so workspace and role changes are saved only through the normal workspace save confirmation. See [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) and the current schema-version entries in [Schema Versions](/reference/runtime/schema-versions/).*
 
 **4. Silent 401 after host token rotation** (long sessions). The host's Claude Code or GitHub CLI rotates an OAuth token automatically in the background. The container holds a snapshot of the pre-rotation token. The server invalidates the old token. The next API call from inside the container fails with `401`. The operator has no warning before it happens.
 
@@ -77,7 +77,7 @@ Phase 6 (credential exposure hardening) — parallel track, no strict ordering
 
 **What the operator experiences after:** Opening new tabs is safe at any point in a session. In-container token refreshes survive indefinitely.
 
-**Status: Shipped in this PR.**
+**Status: Shipped.**
 
 **Exact PR scope:** One file changed — `crates/jackin-capsule/src/runtime_setup.rs`. No schema changes, no config changes, no new CLI commands.
 
@@ -97,7 +97,7 @@ Phase 6 (credential exposure hardening) — parallel track, no strict ordering
 
 **Status: Shipped.**
 
-**Exact shipped scope:** `AgentAuthConfig` gained the optional `sync_source_dir` field, config and workspace schemas were bumped to `v1alpha13`, migration fixtures were added for both file kinds, auth resolution now carries the resolved source folder through provisioning, and the console Auth tab exposes a **Source folder** row for sync-mode agents.
+**Exact shipped scope:** `AgentAuthConfig` has the optional `sync_source_dir` field, the config/workspace migration chain currently lands at `v1alpha8`, migration fixtures cover both file kinds, auth resolution carries the resolved source folder through provisioning, and the console Auth tab exposes a **Source folder** row for sync-mode agents.
 
 **Follow-up hardening (shipped):** Two correctness gaps in source-folder sync were closed. First, an explicit Claude source folder no longer falls back to the default host `~/.claude` credentials or the default macOS Keychain item when the folder has no file-based credentials — it reads that folder's own per-config-dir Keychain entry (`Claude Code-credentials-<sha256(path)[..8]>`) and, on a miss, leaves the capsule unauthenticated rather than leaking the default account. Second, the Source Folder picker now validates a candidate folder against the selected agent's credential structure (Claude, Codex, Amp, Kimi, OpenCode, Grok) and rejects a wrong folder inline instead of saving a path that yields no credentials. See [Auth Source-Folder Sync spec](/reference/developer-reference/specs/auth-source-folder-sync/) (INV-3, INV-7).
 
@@ -231,7 +231,7 @@ When all phases are complete the operator experience is:
 
 | Phase | Goal | Daemon required | Design state | Ships when |
 |---|---|---|---|---|
-| 0 — new-tab overwrite | Stop new tabs from clobbering refreshed tokens | No | Shipped | This PR |
+| 0 — new-tab overwrite | Stop new tabs from clobbering refreshed tokens | No | Shipped | [Auth overwrite on new tab](/roadmap/auth-overwrite-on-new-tab/) |
 | 1 — multi-company isolation | Per-workspace credential source path | No | Shipped | Complete |
 | 2 — health and visibility | Capsule status shipped; pre-launch probe, `jackin auth status`, config-wide probes, console indicators remain | No | Partial | Next auth PR |
 | 3 — daemon foundation | Lifecycle, install, control socket, log redaction | — (is the daemon) | Design needed | After Phase 2 |

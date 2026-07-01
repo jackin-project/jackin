@@ -13,6 +13,7 @@ The docs site is the operator-facing surface for jackin❯, and the volume of MD
 - lychee (catches broken URLs and anchor fragments after build)
 - <RepoFile path="docs/scripts/check-repo-links.ts">docs/scripts/check-repo-links.ts</RepoFile> (catches code-span references to existing repo files)
 - <RepoFile path="docs/scripts/check-roadmap-sidebar.ts">docs/scripts/check-roadmap-sidebar.ts</RepoFile> / `bun run check:roadmap-sidebar` (catches roadmap MDX pages missing from `meta.json` and stale sidebar entries)
+- Codebook spell-check jobs for tracked docs/source prose
 
 There is no automated check on **mechanical markdown style**: heading hierarchy, code-fence languages, list-marker consistency, trailing whitespace, line-length policy, emphasis-marker mixing, footnote use, and the dozens of small choices that compound into a hand-rolled feel when each page was touched by a different contributor on a different day.
 

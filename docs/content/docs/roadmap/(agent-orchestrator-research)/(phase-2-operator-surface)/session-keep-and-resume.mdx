@@ -2,7 +2,7 @@
 title: "Session Keep and Resume"
 ---
 
-**Status**: Open — design proposal (Phase 2 — Live operator surface, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+**Status**: Partially implemented — dirty/unsafe exit assessment, keep/delete action wiring, `keep_awake`, and basic restore candidates exist; durable resume continuity, kept-clean sessions, launch recipes, and `docker start` tiers remain open (Phase 2 — Live operator surface, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -372,7 +372,7 @@ Two supporting sweeps close the long tail:
 
 ## Phases
 
-- **Phase 0 — Exit-dialog hardening (this PR's area).** Restore a plain-text degrade when the terminal cannot render the rich surface, `clog!` the swallowed popup failure, and de-flicker the double alt-screen enter (F7).
+- **Phase 0 — Exit-dialog hardening.** Restore a plain-text degrade when the terminal cannot render the rich surface, `clog!` the swallowed popup failure, and de-flicker the double alt-screen enter (F7).
 - **Phase 1 — Status model and terminal cleanup.** Make "keep to resume" a real `FinalizeDecision` outcome; promote kept instances (including clean ones) to a restore candidate; stop auto-deleting the worktree when the operator keeps (F1, F2). Wire the terminal-outcome cleanup into the exit path so a clean/clean-up/`clean` exit removes the data directory, sibling lock, socket directory, and the `instances.json` row by routing through the existing `purge_container_filesystem` / `InstanceIndex::remove_many` helpers (F9, F10, F11). `instance.json` and the index are **not** versioned schemas, so a new `InstanceStatus` variant needs no migration.
 - **Phase 2 — Rich exit cockpit.** Move the exit decision onto the launch-progress surface; show dirty/unpushed detail with acknowledge (F3, F5, F6).
 - **Phase 3 — Per-workspace policy.** Add the `ask` / `keep` / `clean` setting with its full workspace-schema migration set and the `--keep` / `--clean` overrides.

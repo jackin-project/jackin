@@ -60,7 +60,7 @@ This item keeps **only the cells that are clearly documented, testable, and work
 | **Anthropic** (native) | ✅ shipped | n/a | ✅ shipped |
 | **OpenAI** (native) | n/a | ✅ shipped — Codex's default auth; no `wire_api` redirect needed | n/a |
 | **MiniMax** | ✅ shipped | ✅ shipped (`wire_api = "responses"`) | ✅ shipped |
-| **Z.AI / GLM** | ✅ shippedped | ✖ deferred — Chat-only, blocked on current Codex | ✅ shipped |
+| **Z.AI / GLM** | ✅ shipped | ✖ deferred — Chat-only, blocked on current Codex | ✅ shipped |
 | **Kimi** | ✅ shipped | ✖ deferred — Chat-only, no Responses endpoint | ✅ shipped |
 
 The "native" rows cover each agent's own auth surface: Anthropic for Claude Code (subscription), OpenAI for Codex (`auth.json` sync or `OPENAI_API_KEY`). They are catalog entries even though no env redirect is emitted — the catalog drives the provider picker, and the picker skips these entries when no alt provider is configured (so Claude and Codex launch with no picker when only the native auth is available, mirroring each other).

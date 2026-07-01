@@ -2,7 +2,7 @@
 title: "Declarative Resource Limits per Agent"
 ---
 
-**Status**: Open — design proposal (Phase 1, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+**Status**: Partially implemented — Docker security/resource grants and validation exist; remaining work is role/agent-facing limits, operator overrides, OOM surfacing, and non-Docker translation (Phase 1, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
@@ -10,7 +10,7 @@ jackin❯ now has Docker security/resource fields (`memory`, `memory_reservation
 
 jackin❯ runs every agent in a Docker container with whatever resource allocation the host gives it. On a developer laptop, six parallel agents can each spawn a `cargo build`, exhaust memory, OOM-kill the desktop, or starve each other for CPU. There's no operator-facing control for this today; the operator's only knob is "launch fewer agents."
 
-Docker exposes the right primitives (`--memory`, `--cpus`, `--ulimit nofile=N`, plus `--memory-reservation` for soft limits), but jackin❯ doesn't plumb any of them through.
+Docker exposes the right primitives (`--memory`, `--cpus`, `--ulimit nofile=N`, plus `--memory-reservation` for soft limits). jackin❯ now has Docker-profile plumbing for those primitives; this item tracks the remaining role/agent-facing contract and cross-backend translation.
 
 multicode addresses this directly with three declarative fields: `memory-high` (soft limit, triggers reclaim), `memory-max` (hard limit, triggers OOM kill), `cpu` (quota as percentage), and `nofile` (FD ceiling on Apple-container backends).
 

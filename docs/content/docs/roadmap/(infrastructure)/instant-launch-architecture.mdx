@@ -4,17 +4,9 @@ title: "Runtime Restore and Image Architecture"
 
 **Status**: Mostly implemented — image bake, home seeding, container identity, restore ladder, schema migration, console surfaces, launch cockpit hard-exit plumbing, build-performance work, and in-capsule dirty-exit plumbing have landed; operator live end-to-end signoff remains pending. Inspect currently ships the changed-file list; the full diff pane remains follow-up.
 
-## Confirmed defect — the dirty-exit confirmation never fires
+## Current remaining gap — operator signoff and resume continuity
 
-The headline behavior of this work — "if you exit with dirty or unpushed work, jackin❯ asks what to do" — does not happen. Reproduced three times: with a dirty workspace and the default `ask` policy, exiting the agent normally shows **no dialog**; the container just disappears and the work is silently left preserved. The operator is never asked.
-
-Root cause (code-confirmed):
-
-- The `jackin load` foreground path, `launch_role_runtime` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />, **never calls `finalize_foreground_session`** at all. On success it returns `Ok(())`; on the attach result being an error it returns a `capsule attach failed` error. There is no dirty-exit dialog on the load path, on any exit.
-- The `jackin hardline` reconnect path, `finalize_reconnected_foreground_session` in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" />, runs `attach_outcome?` **before** it calls finalize, so a clean agent exit short-circuits past the dialog.
-- On a clean last-session exit the in-container capsule client (`client::run_client`) hits the daemon's socket close as `early eof` and **exits non-zero**, so `docker exec … jackin-capsule` returns non-zero. The host then treats a normal exit as a failed attach.
-
-Net effect: the host-side exit dialog is unreachable on the everyday "quit the agent" flow. The feature, as a thing an operator can see and use, is not implemented.
+The earlier dirty-exit defect is closed in code: `jackin-core` owns shared worktree dirty assessment, Capsule owns the in-container `ExitDirty` / `ExitInspect` decision surface, and the host reads `/jackin/state/exit-action.json` and executes keep/discard in the finalize path. The remaining roadmap work is no longer "make the dirty-exit dialog reachable"; it is live operator signoff plus the broader keep/resume continuity model: kept-clean sessions, launch-time recipe snapshots, `docker start` with socket-dir rematerialization, recreate/rebuild restore tiers, and a resume surface that treats returning to a session as normal workflow.
 
 ## Decision — the dirty-exit confirmation moves inside the capsule
 
@@ -59,7 +51,7 @@ This checklist is the work contract for the implementing agent. Rules: tackle on
 
 ### Settled decisions (resolved with operator)
 
-- **Host signal**: the capsule writes the chosen action to a small state file under the per-instance dir — `~/.jackin/data/<container>/.jackin/exit-action.json` (`{ "action": "keep" | "discard" }`) — before `drain_and_exit`. The host finalize reads it and executes that action. Chosen over an exit-code convention (range-limited, conflated with real errors) and a control frame (more plumbing); the file survives the exit and is inspectable.
+- **Host signal**: the capsule writes the chosen action to `/jackin/state/exit-action.json` (`{ "action": "keep" | "discard" }`) before `drain_and_exit`; on the host this is the instance state-dir file under the recorded data directory. The host finalize reads it and executes that action. Chosen over an exit-code convention (range-limited, conflated with real errors) and a control frame (more plumbing); the file survives the exit and is inspectable.
 - **`Ctrl+Q` from the exit modal** maps to `Exit & keep` — the safe default that never loses work.
 - **Discard takes no extra sub-confirm**: selecting `Exit & discard changes` is itself the explicit destructive approval (the operator chose the split-Exit shape). No second Yes/No.
 
@@ -134,7 +126,7 @@ The following landed as code in this branch but still needs operator live signof
 - [ ] Empty-dir home seeding, first-seed-only auth handoff, atomic first seed; durable Amp / OpenCode config roots.
 - [ ] Container identity: `--user $HOST_UID:$HOST_GID --group-add 0` with `libnss-extrausers` passwd/group; group-0 image-home writability; an arbitrary-UID/GID launch (read + write + first seed + `git config --global` + role-hook tool installs) without permission-denied.
 - [ ] Restore ladder: Tier 1 `docker start`, Tier 2 reuse of the stored image, Tier 3 pinned rebuild from `role_git_sha` (original commit, not current `HEAD`); launch never reattaches to a live instance.
-- [ ] Schema `v1alpha7` migration and `dirty_exit_policy` config (global + per-workspace; `ask` / `keep` / `discard`).
+- [ ] Schema `v1alpha8` migration chain and `dirty_exit_policy` config (global + per-workspace; `ask` / `keep` / `discard`).
 - [ ] Console instance surfaces; clean-exit purge and stale-row / orphaned-lock reconciliation on launch / prune.
 - [ ] Launch cockpit hard-exit behavior (`Ctrl+Q` → confirm → immediate exit; `Ctrl+C`; double `Ctrl+C` mid-build) with the terminal restored and `gc_orphaned_resources` reclaiming abandoned resources on the next launch.
 - [ ] Local image-build performance changes (no recursive permission repair, single-layer plugin install, uncompressed local export, construct `shellfirm` prebuild) — and the arbitrary-UID/GID correctness this permission rework depends on.

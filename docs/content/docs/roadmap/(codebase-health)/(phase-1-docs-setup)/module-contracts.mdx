@@ -2,39 +2,23 @@
 title: "Module contracts (//! docs)"
 ---
 
-**Status**: Partially implemented — `//!` module-level docs now cover all production source files in `src/` and `crates/` (2026-06-02); remaining scope is `///` item-level API docs on public crate boundary functions, deferred until Stage 4 crate extraction stabilises the public surfaces.
+**Status**: Resolved for module-level contracts — `//!` module-level docs now cover production crate source; remaining `///` public API docs belong to the deferred [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/), not this setup item.
 
 ## Problem
 
-About 46% of source files (53 of 116) had `//!` orientation docs at original analysis. The remaining 54% gave AI agents and contributors no orientation when they open the file — purpose, scope, and key invariants must be reverse-engineered from the code.
+At original analysis, many source files lacked `//!` orientation docs. That module-level gap is now closed for production crate source; this page remains as the shipped design record.
 
 ## What shipped (2026-06-02)
 
-All priority files from both tables below received `//!` blocks following the `env_model.rs` exemplar format (purpose + scope claim + key invariants):
+Priority production files received `//!` blocks following the `env_model.rs` exemplar format (purpose + scope claim + key invariants). The old per-file checklist is intentionally not repeated here because the crate split and self-named module layout now make stale path tables more expensive than useful.
 
-| File | Status |
-|---|---|
-| <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> | ✅ documented |
-| <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile> | ✅ documented |
-| <RepoFile path="crates/jackin/src/app/context.rs">crates/jackin/src/app/context.rs</RepoFile> | ✅ documented |
-| <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> | ✅ documented |
-| <RepoFile path="crates/jackin-runtime/src/isolation/materialize.rs">crates/jackin-runtime/src/isolation/materialize.rs</RepoFile> | ✅ documented |
-| <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs">crates/jackin-runtime/src/isolation/finalize.rs</RepoFile> | ✅ documented |
-| <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> | ✅ documented |
-| <RepoFile path="crates/jackin/src/workspace.rs">crates/jackin/src/workspace.rs</RepoFile> | ✅ documented |
-| <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile> | ✅ documented |
-| <RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile> | ✅ documented |
-| <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile> | ✅ documented (stale path fixed) |
-| <RepoFile path="crates/jackin-console/src/tui/input/global_mounts.rs">crates/jackin-console/src/tui/input/global_mounts.rs</RepoFile> | ✅ documented |
-| <RepoFile path="crates/jackin-manifest/src/validate.rs">crates/jackin-manifest/src/validate.rs</RepoFile> | ✅ documented |
-
-<RepoFile path="crates/jackin-console/src/tui/input/save.rs">crates/jackin-console/src/tui/input/save.rs</RepoFile> already had a `//!` block (purpose + scope); expanding to full 3-element format is a follow-up.
+Future audits should re-run coverage against the current tree instead of copying historical paths.
 
 ## Current coverage (2026-06-02)
 
-All production source files in both `src/` and `crates/` are documented. Excluded intentionally: binary entry points (`main.rs`, `bin/role.rs`), Cargo build scripts, and test modules (`*_tests.rs` / `tests/*.rs`) — these do not need orientation headers.
+Production crate source is documented. Excluded intentionally: binary entry points (`main.rs`, `bin/role.rs`), Cargo build scripts, and test modules (`*_tests.rs` / `tests/*.rs`) — these do not need orientation headers.
 
-Re-verify with: `grep -rL '^//!' src/ crates/ --include='*.rs' | grep -v 'tests/'` — should return only build scripts and binary entry points.
+Re-verify with a current-tree grep over `crates/` only; the old root `src/` tree no longer exists.
 
 The next orientation-doc work is `///` item-level docs on public API entry points at crate boundaries, and rustdoc examples on the stable-surface functions — but that pass waits until the crate extraction (Stage 4) stabilises the public surfaces.
 

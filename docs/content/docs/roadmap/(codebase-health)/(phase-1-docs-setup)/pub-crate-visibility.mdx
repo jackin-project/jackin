@@ -2,7 +2,7 @@
 title: "pub(crate) visibility pass"
 ---
 
-**Status**: Partially implemented — lint enabled, low-hanging-fruit items fixed (2026-06-02); ~100 warnings remain for the second pass.
+**Status**: Partially implemented — `unreachable_pub = "deny"` is now enabled in the workspace lint baseline; remaining work is any intentional visibility cleanup found by fresh compiler/clippy evidence, not the old advisory-warning count.
 
 ## Problem
 
@@ -10,7 +10,7 @@ title: "pub(crate) visibility pass"
 
 ## What shipped (2026-06-02)
 
-- **Lint available**: `unreachable_pub` is intentionally *not* in `[lints.rust]` in <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> — it has ~100 remaining violations and `cargo clippy -- -D warnings` would promote them all to errors. Run `RUSTFLAGS='-W unreachable-pub' cargo check` for the advisory pass. When the remaining items are fixed, the lint can be added to `[lints.rust]`.
+- **Lint enabled**: `unreachable_pub = "deny"` now lives in the root workspace lint table in <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>. The old advisory pass is complete enough that CI treats new unreachable-public items as hard errors.
 - **Low-hanging-fruit items fixed** (all 8 roadmap-specified items, with corrected names):
   - <RepoFile path="crates/jackin-config/src/planner.rs">crates/jackin-config/src/planner.rs</RepoFile> — `WorkspaceCreatePlan`, `WorkspaceEditPlan`, `plan_create`, `plan_edit`, `apply_isolation_overrides` → `pub(crate)`
   - <RepoFile path="crates/jackin-config/src/app_config_mounts.rs">crates/jackin-config/src/app_config_mounts.rs</RepoFile> — `MountEntry` → `pub(crate)`
@@ -20,7 +20,7 @@ title: "pub(crate) visibility pass"
 
 ## Remaining work
 
-~100 warnings remain across 26 files (run `cargo check 2>&1 | grep "unreachable_pub"` for the current set). The largest clusters are in private `console/` sub-modules (`domain`, `services/`) and `runtime/universe.rs`. These require deciding the intended visibility per-item before bulk-converting.
+Do not use the old advisory-warning snapshot; it predates the deny baseline. Re-audit from current compiler/clippy output before opening any follow-up, then scope the pass to concrete items that still leak wider visibility than needed.
 
 The next pass should:
 1. Decide the intended library surface in <RepoFile path="crates/jackin/src/lib.rs">crates/jackin/src/lib.rs</RepoFile> — what truly needs to stay `pub` for `main.rs`, `jackin-role`, and tests.

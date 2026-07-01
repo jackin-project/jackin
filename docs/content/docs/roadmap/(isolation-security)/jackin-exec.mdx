@@ -2,7 +2,7 @@
 title: "jackin-exec: Secure Execution Wrapper"
 ---
 
-**Status**: Partially implemented — the plumbing and operator picker are wired end to end. Shipped and compiled: the `ExecCommand`/`ExecResult`/`ExecDenied` control protocol, the `jackin-exec` argv0/subcommand dispatch in the capsule, the host-side `op read`/host-env/literal resolver on `host.sock` (started by the launch path and bind-mounted to `/jackin/run/host.sock`), launch-time on-demand filtering (on-demand credentials are never resolved at launch) with `JACKIN_EXEC_BINDINGS` injection and the entrypoint system-prompt block, the `jackin_exec` MCP server (`jackin-capsule mcp-server`) registered from `runtime_setup`, and the `EnvValue::Extended` / `OpRef.on_demand` schema (`v1alpha7`).
+**Status**: Partially implemented — the plumbing and operator picker are wired end to end. Shipped and compiled: the `ExecCommand`/`ExecResult`/`ExecDenied` control protocol, the `jackin-exec` argv0/subcommand dispatch in the capsule, the host-side `op read`/host-env/literal resolver on `host.sock` (started by the launch path and bind-mounted to `/jackin/run/host.sock`), launch-time on-demand filtering (on-demand credentials are never resolved at launch) with `JACKIN_EXEC_BINDINGS` injection and the entrypoint system-prompt block, the `jackin_exec` MCP server (`jackin-capsule mcp-server`) registered from `runtime_setup`, and the `EnvValue::Extended` / `OpRef.on_demand` schema in the current config/workspace migration chain (`v1alpha8`).
 
 **The operator credential picker is now wired.** `Dialog::ExecPicker` exists and is driven from the daemon: an `ExecCommand` opens the picker (built from the workspace's on-demand bindings), the control reply is deferred while the operator toggles credentials (Space) and confirms (Enter) or cancels (Esc); on confirm the daemon resolves the selected credentials through `host.sock`, runs the command with them injected, redacts the output, and replies `ExecResult`; on cancel (or any resolver/spawn error) it replies `ExecDenied` and runs nothing — fail-closed at the daemon dispatch path. The picker state machine, selection→confirm dispatch, and binding construction are unit-tested.
 
@@ -300,7 +300,7 @@ The entrypoint (<RepoFile path="docker/runtime/entrypoint.sh" />) uses this to a
 
 | Surface | File kind | Type touched | Action |
 |---|---|---|---|
-| `EnvValue::Extended` (new variant) + `OpRef.on_demand` (new field) | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` → `EnvValue` | bumped `CURRENT_WORKSPACE_VERSION` `v1alpha6` → `v1alpha7` in <RepoFile path="crates/jackin-config/src/migrations.rs" />; no-op restamp; fixture <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha6/meta.toml" /> |
+| `EnvValue::Extended` (new variant) + `OpRef.on_demand` (new field) | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` → `EnvValue` | carried by the current workspace migration chain, now landing at `v1alpha8` with fixtures through <RepoFile path="crates/jackin/tests/fixtures/migrations/workspace/from-v1alpha7/meta.toml" /> |
 
 Both changes are additive with serde defaults. Existing TOML files parse identically.
 
@@ -339,7 +339,7 @@ Both changes are additive with serde defaults. Existing TOML files parse identic
 
   When `ExecCommand` arrives: build `ExecPickerState` from workspace on-demand vars (read from the capsule's loaded config), push onto dialog_stack. Dialog handles Space=toggle, ↑↓=cursor, Enter=confirm (read selected items → connect to `/jackin/run/host.sock` → resolve → inject → execute), Esc=cancel (send `ExecDenied`). Connect to host.sock; inject resolved values as env vars on the `CommandBuilder`; output filter; send `ExecResult`.
 - <RepoFile path="crates/jackin-capsule/src/socket.rs" /> — route `ExecCommand` in control dispatcher
-- <RepoFile path="crates/jackin-config/src/migrations.rs" /> — bump `CURRENT_WORKSPACE_VERSION` to `v1alpha7`; no-op restamp
+- <RepoFile path="crates/jackin-config/src/versions.rs" /> and <RepoFile path="crates/jackin-config/src/migrations.rs" /> — schema version and migration chain for workspace-file restamps
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> + <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" /> — start the host.sock listener for Docker launches and inject `JACKIN_EXEC_BINDINGS=name1,name2,...` as an always-available env var. The actual `is_on_demand()` filtering happens upstream in <RepoFile path="crates/jackin-env/src/resolve.rs" /> (`resolve_operator_env_with_matching` drops on-demand vars before resolution, so they are never `op read` at launch), with `collect_on_demand_bindings` collecting the names beside it
 - <RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" /> — pass the host.sock path and `JACKIN_EXEC_BINDINGS` through the apple-container launch path
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — use `JACKIN_EXEC_BINDINGS` for system prompt block

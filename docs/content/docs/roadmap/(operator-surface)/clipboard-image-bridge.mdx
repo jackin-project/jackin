@@ -8,7 +8,7 @@ title: "Host Affordance Bridge"
 
 ## Implementation Brief For `/goal`
 
-Implementation has reached the first operator-testable milestone. This PR establishes the host-attach foundation and the bounded screenshot/image paste path needed for a real-world smoke test. The feature remains opt-in until live validation proves parity.
+Implementation has reached the first operator-testable milestone. The host-attach foundation and the bounded screenshot/image paste path are shipped behind `JACKIN_HOST_ATTACH=1` for real-world smoke testing. The feature remains opt-in until live validation proves parity.
 
 Current implementation-readiness decision:
 
@@ -17,7 +17,7 @@ Current implementation-readiness decision:
 - **NOT READY** for default-on host attach, broad automatic clipboard/file behavior, background clipboard reads, arbitrary host filesystem access, or any live-validation claim that has not been proved on a fresh isolated throwaway jackin❯ instance.
 - The current goal stops at this operator-testable milestone. Remaining bullets below are intentionally kept as follow-up validation or future implementation scope so the operator can test the core screenshot paste path first and report findings.
 
-Already implemented in this PR:
+Already implemented:
 
 - Operator-facing usage and validation instructions now live in [Host Affordances](/guides/host-affordances/), including `JACKIN_HOST_ATTACH=1`, image paste, explicit image-path staging, GitHub PR/CI opening, visible URL opening, file export, Amp/xclip expectations, and the live validation checklist.
 - Construct image installs `xclip`, `xauth`, and `wl-clipboard` so Amp and other Linux CLIs have the expected clipboard helper binaries when a real Linux display bridge exists.
