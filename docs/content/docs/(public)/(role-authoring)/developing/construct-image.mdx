@@ -149,13 +149,13 @@ The published tags are:
 
 When you load an agent, jackin❯ doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
 
-1. **Agent installation** — copies jackin❯ cached binary for the selected runtime into the derived image
+1. **Agent installation** — copies jackin❯ cached binaries for every supported runtime into the derived image
 2. **Runtime-owned directories** — creates the `/jackin/` runtime, state, run, default-home, and hook paths the container uses
 3. **Plugin installation** — any Claude plugins declared in the role manifest
 4. **Runtime entrypoint + setup bridge** — the script delegates deterministic setup to `jackin-capsule runtime-setup`, then keeps the shell-native work: sourcing role hooks and `exec`-ing the selected agent. The Rust setup path handles one-time container git/GitHub initialization, the shared git trailer hook, durable agent-home seeding, auth handoff refreshes, and Claude MCP registration. It wires up GitHub if `gh` is already authenticated; it does not perform `gh auth login`, so an unauthenticated `gh` is left alone with a notice.
 
 <Aside type="note">
-jackin❯ tags derived images per role and selected agent. Warm launches inspect recipe labels first; if the role source, construct/base image, runtime recipe, selected agent install, `jackin-capsule`, hooks, Claude plugin recipe, host identity strategy, and host UID still match, launch reuses the local image and skips binary prep, build-context creation, GitHub build-token lookup, `docker build`, and the selected-agent version probe. Passing `--rebuild` forces a fresh derived image.
+jackin❯ tags derived images per role commit. Warm launches inspect recipe labels first; if the role source, construct/base image, runtime recipe, supported-agent set, `jackin-capsule`, hooks, Claude plugin recipe, host identity strategy, and host UID still match, launch reuses the local image and skips binary prep, build-context creation, GitHub build-token lookup, `docker build`, and the selected-agent version probe. Passing `--rebuild` forces a fresh derived image.
 </Aside>
 ## Extending the construct
 

@@ -65,7 +65,7 @@ Stamped and, where noted, checked for a precise invalidation reason:
 | `jackin.construct.image` | construct image used (custom vs official) | `ConstructImageChanged` |
 | `jackin.capsule.version` | jackin-capsule version baked in | `CapsuleVersionChanged` |
 
-There are no per-agent version labels: agent binaries are mounted at run time, not baked, so the image carries no agent version to record (see the recipe-table note above).
+Per-agent `jackin.agent.<slug>.version` labels record the baked binary versions for diagnostics. They are not precise invalidation labels; recipe validity still flows through `jackin.image.recipe.hash`.
 
 ## Published-contract labels
 
@@ -103,4 +103,4 @@ Tagged published bases keep the published image labels instead; reuse requires `
 
 ## Dropped labels
 
-The following opaque `jackin.recipe.*` component labels were removed: `role_source_ref`, `base_image`, `generated_runtime_hash`, `supported_agents`, `cache_bust`, `hooks_hash`, `host_identity_strategy`. Their values still live inside `ImageRecipe`, so they still invalidate the image via `jackin.image.recipe.hash` — a mismatch simply surfaces as the generic `RecipeHashChanged` reason instead of a component-specific one. The per-agent `jackin.agent.<slug>.version` labels and the single `jackin.selected_agent_version` were dropped entirely: agent binaries are mounted at run time, not baked, so the image records no agent version. `claude_plugin_hash` is also gone — Claude plugins install at container start, not in the image.
+The following opaque `jackin.recipe.*` component labels were removed: `role_source_ref`, `base_image`, `generated_runtime_hash`, `supported_agents`, `cache_bust`, `hooks_hash`, `host_identity_strategy`. Their values still live inside `ImageRecipe`, so they still invalidate the image via `jackin.image.recipe.hash` — a mismatch simply surfaces as the generic `RecipeHashChanged` reason instead of a component-specific one. The single `jackin.selected_agent_version` label was dropped because the derived image is agent-independent; per-agent `jackin.agent.<slug>.version` labels remain diagnostic-only. The old standalone `claude_plugin_hash` label is gone because Claude plugin declarations now invalidate through `plugin_recipe_hash` inside the master recipe hash.

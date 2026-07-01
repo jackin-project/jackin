@@ -386,26 +386,16 @@ pub(super) async fn decide_role_image(
         refresh_reason = Some(ImageInvalidationReason::PublishedImageStale);
     }
     jackin_diagnostics::active_timing_started("derived image", "image_recipe", None);
-    let mut expected_recipes = expected_image_recipes(
+    let local_base_image = role_base_image_name(selector, branch_override, head_sha.as_deref());
+    let expected_recipes = expected_image_recipes(
         cached_repo,
         validated_repo,
         head_sha.as_deref(),
         branch_override,
-        base_image_override,
+        Some(local_base_image.as_str()),
         paths,
         &image,
     )?;
-    if base_image_override.is_some() {
-        expected_recipes.extend(expected_image_recipes(
-            cached_repo,
-            validated_repo,
-            head_sha.as_deref(),
-            branch_override,
-            None,
-            paths,
-            &image,
-        )?);
-    }
     jackin_diagnostics::active_timing_done(
         "derived image",
         "image_recipe",

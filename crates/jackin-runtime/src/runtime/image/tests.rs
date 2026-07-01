@@ -1076,13 +1076,14 @@ async fn decide_agent_image_reuses_when_recipe_labels_match() {
     let _guard = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
     let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
+    let local_base = role_base_image_name(&selector, None, Some("abc123"));
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
         Agent::Claude,
         Some("abc123"),
         None,
-        None,
+        Some(local_base.as_str()),
         "0",
     );
     let docker = FakeDockerClient::default();
@@ -1437,13 +1438,14 @@ plugins = []
     )
     .unwrap();
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let local_base = role_base_image_name(&selector, None, Some("abc123"));
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
         Agent::Claude,
         Some("abc123"),
         None,
-        None,
+        Some(local_base.as_str()),
         "0",
     );
     let image = image_name(&selector, Some("abc123"));
@@ -1508,13 +1510,14 @@ async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
     let image = image_name(&selector, Some("abc123"));
+    let local_base = role_base_image_name(&selector, None, Some("abc123"));
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
         Agent::Claude,
         Some("abc123"),
         None,
-        None,
+        Some(local_base.as_str()),
         "0",
     );
     let docker = FakeDockerClient::default();
@@ -1588,13 +1591,14 @@ plugins = []
     .unwrap();
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
     let image = image_name(&selector, Some("abc123"));
+    let local_base = role_base_image_name(&selector, None, Some("abc123"));
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
         Agent::Claude,
         Some("abc123"),
         None,
-        None,
+        Some(local_base.as_str()),
         "0",
     );
     let docker = FakeDockerClient::default();
@@ -1757,13 +1761,14 @@ async fn branch_override_uses_branch_tag_and_recipe_ref() {
     // commit-tagged branch image (`jk_agent-smith_feat-instant-launch:abc123`).
     let image = image_name_for_branch(&selector, branch, Some("abc123"));
     let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
+    let local_base = role_base_image_name(&selector, Some(branch), Some("abc123"));
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
         Agent::Claude,
         Some("abc123"),
         Some(branch),
-        None,
+        Some(local_base.as_str()),
         "0",
     );
     let docker = FakeDockerClient::default();
@@ -1967,6 +1972,56 @@ async fn decide_agent_image_reuses_when_host_uid_matches_recipe() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
+    let local_base = role_base_image_name(&selector, None, Some("abc123"));
+    let labels = image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        Agent::Claude,
+        Some("abc123"),
+        None,
+        Some(local_base.as_str()),
+        "0",
+    );
+    let docker = FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image_name(&selector, Some("abc123"))]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    let mut runner = FakeRunner::with_capture_queue(["abc123".to_owned()]);
+
+    let decision = decide_role_image(
+        &paths,
+        &selector,
+        &cached_repo,
+        &validated_repo,
+        false,
+        None,
+        None,
+        &docker,
+        &mut runner,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        decision,
+        ImageDecision::Reuse {
+            image: image_name(&selector, Some("abc123")),
+        }
+    );
+}
+
+#[tokio::test]
+async fn decide_agent_image_rebuilds_when_cached_recipe_uses_non_local_base() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
     let labels = image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
@@ -2003,8 +2058,9 @@ async fn decide_agent_image_reuses_when_host_uid_matches_recipe() {
 
     assert_eq!(
         decision,
-        ImageDecision::Reuse {
-            image: image_name(&selector, Some("abc123")),
+        ImageDecision::BuildFromWorkspace {
+            reason: ImageInvalidationReason::RecipeHashChanged,
+            role_git_sha: Some("abc123".to_owned()),
         }
     );
 }
