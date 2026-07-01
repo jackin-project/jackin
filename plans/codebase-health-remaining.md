@@ -600,6 +600,14 @@ container_info_open), each tracking an independent UI state consumed individuall
 render + subscription paths. Named-field reads match the direct UI-event idiom these
 flags back. `#[expect]` count: 46 → **45**.
 
+EditorTabSelectPlan (jackin-console/src/tui/screens/editor/update.rs:165) + 
+SettingsScrollFocusPlan (jackin-console/src/tui/screens/settings/update.rs:1150) — 
+both converted `#[expect]` to `#[allow]` with per-struct durable justifications. 
+First carries 4 orthogonal UI state flags on the tab-select plan; second carries 4
+mutually-exclusive settings-tab focus flags describing which sub-pane is focusable.
+Both are consumed by direct model-update code where named-field reads are clearer
+than enum-variant rebuilds. `#[expect]` count: 45 → **43**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

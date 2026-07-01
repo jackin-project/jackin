@@ -1142,9 +1142,13 @@ pub struct SettingsTrustRowSelectPlan {
     pub content_focused: bool,
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Four orthogonal settings-tab focus flags (mounts, env, auth, trust) \
+              describing which sub-scroll pane is currently focusable — each tracks \
+              a distinct sub-pane and is consumed individually by the focus router. \
+              Mutually exclusive in practice but naming each sub-pane directly is \
+              clearer than a single enum variant in plan-shaped code."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsScrollFocusPlan {

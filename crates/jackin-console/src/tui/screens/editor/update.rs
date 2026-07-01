@@ -157,9 +157,13 @@ pub fn enter_editor_auth_kind_plan<K>(kind: K) -> EditorAuthKindPlan<K> {
     }
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Four orthogonal UI state flags on the tab-select plan \
+              (tab_bar_focused, workspace_mounts_scroll_focused, clear_auth_kind, \
+              clear_secret_view_state) — each is an independent state update that \
+              the screen-model applies when the operator switches tabs. Named-field \
+              reads match the direct model-update idiom this plan parallelizes."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorTabSelectPlan {
