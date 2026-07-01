@@ -2,6 +2,5 @@
 # The gate (`cargo xtask lint tests`) fails on any violation NOT listed here.
 # Delete an entry when its file is fixed; the list may only shrink.
 files = [
-    "crates/jackin-console/src/tui/screens/workspaces/view/list/tests.rs",
 ]
 
