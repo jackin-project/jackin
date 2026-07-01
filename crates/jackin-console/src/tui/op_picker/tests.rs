@@ -1248,7 +1248,6 @@ fn picker_loading_account_state_renders_spinner_immediately() {
 
 fn render_picker_dump(state: &OpPickerState, width: u16, height: u16) -> (String, String) {
     use ratatui::{Terminal, backend::TestBackend, layout::Rect};
-
     let backend = TestBackend::new(width, height);
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
@@ -2011,64 +2010,59 @@ fn parity_3seg_input_with_sectioned_field_cli_matches_picker() {
     assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
 }
 
-mod cache_invalidation {
-    use super::super::invalidate_cache_for_ref;
+
+#[test]
+fn invalidate_cache_for_ref_drops_items_and_fields() {
     use jackin_core::OpRef;
-    use jackin_env::{OpCache, OpField, OpItem};
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    let cache = Rc::new(RefCell::new(OpCache::default()));
+    let account = Some("ACCT");
+    cache.borrow_mut().put_items(
+        account,
+        "v1",
+        vec![OpItem {
+            id: "i1".into(),
+            name: "Claude".into(),
+            subtitle: String::new(),
+        }],
+    );
+    cache.borrow_mut().put_fields(
+        account,
+        "v1",
+        "i1",
+        vec![OpField {
+            id: "f1".into(),
+            label: "token".into(),
+            field_type: "CONCEALED".into(),
+            concealed: true,
+            reference: String::new(),
+        }],
+    );
 
-    #[test]
-    fn invalidate_cache_for_ref_drops_items_and_fields() {
-        let cache = Rc::new(RefCell::new(OpCache::default()));
-        let account = Some("ACCT");
-        cache.borrow_mut().put_items(
-            account,
-            "v1",
-            vec![OpItem {
-                id: "i1".into(),
-                name: "Claude".into(),
-                subtitle: String::new(),
-            }],
-        );
-        cache.borrow_mut().put_fields(
-            account,
-            "v1",
-            "i1",
-            vec![OpField {
-                id: "f1".into(),
-                label: "token".into(),
-                field_type: "CONCEALED".into(),
-                concealed: true,
-                reference: String::new(),
-            }],
-        );
+    invalidate_cache_for_ref(
+        &cache,
+        &OpRef {
+            op: "op://v1/i1/f1".into(),
+            path: "Work/Claude/token".into(),
+            account: Some("ACCT".into()),
+            on_demand: false,
+        },
+    );
 
-        invalidate_cache_for_ref(
-            &cache,
-            &OpRef {
-                op: "op://v1/i1/f1".into(),
-                path: "Work/Claude/token".into(),
-                account: Some("ACCT".into()),
-                on_demand: false,
-            },
-        );
+    assert!(cache.borrow().get_items(account, "v1").is_none());
+    assert!(cache.borrow().get_fields(account, "v1", "i1").is_none());
+}
 
-        assert!(cache.borrow().get_items(account, "v1").is_none());
-        assert!(cache.borrow().get_fields(account, "v1", "i1").is_none());
-    }
-
-    #[test]
-    fn invalidate_cache_for_ref_ignores_unparseable_ref() {
-        let cache = Rc::new(RefCell::new(OpCache::default()));
-        invalidate_cache_for_ref(
-            &cache,
-            &OpRef {
-                op: "not-a-ref".into(),
-                path: String::new(),
-                account: None,
-                on_demand: false,
-            },
-        );
-    }
+#[test]
+fn invalidate_cache_for_ref_ignores_unparseable_ref() {
+    use jackin_core::OpRef;
+    let cache = Rc::new(RefCell::new(OpCache::default()));
+    invalidate_cache_for_ref(
+        &cache,
+        &OpRef {
+            op: "not-a-ref".into(),
+            path: String::new(),
+            account: None,
+            on_demand: false,
+        },
+    );
 }
