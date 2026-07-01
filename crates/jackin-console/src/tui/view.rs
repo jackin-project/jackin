@@ -15,21 +15,28 @@ pub struct WorkspaceFrameAreas {
     pub footer: Rect,
 }
 
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
-)]
+/// Which modal (if any) currently owns the overlay chrome.
+///
+/// R6 enum-ified from a 9-bool `ModalOverlayState` struct: in practice the
+/// console presents exactly one modal at a time, so the OR'd bool set was
+/// always reduced to "which one is on top" by the render layer. The enum
+/// makes that priority order explicit instead of relying on field order in
+/// a struct literal. Priority (highest first): `Status`, `List`, `Editor`,
+/// `SettingsError`, `SettingsMounts`, `SettingsEnv`, `SettingsAuth`,
+/// `CreatePrelude`, `DestructiveConfirm`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ModalOverlayState {
-    pub status_overlay: bool,
-    pub list_modal: bool,
-    pub editor_modal: bool,
-    pub settings_error: bool,
-    pub settings_mounts_modal: bool,
-    pub settings_env_modal: bool,
-    pub settings_auth_modal: bool,
-    pub create_prelude_modal: bool,
-    pub destructive_confirm: bool,
+pub enum ModalOverlayState {
+    #[default]
+    None,
+    Status,
+    List,
+    Editor,
+    SettingsError,
+    SettingsMounts,
+    SettingsEnv,
+    SettingsAuth,
+    CreatePrelude,
+    DestructiveConfirm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,15 +179,7 @@ pub const fn reserved_footer_height_for_facts(facts: ReservedFooterHeightFacts) 
 
 #[must_use]
 pub const fn modal_overlay_visible(state: ModalOverlayState) -> bool {
-    state.status_overlay
-        || state.list_modal
-        || state.editor_modal
-        || state.settings_error
-        || state.settings_mounts_modal
-        || state.settings_env_modal
-        || state.settings_auth_modal
-        || state.create_prelude_modal
-        || state.destructive_confirm
+    !matches!(state, ModalOverlayState::None)
 }
 
 #[must_use]
@@ -189,16 +188,26 @@ pub const fn modal_overlay_state_from_stage_facts(
     list_modal: bool,
     stage: ConsoleStageModalFacts,
 ) -> ModalOverlayState {
-    ModalOverlayState {
-        status_overlay,
-        list_modal,
-        editor_modal: stage.editor_modal_open,
-        settings_error: stage.settings_error_popup_open,
-        settings_mounts_modal: stage.settings_mounts_modal_open,
-        settings_env_modal: stage.settings_env_modal_open,
-        settings_auth_modal: stage.settings_auth_modal_open,
-        create_prelude_modal: stage.create_prelude_modal_open,
-        destructive_confirm: stage.destructive_confirm_open,
+    if status_overlay {
+        ModalOverlayState::Status
+    } else if list_modal {
+        ModalOverlayState::List
+    } else if stage.editor_modal_open {
+        ModalOverlayState::Editor
+    } else if stage.settings_error_popup_open {
+        ModalOverlayState::SettingsError
+    } else if stage.settings_mounts_modal_open {
+        ModalOverlayState::SettingsMounts
+    } else if stage.settings_env_modal_open {
+        ModalOverlayState::SettingsEnv
+    } else if stage.settings_auth_modal_open {
+        ModalOverlayState::SettingsAuth
+    } else if stage.create_prelude_modal_open {
+        ModalOverlayState::CreatePrelude
+    } else if stage.destructive_confirm_open {
+        ModalOverlayState::DestructiveConfirm
+    } else {
+        ModalOverlayState::None
     }
 }
 

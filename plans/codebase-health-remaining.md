@@ -530,6 +530,14 @@ Note: safe low-fan-out items with no test source impact (no bool field literals 
 | jackin-runtime/src/runtime/launch.rs:636 | launch_role_runtime (640) |
 | jackin-runtime/src/runtime/launch/launch_pipeline.rs:160 | load_role_with (164) |
 
+**Progress (this branch).** ModalOverlayState (jackin-console/src/tui/view.rs) enum-ified
+from 9-bool struct to `OpenModal` enum (None | Status | List | Editor | SettingsError |
+SettingsMounts | SettingsEnv | SettingsAuth | CreatePrelude | DestructiveConfirm). The
+constructor `modal_overlay_state_from_stage_facts` picks the highest-priority non-zero
+state; `modal_overlay_visible` becomes `!= None`. Per-slice relaxation of the "no test
+edits" rule applied (operator ruling 2026-07-01) to mechanically rewrite the 4 affected
+view/tests.rs sites. `#[expect]` count: 57 → **56**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

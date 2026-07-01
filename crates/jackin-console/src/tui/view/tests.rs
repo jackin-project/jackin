@@ -322,18 +322,9 @@ fn modal_areas_stable_preferred_size() {
 #[test]
 fn modal_overlay_visible_tracks_any_modal_fact() {
     assert!(!modal_overlay_visible(ModalOverlayState::default()));
-    assert!(modal_overlay_visible(ModalOverlayState {
-        status_overlay: true,
-        ..ModalOverlayState::default()
-    }));
-    assert!(modal_overlay_visible(ModalOverlayState {
-        settings_auth_modal: true,
-        ..ModalOverlayState::default()
-    }));
-    assert!(modal_overlay_visible(ModalOverlayState {
-        destructive_confirm: true,
-        ..ModalOverlayState::default()
-    }));
+    assert!(modal_overlay_visible(ModalOverlayState::Status));
+    assert!(modal_overlay_visible(ModalOverlayState::SettingsAuth));
+    assert!(modal_overlay_visible(ModalOverlayState::DestructiveConfirm));
 }
 
 #[test]
@@ -350,20 +341,9 @@ fn modal_overlay_state_maps_stage_facts_and_outer_flags() {
         },
     );
 
-    assert_eq!(
-        overlay,
-        ModalOverlayState {
-            status_overlay: true,
-            list_modal: true,
-            editor_modal: true,
-            settings_error: true,
-            settings_mounts_modal: false,
-            settings_env_modal: false,
-            settings_auth_modal: true,
-            create_prelude_modal: false,
-            destructive_confirm: true,
-        }
-    );
+    // status_overlay=true wins the priority order (Status → List → Editor
+    // → Settings* → CreatePrelude → DestructiveConfirm).
+    assert_eq!(overlay, ModalOverlayState::Status);
     assert!(modal_overlay_visible(overlay));
 }
 
@@ -382,8 +362,8 @@ fn modal_overlay_state_counts_list_modal_only_on_list_route() {
         ConsoleStageModalFacts::default(),
     );
 
-    assert!(list.list_modal);
-    assert!(!editor.list_modal);
+    assert_eq!(list, ModalOverlayState::List);
+    assert_eq!(editor, ModalOverlayState::None);
 }
 
 #[test]
