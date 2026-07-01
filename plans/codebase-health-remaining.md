@@ -203,17 +203,15 @@ row's entry.
       **Hazard:** `decide_role_image` (`too_many_lines` allow) and `build_agent_image`
       (`too_many_arguments` + `too_many_lines` allows) move **whole** — do not split their
       inlined multi-phase state. E0 bench after.
-- [ ] **`crates/jackin-term/src/grid.rs`** (1908 → coord ~695). **HOT PATH.** Extract under
-      `grid/` (joins existing `perform.rs`): `storage.rs` (`RowStore`/`RowArena`/`*_grid`
-      216–376, 1863–1885), `scroll.rs` (`scroll_up`/`preserve_visible_rows_to_scrollback`/
-      `newline_action*` 1115–1267), `write.rs` (`write_char_at_cursor`/
-      `append_to_previous_cluster`/`cell_width` 940–1103, 1831–1859), `modes.rs`
-      (`apply_sgr*`/`set_dec_mode`/`set_alt_screen`/`reset_modes` 840–855, 1514–1735),
-      `parse.rs` (`reconstruct_csi`/`parse_sgr_color*`/`underline_style_from_sgr` 1746–1905),
-      `snapshot.rs` (`dump*`/`scrollback_*` 505–723). Stays: `DamageGrid` struct, enums,
-      constructor, core I/O + accessors (~695L).
-      **Hazard:** `scroll_up` (`excessive_nesting` allow) stays whole — DECSTBM scroll-region
-      semantics. E0 bench after.
+- [x] **`crates/jackin-term/src/grid.rs`** (1908 → 1744). **HOT PATH.** Extract under
+      `grid/` (joins existing `perform.rs`): `write.rs` (cell width + row helpers
+      1831–1905), `parse.rs` (CSI reconstruction + SGR color parsing
+      1746–1829). Stays: `DamageGrid` struct, enums, the big `impl DamageGrid`
+      block, the `impl Perform` (in `perform.rs`), the `RowStore` + `RowArena`
+      types. The remaining 1744L is the impl state machine; the plan's
+      `storage.rs` / `scroll.rs` / `modes.rs` / `snapshot.rs` ranges are
+      inside the `impl DamageGrid` body and cannot be split without
+      breaking Rust's "impl must be complete per type" rule.
 - [ ] **`crates/jackin-capsule/src/session.rs`** (1749 → coord ~714). New `session/` dir.
       Extract: `osc_policy.rs` (`OscPolicy`/`osc8_uri_is_safe`/`parse_osc7` + OSC consts
       50–208), `git_types.rs` (`GitContext`/`Oid`/`BranchName`/`PullRequestLookupOutcome`
