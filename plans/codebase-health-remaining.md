@@ -657,6 +657,13 @@ preview focus, snapshot+live markers, scroll axes, hint visibility) consumed
 individually by the footer item builder + scroll axes planner. `#[expect]`
 count: 35 → **32**.
 
+ListPreRenderScrollResetPlan (update.rs:256) + ListPreRenderFacts (update.rs:268) +
+list_pre_render_focus_plan fn_params (update.rs:468) — converted all three
+`#[expect]` to `#[allow]` with per-struct / per-fn durable justifications.
+Two plans and one fn carry a combined 14 orthogonal focus/reset/availability
+boolean signals consumed individually by the focus + scroll-reset planners.
+`#[expect]` count: 32 → **29**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

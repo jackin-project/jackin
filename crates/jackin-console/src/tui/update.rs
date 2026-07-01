@@ -248,9 +248,12 @@ pub struct ListPreRenderFocusPlan {
     pub list_names_focused: bool,
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Four orthogonal scroll-reset flags (reset_workspace, reset_global, \
+              reset_role_global, reset_roles) — each is an independent reset \
+              channel the list-pre-render plan applies to the corresponding scroll \
+              area. Named-field reads match the per-area reset gating."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListPreRenderScrollResetPlan {
@@ -260,9 +263,13 @@ pub struct ListPreRenderScrollResetPlan {
     pub reset_roles: bool,
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Six orthogonal list pre-render state flags (list_names_focused, \
+              preview_focused, sidebar_available, focused_block_scrollable, \
+              role_global_available, roles_available) — each tracks an independent \
+              UI-scroll-availability signal consumed individually by the focus and \
+              scroll-reset plans. Named-field reads match the per-pane gating idiom."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListPreRenderFacts {
@@ -460,9 +467,12 @@ pub fn console_mouse_wheel_plan(
     }
 }
 
-#[expect(
+#[allow(
     clippy::fn_params_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Four orthogonal focus decision inputs (list_names_focused, \
+              preview_focused, sidebar_available, focused_block_scrollable) — each \
+              is an independent UI signal the focus planner reads individually. \
+              Named-arg reads match the per-branch focus routing idiom."
 )]
 #[must_use]
 pub const fn list_pre_render_focus_plan(
