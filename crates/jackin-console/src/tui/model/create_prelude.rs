@@ -91,9 +91,13 @@ impl CreatePreludeTextInputTarget for crate::tui::screens::editor::model::TextIn
     }
 }
 
-#[expect(
+#[allow(
     clippy::fn_params_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Five orthogonal modal-input availability booleans (file_browser_src, \
+              mount_dst_choice, text_input_dst, workdir_pick, text_input_name) — \
+              each is an independent input-mode signal the step resolver reads in \
+              priority order. Named-arg reads match the per-mode priority-routing \
+              idiom this resolver walks."
 )]
 #[must_use]
 pub const fn create_prelude_modal_step(

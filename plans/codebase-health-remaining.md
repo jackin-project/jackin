@@ -664,6 +664,13 @@ Two plans and one fn carry a combined 14 orthogonal focus/reset/availability
 boolean signals consumed individually by the focus + scroll-reset planners.
 `#[expect]` count: 32 → **29**.
 
+create_prelude_modal_step (create_prelude.rs:99) + validate_linux_clipboard_backend
+(host_clipboard.rs:623) — both converted `#[expect]` to `#[allow]` with per-fn
+durable justifications. The first is a priority-routing resolver with 5
+mutually-exclusive modal-input booleans; the second is a capability-matrix
+validator with 4 orthogonal clipboard-backend availability booleans. Both are
+gated by named-arg reads at the call site. `#[expect]` count: 29 → **27**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

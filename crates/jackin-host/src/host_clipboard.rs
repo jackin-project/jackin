@@ -616,9 +616,13 @@ fn validate_linux_clipboard_backend_env(label: &str) -> Result<()> {
 }
 
 #[cfg(any(target_os = "linux", test))]
-#[expect(
+#[allow(
     clippy::fn_params_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Four orthogonal clipboard-backend availability booleans (wayland, \
+              display, wl_paste, xclip) — each is an independent capability the \
+              validator inspects to construct the missing-tool error message. \
+              Named-arg reads match the capability-matrix idiom this validator \
+              walks."
 )]
 fn validate_linux_clipboard_backend(
     wayland: bool,
