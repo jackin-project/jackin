@@ -335,9 +335,12 @@ pub const fn list_names_focus_plan(focused: bool) -> bool {
     focused
 }
 
-#[expect(
+#[allow(
     clippy::fn_params_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Four mutually-exclusive modal visibility flags (github_picker, \
+              role_picker, error_popup, container_info) — each is an independent \
+              picker-open signal routed in priority order by the key-target \
+              resolver. Named-arg reads match the per-picker key-routing idiom."
 )]
 #[must_use]
 pub const fn list_modal_key_target(
@@ -376,9 +379,12 @@ pub const fn list_modal_scroll_target(
     }
 }
 
-#[expect(
+#[allow(
     clippy::fn_params_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Five orthogonal modal visibility flags (workdir_pick, \
+              role_picker, op_picker, settings pickers) — each is an independent \
+              scroll target signal routed by the shared-modal scroll resolver. \
+              Named-arg reads match the per-modal scroll-routing idiom."
 )]
 #[must_use]
 pub const fn shared_modal_scroll_target(

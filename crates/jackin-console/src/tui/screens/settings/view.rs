@@ -112,9 +112,13 @@ pub fn settings_frame_areas(area: Rect, footer_h: u16) -> SettingsFrameAreas {
     }
 }
 
-#[expect(
+#[allow(
     clippy::fn_params_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Four orthogonal settings-modal visibility flags (error_popup, \
+              mounts_modal, env_modal, auth_modal) — each is an independent \
+              picker-open signal the render-plan resolver inspects to pick the \
+              correct modal render target. Named-arg reads match the per-picker \
+              visibility-routing idiom."
 )]
 #[must_use]
 pub const fn settings_modal_render_plan(

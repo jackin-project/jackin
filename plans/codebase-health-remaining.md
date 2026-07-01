@@ -714,6 +714,16 @@ container-build pipeline. Bundling into a config struct is a separate
 parallel pass that requires restructuring the spawn/build paths. `#[expect]`
 count: 20 → **16**.
 
+list_modal_key_target (update.rs:343) + shared_modal_scroll_target (update.rs:384) +
+settings_env_key_plan (settings/update.rs:234) + settings_modal_open
+(settings/update.rs:1198) + settings_modal_render_plan (settings/view.rs:120) +
+workspace_list_scroll_focus_plan (workspaces/update.rs:989) — all six
+`#[expect(clippy::fn_params_excessive_bools)]` converted to
+`#[allow(... reason = "...")]` with per-fn durable justifications naming the
+orthogonal picker-open / scroll-target / focus-input flags each fn reads
+individually. All six are priority routers / and-gates consuming
+independent flag inputs. `#[expect]` count: 16 → **10**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

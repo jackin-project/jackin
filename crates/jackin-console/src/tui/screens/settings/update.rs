@@ -226,9 +226,12 @@ pub const fn settings_general_key_plan(key: KeyCode, is_dirty: bool) -> Settings
     }
 }
 
-#[expect(
+#[allow(
     clippy::fn_params_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Four orthogonal env-key plan inputs (key, plain_modifier, ...) \
+              — each is an independent input the env-key planner reads to route \
+              the keypress to the right key-binding. Named-arg reads match the \
+              per-input key-binding routing idiom."
 )]
 #[must_use]
 pub const fn settings_env_key_plan(
@@ -1190,9 +1193,12 @@ pub const fn settings_scroll_focus_plan(
     }
 }
 
-#[expect(
+#[allow(
     clippy::fn_params_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Four orthogonal settings-modal visibility flags (error_popup, \
+              mounts_modal, env_modal, auth_modal) — each is an independent \
+              picker-open signal the modal-state resolver inspects. Named-arg \
+              reads match the per-picker visibility-routing idiom."
 )]
 #[must_use]
 pub const fn settings_modal_open(
