@@ -263,7 +263,7 @@ row's entry.
       (`try_select_*`/`update_tab_hover` 707–858), `hover.rs` (`update_*_hover`/
       `*_row_at`/`file_browser_*` 321–399, 638–705). Stays: `handle_mouse_with_config`
       dispatch + `clickable_at` + `ScrollArea`/`*_scroll_areas` helpers (~290L).
-- [ ] **`crates/jackin-console/src/tui/components/footer_hints.rs`** (1537 → coord ~110).
+- [x] **`crates/jackin-console/src/tui/components/footer_hints.rs`** (1537 → 60).
       Extract under `footer_hints/`: `workspace.rs` (`WorkspaceListFooter*` facts + fns
       27–521), `editor.rs` (`Editor*FooterFacts`/`AuthRowFooterMode`/editor+auth footer fns
       241–697), `settings.rs` (`SettingsContextFooterMode` + settings/secret footer fns
