@@ -53,7 +53,7 @@ lines = 1749
 
 [[production]]
 path = "crates/jackin-console/src/tui/screens/settings/update.rs"
-lines = 1727
+lines = 1383
 
 [[production]]
 path = "crates/jackin-capsule/src/daemon.rs"
