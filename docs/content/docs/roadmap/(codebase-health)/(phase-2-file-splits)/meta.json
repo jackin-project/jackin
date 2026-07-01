@@ -1,11 +1,11 @@
 {
-  "title": "Phase 2 — File splits",
+  "title": "Phase 2 \u2014 File splits",
   "defaultOpen": false,
   "pages": [
-    "../../split-input-editor",
-    "../../split-app-mod",
-    "../../split-operator-env",
-    "../../split-runtime-launch",
-    "../../unify-settings-editor-surfaces"
+    "split-input-editor",
+    "split-app-mod",
+    "split-operator-env",
+    "split-runtime-launch",
+    "unify-settings-editor-surfaces"
   ]
 }

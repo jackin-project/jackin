@@ -2,9 +2,9 @@
   "title": "Reactive daemon program",
   "defaultOpen": false,
   "pages": [
-    "../jackin-daemon",
-    "../jackin-capsule",
-    "../jackin-desktop-agent-hub",
+    "jackin-daemon",
+    "jackin-capsule",
+    "jackin-desktop-agent-hub",
     "(phase-2-first-reactive-adapters)",
     "(phase-3-host-bridge)"
   ]

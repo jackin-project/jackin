@@ -1,8 +1,8 @@
 {
-  "title": "Phase 2 — First reactive adapters",
+  "title": "Phase 2 \u2014 First reactive adapters",
   "defaultOpen": false,
   "pages": [
-    "../../live-auth-sync",
-    "../../agent-attention-prompts"
+    "live-auth-sync",
+    "agent-attention-prompts"
   ]
 }

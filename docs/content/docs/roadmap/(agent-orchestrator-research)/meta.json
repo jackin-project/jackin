@@ -2,7 +2,7 @@
   "title": "Agent Orchestration",
   "defaultOpen": false,
   "pages": [
-    "../agent-orchestrator-research",
+    "agent-orchestrator-research",
     "(phase-1-foundation)",
     "(phase-2-operator-surface)",
     "(phase-3-persistence)",
