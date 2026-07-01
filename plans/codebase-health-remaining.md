@@ -587,6 +587,12 @@ understand why a capability resolved the way it did. Both are genuinely independ
 sets where named-field reads are clearer than bit-position lookups. `#[expect]` count:
 49 → **47**.
 
+Categories (jackin-xtask/src/pr.rs:41) — converted `#[expect]` to `#[allow]` with
+durable justification. The private struct holds 4 orthogonal file-bucket categories
+(rust / docs / capsule / schema) used by `classify()` to bucket changed files in a
+PR digest; each bool is an independent path-prefix match paralleling the
+`paths-filter` filter idiom. `#[expect]` count: 47 → **46**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
