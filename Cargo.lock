@@ -2912,6 +2912,7 @@ dependencies = [
  "jackin-diagnostics",
  "jackin-docker",
  "jackin-manifest",
+ "nix 0.31.3",
  "reqwest",
  "serde",
  "serde_json",

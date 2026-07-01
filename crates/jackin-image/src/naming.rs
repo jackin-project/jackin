@@ -68,7 +68,7 @@ pub const LABEL_IMAGE_MANIFEST_VERSION: &str = "jackin.manifest.version";
 /// `jackin-runtime::runtime::image::HOST_IDENTITY_STRATEGY` — it's a
 /// recipe input (changes when the host-identity contract
 /// changes), not a runtime label.
-pub const HOST_IDENTITY_STRATEGY: &str = "construct-agent-user-mutable-home-trees-v1";
+pub const HOST_IDENTITY_STRATEGY: &str = "host-uid-owned-runtime-home-v1";
 
 /// Number of leading hex chars of the role-repo commit SHA used in the image
 /// tag. Matches the short SHA GitHub renders (e.g. `4f38b4f`).

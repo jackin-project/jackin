@@ -460,12 +460,11 @@ pub(crate) async fn launch_role_runtime(
         crate::runtime::docker_profile::network_enforcement_label(grants),
     );
 
-    // Run the container as the host operator's UID (group 0). The image is
-    // UID-agnostic (built once, shared); matching the host UID at runtime is
-    // what makes every host-owned bind-mount transparently read/write for the
-    // `agent` user — see `identity::host_run_as_user`. `HOME` is set
-    // explicitly so shells and the agent CLIs resolve the bind-mounted home
-    // even before any passwd lookup.
+    // Run the container as the host operator's UID (group 0). Matching the host
+    // UID makes host-owned bind mounts transparently read/write, and the
+    // derived image bakes that same UID into image-owned `/home/agent` paths —
+    // see `identity::host_run_as_user`. `HOME` is set explicitly so shells and
+    // the agent CLIs resolve the bind-mounted home even before any passwd lookup.
     let run_as_user = crate::runtime::identity::host_run_as_user();
     if let Some(ref user) = run_as_user {
         run_args.extend_from_slice(&[

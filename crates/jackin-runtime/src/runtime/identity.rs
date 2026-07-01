@@ -11,16 +11,16 @@ use jackin_core::CommandRunner;
 ///
 /// The host operator is this jackin process's own effective UID — it creates
 /// every bind-mount source under `~/.jackin`, so matching it makes host-owned
-/// mounts transparently readable/writable inside the container with no chown
-/// and no UID/GID baked into the (shareable) image. Returns `None` on non-unix
-/// hosts, where no mapping applies.
+/// mounts transparently readable/writable inside the container. The derived
+/// image also bakes this UID into `/home/agent` ownership. Returns `None` on
+/// non-unix hosts, where no mapping applies.
 ///
 /// The process also receives supplementary group 0 at `docker run` time. The
-/// image's `/home/agent` tree is normalized to group 0 with group==owner
-/// permissions at build time (the `OpenShift` arbitrary-UID pattern), so a
-/// host-identity process can still use image-baked home paths regardless of
-/// which UID/GID it runs as. Matching `agent` passwd/group entries for the host
-/// UID/GID are supplied at runtime via `libnss-extrausers` so
+/// image's `/home/agent` tree is normalized to host-UID ownership and group 0
+/// write at build time, so a host-identity process can use image-baked home
+/// paths and perform owner-only syscalls such as chmod(2). Matching `agent`
+/// passwd/group entries for the host UID/GID are supplied at runtime via
+/// `libnss-extrausers` so
 /// `getpwuid`/`$HOME` resolve correctly.
 ///
 /// Security tradeoff (the agent is untrusted code): supplementary group 0 lets

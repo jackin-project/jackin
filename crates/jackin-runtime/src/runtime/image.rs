@@ -272,26 +272,16 @@ pub(super) async fn decide_role_image(
         refresh_reason = Some(ImageInvalidationReason::PublishedImageStale);
     }
     jackin_diagnostics::active_timing_started("derived image", "image_recipe", None);
-    let mut expected_recipes = expected_image_recipes(
+    let local_base_image = role_base_image_name(selector, branch_override, head_sha.as_deref());
+    let expected_recipes = expected_image_recipes(
         cached_repo,
         validated_repo,
         head_sha.as_deref(),
         branch_override,
-        base_image_override,
+        Some(local_base_image.as_str()),
         paths,
         &image,
     )?;
-    if base_image_override.is_some() {
-        expected_recipes.extend(expected_image_recipes(
-            cached_repo,
-            validated_repo,
-            head_sha.as_deref(),
-            branch_override,
-            None,
-            paths,
-            &image,
-        )?);
-    }
     jackin_diagnostics::active_timing_done(
         "derived image",
         "image_recipe",
@@ -1478,6 +1468,10 @@ pub(super) async fn build_agent_image(
 
     let build_arg_role_git_sha =
         format!("ROLE_GIT_SHA={}", head_sha.as_deref().unwrap_or("unknown"));
+    let build_arg_run_uid = format!(
+        "JACKIN_RUN_UID={}",
+        crate::runtime::identity::host_uid().unwrap_or(1000)
+    );
     // Always pass the cache-bust arg so Docker matches the correct layer.
     //
     // When rebuilding, generate a fresh timestamp to invalidate fallback
@@ -1549,6 +1543,7 @@ pub(super) async fn build_agent_image(
     emit_image_build_source(base_image_override, build_source_reason, false);
 
     let cache_bust = format!("JACKIN_CACHE_BUST={cache_bust_value}");
+    build_args.extend(["--build-arg", &build_arg_run_uid]);
     if supported_set_uses_cache_bust(&validated_repo.manifest) {
         build_args.extend(["--build-arg", &cache_bust]);
     }

@@ -23,7 +23,10 @@ use crate::naming::{
     LABEL_IMAGE_ROLE_GIT_SHA,
 };
 
-pub const IMAGE_RECIPE_VERSION: &str = "v7";
+// Bumped v7 -> v8: derived images now bake the host UID into `/home/agent`
+// ownership. Group-0 write is not enough for tools that call owner-only
+// syscalls such as chmod(2) while running under `--user UID:GID`.
+pub const IMAGE_RECIPE_VERSION: &str = "v8";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImageRecipe {
@@ -44,6 +47,7 @@ pub struct ImageRecipe {
     /// changes rebuild the image because plugins are now baked at build time (D2).
     plugin_recipe_hash: String,
     host_identity_strategy: &'static str,
+    host_uid: Option<u32>,
 }
 
 impl ImageRecipe {
@@ -76,6 +80,16 @@ pub fn build_image_recipe(
         cache_bust,
         jackin_manifest::repo_contract::construct_image(),
     )
+}
+
+#[cfg(unix)]
+fn host_uid() -> Option<u32> {
+    Some(nix::unistd::geteuid().as_raw())
+}
+
+#[cfg(not(unix))]
+fn host_uid() -> Option<u32> {
+    None
 }
 
 pub fn build_image_recipe_with_construct_image(
@@ -112,6 +126,7 @@ pub fn build_image_recipe_with_construct_image(
         hooks_hash: hooks_hash(&cached_repo.repo_dir, validated_repo)?,
         plugin_recipe_hash: plugin_recipe_hash(validated_repo),
         host_identity_strategy: HOST_IDENTITY_STRATEGY,
+        host_uid: host_uid(),
     })
 }
 

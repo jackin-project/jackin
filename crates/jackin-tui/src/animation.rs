@@ -323,6 +323,13 @@ fn lerp_channel(a: u8, b: u8, t: f32) -> u8 {
     clippy::suboptimal_flops,
     clippy::type_complexity
 )]
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Star-warp rendering loop: per-frame, per-star, per-step nested \
+              control flow over the cell grid + radials. Extracting per-star \
+              helpers would require re-borrowing the grid + stars iterators \
+              across fn boundaries and obscure the per-step composition."
+)]
 fn warp(accelerating: bool, host_screen_owned: bool) {
     use std::f32::consts::PI;
     use std::fmt::Write as _;

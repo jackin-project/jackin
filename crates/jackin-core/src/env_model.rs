@@ -129,6 +129,14 @@ pub fn extract_interpolation_refs(s: &str) -> Vec<&str> {
 ///
 /// # Errors
 /// Returns an error if a dependency cycle is detected.
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Kahn's algorithm topological-sort body: the read-side / \
+              decrement-degree / enqueue-ready nesting is the canonical \
+              topological-sort structure. Extracting into helper fns would \
+              require re-passing the in-degree / adjacency / ready mutable \
+              borrows and obscure the algorithm."
+)]
 pub fn topological_env_order(
     declarations: &std::collections::BTreeMap<String, crate::manifest::EnvVarDecl>,
 ) -> anyhow::Result<Vec<String>> {

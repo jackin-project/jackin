@@ -9,7 +9,7 @@ allow-unwrap-in-tests = true
 # `#[expect(clippy::<lint>, reason = "tracked in codebase-health-enforcement")]`.
 too-many-lines-threshold = 250
 cognitive-complexity-threshold = 60
-excessive-nesting-threshold = 8
+excessive-nesting-threshold = 5
 too-many-arguments-threshold = 9
 disallowed-methods = [
     { path = "std::process::Command::output", reason = "blocking subprocess output must not run on render/runtime threads; use async process helpers or spawn_blocking" },

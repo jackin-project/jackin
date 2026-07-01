@@ -19,6 +19,7 @@ jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
 jackin-manifest = { version = "0.6.0-dev", path = "../jackin-manifest" }
 jackin-docker = { version = "0.6.0-dev", path = "../jackin-docker" }
 jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+nix = { version = "0.31", features = ["user"] }
 hex = "0.4"
 sha2 = "0.11"
 tar = "0.4"
