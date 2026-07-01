@@ -12,7 +12,7 @@ The original CLI hygiene proposal has mostly landed. Durable operator docs live 
 - [jackin status](/commands/status/) and `jackin ps` provide fleet overview, workspace instance lists, and instance detail where data is available.
 - `--format json` exists on `status`, `doctor`, `workspace list`, and `workspace show`; `jackin load --dry-run --format json` makes launch plans scriptable.
 - [jackin load](/commands/load/) supports `--dry-run`, resolving the plan without spawning containers.
-- <RepoFile path="crates/jackin/src/error.rs" /> defines structured `JackinError` variants (E001–E015) with remediation hints; top-level rendering downcasts known errors and falls back to full debug detail for unknown failures.
+- <RepoFile path="crates/jackin/src/error.rs" /> defines structured `JackinError` variants (E001–E016) with remediation hints; top-level rendering downcasts known errors and falls back to full debug detail for unknown failures.
 
 ## Remaining work
 
@@ -32,7 +32,7 @@ Before implementation, design must answer:
 - Extend `status` with uptime seconds, CPU%, and memory once the Docker API abstraction exposes those fields.
 - Make `--filter agent=` and Level-0 `--detail` agent counts query running Capsule registries when cheap and available.
 - Decide whether future streaming status should use NDJSON or a repeated JSON envelope.
-- Revisit error-code numbering only if E001–E015 becomes too crowded; do not churn existing codes casually.
+- Revisit error-code numbering only if E001–E016 becomes too crowded; do not churn existing codes casually.
 
 ## Related files
 

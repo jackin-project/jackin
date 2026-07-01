@@ -14,16 +14,16 @@ Current size evidence: `launch.rs` is about 2.8k lines, `launch/launch_pipeline.
 
 | INV | Description | Verify by |
 |---|---|---|
-| INV-1 | Trust confirmation still happens before the image build — an untrusted third-party agent may be cloned/resolved, but not built or launched until confirmed | `confirm_agent_trust` closure runs before `build_agent_image` in `load_agent_with` |
+| INV-1 | Trust confirmation still happens before the image build — an untrusted third-party agent may be cloned/resolved, but not built or launched until confirmed | `confirm_agent_trust` closure runs before image build in `load_role_with` |
 | INV-2 | Token mode still fails fast before auth state preparation and runtime startup — missing `CLAUDE_CODE_OAUTH_TOKEN` aborts before DinD/network launch | `verify_token_env_present` runs before `AgentState::prepare` / `launch_agent_runtime` |
 | INV-3 | Container slot claim happens before the launch summary is printed so the operator-visible container name is the final locked name | `claim_container_name` runs before `build_config_rows` and the claimed name flows through `launch_agent_runtime` |
 | INV-4 | Foreground attach finalization still runs before teardown classification — isolated worktrees are finalized before deciding whether to preserve or clean the container | `finalize_foreground_session` happens before the `inspect_container_state(...)` cleanup match |
 | INV-5 | Cleanup classification still preserves restartable sessions and tears down clean exits | `Running` / crash paths disarm cleanup; clean exit runs cleanup |
-| INV-6 | `render_exit` still runs on both success and error exits from `load_agent_with` | both `Ok(_)` and `Err(error)` arms call `render_exit` |
+| INV-6 | `render_exit` still runs on both success and error exits from `load_role_with` | both `Ok(_)` and `Err(error)` arms call `render_exit` |
 
 ## Pipeline overview
 
-`load_agent` (public API) → `load_agent_with` (current pipeline):
+`load_role` (public API) → `load_role_with` (current pipeline):
 
 1. **Resolve source + trust** — resolve repo state, then confirm untrusted agents
 2. **Resolve/claim instance** — resolve restore candidates, then claim the final container name/slot
@@ -41,4 +41,4 @@ The spec is the verification oracle. Further launch refactors must be checked ag
 
 ## Key file
 
-<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — specifically the `load_agent_with` helper.
+<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — specifically the `load_role_with` helper.

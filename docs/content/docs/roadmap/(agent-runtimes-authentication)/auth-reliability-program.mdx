@@ -73,13 +73,13 @@ Phase 6 (credential exposure hardening) — parallel track, no strict ordering
 
 **What the operator experiences before:** Opening a second agent tab causes all existing sessions in the container to lose authentication with no warning. Working sessions go from productive to `401` in seconds, with no clear cause.
 
-**What changes:** `jackin-capsule`'s `runtime_setup::run()` captures `is_first_init` from the container-init marker before `run_container_init_once()` writes it. That flag flows through `run_agent_setup(copy_auth)` to every `setup_*()` function. When `copy_auth` is `false` (any invocation after first boot), the credential copy blocks are skipped. MCP registration and provider config writes still run because they are idempotent. The in-container credential files are never touched again after first boot.
+**What changes:** `jackin-capsule`'s `runtime_setup::run()` uses durable agent-home state as the seeding gate. The first setup for an agent copies the launch-time credential snapshot only into missing credential targets; later `jackin-capsule new <agent>` invocations leave existing credential files untouched. MCP registration and provider config writes still run because they are idempotent. In-container credential files refreshed by the agent are no longer overwritten by opening a new tab.
 
 **What the operator experiences after:** Opening new tabs is safe at any point in a session. In-container token refreshes survive indefinitely.
 
 **Status: Shipped.**
 
-**Exact PR scope:** One file changed — `crates/jackin-capsule/src/runtime_setup.rs`. No schema changes, no config changes, no new CLI commands.
+**Exact shipped scope:** `crates/jackin-capsule/src/runtime_setup.rs` owns the durable-home first-seed gate. No schema changes, no config changes, no new CLI commands.
 
 **Detail:** [Auth overwrite on new tab](/roadmap/auth-overwrite-on-new-tab/).
 

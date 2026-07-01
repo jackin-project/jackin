@@ -2,11 +2,11 @@
 title: "Session Keep and Resume"
 ---
 
-**Status**: Partially implemented — dirty/unsafe exit assessment, keep/delete action wiring, `keep_awake`, and basic restore candidates exist; durable resume continuity, kept-clean sessions, launch recipes, and `docker start` tiers remain open (Phase 2 — Live operator surface, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+**Status**: Partially implemented — dirty/unsafe exit assessment, keep/delete action wiring, `keep_awake`, launch recipe pinning, stopped-container `docker start` restore, basic restore candidates, and clean terminal purge exist; kept-clean resume, full durable resume continuity, recreate/rebuild tiers, operator resume UX, and live index reconciliation remain open (Phase 2 — Live operator surface, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
-Current exit plumbing already assesses dirty/unsafe exit states and carries keep/delete action wiring for preserved work. Remaining work is the durable resume ladder and full instance reuse: kept-clean outcomes, launch-time recipe snapshots, `docker start` with socket-dir rematerialization, recreate/rebuild tiers, and an operator surface that treats resume as normal session continuity instead of forensic recovery.
+Current exit plumbing already assesses dirty/unsafe exit states and carries keep/delete action wiring for preserved work. Launch recipe pinning, stopped-container start restore, and clean terminal purge are now in place. Remaining work is the full durable resume ladder and operator-facing continuity model: kept-clean outcomes, recreate/rebuild tiers, socket-dir and sidecar rematerialization hardening where not yet proven, live index reconciliation, and an operator surface that treats resume as normal session continuity instead of forensic recovery.
 
 When an operator leaves a jackin❯ session, the exit path silently discards more than the operator expects, and the next launch cannot bring them back. This is the concrete cause of the "sometimes I lose important context" instability operators report.
 

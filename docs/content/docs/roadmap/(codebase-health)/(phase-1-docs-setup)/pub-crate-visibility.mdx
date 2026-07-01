@@ -11,12 +11,8 @@ title: "pub(crate) visibility pass"
 ## What shipped (2026-06-02)
 
 - **Lint enabled**: `unreachable_pub = "deny"` now lives in the root workspace lint table in <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>. The old advisory pass is complete enough that CI treats new unreachable-public items as hard errors.
-- **Low-hanging-fruit items fixed** (all 8 roadmap-specified items, with corrected names):
-  - <RepoFile path="crates/jackin-config/src/planner.rs">crates/jackin-config/src/planner.rs</RepoFile> — `WorkspaceCreatePlan`, `WorkspaceEditPlan`, `plan_create`, `plan_edit`, `apply_isolation_overrides` → `pub(crate)`
-  - <RepoFile path="crates/jackin-config/src/app_config_mounts.rs">crates/jackin-config/src/app_config_mounts.rs</RepoFile> — `MountEntry` → `pub(crate)`
-  - <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — `BUILTIN_ROLES` (name changed from `BUILTIN_AGENTS`) → `pub(super)`
-  - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — `inspect_attach_outcome`, `EnvLayerState`, `LaunchError`, `verify_credential_env_present` → `pub(super)`
-  - <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> — `JACKIN_STATUS_CMD`, `parse_session_count`, `docker_unavailable_msg` → `pub(crate)` (isolation/finalize.rs and app/mod.rs access these from outside runtime; pub(super) would break those paths)
+- **Some low-hanging-fruit items were narrowed**, including `EnvLayerState`, `LaunchError`, `inspect_attach_outcome`, and `parse_session_count` in the runtime launch/attach area.
+- **Fresh audit correction:** several older “fixed” bullets were too broad. Current code still has wider visibility on some previously named candidates, including planner types/functions in <RepoFile path="crates/jackin-config/src/planner.rs">crates/jackin-config/src/planner.rs</RepoFile>, `BUILTIN_ROLES` in <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile>, and selected attach helpers in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile>. Treat those as current candidates, not shipped facts.
 
 ## Remaining work
 

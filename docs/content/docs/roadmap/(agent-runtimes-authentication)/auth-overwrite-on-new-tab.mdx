@@ -35,11 +35,11 @@ The same overwrite pattern existed for every agent: Codex's `auth.json`, Amp's `
 
 ## Fix shipped
 
-The fix gates every credential copy on whether the requested agent has already been initialized inside the current container. Each agent gets its own marker under `/jackin/state/agent-auth/<agent>.done`.
+The fix gates credential seeding on durable agent-home state, not on an external marker file. `run_agent_setup()` treats the agent home as the authority: first seeding copies the launch-time snapshot into an empty/missing credential target, and later `jackin-capsule new <agent>` invocations skip existing credential files so refreshed in-container credentials are left untouched.
 
-`runtime_setup::run()` still performs container init once via `/jackin/state/container-init.done`, but `run_agent_setup()` now decides `copy_auth` from the per-agent marker. When `copy_auth` is `false`, the credential copy blocks are skipped entirely. The non-credential setup — `seed_home_dir()` (uses `CopyMode::SkipExisting`, already idempotent), MCP tool registration (`claude mcp add tirith`, `claude mcp add shellfirm`), and provider config writes (Codex MiniMax block, OpenCode JSON) — continues to run on every new-tab invocation because those are either idempotent or depend on stable env vars that do not change between tabs.
+`runtime_setup::run()` still performs container init once, and non-credential setup — idempotent home seeding, MCP tool registration (`claude mcp add tirith`, `claude mcp add shellfirm`), and provider config writes (Codex MiniMax block, OpenCode JSON) — can run again on new-tab invocation. The credential-copy path no longer overwrites a file that the running agent has refreshed.
 
-The first tab for an agent in a container sees no marker, so `copy_auth` is `true`, the agent gets the same initial auth bootstrap it always received, and setup writes that agent's marker after success. Later tabs for the same agent see the marker, so `copy_auth` is `false` and whatever credentials the agent has on disk are left untouched. A different agent opened later in the same container has its own marker, so its first tab still gets its auth bootstrap.
+The first tab for an agent in a container gets the same initial auth bootstrap it always received. Later tabs for the same agent inherit the credential state already present in the durable home. A different agent opened later in the same container seeds only its own missing credential target.
 
 The relevant files changed:
 
@@ -55,7 +55,7 @@ The new-tab overwrite is now closed, but the auth snapshot model has two remaini
 
 Both of these are the same class of problem — stale credentials in one of the participants of a multi-process auth lifecycle — and they require a different class of solution: a long-running host process that watches credential files for changes and propagates updates in real time.
 
-**3. The per-agent marker persists across container recreation.** The marker this fix adds lives at `/jackin/state/agent-auth/<agent>.done`, on the `/jackin/state` host bind-mount (`~/.jackin/data/<container>/state/`). That directory survives when a container is removed and recreated under the same name, which is exactly what the restore / `jackin hardline` path does (it reuses the recorded container name and its state directory). So a restore that recreates the container after a host re-login finds the marker already present, skips the credential copy, and the recreated container keeps running the pre-rotation token until the operator launches a genuinely fresh container or the live-sync protocol below removes the snapshot-copy model entirely. This is a deliberate trade — the fix prioritizes the frequent new-tab case over the rarer restore-after-host-rotation case — and `run_agent_setup` emits a warning when it takes the skip path but finds no credential file on disk, so the degraded state is visible in the capsule log instead of presenting as a silent unauthenticated start. The live-sync protocol is the structural fix; until it lands, restore-after-host-rotation is a known limitation.
+**3. Durable-home restore preserves old credential state.** Because the agent home survives container recreation, a restore after host re-login can keep using the credential file already present in the durable home rather than copying a newer host snapshot. This is the same remaining class as the cross-container token drift above: one participant in the auth lifecycle can have a stale token while another has a newer one. The live-sync protocol is the structural fix; until it lands, restore-after-host-rotation is a known limitation.
 
 ## Long-term solution: live auth sync via the jackin❯ daemon
 

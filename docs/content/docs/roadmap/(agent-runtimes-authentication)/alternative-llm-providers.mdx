@@ -2,7 +2,7 @@
 title: "Alternative LLM Providers (MiniMax, Kimi, GLM everywhere)"
 ---
 
-**Status**: Partially implemented — Phases 1–4 shipped on `main` (catalog + Claude Code + Codex MiniMax + Codex OpenAI default + OpenCode + operator Auth-tab rows + provider picker that collapses the agent's native auth + per-provider model overrides in role manifests via `[<agent>.providers.<id>]`); Codex GLM and Kimi cells remain deferred pending upstream Responses-API endpoint.
+**Status**: Partially implemented — Phases 1–4 shipped on `main` (catalog + Claude Code + Codex MiniMax + Codex OpenAI default + OpenCode + operator Auth-tab rows for MiniMax/Z.AI and the existing Kimi runtime key, provider picker that collapses the agent's native auth, and per-provider model overrides in role manifests via `[<agent>.providers.<id>]`); Codex GLM and Kimi cells remain deferred pending upstream Responses-API endpoint.
 
 > **Registry note.** Provider routing now lives behind the workspace crate registry. The durable design record for the runtime/provider adapter work lives in [Architecture](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry).
 
@@ -192,8 +192,8 @@ Auth-tab rows, N-item picker generalization, per-provider tab labels, and the pe
 - <RepoFile path="crates/jackin-protocol/src/lib.rs">crates/jackin-protocol/src/lib.rs</RepoFile> — `Provider` enum, `env_overrides`, `available_for`, `ZAI_*` constants
 - <RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile> — `SESSION_ENV_PASSTHROUGH` allowlist
 - <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> — in-container key resolution (`ZAI_API_KEY`) and provider env application
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> — in-container agent setup (target for Codex `config.toml` generation)
-- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> — `OPENCODE_CONFIG_CONTENT` export
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> — in-container agent setup, Codex `config.toml` generation, and OpenCode provider JSON generation
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> — default OpenCode permission fallback and runtime dispatch
 - <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile> — per-agent `model` fields
 - <RepoFile path="crates/jackin-console/src/tui/state/manager.rs">crates/jackin-console/src/tui/state/manager.rs</RepoFile> — `zai_key_present` and the Auth tab
 

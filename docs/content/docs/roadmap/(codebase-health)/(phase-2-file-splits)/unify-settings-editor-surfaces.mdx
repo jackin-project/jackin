@@ -34,7 +34,7 @@ The whole settings ↔ editor config surface, domain by domain:
 
 ## Full duplication map
 
-Generic state structs live once in `jackin-console`; concrete instantiations live in the `jackin` app crate (<RepoFile path="crates/jackin/src/console/tui.rs">tui/state.rs</RepoFile>). The structural asymmetry at the root: the editor uses **one** unified modal enum `ConsoleModal` (<RepoFile path="crates/jackin-console/src/tui/app.rs">tui/app.rs</RepoFile>); settings splits the same modal taxonomy across **three** enums (`GlobalMountModal`, `SettingsEnvModal`, `SettingsAuthModal`) plus a screen-level error-popup field (<RepoFile path="crates/jackin-console/src/tui/screens/settings/model.rs">screens/settings/model.rs</RepoFile>).
+Generic state structs live once in `jackin-console`; concrete instantiations live in the `jackin` app crate (<RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile>). The structural asymmetry at the root: the editor uses **one** unified modal enum `ConsoleModal` (<RepoFile path="crates/jackin-console/src/tui/app.rs">crates/jackin-console/src/tui/app.rs</RepoFile>); settings splits the same modal taxonomy across **three** enums (`GlobalMountModal`, `SettingsEnvModal`, `SettingsAuthModal`) plus a screen-level error-popup field (<RepoFile path="crates/jackin-console/src/tui/screens/settings/model.rs">crates/jackin-console/src/tui/screens/settings/model.rs</RepoFile>).
 
 ### Modal taxonomy — same concepts, 1 enum vs 3
 
@@ -125,7 +125,7 @@ pub enum AuthSourceFolderOutcome { Apply(PathBuf), Reject(String) }
 pub fn decide_auth_source_folder(kind: Option<AuthKind>, committed: PathBuf) -> AuthSourceFolderOutcome;
 ```
 
-`decide_auth_source_folder` wraps the already-shared `validate_auth_source_folder` (<RepoFile path="crates/jackin/src/console.rs">console/domain.rs</RepoFile>) → runtime gate `validate_sync_source_dir` (<RepoFile path="crates/jackin-runtime/src/instance/auth.rs">instance/auth.rs</RepoFile>). One `handle_auth_modal<H>` and one of each `apply_*`/`open_*`/`restore_*` replace the auth twins; the same shape generalizes to the other domains.
+`decide_auth_source_folder` wraps the already-shared `validate_auth_source_folder` (<RepoFile path="crates/jackin/src/console.rs">crates/jackin/src/console.rs</RepoFile>) → runtime gate `validate_sync_source_dir` (<RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile>). One `handle_auth_modal<H>` and one of each `apply_*`/`open_*`/`restore_*` replace the auth twins; the same shape generalizes to the other domains.
 
 Infra modals that the editor shares with non-auth flows (`TextInput` for mount destinations and env keys; the env-value `OpPicker`) stay surface-owned and are reached through host openers; they are not folded into a domain modal.
 

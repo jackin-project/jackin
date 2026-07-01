@@ -2,11 +2,11 @@
 title: "Network Egress Policy"
 ---
 
-**Status**: Partially implemented — Docker grants, launch-contract rendering, and Capsule firewall substrate exist; remaining work is the operator-facing egress contract, fail-closed enforcement policy, non-Docker parity, and decision logs (Containment track, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+**Status**: Partially implemented — Docker grant-based allowlists, launch-contract rendering, and the fail-closed Capsule guest firewall exist; remaining work is the operator-facing egress contract, DinD inner-container coverage, non-Docker parity, and decision logs (Containment track, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
-jackin❯ already has Docker network/security primitives and a Capsule firewall substrate: Docker security grants, profile validation, launch-contract rendering, and in-container hooks that can host egress enforcement. What is missing is not a raw place to put firewall code; it is the explicit operator contract that says which egress is allowed, whether enforcement is host/guest/partial, and when launch must fail closed.
+jackin❯ already has Docker network/security primitives, launch-contract rendering, and a Capsule guest firewall that can apply a resolved allowlist in fail-closed mode. What is missing is not the first enforcement substrate; it is the explicit operator contract that says which egress is allowed, whether enforcement is host/guest/partial, which paths are uncovered, and when launch must fail closed.
 
 jackin❯ current Docker/DinD model gives the agent broad network reach unless the operator manually constrains the host or the container environment. That is reasonable for a proof of concept, but it is not enough for long autonomous runs, unfamiliar repos, server-side debugging, or future Kubernetes workflows.
 
@@ -68,11 +68,11 @@ Examples of `partial` are expected early:
 - Treat service ports as part of network policy: published container ports, sandbox-to-host aliases, local database/dev-server access, and model-runner endpoints must be listed with allow/deny status.
 - If `mode = "deny"` or `mode = "allowlist"` is requested on an unsupported backend, fail before launch unless the operator opts into `open`.
 
-### Phase 2 — DinD guest enforcement
+### Phase 2 — DinD guest enforcement parity
 
-- Add a conservative egress implementation for the current Docker backend.
-- Cover both the agent container and the DinD sidecar path.
-- Include tests that show forbidden domains/private addresses fail from inside the agent session.
+- Extend the shipped guest enforcement beyond the agent container to the DinD sidecar and any agent-created inner-container path.
+- Include tests that show forbidden domains/private addresses fail from inside the agent session and from DinD-created containers.
+- Keep the contract honest when a path is only partially enforced.
 
 ### Phase 3 — MicroVM host-side proxy research
 

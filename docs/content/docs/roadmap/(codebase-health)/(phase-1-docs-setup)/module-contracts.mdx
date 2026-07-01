@@ -2,11 +2,11 @@
 title: "Module contracts (//! docs)"
 ---
 
-**Status**: Resolved for module-level contracts — `//!` module-level docs now cover production crate source; remaining `///` public API docs belong to the deferred [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/), not this setup item.
+**Status**: Reopened — many module-level contracts shipped, but a fresh current-tree audit still finds production crate files without leading `//!` docs; remaining `///` public API docs belong to the deferred [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/), not this setup item.
 
 ## Problem
 
-At original analysis, many source files lacked `//!` orientation docs. That module-level gap is now closed for production crate source; this page remains as the shipped design record.
+At original analysis, many source files lacked `//!` orientation docs. A large module-doc pass shipped, but the current crate tree has drifted and still contains production source files without leading `//!` docs. This item now tracks closing that remaining current-tree gap rather than preserving a resolved claim.
 
 ## What shipped (2026-06-02)
 
@@ -14,13 +14,13 @@ Priority production files received `//!` blocks following the `env_model.rs` exe
 
 Future audits should re-run coverage against the current tree instead of copying historical paths.
 
-## Current coverage (2026-06-02)
+## Current coverage (2026-07-01 audit)
 
-Production crate source is documented. Excluded intentionally: binary entry points (`main.rs`, `bin/role.rs`), Cargo build scripts, and test modules (`*_tests.rs` / `tests/*.rs`) — these do not need orientation headers.
+Production crate source is not yet fully documented. A fresh audit found remaining non-test, non-binary modules without leading `//!` docs, including files under `crates/jackin/`, `crates/jackin-env/`, `crates/jackin-runtime/`, and `crates/jackin-capsule/`. Excluded intentionally: binary entry points (`main.rs`, `bin/role.rs`), Cargo build scripts, and test modules (`*_tests.rs` / `tests/*.rs`) — these do not need orientation headers.
 
 Re-verify with a current-tree grep over `crates/` only; the old root `src/` tree no longer exists.
 
-The next orientation-doc work is `///` item-level docs on public API entry points at crate boundaries, and rustdoc examples on the stable-surface functions — but that pass waits until the crate extraction (Stage 4) stabilises the public surfaces.
+The next orientation-doc work is finishing `//!` coverage against the current tree. Only after that should `///` item-level docs on public API entry points and rustdoc examples move to the [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/).
 
 ## Steps
 

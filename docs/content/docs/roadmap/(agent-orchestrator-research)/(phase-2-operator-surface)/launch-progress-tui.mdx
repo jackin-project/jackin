@@ -2,9 +2,9 @@
 title: "Launch Progress TUI"
 ---
 
-**Status**: Partially implemented — the rich launch runtime/TUI has shipped; remaining work is hardening, richer diagnostics tooling, broader PTY/E2E coverage, and surfacing the timing evidence needed by [Instant launch architecture](/roadmap/instant-launch-architecture/)
+**Status**: Partially implemented — the rich launch runtime/TUI and substep timing events have shipped; remaining work is hardening, richer diagnostics tooling, broader PTY/E2E coverage, and presenting/aggregating the timing evidence needed by [Instant launch architecture](/roadmap/instant-launch-architecture/)
 
-The shipped launch progress spine provides: run IDs for every command, JSONL run diagnostics, instance-lifecycle boundary rain gating, structured launch stages, rich/test renderers, console-triggered launch reuse, and `JACKIN_NO_MOTION=1`. The old compact/plain launch renderer has been removed from the load path; launch now requires the rich surface, and launch-time decisions render as dialogs. The first implementation intentionally does not add a `jackin diagnostics` command. Remaining follow-up work is to harden the rich renderer with broader snapshot coverage, expose a diagnostics viewer once the JSONL shape settles, and make the launch surface report the substage timing evidence required by [Instant launch architecture](/roadmap/instant-launch-architecture/).
+The shipped launch progress spine provides: run IDs for every command, JSONL run diagnostics, substage timing events, instance-lifecycle boundary rain gating, structured launch stages, rich/test renderers, console-triggered launch reuse, and `JACKIN_NO_MOTION=1`. The old compact/plain launch renderer has been removed from the load path; launch now requires the rich surface, and launch-time decisions render as dialogs. The first implementation intentionally does not add a `jackin diagnostics` command. Remaining follow-up work is to harden the rich renderer with broader snapshot coverage, expose a diagnostics viewer once the JSONL shape settles, and make the launch surface present/aggregate the timing evidence required by [Instant launch architecture](/roadmap/instant-launch-architecture/).
 
 ## Problem
 

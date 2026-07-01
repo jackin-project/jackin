@@ -2,11 +2,11 @@
 title: "Declarative Resource Limits per Agent"
 ---
 
-**Status**: Partially implemented — Docker security/resource grants and validation exist; remaining work is role/agent-facing limits, operator overrides, OOM surfacing, and non-Docker translation (Phase 1, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+**Status**: Partially implemented — Docker `[docker]` security/resource grants, validation, launch-contract output, and Docker flag translation exist; remaining work is nicer role/agent-facing names, one-shot operator overrides, OOM surfacing, and non-Docker translation (Phase 1, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
 ## Problem
 
-jackin❯ now has Docker security/resource fields (`memory`, `memory_reservation`, `cpus`) and validation/translation for the Docker profile path. Remaining work is to normalize that substrate into a role/agent-facing contract and translate it consistently across role manifests, operator overrides, launch-contract output, and future non-Docker backends.
+jackin❯ now has Docker security/resource fields (`memory`, `memory_reservation`, `cpus`, `pids`, `nofile`) and validation/translation for the Docker profile path. Remaining work is to normalize that substrate into a nicer role/agent-facing contract, one-shot operator overrides, OOM status, and future non-Docker backend translation.
 
 jackin❯ runs every agent in a Docker container with whatever resource allocation the host gives it. On a developer laptop, six parallel agents can each spawn a `cargo build`, exhaust memory, OOM-kill the desktop, or starve each other for CPU. There's no operator-facing control for this today; the operator's only knob is "launch fewer agents."
 
@@ -38,11 +38,11 @@ multicode parses these via the `size` crate (decimal `12 GB` and binary `16 GiB`
 
 multicode also tracks runtime metrics that complement the limits: current RAM, CPU %, and crucially **OOM kill count** (sampled from systemd memory pressure counter). When an agent gets OOM-killed, the operator sees it.
 
-## Recommended Shape
+## Remaining shape
 
-The right level for these fields is the **role manifest**, not the operator config or workspace config. Reasoning: limits scale with the toolchain (a Rust agent with `cargo build` needs more headroom than a Go agent), and the role is where toolchain choices live. Operator/ workspace overrides come later if a use case surfaces.
+The shipped low-level substrate lives in the role manifest's `[docker]` grants. The remaining design question is whether to keep exposing those Docker-shaped names directly or add a friendlier backend-neutral layer. The right level for defaults is still the **role manifest**, because limits scale with the toolchain. Operator/workspace overrides remain useful for one launch on a smaller machine.
 
-### Config
+### Possible backend-neutral config
 
 ```toml title="jackin.role.toml"
 version = "v1alpha2"
@@ -79,18 +79,18 @@ Each backend implements a `ResourceLimits` translator:
 
 A backend that can't honor a declared limit (e.g. `nofile` on a container runtime that doesn't expose it) emits a warning at launch and proceeds — not a hard error. Operators see the gap; the agent still runs.
 
-## Scope (V1)
+## Remaining scope
 
-- `[runtime.limits]` block on `jackin.role.toml` with the four fields above.
-- `--memory-max` / `--memory-high` / `--cpus` / `--nofile` flags on `jackin load` for one-shot overrides.
-- Docker translator only in V1 — that's the only backend.
+- Decide whether a backend-neutral `[runtime.limits]` block is still needed on top of the shipped `[docker]` grant fields, or whether docs/aliases are enough.
+- Add `--memory-max` / `--memory-high` / `--cpus` / `--nofile` flags on `jackin load` for one-shot overrides if operator demand confirms the need.
+- Translate the same logical limits to Apple Container and any later sandbox backend.
 - `size`-crate-style parsing (binary and decimal); reuse a small parser rather than pulling the dependency.
 - Defaults: no limits applied if the field is absent (matches today).
-- `[runtime.limits.oom]` block: `preserve_state` defaults to true, `notify` defaults to true (no-op until Phase 2 lands).
+- OOM surfacing: preserve state, report the kill reason in status/diagnostics, and notify once the operator surface can consume it.
 
 ## Defer
 
-- Per-workspace overrides. Manifest-level only in V1.
+- Per-workspace default overrides. Manifest-level plus one-shot CLI is enough until a concrete workspace policy need appears.
 - Disk I/O limits (`--blkio-weight`). Useful but harder to reason about; defer to user request.
 - Network bandwidth limits. Defer indefinitely.
 - Auto-pausing OOM-killed agents instead of killing the container. Docker doesn't expose a clean way; revisit per-backend later.

@@ -10,23 +10,24 @@ title: "Split input/editor.rs"
 
 The remaining problem is no longer a whole-console extraction. It is the root editor input file still carrying mixed dispatch and tab-specific behavior.
 
-## Remaining split
+## Current split state
 
 ```
 crates/jackin-console/src/tui/input/editor.rs          ← thin dispatcher for editor keys and modal routing
 crates/jackin-console/src/tui/input/editor/general.rs  ← General tab handlers
-crates/jackin-console/src/tui/input/editor/mounts.rs   ← Mounts tab handlers
 crates/jackin-console/src/tui/input/editor/agents.rs   ← Agents tab handlers
 crates/jackin-console/src/tui/input/editor/secrets.rs  ← Secrets/op-reference handlers
 crates/jackin-console/src/tui/input/editor/modal.rs    ← modal commit handling if it stays large after tab extraction
 ```
 
+`general.rs`, `agents.rs`, `secrets.rs`, `modal.rs`, and `tests.rs` now exist as child modules. The remaining gap is the still-large root dispatcher plus the missing mounts-specific split.
+
 Use Rust 2024 self-named module layout. Do not create `mod.rs`.
 
 ## Remaining work
 
-1. Re-audit the current editor input file and identify the smallest tab-specific chunks.
-2. Move one tab at a time behind private helper functions, preserving existing key behavior.
+1. Re-audit the current editor input root and identify the smallest mounts-specific chunk that can move safely.
+2. Move the mounts tab behavior behind private helper functions, preserving existing key behavior.
 3. Keep tests in `editor/tests.rs` if module-local tests are needed; do not split tests into child modules.
 4. Verify with targeted Rust tests for the console editor input paths.
 

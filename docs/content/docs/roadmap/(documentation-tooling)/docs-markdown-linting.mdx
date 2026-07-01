@@ -62,7 +62,7 @@ Alternatives considered and rejected:
 
 A single follow-up PR introducing the linter, the config, the CI step, and the cleanup pass for existing files. Splitting these creates a half-adopted state where the linter exists but does not block anything.
 
-1. **Pin the binary.** Add a SHA-pinned `rvben/rumdl@<sha>` step to <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>, scheduled between `Checkout repository` and `Check source repository links`. The local pre-commit equivalent is `bun run check:md` calling the same binary via `mise`.
+1. **Pin the binary.** Add a SHA-pinned `rvben/rumdl@<sha>` step to <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>, scheduled between `Checkout repository` and `Check source repository links`. The local pre-commit equivalent would be a new `bun run check:md` script calling the same binary via `mise`.
 2. **Author a new `docs/.rumdl.toml`.** Start from the default rule set, then disable rules that conflict with Fumadocs conventions: - `MD057` (relative-link existence) — fires on Fumadocs' site-absolute routes (`/guides/mounts/`) which are rendered URLs, not filesystem paths. lychee already covers this. - `MD041` (first-line H1) — Fumadocs renders titles from frontmatter; the first heading in MDX is `##`. - `MD013` (line length) — relax to 120 with `code-blocks = false` and `tables = false`, since prose wraps unhelpfully at narrower widths. - Audit `MD033` (no inline HTML), `MD025` (single H1), and `MD026` (trailing punctuation in headings) once a dry run produces a real violation list.
 3. **Cleanup pass.** Run `rumdl check --fix` against `docs/content/docs/`. Audit the diff. Hand-fix anything `--fix` cannot resolve. Land the cleanup, the config, and the CI step in the same PR.
 4. **Docs workflow.** Wire the rumdl step into the existing docs workflow beside `check:repo-links`, `check:roadmap-sidebar`, build, and link checking. Do not assert branch-protection settings from repo files; treat required-check configuration as an operator-side repository setting.
@@ -95,5 +95,5 @@ The trade-offs do not change the recommendation. They are real, manageable, and 
 - <RepoFile path="docs/scripts/check-repo-links.ts">docs/scripts/check-repo-links.ts</RepoFile> — existing custom-rule precedent that rumdl complements
 - <RepoFile path="docs/lychee.toml">docs/lychee.toml</RepoFile> — companion gate; relationship documented above
 - <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> — would gain a "run `bun run check:md` locally" entry alongside the existing lychee guidance
-- <RepoFile path="docs/package.json">docs/package.json</RepoFile> — new `check:md` script wired into `check:links:fresh`
+- <RepoFile path="docs/package.json">docs/package.json</RepoFile> — would gain a new `check:md` script
 - New `docs/.rumdl.toml` — config introduced by the adoption PR
