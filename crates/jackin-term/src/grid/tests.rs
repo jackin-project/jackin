@@ -605,9 +605,9 @@ fn borrowed_scrollback_view_matches_owned_dump() {
             );
             assert_eq!(borrowed_cell.fgcolor(), owned_cell.fg);
             assert_eq!(borrowed_cell.bgcolor(), owned_cell.bg);
-            assert_eq!(borrowed_cell.bold(), owned_cell.bold);
-            assert_eq!(borrowed_cell.italic(), owned_cell.italic);
-            assert_eq!(borrowed_cell.underline(), owned_cell.underline);
+            assert_eq!(borrowed_cell.bold(), owned_cell.attributes.bold);
+            assert_eq!(borrowed_cell.italic(), owned_cell.attributes.italic);
+            assert_eq!(borrowed_cell.underline(), owned_cell.attributes.underline);
             assert_eq!(
                 borrowed_cell.attrs.underline_style,
                 owned_cell.underline_style
@@ -616,13 +616,19 @@ fn borrowed_scrollback_view_matches_owned_dump() {
                 borrowed_cell.attrs.underline_color,
                 owned_cell.underline_color
             );
-            assert_eq!(borrowed_cell.inverse(), owned_cell.inverse);
-            assert_eq!(borrowed_cell.dim(), owned_cell.dim);
-            assert_eq!(borrowed_cell.strikethrough(), owned_cell.strikethrough);
-            assert_eq!(borrowed_cell.slow_blink(), owned_cell.slow_blink);
-            assert_eq!(borrowed_cell.rapid_blink(), owned_cell.rapid_blink);
-            assert_eq!(borrowed_cell.conceal(), owned_cell.conceal);
-            assert_eq!(borrowed_cell.overline(), owned_cell.overline);
+            assert_eq!(borrowed_cell.inverse(), owned_cell.attributes.inverse);
+            assert_eq!(borrowed_cell.dim(), owned_cell.attributes.dim);
+            assert_eq!(
+                borrowed_cell.strikethrough(),
+                owned_cell.attributes.strikethrough
+            );
+            assert_eq!(borrowed_cell.slow_blink(), owned_cell.attributes.slow_blink);
+            assert_eq!(
+                borrowed_cell.rapid_blink(),
+                owned_cell.attributes.rapid_blink
+            );
+            assert_eq!(borrowed_cell.conceal(), owned_cell.attributes.conceal);
+            assert_eq!(borrowed_cell.overline(), owned_cell.attributes.overline);
             assert_eq!(
                 borrowed_cell
                     .hyperlink
@@ -673,11 +679,11 @@ fn sgr_records_extended_visible_attributes() {
     let cell = snap.cell(0, 0).expect("styled cell");
     assert_eq!(cell.underline_style, UnderlineStyle::Curly);
     assert_eq!(cell.underline_color, Color::Rgb(12, 34, 56));
-    assert!(cell.strikethrough);
-    assert!(cell.slow_blink);
-    assert!(cell.rapid_blink);
-    assert!(cell.conceal);
-    assert!(cell.overline);
+    assert!(cell.attributes.strikethrough);
+    assert!(cell.attributes.slow_blink);
+    assert!(cell.attributes.rapid_blink);
+    assert!(cell.attributes.conceal);
+    assert!(cell.attributes.overline);
 }
 
 #[test]
@@ -690,20 +696,20 @@ fn sgr_resets_extended_visible_attributes() {
     let first = snap.cell(0, 0).expect("first styled cell");
     assert_eq!(first.underline_style, UnderlineStyle::Dashed);
     assert_eq!(first.underline_color, Color::Idx(123));
-    assert!(first.strikethrough);
-    assert!(first.slow_blink);
-    assert!(first.rapid_blink);
-    assert!(first.conceal);
-    assert!(first.overline);
+    assert!(first.attributes.strikethrough);
+    assert!(first.attributes.slow_blink);
+    assert!(first.attributes.rapid_blink);
+    assert!(first.attributes.conceal);
+    assert!(first.attributes.overline);
 
     let second = snap.cell(0, 1).expect("reset cell");
     assert_eq!(second.underline_style, UnderlineStyle::None);
     assert_eq!(second.underline_color, Color::Default);
-    assert!(!second.strikethrough);
-    assert!(!second.slow_blink);
-    assert!(!second.rapid_blink);
-    assert!(!second.conceal);
-    assert!(!second.overline);
+    assert!(!second.attributes.strikethrough);
+    assert!(!second.attributes.slow_blink);
+    assert!(!second.attributes.rapid_blink);
+    assert!(!second.attributes.conceal);
+    assert!(!second.attributes.overline);
 }
 
 #[test]

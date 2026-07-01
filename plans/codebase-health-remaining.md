@@ -568,6 +568,16 @@ the standard CSI SGR bit-mask and named-field construction reads better than
 bit-position lookups in a conformance harness. `CellSnapshot` keeps 2 non-attribute
 bools (is_wide, is_wide_continuation) under the threshold. `#[expect]` count: 51 → **50**.
 
+SnapCell (jackin-term/src/snapshot.rs:31) — bundled the 10 SGR attribute bools
+(bold, italic, underline, inverse, dim, strikethrough, slow_blink, rapid_blink,
+conceal, overline) into a new `SnapCellAttrs` struct with a permanent
+`#[allow(...)]` justification citing the standard CSI SGR attribute set. Cell
+geometry (is_wide, is_wide_continuation) stays as direct fields; the
+attribute set is the bundle. Read sites migrated in `From<&Cell>` impl,
+`attrs_are_default` method, `grid/tests.rs`'s 12 cross-cell assertions, and
+`pane.rs`'s `PaneCell for SnapCell` impl. `SnapCell` keeps 2 non-attribute
+bools (under threshold). `#[expect]` count: 50 → **49**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

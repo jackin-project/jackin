@@ -670,9 +670,8 @@ pub struct SettingsGeneralPreview {
 
 impl SettingsGeneralPreview {
     fn change_count(self) -> usize {
-        usize::from(
-            self.original_toggles.coauthor_trailer != self.pending_toggles.coauthor_trailer,
-        ) + usize::from(self.original_toggles.dco != self.pending_toggles.dco)
+        usize::from(self.original_toggles.coauthor_trailer != self.pending_toggles.coauthor_trailer)
+            + usize::from(self.original_toggles.dco != self.pending_toggles.dco)
     }
 }
 
