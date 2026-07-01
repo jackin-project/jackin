@@ -6,7 +6,7 @@ title: "jackin-exec: Secure Execution Wrapper"
 
 **The operator credential picker is now wired.** `Dialog::ExecPicker` exists and is driven from the daemon: an `ExecCommand` opens the picker (built from the workspace's on-demand bindings), the control reply is deferred while the operator toggles credentials (Space) and confirms (Enter) or cancels (Esc); on confirm the daemon resolves the selected credentials through `host.sock`, runs the command with them injected, redacts the output, and replies `ExecResult`; on cancel (or any resolver/spawn error) it replies `ExecDenied` and runs nothing — fail-closed at the daemon dispatch path. The picker state machine, selection→confirm dispatch, and binding construction are unit-tested.
 
-**Boundary caveat (Phase 1 hardening remaining).** The picker is the operator-facing approval, enforced daemon-side. The host resolver on `host.sock` enforces an allow-list — it resolves only the operator-*configured* on-demand bindings, never arbitrary refs — but it does not yet enforce per-use *approval*: `/jackin/run/host.sock` is reachable by any in-container process, so a compromised agent could connect directly and resolve the configured set without a picker. Binding the socket to the daemon (`SO_PEERCRED` / a one-time per-confirm token) is remaining hardening; the future jackin' daemon that replaces this ad-hoc listener subsumes it.
+**Boundary caveat (Phase 1 hardening remaining).** The picker is the operator-facing approval, enforced daemon-side. The host resolver on `host.sock` enforces an allow-list — it resolves only the operator-*configured* on-demand bindings, never arbitrary refs — but it does not yet enforce per-use *approval*: `/jackin/run/host.sock` is reachable by any in-container process, so a compromised agent could connect directly and resolve the configured set without a picker. Binding the socket to the daemon (`SO_PEERCRED` / a one-time per-confirm token) is remaining hardening; the future jackin❯ daemon that replaces this ad-hoc listener subsumes it.
 
 **Remaining work:** the interactive render/keystroke fidelity is verified only by a live `jackin load` (per the capsule smoke mandate — the multiplexer runs as PID 1 inside a container and cannot be exercised headless), and **temp-file materialization for key-type credentials** (writing an SSH private key to `/jackin/run/secrets/<uuid>` + `SSH_KEY_FILE`, deleting after exit) is still Phase 2.
 
@@ -16,11 +16,11 @@ title: "jackin-exec: Secure Execution Wrapper"
 
 `jackin-exec` is a symlink to `jackin-capsule` — no separate binary, no separate release artifact, no separate build job.
 
-Works on top of any jackin' backend. Does not require the Apple Container backend to land first. See [Agent isolation architecture](/roadmap/agent-isolation-architecture/) for the complete picture.
+Works on top of any jackin❯ backend. Does not require the Apple Container backend to land first. See [Agent isolation architecture](/roadmap/agent-isolation-architecture/) for the complete picture.
 
 ## The Problem
 
-Current jackin' model injects all credentials as container env vars at `docker run` time. Every process inside the container can call `printenv` and see raw API keys. The operator wants credentials available to commands without being permanently visible to the agent.
+Current jackin❯ model injects all credentials as container env vars at `docker run` time. Every process inside the container can call `printenv` and see raw API keys. The operator wants credentials available to commands without being permanently visible to the agent.
 
 ## Two Tiers — Same `env` Map, One New Flag
 
@@ -54,11 +54,11 @@ GH_TOKEN = { value = "$GH_TOKEN",             on_demand = true }
 STG_URL  = { value = "https://staging.internal", on_demand = true }
 ```
 
-**Toggle behavior**: when the operator sets `on_demand = false` (or removes it) via the TUI config editor, jackin' serializes back to the compact plain form:
+**Toggle behavior**: when the operator sets `on_demand = false` (or removes it) via the TUI config editor, jackin❯ serializes back to the compact plain form:
 - `{ value = "https://staging.internal", on_demand = false }` → `"https://staging.internal"`
 - `{ op = "...", path = "...", on_demand = false }` → `{ op = "...", path = "..." }`
 
-When toggled to `on_demand = true`, jackin' serializes to the table form. This conversion happens in the config editor only — no data migration required.
+When toggled to `on_demand = true`, jackin❯ serializes to the table form. This conversion happens in the config editor only — no data migration required.
 
 ## Rust Type Changes
 
@@ -239,7 +239,7 @@ On error, capsule sends `ExecDenied` to the agent — no command is executed.
 
 **Phase 1 mechanism**: `jackin load` host process stays running for the lifetime of the session. After the role container starts, the host immediately attaches to it through the selected backend, which blocks for the interactive session. The host.sock listener runs as a separate task alongside that attach call. The socket path `~/.jackin/sockets/<container>/host.sock` is bind-mounted into the container at `/jackin/run/host.sock` for Docker and passed through the apple-container launch path when that backend is selected. When capsule sends a resolution request, the host task reads it, runs `op read` for each 1Password ref, reads host env vars, writes values back. Capsule injects them ephemerally and executes.
 
-**This is the Phase 1 ad-hoc design.** The host process listening on a socket is not a daemon — it is the `jackin load` process staying alive. Future migration: the jackin' daemon ([Host bridge](/roadmap/host-bridge/), [jackin' daemon](/roadmap/jackin-daemon/)) will handle all credential resolution requests from all running containers. The per-process host.sock approach will be retired when the daemon ships.
+**This is the Phase 1 ad-hoc design.** The host process listening on a socket is not a daemon — it is the `jackin load` process staying alive. Future migration: the jackin❯ daemon ([Host bridge](/roadmap/host-bridge/), [jackin❯ daemon](/roadmap/jackin-daemon/)) will handle all credential resolution requests from all running containers. The per-process host.sock approach will be retired when the daemon ships.
 
 ## Binary: Symlink + Subcommand
 
@@ -281,8 +281,8 @@ ExecDenied { reason: String }
 ## Output Filtering
 
 All resolved credential values (returned from `op read` or host env) are added to the redaction set for that command's output. Capsule scans stdout + stderr before returning to the agent:
-- Exact value match → `[redacted by jackin']`
-- PEM blocks → `[key material redacted by jackin']`
+- Exact value match → `[redacted by jackin❯]`
+- PEM blocks → `[key material redacted by jackin❯]`
 
 Full unredacted output logged to diagnostics run file under `JACKIN_DEBUG`.
 
@@ -366,7 +366,7 @@ Both changes are additive with serde defaults. Existing TOML files parse identic
 |---|---|
 | [Agent isolation architecture](/roadmap/agent-isolation-architecture/) | Master architecture doc; jackin-exec is Layer 3 |
 | [Container credential exposure](/roadmap/container-credential-exposure/) | The problem this item solves |
-| [jackin' daemon](/roadmap/jackin-daemon/) | Future: daemon replaces the Phase 1 ad-hoc host.sock listener |
+| [jackin❯ daemon](/roadmap/jackin-daemon/) | Future: daemon replaces the Phase 1 ad-hoc host.sock listener |
 | [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) | Future daemon-based credential resolution that retires host.sock |
 | [Process-level sandboxing](/roadmap/process-level-sandboxing/) | Complementary — zerobox handles per-operation filesystem/network policy |
 | [Apple Container backend](/roadmap/apple-container-backend/) | jackin-exec works on any backend |

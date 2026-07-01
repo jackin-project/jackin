@@ -1,0 +1,5 @@
+{
+  "title": "Isolation",
+  "defaultOpen": false,
+  "pages": ["smolvm-backend", "orbstack-isolated-machines"]
+}

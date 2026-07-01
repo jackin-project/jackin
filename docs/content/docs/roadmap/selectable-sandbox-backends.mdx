@@ -40,9 +40,9 @@ The next work should happen in this order:
 
 1. [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/)
    - make the current Docker backend explicit, auditable, and progressively stricter before changing runtime families.
-2. [OrbStack isolated machine backend](/roadmap/orbstack-isolated-machine-backend/)
+2. [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/)
    - research a macOS backend that runs the role container and private Docker engine inside an OrbStack isolated machine.
-3. [smolvm backend research](/roadmap/smolvm-backend-research/) - evaluate an open Rust/libkrun VM backend for true VM-per-workload isolation, OCI-image execution, and potential SDK integration; compare it directly with OrbStack isolated machines and Docker Sandboxes.
+3. [smolvm backend research](/reference/research/isolation/smolvm-backend/) - evaluate an open Rust/libkrun VM backend for true VM-per-workload isolation, OCI-image execution, and potential SDK integration; compare it directly with OrbStack isolated machines and Docker Sandboxes.
 4. Kubernetes platform support - future work, not part of the current Docker hardening, OrbStack, or smolvm design pass.
 
 There is no active generic microVM-provider track in this roadmap pass. The VM-style comparison is intentionally limited to OrbStack isolated machines, smolvm, and Docker Sandboxes as captured in the smolvm research item.
@@ -218,8 +218,8 @@ Each experiment must answer two questions:
 | Item | Scope |
 |---|---|
 | [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) | Docker profiles, DinD hardening, resource limits, network defaults, read-only root, capability policy, session-contract reporting. |
-| [OrbStack isolated machine backend](/roadmap/orbstack-isolated-machine-backend/) | macOS isolated-machine lifecycle, selective shares, machine-local Docker, image transfer, attach/reconnect/eject/purge. |
-| [smolvm backend research](/roadmap/smolvm-backend-research/) | Open Rust/libkrun VM backend research: direct OCI execution, persistent machines, Docker workflow compatibility, network allow-host policy, and SDK embedding. |
+| [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/) | macOS isolated-machine lifecycle, selective shares, machine-local Docker, image transfer, attach/reconnect/eject/purge. |
+| [smolvm backend research](/reference/research/isolation/smolvm-backend/) | Open Rust/libkrun VM backend research: direct OCI execution, persistent machines, Docker workflow compatibility, network allow-host policy, and SDK embedding. |
 | [Network egress policy](/roadmap/network-egress-policy/) | Backend-neutral egress config and enforcement-quality reporting. |
 | [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | The operator-visible explanation layer every backend must feed. |
 | [Declarative resource limits](/roadmap/declarative-resource-limits/) | Resource budget schema and backend translators. |

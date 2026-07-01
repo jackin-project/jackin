@@ -256,7 +256,7 @@ Every value in these mockups is already available or already named as in-flight 
 1. **Plan format.** Does the planner emit a structured task list through a `jackin.delegate` tool call (clean and parseable) or do we parse a markdown task list from its visible output (works with any agent, fuzzier)? Start with the MCP tool.
 2. **Result hand-back.** Inject the worker's summary into the planner's PTY (simple, but pollutes the planner's context) or return it as the async MCP tool result (cleaner)? Lean toward the async result.
 3. **Worker isolation.** Same container and shared workspace (fast, but file-collision risk), one worker per `worktree` or `clone` mount (the per-mount isolation already supports this), or separate instances? The per-mount `clone` mode is the natural safe default.
-4. **Failure and loop control.** A per-worker budget cap and a maximum re-delegation count so the planner cannot spin cheap workers indefinitely. This pairs with the budget-enforcement idea tracked in the [brainstorm backlog](/roadmap/brainstorm-backlog/).
+4. **Failure and loop control.** A per-worker budget cap and a maximum re-delegation count so the planner cannot spin cheap workers indefinitely. This pairs with the budget-enforcement idea tracked in the [brainstorm backlog](/reference/research/backlog/platform-ideas/).
 
 ## Relationship to other roadmap items
 

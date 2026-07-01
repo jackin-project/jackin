@@ -1,8 +1,8 @@
 ---
-title: "Agent Orchestrator Research Program"
+title: "Agent Orchestration Program"
 ---
 
-**Status**: Open — design program (fleet-operations track plus containment/recovery track)
+**Status**: Open — phased implementation program (fleet-operations track plus containment/recovery track)
 
 ## Goal
 
@@ -14,8 +14,9 @@ operator surface for experienced engineers who want agents at full speed but
 do not want that speed pointed directly at their host account, production
 credentials, or shared Docker daemon.
 
-This page is the research index for adjacent tools that are solving parts of
-the same problem:
+This page is the task plan for the orchestration program. It keeps only the decision inputs needed to explain the roadmap shape; full external-product dossiers live under [/reference/research/](/reference/research/).
+
+Adjacent tools that inform the plan:
 
 - `multicode` is the strongest reference for **fleet operations**: many
   parallel workspaces, live status, GitHub link state, persistent task state,
@@ -29,7 +30,7 @@ the same problem:
   workspace sharing, host-side network policy, and credential proxying.
 - [Herdr](https://github.com/ogulcancelik/herdr) is the strongest reference for **terminal-multiplexer UX for multi-agent workflows**: agent status (Blocked / Working / Done / Idle), foreground-process ownership, screen heuristics, semantic integration reports, workspace-level status roll-up, notification suppression when the operator is already looking, sound escalation as opt-in, and blocking `wait` semantics on a Unix socket API. Its architecture (bare host processes, AGPL-3.0) rules out embedding, but its UX decisions directly inform the [agent runtime status authority](/roadmap/agent-runtime-status/), [agent attention prompts](/roadmap/agent-attention-prompts/), and the daemon socket design. See [jackin❯ Capsule control plane](/roadmap/jackin-capsule/) for the in-container multiplexer plan that applies these concepts to the Capsule model.
 - [cellshot](https://github.com/kitlangton/cellshot) and adjacent terminal recorder/test tools are the strongest reference for **agentic terminal observation and automation**: structured terminal frames, visible-text waits, input injection, artifact bundles, and replayable traces. They directly inform [Terminal observation and automation](/roadmap/terminal-observation-automation/), the Phase 2 work that makes Capsule sessions script-addressable — Playwright-like control for jackin❯ instances, tabs, prompts, waits, and captures — without treating Docker logs or screenshots as the API.
-- [Orca](https://github.com/stablyai/orca) is the strongest reference for **desktop-native UX for multi-agent workflows**: worktree-per-task visual orchestration, WebGL multi-pane terminals, diff-annotation-to-agent feedback loops, embedded Chromium per worktree for live UI inspection, and 30+ pre-configured agent runtimes at zero config. Its isolation model (host-native worktrees, agents run as host user) is the opposite of the jackin❯ model, making it a useful UX benchmark without being a viable architecture borrow. See [Orca ADE research](/roadmap/orca-research/) for the full evaluation.
+- [Orca](https://github.com/stablyai/orca) is the strongest reference for **desktop-native UX for multi-agent workflows**: worktree-per-task visual orchestration, WebGL multi-pane terminals, diff-annotation-to-agent feedback loops, embedded Chromium per worktree for live UI inspection, and 30+ pre-configured agent runtimes at zero config. Its isolation model (host-native worktrees, agents run as host user) is the opposite of the jackin❯ model, making it a useful UX benchmark without being a viable architecture borrow. See [Orca ADE research](/reference/research/agent-orchestration/orca-ade/) for the full evaluation.
 - Conductor, Claude devcontainers, Trail of Bits' devcontainer, and private
   internal tools remain useful comparison points, but they are not the center
   of this program.
@@ -41,8 +42,7 @@ The program keeps two ideas separate:
    boundary is explained, and how the operator recovers when the agent does
    something destructive.
 
-That wider scope is why this page lives at `agent-orchestrator-research`,
-not under a multicode-specific route.
+That wider scope is why this page is a program roadmap, not a multicode-specific task.
 
 ## jackin❯ values used for evaluation
 
@@ -57,7 +57,7 @@ Every borrowed idea has to survive these filters:
 | Explicit contracts | Before launch, the operator should be able to see mounts, credentials, network, Docker access, host-side effects, and recovery posture. |
 | Real engineering environments | The model must eventually work for SSH, servers, Kubernetes, and repos with serious Docker/Compose needs. |
 
-## Research map
+## Design-input summary
 
 | Tool | Strongest idea to borrow | Main reason not to copy it directly |
 |---|---|---|
@@ -66,7 +66,7 @@ Every borrowed idea has to survive these filters:
 | [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/security/) | MicroVM plus private Docker daemon, host-side network proxy, credential injection outside the VM, branch worktrees under `.sbx/` | Product is tied to Docker Desktop; not an extensible jackin role ecosystem; credentials/network proxy are not available primitives in plain Docker |
 | [`ogulcancelik/herdr`](https://github.com/ogulcancelik/herdr) | Two-stage done state (Done vs Idle), foreground-process ownership, semantic integration reports, visible-screen arbitration, workspace-level status roll-up, notification suppression when tab is focused, sound-escalation opt-in, and blocking `wait` semantics on the socket API | AGPL-3.0 (embedding conflicts with jackin❯ Apache 2.0 license); heuristics degrade when the observed terminal is `docker attach` rather than the agent process; no container isolation, mount model, or auth forwarding | See [Agent runtime status authority](/roadmap/agent-runtime-status/) |
 | [`kitlangton/cellshot`](https://github.com/kitlangton/cellshot), [asciinema](https://github.com/asciinema/asciinema), [Charmbracelet VHS](https://github.com/charmbracelet/vhs), and terminal test/record tools | Treat terminal sessions as observable, scriptable, replayable objects: structured cells, visible-text waits, input injection, `.cast`/JSONL traces, and text/JSON/SVG/PNG artifact bundles | Most tools own their own PTY daemon, browser terminal, or host process; jackin❯ should expose the existing Capsule PTY/session state instead of nesting another runtime. See [Terminal observation and automation](/roadmap/terminal-observation-automation/) |
-| [`stablyai/orca`](https://github.com/stablyai/orca) | Worktree-per-task visual orchestration, diff-annotation-to-agent feedback loop, embedded Chromium per worktree (Design Mode), 30+ zero-config runtimes, WebGL multi-pane terminals, mobile companion | Host-native agents run as host user; no container boundary; isolated UX ideas are the borrow target, not the isolation model. See [Orca ADE research](/roadmap/orca-research/) |
+| [`stablyai/orca`](https://github.com/stablyai/orca) | Worktree-per-task visual orchestration, diff-annotation-to-agent feedback loop, embedded Chromium per worktree (Design Mode), 30+ zero-config runtimes, WebGL multi-pane terminals, mobile companion | Host-native agents run as host user; no container boundary; isolated UX ideas are the borrow target, not the isolation model. See [Orca ADE research](/reference/research/agent-orchestration/orca-ade/) |
 | Claude/devcontainer patterns | Default-deny firewall and reproducible container setup | Devcontainers are workspace setup, not a multi-agent orchestrator or full operator platform |
 | Conductor-style native worktrees | Low-friction host-native worktrees | No meaningful sandbox boundary; useful only as a UX comparison |
 
@@ -363,7 +363,7 @@ launched, what can be reached, and how to recover.
 |---|---|---|
 | [Selectable sandbox backends](/roadmap/selectable-sandbox-backends/) | Docker Sandboxes microVM + private daemon; Hazmat Tier 3 decision | Runtime backend refactor |
 | [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) | Harden current Docker substrate before/alongside stronger backends | DinD TLS; runtime backend refactor; session contract |
-| [Devcontainer parity](/roadmap/devcontainer-parity/) | Claude/devcontainer firewall and reproducibility pattern | Network egress policy |
+| [Devcontainer parity](/reference/research/runtime/devcontainer-parity/) | Claude/devcontainer firewall and reproducibility pattern | Network egress policy |
 
 ### Phase B4 — Recover and govern host-side effects
 

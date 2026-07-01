@@ -2,7 +2,7 @@
 title: "Token & Cost Telemetry"
 ---
 
-**Status**: Partially implemented (Phase 3, [Agent Orchestrator Research Program](/roadmap/agent-orchestrator-research/))
+**Status**: Partially implemented (Phase 3, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
 
 **Implementation note**: Both halves of the design have a landed Capsule slice. The **account-quota** side shipped with the Capsule usage overlay (a Capsule-local Turso `account_usage_snapshots` cache feeding the focused status signal + provider overlay). The **token-spend** side shipped in #532: the in-container token monitor reads each agent's provider logs (Claude/Codex/Kimi JSONL, Amp thread JSON, OpenCode via the async `turso` reader), recomputes per-session totals idempotently each poll, fills cost from the provider stream or the static pricing table, and the daemon polls it on a self-throttled 30s/60s cadence; totals are exposed as `TokenUsageSummary` over the control channel and printed by `jackin-capsule token-usage <id>`. That code (`crates/jackin-capsule/src/token_monitor.rs`) is the source of truth; this page tracks only the remaining work below.
 
@@ -432,7 +432,7 @@ $ jackin usage the-architect --json
 
 ## See Also
 
-- [Agent Orchestrator Research Program](/roadmap/agent-orchestrator-research/)
+- [Agent Orchestration Program](/roadmap/agent-orchestrator-research/)
 - [Persistent storage layer](/roadmap/persistent-storage-layer/) —
   required (sample storage)
 - [Agent runtime status](/roadmap/agent-runtime-status/) —

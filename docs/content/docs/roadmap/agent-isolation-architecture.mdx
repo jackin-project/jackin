@@ -6,7 +6,7 @@ title: "Agent Isolation Architecture: The Four-Layer Security Model"
 
 ## What This Document Is
 
-This is the master security architecture document for jackin'. It explains why jackin' needs a layered isolation model, how we arrived at each decision through research and verification, what each layer solves, and how the layers compose into a complete security story equivalent to — and in operator experience, better than — Docker Sandboxes.
+This is the master security architecture document for jackin❯. It explains why jackin❯ needs a layered isolation model, how we arrived at each decision through research and verification, what each layer solves, and how the layers compose into a complete security story equivalent to — and in operator experience, better than — Docker Sandboxes.
 
 Every design decision here was reached through a deliberate research trail starting from the question: "we use Docker today and it seems fine — why would we need to change anything?" This document answers that question honestly.
 
@@ -16,7 +16,7 @@ Every design decision here was reached through a deliberate research trail start
 
 ### The Starting Point
 
-jackin' launched as a Docker-first orchestration layer for AI agents. The initial security model was practical and correct for a proof-of-concept:
+jackin❯ launched as a Docker-first orchestration layer for AI agents. The initial security model was practical and correct for a proof-of-concept:
 
 - explicit workspace bind mounts (only operator-approved paths)
 - host Docker socket excluded from agent containers
@@ -27,11 +27,11 @@ That model is already better than a developer container with the host socket mou
 
 ### Step 1: Researching OrbStack Isolated Machines
 
-The first candidate for improvement was OrbStack isolated machines — a macOS-native feature that creates machines without the default full-Mac-filesystem passthrough. The hypothesis was that an isolated machine would give each jackin' session a stronger boundary.
+The first candidate for improvement was OrbStack isolated machines — a macOS-native feature that creates machines without the default full-Mac-filesystem passthrough. The hypothesis was that an isolated machine would give each jackin❯ session a stronger boundary.
 
 **What we found**: OrbStack isolated machines share OrbStack's Linux kernel. They provide namespace isolation within the existing OrbStack VM — cgroups and namespaces, not a hypervisor boundary per workload. For the current audience (100% macOS ARM operators who already use OrbStack as their Docker engine), the role container already lives inside OrbStack's Linux VM. An isolated machine would add a namespace layer on the same kernel.
 
-**Conclusion**: [OrbStack isolated machine backend](/roadmap/orbstack-isolated-machine-backend/) deferred. Namespace isolation within a shared kernel does not address the kernel escape risk that motivates VM-level separation.
+**Conclusion**: [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/) deferred. Namespace isolation within a shared kernel does not address the kernel escape risk that motivates VM-level separation.
 
 ### Step 2: Researching the Actual Threat
 
@@ -45,15 +45,15 @@ Research into the 2025–2026 CVE landscape established concrete evidence:
 
 **CVE-2024-1086**: Use-after-free in Linux's netfilter subsystem. Confirmed actively exploited in ransomware campaigns (CISA advisory, October 2025). Reachable from inside a container.
 
-**DinD `--privileged`**: jackin' runs a privileged DinD sidecar today. A `--privileged` container has near-full access to the host kernel — in jackin's case, OrbStack's Linux VM kernel. Recent attack chains have started from legitimate AI agent setups that followed Docker's own security recommendations.
+**DinD `--privileged`**: jackin❯ runs a privileged DinD sidecar today. A `--privileged` container has near-full access to the host kernel — in jackin❯s case, OrbStack's Linux VM kernel. Recent attack chains have started from legitimate AI agent setups that followed Docker's own security recommendations.
 
-**The shared-kernel insight**: The attack surface for all of these is the kernel. Every jackin' session shares one OrbStack Linux VM kernel. A successful kernel exploit in one session reaches all sessions. This is not a configuration problem — it is structural.
+**The shared-kernel insight**: The attack surface for all of these is the kernel. Every jackin❯ session shares one OrbStack Linux VM kernel. A successful kernel exploit in one session reaches all sessions. This is not a configuration problem — it is structural.
 
 ### Step 3: Mapping the Full Problem Space
 
 Concurrent with the kernel research, a second problem emerged from operator experience: credential exposure.
 
-The current jackin' model injects agent credentials (Claude API key, GitHub token, SSH keys) into the role container as environment variables or synced files. This means:
+The current jackin❯ model injects agent credentials (Claude API key, GitHub token, SSH keys) into the role container as environment variables or synced files. This means:
 
 - The agent process can `printenv` and read raw API keys
 - The agent can read credential files from the agent home mount
@@ -73,13 +73,13 @@ With the kernel boundary problem defined, we researched what provides a true per
 
 **gVisor**: syscall interception in userspace — no KVM required. But confirmed broken on OrbStack macOS ARM ([orbstack/orbstack#2362](https://github.com/orbstack/orbstack/issues/2362) — `/tmp → /private/tmp` symlink causes runsc to crash immediately). Claude Code hangs indefinitely in gVisor on macOS ARM ([anthropics/claude-code#35454](https://github.com/anthropics/claude-code/issues/35454)). Not viable on current platform stack.
 
-**smolvm**: uses Hypervisor.framework on macOS and libkrun on Linux. Pre-1.0. Has a documented Docker-in-VM path (v0.7.0, requires Alpine base + ext4 bind mount + virtio-net). **Deferred** in June 2026 — Apple Container is the primary macOS 26 VM track (zero install friction, gRPC/vsock attach, Virtualization.framework). smolvm remains the fallback if Apple Container Phase 0 fails the Docker-inside test. See [smolvm backend research](/roadmap/smolvm-backend-research/).
+**smolvm**: uses Hypervisor.framework on macOS and libkrun on Linux. Pre-1.0. Has a documented Docker-in-VM path (v0.7.0, requires Alpine base + ext4 bind mount + virtio-net). **Deferred** in June 2026 — Apple Container is the primary macOS 26 VM track (zero install friction, gRPC/vsock attach, Virtualization.framework). smolvm remains the fallback if Apple Container Phase 0 fails the Docker-inside test. See [smolvm backend research](/reference/research/isolation/smolvm-backend/).
 
-**Docker Sandboxes**: productized microVM runner from Docker Inc. (launched January 2026). Runs each agent session in a dedicated VM using a proprietary VMM on Apple's Hypervisor.framework. Has a built-in credential proxy and network proxy. However: not a backend API for jackin' to build on — it is a complete agent runner that replaces jackin's role (see [Part 3](#part-3-why-apple-container-not-docker-sandboxes)).
+**Docker Sandboxes**: productized microVM runner from Docker Inc. (launched January 2026). Runs each agent session in a dedicated VM using a proprietary VMM on Apple's Hypervisor.framework. Has a built-in credential proxy and network proxy. However: not a backend API for jackin❯ to build on — it is a complete agent runner that replaces jackin❯s role (see [Part 3](#part-3-why-apple-container-not-docker-sandboxes)).
 
 **Apple Container framework** (macOS 26 Tahoe, WWDC 2025, `apple/container` v0.11.0 March 2026): each OCI container runs in its own dedicated lightweight VM via Virtualization.framework, natively on Apple Silicon. Sub-second start times. Own kernel per container. Own IP per container via vmnet. OCI-compatible. CLI with Docker-compatible surface (`container run`, `container exec`, `container stop`, `container rm`). PID 1 is `vminitd` — a minimal Swift static binary that exposes a gRPC API over vsock for process management and I/O streaming. Zero install friction on macOS 26.
 
-**Key finding for Apple Container**: `--privileged` is not supported. The documented alternative is `--cap-add <CAP>` for specific capabilities. This means the current jackin' DinD sidecar (which requires `--privileged`) cannot run inside an apple/container VM without changes. Rootless DinD — which replaces `--privileged` with specific capability grants — is the compatibility path, but requires the [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) work to complete first.
+**Key finding for Apple Container**: `--privileged` is not supported. The documented alternative is `--cap-add <CAP>` for specific capabilities. This means the current jackin❯ DinD sidecar (which requires `--privileged`) cannot run inside an apple/container VM without changes. Rootless DinD — which replaces `--privileged` with specific capability grants — is the compatibility path, but requires the [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) work to complete first.
 
 ### Step 5: Recognizing That VM Isolation Alone Is Not Enough
 
@@ -91,7 +91,7 @@ This is the gap that process-level sandboxing fills. Research into [Zerobox](htt
 
 ### Step 6: The `jackin-exec` Insight
 
-The credential exposure problem requires a different mechanism than both VM isolation and process sandboxing. The question is: how does an agent run `ssh sentry` without jackin' injecting the SSH key into the container's environment?
+The credential exposure problem requires a different mechanism than both VM isolation and process sandboxing. The question is: how does an agent run `ssh sentry` without jackin❯ injecting the SSH key into the container's environment?
 
 The answer: a two-tier workspace env model and a `jackin-exec` subcommand of `jackin-capsule`.
 
@@ -101,7 +101,7 @@ The answer: a two-tier workspace env model and a `jackin-exec` subcommand of `ja
 
 **`jackin-exec` = `jackin-capsule exec`**: a symlink, not a separate binary. The agent calls `jackin-exec gh pr create`; the capsule subcommand shows the on-demand picker, resolves selected credentials via the host process, injects them as temp env vars, runs the command, scans output for leaked values, deletes temp values. Raw credential values never appear in the container's process environment.
 
-This is the same architecture Docker Sandboxes uses for its host-side credential proxy — except jackin' builds it explicitly, with a TUI-native picker dialog and full operator control.
+This is the same architecture Docker Sandboxes uses for its host-side credential proxy — except jackin❯ builds it explicitly, with a TUI-native picker dialog and full operator control.
 
 ---
 
@@ -156,7 +156,7 @@ Overhead    Granularity       Layer
 
 ## Part 3: Why Apple Container, Not Docker Sandboxes
 
-This comparison matters because Docker Sandboxes and Apple Container appear to address the same problem. They do not. Understanding the difference is essential for understanding why jackin' builds on Apple Container instead of integrating with Docker Sandboxes.
+This comparison matters because Docker Sandboxes and Apple Container appear to address the same problem. They do not. Understanding the difference is essential for understanding why jackin❯ builds on Apple Container instead of integrating with Docker Sandboxes.
 
 ### What Docker Sandboxes Is
 
@@ -179,24 +179,24 @@ Apple Container (`apple/container`, macOS 26 Tahoe) is a **VM primitive**. It ru
 - A structured gRPC/vsock API via `vminitd` for I/O streaming and signal forwarding
 - Per-container IP address via vmnet
 
-Apple Container is designed to answer: "here is a VM primitive, build on it." jackin' builds its own credential proxy (jackin-exec), network policy (egress policy), session model, role system, and TUI on top of this primitive.
+Apple Container is designed to answer: "here is a VM primitive, build on it." jackin❯ builds its own credential proxy (jackin-exec), network policy (egress policy), session model, role system, and TUI on top of this primitive.
 
-### Why jackin' Needs a Primitive, Not a Product
+### Why jackin❯ Needs a Primitive, Not a Product
 
-jackin' is itself an orchestration layer. It manages roles, workspaces, session reconnect, TUI, multiple agent runtimes, and operator UX. Integrating with Docker Sandboxes would mean jackin' becomes subordinate to Docker's product decisions — operators would use Docker Sandboxes to run agents, and jackin' would have no role.
+jackin❯ is itself an orchestration layer. It manages roles, workspaces, session reconnect, TUI, multiple agent runtimes, and operator UX. Integrating with Docker Sandboxes would mean jackin❯ becomes subordinate to Docker's product decisions — operators would use Docker Sandboxes to run agents, and jackin❯ would have no role.
 
-More concretely: Docker Sandboxes CLI (as of May 2026) has no events stream, no `--format json`, no per-sandbox stdout/log hooks. It is intentionally designed as an agent runner, not a backend API. It cannot serve as the programmatic substrate for jackin's lifecycle management.
+More concretely: Docker Sandboxes CLI (as of May 2026) has no events stream, no `--format json`, no per-sandbox stdout/log hooks. It is intentionally designed as an agent runner, not a backend API. It cannot serve as the programmatic substrate for jackin❯s lifecycle management.
 
 ### The Comparison Table
 
-| Capability | Docker Sandboxes | jackin' + Apple Container (full stack) |
+| Capability | Docker Sandboxes | jackin❯ + Apple Container (full stack) |
 |---|---|---|
 | VM per session (own kernel) | ✅ proprietary VMM | ✅ Virtualization.framework |
 | Private Docker daemon (no `--privileged`) | ✅ built-in | ✅ rootless DinD inside VM (requires Docker hardening) |
 | Credentials never in sandbox | ✅ host-side credential proxy (built-in) | ✅ jackin-exec (jackin builds this) |
 | Network domain allowlist | ✅ host-side proxy (built-in) | ✅ egress policy (jackin builds this) |
 | Per-operation filesystem/network policy | ❌ | ✅ zerobox (jackin builds this) |
-| TUI-native operator approval UI | ❌ | ✅ jackin' owns the terminal |
+| TUI-native operator approval UI | ❌ | ✅ jackin❯ owns the terminal |
 | Role system (Dockerfile-based) | ❌ fixed agent runners | ✅ full role authoring |
 | Session reconnect / eject / purge | ❌ | ✅ |
 | Multiple agent runtimes (Claude, Codex, Amp, Kimi, OpenCode) | 7 fixed | ✅ unlimited |
@@ -205,7 +205,7 @@ More concretely: Docker Sandboxes CLI (as of May 2026) has no events stream, no 
 | macOS 26 install friction | Requires Docker Desktop | ✅ zero — built into macOS 26 |
 | Open source (VM layer) | ❌ proprietary VMM | ✅ `apple/container` (open source) |
 
-**jackin' + Apple Container full stack reaches Docker Sandboxes security parity while preserving jackin's own operator experience.** Docker Sandboxes is the benchmark for what the security story should look like; Apple Container is the primitive jackin' uses to build that story on its own terms.
+**jackin❯ + Apple Container full stack reaches Docker Sandboxes security parity while preserving jackin❯s own operator experience.** Docker Sandboxes is the benchmark for what the security story should look like; Apple Container is the primitive jackin❯ uses to build that story on its own terms.
 
 ---
 
@@ -255,7 +255,7 @@ macOS ARM → apple/container VM (own kernel, Virtualization.framework)
 ```
 
 What changes:
-- Each jackin' session gets its own Linux kernel via Apple's hypervisor
+- Each jackin❯ session gets its own Linux kernel via Apple's hypervisor
 - Kernel exploit in one session cannot reach other sessions or the host
 - OrbStack VM no longer in the critical path for session isolation
 - Zero install friction on macOS 26 (built into the OS)
@@ -268,7 +268,7 @@ What remains:
 
 **Prerequisite**: Docker hardening's rootless DinD must validate successfully inside apple/container VMs (specifically: does `CAP_SYS_ADMIN` work inside apple/container for rootless DinD mount namespaces?). This is the Phase 0 gate.
 
-See: [smolvm backend research](/roadmap/smolvm-backend-research/) (contains the Apple Container comparison and Phase 0 plan)
+See: [smolvm backend research](/reference/research/isolation/smolvm-backend/) (contains the Apple Container comparison and Phase 0 plan)
 
 ### Step 3: jackin-exec Credential Injection
 
@@ -345,7 +345,7 @@ The most critical open question is whether rootless DinD can run inside an apple
 2. Does rootless DinD pass `docker build`, Compose, and Testcontainers inside the apple/container VM?
 3. Does jackin-capsule run correctly as non-PID-1 (`JACKIN_CAPSULE_FORCE_DAEMON=1`) with proper SIGTERM propagation, exit-code visibility, and Ctrl+C passthrough?
 
-If rootless DinD fails inside apple/container: smolvm is the fallback (documented Docker-in-VM path exists, though constrained). See [smolvm backend research](/roadmap/smolvm-backend-research/) for the full fallback plan.
+If rootless DinD fails inside apple/container: smolvm is the fallback (documented Docker-in-VM path exists, though constrained). See [smolvm backend research](/reference/research/isolation/smolvm-backend/) for the full fallback plan.
 
 ### jackin-exec Design Decisions
 
@@ -359,15 +359,15 @@ If rootless DinD fails inside apple/container: smolvm is the fallback (documente
 |---|---|---|
 | `--privileged` not supported | By design (use `--cap-add`) | Requires rootless DinD — the Phase 0 gate |
 | Multi-container bridge networking rough edges | Upstream v0.11.0 known issue | Affects DinD inner container networking; monitor for fix |
-| DNS hiccuping after macOS sleep/wake | Upstream v0.11.0 known issue | Operator must reconnect after sleep; jackin' should detect and prompt |
+| DNS hiccuping after macOS sleep/wake | Upstream v0.11.0 known issue | Operator must reconnect after sleep; jackin❯ should detect and prompt |
 | No health checks (`--health-cmd`) | Not implemented | jackin-capsule liveness probes instead |
-| Apple Silicon only | By design | Acceptable — jackin' is macOS ARM only |
+| Apple Silicon only | By design | Acceptable — jackin❯ is macOS ARM only |
 
 ---
 
 ## Part 7: The Threat Model This Architecture Addresses
 
-This architecture is designed for jackin's current threat model: a **trusted operator running semi-trusted AI agents against potentially untrusted external code** on a personal macOS ARM machine. It is explicitly NOT designed for:
+This architecture is designed for jackin❯s current threat model: a **trusted operator running semi-trusted AI agents against potentially untrusted external code** on a personal macOS ARM machine. It is explicitly NOT designed for:
 
 - Hosted or multi-tenant workloads (strangers' code running on shared infrastructure)
 - Enterprise regulatory compliance (HIPAA, PCI-DSS) where third-party audited attestations are required
@@ -449,5 +449,5 @@ The key source files an implementing agent reads before touching this architectu
 | [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) | Host-side resolver that jackin-exec calls for `op://` credentials. |
 | [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | How the operator sees which layers are active and what residual risks remain. |
 | [Selectable sandbox backends](/roadmap/selectable-sandbox-backends/) | Umbrella for Docker and Apple Container as the two runtime families; backend selection model, instance registry design. |
-| [smolvm backend research](/roadmap/smolvm-backend-research/) | Deferred — fallback if Apple Container Phase 0 fails Docker-inside test. |
-| [OrbStack isolated machine backend](/roadmap/orbstack-isolated-machine-backend/) | Deferred — shared-kernel namespace, not hypervisor boundary. Historical research preserved. |
+| [smolvm backend research](/reference/research/isolation/smolvm-backend/) | Deferred — fallback if Apple Container Phase 0 fails Docker-inside test. |
+| [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/) | Deferred — shared-kernel namespace, not hypervisor boundary. Historical research preserved. |

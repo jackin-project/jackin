@@ -4,7 +4,6 @@
   "pages": [
     "../architect-code-intelligence-tooling",
     "../instant-launch-architecture",
-    "../construct-user-creation",
     "../workspace-registry-cache",
     "../platform-support-and-freshness"
   ]

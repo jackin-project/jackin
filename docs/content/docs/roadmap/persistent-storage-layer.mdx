@@ -2,7 +2,7 @@
 title: "Persistent Storage and Workspace Memory Layer"
 ---
 
-**Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/roadmap/agent-orchestrator-research/))
+**Status**: Open — design proposal (Phase 3, [Agent Orchestration Program](/roadmap/agent-orchestrator-research/))
 
 Partial implementation note: the [Capsule usage overlay](/roadmap/capsule-usage-overlay-responsiveness-and-tabs/) now creates a Capsule-local Turso store at `/jackin/state/usage/telemetry.db` with the `account_usage_snapshots` schema subset. That store persists normalized account quota buckets for the in-container Capsule daemon only, and the Capsule control channel can read focused/account quota rows from it. The removed local-log usage samples, runtime-stream samples, scan offsets, workspace summaries, and session summaries are deliberately not part of the shipped overlay. The host `jackin usage <instance> accounts --sync-host-cache` command can explicitly seed the Turso host-global account cache at `~/.jackin/data/daemon/accounts.db` from those daemon-cached rows. The full per-instance `~/.jackin/data/<container>/jackin.db`, automatic host-global account refresh daemon, migrations, memory tables, provider-specific runtime pricing, and richer runtime event contracts described below remain open.
 
@@ -403,7 +403,7 @@ observing real footprint.
 
 ## See Also
 
-- [Agent Orchestrator Research Program](/roadmap/agent-orchestrator-research/)
+- [Agent Orchestration Program](/roadmap/agent-orchestrator-research/)
 - [Token & Cost Telemetry](/roadmap/token-cost-telemetry/) —
   primary V1 consumer
 - [GitHub link tracking](/roadmap/github-link-tracking/) —

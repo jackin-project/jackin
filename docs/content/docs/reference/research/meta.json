@@ -1,5 +1,13 @@
 {
   "title": "Research",
   "defaultOpen": false,
-  "pages": ["token-optimization", "token-optimization-tools"]
+  "pages": [
+    "index",
+    "agent-orchestration",
+    "isolation",
+    "runtime",
+    "backlog",
+    "token-optimization",
+    "token-optimization-tools"
+  ]
 }

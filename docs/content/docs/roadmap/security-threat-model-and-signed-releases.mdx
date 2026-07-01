@@ -40,7 +40,7 @@ This item retires once the first signed release has shipped and the end-to-end v
 ## Non-goals
 
 - No hostile multi-tenant safety claim from Docker hardening alone — that is [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) scope.
-- No microVM replacement — [smolvm backend research](/roadmap/smolvm-backend-research/) tracks that separately.
+- No microVM replacement — [smolvm backend research](/reference/research/isolation/smolvm-backend/) tracks that separately.
 - No retroactive signing of historical releases — provenance starts from the first workflow that includes signing.
 - No source-level (`cargo-cyclonedx`) SBOM — `syft scan` on the binary archive is sufficient for the supply chain transparency goal here.
 
@@ -50,7 +50,7 @@ This item retires once the first signed release has shipped and the end-to-end v
 |---|---|
 | [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) | Container escape is out of scope for this item; Docker hardening tracks that |
 | [Process-level sandboxing](/roadmap/process-level-sandboxing/) | Per-operation isolation inside the container; complementary to the threat model |
-| [smolvm backend research](/roadmap/smolvm-backend-research/) | Future microVM backend that addresses the shared-kernel residual risk |
+| [smolvm backend research](/reference/research/isolation/smolvm-backend/) | Future microVM backend that addresses the shared-kernel residual risk |
 | [Network egress policy](/roadmap/network-egress-policy/) | Network exfiltration threat is tracked there |
 | [Container credential exposure](/roadmap/container-credential-exposure/) | Credential safety beyond symlink rejection |
 | [Rust CI tooling](/roadmap/rust-ci-tooling/) | CI workflow patterns that signing and SBOM generation follow |

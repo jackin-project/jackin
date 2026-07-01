@@ -12,7 +12,7 @@ title: "Devcontainer Parity: Lessons from anthropics/claude-code"
 The upstream [Claude Code repository](https://github.com/anthropics/claude-code/tree/main/.devcontainer)
 ships a working VS Code devcontainer that runs Claude Code inside an isolated
 Docker environment. Its design predates jackin❯, solves several problems
-jackin also has, and makes a few different choices that are worth comparing
+jackin❯ also has, and makes a few different choices that are worth comparing
 directly:
 
 - upstream bakes a network-egress allowlist into the container image via
@@ -30,18 +30,18 @@ per-agent networks, workspace mounting, namespaced role repos, DinD TLS,
 plugin marketplaces, construct/derived-layer split — but several tactical
 pieces of the upstream setup are genuinely useful and map directly onto
 existing open items ([network policy controls](/roadmap/) and
-[construct user creation](/roadmap/construct-user-creation/)
+[construct user creation](/reference/runtime/user-identity/)
 in particular).
 
 This page captures the comparison so those lessons aren't lost.
 
 ## Why It Matters
 
-- **Network egress is currently unrestricted inside jackin agents.** The
+- **Network egress is currently unrestricted inside jackin❯ agents.** The
   [network egress policy](/roadmap/network-egress-policy/) roadmap
   item now owns this product gap; the upstream `init-firewall.sh` remains a
   ready-made reference implementation with a sensible default allowlist.
-- **jackin images are not usable as devcontainers.** Operators who prefer VS
+- **jackin❯ images are not usable as devcontainers.** Operators who prefer VS
   Code / Cursor / Codespaces for code navigation cannot point those tools at a
   jackin-generated image without authoring their own `devcontainer.json`.
   Shipping (or generating) one would widen jackin❯ surface without changing
@@ -56,7 +56,7 @@ This page captures the comparison so those lessons aren't lost.
 
 ## Current State
 
-### jackin construct
+### jackin❯ construct
 
 Source: <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile>
 
@@ -69,14 +69,14 @@ Source: <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile
 - oh-my-zsh + zsh-autosuggestions + starship
 - Zshrc enables `tirith` and `shellfirm` shell hooks
 
-### jackin runtime
+### jackin❯ runtime
 
 Source: <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> and <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile>
 
 - `jackin-capsule runtime-setup` performs git identity / GitHub setup, per-agent durable-home seeding, auth handoff refreshes, and Claude `tirith` / `shellfirm` MCP registration.
 - The shell entrypoint dispatches on `JACKIN_AGENT`, runs optional runtime hooks under `/jackin/runtime/hooks/` (`setup-once.sh`, `source.sh`, `preflight.sh`), and then `exec`s the selected agent.
 
-### jackin agent layer (e.g. `jackin-agent-smith`, `jackin-the-architect`)
+### jackin❯ agent layer (e.g. `jackin-agent-smith`, `jackin-the-architect`)
 
 - Final stage must be `FROM projectjackin/construct:trixie` (validated contract)
 - Agents layer in their own toolchains via `mise` (Rust for the-architect,
@@ -115,7 +115,7 @@ Source: <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jacki
 
 ## Side-by-Side
 
-| Aspect | Upstream devcontainer | jackin construct + agent |
+| Aspect | Upstream devcontainer | jackin❯ construct + agent |
 |---|---|---|
 | Base image | `node:20` | `debian:trixie` (pinned by digest) |
 | Language runtime in base | Node 20 baked in | None; agents add toolchains via `mise` |
@@ -184,7 +184,7 @@ Definition, debugging, or extension auto-install.
    it into the workspace's `.devcontainer/` directory (or a jackin-managed
    shadow dir) so IDEs can consume it. Fields: build target (use the jackin
    image directly), `runArgs`, mounts matching what jackin would mount,
-   `postStartCommand` for per-start jackin runtime hooks, `postCreateCommand`
+   `postStartCommand` for per-start jackin❯ runtime hooks, `postCreateCommand`
    only for one-time initialization, an extensions list curated per agent.
 2. **Ship a static reference `devcontainer.json` in the docs.** Operators
    copy it into their project. Zero product change, lowest cost. Loses
@@ -252,12 +252,12 @@ None of these are gating; they're quality-of-life notes.
   experience inside agents. Low cost.
 - **`man-db`**: useful when the agent or operator looks up tool docs. Low
   cost but meaningful disk impact (`man-db` + pages).
-- **`vim`, `nano`**: jackin construct currently has neither. Operators
+- **`vim`, `nano`**: jackin❯ construct currently has neither. Operators
   dropping into a running container to inspect state have no editor.
   Installing at least one is a small ergonomics win.
 - **Deliberate omissions**: upstream installs none of `tirith`, `shellfirm`,
   `ripgrep`, `fd-find`, `yq`, `git-lfs`, `tree`, Docker CLI, `mise`,
-  GitHub CLI. jackin adds all of these on purpose. No change recommended —
+  GitHub CLI. jackin❯ adds all of these on purpose. No change recommended —
   they are part of what makes jackin❯ baseline more useful than a bare
   devcontainer.
 
@@ -265,9 +265,9 @@ None of these are gating; they're quality-of-life notes.
 
 **Gap**: upstream bundles `anthropic.claude-code`, ESLint, Prettier, and
 GitLens extensions in `devcontainer.json`. Any operator who wants the same
-kit under jackin has to configure it themselves.
+kit under jackin❯ has to configure it themselves.
 
-This is downstream of Finding 2 — if jackin emits a `devcontainer.json`, the
+This is downstream of Finding 2 — if jackin❯ emits a `devcontainer.json`, the
 extensions list becomes an obvious payload for it.
 
 ## Connection to the Docker Runtime Hardening Contract
