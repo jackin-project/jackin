@@ -1,0 +1,8 @@
+{
+  "title": "Terminal Observation",
+  "defaultOpen": false,
+  "pages": [
+    "terminal-observation-automation",
+    "agent-runtime-status-design"
+  ]
+}

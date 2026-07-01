@@ -1,8 +1,5 @@
 {
-  "title": "Fleet phase 3 — Persistence & telemetry",
+  "title": "Fleet phase 3 \u2014 Persistence & telemetry",
   "defaultOpen": false,
-  "pages": [
-    "../../persistent-storage-layer",
-    "../../token-cost-telemetry"
-  ]
+  "pages": []
 }

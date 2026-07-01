@@ -1,0 +1,8 @@
+{
+  "title": "Recovery",
+  "defaultOpen": false,
+  "pages": [
+    "session-keep-and-resume-design",
+    "session-snapshot-rollback"
+  ]
+}

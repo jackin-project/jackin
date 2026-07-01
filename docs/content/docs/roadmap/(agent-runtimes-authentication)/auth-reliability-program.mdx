@@ -1,0 +1,40 @@
+---
+title: "Auth reliability and convenience program"
+---
+
+**Status**: Partially implemented — Phase 0 (new-tab overwrite fix) and Phase 1 (multi-company source folders) are shipped; Phase 2 and Phase 5 have shipped baseline pieces with real gaps remaining; Phases 3, 4, 6, and 7 are still open design proposals
+
+This is the umbrella item for jackin❯ authentication reliability: **auth that works at first but fails later, silently, in ways that force the operator to interrupt their work**. Each phase below is tracked as its own roadmap item; this page is the index and current-status summary across all of them. For the full failure-mode analysis, root-cause reasoning, and phase-sequencing rationale behind this program, see [Auth reliability program — design rationale](/reference/research/authentication/auth-reliability-program-design/).
+
+## Shipped facts
+
+**Phase 0 — new-tab credential overwrite.** Fixed. `jackin-capsule`'s durable-agent-home first-seed gate stops later `jackin-capsule new` invocations from overwriting credentials the agent already refreshed in-container. See [Auth overwrite on new tab](/roadmap/auth-overwrite-on-new-tab/).
+
+**Phase 1 — multi-company auth isolation.** Fixed. The optional `sync_source_dir` field on `AgentAuthConfig` resolves through the workspace-role → workspace → global chain; the console Auth tab exposes a Source-folder row per sync-mode agent, validated against the selected agent's credential structure. See [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) and [Schema Versions](/reference/runtime/schema-versions/).
+
+**Phase 2 — auth health baseline.** Capsule exposes session-local usage/account status surfaces, launch records per-agent auth provisioning outcomes, `jackin doctor` has a coarse `gh_auth` check, and `jackin config auth show` prints global modes. The pre-launch credential probe, `jackin auth status`, and console Auth-tab health glyphs are not shipped. See [Auth health and operator visibility](/roadmap/auth-health-and-visibility/).
+
+**Phase 5 — credential source baseline.** `EnvValue` covers literals, host-env references, structured `op://` refs, and on-demand delivery; `jackin-exec` resolves selected credentials through the host-side `host.sock` bridge rather than injecting them at launch. The general cross-consumer `CredentialSource` abstraction has not been started. See [Credential source pattern](/roadmap/credential-source-pattern/).
+
+## Remaining work
+
+1. **Phase 2 completion** — pre-launch credential-health probe, `jackin auth status` CLI subcommand, and console Auth-tab health glyphs. See [Auth health and operator visibility](/roadmap/auth-health-and-visibility/).
+2. **Phase 3 — jackin❯ daemon foundation** — the long-running host process (lifecycle, install, control socket, log redaction) that Phases 4 and 7 depend on. Design proposal only, open design questions unresolved. See [jackin❯ daemon](/roadmap/jackin-daemon/).
+3. **Phase 4 — live bidirectional auth sync** — propagate token rotation across host and running containers within seconds. Depends on Phase 3. See [Live bidirectional auth sync](/roadmap/live-auth-sync/).
+4. **Phase 5 completion** — the general `CredentialSource` abstraction spanning non-env consumers (command, OS secret store, file backends). See [Credential source pattern](/roadmap/credential-source-pattern/).
+5. **Phase 6 — credential exposure hardening** — move remaining launch-time tokens off `docker run -e`, then opaque per-command handles, then a credential proxy. See [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).
+6. **Phase 7 — mid-session secret and host-action requests** — TouchID/polkit-gated approval flow for agents that need a new credential or host action mid-session. Depends on Phase 3. See [Host bridge — secrets and approved host actions](/roadmap/host-bridge/).
+
+## Related work
+
+- [Auth overwrite on new tab](/roadmap/auth-overwrite-on-new-tab/) — Phase 0.
+- [Auth health and operator visibility](/roadmap/auth-health-and-visibility/) — Phase 2.
+- [Workspace Claude token setup](/roadmap/workspace-claude-token-setup/) — Claude OAuth-token setup; shares the Phase 2 validity-probe integration point.
+- [GitHub CLI authentication strategy](/roadmap/github-cli-auth-strategy/) — GitHub-specific auth modes; shares the Phase 2 pre-flight and Phase 4 bidirectional sync.
+- [jackin❯ daemon](/roadmap/jackin-daemon/) — Phase 3.
+- [Live bidirectional auth sync](/roadmap/live-auth-sync/) — Phase 4.
+- [Credential source pattern](/roadmap/credential-source-pattern/) — Phase 5.
+- [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) — Phase 6.
+- [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) — Phase 7.
+- [Reliable Claude authentication strategy](/reference/research/authentication/claude-auth-strategy/) — historical design context for the current `sync` / `token` / `ignore` mode set.
+- Research: [Auth reliability program — design rationale](/reference/research/authentication/auth-reliability-program-design/) — the seven failure modes, why they share one root cause, phase-sequencing rationale, design constraints, and target end state.
