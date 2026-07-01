@@ -28,6 +28,12 @@ pub struct BackgroundPrewarmTarget {
 /// workspaces sharing a role that disagree) widens the target to the role's
 /// whole supported set so nothing a launch might pick is left stale.
 #[must_use]
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Pre-warm target resolution: per-role + per-mount nested with \
+              per-`Vec` containment checks. The nesting is the per-target \
+              dedup protocol."
+)]
 pub fn background_prewarm_targets(config: &AppConfig) -> Vec<BackgroundPrewarmTarget> {
     let mut targets: std::collections::BTreeMap<String, BackgroundPrewarmTarget> =
         std::collections::BTreeMap::new();
@@ -73,6 +79,12 @@ pub fn background_prewarm_targets(config: &AppConfig) -> Vec<BackgroundPrewarmTa
 /// immediately; a valid image is reused without a rebuild and failures are
 /// swallowed (best-effort). Each refreshed image emits the `PrewarmOnly` launch
 /// plan via the shared prewarm path.
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Background prewarm spawn: per-prewarm-target + per-async-result nested \
+              with per-step error reporting + telemetry. The nesting is the \
+              per-stage error-reporting protocol."
+)]
 pub fn spawn_background_image_prewarm(
     paths: &JackinPaths,
     targets: Vec<BackgroundPrewarmTarget>,

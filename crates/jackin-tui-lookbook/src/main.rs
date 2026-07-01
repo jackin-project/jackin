@@ -216,6 +216,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
               events. Single-binary entry point — the inline shape is the \
               canonical lookbook runner."
 )]
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Same as too_many_lines: per-event / per-pane nested dispatch \
+              through the catalog loop. Per-region helpers would obscure the \
+              per-step readability of the catalog driver."
+)]
 fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
     let stories = stories();
     let mut terminal = TerminalGuard::enter()?;
@@ -699,6 +705,12 @@ impl Drop for TerminalGuard {
 #[cfg(test)]
 mod keymap_smoke;
 
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Lookbook binary's SVG writer: per-story + per-region nested loop. \
+              Extracting per-region helpers would require threading mutable \
+              state through fn calls and obscure the per-story rendering."
+)]
 fn write_svgs(out_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     for path in write_story_svgs(&out_dir)? {
         let mut stdout = io::stdout().lock();

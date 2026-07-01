@@ -507,6 +507,12 @@ pub struct SessionTerminal {
 }
 
 impl Session {
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Session spawn wires PTY + child handle + agent + env into the \
+                  multiplexer state. The nested `is_err` + `crate::clog!` + state- \
+                  update branches are the per-stage error-reporting protocol."
+    )]
     pub fn spawn(
         label: impl Into<String>,
         agent: Option<String>,

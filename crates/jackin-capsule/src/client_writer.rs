@@ -185,10 +185,23 @@ pub(crate) struct EmittedFrameMetrics {
 /// Scan an emitted frame for the diagnostic fingerprint a render bug leaves.
 /// The scan is over our own trusted output, so the few lines of hand parsing
 /// are cheaper than a dependency.
+#[allow(
+    clippy::excessive_nesting,
+    reason = "OSC 8 hyperlink splitter walker: nested byte-slice slicing + \
+              equality check + payload inspection for OSC 8 link parsing. The \
+              nesting is the bytewise state-machine."
+)]
 pub(crate) fn scan_emitted_frame(bytes: &[u8]) -> EmittedFrameMetrics {
     scan_emitted_frame_with_geometry(bytes, None)
 }
 
+#[allow(
+    clippy::excessive_nesting,
+    reason = "OSC 8 hyperlink + cursor + sync geometry splitter walker: nested \
+              byte-slice slicing + equality check + payload inspection for the \
+              full OSC 8 + DECSUBSR + DECSCUSR + ?2026 protocol. The nesting is \
+              the bytewise state-machine."
+)]
 pub(crate) fn scan_emitted_frame_with_geometry(
     bytes: &[u8],
     geometry: Option<(u16, u16)>,

@@ -332,6 +332,12 @@ impl InputParser {
     }
 
     /// Parse a chunk of client bytes into a stream of events.
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "ANSI-input parser: per-byte classification + per-event-type \
+                  (Key / Mouse / Focus / Paste / Data) branches with state- \
+                  machine arms. The nesting is the bytewise state machine."
+    )]
     pub fn parse(&mut self, bytes: &[u8]) -> Vec<InputEvent> {
         let mut events = Vec::new();
         let mut data: Vec<u8> = Vec::new();

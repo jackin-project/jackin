@@ -421,6 +421,11 @@ impl Dialog {
                   Each arm carries its focused state transition; extracting \
                   arms into sub-dispatchers would obscure per-binding readability."
     )]
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Dialog key-event dispatcher: per-key + per-Dialog-variant nested \
+                  with state-update branches. Modal nesting is the dispatch protocol."
+    )]
     pub fn handle_key(
         &mut self,
         key: &[u8],

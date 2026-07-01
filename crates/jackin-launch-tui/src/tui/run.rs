@@ -604,6 +604,12 @@ impl RichRenderer {
         }
     }
 
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Popup loop: per-modal-state (Picker / Confirm / Error / etc.) \
+                  branches with per-arm draw + key-read + state-update nested \
+                  through the modal dispatch. The modal nesting is the protocol."
+    )]
     fn error_popup_loop(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
         let state = ErrorPopupState::new(title, message);
         loop {
@@ -638,6 +644,18 @@ impl RichRenderer {
         })
     }
 
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Launch dialog loop: mode (Picker / Inspect) branches with \
+                  per-arm render + key-read + select-flow nested through the \
+                  launcher dialog dispatch. Modal nesting is the protocol."
+    )]
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Launch dialog loop: mode (Picker / Inspect) branches with \
+                  per-arm render + key-read + select-flow nested through the \
+                  launcher dialog dispatch. Modal nesting is the protocol."
+    )]
     fn launch_dialog_loop(
         &mut self,
         title: &str,
@@ -768,6 +786,12 @@ impl RichRenderer {
 
     /// D24: read-only inspect surface for dirty/unpushed worktrees.
     /// Returns when the operator presses Esc.
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Inspect-surface loop: per-focus-tab (Repos / Files / Diff) nested \
+                  arms for render + key-handle, plus the focus-state-machine nested \
+                  per Tab key. Modal nesting is the per-tab render dispatch."
+    )]
     fn inspect_surface_loop(&mut self, worktrees: &[crate::WorktreeInspect]) -> anyhow::Result<()> {
         use crate::tui::components::dialog::dialog_backdrop;
         use jackin_tui::HintSpan;

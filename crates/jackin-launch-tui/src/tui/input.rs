@@ -20,6 +20,12 @@ pub struct LaunchInput {
 }
 
 impl LaunchInput {
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "LaunchInput spawn wires the event-polling thread, double- \
+                  Ctrl-C tracker, and IPC channels together. The nested `while` \
+                  + `match` + `if let` is the per-event ARM/dispatch protocol."
+    )]
     pub fn spawn() -> Self {
         let (tx, rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
