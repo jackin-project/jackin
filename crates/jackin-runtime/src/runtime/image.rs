@@ -168,6 +168,13 @@ pub async fn prewarm_role_images(
               runner. Named-arg reads match the per-input propagation idiom; \
               bundling into a config struct is the deferred-parallel-pass."
 )]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Decide-role-image: per-cache-state + per-invalidation-reason + \
+              per-build-strategy branches nested with telemetry. Body extraction \
+              follows the deferred-parallel-pass plan; until that slice lands, the \
+              inline shape preserves the per-decision-arm state machine."
+)]
 pub(super) async fn decide_role_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
