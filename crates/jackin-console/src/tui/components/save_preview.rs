@@ -19,10 +19,15 @@ use crate::tui::{
     },
 };
 
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
-)]
+/// Toggleable workspace settings captured at edit time. Bundled so the parent
+/// `WorkspaceSavePreview` keeps the `struct_excessive_bools` clippy gate quiet
+/// while preserving the original/pending diff display surface.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WorkspaceToggleSet {
+    pub keep_awake: bool,
+    pub git_pull: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceSavePreview {
     pub mode: WorkspaceSaveMode,
@@ -35,10 +40,8 @@ pub struct WorkspaceSavePreview {
     pub role_count: usize,
     pub original_default_role: Option<String>,
     pub pending_default_role: Option<String>,
-    pub original_keep_awake: bool,
-    pub pending_keep_awake: bool,
-    pub original_git_pull: bool,
-    pub pending_git_pull: bool,
+    pub original_toggles: WorkspaceToggleSet,
+    pub pending_toggles: WorkspaceToggleSet,
     pub env_original: SettingsEnvPreview,
     pub env_pending: SettingsEnvPreview,
     pub collapse_lines: Vec<Line<'static>>,
@@ -121,10 +124,14 @@ pub fn workspace_save_preview<
         role_count: config.roles.len(),
         original_default_role: editor.original.default_role.clone(),
         pending_default_role: editor.pending.default_role.clone(),
-        original_keep_awake: editor.original.keep_awake.enabled,
-        pending_keep_awake: editor.pending.keep_awake.enabled,
-        original_git_pull: editor.original.git_pull_on_entry,
-        pending_git_pull: editor.pending.git_pull_on_entry,
+        original_toggles: WorkspaceToggleSet {
+            keep_awake: editor.original.keep_awake.enabled,
+            git_pull: editor.original.git_pull_on_entry,
+        },
+        pending_toggles: WorkspaceToggleSet {
+            keep_awake: editor.pending.keep_awake.enabled,
+            git_pull: editor.pending.git_pull_on_entry,
+        },
         env_original: workspace_env_preview(&editor.original),
         env_pending: workspace_env_preview(&editor.pending),
         collapse_lines: collapse_lines.to_vec(),
@@ -775,14 +782,14 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
                     value,
                 ),
             ]));
-            if preview.pending_keep_awake {
+            if preview.pending_toggles.keep_awake {
                 out.push(Line::raw(""));
                 out.push(Line::from(vec![
                     Span::styled("Keep awake: ", heading),
                     Span::styled("enabled", value),
                 ]));
             }
-            if preview.pending_git_pull {
+            if preview.pending_toggles.git_pull {
                 out.push(Line::raw(""));
                 out.push(Line::from(vec![
                     Span::styled("Git pull: ", heading),
@@ -900,28 +907,28 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
                 }
             }
 
-            if preview.pending_keep_awake != preview.original_keep_awake {
+            if preview.pending_toggles.keep_awake != preview.original_toggles.keep_awake {
                 out.push(Line::raw(""));
                 out.push(Line::from(Span::styled("Keep awake:", heading)));
                 out.push(Line::from(Span::styled(
-                    format!("  - {}", enabled_label(preview.original_keep_awake)),
+                    format!("  - {}", enabled_label(preview.original_toggles.keep_awake)),
                     dim,
                 )));
                 out.push(Line::from(Span::styled(
-                    format!("  + {}", enabled_label(preview.pending_keep_awake)),
+                    format!("  + {}", enabled_label(preview.pending_toggles.keep_awake)),
                     value,
                 )));
             }
 
-            if preview.pending_git_pull != preview.original_git_pull {
+            if preview.pending_toggles.git_pull != preview.original_toggles.git_pull {
                 out.push(Line::raw(""));
                 out.push(Line::from(Span::styled("Git pull:", heading)));
                 out.push(Line::from(Span::styled(
-                    format!("  - {}", enabled_label(preview.original_git_pull)),
+                    format!("  - {}", enabled_label(preview.original_toggles.git_pull)),
                     dim,
                 )));
                 out.push(Line::from(Span::styled(
-                    format!("  + {}", enabled_label(preview.pending_git_pull)),
+                    format!("  + {}", enabled_label(preview.pending_toggles.git_pull)),
                     value,
                 )));
             }

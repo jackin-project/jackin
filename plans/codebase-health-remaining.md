@@ -538,6 +538,14 @@ state; `modal_overlay_visible` becomes `!= None`. Per-slice relaxation of the "n
 edits" rule applied (operator ruling 2026-07-01) to mechanically rewrite the 4 affected
 view/tests.rs sites. `#[expect]` count: 57 → **56**.
 
+WorkspaceSavePreview (jackin-console/src/tui/components/save_preview.rs) — bundled the 4
+keep-awake / git-pull toggle bools into a new `WorkspaceToggleSet { keep_awake: bool,
+git_pull: bool }` struct, replaced the `original_*` / `pending_*` bool quartet with
+`original_toggles` / `pending_toggles` of that type. Read sites at the diff line
+builders + write sites at the editor→preview constructor + 1 test fixture migrated; no
+behavior change, just group the two orthogonal toggle pairs by feature rather than
+spreading them across four sibling fields. `#[expect]` count: 56 → **55**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
