@@ -256,7 +256,7 @@ row's entry.
       `footer_items_for_mode` 1349–1587). Stays: `ConsoleModal` enum + core impl methods
       (~250L). **Hazard:** each trait impl carries the full 22-type-param list + where clauses
       — move each impl block **whole**.
-- [ ] **`crates/jackin-console/src/tui/input/mouse.rs`** (1558 → coord ~290). Extract under
+- [x] **`crates/jackin-console/src/tui/input/mouse.rs`** (1558 → 383). Extract under
       `input/mouse/`: `modal_scroll.rs` (`try_scroll_*_modal`/`scroll_*_modal_selection`
       401–636), `scroll_bars.rs` (`try_drag_{horizontal,vertical}_scrollbar` 861–1236),
       `scroll_pan.rs` (`scroll_active_panel*`/`update_scroll_focus` 987–1496), `selection.rs`
