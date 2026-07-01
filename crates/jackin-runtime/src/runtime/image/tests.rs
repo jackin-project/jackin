@@ -1961,7 +1961,7 @@ async fn decide_agent_image_rebuilds_when_role_source_ref_has_changed() {
 }
 
 #[tokio::test]
-async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
+async fn decide_agent_image_reuses_when_host_uid_matches_recipe() {
     let _guard = rich_surface_test_guard();
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -2006,6 +2006,32 @@ async fn decide_agent_image_reuses_when_only_host_uid_has_changed() {
         ImageDecision::Reuse {
             image: image_name(&selector, Some("abc123")),
         }
+    );
+}
+
+#[test]
+fn host_uid_changes_recipe_hash() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
+    let mut first = build_image_recipe(
+        &cached_repo,
+        &validated_repo,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    )
+    .unwrap();
+    let mut second = first.clone();
+    first.host_uid = Some(501);
+    second.host_uid = Some(1000);
+
+    assert_ne!(
+        first.hash().unwrap(),
+        second.hash().unwrap(),
+        "host UID must participate in the derived image recipe hash"
     );
 }
 

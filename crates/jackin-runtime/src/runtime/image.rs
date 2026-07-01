@@ -40,11 +40,10 @@ use super::progress::{LaunchProgress, LaunchStage};
 #[cfg(not(test))]
 use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
-// Recipe schema version. Bumped v6 -> v7: the arbitrary-host-UID runtime home
-// contract now normalizes whole mutable tool-home trees (`.local`, `.cache`,
-// `.config`, `.cargo`, `.rustup`, `.npm`) to group 0 + group write, so v6 images
-// may still fail runtime tool installs under `--user UID:GID`.
-const IMAGE_RECIPE_VERSION: &str = "v7";
+// Recipe schema version. Bumped v7 -> v8: derived images now bake the host UID
+// into `/home/agent` ownership. Group-0 write is not enough for tools that call
+// owner-only syscalls such as chmod(2) while running under `--user UID:GID`.
+const IMAGE_RECIPE_VERSION: &str = "v8";
 /// jackin-capsule version baked into the derived image.
 const LABEL_IMAGE_CAPSULE_VERSION: &str = "jackin.capsule.version";
 /// `jackin.role.toml` schema version (`version = "v1alpha4"`).
@@ -52,7 +51,7 @@ const LABEL_IMAGE_MANIFEST_VERSION: &str = "jackin.manifest.version";
 /// Prefix for per-agent baked-binary version labels: `jackin.agent.<slug>.version`.
 /// Records the version of each agent binary jackin downloaded/cached locally and
 /// baked into the image. Diagnostic — not part of the recipe hash.
-const HOST_IDENTITY_STRATEGY: &str = "construct-agent-user-mutable-home-trees-v1";
+const HOST_IDENTITY_STRATEGY: &str = "host-uid-owned-runtime-home-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ImageInvalidationReason {
@@ -131,6 +130,7 @@ struct ImageRecipe {
     /// changes rebuild the image because plugins are now baked at build time (D2).
     plugin_recipe_hash: String,
     host_identity_strategy: &'static str,
+    host_uid: Option<u32>,
 }
 
 impl ImageRecipe {
@@ -610,6 +610,7 @@ fn build_image_recipe_with_construct_image(
         hooks_hash: hooks_hash(&cached_repo.repo_dir, validated_repo)?,
         plugin_recipe_hash: plugin_recipe_hash(validated_repo),
         host_identity_strategy: HOST_IDENTITY_STRATEGY,
+        host_uid: crate::runtime::identity::host_uid(),
     })
 }
 
@@ -2016,6 +2017,10 @@ pub(super) async fn build_agent_image(
 
     let build_arg_role_git_sha =
         format!("ROLE_GIT_SHA={}", head_sha.as_deref().unwrap_or("unknown"));
+    let build_arg_run_uid = format!(
+        "JACKIN_RUN_UID={}",
+        crate::runtime::identity::host_uid().unwrap_or(1000)
+    );
     // Always pass the cache-bust arg so Docker matches the correct layer.
     //
     // When rebuilding, generate a fresh timestamp to invalidate fallback
@@ -2087,6 +2092,7 @@ pub(super) async fn build_agent_image(
     emit_image_build_source(base_image_override, build_source_reason, false);
 
     let cache_bust = format!("JACKIN_CACHE_BUST={cache_bust_value}");
+    build_args.extend(["--build-arg", &build_arg_run_uid]);
     if supported_set_uses_cache_bust(&validated_repo.manifest) {
         build_args.extend(["--build-arg", &cache_bust]);
     }

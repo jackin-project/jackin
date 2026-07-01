@@ -3017,7 +3017,7 @@ plugins = []
 }
 
 #[tokio::test]
-async fn load_agent_does_not_bake_host_uid_and_gid_into_docker_build() {
+async fn load_agent_bakes_host_uid_not_gid_into_docker_build() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
@@ -3088,6 +3088,7 @@ plugins = []
                 && call.contains("--output type=docker,name=jk_agent-smith")
         })
         .unwrap();
+    assert!(build_call.contains("--build-arg JACKIN_RUN_UID="));
     assert!(!build_call.contains("--build-arg JACKIN_HOST_UID="));
     assert!(!build_call.contains("--build-arg JACKIN_HOST_GID="));
     assert!(!build_call.contains("--build-arg ROLE_GIT_SHA="));
@@ -3376,7 +3377,7 @@ plugins = []
         "workspace mode without --rebuild must not pass --pull"
     );
     assert!(
-        build_cmd.contains("--label jackin.image.recipe.version=v7"),
+        build_cmd.contains("--label jackin.image.recipe.version=v8"),
         "workspace build must stamp recipe version label; got: {build_cmd}"
     );
     assert!(
