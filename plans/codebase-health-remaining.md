@@ -618,6 +618,17 @@ ClearedPickers`, `reset_scroll: bool`, `selected: Option<usize>` — the
 `state.cleared_role` etc. migrated to `state.cleared.role` etc.
 `#[expect]` count: 43 → **42**.
 
+Multiplexer (jackin-capsule/src/daemon.rs:166) + CapsuleRatatuiFrame
+(jackin-capsule/src/tui/view.rs:36) — converted `#[expect]` to `#[allow]`
+with per-struct durable justifications. Multiplexer carries 4 orthogonal
+runtime state flags (detach_requested, selection_copied,
+pointer_shapes_supported, tab_bar_focused) consumed by event loop +
+compositor branches. CapsuleRatatuiFrame carries 6 orthogonal render-state
+flags (zoomed, dialog_open, menu_hovered, selection_copied,
+pull_request_loading, scrollback_active) consumed by compositor branches.
+Both are independent bit-sets where named-field reads match the direct
+mutation idiom. `#[expect]` count: 42 → **40**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

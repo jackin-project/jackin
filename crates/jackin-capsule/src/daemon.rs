@@ -159,9 +159,13 @@ struct SessionLaunch {
     missing_debug_implementations,
     reason = "Multiplexer owns PTY sessions and render/input state; targeted debug logs expose the useful fields."
 )]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Four orthogonal multiplexer state flags (detach_requested, \
+              selection_copied, pointer_shapes_supported, tab_bar_focused) \
+              — each tracks an independent runtime state consumed individually \
+              by the event loop + compositor branches. Named-field reads match \
+              the direct mutation idiom the impl blocks use."
 )]
 pub struct Multiplexer {
     sessions: HashMap<u64, Session>,
