@@ -415,6 +415,12 @@ impl Dialog {
     /// can overflow (`ContainerInfo`, `GitHubContext`). `None` for dialogs that do
     /// not scroll. Lets the daemon route mouse-wheel events to the dialog body.
     /// Handle a raw key byte and return the resulting action.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Dialog key-event dispatcher with one arm per key binding. \
+                  Each arm carries its focused state transition; extracting \
+                  arms into sub-dispatchers would obscure per-binding readability."
+    )]
     pub fn handle_key(
         &mut self,
         key: &[u8],

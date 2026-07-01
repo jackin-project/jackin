@@ -209,6 +209,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     write_svgs(PathBuf::from(first))
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Lookbook binary's terminal-driver fn: runs the story catalog loop \
+              that mounts each story as the active pane and dispatches key \
+              events. Single-binary entry point — the inline shape is the \
+              canonical lookbook runner."
+)]
 fn run_terminal() -> Result<(), Box<dyn std::error::Error>> {
     let stories = stories();
     let mut terminal = TerminalGuard::enter()?;

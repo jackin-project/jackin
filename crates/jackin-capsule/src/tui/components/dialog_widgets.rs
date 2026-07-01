@@ -87,6 +87,12 @@ pub(crate) enum DialogRatatuiSnapshot {
 impl Dialog {
     /// Build a fully-owned snapshot for Ratatui rendering. Called before
     /// the `ratatui_terminal.draw()` closure so there are no borrow conflicts.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Dialog renderer snapshot builder carrying each dialog variant's \
+                  per-row layout inline. Extracting per-variant bodies would \
+                  require re-borrowing the dialog state across fn boundaries."
+    )]
     pub(crate) fn to_ratatui_snapshot(
         &self,
         github: Option<&GithubContextView<'_>>,

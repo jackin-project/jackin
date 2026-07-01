@@ -811,6 +811,14 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
 }
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Top-level daemon entry point: spawns the event loop, the attach \
+              socket acceptor, and the input parser in sequence. Each stage has \
+              its own focused init + handoff. Body extraction follows the same \
+              deferred-parallel-pass plan as the launch fns — the inline shape \
+              preserves captured-runtime state across stages."
+)]
 pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> Result<()> {
     crate::pid1::install_sigchld_reaper();
 

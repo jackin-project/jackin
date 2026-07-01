@@ -365,7 +365,14 @@ impl Multiplexer {
         self.invalidate(FullRedrawReason::DialogChange);
     }
 
-    pub(super) fn apply_action(&mut self, action: Action) {
+    #[allow(
+    clippy::too_many_lines,
+    reason = "Action dispatcher with one arm per multiplexed `Action` variant — \
+              each arm applies its focused state mutation. Extracting arms into \
+              sub-dispatchers would require re-borrowing the multiplexer state \
+              across fn boundaries and obscure the per-action readability."
+)]
+pub(super) fn apply_action(&mut self, action: Action) {
         match action {
             Action::OpenPalette => {
                 self.cancel_drag();

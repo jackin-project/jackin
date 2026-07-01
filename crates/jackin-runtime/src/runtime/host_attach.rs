@@ -188,6 +188,14 @@ where
     .await
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Attach-protocol async loop driving the host's request/response \
+              exchange with the capsule daemon. Body extraction follows the \
+              same deferred-parallel-pass plan as the launch fns — the inline \
+              shape preserves captured socket + reader + writer borrows across \
+              the protocol phases."
+)]
 async fn run_attach_protocol<R, W, I, O>(
     mut server_reader: R,
     mut server_writer: W,

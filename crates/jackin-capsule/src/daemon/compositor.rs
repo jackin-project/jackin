@@ -119,6 +119,13 @@ impl Multiplexer {
     ///
     /// Returns the ANSI output to send to the attach client, or `None` if the
     /// Ratatui terminal fails to draw (the caller then skips the frame).
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Per-frame compositor that snapshots the multiplexer state and \
+                  renders the resulting capsule frame to ANSI bytes. The inline \
+                  shape preserves snapshot borrow scope across the snapshot → \
+                  render → emit pipeline."
+    )]
     fn compose_ratatui_frame(&mut self) -> Option<Vec<u8>> {
         use crate::tui::components::dialog_widgets::DialogRatatuiSnapshot;
         use crate::tui::view::{CapsuleRatatuiFrame, PaneScreen, render_capsule_ratatui_frame};

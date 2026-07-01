@@ -1136,6 +1136,15 @@ fn host_console_list_detail_transitions_have_one_green_border_cluster() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Render-conformance test enumerating every modal-state × pane-tone \
+              combination the green-border cluster invariant must hold for. \
+              Each assertion block inspects one combo, so the fn reads as a \
+              flat table of cluster-invariant checks — splitting into helper \
+              fns would obscure the per-combo readability the conformance \
+              harness depends on."
+)]
 fn host_console_modal_states_have_one_green_border_cluster() {
     let config = AppConfig::default();
     let cwd = test_cwd();

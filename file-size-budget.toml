@@ -61,7 +61,7 @@ lines = 1727
 
 [[production]]
 path = "crates/jackin-capsule/src/daemon.rs"
-lines = 1674
+lines = 1682
 
 [[production]]
 path = "crates/jackin-console/src/tui/screens/settings/view.rs"
@@ -81,7 +81,7 @@ lines = 1537
 
 [[production]]
 path = "crates/jackin-capsule/src/tui/components/dialog_widgets.rs"
-lines = 1510
+lines = 1516
 
 # Integration test files (no `tests.rs` stem) count as production per the
 # file-budget gate. Both are docker E2E flows; per the worklist R7 note
