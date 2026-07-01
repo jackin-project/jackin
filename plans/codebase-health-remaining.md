@@ -648,6 +648,15 @@ the read site. The `fn_params_excessive_bools` expect on
 `current_directory_display_row` (4 bools) is also gone — its signature is now
 3 args (disclosure + selected + hovered). `#[expect]` count: 39 → **35**.
 
+WorkspaceListFooterFacts (footer_hints.rs:56) + WorkspaceListFooterInputFacts
+(footer_hints.rs:77) + WorkspaceFooterScrollFacts (footer_hints.rs:162) —
+converted all three `#[expect]` to `#[allow]` with per-struct durable
+justifications. Together 25 orthogonal footer-state / footer-input /
+footer-scroll flags, each tracking an independent UI signal (inline pickers,
+preview focus, snapshot+live markers, scroll axes, hint visibility) consumed
+individually by the footer item builder + scroll axes planner. `#[expect]`
+count: 35 → **32**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

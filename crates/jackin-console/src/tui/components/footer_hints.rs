@@ -48,9 +48,13 @@ pub enum WorkspaceListFooterMode {
     },
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Twelve orthogonal footer-state flags (inline-agent/role-picker, \
+              selected row / preview focus, snapshot+live markers, saved vs new \
+              workspace, show prewarm/expand/collapse/github) — each tracks an \
+              independent UI hint visibility consumed individually by the footer \
+              item builder. Named-field reads match the per-hint gating idiom."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListFooterFacts {
@@ -69,9 +73,13 @@ pub struct WorkspaceListFooterFacts {
     pub show_open_in_github: bool,
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Eight orthogonal footer-input flags (selected row, inline-agent/role \
+              pickers, preview focus, snapshot+live markers, show_expand/collapse, \
+              scroll axes, open-in-github) — each is an independent input the \
+              workspace-list-footer mode resolver reads individually. Named-field \
+              reads match the per-input gating idiom."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListFooterInputFacts {
@@ -154,9 +162,12 @@ pub const fn workspace_list_footer_facts(
     }
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Five orthogonal scroll-axis input flags (inline-agent/role pickers, \
+              list-names focus, scroll axes per pane, show_expand) — each tracks an \
+              independent scrollable-pane state consumed individually by the scroll \
+              axes planner. Named-field reads match the per-pane gating idiom."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceFooterScrollFacts {
