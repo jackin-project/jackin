@@ -10,8 +10,8 @@ pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
 //
 // Not responsible for: attach-client I/O, socket framing, or daemon
 // multiplexing logic.
-///!
-/// Key invariant: the session's `DamageGrid` is the single source of truth
+//
+// Key invariant: the session's `DamageGrid` is the single source of truth
 // for re-rendering on tab/pane switch and client reattach.
 
 /// PTY session: one PTY + one `DamageGrid` + state-inference timer.

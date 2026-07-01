@@ -1,5 +1,9 @@
 //! Image version helpers extracted from image.rs.
-use super::{HashMap, LABEL_IMAGE_ROLE_GIT_SHA, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, JackinPaths, Agent, CommandRunner, version_check, PreparedRuntimeBinaries, AgentInstall};
+use super::{
+    Agent, AgentInstall, CommandRunner, HashMap, JackinPaths, LABEL_IMAGE_CONSTRUCT,
+    LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, PreparedRuntimeBinaries,
+    version_check,
+};
 
 pub fn local_role_base_labels_match(
     labels: &HashMap<String, String>,
@@ -98,7 +102,7 @@ pub async fn extract_agent_version(
               deferred-parallel-pass plan; until that slice lands, the inline shape \
               preserves the per-version state machine."
 )]
-pub async fn record_built_agent_version(
+pub(super) async fn record_built_agent_version(
     paths: &JackinPaths,
     image: &str,
     agent: Agent,

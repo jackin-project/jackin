@@ -1,5 +1,10 @@
 /// `SettingsAuthState` impls + helper fns.
-use super::*;
+use super::{
+    AuthKind, AuthMode, BTreeMap, GlobalMountsState, SettingsAuthModalSlot,
+    SettingsAuthRestorePendingForm, SettingsAuthRow, SettingsAuthSaveRefs, SettingsAuthState,
+    SettingsEnvState, SettingsPanelChangeCount, SettingsPanelDirty, SettingsPanelDiscard,
+    SettingsPanelMarkSaved, SettingsPanelTakeError, SettingsState,
+};
 
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     #[must_use]

@@ -168,13 +168,6 @@ pub(super) fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
               propagation idiom; bundling into a config struct is the deferred- \
               parallel-pass."
 )]
-#[allow(
-    clippy::too_many_lines,
-    reason = "Launch orchestrator: preflight / image-materialize / env-resolve / \
-              post-launch flow. Body extraction follows the deferred-parallel-pass \
-              plan; until that slice lands, the inline shape preserves captured- \
-              locals across phases."
-)]
 pub(crate) async fn load_role_with(
     paths: &JackinPaths,
     config: &mut AppConfig,

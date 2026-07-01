@@ -6,6 +6,10 @@ use crate::cli;
 use jackin_config::AppConfig;
 use jackin_core::JackinPaths;
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Claude token subcommand dispatch (setup/rotate/revoke/doctor); one line over cap. Tracked for the root-jackin-integration decomposition slice (codebase-health)."
+)]
 pub(super) fn handle_claude_token(
     paths: &JackinPaths,
     config: &mut AppConfig,

@@ -820,13 +820,6 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
               preserves captured-runtime state across stages."
 )]
 #[allow(
-    clippy::too_many_lines,
-    reason = "Daemon entry point: spawn → accept loop → per-client input parser \
-              init + handle_client_frame + shutdown handler. Body extraction follows \
-              the deferred-parallel-pass plan; until that slice lands, the inline \
-              shape preserves captured-runtime state across stages."
-)]
-#[allow(
     clippy::cognitive_complexity,
     reason = "Same justification as the too_many_lines allow: daemon entry point \
               branching tracks the spawn → accept → input-parser init sequence, \

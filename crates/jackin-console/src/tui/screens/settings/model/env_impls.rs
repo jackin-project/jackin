@@ -1,5 +1,8 @@
 /// `SettingsEnvState` impls + `settings_env_config_from_app_config` helper.
-use super::*;
+use super::{
+    BTreeMap, SettingsEnvConfig, SettingsEnvScope, SettingsModalSlot, SettingsPanelChangeCount,
+    SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved, SettingsPanelTakeError,
+};
 
 pub fn settings_env_config_from_app_config(
     config: &jackin_config::AppConfig,

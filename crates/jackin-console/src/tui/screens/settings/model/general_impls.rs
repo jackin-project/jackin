@@ -1,5 +1,8 @@
 /// `SettingsGeneralState` impls + `settings_general` helpers.
-use super::*;
+use super::{
+    SettingsGeneralSaveRefs, SettingsGeneralState, SettingsPanelChangeCount, SettingsPanelDirty,
+    SettingsPanelDiscard, SettingsPanelMarkSaved,
+};
 
 impl SettingsGeneralState {
     #[must_use]

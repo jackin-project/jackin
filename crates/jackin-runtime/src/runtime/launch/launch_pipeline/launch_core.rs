@@ -94,12 +94,6 @@ where
               preserves captured-locals across phases."
 )]
 #[allow(
-    clippy::too_many_lines,
-    reason = "Launch orchestrator: inner phase body (preflight / docker_run / \
-              wait_for_state / teardown) — mirrors launch_role_runtime's phase \
-              decomposition. Body extraction follows the deferred-parallel-pass plan."
-)]
-#[allow(
     clippy::cognitive_complexity,
     reason = "Same justification as the too_many_lines allow: inner launch async \
               body branching tracks the preflight / docker_run / wait / teardown \

@@ -1,6 +1,9 @@
-//! Environment helpers: settings_env_flat_rows, set_settings_env_value, toggle_*, remove_*, step_cursor_*, settings_env_change_count, etc.
+//! Environment helpers: `settings_env_flat_rows`, `set_settings_env_value`, toggle_*, remove_*, `step_cursor`_*, `settings_env_change_count`, etc.
 
-use super::*;
+use super::{
+    BTreeMap, BTreeSet, EnvValue, SettingsEnvConfig, SettingsEnvEnterPlan, SettingsEnvRow,
+    SettingsEnvScope,
+};
 
 pub fn set_role_expanded(expanded_roles: &mut BTreeSet<String>, role: String, expanded: bool) {
     if expanded {

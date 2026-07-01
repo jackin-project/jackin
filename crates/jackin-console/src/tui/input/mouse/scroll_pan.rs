@@ -1,7 +1,15 @@
 //! Per-panel wheel scrolling: wheel events on the focused active panel
 //! and the helper that re-derives the focused scroll-focus plan.
 
-use super::{ManagerState, MouseEvent, Rect, ManagerStage, split_seam_column, LIST_HEADER_HEIGHT, LIST_FOOTER_HEIGHT, point_in_rect, list_scroll_areas, workspace_list_scroll_focus_plan, dispatch_manager, ManagerMessage, EditorTab, editor_scroll_area, editor_scroll_focus_plan, editor_tab_bar_focus_plan, settings_scroll_focus_plan, settings_tab_bar_focus_plan, settings_modal_open_fact, horizontal_split_pane_dims, scroll_viewport_width, apply_horizontal_scroll, MountScrollFocus, is_horizontally_scrollable, SettingsTab, apply_vertical_scroll};
+use super::{
+    EditorTab, LIST_FOOTER_HEIGHT, LIST_HEADER_HEIGHT, ManagerMessage, ManagerStage, ManagerState,
+    MountScrollFocus, MouseEvent, Rect, SettingsTab, apply_horizontal_scroll,
+    apply_vertical_scroll, dispatch_manager, editor_scroll_area, editor_scroll_focus_plan,
+    editor_tab_bar_focus_plan, horizontal_split_pane_dims, is_horizontally_scrollable,
+    list_scroll_areas, point_in_rect, scroll_viewport_width, settings_modal_open_fact,
+    settings_scroll_focus_plan, settings_tab_bar_focus_plan, split_seam_column,
+    workspace_list_scroll_focus_plan,
+};
 use crate::tui::layout::list::list_names_content_width;
 
 pub fn update_scroll_focus(

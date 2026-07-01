@@ -1,7 +1,12 @@
 //! Selection-row helpers: click-to-select in tab bars, mount rows,
 //! auth rows, and settings trust rows.
 
-use super::{ManagerState, MouseEvent, ManagerStage, editor_tab_at_position, dispatch_manager, ManagerMessage, editor_tab_hover_target_plan, settings_tab_hover_target_plan, settings_tab_at_position, Rect, SettingsTab, settings_trust_row_at_position, editor_mount_index_at_position, editor_scroll_area, editor_auth_row_index_at_position};
+use super::{
+    ManagerMessage, ManagerStage, ManagerState, MouseEvent, Rect, SettingsTab, dispatch_manager,
+    editor_auth_row_index_at_position, editor_mount_index_at_position, editor_scroll_area,
+    editor_tab_at_position, editor_tab_hover_target_plan, settings_tab_at_position,
+    settings_tab_hover_target_plan, settings_trust_row_at_position,
+};
 
 pub fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
     let ManagerStage::Editor(editor) = &state.stage else {

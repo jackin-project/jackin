@@ -1,8 +1,12 @@
 //! Control reply + status capture helpers extracted from the daemon
-//! coordinator: write_status_capture, control_reply_for_request, and the
+//! coordinator: `write_status_capture`, `control_reply_for_request`, and the
 //! related reply builders.
 
-use super::*;
+use super::{
+    ClientFrame, ClientMsg, ClipboardImageInsertMode, Instant, Multiplexer, PathBuf, Result,
+    ServerMsg, Session, TokenTotals, clipboard_image_host_error_reason, explicit_redraw_reason,
+    log_clipboard_image_rejection, prefix_mode_for_mux_mode,
+};
 
 /// Write a capture fixture for `session`: its live visible grid (`visible.txt`)
 /// and the current evidence report (`evidence.json`), under

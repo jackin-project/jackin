@@ -1,6 +1,9 @@
 //! Text input state + plan helpers for the Settings sub-views.
 
-use super::*;
+use super::{
+    GlobalMountConfirm, GlobalMountTextTarget, SettingsEnvConfig, SettingsEnvScope,
+    SettingsEnvTextTarget, SettingsTab, forbidden_settings_env_keys,
+};
 use crate::tui::screens::settings::update as settings_update;
 
 #[must_use]

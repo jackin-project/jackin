@@ -1,4 +1,4 @@
-//! OSC policy + osc8 + parse_osc7 extracted from session.
+//! OSC policy + osc8 + `parse_osc7` extracted from session.
 use crate as _;
 
 /// reference operator-side files on click.
