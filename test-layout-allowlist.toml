@@ -4,7 +4,6 @@
 files = [
     "crates/jackin-capsule/src/tui/selection/tests.rs",
     "crates/jackin-console/src/tui/console/tests.rs",
-    "crates/jackin-console/src/tui/input.rs",
     "crates/jackin-console/src/tui/op_picker/tests.rs",
     "crates/jackin-console/src/tui/screens/workspaces/view/list/tests.rs",
     "crates/jackin-instance/src/auth/tests.rs",

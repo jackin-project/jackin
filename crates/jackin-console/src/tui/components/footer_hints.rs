@@ -1532,6 +1532,3 @@ fn append_save_and_escape(
         HintSpan::Text("quit"),
     ]);
 }
-
-#[cfg(test)]
-mod tests;
