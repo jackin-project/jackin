@@ -8,9 +8,8 @@ use super::{
     EditorFieldSelectionKeyPlan, EditorHorizontalScrollKeyPlan, EditorImmediateActionKeyPlan,
     EditorMode, EditorMountActionKeyPlan, EditorMountGithubOpenPlan, EditorNavigationKeyPlan,
     EditorRoleActionKeyPlan, EditorRoleHeaderExpansionKeyPlan, EditorSaveKeyPlan,
-    EditorSaveModePlan, EditorSecretsActionKeyPlan, EditorState, EditorStatusPopupModal,
-    EditorTab, EditorTabActionKeyPlan, FieldFocus, RoleHeaderExpansionPlan, SecretsRow,
-    editor_save_mode_plan,
+    EditorSaveModePlan, EditorSecretsActionKeyPlan, EditorState, EditorStatusPopupModal, EditorTab,
+    EditorTabActionKeyPlan, FieldFocus, RoleHeaderExpansionPlan, SecretsRow, editor_save_mode_plan,
 };
 
 type TestEditor =
@@ -143,9 +142,7 @@ fn editor_apply_auth_kind_plan_updates_selection_and_scroll() {
     assert_eq!(editor.tab_scroll_x, 0);
     assert_eq!(editor.tab_scroll_y, 0);
 
-    editor.apply_auth_kind_plan(
-        crate::tui::screens::editor::update::clear_editor_auth_kind_plan(),
-    );
+    editor.apply_auth_kind_plan(crate::tui::screens::editor::update::clear_editor_auth_kind_plan());
     assert_eq!(editor.auth_selected_kind, None);
 }
 
@@ -211,20 +208,16 @@ fn editor_apply_selection_and_scroll_plans_update_focus() {
 fn editor_apply_scroll_focus_plan_updates_focus_owner() {
     let mut editor = TestEditor::new_edit("alpha".into(), WorkspaceConfig::default());
 
-    editor.apply_scroll_focus_plan(
-        crate::tui::screens::editor::update::EditorScrollFocusPlan {
-            workspace_mounts_scroll_focused: true,
-            tab_content_scroll_focused: false,
-        },
-    );
+    editor.apply_scroll_focus_plan(crate::tui::screens::editor::update::EditorScrollFocusPlan {
+        workspace_mounts_scroll_focused: true,
+        tab_content_scroll_focused: false,
+    });
     assert!(editor.workspace_mounts_scroll_focused());
 
-    editor.apply_scroll_focus_plan(
-        crate::tui::screens::editor::update::EditorScrollFocusPlan {
-            workspace_mounts_scroll_focused: false,
-            tab_content_scroll_focused: true,
-        },
-    );
+    editor.apply_scroll_focus_plan(crate::tui::screens::editor::update::EditorScrollFocusPlan {
+        workspace_mounts_scroll_focused: false,
+        tab_content_scroll_focused: true,
+    });
     assert!(editor.tab_content_scroll_focused());
 }
 
@@ -418,8 +411,7 @@ fn has_active_role_override_picker_checks_current_modal() {
 
 #[test]
 fn active_auth_form_focus_reads_only_auth_modal() {
-    let mut editor =
-        TestEditorWithAuthModal::new_edit("alpha".into(), WorkspaceConfig::default());
+    let mut editor = TestEditorWithAuthModal::new_edit("alpha".into(), WorkspaceConfig::default());
 
     assert_eq!(editor.active_auth_form_focus(), None);
 
@@ -437,8 +429,7 @@ fn active_auth_form_focus_reads_only_auth_modal() {
 
 #[test]
 fn has_auth_form_parent_checks_top_parent_only() {
-    let mut editor =
-        TestEditorWithAuthModal::new_edit("alpha".into(), WorkspaceConfig::default());
+    let mut editor = TestEditorWithAuthModal::new_edit("alpha".into(), WorkspaceConfig::default());
 
     assert!(!editor.has_auth_form_parent());
 
@@ -526,8 +517,7 @@ fn editor_synthesizes_pending_workspace_for_auth_rows() {
     );
     editor.auth_selected_kind = Some(crate::tui::auth::AuthKind::Zai);
 
-    let synthesized =
-        editor.synthesize_app_config_for_auth(&jackin_config::AppConfig::default());
+    let synthesized = editor.synthesize_app_config_for_auth(&jackin_config::AppConfig::default());
     let rows = editor.auth_flat_rows(&jackin_config::AppConfig::default());
 
     assert!(synthesized.workspaces.contains_key("draft"));
@@ -1672,10 +1662,7 @@ fn editor_focused_secret_enter_plan_reads_current_row() {
 #[test]
 fn editor_focused_secrets_role_expansion_plan_reads_current_row() {
     let workspace = WorkspaceConfig {
-        roles: std::collections::BTreeMap::from([(
-            "dev".into(),
-            WorkspaceRoleOverride::default(),
-        )]),
+        roles: std::collections::BTreeMap::from([("dev".into(), WorkspaceRoleOverride::default())]),
         ..Default::default()
     };
     let mut editor = TestEditor::new_edit("alpha".into(), workspace);
@@ -1880,5 +1867,4 @@ fn editor_toggle_default_role_at_cursor_only_sets_allowed_role() {
     editor.pending.default_role = None;
     editor.toggle_default_role_at_cursor(&role_names);
     assert_eq!(editor.pending.default_role, None);
-}
 }

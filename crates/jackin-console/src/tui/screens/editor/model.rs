@@ -9,6 +9,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use jackin_config::WorkspaceConfig;
 use jackin_tui::components::FocusOwner;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorTab {
     General,
