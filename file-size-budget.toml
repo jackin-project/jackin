@@ -27,26 +27,25 @@
 production_cap = 1500
 test_cap = 10000
 
-# Grandfathered production files (current line counts; may only decrease):
-# R4/R7 backlog: 13 files in the 1500L-2000L band need decomposition to drop
-# their grandfather entries. Each entry's `lines` value is the ratchet ceiling
+# Grandfathered production files (current line counts; may only decrease).
+# 11 entries remain — see plans/codebase-health-remaining.md Ledger 2B for
+# the per-file split-map. Each entry's `lines` value is the ratchet ceiling
 # — must only ever decrease.
 [[production]]
 path = "crates/jackin-runtime/src/runtime/image.rs"
-lines = 1973
+lines = 1980
 
-[[production]]
 [[production]]
 path = "crates/jackin-term/src/grid.rs"
 lines = 1908
 
 [[production]]
 path = "crates/jackin-console/src/tui/screens/editor/model.rs"
-lines = 4176
+lines = 2290
 
 [[production]]
 path = "crates/jackin-console/src/tui/screens/settings/model.rs"
-lines = 3852
+lines = 2353
 
 [[production]]
 path = "crates/jackin-capsule/src/session.rs"
@@ -76,21 +75,15 @@ lines = 1558
 path = "crates/jackin-console/src/tui/components/footer_hints.rs"
 lines = 1537
 
-[[production]]
-path = "crates/jackin-capsule/src/tui/components/dialog_widgets.rs"
-lines = 716
-
 # Integration test files (no `tests.rs` stem) count as production per the
-# file-budget gate. Both are docker E2E flows; per the worklist R7 note
-# they sit in the 1500–2000L band awaiting decomposition or path-rename.
+# file-budget gate. `dind_e2e.rs` is the docker E2E flow; per the worklist
+# R7 note it sits in the 1500–2000L band awaiting decomposition or
+# path-rename.
 [[production]]
 path = "crates/jackin/tests/dind_e2e.rs"
 lines = 1669
 
-[[production]]
-path = "crates/jackin/tests/manager_flow.rs"
-lines = 1523
-
 # Grandfathered test files (current line counts; may only decrease):
-[[test]]
-[[test]]
+# both `launch/tests.rs` (8611) and `daemon/tests.rs` (7612) sit under the
+# 10000L `test_cap` and were previously carried in a malformed orphan
+# `[[test]]` shape; entries removed in Ledger 2A.
