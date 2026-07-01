@@ -84,7 +84,7 @@ impl Dialog {
         &self,
         term_rows: u16,
         term_cols: u16,
-        _github: Option<&GithubContextView<'_>>,
+        github: Option<&GithubContextView<'_>>,
     ) -> jackin_tui::components::ScrollAxes {
         let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
         let rect = ratatui::layout::Rect {
@@ -101,6 +101,31 @@ impl Dialog {
                 state.content_width(),
                 state.content_height(),
                 rect,
+            );
+        } else if matches!(self, Self::GitHubContext { .. } | Self::Usage { .. }) {
+            // Mirror clamp_scroll's Usage/GitHubContext geometry: Usage uses the
+            // same body+lines viewport (excludes the tab strip) the renderer uses.
+            let is_usage = matches!(self, Self::Usage { .. });
+            let state = if matches!(self, Self::GitHubContext { .. }) {
+                let Some(state) = self.github_context_state(github) else {
+                    return jackin_tui::components::ScrollAxes::none();
+                };
+                state
+            } else {
+                let Some(state) = self.usage_state() else {
+                    return jackin_tui::components::ScrollAxes::none();
+                };
+                state
+            };
+            let (content_width, content_height, clamp_rect) = if is_usage {
+                crate::tui::components::dialog_widgets::usage_scroll_inputs(rect, &state)
+            } else {
+                (state.content_width(), state.content_height(), rect)
+            };
+            return jackin_tui::components::dialog_scroll_axes(
+                content_width,
+                content_height,
+                clamp_rect,
             );
         }
         jackin_tui::components::ScrollAxes::none()
