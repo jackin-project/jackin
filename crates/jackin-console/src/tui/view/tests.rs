@@ -794,6 +794,12 @@ fn render_manager_buffer(
     terminal.backend().buffer().clone()
 }
 
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Green-border cluster flood-fill test helper: nested `while` + \
+              `for next in neighbors` + `if seen.insert` + recursive stack push. \
+              The nesting is the flood-fill state machine the test depends on."
+)]
 fn green_border_cluster_count(buf: &Buffer) -> usize {
     let area = buf.area;
     let mut seen = std::collections::BTreeSet::<(u16, u16)>::new();
