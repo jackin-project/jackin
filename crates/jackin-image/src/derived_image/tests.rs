@@ -125,8 +125,12 @@ fn renders_runtime_finalization_in_one_layer() {
         "runtime home mutable roots must be writable by supplementary group 0: {dockerfile}"
     );
     assert!(
-        dockerfile.contains("chgrp -R 0 /home/agent"),
-        "the whole runtime home must be normalized to supplementary group 0: {dockerfile}"
+        dockerfile.contains("ARG JACKIN_RUN_UID=1000"),
+        "derived image must accept the runtime host UID as a build arg: {dockerfile}"
+    );
+    assert!(
+        dockerfile.contains("chown -R ${JACKIN_RUN_UID}:0 /home/agent"),
+        "the whole runtime home must be owned by the runtime UID: {dockerfile}"
     );
     assert!(
         dockerfile.contains("chmod -R g+rwX /home/agent"),
@@ -141,12 +145,16 @@ fn renders_runtime_finalization_in_one_layer() {
         "runtime Git config files must be writable by supplementary group 0: {dockerfile}"
     );
     assert!(
+        dockerfile.contains("! -uid ${JACKIN_RUN_UID}"),
+        "runtime home guard must verify runtime UID ownership: {dockerfile}"
+    );
+    assert!(
         dockerfile.contains("for path in /home/agent/.zshrc /home/agent/.config/fish/config.fish"),
         "runtime shell config files must be repaired after finalization: {dockerfile}"
     );
     assert!(
         dockerfile.contains(
-            "jackin runtime home contains a non-group-0 or non-group-writable mutable path: $bad"
+            "jackin runtime home contains a non-runtime-UID, non-group-0, or non-group-writable mutable path: $bad"
         ),
         "runtime mutable home dirs should be guarded after permission repair: {dockerfile}"
     );
