@@ -2,7 +2,7 @@
 title: "Security Threat Model & Signed Releases"
 ---
 
-**Status**: Partially implemented (Isolation & security track)
+**Status**: Partially implemented — signing/release artifacts have shipped in dev releases; clean-cache end-to-end capsule download verification and residual Fulcio-chain hardening remain
 
 ## Problem
 
@@ -22,8 +22,7 @@ All implementation landed on this branch. Operator and contributor detail now li
 
 ## Remaining
 
-- **First-release activation.** Signing and manifest production run only on `main` builds — they were skipped by design on this feature branch (`preview.yml` jobs skip off-main; `release.yml` rejects non-main dispatch). They activate on the first preview/release published after this item merges.
-- **End-to-end verification gate.** `fetch_and_verify_manifest` has never executed against a real signed bundle — unit and integration tests bypass it (`cfg!(test)` stub plus `JACKIN_CAPSULE_BIN`). After the first signed preview publishes, confirm a clean-cache capsule download verifies end-to-end before treating the path as proven:
+- **End-to-end verification gate.** Dev releases now exist after the signing workflows landed (latest observed: `jackin-dev-v0.1.12`, 2026-06-28). The remaining gate is a clean-cache capsule download against one of those signed bundles; unit and integration tests still bypass it (`cfg!(test)` stub plus `JACKIN_CAPSULE_BIN`). Confirm before treating the path as proven:
 
   ```bash
   rm -rf ~/.jackin/cache/jackin-capsule/
@@ -35,7 +34,7 @@ All implementation landed on this branch. Operator and contributor detail now li
 - **Rekor key rotation.** The embedded `SIGSTORE_REKOR_PUB_KEY_B64` in <RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile> must be updated when Sigstore rotates the production Rekor signing key (announced at blog.sigstore.dev).
 - **Fulcio certificate chain not validated (known residual).** `Client::verify_blob` in sigstore-rs 0.14 does not chain-verify the certificate to a Fulcio root or check the OIDC issuer. The Rekor body cross-check (`verify_rekor_body_binds_bundle`) now closes the field-swap attack (an attacker can no longer keep a legitimate Rekor SET and substitute a self-signed cert, because the body hash and cert fields are verified against each other). However, an attacker who can forge a Rekor log entry (extremely high bar — requires the Rekor private key) or who obtains a Fulcio-issued cert with a matching SAN through any other means would still pass all checks. Full closure requires adding Fulcio root cert pool validation using `x509-cert`'s chain-building API against embedded Fulcio intermediate and root certs, or upgrading to a higher-level sigstore-rs API that includes the full keyless verification contract.
 
-This item retires once the first signed release has shipped and the end-to-end verification gate has passed.
+This item retires once a signed release has been clean-cache verified end to end and the remaining verification residuals are either fixed or explicitly accepted.
 
 ## Non-goals
 

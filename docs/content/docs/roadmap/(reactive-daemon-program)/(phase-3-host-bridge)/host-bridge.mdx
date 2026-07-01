@@ -7,6 +7,8 @@ title: "Host Bridge — Secrets and Approved Host Actions"
 
 ## Problem
 
+`jackin-exec`, MCP execution, and the operator credential picker already provide in-container, session-scoped command/credential affordances. They are not a daemon host bridge: they do not provide a long-running host approval service, durable audit log, cross-session policy, or operator-presence proof for host actions.
+
 jackin❯ isolates agent containers from the host on purpose. That's the whole security model. But hard isolation creates two operational pain points the operator runs into often:
 
 1. **An agent needs a secret for one command, mid-session.** The credential wasn't on the operator's pre-launch env-var allowlist (it's a one-off — a database password the operator has in 1Password, an SSH passphrase for a single push, an API key for a tool the agent is about to invoke). Today the operator's choices are bad: stop the agent, edit the workspace env vars, restart the container, lose the agent's working state — or paste the secret into the agent's prompt and let the agent see the raw value forever.
@@ -16,10 +18,7 @@ Both look like the same shape from the operator's seat: *"the agent needs a sing
 
 This roadmap item proposes a **host bridge** — a small request/approval channel between agents inside containers and the operator on the host, hosted by the [jackin❯ daemon](/roadmap/jackin-daemon/). Agents request a secret value or a host command; the operator gets a host-side prompt (touch confirmation, biometric, password); on approval the daemon does the work; the agent receives back exactly what it asked for and nothing more.
 
-The daemon owns the policy, audit log, and execution path. The jackin❯ Desktop
-Agent Hub is the preferred native macOS surface for viewing pending requests and
-audit state once it exists; agents still talk to the daemon, not directly to the
-app.
+The daemon owns the policy, audit log, and execution path. The jackin❯ Desktop Agent Hub is the preferred native macOS surface for viewing pending requests and audit state once it exists; agents still talk to the daemon, not directly to the app.
 
 ## Two flows
 
@@ -87,10 +86,7 @@ The host-side prompt is the load-bearing part of this design. It must be:
 - **Stateful per request.** Each request gets its own prompt with the request ID baked in. Approving prompt A does not approve a different request B that arrives a millisecond later.
 - **Auditable.** Every prompt + response (approved / denied / timed out) lands in the daemon's audit log with timestamp, workspace, role, agent, request payload (with secrets redacted), and the operator's response. Reviewable via `jackin audit` (subcommand to be designed).
 - **Time-bounded.** Prompts expire after a configurable window (default 30s). Expiry counts as deny. The agent receives a structured "operator did not approve in time" error.
-- **Visually distinct.** The prompt is a system-modal notification or native
-  Desktop approval surface, not a TUI overlay — agent presence in jackin❯
-  console must not block another agent's approval prompt from reaching the
-  operator.
+- **Visually distinct.** The prompt is a system-modal notification or native Desktop approval surface, not a TUI overlay — agent presence in jackin❯ console must not block another agent's approval prompt from reaching the operator.
 
 Per-platform implementation:
 
@@ -152,36 +148,13 @@ None of these can run from a CLI that exits between commands. The daemon's lifec
 
 ## Host-side effects
 
-Per <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> "Never mutate the host machine
-silently": the bridge runs operator-authorized commands as the
-operator's UID and writes to host-side audit state. Every effect
-is gated on a TouchID / polkit / password approval surface that
-names the request before it runs.
+Per <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> "Never mutate the host machine silently": the bridge runs operator-authorized commands as the operator's UID and writes to host-side audit state. Every effect is gated on a TouchID / polkit / password approval surface that names the request before it runs.
 
-- **Arbitrary host commands.** `host.run` invokes a command on
-  the host with the operator's UID, only after operator
-  approval through the daemon's prompt surface
-  (`LocalAuthentication` / polkit / password). The command, the
-  agent's stated reason, and the approval/deny outcome land in
-  the audit log. Per-workspace `disabled` / `allowlist` /
-  `blocklist` policies bound what can ever be requested.
-- **Secret reads from operator-chosen sources.**
-  `secret.request` resolves through whatever store the operator
-  configured (Keychain, 1Password, env, etc.). Reads happen only
-  on operator approval; the daemon never enumerates secrets and
-  never caches values past the lifetime of the single
-  `secret.use_in` substitution.
-- **Audit log writes.** The daemon appends approval / deny
-  events to `~/.jackin/log/host-bridge.jsonl` (path subject to
-  daemon design). No other host file is mutated by this feature.
-- **Opt-out path.** Setting the workspace policy to `disabled`
-  unregisters the MCP server inside the container; no further
-  requests are even surfaced to the operator.
-- **Out of scope: silent host writes.** This feature deliberately
-  ships no shape that can mutate the host without per-request
-  approval. Pre-approved allowlist patterns still surface a
-  one-line audit-log entry per invocation; no command runs
-  invisibly.
+- **Arbitrary host commands.** `host.run` invokes a command on the host with the operator's UID, only after operator approval through the daemon's prompt surface (`LocalAuthentication` / polkit / password). The command, the agent's stated reason, and the approval/deny outcome land in the audit log. Per-workspace `disabled` / `allowlist` / `blocklist` policies bound what can ever be requested.
+- **Secret reads from operator-chosen sources.** `secret.request` resolves through whatever store the operator configured (Keychain, 1Password, env, etc.). Reads happen only on operator approval; the daemon never enumerates secrets and never caches values past the lifetime of the single `secret.use_in` substitution.
+- **Audit log writes.** The daemon appends approval / deny events to `~/.jackin/log/host-bridge.jsonl` (path subject to daemon design). No other host file is mutated by this feature.
+- **Opt-out path.** Setting the workspace policy to `disabled` unregisters the MCP server inside the container; no further requests are even surfaced to the operator.
+- **Out of scope: silent host writes.** This feature deliberately ships no shape that can mutate the host without per-request approval. Pre-approved allowlist patterns still surface a one-line audit-log entry per invocation; no command runs invisibly.
 
 ## Phase 1 cut
 

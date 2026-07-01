@@ -10,9 +10,9 @@ title: "Alternative LLM Providers (MiniMax, Kimi, GLM everywhere)"
 
 jackin❯ already routes one alternative provider into one agent: [Z.AI (GLM Coding Plan)](/guides/authentication/zai/) is offered as an Anthropic-compatible backend for Claude Code sessions only. The scaffolding that makes this work — the `Provider` enum, `Provider::env_overrides`, `Provider::available_for`, the in-container token resolution keyed on `ZAI_API_KEY`, and the console provider picker — is hardcoded to exactly that one provider and that one agent surface.
 
-Operators who hold a **MiniMax** or **Kimi** coding subscription, or who want to point **Codex** at a GLM/MiniMax/Kimi backend, have no path today. The three providers all sell coding-focused subscription plans that issue a plain API key usable against a coding base URL (no OAuth flow), so the shipped env-key pattern fits all three — but the catalog is closed at the `Provider::Zai` variant, `available_for` returns providers only for `agent == "claude"`, and there is no generation of the per-agent config that Codex and OpenCode require to route to an OpenAI-compatible endpoint.
+Operators now have shipped alternative-provider paths for several provider/runtime cells, including MiniMax, Kimi, GLM/Z.AI, and OpenCode/Codex/Claude surfaces where the upstream protocol works. The remaining work is narrower: provider parity edges, provider picker/auth UX polish, update/availability detection, config generation drift, and deferred Codex cells where upstream still lacks a Responses-compatible endpoint.
 
-This item generalizes the existing single-provider scaffolding into a small provider catalog covering **MiniMax**, **Kimi**, and **GLM/Z.AI**, across **Claude Code**, **Codex**, and **OpenCode**.
+This item tracks that provider catalog and parity work across **MiniMax**, **Kimi**, and **GLM/Z.AI**, across **Claude Code**, **Codex**, and **OpenCode**.
 
 ## Subscription landscape
 
@@ -53,15 +53,15 @@ Each provider exposes both an Anthropic-compatible surface (for Claude Code) and
 
 ## Deliverable scope
 
-This item ships **only the cells that are clearly documented, testable, and work end-to-end**. Cells blocked by an upstream protocol gap are explicitly out of scope until that gap closes — jackin❯ does not half-build a routing path that cannot route.
+This item keeps **only the cells that are clearly documented, testable, and work end-to-end**. Cells blocked by an upstream protocol gap are explicitly out of scope until that gap closes — jackin❯ does not half-build a routing path that cannot route.
 
 | Provider | Claude Code | Codex | OpenCode |
 |---|---|---|---|
-| **Anthropic** (native) | ✅ ship | n/a | ✅ ship |
-| **OpenAI** (native) | n/a | ✅ ship — Codex's default auth; no `wire_api` redirect needed | n/a |
-| **MiniMax** | ✅ ship | ✅ ship (`wire_api = "responses"`) | ✅ ship |
-| **Z.AI / GLM** | ✅ shipped | ✖ deferred — Chat-only, blocked on current Codex | ✅ ship |
-| **Kimi** | ✅ ship | ✖ deferred — Chat-only, no Responses endpoint | ✅ ship |
+| **Anthropic** (native) | ✅ shipped | n/a | ✅ shipped |
+| **OpenAI** (native) | n/a | ✅ shipped — Codex's default auth; no `wire_api` redirect needed | n/a |
+| **MiniMax** | ✅ shipped | ✅ shipped (`wire_api = "responses"`) | ✅ shipped |
+| **Z.AI / GLM** | ✅ shippedped | ✖ deferred — Chat-only, blocked on current Codex | ✅ shipped |
+| **Kimi** | ✅ shipped | ✖ deferred — Chat-only, no Responses endpoint | ✅ shipped |
 
 The "native" rows cover each agent's own auth surface: Anthropic for Claude Code (subscription), OpenAI for Codex (`auth.json` sync or `OPENAI_API_KEY`). They are catalog entries even though no env redirect is emitted — the catalog drives the provider picker, and the picker skips these entries when no alt provider is configured (so Claude and Codex launch with no picker when only the native auth is available, mirroring each other).
 

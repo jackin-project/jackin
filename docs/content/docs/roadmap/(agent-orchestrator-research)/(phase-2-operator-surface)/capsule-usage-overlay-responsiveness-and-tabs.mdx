@@ -8,6 +8,8 @@ Shipped on PR 579 (2026-06-25): **P0–P4** (Claude/Codex full snapshots, per-pr
 
 This is the single source of truth for the remaining work; it absorbs the former companion "usage and quota overlay" design doc. Reference material kept below is only what an open item still needs.
 
+Current shipped surface: Capsule usage overlay has provider tabs for usage, account identity/auth source, cache-backed refresh, provider verification, status-bar headline mapping, and per-provider quota mechanics. Remaining work is provider-fidelity/open-bug cleanup only: the focused-agent start/refresh lifecycle, any provider response drift found by `usage verify`, the agent-tab `TabStrip` fold, and the live visual smoke.
+
 ## Guiding principles (binding for every item here)
 
 1. **Correctness over ROI.** Fix what is wrong or inconsistent; never skip an item as "low value". The only reason to stop short is a *proven* impossibility.

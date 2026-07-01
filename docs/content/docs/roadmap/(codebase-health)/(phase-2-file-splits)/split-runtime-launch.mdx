@@ -2,66 +2,36 @@
 title: "Split runtime/launch.rs"
 ---
 
-**Status**: Open — Phase 2, confirmation needed (do behavioral spec first)
+**Status**: Partially implemented — launch is split into a root API and child launch modules; remaining work is reducing the still-large launch pipeline and tests
 
-## Problem
+## Current shape
 
-<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> is **7966L** total (was 5494L at original analysis — 45% growth). It is the single largest file in the codebase and the hardest to review. It owns: the public load API, trust verification, terminal setup, operator-env / auth handling, container slot claiming, workspace materialization, DinD sidecar launch, Docker network management, launch orchestration, attach/finalizer cleanup, env resolution with trace (duplicated from `config/roles.rs`), and extensive test infrastructure.
+<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> is now a smaller root API file. Child modules exist under `crates/jackin-runtime/src/runtime/launch/`, including `launch_pipeline.rs`, `launch_dind.rs`, and `launch_slot.rs`.
 
-The file has grown significantly since the original analysis due to new agent runtime support (Kimi), instance identity features, and expanded error reporting.
+The split removed the old single-file bottleneck, but the launch pipeline remains the dense review surface. The next task is not another top-level move; it is making the pipeline phases and their tests easier to audit.
 
-## Duplication found within this file
+## Remaining split
 
-- `build_mode_resolution()` at ~line 2977 duplicates the 3-layer × 4-agent match (12 arms) from <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> `resolve_mode()` solely to capture the resolution trace for error rendering. Extract `resolve_mode_with_trace()` in `config/roles.rs` instead.
-- DinD sidecar launch args (~line 777) are duplicated identically in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> at ~line 472. Extract shared `fn run_dind_sidecar()`.
-- 17 inline `format!("{name}-dind")` / `format!("{name}-net")` derivations that should use a shared `DockerResources` naming helper.
-- The role container `docker run -d -it` argument list (~180 lines starting ~line 865) is a monolithic block interleaving env var injection, mount construction, and label assignment.
+Focus on <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile> and its colocated test surface. Keep Rust 2024 self-named module layout and the crate rule that module tests live in one `tests.rs` file.
 
-## Proposed split
+Candidate production boundaries:
 
-```
-src/runtime/
-  launch.rs          ← thin public API: `load_agent`, `LoadOptions`
-  launch_pipeline.rs ← fn load_agent_with, LaunchContext, StepCounter, LoadCleanup, workspace materialization / finalize flow
-  trust.rs           ← `confirm_agent_trust` — already isolated via FnOnce injection
-  launch_slot.rs     ← claim_container_name + verify_token_env_present
-  launch_dind.rs     ← DinD sidecar launch, Docker network creation (shared with attach.rs)
-```
+- workspace/materialization preparation;
+- trust and role-source checks if still pipeline-local;
+- Docker resource planning and launch plan construction;
+- env/auth resolution and diagnostics;
+- final attach/cleanup handoff.
 
-A new `launch_dind.rs` is added to the original proposal because the DinD sidecar + network logic is now duplicated between `launch.rs` and `attach.rs`.
+## Remaining work
 
-## Why the split is safe — FnOnce injection pattern
-
-`confirm_agent_trust` is passed to `load_agent_with` as a `FnOnce` argument:
-
-```rust
-fn load_agent_with(..., confirm_trust: impl FnOnce(...) -> anyhow::Result<()>)
-```
-
-`launch_pipeline.rs` does NOT import `trust.rs` by name — it receives the function as a generic parameter. After split, `launch.rs` imports `confirm_agent_trust` from `trust.rs` and passes it in. Zero circular import risk.
-
-## Import chain safety (verified)
-
-- `trust.rs`: imports from `std`, `owo_colors`, `dialoguer`, `crate::config` — no runtime dependency
-- `launch_pipeline.rs`: imports from `crate::config`, `crate::instance`, `crate::tui`, `crate::operator_env`, and isolation helpers
-- `launch_dind.rs`: imports from `crate::runtime::naming` — no dependency on launch_pipeline
-- `launch.rs` (thin API): imports from `launch_pipeline`, `trust`, `launch_slot`, `launch_dind`
-
-## What needs confirmation
-
-- Exact placement of `LoadCleanup` (pipeline concern or launch concern?)
-- Whether `claim_container_name` and `verify_token_env_present` stay in the main pipeline file or move into `launch_slot.rs`
-- Whether operator-env resolution / auth diagnostic logic should stay in the main pipeline file or split again later
-- Whether `launch_dind.rs` is the right factoring or if the DinD/network logic belongs in a shared Docker module
-
-## Ordering note
-
-Do **last** among the Phase 2 splits. The test suite is the most complex (tests span ~3500 lines) and any compilation error here blocks all runtime changes. The behavioral spec must exist first — it is the verification oracle. The Phase 1.5 DRY extractions (`resolve_mode_with_trace`, `DockerResources`, `run_dind_sidecar`) should land first to reduce the file's LOC before splitting.
+1. Re-measure `launch_pipeline.rs` and its `tests.rs` before splitting.
+2. Extract only cohesive pipeline phases; do not reintroduce circular dependencies around trust confirmation.
+3. Move repeated Docker naming and launch-plan helpers behind shared runtime helpers where duplication still exists.
+4. Add or update behavioral-spec links after each extracted phase has stable invariants.
 
 ## Related files
 
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — target file (7575L)
-- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> — shares DinD sidecar and network logic (1130L)
-- <RepoFile path="crates/jackin-runtime/src/runtime/test_support.rs">crates/jackin-runtime/src/runtime/test_support.rs</RepoFile> — `FakeRunner` used by the test suite
-- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile> — shares container teardown pattern
-- <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — `resolve_mode()` duplicated for trace in launch.rs
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — public launch API
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile> — remaining dense pipeline surface
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs">crates/jackin-runtime/src/runtime/launch/launch_dind.rs</RepoFile> — DinD/network launch helper
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_slot.rs">crates/jackin-runtime/src/runtime/launch/launch_slot.rs</RepoFile> — container-slot helper

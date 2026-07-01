@@ -2,50 +2,23 @@
 title: "CI gate: PROJECT_STRUCTURE.md freshness"
 ---
 
-**Status**: Open — Phase 1, no confirmation needed
+**Status**: Partially implemented — docs CI already checks roadmap sidebar coverage and source repository links; remaining work is an actual Rust module-map freshness assertion for <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile>
 
-## Problem
+## Current shape
 
-<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> has drifted from the actual module layout because there is no automated check. PRs that add new `.rs` module files can merge without mentioning them in the navigation map.
+<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> is now a root orientation map that delegates detailed source navigation to the [Codebase Map](/reference/getting-oriented/codebase-map/). The docs workflow already runs <RepoFile path="docs/scripts/check-repo-links.ts">docs/scripts/check-repo-links.ts</RepoFile> and `bun run check:roadmap-sidebar`, so published docs routes and roadmap sidebar coverage are gated.
 
-## Implementation
+What is still missing is a repository-level assertion that newly added Rust module files are either represented in the root structure map or intentionally covered by the Codebase Map.
 
-Add a step to the `check` job in <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>:
+## Remaining assertion
 
-```yaml
-- name: Check PROJECT_STRUCTURE.md covers new modules
-  run: |
-    base_ref="${GITHUB_BASE_REF:-main}"
-    missing=()
-    while IFS= read -r f; do
-      stem="${f%.rs}"
-      dir="${stem%/mod}"
-      basename="${dir##*/}"
-      if ! grep -qF "$basename" PROJECT_STRUCTURE.md 2>/dev/null; then
-        missing+=("$f")
-      fi
-    done < <(git diff --name-only "origin/${base_ref}...HEAD" -- src)
-    if [ ${#missing[@]} -gt 0 ]; then
-      printf 'Not mentioned in PROJECT_STRUCTURE.md: %s\n' "${missing[@]}"
-      exit 1
-    fi
-```
+Add a lightweight CI check that compares new `.rs` module files in the PR against the documented source map. The check should:
 
-## Design decisions
-
-- **Scoped to PR diff only** — checks only files added in the current PR, not all 94 existing files. Avoids requiring retroactive fixes before the gate can be enabled.
-- **Greps for basename** (e.g., `op_picker` for <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile>) — PROJECT_STRUCTURE.md uses prose descriptions containing the module name.
-- **False negative risk**: a file named `mod.rs` won't be caught (too generic). Only named modules are checked.
-- **Requires full-enough git history** — `actions/checkout` defaults to a single fetched commit, so the PR job must set `fetch-depth: 0` (or explicitly fetch the base ref) before this diff works reliably.
-
-## Steps
-
-1. Do the project structure update item first (fix existing staleness before enabling the gate).
-2. Update the PR `actions/checkout` step to fetch the base history (`fetch-depth: 0` is the simplest option).
-3. Add the YAML step above to <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile> after the `cargo fmt --check` step.
-4. Add a contributor note somewhere durable (`CONTRIBUTING.md` or the future internal contributor docs): "When adding a new `.rs` module file, update PROJECT_STRUCTURE.md."
-5. Verify the step passes on the current branch before merging.
+- use the PR diff, not the whole historical tree;
+- ignore `tests.rs`, generated code, and crate-internal child modules that are intentionally covered by a parent entry;
+- fail only when a new top-level module surface lacks any matching entry in <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> or the [Codebase Map](/reference/getting-oriented/codebase-map/);
+- run after checkout has enough base history to compute the diff reliably.
 
 ## Caveats
 
-The script uses a PR diff against the base branch, so it is only safe once checkout/fetch behavior guarantees that `origin/<base>` is present locally.
+A naive basename grep produces false positives and false negatives after the workspace split because many real module roots now live under `crates/*/src/<module>.rs` and Rust 2024 self-named modules deliberately avoid `mod.rs`. Prefer a small script with explicit ignore rules over inline YAML shell.

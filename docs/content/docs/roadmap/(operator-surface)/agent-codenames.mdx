@@ -2,7 +2,7 @@
 title: "Agent codenames for parallel session coordination"
 ---
 
-**Status**: Partially implemented
+**Status**: Partially implemented — Phase 1 shipped: per-tab `JACKIN_AGENT_CODENAME` and `jackin-capsule agents` registry. Remaining work is host `jackin status` integration and registry persistence across restarts.
 
 ## Problem
 
@@ -99,6 +99,11 @@ The `← you` marker on the calling agent's own row is rendered using the caller
 ### Why read-only
 
 Agents can read the registry but cannot write to it. The capsule daemon is the sole authority on which tabs exist, which codenames are assigned, and which tabs have exited. An agent that could write to the registry could falsify identity records, impersonate another agent's codename, or poison the shared identity surface that other agents depend on. The read-only constraint is enforced by design: `jackin-capsule agents` is a query to the daemon over the control socket, not a write to a file.
+
+## Remaining work
+
+- **Host status integration.** Extend host `jackin status` to surface per-instance codenames from running Capsule registries when available.
+- **Persistence.** Persist the registry across container restarts if operators need post-restart history; current registry is in-memory for the container lifetime.
 
 ## Design questions
 

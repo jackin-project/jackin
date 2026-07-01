@@ -7,7 +7,7 @@ title: "Reproducibility and Provenance Pinning"
 
 ## Problem
 
-When jackin loads a role today (`agent-smith`, `the-architect`, or any third-party role), it clones the role repo and tracks whatever sits at the tip of the default branch. Every `jackin load` runs `git pull` and silently picks up whatever the upstream pushed since the last run.
+When jackin❯ loads a role today (`agent-smith`, `the-architect`, or any third-party role), it clones the role repo and tracks whatever sits at the tip of the default branch. Every `jackin load` runs `git pull` and silently picks up whatever the upstream pushed since the last run.
 
 That has three concrete consequences:
 
@@ -48,7 +48,7 @@ Both fields are optional and additive. A role that has never been resolved omits
 
 ### Config schema migration
 
-Per the project's pre-release schema rule (see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>), any change to a serde-bearing config struct requires a version bump and a migration registry entry, even when the change is purely additive. This work would bump `CURRENT_CONFIG_VERSION` from `v1alpha2` to `v1alpha3`, add a no-op `MigrationStep`, ship a new `from-v1alpha2/` fixture, and re-bake the existing `from-legacy/` and `from-v1alpha1/` fixtures so their migration chains end at `v1alpha3`. Existing operator config files keep parsing without modification because the new fields are `Option<String>` with serde defaults.
+Per the project's pre-release schema rule (see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>), any change to a serde-bearing config struct requires a version bump and a migration registry entry, even when the change is purely additive. This work would bump to the next config schema version, add a no-op migration step if the fields are purely additive, ship a fixture from the previous version, and re-bake older fixtures so their migration chains end at that next version. Existing operator config files keep parsing without modification because the new fields are `Option<String>` with serde defaults.
 
 ### Open questions for operator review
 
@@ -71,7 +71,7 @@ Docs:
 
 - This page — convert from brainstorm to design proposal once approved, then to "Resolved" once shipped.
 - A new operator-facing note for `--update` on the `jackin load` page.
-- A new timeline entry on the schema-versions reference page for `v1alpha3`.
+- A new timeline entry on the schema-versions reference page for the next config schema version.
 
 ## Related files
 

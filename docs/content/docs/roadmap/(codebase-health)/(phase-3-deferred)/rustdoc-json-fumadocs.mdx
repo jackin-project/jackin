@@ -21,13 +21,13 @@ cargo +nightly rustdoc --output-format json -p jackin --document-private-items
 → docs/content/docs/reference/developer-reference/api/<module>/<Item>.mdx  (gitignored)
 ```
 
-API docs become browsable at `jackin.tailrocks.com/internal/api/` — cross-linked to behavioral specs.
+API docs would become browsable under the contributor reference tree, not an `/internal/` route — cross-linked to behavioral specs once those specs live in their durable `/reference/` locations.
 
 ## Key design decisions (to confirm)
 
 1. **What to include:** All `pub` items + private items with `//!` or `///` docs.
-2. **URL structure:** `jackin.tailrocks.com/internal/api/runtime/LoadOptions/`
-3. **Cross-links:** Hardcoded map in the script from type name → spec URL (e.g. `OpPickerState` → `/internal/specs/op-picker/`)
+2. **URL structure:** a `/reference/` route such as `/reference/developer-reference/api/runtime/LoadOptions/`, adjusted to match the final contributor-reference IA before implementation.
+3. **Cross-links:** Hardcoded map in the script from type name → spec URL (e.g. `OpPickerState` → `/reference/developer-reference/specs/op-picker/` if that remains the final spec route).
 4. **Nightly requirement:** CI adds a separate step with `dtolnay/rust-toolchain@nightly` — isolated from the stable `check` job.
 5. **Generated files:** `.gitignore`d — regenerated on each `bun run build`.
 

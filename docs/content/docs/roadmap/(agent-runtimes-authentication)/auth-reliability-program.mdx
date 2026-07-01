@@ -18,9 +18,9 @@ An operator working with jackin❯ across multiple projects or companies will ev
 
 *Fixed in Phase 0 — this PR. See [Auth overwrite on new tab](/roadmap/auth-overwrite-on-new-tab/).*
 
-**2. No visibility into auth health** (daily friction). The operator has no way to check whether credentials are valid before launching a container. Bad auth is only discovered when the first API call inside the container fails. There is no `jackin auth status` command, no health indicator in the console Auth tab, and no pre-launch probe in the launch summary.
+**2. Auth health visibility is incomplete** (daily friction). Capsule now exposes usage/account-auth-ish status surfaces for running sessions, but jackin❯ still lacks a top-level pre-launch auth probe, `jackin auth status`, config-wide credential checks, and console Auth-tab health glyphs. Bad auth can still be discovered only after launch for those paths.
 
-*Addressed in Phase 2. See [Auth health and operator visibility](/roadmap/auth-health-and-visibility/).*
+*Partially addressed by shipped Capsule usage/auth status surfaces; remaining top-level work is Phase 2. See [Auth health and operator visibility](/roadmap/auth-health-and-visibility/).*
 
 **3. Multi-company auth used to require manual account switching** (fixed for file-backed agent auth). An operator with a personal Claude account and a company Claude account used to have no way to tell different workspaces to read from different credential directories. Every workspace read from the same hardcoded `~/.claude` path, so the operator had to manually switch accounts on the host before launching each workspace, or all workspaces shared one account.
 
@@ -123,7 +123,7 @@ Third, the console Auth tab gains a health indicator column per agent row (probe
 
 **What the operator experiences after:** The launch summary for every container now includes a one-line health result per auth axis. `jackin auth status` shows credential health for all configured workspaces in one view. The console Auth tab shows at a glance which agents have valid credentials and which are missing or expiring. Expired tokens are visible 7 days before they cause a failure.
 
-**Status: Not yet shipped. Design is complete.**
+**Status: Partially shipped. Capsule usage/account-auth-ish status surfaces exist; the top-level pre-launch probe, `jackin auth status`, config-wide probes, and console Auth-tab health glyphs remain open.**
 
 **Exact PR scope:** `probe_auth_health()` + `AuthHealthResult` struct in the auth provisioning crate; integration into the launch summary; `jackin auth status` subcommand; health column in console Auth tab (background probe, cached per focus); health glyph in instance rows. No schema change. No daemon dependency.
 
@@ -233,7 +233,7 @@ When all phases are complete the operator experience is:
 |---|---|---|---|---|
 | 0 — new-tab overwrite | Stop new tabs from clobbering refreshed tokens | No | Shipped | This PR |
 | 1 — multi-company isolation | Per-workspace credential source path | No | Shipped | Complete |
-| 2 — health and visibility | Pre-launch probe, `jackin auth status`, console indicators | No | Complete | Next auth PR |
+| 2 — health and visibility | Capsule status shipped; pre-launch probe, `jackin auth status`, config-wide probes, console indicators remain | No | Partial | Next auth PR |
 | 3 — daemon foundation | Lifecycle, install, control socket, log redaction | — (is the daemon) | Design needed | After Phase 2 |
 | 4 — live bidirectional sync | Token rotation propagates in seconds to all containers | Yes (Phase 3) | Complete | After Phase 3 |
 | 5 — credential source abstraction | Unified `CredentialSource` enum for all axes | No | Complete | After Phases 1–4 |
@@ -258,7 +258,7 @@ When all phases are complete the operator experience is:
 |---|---|---|
 | [Auth overwrite on new tab](/roadmap/auth-overwrite-on-new-tab/) | 0 | Shipped |
 | [Agent Authentication → Choosing a sync source folder](/guides/authentication/agents/#choosing-a-sync-source-folder/) | 1 | Shipped |
-| [Auth health and operator visibility](/roadmap/auth-health-and-visibility/) | 2 | Open — design complete |
+| [Auth health and operator visibility](/roadmap/auth-health-and-visibility/) | 2 | Partially implemented |
 | [Workspace Claude token setup](/roadmap/workspace-claude-token-setup/) | 2 (validity probe integration point) | Partially implemented |
 | [GitHub CLI authentication strategy](/roadmap/github-cli-auth-strategy/) | 2–4 (scope pre-flight; bidirectional sync) | Partially implemented |
 | [jackin❯ daemon](/roadmap/jackin-daemon/) | 3 | Open — design questions remain |

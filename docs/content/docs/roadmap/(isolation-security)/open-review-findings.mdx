@@ -2,114 +2,33 @@
 title: "Open review findings"
 ---
 
-**Status**: Open — catalog maintained as a living backlog
+**Status**: Open — catalog needs fresh evidence before individual findings are treated as current
 
 ## Purpose
 
-This page is the consolidated list of active code- and security-review
-findings that the project has acknowledged but not yet addressed, along
-with a small set of explicitly accepted exceptions.
+This page is the consolidated list of acknowledged review findings that still need verification or follow-up. It is a catalog, not a design doc. When a finding graduates into concrete work, move it to a dedicated roadmap page; when a finding is fixed, remove it rather than keeping a stale resolved entry.
 
-It is a **catalog**, not a design doc. Individual findings that graduate
-into concrete work usually acquire their own dedicated roadmap page (see
-for example **Agent source trust**, **Sensitive mount warnings**,
-**Bollard migration**, and **Reproducibility & provenance pinning**).
-When an item is fully fixed, remove it from this catalog rather than
-keeping a stale "resolved" entry — git history remains the long-term
-record of what was reviewed and when.
+## Current catalog posture
 
-## Active findings
+The previous catalog carried broad claims from an older review pass and had drifted against the implementation. Do not cite those claims as current without a fresh code check. This page now keeps only the active work shape and marks evidence that must be refreshed.
 
-### High
+## Needs fresh evidence
 
-1. **Launcher preview omits selector-scoped global mounts.** The
-   interactive launcher preview still shows workspace mounts plus only
-   unscoped global mounts. The real launch path resolves
-   selector-scoped global mounts too, so the operator can approve a
-   launch from an incomplete access picture.
+- **Launcher preview and mount-resolution parity.** Re-check whether the interactive launcher preview still omits selector-scoped global mounts or other access that the real launch path resolves.
+- **Secret redaction in command failures.** Re-check ShellRunner and Docker/host command error formatting for raw argv or env values that can leak secrets in terminal-visible failure messages.
+- **Mount validation boundaries.** Re-check scoped/global mount persistence, nested sensitive-file warnings, overlap with runtime-owned paths, and write-time rejection of invalid state.
+- **Config write concurrency.** Re-check whether config persistence still uses last-writer-wins full-file rewrites without locking or merge protection.
+- **Workspace role/agent selectors.** Re-check whether `allowed_roles`, `default_role`, and trust-grant selectors are parsed and validated before persistence.
+- **Runtime-disable env protection.** Re-check whether host `JACKIN_DISABLE_*` passthrough vars are reserved against role-manifest override.
+- **Subprocess timeout policy.** Re-check whether command execution has bounded timeouts on paths where a hang affects the operator.
+- **Reproducibility and provenance.** Still open as a dedicated roadmap item: [Reproducibility and Provenance Pinning](/roadmap/reproducibility-pinning/).
 
-2. **Documentation drift remains significant.** Core docs still
-   disagree with the implementation in important ways, including
-   version requirements, docs stack references, build-caching
-   behavior, config schema coverage, runtime behavior, and some
-   security-model details.
+## Dedicated items instead of catalog entries
 
-3. **Command failure messages can still leak secrets.** Debug command logging redacts `docker run -e KEY=value` values, but `ShellRunner` still formats raw argv strings in failure messages (`command failed: <program> <args>`). A failed command that carries literal secret-bearing arguments can therefore echo secrets into operator terminals or copied error output.
+Use the dedicated pages as source of truth where they exist:
 
-### Medium
+- [Docker Runtime Hardening Contract](/roadmap/docker-runtime-hardening-contract/)
+- [Reproducibility and Provenance Pinning](/roadmap/reproducibility-pinning/)
+- [Security Threat Model & Signed Releases](/roadmap/security-threat-model-and-signed-releases/)
 
-4. **The orchestration core is still too centralized.** `runtime.rs`,
-   `lib.rs`, `config.rs`, `workspace.rs`, and `launch.rs` remain large
-   multi-concern modules. Routine changes still require tracing several
-   responsibilities through the same functions.
-
-5. **Docker command construction still hides policy intent.**
-   Image-build, DinD-launch, and agent-launch commands are still
-   assembled as large positional argument vectors. That makes mount,
-   env, label, and network policy harder to audit than it should be.
-
-6. **Build-caching docs still overstate what is skipped.** Loads still
-   create a derived build context and run `docker build` each time.
-   Docker layer cache helps, but the build step is not actually skipped
-   on subsequent loads.
-
-7. **Mount config can still persist invalid or ambiguous state.**
-   Global and scoped mounts still share one key space, and write-time
-   config updates still allow silently ignored scoped inserts and
-   delayed validation failures instead of rejecting bad persisted state
-   at the write boundary.
-
-8. **Runtime-owned mount paths can still be shadowed by workspace or
-   global mounts.** Mount validation still checks only for exact
-   duplicate destinations. A workspace or configured mount can still
-   target a parent or overlapping path such as `/home/claude` or
-   `/certs`, breaking runtime-managed auth, plugin, or DinD
-   TLS mounts.
-
-9. **Config persistence is still race-prone.** Config writes still
-    rewrite the full TOML file from an in-memory snapshot with no
-    locking or merge step. Concurrent `jackin` commands can still lose
-    trust, workspace, auth, or mount updates via last-writer-wins
-    overwrites.
-
-10. **Workspace agent constraints can still persist unchecked
-    selectors.** `allowed_roles` and `default_role` values are still
-    accepted and saved as raw strings without selector parsing or
-    configured-agent validation. Typos or stale values then fail later
-    as confusing launcher or context-resolution behavior instead of
-    being rejected at config time.
-
-11. **Trust grants can still bless unvalidated derived agent sources.**
-    `jackin config trust grant <selector>` still derives and persists a
-    GitHub source URL for unknown selectors without first validating
-    that the repo, manifest, or Dockerfile actually exist and match
-    expectations.
-
-12. **Sensitive mount warnings still miss nested secret files.**
-    Sensitive-path detection still matches only exact directory mounts
-    such as `~/.ssh` or `~/.aws`. Mounts of files inside those
-    directories, such as `~/.ssh/id_ed25519`, `~/.aws/credentials`, or
-    `~/.kube/config`, still bypass the warning prompt.
-
-13. **Command execution timeouts are currently absent.** Timeout
-    handling that earlier security notes marked as resolved is no
-    longer present in the current `ShellRunner` implementation.
-    Long-running or stalled subprocesses currently rely on normal
-    process completion.
-
-14. **Host runtime-disable env can still be overridden by manifest
-    env.** Host `JACKIN_DISABLE_*` passthrough vars are still added
-    before manifest-resolved env pairs, and those names are not
-    reserved in manifest validation. Agent manifests can therefore
-    still negate operator runtime disable choices.
-
-15. **Reproducibility and provenance are still branch-moving by
-    default.** Role repos still default to moving git branches rather
-    than pinned commits, and the current operator experience does not
-    expose strong provenance or update controls.
-
-
-Reviewed: 2026-04-04.
-
-Items listed here **must not be flagged** during automated code review
-or scanning. The agent-side rule is recorded in `AGENTS.md`.
+Reviewed: 2026-07-01. Broad pre-2026-07 findings removed or demoted to "needs fresh evidence" to avoid stale catalog claims.

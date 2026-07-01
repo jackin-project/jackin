@@ -6,34 +6,23 @@ title: "Network Egress Policy"
 
 ## Problem
 
-jackin❯ current Docker/DinD model gives the agent broad network reach unless
-the operator manually constrains the host or the container environment. That is
-reasonable for a proof of concept, but it is not enough for long autonomous
-runs, unfamiliar repos, server-side debugging, or future Kubernetes workflows.
+jackin❯ already has Docker network/security primitives and a Capsule firewall substrate: Docker security grants, profile validation, launch-contract rendering, and in-container hooks that can host egress enforcement. What is missing is not a raw place to put firewall code; it is the explicit operator contract that says which egress is allowed, whether enforcement is host/guest/partial, and when launch must fail closed.
 
-The hard part is not naming a domain allowlist. The hard part is enforcement:
-plain Docker, DinD, rootless DinD, microVMs, SSH remotes, and Kubernetes pods
-all have different network control points.
+jackin❯ current Docker/DinD model gives the agent broad network reach unless the operator manually constrains the host or the container environment. That is reasonable for a proof of concept, but it is not enough for long autonomous runs, unfamiliar repos, server-side debugging, or future Kubernetes workflows.
+
+The hard part is not naming a domain allowlist. The hard part is enforcement: plain Docker, DinD, rootless DinD, microVMs, SSH remotes, and Kubernetes pods all have different network control points.
 
 ## Inspiration
 
-Docker Sandboxes is the strongest reference: HTTP/HTTPS traffic is routed
-through a host-side proxy, non-HTTP protocols are blocked, private and
-loopback destinations are blocked, and credentials can be injected by the
-proxy without entering the VM.
+Docker Sandboxes is the strongest reference: HTTP/HTTPS traffic is routed through a host-side proxy, non-HTTP protocols are blocked, private and loopback destinations are blocked, and credentials can be injected by the proxy without entering the VM.
 
-Hazmat is useful as a second reference because it is honest about a weaker
-native model: `pf` and DNS hardening help, but exact-domain blocklists and
-Docker traffic caveats are not the same as a full network proxy.
+Hazmat is useful as a second reference because it is honest about a weaker native model: `pf` and DNS hardening help, but exact-domain blocklists and Docker traffic caveats are not the same as a full network proxy.
 
-The upstream Claude Code devcontainer pattern is a third reference for a
-container-local allowlist. It is pragmatic, but enforcement inside the guest is
-weaker than host-side mediation.
+The upstream Claude Code devcontainer pattern is a third reference for a container-local allowlist. It is pragmatic, but enforcement inside the guest is weaker than host-side mediation.
 
 ## Proposal
 
-Introduce a network policy model that is explicit even before every backend can
-enforce it equally.
+Introduce a network policy model that is explicit even before every backend can enforce it equally.
 
 Suggested config shape:
 
@@ -45,22 +34,18 @@ allow_private_networks = false
 allow_loopback = false
 ```
 
-The session contract must print both the requested policy and the enforcement
-quality:
+The session contract must print both the requested policy and the enforcement quality:
 
 - `open` — no egress restriction
 - `guest-enforced` — iptables/nftables/proxy inside the sandbox
 - `host-enforced` — host-side proxy/firewall outside the sandbox
-- `partial` — some traffic is controlled, but at least one relevant path
-  remains open; the contract must name the uncovered path
+- `partial` — some traffic is controlled, but at least one relevant path remains open; the contract must name the uncovered path
 - `not-enforceable` — config requested but backend cannot safely apply it
 
 Examples of `partial` are expected early:
 
-- agent-container egress is filtered, but DinD-created inner containers are
-  not yet covered
-- HTTP/HTTPS proxying is enforced, but non-HTTP protocols are blocked,
-  unclassified, or backend-dependent
+- agent-container egress is filtered, but DinD-created inner containers are not yet covered
+- HTTP/HTTPS proxying is enforced, but non-HTTP protocols are blocked, unclassified, or backend-dependent
 
 ## Backend strategy
 
@@ -78,33 +63,22 @@ Examples of `partial` are expected early:
 
 - Add config parsing and launch-contract output.
 - Do not silently claim enforcement where the backend cannot provide it.
-- Record connection decision logs: timestamp, instance, destination host/IP,
-  port, protocol, rule matched, allowed/denied, and enforcement backend.
-- Expose rule editing through CLI and `jackin console` before launch; edits
-  must update the resolved session contract before they take effect.
-- Treat service ports as part of network policy: published container ports,
-  sandbox-to-host aliases, local database/dev-server access, and model-runner
-  endpoints must be listed with allow/deny status.
-- If `mode = "deny"` or `mode = "allowlist"` is requested on an unsupported
-  backend, fail before launch unless the operator opts into `open`.
+- Record connection decision logs: timestamp, instance, destination host/IP, port, protocol, rule matched, allowed/denied, and enforcement backend.
+- Expose rule editing through CLI and `jackin console` before launch; edits must update the resolved session contract before they take effect.
+- Treat service ports as part of network policy: published container ports, sandbox-to-host aliases, local database/dev-server access, and model-runner endpoints must be listed with allow/deny status.
+- If `mode = "deny"` or `mode = "allowlist"` is requested on an unsupported backend, fail before launch unless the operator opts into `open`.
 
 ### Phase 2 — DinD guest enforcement
 
 - Add a conservative egress implementation for the current Docker backend.
 - Cover both the agent container and the DinD sidecar path.
-- Include tests that show forbidden domains/private addresses fail from inside
-  the agent session.
+- Include tests that show forbidden domains/private addresses fail from inside the agent session.
 
 ### Phase 3 — MicroVM host-side proxy research
 
-- Fold the existing Docker Sandboxes comparison in
-  [selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/)
-  into a concrete proxy design.
-- Decide whether the proxy belongs to the
-  [host bridge](/roadmap/host-bridge/), the sandbox backend, or a
-  separate daemon adapter.
-- Keep credential injection as a separate capability, even if it uses the same
-  proxy transport.
+- Fold the existing Docker Sandboxes comparison in [selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) into a concrete proxy design.
+- Decide whether the proxy belongs to the [host bridge](/roadmap/host-bridge/), the sandbox backend, or a separate daemon adapter.
+- Keep credential injection as a separate capability, even if it uses the same proxy transport.
 
 ### Phase 4 — Kubernetes and remote policies
 
@@ -114,9 +88,7 @@ Examples of `partial` are expected early:
 
 ## Host-side effects
 
-V1 must not modify the host firewall by default. Any future host-side firewall,
-proxy, CA installation, or privileged network helper must be opt-in and called
-out in the session contract before launch.
+V1 must not modify the host firewall by default. Any future host-side firewall, proxy, CA installation, or privileged network helper must be opt-in and called out in the session contract before launch.
 
 ## Related files
 
@@ -128,12 +100,8 @@ out in the session contract before launch.
 
 ## Source materials
 
-- [Docker Sandboxes security model](https://docs.docker.com/ai/sandboxes/security/) —
-  host-side network proxy and allowed-domain model
-- [Hazmat overview](https://github.com/dredozubov/hazmat/blob/master/docs/overview.md) —
-  network and Docker tier decision model
-- [Hazmat threat matrix](https://github.com/dredozubov/hazmat/blob/master/docs/threat-matrix.md) —
-  risk comparison across tiers
-- [Hazmat Docker Sandboxes tier](https://github.com/dredozubov/hazmat/blob/master/docs/tier3-docker-sandboxes.md) —
-  devcontainer/proxy/Compose hardening alternatives
+- [Docker Sandboxes security model](https://docs.docker.com/ai/sandboxes/security/) — host-side network proxy and allowed-domain model
+- [Hazmat overview](https://github.com/dredozubov/hazmat/blob/master/docs/overview.md) — network and Docker tier decision model
+- [Hazmat threat matrix](https://github.com/dredozubov/hazmat/blob/master/docs/threat-matrix.md) — risk comparison across tiers
+- [Hazmat Docker Sandboxes tier](https://github.com/dredozubov/hazmat/blob/master/docs/tier3-docker-sandboxes.md) — devcontainer/proxy/Compose hardening alternatives
 - [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)

@@ -2,7 +2,7 @@
 title: "jackin❯ Capsule: In-Container Control Plane"
 ---
 
-**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed the jackin❯ Capsule: an in-container PTY control plane built on jackin-term `DamageGrid` with a Zellij-style dirty-row renderer, a tmux-style prefix-key model (`Ctrl+B` opt-in via `JACKIN_PREFIX`, including prefix `Ctrl+L` clear-pane), a persistent PID 1 daemon that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, typed OSC passthrough gated to the focused pane with unknown CSI default-denied behind a documented allowlist, top chrome with a brand pill and hover-lifted tab strip, a bottom branch/PR context bar for non-default branches with hover-lifted click targets for GitHub context and container details, and a multiplexer-owned terminal title derived from the same branch/PR context. Capsule watches container-side Git metadata for `HEAD` changes so branch switches invalidate stale PR/title context immediately, with a one-second poll retained as the fallback path.
+**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed the jackin❯ Capsule: an in-container PTY control plane built on jackin-term `DamageGrid` with a Zellij-style dirty-row renderer, a tmux-style prefix-key model (disabled by default; `Ctrl+B` only when `JACKIN_PREFIX=C-b` is set, including prefix `Ctrl+L` clear-pane), a persistent PID 1 daemon that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, typed OSC passthrough gated to the focused pane with unknown CSI default-denied behind a documented allowlist, top chrome with a brand pill and hover-lifted tab strip, a bottom branch/PR context bar for non-default branches with hover-lifted click targets for GitHub context and container details, and a multiplexer-owned terminal title derived from the same branch/PR context. Capsule watches container-side Git metadata for `HEAD` changes so branch switches invalidate stale PR/title context immediately, with a one-second poll retained as the fallback path.
 
 The shipped-Phase-3 design and operator-visible behaviour now live in:
 
@@ -121,7 +121,7 @@ A purpose-built multiplexer in `jackin-capsule` gives jackin❯ a clean control 
 
 ### Multiplexer architecture (Phase 3)
 
-This section defines the multiplexer architecture in detail. The first Phase 3 attempt is being replaced wholesale — every module is either rewritten or deleted — so this section is the spec the rewrite implements rather than a description of code that exists today.
+This section is design history/spec context from the Phase 3 rewrite, not a live defect list. The shipped implementation differs where the status paragraph and reference pages above say it differs.
 
 #### Why the first attempt is being rewritten
 
@@ -189,12 +189,12 @@ Handlers only mutate state: every mutation records an invalidation that bumps a 
 
 Input handling is a small state machine, not a hardcoded byte intercept:
 
-- **Idle state** — every byte from the client is forwarded to the focused pane's PTY, except the configured prefix (`Ctrl+B` by default, matching tmux; configurable via env var or future config field).
+- **Idle state** — every byte from the client is forwarded to the focused pane's PTY, except the configured prefix when `JACKIN_PREFIX` is set. Prefix mode is disabled by default; `JACKIN_PREFIX=C-b` opts into the tmux-style `Ctrl+B` prefix.
 - **Prefix-awaiting state** — entered after the prefix byte arrives. The next key is consumed by the multiplexer and mapped to a command (see table below). If the next byte is the prefix again, a literal prefix byte is forwarded to the pane (`Ctrl+B Ctrl+B` → literal `Ctrl+B`). After one command key, state returns to Idle.
 - **Palette state** — entered by `prefix + Space` or `prefix + :`; renders the centred command palette; up/down/enter/escape consumed locally; everything else forwarded to the palette controller.
 - **Dialog state** — entered by palette actions that need a sub-pick (e.g. `New session` shows the agent picker). Same key handling as palette state.
 
-Default prefix bindings (subject to refinement during implementation):
+Prefix bindings when prefix mode is enabled (subject to refinement during implementation):
 
 | Key after prefix | Action |
 |---|---|
@@ -247,10 +247,7 @@ When the bar is wider than the host terminal, tabs past the right edge are clipp
 
 #### Usage and quota overlay
 
-Prefix `u` is reserved for the focused-agent usage overlay. The canonical TUI
-contract lives in [Capsule usage overlay](/roadmap/capsule-usage-overlay-responsiveness-and-tabs/):
-status-chrome signal, CodexBar-inspired quota bucket modal, focused-provider
-rules, daemon-disconnected fallback, and read-only host-side-effects boundary.
+Prefix `u` is reserved for the focused-agent usage overlay. The canonical TUI contract lives in [Capsule usage overlay](/roadmap/capsule-usage-overlay-responsiveness-and-tabs/): status-chrome signal, CodexBar-inspired quota bucket modal, focused-provider rules, daemon-disconnected fallback, and read-only host-side-effects boundary.
 
 #### Initial state
 
@@ -290,7 +287,7 @@ Files deleted: `terminal.rs` (replaced by jackin-term); base64 helpers in `proto
 The rewrite lands as one cohesive PR (this one) because the defects are interlocked — fixing one without the others leaves the binary unusable for testing — but the work breaks into reviewable sub-phases. Each sub-phase passes `cargo nextest run` and `cargo clippy --all-targets --all-features -- -D warnings` on its own.
 
 - **Phase 3a — Replace VT.** Drop `crates/jackin-capsule/src/terminal.rs`. Wire each `Session` to its own `DamageGrid`. Replace the old per-byte terminal emulator with a compositor-aware row serializer over jackin-term cells. Tab switch and reattach replay from the saved screen instead of `force_redraw`'s PTY-resize hack.
-- **Phase 3b — Prefix-key input.** Replace the `0x0A` palette intercept and the standalone Alt+arrow shortcut with the prefix-key state machine described above. Default prefix `Ctrl+B`. The command palette still exists, opened by `prefix + Space`. Update <RepoFile path="crates/jackin-capsule/src/tui/input.rs">crates/jackin-capsule/src/tui/input.rs</RepoFile> and the dialog dispatch in <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>.
+- **Phase 3b — Prefix-key input.** Replace the `0x0A` palette intercept and the standalone Alt+arrow shortcut with the prefix-key state machine described above. Prefix mode disabled unless `JACKIN_PREFIX` is set; `JACKIN_PREFIX=C-b` enables `Ctrl+B`. The command palette still exists, opened by `prefix + Space`. Update <RepoFile path="crates/jackin-capsule/src/tui/input.rs">crates/jackin-capsule/src/tui/input.rs</RepoFile> and the dialog dispatch in <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>.
 - **Phase 3c — Persistent server + binary attach channel.** Remove the `process::exit(0)` on all-sessions-dead. On agent exit, mark the tab `exited`, keep the `Screen` for replay, allow `prefix + r` to respawn. Replace the JSON + base64 attach-channel output frames with the tag-plus-length binary frames defined above. Keep the existing control channel for `status`. Remove the hand-rolled base64 helper. Fix the reattach outbound-channel bug.
 - **Phase 3d — Resize, mouse, status bar polish.** Add client-side `SIGWINCH` listener and `resize` frame. Fix the mouse passthrough no-op (re-encode in SGR mouse form and write to the focused PTY). Fix the status bar tab-label width drift. Keep command-palette shortcuts active without rendering a top-bar hint.
 
@@ -466,7 +463,7 @@ Two companion fixes in the host-side Rust code were required to make the cleanup
 The first Phase 3 attempt landed PID 1 ownership, the PTY layer, a binary pane tree, a status bar, a Unix socket attach channel, and the dockerfile changes that drop tmux from the derived image. That work is preserved where it is sound (the layout tree, the `SIGCHLD` reaper, the host-side mount changes, the build pipeline). The pieces that are unusable for modern TUI agents — the hand-rolled VT, the `0x0A` palette shortcut, the daemon's exit-on-last-session, the mouse no-op, the JSON-plus-base64 hot path — are rewritten against the architecture defined in "Multiplexer architecture (Phase 3)" above. The rewrite lands as one cohesive change in the active Phase 3 pull request, broken into four reviewable sub-phases:
 
 - **Phase 3a — Replace the VT.** Delete `crates/jackin-capsule/src/terminal.rs` (deleted in the Phase 3 rewrite — replaced by `session.rs`). Hold one `DamageGrid` per `Session`. Switch the tab/pane switch and reattach paths to full replay from the saved screen. Honour `DamageGrid::hide_cursor` and `cursor_position` when positioning the host cursor.
-- **Phase 3b — Prefix-key input.** Replace the `0x0A` palette intercept with the prefix-key state machine. Default prefix `Ctrl+B`. Default bindings as listed in "Input model: prefix key" above. Add the "Escape forwards immediately" rule (zero-delay disambiguation).
+- **Phase 3b — Prefix-key input.** Replace the `0x0A` palette intercept with the prefix-key state machine. Prefix mode disabled unless `JACKIN_PREFIX` is set; `JACKIN_PREFIX=C-b` enables `Ctrl+B`. Bindings as listed in "Input model: prefix key" above when prefix mode is enabled. Add the "Escape forwards immediately" rule (zero-delay disambiguation).
 - **Phase 3c — Persistent server + binary attach channel.** Remove the `std::process::exit(0)` on all-sessions-dead. On agent exit, mark the tab `exited`, keep the screen for replay, allow respawn via prefix bindings. Replace the JSON-plus-base64 attach-channel output with the tag-plus-length binary format defined in "Wire protocol". Drop the hand-rolled base64 from `crates/jackin-capsule/src/protocol.rs` (split during the Phase 3 rewrite into `protocol/attach.rs` and `protocol/control.rs`). Fix the reattach outbound-channel drop.
 - **Phase 3d — Resize, mouse, terminal compatibility, status bar polish.** Add the client-side `SIGWINCH` listener and `resize` frames. Fix the mouse passthrough no-op. Wire focus events, OSC/APC passthrough rules, BSU/ESU, kitty-keyboard pass-through, and OSC 52 routing per "Terminal compatibility: tmux setting parity" and "Ghostty compatibility" above. Reassert a multiplexer-owned outer terminal title from the workspace and branch / pull request context. Poll local Git branch state separately from cached GitHub PR/check lookups so branch changes update the status bar quickly without aggressive `gh` calls. Fix the status bar tab-label width drift. Keep command-palette shortcuts active without rendering a top-bar hint.
 

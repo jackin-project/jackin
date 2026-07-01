@@ -29,7 +29,7 @@ A file with no `version` is ambiguous: it could be a file that was never created
 `config.toml` and every per-workspace file use a top-level Kubernetes-style `version` field:
 
 ```toml
-version = "v1alpha5"
+version = "v1alpha8"
 
 [claude]
 auth_forward = "sync"
@@ -38,14 +38,14 @@ auth_forward = "sync"
 
 Absence of `version` is treated as the legacy pre-versioning era. On load, jackin❯ compares the file's version to the current expected version baked into the binary. If the file is older and jackin❯ still has the migration path, jackin❯ runs the migration chain before the config reaches any caller. If the file is too old for the current binary, jackin❯ errors and asks the operator to upgrade through an older jackin❯ first.
 
-The main config file and workspace files are versioned independently. A workspace-only schema change bumps `CURRENT_WORKSPACE_VERSION` (currently `v1alpha4`); a global config-only change bumps `CURRENT_CONFIG_VERSION` (currently `v1alpha5`). The example above shows a `config.toml` snippet; a per-workspace file under `~/.config/jackin/workspaces/<name>.toml` would carry `version = "v1alpha4"` instead.
+The main config file and workspace files are versioned independently. A workspace-only schema change bumps `CURRENT_WORKSPACE_VERSION` (currently `v1alpha8`); a global config-only change bumps `CURRENT_CONFIG_VERSION` (currently `v1alpha8`). The example above shows a `config.toml` snippet; a per-workspace file under `~/.config/jackin/workspaces/<name>.toml` would carry `version = "v1alpha8"` as well.
 
 ### Role manifest version field
 
 `jackin.role.toml` uses the same top-level Kubernetes-style `version` field:
 
 ```toml
-version = "v1alpha4"
+version = "v1alpha6"
 
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
@@ -87,10 +87,10 @@ Migration is **always automatic for config files** — operators do not need to 
 Role manifests live in role repos that jackin❯ does not own. The policy is:
 
 - **Version is current or older**: jackin loads the role when the manifest only uses fields and enum values available at that version.
-- **Older-stamped manifest uses a newer feature**: jackin refuses to use the role and emits a feature-specific error with `jackin role migrate <role-repo-path>`. For example, `opencode` requires `v1alpha3` and `kimi` requires `v1alpha4`; an older-stamped manifest that declares either agent must be migrated before launch.
+- **Older-stamped manifest uses a newer feature**: jackin refuses to use the role and emits a feature-specific error with `jackin role migrate <role-repo-path>`. For example, `opencode` and `kimi` require manifest versions newer than the legacy baseline; an older-stamped manifest that declares either agent must be migrated before launch.
 - **Version newer than expected**: jackin refuses and emits: `role manifest is at {new}, this binary only understands up to {current}; upgrade jackin`.
 
-The `jackin role migrate <role-repo-path>` command applies the manifest migration chain to a desktop local role clone and writes the result back. The operator can then inspect the diff, commit, and push. CI, validation workflows, and Renovate-style automation use the standalone `jackin-role migrate <role-repo-path>` binary instead of the full `jackin` operator CLI.
+The `jackin role migrate <role-repo-path>` command applies the manifest migration chain to a desktop local role clone and writes the result back. The operator can then inspect the diff, commit, and push. CI, validation workflows, and Renovate-style automation are expected to use the standalone role-focused migrator binary when that deferred automation lands; verify the final binary name before documenting or scripting it.
 
 The `--pr` path remains future work. When implemented, it will have jackin open a pull request in the role repo automatically via `gh`.
 
@@ -140,7 +140,7 @@ The migration framework carves out an exception for the three file kinds operato
 
 **Phase 4 — Renovate-style auto-migration GitHub Action**
 
-`--pr` runs from an operator's machine, so a role repo whose author has not run `jackin role migrate` stays broken in CI until someone opens a PR by hand. A scheduled action closes that gap by watching role repos and opening migration PRs upstream automatically. That action should run the small role-focused `jackin-role migrate` binary, not the full `jackin` operator binary.
+`--pr` runs from an operator's machine, so a role repo whose author has not run `jackin role migrate` stays broken in CI until someone opens a PR by hand. A scheduled action closes that gap by watching role repos and opening migration PRs upstream automatically. That action should run the small role-focused migrator binary, not the full `jackin` operator binary; confirm the binary name before implementation.
 
 The action extends [`validate-agent-action`](https://github.com/jackin-project/validate-agent-action) with a `migrate` mode (rather than introducing a new repo — role authors install one action). Two deployment shapes mirror Renovate's:
 

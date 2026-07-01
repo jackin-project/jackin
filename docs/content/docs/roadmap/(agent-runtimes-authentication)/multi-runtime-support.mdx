@@ -1,15 +1,15 @@
 ---
-title: "Multi-Runtime Support for Codex, Amp, Kimi, and OpenCode"
+title: "Multi-Runtime Support for Codex, Amp, Kimi, OpenCode, and Grok"
 ---
 
-**Status**: Partially implemented — built-in `claude`, `codex`, `amp`, `kimi`, and `opencode` launch support is shipped; deeper runtime parity remains
+**Status**: Partially implemented — built-in `claude`, `codex`, `amp`, `kimi`, `opencode`, and `grok` launch support is shipped; deeper runtime parity remains
 
 ## Canonical Docs For Shipped Behavior
 
-- [jackin load](/commands/load/) — `--agent <claude|codex|amp|kimi|opencode>` and launch behavior.
+- [jackin load](/commands/load/) — `--agent <claude|codex|amp|kimi|opencode|grok>` and launch behavior.
 - [Workspaces](/guides/workspaces/) and [Configuration File](/reference/runtime/configuration/) — `default_agent`, last-used agent behavior, and persisted state.
 - [Role manifest](/developing/role-manifest/) and [Creating roles](/developing/creating-roles/) — role-author support for multi-agent manifests.
-- [Agent Authentication](/guides/authentication/agents/) — current auth modes for Claude Code, Codex, Amp, Kimi, and OpenCode.
+- [Agent Authentication](/guides/authentication/agents/) — current auth modes for Claude Code, Codex, Amp, Kimi, OpenCode, and Grok.
 
 This roadmap item no longer repeats shipped runtime selector, state-path, or manifest details. Use the standard docs above for current behavior.
 
@@ -17,10 +17,10 @@ This roadmap item no longer repeats shipped runtime selector, state-path, or man
 
 The project now has basic built-in runtime support. The remaining work is parity depth:
 
-- runtime-native extension surfaces for Codex, Amp, Kimi, and OpenCode;
-- richer Codex/Amp/Kimi/OpenCode config defaults and documented tuning;
+- runtime-native extension surfaces for Codex, Amp, Kimi, OpenCode, and Grok;
+- richer Codex/Amp/Kimi/OpenCode/Grok config defaults and documented tuning;
 - MCP / skill integration beyond simple config-file injection;
-- runtime-specific auth and state behavior where Codex, Amp, Kimi, or OpenCode need something more than `sync`, `api_key`, and `ignore`;
+- runtime-specific auth and state behavior where Codex, Amp, Kimi, OpenCode, or Grok need something more than `sync`, `api_key`, and `ignore`;
 - clearer version/update behavior for non-Claude runtimes.
 
 With the [AgentRuntime registry](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry) in place, adding a built-in runtime is a centralized adapter registration instead of scattered edits across `runtime/`, `config/`, `console/`, and the entrypoint. That registry is the structural prerequisite for most of the parity-depth items above.
@@ -33,7 +33,7 @@ With the [AgentRuntime registry](/reference/getting-oriented/architecture/#agent
 
 ## Open Questions
 
-- Which Codex, Amp, Kimi, and OpenCode settings deserve first-class role-manifest fields rather than generated defaults?
+- Which Codex, Amp, Kimi, OpenCode, and Grok settings deserve first-class role-manifest fields rather than generated defaults?
 - Should runtime-native skills/MCP wiring live in each runtime adapter or in a shared extension model?
-- Do Codex, Amp, Kimi, and OpenCode need additional auth modes beyond `sync`, `api_key`, and `ignore`?
+- Do Codex, Amp, Kimi, OpenCode, and Grok need additional auth modes beyond `sync`, `api_key`, and `ignore`?
 - How much runtime update detection should jackin own for non-Claude CLIs?

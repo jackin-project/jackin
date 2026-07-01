@@ -2,189 +2,36 @@
 title: "Workspace Registry Cache"
 ---
 
-**Status**: Open — design proposal
+**Status**: Partially implemented — outer image freshness, prewarm, and capsule image-cache behavior exist; the future DinD inner-registry / zot workspace cache remains open
 
-## Problem
+## Shipped facts
 
-Each jackin❯ role instance runs its own DinD sidecar. DinD storage (`/var/lib/docker` inside the sidecar) is ephemeral — destroyed when the container stops. Every new session must pull base images from upstream registries from scratch.
+jackin❯ already has image freshness and warming behavior for the outer role/runtime image path. Capsule image-cache behavior also avoids some repeated work across launches. Those shipped paths reduce cold-start pain for the images jackin❯ owns directly.
 
-When multiple role instances share a workspace, or when the same workspace is used across sessions, the same layers are pulled repeatedly: `ubuntu:22.04`, `node:20`, `rust:1.78`, and any other base images the role's build process depends on. On a metered connection or with Docker Hub rate limits in play, this is both slow and wasteful.
+This page now tracks the remaining, narrower cache gap: images pulled or built **inside each role's DinD sidecar** are still scoped to that sidecar's Docker storage. A stopped/destroyed DinD loses those layers, and sibling role instances in the same workspace do not share inner Docker layers or pushed intermediate images.
 
-There is also no mechanism for an agent inside one DinD to push a built image and have it available in a subsequent session or in a sibling DinD instance within the same workspace.
+## Remaining problem
 
-## Why It Matters
+Roles that run `docker build`, Compose, or Testcontainers inside the container still pull base images repeatedly inside DinD. Built images produced inside one session are not available to a later session or sibling instance unless pushed to an external registry. That is slow, wasteful, and especially painful on metered networks or under Docker Hub limits.
 
-- Base image pulls dominate cold-start time for roles that `docker build` inside the container. A workspace-local cache turns repeated cache misses into near-instant local hits.
-- Parallel agents in the same workspace working on the same stack pull the same layers independently. A shared cache eliminates that redundancy.
-- Built images are currently ephemeral. A successful intermediate build in one session cannot be reused in the next. A workspace-local registry that accepts pushes closes this gap.
-- The fix is workspace-scoped by design: each workspace has its own registry, so two workspaces running a service named `userservice` on their respective inner Docker networks have zero interaction. Isolation is preserved by DinD's own namespace boundary.
+## Proposed remaining design
 
-## Why Not a Persistent Named Volume on DinD?
+Add an opt-in workspace-local OCI registry sidecar, likely zot, attached to a workspace-shared network. DinD sidecars in the same workspace use it as their Docker Hub pull-through mirror and as a local push target for intermediate images. The cache is workspace-scoped so unrelated workspaces remain isolated.
 
-The simpler alternative — mounting a named Docker volume at `/var/lib/docker` in each DinD sidecar — persists cache per DinD instance but does not share it across instances. Sibling role containers in the same workspace get no benefit from each other's warming. The workspace registry is the right scope because it matches the unit of shared context: the operator's workspace.
+Phase 1 should be minimal: Docker Hub pull-through and local push for workspace DinD instances, persistent registry volume, automatic start with the first workspace instance, and stop when the last instance exits. Additional upstream registries, quotas/GC, private-registry auth, and diagnostics can follow later.
 
-## Registry Tool: zot
+## Deferred work
 
-[zot](https://zotregistry.dev) (CNCF Sandbox, v2.1.x, actively maintained) is the right tool for this feature. It is the only single-container option that satisfies all three constraints simultaneously:
+- DinD `daemon.json` / launch integration for additional upstream registries such as `ghcr.io` and `quay.io`.
+- Workspace deletion/prune integration that can remove the registry container and shared network, with volume deletion only by explicit operator choice.
+- Storage quota, scrub/GC, and TTL policies.
+- Optional pull credentials for private upstream registries.
+- `jackin workspace container-registry status` or equivalent diagnostics.
 
-| Requirement | zot (full) | registry:2 |
-|---|---|---|
-| Pull-through proxy cache | Yes (multiple upstreams, `onDemand`) | Yes (one upstream, Docker Hub only per instance) |
-| Local push (store built images) | Yes | **No** — proxy mode hard-disables push |
-| Multiple upstream registries | Yes (array config) | **No** — one `remoteurl` per instance |
+## Related files
 
-`registry:2` in proxy mode hard-disables push. Running two instances with shared storage (one proxy, one push) is a workaround that adds operational complexity for no benefit over zot.
-
-Harbor and Nexus satisfy the requirements but are multi-container deployments with images exceeding 100 MB per component; they are not suitable for a per-workspace sidecar.
-
-**Important limitation of `--registry-mirror` in Docker daemon:** The `registry-mirrors` setting in `dockerd` (and therefore `--registry-mirror` passed to DinD) **only intercepts Docker Hub pulls**. Pulls of `ghcr.io/*`, `quay.io/*`, and other non-Docker Hub images are not routed through the mirror by the Docker daemon. zot can cache those registries via its sync extension, but Phase 1 only configures Docker Hub pull-through automatically. Per-registry daemon.json mirror config for additional registries is a Phase 2 concern.
-
-## Architecture
-
-```
-Outer Docker daemon (jackin❯ host)
-├── jackin-{ws}-registry         ← zot, on workspace-shared-net + persistent volume
-├── dind-{ws}-{roleA}            ← workspace-shared-net + role-A-net
-│                                   CMD: --registry-mirror http://jackin-{ws}-registry:5000
-│                                        --insecure-registry jackin-{ws}-registry:5000
-└── dind-{ws}-{roleB}            ← workspace-shared-net + role-B-net
-                                    CMD: --registry-mirror http://jackin-{ws}-registry:5000
-                                         --insecure-registry jackin-{ws}-registry:5000
-
-Inner Docker daemon inside dind-{ws}-{roleA}  (isolated namespace)
-└── userservice, microservice-a, …
-
-Inner Docker daemon inside dind-{ws}-{roleB}  (isolated namespace)
-└── userservice, microservice-b, …  ← same hostname, zero conflict
-```
-
-Services created inside DinD (UserService, microservices, etc.) live on DinD's internal Docker networks, which are completely separate from the outer workspace-shared-net. Two DinD instances each running a container named `userservice` do not see each other. The workspace-shared-net carries only two things: DinD's external interface (registry access) and the zot container.
-
-## Configuration
-
-Registry support is **opt-in and disabled by default**. The operator enables it in the workspace configuration file.
-
-```toml
-[container_registry]
-enabled = true
-```
-
-No other configuration is required for Phase 1. Phase 2 adds optional fields for extra upstream registries and storage quotas.
-
-This requires a `WorkspaceConfig` schema change: a new `ContainerRegistryConfig` struct under the `container_registry` key. Because `WorkspaceConfig` is a versioned schema, the change requires:
-
-1. Bump `CURRENT_WORKSPACE_VERSION` in <RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile>
-2. A migration step in `WORKSPACE_MIGRATIONS` (trivially additive — new table with serde default `enabled = false`)
-3. A new fixture set under `tests/fixtures/migrations/workspace-config/from-{predecessor}/`
-4. Re-bake of all existing fixtures
-5. A new entry in <RepoFile path="docs/content/docs/reference/runtime/schema-versions.mdx">docs/content/docs/reference/runtime/schema-versions.mdx</RepoFile>
-
-## Lifecycle
-
-**Registry container lifecycle:** coupled to workspace instance count — starts automatically with the first instance, stops automatically when the last instance exits.
-
-On every role launch (if `container_registry.enabled = true`), `ensure_workspace_registry()` starts the registry if it is not already running. On every role teardown, the cleanup path queries how many role instances for that workspace are still running. If the count reaches zero, the registry container is stopped (but not removed). The next launch restarts it against the same persistent volume, warming from the previous session's cached layers.
-
-**Idempotent startup:** `ensure_workspace_registry()` checks whether `jackin-{ws}-registry` is already running before issuing any Docker commands. Concurrent role launches in the same workspace are safe.
-
-**Volume lifecycle:** `jackin-{ws}-registry-data` is a named Docker volume that persists independently of the container. It survives container stop and `docker rm`. The cache accumulates across sessions; explicit operator deletion is required to clear it.
-
-**No manual start/stop commands.** The registry is fully automatic. The operator enables it in the workspace file and jackin❯ manages the rest.
-
-## Implementation
-
-### New naming functions
-
-```
-workspace_registry_container(workspace: &str) → String
-workspace_registry_volume(workspace: &str) → String
-workspace_shared_network(workspace: &str) → String
-```
-
-### New module — `src/runtime/registry.rs`
-
-`ensure_workspace_registry(workspace: &str, config: &ContainerRegistryConfig)` performs:
-
-1. Early return if `config.enabled` is false
-2. `docker network create jackin-{ws}-shared-net` if not exists (idempotent — ignore "already exists" error)
-3. Check if `jackin-{ws}-registry` container exists and is running — return if yes
-4. `docker volume create jackin-{ws}-registry-data` if not exists
-5. Write zot `config.json` to `~/.config/jackin/workspaces/{ws}/registry-config.json` — this is a host-side write that must be surfaced in the launch summary the first time it is created (see "Host-side effects" below)
-6. `docker run -d --name jackin-{ws}-registry --network jackin-{ws}-shared-net -v jackin-{ws}-registry-data:/var/lib/registry -v {config_path}:/etc/zot/config.json:ro ghcr.io/project-zot/zot:latest`
-7. Brief health-poll on `http://jackin-{ws}-registry:5000/v2/` before returning
-
-### Zot config (generated)
-
-```json
-{
-  "distSpecVersion": "1.1.0",
-  "storage": { "rootDirectory": "/var/lib/registry" },
-  "http": { "address": "0.0.0.0", "port": "5000" },
-  "log": { "level": "warn" },
-  "extensions": {
-    "sync": {
-      "enable": true,
-      "registries": [
-        {
-          "urls": ["https://registry-1.docker.io"],
-          "onDemand": true,
-          "tlsVerify": true,
-          "content": [{ "prefix": "**" }]
-        }
-      ]
-    }
-  }
-}
-```
-
-Docker Hub requires `onDemand: true`. Polling mode will trigger rate limits.
-
-### Host-side effects
-
-`ensure_workspace_registry()` writes one host-side file: `~/.config/jackin/workspaces/{ws}/registry-config.json`. This is the zot configuration, generated from the workspace's `[container_registry]` settings. The write is a consequence of the operator enabling `container_registry.enabled = true` in their workspace config — the opt-in is explicit. Per the "never mutate the host machine silently" hard rule, the first creation of this file must be surfaced in the launch summary (e.g. `Created container registry config at ~/.config/jackin/workspaces/<ws>/registry-config.json`). Subsequent launches overwrite it silently only if the contents are unchanged; a content change must also be surfaced.
-
-### Launch changes
-
-Before launching DinD: call `ensure_workspace_registry()`.
-
-DinD `docker run` gains two additions when the workspace registry is enabled:
-- `--network jackin-{ws}-shared-net` (second network — DinD already uses its per-role network)
-- Extra CMD args passed to dockerd: `--registry-mirror http://jackin-{ws}-registry:5000 --insecure-registry jackin-{ws}-registry:5000`
-
-The official `docker:dind` entrypoint passes all extra CMD arguments directly to `dockerd`, so no custom entrypoint is needed.
-
-### Attach recovery path
-
-Apply the same DinD `--network` and CMD args on the hardline recovery path to keep the two paths in sync.
-
-### Teardown hook
-
-After stopping a role instance, query how many role containers for that workspace are still running. The implementation must apply a `jackin.workspace={ws}` label to every role container at launch (a new label — not yet present in the codebase) so the teardown path can filter by workspace: `docker ps --filter label=jackin.workspace={ws} --filter label=jackin.kind=role`. If the count reaches zero and `container_registry.enabled = true`, stop (do not remove) `jackin-{ws}-registry`. The volume survives; the next launch restarts the container against the same cache.
-
-### Workspace-level resource tracking
-
-`DockerResources` (in <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile>) is a per-instance struct serialized into each instance's manifest — it is the wrong location for workspace-level resources shared across instances. The registry container and shared network must be tracked separately. The implementation should introduce a `WorkspaceResources` struct (or equivalent) that records `registry_container` and `shared_network` at the workspace level, keyed by workspace name, so teardown and lifecycle queries can locate these resources without coupling them to any single instance.
-
-## Phase 2 (deferred)
-
-- Workspace-deletion teardown — `jackin eject --all` / `jackin prune` integration to stop and remove the registry container and shared network when the whole workspace is destroyed (complements Phase 1 per-instance teardown; volume deletion opt-in only, to avoid silent cache loss)
-- Additional upstream registries — per-registry mirror entries in DinD `daemon.json` for `ghcr.io`, `quay.io`, and others; zot sync config extended with corresponding upstream entries
-- Storage quota and GC — zot scrub/GC config, size limits, TTL-based eviction
-- Registry auth — optional pull credentials for private upstream registries in zot sync config
-- Diagnostic subcommand — `jackin workspace container-registry status` for inspecting registry health, cache size, and upstream sync state (start/stop not needed; lifecycle is automatic)
-
-## Related Files
-
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — DinD launch, workspace registry ensure call, shared-net attachment
-- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> — DinD recovery path, same DinD additions
-- <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs">crates/jackin-runtime/src/runtime/naming.rs</RepoFile> — naming functions for registry container, volume, shared network
-- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile> — teardown hook, stop registry when last workspace instance exits
-- <RepoFile path="crates/jackin/src/workspace.rs">crates/jackin/src/workspace.rs</RepoFile> — `ContainerRegistryConfig` struct, `WorkspaceConfig` extension, new `WorkspaceResources` struct for workspace-level resource tracking
-- <RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile> — `CURRENT_WORKSPACE_VERSION` bump, migration step
-- <RepoFile path="docs/content/docs/reference/runtime/schema-versions.mdx">docs/content/docs/reference/runtime/schema-versions.mdx</RepoFile> — new timeline entry
-
-## See Also
-
-- [Architecture](/reference/getting-oriented/architecture/) — DinD isolation model, per-role network topology
-- [Schema Versions](/reference/runtime/schema-versions/) — workspace config versioning
-- [Codebase Map](/reference/getting-oriented/codebase-map/) — `DockerApi` trait and `BollardDockerClient` are the typed Docker API layer used for image and registry operations
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — DinD launch path.
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — reconnect path must stay in sync with launch.
+- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> — stop registry when the last workspace instance exits.
+- <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" /> — names for registry container, volume, and shared network.
+- [Architecture](/reference/getting-oriented/architecture/) — DinD isolation model.

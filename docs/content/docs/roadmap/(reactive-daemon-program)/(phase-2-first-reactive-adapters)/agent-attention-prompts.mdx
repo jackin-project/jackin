@@ -7,6 +7,8 @@ title: "Agent Attention Prompts"
 
 ## Problem
 
+The Agent Runtime Status Authority substrate already owns state detection inside Capsule. Attention prompts should consume its effective `blocked` / `done` transitions; remaining work is notifications, escalation timers, click-to-focus, mute/rate-limit policy, and daemon/Desktop adapters.
+
 The biggest hidden cost of running AI coding agents today is **idle wall-clock**. Agents finish work, hit a confirmation prompt, run into an ambiguous decision, or stop on a long-running command and silently wait for the operator to come back to the terminal. The operator, meanwhile, is heads-down on something else — reviewing a PR, in a meeting, on another machine — with no signal that anything wants their attention.
 
 Every minute the agent waits is a minute of compounding throughput loss across however many agents the operator is running in parallel. The point of jackin❯ is to make running many agents safe and convenient; "many agents" is only a real win if the operator can stay in flow and only context-switch when an agent actually needs them.
@@ -42,10 +44,7 @@ The pieces:
 
 - **Agent-state event stream.** `jackin-capsule` emits effective state transitions over the per-container control channel. The daemon subscribes to `blocked`, `done`, `idle`, `working`, and stuck-diagnostic events instead of scraping PTY output from the host.
 - **Optional `jackin-attention` MCP server.** Static binary baked into the construct image. Registered automatically in each agent's MCP config at container launch — extending the registration pattern <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime. When the agent adds attention context, the MCP server pushes metadata over the same per-container control channel. It does not replace the state authority.
-- **The jackin❯ daemon dispatches the host-side notification.** Per the [jackin❯ daemon](/roadmap/jackin-daemon/) plug-in surface, this feature is one adapter that listens for state/attention events from any running container and translates them to OS-native notifications:
-  - macOS — `osascript -e 'display notification …'` or the `UserNotifications` framework via a small Swift helper. Sound escalation via `afplay` / `NSSound`.
-  - Linux — `notify-send` (libnotify) or the org.freedesktop.Notifications D-Bus API. Sound via `paplay` / `aplay`.
-  - Windows — out of scope for the first phase; revisit when jackin❯ supports Windows hosts.
+- **The jackin❯ daemon dispatches the host-side notification.** Per the [jackin❯ daemon](/roadmap/jackin-daemon/) plug-in surface, this feature is one adapter that listens for state/attention events from any running container and translates them to OS-native notifications: - macOS — `osascript -e 'display notification …'` or the `UserNotifications` framework via a small Swift helper. Sound escalation via `afplay` / `NSSound`. - Linux — `notify-send` (libnotify) or the org.freedesktop.Notifications D-Bus API. Sound via `paplay` / `aplay`. - Windows — out of scope for the first phase; revisit when jackin❯ supports Windows hosts.
 - **Click-to-focus adapter.** The notification carries an action that, when activated, runs a host-side command to focus the right terminal tab. The first Desktop slice should implement Ghostty only, matching the [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) v1 launch contract. Other terminal emulators get a notification without click focus until their adapters are deliberately added.
 
 ## Per-workspace / per-role policy

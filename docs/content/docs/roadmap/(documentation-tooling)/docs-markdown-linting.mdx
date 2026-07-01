@@ -12,6 +12,7 @@ The docs site is the operator-facing surface for jackin❯, and the volume of MD
 - the docs build (catches structural breakage — missing imports, malformed frontmatter)
 - lychee (catches broken URLs and anchor fragments after build)
 - <RepoFile path="docs/scripts/check-repo-links.ts">docs/scripts/check-repo-links.ts</RepoFile> (catches code-span references to existing repo files)
+- <RepoFile path="docs/scripts/check-roadmap-sidebar.ts">docs/scripts/check-roadmap-sidebar.ts</RepoFile> / `bun run check:roadmap-sidebar` (catches roadmap MDX pages missing from `meta.json` and stale sidebar entries)
 
 There is no automated check on **mechanical markdown style**: heading hierarchy, code-fence languages, list-marker consistency, trailing whitespace, line-length policy, emphasis-marker mixing, footnote use, and the dozens of small choices that compound into a hand-rolled feel when each page was touched by a different contributor on a different day.
 
@@ -61,13 +62,9 @@ Alternatives considered and rejected:
 A single follow-up PR introducing the linter, the config, the CI step, and the cleanup pass for existing files. Splitting these creates a half-adopted state where the linter exists but does not block anything.
 
 1. **Pin the binary.** Add a SHA-pinned `rvben/rumdl@<sha>` step to <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>, scheduled between `Checkout repository` and `Check source repository links`. The local pre-commit equivalent is `bun run check:md` calling the same binary via `mise`.
-2. **Author a new `docs/.rumdl.toml`.** Start from the default rule set, then disable rules that conflict with Fumadocs conventions:
-   - `MD057` (relative-link existence) — fires on Fumadocs' site-absolute routes (`/guides/mounts/`) which are rendered URLs, not filesystem paths. lychee already covers this.
-   - `MD041` (first-line H1) — Fumadocs renders titles from frontmatter; the first heading in MDX is `##`.
-   - `MD013` (line length) — relax to 120 with `code-blocks = false` and `tables = false`, since prose wraps unhelpfully at narrower widths.
-   - Audit `MD033` (no inline HTML), `MD025` (single H1), and `MD026` (trailing punctuation in headings) once a dry run produces a real violation list.
+2. **Author a new `docs/.rumdl.toml`.** Start from the default rule set, then disable rules that conflict with Fumadocs conventions: - `MD057` (relative-link existence) — fires on Fumadocs' site-absolute routes (`/guides/mounts/`) which are rendered URLs, not filesystem paths. lychee already covers this. - `MD041` (first-line H1) — Fumadocs renders titles from frontmatter; the first heading in MDX is `##`. - `MD013` (line length) — relax to 120 with `code-blocks = false` and `tables = false`, since prose wraps unhelpfully at narrower widths. - Audit `MD033` (no inline HTML), `MD025` (single H1), and `MD026` (trailing punctuation in headings) once a dry run produces a real violation list.
 3. **Cleanup pass.** Run `rumdl check --fix` against `docs/content/docs/`. Audit the diff. Hand-fix anything `--fix` cannot resolve. Land the cleanup, the config, and the CI step in the same PR.
-4. **Branch protection.** Add `docs-link-check` (which now includes the rumdl step) to the required checks list on `main`. Without this, the gate is advisory.
+4. **Docs workflow.** Wire the rumdl step into the existing docs workflow beside `check:repo-links`, `check:roadmap-sidebar`, build, and link checking. Do not assert branch-protection settings from repo files; treat required-check configuration as an operator-side repository setting.
 5. **Renovate.** Confirm the workflow's Renovate rules cover the new `rvben/rumdl@<sha>` pin so version bumps land as PRs rather than stale.
 
 The cleanup pass is the only step with non-trivial diff size. After landing, ongoing cost is whatever rumdl flags on new MDX — typically zero, since contributors fix violations locally before pushing.
@@ -89,7 +86,7 @@ The trade-offs do not change the recommendation. They are real, manageable, and 
 1. **Initial strictness.** Start with default rule set (strict, then disable as needed) or minimal set (loose, then add rules as drift surfaces)? Default-strict is more honest about what mechanical rules buy you; minimal-then-grow is less work upfront but tends to stay minimal.
 2. **Auto-fix in CI.** Should CI ever run `rumdl check --fix` and commit back, or should `--fix` be local-only with CI strictly verifying? Local-only is the safer default; auto-fix in CI risks committing unreviewed changes from agents.
 3. **Scope.** Lint only `docs/content/docs/`, or also repo-root markdown (`README.md`, `CHANGELOG.md`, `AGENTS.md`, `RULES.md`, `TESTING.md`, `PROJECT_STRUCTURE.md`, `DEPRECATED.md`, `CONTRIBUTING.md`)? The repo-root files are read by humans and agents from session start; their style consistency arguably matters more than the docs site.
-4. **Failure mode.** rumdl as a hard merge gate (required check) or as PR annotations only? Hard gate is consistent with `cargo fmt --check` and lychee. Annotations-only weakens the policy to the point where it adds noise without enforcement.
+4. **Failure mode.** rumdl as a hard CI failure in the docs workflow or as PR annotations only? Hard CI failure is consistent with `cargo fmt --check`, repo-link checks, roadmap-sidebar checks, and lychee. Whether that CI job is branch-protected is repository configuration, not something this page can verify.
 
 ## Related Files
 

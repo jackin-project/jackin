@@ -2,40 +2,35 @@
 title: "Per-directory README + AGENTS.md"
 ---
 
-**Status**: Open — Phase 1, no confirmation needed
+**Status**: Open — update orientation files to match the workspace crate split and Rust 2024 self-named module layout
 
 ## Problem
 
-AI coding agents (Claude Code, Copilot, Cursor) load `README.md` automatically when they enter a directory context. Without these files, agents must open source files to get orientation. After the Cargo workspace split, each crate also needs an `AGENTS.md` for crate-specific agent rules.
+AI coding agents load nearby `README.md` and `AGENTS.md` files for orientation. The Cargo workspace split changed the useful orientation unit from the old root `src/` tree to crate directories under `crates/`, and the workspace now forbids `mod.rs` in crates.
+
+This item remains valid, but the target content needs to describe the current crate layout rather than pre-split paths.
 
 ## Target directories
 
-| Directory | README should say |
+| Directory | README or AGENTS.md should say |
 |---|---|
-| `src/` | Top-level module map + entry points (`load_agent`, `run_console`, `validate`). Link to PROJECT_STRUCTURE.md. |
-| `src/runtime/` | Container bootstrap pipeline. Entry: `load_agent()` in `launch.rs`. 4-step sequence. |
-| `src/console/` | Operator console TUI. Entry: `run_console()`. Two subsystems: `tui/` and `services/`. **Note: has 2 production dependencies on `runtime/`** (`register_agent_repo`, `RepoError`). |
-| `src/console/tui/` | Workspace manager TUI. Root-dependent state, input, message/update, and render live under `src/console/tui/`. |
-| `src/console/tui/op_picker/` | Root-dependent 1Password picker adapter until the `operator_env` types move behind generic adapters. |
-| `src/config/` | Configuration loading, persistence, editing. TOML schema, migrations, workspace files. |
-| `src/instance/` | Per-instance state: container identity, auth provisioning, manifests. 5 agent-specific provision functions. |
-| `src/isolation/` | Mount isolation: materialize, finalize, cleanup, state records. |
-| `docs/` | Fumadocs docs site. Public docs live in `content/docs/`. |
+| `crates/` | Workspace-wide Rust rules: self-named modules, tests in `tests.rs`, lint baseline, and dependency hygiene. |
+| `crates/jackin/` | CLI binary crate: command dispatch, app context, command handlers, and root integration tests. |
+| `crates/jackin-runtime/` | Container bootstrap pipeline, instance lifecycle, launch pipeline, DinD sidecar management, isolation, and runtime tests. |
+| `crates/jackin-console/` | Operator console TUI state, input/update, screens, services, and shared console components. |
+| `crates/jackin-config/` | Config loading, persistence, editing, schema versions, and migrations. |
+| `crates/jackin-env/` | Operator environment resolution, 1Password references, picker metadata, and launch diagnostics. |
+| `crates/jackin-capsule/` | In-container capsule PID 1, PTY/session control, attach protocol, and terminal model integration. |
+| `docs/` | Fumadocs docs site. Public docs live in `content/docs/`; route groups in parentheses are organizational only. |
 
-## AGENTS.md per crate (after workspace split)
+## Rules for crate guidance
 
-When the Cargo workspace split creates `crates/jackin-console/`, `crates/jackin-runtime/`, etc., each crate should get its own `AGENTS.md` with crate-specific rules — shorter and more focused than the root `AGENTS.md`. Examples:
+- Keep each orientation file short: entrypoints and invariants, not a second codebase map.
+- Do not create or recommend `mod.rs`; crates use Rust 2024 self-named module files such as `foo.rs` plus `foo/tests.rs`.
+- Point durable source navigation to [Codebase Map](/reference/getting-oriented/codebase-map/) and root <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile>.
 
-- `crates/jackin-core/AGENTS.md` — "this crate has no I/O, no `std::process::Command`; keep it that way"
-- `crates/jackin-console/AGENTS.md` — "no import from `jackin-runtime` except through the 2 approved call sites; this is enforced by Cargo"
-- `crates/jackin-runtime/AGENTS.md` — "all Docker operations go through `CommandRunner`; never shell out directly"
+## Remaining work
 
-## Steps
-
-1. Create `src/README.md` through `docs/README.md` with the content above.
-2. Keep each file under ~20 lines — orientation only, not comprehensive documentation.
-3. After the workspace split, add `AGENTS.md` to each crate directory.
-
-## Caveats
-
-These files are not CI-checked for staleness (that's the CI gate item). They will drift if modules change significantly — the workspace split is a natural opportunity to refresh them.
+1. Audit existing crate-level orientation files for stale root-`src/` language.
+2. Add missing crate-level `README.md` or `AGENTS.md` only where they prevent repeated mis-edits.
+3. Keep the docs-site and repo-root source maps aligned when a crate boundary changes.
