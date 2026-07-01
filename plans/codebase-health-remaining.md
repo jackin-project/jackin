@@ -15,6 +15,13 @@ machine-checked exception ledgers hold nothing:
 
 Then Ledger 3 lands the last threshold notch (fns ≤ 150 lines).
 
+**⚠ ALL WORK LANDS IN PR #664 — one PR, no exceptions.** Every slice below is a **commit on
+branch `refactor/codebase-health-decomposition`** (PR
+[#664](https://github.com/jackin-project/jackin/pull/664), "codebase-health enforcement
+umbrella — all phases"). Do **not** open any other PR or branch for this work. "One slice"
+means one focused, verified, signed commit pushed to #664 — not a separate pull request. The
+whole ledger burn-down ships as this single umbrella PR.
+
 **Verification basis.** Every fact below was checked against the live tree (branch
 `refactor/codebase-health-decomposition`, working tree **dirty** with an in-progress
 test-layout sweep) on 2026-07-01. Line numbers were accurate at investigation time — an
@@ -31,14 +38,16 @@ a production-test edit changed behavior → **stop, back out, report.** (Flatten
 
 ## Executor contract (read once, obey every slice)
 
-1. **One slice = one PR.** Do exactly the slice; do not bundle the next one.
+1. **All work stays in PR #664.** One slice = one **commit** on this branch — never a new
+   branch or PR. Do exactly the slice; do not bundle the next one into the same commit.
 2. **Structure only.** See above. If a step seems to need a production-test edit to pass — stop.
 3. **Run Verify in order; stop on first red.** Never force past a gate.
 4. **Do not guess.** Re-confirm line numbers; if code doesn't match the step, stop and report.
 5. **Conventions:** no `mod.rs`; tests in a sibling `tests.rs`; a `tests.rs` is one **flat**
    file with **no** child `mod` declarations; every crate `[lints] workspace = true`; **no
    wildcard imports** (`clippy::wildcard_imports` denied).
-6. **Commit:** Conventional Commit `refactor(<scope>): <slice>`, sign off (`-s`), push immediately.
+6. **Commit:** Conventional Commit `refactor(<scope>): <slice>`, sign off (`-s`), push
+   immediately to `refactor/codebase-health-decomposition` (PR #664). No local-only commits.
 
 ### Standard Verify (every slice)
 
@@ -355,7 +364,7 @@ Ledger 3  too-many-lines 200 → 150 (after 2B)                 → thresholds a
 - **Biggest grind:** Ledger 2B (13 file splits) — mechanical, one PR each, split-maps above.
 - **Nothing here is blocked.** All 13 splits + 7 test-layout fixes proceed today.
 
-## Per-PR checklist (every slice)
+## Per-slice checklist (every commit — all on PR #664)
 
 - [ ] Scope = exactly one slice; structure-only (no logic / behavior / perf change).
 - [ ] `cargo fmt --check` · clippy `-D warnings` · `cargo nextest run --all-features` green.
@@ -363,4 +372,4 @@ Ledger 3  too-many-lines 200 → 150 (after 2B)                 → thresholds a
 - [ ] `cargo xtask lint` green; refresh the relevant ratchet + prune fixed entries.
 - [ ] Docs synced same PR: `PROJECT_STRUCTURE.md` + Codebase Map + this file's box + roadmap box.
 - [ ] (hot-path slices: image / grid / session) E0 launch/attach benchmark shows no regression.
-- [ ] DCO sign-off (`-s`); push immediately.
+- [ ] DCO sign-off (`-s`); push immediately to PR #664. No new branch, no new PR.
