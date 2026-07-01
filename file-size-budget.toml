@@ -33,7 +33,7 @@ test_cap = 10000
 # — must only ever decrease.
 [[production]]
 path = "crates/jackin-runtime/src/runtime/image.rs"
-lines = 1987
+lines = 1843
 
 [[production]]
 path = "crates/jackin-term/src/grid.rs"
