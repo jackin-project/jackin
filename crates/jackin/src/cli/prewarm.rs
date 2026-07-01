@@ -57,7 +57,7 @@ pub struct PrewarmFlags {
     pub sidecar_container: bool,
     #[arg(long)]
     pub keep_sidecar_container: bool,
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["workspace"])]
     pub all_workspaces: bool,
     #[arg(long)]
     pub all_roles: bool,
