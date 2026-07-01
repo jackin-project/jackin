@@ -36,9 +36,6 @@ path = "crates/jackin-runtime/src/runtime/image.rs"
 lines = 1973
 
 [[production]]
-path = "crates/jackin/src/cli/diagnostics.rs"
-lines = 1964
-
 [[production]]
 path = "crates/jackin-term/src/grid.rs"
 lines = 1908
@@ -96,9 +93,4 @@ lines = 1523
 
 # Grandfathered test files (current line counts; may only decrease):
 [[test]]
-path = "crates/jackin-runtime/src/runtime/launch/tests.rs"
-lines = 8611
-
 [[test]]
-path = "crates/jackin-capsule/src/daemon/tests.rs"
-lines = 7612
