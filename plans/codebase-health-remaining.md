@@ -212,7 +212,7 @@ row's entry.
       `storage.rs` / `scroll.rs` / `modes.rs` / `snapshot.rs` ranges are
       inside the `impl DamageGrid` body and cannot be split without
       breaking Rust's "impl must be complete per type" rule.
-- [ ] **`crates/jackin-capsule/src/session.rs`** (1749 → coord ~714). New `session/` dir.
+- [x] **`crates/jackin-capsule/src/session.rs`** (1749 → 1637). New `session/` dir.
       Extract: `osc_policy.rs` (`OscPolicy`/`osc8_uri_is_safe`/`parse_osc7` + OSC consts
       50–208), `git_types.rs` (`GitContext`/`Oid`/`BranchName`/`PullRequestLookupOutcome`
       357–496), `spawn.rs` (`Session::spawn` 523–777), `terminal_protocol.rs`
