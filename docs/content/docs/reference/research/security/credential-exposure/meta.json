@@ -1,0 +1,10 @@
+{
+  "title": "Credential Exposure",
+  "defaultOpen": false,
+  "pages": [
+    "container-credential-exposure",
+    "credential-source-pattern",
+    "host-bridge-design",
+    "jackin-exec-design"
+  ]
+}

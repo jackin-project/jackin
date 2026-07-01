@@ -1,11 +1,9 @@
 {
-  "title": "Fleet phase 4 — Fleet operations",
+  "title": "Fleet phase 4 \u2014 Fleet operations",
   "defaultOpen": false,
   "pages": [
-    "../../task-source-abstraction",
-    "../../agent-workflow-orchestration",
-    "../../agent-to-agent-collaboration",
-    "../../autonomous-task-queue",
-    "../../idle-runtime-cleanup"
+    "task-source-abstraction",
+    "autonomous-task-queue",
+    "idle-runtime-cleanup"
   ]
 }

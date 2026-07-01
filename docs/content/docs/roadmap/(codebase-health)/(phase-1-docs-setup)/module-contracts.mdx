@@ -1,0 +1,20 @@
+---
+title: "Module contracts (//! docs)"
+---
+
+**Status**: Partially implemented — a prior pass added `//!` blocks to priority files, but a current-tree grep (2026-07-01) still finds ~28 non-test, non-binary production files without a leading `//!`, spread across `crates/jackin` (11), `crates/jackin-capsule` (9), `crates/jackin-runtime` (3), `crates/jackin-env` (2), and one each in `crates/jackin-console`, `crates/jackin-term`, `crates/jackin-tui-lookbook`; `///` item-level docs stay out of scope for this item and belong to the deferred [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/).
+
+## Shipped facts
+
+A prior pass added `//!` orientation blocks to priority production files, following the <RepoFile path="crates/jackin-core/src/env_model.rs">crates/jackin-core/src/env_model.rs</RepoFile> exemplar shape: purpose, scope claim (what the module is NOT responsible for), and key invariants callers can assume. That exemplar still holds today. A per-file checklist is intentionally not kept here — the crate split and self-named module layout make a stale path table more expensive to maintain than a fresh grep.
+
+## Remaining work
+
+1. Re-run coverage with a current-tree grep over `crates/` (the old root `src/` tree no longer exists): find every non-test, non-binary `*.rs` file whose first line is not `//!`, excluding binary entry points (`main.rs`, `bin/role.rs`), Cargo `build.rs` scripts, and test modules (`tests.rs`, `*_tests.rs`, `tests/*.rs`).
+2. For each remaining file, read the first ~50 lines and the public item list, then write a `//!` block: purpose, scope, key invariants — modeled on the `env_model.rs` exemplar.
+3. Do not add `///` item-level docs in this pass; that work is scoped to the [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/) item instead.
+4. Purely additive — no behavior change, no CI risk. Land before the behavioral-spec items in this same phase, since a spec presupposes the module already has a stated contract.
+
+## Related work
+
+- [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/) — owns `///` item-level docs and generated API reference, once module-level contracts are complete.

@@ -1,0 +1,34 @@
+---
+title: "Source Branch Policy for Isolated Mounts"
+---
+
+**Status**: Open — design only, nothing implemented; `MountConfig` has no source-branch field and `worktree`/`clone` materialization always starts from the host repo's current `HEAD`
+
+## Shipped baseline
+
+Per-mount `shared | worktree | clone` isolation is shipped (`MountConfig` in <RepoFile path="crates/jackin-config/src/schema.rs" />), but the isolation type carries no source-branch policy. Worktree materialization resolves the base commit with a plain `git -C <src> rev-parse HEAD` (<RepoFile path="crates/jackin-runtime/src/isolation/materialize.rs" />), so every isolated checkout inherits whatever the host repo happens to have checked out at launch time, including detached HEAD. There is no `--mount-source-branch` CLI flag, no TUI control for it, and no workspace-schema field for it today.
+
+## Remaining work
+
+1. **Workspace schema.** Add `source_branch_policy` (+ `source_branch` for the `named` case) to `MountConfig` in <RepoFile path="crates/jackin-config/src/schema.rs" />, with a versioned migration in <RepoFile path="crates/jackin-config/src/migrations.rs" /> (bump `CURRENT_WORKSPACE_VERSION`, add a migration fixture, re-bake existing `after.toml` fixtures, add a Schema Versions timeline entry).
+2. **Runtime resolution.** In <RepoFile path="crates/jackin-runtime/src/isolation/materialize.rs" />, resolve the policy (`host_head` / `current_branch` / `default` / `named` / `ask`) to a concrete ref before `worktree add` or `clone`, without ever mutating the host checkout (no implicit `switch`/`checkout`/`pull`/`fetch`).
+3. **CLI.** Add `--mount-source-branch <dst>=<policy>[:<branch>]` to `jackin workspace create`/`edit` in <RepoFile path="crates/jackin/src/cli/workspace.rs" />, validated the same way `--mount-isolation` is today.
+4. **Console editor.** Replace the current isolation row-cycling in <RepoFile path="crates/jackin/src/console/tui.rs" /> with a mount settings dialog (source folder, container destination, readonly, isolation, mode-gated source-branch group), plus a named-branch picker and an ask-on-launch prompt reusing the existing launch dialog surface (<RepoFile path="crates/jackin-runtime/src/runtime/progress.rs" />).
+5. **Tests.** Parsing, migration, policy resolution, `worktree`/`clone` materialization, invalid combinations, and TUI state transitions.
+6. **Docs.** Workspaces guide, Mounts guide, workspace command reference, configuration reference, schema versions — once the feature ships.
+
+## Out of scope (for this item)
+
+- Implicit fetch/pull of branch lists — local refs only.
+- Per-role source-branch defaults.
+- Grouped multi-mount ask dialog — one mount at a time.
+- Source-branch policy for `shared`, `tmpfs`, or `ephemeral` modes.
+- Automatic PR-branch discovery as a policy option.
+
+## Related work
+
+- Research: [Source Branch Policy for Isolated Mounts](/reference/research/isolation/source-branch-policy-isolated-mounts/) — full problem framing, product positioning, TUI mockups, data model, and open design questions.
+- [Ephemeral mount modes](/roadmap/ephemeral-mount-modes/) — another sign that isolation is becoming a configurable mount strategy, not a single enum.
+- [Session keep and resume](/roadmap/session-keep-and-resume/) — resume becomes more predictable when every isolated checkout records exactly which branch/commit it started from.
+- [Launch Progress TUI](/roadmap/launch-progress-tui/) — provides the rich launch dialog surface for `Ask on launch`.
+- [Task source abstraction](/roadmap/task-source-abstraction/) — future PR/task flows can reuse this policy once a task carries its own branch source.

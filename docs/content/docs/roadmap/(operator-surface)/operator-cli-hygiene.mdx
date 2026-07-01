@@ -1,0 +1,48 @@
+---
+title: "Operator CLI Hygiene"
+---
+
+**Status**: Partially implemented — `doctor`, preflight, `status`/`ps`, JSON output on core read-only commands, `load --dry-run`, and structured `JackinError` rendering shipped; first-run wizard/onboarding remains deferred
+
+## Shipped facts
+
+The original CLI hygiene proposal has mostly landed. Durable operator docs live on the command/reference pages; this roadmap item now tracks only the remaining onboarding gap.
+
+- [jackin doctor](/commands/doctor/) runs host preflight checks and a lightweight subset now gates Docker-dependent commands before they fail deep in launch.
+- [jackin status](/commands/status/) and `jackin ps` provide fleet overview, workspace instance lists, and instance detail where data is available.
+- `--format json` exists on `status`, `doctor`, `workspace list`, and `workspace show`; `jackin load --dry-run --format json` makes launch plans scriptable.
+- [jackin load](/commands/load/) supports `--dry-run`, resolving the plan without spawning containers.
+- <RepoFile path="crates/jackin/src/error.rs" /> defines structured `JackinError` variants (E001–E016) with remediation hints; top-level rendering downcasts known errors and falls back to full debug detail for unknown failures.
+
+## Remaining work
+
+### First-run wizard / onboarding
+
+Deferred. `jackin console` already has a usable interactive workspace creation flow, and a separate first-run wizard would duplicate it unless the UX answers a clearer onboarding need.
+
+Before implementation, design must answer:
+
+- How should a first-run operator learn the minimum model: workspace, role, agent runtime, auth, and Docker preflight?
+- Should onboarding be a `jackin console` first-run path only, or should a plain CLI path exist for headless/scripted setup?
+- How does onboarding handle monorepos and team-shared workspace definitions without becoming `jackin join` prematurely?
+- How should credential setup choose between host sync, 1Password, and plain env/API-key flows without exposing implementation details?
+
+## Deferred nice-to-haves
+
+- Extend `status` with uptime seconds, CPU%, and memory once the Docker API abstraction exposes those fields.
+- Make `--filter agent=` and Level-0 `--detail` agent counts query running Capsule registries when cheap and available.
+- Decide whether future streaming status should use NDJSON or a repeated JSON envelope.
+- Revisit error-code numbering only if E001–E016 becomes too crowded; do not churn existing codes casually.
+
+## Related files
+
+- <RepoFile path="crates/jackin/src/main.rs" /> — top-level error rendering.
+- <RepoFile path="crates/jackin/src/error.rs" /> — `JackinError` catalogue.
+- <RepoFile path="crates/jackin/src/cli.rs" /> — CLI command definitions.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — launch pipeline and dry-run.
+- <RepoFile path="crates/jackin-runtime/src/runtime/discovery.rs" /> — instance discovery for `status`.
+
+## Cross-references
+
+- [Run Diagnostics](/reference/runtime/diagnostics/) — structured run evidence for operator failures.
+- [jackin join & Debug Export](/roadmap/jackin-join-and-debug-bundle/) — project onboarding and shareable debug bundle research.

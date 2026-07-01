@@ -1,0 +1,35 @@
+---
+title: "Workspace Claude Token Setup"
+---
+
+**Status**: Partially implemented — CLI setup / rotate / revoke / doctor, 1Password write + validation, expiry banner, host-side PTY OAuth-token onboarding, the shared `op_picker` Create mode, the plain-prompt `--interactive` storage-location picker, and the console Auth-tab generate-token action are shipped; canonical `oauth_token` auth slot, Apple Keychain backend, pre-launch validity probe, and bulk migration remain
+
+**Parent**: [Reliable Claude Authentication Strategy](/reference/research/authentication/claude-auth-strategy/)
+
+## Canonical Docs For Shipped Behavior
+
+- [Agent Authentication](/guides/authentication/agents/claude-code/#oauth_token-claude-code-only) — operator-facing Claude OAuth-token mode and setup command.
+- [workspace claude-token](/commands/workspace/#workspace-claude-token) — CLI reference for setup, rotate, revoke, and doctor.
+- [Claude Token Orchestrator](/reference/capsule/token-orchestrator/) — contributor details for PTY capture, 1Password writes, validation, expiry stamps, the `op_picker` Create mode, the CLI `--interactive` picker, the console Auth-tab generate action, and tests.
+
+This roadmap item tracks only remaining work. Shipped orchestrator mechanics live in the standard docs above.
+
+## Shipped facts
+
+`jackin workspace claude-token setup/rotate/revoke/doctor` mint, validate, wire, and inspect a workspace or role's Claude OAuth token end to end, with the token never touching argv and no config write before post-write 1Password validation succeeds. Two interactive storage pickers landed on top of that: the CLI's plain-prompt `--interactive` flow and the console Auth-tab `G` generate action, both routed through a shared `op_picker` Create mode so the operator can pick an existing 1Password item/field or create one in place. See [Claude Token Orchestrator](/reference/capsule/token-orchestrator/) for the full mechanics of both the base orchestrator and the interactive pickers.
+
+## Remaining Work
+
+1. **Canonical auth slot.** Replace the current two-key implementation (`auth_forward = "oauth_token"` plus managed `CLAUDE_CODE_OAUTH_TOKEN` env) with a dedicated `oauth_token` field on the Claude auth config. The launcher should synthesize `CLAUDE_CODE_OAUTH_TOKEN` from that slot.
+
+2. **Pre-launch validity probe.** Add a lightweight validity check or cached doctor result so obviously invalid external rotations surface before Claude returns an API 401 inside the session. The design and implementation home for this probe is [Auth health and operator visibility](/roadmap/auth-health-and-visibility/); this item tracks the Claude-specific integration point.
+
+3. **Apple Keychain backend.** Add a local OS-secret-store source after the cross-cutting [Credential Source Pattern](/roadmap/credential-source-pattern/) lands.
+
+4. **Bulk migration.** Add a `--all` or equivalent workflow for migrating multiple workspaces to Claude OAuth-token mode.
+
+## Related work
+
+- [Auth reliability and convenience program](/roadmap/auth-reliability-program/) — parent auth roadmap.
+- [Auth health and operator visibility](/roadmap/auth-health-and-visibility/) — owns the pre-launch credential-probe design.
+- [Credential Source Pattern](/roadmap/credential-source-pattern/) — cross-cutting prerequisite for the Apple Keychain backend.
