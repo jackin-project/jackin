@@ -76,12 +76,8 @@ path = "crates/jackin-console/src/tui/components/footer_hints.rs"
 lines = 1537
 
 # Integration test files (no `tests.rs` stem) count as production per the
-# file-budget gate. `dind_e2e.rs` is the docker E2E flow; per the worklist
-# R7 note it sits in the 1500–2000L band awaiting decomposition or
-# path-rename.
-[[production]]
-path = "crates/jackin/tests/dind_e2e.rs"
-lines = 1669
+# file-budget gate. `dind_e2e.rs` previously sat in the 1500–2000L band
+# awaiting decomposition (Ledger 2B); it now sits at 382L under the cap.
 
 # Grandfathered test files (current line counts; may only decrease):
 # both `launch/tests.rs` (8611) and `daemon/tests.rs` (7612) sit under the
