@@ -1,0 +1,37 @@
+---
+title: "Workspace Registry Cache"
+---
+
+**Status**: Partially implemented — outer image freshness, prewarm, and capsule image-cache behavior exist; the future DinD inner-registry / zot workspace cache remains open
+
+## Shipped facts
+
+jackin❯ already has image freshness and warming behavior for the outer role/runtime image path. Capsule image-cache behavior also avoids some repeated work across launches. Those shipped paths reduce cold-start pain for the images jackin❯ owns directly.
+
+This page now tracks the remaining, narrower cache gap: images pulled or built **inside each role's DinD sidecar** are still scoped to that sidecar's Docker storage. A stopped/destroyed DinD loses those layers, and sibling role instances in the same workspace do not share inner Docker layers or pushed intermediate images.
+
+## Remaining problem
+
+Roles that run `docker build`, Compose, or Testcontainers inside the container still pull base images repeatedly inside DinD. Built images produced inside one session are not available to a later session or sibling instance unless pushed to an external registry. That is slow, wasteful, and especially painful on metered networks or under Docker Hub limits.
+
+## Proposed remaining design
+
+Add an opt-in workspace-local OCI registry sidecar, likely zot, attached to a workspace-shared network. DinD sidecars in the same workspace use it as their Docker Hub pull-through mirror and as a local push target for intermediate images. The cache is workspace-scoped so unrelated workspaces remain isolated.
+
+Phase 1 should be minimal: Docker Hub pull-through and local push for workspace DinD instances, persistent registry volume, automatic start with the first workspace instance, and stop when the last instance exits. Additional upstream registries, quotas/GC, private-registry auth, and diagnostics can follow later.
+
+## Deferred work
+
+- DinD `daemon.json` / launch integration for additional upstream registries such as `ghcr.io` and `quay.io`.
+- Workspace deletion/prune integration that can remove the registry container and shared network, with volume deletion only by explicit operator choice.
+- Storage quota, scrub/GC, and TTL policies.
+- Optional pull credentials for private upstream registries.
+- `jackin workspace container-registry status` or equivalent diagnostics.
+
+## Related files
+
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — DinD launch path.
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — reconnect path must stay in sync with launch.
+- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> — stop registry when the last workspace instance exits.
+- <RepoFile path="crates/jackin-runtime/src/runtime/naming.rs" /> — names for registry container, volume, and shared network.
+- [Architecture](/reference/getting-oriented/architecture/) — DinD isolation model.

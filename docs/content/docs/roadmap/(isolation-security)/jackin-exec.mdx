@@ -1,0 +1,30 @@
+---
+title: "jackin-exec: Secure Execution Wrapper"
+---
+
+**Status**: Partially implemented — the full mechanism is wired and shipped end to end (config schema, dispatch, picker, host.sock resolution, MCP tool); a security-hardening gap on `host.sock` and one credential-materialization gap remain, and the flow has not had a live smoke pass through `jackin load`.
+
+## Shipped facts
+
+`jackin-exec` is a subcommand of `jackin-capsule`, invoked either as `jackin-exec <command> [args...]` (argv0 dispatch) or `jackin-capsule exec <command>`. The `on_demand` flag on `EnvValue` (`EnvValue::Extended` plus `OpRef.on_demand` in <RepoFile path="crates/jackin-core/src/env_value.rs" />) marks env vars that are never resolved or injected at container launch — <RepoFile path="crates/jackin-env/src/resolve.rs" /> filters them out before `docker run`, and the workspace migration chain carries the schema at `v1alpha8` with fixtures through `from-v1alpha7`. Launch injects `JACKIN_EXEC_BINDINGS` (the on-demand var names, not values) as an always-available env var, which drives both an entrypoint system-prompt block and the `jackin_exec` MCP tool (<RepoFile path="crates/jackin-capsule/src/mcp_server.rs" />, registered from <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> whenever bindings are non-empty).
+
+`Dialog::ExecPicker` is wired end to end in the daemon: an `ExecCommand` control message opens the picker (built from the workspace's on-demand bindings), the reply is deferred while the operator toggles credentials (Space) and confirms (Enter) or cancels (Esc). On confirm, the daemon resolves the selected credentials through `host.sock`, runs the command with them injected on the `CommandBuilder`, redacts the output, and replies `ExecResult`; on cancel or any resolver/spawn error it replies `ExecDenied` and runs nothing — fail-closed at the daemon dispatch path. The picker state machine and selection/confirm dispatch are unit-tested (`crates/jackin-capsule/src/exec/tests.rs`, `crates/jackin-capsule/src/daemon/tests.rs`).
+
+`host.sock` (started by the launch path, bind-mounted to `/jackin/run/host.sock`) enforces an allow-list — it resolves only the operator-*configured* on-demand bindings, never arbitrary refs — but does not yet enforce per-use *approval*: any in-container process that can reach the socket can resolve the configured set directly, bypassing the picker. See [jackin-exec design record](/reference/research/security/credential-exposure/jackin-exec-design/) for the full protocol, type changes, and phased implementation history.
+
+## Remaining work
+
+1. Live smoke of the picker/render/keystroke path through `jackin load` — no integration or e2e coverage exists yet, only unit tests of the state machine.
+2. Harden `host.sock` so a direct in-container caller cannot bypass the picker approval (bind the socket to the daemon via `SO_PEERCRED` or a one-time per-confirm token); superseded once the future jackin❯ daemon replaces this ad-hoc listener.
+3. Temp-file materialization for key-type credentials — write an SSH private key to `/jackin/run/secrets/<uuid>` and set `SSH_KEY_FILE`, deleting after exit. Today an SSH key resolves as a raw `SSH_KEY=<pem>` env var, which `ssh` cannot consume directly.
+
+## Related work
+
+- [jackin-exec design record](/reference/research/security/credential-exposure/jackin-exec-design/) — full protocol, Rust type changes, picker/host.sock design, and implementation-phase history
+- [Agent isolation architecture](/reference/research/security/isolation-architecture/agent-isolation-architecture/) — master architecture doc; jackin-exec is Layer 3
+- [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) — the problem this item solves
+- [jackin❯ daemon](/roadmap/jackin-daemon/) — future: daemon replaces the Phase 1 ad-hoc host.sock listener
+- [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) — future daemon-based credential resolution that retires host.sock
+- [Process-level sandboxing](/reference/research/security/process-sandboxing/process-level-sandboxing/) — complementary — zerobox handles per-operation filesystem/network policy
+- [Apple Container backend](/roadmap/apple-container-backend/) — jackin-exec works on any backend
+- [Session contract and explain mode](/roadmap/session-contract-explain-mode/) — jackin-exec calls and picker selections should appear in session contract output

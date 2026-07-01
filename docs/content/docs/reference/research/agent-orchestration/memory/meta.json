@@ -1,0 +1,7 @@
+{
+  "title": "Memory",
+  "defaultOpen": false,
+  "pages": [
+    "persistent-storage-layer"
+  ]
+}

@@ -1,8 +1,8 @@
 {
-  "title": "Containment — Boundary contract",
+  "title": "Containment \u2014 Boundary contract",
   "defaultOpen": false,
   "pages": [
-    "../../session-contract-explain-mode",
-    "../../stack-integration-contracts"
+    "session-contract-explain-mode",
+    "stack-integration-contracts"
   ]
 }

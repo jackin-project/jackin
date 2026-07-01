@@ -1,0 +1,78 @@
+---
+title: "Task Source Abstraction (Design)"
+---
+
+**Status**: Open — research and design proposal (Phase 4, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Problem
+
+The autonomous queue needs something to dispatch, but hardcoding GitHub issues as the only input would make jackin❯ a single-integration queue instead of a general fleet operations layer. The abstraction should let the queue, workflow runner, `jackin console`, persistence, and reporters treat incoming work uniformly whether it came from a GitHub issue, roadmap page, PR, local spec file, stdin prompt, or later issue-tracker adapter.
+
+## Source evidence
+
+<RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> and <RepoFile path="crates/jackin/src/workspace.rs">crates/jackin/src/workspace.rs</RepoFile> currently expose workspace/config schema but no `task_sources` parsing or workspace task-source assignment. <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile>, <RepoFile path="crates/jackin/src/cli/usage/store.rs">crates/jackin/src/cli/usage/store.rs</RepoFile>, <RepoFile path="crates/jackin-runtime/src/instance.rs">crates/jackin-runtime/src/instance.rs</RepoFile>, and <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile> show the current CLI/runtime/protocol surfaces; source search across those crates found no queue-feed command, workflow-run model, task-source trait, or issue-polling loop. <RepoFile path="crates/jackin-capsule/src/telemetry_store.rs">crates/jackin-capsule/src/telemetry_store.rs</RepoFile> and <RepoFile path="crates/jackin/src/cli/usage/store.rs">crates/jackin/src/cli/usage/store.rs</RepoFile> implement only the `account_usage_snapshots` storage subset, matching the [persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) partial-implementation note. [Agent workflow orchestration](/reference/research/agent-orchestration/workflow-systems/agent-workflow-orchestration/) still names `WorkItemSource` and a durable run ledger as future design, and explicitly says the next low-regret implementation should be run records plus GitHub reporter rather than full automation.
+
+## Recommended shape
+
+Define one small internal `TaskSource` surface for queue intake and one related `WorkItemSource`/workflow adapter surface for foreground workflows. They can share core task identity and policy types without forcing every workflow source to be polled forever.
+
+```rust
+pub trait TaskSource {
+    /// Stable identifier written into queue records and used for deduplication.
+    fn id(&self) -> &str;
+
+    /// Human-readable description for logs and jackin console.
+    fn label(&self) -> &str;
+
+    /// Discover newly available tasks. Idempotent: the queue de-duplicates by Task.id.
+    async fn poll(&mut self) -> Result<Vec<Task>, TaskSourceError>;
+
+    /// Optional completion callback. Default V1 behavior should be no-op.
+    async fn report(&mut self, task: &Task, outcome: &TaskOutcome) -> Result<(), TaskSourceError> { Ok(()) }
+}
+
+pub struct Task {
+    pub id: String,
+    pub source: String,
+    pub kind: TaskKind,
+    pub title: String,
+    pub body: String,
+    pub links: Vec<String>,
+    pub labels: Vec<String>,
+    pub created_at: SystemTime,
+}
+```
+
+Each source should also resolve a `TaskPolicy` so the queue does not smuggle GitHub assumptions into the dispatcher: allowed repositories, base-branch constraints, required/excluded labels, write target, publish mode, credential source, per-repository PR cap, and dedupe key. This policy belongs in the resolved session/run contract because it governs what queued agents may publish and which manual gates apply.
+
+## V1 plan
+
+- Add task identity and policy types behind the future queue/workflow module, not as ad hoc GitHub issue structs.
+- Add the `TaskSource` trait plus two low-risk sources: `github_issues` and `file_glob`. Keep `stdin_pipe` as a CLI feed path if the queue command lands in the same slice; otherwise defer it.
+- Add `[task_sources.<name>]` config parsing and per-workspace source assignment only when the queue exists. Until then, avoid accepting inert config that no runtime reads.
+- Store queued tasks in the future persistent storage layer using Turso/SQLite, alongside the planned workflow/run tables. Do not add a separate queue-only database.
+- Feed task links into the future [Agent tag protocol](/roadmap/agent-tag-protocol/) and GitHub visibility into [GitHub link tracking](/roadmap/github-link-tracking/) once those seams exist.
+- Keep `report()` as a seam in V1, but do not auto-close issues, post comments, or update external trackers until operator gates and reporter semantics are proven.
+
+## Deferred
+
+- Linear, JIRA, Slack, Asana, Notion, and other third-party issue sources.
+- Third-party source crate/plugin packaging.
+- Multi-source priority scheduling. V1 can be FIFO within one assigned source.
+- Source config hot-reload. Restart the queue/daemon session.
+- Automatic external completion reporting. Require explicit operator approval until reporter policy is mature.
+
+## Open design questions
+
+- **Source authentication.** GitHub can reuse the existing credential-forwarding pattern; other trackers should declare credential needs through the [credential source pattern](/roadmap/credential-source-pattern/).
+- **Queue source versus workflow source.** A polled queue source and a one-shot workflow source have overlapping identity needs but different lifecycles. Keep the data model shared, but do not force every workflow input to implement polling.
+- **Task identity stability.** `github:owner/repo#412` is stable; `file_glob:specs/foo.md` should treat path rename as a new task unless V1 adds content-hash tracking.
+- **First durable table owner.** The queue should wait for the persistent storage layer or workflow ledger shape rather than inventing a private schema first.
+
+## Related work
+
+- [Task source abstraction](/roadmap/task-source-abstraction/) — roadmap tracking item
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
+- [Agent workflow orchestration](/reference/research/agent-orchestration/workflow-systems/agent-workflow-orchestration/) — workflow-source and run-ledger direction
+- [Autonomous task queue](/roadmap/autonomous-task-queue/) — primary queue consumer
+- [Persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) — task/run storage home

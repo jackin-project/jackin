@@ -1,0 +1,39 @@
+---
+title: "jackin-remote (run on another machine, attend from laptop)"
+---
+
+**Status**: Open — Phase 5 design proposal; no `jackin-remote` binary, `--remote` global flag, remote host config, SSH bridge, rsync orchestration, or remote handler relay exists yet (Phase 5, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Shipped baseline
+
+jackin❯ is no longer purely single-backend in the schema: host config has `[runtime].default_backend`, workspace config has `[runtime].backend`, launch resolution accepts `docker` and `apple-container`, and instance manifests now carry optional backend resources for non-Docker launches. The default Docker backend still owns the normal role-container plus private DinD lifecycle, and `apple-container` is a local backend path rather than a remote host story.
+
+Credential forwarding is also more capable than the original proposal assumed: each built-in agent has `sync`, `api_key`, and `ignore` modes, Claude Code also has `oauth_token`, and auth mode plus `sync_source_dir` resolve across global, workspace, and workspace-role scopes. This is still launch-time credential provisioning into the selected local backend, not a remote per-invocation credential grant protocol.
+
+The console has local host affordances such as browser URL opening and hyperlinked log output, but there is no typed remote action protocol that lets a remote agent ask the local laptop to open a browser, IDE, or diff viewer.
+
+## Remaining work
+
+1. **Remote binary/subcommand and control channel.** No `jackin-remote` binary or `jackin --remote` command exists in <RepoFile path="crates/jackin/src/cli.rs">crates/jackin/src/cli.rs</RepoFile> today. V1 should use an SSH-based control channel plus rsync-based state sync rather than a custom protocol; see the [design research](/reference/research/agent-orchestration/remote-execution/jackin-remote-design/) for the recommended shape.
+2. **Remote-host config schema.** <RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> has runtime backend selection but no `[remote.<name>]` block; V1 needs named remotes with SSH target, remote `jackin` path, sync interval, explicit sync rules, and an optional install/bootstrap command.
+3. **Console attach and one-off launch against a remote host**, reusing the launch path in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> once it can target a remote-resolved backend instead of only local backends.
+4. **Local handler relay** for `web`, `ide`, and `diff` actions so a remote agent's action dispatches through the local console's handler paths (see <RepoFile path="crates/jackin-console/src/tui/state/update.rs">crates/jackin-console/src/tui/state/update.rs</RepoFile> for the existing local-only browser opening) — depends on [Operator handler system](/roadmap/operator-handler-system/).
+5. **Invocation-scoped credential grants** instead of broad rsync of credential directories or long-lived tokens — owned jointly with [Credential source pattern](/roadmap/credential-source-pattern/).
+6. **Remote status events** surfaced in the local console using the same vocabulary as [Session contract and explain mode](/roadmap/session-contract-explain-mode/).
+
+## Out of scope
+
+- Multi-remote orchestration, queue sharding, or dispatching one queue across multiple hosts.
+- Audio/visual desktop redirection such as `ssh -Y`.
+- Container migration between hosts.
+- A direct gRPC/custom protocol alternative to SSH+rsync for V1.
+- Mobile or web client.
+- Kubernetes-specific scheduling; this item should prepare vocabulary for it, not implement it.
+
+## Related work
+
+- Research: [jackin-remote design research](/reference/research/agent-orchestration/remote-execution/jackin-remote-design/) — multicode inspiration, config/CLI sketches, handler relay design, and open design questions.
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
+- [Operator handler system](/roadmap/operator-handler-system/) — local handler invocation
+- [Credential source pattern](/roadmap/credential-source-pattern/) — local resolution → remote grant model
+- [Session contract and explain mode](/roadmap/session-contract-explain-mode/) — status and boundary vocabulary remote should reuse

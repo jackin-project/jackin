@@ -1,0 +1,25 @@
+---
+title: "Spec-driven workflow: prior art and alternatives"
+---
+
+**Status**: Reference — captures why jackin❯ did not adopt an external spec-driven tool wholesale, and what was mined from each candidate. See [Agent workflow: jackin❯-native spec-driven workflow](/roadmap/agent-workflow-cc-sdd/) for the current state and remaining decisions.
+
+## Problem
+
+jackin❯ needed a repo-committed, docs-first, cross-agent spec workflow. The earlier approach leaned on `obra/superpowers` and external skill-driven spec conventions — version-controlled when used, but outside the Fumadocs site and tied to one plugin stack (Claude-only command surface). The goal was a spec artifact that is first-class, browsable in the docs site, and drivable by every agent runtime jackin❯ supports, not just Claude.
+
+## Decision
+
+jackin❯ did not adopt an external tool wholesale. Instead the roadmap item `.mdx` file itself is the living change-spec: while a change is open it carries `## Problem` / `## Why It Matters` / `## Design` / `## Tasks` sections; on ship it retires into canonical docs, so docs are the archive. No parallel `openspec/` directory and no separate `internal/specs/` tree exist in the repo. Repo-local helper tooling supports the human side of this: the `jackin-dev` helper (<RepoFile path="crates/jackin-dev/src/main.rs" />) drives PR sync/status/env/path/explain workflows. Agent skills can orchestrate the workflow, but durable project rules live in repo docs and PR guidance rather than in an external tool-specific spec directory.
+
+## Prior art mined (not adopted wholesale)
+
+- **`obra/superpowers`** — brainstorming → spec authoring, writing-plans, TDD/debug/review skills. The brainstorming method informed the skill flow that shaped this convention; no superpowers spec tree exists in the current repo.
+- **OpenSpec** — artifact roles (proposal / design / tasks) plus a propose→archive lifecycle discipline. The roles mapped cleanly onto roadmap-item sections (`## Problem`/`## Design`/`## Tasks`), but jackin❯ did not install OpenSpec's `openspec/` directory or its JS CLI — that would duplicate the roadmap + docs site rather than reuse it.
+- **`gotalab/cc-sdd`** — `/spec` `/plan` `/execute` command shape for Claude Code. A candidate wrapper, not adopted; a `.claude/commands/` surface would only ever be one client of the canonical docs-backed spec, and jackin❯ wants every supported agent runtime (not just Claude) to be able to drive the workflow.
+
+## Open design questions
+
+- Whether jackin❯ eventually grows its own spec-driven tool (cc-sdd/OpenSpec-like), or keeps the current skills + roadmap-item model indefinitely.
+- Whether a `plan` skill should exist to mechanically break a roadmap item's `## Design` section into `## Tasks`.
+- How to retire `obra/superpowers`-style external dependencies and migrate any high-value external specs into roadmap or reference pages once the in-repo replacement covers day-to-day needs.

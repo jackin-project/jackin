@@ -1,0 +1,29 @@
+---
+title: "Host Bridge — Secrets and Approved Host Actions"
+---
+
+**Status**: Open — design only, no implementation started; blocked on [jackin❯ daemon](/roadmap/jackin-daemon/) phase 1 shipping first.
+
+## Shipped baseline
+
+Today's in-container affordances cover single-session, container-local needs: `jackin-exec` and MCP execution give agents in-container, session-scoped command access, and the operator credential picker resolves secrets at launch time through the credential-source pattern. None of that is a host bridge — there is no long-running host approval service, durable audit log, cross-session policy, or operator-presence proof for host actions. The [jackin❯ daemon](/roadmap/jackin-daemon/) this item depends on is itself still an open design proposal with no implementation, so this adapter has not started.
+
+## Remaining work
+
+1. Ship [jackin❯ daemon](/roadmap/jackin-daemon/) phase 1 first — this feature is one adapter on top of the daemon's control-socket and lifecycle, and cannot land before it.
+2. MCP server exposing `host.run` only, `always-prompt` policy only (no allowlist/blocklist yet) — the simpler of the two proposed flows.
+3. macOS approval surface via `LocalAuthentication` (TouchID + password fallback).
+4. Linux approval surface via a terminal password prompt (polkit integration deferred past this cut).
+5. Audit log written to `~/.jackin/log/host-bridge.jsonl` with rotation.
+6. `Bridge` tab in the `jackin console` workspace editor (parallel to General / Mounts / Roles / Secrets / Auth): enable/disable per workspace, view recent audit entries.
+7. Deferred past this cut: `secret.request` / `secret.use_in` handle lifecycle, allowlist/blocklist policies, polkit integration, `host.run_capability`, prompt-fatigue debounce, audit-export tooling, Windows support, cross-host reach.
+
+## Related work
+
+- [jackin❯ daemon](/roadmap/jackin-daemon/) — host-side process this feature plugs into; must ship phase 1 before this adapter can.
+- [Live bidirectional auth sync](/roadmap/live-auth-sync/) — sibling daemon adapter, same precedent for per-axis features on top of the daemon.
+- [Agent attention prompts](/roadmap/agent-attention-prompts/) — sibling MCP-server feature using the same auto-registration pattern; both flow through the daemon.
+- [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) — native macOS surface that should eventually show host-bridge approvals and audit entries, with daemon policy/execution staying the source of truth.
+- Research: [Host bridge design — flows, threat model, open questions](/reference/research/security/credential-exposure/host-bridge-design/) — the two-flow design, operator approval surface, threat model, defense-in-depth, and open design questions behind this item.
+- [Container credential exposure — beyond env injection](/reference/research/security/credential-exposure/container-credential-exposure/) — broader trade-off between today's `docker run -e` env injection and the daemon-mediated `secret.request` flow this item proposes.
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — current MCP-registration pattern for `tirith` / `shellfirm`; the bridge MCP server would register through the same code path.
