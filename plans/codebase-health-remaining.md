@@ -587,6 +587,13 @@ crate. Given its size + clear boundary, (a) is the pragmatic default — but it 
 ruling. **Done-when** the decision is recorded on the roadmap; if (b), the move shipped.
 (The other two D7 deferrals — tool overlap, `FakeOpWriter` dedup — are already resolved.)
 
+**Progress (this branch).** Operator ruling recorded 2026-07-01: **(a) keep**. Rationale:
+the 103L `persist.rs` is bounded fs::write + atomic rename + filename validation with a
+tight docstring; spinning up an L2 adapter for ~100L adds crate + dep wiring + arch-gate
++ PROJECT_STRUCTURE churn without observable navigability gain. The IO seam stays where it
+lives, documented as a deliberate boundary in the schema crate rather than an L2 split.
+No code change; roadmap box ticked.
+
 ---
 
 ## R11 — Doc & bookkeeping cleanup
