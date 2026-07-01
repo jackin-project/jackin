@@ -37,7 +37,7 @@ lines = 1987
 
 [[production]]
 path = "crates/jackin-term/src/grid.rs"
-lines = 1908
+lines = 1744
 
 [[production]]
 path = "crates/jackin-console/src/tui/screens/editor/model.rs"

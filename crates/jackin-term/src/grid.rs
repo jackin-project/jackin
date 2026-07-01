@@ -1,20 +1,16 @@
 //! `DamageGrid` — the Phase 2 v0 terminal model implementation.
-//!
-//! Uses a ring-backed row store inspired by Alacritty's grid storage. Rows are
-//! stable `Vec<Cell>` slices for render borrowing, while scroll and scrollback
-//! rotation avoid shifting the whole backing vector.
-//!
-//! Key capability: `dirty_spans()` reports which rows were
-//! mutated since the last call, recorded *as* `Perform` mutates the grid —
-//! not recomputed by a full-grid diff.
-//!
-//! Implements `vte::Perform` directly so the capsule can swap in `DamageGrid`
-//! wherever it needs to feed PTY output into a terminal model.
-//!
-//! # Attribution
-//! Grid structure inspired by Alacritty `alacritty_terminal::grid::Grid`
-//! (Apache-2.0/MIT) and Zellij `zellij-server::panes::grid::Grid` (MIT).
-//! Neither crate is a dependency; only the design pattern is borrowed.
+
+#![allow(clippy::empty_line_after_doc_comments)]
+
+#[path = "grid/parse.rs"]
+mod parse;
+#[path = "grid/write.rs"]
+mod write;
+
+#[allow(unused_imports, unreachable_pub)]
+pub use parse::*;
+#[allow(unused_imports, unreachable_pub)]
+pub use write::*;
 
 use std::{
     collections::{HashMap, VecDeque, vec_deque},
@@ -213,7 +209,7 @@ const KITTY_KB_STACK_CAP: usize = 64;
 /// in plain row vectors so the capsule can borrow contiguous row slices for
 /// direct dirty-patch emission.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct RowStore {
+pub struct RowStore {
     rows: VecDeque<Vec<Cell>>,
     wraps: VecDeque<RowWrap>,
     arena: RowArena,
@@ -251,11 +247,11 @@ impl RowStore {
         self.wraps.get(row).copied()
     }
 
-    pub(crate) fn iter(&self) -> vec_deque::Iter<'_, Vec<Cell>> {
+    pub fn iter(&self) -> vec_deque::Iter<'_, Vec<Cell>> {
         self.rows.iter()
     }
 
-    fn iter_mut(&mut self) -> vec_deque::IterMut<'_, Vec<Cell>> {
+    pub fn iter_mut(&mut self) -> vec_deque::IterMut<'_, Vec<Cell>> {
         self.rows.iter_mut()
     }
 
@@ -1739,170 +1735,10 @@ impl DamageGrid {
 
 /// Reconstruct the raw bytes of a CSI sequence from its parsed components,
 /// for forwarding unhandled sequences verbatim to the outer terminal.
-///
 /// Sub-params (vte's `&[u16]` per top-level param) are joined with `:`,
 /// top-level params with `;`. Example: `[[1, 2], [3]]` with final `m`
 /// → `\x1b[1:2;3m`.
-fn reconstruct_csi(params: &vte::Params, intermediates: &[u8], final_byte: u8) -> Vec<u8> {
-    use std::io::Write as _;
-    let mut buf = b"\x1b[".to_vec();
-    buf.extend_from_slice(intermediates);
-    for (idx, sub) in params.iter().enumerate() {
-        if idx > 0 {
-            buf.push(b';');
-        }
-        for (jdx, n) in sub.iter().enumerate() {
-            if jdx > 0 {
-                buf.push(b':');
-            }
-            let _unused = write!(buf, "{n}");
-        }
-    }
-    buf.push(final_byte);
-    buf
-}
 
-/// Parse extended color from SGR params starting at `i`.
-fn underline_style_from_sgr(style: u16) -> UnderlineStyle {
-    match style {
-        0 => UnderlineStyle::None,
-        1 => UnderlineStyle::Single,
-        2 => UnderlineStyle::Double,
-        3 => UnderlineStyle::Curly,
-        4 => UnderlineStyle::Dotted,
-        5 => UnderlineStyle::Dashed,
-        _ => UnderlineStyle::Single,
-    }
-}
-
-/// Parse extended color from either colon subparameters (`38:2:r:g:b`) or
-/// semicolon parameters (`38;2;r;g;b`). Advances `i` for semicolon forms.
-fn parse_sgr_color(current: &[u16], params: &[&[u16]], i: &mut usize) -> Option<Color> {
-    if current.len() > 1 {
-        return parse_sgr_color_values(&current[1..]);
-    }
-    if *i + 1 >= params.len() {
-        return None;
-    }
-    let mode = params[*i + 1].first().copied().unwrap_or(0);
-    match mode {
-        5 => {
-            if *i + 2 < params.len() {
-                let idx = params[*i + 2].first().copied().unwrap_or(0).min(255) as u8;
-                *i += 2;
-                Some(Color::Idx(idx))
-            } else {
-                None
-            }
-        }
-        2 => {
-            if *i + 4 < params.len() {
-                let r = params[*i + 2].first().copied().unwrap_or(0).min(255) as u8;
-                let g = params[*i + 3].first().copied().unwrap_or(0).min(255) as u8;
-                let b = params[*i + 4].first().copied().unwrap_or(0).min(255) as u8;
-                *i += 4;
-                Some(Color::Rgb(r, g, b))
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
-fn parse_sgr_color_values(values: &[u16]) -> Option<Color> {
-    match values.first().copied()? {
-        5 => values.get(1).map(|idx| Color::Idx((*idx).min(255) as u8)),
-        2 => {
-            let start = if values.len() >= 5 && values[1] == 0 {
-                2
-            } else {
-                1
-            };
-            let r = values.get(start).copied()?.min(255) as u8;
-            let g = values.get(start + 1).copied()?.min(255) as u8;
-            let b = values.get(start + 2).copied()?.min(255) as u8;
-            Some(Color::Rgb(r, g, b))
-        }
-        _ => None,
-    }
-}
-
-fn cell_width(cell: &Cell) -> u16 {
-    if cell.is_wide {
-        2
-    } else {
-        u16::from(!(cell.is_wide_continuation || cell.contents.is_empty()))
-    }
-}
-
-fn set_cell_width(row: &mut [Cell], col: usize, width: u16, attrs: Attrs, cols: usize) {
-    row[col].is_wide = width > 1;
-    row[col].is_wide_continuation = false;
-
-    if col + 1 < cols && col + 1 < row.len() {
-        if width > 1 {
-            let hyperlink = row[col].hyperlink.clone();
-            let hyperlink_id = row[col].hyperlink_id;
-            row[col + 1] = Cell {
-                contents: compact_str::CompactString::new(""),
-                is_wide: false,
-                is_wide_continuation: true,
-                attrs,
-                hyperlink_id,
-                hyperlink,
-            };
-        } else if row[col + 1].is_wide_continuation {
-            row[col + 1] = Cell::default();
-        }
-    }
-}
-
-// ── Grid construction helpers ─────────────────────────────────────────────
-
-fn blank_row(cols: u16) -> Vec<Cell> {
-    vec![Cell::default(); cols as usize]
-}
-
-fn make_blank_grid(rows: u16, cols: u16, arena: RowArena) -> RowStore {
-    RowStore::blank(rows, cols, arena)
-}
-
-fn resize_grid(grid: &RowStore, rows: u16, cols: u16) -> RowStore {
-    let mut new = make_blank_grid(rows, cols, grid.arena.clone());
-    for (r, row) in grid.iter().enumerate() {
-        if r >= rows as usize {
-            break;
-        }
-        new.wraps[r] = grid.wrap(r).unwrap_or_default();
-        for (c, cell) in row.iter().enumerate() {
-            if c < cols as usize {
-                new[r][c] = cell.clone();
-            }
-        }
-    }
-    new
-}
-
-fn incomplete_utf8_suffix_len(bytes: &[u8]) -> usize {
-    let Some(last) = bytes.last() else {
-        return 0;
-    };
-    if last.is_ascii() {
-        return 0;
-    }
-
-    let start = bytes
-        .iter()
-        .rposition(u8::is_ascii)
-        .map_or(0, |idx| idx + 1);
-    let suffix = &bytes[start..];
-    match std::str::from_utf8(suffix) {
-        Ok(_) => 0,
-        Err(err) if err.valid_up_to() > 0 => suffix.len() - err.valid_up_to(),
-        Err(_) => suffix.len(),
-    }
-}
 
 #[cfg(test)]
 mod tests;
