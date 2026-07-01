@@ -52,7 +52,7 @@ tempfile = "3.20"
 nix = { version = "0.31", features = ["user"] }
 
 [dev-dependencies]
-jackin-tui = { path = "../jackin-tui" }
+jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 criterion = { version = "=0.8.2", features = ["html_reports"] }
 tokio = { version = "=1.52.3", features = ["test-util"] }
 
