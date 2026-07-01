@@ -70,6 +70,10 @@ fn write_indexed_manifest(paths: &JackinPaths, manifest: &InstanceManifest) {
     InstanceIndex::update_manifest(&paths.data_dir, manifest).unwrap();
 }
 
+fn local_role_base_for_test(selector: &RoleSelector, head_sha: Option<&str>) -> String {
+    crate::runtime::naming::role_base_image_name(selector, None, head_sha)
+}
+
 #[test]
 fn docker_build_failure_cli_error_includes_copyable_artifacts_table() {
     let temp = tempdir().unwrap();
@@ -3403,13 +3407,14 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
     crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
     let image = crate::runtime::naming::image_name(&selector, Some("abc123"));
+    let local_base = local_role_base_for_test(&selector, Some("abc123"));
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
         agent,
         Some("abc123"),
         None,
-        None,
+        Some(local_base.as_str()),
         "0",
     );
     #[cfg(unix)]
@@ -3501,13 +3506,14 @@ plugins = []
     .unwrap();
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
     let image = crate::runtime::naming::image_name(&selector, Some("abc123"));
+    let local_base = local_role_base_for_test(&selector, Some("abc123"));
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
         agent,
         Some("abc123"),
         None,
-        None,
+        Some(local_base.as_str()),
         "0",
     );
     let docker = crate::runtime::test_support::FakeDockerClient::default();
@@ -4678,13 +4684,14 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);
     let image = crate::runtime::naming::image_name(&selector, None);
+    let local_base = local_role_base_for_test(&selector, Some("abc123"));
     let labels = crate::runtime::image::image_recipe_label_map_for_test(
         &cached_repo,
         &validated_repo,
         agent,
         Some("abc123"),
         None,
-        None,
+        Some(local_base.as_str()),
         "0",
     );
     let docker = crate::runtime::test_support::FakeDockerClient {
