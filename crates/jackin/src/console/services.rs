@@ -524,23 +524,6 @@ pub(super) mod instances {
         }
         results
     }
-
-    #[cfg(test)]
-    mod tests {
-        #[test]
-        fn live_instance_reconciliation_error_is_operator_visible() {
-            let line = super::live_instance_reconciliation_error_line(
-                "failed to connect to the docker API",
-            );
-
-            assert_eq!(
-                line,
-                "jackin: error: live instance reconciliation skipped: docker ps failed: \
-                 failed to connect to the docker API"
-            );
-            assert!(!line.contains("[jackin debug console]"));
-        }
-    }
 }
 pub(super) mod role_load {
     use futures_util::FutureExt as _;

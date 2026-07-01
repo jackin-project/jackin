@@ -2,32 +2,12 @@
 # The gate (`cargo xtask lint tests`) fails on any violation NOT listed here.
 # Delete an entry when its file is fixed; the list may only shrink.
 files = [
-    "crates/jackin-capsule/src/clipboard.rs",
-    "crates/jackin-capsule/src/container_context.rs",
-    "crates/jackin-capsule/src/daemon/file_export.rs",
-    "crates/jackin-capsule/src/main.rs",
-    "crates/jackin-capsule/src/pr_context.rs",
-    "crates/jackin-capsule/src/tui/components/dialog_widgets.rs",
     "crates/jackin-capsule/src/tui/selection/tests.rs",
-    "crates/jackin-console/src/tui/components/file_browser.rs",
     "crates/jackin-console/src/tui/console/tests.rs",
     "crates/jackin-console/src/tui/input.rs",
     "crates/jackin-console/src/tui/op_picker/tests.rs",
-    "crates/jackin-console/src/tui/screens/editor/model.rs",
-    "crates/jackin-console/src/tui/screens/settings/model.rs",
-    "crates/jackin-console/src/tui/screens/workspaces/model.rs",
     "crates/jackin-console/src/tui/screens/workspaces/view/list/tests.rs",
-    "crates/jackin-env/src/resolve.rs",
-    "crates/jackin-launch-tui/src/tui/view.rs",
     "crates/jackin-instance/src/auth/tests.rs",
-    "crates/jackin-runtime/src/runtime/drift.rs",
-    "crates/jackin-runtime/src/runtime/identity.rs",
-    "crates/jackin-runtime/src/runtime/launch/launch_dind.rs",
-    "crates/jackin-runtime/src/runtime/shared_runner.rs",
-    "crates/jackin/src/cli/diagnostics.rs",
-    "crates/jackin/src/cli/prewarm.rs",
-    "crates/jackin/src/console/effects.rs",
-    "crates/jackin/src/console/services.rs",
     "crates/jackin/src/console/tui.rs",
 ]
 
