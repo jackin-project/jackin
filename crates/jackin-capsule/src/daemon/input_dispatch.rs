@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] 
 //! Input dispatch methods for the Multiplexer.
 
 use std::sync::Arc;

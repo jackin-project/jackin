@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] 
 //! Role-repo resolution: clone or update from git, validate, cache under `~/.jackin/roles/`.
 //!
 //! Typed errors (`RepoError`) allow callers to downcast and produce

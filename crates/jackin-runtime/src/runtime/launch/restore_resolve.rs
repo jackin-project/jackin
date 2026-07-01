@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)] 
 //! Restore candidate resolution logic extracted from the launch coordinator
 //! (the ~508L cluster of resolve_* fns + Restore* types). All public items
 //! re-exported from the parent launch coordinator to preserve `super::` call
