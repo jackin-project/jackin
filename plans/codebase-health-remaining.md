@@ -223,7 +223,7 @@ row's entry.
       920–1073), `commands.rs` (`build_agent_command`/`build_shell_command`/
       `validate_agent_slug`/… 1625–1746). Stays: `Session` struct, scrollback/render/input/
       lifecycle methods (~714L). **Hazard:** hot path (attach) — E0 bench after.
-- [ ] **`crates/jackin-console/src/tui/screens/settings/update.rs`** (1727 → coord ~250).
+- [x] **`crates/jackin-console/src/tui/screens/settings/update.rs`** (1727 → 1383).
       Extract under `settings/update/`: `key_plans.rs` (the `Settings*KeyPlan` enums + `*key_plan`
       fns 43–282), `global_mount_plans.rs` (`GlobalMount*` plans + fns 484–952),
       `env_plans.rs` (`SettingsEnv*PickerCommitPlan`/`role_picker_*` 950–1071),
