@@ -1,7 +1,7 @@
 //! Hover-state update helpers: container-info hover, file-browser
 //! pointer position, list-row hover targets.
 
-use super::*;
+use super::{ManagerState, MouseEvent, Rect, Modal, ManagerEffect, FileBrowserState, ManagerStage, apply_workspace_list_hover_target, editor_mount_hover_target_at_position, editor_scroll_area, settings_trust_hover_target_at_position, ManagerListRow, split_seam_column, workspace_list_hover_row_at_position};
 
 pub fn try_copy_container_info_value(
     state: &mut ManagerState<'_>,

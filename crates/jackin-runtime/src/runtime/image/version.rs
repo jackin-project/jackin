@@ -1,5 +1,5 @@
 //! Image version helpers extracted from image.rs.
-use super::*;
+use super::{HashMap, LABEL_IMAGE_ROLE_GIT_SHA, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, JackinPaths, Agent, CommandRunner, version_check, PreparedRuntimeBinaries, AgentInstall};
 
 pub fn local_role_base_labels_match(
     labels: &HashMap<String, String>,

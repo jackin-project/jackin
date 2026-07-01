@@ -1,7 +1,7 @@
 //! Scroll-bar drag handlers: drag the horizontal scrollbar of the
 //! long-content body and the vertical scrollbar of the focused panel.
 
-use super::*;
+use super::{ManagerState, MouseEvent, Rect, ManagerStage, list_scroll_areas, apply_scrollbar_drag, ScrollbarAxis, workspace_list_scroll_focus_plan, EditorTab, editor_scroll_area, editor_scroll_focus_plan, settings_modal_open, SettingsTab, SCREEN_HEADER_HEIGHT, TAB_STRIP_HEIGHT, LIST_FOOTER_HEIGHT, MountScrollFocus};
 
 pub fn try_drag_horizontal_scrollbar(
     state: &mut ManagerState<'_>,

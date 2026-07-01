@@ -2,7 +2,7 @@
 //! currently-open modal's body (file browser, picker, settings env/auth
 //! tabs).
 
-use super::*;
+use super::{ManagerState, MouseEvent, Rect, MouseEventKind, MOUSE_VERTICAL_SCROLL_STEP, ManagerStage, Modal, modal_rects, ModalRectMode, GlobalMountModal, SettingsAuthModal, FileBrowserState, point_in_rect, ListModalScrollTarget, SharedModalScrollTarget, GlobalMountModalScrollTarget, scroll_selection_at_position, SettingsEnvModalScrollTarget, SettingsAuthModalScrollTarget};
 
 pub fn try_scroll_file_browser_modal(
     state: &mut ManagerState<'_>,
