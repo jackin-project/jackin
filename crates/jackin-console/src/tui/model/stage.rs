@@ -58,9 +58,13 @@ pub enum ConsoleInputDispatchPlan {
     Stage(ConsoleManagerStageRoute),
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Twelve orthogonal console-modal-open flags (list_modal, inline \
+              pickers, editor_modal, settings pickers, create_prelude_modal) — \
+              each is an independent picker-open signal the input dispatch \
+              planner reads individually to pick the right dispatch arm. \
+              Named-field reads match the per-modal dispatch routing idiom."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConsoleInputDispatchFacts {
@@ -79,9 +83,13 @@ pub struct ConsoleInputDispatchFacts {
     pub stage_route: ConsoleManagerStageRoute,
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Seven orthogonal stage-modal-open flags (editor_modal, settings \
+              pickers, create_prelude_modal, destructive_confirm) — each is an \
+              independent picker-open signal the stage-modal resolver reads to \
+              build the visible stage modal set. Named-field reads match the \
+              per-picker stage-modal routing idiom."
 )]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ConsoleStageModalFacts {

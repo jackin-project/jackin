@@ -21,9 +21,12 @@ pub enum Color {
 
 /// Cell attributes (a subset of SGR properties the capsule reads).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Standard CSI SGR boolean attribute set (bold, italic, inverse, dim, \
+              strikethrough, slow_blink, rapid_blink, conceal, overline) — nine \
+              orthogonal text-attribute bits the cell writer sets/clears per \
+              glyph. Named-field reads match the per-bit SGR bit-set idiom."
 )]
 pub struct Attrs {
     pub foreground: Color,

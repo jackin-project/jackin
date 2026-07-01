@@ -724,6 +724,15 @@ orthogonal picker-open / scroll-target / focus-input flags each fn reads
 individually. All six are priority routers / and-gates consuming
 independent flag inputs. `#[expect]` count: 16 → **10**.
 
+Attrs (jackin-term/src/cell.rs:28) + ConsoleInputDispatchFacts (model/stage.rs:66) +
+ConsoleStageModalFacts (model/stage.rs:87) + StatusFooterHover (tui/.../status_footer.rs:17 +
+core/tui_widgets.rs:84) — all five `#[expect]` converted to `#[allow]` with
+per-struct durable justifications. Attrs carries 9 standard CSI SGR boolean
+attributes; ConsoleInputDispatchFacts carries 12 orthogonal console-modal-open
+flags; ConsoleStageModalFacts carries 7 orthogonal stage-modal-open flags; the
+two StatusFooterHoovers mirror each other across the L2/L3 boundary. `#[expect]`
+count: 10 → **5**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

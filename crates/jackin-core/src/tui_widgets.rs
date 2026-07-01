@@ -76,9 +76,13 @@ impl DialogBodyScroll {
 }
 
 /// Status-footer hover state.
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement W2; bit-field mirrors the L3 status-footer layout"
+    reason = "Four orthogonal status-footer hover flags (left, usage, right, \
+              right_debug) — the L2 bit-field mirror of the L3 \
+              `jackin_tui::StatusFooterHover` struct consumed individually by the \
+              capsule status-footer renderer. Named-field reads match the per- \
+              segment hover-rendering idiom."
 )]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StatusFooterHover {
