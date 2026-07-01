@@ -126,12 +126,12 @@ impl Multiplexer {
     /// before they opened that tab, not to the next-tab-to-the-right
     /// (which feels like a stack push).
     #[allow(
-    clippy::excessive_nesting,
-    reason = "Session-removal fn: per-tab reflow with nested drag/selection \
+        clippy::excessive_nesting,
+        reason = "Session-removal fn: per-tab reflow with nested drag/selection \
               cancellation + tab-index clamping. The nesting is the per-tab \
               reflow protocol."
-)]
-pub(super) fn remove_exited_session(&mut self, session_id: u64) {
+    )]
+    pub(super) fn remove_exited_session(&mut self, session_id: u64) {
         crate::clog!("action: remove_exited_session id={session_id}");
         // Any in-flight selection / drag-resize was anchored to a
         // pane that may be about to disappear (or whose siblings

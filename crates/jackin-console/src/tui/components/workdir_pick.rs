@@ -32,12 +32,12 @@ impl WorkdirPickState {
     /// on macOS or `/home` on Linux) as workdir choices — they're never
     /// useful targets for a workspace workdir.
     #[allow(
-    clippy::excessive_nesting,
-    reason = "Workdir-picker choice builder: per-mount + per-ancestor nested \
+        clippy::excessive_nesting,
+        reason = "Workdir-picker choice builder: per-mount + per-ancestor nested \
               loop with `if seen.insert` dedup + `match` on label type. The \
               nesting is the per-ancestor dedup protocol."
-)]
-pub fn from_mounts<M: WorkdirMount>(mounts: &[M]) -> Self {
+    )]
+    pub fn from_mounts<M: WorkdirMount>(mounts: &[M]) -> Self {
         let home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
         let home_str = home.as_ref().map(|p| p.display().to_string());
         let home_parent_str = home

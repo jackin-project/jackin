@@ -179,11 +179,11 @@ where
               the per-event-arm richness, not actual algorithmic complexity."
 )]
 #[allow(
-        clippy::excessive_nesting,
-        reason = "Same justification as the too_many_lines allow on this fn: per- \
+    clippy::excessive_nesting,
+    reason = "Same justification as the too_many_lines allow on this fn: per- \
                   stage / per-event-arm nested dispatch. The nesting is the \
                   per-stage console event-loop protocol."
-    )]
+)]
 pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     mut config: AppConfig,
     paths: &JackinPaths,

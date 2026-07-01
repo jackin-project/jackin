@@ -201,11 +201,7 @@ fn workspace_instance_pane_wraps_content_and_focus() {
 
 #[test]
 fn workspace_list_display_helpers_own_visible_defaults() {
-    let current = current_directory_display_row(
-        Disclosure::for_instances(true, true),
-        true,
-        false,
-    );
+    let current = current_directory_display_row(Disclosure::for_instances(true, true), true, false);
     assert_eq!(current.label, "Current directory");
     assert_eq!(current.disclosure, Disclosure::Expanded);
     assert!(current.selected);

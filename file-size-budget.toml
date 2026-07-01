@@ -81,7 +81,7 @@ lines = 1537
 
 [[production]]
 path = "crates/jackin-capsule/src/tui/components/dialog_widgets.rs"
-lines = 1516
+lines = 716
 
 # Integration test files (no `tests.rs` stem) count as production per the
 # file-budget gate. Both are docker E2E flows; per the worklist R7 note

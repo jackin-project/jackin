@@ -347,13 +347,13 @@ impl PaneTree {
     /// is rejected up front because `f32::clamp` on NaN returns NaN —
     /// a NaN ratio cast as `u16` collapses one child of the split.
     #[allow(
-    clippy::excessive_nesting,
-    reason = "Pane-tree resize walker: nested `if crosses_this` + signed- \
+        clippy::excessive_nesting,
+        reason = "Pane-tree resize walker: nested `if crosses_this` + signed- \
               delta computation + recursive parent + sibling + border-crossing \
               state-machine branches. The nesting is the per-pane resize \
               propagation protocol."
-)]
-pub fn resize(&mut self, leaf_id: u64, dir: Direction, delta: f32) -> bool {
+    )]
+    pub fn resize(&mut self, leaf_id: u64, dir: Direction, delta: f32) -> bool {
         if !delta.is_finite() {
             return false;
         }

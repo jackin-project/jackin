@@ -514,12 +514,12 @@ impl Session {
                   update branches are the per-stage error-reporting protocol."
     )]
     #[allow(
-    clippy::too_many_lines,
-    reason = "Same justification as the too_many_lines + excessive_nesting \
+        clippy::too_many_lines,
+        reason = "Same justification as the too_many_lines + excessive_nesting \
               allows: session spawn wires PTY + child handle + agent + env into \
               the multiplexer state. Inline shape preserves captured-runtime \
               state across the per-stage error-reporting branches."
-)]
+    )]
     pub fn spawn(
         label: impl Into<String>,
         agent: Option<String>,
