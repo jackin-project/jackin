@@ -279,7 +279,7 @@ subdir are modules included via `mod X;` (resolves to `tests/<name>/X.rs`) — *
 The gate still counts each submodule `.rs` as production, so keep every one < 1500 (all land
 < 500). Keep the top file as the crate root; move helper/fixture/test blocks into submodules.
 
-- [ ] **`crates/jackin/tests/dind_e2e.rs`** (1669 → top ~300). Add `mod common; mod pty_runner;
+- [x] **`crates/jackin/tests/dind_e2e.rs`** (1669 → 382). Add `mod common; mod pty_runner;
       mod transcript; mod diagnostics; mod fixtures; mod util;` and move: `common.rs`
       (prereq/docker checks, serial lock 456–591), `pty_runner.rs` (the PTY runner family +
       `Pty*` structs 593–1002), `transcript.rs` (pipe/transcript helpers 1004–1063),
