@@ -2,10 +2,11 @@
 //! Ledger 2 decomposition). Behavior-preserving: the impls moved as a group so
 //! their cross-block method calls stay co-located; `model.rs` re-exports keep
 //! every call site stable.
-#[expect(
-    clippy::wildcard_imports,
-    reason = "editor/model decomposition slice — explicit imports to be refined in a follow-up"
-)]
+// `wildcard_imports` fires on `use super::*` in the lib build but not in the
+// test build (clippy heuristic), so `#[expect]` (which must always fire) is
+// wrong here; `#[allow]` suppresses where it fires and no-ops where it doesn't.
+// Explicit name list is a tracked follow-up.
+#[allow(clippy::wildcard_imports)]
 use super::*;
 use jackin_config::WorkspaceConfig;
 use jackin_tui::components::FocusOwner;
