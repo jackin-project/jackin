@@ -690,6 +690,14 @@ progress active, shell integration, visible blocker/idle/working, root agent,
 stale report). All consumed individually by the watchdog + arbitrators.
 `#[expect]` count: 24 → **22**.
 
+AgentStatusReport (jackin-protocol/src/agent_status.rs:63) — converted
+`#[expect]` to `#[allow]` with durable justification. The serialized
+status-report wire format carries 6 orthogonal arbitrated-state flags
+(visible blocker/idle/working, process exited, foreground returned to
+shell, stale report). Each is an independent observable the host console
+consumes individually. Named-field reads match the per-signal wire-payload
+idiom. `#[expect]` count: 22 → **21**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
