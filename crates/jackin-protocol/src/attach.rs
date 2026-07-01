@@ -162,9 +162,14 @@ pub struct ClientTerminal {
 /// `session::OscPolicy` and the terminal profile, not these flags. They are the
 /// forward contract for capability-driven downsampling (deferred per roadmap).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Orthogonal terminal capability flags (pointer_shapes, truecolor, \
+              synchronized_output, osc8_hyperlinks, underline_style) — each is an \
+              independent feature bit resolved from the TERM / TERM_PROGRAM / \
+              COLORTERM / capability overrides, consumed individually by downstream \
+              capability gates. Bundling into bitflags would lose naming at the read \
+              site without changing observable behavior."
 )]
 pub struct AttachCapabilities {
     pub pointer_shapes: bool,
@@ -177,9 +182,13 @@ pub struct AttachCapabilities {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Per-capability source-of-truth flags (handshake_identity, terminfo_name, \
+              safe_color_probe, user_override, denylist) — each is an independent \
+              provenance bit that the operator inspects to understand why a capability \
+              resolved the way it did. Named-field reads are clearer than bit-position \
+              lookups in capability-debug output."
 )]
 pub struct AttachCapabilitySources {
     pub handshake_identity: bool,

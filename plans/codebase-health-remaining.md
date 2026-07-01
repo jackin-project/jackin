@@ -578,6 +578,15 @@ attribute set is the bundle. Read sites migrated in `From<&Cell>` impl,
 `pane.rs`'s `PaneCell for SnapCell` impl. `SnapCell` keeps 2 non-attribute
 bools (under threshold). `#[expect]` count: 50 → **49**.
 
+AttachCapabilities + AttachCapabilitySources (jackin-protocol/src/attach.rs:169/184) —
+converted `#[expect]` to `#[allow]` with durable justifications. The first struct holds
+5 orthogonal terminal capability flags resolved from TERM / TERM_PROGRAM / COLORTERM /
+capability overrides, consumed individually by downstream capability gates. The second
+holds 5 orthogonal per-capability provenance flags inspected by the operator to
+understand why a capability resolved the way it did. Both are genuinely independent bit
+sets where named-field reads are clearer than bit-position lookups. `#[expect]` count:
+49 → **47**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
