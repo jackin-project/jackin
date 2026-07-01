@@ -552,6 +552,15 @@ the field quartet with `original_toggles` / `pending_toggles` of that type. Read
 at `change_count` + the diff line builders migrated; constructor migrated. No behavior
 change. `#[expect]` count: 55 → **54**.
 
+op_picker::FieldStageBackPlan / FieldStageRefreshPlan / SectionStageBackPlan
+(jackin-console/src/tui/components/op_picker.rs) — converted `#[expect]` to `#[allow]`
+with durable justifications per plan. These three modal-navigation plans each carry 4–5
+**truly orthogonal** mutation flags (reset/clear/refresh of independent state buckets)
+that are consumed individually by `op_picker/input.rs` consumers — bundling into
+bitflags would lose naming at the read site without changing observable behavior, so
+the honest fix is to mark them as intentional rather than mechanical. `#[expect]` count:
+54 → **51**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 

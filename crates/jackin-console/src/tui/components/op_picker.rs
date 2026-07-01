@@ -460,9 +460,13 @@ pub const fn filter_reset_selection_for_stage(
     }
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Orthogonal Esc-back mutation flags for the op-picker Field stage — \
+              each bool is an independent state reset (section pointer, field buffer, \
+              collapsed sections, selected item, section list) consumed individually \
+              by the input dispatcher. Bundling into bitflags would lose naming at \
+              the read site without changing observable behavior."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldStageBackPlan {
@@ -496,9 +500,13 @@ pub const fn field_stage_back_plan(mode: &OpPickerMode) -> FieldStageBackPlan {
     }
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Orthogonal refresh-mutation flags for the op-picker Field stage — \
+              each bool is an independent state update (clear fields, reset list, \
+              clear collapsed sections, in-place reload) consumed individually by \
+              the input dispatcher. Bundling into bitflags would lose naming at \
+              the read site without changing observable behavior."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldStageRefreshPlan {
@@ -517,9 +525,13 @@ pub const fn field_stage_refresh_plan(mode: &OpPickerMode) -> FieldStageRefreshP
     }
 }
 
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Orthogonal Esc-back mutation flags for the op-picker Section stage — \
+              each bool is an independent state reset (field buffer, collapsed \
+              sections, selected section, selected item) consumed individually by \
+              the input dispatcher. Bundling into bitflags would lose naming at \
+              the read site without changing observable behavior."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SectionStageBackPlan {
