@@ -3,4 +3,3 @@
 # Delete an entry when its file is fixed; the list may only shrink.
 files = [
 ]
-
