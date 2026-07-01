@@ -61,7 +61,7 @@ lines = 1688
 
 [[production]]
 path = "crates/jackin-console/src/tui/screens/settings/view.rs"
-lines = 1639
+lines = 1311
 
 # Integration test files (no `tests.rs` stem) count as production per the
 # file-budget gate. `dind_e2e.rs` previously sat in the 1500–2000L band
