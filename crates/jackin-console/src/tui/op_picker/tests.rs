@@ -2010,7 +2010,6 @@ fn parity_3seg_input_with_sectioned_field_cli_matches_picker() {
     assert_eq!(cli_ref.path, picker_ref.path, "display path must match");
 }
 
-
 #[test]
 fn invalidate_cache_for_ref_drops_items_and_fields() {
     use jackin_core::OpRef;

@@ -499,7 +499,6 @@ fn mount_row_renders_isolation_badge_for_shared() {
     assert!(text.contains("shared"), "missing shared badge: {text:?}");
 }
 
-
 fn mount(path: &str) -> MountConfig {
     MountConfig {
         src: path.into(),
@@ -1657,8 +1656,7 @@ fn preview_shows_compact_running_badge_for_active_instances() {
     cfg.roles
         .insert("alpha".into(), jackin_config::RoleSource::default());
 
-    let mut state =
-        ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
+    let mut state = ManagerState::from_config(&cfg, std::path::Path::new("/tmp"));
     state.instances = vec![
         jackin_core::instance::InstanceIndexEntry {
             instance_id: "k7p9m2xq".into(),

@@ -4,9 +4,9 @@ use super::{
     visible_selection,
 };
 use crate::tui::layout::Rect;
-use unicode_width::UnicodeWidthChar;
 use crate::tui::pane_snapshot::{CellSnapshot, RowSnapshot};
 use crate::tui::selection::word_bounds_in_row;
+use unicode_width::UnicodeWidthChar;
 
 #[test]
 fn selection_start_requires_inner_rect_hit() {
@@ -89,7 +89,6 @@ fn same_cell_selection_is_not_a_drag() {
 /// Shared fixtures for the word-boundary suites: build a `RowSnapshot`
 /// from a string (real unicode widths) and resolve the word under a click.
 
-
 pub(super) fn row(text: &str) -> RowSnapshot {
     RowSnapshot {
         cells: text
@@ -120,7 +119,6 @@ pub(super) fn word_at_col(text: &str, col: u16) -> Option<String> {
     let (start, end) = word_bounds_in_row(&snapshot, col)?;
     Some(snapshot.text_range(start, end))
 }
-
 
 #[test]
 fn plain_words_and_versions() {
@@ -229,7 +227,6 @@ fn wide_cells_map_columns_correctly() {
     assert_eq!(snapshot.text_range(start, end), "\u{4f60}\u{597d}");
 }
 
-
 #[test]
 fn quoted_paths_with_spaces_select_whole_without_quotes() {
     let line = r#"cp "/my docs/file one.txt" /dest"#;
@@ -274,7 +271,6 @@ fn blank_rows_select_nothing() {
     assert_eq!(word_at_col("", 0), None);
     assert_eq!(word_at_col("      ", 3), None);
 }
-
 
 #[test]
 fn angle_brackets_break_like_the_bracket_family() {
