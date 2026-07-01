@@ -164,9 +164,13 @@ where
     }
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Console TUI event loop carries the per-event dispatch arms (Esc / \
+              keys / mouse / focus / palette / paste / resize) inline; extracting \
+              each arm into its own helper would push the dispatcher into a \
+              fn-of-fns shape with the same overall body. Body remains ~234 lines \
+              until a follow-up slice extracts the heaviest arms."
 )]
 pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     mut config: AppConfig,

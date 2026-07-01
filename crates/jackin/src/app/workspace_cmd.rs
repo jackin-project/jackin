@@ -11,9 +11,14 @@ use jackin_core::JackinPaths;
 use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::BollardDockerClient;
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Workspace subcommand dispatch arms (Create / List / Show / Edit / \
+              AddMount / RemoveMount / SetDefaultRole / SetDefaultAgent / \
+              PruneDead...) each carry their own focused work; extracting each \
+              arm into its own helper would push the dispatcher into a fn-of-fns \
+              shape with the same overall body. Body remains ~187 lines until a \
+              follow-up slice extracts the largest arms."
 )]
 pub(super) async fn handle(
     command: WorkspaceCommand,

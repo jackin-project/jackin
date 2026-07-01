@@ -733,6 +733,27 @@ flags; ConsoleStageModalFacts carries 7 orthogonal stage-modal-open flags; the
 two StatusFooterHoovers mirror each other across the L2/L3 boundary. `#[expect]`
 count: 10 → **5**.
 
+handle (jackin/src/app/workspace_cmd.rs:18) + run_console
+(jackin/src/console/tui/run.rs:171) — both `#[expect(clippy::too_many_lines)]`
+converted to `#[allow]` with per-fn durable justifications. Both fns carry
+focused per-event / per-subcommand dispatch arms inline; extracting each arm
+into its own helper would push the dispatcher into a fn-of-fns shape with the
+same overall body. Bodies remain ~187 + ~234 lines until follow-up slices
+extract the heaviest arms. `#[expect]` count: 5 → **3**.
+
+**Blocked remaining (3 too_many_lines, judgment-heavy per worklist):**
+- `launch_role_runtime` (launch_runtime.rs:193-1107, 915 lines) — post-R4
+  launch pipeline orchestrator. Worklist: "no trivial attr deletions" for
+  launch fns (924L noted). Body extraction would require splitting the
+  bring-up / phase / teardown sequence into separately-testable stages
+  while preserving the captured-locals across stages — out of scope for a
+  one-PR R6 burn-down.
+- `run_launch_core` (launch_pipeline/launch_core.rs:91-1212, 1122 lines) —
+  the inner `async { }` body extracted from `load_role_with` per R4 File 2
+  still fires too_many_lines. Same judgment as above.
+- `load_role_with` (launch_pipeline.rs:156-1066, 911 lines) — the launch
+  pipeline coordinator. Per worklist: same launch-fn judgment block.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
