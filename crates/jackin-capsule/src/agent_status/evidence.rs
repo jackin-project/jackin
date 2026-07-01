@@ -59,9 +59,13 @@ pub struct ScreenEvidence {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Six orthogonal /proc-derived process signals (process_exited, \
+              foreground_returned_to_shell, child_alive, root_is_agent, \
+              foreground_is_agent, physics_sampled) — each is an independent \
+              observable the watchdog + arbitrators inspect individually. Named- \
+              field reads match the per-signal rule-pipeline idiom."
 )]
 pub struct ProcessEvidence {
     pub process_exited: bool,
@@ -86,9 +90,15 @@ pub struct ActivityEvidence {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Ten orthogonal arbitrated-state flags (physics_sampled, \
+              osc_progress_active, shell_integration, visible_blocker, \
+              visible_idle, visible_working, process_exited, \
+              foreground_returned_to_shell, root_is_agent, stale_report) — each \
+              tracks an independent observable the arbitrators + watchdog consume \
+              individually. Named-field reads match the per-signal rule-pipeline \
+              idiom."
 )]
 pub struct EvidenceSummary {
     pub raw_state: RawAgentState,

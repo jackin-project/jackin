@@ -682,6 +682,14 @@ AND-combined cursor-visibility factors fed to `cursor_visible_for_state`.
 All three are independent flag sets where named-field reads match the
 per-input routing / gating idiom. `#[expect]` count: 27 → **24**.
 
+ProcessEvidence (agent_status/evidence.rs:66) + EvidenceSummary (evidence.rs:93) —
+converted both `#[expect]` to `#[allow]` with per-struct durable justifications.
+Together 16 orthogonal /proc-derived + arbitrated-state flags (process exit,
+foreground state, child liveness, root/foreground agent flags, physics sample,
+progress active, shell integration, visible blocker/idle/working, root agent,
+stale report). All consumed individually by the watchdog + arbitrators.
+`#[expect]` count: 24 → **22**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
