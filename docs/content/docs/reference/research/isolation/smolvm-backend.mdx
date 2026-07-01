@@ -1,0 +1,760 @@
+---
+title: "smolvm Backend Research"
+---
+
+**Status**: Deferred — Apple Container backend is the primary macOS 26 VM track; smolvm is the fallback if Apple Container Phase 0 fails the Docker-inside compatibility test. See [Apple Container backend](/roadmap/apple-container-backend/) and [Agent isolation architecture](/reference/research/security/isolation-architecture/agent-isolation-architecture/) for the active plan.
+
+## Problem
+
+Docker runtime hardening is the near-term default improvement path. smolvm is the open Rust-native VM research track — true VM-per-workload isolation with OCI-image input, potentially embeddable instead of only scriptable. The [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/) is deferred: research in June 2026 established that OrbStack isolated machines share OrbStack's Linux kernel, so they provide namespace isolation rather than a new kernel boundary — which means they do not address the kernel escape risk that motivates microVM adoption.
+
+The question for jackin❯ is:
+
+> Can smolvm become the small, open, Rust-native VM backend for workloads that need a stronger boundary than hardened Docker but should still keep jackin❯ role/image ergonomics?
+
+This item is not a commitment to implement smolvm support. It is the research track that decides whether smolvm is mature and compatible enough to become a jackin❯ backend.
+
+## Source Material
+
+Primary source: [smol-machines/smolvm](https://github.com/smol-machines/smolvm).
+
+Comparison sources:
+
+- [smol machines product/docs site](https://www.smolmachines.com/) - positioning, usage examples, network defaults, `.smolmachine`, platform matrix, and comparison table.
+- [smolvm SDK overview](https://www.smolmachines.com/) - current SDK shape, language bindings, server requirement, and machine API surface (the standalone `/sdk/` page was removed upstream; the main site now carries this).
+- [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) - Docker's productized agent sandbox runtime.
+- [Docker Sandboxes architecture](https://docs.docker.com/ai/sandboxes/architecture/) - workspace mounting, persistence, networking, lifecycle, and alternatives.
+- [Docker Sandboxes security model](https://docs.docker.com/ai/sandboxes/security/) and [isolation layers](https://docs.docker.com/ai/sandboxes/security/isolation/) - hypervisor, network, private Docker Engine, and credential proxy boundaries.
+- [OrbStack architecture](https://docs.orbstack.dev/architecture), [machines](https://docs.orbstack.dev/machines/), and [release notes](https://docs.orbstack.dev/release-notes) - shared-kernel machine model, isolated machines, selective sharing, and host/machine network controls.
+
+Current repository signals as of May 24, 2026:
+
+- Apache-2.0 repository with roughly 3.4k GitHub stars and active releases.
+- Latest stable: **smolvm v0.7.2 (2026-05-21)**, **libkrun v1.18.1 (2026-05-20)**.
+- README describes smolvm as a CLI for portable, lightweight, self-contained virtual machines.
+- Public docs claim sub-second cold start, cross-platform macOS/Linux support, elastic memory, OCI image input, `.smolmachine` portable artifacts, network off by default, allow-host egress, SSH agent forwarding, persistent machines, and SDK access.
+- README says each workload gets its own kernel through Hypervisor.framework on macOS or KVM on Linux, using libkrun with a custom kernel.
+- README says Docker Hub, GHCR, and other OCI registry images can be booted as microVMs with no Docker daemon required.
+- Known limitations include opt-in TCP/UDP networking only, no ICMP, directory-only volume mounts, Hypervisor.framework signing entitlements on macOS, host SSH agent requirement for `--ssh-agent`, and GPU requirements.
+- Release notes for `v0.7.0` mention "enabling docker within smolvm through TSI", which is directly relevant to jackin❯ Docker-workflow compatibility and needs hands-on validation.
+- Development docs show a Rust build with cargo-make, git-lfs, libkrun/libkrunfw binaries, a smolvm agent rootfs, and macOS codesigning.
+
+### Verified architecture (May 2026)
+
+A research pass through the [smol-machines/smolvm](https://github.com/smol-machines/smolvm) repository established several facts that change the design surface jackin❯ has to plan against:
+
+| Aspect | Verified fact | Source |
+|---|---|---|
+| PID 1 inside the VM | **`smolvm-agent` runs as PID 1, not the OCI image's `ENTRYPOINT`**. The agent mounts essential filesystems, sets up overlayfs, opens a vsock listener on port 6000, then runs the OCI image's entrypoint as a child of the agent under the embedded `crun` runtime | [`crates/smolvm-agent/src/main.rs`](https://github.com/smol-machines/smolvm/blob/main/crates/smolvm-agent/src/main.rs), [`crates/smolvm-agent/src/oci.rs`](https://github.com/smol-machines/smolvm/blob/main/crates/smolvm-agent/src/oci.rs) |
+| Rust SDK / library crate | **Workspace exposes `smolvm` as a library crate** (`[lib] name = "smolvm" path = "src/lib.rs"`), but it is **not on crates.io and not marketed as an SDK**. The `sdks/` directory ships only a Node N-API binding (`smolvm-napi`); Rust is conspicuously absent | [`Cargo.toml`](https://github.com/smol-machines/smolvm/blob/main/Cargo.toml), [`sdks/README.md`](https://github.com/smol-machines/smolvm/blob/main/sdks/README.md) |
+| Server transport | **HTTP via axum**, default `unix:///$XDG_RUNTIME_DIR/smolvm.sock`, optional TCP via `-l 127.0.0.1:8080`. Routes: `/api/v1/machines`, `/exec`, `/logs`, `/images`, `/files`. **OpenAPI 3.1 spec ships via `utoipa`** and can be exported with `smolvm serve openapi --output spec.json` | [`src/cli/serve.rs`](https://github.com/smol-machines/smolvm/blob/main/src/cli/serve.rs), [`src/api/mod.rs`](https://github.com/smol-machines/smolvm/blob/main/src/api/mod.rs), [`src/cli/openapi.rs`](https://github.com/smol-machines/smolvm/blob/main/src/cli/openapi.rs) |
+| `libkrunfw` distribution | **Bundled as a pre-built dylib/so inside smolvm's `lib/` directory** (`lib/libkrun.dylib`, `lib/libkrunfw.5.dylib`, `lib/linux-x86_64/libkrun.so.1.17.3`, `lib/linux-x86_64/libkrunfw.so.5.3.0`). Upstream `containers/libkrunfw` only distributes source tarballs — there is no stable artifact URL. smolvm builds + commits the dylib via git-LFS and ships it transparently in release tarballs | [`sdks/README.md`](https://github.com/smol-machines/smolvm/blob/main/sdks/README.md) |
+| macOS code-signing entitlement | **Single key: `com.apple.security.hypervisor`**. NOT `com.apple.vm.networking` | [`containers/libkrun/hvf-entitlements.plist`](https://github.com/containers/libkrun/blob/main/hvf-entitlements.plist) |
+| TSI for credential proxy | **TSI cannot do HTTPS credential injection.** It handles only AF_INET/AF_INET6/AF_UNIX, SOCK_STREAM/SOCK_DGRAM at the socket syscall layer, not TLS/HTTP. The VMM sees raw bytes after the guest establishes TLS; injecting Authorization headers would require MITMing TLS with a guest-trusted CA. A credential proxy needs a separate guest-side cooperating HTTP proxy + trusted CA, not TSI alone | [libkrun README](https://github.com/containers/libkrun/blob/main/README.md) |
+| Docker-in-smolvm via TSI | [PR #272](https://github.com/smol-machines/smolvm/pull/272) (in v0.7.0) added overlayfs `index=on,redirect_dir=on,uuid=on` flags + custom libkrunfw kernel with `CONFIG_NETFILTER/NF_TABLES/NFT_COMPAT/BRIDGE/OVERLAY_FS`. Documented recipe uses **bare Alpine + `dockerd`** (not an OCI image). Supports `docker pull/run/build`, bridge + host networking. **Critical constraint**: `/var/lib/docker` must be bind-mounted to ext4 — ramfs lacks file-handle support, breaking nested overlay2. Requires `--net-backend virtio-net` (TSI alone is insufficient for Docker's bridge) | [`examples/docker-in-vm/docker.smolfile`](https://github.com/smol-machines/smolvm/blob/main/examples/docker-in-vm/docker.smolfile) |
+| `.smolmachine` artifact | **zstd-compressed tar + JSON manifest + 64-byte binary footer** (magic `SMOLPACK`, version 1). Contains agent-rootfs.tar, OCI layers, platform-specific libkrun, optional `storage.ext4` + `overlay.raw` (VM snapshot mode). OCI-registry-pushable as config blob `application/vnd.smolmachines.machine.config.v1+json` + layer `application/vnd.smolmachines.smolmachine.v1`. Two execution modes: container (unpack + crun) or VM (restore overlay snapshot). On macOS, embedded in `__SMOLVM,__smolvm` Mach-O section for code-signing compatibility | [`crates/smolvm-pack/src/format.rs`](https://github.com/smol-machines/smolvm/blob/main/crates/smolvm-pack/src/format.rs) |
+| Multi-arch | **Yes via Rosetta 2 on Apple Silicon**, but not on Linux. smolvm virtiofs-mounts the host Rosetta runtime at `/mnt/rosetta`, then registers it with `binfmt_misc` for x86_64 ELFs. CLI knob: `--rosetta` on `machine` and `pack`. Requires `softwareupdate --install-rosetta`, macOS 11+, Apple Silicon. Linux: not available (`_rosetta: bool, // Ignored on Linux`). No QEMU TCG fallback | [`src/vm/rosetta.rs`](https://github.com/smol-machines/smolvm/blob/main/src/vm/rosetta.rs) |
+
+## Why Docker Is Not Enough: The Actual Threat Model
+
+This section captures the concrete weaknesses in the shared-kernel container model that motivate the smolvm research. The [docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) improves the existing backend; this item researches the next tier.
+
+The industry pushes AI agent workloads toward microVMs because of confirmed, exploited kernel vulnerabilities — not because Docker is bad software:
+
+- **runc vulnerabilities (November 2025)**: three high-severity CVEs allowing container escape to the host system, affecting Docker, containerd, and every managed Kubernetes service. AI workloads amplify this risk because large, dependency-heavy images slow patching and scanning cycles.
+- **CVE-2026-34040**: Docker authorization bypass via oversized HTTP requests — allows unauthorized creation of containers with full host access. Fixed in Docker Engine 29.3.1.
+- **CVE-2024-1086**: use-after-free in Linux's netfilter subsystem, confirmed actively exploited in ransomware campaigns (CISA advisory, October 2025).
+- **DinD `--privileged`**: jackin❯ runs a privileged DinD sidecar today. A `--privileged` container has near-full access to the host kernel. Recent attack chains have started from legitimate AI agent setups that followed Docker's own security recommendations.
+
+The shared kernel is the attack surface. A microVM gives each workload its own kernel; a successful kernel exploit inside the VM reaches only that VM kernel, not the host or sibling VMs. That is the concrete property smolvm, Docker Sandboxes, and Apple Container framework all provide — and that Docker and OrbStack isolated machines (shared-kernel namespaces) do not.
+
+## Comparison Target
+
+This research compares the post-Docker-hardening options for macOS ARM:
+
+1. **smolvm** — open-source Rust/libkrun VM backend candidate.
+2. **Docker Sandboxes** — Docker's productized microVM agent sandbox with a private Docker Engine, policy proxy, and credential proxy.
+3. **Apple Container framework** — macOS 26 Tahoe native per-container VM using Virtualization.framework on Apple Silicon.
+
+**OrbStack isolated machines are no longer a comparison target in this research pass.** June 2026 analysis established that OrbStack isolated machines share OrbStack's Linux kernel — they provide namespace isolation within the existing VM, not a new kernel per workload. For macOS ARM operators who already use OrbStack as their Docker engine, the role container is already inside OrbStack's Linux VM; an isolated machine adds a namespace layer within the same kernel. See [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/) for the full reasoning.
+
+Do not expand this item into Firecracker research. Firecracker requires KVM (Linux-only); on macOS ARM it needs nested virtualization inside a Linux VM, is not officially supported for macOS by the Firecracker project, and adds a third layer (macOS → Linux VM → Firecracker VM → workload) compared to smolvm's two-layer model (macOS → smolvm VM → workload). Firecracker remains a server-side or hosted-runtime candidate if a separate problem demands it.
+
+## Apple Container Framework (macOS 26 Tahoe)
+
+Apple announced native containerization in macOS 26 Tahoe (2026): each OCI container runs inside its own lightweight VM via Virtualization.framework, natively on Apple Silicon. This is architecturally the closest thing to "per-container hypervisor isolation without a Docker daemon" on macOS.
+
+Key properties:
+
+| Property | Apple Container framework |
+|---|---|
+| Isolation boundary | Own VM per container via Virtualization.framework; true hypervisor boundary |
+| Kernel | Per-container kernel (lightweight Linux kernel) |
+| Platform | macOS ARM (Apple Silicon), optimized natively |
+| OCI compatibility | Yes — OCI-compliant images |
+| Docker dependency | None at the VM level; not mediated by Docker daemon |
+| Start time | Sub-second per Apple's announcement |
+| Docker workflows inside | Unknown — needs evaluation |
+| Maturity | New in macOS 26; operator adoption curve not yet known |
+| License | Open-source (`apple/container` on GitHub) |
+
+Compared to smolvm:
+
+| Concern | smolvm | Apple Container framework |
+|---|---|---|
+| Hypervisor | libkrun + Hypervisor.framework (macOS) / KVM (Linux) | Virtualization.framework (macOS only) |
+| Cross-platform | macOS + Linux | macOS only |
+| OCI image input | Yes | Yes |
+| Docker inside VM | Research track (v0.7.0 TSI recipe) | Unknown |
+| Network policy | Off by default, allow-host | Unknown |
+| Credential proxy | Needs jackin❯ work | Unknown |
+| Open source | Apache-2.0 | Yes (`apple/container`) |
+| Maturity | Pre-1.0 active development | New in macOS 26 |
+| macOS 26 requirement | No (works on earlier macOS) | Yes |
+
+Apple Container framework is not an active research track in this roadmap item. It is captured here as a platform finding that should inform the smolvm vs. Docker Sandboxes comparison. If smolvm Phase 0–2 produces a go recommendation, Apple Container framework becomes the next evaluation target once macOS 26 operator adoption reaches a usable threshold.
+
+## Why smolvm Is Different From Docker Sandboxes
+
+| Concern | smolvm | Docker Sandboxes | Apple Container framework |
+|---|---|---|---|
+| Product shape | Open-source CLI/library-oriented runtime | Productized Docker CLI/service for agent sandboxes | Native macOS container tool |
+| License/control | Apache-2.0 | Commercial Docker product surface | Open-source (`apple/container`) |
+| Implementation fit | Shell out first; SDK/server or Rust embedding requires validation | Shell out to `sbx` or integrate around Docker's sandbox workflow if APIs allow | Unknown — new surface |
+| Kernel boundary | VM per workload with its own kernel | Dedicated microVM per sandbox per Docker docs | VM per container via Virtualization.framework |
+| Platform | macOS and Linux with KVM | macOS, Windows, and Linux per Docker docs | macOS 26+ (Apple Silicon) |
+| Docker compatibility | OCI images boot without Docker daemon; Docker-in-guest under research (ext4 bind, virtio-net required) | Private Docker Engine is a core feature | **`--privileged` not supported** — DinD blocked; rootless DinD via `--cap-add` unconfirmed |
+| File sharing | Directory volume mounts | Workspace mounted at same absolute host path | `-v` bind mounts (same absolute host path) |
+| Network policy | Network off by default, `--allow-host` allowlist | Host-side proxy, allow/deny policy, raw TCP/UDP/ICMP blocked | Per-container IP via vmnet; isolation unconfirmed for agent use cases |
+| Credential posture | jackin must provide its own credential model | Host-side credential proxy injects selected outbound API auth | jackin must provide its own credential model |
+| Maturity risk | Pre-1.0 fast-moving runtime | New but backed by Docker's ecosystem | v0.11.0 (Mar 2026), fast-moving, multi-container networking rough edges |
+| Attach/PTY | CLI-based (`smolvm machine exec -it`), HTTP/OpenAPI via Unix socket | `sbx exec` | gRPC over vsock (vminitd); `container exec` CLI; I/O + signal streaming built in |
+| Lifecycle API for Rust | HTTP/OpenAPI over Unix socket — Rust-friendly | Unknown | Swift XPC native; shell out to `container` CLI |
+| PID 1 conflict | smolvm-agent is PID 1 | No conflict (private Docker daemon is PID 1) | vminitd is PID 1 |
+| Hypervisor layer | Hypervisor.framework (low-level, open-source compatible) | Proprietary VMM | Virtualization.framework (closed-source, higher-level) |
+| Strategic value | Best open Rust-native backend; works macOS + Linux | Best benchmark for the private-Docker-in-VM agent UX | Best macOS 26 native path IF rootless DinD confirmed |
+
+smolvm is the open Rust-native path. Docker Sandboxes is the polished reference. Apple Container framework is the native macOS 26 path — but blocked on the `--privileged` constraint until rootless DinD is validated.
+
+## Apple Container Framework — Detailed Technical Findings (June 2026)
+
+This section captures what is now verified about `apple/container` as of v0.11.0 (March 2026), from the `apple/container` repo, `apple/containerization` repo, WWDC 2025 sessions, and community research.
+
+### vminitd Architecture
+
+`vminitd` is the PID 1 init system inside every apple/container VM. Key facts:
+
+- Compiled as a static Swift binary (no libc, no shell, no standard utils) — minimal attack surface by design
+- Communicates with the host via **gRPC over vsock** port
+- gRPC API covers: start process, stream stdin/stdout/stderr, forward signals, health check
+- The jackin-capsule entrypoint runs as a child of vminitd (PID 2+), same as smolvm-agent
+- The same `JACKIN_CAPSULE_FORCE_DAEMON=1` workaround applies
+
+The gRPC vsock API is more structured than smolvm's HTTP/OpenAPI approach — it's designed for streaming I/O and signal forwarding, which is exactly what interactive TUI sessions need. This is an advantage over smolvm's CLI-based attach where PTY behavior was undocumented.
+
+### `--privileged` Is Not Supported
+
+**This is the critical constraint for jackin❯.**
+
+`--privileged` is not supported in apple/container. The documented alternative is `--cap-add <CAP>` for specific capabilities. This means:
+
+- The current jackin❯ DinD sidecar (`--privileged`) cannot run inside an apple/container VM as-is
+- Rootless DinD (which replaces `--privileged` with specific caps) is the compatibility path
+- Rootless DinD inside apple/container has not been empirically validated
+
+**This creates a hard dependency**: Apple Container backend for jackin❯ requires the Docker hardening contract's rootless DinD work to land first. If rootless DinD passes compatibility testing, Apple Container becomes viable. If rootless DinD cannot run inside apple/container VMs (storage driver or cap conflicts), Apple Container cannot support full jackin❯ role workflows.
+
+### CLI Lifecycle Surface
+
+The `container` CLI has a Docker-compatible surface:
+
+```bash
+container run -it <image> <cmd>      # start container
+container exec <name> <cmd>          # exec into running container  
+container stop <name>                # stop
+container rm <name>                  # delete
+container ps                         # list running
+container logs <name>                # logs
+container build -t <tag> .           # build image
+container pull <image>               # pull OCI image
+```
+
+jackin❯ can shell out to `container` CLI — same pattern as `orb` for OrbStack. No Rust-native API exists; the programmatic surface is Swift-native XPC.
+
+There is also `mocker` (a community project: Docker-compatible CLI built on Apple Containerization) and an MCP server (`ACMS`) for apple/container, indicating the ecosystem is growing.
+
+### Networking
+
+- Each container gets its own IP address via vmnet — no port mapping needed
+- `container system start` creates a vmnet network named `default`
+- macOS 26 plans fully isolated container networking (not yet in 0.11.0)
+- Container-to-container networking on same bridge has rough edges in 0.11.0 (DNS hiccuping after sleep/wake, bridge traffic not bulletproof)
+- No host-side network policy proxy — jackin❯ would need to build that (same as smolvm)
+
+### Hypervisor.framework vs Virtualization.framework
+
+| | Hypervisor.framework (smolvm) | Virtualization.framework (Apple Container) |
+|---|---|---|
+| Level | Low-level — equivalent to KVM on Linux | High-level VMM implementation |
+| Source | Open-source compatible; can be extended | Closed-source; cannot be extended |
+| Custom devices | Yes (libkrun adds virtio-gpu, extended virtio-fs) | No — Apple defines the device set |
+| Entitlement | `com.apple.security.hypervisor` | Requires higher entitlements (macOS system integration) |
+| Docker Desktop uses | Yes | No (Docker Desktop uses its own VMM on top of HVF) |
+
+For jackin❯, this distinction matters for long-term extensibility (smolvm can grow custom devices, Apple Container cannot) but not for the near-term Phase 0 comparison.
+
+### Current Limitations (v0.11.0)
+
+| Limitation | Impact for jackin❯ |
+|---|---|
+| `--privileged` not supported | Current DinD sidecar blocked; rootless DinD required |
+| Multi-container networking rough edges | DinD's bridge networking inside the VM may be affected |
+| DNS hiccuping after sleep/wake | Interactive sessions may lose DNS; operator would need to reconnect |
+| No health checks | jackin❯ would need to probe liveness itself |
+| Apple Silicon only | Acceptable — jackin❯ is macOS ARM only |
+| macOS 26 primary target | Acceptable — jackin❯ targets macOS 26+ |
+
+## Docker Sandboxes Baseline
+
+Docker Sandboxes is the most important product benchmark for smolvm, because it targets the same agent problem jackin❯ cares about:
+
+- each agent session runs in a dedicated microVM
+- each sandbox has its own filesystem, network, and private Docker daemon
+- the agent can run `docker build`, `docker run`, and `docker compose` without touching the host Docker daemon
+- workspace access is explicit, same-path, and live back to the host
+- HTTP/HTTPS traffic goes through a host-side policy and credential proxy
+- raw TCP, UDP, ICMP, private network access, host localhost, and non-allowed domains are blocked by default per Docker docs
+- organization governance can centrally manage network and filesystem policy on paid plans
+
+For jackin❯, Docker Sandboxes answers the "what should excellent look like?" question:
+
+```text
+agent freedom inside boundary:
+  sudo + packages + Docker Engine + writable workspace
+
+host boundary:
+  no host Docker socket
+  no broad host filesystem access
+  no raw network by default
+  credentials mediated outside the VM
+```
+
+smolvm should be compared against that shape, not against generic "microVM" claims.
+
+## What smolvm Could Do Better Than Docker Sandboxes
+
+Potential advantages to validate:
+
+- Open-source runtime that can be audited, patched, forked, and discussed in jackin❯ roadmap terms without depending on vendor APIs.
+- Rust-heavy implementation and libkrun foundation, which may eventually fit jackin❯ better than a black-box CLI integration if a stable Rust-consumable API exists.
+- Direct OCI-image boot without requiring Docker as the outer runtime.
+- Network-off-by-default posture that maps naturally to jackin❯ deny-by-default egress goals.
+- Linux/KVM and macOS Hypervisor.framework support in one project, giving jackin❯ a possible non-OrbStack local VM backend beyond macOS.
+- `.smolmachine` artifacts might become a portable, inspectable snapshot primitive if they map cleanly to jackin❯ eject/purge semantics.
+
+## What Docker Sandboxes Currently Does Better
+
+Expected advantages unless smolvm proves otherwise:
+
+- Private Docker Engine is a product-level feature, not a research question.
+- Network policy and credential proxy are documented first-class controls.
+- Same-path workspace mount behavior aligns strongly with jackin❯ existing same-path design.
+- Agent workflow is explicit: agents get a real development environment, including package installation and Docker workflows.
+- Team/enterprise governance has a built-in story.
+- Cross-platform story includes Windows, where smolvm is not currently a jackin❯ candidate.
+
+## What OrbStack Currently Does Better
+
+Expected advantages unless smolvm proves otherwise:
+
+- Best macOS developer experience for operators already using OrbStack as their Docker backend.
+- Full Linux machine lifecycle with `orb` commands, cloud-init, and polished file/network integration.
+- Easier operator mental model for long-lived machines.
+- Selective shares and host/machine blocking are already in the product surface.
+- Docker inside an OrbStack machine should be straightforward Linux-machine work, though jackin❯ must still validate the full role flow.
+
+## smolvm vs Apple Container: The Decision
+
+This section captures the June 2026 decision analysis. jackin❯ is macOS 26 Tahoe + Apple Silicon only for the current audience.
+
+### The Dependency That Changes Everything
+
+Both smolvm and Apple Container have the PID 1 conflict (their init runs as PID 1, jackin-capsule runs as a child). The `JACKIN_CAPSULE_FORCE_DAEMON=1` workaround resolves both identically.
+
+The real decision axis is **Docker-inside compatibility**:
+
+| Backend | Docker inside VM | Constraint | Status |
+|---|---|---|---|
+| smolvm | Yes — documented v0.7.0 recipe | Alpine + ext4 bind mount + virtio-net required | Empirically tested (by smolvm team), jackin❯ role image untested |
+| Apple Container | Blocked — `--privileged` not supported | Rootless DinD required first | Unvalidated — depends on Docker hardening contract landing |
+
+### The Decision Logic
+
+```
+Docker hardening contract lands (rootless DinD passes compatibility testing)?
+  YES → Apple Container is the primary macOS 26 backend candidate
+          ✓ Zero install friction (built into macOS 26)
+          ✓ True per-container kernel via Virtualization.framework
+          ✓ gRPC/vsock attach — structured I/O + signal forwarding
+          ✓ Own IP per container — no port mapping
+          ✓ Docker-compatible CLI surface (shell out to `container`)
+          ✓ Same `JACKIN_CAPSULE_FORCE_DAEMON=1` workaround as smolvm
+          ✗ `--privileged` blocked — needs rootless DinD
+          ✗ Multi-container networking rough edges (v0.11.0)
+          ✗ Closed-source Virtualization.framework (cannot extend)
+  NO (rootless DinD fails or incompatible inside apple/container) →
+    smolvm is the fallback
+          ✓ Docker-inside documented and working (with constraints)
+          ✓ Hypervisor.framework + libkrun (open-source, extensible)
+          ✓ HTTP/OpenAPI lifecycle API (more Rust-friendly)
+          ✓ Works on macOS + Linux (future-proofing)
+          ✗ Separate install required
+          ✗ Pre-1.0, fast-moving
+          ✗ Docker-in-smolvm requires Alpine base + ext4 + virtio-net (not a role OCI image directly)
+```
+
+### The Phase 0 Question Is Actually Two Questions
+
+Before committing to either backend, Phase 0 must answer:
+
+**For Apple Container:**
+1. Can rootless DinD (`docker:dind-rootless`) run inside an apple/container VM with the required caps (`CAP_SYS_ADMIN` via `--cap-add` is needed for mount namespaces)? Note: `CAP_SYS_ADMIN` is a very broad capability — if apple/container allows it, the isolation story weakens; if it doesn't, rootless DinD is also blocked.
+2. Does `docker build`, `docker run`, Compose, and Testcontainers work inside that rootless DinD?
+
+**For smolvm:**
+3. Can a jackin❯ role OCI image (not Alpine) boot as the smolvm workload with Docker inside? The documented recipe uses Alpine + bare dockerd, not a role image.
+
+If neither passes the Docker-inside test for jackin❯ role images, both backends are usable only for Docker-free roles. In that case, Apple Container is still preferred (zero install friction, cleaner API) for Docker-free or smolvm-mode-B roles.
+
+### Recommendation
+
+**Phase 0 priority order: Apple Container first, smolvm as fallback.**
+
+Reason: if Apple Container's Docker story works (rootless DinD + specific caps inside apple/container VM), the install-friction-zero advantage plus native gRPC attach makes it the clear winner for macOS 26 operators. smolvm requires a separate install and has a more awkward Docker-inside path (Alpine base, ext4 bind mount). Only invest in smolvm Phase 0 if Apple Container fails the Docker-inside test.
+
+**The prerequisite**: Docker hardening contract's rootless DinD work must validate `CAP_SYS_ADMIN` behavior inside apple/container before Apple Container Phase 0 can start. These are sequenced, not parallel.
+
+## Decision Frame
+
+The comparison should produce separate conclusions, not a single winner:
+
+| Desired capability | Likely best first path |
+|---|---|
+| Improve today's local default | Docker runtime hardening |
+| Open-source Rust-native VM backend with true per-workload kernel | smolvm |
+| Private Docker daemon inside a VM with policy proxy | Docker Sandboxes as benchmark, smolvm as prototype |
+| Native macOS 26 per-container VM | Apple Container framework (evaluate once adoption threshold met) |
+| Team-managed policy and paid enterprise controls | Docker Sandboxes benchmark only unless jackin❯ builds its own governance |
+| Cross-platform local VM backend beyond macOS | smolvm research (Linux via KVM) |
+| Hosted hostile multi-tenant execution | Out of scope for this item |
+
+## Goal
+
+Research whether smolvm can support one or more jackin❯ backend modes:
+
+1. **Ephemeral command sandbox**: run one agent/tool command in a short-lived microVM for high-risk operations.
+2. **Docker-free role backend**: boot a role OCI image directly as a smolvm workload without a Docker daemon.
+3. **Persistent machine backend**: create one smolvm machine per jackin❯ instance, preserve agent state, and reconnect later.
+4. **Docker-capable VM backend**: run Docker-compatible workflows inside the smolvm boundary if the `v0.7.0` Docker-in-smolvm work is usable.
+5. **Embedded backend**: eventually integrate through a stable SDK, server, or library boundary instead of shelling out to the CLI.
+
+The research should produce a go/no-go recommendation for each mode.
+
+## Non-Goals
+
+- Do not replace Docker runtime hardening with smolvm research.
+- Do not block OrbStack isolated-machine work on smolvm.
+- Do not claim smolvm can run current jackin❯ roles until Docker workflow compatibility is tested.
+- Do not vendor or fork smolvm unless the operator explicitly chooses that maintenance burden.
+- Do not require smolvm for normal local jackin❯ usage.
+- Do not silently install smolvm or its host dependencies.
+
+## Backend Vocabulary
+
+Use a name that distinguishes this from OrbStack:
+
+```text
+smolvm
+```
+
+Possible future CLI:
+
+```sh
+jackin load reviewer . --backend smolvm
+jackin load reviewer . --backend smolvm --vm-mode ephemeral
+jackin load the-architect . --backend smolvm --vm-mode persistent
+```
+
+Possible future config:
+
+```toml
+[runtime.smolvm]
+enabled = false
+mode = "persistent" # ephemeral | direct-image | persistent | docker-capable
+network = "deny"    # deny | allowlist | open
+allow_hosts = ["github.com", "api.openai.com"]
+ssh_agent = "ask"   # off | ask | on
+cpus = 4
+memory = "8 GiB"
+```
+
+This schema is intentionally speculative. If it lands in versioned config, it must follow the migration rules.
+
+## Implementation Hypotheses
+
+### Mode A — ephemeral operation sandbox
+
+Run a single command or classified high-risk operation inside smolvm:
+
+```text
+jackin role container -> asks host/capsule bridge for sandboxed command
+host jackin -> smolvm machine run --image <tool-image> -- <command>
+smolvm -> exits and deletes state
+```
+
+Best for:
+
+- untrusted scripts
+- package install probes
+- generated code execution
+- quick network-denied checks
+
+Risk:
+
+- Integrating per-command smolvm from inside an existing agent session may need a host bridge, not only the current container runtime.
+- It overlaps with [Process-level sandboxing](/reference/research/security/process-sandboxing/process-level-sandboxing/), which is likely lower overhead for routine commands.
+
+### Mode B — direct role image backend
+
+Boot the role OCI image directly as the smolvm workload. **Important reshape from initial design**: the verified architecture above shows `smolvm-agent` runs as PID 1 inside the VM, not the OCI image's `ENTRYPOINT`. The role image's entrypoint executes as a child of the agent under `crun`. `jackin-capsule` therefore cannot be PID 1 inside a smolvm-booted role image.
+
+Two options for handling this:
+
+| Option | Shape | Trade-off |
+|---|---|---|
+| B.1 — capsule as PID 2 under smolvm-agent | `jackin-capsule` runs as the OCI image's entrypoint, sees itself as PID 2 (or higher) under smolvm-agent. Capsule's session/control channel speaks over the vsock port 6000 that smolvm-agent already opens, or over a side channel | Loses PID-1 reaping semantics (`smolvm-agent` handles SIGCHLD). Capsule's existing assumption of being init has to be relaxed for this backend. The lift is contained in `jackin-capsule` itself |
+| B.2 — patch smolvm-agent or fork | Submit upstream patch (or fork) to let smolvm pass through an OCI-image PID-1 entrypoint without inserting the agent. Or accept the agent as PID 1 and treat capsule as a sibling daemon launched by smolvm-agent | Upstream coordination cost; jackin❯ becomes a smolvm contributor. Highest control over the runtime contract but largest commitment |
+
+Recommended: **B.1**. Modify `jackin-capsule` (see <RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile>, current PID==1 detection at <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>) so the daemon-mode path no longer requires PID 1. Daemon mode currently triggers on `process::id() == 1`; the smolvm path would set an env var (`JACKIN_CAPSULE_FORCE_DAEMON=1` or similar) to opt in regardless of PID. Reaping responsibilities stay with smolvm-agent.
+
+Best for:
+
+- Docker-free roles
+- read-only review roles
+- short-lived agent tasks
+- cases where Docker-in-Docker is unnecessary
+
+Risk:
+
+- Current jackin❯ roles assume a container entrypoint and Docker-style mounts, not necessarily a VM init model.
+- Capsule reaping/signal model under smolvm-agent needs validation (does SIGTERM to the role process work normally? does Ctrl+C propagate?).
+- smolvm volume mounts are directory-only; single-file mounts the role expects (e.g. `~/.gitconfig`) need parent-directory mounts or staging.
+
+### Mode C — persistent smolvm instance
+
+Create one smolvm persistent machine per jackin❯ instance:
+
+```text
+smolvm machine create --net? <instance>
+smolvm machine start --name <instance>
+smolvm machine exec --name <instance> -- <jackin bootstrap>
+```
+
+Best for:
+
+- agent sessions that need reconnect
+- durable package installs inside the VM
+- `.smolmachine` export/import experiments
+
+Risk:
+
+- Persistence can become invisible bloat unless jackin❯ owns cleanup and disk reporting.
+- Current jackin❯ state model deliberately separates agent state from mutable runtime filesystems.
+
+### Mode D — Docker-capable smolvm backend
+
+Validate whether Docker inside smolvm is good enough for current jackin❯ roles. This is the important compatibility gate.
+
+Documented baseline (May 2026): smolvm v0.7.0 added Docker support via TSI through [PR #272](https://github.com/smol-machines/smolvm/pull/272). The known-good recipe at [`examples/docker-in-vm/docker.smolfile`](https://github.com/smol-machines/smolvm/blob/main/examples/docker-in-vm/docker.smolfile) starts from **bare Alpine + `dockerd`** (not from an OCI image). Critical constraints from the recipe:
+
+- `/var/lib/docker` must be bind-mounted to ext4 (`/storage/docker`); ramfs lacks file-handle support for nested overlay2.
+- Custom libkrunfw kernel with `CONFIG_NETFILTER`, `CONFIG_NF_TABLES`, `CONFIG_NFT_COMPAT`, `CONFIG_BRIDGE`, `CONFIG_OVERLAY_FS` is required.
+- `--net-backend virtio-net` is required; TSI alone is insufficient for Docker's bridge networking.
+- Supports `docker pull`, `docker run`, `docker build`, bridge + host networking.
+
+Open compatibility questions for jackin❯ specifically:
+
+- Can a jackin❯ construct/role image be substituted for the Alpine base in the recipe, or does the role image have to stay outside the smolvm-via-TSI Docker boundary?
+- Does Docker Compose work inside the smolfile shape?
+- Does Java Testcontainers work? Reaper (`testcontainers/ryuk`) has historically had issues with non-default Docker contexts.
+- How does jackin❯ inspect and clean the inner Docker state from outside the VM?
+- How are Docker images cached across machine restarts? `.smolmachine` persistence interacts with `/storage/docker` lifecycle.
+
+Decision rule:
+
+- If Docker workflows (build + run + Compose + Testcontainers) all pass inside the smolfile shape, smolvm can compete with OrbStack as an open cross-platform VM backend.
+- If only `docker build`/`docker run` pass but Compose or Testcontainers fail, smolvm is positioned as the Docker-free / lightweight-role backend; OrbStack remains the recommendation for full-fidelity Docker workflows.
+- If Docker workflows do not pass at all, smolvm is still valuable for Docker-free roles and ephemeral high-risk operations, but not as a default replacement for the current Docker backend.
+
+## Network Policy
+
+smolvm's network posture is interesting because the README says network is off by default and egress can be limited with `--allow-host`.
+
+Mapping to jackin❯:
+
+| jackin policy | smolvm mapping to validate |
+|---|---|
+| deny | omit `--net` |
+| allowlist | `--net --allow-host <host>` for each allowed host |
+| open | `--net` without allow-host restriction |
+| private network blocked | validate default host/machine reachability and add explicit denial if supported |
+
+### TSI Limits and the Credential-Proxy Question
+
+The earlier intuition that libkrun's TSI could implement jackin❯ brokered-credential proxy directly was wrong. Confirmed from the [libkrun README](https://github.com/containers/libkrun/blob/main/README.md):
+
+> The VMM acts as a proxy for AF_INET, AF_INET6 and AF_UNIX sockets, for both incoming and outgoing connections.
+
+TSI operates at the **socket syscall layer**, not the TLS/HTTP layer. It transparently redirects guest TCP/UDP syscalls to a host-side vsock proxy. The VMM sees raw bytes *after* the guest has established its TLS session. Injecting an `Authorization` header into HTTPS would require terminating TLS with a guest-trusted CA — which TSI alone does not do.
+
+What TSI *does* give jackin❯ for credentials:
+
+- per-guest network policy enforcement at the syscall level (block, allow, redirect)
+- visibility into which destinations the guest is contacting (for audit/log)
+- no virtual NIC to harden
+
+What TSI does *not* give jackin❯:
+
+- TLS termination + header injection (needed for the Docker Sandboxes credential-proxy shape)
+- HTTP/2 or HTTP/3 protocol awareness
+- raw bytes are already TLS-encrypted by the guest
+
+A real jackin❯ credential proxy on smolvm needs a cooperating in-guest HTTP proxy with a trusted CA cert installed inside the role environment. The HTTP proxy can speak vsock to the host-side credential daemon ([host-bridge](/roadmap/host-bridge/)) which holds the raw token. TSI's role narrows to "enforce that all outbound HTTPS routes through the proxy and nothing else escapes" — a useful primitive, but it is *complementary* to the credential broker, not a replacement.
+| connection logs | not provided by README; jackin may need its own proxy/log layer |
+
+This may make smolvm a useful implementation path for early network egress policy, but only after confirming how DNS, redirects, package managers, and registry auth behave under `--allow-host`.
+
+## Filesystem And Mounts
+
+Known limitation: README says volume mounts are directories only, not single files.
+
+Implications for jackin❯:
+
+- Workspace and global directory mounts fit.
+- Single-file secret/config mounts would need a parent directory mount, a generated staging directory, or a different credential mechanism.
+- Mount destination control must be validated: jackin❯ supports arbitrary `dst`, while smolvm examples use `-v /host/dir:/workspace`.
+- Read-only mount support must be checked.
+- Directory mount confinement must be tested with symlinks, bind-mount escape attempts, nested filesystems, and parent-directory access assumptions.
+- Worktree/clone isolation can still materialize on the host before the directory is mounted into smolvm.
+
+## Authentication
+
+The README says `--ssh-agent` can forward the host SSH agent so private keys do not enter the guest.
+
+Rules for jackin❯:
+
+- SSH agent forwarding must default to off or ask.
+- The launch contract must show whether SSH agent forwarding is enabled.
+- This does not solve API-token forwarding for Claude, Codex, Amp, Kimi, OpenCode, or `gh`.
+- Future brokered credential work should remain backend-neutral.
+
+## Packaging And Embedding
+
+smolvm is attractive because it is Rust-heavy and exposes more than a one-off CLI story. That creates a possible sequence:
+
+1. Shell out to `smolvm` CLI for research and prototypes.
+2. Build a backend adapter around stable CLI output and instance handles.
+3. Evaluate the public SDK/server path only after the CLI prototype proves the product value.
+4. Evaluate lower-level Rust/libkrun embedding only if it materially improves launch latency, logs, lifecycle control, or packaging.
+
+Embedding risks:
+
+- smolvm is pre-1.0 and moving quickly.
+- Public SDK shape may not match jackin❯ Rust integration needs.
+- libkrun/libkrunfw binaries and git-lfs assets complicate distribution.
+- macOS Hypervisor.framework entitlements require signing.
+- Linux requires KVM.
+- Owning a library integration makes jackin❯ part of the VM-runtime update path.
+
+## Comparison: Docker Hardening vs smolvm vs Docker Sandboxes
+
+OrbStack isolated machines are excluded from this comparison — they share OrbStack's Linux kernel and do not address the kernel escape risk that motivates this research. See [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/) for the deferral reasoning.
+
+| Question | Docker hardening | smolvm | Docker Sandboxes |
+|---|---|---|---|
+| Best near-term default? | Yes | No | No |
+| Keeps current role Docker workflows? | Yes | Unknown, must test | Yes — private Docker Engine is core |
+| Stronger kernel boundary than Docker? | No | Yes per README (own kernel via libkrun) | Yes (own kernel via proprietary VMM) |
+| Works on macOS ARM? | Yes | Yes (Hypervisor.framework) | Yes (Apple Hypervisor.framework) |
+| Works on Linux? | Yes | Yes with KVM | Yes with KVM |
+| Open source? | Docker stack mostly open | Apache-2.0 | Proprietary VMM |
+| Rust-native integration potential? | Low | High | Low |
+| Mature operator UX? | High | Unknown | Polished but agent-runner–focused |
+| Network deny by default? | No | Yes per README | Yes, host-side proxy |
+| Credential proxy? | jackin❯ must build | jackin❯ must build | Built-in host-side proxy |
+| DinD `--privileged` elimination? | Partial (rootless DinD research) | Yes — Docker in guest VM | Yes — own Docker daemon per sandbox |
+
+## Implementation Phases
+
+### Phase 0 — hands-on smoke (Apple Container first, smolvm as fallback)
+
+**Prerequisite**: Docker hardening contract's rootless DinD work must complete before Phase 0A can start. rootless DinD requires knowing whether `CAP_SYS_ADMIN` (needed for mount namespaces) is allowable inside apple/container VMs.
+
+**Phase 0A — Apple Container smoke (primary)**
+
+- Verify `container run -it <jackin-role-image> bash` boots a jackin❯ role OCI image
+- Verify jackin-capsule runs as non-PID-1 entrypoint (`JACKIN_CAPSULE_FORCE_DAEMON=1` workaround)
+- Test `container exec` PTY attach — does I/O streaming and signal forwarding work for interactive TUI sessions?
+- Attempt rootless DinD inside the apple/container VM with `--cap-add` instead of `--privileged`:
+  - Which caps does rootless DinD actually need? (`CAP_SYS_ADMIN` for mount namespaces is the critical one)
+  - Does apple/container allow `--cap-add CAP_SYS_ADMIN`?
+  - Does `docker build`, `docker run`, Compose work inside rootless DinD inside the VM?
+- Test workspace directory mount (bind mount) — read/write, read-only
+- Test network isolation behavior — what is reachable from inside the VM by default?
+- Record: cold start time, reattach time, resource overhead
+- Record DNS stability after macOS sleep/wake (known rough edge in v0.11.0)
+
+**Phase 0B — smolvm smoke (if Phase 0A fails Docker-inside test)**
+
+- Install smolvm explicitly in a disposable test environment
+- Run `smolvm machine run --image alpine -- uname -a` without network
+- Run `--net --allow-host` tests for package registries and blocked hosts
+- Mount a jackin❯ workspace directory and validate read/write behavior
+- Test SSH agent forwarding with a non-sensitive key
+- Attempt Docker-in-smolvm with jackin❯ role OCI image (not Alpine base): does the role's init work as the smolfile base?
+- Record the same smoke matrix against Docker Sandboxes where licensing/access permits
+
+**Decision point after Phase 0**: if Apple Container passes rootless DinD test, proceed with Apple Container as primary backend. If it fails, proceed with smolvm. If both fail Docker-inside, both backends are viable only for Docker-free roles and Apple Container is still preferred for its zero install friction.
+
+### Phase 1 — role-image compatibility
+
+- Build a jackin❯ role image with the current Docker path.
+- Try to boot that OCI image directly through the chosen backend (apple/container or smolvm).
+- Verify `jackin-capsule` can run, expose a control channel, and attach.
+- Document entrypoint, init, UID/GID, and `/jackin/` path gaps.
+
+### Phase 2 — Docker workflow compatibility
+
+- Validate Docker-inside-VM capability for the chosen backend.
+- Run `docker build`, `docker run`, Compose, and Testcontainers.
+- Compare with current DinD behavior.
+- Compare with Docker Sandboxes as the benchmark for a private Docker daemon inside a VM boundary.
+- Decide whether the backend can support normal jackin❯ roles or only Docker-free roles.
+
+### Phase 3 — policy and credential parity
+
+- Prototype network-deny, allow-host, package-manager, and registry-auth behavior.
+- Decide whether jackin❯ can add a host-side proxy layer comparable to Docker Sandboxes without making smolvm support too complex.
+- Prototype credential delivery without raw token files or environment variables where possible.
+- Decide whether SSH agent forwarding is enough for Git-only workflows and how model-provider credentials should be brokered.
+
+### Phase 4 — backend adapter prototype
+
+- Add an experimental `smolvm` backend behind a feature flag or hidden config.
+- Shell out to `smolvm`.
+- Persist smolvm machine handles in the backend-neutral instance registry.
+- Implement inspect/eject/purge before general launch support.
+- Keep the adapter honest about whether it is `direct-image`, `persistent`, or `docker-capable`.
+
+### Phase 5 — SDK and packaging decision
+
+- Evaluate CLI, public SDK/server, and lower-level Rust/libkrun integration stability separately.
+- Decide whether any embedding path beats shell-out.
+- Document distribution requirements for macOS signing and Linux KVM.
+- Keep CLI shell-out if embedding would make jackin❯ own too much VM-runtime maintenance.
+
+## Telemetry Surface
+
+Backend operations should emit `debug_log!("smolvm", …)` (the existing macro in <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile>). Minimum required lines:
+
+- `smolvm version=<smolvm --version> libkrun=<v> libkrunfw=<v>`
+- `entitlement_present hypervisor=<yes|no>` (macOS)
+- `kvm_available=<yes|no>` (Linux)
+- `machine_create name=<id> image=<ref> rosetta=<yes|no> mode=<ephemeral|persistent|docker-capable>`
+- `mount source=<host> guest=<path> mode=<rw|ro|tmpfs> validated=<yes|no>`
+- `network mode=<deny|allowlist|open> allow_hosts=<count>`
+- `image_pull source=<registry|local> bytes=<n> elapsed_ms=<n>`
+- `capsule_boot pid=<n> daemon_mode=<forced|inferred>` (Mode B PID-2 path)
+- `attach transport=<vsock-6000|api-/exec|ssh-via-net> pty=<yes|no>`
+
+Compact line per launch:
+
+```text
+smolvm launch mode=direct-image image=jackin-the-architect rosetta=no net=allowlist allow_hosts=3 boot_ms=420
+```
+
+## Schema Migration Footprint
+
+This backend introduces these versioned-config additions; each lands with a `CURRENT_*_VERSION` bump per <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>:
+
+| Surface | File kind | Type touched | Action |
+|---|---|---|---|
+| `[runtime.smolvm] enabled / mode / network / allow_hosts / ssh_agent / cpus / memory` | `config.toml` | `AppConfig` | bump `CURRENT_CONFIG_VERSION`, add fixture. |
+| `[workspaces.X.runtime] backend = "smolvm"` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | bump `CURRENT_WORKSPACE_VERSION`. |
+| `[runtime.smolvm] mode = "..."` per-role override | `jackin.role.toml` | `RoleManifest` | bump `CURRENT_MANIFEST_VERSION`. |
+
+Additionally `jackin-capsule` needs a non-versioned env-var contract: `JACKIN_CAPSULE_FORCE_DAEMON=1` to allow daemon mode regardless of PID (see Mode B.1).
+
+## Decided In This Pass
+
+- Integration shape: **shell out to `smolvm` CLI for V1; consume HTTP+OpenAPI via Unix socket if/when richer lifecycle control is needed**. No dependency on the workspace's `smolvm` library crate (not published, not marketed as stable). No dependency on the Node-only `smolvm-napi` SDK.
+- macOS distribution: jackin❯ bundles or recommends the official smolvm CLI release tarball. Direct `libkrun` embedding requires `com.apple.security.hypervisor` entitlement + Apple Developer ID re-signing of the jackin❯ binary — too much packaging surface to take on under V1.
+- Linux distribution: smolvm CLI requires KVM. Hosts without KVM fall back to Docker backend with a clear `debug_log!("smolvm", "kvm unavailable, falling back")` message.
+- TSI cannot do HTTPS credential injection. The credential broker on smolvm needs an in-guest cooperating HTTP proxy + trusted CA, coordinated with the [host-bridge](/roadmap/host-bridge/) daemon. TSI's role is "enforce all egress routes through the proxy".
+- Mode B (direct role image) accepts capsule as PID 2 under smolvm-agent (B.1). `jackin-capsule` gets a `JACKIN_CAPSULE_FORCE_DAEMON=1` opt-in for non-PID-1 daemon mode. No upstream patch path under V1.
+- `.smolmachine` artifacts are **not used as jackin❯ state primitives**. They are a smolvm-internal packaging concern; jackin❯ uses smolvm's `machine create`/`start`/`exec`/`delete` lifecycle and stores its own per-instance metadata under `~/.jackin/data/<instance>/` per the host-path convention.
+- Multi-arch: on Apple Silicon, jackin❯ supports amd64 role images via `smolvm --rosetta`. Operator gets a `debug_log!("smolvm", "running amd64 image under Rosetta, expect slower exec")` warning. On Linux/aarch64, amd64 images fail-closed with a clear message — no QEMU TCG fallback.
+- Docker workflows inside smolvm follow the v0.7.0 TSI recipe (Alpine + bind-mounted ext4 + virtio-net), not "OCI role image + Docker layered inside". Mode B and Mode D therefore stay distinct backends, not a single composable layer.
+
+## Open Before Implementation Can Start
+
+These need answers before Phase 0 hands-on work converts to design commitments:
+
+1. **`JACKIN_CAPSULE_FORCE_DAEMON` patch shape**: implement the opt-in in `crates/jackin-capsule/src/main.rs` PID detection. Confirm reaping (SIGCHLD propagation), exit-code visibility, and Ctrl+C behavior all still work when capsule is PID 2 under smolvm-agent. Hands-on test.
+2. **smolvm OpenAPI schema shape**: export `smolvm serve openapi --output spec.json` from the v0.7.2 CLI and confirm it covers the endpoints jackin❯ would need (`/machines`, `/exec`, `/logs`, `/images`, `/files`). If gaps exist, decide whether shell-out is sufficient long-term or whether contributing back to the OpenAPI spec is worth it.
+3. **Docker-in-smolvm role-image substitution**: try replacing the Alpine base in the `docker.smolfile` example with a jackin❯ role image. If `dockerd` cannot start because the role's init differs from Alpine's, jackin❯ "Mode D" is locked to a separate VM running Alpine + Docker, not to the role's own VM. That reshapes Mode D from "all-in-one" to "sidecar VM".
+4. **Apple Developer ID signing for jackin❯ itself**: if jackin❯ ships smolvm bundled (not just recommended), the bundle needs to be re-signed under the operator's signing identity (or jackin❯). Establish a CI signing flow before any release that ships smolvm.
+5. **Network allowlist coverage** (Phase 0): does `--allow-host` cover DNS resolution, HTTP redirects, registry auth flows (S3-presigned URLs from package mirrors), and CDN failovers? A package manager that hits 4 hosts in one `npm install` could fail unpredictably under a too-strict allowlist.
+6. **`.smolmachine` interaction with jackin❯ purge**: even though jackin❯ will not *create* `.smolmachine` artifacts, if a role baker uses smolvm directly and ships one to operators, does jackin❯ know to delete it cleanly on purge? Decide whether smolvm's image cache under `~/Library/Application Support/smolvm/` becomes part of `jackin purge --smolvm` or stays smolvm-owned.
+
+## Open Questions
+
+1. Can smolvm boot current jackin❯ role OCI images without rebuilding them into a special VM image shape?
+2. Does Docker inside smolvm support Compose and Testcontainers?
+3. Can smolvm expose a stable attach channel for long-running interactive TUI sessions?
+4. Does smolvm's network allowlist cover DNS, redirects, registry auth, and package-manager mirrors predictably?
+5. How close can smolvm get to Docker Sandboxes' host-side policy and credential proxy model without jackin❯ building a full proxy subsystem first?
+6. Is Docker Sandboxes an integration backend jackin❯ should support directly, or only a reference model for what smolvm should approximate?
+7. Does Docker Sandboxes expose enough local API/CLI surface for jackin❯ lifecycle control, or is it intentionally agent-runner focused rather than backend-provider focused?
+8. Does Apple Container framework (macOS 26) run current jackin❯ role OCI images directly, and does it support Docker workflows inside the per-container VM?
+
+## Risks and Design Traps
+
+- Treating a promising README as implementation proof before running jackin❯ roles inside it.
+- Letting embeddability distract from the product question: does it run agent sessions better?
+- Shipping a pre-1.0 runtime as a default dependency.
+- Building a Docker-free VM backend that cannot run the roles operators already use.
+- Hiding macOS signing and Linux KVM requirements until launch time.
+- Creating a second persistence model that conflicts with jackin❯ purge/eject/recovery semantics.
+- Claiming Docker Sandboxes parity without a host-side credential proxy and auditable network logs.
+- Treating Docker Sandboxes as a reason to stop improving the Docker backend. It is a benchmark and possible later integration target, not a replacement for the near-term Docker hardening contract.
+- Collapsing smolvm, OrbStack, and Docker Sandboxes into one generic "microVM" label. Their boundaries, APIs, product shape, and integration risks are different.
+
+## Related Files
+
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> - launch orchestration that needs a backend split.
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> - role image build path and OCI artifact source.
+- <RepoFile path="crates/jackin-instance/src/manifest.rs">crates/jackin-instance/src/manifest.rs</RepoFile> - future backend/provider handles.
+- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> - capsule startup assumptions.
+- <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> - role base image to test as a smolvm workload.
+
+## Related Roadmap Items
+
+| Item | Relationship |
+|---|---|
+| [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) | Near-term default and compatibility baseline. |
+| [OrbStack isolated machine backend](/reference/research/isolation/orbstack-isolated-machines/) | Deferred — shared-kernel namespace isolation insufficient for macOS ARM audience; historical research preserved. |
+| [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) | Umbrella for backend selection. |
+| [Network egress policy](/roadmap/network-egress-policy/) | smolvm allow-host behavior may implement part of the policy. |
+| [Session contract and explain mode](/roadmap/session-contract-explain-mode/) | Needed to report whether smolvm or Docker Sandboxes is enforcing each boundary. |
+| [Process-level sandboxing](/reference/research/security/process-sandboxing/process-level-sandboxing/) | Lower-overhead alternative for per-operation isolation inside existing Docker sessions. |

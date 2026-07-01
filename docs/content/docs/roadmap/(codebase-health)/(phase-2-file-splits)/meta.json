@@ -1,7 +1,9 @@
 {
-  "title": "Phase 2 — File splits",
+  "title": "Phase 2 \u2014 File splits",
   "defaultOpen": false,
   "pages": [
-    "../../unify-settings-editor-surfaces"
+    "split-input-editor",
+    "split-runtime-launch",
+    "unify-settings-editor-surfaces"
   ]
 }

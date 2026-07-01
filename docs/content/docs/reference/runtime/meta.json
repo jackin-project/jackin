@@ -1,4 +1,4 @@
 {
   "title": "Runtime Model",
-  "pages": ["index", "runtime-instance-model", "instance-resource-naming", "image-labels", "configuration", "schema-versions", "diagnostics"]
+  "pages": ["index", "runtime-instance-model", "instance-resource-naming", "image-labels", "user-identity", "configuration", "schema-versions", "diagnostics"]
 }

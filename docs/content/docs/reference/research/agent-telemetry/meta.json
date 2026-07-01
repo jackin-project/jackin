@@ -1,0 +1,7 @@
+{
+  "title": "Agent Telemetry",
+  "defaultOpen": false,
+  "pages": [
+    "token-cost-telemetry"
+  ]
+}

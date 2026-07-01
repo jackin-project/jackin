@@ -1,0 +1,35 @@
+---
+title: "Declarative Resource Limits per Agent"
+---
+
+**Status**: Partially implemented — operator-level `[docker.grants]` (`memory`, `memory_reservation`, `cpus`, `pids`, `nofile`) are shipped, validated, and translated to Docker flags, and OOM kills are detected, preserved, and surfaced in `jackin status`; remaining work is one-shot per-field CLI overrides, non-Docker backend translation, and a push-notified (not just pull-queried) OOM signal (Phase 1, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Shipped facts
+
+Operators declare resource ceilings in `[docker.grants]` (global `config.toml` or per-workspace), not in the role manifest: `memory`, `memory_reservation`, `cpus`, `pids`, `nofile`. Each Docker security profile (`locked`, `hardened`, `standard`, `compat`) has its own baseline for these fields, and an explicit grant can only raise a dimension above the profile default (`raise_to_max` semantics) — see <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs">crates/jackin-runtime/src/runtime/docker_profile.rs</RepoFile>. Values are range/consistency-validated (`memory_reservation` ≤ `memory`, `pids` > 0, `cpus` finite and positive, `nofile` > 0) before launch. Full schema and examples: [Docker Security Profiles](/guides/docker-profiles/).
+
+The resolved grants are translated into real Docker CLI flags at launch (`resource_flags` in the same file): `--memory`, `--memory-reservation`, `--cpus`, `--pids-limit`, and `--ulimit nofile=N:N`. The role manifest's own `[docker]` table intentionally does not carry these fields (only `min_profile`, `dind`, `allowed_hosts`, `capabilities_add`) — resource ceilings are an operator/host concern, not something a role author declares.
+
+OOM handling is shipped end-to-end: a kernel OOM kill is classified as `AttachOutcome::OomKilled` (<RepoFile path="crates/jackin-isolation/src/finalize.rs">crates/jackin-isolation/src/finalize.rs</RepoFile>), which is treated the same as any non-zero exit — the isolated worktree is preserved by default rather than auto-cleaned. The outcome is persisted on the instance manifest as `last_attach_outcome` (`"oom_killed"`) and printed by the attach/status text output ("Last attach outcome: oom_killed" in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile>).
+
+A one-shot profile override already exists: `jackin load <role> <target> --docker-profile hardened` (<RepoFile path="crates/jackin/src/cli/role.rs">crates/jackin/src/cli/role.rs</RepoFile>). There is no equivalent per-field override (e.g. `--memory-max`, `--cpus`) — only the named profile can be swapped for a single launch.
+
+## Remaining work
+
+1. Per-field one-shot CLI overrides (`--memory-max`/`--memory-high`/`--cpus`/`--nofile` on `jackin load`) for "this one launch is on a smaller machine," on top of the existing `--docker-profile` override.
+2. Non-Docker backend translation of the same grants (Apple `container`, or any future backend) — blocked on [selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) landing a second backend to translate into.
+3. Push-notified OOM signal in the operator console/TUI. Today OOM is only visible by pulling `jackin status`; there's no proactive banner. Depends on the [console resource panel](/roadmap/console-resource-panel/) (Phase 2), which is still open.
+
+## Out of scope
+
+- Disk I/O limits (`--blkio-weight`) and network bandwidth limits — no operator demand yet.
+- Auto-pausing an OOM-killed agent instead of preserving+exiting — Docker doesn't expose a clean primitive for this.
+- Role-manifest-level resource defaults — the shipped design deliberately keeps these operator/host-level, not role-authored; see the research page below for the design alternatives considered.
+
+## Related work
+
+- Guide: [Docker Security Profiles](/guides/docker-profiles/) — full `[docker.grants]` schema, profile table, examples
+- Research: [Declarative resource limits: design alternatives](/reference/research/agent-orchestration/resource-limits/declarative-resource-limits-design/) — multicode inspiration, the backend-neutral `[runtime.limits]` schema that was considered and not adopted, and open naming/inheritance questions
+- [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) — cross-backend translator lives here long-term
+- [Console resource panel](/roadmap/console-resource-panel/) — consumer of the runtime side (current usage vs configured limit) and the natural home for OOM push-notification
+- [Autonomous task queue](/roadmap/autonomous-task-queue/) — queue parallelism limit interacts with per-agent memory limits

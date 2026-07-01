@@ -1,0 +1,10 @@
+{
+  "title": "Host Affordances",
+  "defaultOpen": false,
+  "pages": [
+    "host-affordance-bridge-preflight",
+    "custom-operator-tools-design",
+    "host-affordance-bridge-design",
+    "operator-handler-system-design"
+  ]
+}

@@ -1,0 +1,43 @@
+---
+title: "Stack Integration Contracts"
+---
+
+**Status**: Open — design proposal only; no integration schema, validation, or CLI surface exists in source yet (Containment track, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Shipped facts
+
+Nothing has landed. There is no `detect_files`/`safe_env`/`snapshot_excludes` integration schema anywhere in the workspace, no `[integrations.*]` or `[workspace.integrations]` TOML parsing, and no `jackin integration` subcommand. Roles remain the only environment-definition mechanism today. The feature would extend the existing workspace/mount/sensitive-path machinery in <RepoFile path="crates/jackin-config/src/app_config/workspaces.rs">crates/jackin-config/src/app_config/workspaces.rs</RepoFile>, <RepoFile path="crates/jackin-config/src/app_config/mounts.rs">crates/jackin-config/src/app_config/mounts.rs</RepoFile>, <RepoFile path="crates/jackin-config/src/mounts.rs">crates/jackin-config/src/mounts.rs</RepoFile>, and <RepoFile path="crates/jackin-config/src/sensitive.rs">crates/jackin-config/src/sensitive.rs</RepoFile>. The design rationale (Hazmat's session-integration model and the "can help but cannot weaken containment" framing) lives at [Stack integration hints: design rationale](/reference/research/agent-orchestration/stack-integration-hints/).
+
+## Remaining work
+
+1. **Phase 1 — built-in read-only hints.** Define the integration schema and validation rules; ship a small built-in set (`rust`, `node`, `python-uv`, `go`) with read-only mounts and snapshot excludes only; surface active integrations in [session contract and explain mode](/roadmap/session-contract-explain-mode/).
+2. **Phase 2 — repo recommendations with approval.** Let repos recommend existing integration names by reference only, never inline paths; prompt the operator once per canonical repo path plus recommendation hash; show the recommendation source and diff in the contract before launch.
+3. **Phase 3 — user-authored integration manifests.** Load user manifests from a jackin-owned config directory; reject unknown fields, unsafe env names, paths that resolve into sensitive credential zones, and oversized manifests; add `jackin integration validate <path>` that prints accepted fields, rejected fields, resolved paths, sensitive-zone hits, safe-env decisions, and the exact contract diff a reviewer should inspect.
+
+Every phase must hold the same capability ceiling: an integration can add extra read-only mounts, a safe-env allowlist selector, snapshot exclude globs, warnings, and informational command hints. An integration cannot widen trust compared with the resolved workspace/role policy, add write mounts, change sandbox backend or network policy, expose credentials or credential-shaped env vars, convert a denied credential into an env var/file mount/command output/helper socket, request env names matching credential-shaped patterns such as `*_TOKEN`, `*_KEY`, `*_SECRET`, `*_PASSWORD`, `AWS_*`, `GITHUB_*`, `GH_*`, `OPENAI_*`, or `ANTHROPIC_*` unless a jackin-owned credential source explicitly grants them, run hooks or shell commands, override agent runtime configuration, or mutate host files.
+
+Suggested schema shape:
+
+```toml
+[integrations.rust]
+detect_files = ["Cargo.toml"]
+read_only = ["${env.RUSTUP_HOME}", "${env.CARGO_HOME}"]
+safe_env = ["RUSTUP_HOME", "CARGO_HOME", "CARGO_TARGET_DIR"]
+snapshot_excludes = ["target/"]
+warnings = ["Cargo target caches can be large; prefer isolated target dirs for untrusted repos."]
+```
+
+Repo recommendations should reference existing integration names only:
+
+```toml
+[workspace.integrations]
+recommended = ["rust", "node"]
+```
+
+Activating an integration may add read-only container mounts and store an operator approval outside the project tree. It must not repair host permissions, edit shell files, create toolchain directories, or install packages unless a future design adds an explicit host-action approval flow.
+
+## Related work
+
+- [Session contract and explain mode](/roadmap/session-contract-explain-mode/) — where active integrations are meant to surface before launch.
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/) — parent containment-track roadmap.
+- [Stack integration hints: design rationale](/reference/research/agent-orchestration/stack-integration-hints/) — Hazmat comparison and problem framing behind this shape.

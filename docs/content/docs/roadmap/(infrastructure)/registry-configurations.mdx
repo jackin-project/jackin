@@ -1,0 +1,38 @@
+---
+title: "Registry configurations"
+---
+
+**Status**: Open — design proposal, nothing shipped yet
+
+## Problem
+
+Running `jackin` against a role whose `published_image` lives in a private registry fails silently and expensively: the pull path in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> hard-codes `None` for bollard's registry-auth argument, and the freshness check in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> treats any pull failure as "image is stale" — so an auth failure triggers a multi-minute rebuild from the Dockerfile instead of an actionable error. The structural gap is that jackin has no place for an operator to declare credentials for an external endpoint at all; every existing secret (agent API keys, GitHub token, 1Password refs) was solved as a one-off instead of through a shared credential-source layer.
+
+## Remaining work
+
+1. Define a `[[registries]]` configuration schema (global `AppConfig` and per-workspace `WorkspaceConfig`, per-workspace overriding/extending global) — each entry's credential field is the shared [`CredentialSource`](/roadmap/credential-source-pattern/) enum.
+2. Build the `docker-config` provider (reads `~/.docker/config.json` / `credsStore` / `credHelpers`) as the zero-config default fallback.
+3. Build the native `ecr` provider (`aws-sdk-ecr` over the default AWS credential chain, with token caching/refresh) — the forcing case for this item.
+4. Thread real `DockerCredentials` into bollard's `pull_image`, resolved lazily per pull rather than at config load.
+5. Split the freshness check's conflated states: classify auth failures (fail fast, actionable message) from genuine manifest/tag-not-found staleness (fall back to build, as today), with a `[registry].on_auth_failure` escape hatch for operators who want the old build-on-failure behavior.
+6. Add operator + internals docs for the new config surface.
+
+A `jackin registry login` (keychain-backed, no plaintext store) and a read-only `jackin registry status` are candidate follow-ups, not required for v1.
+
+Design details — provider mechanics, config surface, ADRs on each decision above, and open questions — live in [Registry Configurations: design](/reference/research/security/credential-exposure/registry-configurations-design/).
+
+## Out of scope
+
+- A generic `command` credential kind — deferred until a concrete custom-SSO need appears.
+- A broader `endpoints`/`connections` configuration layer beyond registries — this item stays registry-specific; the credential guts are shared so a broader layer can wrap this later without reshaping them.
+
+## Related work
+
+- [Registry Configurations: design](/reference/research/security/credential-exposure/registry-configurations-design/) — provider mechanics, config surface, decision rationale, and source material.
+- [Credential source pattern](/roadmap/credential-source-pattern/) — the unified sourcing abstraction this item makes concrete and consumes.
+- [Container Credential Exposure — Beyond Env Injection](/reference/research/security/credential-exposure/container-credential-exposure/) — resolved credentials must not leak into layers, `docker inspect`, or logs.
+- [Workspace registry cache](/roadmap/workspace-registry-cache/) — a pull-through cache still needs upstream registry credentials.
+- [1Password integration](/roadmap/onepassword-integration/) — one credential source among several.
+- <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> — `pull_image`; bollard `create_image` with `RegistryAuth` currently `None`.
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> — published-image freshness check that conflates auth failure with staleness.
+- <RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> — `AppConfig` / `WorkspaceConfig`; where a configurations block would live.

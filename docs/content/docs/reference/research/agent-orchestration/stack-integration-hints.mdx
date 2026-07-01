@@ -1,0 +1,25 @@
+---
+title: "Stack Integration Hints: Design Rationale"
+---
+
+**Status**: Research — background for [Stack integration contracts](/roadmap/stack-integration-contracts/); no schema or code exists yet.
+
+## Problem
+
+jackin❯ roles define the agent environment, but real engineering projects still have local stack details that are awkward to encode in every role: read-only toolchain paths or caches that live on the operator machine, safe selector environment variables such as `JAVA_HOME`, `GOPATH`, or `VIRTUAL_ENV`, generated directories that should be excluded from future snapshots, and project-specific warnings and command hints.
+
+The unsafe version of this feature is "let the repo define whatever mounts and environment it wants." That would turn project files into policy authority and undermine jackin❯ host-protection rules. The useful version is narrower: integrations are data-only hints that improve ergonomics without widening the trust boundary.
+
+## Inspiration: Hazmat session integrations
+
+Hazmat's session integrations are a good shape. They can add read-only directories, snapshot excludes, a small safe env passthrough set, warnings, and command hints. They cannot widen project write scope, bypass credential denies, change network policy, inject arbitrary runtime flags, or reconfigure the agent runtime. That "can help but cannot weaken containment" rule maps well to jackin.
+
+The [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/) tracks this alongside the rest of the Hazmat comparison: "Stack ergonomics" in Track B is filed under [Stack integration contracts](/roadmap/stack-integration-contracts/) plus role repos, and the program's "Ideas to decline or postpone" table calls out the same repo-recommendation-with-approval shape (repos may recommend known integration names; operator approval and jackin-owned manifests decide what activates) as the safe alternative to repo-controlled manifests with arbitrary paths or hooks.
+
+Repo recommendations should reference existing integration names only — the repo should not be able to define custom paths inline. If a repo recommendation is accepted, the design calls for storing the approval outside the repo, keyed by canonical path plus file hash, so changes prompt again.
+
+## Source materials
+
+- [Hazmat integrations](https://github.com/dredozubov/hazmat/blob/master/docs/integrations.md) — capability limits, repo recommendations, validation, and built-in stack list.
+- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/) — parent containment-track research.
+- [Stack integration contracts](/roadmap/stack-integration-contracts/) — the roadmap item this rationale backs.

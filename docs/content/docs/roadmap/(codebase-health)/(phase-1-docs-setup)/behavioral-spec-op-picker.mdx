@@ -1,0 +1,32 @@
+---
+title: "Behavioral spec: op_picker"
+---
+
+**Status**: Partially implemented — spec published; the console op-picker `//!` module doc does not yet link to it
+
+## Current shape
+
+The active console 1Password picker adapter is <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile>. Picker metadata types (`RawOpField`, `RawOpItemDetail`, and the `From` conversions into `jackin_core::op_types`) live in <RepoFile path="crates/jackin-env/src/picker.rs">crates/jackin-env/src/picker.rs</RepoFile>; the `OpStructRunner` trait lives in <RepoFile path="crates/jackin-env/src/op_struct.rs">crates/jackin-env/src/op_struct.rs</RepoFile> and is consumed by env resolution in <RepoFile path="crates/jackin-env/src/resolve.rs">crates/jackin-env/src/resolve.rs</RepoFile>. The surface-local render/state-plan component lives in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile>.
+
+The old `op_picker/mod.rs` path is obsolete. The remaining task is documentation linkage, not another split.
+
+## Key invariants
+
+| INV | Description | Verify by |
+|---|---|---|
+| INV-1 | Field selection commits `OpField::reference` verbatim when present; only fixtures missing `reference` use the synthesized `op://<vault>/<item>/<label>` fallback | selection path returns `field.reference.clone()` first, then falls back to `format!("op://{}/{}/{}"...)` |
+| INV-2 | No secret values in picker path — `RawOpField` has no `value` field; serde drops it silently | grep picker structs for `value`; use exhaustive destructure tests around `RawOpField` |
+| INV-3 | Loading is async; key handlers stay synchronous and only advance UI state / poll pending results | background loaders send through channels; key handlers do not call the `op` CLI directly |
+| INV-4 | Field-list selection indexes the display row list, not the filtered field slice directly. Section-header rows are navigable and selectable; Enter on a header toggles collapse rather than committing a field | display rows use a `FieldDisplayRow`-style layer; collapse/expand and Up/Down operate on display-row length |
+
+## Remaining work
+
+1. Add a link to [op_picker Behavioral Spec](/reference/developer-reference/specs/op-picker/) in the `//!` module doc at the top of <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile>; keep implementation details in the reference spec, not duplicated in the module doc.
+
+## Related files
+
+- <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile> — console adapter for state, loader, key handling, and commit selection
+- <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile> — surface-local op-picker render/state-plan helpers including collapsible section headers
+- <RepoFile path="crates/jackin-env/src/picker.rs">crates/jackin-env/src/picker.rs</RepoFile> — `RawOpField` and other picker metadata types, plus `From` conversions into `jackin_core::op_types`
+- <RepoFile path="crates/jackin-env/src/op_struct.rs">crates/jackin-env/src/op_struct.rs</RepoFile> — `OpStructRunner` trait
+- <RepoFile path="crates/jackin-env/src/resolve.rs">crates/jackin-env/src/resolve.rs</RepoFile> — env resolution consuming `OpStructRunner`

@@ -2,10 +2,9 @@
   "title": "Infrastructure",
   "defaultOpen": false,
   "pages": [
-    "../architect-code-intelligence-tooling",
-    "../instant-launch-architecture",
-    "../construct-user-creation",
-    "../workspace-registry-cache",
-    "../platform-support-and-freshness"
+    "instant-launch-architecture",
+    "registry-configurations",
+    "workspace-registry-cache",
+    "platform-support-and-freshness"
   ]
 }

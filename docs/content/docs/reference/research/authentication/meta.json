@@ -1,0 +1,9 @@
+{
+  "title": "Authentication",
+  "defaultOpen": false,
+  "pages": [
+    "claude-auth-strategy",
+    "auth-reliability-program-design",
+    "live-auth-sync-design"
+  ]
+}

@@ -3,12 +3,8 @@
   "defaultOpen": false,
   "pages": [
     "../codebase-health-enforcement",
-    "../pr-verification",
-    "../rust-ci-tooling",
-    "../test-infra-behavioral-specs",
-    "../visual-snapshot-testing",
-    "../ci-speed-roadmap",
-    "../ci-performance-analysis",
+    "pr-verification",
+    "test-infra-behavioral-specs",
     "(phase-1-docs-setup)",
     "(phase-2-file-splits)",
     "(phase-3-deferred)"

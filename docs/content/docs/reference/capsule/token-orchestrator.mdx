@@ -142,6 +142,26 @@ Everything up to and including validation — capture, item create, post-write r
 
 The CLI's `config env unset` and the TUI's auth panel both refuse to delete `CLAUDE_CODE_OAUTH_TOKEN` while `auth_forward = "oauth_token"` is active; the only supported clear path is `jackin workspace claude-token revoke`, which switches both keys atomically.
 
+## Interactive storage-location pickers
+
+Two surfaces let the operator choose (or create) a 1Password destination instead of always minting a brand-new item, and a third surface reuses the same widget to generate a token without leaving `jackin console`. All three commit through the same `OpPickerSelection` enum (`Existing(OpRef)` / `NewItem { .. }` / `EditItemField { .. }`) so downstream wiring code has one shape to handle regardless of surface.
+
+### Shared `op_picker` Create mode
+
+<RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile> exposes `OpPickerMode::Create` alongside the default `Browse`. In Create mode the Item stage renders a `+ New item` sentinel and the Field stage renders `+ New field` and `+ New section` sentinels at the bottom of their lists (the standard `+ Add X` creation-sentinel convention), with naming sub-stages that reuse the shared `text_input` box. Browse mode is unchanged, so every existing caller keeps drilling Account → Vault → Item → Field exactly as before. This Create mode replaced an earlier separate rich-dialog widget that had duplicated the drill-down state machine; the shared widget is now the single implementation, so a rich ratatui TUI lives only inside `jackin console` while the CLI stays plain CLI (next section).
+
+### CLI `--interactive` (plain-prompt picker)
+
+`jackin workspace claude-token setup <ws> --interactive` walks the operator through account → vault → item → field using plain `dialoguer` Select/Input prompts — no rich ratatui TUI. At the item step the operator picks an existing item or `[ + New item ]`; at the field step they pick an existing field (token written in-place via `item_field_set`, see [1Password write contract](#1password-write-contract)) or `[ + New field ]`. The flag is mutually exclusive with `--vault` and `--reuse`. Scripted invocations keep using `--vault` / `--reuse`; `--interactive` is the plain-prompt path for an operator at a shell.
+
+### Console Auth-tab generate action
+
+The workspace editor's Auth tab can mint a Claude token without leaving `jackin console`. On the workspace-level Claude `oauth_token` auth form, `G` opens a source step (Plain text / 1Password); the 1Password branch opens the shared `op_picker` in Create mode so the operator chooses (or creates, via `+ New item` / `+ New field` / `+ New section`) the location. Pressing `G` stashes the open auth form so the dialog can be re-mounted when the mint completes. On commit, the console effect handler (<RepoFile path="crates/jackin/src/console/effects.rs">crates/jackin/src/console/effects.rs</RepoFile>) suspends the TUI (leaves raw-mode + alt-screen, mirroring the terminal guard) and runs `mint_token_value` — the interactive `claude setup-token` OAuth capture plus the 1Password create / read-back validation, but **no** config write (see [Mint without persist](#mint-without-persist-console-generate-path)) — then resumes the TUI and re-mounts the Edit-auth dialog with the minted credential staged and focus on Save. The operator Saves to persist through the editor's normal save path, exactly like the *provide* flow where picking an existing value re-mounts the form on Save. Cancel leaves the config unwired (any op item already created is harmless). Errors surface through the standard `ErrorPopup`.
+
+Role-level generate works the same way at the role layer: the operator opens that role's Claude auth form (via `+ Override for a role`) and presses `G` — the scope follows the auth-form target, so generate needs no separate role step. The CLI exposes the same scope via `jackin workspace claude-token setup <ws> --role <role>` (the interactive CLI prompts for the scope when `--role` is omitted).
+
+Generate offers two storage targets via a source step (`G` → Plain text / 1Password in the console; `--plain` flag or the interactive source prompt on the CLI): 1Password (mint → create/edit an item → wire the `op://` ref) or plain text (mint → store the literal token in config at the chosen scope, no op item). The suspend/resume-around-PTY mint is exercised only by live use; it has no headless test.
+
 ## OAuthToken provisioning inside the container
 
 When the launcher prepares the role-state directory for an agent whose effective `auth_forward` is `oauth_token`, `provision_claude_auth` (in <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile>) takes a different shape from the other modes:
@@ -225,5 +245,8 @@ When extending the orchestrator, prefer to extend an existing `_with_runner` shi
 - **`expiry_days_for_launch` returns `Result<Option<i64>>`** — splitting "absent stamp" (the normal case) from "malformed stamp" (the should-warn case) so a corrupt cache surfaces once on the next launch instead of silently disappearing the countdown.
 - **Revoke `--delete-op-item` is hard-error on literals** — the operator opted into a 1P-side delete; a silent fall-through when the managed env slot can't be deleted would let the secret survive.
 - **Same-ref guard in rotate** — protects against deleting the freshly-created item if the new and prior `op://` references ever match.
+- **`auth_forward = "oauth_token"` plus a managed `CLAUDE_CODE_OAUTH_TOKEN` env entry is an implementation bridge, not the target schema.** A future dedicated `oauth_token` field on the Claude auth config is the intended user-facing shape; the launcher would synthesize `CLAUDE_CODE_OAUTH_TOKEN` from that slot. Tracked as remaining work on [Workspace Claude token setup](/roadmap/workspace-claude-token-setup/).
+- **Any future storage backend must preserve the current safety properties**: no token in argv, no token in shell history, no config write before storage validation succeeds. This applies to the still-unbuilt Apple Keychain backend and any other source the [Credential Source Pattern](/roadmap/credential-source-pattern/) eventually adds.
+- **`op_picker` Create mode is the committed shape for in-place creation** — the `+ New item` / `+ New field` / `+ New section` sentinels, their `text_input`-backed naming stages, and the `OpPickerSelection` commit enum (`Existing` / `NewItem` / `EditItemField`). The console Auth-tab generate action reuses this widget rather than reintroducing a parallel one; any new interactive picker surface should do the same.
 
 When changing any of the above, update this page in the same PR.

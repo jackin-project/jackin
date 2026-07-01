@@ -1,0 +1,35 @@
+---
+title: "GitHub Link Tracking & Live Status"
+---
+
+**Status**: Open — Capsule already shows focused-instance PR context (title, CI URL, HEAD-aware invalidation); durable cross-instance GitHub link tracking, SQLite cache, fetcher loop, and console-wide live status have not started (Phase 2, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Shipped facts
+
+Capsule already ships PR context for the focused container: <RepoFile path="crates/jackin-capsule/src/pr_context.rs" /> runs `gh pr list`, derives the PR title and best check URL (preferring failed, then pending, then success), renders it in the bottom-bar dialog, updates the terminal title, and invalidates stale context when `HEAD` changes. This is scoped to the one focused Capsule instance and depends only on the `gh` CLI already being authenticated in-container.
+
+There is no GitHub status awareness beyond that: no Octocrab dependency in the workspace, no SQLite/cache layer (`rusqlite`/`sqlite` are absent from the tree), no fetcher loop, and no console-wide "Links" cell across instances. The operator still has to switch to a browser tab to check issue/PR/CI state for anything other than the focused container's current PR.
+
+## Remaining work
+
+1. **Fetcher + cache.** Add an Octocrab-based fetcher with a per-state refresh cadence and a per-instance SQLite cache (depends on the not-yet-landed [persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/)).
+2. **Auth plumbing.** Resolve the operator's GitHub PAT via the [credential source pattern](/roadmap/credential-source-pattern/) (`env`, `command`, `op://`, `keychain`); keep this operator-host only, separate from the in-container `gh` CLI passthrough.
+3. **Console rendering.** Add a per-instance "Links" cell/panel showing `<jackin:issue>`/`<jackin:pr>` markers (from the [agent tag protocol](/roadmap/agent-tag-protocol/)) as state/build/review icons, click-to-open via the [`web` handler](/roadmap/operator-handler-system/).
+4. **Cross-instance scope.** Extend beyond the single focused-Capsule PR context to track links across all running instances in one cache.
+
+See the [design exploration](/reference/research/operator-surface/github-link-tracking-design/) for the multicode-inspired cadence table, schema, and open design questions (per-instance vs shared cache, token scope guidance, GitHub App alternative).
+
+## Out of scope
+
+- Custom-link CRUD from the console (manually adding links not emitted by the agent) — agent-emitted flow covers the common case.
+- GitHub Enterprise, GitLab, Bitbucket hosts.
+- PR review summary text (who approved, what comments) — state only for V1.
+- Cross-link aggregation across all instances — depends on Phase 4 autonomous task queue.
+
+## Related work
+
+- [Design exploration: GitHub link tracking](/reference/research/operator-surface/github-link-tracking-design/) — cadence table, schema, fetcher design, open questions.
+- [Agent tag protocol](/roadmap/agent-tag-protocol/) — input this feature consumes.
+- [Persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) — cache home, not yet built.
+- [Operator handler system](/roadmap/operator-handler-system/) — click-to-open target.
+- [Credential source pattern](/roadmap/credential-source-pattern/) — GitHub PAT plumbing.

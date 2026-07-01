@@ -1,0 +1,32 @@
+---
+title: "Agent Tag Protocol (`<jackin:*>` operator-surface markers)"
+---
+
+**Status**: Open — design proposal only, no code shipped (Phase 2, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Shipped facts
+
+Nothing has landed yet. There is no tag-parsing module, no `AgentTagEvent` type, no `agent_provided` snapshot, and no `jackin tags set`/`unset` CLI in the tree; the runtime output stream that would feed a parser (the same stream [agent runtime status](/roadmap/agent-runtime-status/) consumes) is otherwise unconsumed for this purpose. The console has no rendering for captured repo/issue/PR/link/status values, and there is no published skill bundle instructing agents to emit `<jackin:*>` tags.
+
+## Remaining work
+
+1. Parser module that consumes the runtime's structured output and emits `AgentTagEvent`s for the V1 vocabulary: `<jackin:repo>`, `<jackin:issue>`, `<jackin:pr>`, `<jackin:link>`, `<jackin:status>` (plus `<multicode:*>` compatibility aliases).
+2. Defensive parsing: ignore tags inside fenced code blocks, silently skip malformed tags, drop values over 4 KiB, and validate extracted URLs/paths.
+3. In-memory per-instance index (`repo`/`issue`/`pr`/`link: Vec<String>`, `status: Option<String>`) feeding console rendering and [GitHub link tracking](/roadmap/github-link-tracking/).
+4. Console rendering of captured links next to the agent row, routed through the [operator handler system](/roadmap/operator-handler-system/) for click handling.
+5. `jackin tags set`/`unset <instance> <kind> <value>` CLI for manual repair, marked `operator-provided` and taking display precedence over agent-emitted values.
+6. One published skill bundle (separate repo, e.g. `jackin-project/jackin-skills`) instructing agents to emit the tags.
+
+## Out of scope
+
+- Persistence of tag history — V1 is in-memory only; [persistent storage layer](/reference/research/agent-orchestration/memory/persistent-storage-layer/) would add it later.
+- Tag protocol versioning (`<jackin:repo version="2">`) — add the attribute only if compatibility ever needs to break.
+- Tag emission *from* jackin❯ to the agent (reverse direction).
+
+## Related work
+
+- Research: [Agent Tag Protocol: Design Exploration](/reference/research/operator-surface/agent-tag-protocol-design/) — multicode inspiration, vocabulary rationale, parser placement, and open design questions.
+- [Agent runtime status](/roadmap/agent-runtime-status/) — parallel consumer of the same runtime output stream.
+- [GitHub link tracking](/roadmap/github-link-tracking/) — primary consumer of `<jackin:issue>` / `<jackin:pr>`.
+- [Operator handler system](/roadmap/operator-handler-system/) — invoked when the operator clicks a captured link.
+- [Custom operator tools](/roadmap/custom-operator-tools/) — would substitute captured tag values into tool commands.

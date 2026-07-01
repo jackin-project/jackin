@@ -1,0 +1,30 @@
+---
+title: "Custom Operator Tools (`[[tool]]` extension points)"
+---
+
+**Status**: Open — `jackin-exec`, the credential picker, and MCP execution primitives exist as reusable building blocks; the operator-configured `[[tool]]` surface itself has no config parsing, no keybinding registration, and no firing/substitution code yet (Phase 2, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+
+## Shipped baseline
+
+jackin❯ has in-container `jackin-exec` (<RepoFile path="crates/jackin-capsule/src/exec.rs" />, <RepoFile path="crates/jackin-runtime/src/exec_host.rs" />), a credential picker (<RepoFile path="crates/jackin-env/src/picker.rs" />), and MCP execution plumbing (<RepoFile path="crates/jackin-capsule/src/mcp_server.rs" />). These are the primitives a `[[tool]]` surface would reuse, but none of them expose an operator-configurable hotkey-to-command mechanism today. There is no `[[tool]]` array in config parsing, no reserved-key validation for custom tools, and no substitution/firing code in the console or capsule TUI.
+
+## Remaining work
+
+1. `[[tool]]` config array (operator-config level): `type = "exec" | "prompt"`, `key`, `name`, `exec`/`prompt`, optional `scope` role filter.
+2. Reserved-key collision detection at config load.
+3. Substitution engine for `{instance}`, `{workspace}`, `{workdir}`, `{host_workdir}`, `{input}`, and tag-protocol values (`{repo}`, `{issue}`, `{pr}`, `{link}`) once [agent tag protocol](/roadmap/agent-tag-protocol/) ships.
+4. Console keybinding registration and output-capture rendering (modal for V1).
+5. Tool firing routed through the [operator handler system](/roadmap/operator-handler-system/) once that command-resolution layer exists.
+
+## Out of scope (for now)
+
+- Per-workspace tool overrides — operator-config-level only.
+- Streaming output for long-running tools — capture-and-display-on-completion only.
+- Tool authoring helpers, tool emission of `<jackin:*>` tags, tool composability.
+
+## Related work
+
+- Research: [Custom Operator Tools: Design Exploration](/reference/research/operator-surface/host-affordances/custom-operator-tools-design/) — multicode's `[[tool]]` design, recommended config shape, and open questions.
+- [Operator handler system](/roadmap/operator-handler-system/) — shared command-resolution machinery this item will route through.
+- [Agent tag protocol](/roadmap/agent-tag-protocol/) — source of `{repo}`, `{issue}`, `{pr}`, `{link}` substitutions.
+- [Console resource panel](/roadmap/console-resource-panel/) — infrastructure a future scrolling tool-output log would need.

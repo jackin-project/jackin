@@ -1,0 +1,126 @@
+---
+title: "jackin❯ daemon — design proposal"
+description: "Design rationale for a long-running, per-operator-user host daemon: what it owns, what it deliberately excludes, and the open lifecycle/install/protocol/security questions that need answers before implementation starts."
+---
+
+This is the original design-proposal writeup for the [jackin❯ daemon roadmap item](/roadmap/jackin-daemon/), kept for the design-history record. Nothing described below is implemented; the roadmap item tracks current status.
+
+## Problem
+
+jackin❯ has been a short-lived CLI / TUI from day one: every command (`jackin console`, `jackin load`, `jackin workspace …`, `jackin config …`) runs to completion and exits. Reconcilers that need to keep state warm, react to host events, or hold a per-host singleton currently piggy-back on the next command boundary, which is the wrong shape for a growing class of features.
+
+A handful of these features have already accumulated:
+
+- **Keep-awake reconciler.** When a workspace opts into `keep_awake = true`, jackin❯ spawns `caffeinate -imsu` while any role from a keep-awake workspace is running. Today the reconciler runs at every CLI command boundary — leaning on the operator to type a `jackin` command often enough to keep the lock alive, and tearing down + respawning the lock on each invocation. Works in practice, but is structurally a stand-in for a long-running watcher.
+- **Live bidirectional auth sync** ([roadmap item](/roadmap/live-auth-sync/)). Needs to watch the host's token stores (Keychain notifications on macOS, inotify on Linux, periodic `gh auth token` polls), reconcile a flock-protected shared store, and push updates into running containers within seconds — without waiting for the operator to type a command. There is no way to do this from a CLI that exits after each command.
+- **Container event watcher (future).** Surface launch failures, OOM kills, agent process exits to the operator without requiring an open `jackin console` session. Today these only surface when the operator next runs `jackin console` or `gh pr checks`-style polling on the CLI.
+- **Cross-session notifications (future).** Ping the operator when an agent in a backgrounded session needs attention (sensitive-mount confirmation, auth re-prompt, network-policy violation).
+
+The pattern: each new feature that wants to **react to events instead of waiting for the next command** independently invents its own "what if jackin had a daemon" workaround. That doesn't scale.
+
+This proposes introducing **the jackin❯ daemon** as a first-class concept the rest of the project can compose on. It is deliberately written before any one of the dependent features picks an implementation path, so the daemon's lifecycle, install method, security posture, and CLI surface are designed *once* and reused.
+
+The daemon draft PR remains the right place to adjust the base contract while Desktop is being designed. The [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) roadmap depends on this daemon, so daemon API gaps discovered there should be fixed here instead of papered over in the macOS app.
+
+## What the daemon owns
+
+The daemon is the long-running, per-operator-user, per-host process that holds anything jackin❯ needs to:
+
+1. **Watch host state.** Filesystem inotify, macOS Keychain notifications, periodic polls — for any host source jackin reacts to.
+2. **Watch container state.** Docker events stream (`docker events`) for launch failures, exits, OOM kills.
+3. **Push reactive updates** into running containers via the existing bind-mount channels (no new container-side privilege).
+4. **Hold cross-process locks** that have to outlive any one CLI invocation (the live-auth-sync shared store flock, future "only one `jackin load` at a time per role class" mutex, etc.).
+5. **Reconcile per-host singleton state.** Today's keep-awake `caffeinate` lock is the obvious example — only one caffeinate process per host, regardless of how many `jackin` invocations want it alive.
+6. **Run periodic tasks** the operator opted into — credential refresh, session timeout warnings, garbage-collect on dead containers.
+
+Anything that fits this shape moves into the daemon over time. Features that don't (one-shot container launch, config edits, git operations) stay on the CLI / TUI.
+
+## What the daemon does NOT do
+
+To keep the surface manageable and the security posture reviewable:
+
+- It does **not** replace the CLI / TUI. `jackin console`, `jackin load`, `jackin workspace`, `jackin config` continue to be short-lived processes the operator types. The daemon is a back-end the CLI / TUI can talk to over a control socket.
+- It does **not** introduce a network surface. The daemon listens on a Unix domain socket scoped to the operator's user account, never on TCP.
+- It does **not** run as root. Same UID as the operator who launched it.
+- It does **not** survive operator logout. Lifecycle is tied to the operator's session (launchd LaunchAgent on macOS, systemd user unit on Linux), not a system-level service.
+- It does **not** hold credentials in persistent storage of its own. Anything the daemon needs at rest lives in the per-feature shared store (e.g. `~/.jackin/auth-shared/<axis>/` for live auth sync), not in a daemon-owned database.
+
+## Open design questions
+
+This is a design proposal, not a spec. Each question needs an explicit answer before implementation lands.
+
+### Lifecycle
+
+- **Start trigger.** Auto-start on first `jackin` invocation? Auto-start on operator login (launchd / systemd)? Both, with the launchd / systemd unit as the canonical and the CLI auto-spawn as a fallback?
+- **Restart policy.** When the daemon crashes, who restarts it? launchd / systemd handle it natively; the CLI fallback needs a watchdog or accept-and-restart-from-the-next-command policy.
+- **Stop semantics.** `jackin daemon stop` for explicit shutdown? Auto-stop on operator logout? What happens to in-flight reactive work (live auth sync watchers, caffeinate locks) when the daemon shuts down?
+- **Upgrade across jackin versions.** When the operator runs `brew upgrade jackin` (or equivalent), the running daemon binary is the old version while a new CLI lives on disk. Do CLI commands force a daemon restart? Run a version-mismatch check at every connect?
+
+### Install method
+
+- **macOS.** launchd LaunchAgent under `~/Library/LaunchAgents/`. Survives reboot. Auto-installed by `jackin daemon install` or by Homebrew formula post-install hook?
+- **Linux.** systemd user unit under `~/.config/systemd/user/`. Same install-flow question.
+- **Fallback for systems without launchd / systemd.** `nohup jackin daemon serve &` with a pidfile in `~/.jackin/run/`. Watchdog written by the CLI on each connect.
+- **Container / CI environments.** Detect non-interactive environments and short-circuit daemon use entirely — those flows don't benefit from a long-running process.
+
+### CLI surface
+
+Proposed subcommands under `jackin daemon`:
+
+- `jackin daemon install` — write the launchd / systemd unit, start the daemon.
+- `jackin daemon uninstall` — stop and remove the unit.
+- `jackin daemon start` / `stop` / `restart` — manual lifecycle controls.
+- `jackin daemon status` — running / not running, version, uptime, registered watchers, recent reconcile activity.
+- `jackin daemon logs` — tail or stream daemon log output.
+- `jackin daemon serve` — run the daemon in the foreground (used by the launchd / systemd unit).
+
+The console / TUI gets a one-line daemon-status indicator in its footer, mirroring the launch-summary pattern the auth axes use today.
+
+### Control protocol
+
+- **Transport.** Unix domain socket. Path per-operator: `~/.jackin/run/jackin-daemon.sock`.
+- **Wire format.** JSON Lines — one JSON object per line, request/response. Avoids gRPC dependency footprint at this scale.
+- **Authentication.** Filesystem permissions on the socket (`0700` directory, `0600` socket). Same UID. No additional auth layer.
+- **Versioning.** Each request carries a protocol version; daemon rejects mismatches with a clear "client / daemon version skew" error, suggesting `jackin daemon restart` to pick up the matching daemon binary.
+
+### Security posture
+
+- **Credential lifetime in memory.** Live auth sync requires the daemon to hold tokens in memory while watching for changes. Document the threat model: any process running as the operator can already read those tokens from the host's stores — the daemon does not widen the attack surface, but it does centralise it.
+- **Secret-redacted logs.** Daemon log output must redact tokens the same way `tracing::debug!` already does for `GithubAuthContext` and `GithubProvisionOutcome` (manual `Debug` impls; see <RepoFile path="crates/jackin-instance/src/lib.rs">crates/jackin-instance/src/lib.rs</RepoFile>).
+- **Crash dumps and panic backtraces.** Tokens in memory can leak through coredumps. Either disable coredumps for the daemon process (`prctl(PR_SET_DUMPABLE, 0)` on Linux, equivalent on macOS) or redact tokens before any panic-backtrace path can format them.
+- **Fork-safety.** Daemon does not exec subprocesses with token env vars set; `gh auth token` shellouts use a clean env.
+
+### Migration of today's reconcilers
+
+- **Keep-awake `caffeinate`.** Today's per-command reconciler (see <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile>) becomes a daemon-owned watcher: the daemon subscribes to "any role from a keep-awake workspace running" via Docker events and holds the caffeinate lock. CLI commands no longer reconcile.
+- **Live auth sync.** First feature designed to require the daemon — see the [live-auth-sync roadmap item](/roadmap/live-auth-sync/) for the per-axis adapter plan. The daemon hosts the shared store flocks and the host-side watchers.
+- **Desktop Agent Hub.** The native macOS app depends on daemon state rather than scraping jackin❯ config or Docker directly. The daemon is the primary data plane for Desktop status bar and window state; CLI calls are fallback or one-shot paths only when daemon communication is unavailable or would hurt the operator experience. The daemon should expose versioned capabilities for workspace/session discovery, GitHub PR lookup, Ghostty/browser open actions, account status, and event subscription as those slices land.
+- **Future reactive watchers.** Container exit notifications, sensitive-mount confirmations across sessions, etc. — each adds an adapter under the daemon's plug-in surface, not its own ad-hoc workaround.
+
+## Why this is one item, not many
+
+Each of the dependent features (live auth sync, keep-awake migration, container event watcher) could in theory ship its own narrow "we need a daemon for this" PR. That would produce three different daemon shapes, three different lifecycle stories, three different security postures — operationally awful.
+
+The daemon's bones (lifecycle, install, control socket, security model, logs) need to be designed once. Each feature plugs into that base. This roadmap item exists to make that design explicit and to be the place where "do we have a daemon yet?" is answered for any future proposal.
+
+## Proposed implementation phasing
+
+Rough order of operations — not committed; to be confirmed during the design pass:
+
+1. **Phase 0 — design.** Answer every "Open design questions" subsection. Pick lifecycle, install, control protocol, security posture. Land an updated version of the roadmap item with answers.
+2. **Phase 1 — empty daemon.** Ship `jackin daemon serve` / `start` / `stop` / `status` / `logs` with no watchers. Just the lifecycle, install, control socket, log redaction. No feature uses it yet.
+3. **Phase 2 — Desktop-ready daemon API.** Add the small versioned endpoints that Desktop needs first: `daemon/hello`, workspace/session discovery, GitHub PR lookup, account status, event subscription, and Ghostty/browser open actions.
+4. **Phase 3 — caffeinate migration.** Move keep-awake reconciler from per-command into the daemon. Smallest migration target with clearest existing behaviour to compare against.
+5. **Phase 4 — live auth sync.** Add the per-axis watcher adapters. First reactive feature.
+6. **Phase 5+ — container event watcher and beyond.** Each new reactive feature is an adapter against the daemon's stable plug-in surface.
+
+## Related work
+
+- [jackin❯ daemon](/roadmap/jackin-daemon/) — the roadmap item this design proposal backs.
+- [Live bidirectional auth sync](/roadmap/live-auth-sync/) — the first reactive feature this daemon hosts.
+- [Agent attention prompts](/roadmap/agent-attention-prompts/) — host-side OS notifications when an agent waits on operator input. Plugs into this daemon.
+- [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) — operator-mediated channel for agents to request secrets or invoke host commands. Plugs into this daemon and uses the same approval surface (TouchID / polkit / password) the daemon hosts.
+- [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) — native macOS status bar and desktop companion that consumes daemon state for workspaces, sessions, GitHub PRs, account status, notifications, and approved host actions.
+- <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile> — today's per-command keep-awake reconciler; first migration target in Phase 3.
+- [Reliable Claude authentication strategy](/reference/research/authentication/claude-auth-strategy/) — concurrent-session token-drift concerns the live-auth-sync feature ultimately answers, so the daemon hosts the answer.
+- [Credential source pattern](/roadmap/credential-source-pattern/) — future unified credential resolver; the daemon's per-axis adapter trait should be expressible inside that pattern.

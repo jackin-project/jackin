@@ -1,0 +1,38 @@
+---
+title: "Apple Container Backend"
+---
+
+**Status**: Partially implemented — launch-path backend selection, manifest schema, and session-contract/telemetry output are wired and compile; command-path lifecycle dispatch (reconnect/eject/purge) and hardware validation remain open.
+
+## Shipped facts
+
+The backend code has landed and compiles: the `container` CLI client (<RepoFile path="crates/jackin-runtime/src/apple_container_client.rs" />), the launch/attach/reconnect/stop/remove/session-contract orchestration (<RepoFile path="crates/jackin-runtime/src/runtime/apple_container.rs" />), the `JACKIN_CAPSULE_FORCE_DAEMON` capsule patch (<RepoFile path="crates/jackin-capsule/src/main.rs" />, gated on `forced_daemon_mode` so an inherited env var can't capture a client-mode invocation), and the instance-manifest `BackendResources` union (<RepoFile path="crates/jackin-instance/src/manifest.rs" />, `INSTANCE_MANIFEST_VERSION` 2). The config/workspace `[runtime] default_backend` / `[runtime] backend` fields landed at schema version `v1alpha8` with migration fixtures.
+
+**Backend selection for `jackin load` is wired:** the load pipeline (<RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs" />) reads `[runtime].backend` / `[runtime].default_backend` via `resolve_backend` (unit-tested, fails closed on an unrecognised backend string) and routes a fresh load to `apple_container::launch`, so `apple-container` is a selectable backend at launch (`jackin load the-architect . --backend apple-container`).
+
+**Session contract and telemetry are also wired, not just planned:** `apple_container::launch` calls `print_session_contract` (kernel boundary, mounts, DinD state, residual risks) and `check_dns` on attach, and emits `debug_log!("apple-container", …)` lines for version probe, container run, capsule-ready, and DNS check.
+
+**Still to prove/wire end-to-end:** `apple_container::reconnect`/`stop`/`remove`/`ensure_absent_for_purge` exist and compile, but nothing in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> or <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> calls them — the user-facing `reconnect`/`eject`/`purge` command paths still dispatch only to the Docker backend.
+
+**The VM path itself is empirical, not code:** launch/attach runs the `container` CLI and rootless DinD inside an apple/container VM, which **cannot be exercised without macOS 26 ARM hardware** — the Phase 0 gate. Run <RepoFile path="scripts/phase0-apple-container.sh" /> there to validate it; nothing in this branch claims Phase 0 has passed, and the launch dispatch currently starts then reclaims the Docker sidecar pending the Phase-0 reorder.
+
+Full architecture (runtime stack, CLI shell-out surface, manifest/schema detail, telemetry spec, known v0.11.0 limitations, design alternatives): [Apple Container backend — architecture and design](/reference/research/isolation/apple-container-backend/).
+
+## Remaining work
+
+1. **Phase 0 empirical validation** — requires macOS 26 ARM hardware with `apple/container` v0.11.0+. Run <RepoFile path="scripts/phase0-apple-container.sh" />; result decides whether rootless DinD works inside apple/container VMs and whether the Docker-sidecar-then-reclaim ordering in the launch pipeline can be reordered to skip starting the sidecar at all.
+2. **Wire command-path dispatch for reconnect/eject/purge** — `apple_container::reconnect`/`stop`/`remove`/`ensure_absent_for_purge` need callers in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> that branch on the manifest's recorded `BackendResources` variant, mirroring the Docker path.
+3. **Rootless DinD validation** — blocked on the [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) confirming `--cap-add CAP_SYS_ADMIN` works inside an apple/container VM.
+
+## Out of scope
+
+- smolvm as an alternative VM backend — separate fallback track, see [smolvm backend research](/reference/research/isolation/smolvm-backend/).
+- Network egress enforcement at the VM boundary — tracked by [Network egress policy](/roadmap/network-egress-policy/).
+
+## Related work
+
+- [Agent isolation architecture](/reference/research/security/isolation-architecture/agent-isolation-architecture/) — master architecture doc; Apple Container is Layer 2 (VM boundary).
+- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) — prerequisite; rootless DinD must validate before Phase 0 starts.
+- [jackin-exec](/roadmap/jackin-exec/) — Layer 3 credential injection; works on top of any backend including apple-container.
+- [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) — umbrella for Docker and Apple Container as the two runtime families.
+- [Session contract and explain mode](/roadmap/session-contract-explain-mode/) — Apple Container backend must feed the session contract with kernel boundary, caps, mounts.
