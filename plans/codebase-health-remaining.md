@@ -232,7 +232,7 @@ row's entry.
       `set_settings_env_value`/`toggle_*`/`remove_*`/`step_cursor_*`/`settings_*_change_count`
       1381–1724). Stays: tab nav + trust/hover/detail-row helpers + dispatch (~250L).
       **Hazard:** `settings_env_flat_rows`/`settings_env_value` have 10+ call sites — re-export.
-- [ ] **`crates/jackin-capsule/src/daemon.rs`** (1688 → coord ~1342). Joins the existing
+- [x] **`crates/jackin-capsule/src/daemon.rs`** (1688 → 1487). Joins the existing
       `daemon/` dir (10 siblings). Extract: `startup.rs` (`Multiplexer::new` 470–585),
       `clipboard.rs` (`request_clipboard_image_*`/`stage_clipboard_image_*`/
       `ClipboardImageInsertMode`/classify helpers 604–740), `control.rs`
