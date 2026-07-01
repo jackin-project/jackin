@@ -568,10 +568,14 @@ pub fn settings_save_preview<
 ) -> SettingsSavePreview {
     SettingsSavePreview {
         general: SettingsGeneralPreview {
-            original_coauthor_trailer: settings.general.original_coauthor_trailer,
-            pending_coauthor_trailer: settings.general.pending_coauthor_trailer,
-            original_dco: settings.general.original_dco,
-            pending_dco: settings.general.pending_dco,
+            original_toggles: SettingsGeneralToggles {
+                coauthor_trailer: settings.general.original_coauthor_trailer,
+                dco: settings.general.original_dco,
+            },
+            pending_toggles: SettingsGeneralToggles {
+                coauthor_trailer: settings.general.pending_coauthor_trailer,
+                dco: settings.general.pending_dco,
+            },
         },
         mounts_original: settings
             .mounts
@@ -649,22 +653,26 @@ pub fn build_settings_save_lines<
     settings_save_lines(&settings_save_preview(settings))
 }
 
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
-)]
+/// Toggle pair (git coauthor trailer + DCO enforcement) that the settings
+/// dialog captures at edit time. Bundled so the parent `SettingsGeneralPreview`
+/// keeps the `struct_excessive_bools` clippy gate quiet.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SettingsGeneralToggles {
+    pub coauthor_trailer: bool,
+    pub dco: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsGeneralPreview {
-    pub original_coauthor_trailer: bool,
-    pub pending_coauthor_trailer: bool,
-    pub original_dco: bool,
-    pub pending_dco: bool,
+    pub original_toggles: SettingsGeneralToggles,
+    pub pending_toggles: SettingsGeneralToggles,
 }
 
 impl SettingsGeneralPreview {
     fn change_count(self) -> usize {
-        usize::from(self.original_coauthor_trailer != self.pending_coauthor_trailer)
-            + usize::from(self.original_dco != self.pending_dco)
+        usize::from(
+            self.original_toggles.coauthor_trailer != self.pending_toggles.coauthor_trailer,
+        ) + usize::from(self.original_toggles.dco != self.pending_toggles.dco)
     }
 }
 
@@ -1055,9 +1063,11 @@ pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> 
         out.push(Line::from(Span::styled("General:", heading)));
         let arrow = "\u{2192}";
 
-        if preview.general.pending_coauthor_trailer != preview.general.original_coauthor_trailer {
-            let from = enabled_label(preview.general.original_coauthor_trailer);
-            let to = enabled_label(preview.general.pending_coauthor_trailer);
+        if preview.general.pending_toggles.coauthor_trailer
+            != preview.general.original_toggles.coauthor_trailer
+        {
+            let from = enabled_label(preview.general.original_toggles.coauthor_trailer);
+            let to = enabled_label(preview.general.pending_toggles.coauthor_trailer);
             out.push(Line::from(vec![
                 Span::styled("  co-author trailer: ", heading),
                 Span::styled(from, remove_style),
@@ -1066,9 +1076,9 @@ pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> 
             ]));
         }
 
-        if preview.general.pending_dco != preview.general.original_dco {
-            let from = enabled_label(preview.general.original_dco);
-            let to = enabled_label(preview.general.pending_dco);
+        if preview.general.pending_toggles.dco != preview.general.original_toggles.dco {
+            let from = enabled_label(preview.general.original_toggles.dco);
+            let to = enabled_label(preview.general.pending_toggles.dco);
             out.push(Line::from(vec![
                 Span::styled("  dco: ", heading),
                 Span::styled(from, remove_style),

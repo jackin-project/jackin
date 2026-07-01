@@ -546,6 +546,12 @@ builders + write sites at the editor→preview constructor + 1 test fixture migr
 behavior change, just group the two orthogonal toggle pairs by feature rather than
 spreading them across four sibling fields. `#[expect]` count: 56 → **55**.
 
+SettingsGeneralPreview (same file) — bundled the 4 coauthor-trailer / dco toggle bools
+into a `SettingsGeneralToggles { coauthor_trailer: bool, dco: bool }` struct, replaced
+the field quartet with `original_toggles` / `pending_toggles` of that type. Read sites
+at `change_count` + the diff line builders migrated; constructor migrated. No behavior
+change. `#[expect]` count: 55 → **54**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
