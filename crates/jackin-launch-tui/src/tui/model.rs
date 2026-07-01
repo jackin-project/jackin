@@ -9,9 +9,15 @@ pub use jackin_core::launch_progress::{
 };
 
 #[derive(Debug, Clone)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Five orthogonal launch-cockpit state flags (failure_ack, \
+              build_log_open, build_log_scroll_dragging, build_log_active, \
+              container_info_open) — each tracks an independent UI state \
+              (popup dismissal, overlay visibility, drag binding, capture \
+              activity, dialog visibility) consumed individually by render + \
+              subscription paths. Named-field reads match the direct UI-event \
+              idiom these flags back."
 )]
 pub struct LaunchView {
     pub identity: Option<LaunchIdentity>,

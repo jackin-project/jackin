@@ -593,6 +593,13 @@ durable justification. The private struct holds 4 orthogonal file-bucket categor
 PR digest; each bool is an independent path-prefix match paralleling the
 `paths-filter` filter idiom. `#[expect]` count: 47 → **46**.
 
+LaunchView (jackin-launch-tui/src/tui/model.rs:16) — converted `#[expect]` to `#[allow]`
+with durable justification. The struct holds 5 orthogonal launch-cockpit state flags
+(failure_ack, build_log_open, build_log_scroll_dragging, build_log_active,
+container_info_open), each tracking an independent UI state consumed individually by
+render + subscription paths. Named-field reads match the direct UI-event idiom these
+flags back. `#[expect]` count: 46 → **45**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
