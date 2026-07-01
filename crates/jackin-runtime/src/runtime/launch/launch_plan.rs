@@ -88,7 +88,7 @@ pub(crate) fn emit_rejected_launch_plan(
     .to_string();
     if let Some(run) = jackin_diagnostics::active_run() {
         run.stage(
-            "launch_plan",
+            "launch_plan_rejected",
             "restore",
             &format!("rejected launch plan {plan}"),
             Some(&detail),
