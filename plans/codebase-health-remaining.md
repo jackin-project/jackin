@@ -786,6 +786,14 @@ Until those slices land, the inline shape preserves captured-locals across phase
 tighten `clippy.toml` `too-many-lines-threshold` 450 → toward 150, `cognitive-complexity` 100 →,
 `excessive-nesting` 8 → 5, `too-many-arguments` 9 →. Never blanket-`allow`; ratchet in notches.
 
+**Progress (this branch).** Step 1 (file-size cap) done: lowered `production_cap`
+2000 → 1500 and added the 13 files in the 1500L–2000L band + 2 integration test
+files as grandfather entries. All 3 lint sub-gates green with the new cap.
+Step 2 (clippy.toml thresholds) deferred: an attempted 450 → 250 notch surfaced
+6 fn-level violations requiring follow-up body-extraction slices before the next
+notch. R7 closes (mechanically) when both steps + the band decomposition land;
+the band decomposition is a roadmap backlog, not a one-PR close-out.
+
 ---
 
 ## R8 — Duplicate-version debt (`deny.toml`)

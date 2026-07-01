@@ -7,8 +7,8 @@
 # subcommand):
 #
 #   1. Production Rust sources (every `crates/**/*.rs` except `tests.rs`) must
-#      be at most `production_cap` lines long. The cap is 2000L today; ratchet
-#      down over time.
+#      be at most `production_cap` lines long. Ratchets down over time —
+#      see plans/codebase-health-remaining.md R7 for the target of 1500L.
 #   2. Test sources (`**/tests.rs`) must be at most `test_cap` lines long. The
 #      test cap is 10000L today because the launch and daemon tests are large
 #      by design — see `roadmap/test-infra-behavioral-specs/` for the
@@ -24,10 +24,25 @@
 # …then prune entries whose line counts now sit under the cap, and
 # commit the result.
 
-production_cap = 2000
+production_cap = 1500
 test_cap = 10000
 
 # Grandfathered production files (current line counts; may only decrease):
+# R4/R7 backlog: 13 files in the 1500L-2000L band need decomposition to drop
+# their grandfather entries. Each entry's `lines` value is the ratchet ceiling
+# — must only ever decrease.
+[[production]]
+path = "crates/jackin-runtime/src/runtime/image.rs"
+lines = 1966
+
+[[production]]
+path = "crates/jackin/src/cli/diagnostics.rs"
+lines = 1964
+
+[[production]]
+path = "crates/jackin-term/src/grid.rs"
+lines = 1899
+
 [[production]]
 path = "crates/jackin-console/src/tui/screens/editor/model.rs"
 lines = 4176
@@ -35,6 +50,49 @@ lines = 4176
 [[production]]
 path = "crates/jackin-console/src/tui/screens/settings/model.rs"
 lines = 3852
+
+[[production]]
+path = "crates/jackin-capsule/src/session.rs"
+lines = 1736
+
+[[production]]
+path = "crates/jackin-console/src/tui/screens/settings/update.rs"
+lines = 1727
+
+[[production]]
+path = "crates/jackin-capsule/src/daemon.rs"
+lines = 1674
+
+[[production]]
+path = "crates/jackin-console/src/tui/screens/settings/view.rs"
+lines = 1639
+
+[[production]]
+path = "crates/jackin-console/src/tui/model/modal.rs"
+lines = 1587
+
+[[production]]
+path = "crates/jackin-console/src/tui/input/mouse.rs"
+lines = 1558
+
+[[production]]
+path = "crates/jackin-console/src/tui/components/footer_hints.rs"
+lines = 1537
+
+[[production]]
+path = "crates/jackin-capsule/src/tui/components/dialog_widgets.rs"
+lines = 1510
+
+# Integration test files (no `tests.rs` stem) count as production per the
+# file-budget gate. Both are docker E2E flows; per the worklist R7 note
+# they sit in the 1500–2000L band awaiting decomposition or path-rename.
+[[production]]
+path = "crates/jackin/tests/dind_e2e.rs"
+lines = 1669
+
+[[production]]
+path = "crates/jackin/tests/manager_flow.rs"
+lines = 1523
 
 # Grandfathered test files (current line counts; may only decrease):
 [[test]]
