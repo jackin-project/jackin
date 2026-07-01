@@ -1,0 +1,66 @@
+---
+title: "Platform support policy and roadmap freshness tracking — design rationale"
+description: "Why jackin❯ declares macOS as primary and Windows as out of scope, why the construct image is Debian-only, and the design for a roadmap staleness check via last_reviewed frontmatter."
+---
+
+This dossier records the design rationale behind the platform support policy and the roadmap freshness-tracking mechanism. The actionable, current-status tracking lives in [Platform support policy & roadmap freshness](/roadmap/platform-support-and-freshness/); this page keeps the "why" out of the roadmap item.
+
+## Problem framing
+
+Two documentation and process gaps motivated this design:
+
+1. **No declared platform support matrix.** The codebase has only a couple of `#[cfg(windows)]` blocks against dozens of `#[cfg(unix)]` blocks. CI ships macOS and Linux binaries only. Windows is effectively unsupported, but the docs never say so explicitly. The next user who tries `cargo install jackin` on Windows hits cryptic errors with no landing page explaining why.
+
+2. **Roadmap staleness is invisible.** The roadmap has grown past 80 items with no audit catching staleness. An item marked `Status: Open` could be untouched for well over a year. "Open" without a date is misleading — readers cannot tell a live design proposal from an abandoned one.
+
+## Platform support matrix design
+
+The proposed contributor-facing reference page (`docs/content/docs/reference/platform-support.mdx`) declares:
+
+| Platform | Status |
+|---|---|
+| macOS (aarch64, latest) | **Primary** — all development and verification happens here |
+| macOS (x86_64, latest) | Supported (via CI) |
+| Linux (aarch64, x86_64) | **Experimental** — community-tested, no in-house test machine today. Becomes a priority when jackin❯ moves to server-side use cases (Kubernetes, remote operation). Community contributions and bug reports welcome. |
+| Windows (WSL2) | Best-effort — uses the Linux build. No dedicated testing. |
+| Windows (native) | Out of scope — jackin❯'s TUI/PTY model relies on Unix primitives. |
+
+**Philosophy**: jackin❯ targets the latest versions of everything (latest Debian for the construct image, latest macOS, latest OrbStack). There is no intention to support older versions. To change this stance, the project needs at least one strong advocate who uses jackin❯ on that platform and can explain why — the policy is deliberately not a permanent ban, just a statement of current priorities and evidence.
+
+## Base image rationale (Debian-only)
+
+The construct image uses Debian only (latest `debian:trixie`) because it is the most well-known and predictable base image in the Docker ecosystem — stable, not fragmented across distro-specific quirks the way Alpine (musl vs glibc) or slim variants (missing packages) can be. No Alpine or slim variants are planned until a strong advocate appears with a clear use case. This is a policy statement, not a roadmap item — there is no implementation task attached to "stay on Debian."
+
+## Roadmap freshness tracking design
+
+The proposed mechanism: add `last_reviewed: YYYY-MM-DD` frontmatter to every roadmap MDX file, then add a script (`docs/scripts/check-roadmap-freshness.ts`) that runs in CI and as `bun run check:roadmap-freshness`:
+
+- Flags items with `last_reviewed` older than 6 months as stale.
+- Reports them in CI output (no auto-filed issues).
+- Estimated at roughly 30 lines of TypeScript, following the shape of the existing <RepoFile path="docs/scripts/check-roadmap-sidebar.ts" />.
+
+The baseline plan was to apply a single `last_reviewed` date to every existing roadmap MDX file at once, then require new items to carry the field from creation.
+
+### Why staleness tracking instead of archiving
+
+Freshness tracking flags date, not relevance. Archiving stale items risks discarding a design that is still correct but simply hasn't been revisited; a visible "last reviewed" date lets a reader judge trustworthiness themselves without the project committing to a review cadence it can't sustain solo.
+
+## Non-goals
+
+- WSL2 first-class support — that would require dedicated testing infrastructure.
+- Alpine/slim construct image variants — no advocate or use case exists yet.
+- Archiving stale roadmap items — freshness tracking is meant to be sufficient; old items stay visible.
+- Auto-opening GitHub issues for stale items — CI output is enough signal for a solo-maintainer project.
+
+## Open design questions
+
+1. Should the platform support page live under `reference/` or under `getting-started/`? Leans `reference/` since it's contributor/advocate-facing policy, not an operator how-to.
+2. What is the staleness threshold? 6 months was the initial guess; adjustable once the script exists and real data comes in.
+3. Should the freshness script also flag roadmap items missing the `last_reviewed` field entirely (as opposed to just old dates)? Probably yes, since a missing field is itself a freshness signal.
+
+## Related work
+
+- [Platform support policy & roadmap freshness](/roadmap/platform-support-and-freshness/) — the tracked roadmap item.
+- [/reference/research/isolation/smolvm-backend/](/reference/research/isolation/smolvm-backend/) — Linux/KVM support affects the platform matrix.
+- [/reference/research/isolation/orbstack-isolated-machines/](/reference/research/isolation/orbstack-isolated-machines/) — macOS-only backend.
+- [/reference/research/security/sandbox-backends/selectable-sandbox-backends/](/reference/research/security/sandbox-backends/selectable-sandbox-backends/) — backend selection affects platform support.

@@ -1,19 +1,14 @@
 {
-  "title": "Fleet phase 2 — Live operator surface",
+  "title": "Fleet phase 2 \u2014 Live operator surface",
   "defaultOpen": false,
   "pages": [
-    "../../agent-runtime-status",
-    "../../terminal-observation-automation",
-    "../../deja-vu",
-    "../../launch-progress-tui",
-    "../../console-agent-session-control",
-    "../../instant-launch-architecture",
-    "../../session-keep-and-resume",
-    "../../capsule-usage-overlay-responsiveness-and-tabs",
-    "../../console-resource-panel",
-    "../../agent-tag-protocol",
-    "../../github-link-tracking",
-    "../../public-attribution-and-growth",
-    "../../custom-operator-tools"
+    "agent-runtime-status",
+    "launch-progress-tui",
+    "console-agent-session-control",
+    "session-keep-and-resume",
+    "console-resource-panel",
+    "agent-tag-protocol",
+    "github-link-tracking",
+    "custom-operator-tools"
   ]
 }

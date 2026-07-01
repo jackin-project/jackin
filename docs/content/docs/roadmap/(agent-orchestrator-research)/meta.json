@@ -1,10 +1,7 @@
 {
-  "title": "Agent Orchestrator Research",
+  "title": "Agent Orchestration",
   "defaultOpen": false,
   "pages": [
-    "../agent-orchestrator-research",
-    "../orca-research",
-    "../brainstorm-backlog",
     "(phase-1-foundation)",
     "(phase-2-operator-surface)",
     "(phase-3-persistence)",
