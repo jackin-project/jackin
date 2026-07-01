@@ -3,6 +3,7 @@
   "defaultOpen": false,
   "pages": [
     "instant-launch-architecture",
+    "registry-configurations",
     "workspace-registry-cache",
     "platform-support-and-freshness"
   ]
