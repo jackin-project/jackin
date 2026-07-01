@@ -161,6 +161,13 @@ pub async fn prewarm_role_images(
               per-build-strategy branches nested with telemetry. Inline shape \
               preserves the per-decision-arm state machine."
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Decide-role-image call site propagates paths, selector, cached + \
+              validated repos, rebuild + branch override + pinned sha, docker, \
+              runner. Named-arg reads match the per-input propagation idiom; \
+              bundling into a config struct is the deferred-parallel-pass."
+)]
 pub(super) async fn decide_role_image(
     paths: &JackinPaths,
     selector: &RoleSelector,

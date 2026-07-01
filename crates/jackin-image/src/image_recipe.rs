@@ -30,24 +30,27 @@ pub const IMAGE_RECIPE_VERSION: &str = "v8";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImageRecipe {
-    version: &'static str,
+    pub(crate) version: &'static str,
     /// `jackin.role.toml` schema version (e.g. `v1alpha4`). A manifest-schema
     /// bump changes what jackin generates, so it is a recipe input.
-    manifest_version: String,
-    role_git_sha: String,
-    role_source_ref: Option<String>,
-    base_image: Option<String>,
-    construct_image: String,
-    generated_runtime_hash: String,
-    supported_agents: Vec<String>,
-    cache_bust: String,
-    capsule_version: String,
-    hooks_hash: String,
+    pub(crate) manifest_version: String,
+    pub(crate) role_git_sha: String,
+    pub(crate) role_source_ref: Option<String>,
+    pub(crate) base_image: Option<String>,
+    pub(crate) construct_image: String,
+    pub(crate) generated_runtime_hash: String,
+    pub(crate) supported_agents: Vec<String>,
+    pub(crate) cache_bust: String,
+    pub(crate) capsule_version: String,
+    pub(crate) hooks_hash: String,
     /// SHA-256 of the serialised Claude marketplaces + plugins list. Plugin
     /// changes rebuild the image because plugins are now baked at build time (D2).
-    plugin_recipe_hash: String,
-    host_identity_strategy: &'static str,
-    host_uid: Option<u32>,
+    pub(crate) plugin_recipe_hash: String,
+    pub(crate) host_identity_strategy: &'static str,
+    /// Host UID that will run the container. Public so the
+    /// `host_uid_changes_recipe_hash` integration test can mutate the field to
+    /// assert that UID changes participate in the derived-image recipe hash.
+    pub host_uid: Option<u32>,
 }
 
 impl ImageRecipe {

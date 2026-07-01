@@ -88,7 +88,6 @@ fn same_cell_selection_is_not_a_drag() {
 
 /// Shared fixtures for the word-boundary suites: build a `RowSnapshot`
 /// from a string (real unicode widths) and resolve the word under a click.
-
 pub(super) fn row(text: &str) -> RowSnapshot {
     RowSnapshot {
         cells: text

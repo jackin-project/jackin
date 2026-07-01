@@ -5,6 +5,7 @@ use jackin_core::agent::Agent;
 use jackin_image::{
     LABEL_IMAGE_CAPSULE_VERSION, LABEL_IMAGE_MANIFEST_VERSION, LABEL_IMAGE_RECIPE_HASH,
     LABEL_IMAGE_RECIPE_VERSION,
+    image_recipe::build_image_recipe,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, MutexGuard};

@@ -478,6 +478,14 @@ pub(super) mod instances {
         }
     }
 
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Snapshot fan-out walks chunks of containers, each chunk \
+                  spawns a thread, each thread joins a panic-payload match — \
+                  the nesting mirrors the chunk → thread → join-result arms. \
+                  Flattening requires extracting the per-chunk join to a helper; \
+                  deferred-parallel-pass."
+    )]
     fn fetch_snapshots_parallel(
         paths: &jackin_core::JackinPaths,
         targets: &[String],

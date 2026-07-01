@@ -202,6 +202,13 @@ where
               async loop branching tracks the request/response routing arms, \
               not algorithmic complexity."
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Attach-protocol call site propagates the four server/terminal stream \
+              handles plus geometry, request payload, initial input, and the winch \
+              signal. Named-arg reads match the per-input propagation idiom; \
+              bundling into a config struct is the deferred-parallel-pass."
+)]
 async fn run_attach_protocol<R, W, I, O>(
     mut server_reader: R,
     mut server_writer: W,

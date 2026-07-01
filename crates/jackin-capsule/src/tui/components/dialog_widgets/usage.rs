@@ -214,7 +214,7 @@ pub(crate) fn usage_info_lines_impl(
 }
 
 #[derive(Clone, Copy)]
-struct UsageLineContext<'a> {
+pub(crate) struct UsageLineContext<'a> {
     updated: Option<&'a str>,
     account: Option<&'a str>,
     username: Option<&'a str>,

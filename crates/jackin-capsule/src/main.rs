@@ -17,6 +17,14 @@ const DEFAULT_AGENT: &str = "claude";
 /// - PID == 1 → daemon mode (supervisor + multiplexer + socket control plane)
 /// - PID != 1 → client mode (connect to daemon, run interactive UI)
 #[tokio::main(flavor = "current_thread")]
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Top-level CLI dispatch match over subcommands, where some arms (notably \
+              `new` and `--focus`) nest further matches to validate argv. Each branch \
+              is a thin adapter into a client-side runtime call; extracting each arm \
+              into its own helper is the deferred-parallel-pass — the inline shape keeps \
+              the dispatch table co-located for review."
+)]
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if invoked_as_prepare_commit_msg_hook(&args) {

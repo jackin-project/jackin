@@ -160,6 +160,14 @@ pub(super) fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
               in a follow-up slice. Until that slice lands, the inline shape \
               preserves captured-locals across phases."
 )]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Top-level launch pipeline needs paths, config, selector, workspace, \
+              docker, runner, opts, and the two trust/branch confirm callbacks to \
+              propagate through every phase. Named-arg reads match the per-input \
+              propagation idiom; bundling into a config struct is the deferred- \
+              parallel-pass."
+)]
 pub(crate) async fn load_role_with(
     paths: &JackinPaths,
     config: &mut AppConfig,
