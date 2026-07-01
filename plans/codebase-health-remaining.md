@@ -192,7 +192,7 @@ row's entry.
       2199–2290). Stays: `EditorTab`, `EditorState` struct + the big method/impl blocks.
       **Hazard:** the ~1800-line method impl (291–2074) is a state machine — it stays in the
       coordinator (it fits under 1500 once the type clusters leave); do NOT split mid-impl.
-- [ ] **`crates/jackin-runtime/src/runtime/image.rs`** (1973 → coord ~160). **HOT PATH.**
+- [x] **`crates/jackin-runtime/src/runtime/image.rs`** (1987 → 1843). **HOT PATH.**
       Extract under `image/`: `decision.rs` (`decide_role_image` 164–411 +
       `published_image_*` 1763–1844), `builder.rs` (`build_agent_image` 1351–1690 +
       `ensure_local_role_base` 1165–1333), `prewarming.rs` (`spawn_sibling_*_prewarm`/
