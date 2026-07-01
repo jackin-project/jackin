@@ -39,9 +39,13 @@ pub struct PrewarmArgs {
 }
 
 /// Flags for `jackin prewarm` (flattened into `PrewarmArgs` for CLI ergonomics).
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Eight orthogonal CLI flag booleans (image, daemon, roles, sidecar, \
+              sidecar_container, keep_sidecar_container, all_workspaces, all_roles) \
+              — each is an independent `--flag` the operator can pass on the \
+              command line. Named-field reads match the per-flag CLI ergonomics \
+              this struct flattens into."
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::Args)]
 pub struct PrewarmFlags {

@@ -698,6 +698,13 @@ shell, stale report). Each is an independent observable the host console
 consumes individually. Named-field reads match the per-signal wire-payload
 idiom. `#[expect]` count: 22 → **21**.
 
+PrewarmFlags (jackin/src/cli/prewarm.rs:42) — converted `#[expect]` to
+`#[allow]` with durable justification. Eight orthogonal CLI flag booleans
+(image, daemon, roles, sidecar, sidecar_container, keep_sidecar_container,
+all_workspaces, all_roles), each an independent `--flag` the operator can
+pass. Named-field reads match the per-flag CLI ergonomics this struct flattens.
+`#[expect]` count: 21 → **20**.
+
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
 returns zero.
 
