@@ -288,7 +288,7 @@ The gate still counts each submodule `.rs` as production, so keep every one < 15
       sentinel asserts 364–450, 1622–1669). Keep the 4 `#[test]` fns + shared consts +
       `E2eRoleCleanup` in `dind_e2e.rs`. **Hazard:** module-level consts used across siblings
       — keep in `dind_e2e.rs`, `use super::*` in siblings.
-- [ ] **`crates/jackin/tests/manager_flow.rs`** (1523 → top ~500). Already uses the
+- [x] **`crates/jackin/tests/manager_flow.rs`** (1523 → 523). Already uses the
       `#[path = "manager_flow/secrets.rs"] mod secrets;` pattern — extend it. Add
       `auth_common.rs`, `auth_claude.rs`, `auth_github.rs` and move: `auth_common.rs` (the
       auth-kind/role-edit tests + `auth_row_idx` 524–1123), `auth_claude.rs` (the Claude auth
