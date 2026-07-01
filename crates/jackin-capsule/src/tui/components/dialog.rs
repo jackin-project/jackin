@@ -891,6 +891,12 @@ impl Dialog {
     /// outside-dismiss; inside clicks on a row select that row and
     /// immediately confirm; clicks on the border or padding rows are
     /// consumed so they do not leak through to the focused pane underneath.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Dialog click dispatcher: per-Dialog-variant handle-click arm with \
+                  nested per-hit-test + border-click + confirm-cancel + dialog-pop. \
+                  Modal nesting is the per-variant dispatch protocol."
+    )]
     pub fn handle_click(
         &mut self,
         row: u16,

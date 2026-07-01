@@ -977,6 +977,13 @@ where
     Ok(Some(decode_server(tag, payload)?))
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Attach-protocol frame decoder: per-tag (Ctrl / Attach / Detach / \
+              Hello / Bye / ...) branches each decode their own frame payload. \
+              The flat per-tag-decode shape preserves the per-tag wire format. \
+              Body extraction follows the deferred-parallel-pass plan."
+)]
 pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
     Ok(match tag {
         TAG_HELLO => {

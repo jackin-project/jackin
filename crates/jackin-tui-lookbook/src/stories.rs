@@ -86,6 +86,12 @@ impl Story {
 }
 
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Lookbook story catalog: one entry per component, each constructing \
+              its own Story. The flat shape is the canonical story list — \
+              extracting per-component helpers would obscure the catalog layout."
+)]
 pub(crate) fn stories() -> Vec<Story> {
     vec![
         Story::new(

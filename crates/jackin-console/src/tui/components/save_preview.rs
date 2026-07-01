@@ -728,6 +728,12 @@ pub struct TrustPreviewRow {
 }
 
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Workspace-save preview renderer: per-section (header / mount / auth / \
+              env / role / status) line builder. Inline shape preserves the \
+              per-section readability."
+)]
 pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>> {
     let heading = Style::default()
         .fg(jackin_tui::theme::WHITE)

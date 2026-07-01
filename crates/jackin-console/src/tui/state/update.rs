@@ -81,6 +81,12 @@ pub type ManagerUpdate = crate::tui::update::ConsoleUpdate<ManagerEffect>;
 
 // ── Reducer ───────────────────────────────────────────────────────────────
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Manager-state reducer handles every ManagerMessage variant inline: \
+              per-message-arm state mutation + per-stage emit + per-Update \
+              branch. Inline shape preserves the per-message-arm state machine."
+)]
 pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> ManagerUpdate {
     match message {
         ManagerMessage::CollapseSelectedTree => collapse_selected_tree(state),

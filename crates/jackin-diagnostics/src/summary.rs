@@ -124,6 +124,13 @@ pub fn summarize_run_file(path: &Path) -> anyhow::Result<DiagnosticsSummary> {
     summarize_reader(BufReader::new(file))
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Diagnostic summary reader: per-event-line parsing + per-section \
+              (step / metric / fail / note) branch + state-machine arms. The \
+              flat shape preserves the per-line classification logic. Body \
+              extraction follows the deferred-parallel-pass plan as the launch fns."
+)]
 pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSummary> {
     let mut summary = DiagnosticsSummary {
         run_id: None,

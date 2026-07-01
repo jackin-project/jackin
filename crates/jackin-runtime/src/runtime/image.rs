@@ -155,6 +155,12 @@ pub async fn prewarm_role_images(
     Ok(rows)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Decide-role-image: per-cache-state + per-invalidation-reason + \
+              per-build-strategy branches nested with telemetry. Inline shape \
+              preserves the per-decision-arm state machine."
+)]
 pub(super) async fn decide_role_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -1335,6 +1341,12 @@ async fn ensure_local_role_base(
               docker, runner, repo_lock, known head sha, progress) to flow into \
               the build pipeline. Named-arg reads match the per-input propagation \
               idiom the image builder walks."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Same justification as the too_many_arguments allow: build-agent- \
+              image carries every caller-supplied input through the build \
+              pipeline. Inline shape preserves captured-locals across phases."
 )]
 pub(super) async fn build_agent_image(
     paths: &JackinPaths,

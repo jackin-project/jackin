@@ -7,7 +7,7 @@ allow-unwrap-in-tests = true
 # so the lints fire no warnings on day one. Ratchet these down over time;
 # every new violation is either refactored or grandfathered with a narrow
 # `#[expect(clippy::<lint>, reason = "tracked in codebase-health-enforcement")]`.
-too-many-lines-threshold = 250
+too-many-lines-threshold = 200
 cognitive-complexity-threshold = 60
 excessive-nesting-threshold = 5
 too-many-arguments-threshold = 7
