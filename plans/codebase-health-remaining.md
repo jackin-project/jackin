@@ -184,7 +184,7 @@ row's entry.
       `SettingsTab`, panel traits, `SettingsState` struct + impls (~950L).
       **Hazard:** `AuthFormFocus`/`AuthFormTarget` (494–515) are also used by the editor
       module — extract to `auth.rs` but **re-export publicly** from the coordinator.
-- [ ] **`crates/jackin-console/src/tui/screens/editor/model.rs`** (2291 → coord ~1200).
+- [x] **`crates/jackin-console/src/tui/screens/editor/model.rs`** (2291 → 2156).
       Extract under `editor/model/`: `key_plans.rs` (the `Editor*KeyPlan` cluster 88–200),
       `mode.rs` (`EditorMode`/`EditorSaveModePlan` + modal traits 203–238), `secrets.rs`
       (`SecretsScopeTag`/`SecretsRow`/`SecretsEnterPlan` 2141–2172), `auth.rs` (`AuthRow`
