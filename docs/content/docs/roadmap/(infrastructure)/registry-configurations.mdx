@@ -2,255 +2,37 @@
 title: "Registry configurations"
 ---
 
-**Status**: Open — design proposal
+**Status**: Open — design proposal, nothing shipped yet
 
 ## Problem
 
-Running `jackin` against a role whose `published_image` lives in a **private** registry fails silently and expensively. The operator sees only:
+Running `jackin` against a role whose `published_image` lives in a private registry fails silently and expensively: the pull path in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> hard-codes `None` for bollard's registry-auth argument, and the freshness check in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> treats any pull failure as "image is stale" — so an auth failure triggers a multi-minute rebuild from the Dockerfile instead of an actionable error. The structural gap is that jackin has no place for an operator to declare credentials for an external endpoint at all; every existing secret (agent API keys, GitHub token, 1Password refs) was solved as a one-off instead of through a shared credential-source layer.
 
-```text
-jackin: warning: docker pull docker.io/chainargos/jackin-agent-brown:latest failed (pulling image docker.io/chainargos/jackin-agent-brown:latest); treating published image as stale and rebuilding from workspace Dockerfile
-```
+## Remaining work
 
-`docker pull` of the same reference confirms the cause is authentication, not staleness:
+1. Define a `[[registries]]` configuration schema (global `AppConfig` and per-workspace `WorkspaceConfig`, per-workspace overriding/extending global) — each entry's credential field is the shared [`CredentialSource`](/roadmap/credential-source-pattern/) enum.
+2. Build the `docker-config` provider (reads `~/.docker/config.json` / `credsStore` / `credHelpers`) as the zero-config default fallback.
+3. Build the native `ecr` provider (`aws-sdk-ecr` over the default AWS credential chain, with token caching/refresh) — the forcing case for this item.
+4. Thread real `DockerCredentials` into bollard's `pull_image`, resolved lazily per pull rather than at config load.
+5. Split the freshness check's conflated states: classify auth failures (fail fast, actionable message) from genuine manifest/tag-not-found staleness (fall back to build, as today), with a `[registry].on_auth_failure` escape hatch for operators who want the old build-on-failure behavior.
+6. Add operator + internals docs for the new config surface.
 
-```text
-Error response from daemon: pull access denied for chainargos/jackin-agent-brown, repository does not exist or may require 'docker login'
-```
+A `jackin registry login` (keychain-backed, no plaintext store) and a read-only `jackin registry status` are candidate follow-ups, not required for v1.
 
-jackin never sends registry credentials when pulling. The pull path in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> calls bollard `create_image` with the `RegistryAuth` argument hard-coded to `None`. Because the freshness check in <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> treats *any* pull failure as "image is stale", an auth failure is indistinguishable from a genuinely outdated image — so jackin falls through to a full workspace rebuild from the Dockerfile (13+ minutes in the report above) and never tells the operator the real problem was a missing login.
+Design details — provider mechanics, config surface, ADRs on each decision above, and open questions — live in [Registry Configurations: design](/reference/research/security/credential-exposure/registry-configurations-design/).
 
-### Root cause — the bug class, not the missing argument
+## Out of scope
 
-The `auth: None` argument is the symptom. The structural cause is that **jackin has no place for an operator to declare credentials for an external endpoint**. There is no `[registry]`/`[[registries]]` block in the config schema (<RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> defines `AppConfig` and `WorkspaceConfig` with auth blocks only for the agent API key and the GitHub token). Because there is no general credential-source layer, every external secret jackin has ever needed was solved as a one-off:
+- A generic `command` credential kind — deferred until a concrete custom-SSO need appears.
+- A broader `endpoints`/`connections` configuration layer beyond registries — this item stays registry-specific; the credential guts are shared so a broader layer can wrap this later without reshaping them.
 
-- Agent API keys and GitHub token — bespoke fields in <RepoFile path="crates/jackin-config/src/auth.rs">crates/jackin-config/src/auth.rs</RepoFile>.
-- 1Password / env references — resolved ad hoc through the host-socket daemon in <RepoFile path="crates/jackin-capsule/src/exec.rs">crates/jackin-capsule/src/exec.rs</RepoFile>.
-- A general [`CredentialSource`](/roadmap/credential-source-pattern/) abstraction was *designed* but never built.
+## Related work
 
-Registry pull-auth is simply the next instance of this class. A correct architecture would have absorbed it without a new code path. Patching only `create_image` would leave the enabling condition — no credential-source layer, no per-endpoint configuration surface — in place, and the next external endpoint (a second ECR account, a private GHCR, a proxy) would reproduce the same gap.
-
-### Operator-shaped requirements (from design discussion)
-
-- This is **not** "authentication" and must not surface as an auth tab. It is a **configurations** surface: credentials are one attribute of a configured endpoint, not the headline concept.
-- An operator must be able to configure **multiple endpoints at once**, each with its own credentials — e.g. an ECR account, a private Docker Hub org, and a GHCR namespace simultaneously.
-- Configurations must be declarable at the **global** level *and* **per workspace**, with per-workspace entries overriding/extending global. This maps onto the existing `AppConfig` (global) / `WorkspaceConfig` (per-workspace) split — no new scoping machinery required.
-- The forcing case — and first real consumer — is **Amazon ECR private registries**, whose 12-hour tokens make a static stored secret insufficient and force the credential-source layer to support *refreshable/command-sourced* credentials, not just literals.
-
-## Why It Matters
-
-- **Correctness over silent fallback.** An auth failure currently masquerades as staleness and triggers a multi-minute rebuild with no actionable message. The operator cannot tell that one `docker login`-equivalent step would have fixed it.
-- **Private images are table stakes.** Teams ship their role/agent images to private ECR, GHCR, or Docker Hub repos. Without pull auth, the published-image fast path is unusable for them and every launch pays the full local-build cost.
-- **Removes a recurring bug class.** A single credential/configuration layer means the next external endpoint plugs in instead of growing another bespoke field. It also gives [`CredentialSource`](/roadmap/credential-source-pattern/) a concrete first consumer, turning a stalled proposal into shipped infrastructure.
-- **Consolidates a scattered surface.** Registry auth, agent tokens, the GitHub token, and 1Password references are today separate concepts in separate places. A configurations layer is where they converge, and it interlocks with [container credential exposure](/roadmap/container-credential-exposure/) (resolved secrets must not leak into image layers, `docker inspect`, or logs) and the [workspace registry cache](/roadmap/workspace-registry-cache/) (a pull-through cache still needs upstream credentials).
-
-## Design
-
-Direction and candidate solutions — to be finalized in `brainstorm`. The structural move is a **configurations layer**: a list of named, scoped endpoint configurations, each carrying a credential sourced through the [`CredentialSource`](/roadmap/credential-source-pattern/) enum (literal, env, command, `op://`, OS keychain, and — new — Docker credential store/helper and an ECR provider). Registry pull-auth is the first consumer: resolve the matching configuration for a `published_image` reference, hand bollard real credentials, and distinguish auth failure from staleness so the operator gets an actionable message instead of a silent rebuild.
-
-### Pull through bollard, not the docker CLI
-
-The pull path must stay in-process via the bollard API, **not** shell out to the `docker` CLI. The CLI offers no way to hold a session or inject ad-hoc credentials per pull; bollard does, and jackin already calls it. This was verified against the pinned `bollard 0.21.0`:
-
-- `create_image(options, body, credentials: Option<DockerCredentials>)` — the third argument is the injection point. Today it is `None` in <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile>. bollard base64-encodes the credentials into the `X-Registry-Auth` header itself — the same mechanism the CLI uses internally.
-- `bollard::auth::DockerCredentials { username, password, auth, email, serveraddress, identitytoken, registrytoken }` — all `Option<String>`. (Note: the type is `DockerCredentials`, not `RegistryAuth`.)
-
-So the only missing piece is *producing* a `DockerCredentials` and passing it. No architecture change, no CLI dependency.
-
-### Resolve credentials lazily, per pull — not at config load
-
-This is the key move that makes "authenticate once, refresh transparently" fall out for free. A provider trait, resolved at the moment of pull:
-
-```rust
-#[async_trait]
-trait RegistryAuthProvider {
-    // `registry` is the host parsed from the image ref,
-    // e.g. "123456789.dkr.ecr.us-east-1.amazonaws.com"
-    async fn credentials(&self, registry: &str) -> anyhow::Result<Option<DockerCredentials>>;
-}
-```
-
-`pull_image(image)` parses the host from the reference, asks the provider, and hands bollard fresh `DockerCredentials`. Because resolution happens at pull time, a refreshed token is simply "the provider returned a newer value this call." Resolving at startup instead would capture a token that expires mid-session — the failure mode to avoid.
-
-### Provider variants map onto `CredentialSource`
-
-| Kind | Source | Refresh |
-|---|---|---|
-| `static` | username/password from env / `op://` / config literal | none needed (e.g. a GHCR or Docker Hub PAT) |
-| `docker-config` | read `~/.docker/config.json` via the [`docker_credential`](https://github.com/keirlawson/docker_credential) crate — honors `credsStore`/`credHelpers` | credential helper re-invoked on each read → free refresh when `docker-credential-ecr-login` is installed |
-| `ecr` (native) | `aws-sdk-ecr` `get_authorization_token` over the default AWS chain (profile / SSO / instance role / IRSA) | token carries `expires_at` (~12h) → cache and refresh on expiry skew |
-
-ECR token decode: the returned `authorizationToken` is base64 of `AWS:<password>`. Set `username = Some("AWS")`, `password = Some(decoded)`, `serveraddress = Some(registry)`.
-
-### Refresh = cache-with-expiry inside the provider
-
-```rust
-struct EcrProvider {
-    ecr: aws_sdk_ecr::Client,
-    cache: Mutex<HashMap<String, (DockerCredentials, SystemTime)>>,
-}
-// credentials(): if cached and now < expiry - skew → reuse;
-// else call get_authorization_token, store { creds, expires_at }.
-```
-
-"Authenticate once" for ECR means the operator configures the AWS profile/SSO **once** (or runs on a role-bearing instance/IRSA); jackin mints fresh ~12h tokens on demand, transparently, with no re-login and — with the native `aws-sdk-ecr` path — no helper binary to install. Static credentials (PATs) need no refresh at all. This is the heart of the desired UX: provide credentials once, never be forced to re-authenticate mid-flow.
-
-### Recommended default + escape hatches
-
-- **Default (zero config):** the `docker-config` provider. If the operator has already run `docker login` or installed the ECR credential helper, jackin works with no jackin-side configuration — this *is* "provide once," reusing the host's existing login.
-- **Native `ecr` config entry:** best UX for the private-ECR forcing case — AWS credential chain plus automatic refresh, no helper install. Recommended for the reported failure.
-- **Explicit `[[registries]]` entries:** env / `op://` / command credential sources for everything else, declarable global or per workspace.
-
-### Concept-validation PoC
-
-Before committing to the design, a ~30-line throwaway (no jackin integration) proves the whole approach: obtain an ECR token (`aws ecr get-login-password` or `aws-sdk-ecr`), build a `DockerCredentials { username: "AWS", password: token, serveraddress: <registry>, .. }`, and call `create_image(.., Some(creds))` to pull a private ECR image. If that pulls clean, bollard + in-process credentials + per-pull resolution is validated end to end.
-
-### Decided: config surface — narrow surface, general guts
-
-The first cut is a **registry-specific** TOML block, but each entry's credential field **is** the shared [`CredentialSource`](/roadmap/credential-source-pattern/) enum — concrete surface, general internals. This ships the ECR fix without over-designing a universal endpoint layer, and the `credentials` value generalizes for free. Why: avoids speculative `[[configurations]]` schema risk while still being DRY; a broader endpoint/connections layer can wrap this later without reshaping the credential guts.
-
-```toml
-# global config.toml
-[[registries]]
-name = "prod-ecr"
-match = "*.dkr.ecr.us-east-1.amazonaws.com"
-credentials = { ecr = { region = "us-east-1", profile = "prod" } }
-
-[[registries]]
-name = "ghcr"
-match = "ghcr.io"
-credentials = { op = "op://vault/ghcr/token" }
-
-# per-workspace entries extend/override global
-[workspaces.acme]
-[[workspaces.acme.registries]]
-name = "acme-ecr"
-match = "*.dkr.ecr.eu-west-1.amazonaws.com"
-credentials = { ecr = { region = "eu-west-1" } }
-```
-
-Each entry: `name` (operator label), `match` (host pattern for resolving an image ref to an entry), `credentials` (a `CredentialSource`). Declarable in global `AppConfig` and per-workspace `WorkspaceConfig`, reusing the existing scope split.
-
-### Decided: zero-config default — auto-read host docker config
-
-When an image reference matches no `[[registries]]` entry, jackin falls back to the host's `~/.docker/config.json`, honoring `credsStore` and `credHelpers` (via the [`docker_credential`](https://github.com/keirlawson/docker_credential) crate). Why: this is exactly how docker, buildkit, and skopeo already behave, so it is least-surprise; an operator who has run `docker login` or installed `docker-credential-ecr-login` gets working private pulls with zero jackin configuration — the "provide once" promise. Reading `~/.docker/config.json` is a host **read**, allowed under `HOST_AND_CONTAINER.md` (no opt-in needed; no host writes). Resolution stays host-side and credentials are handed only to the docker daemon via bollard's auth header — they never enter the container env or image layers (`container-credential-exposure`).
-
-Precedence: an explicit matching `[[registries]]` entry wins over the host-config fallback; a per-workspace entry wins over a global entry for the same host.
-
-### Decided: separate auth failure from staleness — fail fast, opt-in fallback
-
-The root pain is that <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">image.rs</RepoFile>'s `published_image_freshness` maps **every** pull error to `Stale`, so an auth failure silently triggers a multi-minute rebuild. The fix splits the conflated states: a pull failure is classified, not assumed stale.
-
-- **Auth failure** (HTTP 401/403, `pull access denied`, `requires 'docker login'`, `no basic auth credentials`, `unauthorized`) → by default **fail fast** with an actionable message naming the registry and the fix (add a `[[registries]]` entry / `docker login` / install the ECR helper). No rebuild — rebuilding masks a one-line config error, and the construct base image may itself be private and also unpullable. Why default-fail: correctness over a silent expensive fallback that hides the real problem.
-- **Manifest/tag not found** (`manifest unknown`, repo reachable but no such tag) → genuinely no published image → fall back to building from the workspace Dockerfile, as today. This is the one legitimate "stale/missing" case.
-- **Network / transient** → surfaced as an error (not masked as stale); retry policy TBD in `plan`.
-
-Escape hatch — a global key for operators who legitimately lack registry access and want the local build:
-
-```toml
-[registry]
-on_auth_failure = "fail"   # default; "build" falls back to the workspace Dockerfile
-```
-
-### Decided: v1 credential kinds
-
-The `CredentialSource` members built in this item:
-
-| Kind | v1 | Notes |
-|---|---|---|
-| `docker-config` | ✅ | implicit fallback; reads `~/.docker/config.json` + helpers |
-| `ecr` | ✅ | native, forcing case; AWS chain + auto-refresh |
-| `op` | ✅ | reuses the shipped host-socket 1Password resolution (<RepoFile path="crates/jackin-capsule/src/exec.rs">exec.rs</RepoFile>) |
-| `env` | ✅ | named env var; essential for CI/headless |
-| `static` (literal user/pass) | ✅ | plaintext-on-disk — **docs must discourage** beyond local testing (registry-credential plaintext is the [GHSA-99pg-grm5-qq3v](https://github.com/docker/cli/security/advisories/GHSA-99pg-grm5-qq3v) pitfall); never log/echo it |
-| `command` | ⛔ deferred | generic refresh escape hatch; add post-v1 if a custom-SSO need appears |
-
-### Decided: single injection point, host-side resolution
-
-One `BollardDockerClient` (host daemon via `DOCKER_HOST`/defaults, <RepoFile path="crates/jackin-docker/src/docker_client.rs">docker_client.rs</RepoFile>) drives **every** pull — the published-image freshness check (<RepoFile path="crates/jackin-runtime/src/runtime/image.rs">image.rs</RepoFile>) and the DinD sidecar image pull (<RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs">launch_dind.rs</RepoFile>). So credential resolution threads into `pull_image` itself — a single injection point that covers role images *and* the DinD base image (which may also be private). Why this is clean: creds are produced host-side and handed only to the docker daemon via bollard's `X-Registry-Auth` header; they never cross into a container's env or image layers, satisfying `container-credential-exposure` without extra plumbing. The provider is constructed once and passed down to the docker client.
-
-### Decided: ECR provider mechanics
-
-The native `ecr` kind uses `aws-sdk-ecr` `get_authorization_token` over the **default AWS credential provider chain** — env vars, shared `~/.aws` profile (`profile` field selects it), SSO (cached from a prior `aws sso login`), ECS container creds, EC2 IMDS instance role, and EKS web-identity/IRSA. This means headless/CI works with no interactive step whenever the environment carries any chain leg (env keys, instance role, IRSA); only SSO needs a prior login, which is the AWS-standard flow. Config:
-
-```toml
-credentials = { ecr = { region = "us-east-1", profile = "prod" } }
-```
-
-`region` may be **derived from the registry host** (`<acct>.dkr.ecr.<region>.amazonaws.com`) so it is optional when the `match` host carries it; `profile` is optional (default chain otherwise). Token caching: store `{ DockerCredentials, expires_at }` per registry, refresh when within a small skew (~5 min) of `expires_at`. This is the "authenticate once" payoff — operator configures AWS once; jackin mints ~12h tokens on demand.
-
-### Decided: `jackin registry login` (keychain-backed)
-
-Ship a `jackin registry login <host>` command for discoverable first-run setup. Constraints that shape it:
-
-- **No plaintext store.** It must **not** write a jackin-owned plaintext credential file (the [GHSA-99pg-grm5-qq3v](https://github.com/docker/cli/security/advisories/GHSA-99pg-grm5-qq3v) pitfall). It stores into the **OS keychain / docker `credsStore` backend** — the same secure store `docker login` uses — so it is a friendly front-end to the standard store, not a second credential home. This keeps it DRY with the `docker-config` read path: what `login` writes, the default fallback reads back.
-- **Host-write opt-in is satisfied by the explicit invocation.** Per `HOST_AND_CONTAINER.md` the no-silent-host-writes rule targets *silent* writes during launch; an operator running `jackin registry login` is explicit consent. The launch path still performs no credential writes.
-- **Complements, does not replace.** Setup options remain: existing `docker login`, `[[registries]]` config entries (env/`op`/`ecr`/`static`), or this command. For ECR specifically the native `ecr` config kind is still the lower-friction path (no per-12h login); `login` is aimed at static-credential registries (GHCR/Docker Hub PATs).
-
-A read-only `jackin registry status` (which registries resolve, from which source, ECR token expiry) is a natural companion for visibility and pairs with the auth health/visibility theme — include if cheap, else note as follow-up.
-
-### Open questions deferred to `plan`
-
-- Network/transient pull-error retry policy.
-- `command` credential kind (post-v1).
-- Exact `registry status` scope and whether it lands in v1.
-- Multi-match tie-breaking precision (longest-host-pattern wins) and `match` glob syntax.
-
-- Naming of the entry type (`registries` vs a broader `endpoints`/`connections`/`configurations`) and whether the first cut is registry-only or born general.
-- Reuse-vs-build for the mechanics: bollard for the pull is settled; for sourcing, choose between the [`docker_credential`](https://github.com/keirlawson/docker_credential) crate, native [`aws-sdk-ecr`](https://crates.io/crates/aws-sdk-ecr), shelling out to the credential helper, and (if pulls ever move off bollard) [`oci-client`/`rust-oci-client`](https://github.com/oras-project/rust-oci-client) — per the "prefer maintained crates" rule.
-- How the `ecr` provider behaves in headless/CI environments (which leg of the AWS chain applies) and how expiry skew is tuned.
-- Whether to also offer a `jackin registry login` command, or rely entirely on host docker login + config entries.
-- Where resolution happens relative to the host-socket daemon, so credentials never enter the container env or image layers (ties to [container credential exposure](/roadmap/container-credential-exposure/)).
-
-## Tasks
-
-To be enumerated in `brainstorm` / `plan`. High-level shape: define the configurations schema (global + per-workspace) → build/land `CredentialSource` resolution → add Docker-config and ECR credential sources → thread `RegistryAuth` into the bollard pull → separate auth-failure from staleness in the freshness check with a clear operator message → docs (operator setup page + internals).
-
-## Related roadmap items
-
+- [Registry Configurations: design](/reference/research/security/credential-exposure/registry-configurations-design/) — provider mechanics, config surface, decision rationale, and source material.
 - [Credential source pattern](/roadmap/credential-source-pattern/) — the unified sourcing abstraction this item makes concrete and consumes.
-- [Container credential exposure](/roadmap/container-credential-exposure/) — resolved credentials must not leak into layers, `docker inspect`, or logs.
+- [Container Credential Exposure — Beyond Env Injection](/reference/research/security/credential-exposure/container-credential-exposure/) — resolved credentials must not leak into layers, `docker inspect`, or logs.
 - [Workspace registry cache](/roadmap/workspace-registry-cache/) — a pull-through cache still needs upstream registry credentials.
 - [1Password integration](/roadmap/onepassword-integration/) — one credential source among several.
-
-## Research sources
-
-Sources gathered and individually verified during scoping (the automated synthesis pass degenerated and produced no usable prose summary; these primary/secondary sources are the durable output and should be mined directly during `brainstorm`).
-
-ECR auth flows & token-refresh pain:
-
-- [amazon-ecr-credential-helper](https://github.com/awslabs/amazon-ecr-credential-helper)
-- [ECR private registry authentication](https://docs.aws.amazon.com/AmazonECR/latest/userguide/registry_auth.html)
-- [`aws ecr get-login-password`](https://docs.aws.amazon.com/cli/latest/reference/ecr/get-login-password.html)
-
-Docker credential storage model:
-
-- [docker-credential-helpers](https://github.com/docker/docker-credential-helpers)
-- [`docker login` reference](https://docs.docker.com/reference/cli/docker/login/)
-- [Docker credential storage deep dive](https://oscarchou.com/posts/explanation/docker-credential-deep-dive/)
-
-Comparable tools:
-
-- [nerdctl registry auth](https://github.com/containerd/nerdctl/blob/main/docs/registry.md)
-- [Tilt personal registry](https://docs.tilt.dev/personal_registry.html)
-
-Security pitfalls:
-
-- [Docker CLI plaintext-credential advisory (GHSA-99pg-grm5-qq3v)](https://github.com/docker/cli/security/advisories/GHSA-99pg-grm5-qq3v)
-- [Dockerfile secrets persist in layers](https://xygeni.io/blog/dockerfile-secrets-why-layers-keep-your-sensitive-data-forever/)
-
-Rust library options:
-
-- [`docker_credential` crate](https://github.com/keirlawson/docker_credential)
-- [`oci-client` docs](https://docs.rs/oci-client/latest/oci_client/struct.Client.html)
-- [`rust-oci-client`](https://github.com/oras-project/rust-oci-client)
-- [`aws-sdk-ecr` crate](https://crates.io/crates/aws-sdk-ecr)
-
-## Related Files
-
 - <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> — `pull_image`; bollard `create_image` with `RegistryAuth` currently `None`.
 - <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> — published-image freshness check that conflates auth failure with staleness.
 - <RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> — `AppConfig` / `WorkspaceConfig`; where a configurations block would live.
-- <RepoFile path="crates/jackin-config/src/auth.rs">crates/jackin-config/src/auth.rs</RepoFile> — existing bespoke auth blocks (agent key, GitHub token).
-- <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile> — `RoleManifest.published_image`.
-- <RepoFile path="crates/jackin-capsule/src/exec.rs">crates/jackin-capsule/src/exec.rs</RepoFile> — host-socket credential resolution in use today.
