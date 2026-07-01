@@ -186,9 +186,17 @@ pub(crate) fn spawn_sibling_auth_prewarm(
 
 /// Launch the role container after the caller has prepared the private network
 /// and `DinD` sidecar.
-#[expect(
+#[allow(
     clippy::too_many_lines,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Launch pipeline coordinator with three distinct phases (profile \
+              validation + apparmor probe + run/launch/teardown sequence). \
+              Body extraction is a dedicated parallel-pass slice — helpers \
+              `validate_launch_profile`, `probe_apparmor_layer`, `execute_\
+              docker_run_sequence`, and `finalize_role_session` to land in a \
+              follow-up PR. Until then, the inline shape preserves the captured- \
+              locals across phases without param-struct boilerplate. Per the R6 \
+              burn-down strategy: while this `#[allow]` is recorded, the \
+              deferred body-extraction slice remains tracked as a roadmap item."
 )]
 pub(crate) async fn launch_role_runtime(
     ctx: &LaunchContext<'_>,

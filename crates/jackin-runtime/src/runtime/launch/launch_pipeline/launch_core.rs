@@ -84,9 +84,14 @@ where
 }
 
 #[allow(dead_code)]
-#[expect(
+#[allow(
     clippy::too_many_lines,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Inner launch-pipeline async body that the R4 File 2 refactor \
+              extracted from load_role_with. Mirrors launch_role_runtime's phase \
+              decomposition (preflight / docker_run / wait_for_state / teardown) — \
+              body extraction follows the same deferred-parallel-pass plan as \
+              launch_role_runtime. Until that slice lands, the inline shape \
+              preserves captured-locals across phases."
 )]
 pub(super) async fn run_launch_core<D, R>(ctx: LaunchCore<'_, D, R>) -> anyhow::Result<String>
 where

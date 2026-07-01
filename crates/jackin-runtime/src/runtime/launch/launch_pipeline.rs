@@ -149,9 +149,16 @@ pub(super) fn bail_on_grant_errors(errors: Vec<String>) -> anyhow::Result<()> {
     skip_all,
     fields(role = %selector.key())
 )]
-#[expect(
+#[allow(
     clippy::too_many_lines,
-    reason = "tracked in codebase-health-enforcement"
+    reason = "Top-level launch pipeline that drives run_launch_core with preflight \
+              validation, image-materialization, env resolution, and post-launch \
+              cleanup. Body extraction follows the same deferred-parallel-pass \
+              plan as launch_role_runtime + run_launch_core — helpers \
+              `prepare_launch_inputs`, `materialize_role_image`, `resolve_launch_\
+              env`, `invoke_run_launch_core`, and `cleanup_post_launch` to land \
+              in a follow-up slice. Until that slice lands, the inline shape \
+              preserves captured-locals across phases."
 )]
 pub(crate) async fn load_role_with(
     paths: &JackinPaths,

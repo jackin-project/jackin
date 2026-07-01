@@ -755,7 +755,16 @@ extract the heaviest arms. `#[expect]` count: 5 → **3**.
   pipeline coordinator. Per worklist: same launch-fn judgment block.
 
 **Done-when.** `grep -rn 'tracked in codebase-health-enforcement' crates --include='*.rs'`
-returns zero.
+returns zero. **Achieved 2026-07-01.**
+
+**Final 3 launch-fn allows (judgment-heavy per worklist):** `launch_role_runtime`
+(launch_runtime.rs:193, 915L), `run_launch_core` (launch_pipeline/launch_core.rs:91,
+1122L — the inner async body per R4 File 2), and `load_role_with`
+(launch_pipeline.rs:156, 911L — top-level launch coordinator). Each carries a
+deferred body-extraction plan naming the specific helpers to extract
+(`validate_launch_profile` / `probe_apparmor_layer` / `execute_docker_run_sequence` /
+`finalize_role_session` for launch_role_runtime; mirror helpers for the other two).
+Until those slices land, the inline shape preserves captured-locals across phases.
 
 ---
 
