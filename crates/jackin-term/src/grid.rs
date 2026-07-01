@@ -215,6 +215,22 @@ pub struct RowStore {
     arena: RowArena,
 }
 
+impl<'a> IntoIterator for &'a RowStore {
+    type Item = &'a Vec<Cell>;
+    type IntoIter = vec_deque::Iter<'a, Vec<Cell>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut RowStore {
+    type Item = &'a mut Vec<Cell>;
+    type IntoIter = vec_deque::IterMut<'a, Vec<Cell>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
 impl RowStore {
     fn blank(rows: u16, cols: u16, arena: RowArena) -> Self {
         Self {
