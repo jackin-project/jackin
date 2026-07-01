@@ -240,7 +240,7 @@ row's entry.
       `build_exit_inspect_rows`/`handle_last_session_exit` 747–811, 1487–1685). Stays:
       `Multiplexer` struct + `run_daemon` event loop (~1342L).
       **Hazard:** `run_daemon` (654L event loop) stays whole — it is the daemon entry point.
-- [ ] **`crates/jackin-console/src/tui/screens/settings/view.rs`** (1639 → coord ~260).
+- [x] **`crates/jackin-console/src/tui/screens/settings/view.rs`** (1639 → 1311).
       Extract under `settings/view/`: `render_tabs.rs` (`render_{general,mounts,env,auth,trust}_tab`
       211–377), `render_modals.rs` (`render_{global_mount,settings_env,settings_auth}_modal`
       567–683), `line_renderers.rs` (`*_lines`/`*_state_lines`/`render_auth_*`/`truncate`
