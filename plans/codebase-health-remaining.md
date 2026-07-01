@@ -175,7 +175,7 @@ row's entry.
 
 #### Production files (11)
 
-- [ ] **`crates/jackin-console/src/tui/screens/settings/model.rs`** (2354 → coord ~950).
+- [x] **`crates/jackin-console/src/tui/screens/settings/model.rs`** (2353 → 1365).
       Extract under `settings/model/`: `general.rs` (`SettingsGeneralState` 2256–2353),
       `trust.rs` (`SettingsTrustRow`/`SettingsTrustState`/rows 1457–1602), `mounts.rs`
       (`GlobalMount*`/`GlobalMountsState` 1052–1455 + `GlobalMountDraft` 1604), `env.rs`
