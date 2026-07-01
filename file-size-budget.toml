@@ -28,15 +28,10 @@ production_cap = 2000
 test_cap = 10000
 
 # Grandfathered production files (current line counts; may only decrease).
-# 1 entry remains — see plans/codebase-health-remaining.md Ledger 2B for
-# the per-file split-map. The remaining entry (editor/model.rs at 2293)
-# is tracked for body extraction in a future round (the remaining size
-# is concentrated in a big `impl EditorState` block that cannot be split
-# across modules without breaking Rust's "impl must be complete per
-# type" rule). Tracked in codebase-health-enforcement.
-[[production]]
-path = "crates/jackin-console/src/tui/screens/editor/model.rs"
-lines = 2293
+# EMPTY — Ledger 2 complete. editor/model.rs was the last over-cap file
+# (2293L); its EditorState impl blocks moved as a group to a sibling
+# `model/state_impl.rs` (1796L, under cap) so cross-block generic method
+# resolution stayed co-located, leaving model.rs at 511L.
 
 # Integration test files (no `tests.rs` stem) count as production per the
 # file-budget gate. `dind_e2e.rs` previously sat in the 1500–2000L band

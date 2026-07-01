@@ -358,7 +358,7 @@ Ledger 2B decompose 13 files < 1500 (one PR each)             → budget empty
 Ledger 3  too-many-lines 200 → 150 (after 2B)                 → thresholds at target
 ```
 
-- **Item closes when:** Ledger 1 empty + green, Ledger 2 both lists empty, Ledger 3 at target.
+- **Item closes when:** Ledger 1 empty + green, Ledger 2 both lists empty, Ledger 3 at target. **✅ DONE** — Ledger 1 allowlist `files = []` (0 violations); Ledger 2 `file-size-budget.toml` has zero `[[production]]`/`[[test]]` entries (editor/model.rs decomposed: impls → `model/state_impl.rs` 1796L, model.rs 511L); Ledger 3 `too-many-lines-threshold = 150`. CI fully green (4992/4992 nextest).
 - **Biggest grind:** Ledger 2B (13 file splits) — mechanical, one PR each, split-maps above.
 - **Nothing here is blocked.** All 13 splits + 7 test-layout fixes proceed today.
 
