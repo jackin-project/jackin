@@ -6,7 +6,7 @@ title: "Idle Runtime Cleanup Hooks"
 
 ## Problem
 
-Last-session cleanup is shipped: Capsule exits cleanly when the last session ends so the host cleanup path can tear down the role container, sidecar, cert volume, and network. Remaining work is idle policy, not basic last-session cleanup: time-based retention, resumable-session protection, daemon reconciliation, and operator-visible cleanup rules.
+Shipped baseline: Capsule exits cleanly when the last session ends so the host cleanup path can tear down the role container, sidecar, cert volume, and network. The runtime also has agent status reporting (`Working`, `Blocked`, `Done`, `Idle`, `Unknown`) and can query a running container's session inventory through the Capsule control socket. Remaining work is idle policy, not basic last-session cleanup: role-declared idle hooks, operator opt-in, time-based trigger/re-arm, restart/recycle semantics, cleanup history, and operator-visible cleanup status.
 
 A long-running agent container accumulates state outside the agent's own working set: a Java agent leaves Gradle daemons holding onto a few GB of heap; a Node agent leaves npm caches with thousands of file descriptors; the runtime itself caches build artifacts indefinitely. After a few hours of an idle agent sitting open, that's real resource cost — both on disk and in long-lived processes the operator never asked for.
 
@@ -38,7 +38,7 @@ The implementation watches the workspace status (their equivalent of [agent runt
 
 ## Recommended Shape
 
-Generalize the concept: roles declare what to run when idle, the operator decides whether to enable it, jackin❯ runtime supervisor fires the hook based on observed status.
+Generalize the concept: roles declare what to run when idle, the operator decides whether to enable it, and a jackin❯ runtime supervisor fires the hook based on observed status.
 
 ### Role config
 
@@ -73,11 +73,11 @@ Defaults to off because:
 
 ### Trigger
 
-The supervisor watches the [agent runtime status](/roadmap/agent-runtime-status/) bus. When an instance has been `Idle` for `delay_seconds` continuously:
+The supervisor watches the shipped Capsule agent status reports. When an instance has been `Idle` for `delay_seconds` continuously:
 
 1. Run `commands[0]`, `commands[1]`, ... in sequence via `docker exec`. Each command gets a 60-second timeout (configurable).
 2. If `restart_after_cleanup = true`, eject and re-load the instance afterward (preserves the data dir, just recycles the container).
-3. Record the cleanup in the persistent storage layer's `tool_history` table (or a dedicated `cleanup_history`).
+3. Record the cleanup in persistent storage, likely a dedicated `cleanup_history` table unless the future tool-history store already exists by implementation time.
 4. Re-arm: next cleanup fires `interval_seconds` later if still idle.
 
 A status transition out of `Idle` cancels the pending cleanup.
@@ -86,15 +86,23 @@ A status transition out of `Idle` cancels the pending cleanup.
 
 The console resource panel (when open) shows "Last cleanup: 4m ago" in the per-agent row. CLI: `jackin status <selector>` includes the last-cleanup time.
 
-## Scope (V1)
+## Shipped Baseline
 
-- `[runtime.idle]` block on `jackin.role.toml`.
+- Capsule exits when the last live session exits; clean exits skip stale pane snapshots, remove the session, drain, and let host cleanup run.
+- Reconnect finalization tears down resources after clean stop or cleaned still-running sessions by marking the instance `CleanExited` and calling `eject_role`.
+- Instance manifests already record backend resources for Docker role container, DinD sidecar, network, and cert volume.
+- Agent runtime status wire types and Capsule state arbitration are implemented; panes carry `agent_status_report` when populated.
+- Host attach code can inspect running containers by executing `jackin-capsule status`, but there is no idle-hook supervisor yet.
+
+## Remaining Scope (V1)
+
+- Schema-bumped idle block on `jackin.role.toml`.
 - Operator opt-in via `enable_idle_hooks` per role.
-- Idle detection from the status bus.
+- Idle detection from Capsule agent status reports.
 - Sequential command execution via `docker exec` with per-command timeout.
 - Optional `restart_after_cleanup` toggle.
 - Console rendering of last-cleanup time.
-- Cleanup history written to the persistent storage layer.
+- Cleanup history written to persistent storage.
 
 ## Defer
 
@@ -112,10 +120,11 @@ The console resource panel (when open) shows "Last cleanup: 4m ago" in the per-a
 
 ## Related Files
 
-- New module (e.g. `src/runtime/idle.rs`) — supervisor
-- <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile> — `[runtime.idle]` schema
+- New module (e.g. `crates/jackin-runtime/src/runtime/idle.rs`) — supervisor
+- <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile> and <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile> — idle schema and version validation
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — wires supervisor into instance lifecycle
-- The persistent-storage module — cleanup history table
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> — existing status/session inventory query path to build on
+- A future persistent-storage module — cleanup history table
 - <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile> — last-cleanup display
 
 ## See Also

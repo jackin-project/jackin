@@ -6,92 +6,46 @@ title: "Auth overwrite on new tab — root cause, fix, and long-term strategy"
 
 ## Problem
 
-Opening a new agent tab inside a running jackin❯ container can silently revoke authentication for every existing session in that container. The failure presents as a sudden `401 authentication_error` or a `Please run /login` prompt mid-session — in a session that was working moments before, with no network change or token revocation on the host.
+Opening a new agent tab inside a running jackin❯ container used to be able to silently revoke authentication for every existing session in that container. The failure presented as a sudden `401 authentication_error` or a `Please run /login` prompt mid-session — in a session that was working moments before, with no network change or intentional host logout.
 
-The root cause is a code path in `jackin-capsule`'s runtime setup that was designed to copy host credentials into the container on first boot, but ran unconditionally on every new-tab spawn, overwriting credentials that the agent had already refreshed during its session.
+The root cause was a `jackin-capsule` runtime setup path that copied the launch-time credential snapshot into the agent's live home on every new-tab spawn, overwriting credentials that the agent had already refreshed during its session.
 
-## Root cause
+## Shipped baseline
 
-When a new tab is opened — either an agent tab or a shell tab — the host runs `docker exec <container> /jackin/runtime/jackin-capsule new <agent>`. The capsule's `new` dispatch path calls `runtime_setup::run()`, which historically invoked `run_agent_setup()` on every execution, regardless of whether the container was booting for the first time or resuming for a new session.
+The new-tab overwrite is closed. <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> now keeps `runtime_setup::run()` calling `run_agent_setup()` on every invocation, but credential writes are gated by durable agent-home state instead of blindly copying from `/jackin/<agent>/` each time.
 
-`run_agent_setup()` dispatches to a per-agent `setup_*()` function — `setup_claude()`, `setup_codex()`, `setup_amp()`, `setup_kimi()`, `setup_opencode()`, `setup_grok()`. Each of these unconditionally copied the provisioned credential snapshot from the `/jackin/<agent>/` bind-mount into the agent's live config directory (`~/.claude/.credentials.json`, `~/.codex/auth.json`, etc.).
+The shared single-file policy is `seed_forwarded_credential()` / `apply_forwarded_credential()`: first seed copies a forwarded credential when present; later launches only re-seed when the target credential is missing. That preserves any token an agent refreshed in-container. Claude uses the same `first_seed` signal for `.credentials.json` and `.claude.json`; Codex, Amp, OpenCode, and Grok use the shared helper; Kimi applies the same policy to its credential directory.
 
-The `/jackin/<agent>/` mount is a bind-mount of a file that was written once, at `RoleState::prepare()` time in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile>, during the initial container launch. That snapshot is frozen at the moment the container was first created. It does not update when the host's credentials rotate, and it does not reflect token refreshes the agent performs inside the container.
+Non-credential setup remains idempotent and can still run on later new-tab invocations: container init is separately guarded by `/jackin/state/container-init.done`, Claude MCP registration is retried best-effort, Claude plugin install uses a fingerprint marker, Codex and OpenCode provider config writes are idempotent, and the agent-status reporter repairs drift without touching auth.
 
-Claude Code, Codex, and other agents perform OAuth refresh-token rotations automatically during long sessions. After a rotation, the live in-container credential file (`~/.claude/.credentials.json`) holds the new token; the older snapshot at `/jackin/claude/credentials.json` holds the original, now-invalid token. The moment the operator opens a new tab, `setup_claude()` runs and overwrites the live file with the stale snapshot. Both the new tab and all existing tabs now present the revoked token on their next API call and receive `401`.
+The launch-time snapshot model is still real. <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> provisions host-derived auth into role-state files, and <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> bind-mounts those snapshots into `/jackin/<agent>/...` for the capsule to seed from. For Amp the mount comment explicitly notes the current entrypoint copies the file, so in-container rotation does not flow back today.
 
-The specific sequence that triggers the failure:
+## Remaining unfinished plan
 
-1. Container starts; credentials copied from host snapshot → `~/.claude/.credentials.json`.
-2. Agent runs for a while; Claude Code automatically refreshes the OAuth token; `~/.claude/.credentials.json` now holds the new token.
-3. Operator opens a new tab (agent or shell).
-4. `jackin-capsule new claude` runs `setup_claude()` unconditionally.
-5. `setup_claude()` copies `/jackin/claude/credentials.json` (stale original snapshot) → `~/.claude/.credentials.json` (overwrites the fresh token).
-6. Both tabs now hold the revoked token. Next API call from either tab → `401`.
+The remaining auth-drift problem is not a same-container new-tab overwrite anymore. It is stale credential state across participants that do not share a live source of truth: host, one running container, sibling running containers, and durable agent homes restored across container recreation.
 
-The failure was intermittent because OAuth refresh rotations are not deterministic — they happen when the token is near expiry, not on a fixed schedule. Short-lived sessions and sessions that never hit the refresh window worked fine, which made the bug hard to reproduce on demand.
+Unfinished cases:
 
-The same overwrite pattern existed for every agent: Codex's `auth.json`, Amp's `secrets.json`, Kimi's credential directory, and OpenCode's `auth.json` all followed the same unconditional copy-on-every-exec shape.
+- **Parallel containers sharing one account.** If one container refreshes an OAuth token, a sibling container may still hold the old token and can fail with `401` / `invalid_grant` before it learns the new value.
+- **Host token changes while containers run.** A host-side login or token rotation does not update already-running containers, because current `sync` behaviour is launch-time forwarding, not continuous reconciliation.
+- **In-container refresh does not propagate back.** A token refreshed inside one container stays in that container's writable home and does not update the host or siblings.
+- **Durable-home restore can preserve old auth.** Because agent homes survive container recreation, a restored home can keep a stale credential even if the host has since re-logged-in.
 
-## Fix shipped
+The structural fix remains [Live bidirectional auth sync](/roadmap/live-auth-sync/), hosted by the [jackin❯ daemon](/roadmap/jackin-daemon/). Those pages are still open design proposals, not shipped code. The intended shape is a per-operator host daemon with per-axis adapters, a flock-protected shared store, container-side watchers, and status surfaced through the daemon control path. The design also still has unresolved questions: OAuth refresh-token race locking, macOS Keychain writes, plaintext shared-store hardening, daemon lifecycle/version skew, and the `sync` naming conflict (`forward` or `snapshot` for today's launch-time mode, with true continuous sync getting the `sync` name).
 
-The fix gates credential seeding on durable agent-home state, not on an external marker file. `run_agent_setup()` treats the agent home as the authority: first seeding copies the launch-time snapshot into an empty/missing credential target, and later `jackin-capsule new <agent>` invocations skip existing credential files so refreshed in-container credentials are left untouched.
+Implementation order stays:
 
-`runtime_setup::run()` still performs container init once, and non-credential setup — idempotent home seeding, MCP tool registration (`claude mcp add tirith`, `claude mcp add shellfirm`), and provider config writes (Codex MiniMax block, OpenCode JSON) — can run again on new-tab invocation. The credential-copy path no longer overwrites a file that the running agent has refreshed.
-
-The first tab for an agent in a container gets the same initial auth bootstrap it always received. Later tabs for the same agent inherit the credential state already present in the durable home. A different agent opened later in the same container seeds only its own missing credential target.
-
-The relevant files changed:
-
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> — `run()`, `run_agent_setup()`, `setup_claude()`, `setup_codex()`, `setup_amp()`, `setup_kimi()`, `setup_opencode()`, `setup_grok()`.
-
-## What this fix does not solve
-
-The new-tab overwrite is now closed, but the auth snapshot model has two remaining fragility vectors that this fix does not address.
-
-**1. Container re-launch after host token rotation.** When the operator ejects and reloads a container, `RoleState::prepare()` runs again, reads the host's current credential file, and writes a new snapshot. If the host token is currently valid this works correctly. The risk is in the inverse direction: if the host token has rotated (e.g. because another running container triggered an OAuth refresh and the new token landed in the host's credential file) the new container gets the latest host token — but any _other_ already-running container is still holding the older token from its own launch-time snapshot. This is the "parallel containers sharing one account" invalidation cascade described in the [live bidirectional auth sync](/roadmap/live-auth-sync/) roadmap item.
-
-**2. In-container token refresh does not propagate back to the host or sibling containers.** When Claude Code inside one container refreshes the OAuth token, the new token lives only in that container's writable layer. The host's `~/.claude/.credentials.json` still holds the pre-refresh value. If the operator opens a second container or if a sibling container's access token expires, it will attempt to use its own stale token — which the OAuth server may have already invalidated as a side effect of the first container's rotation.
-
-Both of these are the same class of problem — stale credentials in one of the participants of a multi-process auth lifecycle — and they require a different class of solution: a long-running host process that watches credential files for changes and propagates updates in real time.
-
-**3. Durable-home restore preserves old credential state.** Because the agent home survives container recreation, a restore after host re-login can keep using the credential file already present in the durable home rather than copying a newer host snapshot. This is the same remaining class as the cross-container token drift above: one participant in the auth lifecycle can have a stale token while another has a newer one. The live-sync protocol is the structural fix; until it lands, restore-after-host-rotation is a known limitation.
-
-## Long-term solution: live auth sync via the jackin❯ daemon
-
-The correct long-term answer is the [Live bidirectional auth sync](/roadmap/live-auth-sync/) feature, which depends on the [jackin❯ daemon](/roadmap/jackin-daemon/). The architecture is already designed in those two roadmap items; this section analyzes the specific properties that make it the right answer to the auth fragility problem, along with the challenges it introduces.
-
-### What the daemon provides that the fix does not
-
-The daemon is a long-running per-operator-user host process. For auth sync, it does two things the fix cannot: it watches credential files for changes (via inotify on Linux, polling with optional Keychain callbacks on macOS) and it propagates those changes into running containers without requiring a restart. The propagation path uses a flock-protected shared store at `~/.jackin/auth-shared/<axis>/`, bind-mounted into containers so both sides see the same file; the in-container watcher (`jackin-auth-watcher`, a small static binary baked into the construct image) performs the symmetric in-container → shared-store push when an agent refreshes.
-
-The result is that token rotation — whether initiated by the host or by an agent inside a container — becomes visible to all participants within seconds, without tearing down any session. The `401` class of failure becomes structurally impossible for operators who have enabled live sync mode.
-
-### Challenges and open questions
-
-**OAuth single-grant safety.** OAuth refresh-token rotation is not a broadcast operation — only the party that holds the current refresh token can issue a new one. If two containers both hold a stale access token and both attempt a refresh simultaneously, one will succeed and the other will receive a `400 invalid_grant`. The daemon's last-writer-wins conflict resolution (by `mtime + checksum`) handles the propagation race after one party wins, but it does not prevent both parties from attempting the refresh before either sees the other's result. The live-auth-sync roadmap item notes this concern explicitly and defers the protocol-level answer to the design pass that picks the daemon shape: the most plausible mitigation is a per-axis advisory lock in the shared store that a container acquires before initiating a refresh and releases after the new token is written, so siblings wait rather than race.
-
-**macOS Keychain write path.** On macOS, Claude Code and GitHub CLI store OAuth tokens in the system Keychain, not in a plaintext file. The daemon's host-side watcher must read from the Keychain (`security find-generic-password`) and write back to it (`security add-generic-password -U`) when a container-initiated rotation produces a new token. The read path is straightforward. The write path requires the daemon process to have Keychain access, which introduces a macOS-specific entitlements question that the daemon design pass must answer before implementation starts.
-
-**Token visibility in the shared store.** The flock-protected shared store at `~/.jackin/auth-shared/<axis>/` is a plaintext file on disk. Any process running as the operator user can read it. This is not a widened attack surface compared to today — the credential files in `~/.claude/`, `~/.codex/`, etc. are already readable by the same user — but it is a centralization that creates a single path worth hardening. The [container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) roadmap item is the longer-term answer; the shared store is an acceptable intermediate step.
-
-**Daemon lifecycle.** The daemon must survive across container restarts and operator sessions. On macOS this means a LaunchAgent plist; on Linux a systemd user unit. The first-launch auto-install UX, version-skew handling between the CLI and a running daemon, and crash/restart policy are all open design questions captured in the daemon roadmap item. The live-sync adapter should not be designed until Phase 1 of the daemon ships, so the adapter can plug into the already-decided lifecycle rather than inventing its own.
-
-**Backward compatibility with `sync` mode.** Today's `sync` mode (snapshot-at-launch) and the proposed `live` mode share the same semantic label space. The live-auth-sync roadmap item proposes renaming `sync` to `forward` or `snapshot` when live sync ships, so the word `sync` can be reclaimed for continuous bidirectional sync. That rename is a schema-version bump across `config.toml`, workspace files, and role manifests — all three versioned schemas will need migration steps. The rename should not happen before live sync ships (churn without payoff), and it must not be split across multiple PRs.
-
-### Implementation phasing connecting this fix to the long-term answer
-
-1. **Shipped fix** — new-tab overwrite closed per agent. Auth on disk for each initialized agent inside a container is now stable for the container's lifetime unless the operator explicitly re-launches.
-2. **[jackin❯ daemon Phase 1](/roadmap/jackin-daemon/)** — lifecycle, install, control socket, log redaction. No watchers yet.
-3. **[jackin❯ daemon Phase 4 — live auth sync](/roadmap/live-auth-sync/)** — per-axis watcher adapters (`gh`, Claude, Codex, Amp, Kimi, OpenCode). Shared store bind-mount replaces per-container provisioned-snapshot mount for containers in live mode. In-container `jackin-auth-watcher` binary added to the construct image.
-4. **`sync` → `forward`/`snapshot` rename** — schema version bump in the same PR as Phase 4.
-5. **Full resolution** — operators on `live` mode see no auth-drift failures regardless of how many parallel containers are running or how often OAuth rotates.
+1. Keep the shipped new-tab fix as the stable baseline: later capsule starts do not clobber existing agent credential targets.
+2. Ship the jackin❯ daemon base lifecycle and control socket.
+3. Add live-auth-sync adapters for host stores and running containers.
+4. Rename today's launch-time `sync` mode only when live sync ships, in the same schema-version bump as the live mode.
+5. Move durable operator details to the auth guide/reference pages when live sync lands; keep this roadmap item only as status and residual limitations.
 
 ## Related work
 
 - [Auth reliability and convenience program](/roadmap/auth-reliability-program/) — umbrella that places this fix as Phase 0 in the complete auth reliability sequence; read it for how this item connects to live sync, health visibility, and multi-company isolation.
-- [jackin❯ daemon](/roadmap/jackin-daemon/) — the umbrella long-running-process item. Lifecycle, install, control socket, and security posture are decided there. Live auth sync is a Phase 4 adapter against the daemon's plug-in surface.
-- [Live bidirectional auth sync](/roadmap/live-auth-sync/) — detailed architecture for the shared store, per-axis adapters, in-container watcher, and conflict resolution. The long-term answer to the auth fragility problem this shipped fix partially addresses.
+- [jackin❯ daemon](/roadmap/jackin-daemon/) — the umbrella long-running-process item. Lifecycle, install, control socket, and security posture are still in design; live auth sync is proposed as a later adapter.
+- [Live bidirectional auth sync](/roadmap/live-auth-sync/) — proposed architecture for the shared store, per-axis adapters, in-container watcher, and conflict resolution. The long-term answer to the auth fragility problem this shipped fix partially addresses.
 - [Reliable Claude authentication strategy](/reference/research/authentication/claude-auth-strategy/) — design history for the `sync` / `token` / `ignore` mode set; the concurrent-session token-drift concerns documented there are what this root-cause fix narrows.
 - [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) — threat model for tokens in containers. The shared store introduced by live sync is the next hardening target in that trajectory.
 - <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> — the fixed file; `run()`, `run_agent_setup()`, and `setup_*()` are the changed functions.

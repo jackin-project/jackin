@@ -2,126 +2,55 @@
 title: "Workspace Skills Mount (cross-runtime customization)"
 ---
 
-**Status**: Open — design proposal (Phase 5, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+**Status**: Open — needs redesign after native APM support decision (Phase 5, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
-## Problem
+## Shipped Baseline
 
-Claude plugin and marketplace install paths already ship through the role manifest/runtime setup. Remaining work is the cross-runtime workspace skills mount: local/team skill directories mounted read-only into Claude/Codex/Amp-compatible destinations, with conflict rules against published plugins and no implicit marketplace behavior.
+Role repos can declare Claude plugin marketplaces and plugin IDs in `jackin.role.toml`; jackin❯ bakes those Claude plugins into the derived image rather than mounting runtime plugin state during launch. The role manifest reference documents `[claude].plugins` and `[[claude.marketplaces]]`, and the Rust manifest schema still contains those fields.
 
-Today, an role's behavior is locked at *image build time*: the Dockerfile installs whatever plugins/skills/MCP servers, the `jackin.role.toml` declares Claude plugins, and that's that. Operators who want to customize behavior per-workspace (different skill set per project) or operators who want to share skills across multiple agent classes (one team's "code style" instructions used by Claude *and* Codex *and* Amp) have no clean path.
+The runtime already has per-agent durable home mounts for Claude, Codex, Amp, Kimi, OpenCode, and Grok, plus workspace/global bind-mount plumbing for normal workspace mounts. It does **not** have a `[skills]` or `[workspaces.<name>.skills]` config schema, a `src/skills.rs` collection layer, per-runtime workspace skill destinations, or skill-name conflict handling.
 
-multicode addresses this with `add-skills-from`: directories under configured paths get bind-mounted into the agent's runtime config dir (`~/.config/opencode/skills/<name>/`). The agent picks them up at runtime; no rebuild needed. Operators can edit a skill in their normal editor and the next agent invocation sees the change.
+A newer design direction exists: [Native APM Support for jackin❯ Agent Roles](/reference/research/agent-runtimes/package-manager-support/native-apm-role-support/) says APM should become the long-term agent-context packaging layer and explicitly calls out that this workspace-skill-mount item should be revisited because local/team skills may be better represented as APM local-path dependencies.
 
-## Why It Matters
+## Remaining Problem
 
-- It's the right shape for *team-level* customization that doesn't belong in either the role repo or the operator's personal config.
-- It's runtime-agnostic by design — the same skill markdown bind-mounts into Claude's, Codex's, or Amp's expected skills directory based on the runtime adapter.
-- It complements (doesn't replace) the custom plugin marketplace story (now shipped — see the [role manifest reference](/developing/role-manifest/)): marketplaces distribute *reusable* skills published broadly; the workspace skills mount handles *local* / *team-specific* skills the operator doesn't want to publish.
-- It gives the [tag protocol](/roadmap/agent-tag-protocol/) a natural distribution channel: jackin❯ can ship a skill bundle that roles pull in via this mount, and operators see the protocol "for free" without having to install plugins per role.
-- It also supports workflow and playbook skills such as "independent fix", "address review feedback", or "prepare a PR", which are often more valuable to a queue-driven operator than stack syntax hints.
+Operators still lack a clean, workspace-level way to add local or team skills at runtime without rebuilding a role image and without publishing those skills to a marketplace. The original proposal copied multicode's `add-skills-from` shape: configured host directories contain immediate subdirectories, each subdirectory is a skill with `SKILL.md`, and jackin❯ bind-mounts those skill directories read-only into the selected runtime's expected skills location.
 
-## Inspiration in multicode
+That goal remains useful for team playbooks, code-style instructions, tag-protocol emitters, and workflow skills such as "independent fix" or "prepare a PR". The implementation should not proceed unchanged until it is reconciled with APM: if APM local-path dependencies cover the local/team case inside jackin❯ role orchestration, this item should shrink to documenting and exposing that path rather than adding a parallel jackin❯ skill package system.
 
-**Sources**:
-- No dedicated README section (mentioned in passing under [Isolation](https://github.com/graemerocher/multicode#isolation) and the [Apple-container OpenCode example](https://github.com/graemerocher/multicode#macos-setup-for-apple-containers))
-- Config — [`config.toml` `[isolation] add-skills-from`](https://github.com/graemerocher/multicode/blob/main/config.toml)
-- Skills directory — [`workspace-skills/`](https://github.com/graemerocher/multicode/tree/main/workspace-skills) (real examples — `git-commit-coauthorship`, `independent-fix`, `java-install`, `machine-readable-*`, `micronaut-projects-guide`)
+## Current Recommendation
 
-```toml
-[isolation]
-add-skills-from = [
-  "./workspace-skills",
-  "~/team-skills/micronaut",
-]
-```
+Do not add a first-class `[skills]` config block yet. First land or reject the APM role-support design. If APM remains viable, represent local/team skills as APM local-path dependencies in role context and keep jackin❯ responsible only for isolated install timing, target selection, caching, and launch integration. If APM cannot cover workspace-local skills without mutating the host project or role repo, revive the narrower mount-only design below.
 
-For each path, every immediate subdirectory becomes a skill: the subdirectory is bind-mounted to `~/.config/opencode/skills/<dir-name>/` inside the workspace's isolate. The skill's `SKILL.md` (frontmatter + body) is what OpenCode reads.
+## Narrow Fallback Design
 
-The contents in their repo (visible in `workspace-skills/`):
+If jackin❯ still needs direct workspace skill mounts after the APM evaluation, scope V1 to filesystem mounts only:
 
-- `git-commit-coauthorship/` — commit attribution rules
-- `independent-fix/` — fix workflow
-- `java-install/` — Java version selection
-- `machine-readable-issue|clone|pr/` — tag-protocol emission
-- `micronaut-projects-guide/` — toolchain hints
+- Add operator-level and workspace-level skill source paths.
+- Treat each immediate child directory containing `SKILL.md` as one skill.
+- Resolve operator paths first and workspace paths second; later declarations of the same skill name win within the mount-only set.
+- Mount skills read-only by default.
+- Let each runtime adapter own its destination path and any format compatibility limits.
+- Reject paths that resolve under an isolated workspace mount, because that would duplicate the same content through the materialized worktree and the explicit skill mount.
+- Error on conflicts with role-installed or APM-installed packages when jackin❯ can reliably detect the conflict; otherwise document runtime-specific precedence instead of silently pretending jackin❯ controls it.
 
-## Recommended Shape
+## Deferred Until APM Decision
 
-The runtime-agnostic version: each runtime adapter owns the *destination* inside the container; jackin❯ owns the *source* selection and bind-mount plumbing.
-
-### Config
-
-```toml
-# Operator-level (cross all workspaces) or workspace-level — both
-# accepted, with workspace overriding operator on path conflict.
-
-[skills]
-add_from = [
-  "~/team-skills/jackin-protocols",
-  "~/dotfiles/agent-skills",
-]
-
-# Or per-workspace:
-[workspaces.fix-bugs.skills]
-add_from = ["./project-specific-skills"]
-```
-
-Each path's immediate subdirectories are skills. Each skill has a `SKILL.md` at its root (the same structure multicode uses, the same structure Claude / Codex / Amp converge on).
-
-### Per-runtime mount destination
-
-Each runtime adapter declares where skills go inside the container:
-
-- **Claude** — `/home/agent/.claude/plugins/jackin-skills/<name>/` (works alongside the existing `[claude.plugins]` install path; jackin treats workspace skills as a special pre-installed plugin namespace).
-- **Codex** — `/home/agent/.codex/skills/<name>/`
-- **Amp** — `/home/agent/.config/amp/skills/<name>/`
-
-If a runtime doesn't support a skills concept natively, the adapter mounts at a known path and the role's entrypoint (or a small adapter shim) is responsible for surfacing it. V1 punts on this case — all three planned runtimes (Claude, Codex, Amp) have a skills concept.
-
-### Conflict resolution
-
-Per-path (operator + workspace) order is *additive*: the operator's list is read first, the workspace's list is appended. Within the combined list, the *last* declaration of a skill name wins (later overrides earlier). This is documented behavior, not implicit.
-
-If a skill name collides with one installed via the manifest's `[claude.plugins]` (or the per-runtime equivalent), jackin❯ refuses to launch with a clear error — the operator chooses which to keep. Silent override here is too dangerous.
-
-### Read-only vs read-write
-
-Default: read-only mount. The agent reads its skills; doesn't modify them. Operators editing skill markdown in their editor see changes on next agent restart.
-
-Optional: `read_write = true` for the rare case where a skill itself captures state (a "remember-this" skill). Not encouraged; documented as opt-in.
-
-## Scope (V1)
-
-- `[skills]` block at operator and workspace levels with `add_from` list.
-- Per-runtime mount destination owned by each runtime adapter.
-- Conflict resolution: workspace appends operator; later overrides earlier; manifest-level conflicts error.
-- Read-only by default; opt-in `read_write`.
-- New repo `jackin-project/jackin-skills` ships a published bundle including the [tag protocol](/roadmap/agent-tag-protocol/) emission skills.
-
-## Defer
-
-- Skill version pinning. Skills are filesystem paths; pin the path, not a version. If versioning becomes important, revisit.
-- Skill marketplace integration (browse/install via TUI). The shipped custom plugin marketplace support (see the [role manifest reference](/developing/role-manifest/)) handles published skills; this mount is for local/team ones.
-- Cross-runtime skill format conversion. V1 assumes the markdown format is portable (frontmatter + body); if Claude / Codex / Amp diverge, the runtime adapter handles per-runtime tweaks. Defer active conversion until a divergence shows up.
-- Per-role skill enable/disable from the same `add_from` list. V1 mounts everything; roles that don't want a skill can ignore it by name.
-
-## Open Questions
-
-- **Should workspace skills mount into Claude as "plugins" or "skills"?** Claude Code's plugin format is heavier; "skills" via Claude's skills feature is closer to the multicode shape. Recommended: *use Claude skills*; the [multi-runtime](/roadmap/multi-runtime-support/) work needs to confirm Claude's skills plumbing matches.
-- **Skills inside per-mount-isolated worktrees.** If `add_from` references a path inside an isolated workspace mount, the materialized worktree gets the skill inside the container *and* the bind-mount duplicates it — confusing. Recommended: *reject `add_from` paths that resolve under an isolated workspace mount*, with a clear error.
-- **Default skill bundle for jackin❯.** Should `jackin-project/jackin-skills` be auto-mounted by default when an operator opts into the `<jackin:*>` tag protocol? Recommended: *no auto-mount*; operators add it explicitly. Avoids surprise.
+- A custom jackin❯ skill bundle repository such as `jackin-project/jackin-skills`.
+- TUI browse/install flows for skills.
+- Skill version pinning beyond the source path or APM lockfile.
+- Cross-runtime skill format conversion.
+- Per-role enable/disable filters over a shared skill source list.
 
 ## Related Files
 
-- New module (e.g. `src/skills.rs`) — collection + validation
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — bind-mount plumbing
-- Per-runtime adapter modules (Claude / Codex / Amp) — each owns its mount destination
-- New repo `jackin-project/jackin-skills` — published bundle
-- New docs page: `docs/content/docs/(public)/guides/skills.mdx`
+- <RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> — current config schema has mounts and runtime/auth fields, but no workspace skills schema.
+- <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile> — current role manifest schema still has Claude `plugins` and `marketplaces`.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — current launch path owns durable per-agent home mounts and auth handoff mounts.
+- [Native APM Support for jackin❯ Agent Roles](/reference/research/agent-runtimes/package-manager-support/native-apm-role-support/) — newer strategic direction for skills/packages/plugins.
 
 ## See Also
 
 - [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
-- [Multi-runtime support](/roadmap/multi-runtime-support/) — per-runtime mount destinations
-- [Agent tag protocol](/roadmap/agent-tag-protocol/) — primary distribution use case for skill bundles
-- Custom plugin marketplace (shipped) — published-skill distribution; complementary to this leaf. See the [role manifest reference](/developing/role-manifest/)
+- [Multi-runtime support](/roadmap/multi-runtime-support/) — per-runtime launch and adapter boundaries
+- [Agent tag protocol](/roadmap/agent-tag-protocol/) — possible user of skill bundles or APM packages

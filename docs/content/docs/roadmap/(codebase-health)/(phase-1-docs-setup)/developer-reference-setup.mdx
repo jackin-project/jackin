@@ -2,23 +2,23 @@
 title: "Developer Reference Fumadocs section"
 ---
 
-**Status**: Resolved as a setup task — contributor reference pages are live under `/reference/getting-oriented/` and related `/reference/` sections; future work is ordinary reference maintenance, not a standalone roadmap implementation item
+**Status**: Resolved as a setup task — contributor reference pages are live under `/reference/getting-oriented/` and `/reference/developer-reference/`; future work is ordinary reference maintenance, not a standalone roadmap implementation item
 
 ## Current shape
 
-The contributor-facing reference did not land under `/internal/`. The current canonical route is `/reference/getting-oriented/`, with architecture and codebase-map pages under that tree. Behavioral specs and deeper design material live under the broader `/reference/` and `/roadmap/` contributor surfaces.
+The contributor-facing reference did not land under `/internal/`. The current orientation route is `/reference/getting-oriented/`, with architecture, codebase-map, and workspace automation pages under that tree. Behavioral specs live under `/reference/developer-reference/specs/`; deeper research and design material live under the broader `/reference/` and `/roadmap/` contributor surfaces.
 
-This item is no longer about creating an `/internal/` route. It is about keeping the contributor reference complete as code shifts.
+This item is no longer about creating an `/internal/` route or bootstrapping the contributor section. It is about keeping contributor references complete as code shifts.
 
 ## Remaining work
 
 1. Expand stubby contributor pages only when there is durable content to publish.
 2. Keep behavioral specs in reference pages once they become durable contracts; keep transient task checklists in roadmap pages.
-3. Link roadmap items to `/reference/getting-oriented/` pages instead of stale `/internal/` paths.
-4. Verify docs with `bun run build`, `bun run check:repo-links`, and `bun run check:roadmap-sidebar` when routes change.
+3. Verify docs with `bun run build`, `bun run check:repo-links`, and `bun run check:roadmap-sidebar` when routes change.
 
 ## Canonical routes
 
 - [Architecture](/reference/getting-oriented/architecture/)
 - [Codebase Map](/reference/getting-oriented/codebase-map/)
+- [Behavioral Specs](/reference/developer-reference/specs/)
 - [Roadmap Overview](/roadmap/)

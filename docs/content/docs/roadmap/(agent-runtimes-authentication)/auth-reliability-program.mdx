@@ -2,7 +2,7 @@
 title: "Auth reliability and convenience program"
 ---
 
-**Status**: Partially implemented — Phases 0 and 1 shipped; Phases 2–7 open
+**Status**: Partially implemented — Phases 0 and 1 shipped; Phase 2 and Phase 5 have shipped baseline pieces; Phases 3, 4, 6, and 7 remain open
 
 ## Purpose of this document
 
@@ -171,13 +171,15 @@ Third, the console Auth tab gains a health indicator column per agent row (probe
 
 ### Phase 5 — unified credential source abstraction
 
-**Goal:** Replace five separate per-agent credential resolution implementations with one `CredentialSource` enum, so every auth axis is first-class, composable, and auditable through one code path that cannot drift.
+**Goal:** Replace separate credential resolution implementations with one credential-source abstraction, so every auth axis is first-class, composable, and auditable through one code path that cannot drift.
 
-**What changes:** A `CredentialSource` enum is introduced covering: `Literal(SecretString)`, `Env(String)`, `Command(String)`, `Op(OpRef)`, `OsStore { service, account }`, and `File(PathBuf)`. Values are wrapped in `SecretString` (zeroize-on-drop, `[REDACTED]` in Debug). Every auth axis accepts `Option<CredentialSource>` instead of the current per-axis custom fields. The `sync_source_dir` field from Phase 1 becomes the `File` source kind. The `CLAUDE_CODE_OAUTH_TOKEN` env reference becomes the `Env` source kind. 1Password refs (`op://`) become the `Op` source kind. All existing behavior is preserved; the abstraction change is internal. Future auth axes (Linear, JIRA, any API key) use `CredentialSource` from day one and never need their own parallel resolver.
+**Shipped baseline:** `EnvValue` now covers literals, host-env references, structured `op://` refs, and on-demand `jackin-exec` delivery; auth/provider-key forms reuse those env values through shared console source pickers. `jackin-exec` and its MCP wrapper provide session-scoped, operator-approved command execution with selected credentials resolved through the host-side `host.sock` bridge rather than injected at launch.
 
-**What the operator experiences after:** No visible behavior change. The internal consolidation means future auth features are faster to build and cannot accidentally diverge across agents.
+**Remaining work:** Introduce one general credential-source abstraction usable by auth axes, provider keys, MCP tools, daemon adapters, and future non-env consumers. The `sync_source_dir` field from Phase 1 becomes the file/source-folder source kind. The `CLAUDE_CODE_OAUTH_TOKEN` env reference becomes an env source kind. 1Password refs (`op://`) become the 1Password source kind. OS secret stores remain future source kinds. All existing behavior must be preserved; the abstraction change is internal. Future auth axes (Linear, JIRA, any API key) use the shared source type from day one and never need their own parallel resolver.
 
-**Status: Not yet shipped. Design is complete but benefits from Phases 1–4 being in place first.**
+**What the operator experiences after:** No visible behavior change for existing configs. The internal consolidation means future auth features are faster to build and cannot accidentally diverge across agents.
+
+**Status: Partially shipped. Env/provider-key source values and on-demand `jackin-exec` delivery exist; the general credential-source abstraction for all credential consumers remains open.**
 
 **Detail:** [Credential source pattern](/roadmap/credential-source-pattern/).
 
@@ -189,13 +191,13 @@ Third, the console Auth tab gains a health indicator column per agent row (probe
 
 **What changes (three sub-phases, each independently shippable):**
 
-Sub-phase 6a — file mounts instead of env injection. Move from `docker run -e KEY=VALUE` (visible in `docker inspect`) to Compose-secrets-style file mounts for agents that accept file-path credential inputs. Medium risk, no daemon required.
+Sub-phase 6a — file mounts instead of env injection. Move remaining launch-time token delivery from `docker run -e KEY=VALUE` (visible in `docker inspect`) to Compose-secrets-style file mounts for agents that accept file-path credential inputs. Medium risk, no daemon required. The shipped `jackin-exec` path already keeps on-demand operator-env credentials out of launch-time env; this sub-phase is about the remaining auth/provider tokens that still need launch-time delivery.
 
 Sub-phase 6b — per-command opaque handles via daemon. The agent receives an opaque handle token from the daemon, not the raw credential value. The daemon verifies the handle before issuing the credential for each use. Tokens never appear in `docker exec` output or container env. Requires Phase 3.
 
 Sub-phase 6c — credential proxy. A Docker Sandboxes-style host-side proxy intercepts outbound API calls from containers and substitutes credentials at the network layer, so tokens never appear in container memory. Long-term target.
 
-**Status: Not yet shipped. Sub-phase 6a has no daemon dependency and can start before Phase 3.**
+**Status: Open for auth/provider tokens. On-demand `jackin-exec` delivery exists for selected command credentials; sub-phase 6a still has no daemon dependency and can start before Phase 3.**
 
 **Detail:** [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).
 
@@ -236,8 +238,8 @@ When all phases are complete the operator experience is:
 | 2 — health and visibility | Capsule status shipped; pre-launch probe, `jackin auth status`, config-wide probes, console indicators remain | No | Partial | Next auth PR |
 | 3 — daemon foundation | Lifecycle, install, control socket, log redaction | — (is the daemon) | Design needed | After Phase 2 |
 | 4 — live bidirectional sync | Token rotation propagates in seconds to all containers | Yes (Phase 3) | Complete | After Phase 3 |
-| 5 — credential source abstraction | Unified `CredentialSource` enum for all axes | No | Complete | After Phases 1–4 |
-| 6 — credential exposure hardening | Tokens out of `docker inspect`, opaque handles | 6a: No; 6b+: Yes | Complete | Parallel track |
+| 5 — credential source abstraction | Shared source abstraction for all credential consumers | No | Partial | After Phases 1–4 |
+| 6 — credential exposure hardening | Remaining launch-time tokens out of `docker inspect`, opaque handles | 6a: No; 6b+: Yes | Open | Parallel track |
 | 7 — mid-session requests | Host-bridge approval flow for new credentials | Yes (Phase 3) | Complete | After Phase 3 |
 
 ## Design constraints that apply across all phases
@@ -263,7 +265,7 @@ When all phases are complete the operator experience is:
 | [GitHub CLI authentication strategy](/roadmap/github-cli-auth-strategy/) | 2–4 (scope pre-flight; bidirectional sync) | Partially implemented |
 | [jackin❯ daemon](/roadmap/jackin-daemon/) | 3 | Open — design questions remain |
 | [Live bidirectional auth sync](/roadmap/live-auth-sync/) | 4 | Open — design complete, awaits daemon |
-| [Credential source pattern](/roadmap/credential-source-pattern/) | 5 | Open — design complete |
-| [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) | 6 | Open — design complete |
+| [Credential source pattern](/roadmap/credential-source-pattern/) | 5 | Partially implemented |
+| [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) | 6 | Open — design proposal |
 | [Host bridge — secrets and approved host actions](/roadmap/host-bridge/) | 7 | Open — design complete, awaits daemon |
 | [Reliable Claude authentication strategy](/reference/research/authentication/claude-auth-strategy/) | Historical context for current mode design | Deferred |

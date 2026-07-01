@@ -2,19 +2,19 @@
 title: "Auth health and operator visibility"
 ---
 
-**Status**: Partially implemented — Capsule now exposes usage/account-auth-ish status surfaces for running sessions; top-level pre-launch health, `jackin auth status`, config-wide probes, and console Auth-tab health glyphs remain open
+**Status**: Partially implemented — Capsule now exposes usage/account status surfaces for running sessions, launch already records auth provisioning outcomes, `jackin doctor` checks coarse GitHub CLI auth, and `jackin config auth show` prints global modes; per-agent credential health probes, `jackin auth status`, config-wide probes, and console Auth-tab health glyphs remain open
 
 ## Shipped facts
 
-Capsule has gained session-local status surfaces that make provider usage/account-auth-ish state visible while an operator is already inside a running session. That closes part of the old "auth is invisible" complaint, but it is not the same as a jackin❯-level auth health layer.
+Capsule has gained session-local status surfaces that make provider usage/account state visible while an operator is already inside a running session. The daemon owns the usage cache, exposes focused usage and account-list control replies, and refreshes usage when an agent session starts. Launch also records per-agent auth provisioning outcomes for the launch summary, GitHub sync resolves `gh auth token --hostname github.com` before falling back to `hosts.yml`, `jackin doctor` has a coarse `gh_auth` check, and `jackin config auth show` prints global auth-forwarding modes. That is useful baseline visibility, but it is not a jackin❯-level auth health layer.
 
-The remaining gap is top-level visibility before and around launch: jackin❯ still needs to check the credentials it is about to provision, expose the result without entering a container, and show config-wide health in the console Auth tab.
+The remaining gap is credential-specific health before and around launch: jackin❯ still needs to validate the credentials it is about to provision, expose that result without entering a container, and show config-wide health in the console Auth tab.
 
 ## Remaining work
 
-1. **Pre-launch credential probe.** Before `docker run`, check the resolved auth mode and source for each agent/GitHub axis. Keep it local-only: file exists/non-empty, expected JSON parses, obvious JWT/Claude expiry fields decode, env vars are set, and `gh auth token --hostname github.com` exits zero for GitHub sync. Emit warnings in the launch summary; do not make network validity calls or block offline workflows.
+1. **Pre-launch credential probe.** Before `docker run`, check the resolved auth mode and source for each agent/GitHub axis. Keep it local-only: file exists/non-empty, expected JSON parses, obvious JWT/Claude expiry fields decode, env vars are set, and GitHub sync reports a resolved token or typed missing reason from the existing resolver. Emit health warnings in the launch summary; do not make provider network validity calls or block offline workflows.
 
-2. **`jackin auth status`.** Add a CLI command that walks configured workspaces and roles, resolves auth the same way launch does, and prints health for each axis. Include `--json` for scripts and for the console. Running-instance rows can read provisioned local state first; daemon-backed live health remains a later extension.
+2. **`jackin auth status`.** Add a CLI command that walks configured workspaces and roles, resolves auth the same way launch does, and prints health for each axis. Include `--json` for scripts and for the console. This is distinct from `jackin config auth show`, which only prints global modes. Running-instance rows can read provisioned local state first; daemon-backed live health remains a later extension.
 
 3. **Config-wide console indicators.** Add Auth-tab health glyphs for each agent/provider row and refresh them when the tab gains focus or config changes. The console should make missing source folders, missing env vars, expired tokens, and ignored auth visible before launch.
 
