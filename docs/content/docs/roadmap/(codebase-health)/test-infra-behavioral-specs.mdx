@@ -2,105 +2,28 @@
 title: "Test Infrastructure & Behavioral Specs"
 ---
 
-**Status**: Partially implemented — fuzz infrastructure exists for `jackin-term` and some snapshot tooling is in use; shared `jackin-test-support`, major-component behavioral specs, parser `proptest`, and parser fuzz targets remain open
+**Status**: Partially implemented — `insta` snapshot testing and `cargo-fuzz` (for `jackin-term`, scheduled nightly) are in use; a shared `jackin-test-support` crate, mega-test-file splits, behavioral specs for the capsule daemon and operator console, and `proptest`/fuzz coverage for parser surfaces all remain open
 
-## Problem
+## Shipped facts
 
-Three testing gaps block the codebase readability program and increase the risk of silent regressions:
+Behavioral specs already exist for two components: `runtime/launch.rs` (published at [runtime/launch.rs Behavioral Spec](/reference/developer-reference/specs/runtime-launch/), tracked at [Behavioral spec: runtime/launch.rs](/roadmap/behavioral-spec-runtime-launch/)) and the console `op_picker` (published at [op_picker Behavioral Spec](/reference/developer-reference/specs/op-picker/)), plus a related but differently-scoped spec for alternate agent credential/config folder sync ([Auth Source-Folder Sync](/reference/developer-reference/specs/auth-source-folder-sync/)).
+`insta` is already a dev-dependency in `jackin-image`, `jackin-console`, `jackin`, `jackin-runtime`, and `jackin-capsule`, though not yet standardized through a shared harness.
+`cargo-fuzz` exists for `jackin-term` (the `damage_grid_process` target) and runs nightly via <RepoFile path=".github/workflows/hygiene.yml">.github/workflows/hygiene.yml</RepoFile>; no parser crate has an equivalent target, and `proptest` is not in the dependency graph at all.
+`crates/jackin/tests/manager_flow.rs` (1,528 lines) and `crates/jackin/tests/dind_e2e.rs` (1,669 lines) remain large, and test helpers (mock runners, config builders, workspace builders) are still duplicated across multiple test files rather than consolidated into a shared crate.
 
-1. **Test file duplication mirrors source duplication.** <RepoFile path="crates/jackin/tests/manager_flow.rs">crates/jackin/tests/manager_flow.rs</RepoFile> is **1,528 lines** and <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile> is **1,669 lines**. There are 4 byte-for-byte-identical `config_with_agents` helpers across 4 test files, 3 independent `FakeRunner` definitions (plus a 4th `ScriptedRunner`), 10 independent mount-helper definitions in 7 files, 45+ copy-pasted role-seeding blocks across 10 files, and 20 inline `ResolvedWorkspace` constructions across 5 files. This blocks the Phase 2 source-file splits because splitting a 7000-line source file means rewriting the 3000-line test file that depends on it.
+## Remaining work
 
-2. **Behavioral specs are incomplete.** Specs now exist for some surfaces, but not for `jackin-capsule`'s daemon (<RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> — about 1.7k production lines plus a much larger `daemon/tests.rs` surface), still a load-bearing in-container control plane. Behavioral specs should be a general practice for all major components.
+1. Extract a `crates/jackin-test-support/` dev-dependency crate consolidating the duplicated mock runners, config/workspace builders, and role-seeding helpers scattered across test files; no such crate exists yet.
+2. Split `tests/manager_flow.rs` and `tests/dind_e2e.rs` into smaller per-scenario files, after the helper extraction (companion to each source-file split in the codebase readability program).
+3. Standardize `insta` snapshot/golden-file usage through the test-support crate (shared determinism harness: fixed size/theme/clock, redaction).
+4. Write a behavioral spec for the capsule daemon (<RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>) — PID 1 contract, single-attach-client invariant, session lifecycle, PTY mutex poison recovery, sessions persistence and reattach.
+5. Write a behavioral spec for the operator console TUI state machine (workspace to role to agent selection, instance lifecycle, keybinding dispatch, dialog stack).
+6. Add `proptest` invariant tests and `cargo-fuzz` targets for parser surfaces: <RepoFile path="crates/jackin-manifest/src/validate.rs">crates/jackin-manifest/src/validate.rs</RepoFile>, <RepoFile path="crates/jackin-env/src/env_resolver.rs">crates/jackin-env/src/env_resolver.rs</RepoFile>, and the migration chains (<RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile>, <RepoFile path="crates/jackin-manifest/src/migrations.rs">crates/jackin-manifest/src/migrations.rs</RepoFile>); extend the existing nightly fuzz schedule to cover the new targets.
 
-3. **No property-based or fuzz testing for parser surfaces.** <RepoFile path="crates/jackin-manifest/src/validate.rs">crates/jackin-manifest/src/validate.rs</RepoFile> (253 LOC), <RepoFile path="crates/jackin-env/src/env_resolver.rs">crates/jackin-env/src/env_resolver.rs</RepoFile>, and the migration chain (<RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile>, <RepoFile path="crates/jackin-manifest/src/migrations.rs">crates/jackin-manifest/src/migrations.rs</RepoFile>) are parsers of operator/role-author-supplied input, tested only by example-based unit tests. An input the developer didn't think of isn't covered. The migration framework's fixture chain is one of the project's strongest correctness surfaces, but it's still a closed-world test.
+## Related work
 
-## Proposal
-
-### 1. Test file split + mock consolidation
-
-Research established Rust patterns for test-support crates (tokio, bevy, cargo, and other prominent projects all maintain dedicated test-support crates), then:
-
-**Phase 1 — Extract `jackin-test-support` dev-dep crate.** No such crate exists yet. Promote `FakeRunner`, `ScriptedRunner`, `seed_minimal_role_repo`, `simple_mount`, `config_with_agents`, `test_workspace`, `fake_runner_with_running` into one crate under `crates/jackin-test-support/`. Update every test to import from it. Estimated net delete: 500–1000 LOC.
-
-**Phase 2 — Split mega-test-files.** `tests/manager_flow.rs` → 8–10 files by scenario family. `tests/dind_e2e.rs` → smaller end-to-end groups. Companion to each source-file Phase 2 split.
-
-**Phase 3 — Snapshot/golden-file infrastructure.** `insta` already exists in some crate dev-dependencies; standardize it through the test-support crate so every JSON output, derived Dockerfile, and friendly error block can be snapshotted with one helper, and host the shared determinism harness (fixed size/theme/clock, redaction). The styled-SVG visual goldens for TUI screens and CLI output build on this crate but are designed in [Visual snapshot testing (CLI & TUI)](/reference/research/testing/visual-snapshots/visual-snapshot-testing/); that item owns the artifact format, this item owns the shared `jackin-test-support` crate it lives in.
-
-### 2. Behavioral specs for major components
-
-Write behavioral specification documents for every major component, not just `runtime/launch.rs`. Priority order:
-
-1. **Capsule daemon** (<RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile>) — PID 1 contract, single-attach-client invariant, control channel dispatch, session lifecycle, PTY mutex poison recovery, attach framing, OSC passthrough, mode-state restore, sessions persistence and reattach.
-2. **Operator console** — the TUI state machine: workspace selection → role selection → agent selection → instance lifecycle → session management, keybinding dispatch, dialog stack.
-3. **Launch pipeline** (<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>) — already roadmap'd in [behavioral spec for runtime launch](/roadmap/behavioral-spec-runtime-launch/), but worth confirming coverage.
-4. **Auth forwarding** (<RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile>) — credential provisioning, symlink rejection, refresh flows.
-
-Each spec should: list invariants, give the failure mode for each violation, and link to the source line where the invariant is enforced.
-
-### 3. Property and fuzz tests for parser surfaces
-
-Add two testing layers. `cargo-fuzz` exists for `jackin-term`; the remaining fuzz gap is parser surfaces (`manifest`, env resolution, migrations). `proptest` is not yet part of the parser test strategy:
-
-**`proptest` for invariant testing:**
-- `env_resolver`: `${env.VAR}` interpolation is associative, idempotent on no-op substitutions, escapes correctly for every Unicode input.
-- `manifest::validate`: a manifest that parses successfully always round-trips through serialize → parse unchanged.
-- Migration chain: any input that parses at version N migrates successfully to N+1 and the resulting output parses at N+1.
-
-**`cargo-fuzz` targets:**
-- `manifest::validate` (TOML input, expect no panic).
-- `env_resolver::resolve` (any Unicode env string).
-- Each migration step (any input that parses at version N).
-
-Schedule `cargo fuzz run <target> -- -max_total_time=300` as a nightly CI job (not on every PR — too slow).
-
-## Non-goals
-
-- Do not block the readability program's Phase 1 work on the test-support crate. Phase 1 splits don't need it yet.
-- Do not add mutation testing yet. Re-evaluate once `cargo-llvm-cov` (from the CI tooling roadmap item) shows where coverage is weakest.
-- Do not fuzz the TUI rendering layer or the Docker client — those surfaces change too fast for fuzzing to be cost-effective.
-
-## Implementation Phases
-
-### Phase 1 — Research + test-support crate
-
-1. Audit: walk every `tests/*.rs` and inventory helpers + mock structs.
-2. Research how prominent Rust projects structure their test-support crates.
-3. Create `crates/jackin-test-support/` with a Cargo.toml declaring dev-dependencies only from consumers' perspective (`publish = false`).
-4. Promote one helper family at a time (mounts first — smallest, used everywhere).
-5. Split `tests/manager_flow.rs` last, after helpers are extracted.
-
-### Phase 2 — Behavioral specs
-
-1. Write capsule daemon behavioral spec.
-2. Write console behavioral spec.
-3. Confirm launch pipeline spec coverage.
-
-### Phase 3 — Property and fuzz tests
-
-1. Add `proptest` to dev-dependencies.
-2. Add `fuzz/` directory with `cargo-fuzz` setup; one target per parser.
-3. Schedule nightly CI fuzz run.
-
-## Open Questions
-
-1. Which exact Rust projects should we study for test-support crate patterns? (tokio, bevy, cargo, and clap are candidates.)
-2. Should the test-support crate live in `crates/` or alongside the test files?
-3. Should behavioral specs live in the roadmap or in contributor-facing reference docs?
-4. What is the right nightly CI schedule for fuzz runs?
-
-## Related Files
-
-- <RepoFile path="crates/jackin/tests/manager_flow.rs">crates/jackin/tests/manager_flow.rs</RepoFile> — 1,528-line test file
-- <RepoFile path="crates/jackin/tests/dind_e2e.rs">crates/jackin/tests/dind_e2e.rs</RepoFile> — 1,669-line E2E test
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> — 1,666-line capsule daemon
-- <RepoFile path="crates/jackin-manifest/src/validate.rs">crates/jackin-manifest/src/validate.rs</RepoFile> — 253-line manifest validation
-- <RepoFile path="crates/jackin-env/src/env_resolver.rs">crates/jackin-env/src/env_resolver.rs</RepoFile> — env var interpolation
-- <RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile> — config migration chain
-- <RepoFile path="crates/jackin-manifest/src/migrations.rs">crates/jackin-manifest/src/migrations.rs</RepoFile> — manifest migration chain
-
-## Cross-references
-
-- [Codebase map](/reference/getting-oriented/codebase-map/) — workspace crate structure that the behavioral specs will cover
+- Research: [Test infrastructure: shared test-support crate, behavioral specs, and parser fuzzing](/reference/research/testing/test-infrastructure-consolidation/) — design rationale, phasing, and open questions for this item
+- [Visual snapshot testing (CLI & TUI)](/reference/research/testing/visual-snapshots/visual-snapshot-testing/) — SVG golden-artifact format that would build on the shared test-support crate
 - [Rust CI tooling & dependency hygiene](/reference/research/ci/rust-tooling/rust-ci-tooling/) — `cargo insta` for snapshot tests, `cargo-llvm-cov` for coverage
-- [Behavioral spec for runtime launch](/roadmap/behavioral-spec-runtime-launch/) — existing spec item that this extends to all components
-- [AgentRuntime and Provider registry](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry) — adapter registration reduces the per-agent test matrix
+- [Behavioral spec: runtime/launch.rs](/roadmap/behavioral-spec-runtime-launch/) — existing spec item this extends to other components
+- [Codebase map](/reference/getting-oriented/codebase-map/) — workspace crate structure the behavioral specs will cover

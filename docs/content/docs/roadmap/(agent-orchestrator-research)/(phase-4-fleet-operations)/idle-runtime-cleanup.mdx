@@ -2,134 +2,36 @@
 title: "Idle Runtime Cleanup Hooks"
 ---
 
-**Status**: Open — design proposal (Phase 4, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+**Status**: Open — no idle-cleanup mechanism exists yet; only the underlying signals it would build on (clean-exit teardown, agent status reporting) are shipped (Phase 4, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
-## Problem
+## Shipped baseline
 
-Shipped baseline: Capsule exits cleanly when the last session ends so the host cleanup path can tear down the role container, sidecar, cert volume, and network. The runtime also has agent status reporting (`Working`, `Blocked`, `Done`, `Idle`, `Unknown`) and can query a running container's session inventory through the Capsule control socket. Remaining work is idle policy, not basic last-session cleanup: role-declared idle hooks, operator opt-in, time-based trigger/re-arm, restart/recycle semantics, cleanup history, and operator-visible cleanup status.
+Capsule already exits cleanly when the last session ends: reconnect finalization marks the instance `CleanExited` and calls `eject_role` (<RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile>), which lets the host cleanup path tear down the role container, DinD sidecar, cert volume, and network. Instance manifests already record these backend resources.
 
-A long-running agent container accumulates state outside the agent's own working set: a Java agent leaves Gradle daemons holding onto a few GB of heap; a Node agent leaves npm caches with thousands of file descriptors; the runtime itself caches build artifacts indefinitely. After a few hours of an idle agent sitting open, that's real resource cost — both on disk and in long-lived processes the operator never asked for.
+Agent status reporting is also shipped: Capsule tracks per-session status (`Working`, `Blocked`, `Done`, `Idle`, `Unknown`) and includes it as `agent_status_report` on control-protocol panes (<RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/daemon/multiplexer_utils.rs">crates/jackin-capsule/src/daemon/multiplexer_utils.rs</RepoFile>). A host process can already query a running container's session inventory and status through the Capsule control socket.
 
-multicode addresses this with declarative idle hooks: after N seconds of inactivity, run a cleanup command (`gradle --stop`, etc.); optionally recycle the container.
+None of that adds up to idle-hook cleanup: there is no role-declared idle-command schema, no operator opt-in, no time-based trigger/re-arm supervisor, no restart/recycle semantics, and no cleanup history. This is an unbuilt feature, not a partial one.
 
-## Why It Matters
+## Remaining work
 
-- The autonomous queue (Phase 4) keeps containers warm waiting for work. Without cleanup, those warm containers accumulate state every cycle.
-- It's a small feature with disproportionate impact for long-running fleets — exactly the workflow the program targets.
-- It generalizes naturally to anything an role wants done while idle (commit checkpoint snapshots, push WIP branches, evict caches).
+1. `[runtime.idle]` block on `jackin.role.toml` (schema-bumped): `commands`, `delay_seconds`, `interval_seconds`, `restart_after_cleanup`.
+2. Operator opt-in per role (`enable_idle_hooks`, default off).
+3. Idle-detection supervisor that watches Capsule agent status reports and fires after `delay_seconds` of continuous `Idle`, re-arming every `interval_seconds`.
+4. Sequential command execution via `docker exec` with a per-command timeout.
+5. Optional container restart/recycle after cleanup (`restart_after_cleanup`).
+6. Cleanup history persisted (new store, or the future tool-history store if it lands first) and surfaced as "last cleanup" in the console resource panel and `jackin status`.
 
-## Inspiration in multicode
+## Out of scope
 
-**Sources**:
-- README — [Autonomous queueing](https://github.com/graemerocher/multicode#autonomous-queueing) (the `idle-runtime-cleanup`, `idle-runtime-cleanup-delay-seconds`, `idle-runtime-cleanup-interval-seconds`, and `idle-runtime-restart` knobs are documented here)
-- Config — [`config.toml` `[autonomous]` block](https://github.com/graemerocher/multicode/blob/main/config.toml)
+- Resource-threshold-based hooks (e.g. "cleanup when memory > X") in addition to time-based triggers.
+- Hooks for states other than `Idle` (busy, question).
+- Per-workspace override of idle config — role-level only for V1.
+- Operator-defined ad-hoc cleanup commands outside the role manifest.
+- Notification on cleanup failure beyond an in-console error dialog.
 
-```toml
-[autonomous]
-idle-runtime-cleanup = true
-idle-runtime-cleanup-delay-seconds = 300       # idle for 5 min before first cleanup
-idle-runtime-cleanup-interval-seconds = 900    # re-run every 15 min while still idle
-idle-runtime-restart = false                   # also recycle the container?
-```
+## Related work
 
-multicode runs `gradle --stop` and (optionally) terminates remaining Gradle daemon/worker processes inside Apple-container workspaces. Then, if `idle-runtime-restart = true`, recycles the runtime entirely (stops the container, starts a new one).
-
-The implementation watches the workspace status (their equivalent of [agent runtime status](/roadmap/agent-runtime-status/)) and fires when status has been `Idle` for the configured delay.
-
-## Recommended Shape
-
-Generalize the concept: roles declare what to run when idle, the operator decides whether to enable it, and a jackin❯ runtime supervisor fires the hook based on observed status.
-
-### Role config
-
-```toml title="jackin.role.toml"
-version = "v1alpha2"
-
-[runtime.idle]
-commands = [
-  "gradle --stop",
-  "find /home/agent/.cache -atime +1 -delete"
-]
-delay_seconds = 300
-interval_seconds = 900
-restart_after_cleanup = false
-```
-
-`commands` is a list — each runs in sequence inside the agent container via `docker exec`. They're the role's recommendation; the *operator* chooses whether to enable.
-
-### Operator opt-in
-
-```toml
-# operator config
-[roles."the-architect"]
-enable_idle_hooks = true   # default false
-```
-
-Defaults to off because:
-
-- The hooks run inside someone else's container based on the agent class's declarations.
-- Some operators want the warm state preserved.
-- Misconfigured commands could break the running agent.
-
-### Trigger
-
-The supervisor watches the shipped Capsule agent status reports. When an instance has been `Idle` for `delay_seconds` continuously:
-
-1. Run `commands[0]`, `commands[1]`, ... in sequence via `docker exec`. Each command gets a 60-second timeout (configurable).
-2. If `restart_after_cleanup = true`, eject and re-load the instance afterward (preserves the data dir, just recycles the container).
-3. Record the cleanup in persistent storage, likely a dedicated `cleanup_history` table unless the future tool-history store already exists by implementation time.
-4. Re-arm: next cleanup fires `interval_seconds` later if still idle.
-
-A status transition out of `Idle` cancels the pending cleanup.
-
-### Console visibility
-
-The console resource panel (when open) shows "Last cleanup: 4m ago" in the per-agent row. CLI: `jackin status <selector>` includes the last-cleanup time.
-
-## Shipped Baseline
-
-- Capsule exits when the last live session exits; clean exits skip stale pane snapshots, remove the session, drain, and let host cleanup run.
-- Reconnect finalization tears down resources after clean stop or cleaned still-running sessions by marking the instance `CleanExited` and calling `eject_role`.
-- Instance manifests already record backend resources for Docker role container, DinD sidecar, network, and cert volume.
-- Agent runtime status wire types and Capsule state arbitration are implemented; panes carry `agent_status_report` when populated.
-- Host attach code can inspect running containers by executing `jackin-capsule status`, but there is no idle-hook supervisor yet.
-
-## Remaining Scope (V1)
-
-- Schema-bumped idle block on `jackin.role.toml`.
-- Operator opt-in via `enable_idle_hooks` per role.
-- Idle detection from Capsule agent status reports.
-- Sequential command execution via `docker exec` with per-command timeout.
-- Optional `restart_after_cleanup` toggle.
-- Console rendering of last-cleanup time.
-- Cleanup history written to persistent storage.
-
-## Defer
-
-- Idle hooks based on resource thresholds ("cleanup when memory > X") in addition to time-based. Defer.
-- Hooks for other states (busy, question). Idle-only in V1.
-- Per-workspace override of idle config. Agent-class-level only in V1.
-- Operator-defined ad-hoc cleanup commands (not in role). Defer; use `jackin exec` instead if needed.
-- Notification on cleanup failure beyond an in-console ErrorPopup dialog. Defer.
-
-## Open Questions
-
-- **Default delay/interval values.** multicode uses 300s/900s. Are those sensible jackin defaults, or should roles be more conservative? Recommended: *match multicode for V1*; tune from feedback.
-- **Cleanup during foreground operator attach.** If the operator is actively `jackin hardline`'d into an idle session, should cleanup fire? multicode runs it regardless. Recommended: *suppress when attached* — the operator's about-to-type-something signal isn't visible to the status adapter.
-- **Recovery from cleanup-broken-container.** If `restart_after_cleanup` is true and the new container fails to come up, the operator's session is unrecoverable from cleanup alone. Recommended: *one retry, then mark instance failed and surface for operator intervention*.
-
-## Related Files
-
-- New module (e.g. `crates/jackin-runtime/src/runtime/idle.rs`) — supervisor
-- <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile> and <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile> — idle schema and version validation
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — wires supervisor into instance lifecycle
-- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs">crates/jackin-runtime/src/runtime/attach.rs</RepoFile> — existing status/session inventory query path to build on
-- A future persistent-storage module — cleanup history table
-- <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile> — last-cleanup display
-
-## See Also
-
-- [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
+- Research: [Idle runtime cleanup: design notes](/reference/research/agent-orchestration/idle-runtime-cleanup-design/) — multicode precedent, recommended config shape, open questions
 - [Agent runtime status](/roadmap/agent-runtime-status/) — required idle signal
 - [Autonomous task queue](/roadmap/autonomous-task-queue/) — primary beneficiary (queue-warm containers cleaned regularly)
-- [Console resource panel](/roadmap/console-resource-panel/) — visibility surface
+- [Console resource panel](/roadmap/console-resource-panel/) — intended visibility surface

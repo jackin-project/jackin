@@ -2,79 +2,23 @@
 title: "Reproducibility and Provenance Pinning"
 ---
 
+**Status**: Open — design proposal, nothing shipped yet
 
-**Status**: Open — design proposal
+## Shipped baseline
 
-## Problem
+Role repos are resolved by clone-then-fetch-and-merge against the default branch on every `jackin load`; there is no commit pin, no `version`/`commit` field on the role-source config entry, and no `--update` flag. Trust is a single boolean that never resets on upstream movement. This matches the design's own starting assumption, so no part of the original proposal has landed.
 
-When jackin❯ loads a role today (`agent-smith`, `the-architect`, or any third-party role), it clones the role repo and tracks whatever sits at the tip of the default branch. Every `jackin load` runs `git pull` and silently picks up whatever the upstream pushed since the last run.
+## Remaining work
 
-That has three concrete consequences:
+1. Add optional `commit`/`version` fields to the role-source config entry, written by the runtime on first resolve.
+2. Switch subsequent loads to fetch + detached-HEAD checkout of the pinned commit instead of fetch+merge.
+3. Add a `jackin load --update` flag that re-pins (tag-preferring resolution) and resets trust.
+4. Bump the config schema version and add the migration-registry entry required for any serde-bearing config struct change (see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>).
+5. Surface the resolved version/SHA in the launch summary.
 
-1. **Behaviour drifts between runs without operator awareness.** Yesterday `the-architect` behaved one way; today the upstream merged a refactor and now it behaves another. The operator did not request, see, or approve the change.
-2. **Past runs are not reproducible.** If something worked Tuesday and broke Thursday, nothing on disk records *which* role-repo commit Tuesday's run actually used. The session state, the launch summary, and the config file all describe "the role" but not "this specific snapshot of the role".
-3. **Trust is granted to a moving target.** The operator may have marked a role `trusted = true` last month after reading the code at one commit. The remote has since moved 40 commits. The trust flag still says `true`, but it is now applied to code that has never been reviewed.
+Design details, schema sketch, and open questions needing operator sign-off before implementation: [Role repo pinning: design](/reference/research/security/supply-chain/role-repo-pinning-design/).
 
-## Why it matters
+## Related work
 
-This is the foundation for treating role repos as supply-chain artefacts rather than "always-latest from the internet". Without pinning, the audit trail in `~/.config/jackin/config.toml` does not capture *what was actually run* — only *which repo it came from*. That is fine for prototyping but rules out reproducing a session, bisecting an agent regression, or trusting a third-party role beyond a single read-through.
-
-## Proposed approach (brainstorm — pending operator approval)
-
-Pin role repos to an immutable commit SHA on first resolve, prefer human-readable tags when present, and require an explicit `jackin load --update` to advance the pin (which also resets trust so the operator re-confirms against the new code). This is the "Option 3 (hybrid)" sketch from the original brainstorm; the open questions in the previous draft of this page are folded into the implementation sketch below.
-
-### Schema sketch
-
-Add two optional fields to the role-source entry in `config.toml`:
-
-```toml
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-commit = "a1b2c3d4e5f6…"   # resolved SHA, runtime-written
-version = "v1.2.3"          # tag at HEAD, when one exists
-trusted = true
-```
-
-Both fields are optional and additive. A role that has never been resolved omits both; the runtime fills them in after the first successful clone. `commit` is the source of truth for what gets checked out; `version` is purely cosmetic (launch summary line).
-
-### Runtime behaviour sketch
-
-- **First resolve** (no `commit` recorded): clone the repo, then capture HEAD SHA via `git rev-parse HEAD` and any tag exactly at HEAD via `git describe --tags --exact-match HEAD` (best-effort; absence is fine). Persist both back into the operator's `config.toml`.
-- **Subsequent loads** (with `commit` set): `git fetch` (no merge), then `git checkout <commit>` in detached-HEAD mode. No auto-pull, no auto-advance.
-- **`jackin load --update`** (new flag): `git fetch`, then re-pin. Resolution rule: if the repo has any tag, pick the highest semver-sorted `v*` tag; otherwise re-pin to the default branch's HEAD. Reset `trusted = false` so the operator must re-confirm trust against the new code.
-- **`--role-branch <name>`** (existing flag) keeps its current bypass behaviour — does not write a pin, used for ad-hoc PR testing.
-- **Built-in roles** follow the same rules; the only special case is that `trusted = true` is asserted by the binary on every sync.
-- **Launch summary** prints `Role: <key> @ <version-or-short-sha>` so the operator sees the resolved version on every run.
-
-### Config schema migration
-
-Per the project's pre-release schema rule (see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>), any change to a serde-bearing config struct requires a version bump and a migration registry entry, even when the change is purely additive. This work would bump to the next config schema version, add a no-op migration step if the fields are purely additive, ship a fixture from the previous version, and re-bake older fixtures so their migration chains end at that next version. Existing operator config files keep parsing without modification because the new fields are `Option<String>` with serde defaults.
-
-### Open questions for operator review
-
-- Is the `--update` resolution rule "highest `v*` tag, fall back to default branch HEAD" the right default? Or should the operator have to opt into tag-following with a separate flag, with the default being "advance to default-branch HEAD"?
-- Should `--update` also accept an explicit target — e.g. `jackin load --update v1.3.0` to pin to a specific tag, or `jackin load --update <sha>` to pin to a specific commit?
-- Should re-pinning always reset `trusted = false`, or only when the new commit is outside the previously-trusted commit's ancestry (i.e. a force-push or unrelated commit)? The current sketch is conservative ("any movement re-prompts trust"); a finer-grained rule is possible but adds complexity.
-- For built-in roles, should the binary ship a *default pin* (so a fresh install lands on a known-good commit rather than HEAD), or continue to resolve on first load? Shipping defaults adds release-engineering work but removes the first-launch network surprise.
-
-### Files that would change
-
-Code:
-
-- <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> — add `commit`, `version` fields to `RoleSource`.
-- <RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile> — version bump and registry step.
-- <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — `sync_builtin_agents` must update fields in place rather than overwriting the whole `RoleSource`, so a re-pinned built-in survives a binary upgrade.
-- <RepoFile path="crates/jackin-runtime/src/runtime/repo_cache.rs">crates/jackin-runtime/src/runtime/repo_cache.rs</RepoFile> — capture-pin helper, fetch+checkout-detached path for pinned commits, `--update` path, persist callback into config.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — wire the `--update` flag, include resolved version/SHA in the launch summary.
-
-Docs:
-
-- This page — convert from brainstorm to design proposal once approved, then to "Resolved" once shipped.
-- A new operator-facing note for `--update` on the `jackin load` page.
-- A new timeline entry on the schema-versions reference page for the next config schema version.
-
-## Related files
-
-- <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — `resolve_agent_source()`; `AgentSource` (defined in <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile>) would gain the new fields.
-- <RepoFile path="crates/jackin-runtime/src/runtime/repo_cache.rs">crates/jackin-runtime/src/runtime/repo_cache.rs</RepoFile> — repo checkout logic; calls into config layer to resolve source.
-- <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile> — version/provenance metadata.
+- <RepoFile path="crates/jackin-runtime/src/runtime/repo_cache.rs">crates/jackin-runtime/src/runtime/repo_cache.rs</RepoFile> — current clone/fetch/checkout logic this work would change.
+- <RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> — `RoleSource`, the struct that would gain the new fields.

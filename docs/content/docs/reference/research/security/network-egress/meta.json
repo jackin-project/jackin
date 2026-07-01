@@ -1,0 +1,7 @@
+{
+  "title": "Network Egress",
+  "defaultOpen": false,
+  "pages": [
+    "network-egress-policy-design"
+  ]
+}

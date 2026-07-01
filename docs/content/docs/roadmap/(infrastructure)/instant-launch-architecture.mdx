@@ -2,142 +2,32 @@
 title: "Runtime Restore and Image Architecture"
 ---
 
-**Status**: Mostly implemented — image bake, home seeding, container identity, restore ladder, schema migration, console surfaces, launch cockpit hard-exit plumbing, build-performance work, and in-capsule dirty-exit plumbing have landed; operator live end-to-end signoff remains pending. Inspect currently ships the changed-file list; the full diff pane remains follow-up.
+**Status**: Partially implemented — image bake, home seeding, container identity, the restore ladder, schema migration, console instance surfaces, launch cockpit hard-exit, build-performance work, and the in-capsule dirty-exit flow (shared detection, the exit modal, host keep/discard execution) have all landed in code; only operator live end-to-end signoff and the Inspect diff pane remain.
 
-## Current remaining gap — operator signoff and resume continuity
+## Shipped facts
 
-The earlier dirty-exit defect is closed in code: `jackin-core` owns shared worktree dirty assessment, Capsule owns the in-container `ExitDirty` / `ExitInspect` decision surface, and the host reads `/jackin/state/exit-action.json` and executes keep/discard in the finalize path. The remaining roadmap work is no longer "make the dirty-exit dialog reachable"; it is live operator signoff plus the broader keep/resume continuity model: kept-clean sessions, launch-time recipe snapshots, `docker start` with socket-dir rematerialization, recreate/rebuild restore tiers, and a resume surface that treats returning to a session as normal workflow.
+The dirty-exit decision now lives entirely in-container instead of on the host after the container has already exited. `jackin-core`'s `worktree_dirty` module (`assess_worktree`, `WorktreeState`, `ChangedFile`, `parse_porcelain`) is the single source of truth for "clean vs dirty vs unpushed"; host `assess_cleanup` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> is a thin wrapper over it, and the capsule daemon runs the same function in-container against its workdir at last-session-close. When the last session exits dirty, `handle_last_session_exit()` / `decide_exit()` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> push the `Dialog::ExitDirty` modal (per-repo `N changed · N unpushed` summary lines, four rows: start a new agent, inspect changes, exit & keep, exit & discard) defined in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />; `Esc` is ignored (forced choice) and `Ctrl+Q` maps to `Exit & keep`. "Inspect changes" opens `Dialog::ExitInspect`, a read-only changed-file list grouped by repo. The capsule writes the chosen action to `/jackin/state/exit-action.json`; the host reads it via `ExitActionPrompt` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> (keep -> preserve, discard -> terminal cleanup, absent -> keep) at both finalize call sites in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" />, both of which now run finalize on a clean-exit non-zero `docker exec` result instead of short-circuiting it. Schema `v1alpha8` carries the `dirty_exit_policy` config (global + per-workspace: `ask` / `keep` / `discard`).
 
-## Decision — the dirty-exit confirmation moves inside the capsule
+The rest of the feature set named in the status line — image bake, home seeding, container identity, the restore ladder, and console instance surfaces — is implemented and documented as steady-state behavior in [Runtime Instance Model](/reference/runtime/runtime-instance-model/), [Construct Image: User Creation Responsibility](/reference/runtime/user-identity/), [Image Labels & Recipe Hash](/reference/runtime/image-labels/), and [Capsule Session Lifecycle](/reference/capsule/session-lifecycle/). This item stopped tracking that work as design-in-progress once it landed; what remains here is signoff, not design.
 
-The confirmation is **redesigned to run inside the capsule** (the in-container multiplexer), not on the host after the container exits. This supersedes the old host-side post-exit exit dialog for the dirty case.
+Design rationale, the alternatives considered for the host signal (file vs. exit code vs. control frame), and the agreed TUI mockup for the exit modal are captured in [In-Capsule Dirty-Exit: Design Rationale and Implementation Record](/reference/research/runtime/in-capsule-dirty-exit-design/).
 
-Why in-capsule (operator's call, accepted):
+## Remaining work
 
-- **Ask before teardown.** A host-side dialog can only prompt *after* the container has exited — at which point "want to resume?" means rebuild/restart to get back to work. In-capsule, the container is still warm; starting a new agent is instant.
-- **Decision at the place of work.** The operator is already inside the container; the capsule already owns the TUI and a full set of dialogs. No new surface, no second binary.
-- **Less resource churn.** No stop → ask → recreate cycle.
+1. **Inspect diff pane.** `Dialog::ExitInspect` ships the changed-file list only; the side-by-side per-file diff pane is still a follow-up.
+2. **Cross-screen double-`Ctrl+C` escape.** The `ExitDirty` modal currently consumes `Ctrl+C` like any other key; the cross-screen double-`Ctrl+C` immediate-exit guarantee does not yet reach this modal. Tracked as a separate capsule-global concern, not a blocker for the keyboard-driven modal.
+3. **Operator live signoff.** CI passing does not substitute for a manual pass. Needs a live confirmation covering: the full dirty-exit flow (modal appears, each of the four rows behaves as designed, a clean exit shows no modal, `keep`/`discard` policies skip the modal); image-baked binaries/plugins/default home and the rebuild-on-agent-version-change trigger; home seeding and first-seed auth handoff; arbitrary-UID/GID container identity (`libnss-extrausers`, group-0 writability, first seed, `git config --global`, role-hook tool installs); all three restore-ladder tiers (`docker start`, image reuse, pinned rebuild from `role_git_sha`); the `v1alpha8` migration chain and `dirty_exit_policy` resolution; console instance surfaces and stale-row/orphaned-lock reconciliation; launch cockpit hard-exit (`Ctrl+Q`, `Ctrl+C`, double-`Ctrl+C` mid-build) with `gc_orphaned_resources` reclaiming abandoned resources; and the image-build performance changes (no recursive permission repair, single-layer plugin install, uncompressed local export, `shellfirm` prebuild).
 
-The split of responsibility: the **capsule** detects dirty/unpushed state and **asks** the operator before any teardown; the **host** still **executes** the filesystem keep/discard, because it owns the isolated worktrees. The capsule decides; the host carries it out.
+## Related work
 
-## Architecture — share the dirty-detection logic
-
-The detection logic must be shared, not duplicated, so the capsule and the host can never disagree on what "dirty" means.
-
-- Today the detection lives only host-side, in `assess_cleanup` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> — pure git work (`git -C <path> status --porcelain` for uncommitted/untracked, `rev-list <upstream>..<branch>` for unpushed), coupled only to a worktree path and a command runner.
-- Both `jackin-runtime` (host) and `jackin-capsule` (in-container) already depend on `jackin-core`, which already holds the shared `CleanupStatus` and `IsolationRecord` types in <RepoFile path="crates/jackin-core/src/isolation_record.rs" />. `jackin-core` is the natural shared home — no new crate, no new binary.
-- Plan: extract the path-based assessment into `jackin-core` as a function over a repo path returning `Clean | Dirty | Unpushed` (plus the `PreservedReason` it already produces). The host's `assess_cleanup` becomes a thin wrapper over it; the capsule calls the same function in-container against its workdir at last-session-close. One source of truth.
-
-## Target workflow — in-capsule dirty-exit
-
-The hinge is the last-session-close branch in <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> (`no_live_sessions()`, which today calls `drain_and_exit` immediately):
-
-```text
-last live session exits (agent /exit, Ctrl-D, or crash)
-  │  run the shared dirty assessment on the workspace mount(s) in-container
-  ├─ clean / pushed ─────────────► drain_and_exit  (unchanged — silent exit)
-  └─ dirty / unpushed ───────────► push in-capsule modal; container stays alive
-        ├─ Start a new agent ─────► open the New-tab agent picker (verbatim) → spawn → back to work
-        ├─ Inspect changes ───────► read-only diff view (Esc back to modal)
-        ├─ Exit & keep changes ───► drain_and_exit → host preserves the instance (resumable)
-        └─ Exit & discard changes ► drain_and_exit → host discards the dirty work
-```
-
-"Start a new agent" reuses the capsule's existing `new_agent_picker` (`PickerIntent::NewTab`) in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> — the exact dialog "New tab" already opens. The confirmation reuses the capsule's existing dialog / modal-stack infrastructure; no new chrome.
-
-## Implementation checklist
-
-This checklist is the work contract for the implementing agent. Rules: tackle one item at a time; mark a box `[x]` **only** after the change is implemented *and* its verification step passes — never on code alone; do not check a parent until every child under it is checked; if an item marked **(decide)** is unresolved, stop and confirm with the operator before implementing — do not guess. The full rationale lives in the sections above; this is the execution tracker.
-
-### Settled decisions (resolved with operator)
-
-- **Host signal**: the capsule writes the chosen action to `/jackin/state/exit-action.json` (`{ "action": "keep" | "discard" }`) before `drain_and_exit`; on the host this is the instance state-dir file under the recorded data directory. The host finalize reads it and executes that action. Chosen over an exit-code convention (range-limited, conflated with real errors) and a control frame (more plumbing); the file survives the exit and is inspectable.
-- **`Ctrl+Q` from the exit modal** maps to `Exit & keep` — the safe default that never loses work.
-- **Discard takes no extra sub-confirm**: selecting `Exit & discard changes` is itself the explicit destructive approval (the operator chose the split-Exit shape). No second Yes/No.
-
-### Part 1 — Share dirty detection into `jackin-core`
-
-- [x] Add a `jackin-core` module (`worktree_dirty`) exposing a path-based assessment: input a repo path + base ref, output `WorktreeState` (`Clean | Dirty | Unpushed`) via `assess_worktree`, plus the per-file change list (`ChangedFile` + `parse_porcelain`/`changed_files`) the Inspect view needs. Drives git through the existing `jackin_core::runner::CommandRunner` seam so the crate stays subprocess-free.
-- [x] Expose the shared result type (`WorktreeState`, `ChangedFile`) in `jackin-core`, driven by the existing `CommandRunner` seam that both host (async) and capsule (in-container) can implement. (`PreservedReason` deliberately stays host-side in `finalize.rs` — it is exit-dialog wording the capsule does not consume; the capsule derives its own summary from `WorktreeState` + the change list.)
-- [x] Rewire host `assess_cleanup` in <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> to call `jackin_core::worktree_dirty::assess_worktree` with a logger closure that preserves the `--debug` diagnostics — no host behavior change.
-- [x] Add `jackin-core` unit tests (scripted `CommandRunner` mock + std-only `block_on`): clean, uncommitted, untracked, branch-ahead-no-upstream, ahead-of-upstream, fully-pushed, `[gone]`-merged, detached-HEAD off/at base, status-failure fail-closed, no-branches fail-closed, multiple repos, and `changed_files`/`parse_porcelain`.
-- [x] Verify: `jackin-core` tests (15) and host `finalize` tests (43) pass; `cargo fmt --check` and `cargo clippy` clean on both crates.
-
-### Part 2 — In-capsule confirmation (`jackin-capsule`)
-
-- [x] Plumb into the capsule launch config (`/jackin/run/agent.toml`) the data the daemon needs at exit: the resolved `dirty_exit_policy` and the list of **isolated worktree/clone mount paths** to assess. Added `dirty_exit_policy: Option<String>` + `isolated_worktrees: Vec<String>` to `jackin_protocol::CapsuleConfig` (serde-defaulted, backward-compat); the host `capsule_config()` builder populates them from `resolve_dirty_exit_policy` and the non-`shared` materialized mounts. Verified: protocol/runtime/capsule build, 180 launch tests pass.
-- [x] At `no_live_sessions()` in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />: `handle_last_session_exit()` runs `decide_exit()` — clean, or policy `keep`/`discard`, drains (preserving the non-clean-exit reason); policy `ask` + dirty pushes the modal and keeps the daemon alive (render early-returns on an open dialog, so a zero-pane modal renders).
-- [x] Add the exit-modal `Dialog::ExitDirty` variant (per-repo summary lines + the four rows) reusing the `FilterPicker` snapshot + render; box sizing/hint/click arms added; renders over zero panes.
-- [x] Wire rows: `Start a new agent` → `Action::OpenAgentPicker(NewTab)` (the verbatim picker; SpawnAgent clears the stack, dismissing the modal); `Inspect changes` → read-only changed-files list; `Exit & keep` / `Exit & discard` → set `exit_request`, event loop writes `exit-action.json` and drains.
-- [x] `Esc` ignored on the modal (forced choice); default focus the first row. (Double-`Ctrl+C` hard-exit: the modal currently consumes `Ctrl+C` like other keys — the cross-screen double-`Ctrl+C` escape is a separate capsule-global concern, tracked as a follow-up; not a blocker for the keyboard-driven modal.)
-- [x] In-capsule Inspect view (`Dialog::ExitInspect` / `InspectRow`): read-only changed-files list grouped by repo (status + path), `Esc` walks back; strictly preview-only. **Reduction noted:** the side-by-side `diff_view` pane (per-file content) is a follow-up — this ships the file list, not the diff pane.
-- [x] Host-signal mechanism: the capsule writes `exit-action.json` (`ExitAction` keep/discard) to `EXIT_ACTION_PATH`; the host reads it (Part 3).
-- [x] Tests: `decide_exit` drains on `keep`/`discard` and ask-but-clean; `ExitDirty` Enter routes each row, `Esc` ignored, navigation clamps; `ExitInspect` `Esc` walks back. (Dirty-pushes-modal end-to-end is covered by the operator live check, since it needs real in-container git.)
-
-### Part 3 — Host executes the chosen action (`jackin-runtime`)
-
-- [x] Clean last-session shutdown no longer fails the launch. **Resolved host-side** (more robust than racing the capsule client's exit code): the non-zero `docker exec` result at clean shutdown is treated as the attach socket-close race, not a failure. (The capsule client's own exit code is now irrelevant to the host; left as-is.)
-- [x] `launch_role_runtime` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> falls through to a successful return on a clean exit (diagnose `None`) instead of returning `attach_failure_error`, so the pipeline runs finalize instead of skipping it via `launch_result?`.
-- [x] The hardline path in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> no longer short-circuits on `attach_outcome?`: a non-zero attach result is logged and finalize runs (it re-inspects the container + reads `exit-action.json`).
-- [x] Host reads the capsule-signaled action and **executes** it via `ExitActionPrompt` (replacing `RichCleanupPrompt` at both finalize call sites): keep → `KeepAll` (preserve), discard → `DiscardAll` (terminal cleanup); no host prompt. Absent file → `KeepAll` (never lose work).
-- [x] Tests: `ExitActionPrompt` maps keep/discard/absent; `read_exit_action` ignores absent/garbage; `finalize_foreground_session` + `ExitActionPrompt` + `exit-action.json` `keep` preserves the records (`PreservedDirty`) and `discard` removes them.
-
-### End-to-end verification (operator)
-
-- [ ] Operator confirms the full flow live: dirty workspace → exit agent → modal appears in-capsule; `Start a new agent` returns to work with the New-tab picker; `Inspect changes` shows the shipped changed-file list; `Exit & keep` preserves and the instance is resumable; `Exit & discard` removes it; a clean exit shows no modal; `keep`/`discard` policies skip the modal. Full per-file diff pane remains follow-up.
-
-## In-capsule dirty-exit UI — agreed design
-
-Settled with the operator by walking faithful TUI previews. The modal renders in the capsule's existing chrome (row 0 ` jackin❯ ` brand pill + tab strip, row 1 `━` underline) as a centered choice list, reusing the capsule's existing dialog / modal-stack components — no new chrome.
-
-The exit modal, `Unsaved work — exit?`, shows **one summary line per dirty repo** (`<repo>  N changed · N unpushed`) above four choices:
-
-```text
- jackin❯  [the-architect]
- ━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  ┌─ Unsaved work — exit? ───────────────┐
-  │ jackin      2 changed · 1 unpushed    │
-  │ holla-apt   3 changed                 │
-  │                                       │
-  │ ▸ Start a new agent                   │
-  │   Inspect changes                     │
-  │   Exit & keep changes                 │
-  │   Exit & discard changes              │
-  └───────────────────────────────────────┘
-  ↑↓ · ↵ select · Ctrl-Q quit
-```
-
-Settled decisions:
-
-- **Default focus** is the first row, `Start a new agent`. **`Esc` is ignored** — the modal is a forced explicit choice; there is no ambiguous cancel.
-- **`Start a new agent`** opens the **exact New-tab agent picker** — the same `Dialog::new_agent_picker(agents, PickerIntent::NewTab)` in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />, rendered identically: title `New tab`, full-width `── agents ──` / `── shells ──` section dashes, agent display names, type-to-filter, and the `Shell` row. It is the New-tab flow verbatim, not a lookalike. `Esc` in the picker walks back one step to the exit modal (modal stack).
-- **`Inspect changes`** opens the shipped read-only changed-file list inside the capsule, grouped by repo. The full `diff_view` pane with per-file content is a follow-up. `Esc` returns to the exit modal.
-- **Keep vs discard is decided in-capsule**: the two `Exit & …` rows are the decision. The host only **executes** the chosen action — it never prompts. Selecting `Exit & discard changes` is itself the explicit destructive approval, so there is no separate host confirmation; if a delete guard is wanted it is an in-capsule sub-confirm, never a post-teardown host prompt.
-- **Multiple dirty repos** are listed one line each, with full per-file detail behind `Inspect`.
-
-Still open (minor, settle during implementation): exact row wording, the `Ctrl+Q` meaning from this modal (tentatively treat as `Exit & keep`), and unpushed-only vs uncommitted summary phrasing. The cross-screen double-`Ctrl+C` immediate-exit guarantee applies here too.
-
-## Operator verification — pending sign-off
-
-The following landed as code in this branch but still needs operator live signoff. CI passing does not replace this manual check.
-
-- [ ] Image-baked agent binaries, Claude plugins, and default-home state; image-validity by Docker labels; agent-version-changed rebuild trigger.
-- [ ] Empty-dir home seeding, first-seed-only auth handoff, atomic first seed; durable Amp / OpenCode config roots.
-- [ ] Container identity: `--user $HOST_UID:$HOST_GID --group-add 0` with `libnss-extrausers` passwd/group; group-0 image-home writability; an arbitrary-UID/GID launch (read + write + first seed + `git config --global` + role-hook tool installs) without permission-denied.
-- [ ] Restore ladder: Tier 1 `docker start`, Tier 2 reuse of the stored image, Tier 3 pinned rebuild from `role_git_sha` (original commit, not current `HEAD`); launch never reattaches to a live instance.
-- [ ] Schema `v1alpha8` migration chain and `dirty_exit_policy` config (global + per-workspace; `ask` / `keep` / `discard`).
-- [ ] Console instance surfaces; clean-exit purge and stale-row / orphaned-lock reconciliation on launch / prune.
-- [ ] Launch cockpit hard-exit behavior (`Ctrl+Q` → confirm → immediate exit; `Ctrl+C`; double `Ctrl+C` mid-build) with the terminal restored and `gc_orphaned_resources` reclaiming abandoned resources on the next launch.
-- [ ] Local image-build performance changes (no recursive permission repair, single-layer plugin install, uncompressed local export, construct `shellfirm` prebuild) — and the arbitrary-UID/GID correctness this permission rework depends on.
-
-When the operator confirms a group above, move it out of this list with an explicit note that it was operator-verified; until then it stays here regardless of test or CI status.
-
-## Related files
-
+- Research: [In-Capsule Dirty-Exit: Design Rationale and Implementation Record](/reference/research/runtime/in-capsule-dirty-exit-design/)
+- [Runtime Instance Model](/reference/runtime/runtime-instance-model/)
+- [Construct Image: User Creation Responsibility](/reference/runtime/user-identity/)
+- [Image Labels & Recipe Hash](/reference/runtime/image-labels/)
+- [Capsule Session Lifecycle](/reference/capsule/session-lifecycle/)
+- <RepoFile path="crates/jackin-core/src/worktree_dirty.rs" /> — shared detection.
 - <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — multiplexer daemon; the `no_live_sessions()` last-session-close branch is the in-capsule hinge.
-- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> — capsule dialog system and `new_agent_picker` reused for "Start a new agent".
-- <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> — host `assess_cleanup` (detection to extract) and terminal-outcome / keep-discard execution.
-- <RepoFile path="crates/jackin-core/src/isolation_record.rs" /> — shared cleanup types; target home for the extracted detection.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — `launch_role_runtime` load path that must run finalize on clean exit.
-- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — hardline reconnect path that short-circuits finalize on clean exit.
+- <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" /> — capsule dialog system, `ExitDirty` / `ExitInspect`, and `new_agent_picker` reused for "Start a new agent".
+- <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> — host `assess_cleanup` wrapper and `ExitActionPrompt` keep/discard execution.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — `launch_role_runtime` load path that runs finalize on clean exit.
+- <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> — hardline reconnect path that no longer short-circuits finalize on clean exit.

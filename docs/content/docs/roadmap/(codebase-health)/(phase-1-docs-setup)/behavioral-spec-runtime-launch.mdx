@@ -2,43 +2,20 @@
 title: "Behavioral spec: runtime/launch.rs"
 ---
 
-**Status**: Partially implemented — spec published (2026-06-02); next step is adding the `//!` link from <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> to the spec URL, then using the spec as the oracle for the [split-runtime-launch](/roadmap/split-runtime-launch/) refactor
+**Status**: Partially implemented — spec published; the `//!` module doc at the top of <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> summarizes the invariants but does not yet link to the published spec URL
 
-## Problem
+## Shipped facts
 
-<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> is the `jackin load` critical path. The original single-file bottleneck has been split down to a smaller root API, but the launch surface is still large across `launch.rs`, `launch/launch_pipeline.rs`, and especially `launch/tests.rs`. Without a behavioral spec, there is no oracle to verify that remaining refactors preserve the launch pipeline, auth checks, workspace materialization, and post-attach cleanup rules.
+<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> is the `jackin load` critical path: `load_role` (public API) calls `load_role_with` (pipeline implementation), split across `launch.rs`, `launch/launch_pipeline.rs`, `launch/launch_dind.rs`, `launch/launch_slot.rs`, and the colocated `launch/tests.rs`.
+The full behavioral contract (INV-1 through INV-6 covering trust confirmation, token-mode fail-fast, container slot claim ordering, foreground-attach finalization, cleanup classification, and `render_exit` on both exit paths), the five-phase pipeline overview, and the test-seam list (`op_runner`, `host_env`, `confirm_trust_for_test`, `confirm_branch_for_test`) are published at [runtime/launch.rs Behavioral Spec](/reference/developer-reference/specs/runtime-launch/) — that page is the oracle, not this roadmap item.
+Current size evidence: `launch.rs` is about 2.8k lines, `launch/launch_pipeline.rs` about 2.2k lines, and `launch/tests.rs` about 8.6k lines; the remaining work on the file itself is tracked separately in [Split runtime/launch.rs](/roadmap/split-runtime-launch/).
 
-Current size evidence: `launch.rs` is about 2.8k lines, `launch/launch_pipeline.rs` about 2.2k lines, and `launch/tests.rs` about 8.6k lines. Remaining work is no longer one monolithic-file split; it is preserving behavior while shrinking the pipeline and test surface.
+## Remaining work
 
-## Verified invariants
+1. Add a link to the [runtime/launch.rs Behavioral Spec](/reference/developer-reference/specs/runtime-launch/) in the `//!` module doc at the top of <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>, keeping implementation detail in the spec rather than duplicated in the module doc.
+2. Use the published spec as the verification oracle when executing the [Split runtime/launch.rs](/roadmap/split-runtime-launch/) refactor.
 
-| INV | Description | Verify by |
-|---|---|---|
-| INV-1 | Trust confirmation still happens before the image build — an untrusted third-party agent may be cloned/resolved, but not built or launched until confirmed | `confirm_agent_trust` closure runs before image build in `load_role_with` |
-| INV-2 | Token mode still fails fast before auth state preparation and runtime startup — missing `CLAUDE_CODE_OAUTH_TOKEN` aborts before DinD/network launch | `verify_token_env_present` runs before `AgentState::prepare` / `launch_agent_runtime` |
-| INV-3 | Container slot claim happens before the launch summary is printed so the operator-visible container name is the final locked name | `claim_container_name` runs before `build_config_rows` and the claimed name flows through `launch_agent_runtime` |
-| INV-4 | Foreground attach finalization still runs before teardown classification — isolated worktrees are finalized before deciding whether to preserve or clean the container | `finalize_foreground_session` happens before the `inspect_container_state(...)` cleanup match |
-| INV-5 | Cleanup classification still preserves restartable sessions and tears down clean exits | `Running` / crash paths disarm cleanup; clean exit runs cleanup |
-| INV-6 | `render_exit` still runs on both success and error exits from `load_role_with` | both `Ok(_)` and `Err(error)` arms call `render_exit` |
+## Related work
 
-## Pipeline overview
-
-`load_role` (public API) → `load_role_with` (current pipeline):
-
-1. **Resolve source + trust** — resolve repo state, then confirm untrusted agents
-2. **Resolve/claim instance** — resolve restore candidates, then claim the final container name/slot
-3. **Resolve launch inputs** — print the launch summary with the claimed name, then resolve manifest env, operator env, auth mode, and diagnostics
-4. **Build + prepare state** — build the image, prepare auth state, isolated mounts, cache/state dirs
-5. **Launch + finalize** — start runtime, attach, finalize worktrees, classify teardown/preservation
-
-## Status
-
-**Spec published** — see [runtime/launch.rs Behavioral Spec](/reference/developer-reference/specs/runtime-launch/).
-
-## Why this must come before the split
-
-The spec is the verification oracle. Further launch refactors must be checked against the published contract so the already-split root API, pipeline module, and large test surface keep the same behavior.
-
-## Key file
-
-<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — specifically the `load_role_with` helper.
+- [Split runtime/launch.rs](/roadmap/split-runtime-launch/) — the file-size reduction this spec exists to protect
+- [runtime/launch.rs Behavioral Spec](/reference/developer-reference/specs/runtime-launch/) — canonical invariant contract

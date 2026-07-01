@@ -2,184 +2,24 @@
 title: "Config versioning and migration framework"
 ---
 
-**Status**: Partially implemented — Phase 1 and Phase 2 shipped; Phase 3 `--pr` automation and Phase 4 auto-migration GitHub Action remain deferred (Configuration ergonomics)
+**Status**: Partially implemented — Phase 1 (config file versioning) and Phase 2 (role manifest versioning) shipped; Phase 3 (`--pr` auto-migration) and Phase 4 (Renovate-style migration GitHub Action) remain open (Configuration ergonomics)
 
-## Problem
+## Shipped facts
 
-Every time jackin❯ introduces a structural change to `~/.config/jackin/config.toml`, workspace files, or the `jackin.role.toml` role manifest, operators and role authors are expected to delete and recreate their setup from scratch. There is no signal that a file is stale, no path from an old shape to a new one, and no tooling to help — just a confusing parse error from `serde` when `deny_unknown_fields` fires or a required key is missing.
+`config.toml` and per-workspace files under `~/.config/jackin/workspaces/<name>.toml` carry a top-level `version` field (`CURRENT_CONFIG_VERSION` / `CURRENT_WORKSPACE_VERSION`, currently `v1alpha8` in <RepoFile path="crates/jackin-config/src/versions.rs">crates/jackin-config/src/versions.rs</RepoFile>). `AppConfig::load_or_init` (<RepoFile path="crates/jackin-config/src/app_config_persist.rs">crates/jackin-config/src/app_config_persist.rs</RepoFile>) reads the raw TOML, extracts `version` (missing = legacy), and walks the migration registry in <RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile> — a compile-time slice of `toml_edit`-based transform functions, one per version step — before deserializing into typed structs. Migrated files are rewritten atomically (`atomic_write`) and one line is printed to stderr. A file stamped newer than the binary's current version errors rather than silently misbehaving. This is fully automatic; operators do nothing.
 
-Two classes of files are affected differently:
+`jackin.role.toml` carries the same `version` field (`CURRENT_MANIFEST_VERSION`, currently `v1alpha6` in <RepoFile path="crates/jackin-core/src/constants.rs">crates/jackin-core/src/constants.rs</RepoFile>). Because role manifests live in repos jackin❯ does not own, migration is explicit rather than automatic: `jackin role migrate <role-repo-path>` (a subcommand of the main `jackin` binary, <RepoFile path="crates/jackin/src/cli/role.rs">crates/jackin/src/cli/role.rs</RepoFile>) and the standalone `jackin-role migrate <role-repo-path>` binary (<RepoFile path="crates/jackin/src/bin/role.rs">crates/jackin/src/bin/role.rs</RepoFile>, same `RoleCommand` enum) both apply the migration chain and write the result back to a local clone for the author to review, commit, and push. An older-stamped manifest that uses a feature newer than its declared version is rejected with a migrate hint; a manifest newer than the binary understands is rejected with an "upgrade jackin" error.
 
-- **jackin❯-owned files** (`config.toml` and the per-workspace files at `~/.config/jackin/workspaces/<name>.toml`) — jackin writes these. It can migrate them silently on startup before the operator touches anything.
-- **Role-owned files** (`jackin.role.toml` in each role repo) — the role author writes these. jackin❯ reads them but has no write authority without an explicit operator action. A breaking change in the manifest schema forces every role author to update their repo manually and with no guidance beyond "it broke."
+Full version history, per-file current versions, and the field-level migration tables live in [Schema Versions](/reference/runtime/schema-versions/) — that page is the canonical, continuously-updated record and should not be duplicated here. [Configuration File](/reference/runtime/configuration/) covers the `version` field from the config-schema side.
 
-A file with no `version` is ambiguous: it could be a file that was never created, a file that predates the current schema, or a file that was written by a newer binary the current one cannot read. The migration framework collapses the first two into a single legacy bucket and rejects the third with an "upgrade jackin" message.
+## Remaining work
 
-## Why it matters
+1. **Phase 3 — `--pr` auto-migration.** No `--pr` flag exists on `jackin role migrate` today. Add an opt-in path that, after writing the migrated manifest, opens a branch + PR in the role repo via `gh` (gated on `gh` auth and GitHub-remote detection), so the maintainer and operators can send migration PRs to role repos without a local checkout.
+2. **Phase 4 — Renovate-style migration GitHub Action.** Role repos already use the `jackin-project/jackin-role-action` reusable workflow for validation; extending it with a scheduled `migrate` mode (open PR when a repo's manifest is behind, close/rebase as needed) would close the gap for role authors who never run `jackin role migrate` by hand. Deployment shape (hosted app vs. self-hosted workflow + PAT), target-repo discovery, and rebase/conflict handling are still open design questions — see the linked research page for the design proposal this would build on.
 
-- **Operators lose their entire setup on upgrade.** Workspace configs, mount lists, per-workspace role overrides, and auth-forward settings all disappear when the schema changes. The correct response today is "delete and recreate" — which is unacceptable once jackin❯ moves past proof-of-concept.
-- **Role authors are collateral damage.** When the manifest schema gains a required field or renames a section, every third-party `jackin.role.toml` silently breaks until the author notices and patches it. There is no upgrade guide, no version gate, no migration tool.
-- **Breaking changes become risky to ship.** Without a migration path, the maintainer must weigh "correct shape" against "all existing users break" — a tension that slows the design or forces bad compromises.
-- **`deny_unknown_fields` makes serde errors cryptic.** The parse error names the unknown field but gives no hint that the file is simply outdated.
+## Related work
 
-## Shipped shape
-
-### Config version field
-
-`config.toml` and every per-workspace file use a top-level Kubernetes-style `version` field:
-
-```toml
-version = "v1alpha8"
-
-[claude]
-auth_forward = "sync"
-# … rest of config …
-```
-
-Absence of `version` is treated as the legacy pre-versioning era. On load, jackin❯ compares the file's version to the current expected version baked into the binary. If the file is older and jackin❯ still has the migration path, jackin❯ runs the migration chain before the config reaches any caller. If the file is too old for the current binary, jackin❯ errors and asks the operator to upgrade through an older jackin❯ first.
-
-The main config file and workspace files are versioned independently. A workspace-only schema change bumps `CURRENT_WORKSPACE_VERSION` (currently `v1alpha8`); a global config-only change bumps `CURRENT_CONFIG_VERSION` (currently `v1alpha8`). The example above shows a `config.toml` snippet; a per-workspace file under `~/.config/jackin/workspaces/<name>.toml` would carry `version = "v1alpha8"` as well.
-
-### Role manifest version field
-
-`jackin.role.toml` uses the same top-level Kubernetes-style `version` field:
-
-```toml
-version = "v1alpha6"
-
-dockerfile = "Dockerfile"
-agents = ["claude", "codex"]
-# … rest of manifest …
-```
-
-Role manifests are not owned by jackin, so migration is opt-in and explicit rather than automatic (see [Role manifest migration](#role-manifest-migration) below).
-
-### Migration registry
-
-Each version step is a function that transforms a `toml_edit::DocumentMut` to the next version. The registries are compile-time slices, one per file kind:
-
-```rust
-const CONFIG_MIGRATIONS: &[(&str, ConfigMigration)] = &[
-    ("v1alpha1", migrate_config_legacy_to_v1alpha1),
-    ("v1alpha2", migrate_config_v1alpha1_to_v1alpha2),
-    // …
-];
-```
-
-The current expected version is the latest supported Kubernetes-style version baked into the binary. Applying migrations walks target versions greater than the file's current version.
-
-`toml_edit` (already in the workspace) is used for the actual file rewrite so that comments and whitespace outside the migrated tables are preserved where possible.
-
-## Config file migration
-
-On every startup, `AppConfig::load_or_init` (in <RepoFile path="crates/jackin-config/src/app_config_persist.rs">crates/jackin-config/src/app_config_persist.rs</RepoFile>) runs the migration step before deserializing into typed structs:
-
-1. Read the raw TOML as `toml_edit::DocumentMut`.
-2. Extract `version` (default `legacy` if absent).
-3. If `version == CURRENT_*_VERSION`, deserialize as today.
-4. If `version < CURRENT_*_VERSION`, apply the file-kind migration registry in sequence. Write the migrated result back to disk with atomic rename. Print one line to stderr: `[jackin] config migrated {old} -> {new}`.
-5. If `version > CURRENT_*_VERSION`, error: the file was written by a newer binary and this binary cannot safely read it.
-
-Migration is **always automatic for config files** — operators do not need to run any command. The worst-case outcome is a write to `config.toml` that the operator can review with `git diff` if they version-control their dotfiles.
-
-## Role manifest migration
-
-Role manifests live in role repos that jackin❯ does not own. The policy is:
-
-- **Version is current or older**: jackin loads the role when the manifest only uses fields and enum values available at that version.
-- **Older-stamped manifest uses a newer feature**: jackin refuses to use the role and emits a feature-specific error with `jackin role migrate <role-repo-path>`. For example, `opencode` and `kimi` require manifest versions newer than the legacy baseline; an older-stamped manifest that declares either agent must be migrated before launch.
-- **Version newer than expected**: jackin refuses and emits: `role manifest is at {new}, this binary only understands up to {current}; upgrade jackin`.
-
-The `jackin role migrate <role-repo-path>` command applies the manifest migration chain to a desktop local role clone and writes the result back. The operator can then inspect the diff, commit, and push. CI, validation workflows, and Renovate-style automation are expected to use the standalone role-focused migrator binary when that deferred automation lands; verify the final binary name before documenting or scripting it.
-
-The `--pr` path remains future work. When implemented, it will have jackin open a pull request in the role repo automatically via `gh`.
-
-The `--pr` path requires:
-- `gh` authenticated with write access to the role repo.
-- The role repo to be a GitHub-hosted repo (the `git` source in `config.toml` resolves to a `github.com` URL).
-- A branch name derived from the migration: `jackin/manifest-migrate-v{old}-to-v{new}`.
-
-This makes it practical for the jackin maintainer to migrate all first-party role repos in one pass when a breaking manifest change ships, and for operators to send migration PRs to third-party role repos they rely on.
-
-## Error mode table
-
-| Situation | Config file | Role manifest |
-|---|---|---|
-| `version` absent | Treat as legacy; migrate automatically | Treat as legacy; load if no newer feature is used |
-| `version` < current | Migrate automatically on startup | Load if no newer feature is used; otherwise error + suggest `--migrate` |
-| `version` == current | Load normally | Load normally |
-| `version` > current | Error: binary too old | Error: binary too old |
-
-## Relationship to the pre-release rule
-
-<RepoFile path="AGENTS.md">AGENTS.md</RepoFile> states: "Do not write migration code, compatibility shims, fallback parsers for old field names, 'tolerant ignore + warn' handlers, or deprecation warnings. Make the new shape the only shape; let stale configs fail with the standard parser error." This rule keeps the project moving fast on surfaces where breaking changes are cheap.
-
-The migration framework carves out an exception for the three file kinds operators and role authors actively edit: `config.toml`, per-workspace files, and `jackin.role.toml`. Breaking schema changes to those files must bump the version and add a migration step. The pre-release exemption stays in force for other surfaces (CLI flags, internal Rust APIs) until the first tagged release.
-
-## Implementation phases
-
-**Phase 1 — Config file versioning**
-
-1. Add `version` extraction to the raw TOML read layer in <RepoFile path="crates/jackin-config/src/app_config_persist.rs">crates/jackin-config/src/app_config_persist.rs</RepoFile> (before deserialization into `AppConfig`).
-2. Implement the migration registry and the fold-and-rewrite logic using `toml_edit` (<RepoFile path="crates/jackin-config/src/editor.rs">crates/jackin-config/src/editor.rs</RepoFile>).
-3. Ship with `CURRENT_CONFIG_VERSION = "v1alpha1"` and `CURRENT_WORKSPACE_VERSION = "v1alpha1"`; the legacy→`v1alpha1` migration is a no-op that adds `version = "v1alpha1"` to existing files.
-4. All future breaking config changes bump the version and add a migration function.
-
-**Phase 2 — Role manifest versioning**
-
-1. Add `version: String` (`version` in TOML) to `RoleManifest` in <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile>.
-2. Implement the version-gate logic at manifest load time with the error messages described above.
-3. Ship with `CURRENT_MANIFEST_VERSION = "v1alpha1"`; treat missing `version` as legacy.
-4. Add `jackin-role migrate <role-repo-path>` that applies the migration chain and writes the updated manifest back to the local role clone.
-
-**Phase 3 — `--pr` auto-migration**
-
-1. After `--migrate` writes the updated manifest, optionally create a branch + PR in the role repo via `gh`.
-2. Gated on `gh` auth, GitHub remote detection, and explicit `--pr` flag.
-3. Allows the jackin maintainer (and operators) to submit migration PRs to third-party role repos with a single command.
-
-**Phase 4 — Renovate-style auto-migration GitHub Action**
-
-`--pr` runs from an operator's machine, so a role repo whose author has not run `jackin role migrate` stays broken in CI until someone opens a PR by hand. A scheduled action closes that gap by watching role repos and opening migration PRs upstream automatically. That action should run the small role-focused migrator binary, not the full `jackin` operator binary; confirm the binary name before implementation.
-
-The action extends [`validate-agent-action`](https://github.com/jackin-project/validate-agent-action) with a `migrate` mode (rather than introducing a new repo — role authors install one action). Two deployment shapes mirror Renovate's:
-
-1. **Hosted GitHub App** (Mend Renovate equivalent — runner is hosted by jackin-project, role-repo authors only install the app). The app holds `pull_requests:write` + `contents:write` on the repos it watches and runs the migration on a cron from a central runner. Identity for the PR is the app bot, parallel to `renovate[bot]`. Authors do not manage tokens.
-
-2. **Self-hosted workflow with PAT or `GITHUB_TOKEN`** (`renovate-bot/renovate-action` equivalent — runner is the role repo's own GitHub Actions). Role authors add a workflow to their own repo that calls the action on a schedule (`on: schedule: - cron: "0 6 * * *"`) and on `workflow_dispatch`. The workflow uses `secrets.GITHUB_TOKEN` (opens PRs from the same repo) or an operator-supplied PAT for cross-repo cases. Authors manage the token themselves but skip the app registration.
-
-Per-run flow (both modes):
-
-1. Check out the role repo at the default branch.
-2. Run `jackin-role validate <repo>` to detect whether the manifest is already current. If yes, jump to the cleanup step below.
-3. Switch to a deterministic branch name (e.g. `jackin/schema-migration/v1alpha1-to-v1alpha2`) and run the manifest migrator.
-4. Commit the migrated manifest with a fixed message shape; push.
-5. Open a PR if none exists for that branch; update the existing PR if one does (Renovate's "branch is the source of truth" model). PR body links to the schema-versions page and names the source jackin tag for traceability.
-
-Cleanup (subsequent runs only): if a previous run opened a migration PR and the manifest is now current (because the maintainer hand-merged or hand-migrated), close the PR and delete the branch so zombies do not accumulate.
-
-Open design questions:
-
-- **Target-repo discovery.** How does the central runner enumerate which repos to scan? Renovate uses an onboarding PR plus a per-repo config file; jackin❯ analog is unspecified. Options: subscribe to push events and short-circuit when `jackin.role.toml` is absent, require an explicit allowlist file in each repo, or piggy-back on an org-level config. Pick one before implementation.
-- **App vs PAT default in docs.** Renovate's default-recommended path is the hosted app; jackin picks one as the documented default and calls out the other as fallback.
-- **Source of "current schema."** The action needs to know which `CURRENT_*_VERSION` to migrate to. Options: pin to the latest `jackin-role` release, follow the same `latest-build` channel as the existing validate action, or pin per-workflow. Decision affects how new schema versions roll out across the role-repo ecosystem.
-- **Branch lifecycle.** When a role author rebases, force-pushes, or hand-edits the migration PR, the action must detect drift and either rebase its own commit or stop (Renovate calls this "rebase strategy" — it has multiple modes; jackin picks one).
-- **Conflict handling.** If a role author has already partially migrated, the action's migration step may produce a no-op diff. The action detects that case and closes the PR rather than opens an empty one.
-
-## Open questions
-
-- **Retention window.** jackin❯ does not keep old migration code forever. When an old `version` leaves the supported window, jackin❯ errors instead of migrating directly; operators upgrade through an older jackin❯ first.
-- **Comment preservation during migration.** `toml_edit` preserves document structure for unchanged tables; migrated tables (renamed keys, restructured sections) lose their original comments. The migration message in stderr names this so the operator knows comments on rewritten sections must be re-applied by hand.
-- **Config migration failure recovery.** If the migration write fails (disk full, permissions), the in-memory migrated config is valid but the file is stale. Atomic rename (write to a temp file, `rename(2)`) is the right answer; a failed rename should abort startup with a clear error rather than silently proceeding with a stale file.
-- **Schema changelog.** Each version bump needs a companion note: "what changed between v1alphaN and v1alphaN+1, and why." This belongs in the jackin changelog (once it activates at first release) or in a dedicated schema changelog reference page. Decide location before the first follow-up bump.
-
-## Related files
-
-- <RepoFile path="crates/jackin-config/src/app_config_persist.rs">crates/jackin-config/src/app_config_persist.rs</RepoFile> — `AppConfig::load_or_init`, the migration entry point.
-- <RepoFile path="crates/jackin-config/src/editor.rs">crates/jackin-config/src/editor.rs</RepoFile> — `ConfigEditor`, used for comment-preserving file rewrites.
-- <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile> — `RoleManifest`, the role manifest struct.
-- <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> — `AppConfig` and workspace config structs.
-- [split workspace-file layout](/reference/runtime/configuration/#one-file-per-workspace-by-design) — sibling ergonomics item; migration must handle both the monolithic and split layouts if both can exist in the field.
-- [Agent version pinning](/roadmap/reproducibility-pinning/) — related: pinning roles to tagged versions implies a version relationship between the jackin binary and the role manifest schema.
-- [Configuration File](/reference/runtime/configuration/) — internals reference; covers `version` and migration behavior.
-- [Schema Versions](/reference/runtime/schema-versions/) — canonical history of schema versions, fields, and migration changes.
+- Research: [Renovate-style role-manifest migration automation](/reference/research/runtime/config-versioning-migration-design/) — Phase 3/4 design proposal, prior-art comparison to Renovate, and open design questions for the CI automation.
+- [Schema Versions](/reference/runtime/schema-versions/) — canonical version history and migration tables.
+- [Configuration File](/reference/runtime/configuration/) — `version` field and config schema reference.
+- [Agent version pinning](/roadmap/reproducibility-pinning/) — pinning roles to tagged versions implies a version relationship between the jackin binary and the role manifest schema.

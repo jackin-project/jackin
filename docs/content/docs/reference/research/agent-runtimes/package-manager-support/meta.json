@@ -2,6 +2,7 @@
   "title": "Package Manager Support",
   "defaultOpen": false,
   "pages": [
-    "native-apm-role-support"
+    "native-apm-role-support",
+    "workspace-skills-mount-design"
   ]
 }

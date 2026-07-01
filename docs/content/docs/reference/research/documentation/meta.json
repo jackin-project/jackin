@@ -2,6 +2,8 @@
   "title": "Documentation",
   "defaultOpen": false,
   "pages": [
-    "repository-strategy"
+    "repository-strategy",
+    "docs-markdown-linting",
+    "spec-workflow"
   ]
 }

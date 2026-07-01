@@ -9,7 +9,6 @@
     "developer-reference-setup",
     "ci-project-structure-gate",
     "pub-crate-visibility",
-    "agent-workflow-cc-sdd",
-    "move-contributing-testing"
+    "agent-workflow-cc-sdd"
   ]
 }

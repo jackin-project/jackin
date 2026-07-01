@@ -2,33 +2,20 @@
 title: "Agent workflow: jackin❯-native spec-driven workflow"
 ---
 
-**Status**: Open — iterating. Current state: in-repo `jackin-dev` contributor helper plus docs-backed roadmap/spec workflow.
+**Status**: Open — iterating. The roadmap item `.mdx` is the living change-spec (`## Problem`/`## Design`/`## Tasks` while open, retiring into canonical docs on ship); the in-repo `jackin-dev` helper backs the human PR workflow. No external spec tool was adopted.
 
-## Problem
+## Shipped facts
 
-jackin❯ needs a repo-committed, docs-first, cross-agent spec workflow. The earlier approach leaned on `obra/superpowers` and external skill-driven spec conventions — version-controlled when used, but outside the Fumadocs site and tied to one plugin stack (Claude-only command surface). We want the spec to be a first-class, browsable docs artifact that every agent jackin❯ supports can drive.
+The workflow convention itself has landed and is in active use: roadmap items carry `## Problem` / `## Why It Matters` / `## Design` / `## Tasks` sections while a change is open, and retire into canonical docs once shipped — there is no parallel `openspec/` directory or separate `internal/specs/` tree in the repo. The `jackin-dev` helper (<RepoFile path="crates/jackin-dev/src/main.rs" />) lives in this workspace and drives the PR `sync`/`status`/`env`/`path`/`explain` subcommands that support this workflow day to day.
 
-## Current direction
+This is the initial iteration, not a finished design — the shape above is expected to keep changing as it gets used.
 
-We are **not** adopting an external tool wholesale. Instead the workflow is jackin❯-native and iterating:
+## Remaining work
 
-- **The roadmap item `.mdx` is the living change-spec.** While a change is open it carries `## Problem` / `## Why It Matters` / `## Design` / `## Tasks`; on ship it retires into canonical docs — docs are the archive (no parallel `openspec/` dir, no separate `internal/specs/` tree).
-- **Repo-local helper tooling supports it.** The `jackin-dev` helper now lives in this workspace under <RepoFile path="crates/jackin-dev/src/main.rs" /> for PR sync/status/env/path/explain workflows. Agent skills can orchestrate the human workflow, but durable project rules live in the repo docs and PR guidance rather than an external tool-specific spec directory.
+1. Decide whether jackin❯ eventually grows its own spec-driven tool (cc-sdd/OpenSpec-like), or keeps the current skills + roadmap-item model.
+2. Build the deferred `plan` skill that mechanically breaks a roadmap item's `## Design` section into `## Tasks`.
+3. Retire `obra/superpowers`-style external dependencies and migrate any remaining high-value external specs into roadmap or reference pages.
 
-This is the **initial iteration**, not a finished design. We expect to learn what survives by using it.
+## Related work
 
-## Prior art to mine (not adopt)
-
-Kept as reference for when we grow our own spec-driven tooling:
-
-- **`obra/superpowers`** — brainstorming → spec authoring, writing-plans, TDD/debug/review skills. The brainstorming method informed the skill flow; no superpowers spec tree exists in the current repo.
-- **OpenSpec** — artifact roles (proposal / design / tasks) + propose→archive lifecycle discipline. Mapped onto our roadmap-item sections; we did **not** install its `openspec/` dir or JS CLI (would duplicate the roadmap + docs).
-- **`gotalab/cc-sdd`** — `/spec` `/plan` `/execute` command shape. A candidate wrapper, not adopted; `.claude/commands/` would only ever be one client of the canonical docs-backed spec.
-
-## Open threads
-
-Loose on purpose — we iterate rather than lock a detailed plan:
-
-- Whether jackin❯ eventually grows its **own** spec-driven tool (cc-sdd/OpenSpec-like) or keeps the skills + roadmap-item model.
-- The deferred `plan` skill (break `## Design` → `## Tasks`).
-- Retiring `obra/superpowers`-style dependencies and migrating any high-value external specs into roadmap or reference pages once the replacement covers day-to-day needs.
+- Research: [Spec-driven workflow: prior art and alternatives](/reference/research/documentation/spec-workflow/prior-art/) — why `obra/superpowers`, OpenSpec, and `gotalab/cc-sdd` were mined but not adopted wholesale.

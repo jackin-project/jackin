@@ -2,39 +2,19 @@
 title: "Module contracts (//! docs)"
 ---
 
-**Status**: Reopened — many module-level contracts shipped, but a fresh current-tree audit still finds production crate files without leading `//!` docs; remaining `///` public API docs belong to the deferred [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/), not this setup item.
+**Status**: Partially implemented — a prior pass added `//!` blocks to priority files, but a current-tree grep (2026-07-01) still finds ~28 non-test, non-binary production files without a leading `//!`, spread across `crates/jackin` (11), `crates/jackin-capsule` (9), `crates/jackin-runtime` (3), `crates/jackin-env` (2), and one each in `crates/jackin-console`, `crates/jackin-term`, `crates/jackin-tui-lookbook`; `///` item-level docs stay out of scope for this item and belong to the deferred [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/).
 
-## Problem
+## Shipped facts
 
-At original analysis, many source files lacked `//!` orientation docs. A large module-doc pass shipped, but the current crate tree has drifted and still contains production source files without leading `//!` docs. This item now tracks closing that remaining current-tree gap rather than preserving a resolved claim.
+A prior pass added `//!` orientation blocks to priority production files, following the <RepoFile path="crates/jackin-core/src/env_model.rs">crates/jackin-core/src/env_model.rs</RepoFile> exemplar shape: purpose, scope claim (what the module is NOT responsible for), and key invariants callers can assume. That exemplar still holds today. A per-file checklist is intentionally not kept here — the crate split and self-named module layout make a stale path table more expensive to maintain than a fresh grep.
 
-## What shipped (2026-06-02)
+## Remaining work
 
-Priority production files received `//!` blocks following the `env_model.rs` exemplar format (purpose + scope claim + key invariants). The old per-file checklist is intentionally not repeated here because the crate split and self-named module layout now make stale path tables more expensive than useful.
+1. Re-run coverage with a current-tree grep over `crates/` (the old root `src/` tree no longer exists): find every non-test, non-binary `*.rs` file whose first line is not `//!`, excluding binary entry points (`main.rs`, `bin/role.rs`), Cargo `build.rs` scripts, and test modules (`tests.rs`, `*_tests.rs`, `tests/*.rs`).
+2. For each remaining file, read the first ~50 lines and the public item list, then write a `//!` block: purpose, scope, key invariants — modeled on the `env_model.rs` exemplar.
+3. Do not add `///` item-level docs in this pass; that work is scoped to the [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/) item instead.
+4. Purely additive — no behavior change, no CI risk. Land before the behavioral-spec items in this same phase, since a spec presupposes the module already has a stated contract.
 
-Future audits should re-run coverage against the current tree instead of copying historical paths.
+## Related work
 
-## Current coverage (2026-07-01 audit)
-
-Production crate source is not yet fully documented. A fresh audit found remaining non-test, non-binary modules without leading `//!` docs, including files under `crates/jackin/`, `crates/jackin-env/`, `crates/jackin-runtime/`, and `crates/jackin-capsule/`. Excluded intentionally: binary entry points (`main.rs`, `bin/role.rs`), Cargo build scripts, and test modules (`*_tests.rs` / `tests/*.rs`) — these do not need orientation headers.
-
-Re-verify with a current-tree grep over `crates/` only; the old root `src/` tree no longer exists.
-
-The next orientation-doc work is finishing `//!` coverage against the current tree. Only after that should `///` item-level docs on public API entry points and rustdoc examples move to the [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/).
-
-## Steps
-
-1. For each file, read the first 50 lines and the public item list.
-2. Write a `//!` block at the top: purpose, scope claim, key invariants, what callers can assume.
-3. Model on <RepoFile path="crates/jackin-core/src/env_model.rs">crates/jackin-core/src/env_model.rs</RepoFile> (the 3-element exemplar: purpose + scope + history).
-4. Do not add `///` item-level docs in this pass — only `//!` module-level.
-
-## What a good `//!` block says
-
-- **Purpose:** What does this module do?
-- **Scope:** What is it NOT responsible for? (crucial for AI agents to know where not to look)
-- **Key invariants:** What must always be true when this module's public functions return?
-
-## Caveats
-
-Purely additive — no behavior change, no CI risk. Do before the behavioral specs since the spec presupposes the module has a stated contract.
+- [rustdoc JSON → Fumadocs API pipeline](/roadmap/rustdoc-json-fumadocs/) — owns `///` item-level docs and generated API reference, once module-level contracts are complete.

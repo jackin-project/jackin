@@ -5,6 +5,8 @@
     "credential-exposure",
     "isolation-architecture",
     "process-sandboxing",
-    "sandbox-backends"
+    "sandbox-backends",
+    "network-egress",
+    "supply-chain"
   ]
 }

@@ -1,5 +1,22 @@
 {
   "title": "Agent Orchestration",
   "defaultOpen": false,
-  "pages": ["orca-ade"]
+  "pages": [
+    "program-research",
+    "orca-ade",
+    "agent-attention-prompts-design",
+    "idle-runtime-cleanup-design",
+    "jackin-capsule-multiplexer-rewrite",
+    "stack-integration-hints",
+    "workspace-description-field",
+    "conversation-capture",
+    "fleet-operations",
+    "memory",
+    "multi-agent-collaboration",
+    "recovery",
+    "remote-execution",
+    "resource-limits",
+    "terminal-observation",
+    "workflow-systems"
+  ]
 }

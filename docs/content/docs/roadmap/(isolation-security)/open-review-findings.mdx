@@ -2,25 +2,26 @@
 title: "Open review findings"
 ---
 
-**Status**: Open — catalog needs fresh evidence before individual findings are treated as current
+**Status**: Open — five confirmed findings need fixes; two prior catalog rows verified resolved and dropped
 
 ## Purpose
 
 This page is the consolidated list of acknowledged review findings that still need verification or follow-up. It is a catalog, not a design doc. When a finding graduates into concrete work, move it to a dedicated roadmap page; when a finding is fixed, remove it rather than keeping a stale resolved entry.
 
-## Current catalog posture
+## Resolved since last pass
 
-The previous catalog carried broad claims from an older review pass and had drifted against the implementation. Do not cite those claims as current without a fresh code check. This page now keeps only the active work shape and marks evidence that must be refreshed.
+Source-verified against the current tree and dropped from the catalog:
 
-## Needs fresh evidence
+- **Launcher preview and mount-resolution parity.** `AppConfig::resolve_mount_rows` in <RepoFile path="crates/jackin-config/src/app_config_mounts.rs" /> is the single function both the workspace details-pane preview (`role_scoped_mount_count` in <RepoFile path="crates/jackin-console/src/tui/screens/workspaces/view.rs" />) and the real launch resolver (`resolve_load_workspace` in <RepoFile path="crates/jackin-config/src/resolve.rs" />) call. Selector-scoped global mounts cannot drift between preview and launch because there is only one resolution path; test `preview_shows_unscoped_global_mounts_without_role_ambiguity_text` confirms scoped-only mounts are excluded from the unscoped preview line.
+- **Workspace role/agent selectors.** `AppConfig::create_workspace` and `AppConfig::edit_workspace` in <RepoFile path="crates/jackin-config/src/app_config_workspaces.rs" /> both call `validate_workspace_config` before any write, which rejects a `default_role` that is not a member of `allowed_roles`. These two functions are the only mutation paths for that geometry (the `ConfigEditor` typed-setter path never touches `allowed_roles`/`default_role`), so the check cannot be bypassed before persistence.
 
-- **Launcher preview and mount-resolution parity.** Re-check whether the interactive launcher preview still omits selector-scoped global mounts or other access that the real launch path resolves.
-- **Secret redaction in command failures.** Re-check ShellRunner and Docker/host command error formatting for raw argv or env values that can leak secrets in terminal-visible failure messages.
-- **Mount validation boundaries.** Re-check scoped/global mount persistence, nested sensitive-file warnings, overlap with runtime-owned paths, and write-time rejection of invalid state.
-- **Config write concurrency.** Re-check whether config persistence still uses last-writer-wins full-file rewrites without locking or merge protection.
-- **Workspace role/agent selectors.** Re-check whether `allowed_roles`, `default_role`, and trust-grant selectors are parsed and validated before persistence.
-- **Runtime-disable env protection.** Re-check whether host `JACKIN_DISABLE_*` passthrough vars are reserved against role-manifest override.
-- **Subprocess timeout policy.** Re-check whether command execution has bounded timeouts on paths where a hang affects the operator.
+## Confirmed still open
+
+- **Secret redaction in command failures (real leak, not just a re-check).** `ShellRunner` in <RepoFile path="crates/jackin-docker/src/shell_runner.rs" /> only redacts `-e`/`--env` argv values in the `--debug` log line (`log_command`, `redact_env_args`) and in the `tee_to_build_log` command string. Every `anyhow::bail!("command failed: {} {}", program, args.join(" "))` in `run`, `run_captured`, and `do_capture` joins the *raw*, unredacted `args` slice. Launch (<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />) pushes `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, and other secrets as `-e KEY=value` pairs into that same `args` slice, so a failing `docker run` surfaces the raw token in the CLI/terminal-visible error text. Fix: route every failure-path error string through `redact_env_args` the same way the debug log path already does.
+- **Mount validation boundaries — nested sensitive-path and runtime-owned-path gaps.** `find_sensitive_mounts` in <RepoFile path="crates/jackin-config/src/sensitive.rs" /> only flags a mount whose `src` *exactly* ends with a known suffix (`/.ssh`, `/.aws`, etc.); mounting a parent directory that merely contains one of those paths (e.g. the whole home directory) triggers no warning. Separately, no check in <RepoFile path="crates/jackin-config/src/schema.rs" /> or <RepoFile path="crates/jackin-config/src/app_config_mounts.rs" /> rejects a mount destination that collides with a runtime-owned container path (e.g. `/jackin/...`). Scoped/global mount persistence and write-time rejection of structurally invalid rows (duplicate destinations, non-shared global isolation) are already covered by `AppConfig::validate_effective_mount_destinations` and `AppConfig::validate_global_mount_rows`, called from <RepoFile path="crates/jackin-console/src/services/config_save.rs" /> — that half of the original bullet is resolved.
+- **Config write concurrency.** `ConfigEditor::open`/`save` in <RepoFile path="crates/jackin-config/src/editor.rs" /> and `atomic_write` in <RepoFile path="crates/jackin-config/src/persist.rs" /> still do a read-modify-rename cycle with no file lock or merge check. Two concurrent `jackin` processes editing config still silently last-writer-wins.
+- **Runtime-disable env protection.** `is_reserved` in <RepoFile path="crates/jackin-core/src/env_model.rs" /> checks only a fixed list of exact runtime env names; `JACKIN_DISABLE_*` is not in `RESERVED_RUNTIME_ENV_VARS`, and no prefix-based reservation exists anywhere in the reserved-name check. A role manifest can declare an `env.JACKIN_DISABLE_*` entry today without `validate_reserved_env_names` rejecting it.
+- **Subprocess timeout policy.** No timeout wrapper exists in `ShellRunner` (<RepoFile path="crates/jackin-docker/src/shell_runner.rs" />) or `CommandRunner` (<RepoFile path="crates/jackin-core/src/runner.rs" />); every `run`/`capture`/`capture_secret` call awaits the child process unbounded.
 - **Reproducibility and provenance.** Still open as a dedicated roadmap item: [Reproducibility and Provenance Pinning](/roadmap/reproducibility-pinning/).
 
 ## Dedicated items instead of catalog entries
@@ -31,4 +32,4 @@ Use the dedicated pages as source of truth where they exist:
 - [Reproducibility and Provenance Pinning](/roadmap/reproducibility-pinning/)
 - [Security Threat Model & Signed Releases](/roadmap/security-threat-model-and-signed-releases/)
 
-Reviewed: 2026-07-01. This pass confirmed that dedicated roadmap items still own reproducibility, Docker hardening, and signed-release follow-up, and that `jackin-exec` has explicit redaction surfaces. The remaining catalog rows above still need per-finding source refresh before being treated as current blockers.
+Reviewed: 2026-07-01. This pass re-verified every row against source: two findings (launcher preview parity, role/selector validation) are fixed and dropped; the remaining five are confirmed still open with concrete file/function references above, including a live secret-redaction gap in `ShellRunner`'s failure-path error strings that is more serious than the prior "needs fresh evidence" framing implied.

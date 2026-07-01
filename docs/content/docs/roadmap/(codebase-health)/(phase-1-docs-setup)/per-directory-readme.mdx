@@ -2,26 +2,21 @@
 title: "Per-directory README + AGENTS.md"
 ---
 
-**Status**: Open — update orientation files to match the workspace crate split and Rust 2024 self-named module layout
+**Status**: Partially implemented — workspace-wide Rust rules and several crate-level orientation files are already current; five crates in `crates/` still have no `README.md` or `AGENTS.md`
 
-## Problem
+## Shipped facts
 
-AI coding agents load nearby `README.md` and `AGENTS.md` files for orientation. The Cargo workspace split changed the useful orientation unit from the old root `src/` tree to crate directories under `crates/`, and the workspace now forbids `mod.rs` in crates.
+<RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile> already documents the workspace-wide Rust rules for the current crate layout: Rust 2024 self-named module files (no `mod.rs`), the `tests.rs` convention, naming, and the lint/supply-chain baseline. No stale pre-split `src/` language remains there. Seven of the nineteen `crates/*` directories have their own orientation file: <RepoFile path="crates/jackin-capsule/README.md">jackin-capsule</RepoFile>, <RepoFile path="crates/jackin-build-meta/README.md">jackin-build-meta</RepoFile>, <RepoFile path="crates/jackin-pr-trailers/README.md">jackin-pr-trailers</RepoFile>, <RepoFile path="crates/jackin-protocol/README.md">jackin-protocol</RepoFile>, <RepoFile path="crates/jackin-term/README.md">jackin-term</RepoFile>, and <RepoFile path="crates/jackin-tui/README.md">jackin-tui</RepoFile> each carry a `README.md`, and <RepoFile path="crates/jackin-tui-lookbook/AGENTS.md">jackin-tui-lookbook</RepoFile> carries an `AGENTS.md`. <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> is also current for the Fumadocs site layout.
 
-This item remains valid, but the target content needs to describe the current crate layout rather than pre-split paths.
-
-## Target directories
+## Target directories still missing an orientation file
 
 | Directory | README or AGENTS.md should say |
 |---|---|
-| `crates/` | Workspace-wide Rust rules: self-named modules, tests in `tests.rs`, lint baseline, and dependency hygiene. |
 | `crates/jackin/` | CLI binary crate: command dispatch, app context, command handlers, and root integration tests. |
 | `crates/jackin-runtime/` | Container bootstrap pipeline, instance lifecycle, launch pipeline, DinD sidecar management, isolation, and runtime tests. |
 | `crates/jackin-console/` | Operator console TUI state, input/update, screens, services, and shared console components. |
 | `crates/jackin-config/` | Config loading, persistence, editing, schema versions, and migrations. |
 | `crates/jackin-env/` | Operator environment resolution, 1Password references, picker metadata, and launch diagnostics. |
-| `crates/jackin-capsule/` | In-container capsule PID 1, PTY/session control, attach protocol, and terminal model integration. |
-| `docs/` | Fumadocs docs site. Public docs live in `content/docs/`; route groups in parentheses are organizational only. |
 
 ## Rules for crate guidance
 
@@ -31,6 +26,5 @@ This item remains valid, but the target content needs to describe the current cr
 
 ## Remaining work
 
-1. Audit existing crate-level orientation files for stale root-`src/` language.
-2. Add missing crate-level `README.md` or `AGENTS.md` only where they prevent repeated mis-edits.
-3. Keep the docs-site and repo-root source maps aligned when a crate boundary changes.
+1. Add a crate-level `README.md` or `AGENTS.md` for the five crates listed above, each covering entrypoints and invariants only.
+2. Keep the docs-site and repo-root source maps aligned when a crate boundary changes.

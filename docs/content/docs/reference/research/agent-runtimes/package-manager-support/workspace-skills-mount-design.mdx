@@ -1,0 +1,42 @@
+---
+title: "Workspace Skills Mount: Design Options"
+---
+
+Exploratory design notes for a possible jackin❯-owned workspace-level skill mount, kept for reference while the [Native APM Support](/reference/research/agent-runtimes/package-manager-support/native-apm-role-support/) decision is pending. See the [Workspace skills mount](/roadmap/workspace-skills-mount/) roadmap item for current status.
+
+## Problem
+
+Operators lack a clean, workspace-level way to add local or team skills at runtime without rebuilding a role image and without publishing those skills to a marketplace. The original proposal copied multicode's `add-skills-from` shape: configured host directories contain immediate subdirectories, each subdirectory is a skill with `SKILL.md`, and jackin❯ bind-mounts those skill directories read-only into the selected runtime's expected skills location.
+
+That goal remains useful for team playbooks, code-style instructions, tag-protocol emitters, and workflow skills such as "independent fix" or "prepare a PR".
+
+## Current recommendation
+
+Do not add a first-class `[skills]` config block yet. Land or reject the APM role-support design first. If APM remains viable, represent local/team skills as APM local-path dependencies in role context, and keep jackin❯ responsible only for isolated install timing, target selection, caching, and launch integration. If APM cannot cover workspace-local skills without mutating the host project or role repo, revive the narrower mount-only design below.
+
+## Narrow fallback design
+
+If jackin❯ still needs direct workspace skill mounts after the APM evaluation, scope V1 to filesystem mounts only:
+
+- Add operator-level and workspace-level skill source paths.
+- Treat each immediate child directory containing `SKILL.md` as one skill.
+- Resolve operator paths first and workspace paths second; later declarations of the same skill name win within the mount-only set.
+- Mount skills read-only by default.
+- Let each runtime adapter own its destination path and any format compatibility limits.
+- Reject paths that resolve under an isolated workspace mount, because that would duplicate the same content through the materialized worktree and the explicit skill mount.
+- Error on conflicts with role-installed or APM-installed packages when jackin❯ can reliably detect the conflict; otherwise document runtime-specific precedence instead of silently pretending jackin❯ controls it.
+
+## Deferred until APM decision
+
+- A custom jackin❯ skill bundle repository such as `jackin-project/jackin-skills`.
+- TUI browse/install flows for skills.
+- Skill version pinning beyond the source path or APM lockfile.
+- Cross-runtime skill format conversion.
+- Per-role enable/disable filters over a shared skill source list.
+
+## Related work
+
+- [Native APM Support for jackin❯ Agent Roles](/reference/research/agent-runtimes/package-manager-support/native-apm-role-support/)
+- [Workspace skills mount](/roadmap/workspace-skills-mount/)
+- [Multi-runtime support](/roadmap/multi-runtime-support/)
+- [Agent tag protocol](/roadmap/agent-tag-protocol/)

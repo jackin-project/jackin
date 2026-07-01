@@ -2,11 +2,11 @@
 title: "Behavioral spec: op_picker"
 ---
 
-**Status**: Partially implemented — spec published; next step is linking from the console op-picker `//!` docs to the spec URL if the module docs do not already do so
+**Status**: Partially implemented — spec published; the console op-picker `//!` module doc does not yet link to it
 
 ## Current shape
 
-The active console 1Password picker adapter is <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile>. The shared env-resolution and picker metadata types live in <RepoFile path="crates/jackin-env/src/resolve.rs">crates/jackin-env/src/resolve.rs</RepoFile>, and the surface-local render/state-plan component lives in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile>.
+The active console 1Password picker adapter is <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile>. Picker metadata types (`RawOpField`, `RawOpItemDetail`, and the `From` conversions into `jackin_core::op_types`) live in <RepoFile path="crates/jackin-env/src/picker.rs">crates/jackin-env/src/picker.rs</RepoFile>; the `OpStructRunner` trait lives in <RepoFile path="crates/jackin-env/src/op_struct.rs">crates/jackin-env/src/op_struct.rs</RepoFile> and is consumed by env resolution in <RepoFile path="crates/jackin-env/src/resolve.rs">crates/jackin-env/src/resolve.rs</RepoFile>. The surface-local render/state-plan component lives in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile>.
 
 The old `op_picker/mod.rs` path is obsolete. The remaining task is documentation linkage, not another split.
 
@@ -21,11 +21,12 @@ The old `op_picker/mod.rs` path is obsolete. The remaining task is documentation
 
 ## Remaining work
 
-1. Confirm <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile> has a `//!` module doc that links to [op_picker Behavioral Spec](/reference/developer-reference/specs/op-picker/).
-2. If missing, add only that link and keep implementation details in the reference spec.
+1. Add a link to [op_picker Behavioral Spec](/reference/developer-reference/specs/op-picker/) in the `//!` module doc at the top of <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile>; keep implementation details in the reference spec, not duplicated in the module doc.
 
 ## Related files
 
 - <RepoFile path="crates/jackin-console/src/tui/op_picker.rs">crates/jackin-console/src/tui/op_picker.rs</RepoFile> — console adapter for state, loader, key handling, and commit selection
 - <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile> — surface-local op-picker render/state-plan helpers including collapsible section headers
-- <RepoFile path="crates/jackin-env/src/resolve.rs">crates/jackin-env/src/resolve.rs</RepoFile> — `RawOpField`, `OpStructRunner`, env resolution, and picker metadata
+- <RepoFile path="crates/jackin-env/src/picker.rs">crates/jackin-env/src/picker.rs</RepoFile> — `RawOpField` and other picker metadata types, plus `From` conversions into `jackin_core::op_types`
+- <RepoFile path="crates/jackin-env/src/op_struct.rs">crates/jackin-env/src/op_struct.rs</RepoFile> — `OpStructRunner` trait
+- <RepoFile path="crates/jackin-env/src/resolve.rs">crates/jackin-env/src/resolve.rs</RepoFile> — env resolution consuming `OpStructRunner`

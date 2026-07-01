@@ -3,6 +3,7 @@
   "defaultOpen": false,
   "pages": [
     "performance",
-    "rust-tooling"
+    "rust-tooling",
+    "pr-verification"
   ]
 }

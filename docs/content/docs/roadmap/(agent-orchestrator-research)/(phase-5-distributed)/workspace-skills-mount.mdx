@@ -2,55 +2,24 @@
 title: "Workspace Skills Mount (cross-runtime customization)"
 ---
 
-**Status**: Open — needs redesign after native APM support decision (Phase 5, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+**Status**: Open — blocked on the [Native APM Support](/reference/research/agent-runtimes/package-manager-support/native-apm-role-support/) decision; no `[skills]` config, collection layer, or mount implementation exists yet.
 
-## Shipped Baseline
+## Shipped facts
 
-Role repos can declare Claude plugin marketplaces and plugin IDs in `jackin.role.toml`; jackin❯ bakes those Claude plugins into the derived image rather than mounting runtime plugin state during launch. The role manifest reference documents `[claude].plugins` and `[[claude.marketplaces]]`, and the Rust manifest schema still contains those fields.
+Role repos can declare Claude plugin marketplaces and plugin IDs in `jackin.role.toml`; jackin❯ bakes those Claude plugins into the derived image rather than mounting runtime plugin state during launch. The role manifest reference documents `[claude].plugins` and `[[claude.marketplaces]]`, and the Rust manifest schema (<RepoFile path="crates/jackin-core/src/manifest.rs" />) still carries those fields.
 
-The runtime already has per-agent durable home mounts for Claude, Codex, Amp, Kimi, OpenCode, and Grok, plus workspace/global bind-mount plumbing for normal workspace mounts. It does **not** have a `[skills]` or `[workspaces.<name>.skills]` config schema, a `src/skills.rs` collection layer, per-runtime workspace skill destinations, or skill-name conflict handling.
+The runtime already has per-agent durable home mounts for Claude, Codex, Amp, Kimi, OpenCode, and Grok, plus workspace/global bind-mount plumbing (<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" />) for normal workspace mounts. It does not have a `[skills]` or `[workspaces.<name>.skills]` config schema (<RepoFile path="crates/jackin-config/src/schema.rs" /> has mounts and runtime/auth fields only), a skill-collection layer, per-runtime workspace skill destinations, or skill-name conflict handling.
 
-A newer design direction exists: [Native APM Support for jackin❯ Agent Roles](/reference/research/agent-runtimes/package-manager-support/native-apm-role-support/) says APM should become the long-term agent-context packaging layer and explicitly calls out that this workspace-skill-mount item should be revisited because local/team skills may be better represented as APM local-path dependencies.
+## Remaining work
 
-## Remaining Problem
+1. Land or reject the APM role-support design first — that decision determines whether this item proceeds at all.
+2. If APM local-path dependencies cover the local/team skill case, shrink this item to documenting and exposing that path rather than building a parallel jackin❯ skill package system.
+3. If APM cannot cover workspace-local skills without mutating the host project or role repo, revive the narrower filesystem-mount-only design — see the research page below for the worked-out shape.
 
-Operators still lack a clean, workspace-level way to add local or team skills at runtime without rebuilding a role image and without publishing those skills to a marketplace. The original proposal copied multicode's `add-skills-from` shape: configured host directories contain immediate subdirectories, each subdirectory is a skill with `SKILL.md`, and jackin❯ bind-mounts those skill directories read-only into the selected runtime's expected skills location.
+## Related work
 
-That goal remains useful for team playbooks, code-style instructions, tag-protocol emitters, and workflow skills such as "independent fix" or "prepare a PR". The implementation should not proceed unchanged until it is reconciled with APM: if APM local-path dependencies cover the local/team case inside jackin❯ role orchestration, this item should shrink to documenting and exposing that path rather than adding a parallel jackin❯ skill package system.
-
-## Current Recommendation
-
-Do not add a first-class `[skills]` config block yet. First land or reject the APM role-support design. If APM remains viable, represent local/team skills as APM local-path dependencies in role context and keep jackin❯ responsible only for isolated install timing, target selection, caching, and launch integration. If APM cannot cover workspace-local skills without mutating the host project or role repo, revive the narrower mount-only design below.
-
-## Narrow Fallback Design
-
-If jackin❯ still needs direct workspace skill mounts after the APM evaluation, scope V1 to filesystem mounts only:
-
-- Add operator-level and workspace-level skill source paths.
-- Treat each immediate child directory containing `SKILL.md` as one skill.
-- Resolve operator paths first and workspace paths second; later declarations of the same skill name win within the mount-only set.
-- Mount skills read-only by default.
-- Let each runtime adapter own its destination path and any format compatibility limits.
-- Reject paths that resolve under an isolated workspace mount, because that would duplicate the same content through the materialized worktree and the explicit skill mount.
-- Error on conflicts with role-installed or APM-installed packages when jackin❯ can reliably detect the conflict; otherwise document runtime-specific precedence instead of silently pretending jackin❯ controls it.
-
-## Deferred Until APM Decision
-
-- A custom jackin❯ skill bundle repository such as `jackin-project/jackin-skills`.
-- TUI browse/install flows for skills.
-- Skill version pinning beyond the source path or APM lockfile.
-- Cross-runtime skill format conversion.
-- Per-role enable/disable filters over a shared skill source list.
-
-## Related Files
-
-- <RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> — current config schema has mounts and runtime/auth fields, but no workspace skills schema.
-- <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile> — current role manifest schema still has Claude `plugins` and `marketplaces`.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — current launch path owns durable per-agent home mounts and auth handoff mounts.
-- [Native APM Support for jackin❯ Agent Roles](/reference/research/agent-runtimes/package-manager-support/native-apm-role-support/) — newer strategic direction for skills/packages/plugins.
-
-## See Also
-
+- Research: [Workspace Skills Mount: Design Options](/reference/research/agent-runtimes/package-manager-support/workspace-skills-mount-design/) — problem statement, fallback mount-only design, and deferred scope.
+- [Native APM Support for jackin❯ Agent Roles](/reference/research/agent-runtimes/package-manager-support/native-apm-role-support/) — the strategic direction this item is blocked on.
 - [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/)
 - [Multi-runtime support](/roadmap/multi-runtime-support/) — per-runtime launch and adapter boundaries
 - [Agent tag protocol](/roadmap/agent-tag-protocol/) — possible user of skill bundles or APM packages

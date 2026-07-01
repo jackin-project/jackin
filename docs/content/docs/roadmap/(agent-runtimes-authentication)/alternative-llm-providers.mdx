@@ -48,7 +48,7 @@ Do the same for OpenCode generation after the catalog grows: `build_opencode_con
 
 ### Availability and update detection
 
-Keep the launch picker sourced from `Provider::available_for`, but add tests/telemetry around the operator-facing cases that matter: native-only agents should skip the picker, a single non-native provider should auto-route without an extra choice, and configured-but-unsupported cells should stay hidden rather than launching into a known protocol failure.
+`Provider::available_for` and its `available_for_provider_matrix` test already cover the operator-facing cases: native-only agents skip the picker, a single non-native provider auto-routes without an extra choice, and configured-but-unsupported cells (e.g. Z.AI/Kimi under Codex) stay hidden. No telemetry emits around picker/auto-route decisions today; add it only if operators report a provider-routing mismatch that logs can't currently explain.
 
 Provider docs and constants should be audited when upstream changes plan names, endpoint hosts, key shapes, or model ids. The current documented subscription flows are key-copy flows: Z.AI API key, MiniMax Token Plan `sk-cp-…` subscription key, and Kimi Code `sk-ki…` key.
 

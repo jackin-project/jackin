@@ -4,106 +4,30 @@ title: "Agent Launch Flags API"
 
 **Status**: Open — baseline shipped, override API unimplemented
 
-## Problem
+## Shipped facts
 
-<RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> still hardcodes final launch argv per agent:
+The `AgentRuntime` trait and adapter registry now exist in <RepoFile path="crates/jackin-core/src/agent/runtime.rs">crates/jackin-core/src/agent/runtime.rs</RepoFile> and <RepoFile path="crates/jackin-core/src/agent/adapters.rs">crates/jackin-core/src/agent/adapters.rs</RepoFile>. Agent identity, install blocks, auth env vars, supported auth modes, state paths, default-home exclusions, and version parsing route through that adapter surface. The trait has no launch-argv method yet.
 
-```bash
-case "${JACKIN_AGENT:?}" in
-  claude)   LAUNCH=(claude --settings '{"skipDangerousModePermissionPrompt":true}' --dangerously-skip-permissions --verbose) ;;
-  codex)    LAUNCH=(codex --enable goals --dangerously-bypass-approvals-and-sandbox) ;;
-  amp)      LAUNCH=(amp --dangerously-allow-all) ;;
-  kimi)     LAUNCH=(kimi --yolo) ;;
-  opencode) export OPENCODE_CONFIG_CONTENT='{"permission":"allow"}' ; LAUNCH=(opencode) ;;
-  grok)     LAUNCH=(grok --always-approve) ;;
-  ...
-```
+`jackin-capsule runtime-setup` now owns deterministic runtime preparation before every agent exec: container git/GitHub setup, git trailer hook wiring, DCO identity cache, per-agent home/auth handoff, Codex profile/model-catalog setup, provider config, and other idempotent capsule setup. <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> delegates that setup to Rust, then still constructs final launch argv itself via a per-agent shell `case` on `$JACKIN_AGENT`, runs role hooks, and `exec`s the selected agent. No launch-argument override exists anywhere in the manifest: `RoleManifest` and its per-agent config structs (<RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile>) carry no `launch_args` or `safe_mode` field.
 
-A security-conscious role author who wants to run Claude without `--dangerously-skip-permissions` (for audit replay, for example) cannot express that in `jackin.role.toml`. The role manifest has per-agent model and provider config, but no launch-argument override or safe-mode field. Launch flags remain a shell policy decision, not a jackin❯ manifest policy decision.
+The high-autonomy defaults remain documented in [Security implementation](/reference/security-implementation/#high-autonomy-launch-flags). Current built-in defaults cover Claude, Codex, Amp, Kimi, OpenCode, and Grok. OpenCode's approval behavior is partly environment/config based rather than only CLI flags.
 
-By default jackin❯ always passes the dangerous-mode flags (this is the whole point — autonomous agents). But role authors need the ability to override or extend these args.
+Research: [Agent Launch Flags API: Design Options](/reference/research/agent-runtimes/agent-launch-flags-api-design/) has the proposed static-manifest + runtime-API shape, phasing, and open design questions.
 
-## Shipped baseline
+## Remaining work
 
-The `AgentRuntime` trait and adapter registry now exist in <RepoFile path="crates/jackin-core/src/agent/runtime.rs">crates/jackin-core/src/agent/runtime.rs</RepoFile> and <RepoFile path="crates/jackin-core/src/agent/adapters.rs">crates/jackin-core/src/agent/adapters.rs</RepoFile>. Agent identity, install blocks, auth env vars, supported auth modes, state paths, default-home exclusions, and version parsing route through that adapter surface.
+1. Add a launch-argv method (or equivalent) to the `AgentRuntime` trait so each adapter owns its own argv construction.
+2. Add static launch-argument controls (`launch_args` override, `safe_mode` toggle, or similar) to the `jackin.role.toml` schema — a versioned schema change; migration rules apply.
+3. Design and implement a runtime API (construct-image binary) that role hooks can call before agent exec to adjust launch arguments dynamically.
+4. Move final launch-argv construction from <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> bash into the Rust `AgentRuntime` surface, keeping bash only as the hook-compatible wrapper before `exec`.
 
-`jackin-capsule runtime-setup` also now owns deterministic runtime preparation before every agent exec: container git/GitHub setup, git trailer hook wiring, DCO identity cache, per-agent home/auth handoff, Codex profile/model-catalog setup, provider config, and other idempotent capsule setup. The shell entrypoint delegates that setup to Rust, then still constructs the final argv, runs role hooks, and `exec`s the selected agent.
+## Out of scope
 
-The high-autonomy defaults remain documented in [Security implementation](/reference/security-implementation/#high-autonomy-launch-flags/). Current built-in defaults cover Claude, Codex, Amp, Kimi, OpenCode, and Grok. OpenCode's approval behavior is partly environment/config based rather than only CLI flags.
+- Removing the default dangerous-mode behavior — autonomous agents are the core value proposition.
+- Letting operators pass arbitrary flags the agent runtime doesn't understand.
+- A second launch-dispatch table that bypasses the `AgentRuntime` adapter surface.
 
-## Proposal
+## Related work
 
-Two APIs, ordered:
-
-### 1. Static API in jackin.role.toml
-
-Expose launch-argument controls in the versioned role manifest. The current manifest uses top-level `agents = [...]` plus per-agent tables such as `[claude]`, `[codex]`, `[kimi]`, `[opencode]`, and `[grok]`; the final schema should fit that existing shape unless a schema bump deliberately moves to an agent map. Default behavior stays identical: existing high-autonomy args remain defaults.
-
-Example:
-
-```toml
-[claude]
-launch_args = ["--dangerously-skip-permissions", "--verbose"]
-```
-
-```toml
-[claude]
-safe_mode = true
-```
-
-When `safe_mode = true`, the dangerous-mode flags are omitted for that agent. When `launch_args` is set, it overrides the defaults entirely for that agent. Exact names remain open; the shipped schema does not yet include either field.
-
-### 2. Runtime API via construct image binary
-
-Provide a command inside the construct image, likely in `jackin-capsule`, that role hooks can call before agent exec to dynamically adjust agent launch arguments. This allows a role to evaluate runtime conditions and modify flags without editing the image entrypoint.
-
-Example: a role might call the binary to add `--model` overrides or remove `--dangerously-skip-permissions` based on workspace conditions.
-
-### 3. Move launch dispatch to Rust
-
-Move final launch argv construction out of bash into a Rust surface. Bash remains only the hook-compatible wrapper that can source `source.sh` before `exec`. The `AgentRuntime` trait now exists, so this item can add a launch-argv method to that adapter surface instead of first waiting for trait extraction.
-
-## Non-goals
-
-- Do not remove the default dangerous-mode behavior. Autonomous agents are the core value proposition.
-- Do not allow operators to add arbitrary flags the agent runtime doesn't understand.
-- Do not bypass the `AgentRuntime` adapter surface with a second launch-dispatch table.
-
-## Implementation Phases
-
-### Phase 1 — Extend `AgentRuntime`
-
-Add `launch_argv()` or an equivalent typed method to each `AgentRuntime` impl. The trait exists, but launch argv is not part of it yet.
-
-### Phase 2 — Static manifest API
-
-Add the static launch-argument controls to the role manifest schema. This is a versioned schema change — migration rules apply.
-
-### Phase 3 — Runtime API binary
-
-Design and implement the construct-image binary for dynamic flag adjustment.
-
-### Phase 4 — Move dispatch to Rust
-
-Move launch dispatch from entrypoint.sh to Rust while preserving hook semantics that require a shell before `exec`.
-
-## Open Questions
-
-1. What is the exact shape of the runtime API binary? What arguments does it accept?
-2. Should safe mode be a per-agent field only, or should there also be a role-wide default?
-3. How does the runtime API interact with the static manifest settings? (Override? Merge? Prepend/append?)
-4. Should static launch args be unrestricted strings, a typed enum of known flags, or a small policy object per agent?
-
-## Related Files
-
-- <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile>
-- <RepoFile path="crates/jackin-core/src/agent.rs">crates/jackin-core/src/agent.rs</RepoFile>
-- <RepoFile path="crates/jackin-core/src/agent/runtime.rs">crates/jackin-core/src/agent/runtime.rs</RepoFile>
-- <RepoFile path="crates/jackin-core/src/agent/adapters.rs">crates/jackin-core/src/agent/adapters.rs</RepoFile>
-- <RepoFile path="crates/jackin-core/src/manifest.rs">crates/jackin-core/src/manifest.rs</RepoFile>
-- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile>
-
-## Cross-references
-
-- Agent runtime trait extraction — shipped baseline for this item; remaining work is adding launch argv to that surface
-- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) — hardened profiles may restrict launch flags
+- [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) — hardened profiles may restrict launch flags.
+- Research: [Agent Launch Flags API: Design Options](/reference/research/agent-runtimes/agent-launch-flags-api-design/) — proposal, phasing, open questions.

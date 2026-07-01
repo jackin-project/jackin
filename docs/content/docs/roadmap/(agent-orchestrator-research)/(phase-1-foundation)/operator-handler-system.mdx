@@ -2,120 +2,31 @@
 title: "Operator Handler System (IDE / diff / browser launchers)"
 ---
 
-**Status**: Partially implemented — host affordance primitives for safe URL open, file export, reveal/open, and host action framing exist; remaining work is the named configurable handler layer (Phase 1, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
+**Status**: Partially implemented — host affordance primitives (safe URL open, verified file export, host reveal/open) are shipped and documented; the configurable named-handler layer (`[handler]` config, `jackin open`/`diff`/`web`, console keybindings) is not built (Phase 1, [Agent Orchestration Program](/reference/research/agent-orchestration/program-research/))
 
-## Problem
+## Shipped facts
 
-Capsule already ships host affordances for the most common cases: safe URL opening, verified file export, and queued host open/reveal actions for exported files. Remaining work is the configurable handler layer: named operator handlers, platform defaults, substitutions, and CLI/console routing that reuse those affordances instead of adding one-off launchers.
+Capsule ships host affordances for the most common cases an operator needs today: safe scheme-limited URL opening, verified file export with reveal/open follow-up, and host reveal/open for launch-failure artifacts and diagnostics — see [Host Affordances](/guides/host-affordances/) for the full operator-facing list. `crates/jackin-runtime/src/runtime/host_desktop.rs` implements the cross-platform `open` / `xdg-open` / `explorer.exe` dispatch these affordances share, and `jackin_core::url_text::is_host_open_url` enforces the `http(s)`/`mailto` scheme allowlist.
 
-When an operator wants to act on something the agent produced — review a diff, open the workspace in an IDE, follow a link the agent printed — they have to context-switch to a separate shell, copy the path, run the right launcher manually. Every adjacent tool in this space (multicode, Conductor, Docker Sandboxes) ships an external-launcher abstraction precisely because this friction kills the "left it running overnight" workflow.
+What is missing is the configurable handler layer this item is actually about: named operator handlers (`diff`, `web`, `ide`), platform defaults, and CLI/console routing that let an operator wire a diff viewer or IDE the same way multicode's `[handler]`/`[compare]` blocks do. There is no `[handler]` config surface in `jackin-config`, no `jackin open` / `jackin diff` / `jackin web` CLI subcommands (`crates/jackin/src/cli.rs` has no such variants), and no console `o`/`d`/`w` keybindings.
 
-jackin❯ has no such abstraction today, so each future feature that needs to launch an external tool would invent its own.
+## Remaining work
 
-## Why It Matters
+1. `[handler.diff]`, `[handler.web]`, `[handler.ide]` operator-config blocks with cross-platform defaults for `web` (`open`/`xdg-open`) and `diff` (`git diff` in-terminal fallback).
+2. CLI subcommands `jackin open <selector>`, `jackin diff <selector>`, `jackin web <url>`, resolving the same primary-mount / materialized-worktree path `jackin load` uses.
+3. Console keybindings (`o` open in IDE, `d` diff, `w` web) on a selected workspace row.
+4. IDE well-known table (`vscode`, `intellij`, `zed`, `cursor`, `none`) with an explicit-command override.
 
-- The console (today) and any future TUI need to know how to "open" a path, URL, or repo without hardcoding `open` / `xdg-open`.
-- Multiple downstream items in this program need it: [GitHub link tracking](/roadmap/github-link-tracking/) opens issue/PR URLs, [agent tag protocol](/roadmap/agent-tag-protocol/) opens repo paths, [custom operator tools](/roadmap/custom-operator-tools/) expand exec templates that eventually want the same launcher resolution.
-- Designing the abstraction once means cross-platform handling (`open` on macOS, `xdg-open` on Linux, OS-native file URLs) lives in one place.
+## Out of scope
 
-## Inspiration in multicode
+- Per-workspace handler overrides — operator-config-level only for V1.
+- In-console diff renderer — `git diff` in a paged view is enough; external viewers stay external.
+- PTY allocation for the diff handler — defer until a TTY-aware diff tool needs it.
 
-**Sources**:
-- README — [Editor Tool](https://github.com/graemerocher/multicode#editor-tool) (covers the `[compare]` block for IDE selection)
-- Config — [`config.toml` `[handler]` block](https://github.com/graemerocher/multicode/blob/main/config.toml)
+## Related work
 
-```toml
-[handler]
-review = "/usr/bin/smerge ."          # chdir-mode launcher (no {} placeholder)
-review-pty = false                     # allocate a PTY for the launcher?
-web = "/usr/bin/firefox {}"            # template-mode launcher (single {} required)
-```
-
-multicode also exposes a `[compare]` block in the current reference implementation that specifies the IDE for "open in editor":
-
-```toml
-[compare]
-tool = "vscode"   # or "intellij"
-command = "..."   # optional override
-```
-
-The TUI keystrokes `r` (review = open diff viewer for repo) and `e` (open in IDE) call the resolved handler. Both blocks are loaded once at startup; no hot-reload.
-
-## Recommended Shape
-
-One unified `[handler]` block. The `[compare]`-style IDE selector folds in as another handler kind, not a separate block.
-
-### Config
-
-```toml
-[handler.diff]
-# Diff viewer for a repo path. Invoked chdir-mode by default (cwd = arg).
-command = "/opt/homebrew/bin/smerge"
-mode = "chdir"
-
-[handler.web]
-# URL launcher.
-command = "open {}"   # macOS default; Linux default would be `xdg-open {}`
-mode = "template"
-
-[handler.ide]
-# IDE on a workspace path. Either a tool name (resolved via well-known list)
-# or a full command.
-tool = "vscode"
-# command = "code -n -g {}"     # optional explicit override
-```
-
-Resolution rules:
-
-- `diff` defaults to `git diff` (in-terminal) if no command is configured.
-- `web` defaults to `xdg-open {}` on Linux, `open {}` on macOS, none on unsupported platforms (handler returns "no web handler configured").
-- `ide.tool` accepts at least `vscode`, `intellij`, `zed`, `cursor`, plus `none` to disable. The well-known table is small and operator-extensible via `command = "..."`.
-- `mode = "chdir"` means the handler runs with cwd set to the argument and no argument substitution; `mode = "template"` requires a single `{}` and substitutes verbatim.
-
-### CLI
-
-```sh
-jackin open <selector>           # IDE handler
-jackin diff <selector>           # diff handler (in-terminal `git diff` by default)
-jackin web <url>                 # web handler — explicit URL form
-```
-
-Subcommands accept the same selector grammar as `jackin load`. They resolve the workspace's primary mount path (or, if isolated, the materialized worktree path under `<data_dir>/jackin-<container>/git/worktree/repo/<dst-tree>/<container>/`) before invoking the handler.
-
-### Console
-
-Single keystroke per handler when a workspace row is selected: `o` (open in IDE), `d` (diff), `w` (web — only meaningful when a link is selected).
-
-## Scope (V1)
-
-- `[handler.diff]`, `[handler.web]`, `[handler.ide]` config blocks at the operator-config level.
-- Cross-platform defaults baked in for `web` and a sensible default for `diff` (`git diff` in terminal).
-- IDE well-known table covering the four named editors above.
-- CLI subcommands `jackin open`, `jackin diff`, `jackin web`.
-- Console keybindings for diff and IDE.
-- For worktree-isolated mounts, default to opening the materialized worktree; provide a flag (CLI) and Shift-modifier (console) to open the host repo path instead.
-
-## Defer
-
-- Per-workspace handler overrides. Operator-config-level only in V1; if a use case surfaces (e.g. one workspace wants its own IDE), revisit.
-- In-console diff renderer. multicode uses an external viewer; jackin console gets `git diff` in a paged view, that's enough.
-- PTY allocation for the diff handler (`review-pty` in multicode). Defer until someone reports an issue with a TTY-aware diff tool.
-
-## Open Questions
-
-- Where does the operator-config file live for handlers? Options: extend the existing operator config under `[handler]`, or a new `~/.config/jackin/handlers.toml`. Recommended default: *extend operator config* — single-file ergonomics matter.
-- Should `jackin diff` default to in-terminal `git diff` (current recommendation) or refuse to run without a configured handler? Recommended default: *in-terminal default*; explicit configuration is a polish, not a prerequisite.
-- For worktree-isolated mounts, should `jackin open` default to the materialized worktree or the host repo? See default above; this might flip after operators try V1.
-
-## Related Files
-
-- New module (e.g. `src/handler.rs`) — config + resolution + execution
-- <RepoFile path="crates/jackin/src/cli/role.rs">crates/jackin/src/cli/role.rs</RepoFile> — adds `jackin open` / `jackin diff` / `jackin web` subcommands
-- <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile> — keybindings
-- <RepoFile path="crates/jackin-config/src/resolve.rs">crates/jackin-config/src/resolve.rs</RepoFile> — primary-mount resolution for the handler argument
-
-## See Also
-
-- [GitHub link tracking](/roadmap/github-link-tracking/) — consumes `web` handler
-- [Agent tag protocol](/roadmap/agent-tag-protocol/) — emitted `<jackin:repo>` tags resolve through `diff` and `ide`
-- [Custom operator tools](/roadmap/custom-operator-tools/) — also uses the handler resolution machinery
+- Research: [Operator Handler System: Design Exploration](/reference/research/operator-surface/host-affordances/operator-handler-system-design/) — multicode inspiration, recommended config/CLI/console shape, and open design questions.
+- [Host Affordances](/guides/host-affordances/) — shipped host-open/export/reveal primitives this handler layer reuses.
+- [GitHub link tracking](/roadmap/github-link-tracking/) — consumes the `web` handler.
+- [Agent tag protocol](/roadmap/agent-tag-protocol/) — emitted `<jackin:repo>` tags resolve through `diff` and `ide`.
+- [Custom operator tools](/roadmap/custom-operator-tools/) — also uses the handler resolution machinery.

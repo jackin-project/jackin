@@ -2,6 +2,7 @@
   "title": "Testing",
   "defaultOpen": false,
   "pages": [
-    "visual-snapshots"
+    "visual-snapshots",
+    "test-infrastructure-consolidation"
   ]
 }

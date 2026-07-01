@@ -2,6 +2,7 @@
   "title": "Workflow Systems",
   "defaultOpen": false,
   "pages": [
-    "agent-workflow-orchestration"
+    "agent-workflow-orchestration",
+    "task-source-abstraction-design"
   ]
 }

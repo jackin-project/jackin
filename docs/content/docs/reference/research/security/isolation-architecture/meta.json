@@ -2,6 +2,7 @@
   "title": "Isolation Architecture",
   "defaultOpen": false,
   "pages": [
-    "agent-isolation-architecture"
+    "agent-isolation-architecture",
+    "session-contract-design"
   ]
 }
