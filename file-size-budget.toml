@@ -7,8 +7,10 @@
 # subcommand):
 #
 #   1. Production Rust sources (every `crates/**/*.rs` except `tests.rs`) must
-#      be at most `production_cap` lines long. Ratchets down over time —
-#      see plans/codebase-health-remaining.md R7 for the target of 1500L.
+#      be at most `production_cap` lines long. The cap sits at 2000L (the
+#      original 1500L target was relaxed for the three hot-path files whose
+#      decomposition reached a safe floor above 1500L under the E0 thin-LTO
+#      guardrail — see plans/codebase-health-remaining.md).
 #   2. Test sources (`**/tests.rs`) must be at most `test_cap` lines long. The
 #      test cap is 10000L today because the launch and daemon tests are large
 #      by design — see `roadmap/test-infra-behavioral-specs/` for the
