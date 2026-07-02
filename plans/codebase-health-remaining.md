@@ -6,6 +6,89 @@
 
 PR #664 is intended to be a structure-only codebase-health refactor. Before merge, prove that it did not relax behavior, hide runtime failures, or weaken the CI gates that are supposed to prevent the codebase-health ledgers from regressing.
 
+## Pre-Refactor Baseline References
+
+Use these references when a blocker says "restore previous behavior" or "compare with before the refactor." Do not infer the old behavior from memory.
+
+### General Diff Commands
+
+- Current pre-PR baseline is `origin/main`. PR-local changes can be inspected with:
+  - `git diff origin/main...HEAD -- <path>`
+  - `git show origin/main:<path>`
+- If `git show origin/main:<path>` fails with "path exists on disk, but not in origin/main", that file is new in PR #664. In that case, inspect the current file and this plan instead of looking for a pre-refactor version.
+- For renamed files, compare old and new paths explicitly:
+  - `git show origin/main:<old-path>`
+  - `sed -n '<start>,<end>p' <new-path>`
+  - `git diff origin/main...HEAD -- <old-path> <new-path>`
+
+### Blocker 1 Baseline: `jackin prewarm`
+
+- Old file before the refactor:
+  - `git show origin/main:crates/jackin/src/cli/prewarm.rs`
+- Current file after the refactor:
+  - <RepoFile path="crates/jackin/src/cli/prewarm.rs">crates/jackin/src/cli/prewarm.rs</RepoFile>
+- Exact old constraints to restore were present in `origin/main`:
+  - `keep_sidecar_container`: `#[arg(long, requires = "sidecar_container")]`
+  - `role`: `#[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]`
+  - `workspace`: `#[arg(long, conflicts_with_all = ["role", "all_workspaces"])]`
+  - `all_workspaces`: `#[arg(long, conflicts_with_all = ["role", "workspace", "role_git", "all_roles"])]`
+  - `all_roles`: `#[arg(long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git", "all_workspaces"])]`
+  - `role_git`: `#[arg(long, requires = "role", conflicts_with_all = ["workspace", "all_workspaces"])]`
+- Helpful command to inspect just that old area:
+  - `git show origin/main:crates/jackin/src/cli/prewarm.rs | sed -n '20,72p'`
+- Existing CLI tests live in:
+  - <RepoFile path="crates/jackin/src/cli/tests.rs">crates/jackin/src/cli/tests.rs</RepoFile>
+- Existing parse-test pattern to copy:
+  - Use `Cli::try_parse_from([...])`.
+  - Use `unwrap()` for accepted combinations and `unwrap_err()` or `is_err()` for rejected combinations.
+
+### Blocker 2 Baseline: Launch TUI
+
+- Old crate before the rename/refactor is `crates/jackin-launch/`.
+- New crate after the refactor is `crates/jackin-launch-tui/`.
+- Compare old/new files with these mappings:
+  - `origin/main:crates/jackin-launch/src/tui/update.rs` → <RepoFile path="crates/jackin-launch-tui/src/tui/update.rs">crates/jackin-launch-tui/src/tui/update.rs</RepoFile>
+  - `origin/main:crates/jackin-launch/src/tui/view.rs` → <RepoFile path="crates/jackin-launch-tui/src/tui/view.rs">crates/jackin-launch-tui/src/tui/view.rs</RepoFile>
+  - `origin/main:crates/jackin-launch/src/tui/subscriptions.rs` → <RepoFile path="crates/jackin-launch-tui/src/tui/subscriptions.rs">crates/jackin-launch-tui/src/tui/subscriptions.rs</RepoFile>
+  - `origin/main:crates/jackin-launch/src/tui/components/failure_dialog.rs` → <RepoFile path="crates/jackin-launch-tui/src/tui/components/failure_dialog.rs">crates/jackin-launch-tui/src/tui/components/failure_dialog.rs</RepoFile>
+- Current failure-hiding risk points:
+  - <RepoFile path="crates/jackin-launch-tui/src/tui/view.rs">view.rs</RepoFile> currently has an early `if view.build_log_open { ... return; }` before the failure dialog path.
+  - <RepoFile path="crates/jackin-launch-tui/src/tui/update.rs">update.rs</RepoFile> currently handles `LaunchMessage::StageFailed` without clearing `build_log_open`, `build_log_scroll_dragging`, or `container_info_open`.
+- Existing focused test files to extend:
+  - <RepoFile path="crates/jackin-launch-tui/src/tui/update/tests.rs">crates/jackin-launch-tui/src/tui/update/tests.rs</RepoFile>
+  - <RepoFile path="crates/jackin-launch-tui/src/tui/subscriptions/tests.rs">crates/jackin-launch-tui/src/tui/subscriptions/tests.rs</RepoFile>
+  - <RepoFile path="crates/jackin-launch-tui/src/tui/components/failure_dialog/tests.rs">crates/jackin-launch-tui/src/tui/components/failure_dialog/tests.rs</RepoFile>
+- If a view render test file does not exist for the exact render helper, add the test to the nearest sibling `tests.rs` that already exercises `render_launch_view` or the component-level render function. Do not create inline tests in `view.rs`.
+
+### Blocker 3 Baseline: CI Wiring
+
+- CI workflow existed before the refactor:
+  - `git show origin/main:.github/workflows/ci.yml`
+  - Current file: <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>
+- Important distinction: `file-size-gate` is PR-introduced. It does not exist in `origin/main`, so this blocker is not "restore old CI"; it is "finish wiring the new gate so the PR claim is true."
+- Useful inspection commands:
+  - `rg -n "rust:|schema-check:|file-size-gate:|ci-required:" .github/workflows/ci.yml`
+  - `git diff origin/main...HEAD -- .github/workflows/ci.yml`
+- Current audited problem:
+  - The `rust:` path filter does not include `clippy.toml`, `file-size-budget.toml`, or `test-layout-allowlist.toml`.
+  - `ci-required.needs` does not include every gate that must block merge, especially `schema-check` and `file-size-gate`.
+
+### Blocker 4 Baseline: Ratchet Semantics
+
+- These files are PR-introduced:
+  - <RepoFile path="crates/jackin-xtask/src/lint.rs">crates/jackin-xtask/src/lint.rs</RepoFile>
+  - <RepoFile path="crates/jackin-xtask/src/test_layout.rs">crates/jackin-xtask/src/test_layout.rs</RepoFile>
+- Because they are new in PR #664, `origin/main` cannot show the old implementation. Use current source plus tests to verify the audited gap.
+- Current audited file-size gap:
+  - In <RepoFile path="crates/jackin-xtask/src/lint.rs">crates/jackin-xtask/src/lint.rs</RepoFile>, the match arm `Some(_) => {}` accepts budgeted files that are at or under the recorded high-water mark. That means stale or no-longer-needed rows can pass.
+  - Inspect with: `nl -ba crates/jackin-xtask/src/lint.rs | sed -n '147,164p'`
+- Current audited test-layout gap:
+  - In <RepoFile path="crates/jackin-xtask/src/test_layout.rs">crates/jackin-xtask/src/test_layout.rs</RepoFile>, stale allowlist entries are printed as notes, not errors.
+  - Inspect with: `rg -n "stale|note:" crates/jackin-xtask/src/test_layout.rs`
+- Existing xtask tests to extend:
+  - <RepoFile path="crates/jackin-xtask/src/lint/tests.rs">crates/jackin-xtask/src/lint/tests.rs</RepoFile>
+  - <RepoFile path="crates/jackin-xtask/src/test_layout/tests.rs">crates/jackin-xtask/src/test_layout/tests.rs</RepoFile>
+
 ## Executor Rules
 
 - Do not add new broad refactors while working this plan. Each edit must map to one blocker below.
