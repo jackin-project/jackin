@@ -6,7 +6,6 @@ use jackin_config::AppConfig;
 use jackin_tui::{HintSpan, components::ScrollAxes};
 use ratatui::layout::Rect;
 
-use crate::tui::app::ConsoleManagerStage;
 use crate::tui::components::footer_hints::{
     WorkspaceFooterScrollFacts, WorkspaceInlinePickerContentFacts, WorkspaceListFooterInputFacts,
     WorkspaceScreenFooterFacts, WorkspaceScreenFooterPlan, selected_instance_snapshot_available,
@@ -18,6 +17,7 @@ use crate::tui::components::footer_hints::{
 use crate::tui::layout;
 use crate::tui::layout::list::{list_names_content_width, selected_sidebar_scroll_areas};
 use crate::tui::list_geometry;
+use crate::tui::model::ConsoleManagerStage;
 use crate::tui::screens::workspaces::model::ManagerListRow;
 use crate::tui::screens::workspaces::update::{workspace_row_owns_left, workspace_row_owns_right};
 use crate::tui::sidebar_layout;

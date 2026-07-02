@@ -4,6 +4,15 @@
 //! integration tests. The crate is simultaneously a binary (via `main.rs`) and
 //! a library (via `lib.rs`); `pub mod` entries here are the public compatibility
 //! boundary, while `pub(crate)` entries are root-crate-only shims.
+//!
+//! **Architecture Invariant:** L4 entry/glue crate. Allowed dependencies:
+//! `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-docker`,
+//! `jackin-diagnostics`, `jackin-env`, `jackin-image`, `jackin-runtime`,
+//! `jackin-tui`, `jackin-console`, `jackin-protocol`. This is the only
+//! crate allowed to depend on every other workspace crate (it wires the
+//! `ConsoleHostTerminal` impl, the `BuildLogSink` adapter, and the
+//! runtime command dispatch). The shim-maze pattern (D6) is gone;
+//! callers import directly from the owning crate root.
 
 #![allow(clippy::redundant_pub_crate)]
 #![expect(
@@ -17,33 +26,16 @@
     reason = "primary CLI crate still carries state-machine invariants under the strict lint transition"
 )]
 
-pub mod agent;
-pub mod agent_binary;
 mod app;
-pub mod binary_artifact;
-pub mod capsule_binary;
+
 pub mod cli;
-pub mod config;
 pub mod console;
-pub mod derived_image;
-pub(crate) mod diagnostics;
-pub mod docker;
-pub mod docker_client;
-pub(crate) mod env_model;
-pub mod env_resolver;
+
 pub mod error;
-pub mod instance;
-pub mod isolation;
-pub mod manifest;
-pub mod operator_env;
-pub mod paths;
 pub(crate) mod preflight;
-pub mod repo;
-pub(crate) mod repo_contract;
+pub mod prompt;
 pub mod role_authoring;
-pub mod runtime;
-pub mod selector;
-pub mod tui;
+pub mod warp;
 pub mod workspace;
 
 pub use app::run;

@@ -3,6 +3,13 @@
 //! **Phase 3 (current):** Full `operator_env` stack extracted here.
 //!
 //! **Dependency tier:** `jackin-core` → `jackin-config` → `jackin-env`
+//!
+//! **Architecture Invariant:** L1 application crate. Allowed dependencies:
+//! `jackin-core`, `jackin-config`, `jackin-protocol`, `jackin-diagnostics`.
+//! Operator-env types (`PromptResult`, `OpCache`) live here in the
+//! domain/infra layer so presentation crates (`jackin-launch-tui`,
+//! `jackin-console`) reach them through `jackin-env` rather than reaching
+//! into each other.
 
 pub mod env_layer;
 pub mod env_resolver;
@@ -15,6 +22,9 @@ pub mod parse_helpers;
 pub mod picker;
 pub mod resolve;
 pub mod token_setup;
+
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 
 pub use env_layer::{EnvLayer, merge_layers};
 pub use env_resolver::{

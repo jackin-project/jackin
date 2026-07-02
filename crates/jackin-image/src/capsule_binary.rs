@@ -226,10 +226,6 @@ fn remove_with_debug_log(path: &Path) {
     }
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "sequential download pipeline; splitting would fragment the per-step cleanup logic"
-)]
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
     let base_url = base_download_url(version);

@@ -1,5 +1,10 @@
 //! jackin-term: owned terminal model for the jackin-capsule re-emitting PTY multiplexer.
 //!
+//! **Architecture Invariant:** L2 infrastructure crate. Allowed
+//! dependencies: `jackin-core`, `jackin-diagnostics`. Owned terminal-model
+//! crate — no presentation, no ratatui; only the model + diff surface that
+//! the capsule paints into its render target.
+//!
 //! See `README.md` for the full engineering rationale.
 //!
 //! ## Pipeline

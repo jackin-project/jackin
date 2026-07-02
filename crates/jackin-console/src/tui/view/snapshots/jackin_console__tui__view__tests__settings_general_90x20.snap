@@ -1,6 +1,6 @@
 ---
 source: crates/jackin-console/src/tui/view/tests.rs
-assertion_line: 992
+assertion_line: 977
 expression: rendered
 ---
  jackin❯  · settings                                                                      
@@ -22,4 +22,4 @@ expression: rendered
 │                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────┘
                                                                                           
-       ←→ switch tab   ⇥/↓ enter content   S save settings   Esc back · Ctrl-Q quit
+       ←/→ switch tab   ⇥/↓ enter content   S save settings   Esc back · Ctrl-Q quit

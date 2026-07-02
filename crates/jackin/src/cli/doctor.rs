@@ -3,8 +3,8 @@ use owo_colors::OwoColorize;
 
 use crate::cli::BANNER;
 use crate::cli::format::OutputFormat;
-use crate::paths::JackinPaths;
 use crate::preflight::{CheckName, CheckResult, CheckStatus, run_check};
+use jackin_core::JackinPaths;
 
 /// `jackin doctor` — run pre-flight health checks and print a status table.
 #[derive(Debug, Args, PartialEq, Eq)]

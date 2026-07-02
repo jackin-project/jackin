@@ -5,14 +5,14 @@
 use crossterm::event::KeyEvent;
 
 use super::InputOutcome;
-use crate::tui::app::{
+use crate::tui::components::file_browser::page_rows_for_modal;
+use crate::tui::model::{
     CreatePreludeFileBrowserPlan, CreatePreludeKeyPlan, CreatePreludeModalStep,
     CreatePreludeMountDstChoicePlan, CreatePreludeTextInputDstPlan, CreatePreludeTextInputNamePlan,
     CreatePreludeWorkdirPickPlan, create_prelude_file_browser_plan, create_prelude_key_plan,
     create_prelude_mount_dst_choice_plan, create_prelude_text_input_dst_plan,
     create_prelude_text_input_name_plan, create_prelude_workdir_pick_plan,
 };
-use crate::tui::components::file_browser::page_rows_for_modal;
 use crate::tui::screens::workspaces::view::{
     create_prelude_mount_destination_default, create_prelude_mount_destination_input_state,
     create_prelude_mount_dst_choice_state, create_prelude_workdir_pick_state,
@@ -46,10 +46,6 @@ pub fn handle_prelude_key(
     InputOutcome::Continue
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub fn handle_prelude_modal(
     prelude: &mut crate::tui::state::CreatePreludeState<'_>,
     key: KeyEvent,

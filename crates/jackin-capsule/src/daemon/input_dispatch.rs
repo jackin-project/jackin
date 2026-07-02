@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Input dispatch methods for the Multiplexer.
 
 use std::sync::Arc;
@@ -39,7 +40,7 @@ impl Multiplexer {
             );
             return;
         }
-        if !jackin_core::url_text::is_host_open_url(&url) {
+        if !jackin_tui::url_text::is_host_open_url(&url) {
             self.set_clipboard_image_notice(
                 "Host link rejected: unsupported URL scheme".to_owned(),
             );
@@ -365,6 +366,20 @@ impl Multiplexer {
         self.invalidate(FullRedrawReason::DialogChange);
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Action dispatcher with one arm per multiplexed `Action` variant — \
+              each arm applies its focused state mutation. Extracting arms into \
+              sub-dispatchers would require re-borrowing the multiplexer state \
+              across fn boundaries and obscure the per-action readability."
+    )]
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Action dispatcher already accepted too_many_lines + too_many_lines \
+              allows: per-action arm with nested `match` over sub-actions + \
+              optional `dialog_top_mut` + scroll state nested. The nesting is the \
+              per-action-arm dispatch protocol."
+    )]
     pub(super) fn apply_action(&mut self, action: Action) {
         match action {
             Action::OpenPalette => {

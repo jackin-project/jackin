@@ -230,7 +230,7 @@ Copy rather than symlink: Codex does not reliably follow symlinked config files 
 Write **only** these single files. Never overwrite `~/.claude/settings.json` or COPY the `.claude/` directory wholesale — the caveman installer's hooks and the build's `test -f` smoke checks depend on that state (this is also why codedb's installer is skipped).
 
 <Aside type="caution">
-**A global guidance file now exists — merge into it, do not COPY a second one.** The token-optimisation stack (caveman + RTK + headroom, shipped separately in the-architect) already writes a single `token-optimization.md` to `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.config/amp/AGENTS.md`, `~/.kimi-code/AGENTS.md`, and `~/.grok/AGENTS.md`. A second `COPY code-intelligence.md` to any of those same paths would clobber it (last `COPY` wins) and break the `sha256sum` smoke check below — the earlier "no global `~/.claude/CLAUDE.md` exists" assumption no longer holds. **Decision: consolidate.** The code-intelligence router becomes a section *appended into that one guidance file* (one source → every runtime path), not a competing file. Reconcile the per-runtime path list with the stack's: `amp` reads `~/.config/amp/AGENTS.md` (not `~/.config/AGENTS.md`), `opencode`'s `AGENTS.md` is owned by the caveman plugin, and `kimi` reads `~/.kimi-code/AGENTS.md`.
+**A global guidance file now exists — merge into it, do not COPY a second one.** The token-optimisation stack (caveman + RTK + headroom, shipped separately in the-architect) already writes a single `token-optimization.md` to `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.config/amp/AGENTS.md`, `~/.kimi-code/AGENTS.md`, and `~/.grok/AGENTS.md`. A second `COPY code-intelligence.md` to any of those same paths would clobber it (last `COPY` wins) and break the `sha256sum` smoke check below — the earlier "no global `~/.claude/CLAUDE.md` exists" assumption no longer holds. **Decision: consolidate.** The code-intelligence router becomes a section *appended into that one guidance file* (one source → every runtime path), not a competing file. Reconcile the per-runtime path list with the stack's: `amp` reads `~/.config/amp/AGENTS.md` (not `~/.config/AGENTS.md`), `opencode`'s <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> is owned by the caveman plugin, and `kimi` reads `~/.kimi-code/AGENTS.md`.
 </Aside>
 
 ```dockerfile
@@ -250,9 +250,9 @@ Global-instructions path per runtime — each is a copy of the one consolidated 
 
 | Runtime | Global path | Wiring |
 |---|---|---|
-| `amp` | `~/.config/amp/AGENTS.md` | copy (native `AGENTS.md`) |
+| `amp` | `~/.config/amp/AGENTS.md` | copy (native <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>) |
 | `claude` | `~/.claude/CLAUDE.md` | copy |
-| `codex` | `~/.codex/AGENTS.md` | copy (native `AGENTS.md`) |
+| `codex` | `~/.codex/AGENTS.md` | copy (native <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>) |
 | `grok` | `~/.grok/AGENTS.md` | copy (read as a global instruction) |
 | `opencode` | — | caveman plugin owns `~/.config/opencode/AGENTS.md`; do not COPY here |
 | `kimi` | `~/.kimi-code/AGENTS.md` | copy (note: auto-load reliability varies post-v1.29.0 — kimi#850; add `~/.agents/AGENTS.md` as a cross-tool fallback) |

@@ -38,8 +38,8 @@ Run Docker-backed smoke tests:
 cargo nextest run -p jackin --features e2e --profile docker-e2e
 ```
 
-In PR checkouts, run `cargo xtask pr prepare <PR_NUMBER> --capsule` and source
-the generated `env.sh` first. Outside the PR prepare flow, use
+In PR checkouts, run `jackin-dev pr sync <PR_NUMBER>` and source
+`$(jackin-dev pr path <PR_NUMBER>)/env.sh` first. Outside the PR sync flow, use
 `eval "$(cargo run --bin build-jackin-capsule -- --export)"` before the
 Docker-backed smoke command.
 

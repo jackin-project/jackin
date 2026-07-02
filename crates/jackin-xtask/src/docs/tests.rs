@@ -106,6 +106,156 @@ fn validate_tree_resolves_group_and_parent_cross_refs() {
     );
 }
 
+fn repo_link_fixture(page_body: &str) -> tempfile::TempDir {
+    let repo = tempfile::tempdir().unwrap();
+    let root = repo.path();
+    write(
+        &root.join("crates/jackin-host/src/host_desktop.rs"),
+        "pub fn open() {}\n",
+    );
+    write(&root.join("Cargo.toml"), "[workspace]\n");
+    write(&root.join("docs/content/docs/guide.mdx"), page_body);
+    repo
+}
+
+#[test]
+fn repo_links_scan_root_and_docs_markdown_files() {
+    let repo = repo_link_fixture("---\ntitle: Guide\n---\n");
+    let root = repo.path();
+    write(
+        &root.join("docs/AGENTS.md"),
+        "See `crates/jackin-host/src/host_desktop.rs`.\n",
+    );
+    write(
+        &root.join("PROJECT_STRUCTURE.md"),
+        "See `crates/jackin-host/src/host_desktop.rs`.\n",
+    );
+
+    let err = check_repo_links_in(root, &root.join(DOCS_ROOT))
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        err.contains("docs/AGENTS.md") && err.contains("PROJECT_STRUCTURE.md"),
+        "should include docs markdown outside content/docs: {err}"
+    );
+}
+
+#[test]
+fn repo_links_reject_repo_file_component_outside_fumadocs_content() {
+    let repo = repo_link_fixture("---\ntitle: Guide\n---\n");
+    let root = repo.path();
+    write(
+        &root.join("docs/AGENTS.md"),
+        "See <RepoFile path=\"crates/jackin-host/src/host_desktop.rs\" />.\n",
+    );
+
+    let err = check_repo_links_in(root, &root.join(DOCS_ROOT))
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        err.contains("<RepoFile> is only allowed under docs/content/docs"),
+        "should reject Fumadocs-only component outside Fumadocs content: {err}"
+    );
+}
+
+#[test]
+fn repo_links_ignore_docs_local_paths_that_are_not_repo_files() {
+    let repo = repo_link_fixture(
+        "---\ntitle: Guide\n---\n\nSee `crates/jackin-host/src/host_desktop.rs`.\n",
+    );
+    write(
+        &repo.path().join("docs/AGENTS.md"),
+        "Docs source lives in `src/lib/source.ts`.\n",
+    );
+
+    let err = check_repo_links_in(repo.path(), &repo.path().join(DOCS_ROOT))
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        err.contains("docs/content/docs/guide.mdx") && !err.contains("docs/AGENTS.md"),
+        "should not treat docs-local paths as repo-root files: {err}"
+    );
+}
+
+#[test]
+fn repo_links_reject_inline_code_repo_paths() {
+    let repo = repo_link_fixture(
+        "---\ntitle: Guide\n---\n\nSee `crates/jackin-host/src/host_desktop.rs`.\n",
+    );
+
+    let err = check_repo_links_in(repo.path(), &repo.path().join(DOCS_ROOT))
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        err.contains("link existing repo file")
+            && err.contains("crates/jackin-host/src/host_desktop.rs"),
+        "should flag raw inline repo path: {err}"
+    );
+}
+
+#[test]
+fn repo_links_accept_repo_file_component_and_markdown_link_text() {
+    let repo = repo_link_fixture(
+        "---\ntitle: Guide\n---\n\n\
+         See <RepoFile path=\"crates/jackin-host/src/host_desktop.rs\">crates/jackin-host/src/host_desktop.rs</RepoFile>.\n\
+         [`Cargo.toml`](../../Cargo.toml) is regular Markdown.\n",
+    );
+
+    check_repo_links_in(repo.path(), &repo.path().join(DOCS_ROOT)).unwrap();
+}
+
+#[test]
+fn repo_links_reject_missing_repo_file_component_path() {
+    let repo = repo_link_fixture(
+        "---\ntitle: Guide\n---\n\n\
+         See <RepoFile path=\"crates/jackin-host/src/missing.rs\" />.\n",
+    );
+
+    let err = check_repo_links_in(repo.path(), &repo.path().join(DOCS_ROOT))
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        err.contains("RepoFile path does not exist")
+            && err.contains("crates/jackin-host/src/missing.rs"),
+        "should flag missing RepoFile path: {err}"
+    );
+}
+
+#[test]
+fn repo_links_reject_repo_file_component_traversal() {
+    let repo = repo_link_fixture(
+        "---\ntitle: Guide\n---\n\n\
+         See <RepoFile path=\"docs/content/docs/../../Cargo.toml\" />.\n",
+    );
+
+    let err = check_repo_links_in(repo.path(), &repo.path().join(DOCS_ROOT))
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        err.contains("RepoFile path does not exist")
+            && err.contains("docs/content/docs/../../Cargo.toml"),
+        "should reject non-normal repo paths: {err}"
+    );
+}
+
+#[test]
+fn repo_links_ignore_code_fences() {
+    let repo = repo_link_fixture(
+        "---\ntitle: Guide\n---\n\n\
+         ```text\n\
+         crates/jackin-host/src/host_desktop.rs\n\
+         ```\n",
+    );
+
+    check_repo_links_in(repo.path(), &repo.path().join(DOCS_ROOT)).unwrap();
+}
+
 #[test]
 fn change_new_in_scaffolds_and_registers() {
     let roadmap = tempfile::tempdir().unwrap();
@@ -176,15 +326,9 @@ fn research_scaffold_in_creates_dossier_and_registers() {
 
 #[test]
 fn line_references_slug_is_boundary_safe() {
-    assert!(line_references_slug(
-        "see /reference/roadmap/auth/ for",
-        "auth"
-    ));
+    assert!(line_references_slug("see /roadmap/auth/ for", "auth"));
     assert!(line_references_slug("    \"../auth\"", "auth"));
-    assert!(!line_references_slug(
-        "/reference/roadmap/auth-health/",
-        "auth"
-    ));
+    assert!(!line_references_slug("/roadmap/auth-health/", "auth"));
     assert!(!line_references_slug("nothing here", "auth"));
 }
 
@@ -194,11 +338,11 @@ fn roadmap_fixture(extra: &[(&str, &str)]) -> tempfile::TempDir {
     let docs = tempfile::tempdir().unwrap();
     let d = docs.path();
     write_meta_mk(
-        &d.join("reference/roadmap/(grp)/meta.json"),
+        &d.join("roadmap/(grp)/meta.json"),
         &json!({ "pages": ["../shipme"] }),
     );
     write(
-        &d.join("reference/roadmap/shipme.mdx"),
+        &d.join("roadmap/shipme.mdx"),
         "---\ntitle: Ship Me\n---\n\n**Status**: Open\n\n## Problem\n\nbody\n",
     );
     for (rel, body) in extra {
@@ -221,11 +365,8 @@ fn retire_apply_removes_entry_and_page_when_clean() {
         },
     )
     .expect("clean retire should succeed");
-    assert!(
-        !d.join("reference/roadmap/shipme.mdx").exists(),
-        "page deleted"
-    );
-    let meta = read_meta(&d.join("reference/roadmap/(grp)/meta.json")).unwrap();
+    assert!(!d.join("roadmap/shipme.mdx").exists(), "page deleted");
+    let meta = read_meta(&d.join("roadmap/(grp)/meta.json")).unwrap();
     assert!(
         meta["pages"].as_array().unwrap().is_empty(),
         "sidebar entry dropped"
@@ -236,7 +377,7 @@ fn retire_apply_removes_entry_and_page_when_clean() {
 fn retire_apply_fails_on_dangling_inbound_link() {
     let docs = roadmap_fixture(&[(
         "guides/foo.mdx",
-        "---\ntitle: F\n---\n\nSee [the work](/reference/roadmap/shipme/).\n",
+        "---\ntitle: F\n---\n\nSee [the work](/roadmap/shipme/).\n",
     )]);
     let err = roadmap_retire(
         docs.path(),
@@ -255,18 +396,15 @@ fn retire_apply_fails_on_dangling_inbound_link() {
     );
     // Fail-closed: nothing is mutated when the gate trips.
     let d = docs.path();
-    assert!(
-        d.join("reference/roadmap/shipme.mdx").exists(),
-        "page must survive"
-    );
-    let meta = read_meta(&d.join("reference/roadmap/(grp)/meta.json")).unwrap();
+    assert!(d.join("roadmap/shipme.mdx").exists(), "page must survive");
+    let meta = read_meta(&d.join("roadmap/(grp)/meta.json")).unwrap();
     assert_eq!(meta["pages"][0], "../shipme", "sidebar entry must survive");
 }
 
 #[test]
 fn retire_partial_sets_status_and_keeps_page() {
     let docs = roadmap_fixture(&[]);
-    let item = docs.path().join("reference/roadmap/shipme.mdx");
+    let item = docs.path().join("roadmap/shipme.mdx");
     roadmap_retire(
         docs.path(),
         RoadmapRetireArgs {

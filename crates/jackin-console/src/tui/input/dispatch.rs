@@ -18,11 +18,11 @@ use super::list::{
 };
 use super::prelude::{PreludeModalOutcome, handle_prelude_key, handle_prelude_modal};
 use super::save::begin_editor_save;
-use crate::tui::app::{
+use crate::tui::effect::{ConsoleEffect, FileBrowserEffectContext};
+use crate::tui::model::{
     ConsoleInputDispatchFacts, ConsoleInputDispatchPlan, ConsoleManagerStageRoute,
     CreatePreludeCompletionStatus, console_input_dispatch_plan, create_prelude_completion_status,
 };
-use crate::tui::effect::{ConsoleEffect, FileBrowserEffectContext};
 use crate::tui::screens::workspaces::update::{
     InstancePurgeKeyPlan, WorkspaceDeleteKeyPlan, instance_purge_key_plan,
     workspace_delete_key_plan,
@@ -34,9 +34,12 @@ use crate::tui::update::{DismissibleModalPlan, dismissible_modal_plan};
 type ValidateAuthSourceFolder =
     dyn Fn(Option<crate::tui::auth::AuthKind>, &std::path::Path) -> Result<(), String>;
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
+    reason = "Top-level input dispatcher handling every per-stage key binding \
+              inline. Each stage's arm carries its own focused state transition; \
+              extracting arms into sub-dispatchers would require re-borrowing \
+              state + config across fn boundaries."
 )]
 pub fn handle_key(
     state: &mut ManagerState<'_>,

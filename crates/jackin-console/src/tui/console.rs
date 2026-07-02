@@ -8,7 +8,7 @@ use jackin_config::{AppConfig, LoadWorkspaceInput};
 use jackin_core::RoleSelector;
 use jackin_env::OpCache;
 
-use crate::tui::app::{ConsoleApp, ConsoleAppStage};
+use crate::tui::model::{ConsoleApp, ConsoleAppStage};
 use crate::tui::state::ManagerState;
 
 pub type ConsoleStage = ConsoleAppStage<ManagerState<'static>>;

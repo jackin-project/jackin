@@ -115,7 +115,7 @@ Every fresh launch gets a unique DNS-safe instance identity. Existing running or
 
 ### Capsule supervisor and session model
 
-Every role container runs the jackin❯ Capsule (<RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile>) as PID 1. In daemon mode it reaps children, manages PTYs, renders the multiplexer, and serves the socket API. `SIGTERM` / `SIGINT` trigger orderly shutdown, and the daemon exits when the last live session ends so Docker reports a clean container exit. The full Capsule design is documented in [jackin❯ Capsule](/reference/capsule//).
+Every role container runs the jackin❯ Capsule (<RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile>) as PID 1. In daemon mode it reaps children, manages PTYs, renders the multiplexer, and serves the socket API. `SIGTERM` / `SIGINT` trigger orderly shutdown, and the daemon exits when the last live session ends so Docker reports a clean container exit. The full Capsule design is documented in [jackin❯ Capsule](/reference/capsule/).
 
 Sessions are daemon-owned PTYs inside the running container. All agent sessions are equal — there is no "primary" or "secondary" distinction.
 
@@ -344,7 +344,7 @@ When this list drifts from <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>, <R
 
 ## Async architecture and the "no blocking on the render thread" rule
 
-Both the host CLI (`crates/jackin/src/main.rs`) and the capsule daemon (`crates/jackin-capsule/src/main.rs`) run on a **`current_thread` Tokio runtime**. The render/event loop and all spawned tasks share a single OS thread. This is intentional:
+Both the host CLI (<RepoFile path="crates/jackin/src/main.rs">crates/jackin/src/main.rs</RepoFile>) and the capsule daemon (<RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile>) run on a **`current_thread` Tokio runtime**. The render/event loop and all spawned tasks share a single OS thread. This is intentional:
 
 - The host CLI holds `!Send` terminal raw-mode state and signal handlers that must stay on the OS main thread.
 - The capsule daemon's multiplexer loop, PTY readers, and socket accept loop communicate via `mpsc` channels — the single-thread model prevents data races without locking.
@@ -361,7 +361,7 @@ Both the host CLI (`crates/jackin/src/main.rs`) and the capsule daemon (`crates/
 
 `spawn_blocking` works on the `current_thread` runtime — it uses Tokio's separate blocking thread pool, so the runtime thread keeps polling the render task while the blocking work runs elsewhere.
 
-**Known open sites (Defect 43).** A small number of blocking calls remain in the provisioning path. The highest-priority one is `RoleState::prepare` in <RepoFile path="crates/jackin-runtime/src/instance.rs">crates/jackin-runtime/src/instance.rs</RepoFile>, which runs `gh` CLI, macOS keychain (`security`), and filesystem copies directly on the async provisioning task — and is therefore the most likely rain-freeze cause when git auth or 1Password are involved. Wrap it in `spawn_blocking` and clone the necessary inputs for the closure. Subsequent conversions: `op_cli.rs` poll loops, and any remaining `std::process::Command` in async-reachable paths.
+**Known open sites (Defect 43).** A small number of blocking calls remain in the provisioning path. The highest-priority one is `RoleState::prepare` in <RepoFile path="crates/jackin-instance/src/lib.rs">crates/jackin-instance/src/lib.rs</RepoFile>, which runs `gh` CLI, macOS keychain (`security`), and filesystem copies directly on the async provisioning task — and is therefore the most likely rain-freeze cause when git auth or 1Password are involved. Wrap it in `spawn_blocking` and clone the necessary inputs for the closure. Subsequent conversions: `op_cli.rs` poll loops, and any remaining `std::process::Command` in async-reachable paths.
 
 **Parallelism: `try_join!` for independent stages.** The launch pipeline in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile> already uses `tokio::join!` for some independent steps. The pattern is `try_join!(stage_a, stage_b)` for stages with no data dependency, so they run concurrently while the render task keeps ticking. Each stage emits its own `stage_started` / `stage_done` events to the progress channel; the shared-state mutex in `SharedView` handles out-of-order updates already. Extending this to more stage groups is incremental and safe.
 
@@ -369,7 +369,7 @@ Both the host CLI (`crates/jackin/src/main.rs`) and the capsule daemon (`crates/
 
 Adding a new agent runtime or provider must be one registration, not N call-site edits. This is enforced through two sealed adapter registries.
 
-**`AgentRuntime` trait** (`crates/jackin-core/src/agent/runtime.rs`). Every agent variant (`claude`, `codex`, `amp`, `kimi`, `opencode`) is represented by a zero-sized adapter struct that implements `AgentRuntime`. `Agent::runtime()` returns `&'static dyn AgentRuntime` — a compile-time-known dispatch point. Adding a sixth built-in runtime means adding the enum variant, adapter file, registry entry, and the small number of centralized named-field accessor rows that remain because the public TOML schemas still expose named agent sections.
+**`AgentRuntime` trait** (<RepoFile path="crates/jackin-core/src/agent/runtime.rs">crates/jackin-core/src/agent/runtime.rs</RepoFile>). Every agent variant (`claude`, `codex`, `amp`, `kimi`, `opencode`) is represented by a zero-sized adapter struct that implements `AgentRuntime`. `Agent::runtime()` returns `&'static dyn AgentRuntime` — a compile-time-known dispatch point. Adding a sixth built-in runtime means adding the enum variant, adapter file, registry entry, and the small number of centralized named-field accessor rows that remain because the public TOML schemas still expose named agent sections.
 
 Key trait methods:
 - `slug() / label()` — wire identifier and display name.
@@ -379,7 +379,7 @@ Key trait methods:
 - `state_paths()` — `AgentStatePaths { credential_dir, credential_file, folder_env_var }` — the per-agent credential location on the host and the environment hint for the operator. Used by provisioning and by `sync_source_dir` resolution.
 - `parse_version(output)` — parses `--version` stdout to extract a semver string, replacing five per-agent branches.
 
-**`ProviderAdapter` trait** (`crates/jackin-protocol/src/provider_adapter.rs`). Same sealed pattern for providers (Anthropic, Zai, MiniMax, Kimi). `Provider::adapter()` returns `&'static dyn ProviderAdapter`. `Provider::available_for(agent_slug, has_key: impl Fn(Provider) -> bool)` replaces the four-positional-bool form.
+**`ProviderAdapter` trait** (<RepoFile path="crates/jackin-protocol/src/provider_adapter.rs">crates/jackin-protocol/src/provider_adapter.rs</RepoFile>). Same sealed pattern for providers (Anthropic, Zai, MiniMax, Kimi). `Provider::adapter()` returns `&'static dyn ProviderAdapter`. `Provider::available_for(agent_slug, has_key: impl Fn(Provider) -> bool)` replaces the four-positional-bool form.
 
 Key trait methods:
 - `label()` — display name.

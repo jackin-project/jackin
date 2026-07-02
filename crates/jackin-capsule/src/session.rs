@@ -1,11 +1,18 @@
-//! Per-agent PTY session: spawn, resize, write input, read output, and track
-//! session state for the daemon.
-//!
-//! Not responsible for: attach-client I/O, socket framing, or daemon
-//! multiplexing logic.
-//!
-//! Key invariant: the session's `DamageGrid` is the single source of truth
-//! for re-rendering on tab/pane switch and client reattach.
+// Per-agent PTY session: spawn, resize, write input, read output, and track
+// session state for the daemon.
+
+#[path = "session/osc_policy.rs"]
+mod osc_policy;
+
+#[allow(unused_imports, unreachable_pub)]
+pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
+
+//
+// Not responsible for: attach-client I/O, socket framing, or daemon
+// multiplexing logic.
+//
+// Key invariant: the session's `DamageGrid` is the single source of truth
+// for re-rendering on tab/pane switch and client reattach.
 
 /// PTY session: one PTY + one `DamageGrid` + state-inference timer.
 ///
@@ -37,7 +44,7 @@ use tokio::sync::mpsc;
 use crate::agent_status::SessionStatus;
 use crate::protocol::AgentState;
 use crate::pull_request::PullRequestInfo;
-use crate::tui::render::RowSnapshot;
+use crate::tui::pane_snapshot::RowSnapshot;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -88,118 +95,6 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
 /// `file://`, and anything else are dropped — a compromised agent
 /// could otherwise script the operator's terminal emulator or
 /// reference operator-side files on click.
-pub(crate) fn osc8_uri_is_safe(uri: &str) -> bool {
-    if uri.is_empty() {
-        return true;
-    }
-    // Byte-level case-insensitive prefix match so this stays allocation-free:
-    // the frame hyperlink-region builder calls it per linked cell every frame,
-    // and a `to_ascii_lowercase()` here would heap-allocate each call.
-    let bytes = uri.trim().as_bytes();
-    [b"http://".as_slice(), b"https://", b"mailto:"]
-        .iter()
-        .any(|scheme| {
-            bytes
-                .get(..scheme.len())
-                .is_some_and(|head| head.eq_ignore_ascii_case(scheme))
-        })
-}
-
-/// Parse an `OSC 7` payload into a local-filesystem path. `OSC 7`
-/// canonically arrives as `file://<host>/<percent-encoded-path>`;
-/// `url::Url` does the percent-decoding and host-stripping in one
-/// pass. Returns `None` for any payload that does not parse as a
-/// `file://` URL — silently trusting arbitrary text would let an
-/// agent overwrite the pane title with whatever it pleased.
-fn parse_osc7(payload: &str) -> Option<String> {
-    let url = url::Url::parse(payload).ok()?;
-    if url.scheme() != "file" {
-        return None;
-    }
-    url.to_file_path()
-        .ok()
-        .map(|p| p.to_string_lossy().into_owned())
-}
-
-/// Per-OSC operator opt-out switches. All default to `allow`; the
-/// values `deny`, `off`, `no` (case-sensitive) turn the matching
-/// passthrough off when the operator runs an untrusted role. tmux
-/// exposes the same family as `set-clipboard on|off` plus
-/// `allow-passthrough` for OSC; jackin keeps the surface per-OSC so
-/// the operator can leave the agent's terminal title alone but block
-/// notification spam, or vice versa.
-const ENV_OSC52: &str = "JACKIN_OSC52";
-const ENV_OSC_TITLE: &str = "JACKIN_OSC_TITLE";
-const ENV_OSC_NOTIFY: &str = "JACKIN_OSC_NOTIFY";
-const ENV_OSC_HYPERLINK: &str = "JACKIN_OSC_HYPERLINK";
-
-#[derive(Debug, Clone, Copy)]
-pub struct OscPolicy {
-    allow_title: bool,
-    allow_osc52: bool,
-    allow_notify: bool,
-    allow_hyperlink: bool,
-}
-
-impl Default for OscPolicy {
-    fn default() -> Self {
-        Self {
-            allow_title: true,
-            allow_osc52: true,
-            allow_notify: true,
-            allow_hyperlink: true,
-        }
-    }
-}
-
-impl OscPolicy {
-    /// Read policy from environment. Cached at `Session::spawn` time so a
-    /// background pane cannot toggle the gate at runtime by `export`ing
-    /// into a focused shell.
-    pub fn from_env() -> Self {
-        Self {
-            allow_title: !is_env_deny(ENV_OSC_TITLE),
-            allow_osc52: !is_env_deny(ENV_OSC52),
-            allow_notify: !is_env_deny(ENV_OSC_NOTIFY),
-            allow_hyperlink: !is_env_deny(ENV_OSC_HYPERLINK),
-        }
-    }
-
-    pub fn allow_title(self) -> bool {
-        self.allow_title
-    }
-    pub fn allow_osc52(self) -> bool {
-        self.allow_osc52
-    }
-    pub fn allow_notify(self) -> bool {
-        self.allow_notify
-    }
-    pub fn allow_hyperlink(self) -> bool {
-        self.allow_hyperlink
-    }
-
-    /// Test-only constructor with every passthrough gate closed.
-    /// Production code must call `from_env()`; the `#[doc(hidden)]`
-    /// attribute hides this from rustdoc and the `for_test_` prefix
-    /// flags intent to readers. Cargo cannot list a crate in its own
-    /// `[dev-dependencies]` with a feature flag, so a `#[cfg(feature
-    /// = "test-helpers")]` gate would break the default `cargo test`
-    /// invocation that integration tests rely on.
-    #[doc(hidden)]
-    pub fn for_test_deny_all() -> Self {
-        Self {
-            allow_title: false,
-            allow_osc52: false,
-            allow_notify: false,
-            allow_hyperlink: false,
-        }
-    }
-}
-
-fn is_env_deny(name: &str) -> bool {
-    matches!(std::env::var(name).as_deref(), Ok("deny" | "off" | "no"))
-}
-
 pub fn next_id() -> u64 {
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
@@ -500,6 +395,19 @@ pub struct SessionTerminal {
 }
 
 impl Session {
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Session spawn wires PTY + child handle + agent + env into the \
+                  multiplexer state. The nested `is_err` + `crate::clog!` + state- \
+                  update branches are the per-stage error-reporting protocol."
+    )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Same justification as the too_many_lines + excessive_nesting \
+              allows: session spawn wires PTY + child handle + agent + env into \
+              the multiplexer state. Inline shape preserves captured-runtime \
+              state across the per-stage error-reporting branches."
+    )]
     pub fn spawn(
         label: impl Into<String>,
         agent: Option<String>,
@@ -826,7 +734,7 @@ impl Session {
     }
 
     pub(crate) fn render_content_snapshot(&self, viewport_cols: u16) -> Vec<RowSnapshot> {
-        crate::tui::render::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
+        crate::tui::pane_snapshot::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
     }
 
     pub(crate) fn diagnostic_tail(&self, max_rows: usize) -> Option<String> {
@@ -1635,6 +1543,10 @@ fn inject_status_env(cmd: &mut CommandBuilder, session_id: u64, agent: Option<&s
             "JACKIN_STATUS_SOURCE",
             format!("hook-{runtime}-{session_id}"),
         );
+    } else {
+        cmd.env_remove("JACKIN_SESSION_ID");
+        cmd.env_remove("JACKIN_AGENT_RUNTIME");
+        cmd.env_remove("JACKIN_STATUS_SOURCE");
     }
 }
 

@@ -5,7 +5,7 @@ description: Technical reference for how jackin❯ creates, manages, and tears d
 
 ## Overview
 
-Every role container runs the jackin❯ Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/jackin/run/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /jackin/runtime/jackin-capsule` client. See [jackin❯ Capsule](/reference/capsule//) for the control-plane design and wire protocol.
+Every role container runs the jackin❯ Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/jackin/run/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /jackin/runtime/jackin-capsule` client. See [jackin❯ Capsule](/reference/capsule/) for the control-plane design and wire protocol.
 
 There are two session types:
 
@@ -108,7 +108,7 @@ The debug capsule uses `[profile.capsule-debug]` in <RepoFile path="Cargo.toml">
 RUST_BACKTRACE=full cargo run --bin jackin -- load the-architect . --debug
 ```
 
-Set `RUST_BACKTRACE=full` so the panic hook's `Backtrace::force_capture()` in <RepoFile path="crates/jackin-capsule/src/logging.rs">crates/jackin-capsule/src/logging.rs</RepoFile> emits the full stack. The backtrace is written to `~/.jackin/data/<container>/state/multiplexer.log`; the diagnostics run log (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`) records the `capsule_log` path so you can locate it from the run id alone.
+Set `RUST_BACKTRACE=full` so the panic hook's `Backtrace::force_capture()` in <RepoFile path="crates/jackin-usage/src/logging.rs">crates/jackin-usage/src/logging.rs</RepoFile> emits the full stack. The backtrace is written to `~/.jackin/data/<container>/state/multiplexer.log`; the diagnostics run log (`~/.jackin/data/diagnostics/runs/<run-id>.jsonl`) records the `capsule_log` path so you can locate it from the run id alone.
 
 For a controlled symbolication smoke, set `JACKIN_CAPSULE_FORCE_PANIC=1` on the host launch. The host passes it through to the container only for that run; the capsule initializes logging first, then intentionally panics with a stable diagnostics message so the run JSONL's `capsule_log` path can be checked for resolved `crates/jackin-capsule/...` frames.
 

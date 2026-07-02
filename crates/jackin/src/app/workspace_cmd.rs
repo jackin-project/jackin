@@ -3,18 +3,22 @@
 use anyhow::Result;
 
 use crate::cli::{self, WorkspaceCommand};
-use crate::config::AppConfig;
-use crate::docker::ShellRunner;
-use crate::docker_client::BollardDockerClient;
-use crate::paths::JackinPaths;
-use crate::tui;
 use crate::workspace::{
     self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved, resolve_path,
 };
+use jackin_config::AppConfig;
+use jackin_core::JackinPaths;
+use jackin_docker::ShellRunner;
+use jackin_docker::docker_client::BollardDockerClient;
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
-    reason = "workspace command dispatcher — one match arm per WorkspaceCommand variant; further splitting would require passing context through many levels"
+    reason = "Workspace subcommand dispatch arms (Create / List / Show / Edit / \
+              AddMount / RemoveMount / SetDefaultRole / SetDefaultAgent / \
+              PruneDead...) each carry their own focused work; extracting each \
+              arm into its own helper would push the dispatcher into a fn-of-fns \
+              shape with the same overall body. Body remains ~187 lines until a \
+              follow-up slice extracts the largest arms."
 )]
 pub(super) async fn handle(
     command: WorkspaceCommand,
@@ -51,11 +55,11 @@ pub(super) async fn handle(
                 let removed_list: Vec<String> = plan
                     .collapsed
                     .iter()
-                    .map(|r| tui::shorten_home(&r.child.src))
+                    .map(|r| jackin_core::shorten_home(&r.child.src))
                     .collect();
                 // Parent paths in a single create are all the same set; pick
                 // the first for the summary headline.
-                let parent = tui::shorten_home(&plan.collapsed[0].covered_by.src);
+                let parent = jackin_core::shorten_home(&plan.collapsed[0].covered_by.src);
                 eprintln!(
                     "collapsed {} redundant mount(s) under {parent}: {}",
                     plan.collapsed.len(),
@@ -64,7 +68,7 @@ pub(super) async fn handle(
             }
             let mount_count = plan.final_mounts.len();
             let ws = WorkspaceConfig {
-                version: crate::config::CURRENT_WORKSPACE_VERSION.to_owned(),
+                version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
                 workdir: expanded_workdir,
                 mounts: plan.final_mounts,
                 allowed_roles,
@@ -88,12 +92,12 @@ pub(super) async fn handle(
                 dirty_exit_policy: None,
                 docker: None,
             };
-            let mut editor = crate::config::ConfigEditor::open(paths)?;
+            let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.create_workspace(&name, ws)?;
             editor.save()?;
             println!(
                 "Created workspace {name:?} (workdir: {}, {mount_count} mount(s)).",
-                tui::shorten_home(&workdir)
+                jackin_core::shorten_home(&workdir)
             );
             Ok(())
         }
@@ -149,7 +153,7 @@ pub(super) async fn handle(
                     .iter()
                     .map(|(name, ws)| Row {
                         name: (*name).to_owned(),
-                        workdir: tui::shorten_home(&ws.workdir),
+                        workdir: jackin_core::shorten_home(&ws.workdir),
                         mounts: ws.mounts.len(),
                         allowed: if ws.allowed_roles.is_empty() {
                             "any role".to_owned()
@@ -164,7 +168,7 @@ pub(super) async fn handle(
                 table.with(Style::modern());
                 println!("{table}");
                 println!();
-                tui::hint("Run ", "jackin workspace show <name>", " for details.");
+                jackin_tui::output::hint("Run ", "jackin workspace show <name>", " for details.");
             }
             Ok(())
         }
@@ -263,8 +267,8 @@ pub(super) async fn handle(
                     .map(|r| {
                         format!(
                             "{} covered by {}",
-                            tui::shorten_home(&r.child.src),
-                            tui::shorten_home(&r.covered_by.src),
+                            jackin_core::shorten_home(&r.child.src),
+                            jackin_core::shorten_home(&r.covered_by.src),
                         )
                     })
                     .collect();
@@ -284,7 +288,7 @@ pub(super) async fn handle(
             // If there are any collapses to apply, prompt (or bail on
             // non-TTY without --yes).
             if !all_collapses.is_empty() && !assume_yes {
-                tui::require_interactive_stdin(
+                crate::prompt::require_interactive_stdin(
                     "refusing to collapse mounts without confirmation; pass --yes to proceed non-interactively",
                 )?;
 
@@ -294,7 +298,7 @@ pub(super) async fn handle(
                         plan.edit_driven_collapses.len()
                     );
                     for r in &plan.edit_driven_collapses {
-                        eprintln!("  • {}", tui::shorten_home(&r.child.src));
+                        eprintln!("  • {}", jackin_core::shorten_home(&r.child.src));
                     }
                 }
                 if !plan.pre_existing_collapses.is_empty() {
@@ -303,7 +307,7 @@ pub(super) async fn handle(
                         plan.pre_existing_collapses.len()
                     );
                     for r in &plan.pre_existing_collapses {
-                        eprintln!("  • {}", tui::shorten_home(&r.child.src));
+                        eprintln!("  • {}", jackin_core::shorten_home(&r.child.src));
                     }
                 }
                 eprintln!("These will be removed from the workspace.");
@@ -321,30 +325,30 @@ pub(super) async fn handle(
             // summary output, plus collapse lines).
             let mut changes: Vec<String> = Vec::new();
             if let Some(ref w) = workdir {
-                changes.push(format!("workdir → {}", tui::shorten_home(w)));
+                changes.push(format!("workdir → {}", jackin_core::shorten_home(w)));
             }
             for m in &upsert_mounts {
                 if all_collapses.iter().any(|r| r.child.dst == m.dst) {
                     continue;
                 }
                 if m.src == m.dst {
-                    changes.push(format!("added mount {}", tui::shorten_home(&m.src)));
+                    changes.push(format!("added mount {}", jackin_core::shorten_home(&m.src)));
                 } else {
                     changes.push(format!(
                         "added mount {} → {}",
-                        tui::shorten_home(&m.src),
-                        tui::shorten_home(&m.dst)
+                        jackin_core::shorten_home(&m.src),
+                        jackin_core::shorten_home(&m.dst)
                     ));
                 }
             }
             for dst in &remove_destinations {
-                changes.push(format!("removed mount {}", tui::shorten_home(dst)));
+                changes.push(format!("removed mount {}", jackin_core::shorten_home(dst)));
             }
             for r in &all_collapses {
                 changes.push(format!(
                     "collapsed {} under {}",
-                    tui::shorten_home(&r.child.src),
-                    tui::shorten_home(&r.covered_by.src)
+                    jackin_core::shorten_home(&r.child.src),
+                    jackin_core::shorten_home(&r.covered_by.src)
                 ));
             }
             if no_workdir_mount {
@@ -406,12 +410,14 @@ pub(super) async fn handle(
             // exist. Connecting first ensures the daemon is reachable
             // before we query it; skip the connection entirely when there
             // is nothing to check (common in fresh or test environments).
-            let has_records =
-                crate::isolation::state::list_records_for_workspace(&paths.data_dir, &name)
-                    .is_ok_and(|r| !r.is_empty());
+            let has_records = jackin_runtime::isolation::state::list_records_for_workspace(
+                &paths.data_dir,
+                &name,
+            )
+            .is_ok_and(|r| !r.is_empty());
             let detection = if has_records {
                 let docker = connect_docker()?;
-                crate::runtime::drift::detect_workspace_edit_drift(
+                jackin_runtime::runtime::drift::detect_workspace_edit_drift(
                     paths,
                     &name,
                     &prospective_mounts,
@@ -419,7 +425,7 @@ pub(super) async fn handle(
                 )
                 .await?
             } else {
-                crate::runtime::drift::DriftDetection::default()
+                jackin_runtime::runtime::drift::DriftDetection::default()
             };
             if !detection.running_containers.is_empty() {
                 anyhow::bail!(
@@ -442,7 +448,7 @@ pub(super) async fn handle(
                 }
                 for rec in &detection.stopped_records {
                     let container_dir = paths.data_dir.join(&rec.container_name);
-                    crate::isolation::cleanup::force_cleanup_isolated(
+                    jackin_runtime::isolation::cleanup::force_cleanup_isolated(
                         rec,
                         &container_dir,
                         &mut runner,
@@ -451,7 +457,7 @@ pub(super) async fn handle(
                 }
             }
 
-            let mut editor = crate::config::ConfigEditor::open(paths)?;
+            let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.edit_workspace(
                 &name,
                 WorkspaceEdit {
@@ -494,7 +500,7 @@ pub(super) async fn handle(
             }
 
             if !assume_yes {
-                tui::require_interactive_stdin(
+                crate::prompt::require_interactive_stdin(
                     "refusing to collapse mounts without confirmation; pass --yes to proceed non-interactively",
                 )?;
                 eprintln!(
@@ -504,8 +510,8 @@ pub(super) async fn handle(
                 for r in &plan.removed {
                     eprintln!(
                         "  • {} (covered by {})",
-                        tui::shorten_home(&r.child.src),
-                        tui::shorten_home(&r.covered_by.src),
+                        jackin_core::shorten_home(&r.child.src),
+                        jackin_core::shorten_home(&r.covered_by.src),
                     );
                 }
                 let confirmed = dialoguer::Confirm::new()
@@ -519,7 +525,7 @@ pub(super) async fn handle(
 
             let remove_dsts: Vec<String> =
                 plan.removed.iter().map(|r| r.child.dst.clone()).collect();
-            let mut editor = crate::config::ConfigEditor::open(paths)?;
+            let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.edit_workspace(
                 &name,
                 WorkspaceEdit {
@@ -535,7 +541,7 @@ pub(super) async fn handle(
             Ok(())
         }
         WorkspaceCommand::Remove { name } => {
-            let mut editor = crate::config::ConfigEditor::open(paths)?;
+            let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.remove_workspace(&name)?;
             editor.save()?;
             println!("Removed workspace {name:?}.");
@@ -552,7 +558,7 @@ pub(super) async fn handle(
                 if key.is_empty() {
                     anyhow::bail!("env var key cannot be empty");
                 }
-                if crate::env_model::is_reserved(&key) {
+                if jackin_core::env_model::is_reserved(&key) {
                     anyhow::bail!(
                         "env name {key:?} is reserved by the jackin runtime and cannot be set"
                     );
@@ -569,7 +575,7 @@ pub(super) async fn handle(
                 }
                 let env_value = super::config_cmd::resolve_env_value_for_cli(&value)?;
                 let scope = super::workspace_env_scope(workspace, role);
-                let mut editor = crate::config::ConfigEditor::open(paths)?;
+                let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 editor.set_env_var(&scope, &key, env_value)?;
                 if let Some(ref c) = comment {
                     editor.set_env_comment(&scope, &key, Some(c));
@@ -590,10 +596,10 @@ pub(super) async fn handle(
                 // CLAUDE_CODE_OAUTH_TOKEN under oauth_token mode is owned
                 // by the claude-token orchestrator; an unset here would
                 // silently break auth at the next launch.
-                if key == crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV
+                if key == jackin_env::CLAUDE_OAUTH_TOKEN_ENV
                     && role.is_none()
                     && ws.claude.as_ref().map(|c| c.auth_forward)
-                        == Some(crate::config::AuthForwardMode::OAuthToken)
+                        == Some(jackin_config::AuthForwardMode::OAuthToken)
                 {
                     anyhow::bail!(
                         "CLAUDE_CODE_OAUTH_TOKEN is managed by \
@@ -603,7 +609,7 @@ pub(super) async fn handle(
                     );
                 }
                 let scope = super::workspace_env_scope(workspace, role);
-                let mut editor = crate::config::ConfigEditor::open(paths)?;
+                let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 if editor.remove_env_var(&scope, &key) {
                     editor.save()?;
                     println!("Removed {key}.");

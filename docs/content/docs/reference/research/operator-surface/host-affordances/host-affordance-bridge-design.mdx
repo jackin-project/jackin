@@ -431,8 +431,8 @@ This makes export mechanically easy but violates the directionality that keeps t
 - Current terminal client behavior to preserve: <RepoFile path="crates/jackin-capsule/src/tui/run.rs" />, <RepoFile path="crates/jackin-capsule/src/tui/terminal.rs" />, <RepoFile path="crates/jackin-capsule/src/tui/host_colors.rs" />, and <RepoFile path="crates/jackin-capsule/src/tui/input.rs" />.
 - Pane input/output and OSC policy: <RepoFile path="crates/jackin-capsule/src/session.rs" />, <RepoFile path="crates/jackin-capsule/src/daemon.rs" />, and <RepoFile path="crates/jackin-capsule/src/daemon/mouse_input.rs" />.
 - GitHub context data and dialog UI: <RepoFile path="crates/jackin-capsule/src/pr_context.rs" />, <RepoFile path="crates/jackin-capsule/src/pull_request.rs" />, and <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs" />.
-- Existing host-private write posture reused conceptually for create-new, permissioned, symlink-safe writes: <RepoFile path="crates/jackin-runtime/src/instance/auth.rs" />. Credential-specific helpers were not reused directly as a generic export API without extracting the policy boundary.
-- Host clipboard readers and paste-path auto-stage: <RepoFile path="crates/jackin-runtime/src/runtime/host_clipboard.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/host_attach.rs" />.
+- Existing host-private write posture reused conceptually for create-new, permissioned, symlink-safe writes: <RepoFile path="crates/jackin-instance/src/auth.rs" />. Credential-specific helpers were not reused directly as a generic export API without extracting the policy boundary.
+- Host clipboard readers and paste-path auto-stage: <RepoFile path="crates/jackin-host/src/host_clipboard.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/host_attach.rs" />.
 - Command palette actions: <RepoFile path="crates/jackin-capsule/src/tui/components/palette.rs" />.
 
 ## Phasing

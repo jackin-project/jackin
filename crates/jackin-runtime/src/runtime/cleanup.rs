@@ -11,20 +11,20 @@
     reason = "runtime cleanup and GC report operator-visible warnings and results"
 )]
 
+use super::prune_output;
 use crate::instance::{DockerResources, InstanceIndex, InstanceManifest, InstanceStatus};
 use fs2::FileExt;
 use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::{ContainerState, DockerApi, RemoveImageOutcome};
-use jackin_tui::prune_output;
 use owo_colors::OwoColorize;
 
 use super::discovery::{list_managed_role_names, list_role_names};
 use super::naming::{
     LABEL_IMAGE_KEY, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, LABEL_ROLE_KEY,
-    dind_certs_volume, role_network_name,
 };
+use crate::instance::naming::{dind_certs_volume, role_network_name};
 
 pub async fn purge_class_data(
     paths: &JackinPaths,
@@ -711,7 +711,7 @@ pub async fn prune_all_instances(
     );
     exile_all(paths, docker).await?;
 
-    super::caffeinate::reconcile(paths, docker, runner).await;
+    jackin_host::caffeinate::reconcile(paths, docker, runner).await;
 
     let index = prune_output::start("Reading", "instance index")
         .complete(InstanceIndex::read_or_rebuild(&paths.data_dir), |error| {

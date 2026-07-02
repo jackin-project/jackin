@@ -59,12 +59,12 @@ The `change`, `research`, and `roadmap` families (source: <RepoFile path="crates
 | Command | What it does |
 | --- | --- |
 | `cargo xtask change new <slug> --group <group>` | Scaffold a roadmap item at `reference/roadmap/<slug>.mdx` (frontmatter, `**Status**: Open`, `Problem`/`Why It Matters`/`Design`/`Tasks`/`Related Files`) and register it as `../<slug>` in the named group's `meta.json`. `--title` overrides the title-cased default. |
-| `cargo xtask research scaffold <slug>` | Scaffold a research dossier at `research/<slug>/` with `index.mdx`, a `prompt.mdx` brief, a `meta.json` (`pages: ["index", "prompt"]`), and register the dossier in the parent `research/meta.json`. `--title` overrides the default. |
+| `cargo xtask research scaffold <slug>` | Scaffold a research dossier at `reference/research/<slug>/` with `index.mdx`, a `prompt.mdx` brief, a `meta.json` (`pages: ["index", "prompt"]`), and register the dossier in the parent `reference/research/meta.json`. `--title` overrides the default. |
 | `cargo xtask research check` | Validate every research `meta.json`: each `pages` entry resolves to a file/dir on disk, and no `.mdx` is orphaned. Non-zero exit on any problem. |
 | `cargo xtask roadmap audit` | Same validation for the roadmap subtree, including `(group)` folders and `../<slug>` cross-references. Non-zero exit on any problem. |
 | `cargo xtask roadmap retire <slug>` | Retire a shipped roadmap item. `--plan` (default) prints a read-only worklist — page content, inbound links, and the sidebar entry. `--apply` drops the `../<slug>` group entry, deletes the `.mdx`, runs the audit, and fails if any inbound link still resolves to it. `--partial` sets `**Status**: Partially implemented` and keeps the page. |
 
-`research check` is read-only and deterministic. Roadmap sidebar parity is already gated in CI by `bun run check:roadmap-sidebar` (in the docs workflow), so `roadmap audit` is the local equivalent rather than a second CI gate.
+`research check` is read-only and deterministic. Roadmap and research sidebar parity are both gated in CI by `cargo xtask roadmap audit` and `cargo xtask research check` in the docs workflow, so those commands are the local equivalents.
 
 ## Schema migration gate
 

@@ -1,0 +1,79 @@
+---
+title: "Codebase health: structure & reviewability"
+---
+
+**Status**: Partially implemented — the original exception-ledger burn-down is complete, and the PR #664 merge-readiness audit blockers have been addressed with regression tests (prewarm clap invariants restored, launch failures kept visible/actionable, the codebase-health gates wired into required CI, and the ratchets made shrink-only). This page tracks the durable follow-up work that remains after the structure-only refactor.
+
+## Merge-Readiness Audit
+
+PR #664 is a structure-only refactor. The audit checklist restored or proved every pre-refactor behavior that was weakened during extraction:
+
+- Restored the `jackin prewarm` `clap` constraints that were dropped when flags moved into nested structs.
+- Made launch failure dialogs visible above lower-priority overlays, dismissible through the shared modal path, and safe for long diagnostics.
+- Wired the file-size, schema, and strict codebase-health gates into required CI aggregation and path filters.
+- Made the file-size and test-layout ratchets fail stale or no-longer-needed exception rows (shrink-only).
+- Kept roadmap and PR text honest alongside the required gates and regression tests.
+
+The detailed executor checklist was closed with PR #664 and is intentionally not kept here as a long-term task board.
+
+Non-blocking audit context:
+
+- Roadmap and PR truthfulness were refreshed during the audit: the overview no longer marks this item as implemented, the launch split leaf now matches the current file layout, and the PR verification section uses the strict lint command.
+- The PR branch was synced with `main` after the audit; the <RepoFile path="Cargo.lock">Cargo.lock</RepoFile> conflict around `rand` was resolved in the merge commit, and GitHub no longer reports the branch as dirty.
+- Test-placement audit found and fixed the remaining stricter-layout gap: the lookbook keymap smoke tests moved into a sibling `tests.rs`, the test-layout gate now rejects direct unit-test attributes in non-test files, and a repo-wide grep for unit-test attributes outside `tests.rs` / `tests/` files returns no real test functions.
+- Local audit verification passed for `cargo fmt --check`, workspace `cargo check`, workspace `clippy -D warnings`, `cargo run -p jackin-xtask --locked -- lint`, the broad non-Docker `nextest` command, and the docs gate. These results are useful evidence, but they do not close the merge blockers because the plan still requires source changes and regression tests.
+- Workflow comments that still describe dependency-direction checks as informational should be cleaned up when the CI wiring blocker is implemented; the comment cleanup itself is not a standalone merge blocker.
+
+## Remaining Work
+
+### Root `jackin` Integration Decomposition
+
+The root binary still has command-dispatch and console-entry functions carrying codebase-health `#[allow(clippy::too_many_lines)]` justifications. Split these without changing CLI behavior:
+
+- <RepoFile path="crates/jackin/src/app/load_cmd.rs">crates/jackin/src/app/load_cmd.rs</RepoFile> — `handle_console` still owns cwd/config/terminal setup plus the console run loop.
+- <RepoFile path="crates/jackin/src/app/token_cmd.rs">crates/jackin/src/app/token_cmd.rs</RepoFile> — `handle_claude_token` still carries the setup/rotate/revoke/doctor dispatcher body.
+- <RepoFile path="crates/jackin/src/app/workspace_cmd.rs">crates/jackin/src/app/workspace_cmd.rs</RepoFile> — `handle` still carries the workspace subcommand dispatcher and its largest arms.
+- <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile> — the bare-`jackin` routing comment still calls out the TTY-capability fallback and `launch` deprecation warning as follow-up behavior around the root command entry path.
+
+### Launch And Build Orchestrator Body Extraction
+
+The ledger cap is closed, but several large orchestrators still carry explicit deferred body-extraction notes. Extract cohesive phases only when the surrounding behavioral specs can stay unchanged:
+
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs">crates/jackin-runtime/src/runtime/launch/launch_runtime.rs</RepoFile> — split `launch_role_runtime` into named launch-profile validation, AppArmor probing, Docker-run sequencing, and session-finalization phases.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile> — split `load_role_with` into launch-input preparation, image materialization, env resolution, `run_launch_core` invocation, and post-launch cleanup phases.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core.rs</RepoFile> — split `run_launch_core` along its preflight, Docker-run, wait-for-state, and teardown phases.
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> and its child modules — replace the remaining large image decision/build parameter trains with named context structs only when doing so does not disturb the hot path.
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> and <RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile> — finish the deferred parallel-pass extraction notes around daemon/control-plane entry bodies.
+
+The [Split runtime/launch.rs](/roadmap/split-runtime-launch/) leaf owns the most detailed launch-specific split plan. Keep the two pages consistent when any launch slice lands.
+
+### Shared TUI Runtime Dispatch Follow-Through
+
+The shared TEA runtime traits exist, and thin wrappers satisfy the type-level contract, but the actual call sites still bypass those wrappers in several surfaces:
+
+- <RepoFile path="crates/jackin-launch-tui/src/tui/model.rs">crates/jackin-launch-tui/src/tui/model.rs</RepoFile> — `RichRenderer::render` still calls the concrete render path directly.
+- <RepoFile path="crates/jackin-capsule/src/tui/runtime.rs">crates/jackin-capsule/src/tui/runtime.rs</RepoFile> — `daemon/compositor.rs` and `tui/run.rs` still need to dispatch through the shared runtime traits.
+- <RepoFile path="crates/jackin-console/src/tui/runtime.rs">crates/jackin-console/src/tui/runtime.rs</RepoFile> — the root console loop still calls the concrete view directly; the runtime-trait dispatch migration is still a later phase.
+- <RepoFile path="crates/jackin-console/src/tui/input/mouse/modal_scroll.rs">crates/jackin-console/src/tui/input/mouse/modal_scroll.rs</RepoFile> — modal wheel routing still matches `MouseEventKind` directly in one console path; route it through the shared scroll classifier when the runtime dispatch follow-through resumes.
+
+### Editor Model Cleanup
+
+<RepoFile path="crates/jackin-console/src/tui/screens/editor/model/state_impl.rs">crates/jackin-console/src/tui/screens/editor/model/state_impl.rs</RepoFile> still uses a wildcard import with a local `#[allow(clippy::wildcard_imports)]`. Replace it with an explicit import list once the extracted `EditorState` impl block settles enough that the name list is maintainable.
+
+### Existing Leaf Roadmap Items
+
+Do not duplicate the detailed work already owned by these leaves; keep this umbrella page as the cross-reference and update it when a leaf closes:
+
+- [Split runtime/launch.rs](/roadmap/split-runtime-launch/) — remaining launch-function decomposition.
+- [Split input/editor.rs](/roadmap/split-input-editor/) — final editor input mount-tab split.
+- [Unify the settings and workspace-editor surfaces](/roadmap/unify-settings-editor-surfaces/) — config-surface unification after the structural splits.
+
+## Closed Ledger Scope
+
+The following are finished and intentionally no longer tracked as remaining work:
+
+- Test-layout allowlist burn-down: 0 violations.
+- File-size budget burn-down: no grandfathered production or test files.
+- Dependency-direction gate: strict mode exists and passes locally; the full codebase-health gate set (file-size, test-layout, schema) is wired into required CI as part of the PR #664 refactor, so this item closes once dependency-direction itself is promoted from informational to strict.
+- Clippy threshold burn-down: function length, complexity, nesting, and argument thresholds are at target.
+- Historical per-slice split maps from PR #664.

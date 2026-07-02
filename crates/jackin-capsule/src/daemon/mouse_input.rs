@@ -7,7 +7,7 @@ use ratatui::layout::Rect;
 use crate::tui::components::branch_context_bar::{
     BranchContextBarHit, ColRange, branch_context_bar_layout, debug_run_id_label,
 };
-use crate::tui::render::RowSnapshot;
+use crate::tui::pane_snapshot::RowSnapshot;
 use crate::tui::terminal::osc22_pointer_shape;
 use crate::tui::view::encode_osc52_clipboard_write;
 
@@ -678,16 +678,16 @@ impl Multiplexer {
         };
 
         if let Some(osc8_target) = session.hyperlink_target_at_content_row(row_idx, anchor_col) {
-            if jackin_core::url_text::is_host_open_url(osc8_target) {
+            if jackin_tui::url_text::is_host_open_url(osc8_target) {
                 if let Some(log_suffix) = log_suffix {
                     crate::cdebug!(
                         "host-affordance: resolved {log_suffix} OSC8 url: {}",
-                        jackin_core::url_text::redact_url_for_log(osc8_target)
+                        jackin_tui::url_text::redact_url_for_log(osc8_target)
                     );
                 }
                 return Some(HostOpenTarget::Allowed(osc8_target.to_owned()));
             }
-            if !jackin_core::url_text::has_url_scheme(osc8_target) {
+            if !jackin_tui::url_text::has_url_scheme(osc8_target) {
                 if let Some(log_suffix) = log_suffix {
                     crate::cdebug!(
                         "visible url open skipped ({log_suffix}): OSC8 target has no URL scheme at session={session_id} content_row={row_idx} col={anchor_col} token={osc8_target:?}"
@@ -722,8 +722,8 @@ impl Multiplexer {
             return None;
         };
         let url = row.text_range(start_col, end_col);
-        if !jackin_core::url_text::is_host_open_url(&url) {
-            if !jackin_core::url_text::has_url_scheme(&url) {
+        if !jackin_tui::url_text::is_host_open_url(&url) {
+            if !jackin_tui::url_text::has_url_scheme(&url) {
                 if let Some(log_suffix) = log_suffix {
                     crate::cdebug!(
                         "visible url open skipped ({log_suffix}): token has no URL scheme at session={session_id} content_row={row_idx} cols={start_col}..={end_col} token={url:?}"
@@ -741,7 +741,7 @@ impl Multiplexer {
         if let Some(log_suffix) = log_suffix {
             crate::cdebug!(
                 "host-affordance: resolved {log_suffix} visible-token url: {}",
-                jackin_core::url_text::redact_url_for_log(&url)
+                jackin_tui::url_text::redact_url_for_log(&url)
             );
         }
         Some(HostOpenTarget::Allowed(url))
@@ -762,7 +762,7 @@ impl Multiplexer {
     fn send_host_open_url(&mut self, log_suffix: &str, url: String) -> bool {
         crate::clog!(
             "host-affordance: opening {log_suffix} visible url from pane: {}",
-            jackin_core::url_text::redact_url_for_log(&url)
+            jackin_tui::url_text::redact_url_for_log(&url)
         );
         self.send_protocol_frame(ServerFrame::HostOpenUrl(url));
         true
@@ -771,7 +771,7 @@ impl Multiplexer {
     fn reject_host_open_url(&mut self, log_suffix: &str, token: &str) {
         crate::clog!(
             "host-affordance: rejected {log_suffix} visible url from pane: {}",
-            jackin_core::url_text::redact_url_for_log(token)
+            jackin_tui::url_text::redact_url_for_log(token)
         );
         self.set_clipboard_image_notice("Host link rejected: unsupported URL scheme".to_owned());
     }

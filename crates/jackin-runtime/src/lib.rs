@@ -5,13 +5,24 @@
 //! instance lifecycle.
 //!
 //! **Dependency tier:** `jackin-core` → `jackin-config` → `jackin-env` → `jackin-runtime`
+//!
+//! **Architecture Invariant:** L1 application / orchestration crate.
+//! Allowed dependencies: `jackin-core`, `jackin-config`, `jackin-env`,
+//! `jackin-manifest`, `jackin-docker`, `jackin-image`,
+//! `jackin-diagnostics`, `jackin-launch-tui`, `jackin-host`,
+//! `jackin-protocol`, `jackin-isolation`, `jackin-instance`.
+//! (R1: `jackin-tui` production edge removed via pure-item relocation to
+//! core + `LaunchOutputSink` port; only dev-dep remains for tests.)
 
 pub mod apple_container_client;
 pub mod exec_host;
-pub mod instance;
 pub mod isolation;
 pub mod runtime;
 pub mod spin_wait;
+
+// Re-export jackin_instance as `instance` so existing call sites
+// (crate::instance::X) continue to compile unchanged.
+pub use jackin_instance as instance;
 
 // Re-export the key public items to match what the binary's src/runtime/mod.rs exposes.
 pub use runtime::{

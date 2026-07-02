@@ -56,6 +56,15 @@ pub enum AgentStatusSource {
 /// and rendered by the host console. Every field is computed from arbitration
 /// inputs, never from the output state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Six orthogonal arbitrated-state wire flags (visible_blocker, \
+              visible_idle, visible_working, process_exited, \
+              foreground_returned_to_shell, stale_report) — each is an independent \
+              observable serialized to the control socket and consumed individually \
+              by the host console. Named-field reads match the per-signal \
+              wire-payload idiom this struct parallels."
+)]
 pub struct AgentStatusReport {
     pub raw_state: AgentRawState,
     pub source: AgentStatusSource,

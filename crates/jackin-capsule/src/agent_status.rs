@@ -59,6 +59,12 @@ pub enum OscShellMark {
 /// Finds `\x1b]133;A`, `B`, `C`, or `D[;<exit_code>]` followed by BEL
 /// (`\x07`) or ST (`\x1b\\`). Model-independent: works with both the
 /// current vt100-based session and the future DamageGrid-based session.
+#[allow(
+    clippy::excessive_nesting,
+    reason = "OSC 133 ;C/;D shell-marker parser: nested exit-code extraction + \
+              marker-id parsing + state-machine branches. The nesting is the \
+              bytewise state-machine."
+)]
 pub fn scan_osc133(bytes: &[u8]) -> Option<OscShellMark> {
     // Minimum sequence: \x1b]133;A\x07 = 8 bytes; the `i + 7 < len` loop bound
     // already yields `None` for anything shorter.
@@ -113,6 +119,12 @@ pub fn scan_osc133(bytes: &[u8]) -> Option<OscShellMark> {
 /// surfaces plain OSC 9 as a `Notification` passthrough but does not decode the
 /// `9;4` progress sub-protocol, so it is scanned from the raw stream here —
 /// the same model-independent approach as `scan_osc133`.
+#[allow(
+    clippy::excessive_nesting,
+    reason = "OSC 9;4 progress scanner parses the `bytes[start..end]` window via \
+              nested `position` + `map_or` + `parse::<i32>` + `ok` — the nesting is \
+              the parser's windowed-state machine."
+)]
 pub fn scan_osc9_progress(bytes: &[u8]) -> Option<u8> {
     const NEEDLE: &[u8] = b"\x1b]9;4;";
     let pos = bytes.windows(NEEDLE.len()).position(|w| w == NEEDLE)?;

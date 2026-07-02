@@ -1,123 +1,10 @@
 //! Tests for `token setup`.
 use super::*;
+use crate::test_support::FakeOpWriter;
 use jackin_config::{AppConfig, WorkspaceConfig};
-use jackin_core::OpRef;
-use std::cell::RefCell;
+use jackin_core::{FieldTarget, OpRef};
 use std::sync::Mutex;
 use tempfile::tempdir;
-
-struct FakeOpWriter {
-    last_create: RefCell<Option<(String, String, String)>>, // (vault, title, field)
-    produced_ref: OpRef,
-    recorded_value: RefCell<Option<String>>,
-    /// Records the `field_id` passed to the last `item_field_set`
-    /// call so the edit-existing threading can be asserted. Outer
-    /// `Option` = was the method called; inner = the `Option<&str>` arg.
-    #[allow(
-        clippy::option_option,
-        reason = "outer = call-recorded, inner = the Option<&str> arg"
-    )]
-    recorded_field_id: RefCell<Option<Option<String>>>,
-    /// When `true`, `item_create` returns Err instead of recording.
-    fail_create: bool,
-    /// When `true`, `item_delete` records the call AND returns Err
-    /// so revoke-error paths are exercisable.
-    fail_delete: bool,
-    /// Records every `item_delete` call so cleanup-on-failure
-    /// paths can be asserted.
-    deletes: RefCell<Vec<(String, String)>>,
-}
-
-impl FakeOpWriter {
-    fn new(produced_ref: OpRef) -> Self {
-        Self {
-            last_create: RefCell::new(None),
-            produced_ref,
-            recorded_value: RefCell::new(None),
-            recorded_field_id: RefCell::new(None),
-            fail_create: false,
-            fail_delete: false,
-            deletes: RefCell::new(Vec::new()),
-        }
-    }
-    fn failing() -> Self {
-        Self {
-            last_create: RefCell::new(None),
-            produced_ref: OpRef {
-                op: "op://_/_/_".into(),
-                path: "_/_/_".into(),
-                account: None,
-                on_demand: false,
-            },
-            recorded_value: RefCell::new(None),
-            recorded_field_id: RefCell::new(None),
-            fail_create: true,
-            fail_delete: false,
-            deletes: RefCell::new(Vec::new()),
-        }
-    }
-    fn with_failing_delete(mut self) -> Self {
-        self.fail_delete = true;
-        self
-    }
-}
-
-impl OpWriteRunner for FakeOpWriter {
-    fn item_create(
-        &self,
-        params: crate::op_struct::OpItemCreateParams<'_>,
-    ) -> anyhow::Result<OpRef> {
-        if self.fail_create {
-            anyhow::bail!("simulated item_create failure");
-        }
-        *self.last_create.borrow_mut() = Some((
-            params.vault_id.to_owned(),
-            params.title.to_owned(),
-            params.field_label.to_owned(),
-        ));
-        *self.recorded_value.borrow_mut() = Some(params.value.to_owned());
-        Ok(self.produced_ref.clone())
-    }
-    fn item_delete(&self, item_id: &str, vault_id: &str, _: Option<&str>) -> anyhow::Result<()> {
-        self.deletes
-            .borrow_mut()
-            .push((vault_id.to_owned(), item_id.to_owned()));
-        if self.fail_delete {
-            anyhow::bail!("simulated item_delete failure");
-        }
-        Ok(())
-    }
-    fn item_field_set(
-        &self,
-        _item_id: &str,
-        _vault_id: &str,
-        target: &FieldTarget,
-        value: &str,
-        _section: Option<&str>,
-    ) -> anyhow::Result<OpRef> {
-        if self.fail_create {
-            anyhow::bail!("simulated item_field_set failure");
-        }
-        *self.last_create.borrow_mut() = Some((
-            "existing-vault".to_owned(),
-            "existing-item".to_owned(),
-            target.label().to_owned(),
-        ));
-        *self.recorded_field_id.borrow_mut() = Some(target.id().map(str::to_owned));
-        *self.recorded_value.borrow_mut() = Some(value.to_owned());
-        Ok(self.produced_ref.clone())
-    }
-    fn item_tags(
-        &self,
-        _item_id: &str,
-        _vault_id: &str,
-        _account: Option<&str>,
-    ) -> anyhow::Result<Vec<String>> {
-        // The setup/rotate-into-fresh-item tests never reach the
-        // prior-item ownership check (that lives in app::rotate).
-        anyhow::bail!("token_setup tests do not exercise item_tags")
-    }
-}
 
 struct FakeOpReader {
     /// Per-call queue. Each call pops one. When empty, `read`
@@ -242,7 +129,7 @@ fn prior_token_slot_reads_the_scoped_slot() {
 #[test]
 fn run_setup_with_runner_role_scope_wires_role_override_not_workspace() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let token = "sk-ant-oat01-ROLE";
     let reader = FakeOpReader::ok(token);
     let probe = dummy_probe();
@@ -285,7 +172,7 @@ fn run_setup_with_runner_role_scope_wires_role_override_not_workspace() {
 #[test]
 fn run_setup_with_runner_creates_item_and_wires_workspace_config() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let token = "sk-ant-oat01-EXAMPLE";
     let reader = FakeOpReader::ok(token);
     let probe = dummy_probe();
@@ -363,7 +250,7 @@ fn run_setup_with_runner_global_scope_wires_global_config() {
     let mut cfg = AppConfig::default();
     std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
 
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let token = "sk-ant-oat01-GLOBAL";
     let reader = FakeOpReader::ok(token);
     let probe = dummy_probe();
@@ -415,7 +302,7 @@ fn run_setup_with_runner_aborts_when_workspace_missing() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let mut cfg = AppConfig::default();
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let reader = FakeOpReader::ok("ignored");
     let probe = dummy_probe();
     let err = run_setup_with_runner(
@@ -436,7 +323,7 @@ fn run_setup_with_runner_aborts_when_workspace_missing() {
 #[test]
 fn run_setup_with_runner_aborts_when_vault_missing_and_no_reuse() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let reader = FakeOpReader::ok("ignored");
     let probe = dummy_probe();
     let capture_called = std::cell::Cell::new(false);
@@ -506,7 +393,7 @@ fn run_setup_with_runner_propagates_item_create_failure_without_touching_config(
 #[test]
 fn run_setup_with_runner_propagates_capture_failure_without_calling_op() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let reader = FakeOpReader::ok("ignored");
     let probe = dummy_probe();
     let err = run_setup_with_runner(
@@ -539,7 +426,7 @@ fn run_setup_with_runner_propagates_capture_failure_without_calling_op() {
 #[test]
 fn run_setup_with_runner_post_write_read_failure_cleans_up_orphan_item() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let reader = FakeOpReader::err("op read failed: vault not found");
     let probe = dummy_probe();
     let err = run_setup_with_runner(
@@ -576,7 +463,7 @@ fn run_setup_with_runner_post_write_read_failure_cleans_up_orphan_item() {
 #[test]
 fn run_setup_with_runner_post_write_sha_mismatch_aborts_and_cleans_up() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     // Reader returns a value whose SHA-256 prefix differs from
     // what the orchestrator just captured.
     let reader = FakeOpReader::ok("a-totally-different-token");
@@ -620,7 +507,7 @@ fn run_setup_with_runner_post_write_sha_mismatch_aborts_and_cleans_up() {
 #[test]
 fn run_setup_with_runner_reuse_path_surfaces_validation_error() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let reader = FakeOpReader::err("op read failed: item not found");
     let probe = dummy_probe();
     let err = run_setup_with_runner(
@@ -655,7 +542,7 @@ fn run_setup_with_runner_reuse_path_surfaces_validation_error() {
 #[test]
 fn run_setup_with_runner_reuse_path_skips_capture_and_no_expiry_stamp() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let reader = FakeOpReader::ok("sk-ant-oat01-EXISTING");
     let probe = dummy_probe();
 
@@ -701,7 +588,7 @@ fn run_setup_with_runner_reuse_path_skips_capture_and_no_expiry_stamp() {
 #[test]
 fn run_setup_with_runner_plain_text_wires_literal_and_skips_op_writer() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let token = "sk-ant-oat01-PLAIN";
     // Reader must never be consulted on the plain path — a panic
     // here proves no post-write validation read fired.
@@ -763,7 +650,7 @@ fn run_setup_with_runner_plain_text_wires_literal_and_skips_op_writer() {
 #[test]
 fn run_setup_with_runner_plain_text_with_reuse_bails() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let reader = FakeOpReader::ok("ignored");
     let probe = dummy_probe();
     let capture_called = std::cell::Cell::new(false);
@@ -1044,7 +931,7 @@ fn run_revoke_with_runner_delete_op_item_calls_writer_with_parsed_uuids() {
     cfg.workspaces.insert("proj".into(), ws);
     std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
 
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let report = run_revoke_with_runner(&paths, &mut cfg, "proj", true, &writer).unwrap();
 
     assert!(report.cleared_slot);
@@ -1082,7 +969,7 @@ fn run_revoke_with_runner_delete_op_item_on_literal_slot_bails() {
     cfg.workspaces.insert("proj".into(), ws);
     std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
 
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     let err = run_revoke_with_runner(&paths, &mut cfg, "proj", true, &writer).unwrap_err();
 
     assert!(err.to_string().contains("literal token slot"));
@@ -1124,7 +1011,7 @@ fn run_revoke_with_runner_delete_op_item_failure_does_not_save_config() {
     cfg.workspaces.insert("proj".into(), ws);
     std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
 
-    let writer = FakeOpWriter::new(dummy_op_ref()).with_failing_delete();
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref()).with_failing_delete();
     let err = run_revoke_with_runner(&paths, &mut cfg, "proj", true, &writer).unwrap_err();
 
     assert!(err.to_string().contains("simulated item_delete failure"));
@@ -1150,7 +1037,7 @@ fn run_revoke_with_runner_delete_op_item_failure_does_not_save_config() {
 #[test]
 fn run_setup_with_runner_post_write_failure_with_failing_delete_surfaces_manual_hint() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref()).with_failing_delete();
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref()).with_failing_delete();
     let reader = FakeOpReader::err("op read failed: vault not found");
     let probe = dummy_probe();
     let err = run_setup_with_runner(
@@ -1189,7 +1076,7 @@ fn run_setup_with_runner_post_write_unparseable_op_ref_skips_delete_call() {
         account: None,
         on_demand: false,
     };
-    let writer = FakeOpWriter::new(bogus_ref);
+    let writer = FakeOpWriter::new_with_ref(bogus_ref);
     let reader = FakeOpReader::err("op read failed: bogus URI");
     let probe = dummy_probe();
     let err = run_setup_with_runner(
@@ -1225,7 +1112,7 @@ fn run_setup_with_runner_post_write_unparseable_op_ref_skips_delete_call() {
 #[test]
 fn run_setup_with_runner_edit_existing_validation_failure_keeps_item() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
-    let writer = FakeOpWriter::new(dummy_op_ref());
+    let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
     // Reader resolves the ref to a DIFFERENT value than the captured
     // token, so the SHA-256 prefix check fails and the post-write
     // validation bails.

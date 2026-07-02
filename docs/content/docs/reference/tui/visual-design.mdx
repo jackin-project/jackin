@@ -76,7 +76,7 @@ Every row that begins with `+` is an add/create action and must render through t
 
 ## Tab Bar
 
-**W3C ARIA Tabs pattern** (see `AGENTS.md` → TUI navigation conventions for full spec). Summary:
+**W3C ARIA Tabs pattern** (see <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> → TUI navigation conventions for full spec). Summary:
 
 - Tab bar has its own focus area (`tab_bar_focused: bool` in state).
 - **Tab chrome is shared with the in-container multiplexer status bar** (`jackin-capsule`): inactive tabs render on a dark-grey background (`TAB_BG_INACTIVE`), the active tab lifts to graphite (`TAB_BG_ACTIVE` — never the brand green, so it stays distinct from the ` jackin❯ ` pill), both with WHITE text and the active tab bold. These backgrounds and the Ratatui renderer live in the shared `jackin-tui` crate (`TAB_BG_*`, `components::TabStrip`) and are consumed by the console tab strips (workspace editor, settings) and the capsule Ratatui status bar.

@@ -10,7 +10,7 @@ description: "Why jackin❯ uses ratatui and not tui-rs, crossterm-raw, or anoth
 
 ## Context
 
-jackin❯ needs to render full-screen terminal UIs on three surfaces: the host workspace console (`jackin-console`), the launch progress cockpit (`jackin-launch`), and the in-container multiplexer (`jackin-capsule`). The choices at the time of evaluation were:
+jackin❯ needs to render full-screen terminal UIs on three surfaces: the host workspace console (`jackin-console`), the launch progress cockpit (`jackin-launch-tui`), and the in-container multiplexer (`jackin-capsule`). The choices at the time of evaluation were:
 
 - **`tui-rs`** — the original Rust immediate-mode TUI library. Archived/abandoned in 2023.
 - **`ratatui`** — a community fork of `tui-rs`, actively maintained as its de-facto successor.
@@ -21,7 +21,7 @@ jackin❯ needs to render full-screen terminal UIs on three surfaces: the host w
 
 **Use `ratatui` as the primary TUI rendering library across all three surfaces.**
 
-`ratatui` is pinned at `0.30` per-crate in each consuming crate — <RepoFile path="crates/jackin-tui/Cargo.toml">crates/jackin-tui/Cargo.toml</RepoFile>, <RepoFile path="crates/jackin-capsule/Cargo.toml">crates/jackin-capsule/Cargo.toml</RepoFile>, <RepoFile path="crates/jackin-console/Cargo.toml">crates/jackin-console/Cargo.toml</RepoFile>, <RepoFile path="crates/jackin-launch/Cargo.toml">crates/jackin-launch/Cargo.toml</RepoFile>, and <RepoFile path="crates/jackin-tui-lookbook/Cargo.toml">crates/jackin-tui-lookbook/Cargo.toml</RepoFile>:
+`ratatui` is pinned at `0.30` per-crate in each consuming crate — <RepoFile path="crates/jackin-tui/Cargo.toml">crates/jackin-tui/Cargo.toml</RepoFile>, <RepoFile path="crates/jackin-capsule/Cargo.toml">crates/jackin-capsule/Cargo.toml</RepoFile>, <RepoFile path="crates/jackin-console/Cargo.toml">crates/jackin-console/Cargo.toml</RepoFile>, <RepoFile path="crates/jackin-launch-tui/Cargo.toml">crates/jackin-launch-tui/Cargo.toml</RepoFile>, and <RepoFile path="crates/jackin-tui-lookbook/Cargo.toml">crates/jackin-tui-lookbook/Cargo.toml</RepoFile>:
 
 ```toml
 ratatui = "0.30"

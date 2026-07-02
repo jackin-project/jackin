@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Settings Auth tab key and modal handlers.
 
 use super::{
@@ -94,10 +95,14 @@ pub fn settings_auth_can_generate_token(auth: &crate::tui::state::SettingsAuthSt
 }
 
 #[expect(
-    clippy::too_many_lines,
-    clippy::too_many_arguments,
     clippy::type_complexity,
     reason = "pending extraction — tracked in codebase-readability roadmap"
+)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Settings-auth-modal key handler carries every per-binding input the \
+              dispatch needs: auth state, env state, key event, palette key. \
+              Same justification as the too_many_lines allow."
 )]
 pub fn handle_settings_auth_modal(
     auth: &mut crate::tui::state::SettingsAuthState,

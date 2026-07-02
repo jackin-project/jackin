@@ -8,7 +8,7 @@ title: "Security Threat Model & Signed Releases"
 
 jackin❯ closed two credibility gaps with this work:
 
-- **Undocumented security implementation.** Symlink rejection in <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile>, `shellfirm` and `tirith` in the construct image, and the YOLO-flag contract in <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> were enforced in code but invisible to operators, role authors, and contributors who reason about the trust boundary.
+- **Undocumented security implementation.** Symlink rejection in <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile>, `shellfirm` and `tirith` in the construct image, and the YOLO-flag contract in <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> were enforced in code but invisible to operators, role authors, and contributors who reason about the trust boundary.
 - **Unsigned capsule binary.** `jackin-capsule` is downloaded into every container at runtime (<RepoFile path="crates/jackin-image/src/capsule_binary.rs">crates/jackin-image/src/capsule_binary.rs</RepoFile>) and was verified by SHA256 only — no signing, no SLSA provenance, no SBOM. A tampered artifact matching the expected SHA256 would go undetected.
 
 ## Shipped

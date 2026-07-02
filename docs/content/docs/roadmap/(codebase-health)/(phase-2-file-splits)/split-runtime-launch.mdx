@@ -2,47 +2,64 @@
 title: "Split runtime/launch.rs"
 ---
 
-**Status**: Partially implemented — launch is split into a root module and seven child launch modules, but the root file and the pipeline module each still carry one `clippy::too_many_lines`-flagged function; splitting those two functions, not another top-level move, is what remains
+**Status**: Partially implemented — the old monolithic `runtime/launch.rs` was split into a root module and child launch modules, but three large launch orchestration functions still carry the remaining reviewability risk. The next work is internal phase extraction inside those functions, not another top-level file move.
 
-## Current shape
+## Current Shape
 
-<RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> (2,832 lines) declares child modules under `crates/jackin-runtime/src/runtime/launch/`: `launch_dind.rs` (950 lines), `launch_pipeline.rs` (2,214 lines), `launch_slot.rs` (370 lines), `restore.rs` (419 lines), `auth_error.rs` (316 lines), `progress_helpers.rs` (211 lines), `trust.rs` (112 lines), and `tests.rs` (8,611 lines, ~219 test functions).
+The launch area now uses Rust 2024 self-named module layout:
 
-The split moved dedicated concerns (DinD, slot claim, restore resolution, auth-error rendering, progress helpers, trust helpers) out of the root file, but the root file itself is not done shrinking: `launch_role_runtime` (docker run-arg construction, profile/cgroup validation, sibling auth prewarm, socket-dir prep, hardline handoff) is still one function, about 908 lines, carrying `#[expect(clippy::too_many_lines, reason = "pending extraction — tracked in codebase-readability roadmap")]`. `launch_pipeline.rs`'s `load_role_with` is the crate's single largest function — about 1,947 lines — carrying the same marker plus `clippy::too_many_arguments`, and remains the dense review surface.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — 269 lines; public launch API, module declarations, and tests.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs">crates/jackin-runtime/src/runtime/launch/launch_runtime.rs</RepoFile> — 1,155 lines; `LaunchContext`, prewarm helpers, and `launch_role_runtime`.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile> — 1,184 lines; `load_role_with` and launch-input/pipeline coordination.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core.rs</RepoFile> — 1,223 lines; `run_launch_core` and the `LaunchCore` context.
 
-The crate-wide 8,611-line `tests.rs` is colocated with the root `launch.rs` per the crate's "one `tests.rs`, all tests inline, never split further" rule; it exercises `load_role`/`load_role_with` end to end plus the root file's own helpers. `launch_pipeline.rs` has its own thin `launch_pipeline/tests.rs` (55 lines) covering only small standalone helpers (`tag_errors`, `bail_on_grant_errors`, `tagged_grant_errors`) — `load_role_with` itself has no dedicated colocated tests and is exercised only through the public entry points covered by the root `tests.rs`.
+The split moved dedicated concerns such as DinD setup, slot claim, restore resolution, auth-error rendering, progress helpers, trust helpers, and launch-core execution out of the former root file. The remaining issue is that the largest orchestration functions still combine several behavioral phases behind broad context structs.
 
-## Remaining split
+## Remaining Split
 
-Two production functions still need internal splitting:
+Three production functions still need internal splitting:
 
-- `launch_role_runtime` in <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile>;
+- `launch_role_runtime` in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs">crates/jackin-runtime/src/runtime/launch/launch_runtime.rs</RepoFile>.
 - `load_role_with` in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile>.
+- `run_launch_core` in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core.rs</RepoFile>.
 
-Keep Rust 2024 self-named module layout. Per the crate rule, a growing `tests.rs` is a signal that the module under test still does too much — it is not, itself, a target to split.
+Keep the current module layout. Do not split tests simply to reduce line counts; a growing `tests.rs` remains a signal that the production module may still own too much behavior, not an independent target.
 
-Candidate production boundaries inside `load_role_with`:
+## Candidate Boundaries
 
-- workspace/materialization preparation;
-- trust and role-source checks — confirmed still pipeline-local: the trust *gate* (prompt, in-memory trust mutation, branch-trust gate) runs inline in `load_role_with`; `trust.rs` only holds the `inject_workspace_mise_env` and `seed_codex_project_trust` helpers it calls;
-- Docker resource planning and launch plan construction;
-- env/auth resolution and diagnostics;
-- final attach/cleanup handoff.
+`launch_role_runtime`:
 
-## Remaining work
+- launch-profile and cgroup/AppArmor validation;
+- sibling-auth prewarm;
+- Docker run-argument construction;
+- socket-directory preparation;
+- hardline handoff and session-finalization reporting.
 
-1. Extract `launch_role_runtime`'s docker-run-args, sibling-auth-prewarm, and socket-dir-prep phases out of `launch.rs` into named helpers or a child module.
-2. Re-measure `load_role_with` and extract only cohesive pipeline phases; do not reintroduce circular dependencies around trust confirmation.
-3. Move repeated Docker naming and launch-plan helpers behind shared runtime helpers where duplication still exists.
+`load_role_with`:
+
+- launch-input preparation;
+- workspace and role materialization;
+- trust and role-source checks;
+- image materialization and diagnostics;
+- environment/auth resolution;
+- `run_launch_core` invocation;
+- post-launch cleanup.
+
+`run_launch_core`:
+
+- preflight state assembly;
+- Docker run execution;
+- wait-for-state handling;
+- teardown and error tagging.
+
+## Remaining Work
+
+1. Extract one cohesive phase at a time and keep existing launch behavior covered by the runtime launch tests.
+2. Avoid circular dependencies around trust confirmation and launch diagnostics.
+3. Move repeated Docker naming and launch-plan helpers behind shared runtime helpers only where duplication remains after phase extraction.
 4. Add or update links to [Behavioral spec for runtime launch](/roadmap/behavioral-spec-runtime-launch/) after each extracted phase has stable invariants.
 
-## Related files
+## Related Work
 
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — public launch API, still holds `launch_role_runtime`
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile> — remaining dense pipeline surface (`load_role_with`)
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_dind.rs">crates/jackin-runtime/src/runtime/launch/launch_dind.rs</RepoFile> — DinD/network launch helper
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_slot.rs">crates/jackin-runtime/src/runtime/launch/launch_slot.rs</RepoFile> — container-slot helper
-
-## Related work
-
-- [Behavioral spec for runtime launch](/roadmap/behavioral-spec-runtime-launch/) — spec item covering the same pipeline; extracted phases should land documented invariants there
+- [Codebase health: structure & reviewability](/roadmap/codebase-health-enforcement/) — umbrella item that tracks cross-surface follow-up after the PR #664 merge-readiness audit.
+- [Behavioral spec for runtime launch](/roadmap/behavioral-spec-runtime-launch/) — spec item covering the same pipeline; extracted phases should land documented invariants there.

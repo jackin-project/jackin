@@ -129,6 +129,14 @@ pub fn extract_interpolation_refs(s: &str) -> Vec<&str> {
 ///
 /// # Errors
 /// Returns an error if a dependency cycle is detected.
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Kahn's algorithm topological-sort body: the read-side / \
+              decrement-degree / enqueue-ready nesting is the canonical \
+              topological-sort structure. Extracting into helper fns would \
+              require re-passing the in-degree / adjacency / ready mutable \
+              borrows and obscure the algorithm."
+)]
 pub fn topological_env_order(
     declarations: &std::collections::BTreeMap<String, crate::manifest::EnvVarDecl>,
 ) -> anyhow::Result<Vec<String>> {
@@ -181,21 +189,4 @@ pub fn topological_env_order(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn open_links_allowed_accepts_unset_and_non_deny_values() {
-        assert!(open_links_allowed(None));
-        assert!(open_links_allowed(Some("")));
-        assert!(open_links_allowed(Some("allow")));
-        assert!(open_links_allowed(Some("yes")));
-    }
-
-    #[test]
-    fn open_links_allowed_rejects_deny_values() {
-        for value in ["deny", "off", "no"] {
-            assert!(!open_links_allowed(Some(value)));
-        }
-    }
-}
+mod tests;

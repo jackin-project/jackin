@@ -1,11 +1,11 @@
 //! Rendering helper types and functions for the capsule multiplexer.
 
 use crate::pull_request::PullRequestInfo;
-use crate::tui::app::{HoverTarget, VisiblePane};
 use crate::tui::components::chrome::{DialogBackdrop, PaneBorderWidget, StatusBarWidget};
 use crate::tui::components::dialog_widgets::{DialogRatatuiSnapshot, render_dialog_ratatui};
 use crate::tui::components::pane::PaneBodyWidget;
 use crate::tui::layout::{self, Tab};
+use crate::tui::model::{HoverTarget, VisiblePane};
 use jackin_tui::components::FocusOwner;
 use ratatui::{Frame, layout::Rect as RatatuiRect, style::Modifier};
 
@@ -28,6 +28,16 @@ pub(crate) enum PaneScreen<'a> {
     View(jackin_term::GridView<'a>),
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Six orthogonal render-state flags on the per-frame snapshot \
+              (zoomed, dialog_open, menu_hovered, selection_copied, \
+              pull_request_loading, scrollback_active) — each tracks an \
+              independent UI state consumed individually by the compositor \
+              branches. Named-field reads match the per-branch dispatch idiom \
+              this snapshot feeds."
+)]
+#[derive(Clone)]
 pub(crate) struct CapsuleRatatuiFrame<'a> {
     pub(crate) tabs: &'a [Tab],
     /// Row-0 layout computed once per frame and shared by the status-bar

@@ -27,13 +27,12 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
-base64 = "0.22"
 jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
 # OTLP export for the in-container session, runtime-gated on the endpoint the
 # host injects. Pulls the opentelemetry stack into the capsule image.
 jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics", features = ["otlp"] }
 jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
-tracing = "0.1"
+jackin-usage = { version = "0.6.0-dev", path = "../jackin-usage" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
@@ -42,10 +41,6 @@ tokio = { version = "1", features = ["rt", "io-util", "io-std", "sync", "macros"
 crossterm = "0.29"
 portable-pty = "0.9"
 nix = { version = "0.31", features = ["term", "signal", "process", "inotify"] }
-# Advisory file locks (flock) for the cross-container per-account usage refresh
-# lock; flock on the bind-mounted shared volume shares the inode across
-# same-kernel containers, so only one instance refreshes a given account.
-fs2 = "0.4"
 # jackin-term: the owned terminal model. `DamageGrid` is the sole VT parser /
 # screen / scrollback / passthrough model.
 jackin-term = { version = "0.6.0-dev", path = "../jackin-term" }
@@ -53,8 +48,6 @@ url = "2"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 regex = "1"
-reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
-turso = { version = "0.7.0-pre.7", default-features = false }
 sha2 = "0.11"
 jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
 ratatui = "0.30"

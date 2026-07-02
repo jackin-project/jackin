@@ -52,7 +52,7 @@ Cross-tokenizer, identical fixed text (7-tok wrapper included):
 | Sample | Fable 5 | Sonnet 4.6 | Haiku 4.5 | Fable premium |
 |---|---|---|---|---|
 | English prose, 730 chars | 224 | 157 | 157 | **+42.7%** (+44.7% net of wrapper) |
-| Rust code, 1,800 bytes (`crates/jackin-build-meta/src/lib.rs`) | 777 | 558 | 558 | **+39.2%** (+39.7% net) |
+| Rust code, 1,800 bytes (<RepoFile path="crates/jackin-build-meta/src/lib.rs">crates/jackin-build-meta/src/lib.rs</RepoFile>) | 777 | 558 | 558 | **+39.2%** (+39.7% net) |
 
 Sonnet 4.6 and Haiku 4.5 return byte-identical counts — shared tokenizer confirmed. Phase-0 (same day, other samples) got +15% (code) / +38% (prose); a tighter probe gives prose +35%, code −3%, CJK −4% — the premium is prose/ASCII-specific, not code-wide. Treat the Rust row above as sample-specific.
 
@@ -335,7 +335,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 | "under 200 lines"; skills 30–100 tok; deferral default; CLI-over-MCP; /effort + MAX_THINKING_TOKENS=8000; Fable 5 thinking not disableable; ~7x teams; $13/day; $150–250/mo; &lt;$30/day for 90%; &lt;$0.04 background; LiteLLM name-check; grep-hook example; /usage attribution | code.claude.com/docs/en/costs |
 | Firecrawl 3,847 -> 312 (91.9%); 41% path-scoping; 38,381 -> 2,788 (94%); 80–99% logs | firecrawl.dev/blog/claude-code-token-efficiency (vendor-interested) |
 | Prices Fable 5 $10/$50, Opus 4.8 $5/$25, Sonnet 4.6 $3/$15, Haiku 4.5 $1/$5; "up to 35% more tokens" note; 675 -> 290 tool-use prompt (-57%); batch 50%; max_content_tokens page scale | platform.claude.com/docs/en/about-claude/pricing |
-| Local tokenizer premium +42.7% prose / +39.2% one Rust sample raw (+44.7%/+39.7% net of 7-tok wrapper); Sonnet=Haiku identical counts; correction: prose premium holds, code/CJK can be near-neutral | /tmp/ct.py on Fable-family / Sonnet-family models, fixed prose + `crates/jackin-build-meta/src/lib.rs` head |
+| Local tokenizer premium +42.7% prose / +39.2% one Rust sample raw (+44.7%/+39.7% net of 7-tok wrapper); Sonnet=Haiku identical counts; correction: prose premium holds, code/CJK can be near-neutral | /tmp/ct.py on Fable-family / Sonnet-family models, fixed prose + <RepoFile path="crates/jackin-build-meta/src/lib.rs">crates/jackin-build-meta/src/lib.rs</RepoFile> head |
 | Effort: 76% fewer output tokens at medium; +4.3 pts at -48% (Opus 4.5-era) | anthropic.com/news/claude-opus-4-5 |
 | Tool Search: "85% reduction"; 191,300 vs 122,800; 49 -> 74; 79.5 -> 88.1; ~55K five-server; 134K internal; programmatic 43,588 -> 27,297 (37%); retrieval 25.6 -> 28.5, GIA 46.5 -> 51.2 | anthropic.com/engineering/advanced-tool-use |
 | Context editing 84% / +39% / +29% (100-turn search eval) | claude.com/blog/context-management |

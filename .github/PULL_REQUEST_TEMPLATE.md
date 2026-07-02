@@ -185,8 +185,8 @@ per-page localhost render walk still goes in `### Documentation` below.>
   cd docs
   bun install --frozen-lockfile
   bun run build
-  bun run check:repo-links
-  bun run check:roadmap-sidebar
+  cargo xtask docs repo-links
+  cargo xtask roadmap audit
   bunx tsc --noEmit
   bun test
 )

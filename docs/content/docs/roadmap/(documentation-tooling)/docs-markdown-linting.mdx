@@ -6,7 +6,7 @@ title: "Docs Markdown Linting (rumdl)"
 
 ## Shipped baseline
 
-The docs site has automated gates for structural breakage (the Fumadocs build), broken links (lychee, via <RepoFile path="docs/lychee.toml">docs/lychee.toml</RepoFile>), code-span references to real repo files (<RepoFile path="docs/scripts/check-repo-links.ts">docs/scripts/check-repo-links.ts</RepoFile>), and roadmap sidebar completeness (<RepoFile path="docs/scripts/check-roadmap-sidebar.ts">docs/scripts/check-roadmap-sidebar.ts</RepoFile>). None of these check mechanical markdown style — heading hierarchy, code-fence languages, list-marker consistency, line length, emphasis-marker mixing. No `.rumdl.toml`, no rumdl CI step in <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>, and no `check:md` script in <RepoFile path="docs/package.json">docs/package.json</RepoFile> exist today — this item is fully unstarted.
+The docs site has automated gates for structural breakage (the Fumadocs build), broken links (lychee, via <RepoFile path="docs/lychee.toml">docs/lychee.toml</RepoFile>), code-span references to real repo files (`cargo xtask docs repo-links`), and roadmap sidebar completeness (`cargo xtask roadmap audit`). The Rust validators live in <RepoFile path="crates/jackin-xtask/src/docs.rs">crates/jackin-xtask/src/docs.rs</RepoFile>. None of these check mechanical markdown style — heading hierarchy, code-fence languages, list-marker consistency, line length, emphasis-marker mixing. No `.rumdl.toml`, no rumdl CI step in <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile>, and no `check:md` script in <RepoFile path="docs/package.json">docs/package.json</RepoFile> exist today — this item is fully unstarted.
 
 Research: [Docs markdown linting: rumdl adoption rationale](/reference/research/documentation/docs-markdown-linting/) covers why rumdl over `markdownlint-cli2`/`remark-lint`/`mado`, and the trade-offs of adopting it.
 
@@ -22,5 +22,5 @@ Research: [Docs markdown linting: rumdl adoption rationale](/reference/research/
 
 - Research: [Docs markdown linting: rumdl adoption rationale](/reference/research/documentation/docs-markdown-linting/) — why rumdl, alternatives rejected, open design questions.
 - <RepoFile path=".github/workflows/docs.yml">.github/workflows/docs.yml</RepoFile> — CI integration point for the rumdl step.
-- <RepoFile path="docs/scripts/check-repo-links.ts">docs/scripts/check-repo-links.ts</RepoFile> — existing custom-rule precedent rumdl complements, not replaces.
+- <RepoFile path="crates/jackin-xtask/src/docs.rs">crates/jackin-xtask/src/docs.rs</RepoFile> — existing custom-rule precedent rumdl complements, not replaces.
 - <RepoFile path="docs/lychee.toml">docs/lychee.toml</RepoFile> — companion link-check gate.

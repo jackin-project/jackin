@@ -5,8 +5,8 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
 };
 
-use crate::tui::app::ConsoleManagerStageRoute;
-use crate::tui::app::ConsoleStageModalFacts;
+use crate::tui::model::ConsoleManagerStageRoute;
+use crate::tui::model::ConsoleStageModalFacts;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceFrameAreas {
@@ -15,17 +15,28 @@ pub struct WorkspaceFrameAreas {
     pub footer: Rect,
 }
 
+/// Which modal (if any) currently owns the overlay chrome.
+///
+/// R6 refactored into an enum from a 9-bool `ModalOverlayState` struct: in practice the
+/// console presents exactly one modal at a time, so the OR'd bool set was
+/// always reduced to "which one is on top" by the render layer. The enum
+/// makes that priority order explicit instead of relying on field order in
+/// a struct literal. Priority (highest first): `Status`, `List`, `Editor`,
+/// `SettingsError`, `SettingsMounts`, `SettingsEnv`, `SettingsAuth`,
+/// `CreatePrelude`, `DestructiveConfirm`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ModalOverlayState {
-    pub status_overlay: bool,
-    pub list_modal: bool,
-    pub editor_modal: bool,
-    pub settings_error: bool,
-    pub settings_mounts_modal: bool,
-    pub settings_env_modal: bool,
-    pub settings_auth_modal: bool,
-    pub create_prelude_modal: bool,
-    pub destructive_confirm: bool,
+pub enum ModalOverlayState {
+    #[default]
+    None,
+    Status,
+    List,
+    Editor,
+    SettingsError,
+    SettingsMounts,
+    SettingsEnv,
+    SettingsAuth,
+    CreatePrelude,
+    DestructiveConfirm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,15 +179,7 @@ pub const fn reserved_footer_height_for_facts(facts: ReservedFooterHeightFacts) 
 
 #[must_use]
 pub const fn modal_overlay_visible(state: ModalOverlayState) -> bool {
-    state.status_overlay
-        || state.list_modal
-        || state.editor_modal
-        || state.settings_error
-        || state.settings_mounts_modal
-        || state.settings_env_modal
-        || state.settings_auth_modal
-        || state.create_prelude_modal
-        || state.destructive_confirm
+    !matches!(state, ModalOverlayState::None)
 }
 
 #[must_use]
@@ -185,16 +188,26 @@ pub const fn modal_overlay_state_from_stage_facts(
     list_modal: bool,
     stage: ConsoleStageModalFacts,
 ) -> ModalOverlayState {
-    ModalOverlayState {
-        status_overlay,
-        list_modal,
-        editor_modal: stage.editor_modal_open,
-        settings_error: stage.settings_error_popup_open,
-        settings_mounts_modal: stage.settings_mounts_modal_open,
-        settings_env_modal: stage.settings_env_modal_open,
-        settings_auth_modal: stage.settings_auth_modal_open,
-        create_prelude_modal: stage.create_prelude_modal_open,
-        destructive_confirm: stage.destructive_confirm_open,
+    if status_overlay {
+        ModalOverlayState::Status
+    } else if list_modal {
+        ModalOverlayState::List
+    } else if stage.editor_modal_open {
+        ModalOverlayState::Editor
+    } else if stage.settings_error_popup_open {
+        ModalOverlayState::SettingsError
+    } else if stage.settings_mounts_modal_open {
+        ModalOverlayState::SettingsMounts
+    } else if stage.settings_env_modal_open {
+        ModalOverlayState::SettingsEnv
+    } else if stage.settings_auth_modal_open {
+        ModalOverlayState::SettingsAuth
+    } else if stage.create_prelude_modal_open {
+        ModalOverlayState::CreatePrelude
+    } else if stage.destructive_confirm_open {
+        ModalOverlayState::DestructiveConfirm
+    } else {
+        ModalOverlayState::None
     }
 }
 
@@ -463,9 +476,9 @@ pub fn prepare_for_render(
     cwd: &std::path::Path,
     area: Rect,
 ) {
-    use crate::tui::app::ConsoleManagerStage;
     use crate::tui::components::footer_hints::editor_footer_items;
     use crate::tui::layout::list::clamp_list_scroll_for_area;
+    use crate::tui::model::ConsoleManagerStage;
     use crate::tui::screens::editor::view::{editor_frame_areas, prepare_editor_for_render};
     use crate::tui::screens::settings::view::{
         settings_frame_areas, settings_screen_footer_for_state,
@@ -502,7 +515,7 @@ pub fn prepare_for_render(
 }
 
 fn prepare_visible_modal(area: Rect, state: &mut crate::tui::state::ManagerState<'_>) {
-    use crate::tui::app::ConsoleManagerStage;
+    use crate::tui::model::ConsoleManagerStage;
 
     let areas = visible_modal_prepare_areas_for_stage_facts(
         area,

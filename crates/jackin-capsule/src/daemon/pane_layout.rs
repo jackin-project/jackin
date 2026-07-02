@@ -291,13 +291,13 @@ impl Multiplexer {
                     .provider
                     .as_ref()
                     .map(|provider| provider.label.as_str());
-                crate::tui::app::visible_tab_pane_kind(crate::tui::app::VisibleTabPaneFacts {
+                crate::tui::model::visible_tab_pane_kind(crate::tui::model::VisibleTabPaneFacts {
                     agent_slug: session.agent.as_deref(),
                     provider_label,
                 })
             })
         });
-        crate::tui::app::tab_auto_label(pane_count, panes)
+        crate::tui::model::tab_auto_label(pane_count, panes)
     }
 
     /// Rewrite each tab's auto-label after a spawn / split / remove.

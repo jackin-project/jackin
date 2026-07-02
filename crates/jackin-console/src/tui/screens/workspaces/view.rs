@@ -52,12 +52,18 @@ pub enum WorkspaceListRowTone {
 pub struct WorkspaceListDisplayRow {
     pub label: String,
     pub tone: WorkspaceListRowTone,
-    pub expanded: bool,
-    pub has_instances: bool,
+    pub disclosure: Disclosure,
     pub selected: bool,
     pub hovered: bool,
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Four orthogonal UI state flags (selected, hovered, \
+              current_dir_expanded, current_dir_has_instances) — each tracks an \
+              independent focus / disclosure signal consumed individually by the \
+              row builder. Named-field reads match the direct focus-model idiom."
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListDisplayRowFacts {
     pub row: ManagerListRow,
@@ -97,6 +103,14 @@ pub enum WorkspaceSidebarPlan {
     ListNames,
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Five orthogonal sidebar-picker visibility flags (provider, \
+              launch_provider, new_session, agent, role) — each tracks an \
+              independent inline-picker open state consumed individually by the \
+              sidebar planner to pick its `WorkspaceSidebarPlan` variant. Named- \
+              field reads match the per-picker detection idiom."
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceSidebarFacts {
     pub inline_provider_picker_open: bool,
@@ -168,16 +182,14 @@ pub const fn workspace_sidebar_owns_focus(list_names_focused: bool, list_modal_o
 
 #[must_use]
 pub fn current_directory_display_row(
-    expanded: bool,
-    has_instances: bool,
+    disclosure: Disclosure,
     selected: bool,
     hovered: bool,
 ) -> WorkspaceListDisplayRow {
     WorkspaceListDisplayRow {
         label: "Current directory".to_owned(),
         tone: WorkspaceListRowTone::White,
-        expanded,
-        has_instances,
+        disclosure,
         selected,
         hovered,
     }
@@ -188,8 +200,7 @@ pub fn new_workspace_display_row(selected: bool, hovered: bool) -> WorkspaceList
     WorkspaceListDisplayRow {
         label: new_workspace_list_label().to_owned(),
         tone: WorkspaceListRowTone::White,
-        expanded: false,
-        has_instances: false,
+        disclosure: Disclosure::None,
         selected,
         hovered,
     }
@@ -230,8 +241,7 @@ pub fn workspace_instance_display_row(
     WorkspaceListDisplayRow {
         label: workspace_instance_list_label(instance_id, role_key, status),
         tone: WorkspaceListRowTone::Instance,
-        expanded: false,
-        has_instances: false,
+        disclosure: Disclosure::None,
         selected,
         hovered,
     }
@@ -246,8 +256,7 @@ pub fn workspace_list_display_row_for_row(
 ) -> Option<WorkspaceListDisplayRow> {
     match facts.row {
         ManagerListRow::CurrentDirectory => Some(current_directory_display_row(
-            facts.current_dir_expanded,
-            facts.current_dir_has_instances,
+            Disclosure::for_instances(facts.current_dir_has_instances, facts.current_dir_expanded),
             facts.selected,
             facts.hovered,
         )),
@@ -266,8 +275,7 @@ pub fn workspace_list_display_row_for_row(
             saved_workspace(idx).map(|(name, expanded, has_instances)| WorkspaceListDisplayRow {
                 label: name,
                 tone: WorkspaceListRowTone::Workspace,
-                expanded,
-                has_instances,
+                disclosure: Disclosure::for_instances(has_instances, expanded),
                 selected: facts.selected,
                 hovered: facts.hovered,
             })
@@ -551,7 +559,7 @@ fn push_tree_workspace_line(
         ]));
         return;
     }
-    let disclosure = Disclosure::for_instances(row.has_instances, row.expanded);
+    let disclosure = row.disclosure;
     let color = row_fg(row);
     let line = if let Some(arrow) = disclosure.glyph() {
         let text_w = 1 + 1 + 1 + jackin_tui::display_cols(&row.label);

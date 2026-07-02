@@ -3,10 +3,6 @@
 use jackin_config::{AppConfig, LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_core::RoleSelector;
 
-use crate::tui::app::{
-    open_launch_agent_prompt_plan, open_launch_provider_picker_plan, store_pending_launch_plan,
-    take_pending_launch_and_role_plan, take_pending_launch_plan,
-};
 use crate::tui::components::error_popup::{
     role_resolution_error_message, role_resolution_error_title,
 };
@@ -15,6 +11,10 @@ pub use crate::tui::message::{AgentPickerChoices, LaunchPromptDispatch, LaunchPr
 use crate::tui::message::{
     AgentPickerResolution, OnPromptFailure, PromptOutcome, agent_picker_choices_for_workspace,
     launch_agent_prompt_plan,
+};
+use crate::tui::model::{
+    open_launch_agent_prompt_plan, open_launch_provider_picker_plan, store_pending_launch_plan,
+    take_pending_launch_and_role_plan, take_pending_launch_plan,
 };
 use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::update::{

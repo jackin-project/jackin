@@ -1,6 +1,6 @@
 //! Tests for `run`.
 use super::*;
-use crate::tui::app::ConsoleManagerStageRoute;
+use crate::tui::model::ConsoleManagerStageRoute;
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseEvent, MouseEventKind,
 };

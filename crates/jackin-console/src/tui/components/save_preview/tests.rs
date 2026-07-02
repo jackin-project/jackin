@@ -1,7 +1,8 @@
 //! Tests for `save_preview`.
 use super::{
     SettingsEnvPreview, WorkspaceAuthChange, WorkspaceSaveMode, WorkspaceSavePreview,
-    build_workspace_save_lines, workspace_create_display_name, workspace_save_lines,
+    WorkspaceToggleSet, build_workspace_save_lines, workspace_create_display_name,
+    workspace_save_lines,
 };
 use crate::mount_info_cache::MountInfoCache;
 use crate::tui::screens::editor::model::EditorState;
@@ -36,10 +37,8 @@ fn empty_workspace_preview() -> WorkspaceSavePreview {
         role_count: 0,
         original_default_role: None,
         pending_default_role: None,
-        original_keep_awake: false,
-        pending_keep_awake: false,
-        original_git_pull: false,
-        pending_git_pull: false,
+        original_toggles: WorkspaceToggleSet::default(),
+        pending_toggles: WorkspaceToggleSet::default(),
         env_original: SettingsEnvPreview::default(),
         env_pending: SettingsEnvPreview::default(),
         collapse_lines: Vec::new(),

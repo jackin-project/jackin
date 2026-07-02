@@ -43,19 +43,7 @@ impl Default for VirtualTerminalProfile {
             agent_colorterm: "truecolor",
             osc8_policy: Osc8Policy::ModelMetadata,
             supported_sgr: SupportedSgr {
-                bold: true,
-                dim: true,
-                italic: true,
-                underline: true,
-                underline_style: true,
-                underline_color: true,
-                inverse: true,
-                strikethrough: true,
-                blink: true,
-                conceal: true,
-                overline: true,
-                color_256: true,
-                truecolor: true,
+                flags: (1 << 13) - 1,
             },
         }
     }
@@ -71,19 +59,63 @@ pub enum Osc8Policy {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SupportedSgr {
-    pub bold: bool,
-    pub dim: bool,
-    pub italic: bool,
-    pub underline: bool,
-    pub underline_style: bool,
-    pub underline_color: bool,
-    pub inverse: bool,
-    pub strikethrough: bool,
-    pub blink: bool,
-    pub conceal: bool,
-    pub overline: bool,
-    pub color_256: bool,
-    pub truecolor: bool,
+    pub(crate) flags: u16,
+}
+
+const BOLD: u16 = 1 << 0;
+const DIM: u16 = 1 << 1;
+const ITALIC: u16 = 1 << 2;
+const UNDERLINE: u16 = 1 << 3;
+const UNDERLINE_STYLE: u16 = 1 << 4;
+const UNDERLINE_COLOR: u16 = 1 << 5;
+const INVERSE: u16 = 1 << 6;
+const STRIKETHROUGH: u16 = 1 << 7;
+const BLINK: u16 = 1 << 8;
+const CONCEAL: u16 = 1 << 9;
+const OVERLINE: u16 = 1 << 10;
+const COLOR_256: u16 = 1 << 11;
+const TRUECOLOR: u16 = 1 << 12;
+
+impl SupportedSgr {
+    pub fn bold(&self) -> bool {
+        self.flags & BOLD != 0
+    }
+    pub fn dim(&self) -> bool {
+        self.flags & DIM != 0
+    }
+    pub fn italic(&self) -> bool {
+        self.flags & ITALIC != 0
+    }
+    pub fn underline(&self) -> bool {
+        self.flags & UNDERLINE != 0
+    }
+    pub fn underline_style(&self) -> bool {
+        self.flags & UNDERLINE_STYLE != 0
+    }
+    pub fn underline_color(&self) -> bool {
+        self.flags & UNDERLINE_COLOR != 0
+    }
+    pub fn inverse(&self) -> bool {
+        self.flags & INVERSE != 0
+    }
+    pub fn strikethrough(&self) -> bool {
+        self.flags & STRIKETHROUGH != 0
+    }
+    pub fn blink(&self) -> bool {
+        self.flags & BLINK != 0
+    }
+    pub fn conceal(&self) -> bool {
+        self.flags & CONCEAL != 0
+    }
+    pub fn overline(&self) -> bool {
+        self.flags & OVERLINE != 0
+    }
+    pub fn color_256(&self) -> bool {
+        self.flags & COLOR_256 != 0
+    }
+    pub fn truecolor(&self) -> bool {
+        self.flags & TRUECOLOR != 0
+    }
 }
 
 impl VirtualTerminalProfile {
@@ -120,17 +152,17 @@ impl VirtualTerminalProfile {
     #[must_use]
     pub fn attrs_supported(self, attrs: &Attrs) -> bool {
         let sgr = self.supported_sgr;
-        (sgr.color_256
-            || sgr.truecolor
+        (sgr.color_256()
+            || sgr.truecolor()
             || (attrs.foreground == Color::Default && attrs.background == Color::Default))
-            && (!attrs.bold || sgr.bold)
-            && (!attrs.dim || sgr.dim)
-            && (!attrs.italic || sgr.italic)
-            && (attrs.underline_style == UnderlineStyle::None || sgr.underline)
-            && (!attrs.strikethrough || sgr.strikethrough)
-            && (!(attrs.slow_blink || attrs.rapid_blink) || sgr.blink)
-            && (!attrs.conceal || sgr.conceal)
-            && (!attrs.overline || sgr.overline)
+            && (!attrs.bold || sgr.bold())
+            && (!attrs.dim || sgr.dim())
+            && (!attrs.italic || sgr.italic())
+            && (attrs.underline_style == UnderlineStyle::None || sgr.underline())
+            && (!attrs.strikethrough || sgr.strikethrough())
+            && (!(attrs.slow_blink || attrs.rapid_blink) || sgr.blink())
+            && (!attrs.conceal || sgr.conceal())
+            && (!attrs.overline || sgr.overline())
     }
 }
 

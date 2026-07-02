@@ -10,6 +10,13 @@ use crate::display_cols;
 use crate::theme::{DANGER_RED, DEBUG_AMBER, LINK_BLUE, WHITE, faded};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Four orthogonal status-footer hover flags (left, usage, right, \
+              right_debug) — each is an independent footer-segment hover signal \
+              consumed individually by the status-footer renderer. Named-field \
+              reads match the per-segment hover-rendering idiom."
+)]
 pub struct StatusFooterHover {
     pub left: bool,
     pub usage: bool,

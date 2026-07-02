@@ -21,6 +21,7 @@
 //! operator-notice channel (`emit_compact_line`), which never depends on the file.
 
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Arguments;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -28,11 +29,13 @@ use std::process::ExitStatus;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use anstyle_parse::{DefaultCharAccumulator, Parser, Perform};
 use anyhow::Context;
+use owo_colors::OwoColorize;
 use rand::RngExt as _;
 use serde::Serialize;
 
-use jackin_core::{JackinPaths, ansi_text::strip_bytes, prune_output};
+use jackin_core::JackinPaths;
 
 #[cfg(test)]
 mod tests;
@@ -692,8 +695,8 @@ pub fn prune_old_runs(paths: &JackinPaths) {
 
 pub fn prune_all_runs(paths: &JackinPaths) -> anyhow::Result<()> {
     let dir = run_dir(paths);
-    prune_output::section("Diagnostics", "removing diagnostic runs");
-    let row = prune_output::start("Deleting", "diagnostics");
+    section("Diagnostics", "removing diagnostic runs");
+    let row = start("Deleting", "diagnostics");
 
     let active_path = active_run().map(|run| run.path().to_path_buf());
     let result = active_path
@@ -981,5 +984,153 @@ pub(crate) fn prune_old_runs_in_dir(dir: &Path, active_run: Option<&str>) {
     let overflow = entries.len().saturating_sub(MAX_RUN_ARTIFACTS);
     for (path, _) in entries.into_iter().take(overflow) {
         remove_jsonl_run(&path);
+    }
+}
+
+// Local copies of the presentation helpers that were moved to `jackin-tui` in
+// A3. Inlined here so this crate (L1, depended on by 8 L0/L1/L2 crates) does
+// not need to pull `jackin-tui` (L3) for the two small helpers `prune_all_runs`
+// uses. The implementations are byte-identical to the originals in
+// `jackin_core::{ansi_text, prune_output}` before their A3 move.
+
+#[must_use]
+fn strip_bytes(bytes: &[u8]) -> Vec<u8> {
+    let mut parser = Parser::<DefaultCharAccumulator>::default();
+    let mut performer = PlainPerformer { output: Vec::new() };
+    for &byte in bytes {
+        parser.advance(&mut performer, byte);
+    }
+    performer.output
+}
+
+struct PlainPerformer {
+    output: Vec<u8>,
+}
+
+impl Perform for PlainPerformer {
+    fn print(&mut self, c: char) {
+        let mut buf = [0u8; 4];
+        self.output
+            .extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+    }
+
+    fn execute(&mut self, byte: u8) {
+        if matches!(byte, b'\n' | b'\r' | b'\t') {
+            self.output.push(byte);
+        }
+    }
+}
+
+const STATUS_COLUMN: usize = 78;
+
+fn flush_stdout() {
+    drop(std::io::stdout().flush());
+}
+
+fn stdout_line(args: Arguments<'_>) {
+    let mut stdout = std::io::stdout().lock();
+    drop(writeln!(stdout, "{args}"));
+}
+
+fn stdout_fragment(args: Arguments<'_>) {
+    let mut stdout = std::io::stdout().lock();
+    drop(write!(stdout, "{args}"));
+}
+
+fn section(label: &str, detail: impl std::fmt::Display) {
+    stdout_line(format_args!(""));
+    stdout_line(format_args!("  {} {}", label.bold(), detail.dimmed()));
+    flush_stdout();
+}
+
+fn ok_label() {
+    stdout_line(format_args!(" {}", "OK".green().bold()));
+}
+
+fn failed_label(detail: impl std::fmt::Display) {
+    stdout_line(format_args!(" {}", "FAILED".red().bold()));
+    stdout_line(format_args!("      {detail}"));
+}
+
+fn start(action: &str, target: impl std::fmt::Display) -> PendingRow {
+    let (prefix, dots) = pending_parts(action, target);
+    stdout_fragment(format_args!("    {} {}", prefix.bold(), dots.dimmed()));
+    flush_stdout();
+    PendingRow { finalized: false }
+}
+
+fn pending_parts(action: &str, target: impl std::fmt::Display) -> (String, String) {
+    let (prefix, prefix_chars) = fit_prefix(format!("{action} {target}"));
+    let dots = ".".repeat(STATUS_COLUMN.saturating_sub(prefix_chars).max(3));
+    (prefix, dots)
+}
+
+fn fit_prefix(prefix: String) -> (String, usize) {
+    let max = STATUS_COLUMN.saturating_sub(4);
+    let keep = max.saturating_sub(3);
+    let mut total = 0usize;
+    let mut truncate_at: Option<usize> = None;
+    for (idx, _) in prefix.char_indices() {
+        if total == keep && truncate_at.is_none() {
+            truncate_at = Some(idx);
+        }
+        if total > max {
+            let cut = truncate_at.unwrap_or(idx);
+            let mut fitted = prefix[..cut].to_string();
+            fitted.push_str("...");
+            return (fitted, keep + 3);
+        }
+        total += 1;
+    }
+    (prefix, total)
+}
+
+#[derive(Debug)]
+pub struct PendingRow {
+    #[expect(
+        dead_code,
+        reason = "Drop guard: closed in Drop impl if caller forgets to finalize"
+    )]
+    finalized: bool,
+}
+
+impl PendingRow {
+    /// Finalize the row from a `Result`: print `OK` on success, `FAILED` on error.
+    pub fn complete<T, E, F>(self, result: Result<T, E>, message: F) -> Result<T, E>
+    where
+        F: FnOnce(&E) -> String,
+    {
+        match result {
+            Ok(value) => {
+                ok_label();
+                Ok(value)
+            }
+            Err(error) => {
+                failed_label(message(&error));
+                Err(error)
+            }
+        }
+    }
+}
+
+impl jackin_core::launch_progress::LaunchDiagnostics for RunDiagnostics {
+    fn run_id(&self) -> &str {
+        &self.run_id
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn command_output_path(&self, name: &str) -> PathBuf {
+        self.command_output_path(name)
+    }
+
+    fn compact(&self, kind: &str, message: &str) {
+        self.compact(kind, message);
+    }
+
+    fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
+        self.stage(kind, stage, message, detail);
     }
 }

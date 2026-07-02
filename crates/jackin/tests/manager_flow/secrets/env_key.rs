@@ -55,7 +55,7 @@ fn env_key_modal_blocks_duplicate_workspace_key() -> Result<()> {
             .pending
             .env
             .get("EXISTING")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("kept-value"),
         "the pre-existing value must remain untouched"
     );
@@ -75,7 +75,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
     let mut role_env = std::collections::BTreeMap::new();
     role_env.insert(
         "LOG_LEVEL".into(),
-        jackin::operator_env::EnvValue::Plain("debug".into()),
+        jackin_core::EnvValue::Plain("debug".into()),
     );
     let mut roles = std::collections::BTreeMap::new();
     roles.insert(
@@ -97,7 +97,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             src: host_path.clone(),
             dst: host_path,
             readonly: false,
-            isolation: jackin::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         }],
         roles,
         ..Default::default()
@@ -165,7 +165,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
         agent_entry
             .env
             .get("LOG_LEVEL")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("debug"),
         "pre-existing role value must remain untouched"
     );

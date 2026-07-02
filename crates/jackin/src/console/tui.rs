@@ -22,10 +22,10 @@ pub(crate) mod input {
         pub(super) fn poll_role_load(
             editor: &mut crate::console::tui::state::EditorState<'_>,
             config: &mut jackin_config::AppConfig,
-            paths: &crate::paths::JackinPaths,
+            paths: &jackin_core::JackinPaths,
         ) -> bool {
             use crate::console::tui::state::PendingRoleLoad;
-            use jackin_console::tui::app::ConsolePendingRoleLoad as _;
+            use jackin_console::tui::model::ConsolePendingRoleLoad as _;
             let Some((load, result)): Option<(PendingRoleLoad, anyhow::Result<()>)> =
                 editor.poll_pending_role_load()
             else {
@@ -47,8 +47,8 @@ pub(crate) mod input {
 
         use super::InputOutcome;
         use crate::console::tui::state::ManagerState;
-        use crate::paths::JackinPaths;
         use jackin_config::AppConfig;
+        use jackin_core::JackinPaths;
 
         pub fn handle_key(
             state: &mut ManagerState<'_>,
@@ -82,28 +82,7 @@ pub(crate) mod input {
     >;
 
     #[cfg(test)]
-    pub(super) mod test_support {
-        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-        use jackin_config::{MountConfig, MountIsolation};
-
-        pub(crate) fn key(code: KeyCode) -> KeyEvent {
-            KeyEvent {
-                code,
-                modifiers: KeyModifiers::NONE,
-                kind: KeyEventKind::Press,
-                state: KeyEventState::NONE,
-            }
-        }
-
-        pub(crate) fn mount(src: &str, dst: &str) -> MountConfig {
-            MountConfig {
-                src: src.into(),
-                dst: dst.into(),
-                readonly: false,
-                isolation: MountIsolation::Shared,
-            }
-        }
-    }
+    pub(super) mod test_support;
 }
 pub mod run;
 pub mod state {

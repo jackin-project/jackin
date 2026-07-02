@@ -28,11 +28,11 @@ fn handle_key(
     cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
-    use crate::tui::app::{
+    use crate::tui::effect::ConsoleEffect;
+    use crate::tui::model::{
         ConsoleInputDispatchFacts, ConsoleInputDispatchPlan, ConsoleManagerStageRoute,
         console_input_dispatch_plan,
     };
-    use crate::tui::effect::ConsoleEffect;
     use crate::tui::screens::workspaces::update::{InstancePurgeKeyPlan, instance_purge_key_plan};
     use crate::tui::state::update::{ManagerMessage, update_manager};
 

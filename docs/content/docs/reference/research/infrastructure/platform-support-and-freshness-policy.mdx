@@ -37,7 +37,7 @@ The proposed mechanism: add `last_reviewed: YYYY-MM-DD` frontmatter to every roa
 
 - Flags items with `last_reviewed` older than 6 months as stale.
 - Reports them in CI output (no auto-filed issues).
-- Estimated at roughly 30 lines of TypeScript, following the shape of the existing <RepoFile path="docs/scripts/check-roadmap-sidebar.ts" />.
+- Implement in Rust under <RepoFile path="crates/jackin-xtask/src/docs.rs">crates/jackin-xtask/src/docs.rs</RepoFile>, following the shape of the existing roadmap/sidebar validators.
 
 The baseline plan was to apply a single `last_reviewed` date to every existing roadmap MDX file at once, then require new items to carry the field from creation.
 

@@ -125,6 +125,12 @@ impl Multiplexer {
     /// agent should return them to whatever they were looking at
     /// before they opened that tab, not to the next-tab-to-the-right
     /// (which feels like a stack push).
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "Session-removal fn: per-tab reflow with nested drag/selection \
+              cancellation + tab-index clamping. The nesting is the per-tab \
+              reflow protocol."
+    )]
     pub(super) fn remove_exited_session(&mut self, session_id: u64) {
         crate::clog!("action: remove_exited_session id={session_id}");
         // Any in-flight selection / drag-resize was anchored to a
@@ -253,7 +259,7 @@ impl Multiplexer {
         let cwd = self.workdir.as_path();
         match agent {
             Some(slug) => {
-                let label = crate::tui::app::visible_agent_label(Some(slug), provider_label);
+                let label = crate::tui::model::visible_agent_label(Some(slug), provider_label);
                 SessionLaunch {
                     label,
                     cmd: build_agent_command(
@@ -266,7 +272,7 @@ impl Multiplexer {
                 }
             }
             None => SessionLaunch {
-                label: crate::tui::app::visible_agent_label(None, None),
+                label: crate::tui::model::visible_agent_label(None, None),
                 cmd: build_shell_command(env_passthrough, cwd, codename),
             },
         }

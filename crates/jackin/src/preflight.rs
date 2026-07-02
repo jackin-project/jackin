@@ -4,7 +4,7 @@
 //! and a human-readable hint for fixing failures. The `preflight` function
 //! runs a slice of check names, fails on any `Fail`, and returns `Ok(())`
 //! when all pass or warn.
-use crate::docker_client::DockerApi;
+use jackin_docker::docker_client::DockerApi;
 use owo_colors::OwoColorize;
 use std::path::Path;
 
@@ -122,7 +122,7 @@ impl CheckName {
 }
 
 /// Run a single check and return its result.
-pub(crate) async fn run_check(check: CheckName, paths: &crate::paths::JackinPaths) -> CheckResult {
+pub(crate) async fn run_check(check: CheckName, paths: &jackin_core::JackinPaths) -> CheckResult {
     match check {
         CheckName::DockerDaemon => check_docker_daemon().await,
         CheckName::DockerVersion => check_docker_version().await,
@@ -145,7 +145,7 @@ pub(crate) async fn run_check(check: CheckName, paths: &crate::paths::JackinPath
 /// and return `Err`.
 pub(crate) async fn preflight(
     checks: &[CheckName],
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
 ) -> anyhow::Result<()> {
     let mut failures = Vec::new();
     for &check in checks {
@@ -200,7 +200,7 @@ pub(crate) async fn preflight(
 // ── Individual check implementations ────────────────────────────────────────
 
 async fn check_docker_daemon() -> CheckResult {
-    match crate::docker_client::BollardDockerClient::connect() {
+    match jackin_docker::docker_client::BollardDockerClient::connect() {
         Ok(docker) => {
             // Attempt a lightweight operation (list_containers with empty filter)
             // to verify the daemon is actually reachable.
@@ -256,7 +256,7 @@ async fn check_docker_version() -> CheckResult {
     }
 }
 
-fn check_disk_space(paths: &crate::paths::JackinPaths) -> CheckResult {
+fn check_disk_space(paths: &jackin_core::JackinPaths) -> CheckResult {
     // Check that the jackin data directory has ≥1 GiB free.
     let dir = paths.data_dir.parent().unwrap_or(&paths.data_dir);
     match available_bytes(dir) {
@@ -316,10 +316,10 @@ fn check_jackin_dir(data_dir: &Path) -> CheckResult {
     CheckResult::ok("jackin_dir", format!("{} exists", jackin_dir.display()))
 }
 
-fn check_capsule_cache(paths: &crate::paths::JackinPaths) -> CheckResult {
-    let version = crate::capsule_binary::REQUIRED_VERSION;
+fn check_capsule_cache(paths: &jackin_core::JackinPaths) -> CheckResult {
+    let version = jackin_image::capsule_binary::REQUIRED_VERSION;
     let arch = std::env::consts::ARCH;
-    let cached = crate::capsule_binary::cached_binary_path(&paths.cache_dir, version, arch);
+    let cached = jackin_image::capsule_binary::cached_binary_path(&paths.cache_dir, version, arch);
     if cached.exists() {
         CheckResult::ok(
             "capsule_cache",
@@ -432,8 +432,8 @@ fn check_clock_skew() -> CheckResult {
     }
 }
 
-async fn check_orphaned_containers(paths: &crate::paths::JackinPaths) -> CheckResult {
-    use crate::docker_client::{BollardDockerClient, DockerApi};
+async fn check_orphaned_containers(paths: &jackin_core::JackinPaths) -> CheckResult {
+    use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
     use jackin_runtime::runtime::naming::LABEL_MANAGED;
 
     let Ok(docker) = BollardDockerClient::connect() else {
@@ -442,7 +442,8 @@ async fn check_orphaned_containers(paths: &crate::paths::JackinPaths) -> CheckRe
     let Ok(containers) = docker.list_containers(&[LABEL_MANAGED], true).await else {
         return CheckResult::skip("orphaned_containers", "Could not list containers");
     };
-    let Ok(index) = crate::instance::manifest::InstanceIndex::read_or_rebuild(&paths.data_dir)
+    let Ok(index) =
+        jackin_runtime::instance::manifest::InstanceIndex::read_or_rebuild(&paths.data_dir)
     else {
         return CheckResult::skip("orphaned_containers", "Could not read instance index");
     };
@@ -471,7 +472,7 @@ async fn check_orphaned_containers(paths: &crate::paths::JackinPaths) -> CheckRe
     }
 }
 
-fn check_stale_isolation(paths: &crate::paths::JackinPaths) -> CheckResult {
+fn check_stale_isolation(paths: &jackin_core::JackinPaths) -> CheckResult {
     // Look for isolation.json files that reference worktrees that no longer exist.
     use jackin_runtime::isolation::state::read_records;
 

@@ -89,7 +89,10 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'Cargo.toml'
               - 'Cargo.lock'
+              - 'clippy.toml'
               - 'deny.toml'
+              - 'file-size-budget.toml'
+              - 'test-layout-allowlist.toml'
               - 'rust-toolchain.toml'
               - 'build.rs'
               - 'src/**'
@@ -109,6 +112,7 @@ jobs:
               - '.github/workflows/rust-nextest.yml'
               - 'docker/**'
               - 'crates/jackin/tests/dind_e2e.rs'
+              - 'crates/jackin/tests/dind_e2e/**'
               - 'crates/jackin/tests/fixtures/**'
               - 'crates/jackin/src/runtime.rs'
               - 'crates/jackin/src/app/**'
@@ -118,9 +122,14 @@ jobs:
               - 'crates/jackin/src/repo_contract/**'
               - 'crates/jackin-capsule/**'
               - 'crates/jackin-docker/**'
+              - 'crates/jackin-host/**'
               - 'crates/jackin-image/**'
-              - 'crates/jackin-launch/**'
+              - 'crates/jackin-instance/**'
+              - 'crates/jackin-isolation/**'
+              - 'crates/jackin-launch-tui/**'
+              - 'crates/jackin-manifest/**'
               - 'crates/jackin-runtime/**'
+              - 'crates/jackin-usage/**'
             workflows:
               - '.github/workflows/**'
             mise:
@@ -387,6 +396,60 @@ jobs:
         run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - run: cargo run -p jackin-xtask --locked -- schema-check --base origin/main
 
+  file-size-gate:
+    needs: [changes, matrix-setup, cargo-registry-warmup]
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
+    name: file-size ratchet gate (${{ matrix.config.lane }})
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_OFFLINE: "true"
+      CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          RUSTC_WRAPPER: ""
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:sccache"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: ci-file-size-gate-dev-workspace-v2
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
+      # Gate: codebase-health lint checks via the umbrella `lint --strict`
+      # command. The file-size ratchet (file-size-budget.toml: production
+      # ≤2000L, tests ≤10000L) and the test-file-layout ratchet
+      # (test-layout-allowlist.toml: one sibling tests.rs) are STRICT here —
+      # they fail on growth above budget and on stale/missing/shrunken rows.
+      # dependency-direction stays informational (exits 0) until the P2 layer
+      # inversions are cleaned up. Grandfathered entries in each ratchet file
+      # may only ever shrink. See `roadmap/codebase-health-enforcement`.
+      - run: cargo run -p jackin-xtask --locked -- lint --strict
+
   clippy:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
@@ -495,6 +558,70 @@ jobs:
       - run: cargo shear --deny-warnings
       - run: bash scripts/ci/check-agent-status-truthful.sh
       - run: cargo deny check licenses bans sources
+
+  # R9 (W4 optional): publish a cargo-depgraph layering visualization as
+  # an informational artifact per PR. Non-blocking — failures here must
+  # never fail the merge (continue-on-error below + intentionally not in
+  # the ci-required aggregator needs list). Restricted to GitHub lane so
+  # the artifact does not double; Velnor self-hosted runners stay focused
+  # on the gating CI lanes.
+  workspace-depgraph:
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    name: workspace depgraph artifact
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_NET_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - name: Install cargo-depgraph (online; its sourcehut repo ships no
+          cargo-binstall manifest, so fetch the crates.io build directly. This
+          one step overrides the job's CARGO_NET_OFFLINE so the tool can be
+          fetched; the job stays non-blocking (continue-on-error) by design.)
+        env:
+          CARGO_NET_OFFLINE: "false"
+        run: cargo install cargo-depgraph --locked
+      - name: Install graphviz (DOT → SVG renderer)
+        run: sudo apt-get install -y --no-install-recommends graphviz
+      - name: Generate layered dependency graph
+        run: |
+          set -euo pipefail
+          cargo depgraph \
+            --workspace-only \
+            --all-features \
+            --dedup-transitive-deps \
+            --manifest-path Cargo.toml > workspace.dot
+          dot -Tsvg workspace.dot -o workspace.svg
+      - name: Upload depgraph artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: workspace-depgraph
+          path: |
+            workspace.dot
+            workspace.svg
+          if-no-files-found: warn
+          retention-days: 14
 
   check-default:
     needs: [changes, matrix-setup, cargo-registry-warmup]
@@ -946,6 +1073,8 @@ jobs:
       - fmt
       - clippy
       - dependency-policy
+      - schema-check
+      - file-size-gate
       - check-default
       - construct-e2e-image
       - test

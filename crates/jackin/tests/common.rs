@@ -8,11 +8,11 @@
 )]
 #![allow(unreachable_pub)]
 
-use jackin::docker::{CommandRunner, RunOptions};
-use jackin::docker_client::{
+use jackin_core::paths::JackinPaths;
+use jackin_docker::docker_client::{
     ContainerRow, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
 };
-use jackin::paths::JackinPaths;
+use jackin_docker::{CommandRunner, RunOptions};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
@@ -22,12 +22,14 @@ use std::path::Path;
 /// integration tests need to call this explicitly because `cfg(test)`
 /// only affects the lib when compiled for the lib's own test target.
 pub fn install_capsule_binary_stub(paths: &JackinPaths) {
-    jackin::capsule_binary::install_test_stub(paths).expect("install jackin-capsule test stub");
+    jackin_image::capsule_binary::install_test_stub(paths)
+        .expect("install jackin-capsule test stub");
 }
 
 pub fn install_agent_binary_stubs(paths: &JackinPaths) {
-    for agent in jackin::agent::Agent::ALL {
-        jackin::agent_binary::install_test_stub(paths, *agent).expect("install agent binary stub");
+    for agent in jackin_core::Agent::ALL {
+        jackin_image::agent_binary::install_test_stub(paths, *agent)
+            .expect("install agent binary stub");
     }
 }
 
@@ -56,7 +58,7 @@ impl DockerApi for NoOpDocker {
     async fn create_container(
         &self,
         _name: &str,
-        _spec: jackin::docker_client::ContainerSpec,
+        _spec: jackin_docker::docker_client::ContainerSpec,
     ) -> anyhow::Result<()> {
         Ok(())
     }

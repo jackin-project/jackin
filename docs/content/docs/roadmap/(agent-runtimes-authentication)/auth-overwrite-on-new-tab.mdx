@@ -18,7 +18,7 @@ The shared single-file policy is `seed_forwarded_credential()` / `apply_forwarde
 
 Non-credential setup remains idempotent and can still run on later new-tab invocations: container init is separately guarded by `/jackin/state/container-init.done`, Claude MCP registration is retried best-effort, Claude plugin install uses a fingerprint marker, Codex and OpenCode provider config writes are idempotent, and the agent-status reporter repairs drift without touching auth.
 
-The launch-time snapshot model is still real. <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> provisions host-derived auth into role-state files, and <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> bind-mounts those snapshots into `/jackin/<agent>/...` for the capsule to seed from. For Amp the mount comment explicitly notes the current entrypoint copies the file, so in-container rotation does not flow back today.
+The launch-time snapshot model is still real. <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> provisions host-derived auth into role-state files, and <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> bind-mounts those snapshots into `/jackin/<agent>/...` for the capsule to seed from. For Amp the mount comment explicitly notes the current entrypoint copies the file, so in-container rotation does not flow back today.
 
 ## Remaining unfinished plan
 
@@ -49,5 +49,5 @@ Implementation order stays:
 - [Reliable Claude authentication strategy](/reference/research/authentication/claude-auth-strategy/) — design history for the `sync` / `token` / `ignore` mode set; the concurrent-session token-drift concerns documented there are what this root-cause fix narrows.
 - [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) — threat model for tokens in containers. The shared store introduced by live sync is the next hardening target in that trajectory.
 - <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> — the fixed file; `run()`, `run_agent_setup()`, and `setup_*()` are the changed functions.
-- <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> — `provision_*_auth()` functions that write the launch-time credential snapshot. The snapshot model is unchanged by the shipped new-tab fix; it remains the input to first-boot auth bootstrap.
+- <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> — `provision_*_auth()` functions that write the launch-time credential snapshot. The snapshot model is unchanged by the shipped new-tab fix; it remains the input to first-boot auth bootstrap.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — `agent_mounts()` that bind-mounts the provisioned snapshot into the container.

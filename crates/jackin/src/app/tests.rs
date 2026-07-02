@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn parse_auth_forward_mode_from_cli_accepts_sync() {
     let mode = parse_auth_forward_mode_from_cli("sync").unwrap();
-    assert_eq!(mode, config::AuthForwardMode::Sync);
+    assert_eq!(mode, jackin_config::AuthForwardMode::Sync);
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn resolve_instance_reference_matches_manifest_instance_id() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -76,7 +76,7 @@ fn resolve_instance_reference_ignores_purged_tombstones() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -296,7 +296,7 @@ fn ad_hoc_manifest_for_workdir(workdir: &std::path::Path) -> instance::InstanceM
         host_workdir_fingerprint: &instance::manifest::host_path_fingerprint(&workdir),
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -332,7 +332,7 @@ async fn stop_failure_leaves_running_manifest_when_container_still_exists() {
     let paths = JackinPaths::for_tests(temp.path());
     let container =
         write_stop_test_manifest(&paths, temp.path(), instance::InstanceStatus::Running);
-    let docker = crate::docker_client::FakeDockerClient {
+    let docker = runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             runtime::ContainerState::Running,
         ])),
@@ -353,7 +353,7 @@ async fn stop_failure_marks_restore_available_when_container_is_gone() {
     let paths = JackinPaths::for_tests(temp.path());
     let container =
         write_stop_test_manifest(&paths, temp.path(), instance::InstanceStatus::Running);
-    let docker = crate::docker_client::FakeDockerClient::default();
+    let docker = runtime::test_support::FakeDockerClient::default();
 
     mark_instance_restore_available_after_stop(&paths, &container, &docker, false).await;
 
@@ -379,7 +379,7 @@ async fn hardline_restore_candidate_marks_missing_manifest_available() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -399,7 +399,7 @@ async fn hardline_restore_candidate_marks_missing_manifest_available() {
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
     // inspect returns NotFound → manifest marked RestoreAvailable
-    let docker = crate::docker_client::FakeDockerClient::default();
+    let docker = runtime::test_support::FakeDockerClient::default();
 
     let candidate = restore_candidate_for_hardline(&paths, container, &docker)
         .await
@@ -429,7 +429,7 @@ async fn hardline_restore_candidate_errors_when_docker_unavailable() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -447,7 +447,7 @@ async fn hardline_restore_candidate_errors_when_docker_unavailable() {
     manifest.mark_status(instance::InstanceStatus::Crashed);
     manifest.write(&paths.data_dir.join(container)).unwrap();
     // inspect returns InspectUnavailable → Docker is unavailable error
-    let docker = crate::docker_client::FakeDockerClient {
+    let docker = runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
             runtime::ContainerState::InspectUnavailable(
                 "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_owned(),
@@ -471,20 +471,20 @@ fn workspace_show_includes_isolation_column() {
     std::fs::create_dir_all(&worktree_src).unwrap();
     std::fs::create_dir_all(&cache_src).unwrap();
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![
             crate::workspace::MountConfig {
                 src: worktree_src.display().to_string(),
                 dst: "/workspace/jackin".into(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Worktree,
+                isolation: jackin_core::MountIsolation::Worktree,
             },
             crate::workspace::MountConfig {
                 src: cache_src.display().to_string(),
                 dst: "/workspace/cache".into(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             },
         ],
         allowed_roles: vec![],
@@ -524,25 +524,25 @@ fn workspace_show_splits_workspace_and_global_mount_groups() {
     let mut config = AppConfig::default();
     config
         .roles
-        .insert("agent-smith".into(), config::RoleSource::default());
+        .insert("agent-smith".into(), jackin_config::RoleSource::default());
     config.add_mount(
         "gradle-cache",
         crate::workspace::MountConfig {
             src: global_src.display().to_string(),
             dst: "/home/agent/.gradle/caches".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         },
         None,
     );
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![crate::workspace::MountConfig {
             src: work_src.display().to_string(),
             dst: "/workspace/jackin".into(),
             readonly: false,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         }],
         allowed_roles: vec!["agent-smith".into()],
         ..Default::default()
@@ -561,7 +561,7 @@ fn workspace_show_splits_workspace_and_global_mount_groups() {
 fn validate_setup_role_rejects_disallowed_and_accepts_allowed() {
     let mut config = AppConfig::default();
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         allowed_roles: vec!["alpha".into(), "beta".into()],
         ..Default::default()
@@ -580,7 +580,7 @@ fn validate_setup_role_rejects_disallowed_and_accepts_allowed() {
 fn validate_setup_role_allows_any_when_allowed_roles_empty() {
     let mut config = AppConfig::default();
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         allowed_roles: vec![],
         ..Default::default()
@@ -597,22 +597,22 @@ fn workspace_show_explains_ambiguous_role_scoped_global_mounts() {
     let mut config = AppConfig::default();
     config
         .roles
-        .insert("alpha".into(), config::RoleSource::default());
+        .insert("alpha".into(), jackin_config::RoleSource::default());
     config
         .roles
-        .insert("beta".into(), config::RoleSource::default());
+        .insert("beta".into(), jackin_config::RoleSource::default());
     config.add_mount(
         "team-secrets",
         crate::workspace::MountConfig {
             src: global_src.display().to_string(),
             dst: "/secrets".into(),
             readonly: true,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         },
         Some("alpha"),
     );
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![],
         allowed_roles: vec!["alpha".into(), "beta".into()],
@@ -633,7 +633,7 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
     let mut config = AppConfig::default();
     config.roles.insert(
         "chainargos/agent-brown".into(),
-        config::RoleSource::default(),
+        jackin_config::RoleSource::default(),
     );
     config.add_mount(
         "team-secrets",
@@ -641,12 +641,12 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
             src: global_src.display().to_string(),
             dst: "/secrets".into(),
             readonly: true,
-            isolation: crate::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         },
         Some("chainargos/*"),
     );
     let ws = crate::workspace::WorkspaceConfig {
-        version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+        version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
         workdir: "/workspace/jackin".into(),
         mounts: vec![],
         allowed_roles: vec!["chainargos/agent-brown".into()],
@@ -663,110 +663,22 @@ fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
     assert!(out.contains("chainargos/*"), "{out}");
 }
 
-/// Test fake for [`crate::operator_env::OpWriteRunner`] used by
-/// the rotate-cleanup tests below.
-struct FakeOpWriter {
-    /// Records every `item_delete` call as `(vault, item, account)`
-    /// so the rotate-cleanup tests can assert the per-call account
-    /// override (the account the prior item lives in).
-    deletes: std::cell::RefCell<Vec<(String, String, Option<String>)>>,
-    fail_delete: bool,
-    /// Tags returned by `item_tags`. Defaults to jackin-owned so the
-    /// rotate-cleanup tests exercise the delete; set empty to model an
-    /// operator-adopted item the delete guard must spare.
-    tags: Vec<String>,
-    /// When `true`, `item_tags` returns `Err` to exercise the rotate
-    /// guard's fail-safe (skip delete) path.
-    fail_tags: bool,
-}
-impl FakeOpWriter {
-    fn new() -> Self {
-        Self {
-            deletes: std::cell::RefCell::new(Vec::new()),
-            fail_delete: false,
-            tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_owned()],
-            fail_tags: false,
-        }
-    }
-    fn failing() -> Self {
-        Self {
-            deletes: std::cell::RefCell::new(Vec::new()),
-            fail_delete: true,
-            tags: vec![crate::workspace::token_setup::JACKIN_TAG.to_owned()],
-            fail_tags: false,
-        }
-    }
-    fn adopted() -> Self {
-        Self {
-            deletes: std::cell::RefCell::new(Vec::new()),
-            fail_delete: false,
-            tags: Vec::new(),
-            fail_tags: false,
-        }
-    }
-    fn tag_read_fails() -> Self {
-        Self {
-            deletes: std::cell::RefCell::new(Vec::new()),
-            fail_delete: false,
-            tags: Vec::new(),
-            fail_tags: true,
-        }
-    }
-}
-impl crate::operator_env::OpWriteRunner for FakeOpWriter {
-    fn item_create(
-        &self,
-        _params: crate::operator_env::OpItemCreateParams<'_>,
-    ) -> Result<crate::operator_env::OpRef> {
-        anyhow::bail!("rotate-cleanup tests do not exercise item_create")
-    }
-    fn item_delete(&self, item_id: &str, vault_id: &str, account: Option<&str>) -> Result<()> {
-        self.deletes.borrow_mut().push((
-            vault_id.to_owned(),
-            item_id.to_owned(),
-            account.map(str::to_owned),
-        ));
-        if self.fail_delete {
-            anyhow::bail!("simulated item_delete failure");
-        }
-        Ok(())
-    }
-    fn item_field_set(
-        &self,
-        _item_id: &str,
-        _vault_id: &str,
-        _target: &crate::operator_env::FieldTarget,
-        _value: &str,
-        _section: Option<&str>,
-    ) -> Result<crate::operator_env::OpRef> {
-        anyhow::bail!("rotate-cleanup tests do not exercise item_field_set")
-    }
-    fn item_tags(
-        &self,
-        _item_id: &str,
-        _vault_id: &str,
-        _account: Option<&str>,
-    ) -> Result<Vec<String>> {
-        if self.fail_tags {
-            anyhow::bail!("simulated item_tags read failure");
-        }
-        Ok(self.tags.clone())
-    }
-}
+/// Test fake for [`jackin_env::OpWriteRunner`] used by the
+/// rotate-cleanup tests below. Shared with `jackin-env` via
+/// `jackin_env::test_support::FakeOpWriter` (Phase 2 dedup).
+use jackin_env::test_support::FakeOpWriter;
 
 /// Rotate's prior-item cleanup parses the prior op:// reference,
 /// issues a delete with the parsed UUIDs, and returns Ok.
 #[test]
 fn delete_prior_op_item_with_op_ref_calls_writer_with_parsed_uuids() {
-    let prior = Some(crate::operator_env::EnvValue::OpRef(
-        crate::operator_env::OpRef {
-            op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
-            path: "Personal/Prior/token".into(),
-            account: None,
-            on_demand: false,
-        },
-    ));
-    let new_ref = crate::operator_env::OpRef {
+    let prior = Some(jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+        op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
+        path: "Personal/Prior/token".into(),
+        account: None,
+        on_demand: false,
+    }));
+    let new_ref = jackin_core::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: None,
@@ -776,23 +688,22 @@ fn delete_prior_op_item_with_op_ref_calls_writer_with_parsed_uuids() {
     delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
     assert_eq!(
         *writer.deletes.borrow(),
-        vec![("VAULT_UUID".to_owned(), "OLD_ITEM".to_owned(), None)],
+        vec![("VAULT_UUID".to_owned(), "OLD_ITEM".to_owned())],
     );
+    assert_eq!(*writer.delete_accounts.borrow(), vec![None],);
 }
 
 /// The prior item the operator adopted (no jackin tag) must NOT be
 /// deleted on rotate — it may hold the operator's other fields.
 #[test]
 fn delete_prior_op_item_spares_operator_adopted_item() {
-    let prior = Some(crate::operator_env::EnvValue::OpRef(
-        crate::operator_env::OpRef {
-            op: "op://VAULT_UUID/SHARED_ITEM/token".into(),
-            path: "Personal/My Vault Item/token".into(),
-            account: None,
-            on_demand: false,
-        },
-    ));
-    let new_ref = crate::operator_env::OpRef {
+    let prior = Some(jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+        op: "op://VAULT_UUID/SHARED_ITEM/token".into(),
+        path: "Personal/My Vault Item/token".into(),
+        account: None,
+        on_demand: false,
+    }));
+    let new_ref = jackin_core::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: None,
@@ -811,15 +722,13 @@ fn delete_prior_op_item_spares_operator_adopted_item() {
 /// still return Ok so the freshly-wired token stands.
 #[test]
 fn delete_prior_op_item_skips_delete_on_tag_read_error() {
-    let prior = Some(crate::operator_env::EnvValue::OpRef(
-        crate::operator_env::OpRef {
-            op: "op://VAULT_UUID/OLD_ITEM/token".into(),
-            path: "Personal/Prior/token".into(),
-            account: None,
-            on_demand: false,
-        },
-    ));
-    let new_ref = crate::operator_env::OpRef {
+    let prior = Some(jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+        op: "op://VAULT_UUID/OLD_ITEM/token".into(),
+        path: "Personal/Prior/token".into(),
+        account: None,
+        on_demand: false,
+    }));
+    let new_ref = jackin_core::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: None,
@@ -840,15 +749,13 @@ fn delete_prior_op_item_skips_delete_on_tag_read_error() {
 /// account — otherwise the prior item is orphaned.
 #[test]
 fn delete_prior_op_item_targets_prior_refs_account() {
-    let prior = Some(crate::operator_env::EnvValue::OpRef(
-        crate::operator_env::OpRef {
-            op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
-            path: "Personal/Prior/token".into(),
-            account: Some("account-A".into()),
-            on_demand: false,
-        },
-    ));
-    let new_ref = crate::operator_env::OpRef {
+    let prior = Some(jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+        op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
+        path: "Personal/Prior/token".into(),
+        account: Some("account-A".into()),
+        on_demand: false,
+    }));
+    let new_ref = jackin_core::OpRef {
         op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
         path: "Personal/New/token".into(),
         account: Some("account-B".into()),
@@ -860,11 +767,11 @@ fn delete_prior_op_item_targets_prior_refs_account() {
     delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
     assert_eq!(
         *writer.deletes.borrow(),
-        vec![(
-            "VAULT_UUID".to_owned(),
-            "OLD_ITEM".to_owned(),
-            Some("account-A".to_owned()),
-        )],
+        vec![("VAULT_UUID".to_owned(), "OLD_ITEM".to_owned())],
+    );
+    assert_eq!(
+        *writer.delete_accounts.borrow(),
+        vec![Some("account-A".to_owned())],
         "delete must target the account the prior item actually lives in"
     );
 }
@@ -874,7 +781,7 @@ fn delete_prior_op_item_targets_prior_refs_account() {
 /// the literal came from.
 #[test]
 fn delete_prior_op_item_skips_when_prior_is_none_or_literal() {
-    let new_ref = crate::operator_env::OpRef {
+    let new_ref = jackin_core::OpRef {
         op: "op://V/I/F".into(),
         path: "Personal/New/token".into(),
         account: None,
@@ -886,7 +793,7 @@ fn delete_prior_op_item_skips_when_prior_is_none_or_literal() {
 
     let writer = FakeOpWriter::new();
     delete_prior_op_item_with_runner(
-        Some(crate::operator_env::EnvValue::Plain("literal".into())),
+        Some(jackin_core::EnvValue::Plain("literal".into())),
         &new_ref,
         &writer,
     )
@@ -900,7 +807,7 @@ fn delete_prior_op_item_skips_when_prior_is_none_or_literal() {
 /// loss until the operator runs `doctor`.
 #[test]
 fn delete_prior_op_item_skips_when_new_ref_equals_prior() {
-    let same = crate::operator_env::OpRef {
+    let same = jackin_core::OpRef {
         op: "op://V/I/F".into(),
         path: "Personal/Item/token".into(),
         account: None,
@@ -908,7 +815,7 @@ fn delete_prior_op_item_skips_when_new_ref_equals_prior() {
     };
     let writer = FakeOpWriter::new();
     delete_prior_op_item_with_runner(
-        Some(crate::operator_env::EnvValue::OpRef(same.clone())),
+        Some(jackin_core::EnvValue::OpRef(same.clone())),
         &same,
         &writer,
     )
@@ -921,15 +828,13 @@ fn delete_prior_op_item_skips_when_new_ref_equals_prior() {
 /// automation surfaces the orphan.
 #[test]
 fn delete_prior_op_item_propagates_err_with_actionable_hint() {
-    let prior = Some(crate::operator_env::EnvValue::OpRef(
-        crate::operator_env::OpRef {
-            op: "op://V_UUID/I_UUID/F".into(),
-            path: "Personal/Prior/token".into(),
-            account: None,
-            on_demand: false,
-        },
-    ));
-    let new_ref = crate::operator_env::OpRef {
+    let prior = Some(jackin_core::EnvValue::OpRef(jackin_core::OpRef {
+        op: "op://V_UUID/I_UUID/F".into(),
+        path: "Personal/Prior/token".into(),
+        account: None,
+        on_demand: false,
+    }));
+    let new_ref = jackin_core::OpRef {
         op: "op://V_UUID/I_NEW/F".into(),
         path: "Personal/New/token".into(),
         account: None,
@@ -951,7 +856,7 @@ use std::collections::HashMap;
 async fn resolve_role_no_match_errors() {
     let selector = RoleSelector::new(None, "agent-smith");
     // list_containers returns empty → no match
-    let docker = crate::docker_client::FakeDockerClient::default();
+    let docker = runtime::test_support::FakeDockerClient::default();
     let err = resolve_role_to_container(&selector, &docker)
         .await
         .unwrap_err();
@@ -965,13 +870,13 @@ async fn resolve_role_no_match_errors() {
 async fn resolve_role_multiple_matches_errors_with_names() {
     let selector = RoleSelector::new(None, "agent-smith");
     // list_containers returns two containers → multiple match error
-    let docker = crate::docker_client::FakeDockerClient {
+    let docker = runtime::test_support::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
-            crate::docker_client::ContainerRow {
+            jackin_docker::docker_client::ContainerRow {
                 name: "jk-k7p9m2xq-agentsmith".to_owned(),
                 labels: HashMap::default(),
             },
-            crate::docker_client::ContainerRow {
+            jackin_docker::docker_client::ContainerRow {
                 name: "jk-a1b2c3d4-agentsmith".to_owned(),
                 labels: HashMap::default(),
             },
@@ -991,9 +896,9 @@ async fn resolve_role_multiple_matches_errors_with_names() {
 async fn resolve_role_single_match_returns_name() {
     let selector = RoleSelector::new(None, "agent-smith");
     // list_containers returns one container → single match
-    let docker = crate::docker_client::FakeDockerClient {
+    let docker = runtime::test_support::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
-            crate::docker_client::ContainerRow {
+            jackin_docker::docker_client::ContainerRow {
                 name: "jk-k7p9m2xq-agentsmith".to_owned(),
                 labels: HashMap::default(),
             },

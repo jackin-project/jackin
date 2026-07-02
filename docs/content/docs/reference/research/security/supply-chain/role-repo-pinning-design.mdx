@@ -62,7 +62,7 @@ Per the project's pre-release schema rule (see <RepoFile path="AGENTS.md">AGENTS
 
 - <RepoFile path="crates/jackin-config/src/schema.rs">crates/jackin-config/src/schema.rs</RepoFile> — add `commit`, `version` fields to `RoleSource`.
 - <RepoFile path="crates/jackin-config/src/migrations.rs">crates/jackin-config/src/migrations.rs</RepoFile> — version bump and registry step.
-- <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — `sync_builtin_agents` and `resolve_agent_source` must update fields in place rather than overwriting the whole `RoleSource`, so a re-pinned built-in survives a binary upgrade.
+- <RepoFile path="crates/jackin-config/src/app_config/roles.rs">crates/jackin-config/src/app_config/roles.rs</RepoFile> — `sync_builtin_agents` and `resolve_agent_source` must update fields in place rather than overwriting the whole `RoleSource`, so a re-pinned built-in survives a binary upgrade.
 - <RepoFile path="crates/jackin-runtime/src/runtime/repo_cache.rs">crates/jackin-runtime/src/runtime/repo_cache.rs</RepoFile> — capture-pin helper, fetch+checkout-detached path for pinned commits, `--update` path, persist callback into config.
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — wire the `--update` flag, include resolved version/SHA in the launch summary.
 - <RepoFile path="crates/jackin-manifest/src/manifest.rs">crates/jackin-manifest/src/manifest.rs</RepoFile> — version/provenance metadata.

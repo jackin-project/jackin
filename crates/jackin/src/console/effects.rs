@@ -24,7 +24,7 @@ pub(crate) fn op_cli_available() -> bool {
 pub(crate) fn execute_manager_effect(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     effect: ManagerEffect,
 ) -> bool {
     match effect {
@@ -142,7 +142,7 @@ fn execute_container_info_copy(state: &mut ManagerState<'_>, row: usize, payload
 pub fn execute_pending_workspace_save_commit(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     cwd: &std::path::Path,
 ) -> anyhow::Result<bool> {
     let pending = if let ManagerStage::Editor(editor) = &mut state.stage {
@@ -174,7 +174,7 @@ pub fn execute_pending_workspace_save_commit(
 pub(crate) fn execute_remove_workspace(
     state: &mut ManagerState<'_>,
     _config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     cwd: &std::path::Path,
     name: &str,
 ) -> bool {
@@ -219,7 +219,7 @@ fn apply_remove_workspace_result(
 pub(crate) fn apply_role_load_completion(
     state: &mut ManagerState<'_>,
     _config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     load: PendingRoleLoad,
     result: anyhow::Result<()>,
 ) {
@@ -239,7 +239,7 @@ pub(crate) fn apply_role_load_completion(
             let ManagerStage::Editor(editor) = &mut state.stage else {
                 return;
             };
-            crate::debug_log!(
+            jackin_diagnostics::debug_log!(
                 "role",
                 "role loader failed for key={key:?} raw={raw:?}: {e:?}",
                 key = load.key,
@@ -279,19 +279,19 @@ fn apply_role_source_persist_result(
                 let ManagerStage::Editor(editor) = &mut state.stage else {
                     return;
                 };
-                crate::debug_log!(
+                jackin_diagnostics::debug_log!(
                     "role",
                     "role repo registration completed for key={key:?} git={git:?}",
                     git = source.git.as_str()
                 );
                 if source.trusted {
-                    crate::debug_log!(
+                    jackin_diagnostics::debug_log!(
                         "role",
                         "role source is trusted; adding key={key:?} directly to the workspace"
                     );
                     crate::console::tui::state::add_role_to_workspace_editor(editor, config, &key);
                 } else {
-                    crate::debug_log!(
+                    jackin_diagnostics::debug_log!(
                         "role",
                         "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
                         git = source.git.as_str()
@@ -303,7 +303,7 @@ fn apply_role_source_persist_result(
                 let ManagerStage::Editor(editor) = &mut state.stage else {
                     return;
                 };
-                crate::debug_log!(
+                jackin_diagnostics::debug_log!(
                     "role",
                     "role loader failed for key={key:?} raw={raw:?}: {e:?}"
                 );
@@ -340,14 +340,14 @@ fn apply_role_source_persist_result(
 pub(crate) fn apply_role_load_completion_for_tests(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     load: PendingRoleLoad,
     result: anyhow::Result<()>,
 ) {
     match result {
         Ok(()) => {
             if let Err(e) = execute_role_source_persist(config, paths, &load.key, &load.source) {
-                crate::debug_log!(
+                jackin_diagnostics::debug_log!(
                     "role",
                     "role loader failed for key={key:?} raw={raw:?}: {e:?}",
                     key = load.key,
@@ -361,21 +361,21 @@ pub(crate) fn apply_role_load_completion_for_tests(
                 );
                 return;
             }
-            crate::debug_log!(
+            jackin_diagnostics::debug_log!(
                 "role",
                 "role repo registration completed for key={key:?} git={git:?}",
                 key = load.key,
                 git = load.source.git.as_str()
             );
             if load.source.trusted {
-                crate::debug_log!(
+                jackin_diagnostics::debug_log!(
                     "role",
                     "role source is trusted; adding key={key:?} directly to the workspace",
                     key = load.key
                 );
                 crate::console::tui::state::add_role_to_workspace_editor(editor, config, &load.key);
             } else {
-                crate::debug_log!(
+                jackin_diagnostics::debug_log!(
                     "role",
                     "role source registered untrusted; opening trust confirm for key={key:?} git={git:?}",
                     key = load.key,
@@ -385,7 +385,7 @@ pub(crate) fn apply_role_load_completion_for_tests(
             }
         }
         Err(e) => {
-            crate::debug_log!(
+            jackin_diagnostics::debug_log!(
                 "role",
                 "role loader failed for key={key:?} raw={raw:?}: {e:?}",
                 key = load.key,
@@ -412,12 +412,12 @@ pub(crate) fn apply_role_load_completion_for_tests(
 pub(crate) async fn apply_role_input_with_runner_for_tests(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     value: &str,
-    runner: &mut impl crate::docker::CommandRunner,
+    runner: &mut impl jackin_docker::CommandRunner,
 ) {
     let raw = value.trim();
-    crate::debug_log!("role", "resolving role loader input: raw={raw:?}");
+    jackin_diagnostics::debug_log!("role", "resolving role loader input: raw={raw:?}");
     let resolved = match crate::console::resolve_role_input_source(config, raw) {
         Ok(resolved) => resolved,
         Err(error) => {
@@ -430,7 +430,7 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
         }
     };
 
-    crate::debug_log!(
+    jackin_diagnostics::debug_log!(
         "role",
         "registering role repo for key={key:?} git={git:?}",
         key = resolved.key,
@@ -441,7 +441,7 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
         &resolved.selector,
         &resolved.source.git,
         runner,
-        crate::tui::is_debug_mode(),
+        jackin_diagnostics::is_debug_mode(),
     )
     .await;
     let (_tx, rx) = tokio::sync::oneshot::channel();
@@ -463,7 +463,7 @@ pub(crate) async fn apply_role_input_with_runner_for_tests(
 pub(crate) fn persist_trusted_role_source_for_tests(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     key: &str,
     source: &jackin_config::RoleSource,
 ) {
@@ -480,7 +480,7 @@ pub(crate) fn persist_trusted_role_source_for_tests(
 fn execute_trusted_role_source_persist(
     state: &mut ManagerState<'_>,
     _config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     key: &str,
     mut source: jackin_config::RoleSource,
 ) {
@@ -499,7 +499,7 @@ fn execute_trusted_role_source_persist(
 }
 
 pub(crate) fn execute_token_generate(
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     config: &AppConfig,
     req: &crate::console::tui::state::PendingTokenGenerate,
 ) -> anyhow::Result<jackin_core::EnvValue> {
@@ -512,13 +512,13 @@ pub(crate) use jackin_console::tui::state::update::{
 
 fn execute_role_registration_start(
     state: &mut ManagerState<'_>,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     raw: String,
     key: &str,
     selector: jackin_core::RoleSelector,
     source: jackin_config::RoleSource,
 ) {
-    crate::debug_log!(
+    jackin_diagnostics::debug_log!(
         "role",
         "registering role repo for key={key:?} git={git:?}",
         git = source.git.as_str()
@@ -546,7 +546,7 @@ use jackin_console::tui::state::update::execute_op_commit_validation;
 pub(crate) fn execute_workspace_save_effect(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     cwd: &std::path::Path,
     effect: WorkspaceSaveEffect,
 ) {
@@ -618,7 +618,7 @@ pub(crate) fn execute_workspace_save_effect(
 pub(crate) fn execute_workspace_save_write(
     state: &mut ManagerState<'_>,
     _config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     _cwd: &std::path::Path,
     input: WorkspaceSaveWriteInput<'_>,
     exit_on_success: bool,
@@ -706,7 +706,7 @@ fn apply_workspace_save_write_result(
 #[cfg(test)]
 pub(crate) fn execute_role_source_persist(
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     key: &str,
     source: &jackin_config::RoleSource,
 ) -> anyhow::Result<()> {
@@ -716,7 +716,7 @@ pub(crate) fn execute_role_source_persist(
 fn execute_settings_save(
     state: &mut ManagerState<'_>,
     _config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
 ) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
@@ -765,7 +765,7 @@ fn apply_settings_save_result(
 pub fn poll_background_messages(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
 ) -> Vec<ManagerBackgroundEvent> {
     let mut messages = vec![
         ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls),
@@ -830,7 +830,7 @@ pub fn poll_background_messages(
 pub fn apply_background_event(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
-    paths: &crate::paths::JackinPaths,
+    paths: &jackin_core::JackinPaths,
     cwd: &std::path::Path,
     event: ManagerBackgroundEvent,
 ) -> bool {
@@ -900,7 +900,7 @@ pub(crate) use jackin_console::tui::op_picker::poll_picker_loads;
 
 // ── Role-resolution error helpers ───────────────────────────────────────────
 //
-// These depend on `crate::runtime::RepoError` and `crate::repo` types that
+// These depend on `jackin_runtime::runtime::RepoError` and `jackin_manifest::repo` types that
 // are not accessible from `jackin-console`. All callers live in this file.
 
 pub(crate) fn open_role_resolution_error(
@@ -912,7 +912,7 @@ pub(crate) fn open_role_resolution_error(
     use jackin_console::tui::components::error_popup::{
         configured_role_load_error_message, repository_role_load_error_message,
     };
-    crate::debug_log!(
+    jackin_diagnostics::debug_log!(
         "role",
         "showing role-load error popup for raw={raw:?}: {err:?}"
     );
@@ -933,16 +933,16 @@ fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
 
     if let Some(repo_err) = err
         .chain()
-        .find_map(|cause| cause.downcast_ref::<crate::runtime::RepoError>())
+        .find_map(|cause| cause.downcast_ref::<jackin_runtime::runtime::RepoError>())
     {
         return match repo_err {
-            crate::runtime::RepoError::CloneFailed(_) => {
+            jackin_runtime::runtime::RepoError::CloneFailed(_) => {
                 role_repository_unavailable_message().into()
             }
-            crate::runtime::RepoError::RemoteMismatch => {
+            jackin_runtime::runtime::RepoError::RemoteMismatch => {
                 role_repository_remote_mismatch_message().into()
             }
-            crate::runtime::RepoError::InvalidRoleRepo(detail) => {
+            jackin_runtime::runtime::RepoError::InvalidRoleRepo(detail) => {
                 invalid_role_repository_message(humanize_invalid_role_repo(detail))
             }
         };
@@ -950,8 +950,8 @@ fn friendly_role_resolution_error(err: &anyhow::Error) -> String {
     generic_role_repository_error_message().into()
 }
 
-fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> String {
-    use crate::repo::RoleRepoValidationError as V;
+fn humanize_invalid_role_repo(err: &jackin_manifest::repo::RoleRepoValidationError) -> String {
+    use jackin_manifest::repo::RoleRepoValidationError as V;
     match err {
         V::Missing(path) => {
             let file = path
@@ -961,405 +961,5 @@ fn humanize_invalid_role_repo(err: &crate::repo::RoleRepoValidationError) -> Str
             error_popup::missing_role_repository_file_message(file)
         }
         _ => err.to_string().trim_end_matches('.').to_owned(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use jackin_config::AppConfig;
-    use jackin_config::WorkspaceConfig;
-    use jackin_console::tui::auth::{AuthKind, AuthMode};
-    use jackin_console::tui::components::file_browser::{
-        FileBrowserOutcome, FileBrowserState, FolderListing,
-    };
-    use jackin_console::tui::effect::FileBrowserEffectContext;
-    use jackin_console::tui::effect::{ConsoleEffect, WorkspaceSaveEffect};
-    use jackin_console::tui::state::update::{ManagerBackgroundEvent, ManagerMessage};
-
-    use crate::console::tui::state::{
-        AuthForm, AuthFormFocus, AuthFormTarget, CreatePreludeState, EditorState,
-        FileBrowserTarget, ManagerEffect, ManagerStage, ManagerState, Modal, PendingRoleLoad,
-        SettingsAuthModal, SettingsState,
-    };
-    use crate::console::tui::{WorkspaceSaveWriteInput, WorkspaceSaveWriteMode};
-
-    use super::{
-        apply_role_load_completion, execute_manager_effect, execute_workspace_save_effect,
-        execute_workspace_save_write, poll_background_messages,
-    };
-
-    #[tokio::test]
-    async fn poll_background_messages_routes_file_browser_poll_through_message() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let mut state = ManagerState::from_config(&config, cwd);
-
-        let events = poll_background_messages(&mut state, &mut config, &paths);
-
-        assert!(events.iter().any(|event| matches!(
-            event,
-            ManagerBackgroundEvent::Message(ManagerMessage::PollFileBrowserGitUrls)
-        )));
-    }
-
-    #[tokio::test]
-    async fn execute_manager_effect_requests_instance_refresh() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let mut state = ManagerState::from_config(&config, cwd);
-
-        execute_manager_effect(
-            &mut state,
-            &mut config,
-            &paths,
-            ConsoleEffect::RequestInstanceRefresh.into(),
-        );
-
-        assert!(
-            state.instance_refresh_in_flight(),
-            "instance refresh effect should spawn a worker"
-        );
-    }
-
-    #[tokio::test]
-    async fn workspace_save_drift_check_starts_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
-        let mut state = ManagerState::from_config(&config, cwd);
-        state.stage = ManagerStage::Editor(editor);
-
-        execute_workspace_save_effect(
-            &mut state,
-            &mut config,
-            &paths,
-            cwd,
-            WorkspaceSaveEffect::StartDriftCheck {
-                original_name: "workspace".into(),
-                prospective_mounts: Vec::new(),
-                plan: jackin_console::tui::state::PendingSaveCommit {
-                    effective_removals: Vec::new(),
-                    final_mounts: None,
-                    delete_isolated_acknowledged: false,
-                    isolated_cleanup_complete: false,
-                },
-                exit_on_success: false,
-            },
-        );
-
-        let ManagerStage::Editor(editor) = &state.stage else {
-            panic!("expected editor stage");
-        };
-        assert!(
-            editor.pending_drift_check.is_some(),
-            "workspace save drift detection should run on a worker"
-        );
-        assert!(matches!(editor.modal, Some(Modal::StatusPopup { .. })));
-    }
-
-    #[tokio::test]
-    async fn workspace_save_write_starts_config_save_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let original = WorkspaceConfig::default();
-        let pending = WorkspaceConfig::default();
-        let editor = EditorState::new_edit("workspace".into(), original.clone());
-        let mut state = ManagerState::from_config(&config, cwd);
-        state.stage = ManagerStage::Editor(editor);
-
-        execute_workspace_save_write(
-            &mut state,
-            &mut config,
-            &paths,
-            cwd,
-            WorkspaceSaveWriteInput {
-                mode: WorkspaceSaveWriteMode::Edit {
-                    original_name: "workspace".into(),
-                    pending_name: None,
-                    effective_removals: Vec::new(),
-                },
-                original: &original,
-                pending: &pending,
-            },
-            false,
-        );
-
-        assert!(
-            state.config_save_in_flight(),
-            "workspace config save should run on a worker"
-        );
-    }
-
-    #[tokio::test]
-    async fn settings_save_starts_config_save_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let settings = SettingsState::from_config(&config);
-        let mut state = ManagerState::from_config(&config, cwd);
-        state.stage = ManagerStage::Settings(settings);
-
-        execute_manager_effect(
-            &mut state,
-            &mut config,
-            &paths,
-            ConsoleEffect::SaveSettings.into(),
-        );
-
-        assert!(
-            state.config_save_in_flight(),
-            "settings config save should run on a worker"
-        );
-    }
-
-    #[tokio::test]
-    async fn remove_workspace_starts_config_save_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let mut state = ManagerState::from_config(&config, cwd);
-
-        super::execute_remove_workspace(&mut state, &mut config, &paths, cwd, "workspace");
-
-        assert!(
-            state.config_save_in_flight(),
-            "workspace delete should run on a worker"
-        );
-    }
-
-    #[tokio::test]
-    async fn trusted_role_source_persist_starts_config_save_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
-        let mut state = ManagerState::from_config(&config, cwd);
-        state.stage = ManagerStage::Editor(editor);
-
-        execute_manager_effect(
-            &mut state,
-            &mut config,
-            &paths,
-            ManagerEffect::PersistTrustedRoleSource {
-                key: "agent-smith".into(),
-                source: jackin_config::RoleSource::default(),
-            },
-        );
-
-        assert!(
-            state.config_save_in_flight(),
-            "trusted role source persistence should run on a worker"
-        );
-    }
-
-    #[tokio::test]
-    async fn role_load_completion_starts_role_source_persist_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
-        let mut state = ManagerState::from_config(&config, cwd);
-        state.stage = ManagerStage::Editor(editor);
-        let (_tx, rx) = tokio::sync::oneshot::channel();
-
-        apply_role_load_completion(
-            &mut state,
-            &mut config,
-            &paths,
-            PendingRoleLoad {
-                raw: "agent-smith".into(),
-                key: "agent-smith".into(),
-                source: jackin_config::RoleSource::default(),
-                rx,
-            },
-            Ok(()),
-        );
-
-        assert!(
-            state.config_save_in_flight(),
-            "loaded role source persistence should run on a worker"
-        );
-    }
-
-    #[tokio::test]
-    async fn create_prelude_file_browser_open_starts_listing_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let mut state = ManagerState::from_config(&config, cwd);
-
-        execute_manager_effect(
-            &mut state,
-            &mut config,
-            &paths,
-            ManagerEffect::OpenCreatePreludeFileBrowser,
-        );
-
-        assert!(
-            state.file_browser_listing_in_flight(),
-            "file browser open should scan directories on a worker"
-        );
-        assert!(
-            matches!(state.stage, ManagerStage::List),
-            "the modal should open only after the worker returns"
-        );
-    }
-
-    #[tokio::test]
-    async fn file_browser_navigation_starts_listing_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let mut state = ManagerState::from_config(&config, cwd);
-        let listing = FolderListing {
-            root: cwd.to_path_buf(),
-            cwd: cwd.to_path_buf(),
-            entries: Vec::new(),
-        };
-        let mut prelude = CreatePreludeState::new();
-        prelude.modal = Some(Modal::FileBrowser {
-            target: FileBrowserTarget::CreateFirstMountSrc,
-            state: FileBrowserState::from_listing(listing),
-        });
-        state.stage = ManagerStage::CreatePrelude(prelude);
-
-        execute_manager_effect(
-            &mut state,
-            &mut config,
-            &paths,
-            ManagerEffect::ApplyFileBrowserOutcome {
-                context: FileBrowserEffectContext::Prelude { browser_cwd: None },
-                outcome: FileBrowserOutcome::NavigateTo(cwd.join("child")),
-            },
-        );
-
-        assert!(
-            state.file_browser_listing_in_flight(),
-            "file browser navigation should scan directories on a worker"
-        );
-    }
-
-    #[tokio::test]
-    async fn file_browser_commit_starts_validation_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let child = cwd.join("child");
-        std::fs::create_dir(&child).unwrap();
-        let mut config = AppConfig::default();
-        let mut state = ManagerState::from_config(&config, cwd);
-        let listing = FolderListing {
-            root: cwd.to_path_buf(),
-            cwd: cwd.to_path_buf(),
-            entries: Vec::new(),
-        };
-        let mut prelude = CreatePreludeState::new();
-        prelude.modal = Some(Modal::FileBrowser {
-            target: FileBrowserTarget::CreateFirstMountSrc,
-            state: FileBrowserState::from_listing(listing),
-        });
-        state.stage = ManagerStage::CreatePrelude(prelude);
-
-        execute_manager_effect(
-            &mut state,
-            &mut config,
-            &paths,
-            ManagerEffect::ApplyFileBrowserOutcome {
-                context: FileBrowserEffectContext::Prelude { browser_cwd: None },
-                outcome: FileBrowserOutcome::RequestCommit(child),
-            },
-        );
-
-        assert!(
-            state.file_browser_commit_in_flight(),
-            "file browser commit validation should run on a worker"
-        );
-    }
-
-    #[tokio::test]
-    async fn editor_auth_source_folder_open_starts_listing_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let mut state = ManagerState::from_config(&config, cwd);
-        let mut editor = EditorState::new_edit("workspace".into(), WorkspaceConfig::default());
-        let mut form = AuthForm::new(AuthKind::Claude);
-        form.set_mode(AuthMode::Sync);
-        form.set_source_folder(cwd.to_path_buf());
-        editor.modal = Some(Modal::AuthForm {
-            target: AuthFormTarget::Workspace {
-                kind: AuthKind::Claude,
-            },
-            state: Box::new(form),
-            focus: AuthFormFocus::SourceFolder,
-            literal_buffer: String::new(),
-        });
-        state.stage = ManagerStage::Editor(editor);
-
-        execute_manager_effect(
-            &mut state,
-            &mut config,
-            &paths,
-            ManagerEffect::OpenEditorAuthSourceFolderBrowser,
-        );
-
-        assert!(state.file_browser_listing_in_flight());
-        let ManagerStage::Editor(editor) = &state.stage else {
-            panic!("expected editor stage");
-        };
-        assert!(matches!(editor.modal, Some(Modal::AuthForm { .. })));
-    }
-
-    #[tokio::test]
-    async fn settings_auth_source_folder_open_starts_listing_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
-        let cwd = tmp.path();
-        let mut config = AppConfig::default();
-        let mut state = ManagerState::from_config(&config, cwd);
-        let mut settings = SettingsState::from_config(&config);
-        let mut form = AuthForm::new(AuthKind::Claude);
-        form.set_mode(AuthMode::Sync);
-        form.set_source_folder(cwd.to_path_buf());
-        settings.auth.modal = Some(SettingsAuthModal::AuthForm {
-            target: AuthFormTarget::Workspace {
-                kind: AuthKind::Claude,
-            },
-            state: Box::new(form),
-            focus: AuthFormFocus::SourceFolder,
-            literal_buffer: String::new(),
-        });
-        state.stage = ManagerStage::Settings(settings);
-
-        execute_manager_effect(
-            &mut state,
-            &mut config,
-            &paths,
-            ManagerEffect::OpenSettingsAuthSourceFolderBrowser,
-        );
-
-        assert!(state.file_browser_listing_in_flight());
-        let ManagerStage::Settings(settings) = &state.stage else {
-            panic!("expected settings stage");
-        };
-        assert!(matches!(
-            settings.auth.modal,
-            Some(SettingsAuthModal::AuthForm { .. })
-        ));
     }
 }

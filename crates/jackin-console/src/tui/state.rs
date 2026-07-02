@@ -98,7 +98,7 @@ pub type AgentChoiceState =
 pub type RolePickerState =
     crate::tui::components::role_picker::RolePickerState<jackin_core::RoleSelector>;
 
-pub type ManagerStage<'a> = crate::tui::app::ConsoleManagerStage<
+pub type ManagerStage<'a> = crate::tui::model::ConsoleManagerStage<
     CreatePreludeState<'a>,
     EditorState<'a>,
     SettingsState<'a>,
@@ -206,7 +206,7 @@ pub type PendingIsolationCleanup =
 
 pub type PendingRoleLoad = crate::tui::subscriptions::PendingRoleLoad<jackin_config::RoleSource>;
 
-pub type Modal<'a> = crate::tui::app::ConsoleModal<
+pub type Modal<'a> = crate::tui::model::ConsoleModal<
     TextInputTarget,
     TextInputState<'a>,
     FileBrowserTarget,
@@ -231,7 +231,7 @@ pub type Modal<'a> = crate::tui::app::ConsoleModal<
     SecretsScopeTag,
 >;
 
-pub type CreatePreludeState<'a> = crate::tui::app::ConsoleCreatePreludeState<Modal<'a>>;
+pub type CreatePreludeState<'a> = crate::tui::model::ConsoleCreatePreludeState<Modal<'a>>;
 
 // ── ManagerState ────────────────────────────────────────────────────────────
 
@@ -355,7 +355,7 @@ pub struct ManagerState<'a> {
 
 // ── Impls ───────────────────────────────────────────────────────────────────
 
-impl crate::tui::app::ConsoleManagerModalBlockPresence for ManagerState<'_> {
+impl crate::tui::model::ConsoleManagerModalBlockPresence for ManagerState<'_> {
     fn list_modal_open(&self) -> bool {
         self.list_modal.is_some()
     }

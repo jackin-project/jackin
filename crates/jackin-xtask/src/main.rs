@@ -16,11 +16,14 @@
 //! declarative build graph stays in `docker-bake.hcl`, which this binary
 //! invokes rather than reimplementing in flag assembly.
 
+mod arch;
 mod construct;
 mod docs;
+mod lint;
 mod pr;
 mod pty_fixture;
 mod schema;
+mod test_layout;
 
 use std::process::ExitCode;
 
@@ -53,6 +56,11 @@ enum Command {
     /// Use as `cargo xtask change new <slug> --group <group>`.
     #[command(subcommand)]
     Change(docs::ChangeCommand),
+    /// Documentation checks that do not require the TypeScript/Fumadocs runtime.
+    ///
+    /// Use as `cargo xtask docs repo-links`.
+    #[command(subcommand)]
+    Docs(docs::DocsCommand),
     /// Scaffold or validate research dossiers.
     ///
     /// Use as `cargo xtask research scaffold <slug>` / `research check`.
@@ -67,6 +75,48 @@ enum Command {
     ///
     /// Use as `cargo xtask schema-check --base origin/main`.
     SchemaCheck(schema::SchemaCheckArgs),
+    /// Codebase-health lint gates (codebase-health-enforcement W3 + W4).
+    ///
+    /// `cargo xtask lint` (no subcommand) runs **every** gate — the file-size
+    /// ratchet, the test-file-layout rule, and the dependency-direction check.
+    /// This is the CI entry point. Add `--strict` to fail on architecture
+    /// violations instead of just reporting them.
+    ///
+    /// Subcommands run a single gate: `cargo xtask lint files`
+    /// (`--print-budget` refreshes the budget file), `cargo xtask lint tests`,
+    /// `cargo xtask lint arch` (`--dump` / `--strict`).
+    Lint {
+        #[command(subcommand)]
+        command: Option<LintCommand>,
+        /// When running all gates (no subcommand), fail on architecture
+        /// violations. Forwarded to the arch gate; ignored when a subcommand
+        /// is given.
+        #[arg(long)]
+        strict: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum LintCommand {
+    /// Enforce the file-size ratchet from `file-size-budget.toml`.
+    Files(lint::LintFilesArgs),
+    /// Enforce the test-file-layout rule (tests live in a sibling
+    /// `tests.rs`, never inline `#[cfg(test)] mod tests` or split across
+    /// `tests/` sub-modules).
+    Tests(test_layout::LintTestsArgs),
+    /// Dependency-direction gate (Workstream 4).
+    Arch(arch::LintArchArgs),
+}
+
+/// Run every codebase-health lint gate in sequence — the `cargo xtask lint`
+/// (no subcommand) entry point used by CI. The file-size ratchet and the
+/// test-file-layout rule always hard-fail on violations; the dependency-
+/// direction gate fails only in `strict` mode (informational otherwise, while
+/// the P2 inversions are still being cleaned up).
+fn run_all_lints(strict: bool) -> anyhow::Result<()> {
+    lint::enforce()?;
+    test_layout::enforce()?;
+    arch::check(strict)
 }
 
 fn main() -> ExitCode {
@@ -76,9 +126,16 @@ fn main() -> ExitCode {
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
         Command::Change(cmd) => docs::run_change(cmd),
+        Command::Docs(cmd) => docs::run_docs(cmd),
         Command::Research(cmd) => docs::run_research(cmd),
         Command::Roadmap(cmd) => docs::run_roadmap(cmd),
         Command::SchemaCheck(args) => schema::run(args),
+        Command::Lint { command, strict } => match command {
+            Some(LintCommand::Files(args)) => lint::run(args),
+            Some(LintCommand::Tests(args)) => test_layout::run(args),
+            Some(LintCommand::Arch(args)) => arch::run(args),
+            None => run_all_lints(strict),
+        },
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

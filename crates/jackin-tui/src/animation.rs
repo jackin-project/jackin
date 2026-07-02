@@ -282,7 +282,7 @@ fn drain_pending_input(host_screen_owned: bool) {
 
 /// Entry ritual — opening phrases then a hyperspace jump into the Construct.
 ///
-/// `host_screen_owned` should be `jackin_diagnostics::host_screen_owned()`.
+/// `host_screen_owned` should be `jackin_tui::ownership::host_screen_owned()`.
 pub fn warp_intro(host_screen_owned: bool) {
     drain_pending_input(host_screen_owned);
     intro_phrases(host_screen_owned);
@@ -291,14 +291,14 @@ pub fn warp_intro(host_screen_owned: bool) {
 
 /// Exit ritual — drop out of hyperspace.
 ///
-/// `host_screen_owned` should be `jackin_diagnostics::host_screen_owned()`.
+/// `host_screen_owned` should be `jackin_tui::ownership::host_screen_owned()`.
 pub fn warp_out(host_screen_owned: bool) {
     warp(false, host_screen_owned);
 }
 
 /// Closing screen shown when the last container leaves.
 ///
-/// `host_screen_owned` should be `jackin_diagnostics::host_screen_owned()`.
+/// `host_screen_owned` should be `jackin_tui::ownership::host_screen_owned()`.
 pub fn warp_end_caption(elapsed: Option<std::time::Duration>, host_screen_owned: bool) {
     if let Some(d) = elapsed {
         let line = format!(
@@ -322,6 +322,13 @@ fn lerp_channel(a: u8, b: u8, t: f32) -> u8 {
     clippy::too_many_lines,
     clippy::suboptimal_flops,
     clippy::type_complexity
+)]
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Star-warp rendering loop: per-frame, per-star, per-step nested \
+              control flow over the cell grid + radials. Extracting per-star \
+              helpers would require re-borrowing the grid + stars iterators \
+              across fn boundaries and obscure the per-step composition."
 )]
 fn warp(accelerating: bool, host_screen_owned: bool) {
     use std::f32::consts::PI;

@@ -81,6 +81,12 @@ fn start_listener_at_with_limiter(path: &Path) -> Result<ListenerWithLimiter> {
     start_listener_at_inner(path)
 }
 
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Unix-socket listener setup: per-step (unlink stale, bind, set- \
+              perms, nonblocking) nested `match` over `Result` outcomes. The \
+              nesting is the per-step error-propagation protocol."
+)]
 fn start_listener_at_inner(path: &Path) -> Result<ListenerWithLimiter> {
     match std::fs::remove_file(path) {
         Ok(()) => {}

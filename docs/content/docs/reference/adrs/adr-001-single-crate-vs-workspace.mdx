@@ -4,7 +4,7 @@ description: "Why jackin❯ started as a single crate and when it transitioned t
 ---
 
 **Status**: Accepted
-**Current state**: Cargo workspace — 17 member crates under `crates/`, root `jackin` binary crate at `crates/jackin/`. Total ~170 K lines of Rust.
+**Current state**: Cargo workspace — 24 member crates under `crates/`, root `jackin` binary crate at `crates/jackin/`. Total ~170 K lines of Rust.
 **Date**: 2026-05-30
 **Deciders**: Operator + agent
 
@@ -20,7 +20,7 @@ Reference projects that stay single-crate at comparable scale: `starship` (~120 
 
 **Trigger for workspace adoption**: either (a) total Rust LOC exceeds 150 K, or (b) a type from the core codebase is needed by external tooling (an `jackin-core` use case). Whichever comes first.
 
-**Phase 2 — workspace adopted (current state).** The codebase crossed ~170 K lines as surface-specific crates (`jackin-capsule`, `jackin-launch`, `jackin-console`, `jackin-tui`, `jackin-tui-lookbook`, `jackin-protocol`, `jackin-build-meta`) were extracted. The workspace root is <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> with `members = [...]`; the `jackin` binary crate at `crates/jackin/` remains the primary binary. The `crates/` directory is the canonical home for all member crates.
+**Phase 2 — workspace adopted (current state).** The codebase crossed ~170 K lines as surface-specific and subsystem crates (`jackin-capsule`, `jackin-launch-tui`, `jackin-console`, `jackin-host`, `jackin-instance`, `jackin-isolation`, `jackin-usage`, `jackin-tui`, `jackin-tui-lookbook`, `jackin-protocol`, `jackin-build-meta`) were extracted. The workspace root is <RepoFile path="Cargo.toml">Cargo.toml</RepoFile> with `members = [...]`; the `jackin` binary crate at `crates/jackin/` remains the primary binary. The `crates/` directory is the canonical home for all member crates.
 
 ## Consequences
 

@@ -7,6 +7,23 @@
 //! [`components`], with color adapters in [`theme`]. Surface crates
 //! own domain state and compose these pieces instead of re-declaring
 //! palette values or reimplementing visual primitives.
+//!
+//! **Architecture Invariant:** L3 presentation crate (design system).
+//! Allowed dependencies: `jackin-core` (for the re-exported widget stubs
+//! `TailScroll`, `DialogBodyScroll`, `StatusFooterHover`, etc., plus
+//! shared tokens `Rgb`, `owo_rgb`, the `PHOSPHOR_*` palette, and
+//! `shorten_home`). Must NOT depend on infrastructure or higher-layer
+//! presentation surfaces (`jackin-launch-tui`, `jackin-console`,
+//! `jackin-capsule`). Surface crates depend on this one, never the
+//! reverse.
+//!
+//! # Shared TEA runtime contract
+//!
+//! The Elm-style runtime lives in [`runtime`]: one
+//! [`runtime::UpdateResult`] per `update` call, [`runtime::Component`]
+//! for event→message translation, and [`runtime::View`] for
+//! model→frame rendering. Surface crates (host, launch, capsule,
+//! console) implement these traits; `jackin-tui` only defines them.
 
 pub mod animation;
 pub mod ansi_text;
@@ -15,11 +32,13 @@ pub mod geometry;
 pub mod host_colors;
 pub mod keymap;
 pub mod output;
+pub mod ownership;
 pub mod prune_output;
 pub mod runtime;
 pub mod scroll;
 pub mod terminal_modes;
 pub mod theme;
+pub mod url_text;
 
 pub use components::text_input::TextField;
 pub use geometry::{
@@ -29,6 +48,10 @@ pub use geometry::{
     sanitize_terminal_title, tab_at_column, take_display_cols,
 };
 pub use jackin_core::shorten_home;
+pub use jackin_core::tui_widgets::{
+    BOTTOM_CHROME_ROWS, BottomChromeAreas, DialogBodyScroll, StatusFooterHover, TailScroll,
+    bottom_chrome_areas, is_scrollable, max_line_width, max_offset,
+};
 
 /// Outcome of a modal or component event-handling cycle.
 ///
@@ -227,8 +250,6 @@ pub const PREVIEW_CARD: Rgb = Rgb::new(28, 28, 28);
 /// Shared ANSI helpers.
 pub mod ansi {
     use super::Rgb;
-    use base64::Engine as _;
-    use base64::engine::general_purpose::STANDARD as BASE64;
     use std::io::Write as _;
 
     /// Dialog surface / input-band background SGR. Emits the terminal's DEFAULT
@@ -238,13 +259,8 @@ pub mod ansi {
     pub const RESET: &str = "\x1b[0m";
     pub const BOLD: &str = "\x1b[1m";
 
-    /// OSC 22 cursor-shape escapes. `POINTER_HAND` switches the terminal
-    /// pointer to the hand/`pointer` shape over a clickable element;
-    /// `POINTER_DEFAULT` restores it. Shared by every TUI surface so the
-    /// "this is clickable" cue is identical (terminals without OSC 22 ignore
-    /// the sequence harmlessly).
-    pub const POINTER_HAND: &str = "\x1b]22;pointer\x1b\\";
-    pub const POINTER_DEFAULT: &str = "\x1b]22;default\x1b\\";
+    // Re-exported from jackin-core (relocated pure ANSI tokens; Parallel Change shim).
+    pub use jackin_core::ansi_tokens::{POINTER_DEFAULT, POINTER_HAND};
     pub const INVERSE: &str = "\x1b[7m";
 
     /// Help/banner form of the brand pill, shared with the host and
@@ -274,6 +290,13 @@ pub mod ansi {
     /// multi-line ANSI art). A static surface, not the live launch rain — which
     /// the Launch Progress TUI owns.
     #[must_use]
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "ASCII-art help-banner renderer with per-row × per-column nested \
+                  character-styling + xorshift-driven effects. The nesting is the \
+                  per-cell composition — extracting per-row / per-column helpers \
+                  would require threading mutable state through separate fn calls."
+    )]
     pub fn help_banner(width: u16) -> String {
         const H: usize = 13;
         // Rows over which the rain dims to black as it nears the logo band.
@@ -433,20 +456,9 @@ pub mod ansi {
         format!("\x1b[48;2;{};{};{}m", rgb.r, rgb.g, rgb.b)
     }
 
-    /// OSC 52 clipboard-write sequence. Targets the system clipboard (`c`)
-    /// and uses BEL termination, which is accepted by Ghostty, Kitty, iTerm2,
-    /// Alacritty, and `WezTerm`. (GNOME Terminal / VTE has historically required
-    /// ST `\x1b\\` for OSC 52 — keep it off the BEL-supported list until a
-    /// specific VTE version can be cited.)
-    #[must_use]
-    pub fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
-        let encoded = BASE64.encode(payload.as_bytes());
-        let mut out = Vec::with_capacity(8 + encoded.len());
-        out.extend_from_slice(b"\x1b]52;c;");
-        out.extend_from_slice(encoded.as_bytes());
-        out.extend_from_slice(b"\x07");
-        out
-    }
+    // Re-exported from jackin-core (relocated pure ANSI helper; Parallel Change shim).
+    // (The base64 uses and body now live in ansi_tokens.rs.)
+    pub use jackin_core::ansi_tokens::encode_osc52_clipboard_write;
 
     /// Open an OSC 8 hyperlink for subsequent terminal text. Call
     /// [`emit_osc8_close`] after writing the linked text.

@@ -101,6 +101,13 @@ impl ClaudeHookInstaller {
         })
     }
 
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "JSON hook merge walker: nested `for hook in hooks` + `is_some_and` \
+                  + `as_object_mut` chain to atomically merge per-event hook \
+                  entries into the existing settings JSON. The nesting is the \
+                  merge-with-preserve protocol."
+    )]
     fn merge_hook_entries(&self, mut settings: serde_json::Value) -> serde_json::Value {
         // Start from the existing hooks map (if any); our command entries merge
         // in below and the whole map is written back to `settings` at the end.
@@ -168,6 +175,13 @@ impl ClaudeHookInstaller {
                 return false;
             };
             // Check that at least one entry has our command with the correct async flag.
+            #[allow(
+                clippy::excessive_nesting,
+                reason = "JSON hook-array membership check: nested `any` + `as_str` \
+                          + `is_some_and` boolean chain to validate the hook entry's \
+                          command + async flag. The nesting is the per-field guard \
+                          chain."
+            )]
             let found = arr.iter().any(|entry| {
                 let inner = entry.get("hooks").and_then(|h| h.as_array());
                 inner.is_some_and(|inner_hooks| {
@@ -310,6 +324,12 @@ impl HookInstaller for CodexHookInstaller {
 /// site and `verify` keeps reporting drift. This is the single chokepoint that
 /// makes "a reporter never clobbers agent config" a structural guarantee for
 /// every installer, not a per-installer habit.
+#[allow(
+    clippy::excessive_nesting,
+    reason = "JSON hook-array walker: nested `is_some_and` + `as_object_mut` + \
+              `insert` chain to atomically rewrite an existing hook entry. The \
+              nesting is the rewrite-with-preserve protocol."
+)]
 fn read_existing_json_object(
     path: &Path,
 ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {

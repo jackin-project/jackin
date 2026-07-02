@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use super::host_colors::query_host_terminal_colors;
 use anyhow::{Context, Result, bail};
 use directories::UserDirs;
 use jackin_core::paths::JackinPaths;
@@ -21,7 +22,6 @@ use jackin_protocol::attach::{
     MAX_CLIPBOARD_IMAGE_BYTES, MAX_CLIPBOARD_IMAGE_CHUNK_BYTES, MAX_CLIPBOARD_IMAGE_ERROR_BYTES,
     MAX_HOST_NOTICE_BYTES, ServerFrame, SpawnRequest, encode_client, read_server_frame,
 };
-use jackin_tui::host_colors::query_host_terminal_colors;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -31,11 +31,11 @@ use tokio::signal::unix::{SignalKind, signal};
 use super::attach::{
     HostAttachTransportPlan, attach_proxy_exec_args, select_host_attach_transport,
 };
-use super::host_clipboard::{
+use jackin_host::host_clipboard::{
     is_image_paste_trigger, read_host_clipboard_image, read_host_clipboard_text_path_image,
     read_image_for_paste_trigger, read_image_from_pasted_path,
 };
-use super::host_desktop::{open_host_file, open_host_url, reveal_host_file};
+use jackin_host::host_desktop::{open_host_file, open_host_url, reveal_host_file};
 
 pub const JACKIN_HOST_ATTACH_ENV: &str = "JACKIN_HOST_ATTACH";
 
@@ -188,7 +188,27 @@ where
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Attach-protocol async loop driving the host's request/response \
+              exchange with the capsule daemon. Body extraction follows the \
+              same deferred-parallel-pass plan as the launch fns — the inline \
+              shape preserves captured socket + reader + writer borrows across \
+              the protocol phases."
+)]
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "Same justification as the too_many_lines allow: attach protocol \
+              async loop branching tracks the request/response routing arms, \
+              not algorithmic complexity."
+)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Attach-protocol call site propagates the four server/terminal stream \
+              handles plus geometry, request payload, initial input, and the winch \
+              signal. Named-arg reads match the per-input propagation idiom; \
+              bundling into a config struct is the deferred-parallel-pass."
+)]
 async fn run_attach_protocol<R, W, I, O>(
     mut server_reader: R,
     mut server_writer: W,
@@ -270,7 +290,7 @@ where
                         let message = match open_host_url(&url) {
                             Ok(()) => "Opening URL in host browser".to_owned(),
                             Err(err) => {
-                                let redacted = jackin_core::url_text::redact_url_for_log(&url);
+                                let redacted = jackin_core::redact_url_for_log(&url);
                                 jackin_diagnostics::debug_log!(
                                     "attach",
                                     "host open URL failed for {redacted:?}: {err:#}"

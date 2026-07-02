@@ -21,7 +21,7 @@ fn widget_bar(
     pull_request: Option<&PullRequestInfo>,
     loading: bool,
     container: &str,
-    hover: Option<crate::tui::app::HoverTarget>,
+    hover: Option<crate::tui::model::HoverTarget>,
 ) -> (String, ratatui::buffer::Buffer) {
     use ratatui::widgets::Widget as _;
     let area = ratatui::layout::Rect::new(0, 0, cols, 24);
@@ -323,7 +323,7 @@ fn hover_highlights_click_targets() {
         Some(&pr),
         false,
         "jk-test-container",
-        Some(crate::tui::app::HoverTarget::BranchContext),
+        Some(crate::tui::model::HoverTarget::BranchContext),
     );
     assert_eq!(ctx[(1, 23)].bg, hover_bg, "hovered context chunk lifts");
 
@@ -334,7 +334,7 @@ fn hover_highlights_click_targets() {
         Some(&pr),
         false,
         "jk-test-container",
-        Some(crate::tui::app::HoverTarget::Container),
+        Some(crate::tui::model::HoverTarget::Container),
     );
     assert!(text.contains("jk-test-container"));
     let chunk_x = text.find("jk-test-container").expect("container chunk") as u16;
@@ -351,7 +351,7 @@ fn hover_highlights_click_targets() {
         Some(&pr),
         false,
         "jk-test-container",
-        Some(crate::tui::app::HoverTarget::UsageStatus),
+        Some(crate::tui::model::HoverTarget::UsageStatus),
     );
     let chunk_x = text.find("Session 37%").expect("usage chunk") as u16;
     assert_eq!(

@@ -1,171 +1,66 @@
 //! Docker image build pipeline: prepare binaries, build derived image, tag and cache.
-//!
-//! Stages: collect agent binaries → build derived context → `docker build` →
-//! tag. Not responsible for container start, session attach, or identity
-//! capture — those live in sibling modules.
-//!
-//! Key invariant: the derived image label set written here is the authority
-//! consumed by `discovery` and `naming` for cache-hit detection.
+
+#![allow(clippy::empty_line_after_doc_comments)]
+
+#[path = "image/version.rs"]
+mod version;
+
+#[allow(unused_imports, unreachable_pub)]
+pub use version::*;
+
+// Stages: collect agent binaries → build derived context → `docker build` →
+// tag. Not responsible for container start, session attach, or identity
+// capture — those live in sibling modules.
+//
+// Key invariant: the derived image label set written here is the authority
+// consumed by `discovery` and `naming` for cache-hit detection.
 
 use anyhow::Context as _;
 use futures_util::future::try_join_all;
-use serde::Serialize;
-use sha2::{Digest as _, Sha256};
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use jackin_core::agent::Agent;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
-#[cfg(not(test))]
-use jackin_docker::ShellRunner;
-#[cfg(not(test))]
-use jackin_docker::docker_client::BollardDockerClient;
 use jackin_docker::docker_client::DockerApi;
+#[cfg(not(test))]
+use jackin_docker::{ShellRunner, docker_client::BollardDockerClient};
 use jackin_image::capsule_binary;
 use jackin_image::derived_image::{
     AgentInstall, create_derived_build_context_for_agents, create_role_base_build_context,
-    render_derived_dockerfile,
+};
+use jackin_image::image_recipe::{
+    expected_image_recipes, recipe_labels, supported_set_uses_cache_bust,
 };
 use jackin_image::version_check;
+use jackin_launch_tui::build_log::DiagnosticsBuildLogSink;
 use jackin_manifest::repo::CachedRepo;
-use std::path::PathBuf;
+
+#[cfg(test)]
+pub(crate) use jackin_image::image_recipe::{
+    build_image_recipe_with_construct_image, expected_image_recipe_for_test,
+    image_recipe_label_map_for_install_test, image_recipe_label_map_for_test,
+};
 
 use super::naming::{
     LABEL_IMAGE_AGENT_VERSION_PREFIX, LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION,
-    LABEL_IMAGE_RECIPE_HASH, LABEL_IMAGE_RECIPE_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name,
-    image_name_for_branch, role_base_image_name, short_git_sha,
+    LABEL_IMAGE_ROLE_GIT_SHA, image_name, image_name_for_branch, role_base_image_name,
+    short_git_sha,
 };
 use super::progress::{LaunchProgress, LaunchStage};
 #[cfg(not(test))]
 use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
-// Recipe schema version. Bumped v7 -> v8: derived images now bake the host UID
-// into `/home/agent` ownership. Group-0 write is not enough for tools that call
-// owner-only syscalls such as chmod(2) while running under `--user UID:GID`.
-const IMAGE_RECIPE_VERSION: &str = "v8";
-/// jackin-capsule version baked into the derived image.
-const LABEL_IMAGE_CAPSULE_VERSION: &str = "jackin.capsule.version";
-/// `jackin.role.toml` schema version (`version = "v1alpha4"`).
-const LABEL_IMAGE_MANIFEST_VERSION: &str = "jackin.manifest.version";
-/// Prefix for per-agent baked-binary version labels: `jackin.agent.<slug>.version`.
-/// Records the version of each agent binary jackin downloaded/cached locally and
-/// baked into the image. Diagnostic — not part of the recipe hash.
-const HOST_IDENTITY_STRATEGY: &str = "host-uid-owned-runtime-home-v1";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ImageInvalidationReason {
-    ExplicitRebuild,
-    LocalImageMissing,
-    ImageListFailed,
-    MissingRecipeLabel,
-    RecipeVersionChanged,
-    RecipeHashChanged,
-    RoleGitShaChanged,
-    ManifestVersionChanged,
-    ConstructImageChanged,
-    CapsuleVersionChanged,
-    PublishedImageStale,
-    InspectFailed,
-    /// D20: an agent CLI release is newer than the version baked into the image.
-    AgentVersionChanged,
-}
-
-impl ImageInvalidationReason {
-    pub(super) const fn as_str(self) -> &'static str {
-        match self {
-            Self::ExplicitRebuild => "explicit_rebuild",
-            Self::LocalImageMissing => "local_image_missing",
-            Self::ImageListFailed => "image_list_failed",
-            Self::MissingRecipeLabel => "missing_recipe_label",
-            Self::RecipeVersionChanged => "recipe_version_changed",
-            Self::RecipeHashChanged => "recipe_hash_changed",
-            Self::RoleGitShaChanged => "role_git_sha_changed",
-            Self::ManifestVersionChanged => "manifest_version_changed",
-            Self::ConstructImageChanged => "construct_image_changed",
-            Self::CapsuleVersionChanged => "capsule_version_changed",
-            Self::PublishedImageStale => "published_image_stale",
-            Self::InspectFailed => "inspect_failed",
-            Self::AgentVersionChanged => "agent_version_changed",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum ImageDecision {
-    Reuse {
-        image: String,
-    },
-    RefreshInBackground {
-        image: String,
-        reason: ImageInvalidationReason,
-    },
-    BuildFromPublished {
-        reason: ImageInvalidationReason,
-        role_git_sha: Option<String>,
-        base_image: String,
-    },
-    BuildFromWorkspace {
-        reason: ImageInvalidationReason,
-        role_git_sha: Option<String>,
-    },
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct ImageRecipe {
-    version: &'static str,
-    /// `jackin.role.toml` schema version (e.g. `v1alpha4`). A manifest-schema
-    /// bump changes what jackin generates, so it is a recipe input.
-    manifest_version: String,
-    role_git_sha: String,
-    role_source_ref: Option<String>,
-    base_image: Option<String>,
-    construct_image: String,
-    generated_runtime_hash: String,
-    supported_agents: Vec<String>,
-    cache_bust: String,
-    capsule_version: String,
-    hooks_hash: String,
-    /// SHA-256 of the serialised Claude marketplaces + plugins list. Plugin
-    /// changes rebuild the image because plugins are now baked at build time (D2).
-    plugin_recipe_hash: String,
-    host_identity_strategy: &'static str,
-    host_uid: Option<u32>,
-}
-
-impl ImageRecipe {
-    fn hash(&self) -> anyhow::Result<String> {
-        let bytes = serde_json::to_vec(self)?;
-        Ok(sha256_hex(&bytes))
-    }
-}
-
-impl ImageDecision {
-    /// Role-repo commit SHA embedded in this decision — short SHA from the
-    /// image tag for Reuse/Refresh, or the value from Build* variants.
-    pub(super) fn role_git_sha(&self) -> Option<String> {
-        match self {
-            Self::Reuse { image } | Self::RefreshInBackground { image, .. } => {
-                image.split(':').next_back().map(ToOwned::to_owned)
-            }
-            Self::BuildFromWorkspace { role_git_sha, .. }
-            | Self::BuildFromPublished { role_git_sha, .. } => role_git_sha.clone(),
-        }
-    }
-
-    /// Base/construct image reference for this decision; `None` for Reuse/Refresh.
-    pub(super) fn base_image_ref(&self) -> Option<&str> {
-        match self {
-            Self::BuildFromPublished { base_image, .. } => Some(base_image.as_str()),
-            _ => None,
-        }
-    }
-}
-
-struct ExpectedImageRecipe {
-    recipe: ImageRecipe,
-    hash: String,
-}
+pub(super) use jackin_image::image_decision::{
+    ImageDecision, ImageInvalidationReason, build_decision, classify_image_labels,
+    decision_base_image_override, emit_image_decision, emit_image_refresh_background,
+    emit_image_reuse,
+};
 
 pub(super) struct PreparedRuntimeBinaries {
     agent_installs: BTreeMap<Agent, AgentInstall<PathBuf>>,
@@ -268,7 +163,19 @@ pub async fn prewarm_role_images(
     Ok(rows)
 }
 
-#[expect(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Decide-role-image: per-cache-state + per-invalidation-reason + \
+              per-build-strategy branches nested with telemetry. Inline shape \
+              preserves the per-decision-arm state machine."
+)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Decide-role-image call site propagates paths, selector, cached + \
+              validated repos, rebuild + branch override + pinned sha, docker, \
+              runner. Named-arg reads match the per-input propagation idiom; \
+              bundling into a config struct is the deferred-parallel-pass."
+)]
 pub(super) async fn decide_role_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -516,452 +423,6 @@ pub(super) async fn decide_role_image(
             Ok(build_decision(reason, head_sha, base_image_override))
         }
     }
-}
-
-fn build_decision(
-    reason: ImageInvalidationReason,
-    role_git_sha: Option<String>,
-    base_image_override: Option<&str>,
-) -> ImageDecision {
-    match base_image_override {
-        Some(base_image) => ImageDecision::BuildFromPublished {
-            reason,
-            role_git_sha,
-            base_image: base_image.to_owned(),
-        },
-        None => ImageDecision::BuildFromWorkspace {
-            reason,
-            role_git_sha,
-        },
-    }
-}
-
-fn decision_base_image_override<'a>(
-    validated_repo: &'a jackin_manifest::repo::ValidatedRoleRepo,
-    branch_override: Option<&str>,
-) -> Option<&'a str> {
-    let custom_construct = jackin_manifest::repo_contract::construct_image()
-        != jackin_manifest::repo_contract::CONSTRUCT_IMAGE;
-    if branch_override.is_none() && !custom_construct {
-        validated_repo.manifest.published_image.as_deref()
-    } else {
-        None
-    }
-}
-
-fn build_image_recipe(
-    cached_repo: &CachedRepo,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    head_sha: Option<&str>,
-    branch_override: Option<&str>,
-    base_image_override: Option<&str>,
-    cache_bust: &str,
-) -> anyhow::Result<ImageRecipe> {
-    build_image_recipe_with_construct_image(
-        cached_repo,
-        validated_repo,
-        head_sha,
-        branch_override,
-        base_image_override,
-        cache_bust,
-        jackin_manifest::repo_contract::construct_image(),
-    )
-}
-
-fn build_image_recipe_with_construct_image(
-    cached_repo: &CachedRepo,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    head_sha: Option<&str>,
-    branch_override: Option<&str>,
-    base_image_override: Option<&str>,
-    cache_bust: &str,
-    construct_image: String,
-) -> anyhow::Result<ImageRecipe> {
-    let runtime_dockerfile = render_runtime_dockerfile(validated_repo, base_image_override)?;
-    let supported_agents = canonical_supported_agent_slugs(&validated_repo.manifest);
-
-    Ok(ImageRecipe {
-        version: IMAGE_RECIPE_VERSION,
-        manifest_version: validated_repo.manifest.version.clone(),
-        // Short (7-char) role-repo commit SHA — matches the image tag and the
-        // `jackin.role.git.sha` label form.
-        role_git_sha: head_sha.map_or("unknown", short_git_sha).to_owned(),
-        role_source_ref: branch_override.map(ToOwned::to_owned),
-        base_image: base_image_override.map(ToOwned::to_owned),
-        construct_image,
-        generated_runtime_hash: hash_str(&runtime_dockerfile),
-        supported_agents,
-        cache_bust: cache_bust.to_owned(),
-        // Key on the same SHA-suffixed JACKIN_VERSION the capsule binary is
-        // selected by (capsule_binary::REQUIRED_VERSION), not CARGO_PKG_VERSION:
-        // two non-tag builds share a cargo version but ship different capsule
-        // binaries, so CARGO_PKG_VERSION would reuse a stale capsule on dev builds.
-        capsule_version: capsule_binary::REQUIRED_VERSION.to_owned(),
-        hooks_hash: hooks_hash(&cached_repo.repo_dir, validated_repo)?,
-        plugin_recipe_hash: plugin_recipe_hash(validated_repo),
-        host_identity_strategy: HOST_IDENTITY_STRATEGY,
-        host_uid: crate::runtime::identity::host_uid(),
-    })
-}
-
-/// Render the canonical derived Dockerfile used for the image recipe hash.
-///
-/// Agent-independent by construction: every supported agent is installed from
-/// its prefetched binary, so the hash depends only on the role's supported set
-/// (plus base image, hooks, plugins, capsule version), never on which agent was
-/// selected at launch. The real build may fall back to a script install for an
-/// agent whose binary failed to prefetch, but that produces a functionally
-/// equivalent image for the same agent set, so it is labelled with — and reused
-/// against — this same canonical recipe rather than forking a new image.
-fn render_runtime_dockerfile(
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    base_image_override: Option<&str>,
-) -> anyhow::Result<String> {
-    let base_dockerfile = if let Some(image) = base_image_override {
-        format!("FROM {image}\n")
-    } else {
-        validated_repo.dockerfile.dockerfile_contents.clone()
-    };
-    let agents_to_install = validated_repo.manifest.supported_agents();
-    Ok(render_derived_dockerfile(
-        &base_dockerfile,
-        validated_repo.manifest.hooks.as_ref(),
-        &agents_to_install,
-        Some(".jackin-runtime/jackin-capsule"),
-        &BTreeMap::new(),
-        validated_repo.manifest.claude.as_ref(),
-    ))
-}
-
-fn canonical_supported_agent_slugs(manifest: &jackin_core::manifest::RoleManifest) -> Vec<String> {
-    let mut agents = manifest
-        .supported_agents()
-        .into_iter()
-        .map(|agent| agent.slug().to_owned())
-        .collect::<Vec<_>>();
-    agents.sort();
-    agents
-}
-
-/// The derived image carries a non-reproducible install step (Claude / Grok run
-/// a network installer at build time) when either agent is in the supported set,
-/// so the recipe folds in the stored cache-bust token to force a rebuild when
-/// that token advances. Other supported sets install purely from prefetched
-/// binaries and need no cache bust.
-fn supported_set_uses_cache_bust(manifest: &jackin_core::manifest::RoleManifest) -> bool {
-    manifest
-        .supported_agents()
-        .iter()
-        .any(|agent| matches!(agent, Agent::Claude | Agent::Grok))
-}
-
-fn cache_bust_recipe_value(
-    paths: &JackinPaths,
-    image: &str,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-) -> String {
-    if supported_set_uses_cache_bust(&validated_repo.manifest) {
-        version_check::stored_cache_bust(paths, image).unwrap_or_else(|| "0".to_owned())
-    } else {
-        "unused".to_owned()
-    }
-}
-
-fn expected_image_recipes(
-    cached_repo: &CachedRepo,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    head_sha: Option<&str>,
-    branch_override: Option<&str>,
-    base_image_override: Option<&str>,
-    paths: &JackinPaths,
-    image: &str,
-) -> anyhow::Result<Vec<ExpectedImageRecipe>> {
-    let cache_bust = cache_bust_recipe_value(paths, image, validated_repo);
-    let recipe = build_image_recipe(
-        cached_repo,
-        validated_repo,
-        head_sha,
-        branch_override,
-        base_image_override,
-        &cache_bust,
-    )?;
-    Ok(vec![ExpectedImageRecipe {
-        hash: recipe.hash()?,
-        recipe,
-    }])
-}
-
-fn hooks_hash(
-    repo_dir: &std::path::Path,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-) -> anyhow::Result<String> {
-    let mut entries = Vec::new();
-    if let Some(hooks) = validated_repo.manifest.hooks.as_ref() {
-        for hook in hooks.entries() {
-            let bytes = std::fs::read(repo_dir.join(hook.path))
-                .with_context(|| format!("reading {} for image recipe", hook.path))?;
-            entries.push(serde_json::json!({
-                "label": hook.label,
-                "filename": hook.filename,
-                "path": hook.path,
-                "content_hash": sha256_hex(&bytes),
-            }));
-        }
-    }
-    let bytes = serde_json::to_vec(&entries)?;
-    Ok(sha256_hex(&bytes))
-}
-
-/// Hash the Claude marketplace + plugin list so changes force a rebuild (D2).
-/// Empty config → stable constant hash so the field never changes for
-/// roles without any Claude plugin config.
-fn plugin_recipe_hash(validated_repo: &jackin_manifest::repo::ValidatedRoleRepo) -> String {
-    let entry = validated_repo.manifest.claude.as_ref().map(|c| {
-        serde_json::json!({
-            "marketplaces": c.marketplaces.iter().map(|m| serde_json::json!({
-                "source": m.source,
-                "sparse": m.sparse,
-            })).collect::<Vec<_>>(),
-            "plugins": c.plugins,
-        })
-    });
-    let bytes = serde_json::to_vec(&entry).unwrap_or_default();
-    sha256_hex(&bytes)
-}
-
-fn classify_image_labels(
-    labels: &HashMap<String, String>,
-    expected_recipes: &[ExpectedImageRecipe],
-) -> Option<ImageInvalidationReason> {
-    match labels.get(LABEL_IMAGE_RECIPE_VERSION).map(String::as_str) {
-        Some(IMAGE_RECIPE_VERSION) => {}
-        Some(_) => return Some(ImageInvalidationReason::RecipeVersionChanged),
-        None => return Some(ImageInvalidationReason::MissingRecipeLabel),
-    }
-    let Some(stored_hash) = labels.get(LABEL_IMAGE_RECIPE_HASH) else {
-        return Some(ImageInvalidationReason::MissingRecipeLabel);
-    };
-
-    for expected in expected_recipes {
-        if &expected.hash == stored_hash {
-            return recipe_label_mismatch(labels, &expected.recipe);
-        }
-    }
-
-    let Some(first_expected) = expected_recipes.first() else {
-        return Some(ImageInvalidationReason::RecipeHashChanged);
-    };
-    recipe_label_mismatch(labels, &first_expected.recipe)
-        .or(Some(ImageInvalidationReason::RecipeHashChanged))
-}
-
-fn recipe_label_mismatch(
-    labels: &HashMap<String, String>,
-    recipe: &ImageRecipe,
-) -> Option<ImageInvalidationReason> {
-    for (key, expected, reason) in recipe_diagnostic_labels(recipe) {
-        let Some(stored) = labels.get(key) else {
-            return Some(ImageInvalidationReason::MissingRecipeLabel);
-        };
-        if stored != &expected {
-            return Some(reason);
-        }
-    }
-    None
-}
-
-fn emit_image_decision(image: &str, reason: ImageInvalidationReason) {
-    jackin_diagnostics::debug_log!(
-        "image",
-        "derived image {image} requires build: {}",
-        reason.as_str()
-    );
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.stage(
-            "image_cache_miss",
-            "derived image",
-            &format!("derived image {image} requires build"),
-            Some(reason.as_str()),
-        );
-    }
-}
-
-fn emit_image_reuse(image: &str) {
-    if let Some(run) = jackin_diagnostics::active_run() {
-        let detail = serde_json::json!({
-            "reason": "recipe_hash_match",
-            "skipped": [
-                "prepare_runtime_binaries",
-                "create_derived_build_context",
-                "resolve_github_token",
-                "docker_build",
-                "selected_agent_version_probe"
-            ],
-        })
-        .to_string();
-        run.stage(
-            "image_cache_hit",
-            "derived image",
-            &format!("reusing derived image {image}"),
-            Some(&detail),
-        );
-    }
-}
-
-fn emit_image_refresh_background(image: &str, reason: ImageInvalidationReason) {
-    emit_image_reuse(image);
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.stage(
-            "image_refresh_background",
-            "derived image",
-            &format!("reusing derived image {image}; background refresh pending"),
-            Some(reason.as_str()),
-        );
-    }
-}
-
-fn recipe_labels(recipe: &ImageRecipe, recipe_hash: &str) -> Vec<String> {
-    let mut labels = vec![
-        format!("{LABEL_IMAGE_RECIPE_VERSION}={}", recipe.version),
-        format!("{LABEL_IMAGE_RECIPE_HASH}={recipe_hash}"),
-    ];
-    labels.extend(
-        recipe_diagnostic_labels(recipe)
-            .into_iter()
-            .map(|(key, value, _)| format!("{key}={value}")),
-    );
-    labels
-}
-
-fn recipe_diagnostic_labels(
-    recipe: &ImageRecipe,
-) -> Vec<(&'static str, String, ImageInvalidationReason)> {
-    // Minimal, human-meaningful label set. Every other recipe input
-    // (role_source_ref, base_image, generated_runtime_hash, supported_agents,
-    // cache_bust, hooks_hash, claude_plugin_recipe_hash, host_identity_strategy)
-    // still lives inside `ImageRecipe` and so still invalidates the image via
-    // the master `jackin.image.recipe.hash` — it just no longer gets its own
-    // opaque diagnostic label. A mismatch on those surfaces as the generic
-    // `RecipeHashChanged` reason rather than a component-specific one.
-    vec![
-        (
-            LABEL_IMAGE_ROLE_GIT_SHA,
-            recipe.role_git_sha.clone(),
-            ImageInvalidationReason::RoleGitShaChanged,
-        ),
-        (
-            LABEL_IMAGE_MANIFEST_VERSION,
-            recipe.manifest_version.clone(),
-            ImageInvalidationReason::ManifestVersionChanged,
-        ),
-        (
-            LABEL_IMAGE_CONSTRUCT,
-            recipe.construct_image.clone(),
-            ImageInvalidationReason::ConstructImageChanged,
-        ),
-        (
-            LABEL_IMAGE_CAPSULE_VERSION,
-            recipe.capsule_version.clone(),
-            ImageInvalidationReason::CapsuleVersionChanged,
-        ),
-    ]
-}
-
-#[cfg(test)]
-pub(crate) fn image_recipe_label_map_for_test(
-    cached_repo: &CachedRepo,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    agent: Agent,
-    head_sha: Option<&str>,
-    branch_override: Option<&str>,
-    base_image_override: Option<&str>,
-    cache_bust: &str,
-) -> HashMap<String, String> {
-    image_recipe_label_map_for_install_test(
-        cached_repo,
-        validated_repo,
-        agent,
-        head_sha,
-        branch_override,
-        base_image_override,
-        cache_bust,
-        AgentInstall::Prefetched(format!(".jackin-runtime/agent-binaries/{}", agent.slug())),
-    )
-}
-
-#[cfg(test)]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "test helper builds an image recipe label map from the same independent inputs as the recipe builder"
-)]
-fn image_recipe_label_map_for_install_test(
-    cached_repo: &CachedRepo,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    _agent: Agent,
-    head_sha: Option<&str>,
-    branch_override: Option<&str>,
-    base_image_override: Option<&str>,
-    cache_bust: &str,
-    // The derived image is agent-independent; the selected agent / install
-    // method no longer affect the recipe. Params retained so existing tests
-    // keep compiling without churn.
-    _selected_install: AgentInstall<String>,
-) -> HashMap<String, String> {
-    let recipe = build_image_recipe(
-        cached_repo,
-        validated_repo,
-        head_sha,
-        branch_override,
-        base_image_override,
-        cache_bust,
-    )
-    .expect("test image recipe should build");
-    let recipe_hash = recipe.hash().expect("test image recipe should hash");
-    recipe_labels(&recipe, &recipe_hash)
-        .into_iter()
-        .filter_map(|label| {
-            let (key, value) = label.split_once('=')?;
-            Some((key.to_owned(), value.to_owned()))
-        })
-        .collect()
-}
-
-#[cfg(test)]
-fn expected_image_recipe_for_test(
-    cached_repo: &CachedRepo,
-    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
-    _agent: Agent,
-    head_sha: Option<&str>,
-    branch_override: Option<&str>,
-    base_image_override: Option<&str>,
-    cache_bust: &str,
-) -> ExpectedImageRecipe {
-    let recipe = build_image_recipe(
-        cached_repo,
-        validated_repo,
-        head_sha,
-        branch_override,
-        base_image_override,
-        cache_bust,
-    )
-    .expect("test image recipe should build");
-    let hash = recipe.hash().expect("test image recipe should hash");
-    ExpectedImageRecipe { recipe, hash }
-}
-
-fn hash_str(input: &str) -> String {
-    sha256_hex(input.as_bytes())
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        out.push(HEX[(byte >> 4) as usize] as char);
-        out.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    out
 }
 
 pub(super) async fn prepare_runtime_binaries_for_agents(
@@ -1413,7 +874,15 @@ async fn prewarm_agent_image(
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Prewarming the agent image needs every caller-supplied input \
+              (paths, selector, cached + validated repos, branch override, \
+              agent, docker, runner, repo_lock, debug) to flow into the build \
+              pipeline; bundling into a config struct would be a parallel pass \
+              that requires restructuring the image-build path. Named-arg reads \
+              match the per-input propagation idiom."
+)]
 async fn prewarm_agent_image_from_validated_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -1700,9 +1169,13 @@ fn agent_binary_prepare_summary(
 /// published-image construct version label — so the heavy role layers are built
 /// or tagged once per (role commit, construct) and overlay rebuilds don't touch
 /// them.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
-    reason = "threads the same inputs as the build path"
+    reason = "Resolving the local role base needs every caller-supplied input \
+              (selector, branch + head sha, cached + validated repos, published \
+              base, rebuild, debug, docker, runner) to flow through to the pull- \
+              or-build branch. Named-arg reads match the per-input propagation \
+              idiom the role-base resolver walks."
 )]
 async fn ensure_local_role_base(
     selector: &RoleSelector,
@@ -1843,13 +1316,14 @@ async fn ensure_local_role_base(
         p.stage_progress(LaunchStage::DerivedImage, "Building role base image");
     }
     emit_non_containerd_image_store_note(runner).await;
-    jackin_launch::build_log::begin();
+    jackin_diagnostics::build_log::begin();
     let build_options = RunOptions {
         capture_stderr: true,
         capture_stdout: true,
         null_stdin: true,
         stream_captured_output: should_stream_build_output(debug),
         tee_to_build_log: true,
+        build_log_sink: Some(Arc::new(DiagnosticsBuildLogSink)),
         extra_env: docker_build_env(),
         ..RunOptions::default()
     };
@@ -1858,7 +1332,7 @@ async fn ensure_local_role_base(
         Some(p) => p.while_waiting(build_future).await,
         None => build_future.await,
     };
-    jackin_launch::build_log::end();
+    jackin_diagnostics::build_log::end();
     jackin_diagnostics::active_timing_done(
         "derived image",
         "build_role_base",
@@ -1874,7 +1348,21 @@ async fn ensure_local_role_base(
 }
 
 /// Build the Docker image for the role. Returns the image name.
-#[expect(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Building the agent image needs every caller-supplied input \
+              (paths, selector, cached + validated repos, agent, runtime \
+              binaries, rebuild + reason + base override, debug + branch override, \
+              docker, runner, repo_lock, known head sha, progress) to flow into \
+              the build pipeline. Named-arg reads match the per-input propagation \
+              idiom the image builder walks."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Same justification as the too_many_arguments allow: build-agent- \
+              image carries every caller-supplied input through the build \
+              pipeline. Inline shape preserves captured-locals across phases."
+)]
 pub(super) async fn build_agent_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -2060,7 +1548,7 @@ pub(super) async fn build_agent_image(
     };
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
-    let recipe = build_image_recipe(
+    let recipe = jackin_image::image_recipe::build_image_recipe(
         cached_repo,
         validated_repo,
         head_sha.as_deref(),
@@ -2176,7 +1664,7 @@ pub(super) async fn build_agent_image(
     // process-global ACTIVE flag is reset before the next launch. The
     // `while_waiting` branch returns `Err` on cancel, which we capture in
     // `build_result` and only `?`-propagate after calling `end()`.
-    jackin_launch::build_log::begin();
+    jackin_diagnostics::build_log::begin();
     jackin_diagnostics::active_timing_started("derived image", "docker_build", None);
     let build_options = RunOptions {
         capture_stderr: true,
@@ -2184,6 +1672,7 @@ pub(super) async fn build_agent_image(
         null_stdin: true,
         stream_captured_output: should_stream_build_output(debug),
         tee_to_build_log: true,
+        build_log_sink: Some(Arc::new(DiagnosticsBuildLogSink)),
         extra_env: docker_build_env(),
         ..RunOptions::default()
     };
@@ -2197,7 +1686,7 @@ pub(super) async fn build_agent_image(
         Some(p) => p.while_waiting(build_future).await,
         None => build_future.await,
     };
-    jackin_launch::build_log::end();
+    jackin_diagnostics::build_log::end();
     jackin_diagnostics::active_timing_done(
         "derived image",
         "docker_build",
@@ -2248,329 +1737,21 @@ pub(super) async fn role_git_sha_for_recipe(
     head_sha
 }
 
-fn should_stream_build_output(debug: bool) -> bool {
-    !debug && !jackin_diagnostics::rich_terminal_owned()
-}
-
-fn local_image_output_arg(image: &str) -> String {
-    format!("type=docker,name={image},compression=uncompressed")
-}
-
-async fn emit_non_containerd_image_store_note(runner: &mut impl CommandRunner) {
-    let Ok(info) = runner
-        .capture(
-            "docker",
-            &["info", "--format", "{{.Driver}}\n{{json .DriverStatus}}"],
-            None,
-        )
-        .await
-    else {
-        return;
-    };
-    if docker_info_uses_containerd_store(&info) != Some(false) {
-        return;
-    }
-    let detail = serde_json::json!({
-        "containerd_image_store": false,
-        "docker_info": info.trim(),
-    })
-    .to_string();
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.stage(
-            "docker_image_store",
-            "derived image",
-            "Docker daemon is not using the containerd image store; local image export/unpack may be slower",
-            Some(&detail),
-        );
-    }
-}
-
-fn docker_info_uses_containerd_store(info: &str) -> Option<bool> {
-    let info = info.trim();
-    if info.is_empty() {
-        return None;
-    }
-    let lowered = info.to_ascii_lowercase();
-    Some(lowered.contains("io.containerd.snapshotter") || lowered.contains("containerd"))
-}
-
-fn docker_build_env() -> Vec<(String, String)> {
-    // BuildKit is required, not optional: the generated Dockerfiles use
-    // `COPY --link --chmod=` and `--mount=type=secret`, all BuildKit-only.
-    // Gating it on a github token left token-less builds on the legacy
-    // builder, which rejects `--chmod` ("the --chmod option requires
-    // BuildKit") and fails the derived-image build.
-    vec![
-        ("DOCKER_BUILDKIT".to_owned(), "1".to_owned()),
-        ("BUILDKIT_PROGRESS".to_owned(), "plain".to_owned()),
-        ("BUILDX_NO_DEFAULT_ATTESTATIONS".to_owned(), "1".to_owned()),
-    ]
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct BuildContextStats {
-    files: u64,
-    bytes: u64,
-}
-
-fn emit_build_context_snapshot(context_dir: &std::path::Path, source: &str) {
-    match build_context_stats(context_dir) {
-        Ok(stats) => {
-            if let Some(run) = jackin_diagnostics::active_run() {
-                let detail = serde_json::json!({
-                    "source": source,
-                    "files": stats.files,
-                    "bytes": stats.bytes,
-                    "context_dir": context_dir.display().to_string(),
-                })
-                .to_string();
-                run.stage(
-                    "build_context_snapshot",
-                    "derived image",
-                    &format!(
-                        "derived {source} build context snapshot: {} files, {} bytes",
-                        stats.files, stats.bytes
-                    ),
-                    Some(&detail),
-                );
-            }
-        }
-        Err(error) => emit_compact_image_warning(&format!(
-            "failed to measure derived build context at {}: {error:#}",
-            context_dir.display()
-        )),
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct ImageBuildSourceDiagnostic<'a> {
-    source: &'a str,
-    reason: &'a str,
-    base_image: Option<&'a str>,
-    pull_base_image: bool,
-}
-
-fn emit_image_build_source(base_image: Option<&str>, reason: &str, pull_base_image: bool) {
-    let source = if base_image.is_some() {
-        "published_image"
-    } else {
-        "workspace_dockerfile"
-    };
-    let detail = ImageBuildSourceDiagnostic {
-        source,
-        reason,
-        base_image,
-        pull_base_image,
-    };
-    let detail = serde_json::to_string(&detail).unwrap_or_else(|_| "{}".to_owned());
-    if let Some(run) = jackin_diagnostics::active_run() {
-        run.stage(
-            "image_build_source",
-            "derived image",
-            "derived image build source selected",
-            Some(&detail),
-        );
-    }
-}
-
-fn build_context_stats(context_dir: &std::path::Path) -> anyhow::Result<BuildContextStats> {
-    let mut stats = BuildContextStats::default();
-    collect_build_context_stats(context_dir, &mut stats)?;
-    Ok(stats)
-}
-
-fn collect_build_context_stats(
-    path: &std::path::Path,
-    stats: &mut BuildContextStats,
-) -> anyhow::Result<()> {
-    let meta = std::fs::symlink_metadata(path)
-        .with_context(|| format!("inspecting build-context path {}", path.display()))?;
-    if meta.is_dir() {
-        for entry in std::fs::read_dir(path)
-            .with_context(|| format!("reading build-context directory {}", path.display()))?
-        {
-            let entry = entry.with_context(|| format!("reading entry under {}", path.display()))?;
-            collect_build_context_stats(&entry.path(), stats)?;
-        }
-    } else {
-        stats.files += 1;
-        stats.bytes += meta.len();
-    }
-    Ok(())
-}
-
-fn dockerfile_requests_github_token_secret(dockerfile_path: &std::path::Path) -> bool {
-    match std::fs::read_to_string(dockerfile_path) {
-        Ok(body) => dockerfile_body_requests_github_token_secret(&body),
-        Err(error) => {
-            jackin_diagnostics::debug_log!(
-                "image",
-                "could not read DerivedDockerfile {} before token lookup ({error}); resolving GitHub token conservatively",
-                dockerfile_path.display()
-            );
-            true
-        }
-    }
-}
-
-fn dockerfile_body_requests_github_token_secret(dockerfile_body: &str) -> bool {
-    dockerfile_body
-        .lines()
-        .map(str::trim_start)
-        .any(|line| !line.starts_with('#') && line.contains("id=github_token"))
-}
-
-fn dockerfile_requests_role_git_sha_arg(dockerfile_path: &std::path::Path) -> bool {
-    match std::fs::read_to_string(dockerfile_path) {
-        Ok(body) => dockerfile_body_requests_role_git_sha_arg(&body),
-        Err(error) => {
-            jackin_diagnostics::debug_log!(
-                "image",
-                "could not read DerivedDockerfile {} before ROLE_GIT_SHA arg detection ({error}); omitting unused build arg",
-                dockerfile_path.display()
-            );
-            false
-        }
-    }
-}
-
-fn dockerfile_body_requests_role_git_sha_arg(dockerfile_body: &str) -> bool {
-    dockerfile_body
-        .lines()
-        .map(str::trim_start)
-        .filter(|line| !line.starts_with('#'))
-        .any(|line| {
-            line.strip_prefix("ARG ")
-                .or_else(|| line.strip_prefix("ARG\t"))
-                .is_some_and(|rest| {
-                    rest.trim_start()
-                        .split(['=', ' ', '\t'])
-                        .next()
-                        .is_some_and(|name| name == "ROLE_GIT_SHA")
-                })
-        })
-}
-
-fn emit_docker_build_step_diagnostics() {
-    let Some(run) = jackin_diagnostics::active_run() else {
-        return;
-    };
-    let path = run.command_output_path("docker-build");
-    let Ok(contents) = std::fs::read_to_string(&path) else {
-        return;
-    };
-    for step in parse_docker_build_steps(&contents) {
-        run.docker_build_step(&step.step, &step.label, step.duration_ms, step.cached);
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct DockerBuildStep {
-    step: String,
-    label: String,
-    duration_ms: Option<u64>,
-    cached: bool,
-}
-
-fn parse_docker_build_steps(contents: &str) -> Vec<DockerBuildStep> {
-    let mut labels = HashMap::new();
-    let mut steps = Vec::new();
-    for line in contents.lines() {
-        let Some((step, rest)) = parse_buildkit_line(line) else {
-            continue;
-        };
-        if is_buildkit_step_description(rest, labels.contains_key(&step)) {
-            labels.insert(step.clone(), rest.to_owned());
-            continue;
-        }
-        if let Some(completed) = parse_completed_buildkit_step(&step, rest, &labels) {
-            steps.push(completed);
-        }
-    }
-    steps
-}
-
-fn parse_buildkit_line(line: &str) -> Option<(String, &str)> {
-    let trimmed = line.trim_start();
-    if !trimmed.starts_with('#') {
-        return None;
-    }
-    let (prefix, rest) = trimmed.split_once(' ')?;
-    let step = prefix.strip_prefix('#')?;
-    if !step.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    Some((step.to_owned(), rest.trim()))
-}
-
-fn is_buildkit_step_description(rest: &str, has_label: bool) -> bool {
-    if rest.starts_with('[') {
-        return true;
-    }
-    !has_label
-        && !matches!(split_buildkit_duration(rest).0, "DONE" | "CACHED")
-        && !rest.chars().next().is_some_and(|c| c.is_ascii_digit())
-        && !rest.ends_with(" done")
-}
-
-fn parse_completed_buildkit_step(
-    step: &str,
-    rest: &str,
-    labels: &HashMap<String, String>,
-) -> Option<DockerBuildStep> {
-    let (label, duration_ms) = split_buildkit_duration(rest);
-    let completed = label == "DONE" || label == "CACHED";
-    if !completed {
-        return None;
-    }
-    let cached = label == "CACHED";
-    let label = labels
-        .get(step)
-        .map_or_else(|| label.to_owned(), ToOwned::to_owned);
-    Some(DockerBuildStep {
-        step: step.to_owned(),
-        label,
-        duration_ms,
-        cached,
-    })
-}
-
-fn split_buildkit_duration(rest: &str) -> (&str, Option<u64>) {
-    let Some((label, duration)) = rest.rsplit_once(' ') else {
-        return (rest, None);
-    };
-    let Some(duration_ms) = parse_buildkit_duration_ms(duration) else {
-        return (rest, None);
-    };
-    (label.trim_end(), Some(duration_ms))
-}
-
-fn parse_buildkit_duration_ms(value: &str) -> Option<u64> {
-    let seconds = value.strip_suffix('s')?;
-    let (whole, fraction) = seconds.split_once('.').map_or((seconds, ""), |parts| parts);
-    if whole.is_empty() || !whole.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    if !fraction.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    let whole_ms = whole.parse::<u64>().ok()?.checked_mul(1000)?;
-    let fraction_ms = match fraction.len() {
-        0 => 0,
-        1 => fraction.parse::<u64>().ok()?.checked_mul(100)?,
-        2 => fraction.parse::<u64>().ok()?.checked_mul(10)?,
-        _ => fraction[..3].parse::<u64>().ok()?,
-    };
-    whole_ms.checked_add(fraction_ms)
-}
-
-fn emit_compact_image_warning(message: &str) {
-    jackin_diagnostics::emit_compact_line("warning", &compact_image_warning_line(message));
-}
-
-fn compact_image_warning_line(message: &str) -> String {
-    format!("jackin: warning: {message}")
-}
+#[allow(
+    unused_imports,
+    reason = "re-exported so runtime/image/tests.rs can reach them via super::*"
+)]
+pub(super) use jackin_image::image_build::{
+    BuildContextStats, DockerBuildStep, build_context_stats, collect_build_context_stats,
+    compact_image_warning_line, docker_build_env, docker_info_uses_containerd_store,
+    dockerfile_body_requests_github_token_secret, dockerfile_body_requests_role_git_sha_arg,
+    dockerfile_requests_github_token_secret, dockerfile_requests_role_git_sha_arg,
+    emit_build_context_snapshot, emit_compact_image_warning, emit_docker_build_step_diagnostics,
+    emit_image_build_source, emit_non_containerd_image_store_note, is_buildkit_step_description,
+    local_image_output_arg, parse_buildkit_duration_ms, parse_buildkit_line,
+    parse_completed_buildkit_step, parse_docker_build_steps, should_stream_build_output,
+    split_buildkit_duration,
+};
 
 /// Returns `true` when the published image is out of date relative to the
 /// current role repo state.
@@ -2648,159 +1829,6 @@ async fn published_image_is_stale(
         published_image_freshness(published, dockerfile_version, head_sha, docker).await,
         PublishedImageFreshness::Fresh
     )
-}
-
-fn local_role_base_labels_match(
-    labels: &HashMap<String, String>,
-    construct_image: &str,
-    dockerfile_construct_version: &str,
-    head_sha: Option<&str>,
-) -> bool {
-    let role_sha_matches = match head_sha {
-        Some(expected) => labels
-            .get(LABEL_IMAGE_ROLE_GIT_SHA)
-            .is_some_and(|stored| stored == expected),
-        None => true,
-    };
-    if !role_sha_matches {
-        return false;
-    }
-
-    if let Some(stored) = labels.get(LABEL_IMAGE_CONSTRUCT) {
-        return stored == construct_image;
-    }
-
-    if let Some(stored) = labels.get(LABEL_IMAGE_CONSTRUCT_VERSION) {
-        return stored == dockerfile_construct_version;
-    }
-
-    head_sha.is_some()
-}
-
-// Collapsed from a 5-arm match to AgentRuntime adapter dispatch.
-// `runtime().label()` → display label; `runtime().parse_version(raw)` → semver parse;
-// `version_check::store_version(paths, agent, image, version)` → unified store.
-async fn extract_agent_version(
-    paths: &JackinPaths,
-    image: &str,
-    agent: Agent,
-    debug: bool,
-    runner: &mut impl CommandRunner,
-) {
-    let runtime = agent.runtime();
-    let slug = agent.slug();
-    jackin_diagnostics::active_timing_started(
-        "derived image",
-        "selected_agent_version_probe",
-        Some(slug),
-    );
-    let raw_result = runner
-        .capture(
-            "docker",
-            &["run", "--rm", "--entrypoint", slug, image, "--version"],
-            None,
-        )
-        .await;
-    let Ok(raw) = raw_result else {
-        jackin_diagnostics::active_timing_done(
-            "derived image",
-            "selected_agent_version_probe",
-            Some("error"),
-        );
-        if debug {
-            jackin_diagnostics::emit_debug_line(
-                "image",
-                &format!(
-                    "could not probe {} version from {image}; version check skipped",
-                    runtime.label()
-                ),
-            );
-        }
-        return;
-    };
-    jackin_diagnostics::active_timing_done(
-        "derived image",
-        "selected_agent_version_probe",
-        Some("probed"),
-    );
-    let version = raw.trim();
-    if version.is_empty() {
-        return;
-    }
-    if debug {
-        jackin_diagnostics::emit_debug_line("image", &format!("{} {version}", runtime.label()));
-    }
-    if let Some(semver) = runtime.parse_version(version) {
-        version_check::store_version(paths, agent, image, semver);
-    } else if debug {
-        jackin_diagnostics::emit_debug_line(
-            "image",
-            &format!("unexpected {slug} --version output: {version:?}"),
-        );
-    }
-}
-
-async fn record_built_agent_version(
-    paths: &JackinPaths,
-    image: &str,
-    agent: Agent,
-    runtime_binaries: &PreparedRuntimeBinaries,
-    debug: bool,
-    runner: &mut impl CommandRunner,
-) {
-    if matches!(
-        runtime_binaries.agent_installs.get(&agent),
-        Some(AgentInstall::Prefetched(_))
-    ) && let Some(version) = runtime_binaries.prefetched_agent_versions.get(&agent)
-    {
-        jackin_diagnostics::active_timing_started(
-            "derived image",
-            "selected_agent_version_probe",
-            Some(agent.slug()),
-        );
-        jackin_diagnostics::active_timing_done(
-            "derived image",
-            "selected_agent_version_probe",
-            Some("prefetched"),
-        );
-        version_check::store_version(paths, agent, image, version);
-        if debug {
-            jackin_diagnostics::emit_debug_line(
-                "image",
-                &format!(
-                    "{} {version} recorded from prefetched binary metadata; Docker probe skipped",
-                    agent.runtime().label()
-                ),
-            );
-        }
-        return;
-    }
-    extract_agent_version(paths, image, agent, debug, runner).await;
-}
-
-/// Resolves a GitHub token for authenticating mise's GitHub API calls during
-/// Docker image builds. Checks `GITHUB_TOKEN` and `GH_TOKEN` env vars first
-/// (set in CI and by operators), then falls back to `gh auth token` for local
-/// development where the user is already logged in via the gh CLI.
-///
-/// Returns `None` when no token is available; callers must degrade gracefully
-/// (build still works, mise falls back to unauthenticated GitHub API access).
-async fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<String> {
-    for var in ["GITHUB_TOKEN", "GH_TOKEN"] {
-        if let Some(t) = std::env::var(var).ok().filter(|t| !t.trim().is_empty()) {
-            return Some(t.trim().to_owned());
-        }
-    }
-    match runner.capture_secret("gh", &["auth", "token"], None).await {
-        Ok(s) => {
-            let s = s.trim().to_owned();
-            (!s.is_empty()).then_some(s)
-        }
-        Err(e) => {
-            jackin_diagnostics::debug_log!("github_token", "gh auth token failed (no token): {e}");
-            None
-        }
-    }
 }
 
 #[cfg(test)]

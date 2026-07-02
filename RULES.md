@@ -4,13 +4,13 @@
 
 All project rules, conventions, commands, architecture info live in repo's topic-specific rule files — never in tool-specific config files (e.g., `CLAUDE.md`, `GEMINI.md`, `COPILOT.md`).
 
-**Tool-specific config files are symlinks to sibling `AGENTS.md` — never a copy, never an `@import`.** Every `CLAUDE.md` (and future `GEMINI.md` / `COPILOT.md`) symlinks to `AGENTS.md` in same dir. Create with `ln -s AGENTS.md CLAUDE.md`. Find tool config that's plain-text `@AGENTS.md` include or copy? Replace with symlink. Every dir with `AGENTS.md` needs `CLAUDE.md` symlink beside it.
+**Tool-specific config files are symlinks to sibling AGENTS.md — never a copy, never an `@import`.** Every CLAUDE.md (and future GEMINI.md / COPILOT.md) symlinks to AGENTS.md in same dir. Create with `ln -s AGENTS.md CLAUDE.md`. Find tool config that's plain-text `@AGENTS.md` include or copy? Replace with symlink. Every dir with AGENTS.md needs CLAUDE.md symlink beside it.
 
-Symlink = one source of truth on disk: two paths resolve to same bytes, so tool file never drifts from `AGENTS.md`. Instructions shared across all AI agents regardless of tool.
+Symlink = one source of truth on disk: two paths resolve to same bytes, so tool file never drifts from AGENTS.md. Instructions shared across all AI agents regardless of tool.
 
-**Never link to `AGENTS.md` or `CLAUDE.md` from another rule file.** Agent harness auto-loads these from working dir — root `AGENTS.md` always present, subdir's `AGENTS.md` loads automatically when agent reads or edits under that subtree. Cross-reference link redundant at best, misleading at worst (implies manual open). No rule file — not `AGENTS.md`, not repo-root topic file like `PULL_REQUESTS.md`, `BRANCHING.md`, `ENGINEERING.md` — may contain Markdown link or `@import` to any `AGENTS.md` or `CLAUDE.md`. Reference rule by topic, or name governing subdir in plain text (e.g. "agent-only PR extras that load under `.github/`"), but don't link file. Links between non-`AGENTS` topic files (`PULL_REQUESTS.md` ↔ `BRANCHING.md`, etc.) fine.
+**Never link to AGENTS.md or CLAUDE.md from another rule file.** Agent harness auto-loads these from working dir — root AGENTS.md always present, subdir's AGENTS.md loads automatically when agent reads or edits under that subtree. Cross-reference link redundant at best, misleading at worst (implies manual open). No rule file — not AGENTS.md, not repo-root topic file like PULL_REQUESTS.md, BRANCHING.md, ENGINEERING.md — may contain Markdown link or `@import` to any AGENTS.md or CLAUDE.md. Reference rule by topic, or name governing subdir in plain text (e.g. "agent-only PR extras that load under `.github/`"), but don't link file. Links between non-AGENTS topic files (PULL_REQUESTS.md ↔ BRANCHING.md, etc.) fine.
 
-Applies to agent instruction graph — repo's rule files. Published docs site separate, human-facing: contributor pages may still point at house-rules file with `<RepoFile path="AGENTS.md" />` because docs reader not inside auto-load harness.
+Applies to agent instruction graph — repo's rule files. Published docs site separate, human-facing: contributor pages may still point at house-rules files with Fumadocs repository-file links because docs reader not inside auto-load harness.
 
 ## Brand spelling
 

@@ -53,7 +53,7 @@ When all phases are complete, the intended operator experience is:
 
 ## Design constraints that apply across all phases
 
-**The host is never mutated silently.** Every write jackin❯ makes to host-side credential state must be surfaced in the launch summary or daemon status and must be opt-in through the workspace's chosen auth mode. Read-only access to host credential files is unrestricted. Full rationale: `AGENTS.md` § "Never mutate the host machine silently."
+**The host is never mutated silently.** Every write jackin❯ makes to host-side credential state must be surfaced in the launch summary or daemon status and must be opt-in through the workspace's chosen auth mode. Read-only access to host credential files is unrestricted. Full rationale: <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> § "Never mutate the host machine silently."
 
 **Token values are never logged.** Every code path that handles raw token values must redact them in debug output, using the same pattern as `GithubAuthContext`'s manual `Debug` impl (`[REDACTED]`). This applies to the pre-launch probe, `jackin auth status`, the daemon log, and every credential-source resolver. No "temporary debug logging" exceptions.
 

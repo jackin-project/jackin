@@ -305,7 +305,7 @@ Both changes are additive with serde defaults. Existing TOML files parse identic
 ### Phase 1 — exec subcommand + picker + host.sock resolution
 
 **Source files:**
-- `crates/jackin-capsule/src/exec.rs` — exec client: argv[0] detection, connect to control channel, send ExecCommand, receive result
+- <RepoFile path="crates/jackin-capsule/src/exec.rs">crates/jackin-capsule/src/exec.rs</RepoFile> — exec client: argv[0] detection, connect to control channel, send ExecCommand, receive result
 - <RepoFile path="crates/jackin-runtime/src/exec_host.rs" /> — host.sock listener: stays alive for session duration, runs `op read`, responds to capsule credential requests
 - <RepoFile path="crates/jackin-core/src/env_value.rs" /> — `Extended` variant on `EnvValue`; `on_demand: bool` on `OpRef`
 - <RepoFile path="crates/jackin-capsule/src/main.rs" /> — `exec` subcommand dispatch + argv[0] detection

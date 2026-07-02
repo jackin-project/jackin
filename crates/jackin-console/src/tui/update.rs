@@ -248,6 +248,13 @@ pub struct ListPreRenderFocusPlan {
     pub list_names_focused: bool,
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Four orthogonal scroll-reset flags (reset_workspace, reset_global, \
+              reset_role_global, reset_roles) — each is an independent reset \
+              channel the list-pre-render plan applies to the corresponding scroll \
+              area. Named-field reads match the per-area reset gating."
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListPreRenderScrollResetPlan {
     pub reset_workspace: bool,
@@ -256,6 +263,14 @@ pub struct ListPreRenderScrollResetPlan {
     pub reset_roles: bool,
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Six orthogonal list pre-render state flags (list_names_focused, \
+              preview_focused, sidebar_available, focused_block_scrollable, \
+              role_global_available, roles_available) — each tracks an independent \
+              UI-scroll-availability signal consumed individually by the focus and \
+              scroll-reset plans. Named-field reads match the per-pane gating idiom."
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListPreRenderFacts {
     pub list_scroll_focus: Option<crate::tui::focus::MountScrollFocus>,
@@ -320,6 +335,13 @@ pub const fn list_names_focus_plan(focused: bool) -> bool {
     focused
 }
 
+#[allow(
+    clippy::fn_params_excessive_bools,
+    reason = "Four mutually-exclusive modal visibility flags (github_picker, \
+              role_picker, error_popup, container_info) — each is an independent \
+              picker-open signal routed in priority order by the key-target \
+              resolver. Named-arg reads match the per-picker key-routing idiom."
+)]
 #[must_use]
 pub const fn list_modal_key_target(
     github_picker: bool,
@@ -357,6 +379,13 @@ pub const fn list_modal_scroll_target(
     }
 }
 
+#[allow(
+    clippy::fn_params_excessive_bools,
+    reason = "Five orthogonal modal visibility flags (workdir_pick, \
+              role_picker, op_picker, settings pickers) — each is an independent \
+              scroll target signal routed by the shared-modal scroll resolver. \
+              Named-arg reads match the per-modal scroll-routing idiom."
+)]
 #[must_use]
 pub const fn shared_modal_scroll_target(
     workdir_pick: bool,
@@ -444,6 +473,13 @@ pub fn console_mouse_wheel_plan(
     }
 }
 
+#[allow(
+    clippy::fn_params_excessive_bools,
+    reason = "Four orthogonal focus decision inputs (list_names_focused, \
+              preview_focused, sidebar_available, focused_block_scrollable) — each \
+              is an independent UI signal the focus planner reads individually. \
+              Named-arg reads match the per-branch focus routing idiom."
+)]
 #[must_use]
 pub const fn list_pre_render_focus_plan(
     list_scroll_focus: Option<crate::tui::focus::MountScrollFocus>,

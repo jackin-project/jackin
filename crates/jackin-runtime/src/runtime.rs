@@ -5,15 +5,13 @@
 
 pub mod apple_container;
 pub mod attach;
-pub mod caffeinate;
 pub mod cleanup;
 pub mod discovery;
 pub mod docker_profile;
 pub mod drift;
 pub mod exit_summary;
 pub mod host_attach;
-mod host_clipboard;
-mod host_desktop;
+pub mod host_colors;
 pub mod identity;
 pub mod image;
 pub mod launch;
@@ -21,6 +19,7 @@ pub mod logs;
 pub mod naming;
 pub mod prewarm_trigger;
 pub mod progress;
+pub mod prune_output;
 pub mod repo_cache;
 pub(crate) mod shared_runner;
 pub mod snapshot;
@@ -38,7 +37,6 @@ pub use self::attach::{
     hardline_agent, hardline_agent_with_focus, inspect_agent_sessions, inspect_hardline_instance,
     spawn_agent_session, spawn_shell_session,
 };
-pub use self::caffeinate::reconcile as reconcile_keep_awake;
 pub use self::cleanup::{
     eject_role, exile_all, prune_all_instances, prune_cache, prune_diagnostics, prune_images,
     prune_instances, prune_jackin_home, prune_roles, purge_class_data, purge_container_state,
@@ -63,6 +61,7 @@ pub use self::universe::{
     EntryClaim, StartKind, claim_entry as claim_construct_entry, force_boundary_intro_enabled,
     release_entry_if_idle,
 };
+pub use ::jackin_host::caffeinate::reconcile as reconcile_keep_awake;
 
 pub use self::launch::resolve_supported_agents_for_console;
 

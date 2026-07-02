@@ -2,6 +2,7 @@
   "title": "Codebase health",
   "defaultOpen": false,
   "pages": [
+    "codebase-health-enforcement",
     "pr-verification",
     "test-infra-behavioral-specs",
     "(phase-1-docs-setup)",

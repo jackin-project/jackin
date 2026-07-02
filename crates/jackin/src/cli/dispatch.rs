@@ -3,7 +3,7 @@
 //! This module owns the decision logic that drives bare `jackin` and the
 //! explicit `jackin console` subcommand. It lives separately from
 //! [`crate::run`] so the decisions are unit-testable without standing up a
-//! full [`crate::config::AppConfig`] / [`crate::paths::JackinPaths`].
+//! full [`jackin_config::AppConfig`] / [`jackin_core::JackinPaths`].
 
 use std::io::IsTerminal;
 

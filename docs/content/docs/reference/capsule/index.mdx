@@ -424,7 +424,7 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 | <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
 | <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
 | <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
-| <RepoFile path="crates/jackin-runtime/src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
+| <RepoFile path="crates/jackin-isolation/src/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
 | [Agent runtime status authority roadmap item](/roadmap/agent-runtime-status/) | Design record and regression checklist for the shipped in-container state authority |
 | [jackin❯ daemon roadmap item](/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
 | [Multiplexer Design Rules](/reference/capsule/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |

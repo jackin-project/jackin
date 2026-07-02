@@ -15,7 +15,7 @@
 
 use crate::instance::{InstanceManifest, InstanceStatus};
 use anyhow::Context as _;
-use jackin_core::{CommandRunner, RunOptions};
+use jackin_core::{CommandRunner, JACKIN_STATUS_CMD, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 use jackin_protocol::attach::SpawnRequest;
 use std::path::PathBuf;
@@ -35,9 +35,6 @@ use std::path::PathBuf;
 /// propagates loudly because `||` short-circuits at the first failure
 /// only — there is no `|| true` suppression of the second command's
 /// errors.
-pub const JACKIN_STATUS_CMD: &str =
-    "test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule status";
-
 pub const JACKIN_CAPSULE_PATH: &str = "/jackin/runtime/jackin-capsule";
 pub const ATTACH_PROXY_SUBCOMMAND: &str = "attach-proxy";
 
@@ -192,20 +189,6 @@ pub async fn inspect_agent_sessions(
     }
 }
 
-/// Parse the `Sessions: <N>` header from `jackin-capsule status`
-/// output. Returns `None` if no parsable header line is present —
-/// daemon unreachable, torn write, or post-format-drift. Shared
-/// between `inspect_agent_sessions` here and
-/// `isolation::finalize::has_jackin_sessions` so a future change to
-/// the header shape touches one place, not two.
-pub(crate) fn parse_session_count(output: &str) -> Option<usize> {
-    output.lines().find_map(|line| {
-        line.trim()
-            .strip_prefix("Sessions:")
-            .and_then(|value| value.trim().parse().ok())
-    })
-}
-
 /// Parse session list from `jackin-capsule status` output.
 ///
 /// The output starts with `Sessions: <N>` followed by N lines shaped
@@ -225,7 +208,7 @@ pub(crate) fn parse_session_count(output: &str) -> Option<usize> {
 /// on the header — that matches the capsule's print order, where the
 /// header is always the first non-blank line.
 fn parse_jackin_sessions(output: &str) -> Result<Vec<AgentSession>, String> {
-    let expected = parse_session_count(output).ok_or_else(|| {
+    let expected = jackin_core::parse_session_count(output).ok_or_else(|| {
         "jackin-capsule status emitted no parsable `Sessions: N` header — daemon may be unreachable".to_owned()
     })?;
 
@@ -456,7 +439,7 @@ pub(super) async fn start_or_reconnect_capsule_client(
             );
         }
     }
-    super::caffeinate::reconcile(paths, docker, runner).await;
+    jackin_host::caffeinate::reconcile(paths, docker, runner).await;
     reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await
 }
 
@@ -522,7 +505,7 @@ pub async fn spawn_shell_session(
     .await?;
 
     set_role_terminal_title(paths, container_name);
-    super::caffeinate::reconcile(paths, docker, runner).await;
+    jackin_host::caffeinate::reconcile(paths, docker, runner).await;
     if super::host_attach::host_attach_enabled() {
         let result = super::host_attach::run_host_attach_session(
             paths,
@@ -581,7 +564,15 @@ pub async fn spawn_shell_session(
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
 
-#[expect(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Spawning a single agent session requires every caller-supplied \
+              parameter (paths, container_name, manifest, agent, provider_label, \
+              env_overrides, git config, docker, runner, ...) to flow through to \
+              the container bring-up path; bundling into a config struct would be \
+              a parallel pass that requires restructuring the spawn path. Named- \
+              arg reads match the per-input propagation idiom."
+)]
 pub async fn spawn_agent_session(
     paths: &JackinPaths,
     container_name: &str,
@@ -608,7 +599,7 @@ pub async fn spawn_agent_session(
     // git policy toggles are session env consumed by the spawned entrypoint.
     // Each transport encodes them only on the path that consumes it.
     set_role_terminal_title(paths, container_name);
-    super::caffeinate::reconcile(paths, docker, runner).await;
+    jackin_host::caffeinate::reconcile(paths, docker, runner).await;
     if super::host_attach::host_attach_enabled() {
         let mut session_env_overrides: Vec<(String, String)> =
             git_policy_env_pairs(git_coauthor_trailer, git_dco)
@@ -731,7 +722,7 @@ pub async fn hardline_agent_with_focus(
     );
     let attach_outcome = match container_state {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
-            super::caffeinate::reconcile(paths, docker, runner).await;
+            jackin_host::caffeinate::reconcile(paths, docker, runner).await;
             reconnect_or_create_session_with_focus(
                 paths,
                 container_name,

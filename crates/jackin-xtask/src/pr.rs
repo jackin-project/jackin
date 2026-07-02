@@ -34,6 +34,13 @@ pub(crate) fn run(command: PrCommand) -> Result<()> {
 
 /// Which categories of file the diff touches; each gates a verify-locally block.
 #[derive(Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Four orthogonal file-bucket categories (rust, docs, capsule, schema) \
+              used by `classify()` to bucket changed files in a PR digest. Each \
+              bool is an independent path-prefix match; named-field reads match \
+              the git path-filter idiom this helper parallels."
+)]
 struct Categories {
     rust: bool,
     docs: bool,

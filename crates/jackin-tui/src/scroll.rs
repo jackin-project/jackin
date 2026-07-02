@@ -4,8 +4,17 @@
 //! jackin❯ owns rendering, so this module exposes small helpers that convert
 //! those metrics into the full-cell thumbs and clamped offsets used by the
 //! host console, launch progress overlay, and capsule renderer.
+//!
+//! `TailScroll` + the `is_scrollable` / `max_line_width` / `max_offset`
+//! helpers are owned by `jackin-core::tui_widgets` and re-exported here
+//! so L3 callers can use the canonical names. The runtime uses the
+//! core stub directly (this is the A5 unblock 7 port-trait move
+//! that breaks the runtime → tui edge for the progress layer's
+//! widget fields).
 
 use tui_scrollbar::{SUBCELL, ScrollLengths, ScrollMetrics};
+
+pub use jackin_core::tui_widgets::{TailScroll, is_scrollable, max_line_width, max_offset};
 
 use crossterm::event::{KeyModifiers, MouseEventKind};
 
@@ -60,58 +69,6 @@ pub struct FullCellThumb {
 /// Externally `0` means "live tail / newest content". Internally the helper
 /// clamps through the same top-relative `tui-scrollbar` metrics used by normal
 /// panels before converting back to the tail-relative representation.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct TailScroll {
-    offset: usize,
-}
-
-impl TailScroll {
-    #[must_use]
-    pub const fn new(offset: usize) -> Self {
-        Self { offset }
-    }
-
-    #[must_use]
-    pub const fn offset(self) -> usize {
-        self.offset
-    }
-
-    pub fn scroll_by(&mut self, filled: usize, delta: isize) -> usize {
-        let current = self.offset.min(filled);
-        self.offset = if delta.is_negative() {
-            current.saturating_sub(delta.unsigned_abs())
-        } else {
-            current.saturating_add(delta as usize).min(filled)
-        };
-        self.offset
-    }
-
-    pub fn clamp(&mut self, filled: usize) -> usize {
-        self.offset = self.offset.min(filled);
-        self.offset
-    }
-
-    #[must_use]
-    pub fn to_top_offset(self, content_len: usize, viewport_len: usize) -> usize {
-        let max = max_offset(content_len, viewport_len);
-        max.saturating_sub(self.offset.min(max))
-    }
-}
-
-#[must_use]
-pub const fn is_scrollable(content_len: usize, viewport_len: usize) -> bool {
-    viewport_len > 0 && content_len > viewport_len
-}
-
-#[must_use]
-pub const fn max_offset(content_len: usize, viewport_len: usize) -> usize {
-    if viewport_len == 0 || content_len <= viewport_len {
-        0
-    } else {
-        content_len - viewport_len
-    }
-}
-
 fn metrics(
     content_len: usize,
     viewport_len: usize,

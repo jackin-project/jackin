@@ -139,7 +139,7 @@ fn print_root_help_banner() {
     reason = "binary entrypoint — exit is the correct mechanism"
 )]
 fn exit_for_run_error(error: &anyhow::Error, debug: bool) -> ! {
-    if jackin::runtime::progress::LaunchCancelled::is_cancel(error) {
+    if jackin_runtime::runtime::progress::LaunchCancelled::is_cancel(error) {
         std::process::exit(0);
     }
     render_error(error, debug);
@@ -159,6 +159,6 @@ fn render_error(error: &anyhow::Error, debug: bool) {
             eprintln!("  {} {error:#}", "detail:".dimmed());
         }
     } else {
-        jackin::tui::fatal(&format!("{error:#}"));
+        jackin_tui::output::fatal(&format!("{error:#}"));
     }
 }

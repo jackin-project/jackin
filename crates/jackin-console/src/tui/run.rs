@@ -2,7 +2,7 @@
 
 use ratatui::layout::Rect;
 
-use crate::tui::app::ConsoleManagerStageRoute;
+use crate::tui::model::ConsoleManagerStageRoute;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsoleScreenStage {

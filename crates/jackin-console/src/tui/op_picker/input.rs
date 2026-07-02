@@ -348,10 +348,6 @@ impl OpPickerState {
         }
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "pending extraction — tracked in codebase-readability roadmap"
-    )]
     fn handle_field_key(&mut self, key: KeyEvent) -> ModalOutcome<OpPickerSelection> {
         match key.code {
             KeyCode::Char('r' | 'R') if !key.modifiers.contains(KeyModifiers::CONTROL) => {

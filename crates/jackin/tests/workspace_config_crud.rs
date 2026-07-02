@@ -3,9 +3,9 @@
     reason = "integration test fixture setup should fail immediately with source location"
 )]
 
-use jackin::config::ConfigEditor;
-use jackin::paths::JackinPaths;
 use jackin::workspace::{self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved};
+use jackin_config::ConfigEditor;
+use jackin_core::paths::JackinPaths;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
@@ -68,7 +68,7 @@ fn workspace_create_resolves_relative_workdir_and_mounts() {
                         src: expanded_workdir.clone(),
                         dst: expanded_workdir,
                         readonly: false,
-                        isolation: jackin::isolation::MountIsolation::Shared,
+                        isolation: jackin_core::MountIsolation::Shared,
                     },
                     mount,
                 ],
@@ -113,7 +113,7 @@ fn workspace_create_resolves_dot_workdir_and_dotdot_mount() {
                         src: expanded_workdir.clone(),
                         dst: expanded_workdir,
                         readonly: false,
-                        isolation: jackin::isolation::MountIsolation::Shared,
+                        isolation: jackin_core::MountIsolation::Shared,
                     },
                     mount,
                 ],
@@ -179,7 +179,7 @@ fn workspace_create_uses_only_explicit_mounts() {
         src: src_path.clone(),
         dst: "/workspace".to_owned(),
         readonly: false,
-        isolation: jackin::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     }];
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
@@ -216,7 +216,7 @@ fn workspace_create_preserves_explicit_workdir_mount() {
         src: expanded_workdir.clone(),
         dst: expanded_workdir.clone(),
         readonly: true, // user chose read-only
-        isolation: jackin::isolation::MountIsolation::Shared,
+        isolation: jackin_core::MountIsolation::Shared,
     }];
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
@@ -262,7 +262,7 @@ fn workspace_edit_resolves_relative_mount() {
                     src: workdir_abs.clone(),
                     dst: workdir_abs,
                     readonly: false,
-                    isolation: jackin::isolation::MountIsolation::Shared,
+                    isolation: jackin_core::MountIsolation::Shared,
                 }],
                 ..Default::default()
             },
@@ -318,13 +318,13 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
                         src: workdir_abs.clone(),
                         dst: workdir_abs.clone(),
                         readonly: false,
-                        isolation: jackin::isolation::MountIsolation::Shared,
+                        isolation: jackin_core::MountIsolation::Shared,
                     },
                     workspace::MountConfig {
                         src: extra_abs,
                         dst: workdir_abs.clone() + "/extra",
                         readonly: false,
-                        isolation: jackin::isolation::MountIsolation::Shared,
+                        isolation: jackin_core::MountIsolation::Shared,
                     },
                 ],
                 ..Default::default()
@@ -377,7 +377,7 @@ fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
                     src: src_abs,
                     dst: "/workspace".to_owned(),
                     readonly: false,
-                    isolation: jackin::isolation::MountIsolation::Shared,
+                    isolation: jackin_core::MountIsolation::Shared,
                 }],
                 ..Default::default()
             },

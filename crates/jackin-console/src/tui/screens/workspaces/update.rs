@@ -777,6 +777,14 @@ pub fn selected_index(selected: usize, row_count: usize) -> usize {
     crate::tui::focus::selected_index(selected, row_count)
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Five orthogonal inline-picker clear flags on the list-selection \
+              plan (role / agent / new_session / provider / launch_provider) — \
+              each tracks an independent clear-mutation the plan applies to the \
+              state. Named-field reads match the per-trait-method dispatch this \
+              plan parallelizes."
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkspaceListSelectionPlan {
     pub selected: usize,
@@ -973,6 +981,13 @@ pub fn workspace_list_clickable_at_position(
         .is_some()
 }
 
+#[allow(
+    clippy::fn_params_excessive_bools,
+    reason = "Six orthogonal workspace-list scroll-focus inputs (in_left_pane, \
+              has_scroll_areas, ...) — each is an independent UI signal the \
+              scroll-focus planner reads to pick the correct focus target. \
+              Named-arg reads match the per-input scroll-focus routing idiom."
+)]
 #[must_use]
 pub const fn workspace_list_scroll_focus_plan(
     in_left_pane: bool,

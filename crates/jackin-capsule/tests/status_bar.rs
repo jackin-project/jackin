@@ -1,9 +1,9 @@
-use jackin_capsule::tui::app::VisibleAgentState;
 use jackin_capsule::tui::components::chrome::StatusBarWidget;
 use jackin_capsule::tui::components::status_bar::{PrefixMode, StatusBar, status_bar_plan};
 /// Status bar layout regressions: brand pill, tab click regions,
 /// menu hint, overflow indicator.
 use jackin_capsule::tui::layout::Tab;
+use jackin_capsule::tui::model::VisibleAgentState;
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 
 fn draw(

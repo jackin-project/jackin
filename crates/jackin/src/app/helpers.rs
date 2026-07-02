@@ -2,13 +2,12 @@
 
 use anyhow::Result;
 
-use crate::config::{AppConfig, WorkspaceConfig};
-use crate::docker_client::DockerApi;
-use crate::instance;
-use crate::paths::JackinPaths;
-use crate::runtime;
-use crate::selector::RoleSelector;
-use crate::tui;
+use jackin_config::{AppConfig, WorkspaceConfig};
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
+use jackin_docker::docker_client::DockerApi;
+use jackin_runtime::instance;
+use jackin_runtime::runtime;
 
 pub(super) async fn resolve_role_to_container(
     class: &RoleSelector,
@@ -58,10 +57,6 @@ pub(super) fn resolve_instance_reference(
 /// trailing mounts table with one row per mount. The mounts table renders the
 /// canonical lowercase isolation name (`shared`/`worktree`/`clone`) so the output
 /// matches TOML/CLI input verbatim.
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub(super) fn render_workspace_show(
     config: &AppConfig,
     name: &str,
@@ -111,7 +106,7 @@ pub(super) fn render_workspace_show(
     let default_role = workspace.default_role.as_deref().unwrap_or("none");
     let agent = workspace.resolved_agent().slug();
 
-    let short_workdir = tui::shorten_home(&workspace.workdir);
+    let short_workdir = jackin_core::shorten_home(&workspace.workdir);
     let mut info: Vec<(&str, &str)> = vec![
         ("Name", name),
         ("Workdir", short_workdir.as_str()),
@@ -156,7 +151,7 @@ pub(super) fn render_workspace_show(
         let _unused = writeln!(out, "{mount_table}");
     }
 
-    let render_unscoped_table = |out: &mut String, rows: &[&crate::config::GlobalMountRow]| {
+    let render_unscoped_table = |out: &mut String, rows: &[&jackin_config::GlobalMountRow]| {
         if rows.is_empty() {
             return;
         }
@@ -172,7 +167,7 @@ pub(super) fn render_workspace_show(
     };
 
     match config.workspace_applicable_mount_rows(workspace) {
-        crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
+        jackin_config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
             if rows.is_empty() {
                 return out;
             }
@@ -192,12 +187,12 @@ pub(super) fn render_workspace_show(
             let _unused = writeln!(out, "Global mounts ({role}):");
             let _unused = writeln!(out, "{table}");
         }
-        crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
+        jackin_config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
             // Unscoped global mounts apply regardless of role — render
             // them even when the role is ambiguous. Only the scoped
             // subset depends on role selection.
             let all_rows = config.list_mount_rows();
-            let unscoped: Vec<&crate::config::GlobalMountRow> =
+            let unscoped: Vec<&jackin_config::GlobalMountRow> =
                 all_rows.iter().filter(|row| row.scope.is_none()).collect();
             render_unscoped_table(&mut out, &unscoped);
             if all_rows.iter().any(|row| row.scope.is_some()) {
@@ -219,10 +214,10 @@ pub(super) fn mount_mode(readonly: bool) -> String {
 }
 
 pub(super) fn mount_display(src: &str, dst: &str) -> String {
-    let short_dst = tui::shorten_home(dst);
+    let short_dst = jackin_core::shorten_home(dst);
     if src == dst {
         short_dst
     } else {
-        format!("{}\nhost: {}", short_dst, tui::shorten_home(src))
+        format!("{}\nhost: {}", short_dst, jackin_core::shorten_home(src))
     }
 }

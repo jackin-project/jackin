@@ -11,7 +11,7 @@ use std::path::Path;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
-pub use jackin_core::{CommandRunner, RunOptions};
+pub use jackin_core::{BuildLogSink, CommandRunner, RunOptions};
 
 #[derive(Debug, Default)]
 pub struct ShellRunner {
@@ -50,6 +50,7 @@ impl ShellRunner {
             stream_captured_output: _,
             interactive: _,
             tee_to_build_log: _,
+            build_log_sink: _,
         } = opts;
         if should_null_stdin(opts) {
             cmd.stdin(std::process::Stdio::null());
@@ -103,7 +104,7 @@ pub fn redact_env_args(args: &[&str]) -> Vec<String> {
 async fn read_process_pipe<R, W>(
     pipe: &mut R,
     stream: bool,
-    tee_build_log: bool,
+    sink: Option<&dyn BuildLogSink>,
     mut output: W,
 ) -> std::io::Result<Vec<u8>>
 where
@@ -123,11 +124,11 @@ where
         if stream {
             output.write_all(&buf[..n])?;
         }
-        if tee_build_log {
+        if let Some(s) = sink {
             for &byte in &buf[..n] {
                 if byte == b'\n' {
                     let line = String::from_utf8_lossy(&line_remainder);
-                    jackin_launch::build_log::push_line(line.trim_end_matches('\r'));
+                    s.push_line(line.trim_end_matches('\r'));
                     line_remainder.clear();
                 } else {
                     line_remainder.push(byte);
@@ -136,9 +137,11 @@ where
         }
         captured.extend_from_slice(&buf[..n]);
     }
-    if tee_build_log && !line_remainder.is_empty() {
+    if !line_remainder.is_empty() {
         let line = String::from_utf8_lossy(&line_remainder);
-        jackin_launch::build_log::push_line(line.trim_end_matches('\r'));
+        if let Some(s) = sink {
+            s.push_line(line.trim_end_matches('\r'));
+        }
     }
     Ok(captured)
 }
@@ -292,18 +295,30 @@ impl ShellRunner {
         let stream = opts.stream_captured_output
             && !self.debug
             && !jackin_diagnostics::rich_terminal_owned();
-        let tee = opts.tee_to_build_log;
+        let (sink_out, sink_err) = (opts.build_log_sink.clone(), opts.build_log_sink.clone());
         let read_stdout = async move {
             let Some(mut stdout_pipe) = stdout_pipe else {
                 return Ok::<Vec<u8>, std::io::Error>(Vec::new());
             };
-            read_process_pipe(&mut stdout_pipe, stream, tee, std::io::stdout()).await
+            read_process_pipe(
+                &mut stdout_pipe,
+                stream,
+                sink_out.as_deref(),
+                std::io::stdout(),
+            )
+            .await
         };
         let read_stderr = async move {
             let Some(mut stderr_pipe) = stderr_pipe else {
                 return Ok::<Vec<u8>, std::io::Error>(Vec::new());
             };
-            read_process_pipe(&mut stderr_pipe, stream, tee, std::io::stderr()).await
+            read_process_pipe(
+                &mut stderr_pipe,
+                stream,
+                sink_err.as_deref(),
+                std::io::stderr(),
+            )
+            .await
         };
         let (status, stdout_result, stderr_result) =
             tokio::join!(child.wait(), read_stdout, read_stderr);

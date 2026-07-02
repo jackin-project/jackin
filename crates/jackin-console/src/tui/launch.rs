@@ -7,11 +7,11 @@ use jackin_config::{AppConfig, LoadWorkspaceInput, ResolvedWorkspace};
 use jackin_core::RoleSelector;
 
 use crate::services::launch::LaunchDispatchResolution;
-use crate::tui::app::{clear_pending_launch_plan, open_launch_role_prompt_plan};
 use crate::tui::components::error_popup::{
     no_eligible_roles_error_message, no_eligible_roles_error_title,
 };
 use crate::tui::console::{ConsoleStage, ConsoleState};
+use crate::tui::model::{clear_pending_launch_plan, open_launch_role_prompt_plan};
 use crate::tui::state::update::{ManagerMessage, update_manager};
 
 pub fn dispatch_launch_for_workspace(

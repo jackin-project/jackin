@@ -32,7 +32,7 @@ fn load_args_parses_agent_flag() {
     assert!(matches!(
         cli.command,
         Some(Command::Load(super::LoadArgs {
-            agent: Some(crate::agent::Agent::Codex),
+            agent: Some(jackin_core::Agent::Codex),
             ..
         }))
     ));
@@ -44,7 +44,7 @@ fn load_args_parses_amp_agent_flag() {
     assert!(matches!(
         cli.command,
         Some(Command::Load(super::LoadArgs {
-            agent: Some(crate::agent::Agent::Amp),
+            agent: Some(jackin_core::Agent::Amp),
             ..
         }))
     ));
@@ -339,7 +339,7 @@ fn parses_hardline_new_agent_flags() {
             selector: None,
             inspect: false,
             new: true,
-            agent: Some(crate::agent::Agent::Codex),
+            agent: Some(jackin_core::Agent::Codex),
             shell: false,
         }))
     ));

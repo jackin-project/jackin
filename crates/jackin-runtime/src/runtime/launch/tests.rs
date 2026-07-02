@@ -1,5 +1,5 @@
 //! Tests for `runtime/launch.rs`: load pipeline behavioral verification.
-#![allow(clippy::too_many_lines)]
+#![allow(clippy::too_many_lines, unused_qualifications)]
 use super::super::test_support::FakeRunner;
 use super::*;
 use jackin_config::AppConfig;

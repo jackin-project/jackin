@@ -19,9 +19,9 @@ where
 
 use crate::cli::BANNER;
 use crate::cli::format::OutputFormat;
-use crate::docker_client::{BollardDockerClient, ContainerState, DockerApi};
-use crate::instance::manifest::InstanceIndex;
-use crate::paths::JackinPaths;
+use jackin_core::JackinPaths;
+use jackin_docker::docker_client::{BollardDockerClient, ContainerState, DockerApi};
+use jackin_runtime::instance::manifest::InstanceIndex;
 
 /// Command string for querying the agent registry over the capsule socket.
 const JACKIN_AGENTS_CMD: &str =
@@ -96,8 +96,10 @@ async fn run_level0(
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
 
     // Group by workspace name/label.
-    let mut workspaces: HashMap<String, Vec<&crate::instance::manifest::InstanceIndexEntry>> =
-        HashMap::new();
+    let mut workspaces: HashMap<
+        String,
+        Vec<&jackin_runtime::instance::manifest::InstanceIndexEntry>,
+    > = HashMap::new();
     for entry in &index.instances {
         let key = entry
             .workspace_name
@@ -134,8 +136,10 @@ async fn run_level0(
     }
 
     // Human output.
-    let mut sorted_ws: Vec<(String, Vec<&crate::instance::manifest::InstanceIndexEntry>)> =
-        workspaces.into_iter().collect();
+    let mut sorted_ws: Vec<(
+        String,
+        Vec<&jackin_runtime::instance::manifest::InstanceIndexEntry>,
+    )> = workspaces.into_iter().collect();
     sorted_ws.sort_by(|a, b| a.0.cmp(&b.0));
 
     print!("{BANNER}");

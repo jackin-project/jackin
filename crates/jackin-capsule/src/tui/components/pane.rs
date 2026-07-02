@@ -129,39 +129,39 @@ impl PaneCell for SnapCell {
     }
 
     fn bold(&self) -> bool {
-        self.bold
+        self.attributes.bold
     }
 
     fn italic(&self) -> bool {
-        self.italic
+        self.attributes.italic
     }
 
     fn underline(&self) -> bool {
-        self.underline
+        self.attributes.underline
     }
 
     fn inverse(&self) -> bool {
-        self.inverse
+        self.attributes.inverse
     }
 
     fn dim(&self) -> bool {
-        self.dim
+        self.attributes.dim
     }
 
     fn strikethrough(&self) -> bool {
-        self.strikethrough
+        self.attributes.strikethrough
     }
 
     fn slow_blink(&self) -> bool {
-        self.slow_blink
+        self.attributes.slow_blink
     }
 
     fn rapid_blink(&self) -> bool {
-        self.rapid_blink
+        self.attributes.rapid_blink
     }
 
     fn conceal(&self) -> bool {
-        self.conceal
+        self.attributes.conceal
     }
 
     fn hyperlink_uri(&self) -> Option<&str> {

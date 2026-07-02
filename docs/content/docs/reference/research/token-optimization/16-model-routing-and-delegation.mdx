@@ -25,7 +25,7 @@ Pricing matches the dossier reference sheet exactly (platform.claude.com models 
 
 ## Local measurement: tokenizer divergence across routing tiers
 
-Method: deterministic samples piped through the free count_tokens harness (`python3 /tmp/ct.py &lt;model&gt; < sample`), one user message per call. Samples: first 2,000 B of `crates/jackin-core/src/agent.rs`; first 4,096 B and full 6,366 B of this repo's <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>; a fixed 528 B English paragraph; a 558 B JSON tool schema. Counts include a few tokens of message-wrapper overhead (ratios are marginally understated).
+Method: deterministic samples piped through the free count_tokens harness (`python3 /tmp/ct.py &lt;model&gt; < sample`), one user message per call. Samples: first 2,000 B of <RepoFile path="crates/jackin-core/src/agent.rs">crates/jackin-core/src/agent.rs</RepoFile>; first 4,096 B and full 6,366 B of this repo's <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>; a fixed 528 B English paragraph; a 558 B JSON tool schema. Counts include a few tokens of message-wrapper overhead (ratios are marginally understated).
 
 | Sample | Fable 5 | Opus 4.8 | Sonnet 4.6 | Haiku 4.5 | Fable/Sonnet ratio |
 |---|---|---|---|---|---|

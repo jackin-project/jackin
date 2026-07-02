@@ -1,4 +1,10 @@
 //! Role manifest loading, validation, and migration.
+//!
+//! **Architecture Invariant:** L0 domain crate. Allowed dependencies:
+//! `jackin-core`, `jackin-config`. No infrastructure or presentation
+//! dependencies. Validation warnings route through
+//! `jackin_core::OperatorNoticeSink` (see `emit_compact_line`) so the
+//! manifest→diagnostics inversion never returns.
 
 pub mod manifest;
 pub mod migrations;

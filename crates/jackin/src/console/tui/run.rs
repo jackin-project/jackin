@@ -10,7 +10,6 @@ use crate::console::terminal::{
     resume_console_terminal, suspend_console_terminal,
 };
 use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
-use jackin_console::tui::app::{clear_pending_launch_role_plan, take_pending_launch_plan};
 use jackin_console::tui::components::error_popup::{
     instance_action_failed_error_message, instance_action_failed_error_title,
 };
@@ -20,6 +19,7 @@ use jackin_console::tui::components::status_popup::{
 use jackin_console::tui::debug::console_location_debug;
 use jackin_console::tui::message::PromptOutcome;
 use jackin_console::tui::message::launch_prompt_should_probe_agents;
+use jackin_console::tui::model::{clear_pending_launch_role_plan, take_pending_launch_plan};
 use jackin_console::tui::prompts::{
     ConcreteAgentPickerChoices as AgentPickerChoices,
     ConcreteLaunchPromptDispatch as LaunchPromptDispatch,
@@ -36,9 +36,9 @@ use jackin_console::tui::run::{
     token_generate_scope_label_for_console, token_generate_status_message,
 };
 
-use crate::paths::JackinPaths;
 use jackin_config::AppConfig;
 use jackin_config::LoadWorkspaceInput;
+use jackin_core::JackinPaths;
 
 pub struct ConsoleRunOptions<'a> {
     pub op_available: bool,
@@ -94,7 +94,7 @@ async fn execute_launch_prompt<B>(
     paths: &JackinPaths,
     config: &AppConfig,
     cwd: &std::path::Path,
-    runner: &mut impl crate::docker::CommandRunner,
+    runner: &mut impl jackin_docker::CommandRunner,
     request: LaunchPromptRequest,
 ) -> anyhow::Result<Option<ConsoleOutcome>>
 where
@@ -148,7 +148,7 @@ async fn execute_launch_prompt_dispatch<B>(
     paths: &JackinPaths,
     config: &AppConfig,
     cwd: &std::path::Path,
-    runner: &mut impl crate::docker::CommandRunner,
+    runner: &mut impl jackin_docker::CommandRunner,
     dispatch: LaunchPromptDispatch,
 ) -> anyhow::Result<Option<ConsoleOutcome>>
 where
@@ -164,9 +164,25 @@ where
     }
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
+    reason = "Console TUI event loop carries the per-event dispatch arms (Esc / \
+              keys / mouse / focus / palette / paste / resize) inline; extracting \
+              each arm into its own helper would push the dispatcher into a \
+              fn-of-fns shape with the same overall body. Body remains ~234 lines \
+              until a follow-up slice extracts the heaviest arms."
+)]
+#[allow(
+    clippy::cognitive_complexity,
+    reason = "Same justification as the too_many_lines allow: console TUI event \
+              loop carries per-event dispatch arms inline. Branching depth tracks \
+              the per-event-arm richness, not actual algorithmic complexity."
+)]
+#[allow(
+    clippy::excessive_nesting,
+    reason = "Same justification as the too_many_lines allow on this fn: per- \
+                  stage / per-event-arm nested dispatch. The nesting is the \
+                  per-stage console event-loop protocol."
 )]
 pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     mut config: AppConfig,
@@ -174,7 +190,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     cwd: &std::path::Path,
     options: ConsoleRunOptions<'_>,
     action_handler: &mut H,
-    runner: &mut impl crate::docker::CommandRunner,
+    runner: &mut impl jackin_docker::CommandRunner,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
@@ -298,7 +314,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         {
             let full_area: ratatui::layout::Rect = terminal.size()?.into();
             let (main_area, debug_bar_area) =
-                split_debug_area(full_area, crate::tui::is_debug_mode());
+                split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
             // If the Debug-info dialog's raw overlay was painted last frame and
             // the dialog has since closed, force a full clear so the OSC 8 link
             // residue (which Ratatui's diff does not track) is wiped.
@@ -343,7 +359,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                 }
                 chrome_hover_tracker.clear();
                 if let Some(bar_area) = debug_bar_area {
-                    let active_run = crate::diagnostics::active_run();
+                    let active_run = jackin_diagnostics::active_run();
                     let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
                     let run_id = debug_run_id_label(
                         active_run.as_ref().map(|r| r.run_id()),
@@ -433,7 +449,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     {
                         continue;
                     }
-                    crate::debug_log!(
+                    jackin_diagnostics::debug_log!(
                         "tui",
                         "key={} location={}",
                         jackin_console::tui::debug::key_debug_name_for_input(
@@ -632,7 +648,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                                         let full_area = frame.area();
                                         let (main_area, _debug_bar) = split_debug_area(
                                             full_area,
-                                            crate::tui::is_debug_mode(),
+                                            jackin_diagnostics::is_debug_mode(),
                                         );
                                         crate::console::tui::render(
                                             frame, main_area, ms, &config, cwd,
@@ -672,7 +688,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                 Event::Mouse(mouse) => {
                     last_mouse_event_at = Some(std::time::Instant::now());
                     if should_debug_log_mouse(mouse) {
-                        crate::debug_log!(
+                        jackin_diagnostics::debug_log!(
                             "tui",
                             "mouse={mouse:?} location={}",
                             console_location_debug(&state)
@@ -690,7 +706,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     let modal_plan = {
                         let full_area: ratatui::layout::Rect = term_size;
                         let (main_area, _) =
-                            split_debug_area(full_area, crate::tui::is_debug_mode());
+                            split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
                         let quit_confirm_rect = state
                             .quit_confirm_state()
                             .map(|confirm| quit_confirm_area(main_area, confirm));
@@ -748,7 +764,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                             mouse.row,
                             &ConsoleChromeHover::DebugChip,
                         );
-                        let active_run = crate::diagnostics::active_run();
+                        let active_run = jackin_diagnostics::active_run();
                         if debug_chip_activation_allowed(
                             mouse,
                             no_modal_open,

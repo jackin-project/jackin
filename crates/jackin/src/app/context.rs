@@ -11,14 +11,13 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::config::AppConfig;
-use crate::docker_client::DockerApi;
-use crate::instance;
-use crate::paths::JackinPaths;
-use crate::runtime;
-use crate::selector::RoleSelector;
-use crate::tui;
 use crate::workspace::{LoadWorkspaceInput, WorkspaceConfig, expand_tilde};
+use jackin_config::AppConfig;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
+use jackin_docker::docker_client::DockerApi;
+use jackin_runtime::instance;
+use jackin_runtime::runtime;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TargetKind {
@@ -78,7 +77,7 @@ pub(crate) fn resolve_target_name(
 ) -> Result<LoadWorkspaceInput> {
     resolve_target_name_with_choice(name, config, cwd, |message, options| {
         let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-        tui::prompt_choice(message, &option_refs)
+        crate::prompt::prompt_choice(message, &option_refs)
     })
 }
 
@@ -156,7 +155,7 @@ pub(crate) fn resolve_agent_from_context(
 ) -> Result<(RoleSelector, LoadWorkspaceInput)> {
     resolve_agent_from_context_with_choice(config, cwd, |message, options| {
         let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-        tui::prompt_choice(message, &option_refs)
+        crate::prompt::prompt_choice(message, &option_refs)
     })
 }
 
@@ -290,7 +289,7 @@ pub(crate) async fn resolve_running_container_from_context(
         _ => {
             let options = hardline_candidate_prompt_options(paths, &candidates);
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-            let choice = tui::prompt_choice(
+            let choice = crate::prompt::prompt_choice(
                 &format!("Workspace {name:?} has multiple matching instances. Select one:"),
                 &option_refs,
             )?;
@@ -314,7 +313,7 @@ async fn resolve_ad_hoc_container_from_context(
         _ => {
             let options = hardline_candidate_prompt_options(paths, &candidates);
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
-            let choice = tui::prompt_choice(
+            let choice = crate::prompt::prompt_choice(
                 "Current directory has multiple ad-hoc instances. Select one:",
                 &option_refs,
             )?;
@@ -354,7 +353,8 @@ fn hardline_candidate_prompt_label(paths: &JackinPaths, candidate: &HardlineCand
     let Ok(manifest) = instance::InstanceManifest::read(&state_dir) else {
         return format!("{container} - {docker_state} - {session_summary}");
     };
-    let isolation = crate::isolation::state::MountSummary::prompt_label_for_state_dir(&state_dir);
+    let isolation =
+        jackin_runtime::isolation::state::MountSummary::prompt_label_for_state_dir(&state_dir);
     format!(
         "{} - {} - {} - agent:{} - status:{} - {} - {} - {}",
         manifest.container_base,
@@ -504,8 +504,8 @@ fn preferred_indexed_container(
 pub(crate) fn prompt_agent_choice_if_needed(
     paths: &JackinPaths,
     selector: &RoleSelector,
-    workspace_default: Option<crate::agent::Agent>,
-) -> Result<Option<crate::agent::Agent>> {
+    workspace_default: Option<jackin_core::Agent>,
+) -> Result<Option<jackin_core::Agent>> {
     use std::io::IsTerminal;
 
     let Some(supported) = supported_agents_requiring_prompt(paths, selector, workspace_default)
@@ -538,13 +538,13 @@ pub(crate) fn prompt_agent_choice_if_needed(
 pub(crate) fn supported_agents_requiring_prompt(
     paths: &JackinPaths,
     selector: &RoleSelector,
-    workspace_default: Option<crate::agent::Agent>,
-) -> Option<Vec<crate::agent::Agent>> {
+    workspace_default: Option<jackin_core::Agent>,
+) -> Option<Vec<jackin_core::Agent>> {
     if workspace_default.is_some() {
         return None;
     }
-    let cached = crate::repo::CachedRepo::new(paths, selector);
-    let supported = crate::manifest::load_role_manifest(&cached.repo_dir)
+    let cached = jackin_manifest::repo::CachedRepo::new(paths, selector);
+    let supported = jackin_manifest::load_role_manifest(&cached.repo_dir)
         .ok()?
         .supported_agents();
     (supported.len() >= 2).then_some(supported)
@@ -572,7 +572,7 @@ pub(crate) fn remember_last_agent(
     // mutation flows through ConfigEditor). Tests that construct an
     // AppConfig purely in memory must persist it before calling this
     // function — see `remember_last_agent_persists_successful_loads`.
-    let mut editor = match crate::config::ConfigEditor::open(paths) {
+    let mut editor = match jackin_config::ConfigEditor::open(paths) {
         Ok(editor) => editor,
         Err(error) => {
             eprintln!("warning: failed to open config for last-used-role save: {error}");

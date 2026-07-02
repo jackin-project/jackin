@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Role-repo resolution: clone or update from git, validate, cache under `~/.jackin/roles/`.
 //!
 //! Typed errors (`RepoError`) allow callers to downcast and produce
@@ -367,10 +368,6 @@ impl RepoResolveOptions {
     }
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub(super) async fn resolve_agent_repo_with(
     paths: &JackinPaths,
     selector: &RoleSelector,

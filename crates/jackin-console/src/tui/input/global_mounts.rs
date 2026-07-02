@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Key handler for the Settings → Global Mounts tab and its modals.
 //!
 //! Dispatches keyboard events to the add/edit/delete flow for global mount
@@ -538,10 +539,6 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
     }
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub fn handle_settings_confirm_modal(
     settings: &mut crate::tui::state::SettingsState<'_>,
     key: KeyEvent,
@@ -710,10 +707,6 @@ pub fn handle_settings_confirm_modal(
     outcome
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
-)]
 pub fn handle_settings_env_modal(
     env: &mut crate::tui::state::SettingsEnvState<'_>,
     key: KeyEvent,

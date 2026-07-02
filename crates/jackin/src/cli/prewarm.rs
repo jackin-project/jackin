@@ -1,12 +1,12 @@
 use clap::Args;
 use owo_colors::OwoColorize as _;
 
-use crate::agent::Agent;
 use crate::cli::{BANNER, HELP_STYLES};
-use crate::config::AppConfig;
-use crate::docker::ShellRunner;
-use crate::paths::JackinPaths;
-use crate::selector::RoleSelector;
+use jackin_config::AppConfig;
+use jackin_core::Agent;
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
+use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::{BollardDockerClient, DockerApi};
 
 /// `jackin prewarm` — fill jackin-owned runtime caches before launch.
@@ -20,9 +20,44 @@ pub struct PrewarmArgs {
     /// Agent runtime binary to prewarm. Repeat to choose several. Defaults to all agents.
     #[arg(long = "agent", value_parser = parse_agent)]
     pub agents: Vec<Agent>,
+    #[command(flatten)]
+    pub flags: PrewarmFlags,
+
+    /// Role selector whose repo cache and/or derived image(s) should be prewarmed.
+    #[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]
+    pub role: Option<String>,
+    /// Saved workspace whose default role repo and/or agent image should be prewarmed.
+    #[arg(long, conflicts_with_all = ["role", "all_workspaces"])]
+    pub workspace: Option<String>,
+
+    /// Role git URL override for role/image prewarm. Defaults to configured role source.
+    #[arg(long, requires = "role", conflicts_with_all = ["workspace", "all_workspaces"])]
+    pub role_git: Option<String>,
+    /// Role branch to prewarm. Uses branch-scoped image tags.
+    #[arg(long, requires = "image")]
+    pub role_branch: Option<String>,
+}
+
+#[cfg(test)]
+mod tests;
+
+/// Flags for `jackin prewarm` (flattened into `PrewarmArgs` for CLI ergonomics).
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Eight orthogonal CLI flag booleans (image, daemon, roles, sidecar, \
+              sidecar_container, keep_sidecar_container, all_workspaces, all_roles) \
+              — each is an independent `--flag` the operator can pass on the \
+              command line. Named-field reads match the per-flag CLI ergonomics \
+              this struct flattens into."
+)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::Args)]
+pub struct PrewarmFlags {
     /// Also prewarm derived Docker image(s) for a role.
     #[arg(long)]
     pub image: bool,
+    /// Prewarm a kept Docker-in-Docker daemon for one-shot adoption by the next fresh launch.
+    #[arg(long)]
+    pub daemon: bool,
     /// Also prefetch/update every configured role repo cache.
     #[arg(long)]
     pub roles: bool,
@@ -35,32 +70,17 @@ pub struct PrewarmArgs {
     /// Keep the prewarmed sidecar container running for future daemon/runtime reuse.
     #[arg(long, requires = "sidecar_container")]
     pub keep_sidecar_container: bool,
-    /// Prewarm a kept Docker-in-Docker daemon for one-shot adoption by the next fresh launch.
-    #[arg(long)]
-    pub daemon: bool,
-    /// Role selector whose repo cache and/or derived image(s) should be prewarmed.
-    #[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]
-    pub role: Option<String>,
-    /// Saved workspace whose default role repo and/or agent image should be prewarmed.
-    #[arg(long, conflicts_with_all = ["role", "all_workspaces"])]
-    pub workspace: Option<String>,
     /// Prewarm targets for every saved workspace with a default role.
     #[arg(long, conflicts_with_all = ["role", "workspace", "role_git", "all_roles"])]
     pub all_workspaces: bool,
     /// Prewarm image targets for every configured role.
     #[arg(long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git", "all_workspaces"])]
     pub all_roles: bool,
-    /// Role git URL override for role/image prewarm. Defaults to configured role source.
-    #[arg(long, requires = "role", conflicts_with_all = ["workspace", "all_workspaces"])]
-    pub role_git: Option<String>,
-    /// Role branch to prewarm. Uses branch-scoped image tags.
-    #[arg(long, requires = "image")]
-    pub role_branch: Option<String>,
 }
 
 fn parse_agent(s: &str) -> Result<Agent, String> {
     s.parse()
-        .map_err(|e: crate::agent::ParseAgentError| e.to_string())
+        .map_err(|e: jackin_core::ParseAgentError| e.to_string())
 }
 
 pub async fn run(
@@ -69,7 +89,7 @@ pub async fn run(
     config: &AppConfig,
     debug: bool,
 ) -> anyhow::Result<()> {
-    let image_targets = if args.image {
+    let image_targets = if args.flags.image {
         PrewarmImageTarget::resolve(args, config)?
     } else {
         Vec::new()
@@ -79,7 +99,7 @@ pub async fn run(
     print!("{BANNER}");
     println!("prewarm\n");
 
-    let capsule = crate::capsule_binary::ensure_available(paths);
+    let capsule = jackin_image::capsule_binary::ensure_available(paths);
     let agents_result = prewarm_agents(paths, &agents);
     let sidecar_needed = should_prewarm_sidecar_image(args);
     let sidecar_result = async {
@@ -90,7 +110,7 @@ pub async fn run(
         }
     };
     let sidecar_container_needed = should_prewarm_sidecar_container(args);
-    if args.daemon {
+    if args.flags.daemon {
         emit_daemon_prewarm_plan();
     }
     let sidecar_container_result = async {
@@ -142,7 +162,7 @@ pub async fn run(
         if let Ok(row) = result.as_ref()
             && row.kept
         {
-            crate::runtime::write_prewarmed_dind_state(paths, row)?;
+            jackin_runtime::runtime::write_prewarmed_dind_state(paths, row)?;
         }
         print_sidecar_container_result(result)?;
     }
@@ -151,7 +171,7 @@ pub async fn run(
         prewarm_images(args, paths, image_targets, debug).await?;
     }
 
-    if args.roles {
+    if args.flags.roles {
         let targets = PrewarmRoleTarget::resolve(args, config)?;
         prewarm_role_repos(paths, targets, debug).await?;
     }
@@ -171,15 +191,15 @@ pub async fn run(
 }
 
 fn should_prewarm_sidecar_image(args: &PrewarmArgs) -> bool {
-    args.sidecar || args.image
+    args.flags.sidecar || args.flags.image
 }
 
 fn should_prewarm_sidecar_container(args: &PrewarmArgs) -> bool {
-    args.sidecar_container || args.daemon
+    args.flags.sidecar_container || args.flags.daemon
 }
 
 fn should_keep_sidecar_container(args: &PrewarmArgs) -> bool {
-    args.keep_sidecar_container || args.daemon
+    args.flags.keep_sidecar_container || args.flags.daemon
 }
 
 fn emit_daemon_prewarm_plan() {
@@ -201,7 +221,7 @@ enum SidecarImagePrewarmStatus {
 
 async fn prewarm_sidecar_image_status() -> anyhow::Result<SidecarImagePrewarmStatus> {
     let docker = BollardDockerClient::connect()?;
-    let image = crate::runtime::DIND_IMAGE;
+    let image = jackin_runtime::runtime::DIND_IMAGE;
     let tags = docker.list_image_tags(image).await?;
     if tags.is_empty() {
         docker.pull_image(image).await?;
@@ -213,9 +233,9 @@ async fn prewarm_sidecar_image_status() -> anyhow::Result<SidecarImagePrewarmSta
 
 async fn prewarm_sidecar_container_status(
     keep: bool,
-) -> anyhow::Result<crate::runtime::DindSidecarPrewarm> {
+) -> anyhow::Result<jackin_runtime::runtime::DindSidecarPrewarm> {
     let docker = BollardDockerClient::connect()?;
-    crate::runtime::prewarm_dind_sidecar_container(&docker, keep).await
+    jackin_runtime::runtime::prewarm_dind_sidecar_container(&docker, keep).await
 }
 
 fn print_sidecar_image_result(
@@ -223,7 +243,7 @@ fn print_sidecar_image_result(
 ) -> anyhow::Result<()> {
     println!();
     println!("sidecar");
-    let image = crate::runtime::DIND_IMAGE;
+    let image = jackin_runtime::runtime::DIND_IMAGE;
     match result {
         Ok(SidecarImagePrewarmStatus::Pulled) => {
             println!("  {}  {:<8} pulled", "✓".green(), image);
@@ -241,7 +261,7 @@ fn print_sidecar_image_result(
 }
 
 fn print_sidecar_container_result(
-    result: anyhow::Result<crate::runtime::DindSidecarPrewarm>,
+    result: anyhow::Result<jackin_runtime::runtime::DindSidecarPrewarm>,
 ) -> anyhow::Result<()> {
     println!();
     println!("sidecar container");
@@ -250,7 +270,7 @@ fn print_sidecar_container_result(
             println!(
                 "  {}  {:<8} {:<13} {}ms  {}",
                 "✓".green(),
-                crate::runtime::DIND_IMAGE,
+                jackin_runtime::runtime::DIND_IMAGE,
                 if row.kept {
                     "ready+kept"
                 } else {
@@ -265,7 +285,7 @@ fn print_sidecar_container_result(
             println!(
                 "  {}  {:<8} {error:#}",
                 "✗".red().bold(),
-                crate::runtime::DIND_IMAGE
+                jackin_runtime::runtime::DIND_IMAGE
             );
             Err(error)
         }
@@ -286,7 +306,7 @@ async fn prewarm_role_repos(
         tasks.spawn(async move {
             let mut runner = ShellRunner { debug };
             let selector = target.selector;
-            let result = crate::runtime::register_agent_repo(
+            let result = jackin_runtime::runtime::register_agent_repo(
                 &paths,
                 &selector,
                 &target.role_git,
@@ -363,7 +383,7 @@ struct PrewarmRoleTarget {
 
 impl PrewarmRoleTarget {
     fn resolve(args: &PrewarmArgs, config: &AppConfig) -> anyhow::Result<Vec<Self>> {
-        if args.all_workspaces {
+        if args.flags.all_workspaces {
             let mut targets = std::collections::BTreeMap::new();
             for workspace_name in config.workspaces.keys() {
                 if let Some(target) = Self::resolve_workspace(config, workspace_name)? {
@@ -464,7 +484,7 @@ async fn prewarm_images(
                 label,
                 is_agent_narrowed: _,
             } = target;
-            let rows = crate::runtime::prewarm_role_images(
+            let rows = jackin_runtime::runtime::prewarm_role_images(
                 &paths,
                 &selector,
                 &role_git,
@@ -491,11 +511,13 @@ async fn prewarm_images(
     Ok(())
 }
 
-fn print_image_prewarm_rows(rows: Vec<crate::runtime::RoleImagePrewarmRow>) -> anyhow::Result<()> {
+fn print_image_prewarm_rows(
+    rows: Vec<jackin_runtime::runtime::RoleImagePrewarmRow>,
+) -> anyhow::Result<()> {
     for row in rows {
         let status = match row.status {
-            crate::runtime::ImagePrewarmStatus::Reused => "reused",
-            crate::runtime::ImagePrewarmStatus::Built => "built",
+            jackin_runtime::runtime::ImagePrewarmStatus::Reused => "reused",
+            jackin_runtime::runtime::ImagePrewarmStatus::Built => "built",
         };
         println!(
             "  {}  {:<8} {:<6} {}",
@@ -518,7 +540,7 @@ struct PrewarmImageTarget {
 
 impl PrewarmImageTarget {
     fn resolve(args: &PrewarmArgs, config: &AppConfig) -> anyhow::Result<Vec<Self>> {
-        if args.all_workspaces {
+        if args.flags.all_workspaces {
             let mut targets = config
                 .workspaces
                 .keys()
@@ -533,7 +555,7 @@ impl PrewarmImageTarget {
             return Ok(targets);
         }
 
-        if args.all_roles {
+        if args.flags.all_roles {
             if config.roles.is_empty() {
                 anyhow::bail!("no configured roles to image-prewarm");
             }
@@ -633,7 +655,7 @@ async fn prewarm_agents(
     for agent in agents.iter().copied() {
         let paths = paths.clone();
         tasks.spawn(async move {
-            let result = crate::agent_binary::ensure_available(&paths, agent)
+            let result = jackin_image::agent_binary::ensure_available(&paths, agent)
                 .await
                 .map(|binary| AgentPrewarmRow {
                     agent: binary.agent,
@@ -660,441 +682,4 @@ async fn prewarm_agents(
         Err(row) => row.agent,
     });
     rows
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn config_with_workspace_default(agent: Option<Agent>) -> AppConfig {
-        let mut config = AppConfig::default();
-        config.roles.insert(
-            "agent-smith".to_owned(),
-            jackin_config::RoleSource {
-                git: "https://example.invalid/agent-smith.git".to_owned(),
-                trusted: true,
-                env: std::collections::BTreeMap::new(),
-            },
-        );
-        config.workspaces.insert(
-            "jackin".to_owned(),
-            jackin_config::WorkspaceConfig {
-                workdir: "/workspace".to_owned(),
-                default_role: Some("agent-smith".to_owned()),
-                default_agent: agent,
-                ..jackin_config::WorkspaceConfig::default()
-            },
-        );
-        config
-    }
-
-    #[test]
-    fn image_workspace_default_agent_narrows_binary_prewarm() {
-        let config = config_with_workspace_default(Some(Agent::Codex));
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: true,
-            roles: false,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: None,
-            workspace: Some("jackin".to_owned()),
-            all_workspaces: false,
-            all_roles: false,
-            role_git: None,
-            role_branch: None,
-        };
-        let target = PrewarmImageTarget::resolve(&args, &config)
-            .unwrap()
-            .pop()
-            .unwrap();
-
-        assert_eq!(target.agents, vec![Agent::Codex]);
-        assert_eq!(binary_prewarm_agents(&args, &[target]), vec![Agent::Codex]);
-    }
-
-    #[test]
-    fn image_role_without_agent_keeps_all_binary_prewarm() {
-        let config = config_with_workspace_default(Some(Agent::Codex));
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: true,
-            roles: false,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: Some("agent-smith".to_owned()),
-            workspace: None,
-            all_workspaces: false,
-            all_roles: false,
-            role_git: None,
-            role_branch: None,
-        };
-        let target = PrewarmImageTarget::resolve(&args, &config)
-            .unwrap()
-            .pop()
-            .unwrap();
-
-        assert!(target.agents.is_empty());
-        assert_eq!(binary_prewarm_agents(&args, &[target]), Agent::ALL.to_vec());
-    }
-
-    #[test]
-    fn image_all_workspaces_unions_default_agents_for_binary_prewarm() {
-        let mut config = config_with_workspace_default(Some(Agent::Codex));
-        config.roles.insert(
-            "the-architect".to_owned(),
-            jackin_config::RoleSource {
-                git: "https://example.invalid/the-architect.git".to_owned(),
-                trusted: true,
-                env: std::collections::BTreeMap::new(),
-            },
-        );
-        config.workspaces.insert(
-            "docs".to_owned(),
-            jackin_config::WorkspaceConfig {
-                workdir: "/docs".to_owned(),
-                default_role: Some("the-architect".to_owned()),
-                default_agent: Some(Agent::Claude),
-                ..jackin_config::WorkspaceConfig::default()
-            },
-        );
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: true,
-            roles: false,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: None,
-            workspace: None,
-            all_workspaces: true,
-            all_roles: false,
-            role_git: None,
-            role_branch: None,
-        };
-        let targets = PrewarmImageTarget::resolve(&args, &config).unwrap();
-
-        assert_eq!(targets.len(), 2);
-        assert_eq!(
-            binary_prewarm_agents(&args, &targets),
-            vec![Agent::Claude, Agent::Codex]
-        );
-    }
-
-    #[test]
-    fn image_all_roles_expands_configured_roles_without_agent_narrowing() {
-        let mut config = config_with_workspace_default(Some(Agent::Codex));
-        config.roles.insert(
-            "the-architect".to_owned(),
-            jackin_config::RoleSource {
-                git: "https://example.invalid/the-architect.git".to_owned(),
-                trusted: true,
-                env: std::collections::BTreeMap::new(),
-            },
-        );
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: true,
-            roles: false,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: None,
-            workspace: None,
-            all_workspaces: false,
-            all_roles: true,
-            role_git: None,
-            role_branch: None,
-        };
-
-        let targets = PrewarmImageTarget::resolve(&args, &config).unwrap();
-
-        assert_eq!(targets.len(), 2);
-        assert_eq!(targets[0].selector.key(), "agent-smith");
-        assert_eq!(targets[1].selector.key(), "the-architect");
-        assert!(targets.iter().all(|target| target.agents.is_empty()));
-        assert_eq!(binary_prewarm_agents(&args, &targets), Agent::ALL.to_vec());
-    }
-
-    #[test]
-    fn image_all_roles_respects_explicit_agent_filter() {
-        let config = config_with_workspace_default(Some(Agent::Codex));
-        let args = PrewarmArgs {
-            agents: vec![Agent::Kimi],
-            image: true,
-            roles: false,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: None,
-            workspace: None,
-            all_workspaces: false,
-            all_roles: true,
-            role_git: None,
-            role_branch: None,
-        };
-
-        let targets = PrewarmImageTarget::resolve(&args, &config).unwrap();
-
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].agents, vec![Agent::Kimi]);
-        assert_eq!(binary_prewarm_agents(&args, &targets), vec![Agent::Kimi]);
-    }
-
-    #[test]
-    fn roles_prewarm_does_not_require_image_targets() {
-        let config = config_with_workspace_default(Some(Agent::Codex));
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: false,
-            roles: true,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: None,
-            workspace: None,
-            all_workspaces: false,
-            all_roles: false,
-            role_git: None,
-            role_branch: None,
-        };
-
-        assert!(PrewarmImageTarget::resolve(&args, &config).is_err());
-        assert_eq!(binary_prewarm_agents(&args, &[]), Agent::ALL.to_vec());
-        assert!(!should_prewarm_sidecar_image(&args));
-    }
-
-    #[test]
-    fn image_prewarm_also_prewarms_sidecar_image() {
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: true,
-            roles: false,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: Some("agent-smith".to_owned()),
-            workspace: None,
-            all_workspaces: false,
-            all_roles: false,
-            role_git: None,
-            role_branch: None,
-        };
-
-        assert!(should_prewarm_sidecar_image(&args));
-    }
-
-    #[test]
-    fn sidecar_prewarm_can_run_without_image_targets() {
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: false,
-            roles: false,
-            sidecar: true,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: None,
-            workspace: None,
-            all_workspaces: false,
-            all_roles: false,
-            role_git: None,
-            role_branch: None,
-        };
-
-        assert!(should_prewarm_sidecar_image(&args));
-    }
-
-    #[test]
-    fn sidecar_container_prewarm_uses_container_path_image_lookup() {
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: false,
-            roles: false,
-            sidecar: false,
-            sidecar_container: true,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: None,
-            workspace: None,
-            all_workspaces: false,
-            all_roles: false,
-            role_git: None,
-            role_branch: None,
-        };
-
-        assert!(!should_prewarm_sidecar_image(&args));
-        assert!(should_prewarm_sidecar_container(&args));
-        assert!(!should_keep_sidecar_container(&args));
-    }
-
-    #[test]
-    fn daemon_prewarm_keeps_sidecar_without_duplicate_image_lookup() {
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: false,
-            roles: false,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: true,
-            role: None,
-            workspace: None,
-            all_workspaces: false,
-            all_roles: false,
-            role_git: None,
-            role_branch: None,
-        };
-
-        assert!(!should_prewarm_sidecar_image(&args));
-        assert!(should_prewarm_sidecar_container(&args));
-        assert!(should_keep_sidecar_container(&args));
-    }
-
-    #[test]
-    fn daemon_prewarm_records_plan_and_skipped_work() {
-        let temp = tempfile::tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "prewarm").unwrap();
-        let _guard = run.activate();
-
-        emit_daemon_prewarm_plan();
-
-        let diagnostics = std::fs::read_to_string(run.path()).unwrap();
-        assert!(
-            diagnostics.contains("\"kind\":\"launch_plan\""),
-            "{diagnostics}"
-        );
-        assert!(diagnostics.contains("PrewarmOnly"), "{diagnostics}");
-        assert!(
-            diagnostics.contains("daemon_prewarm:kept_sidecar"),
-            "{diagnostics}"
-        );
-        assert!(
-            diagnostics.contains("standalone_sidecar_image_prewarm"),
-            "{diagnostics}"
-        );
-    }
-
-    #[test]
-    fn roles_prewarm_can_target_one_role_without_image() {
-        let config = config_with_workspace_default(Some(Agent::Codex));
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: false,
-            roles: true,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: Some("agent-smith".to_owned()),
-            workspace: None,
-            all_workspaces: false,
-            all_roles: false,
-            role_git: None,
-            role_branch: None,
-        };
-        let targets = PrewarmRoleTarget::resolve(&args, &config).unwrap();
-
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].selector.key(), "agent-smith");
-        assert_eq!(
-            targets[0].role_git,
-            "https://example.invalid/agent-smith.git"
-        );
-    }
-
-    #[test]
-    fn roles_prewarm_can_target_workspace_default_role_without_image() {
-        let config = config_with_workspace_default(Some(Agent::Codex));
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: false,
-            roles: true,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: None,
-            workspace: Some("jackin".to_owned()),
-            all_workspaces: false,
-            all_roles: false,
-            role_git: None,
-            role_branch: None,
-        };
-        let targets = PrewarmRoleTarget::resolve(&args, &config).unwrap();
-
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].selector.key(), "agent-smith");
-        assert_eq!(
-            targets[0].role_git,
-            "https://example.invalid/agent-smith.git"
-        );
-    }
-
-    #[test]
-    fn roles_prewarm_all_workspaces_deduplicates_default_roles_without_image() {
-        let mut config = config_with_workspace_default(Some(Agent::Codex));
-        config.workspaces.insert(
-            "docs".to_owned(),
-            jackin_config::WorkspaceConfig {
-                workdir: "/docs".to_owned(),
-                default_role: Some("agent-smith".to_owned()),
-                default_agent: Some(Agent::Claude),
-                ..jackin_config::WorkspaceConfig::default()
-            },
-        );
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: false,
-            roles: true,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: None,
-            workspace: None,
-            all_workspaces: true,
-            all_roles: false,
-            role_git: None,
-            role_branch: None,
-        };
-        let targets = PrewarmRoleTarget::resolve(&args, &config).unwrap();
-
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].selector.key(), "agent-smith");
-    }
-
-    #[test]
-    fn roles_prewarm_can_use_role_git_override_without_image() {
-        let config = AppConfig::default();
-        let args = PrewarmArgs {
-            agents: Vec::new(),
-            image: false,
-            roles: true,
-            sidecar: false,
-            sidecar_container: false,
-            keep_sidecar_container: false,
-            daemon: false,
-            role: Some("agent-smith".to_owned()),
-            workspace: None,
-            all_workspaces: false,
-            all_roles: false,
-            role_git: Some("https://example.invalid/custom.git".to_owned()),
-            role_branch: None,
-        };
-        let targets = PrewarmRoleTarget::resolve(&args, &config).unwrap();
-
-        assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].role_git, "https://example.invalid/custom.git");
-    }
 }

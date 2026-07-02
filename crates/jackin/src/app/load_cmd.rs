@@ -4,15 +4,15 @@ use anyhow::{Context, Result};
 
 use crate::cli::cleanup::EjectArgs;
 use crate::cli::role::{HardlineArgs, LoadArgs};
-use crate::config::AppConfig;
 use crate::console;
-use crate::docker::ShellRunner;
-use crate::docker_client::BollardDockerClient;
-use crate::instance;
-use crate::paths::JackinPaths;
-use crate::runtime;
-use crate::selector::{RoleSelector, Selector};
 use crate::workspace::{LoadWorkspaceInput, parse_mount_spec_resolved, resolve_load_workspace};
+use jackin_config::AppConfig;
+use jackin_core::JackinPaths;
+use jackin_core::{RoleSelector, Selector};
+use jackin_docker::ShellRunner;
+use jackin_docker::docker_client::BollardDockerClient;
+use jackin_runtime::instance;
+use jackin_runtime::runtime;
 
 use super::{
     ConsoleInPlaceHandler, HardlineAction,
@@ -103,7 +103,7 @@ pub(super) async fn handle_load(
     // sleep). Post-launch reconcile below catches the new role.
     let entry_claim = play_construct_intro_if_needed(paths, &docker).await;
     runtime::reconcile_keep_awake(paths, &docker, runner).await;
-    let agent_slug = opts.agent.map(crate::agent::Agent::slug);
+    let agent_slug = opts.agent.map(jackin_core::Agent::slug);
     let result = jackin_diagnostics::launch_trace(
         Some(&resolved_workspace.label),
         agent_slug,
@@ -133,9 +133,9 @@ pub(super) async fn handle_load(
     result
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
-    reason = "command handler mirrors match arm complexity"
+    reason = "console command entry point: cwd/config/terminal setup + run-loop orchestration. Tracked for the root-jackin-integration decomposition slice (codebase-health)."
 )]
 pub(super) async fn handle_console(
     config: AppConfig,
@@ -216,16 +216,18 @@ pub(super) async fn handle_console(
             drop(screen);
             let args = crate::cli::PrewarmArgs {
                 agents: Vec::new(),
-                image: true,
-                roles: false,
-                sidecar: false,
-                sidecar_container: false,
-                keep_sidecar_container: false,
-                daemon: false,
+                flags: crate::cli::prewarm::PrewarmFlags {
+                    image: true,
+                    daemon: false,
+                    roles: false,
+                    sidecar: false,
+                    sidecar_container: false,
+                    keep_sidecar_container: false,
+                    all_workspaces: false,
+                    all_roles: false,
+                },
                 role: None,
                 workspace: Some(name),
-                all_workspaces: false,
-                all_roles: false,
                 role_git: None,
                 role_branch: None,
             };
@@ -331,7 +333,7 @@ pub(super) async fn handle_console(
         play_construct_intro_if_needed(&paths, &docker).await
     };
     runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-    let agent_slug = opts.agent.map(crate::agent::Agent::slug);
+    let agent_slug = opts.agent.map(jackin_core::Agent::slug);
     let result = jackin_diagnostics::launch_trace(
         Some(&workspace.label),
         agent_slug,
@@ -545,7 +547,7 @@ pub(super) async fn handle_eject(
 fn print_dry_run_plan(
     class: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,
-    agent: Option<&crate::agent::Agent>,
+    agent: Option<&jackin_core::Agent>,
     role_branch: Option<&str>,
     rebuild: bool,
     format: &str,

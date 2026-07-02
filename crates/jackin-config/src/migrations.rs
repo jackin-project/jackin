@@ -306,7 +306,7 @@ pub fn migrate_file_if_needed(
     // Migration is a silent, automatic upgrade — the operator never asked for
     // it and must not see it on screen. Record it in the run diagnostics log
     // (debug runs only); a clean (non-debug) run stays quiet.
-    jackin_diagnostics::debug_log!("config", "{label} migrated {old_version} -> {current_raw}");
+    jackin_core::debug_log!("config", "{label} migrated {old_version} -> {current_raw}");
     Ok(Some(old_version))
 }
 
@@ -459,7 +459,7 @@ pub const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
 ///
 /// Catches typos in `from` / `to`, missing middle steps, backward steps,
 /// cycles, and duplicate `from` values (which would silently fork the walker).
-/// Production registries call this from a `#[test]` so a registry mistake
+/// Production registries call this from a unit test so a registry mistake
 /// fails CI rather than surfacing on an operator's machine.
 #[expect(
     clippy::expect_used,

@@ -12,7 +12,7 @@ fn seed_override_picker_workspace(
     for name in allowed {
         config.roles.insert(
             (*name).to_owned(),
-            jackin::config::RoleSource {
+            jackin_config::RoleSource {
                 git: format!("https://example.invalid/{name}.git"),
                 trusted: true,
                 env: std::collections::BTreeMap::new(),
@@ -27,7 +27,7 @@ fn seed_override_picker_workspace(
         let mut env = std::collections::BTreeMap::new();
         env.insert(
             "LOG_LEVEL".into(),
-            jackin::operator_env::EnvValue::Plain("debug".into()),
+            jackin_core::EnvValue::Plain("debug".into()),
         );
         roles_map.insert(
             (*name).into(),
@@ -50,7 +50,7 @@ fn seed_override_picker_workspace(
             src: host_path.clone(),
             dst: host_path,
             readonly: false,
-            isolation: jackin::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         }],
         allowed_roles: allowed.iter().map(|s| (*s).to_owned()).collect(),
         roles: roles_map,
@@ -195,7 +195,7 @@ fn agent_picker_lists_all_allowed_agents_not_filtered_by_existing_overrides() ->
             let mut keys: Vec<String> = picker
                 .roles
                 .iter()
-                .map(jackin::selector::RoleSelector::key)
+                .map(jackin_core::RoleSelector::key)
                 .collect();
             keys.sort();
             assert_eq!(
@@ -402,7 +402,7 @@ fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()
             .unwrap()
             .env
             .get("API_TOKEN")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("secret"),
         "the committed key/value must land in the role's env map"
     );

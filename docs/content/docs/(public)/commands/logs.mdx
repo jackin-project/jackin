@@ -63,7 +63,7 @@ Each line is timestamped in ISO-8601 UTC and prefixed with `[jackin-capsule]`. T
 - **Lifecycle events** — child process reap, PTY read EOF, session resize, attach/detach.
 - **Errors** — PTY read/write errors with errno, mutex poison, control-protocol parse failures, queue closures.
 
-Reader-task EOF and child-reaper events are both logged; the difference between them is load-bearing when triaging "agent exited but pane stayed open" reports — see [`reference/jackin-capsule`](/reference/capsule//) for the lifecycle model.
+Reader-task EOF and child-reaper events are both logged; the difference between them is load-bearing when triaging "agent exited but pane stayed open" reports — see [`reference/jackin-capsule`](/reference/capsule/) for the lifecycle model.
 
 ## Bundling for bug reports
 

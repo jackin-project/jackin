@@ -200,7 +200,7 @@ fn parses_prewarm_agent_filters() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.agents == [crate::agent::Agent::Claude, crate::agent::Agent::Kimi]
+            if args.agents == [jackin_core::Agent::Claude, jackin_core::Agent::Kimi]
     ));
 }
 
@@ -223,11 +223,11 @@ fn parses_prewarm_image_role_filters() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.image
+            if args.flags.image
                 && args.role.as_deref() == Some("agent-smith")
                 && args.role_git.as_deref() == Some("https://example.invalid/agent-smith.git")
                 && args.role_branch.as_deref() == Some("feat/launch-speed")
-                && args.agents == [crate::agent::Agent::Codex]
+                && args.agents == [jackin_core::Agent::Codex]
     ));
 }
 
@@ -246,8 +246,8 @@ fn parses_prewarm_roles_single_role_filter() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.roles
-                && !args.image
+            if args.flags.roles
+                && !args.flags.image
                 && args.role.as_deref() == Some("agent-smith")
                 && args.role_git.as_deref() == Some("https://example.invalid/agent-smith.git")
     ));
@@ -260,11 +260,11 @@ fn parses_prewarm_roles_workspace_filter() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.roles
-                && !args.image
+            if args.flags.roles
+                && !args.flags.image
                 && args.workspace.as_deref() == Some("jackin")
                 && args.role.is_none()
-                && !args.all_workspaces
+                && !args.flags.all_workspaces
     ));
 }
 
@@ -274,11 +274,11 @@ fn parses_prewarm_roles_all_workspaces_filter() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.roles
-                && !args.image
+            if args.flags.roles
+                && !args.flags.image
                 && args.workspace.is_none()
                 && args.role.is_none()
-                && args.all_workspaces
+                && args.flags.all_workspaces
     ));
 }
 
@@ -287,7 +287,7 @@ fn parses_prewarm_sidecar_filter() {
     let cli = Cli::try_parse_from(["jackin", "prewarm", "--sidecar"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Prewarm(ref args)) if args.sidecar && !args.image && !args.roles
+        Some(Command::Prewarm(ref args)) if args.flags.sidecar && !args.flags.image && !args.flags.roles
     ));
 }
 
@@ -303,7 +303,7 @@ fn parses_prewarm_sidecar_container_keep_filter() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.sidecar_container && args.keep_sidecar_container
+            if args.flags.sidecar_container && args.flags.keep_sidecar_container
     ));
 }
 
@@ -313,7 +313,7 @@ fn parses_prewarm_daemon_filter() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.daemon && !args.sidecar && !args.sidecar_container && !args.keep_sidecar_container
+            if args.flags.daemon && !args.flags.sidecar && !args.flags.sidecar_container && !args.flags.keep_sidecar_container
     ));
 }
 
@@ -334,13 +334,13 @@ fn parses_prewarm_image_workspace_filters() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.image
+            if args.flags.image
                 && args.workspace.as_deref() == Some("jackin")
-                && !args.all_workspaces
+                && !args.flags.all_workspaces
                 && args.role.is_none()
                 && args.role_git.is_none()
                 && args.role_branch.as_deref() == Some("feat/launch-speed")
-                && args.agents == [crate::agent::Agent::Claude]
+                && args.agents == [jackin_core::Agent::Claude]
     ));
 }
 
@@ -350,8 +350,8 @@ fn parses_prewarm_image_all_workspaces() {
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))
-            if args.image
-                && args.all_workspaces
+            if args.flags.image
+                && args.flags.all_workspaces
                 && args.workspace.is_none()
                 && args.role.is_none()
                 && args.role_git.is_none()
@@ -424,4 +424,129 @@ fn rejects_prewarm_image_workspace_with_role_git_override() {
     ])
     .unwrap_err();
     assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+// ── prewarm clap invariant regression tests ─────────────────────────
+//
+// These pin the relationships the codebase-health refactor dropped when the
+// prewarm flags moved into the flattened `PrewarmFlags` struct. Each test maps
+// to one `#[arg]` constraint restored in `prewarm.rs`. Compare against the
+// pre-refactor baseline in `origin/main:crates/jackin/src/cli/prewarm.rs`.
+
+#[test]
+fn rejects_prewarm_keep_sidecar_container_without_sidecar_container() {
+    let err = Cli::try_parse_from(["jackin", "prewarm", "--keep-sidecar-container"]).unwrap_err();
+    // `--keep-sidecar-container` requires `--sidecar-container`.
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    let msg = strip_ansi(&err.to_string());
+    assert!(
+        msg.contains("--sidecar-container"),
+        "error should name --sidecar-container: {msg:?}"
+    );
+}
+
+#[test]
+fn rejects_prewarm_role_with_all_workspaces() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--role",
+        "architect",
+        "--all-workspaces",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_workspace_with_all_workspaces() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--workspace",
+        "demo",
+        "--all-workspaces",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_role_with_all_roles() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--role",
+        "architect",
+        "--all-roles",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_workspace_with_all_roles() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--workspace",
+        "demo",
+        "--all-roles",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_role_git_with_all_workspaces() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--role",
+        "architect",
+        "--role-git",
+        "https://example.invalid/role.git",
+        "--all-workspaces",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_all_roles_without_image() {
+    let err = Cli::try_parse_from(["jackin", "prewarm", "--all-roles"]).unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+}
+
+#[test]
+fn parses_prewarm_image_all_roles() {
+    let cli = Cli::try_parse_from(["jackin", "prewarm", "--image", "--all-roles"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.flags.image && args.flags.all_roles
+    ));
+}
+
+#[test]
+fn parses_prewarm_image_role_git() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--role",
+        "architect",
+        "--role-git",
+        "https://example.invalid/role.git",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.role.as_deref() == Some("architect")
+                && args.role_git.as_deref() == Some("https://example.invalid/role.git")
+                && args.flags.image
+    ));
 }

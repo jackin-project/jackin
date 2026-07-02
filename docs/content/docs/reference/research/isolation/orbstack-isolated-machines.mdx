@@ -443,7 +443,7 @@ The "shared-kernel" line is important. It avoids using microVM language for a ba
 
 ## Telemetry Surface
 
-Backend operations should emit `debug_log!("orbstack", …)` (the existing macro in <RepoFile path="crates/jackin/src/tui.rs">crates/jackin/src/tui.rs</RepoFile>) so the firehose under `JACKIN_DEBUG=1` reconstructs the full machine lifecycle. Minimum required lines:
+Backend operations should emit `debug_log!("orbstack", …)` (the existing macro in <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile>) so the firehose under `JACKIN_DEBUG=1` reconstructs the full machine lifecycle. Minimum required lines:
 
 - `orbstack version=<orb --version> isolated_supported=<yes|no>` (probed at launch)
 - `machine_create name=<name> distro=<distro> isolated=<yes|no> shares=<count>`
@@ -472,7 +472,7 @@ This backend introduces these versioned-config additions; each lands with a `CUR
 | `[workspaces.X.runtime] backend = "orbstack-isolated"` | `~/.config/jackin/workspaces/<name>.toml` | `WorkspaceConfig` | bump `CURRENT_WORKSPACE_VERSION`. |
 | `[runtime.docker] requires_inner_engine = false` (shared with hardening contract) | `jackin.role.toml` | `RoleManifest` | bump `CURRENT_MANIFEST_VERSION`. |
 
-All three are additive. The instance manifest at <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile> also needs a `backend_kind`/`provider_kind` axis split, which is per-instance metadata (not a versioned schema in the AGENTS.md sense) but still needs a forward-compatible default for existing Docker-only instances.
+All three are additive. The instance manifest at <RepoFile path="crates/jackin-instance/src/manifest.rs">crates/jackin-instance/src/manifest.rs</RepoFile> also needs a `backend_kind`/`provider_kind` axis split, which is per-instance metadata (not a versioned schema in the AGENTS.md sense) but still needs a forward-compatible default for existing Docker-only instances.
 
 ## Decided In This Pass
 
@@ -512,7 +512,7 @@ These need answers before Phase 1 code work begins. Several can be resolved in u
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> - launch orchestration that needs a backend split.
 - <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> - role image build path.
 - <RepoFile path="crates/jackin-docker/src/docker_client.rs">crates/jackin-docker/src/docker_client.rs</RepoFile> - current Docker lifecycle boundary.
-- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs">crates/jackin-runtime/src/instance/manifest.rs</RepoFile> - instance metadata that needs backend/provider fields.
+- <RepoFile path="crates/jackin-instance/src/manifest.rs">crates/jackin-instance/src/manifest.rs</RepoFile> - instance metadata that needs backend/provider fields.
 - <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> - capsule startup inside the role container.
 - <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> - role base image that should remain reusable.
 

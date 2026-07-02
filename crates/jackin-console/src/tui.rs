@@ -1,6 +1,5 @@
 //! Host console TUI-layer helpers.
 
-pub mod app;
 pub mod auth;
 pub mod auth_config;
 pub mod components;
@@ -15,11 +14,13 @@ pub mod launch;
 pub mod layout;
 pub mod list_geometry;
 pub mod message;
+pub mod model;
 pub mod mount_display;
 pub mod op_breadcrumb;
 pub mod op_picker;
 pub mod prompts;
 pub mod run;
+pub mod runtime;
 pub mod screens;
 pub mod sidebar_layout;
 pub mod split;

@@ -240,11 +240,11 @@ This proposal is about a better auth primitive, not about relaxing jackin❯ sec
 
 At minimum, this design would touch:
 
-- <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — auth mode resolution (`resolve_auth_forward_mode`, `set_agent_auth_forward`)
-- <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> — `AuthForwardMode` enum, persistence types
+- <RepoFile path="crates/jackin-config/src/app_config/roles.rs">crates/jackin-config/src/app_config/roles.rs</RepoFile> — auth mode resolution (`resolve_auth_forward_mode`, `set_agent_auth_forward`)
+- <RepoFile path="crates/jackin-config/src/app_config.rs">crates/jackin-config/src/app_config.rs</RepoFile> — `AuthForwardMode` enum, persistence types
 - <RepoFile path="crates/jackin/src/cli/config.rs">crates/jackin/src/cli/config.rs</RepoFile> — `config auth` subcommand help text and examples
 - <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile> — `config auth` command dispatch
-- <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> — auth provisioning semantics for the new mode
+- <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> — auth provisioning semantics for the new mode
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — runtime env injection and launch-time warnings
 - [Agent authentication](/guides/authentication/agents/) — explain concurrent-session tradeoffs and token mode
 - [config command](/commands/config/) — document setup and mode selection
@@ -277,11 +277,11 @@ copy-paste flow. A follow-up design proposal addresses that:
 
 ## Related Files
 
-- <RepoFile path="crates/jackin/src/config.rs">crates/jackin/src/config.rs</RepoFile> — `AuthForwardMode` enum, persistence types
-- <RepoFile path="crates/jackin-config/src/app_config_roles.rs">crates/jackin-config/src/app_config_roles.rs</RepoFile> — auth mode resolution
+- <RepoFile path="crates/jackin-config/src/app_config.rs">crates/jackin-config/src/app_config.rs</RepoFile> — `AuthForwardMode` enum, persistence types
+- <RepoFile path="crates/jackin-config/src/app_config/roles.rs">crates/jackin-config/src/app_config/roles.rs</RepoFile> — auth mode resolution
 - <RepoFile path="crates/jackin/src/cli/config.rs">crates/jackin/src/cli/config.rs</RepoFile> — `jackin config auth` help text
 - <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile> — auth config command handlers
-- <RepoFile path="crates/jackin-runtime/src/instance/auth.rs">crates/jackin-runtime/src/instance/auth.rs</RepoFile> — credential forwarding and state preparation
+- <RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> — credential forwarding and state preparation
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs">crates/jackin-runtime/src/runtime/launch.rs</RepoFile> — launch-time env injection and notices
 - [Agent authentication](/guides/authentication/agents/) — current forwarding model and troubleshooting
 - [config command](/commands/config/) — current operator auth commands

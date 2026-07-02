@@ -36,21 +36,21 @@ type MigrateFn = fn(&Path) -> anyhow::Result<()>;
 #[test]
 fn config_fixtures_round_trip_to_current() {
     walk_fixtures("config", |p| {
-        jackin::config::migrate_config_file_if_needed(p).map(|_| ())
+        jackin_config::migrate_config_file_if_needed(p).map(|_| ())
     });
 }
 
 #[test]
 fn workspace_fixtures_round_trip_to_current() {
     walk_fixtures("workspace", |p| {
-        jackin::config::migrate_workspace_file_if_needed(p).map(|_| ())
+        jackin_config::migrate_workspace_file_if_needed(p).map(|_| ())
     });
 }
 
 #[test]
 fn manifest_fixtures_round_trip_to_current() {
     walk_fixtures("manifest", |p| {
-        jackin::manifest::migrations::migrate_manifest_file(p).map(|_| ())
+        jackin_manifest::migrations::migrate_manifest_file(p).map(|_| ())
     });
 }
 
@@ -126,7 +126,7 @@ fn walk_fixtures(file_kind: &str, migrate: MigrateFn) {
 fn parse_fixture(file_kind: &str, contents: &str, name: &str, side: &str) {
     match file_kind {
         "config" => {
-            let _parsed: jackin::config::AppConfig = toml::from_str(contents)
+            let _parsed: jackin_config::AppConfig = toml::from_str(contents)
                 .unwrap_or_else(|e| panic!("{side} {name} failed to parse as AppConfig: {e}"));
         }
         "workspace" => {
@@ -136,7 +136,7 @@ fn parse_fixture(file_kind: &str, contents: &str, name: &str, side: &str) {
                 });
         }
         "manifest" => {
-            let _parsed: jackin::manifest::RoleManifest = toml::from_str(contents)
+            let _parsed: jackin_manifest::RoleManifest = toml::from_str(contents)
                 .unwrap_or_else(|e| panic!("{side} {name} failed to parse as RoleManifest: {e}"));
         }
         other => panic!("unknown file_kind {other:?}"),

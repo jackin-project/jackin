@@ -6,9 +6,9 @@ title: "Operator Handler System (IDE / diff / browser launchers)"
 
 ## Shipped facts
 
-Capsule ships host affordances for the most common cases an operator needs today: safe scheme-limited URL opening, verified file export with reveal/open follow-up, and host reveal/open for launch-failure artifacts and diagnostics — see [Host Affordances](/guides/host-affordances/) for the full operator-facing list. `crates/jackin-runtime/src/runtime/host_desktop.rs` implements the cross-platform `open` / `xdg-open` / `explorer.exe` dispatch these affordances share, and `jackin_core::url_text::is_host_open_url` enforces the `http(s)`/`mailto` scheme allowlist.
+Capsule ships host affordances for the most common cases an operator needs today: safe scheme-limited URL opening, verified file export with reveal/open follow-up, and host reveal/open for launch-failure artifacts and diagnostics — see [Host Affordances](/guides/host-affordances/) for the full operator-facing list. <RepoFile path="crates/jackin-host/src/host_desktop.rs">crates/jackin-host/src/host_desktop.rs</RepoFile> implements the cross-platform `open` / `xdg-open` / `explorer.exe` dispatch these affordances share, and `jackin_core::url_text::is_host_open_url` enforces the `http(s)`/`mailto` scheme allowlist.
 
-What is missing is the configurable handler layer this item is actually about: named operator handlers (`diff`, `web`, `ide`), platform defaults, and CLI/console routing that let an operator wire a diff viewer or IDE the same way multicode's `[handler]`/`[compare]` blocks do. There is no `[handler]` config surface in `jackin-config`, no `jackin open` / `jackin diff` / `jackin web` CLI subcommands (`crates/jackin/src/cli.rs` has no such variants), and no console `o`/`d`/`w` keybindings.
+What is missing is the configurable handler layer this item is actually about: named operator handlers (`diff`, `web`, `ide`), platform defaults, and CLI/console routing that let an operator wire a diff viewer or IDE the same way multicode's `[handler]`/`[compare]` blocks do. There is no `[handler]` config surface in `jackin-config`, no `jackin open` / `jackin diff` / `jackin web` CLI subcommands (<RepoFile path="crates/jackin/src/cli.rs">crates/jackin/src/cli.rs</RepoFile> has no such variants), and no console `o`/`d`/`w` keybindings.
 
 ## Remaining work
 

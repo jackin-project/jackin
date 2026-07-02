@@ -1,0 +1,311 @@
+//! Tests for `caffeinate`.
+use std::cell::RefCell;
+use std::collections::{HashMap, VecDeque};
+use std::path::Path;
+
+use super::*;
+use jackin_core::runner::{CommandRunner, RunOptions};
+use jackin_docker::docker_client::{
+    ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
+};
+use tempfile::tempdir;
+
+/// Minimal in-file `DockerApi` fake for caffeinate tests. Only
+/// `list_containers` and `inspect_container_state` are meaningful; the
+/// remaining methods are stubbed with safe defaults. Lifted from
+/// `jackin-runtime::runtime::test_support::FakeDockerClient` and inlined
+/// here to avoid a circular `jackin-host` → `jackin-runtime` →
+/// `jackin-host` dependency (the proper fix per the C1 playbook is to
+/// move the shared `test_support` fixture into `jackin-core`).
+#[derive(Debug, Default)]
+pub(crate) struct FakeDockerClient {
+    pub list_containers_queue: RefCell<VecDeque<Vec<ContainerRow>>>,
+}
+
+impl DockerApi for FakeDockerClient {
+    async fn inspect_container_state(&self, _name: &str) -> ContainerState {
+        ContainerState::NotFound
+    }
+    async fn remove_container(&self, _name: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn list_containers(
+        &self,
+        _label_filters: &[&str],
+        _all: bool,
+    ) -> anyhow::Result<Vec<ContainerRow>> {
+        Ok(self
+            .list_containers_queue
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_default())
+    }
+    async fn create_container(&self, _name: &str, _spec: ContainerSpec) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn start_container(&self, _name: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn remove_volume(&self, _name: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn create_network(
+        &self,
+        _name: &str,
+        _labels: HashMap<String, String>,
+        _check_existing: bool,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn remove_network(&self, _name: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn list_networks(&self, _label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {
+        Ok(Vec::new())
+    }
+    async fn list_image_tags(&self, _reference_filter: &str) -> anyhow::Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+    async fn remove_image(&self, _name: &str) -> anyhow::Result<RemoveImageOutcome> {
+        Ok(RemoveImageOutcome::NotFound)
+    }
+    async fn inspect_image_labels(&self, _image: &str) -> anyhow::Result<HashMap<String, String>> {
+        Ok(HashMap::new())
+    }
+    async fn pull_image(&self, _image: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn exec_capture(&self, _container: &str, _cmd: &[&str]) -> anyhow::Result<String> {
+        Ok(String::new())
+    }
+    async fn inspect_network(&self, _name: &str) -> anyhow::Result<Option<NetworkRow>> {
+        Ok(None)
+    }
+}
+
+/// Minimal in-file `CommandRunner` fake for caffeinate tests. `run` records
+/// the command and returns `Ok(())`; `capture` returns an empty string.
+/// Same circular-dep reasoning as `FakeDockerClient` above.
+#[derive(Debug, Default)]
+pub(crate) struct FakeRunner {
+    pub recorded: Vec<String>,
+}
+
+impl CommandRunner for FakeRunner {
+    async fn run(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        _cwd: Option<&Path>,
+        _opts: &RunOptions,
+    ) -> anyhow::Result<()> {
+        self.recorded
+            .push(format!("{} {}", program, args.join(" ")));
+        Ok(())
+    }
+    async fn capture(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        _cwd: Option<&Path>,
+    ) -> anyhow::Result<String> {
+        self.recorded
+            .push(format!("{} {}", program, args.join(" ")));
+        Ok(String::new())
+    }
+    async fn capture_secret(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+    ) -> anyhow::Result<String> {
+        self.capture(program, args, cwd).await
+    }
+}
+
+#[tokio::test]
+async fn count_keep_awake_agents_returns_zero_for_empty_output() {
+    let docker = FakeDockerClient::default();
+    let count = count_keep_awake_agents(&docker).await.unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn count_keep_awake_agents_counts_nonempty_lines() {
+    let docker = FakeDockerClient {
+        list_containers_queue: RefCell::new(VecDeque::from([vec![
+            ContainerRow {
+                name: "jk-agent-smith".to_owned(),
+                labels: HashMap::default(),
+            },
+            ContainerRow {
+                name: "jk-the-architect".to_owned(),
+                labels: HashMap::default(),
+            },
+        ]])),
+    };
+    let count = count_keep_awake_agents(&docker).await.unwrap();
+    assert_eq!(count, 2);
+}
+
+#[test]
+fn read_pid_file_returns_none_when_missing() {
+    let tmp = tempdir().unwrap();
+    assert_eq!(
+        read_pid_file(&tmp.path().join("missing.pid")).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn read_pid_file_parses_trimmed_pid() {
+    let tmp = tempdir().unwrap();
+    let path = tmp.path().join("p.pid");
+    std::fs::write(&path, "12345\n").unwrap();
+    assert_eq!(read_pid_file(&path).unwrap(), Some(12345));
+}
+
+#[test]
+fn read_pid_file_returns_none_for_empty_file() {
+    // Empty file is the legitimate "no PID recorded" state — treat
+    // as a fresh start, not as corruption.
+    let tmp = tempdir().unwrap();
+    let path = tmp.path().join("p.pid");
+    std::fs::write(&path, "").unwrap();
+    assert_eq!(read_pid_file(&path).unwrap(), None);
+}
+
+#[test]
+fn read_pid_file_errors_on_garbage() {
+    // Corrupted PID file (non-numeric content) MUST surface as an
+    // error rather than coercing to None — silent coercion would
+    // let the next `(true, Gone)` arm spawn a duplicate caffeinate
+    // over the unrecorded survivor, orphaning the prior process
+    // until reboot.
+    let tmp = tempdir().unwrap();
+    let path = tmp.path().join("p.pid");
+    std::fs::write(&path, "not-a-pid").unwrap();
+    let err = read_pid_file(&path).unwrap_err();
+    assert!(
+        err.to_string().contains("non-numeric"),
+        "error must mention non-numeric content; got: {err}",
+    );
+}
+
+#[test]
+fn is_caffeinate_alive_at_returns_gone_for_nonexistent_pid() {
+    // PID 1 always exists; pick a deliberately huge number unlikely
+    // to be allocated. `ps -p` returns nonzero for missing PIDs.
+    assert_eq!(is_caffeinate_alive_at(2_000_000_000), Liveness::Gone);
+}
+
+#[test]
+fn is_caffeinate_alive_at_returns_gone_for_unrelated_process() {
+    // PID 1 is launchd on macOS / init on Linux — alive, but its
+    // comm is not "caffeinate". This is exactly the PID-reuse race
+    // the comm check guards against; the impostor must classify as
+    // `Gone`, not `Alive`, so the caller never SIGTERMs it.
+    assert_eq!(is_caffeinate_alive_at(1), Liveness::Gone);
+}
+
+#[test]
+fn classify_ps_comm_output_returns_gone_on_nonzero_exit() {
+    // `ps -p <missing>` exits nonzero with empty stdout — that's
+    // the "no such process" signal.
+    assert_eq!(classify_ps_comm_output(false, ""), Liveness::Gone);
+}
+
+#[test]
+fn classify_ps_comm_output_returns_alive_for_basename() {
+    // Linux-style: `ps -o comm=` reports just the basename.
+    assert_eq!(
+        classify_ps_comm_output(true, "caffeinate\n"),
+        Liveness::Alive
+    );
+}
+
+#[test]
+fn classify_ps_comm_output_returns_alive_for_absolute_path() {
+    // macOS-style: `ps -o comm=` reports the full executable path.
+    assert_eq!(
+        classify_ps_comm_output(true, "/usr/bin/caffeinate\n"),
+        Liveness::Alive,
+    );
+}
+
+#[test]
+fn classify_ps_comm_output_returns_gone_for_other_process() {
+    // PID alive but comm doesn't match — same outcome as "no such
+    // PID": treat as gone, never act on it.
+    assert_eq!(
+        classify_ps_comm_output(true, "/sbin/launchd\n"),
+        Liveness::Gone
+    );
+    assert_eq!(classify_ps_comm_output(true, "bash\n"), Liveness::Gone);
+}
+
+#[test]
+fn classify_ps_comm_output_does_not_match_substring() {
+    // Guard against a future "simplification" to `contains` that
+    // would treat `caffeinated`, `xcaffeinate`, etc. as a match.
+    assert_eq!(
+        classify_ps_comm_output(true, "caffeinated\n"),
+        Liveness::Gone
+    );
+    assert_eq!(
+        classify_ps_comm_output(true, "xcaffeinate\n"),
+        Liveness::Gone
+    );
+}
+
+#[test]
+fn classify_ps_comm_output_returns_gone_for_empty_stdout() {
+    // Defensive: success + empty output shouldn't be treated as a
+    // match (basename == "" != "caffeinate").
+    assert_eq!(classify_ps_comm_output(true, ""), Liveness::Gone);
+}
+
+#[tokio::test]
+async fn reconcile_inner_is_noop_when_no_agents_and_no_pid_file() {
+    let tmp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+
+    reconcile_inner(&paths, &docker, &mut runner).await.unwrap();
+
+    assert!(!pid_path_for_tests(&paths).exists());
+}
+
+#[tokio::test]
+async fn reconcile_inner_clears_stale_pid_file_when_no_agents() {
+    let tmp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    std::fs::create_dir_all(&paths.data_dir).unwrap();
+    let pid_path = pid_path_for_tests(&paths);
+    std::fs::write(&pid_path, "2000000001").unwrap();
+
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+    reconcile_inner(&paths, &docker, &mut runner).await.unwrap();
+
+    assert!(!pid_path.exists(), "stale PID file should be removed");
+}
+
+#[tokio::test]
+async fn reconcile_inner_clears_pid_file_when_pid_belongs_to_unrelated_process() {
+    let tmp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    std::fs::create_dir_all(&paths.data_dir).unwrap();
+    let pid_path = pid_path_for_tests(&paths);
+    std::fs::write(&pid_path, "1").unwrap();
+
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+    reconcile_inner(&paths, &docker, &mut runner).await.unwrap();
+
+    assert!(
+        !pid_path.exists(),
+        "PID file pointing at an unrelated live process should be removed"
+    );
+}

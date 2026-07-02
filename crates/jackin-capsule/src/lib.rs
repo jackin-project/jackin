@@ -3,6 +3,13 @@
 //!
 //! Not responsible for: protocol encoding (see `jackin-protocol`), host-side
 //! launch orchestration, or config schema migration.
+//!
+//! **Architecture Invariant:** L4 entry/glue crate. Allowed dependencies:
+//! `jackin-core`, `jackin-diagnostics`, `jackin-protocol`, `jackin-usage`,
+//! `jackin-term`, `jackin-tui`. PID1 + PTY daemon + in-container TUI +
+//! usage telemetry re-exported from `jackin-usage` (see C2 carve).
+//! Must NOT depend on host-side runtime (`jackin-runtime`) or other
+//! host binary crates — the capsule is a different process tree.
 
 pub mod agent_status;
 pub(crate) mod alloc_telemetry;
@@ -22,7 +29,6 @@ pub mod exec;
 pub mod exit_assess;
 pub mod firewall;
 pub mod git_context;
-pub mod logging;
 pub mod mcp_server;
 pub mod output;
 pub mod pid1;
@@ -34,12 +40,25 @@ pub mod services;
 pub mod session;
 pub mod socket;
 pub mod sudo_provision;
-pub mod telemetry;
-pub(crate) mod telemetry_store;
-pub(crate) mod token_monitor;
-pub(crate) mod usage;
 pub mod util;
 
 /// Terminal-rendering code — all UI paint/layout lives here.
 pub mod tui;
 pub mod wordlist;
+
+// Logging infrastructure lives in jackin-usage; re-export so all
+// capsule modules that call crate::clog! / crate::cdebug! still work —
+// $crate in the macro expands to jackin_usage, which has write_line.
+pub mod logging {
+    pub use jackin_usage::logging::*;
+}
+pub use jackin_usage::{cdebug, clog};
+pub mod telemetry {
+    pub use jackin_usage::telemetry::*;
+}
+pub mod token_monitor {
+    pub use jackin_usage::token_monitor::*;
+}
+pub mod usage {
+    pub use jackin_usage::usage::*;
+}

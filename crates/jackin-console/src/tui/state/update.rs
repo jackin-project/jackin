@@ -5,8 +5,8 @@
 
 use ratatui::layout::Rect;
 
-use crate::tui::app::apply_manager_stage;
 use crate::tui::auth::AuthKind;
+use crate::tui::model::apply_manager_stage;
 use crate::tui::screens::editor::update::{
     clear_editor_auth_kind_plan, editor_field_selection_plan, editor_mount_row_select_plan,
     editor_tab_bar_focus_plan, editor_tab_horizontal_scroll_plan, editor_tab_move_plan,
@@ -81,9 +81,11 @@ pub type ManagerUpdate = crate::tui::update::ConsoleUpdate<ManagerEffect>;
 
 // ── Reducer ───────────────────────────────────────────────────────────────
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
-    reason = "pending extraction — tracked in codebase-readability roadmap"
+    reason = "Manager-state reducer handles every ManagerMessage variant inline: \
+              per-message-arm state mutation + per-stage emit + per-Update \
+              branch. Inline shape preserves the per-message-arm state machine."
 )]
 pub fn update_manager(state: &mut ManagerState<'_>, message: ManagerMessage) -> ManagerUpdate {
     match message {

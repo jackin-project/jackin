@@ -7,7 +7,7 @@ use clap::{Args, Subcommand};
 use std::str::FromStr;
 
 use super::{BANNER, HELP_STYLES};
-use crate::isolation::MountIsolation;
+use jackin_core::MountIsolation;
 
 fn parse_mount_isolation(s: &str) -> anyhow::Result<(String, MountIsolation)> {
     let (dst, ty) = s
@@ -20,9 +20,9 @@ fn parse_mount_isolation(s: &str) -> anyhow::Result<(String, MountIsolation)> {
     Ok((dst.into(), mode))
 }
 
-fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
+fn parse_agent(s: &str) -> Result<jackin_core::Agent, String> {
     s.parse()
-        .map_err(|e: crate::agent::ParseAgentError| e.to_string())
+        .map_err(|e: jackin_core::ParseAgentError| e.to_string())
 }
 
 /// Shared args for read-only workspace subcommands that support `--format`.
@@ -80,7 +80,7 @@ Examples:
         default_role: Option<String>,
         /// Default agent for this workspace (claude, codex, amp, or opencode)
         #[arg(long, value_parser = parse_agent)]
-        default_agent: Option<crate::agent::Agent>,
+        default_agent: Option<jackin_core::Agent>,
         /// Set isolation mode for a mount destination. Repeatable.
         /// Format: `<container-dst>=<shared|worktree|clone>`.
         #[arg(
@@ -165,7 +165,7 @@ Examples:
         clear_default_role: bool,
         /// Set the default agent for this workspace
         #[arg(long, value_parser = parse_agent)]
-        default_agent: Option<crate::agent::Agent>,
+        default_agent: Option<jackin_core::Agent>,
         /// Clear the explicit default agent so the workspace falls back to claude
         #[arg(long, conflicts_with = "default_agent", default_value_t = false)]
         clear_default_agent: bool,

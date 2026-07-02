@@ -29,7 +29,7 @@ Collapse to one render path, derived rendering, and one writer:
 
 ## Consequences
 
-- The stale-cell class is structurally impossible: one writer, one model, atomic frames, enforced by the echo-back conformance harness in `crates/jackin-capsule/src/daemon/tests/render_conformance.rs`.
+- The stale-cell class is structurally impossible: one writer, one model, atomic frames, enforced by the echo-back conformance harness in <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs">crates/jackin-capsule/src/daemon/tests.rs</RepoFile>.
 - Tab switch, zoom, and dialog close repaint in place — the black flash is gone everywhere outside first attach and resize.
 - Compose cost rose from the patch tier's ~20 µs to ~130 µs p95 at 80×24 under a streaming fixture (~5.8 KB/frame vs ~2.3 KB) — still far below one frame budget. Documented escape hatch if a pathological terminal size measures hot: per-pane damage may skip re-rendering clean pane widgets into the buffer — never a second emit path or writer.
 - ADR-004's grid-patch encoder is retired; `PaneBodyWidget` is the only pane-body renderer.

@@ -6,6 +6,11 @@
 //! VT-parser stack. Most declarations here are wire-format types;
 //! small constants that name the host↔Capsule runtime contract live
 //! here too so the two binaries cannot drift.
+//!
+//! **Architecture Invariant:** L0 domain crate (wire types). Allowed
+//! dependencies: `jackin-core`. Wire types stay free of presentation
+//! and infrastructure concerns; DTOs and their conversions live at the
+//! edges, never here.
 
 pub mod agent_status;
 pub mod attach;

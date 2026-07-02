@@ -10,16 +10,20 @@ members = [
     "crates/jackin-diagnostics",
     "crates/jackin-docker",
     "crates/jackin-env",
+    "crates/jackin-host",
     "crates/jackin-image",
     "crates/jackin-manifest",
     "crates/jackin-protocol",
-    "crates/jackin-launch",
+    "crates/jackin-launch-tui",
     "crates/jackin-runtime",
     "crates/jackin-term",
     "crates/jackin-tui",
     "crates/jackin-tui-lookbook",
     "crates/jackin-xtask",
     "crates/jackin-pr-trailers",
+    "crates/jackin-usage",
+    "crates/jackin-isolation",
+    "crates/jackin-instance",
 ]
 resolver = "3"
 
@@ -91,9 +95,11 @@ rc_buffer = "warn"
 str_to_string = "warn"
 return_self_not_must_use = "warn"
 redundant_feature_names = "allow"
-struct_excessive_bools = "allow"
-fn_params_excessive_bools = "allow"
-too_many_lines = "allow"
+struct_excessive_bools = "warn"
+fn_params_excessive_bools = "warn"
+too_many_lines = "warn"
+cognitive_complexity = "warn"
+excessive_nesting = "warn"
 implicit_hasher = "allow"
 similar_names = "allow"
 assigning_clones = "allow"
@@ -128,6 +134,7 @@ multiple_crate_versions = "allow"
 debug = 1
 
 [profile.release]
+lto = "thin"
 strip = "symbols"
 
 # Symbol-rich capsule build for triage. Select with:

@@ -201,16 +201,15 @@ fn workspace_instance_pane_wraps_content_and_focus() {
 
 #[test]
 fn workspace_list_display_helpers_own_visible_defaults() {
-    let current = current_directory_display_row(true, true, true, false);
+    let current = current_directory_display_row(Disclosure::for_instances(true, true), true, false);
     assert_eq!(current.label, "Current directory");
-    assert!(current.expanded);
-    assert!(current.has_instances);
+    assert_eq!(current.disclosure, Disclosure::Expanded);
     assert!(current.selected);
 
     let new_workspace = new_workspace_display_row(false, true);
     assert_eq!(new_workspace.label, new_workspace_list_label());
     assert!(new_workspace.hovered);
-    assert!(!new_workspace.expanded);
+    assert_eq!(new_workspace.disclosure, Disclosure::None);
     assert_eq!(
         workspace_instance_list_label("abc123", "chainargos/agent-smith", InstanceStatus::Running),
         "abc123  chainargos/agent-smith"
@@ -230,8 +229,7 @@ fn workspace_list_display_helpers_own_visible_defaults() {
     assert_eq!(instance.tone, WorkspaceListRowTone::Instance);
     assert!(instance.selected);
     assert!(instance.hovered);
-    assert!(!instance.expanded);
-    assert!(!instance.has_instances);
+    assert_eq!(instance.disclosure, Disclosure::None);
     assert_eq!(workspace_instance_pane_agent_label(None), "shell");
     assert_eq!(
         workspace_instance_pane_agent_label(Some("claude")),
@@ -261,7 +259,11 @@ fn workspace_list_display_row_for_row_routes_all_row_kinds() {
             |_| None,
             |_, _| None,
         ),
-        Some(current_directory_display_row(true, true, true, false))
+        Some(current_directory_display_row(
+            Disclosure::for_instances(true, true),
+            true,
+            false,
+        ))
     );
     assert_eq!(
         workspace_list_display_row_for_row(
@@ -279,8 +281,7 @@ fn workspace_list_display_row_for_row_routes_all_row_kinds() {
         Some(WorkspaceListDisplayRow {
             label: "ws".to_owned(),
             tone: WorkspaceListRowTone::Workspace,
-            expanded: true,
-            has_instances: false,
+            disclosure: Disclosure::None,
             selected: false,
             hovered: true,
         })
@@ -358,7 +359,11 @@ fn workspace_list_display_rows_assembles_visual_rows() {
 
     assert_eq!(
         rows[0],
-        Some(current_directory_display_row(true, true, false, false))
+        Some(current_directory_display_row(
+            Disclosure::for_instances(true, true),
+            false,
+            false,
+        ))
     );
     assert_eq!(rows[1], None);
     assert_eq!(
@@ -366,8 +371,7 @@ fn workspace_list_display_rows_assembles_visual_rows() {
         Some(WorkspaceListDisplayRow {
             label: "ws-one".to_owned(),
             tone: WorkspaceListRowTone::Workspace,
-            expanded: false,
-            has_instances: true,
+            disclosure: Disclosure::Collapsed,
             selected: true,
             hovered: false,
         })

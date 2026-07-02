@@ -8,8 +8,42 @@ use anstyle_parse::{DefaultCharAccumulator, Params, Parser, Perform};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 
-pub use jackin_core::ansi_text::strip_bytes;
+#[must_use]
+pub fn strip_bytes(bytes: &[u8]) -> Vec<u8> {
+    let mut parser = Parser::<DefaultCharAccumulator>::default();
+    let mut performer = PlainPerformer { output: Vec::new() };
+    for &byte in bytes {
+        parser.advance(&mut performer, byte);
+    }
+    performer.output
+}
 
+struct PlainPerformer {
+    output: Vec<u8>,
+}
+
+impl Perform for PlainPerformer {
+    fn print(&mut self, c: char) {
+        let mut buf = [0u8; 4];
+        self.output
+            .extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+    }
+
+    fn execute(&mut self, byte: u8) {
+        if matches!(byte, b'\n' | b'\r' | b'\t') {
+            self.output.push(byte);
+        }
+    }
+}
+
+#[allow(
+    clippy::excessive_nesting,
+    reason = "ANSI parser dispatch: per-event track (C0 / CSI / OSC / DCS / text / \
+              ESC) with terminal-state branches (utf8 pending, esc buffered, dp \
+              pending) nested through the perform-trait shape. Extracting per-state \
+              sub-helpers would require re-passing the parser + performer mutable \
+              borrows across fn boundaries."
+)]
 pub fn styled_spans(input: &str, default_style: Style) -> Vec<Span<'static>> {
     let mut parser = Parser::<DefaultCharAccumulator>::default();
     let mut performer = StyledPerformer {
@@ -60,6 +94,15 @@ impl Perform for StyledPerformer {
         }
     }
 
+    #[allow(
+        clippy::excessive_nesting,
+        reason = "vte::Perform trait dispatcher (`csi_dispatch`) for the styled- \
+                  spans parser requires a single exhaustive match on the SGR \
+                  parameter byte covering every CSI SGR sequence the styled- \
+                  spans consumer supports. Extracting per-SGR-code sub-dispatchers \
+                  would require re-borrowing the parser state across fn \
+                  boundaries — same constraint as jackin-term's csi_dispatch."
+    )]
     fn csi_dispatch(&mut self, params: &Params, _intermediates: &[u8], _ignore: bool, action: u8) {
         if action != b'm' {
             return;

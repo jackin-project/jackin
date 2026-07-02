@@ -3,10 +3,10 @@
 use anyhow::Result;
 
 use crate::cli::{self, ConfigCommand};
-use crate::config::{self, AppConfig};
-use crate::paths::JackinPaths;
-use crate::selector::RoleSelector;
 use crate::workspace::resolve_path;
+use jackin_config::{self, AppConfig};
+use jackin_core::JackinPaths;
+use jackin_core::RoleSelector;
 
 #[derive(tabled::Tabled)]
 pub(super) struct EnvRow {
@@ -16,14 +16,14 @@ pub(super) struct EnvRow {
     value: String,
 }
 
-pub(super) fn resolve_env_value_for_cli(value: &str) -> Result<crate::operator_env::EnvValue> {
+pub(super) fn resolve_env_value_for_cli(value: &str) -> Result<jackin_core::EnvValue> {
     if !value.starts_with("op://") {
-        return Ok(crate::operator_env::EnvValue::Plain(value.to_owned()));
+        return Ok(jackin_core::EnvValue::Plain(value.to_owned()));
     }
 
     // Probe op CLI availability before attempting structural queries.
-    let op_cli = crate::operator_env::OpCli::new();
-    crate::operator_env::OpRunner::probe(&op_cli).map_err(|e| {
+    let op_cli = jackin_env::OpCli::new();
+    jackin_env::OpRunner::probe(&op_cli).map_err(|e| {
         anyhow::anyhow!(
             "`op` CLI not available; cannot resolve `op://...` reference. \
              Install 1Password CLI, or use a non-op:// value.\n\
@@ -31,8 +31,8 @@ pub(super) fn resolve_env_value_for_cli(value: &str) -> Result<crate::operator_e
         )
     })?;
 
-    let op_ref = crate::operator_env::resolve_op_uri_to_ref(value, &op_cli, None)?;
-    Ok(crate::operator_env::EnvValue::OpRef(op_ref))
+    let op_ref = jackin_env::resolve_op_uri_to_ref(value, &op_cli, None)?;
+    Ok(jackin_core::EnvValue::OpRef(op_ref))
 }
 
 pub(super) fn print_env_table(vars: &[(String, String)]) {
@@ -54,7 +54,13 @@ pub(super) fn print_env_table(vars: &[(String, String)]) {
     println!("{table}");
 }
 
-#[expect(clippy::too_many_lines, reason = "config command dispatcher")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Config subcommand dispatcher with one arm per subcommand (set/get/\
+              unset/show/validate). Each arm applies its focused config mutation; \
+              extracting arms into sub-dispatchers would obscure per-subcommand \
+              readability."
+)]
 pub(super) fn handle(
     cmd: ConfigCommand,
     config: &mut AppConfig,
@@ -73,11 +79,11 @@ pub(super) fn handle(
                 let ro = if readonly { " (read-only)" } else { "" };
                 let scope_label = scope.as_deref().unwrap_or("global");
                 let resolved_src = resolve_path(&src);
-                let mount = config::MountConfig {
+                let mount = jackin_config::MountConfig {
                     src: resolved_src,
                     dst: dst.clone(),
                     readonly,
-                    isolation: crate::isolation::MountIsolation::Shared,
+                    isolation: jackin_core::MountIsolation::Shared,
                 };
                 crate::workspace::validate_mounts(std::slice::from_ref(&mount))?;
                 let sensitive =
@@ -87,20 +93,20 @@ pub(super) fn handle(
                     anyhow::bail!("aborted — sensitive mount paths were not confirmed");
                 }
                 let (matched, mut candidate_rows): (
-                    Vec<config::GlobalMountRow>,
-                    Vec<config::GlobalMountRow>,
+                    Vec<jackin_config::GlobalMountRow>,
+                    Vec<jackin_config::GlobalMountRow>,
                 ) = config
                     .list_mount_rows()
                     .into_iter()
                     .partition(|row| row.name == name && row.scope == scope);
                 let existing = matched.into_iter().next();
-                candidate_rows.push(config::GlobalMountRow {
+                candidate_rows.push(jackin_config::GlobalMountRow {
                     scope: scope.clone(),
                     name: name.clone(),
                     mount: mount.clone(),
                 });
                 AppConfig::validate_global_mount_rows(&candidate_rows)?;
-                let mut editor = config::ConfigEditor::open(paths)?;
+                let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 editor.add_mount(&name, mount, scope.as_deref());
                 editor.save()?;
                 if let Some(prev) = existing {
@@ -114,7 +120,7 @@ pub(super) fn handle(
                 Ok(())
             }
             cli::MountCommand::Remove { name, scope } => {
-                let mut editor = config::ConfigEditor::open(paths)?;
+                let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 if editor.remove_mount(&name, scope.as_deref()) {
                     editor.save()?;
                     println!("Removed mount {name:?}.");
@@ -198,7 +204,7 @@ pub(super) fn handle(
                 if was_trusted {
                     println!("{} is already trusted.", class.key());
                 } else {
-                    let mut editor = config::ConfigEditor::open(paths)?;
+                    let mut editor = jackin_config::ConfigEditor::open(paths)?;
                     if let Some(source) = config.roles.get(&class.key()) {
                         editor.upsert_agent_source(&class.key(), source);
                     }
@@ -215,7 +221,7 @@ pub(super) fn handle(
                 }
                 let was_trusted = config.roles.get(&class.key()).is_some_and(|a| a.trusted);
                 if was_trusted {
-                    let mut editor = config::ConfigEditor::open(paths)?;
+                    let mut editor = jackin_config::ConfigEditor::open(paths)?;
                     editor.set_agent_trust(&class.key(), false);
                     editor.save()?;
                     println!("Revoked trust for {}.", class.key());
@@ -252,7 +258,7 @@ pub(super) fn handle(
                         parsed_agent.supported_modes()
                     );
                 }
-                let mut editor = config::ConfigEditor::open(paths)?;
+                let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 editor.set_global_auth_forward(parsed_agent, parsed_mode);
                 editor.save()?;
                 println!("Set global {parsed_agent} auth forwarding to {parsed_mode}.");
@@ -273,7 +279,7 @@ pub(super) fn handle(
                 if key.is_empty() {
                     anyhow::bail!("env var key cannot be empty");
                 }
-                if crate::env_model::is_reserved(&key) {
+                if jackin_core::env_model::is_reserved(&key) {
                     anyhow::bail!(
                         "env name {key:?} is reserved by the jackin runtime and cannot be set"
                     );
@@ -288,8 +294,11 @@ pub(super) fn handle(
                     );
                 }
                 let env_value = resolve_env_value_for_cli(&value)?;
-                let scope = role.map_or(config::EnvScope::Global, config::EnvScope::Role);
-                let mut editor = config::ConfigEditor::open(paths)?;
+                let scope = role.map_or(
+                    jackin_config::EnvScope::Global,
+                    jackin_config::EnvScope::Role,
+                );
+                let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 editor.set_env_var(&scope, &key, env_value)?;
                 if let Some(ref c) = comment {
                     editor.set_env_comment(&scope, &key, Some(c));
@@ -302,8 +311,11 @@ pub(super) fn handle(
                 if key.is_empty() {
                     anyhow::bail!("env var key cannot be empty");
                 }
-                let scope = role.map_or(config::EnvScope::Global, config::EnvScope::Role);
-                let mut editor = config::ConfigEditor::open(paths)?;
+                let scope = role.map_or(
+                    jackin_config::EnvScope::Global,
+                    jackin_config::EnvScope::Role,
+                );
+                let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 if editor.remove_env_var(&scope, &key) {
                     editor.save()?;
                     println!("Removed {key}.");
@@ -341,7 +353,7 @@ pub(super) fn handle(
                     cli::CoauthorTrailerCommand::Enable => true,
                     cli::CoauthorTrailerCommand::Disable => false,
                 };
-                let mut editor = config::ConfigEditor::open(paths)?;
+                let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 editor.set_git_coauthor_trailer(enable);
                 let saved = editor.save()?;
                 if saved.git.coauthor_trailer {
@@ -356,7 +368,7 @@ pub(super) fn handle(
                     cli::DcoCommand::Enable => true,
                     cli::DcoCommand::Disable => false,
                 };
-                let mut editor = config::ConfigEditor::open(paths)?;
+                let mut editor = jackin_config::ConfigEditor::open(paths)?;
                 editor.set_git_dco(enable);
                 let saved = editor.save()?;
                 if saved.git.dco {

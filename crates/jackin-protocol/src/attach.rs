@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 //! Attach protocol handshake: initial capability negotiation and session-ID
 //! assignment when a client connects.
 //!
@@ -162,6 +163,15 @@ pub struct ClientTerminal {
 /// `session::OscPolicy` and the terminal profile, not these flags. They are the
 /// forward contract for capability-driven downsampling (deferred per roadmap).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Orthogonal terminal capability flags (pointer_shapes, truecolor, \
+              synchronized_output, osc8_hyperlinks, underline_style) — each is an \
+              independent feature bit resolved from the TERM / TERM_PROGRAM / \
+              COLORTERM / capability overrides, consumed individually by downstream \
+              capability gates. Bundling into bitflags would lose naming at the read \
+              site without changing observable behavior."
+)]
 pub struct AttachCapabilities {
     pub pointer_shapes: bool,
     pub truecolor: bool,
@@ -173,6 +183,14 @@ pub struct AttachCapabilities {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Per-capability source-of-truth flags (handshake_identity, terminfo_name, \
+              safe_color_probe, user_override, denylist) — each is an independent \
+              provenance bit that the operator inspects to understand why a capability \
+              resolved the way it did. Named-field reads are clearer than bit-position \
+              lookups in capability-debug output."
+)]
 pub struct AttachCapabilitySources {
     pub handshake_identity: bool,
     pub terminfo_name: bool,
@@ -960,6 +978,13 @@ where
     Ok(Some(decode_server(tag, payload)?))
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Attach-protocol frame decoder: per-tag (Ctrl / Attach / Detach / \
+              Hello / Bye / ...) branches each decode their own frame payload. \
+              The flat per-tag-decode shape preserves the per-tag wire format. \
+              Body extraction follows the deferred-parallel-pass plan."
+)]
 pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
     Ok(match tag {
         TAG_HELLO => {
@@ -1200,7 +1225,7 @@ pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
         TAG_HOST_OPEN_URL => {
             let url = std::str::from_utf8(&payload)
                 .map_err(|_| anyhow::anyhow!("host-open-url payload is not valid UTF-8"))?;
-            if !jackin_core::url_text::is_host_open_url(url) {
+            if !is_host_open_url_scheme(url) {
                 bail!("host-open-url payload must use an allowlisted scheme");
             }
             ServerFrame::HostOpenUrl(url.to_owned())
@@ -1388,6 +1413,15 @@ impl<'a> PayloadCursor<'a> {
         self.pos = end;
         Ok(bytes)
     }
+}
+
+/// Returns true when `url` uses one of the schemes the host-side opener
+/// accepts: `http://`, `https://`, or `mailto:`. Inlined here so the
+/// protocol layer (L0) does not depend on `jackin-tui` (L3) for a
+/// three-line policy check.
+fn is_host_open_url_scheme(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
 }
 
 #[cfg(test)]

@@ -20,6 +20,30 @@ use crate::{
     grid::{RowStore, RowWrap},
 };
 
+/// SGR text-attribute flags captured in a `SnapCell`. Bundled so `SnapCell`
+/// keeps the `struct_excessive_bools` clippy gate quiet while still letting
+/// `is_blank` test each named flag directly.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Standard CSI SGR boolean attribute set (bold, italic, underline, \
+              inverse, dim, strikethrough, slow_blink, rapid_blink, conceal, \
+              overline) — intrinsically a 10-bit mask and named-field reads \
+              are clearer in assertions than bit-position lookups."
+)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SnapCellAttrs {
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub inverse: bool,
+    pub dim: bool,
+    pub strikethrough: bool,
+    pub slow_blink: bool,
+    pub rapid_blink: bool,
+    pub conceal: bool,
+    pub overline: bool,
+}
+
 /// A snapshot of a single cell at dump time.
 ///
 /// All fields are owned so the snapshot is independent of the grid's lifetime.
@@ -35,30 +59,12 @@ pub struct SnapCell {
     pub fg: Color,
     /// Background color.
     pub bg: Color,
-    /// Bold.
-    pub bold: bool,
-    /// Italic.
-    pub italic: bool,
-    /// Underline.
-    pub underline: bool,
+    /// Bundled SGR text-attribute set.
+    pub attributes: SnapCellAttrs,
     /// Underline style.
     pub underline_style: UnderlineStyle,
     /// Underline color.
     pub underline_color: Color,
-    /// Reverse video.
-    pub inverse: bool,
-    /// Dim / faint.
-    pub dim: bool,
-    /// Strikethrough.
-    pub strikethrough: bool,
-    /// Slow blink.
-    pub slow_blink: bool,
-    /// Rapid blink.
-    pub rapid_blink: bool,
-    /// Conceal / hidden.
-    pub conceal: bool,
-    /// Overline.
-    pub overline: bool,
     /// OSC 8 hyperlink id.
     pub hyperlink_id: Option<String>,
     /// OSC 8 hyperlink target URI.
@@ -79,18 +85,18 @@ impl SnapCell {
     fn attrs_are_default(&self) -> bool {
         self.fg == Color::Default
             && self.bg == Color::Default
-            && !self.bold
-            && !self.italic
-            && !self.underline
+            && !self.attributes.bold
+            && !self.attributes.italic
+            && !self.attributes.underline
             && self.underline_style == UnderlineStyle::None
             && self.underline_color == Color::Default
-            && !self.inverse
-            && !self.dim
-            && !self.strikethrough
-            && !self.slow_blink
-            && !self.rapid_blink
-            && !self.conceal
-            && !self.overline
+            && !self.attributes.inverse
+            && !self.attributes.dim
+            && !self.attributes.strikethrough
+            && !self.attributes.slow_blink
+            && !self.attributes.rapid_blink
+            && !self.attributes.conceal
+            && !self.attributes.overline
             && self.hyperlink_uri.is_none()
     }
 }
@@ -103,18 +109,20 @@ impl From<&Cell> for SnapCell {
             is_wide_continuation: cell.is_wide_continuation,
             fg: cell.fgcolor(),
             bg: cell.bgcolor(),
-            bold: cell.bold(),
-            italic: cell.italic(),
-            underline: cell.underline(),
+            attributes: SnapCellAttrs {
+                bold: cell.bold(),
+                italic: cell.italic(),
+                underline: cell.underline(),
+                inverse: cell.inverse(),
+                dim: cell.dim(),
+                strikethrough: cell.strikethrough(),
+                slow_blink: cell.slow_blink(),
+                rapid_blink: cell.rapid_blink(),
+                conceal: cell.conceal(),
+                overline: cell.overline(),
+            },
             underline_style: cell.attrs.underline_style,
             underline_color: cell.attrs.underline_color,
-            inverse: cell.inverse(),
-            dim: cell.dim(),
-            strikethrough: cell.strikethrough(),
-            slow_blink: cell.slow_blink(),
-            rapid_blink: cell.rapid_blink(),
-            conceal: cell.conceal(),
-            overline: cell.overline(),
             hyperlink_id: cell.hyperlink.as_ref().map(|link| link.id.clone()),
             hyperlink_uri: cell.hyperlink.as_ref().map(|link| link.uri.clone()),
         }

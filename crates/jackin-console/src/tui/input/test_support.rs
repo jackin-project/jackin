@@ -1,0 +1,22 @@
+//! Test support helpers for input handlers (extracted from `input.rs`).
+
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+use jackin_config::{MountConfig, MountIsolation};
+
+pub fn key(code: KeyCode) -> KeyEvent {
+    KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    }
+}
+
+pub fn mount(src: &str, dst: &str) -> MountConfig {
+    MountConfig {
+        src: src.into(),
+        dst: dst.into(),
+        readonly: false,
+        isolation: MountIsolation::Shared,
+    }
+}

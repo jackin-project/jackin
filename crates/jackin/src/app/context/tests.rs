@@ -1,6 +1,5 @@
 //! Tests for `context`.
 use super::*;
-use crate::config;
 use crate::workspace;
 use jackin_config::find_saved_workspace_for_cwd;
 
@@ -74,7 +73,7 @@ fn resolve_target_name_workspace_only() {
     config.workspaces.insert(
         "my-ws".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/workspace".to_owned(),
             ..Default::default()
         },
@@ -115,7 +114,7 @@ fn resolve_agent_from_context_matches_workspace_from_nested_mount_path() {
     let mut config = AppConfig::default();
     config.roles.insert(
         "agent-smith".to_owned(),
-        config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
@@ -124,13 +123,13 @@ fn resolve_agent_from_context_matches_workspace_from_nested_mount_path() {
     config.workspaces.insert(
         "my-app".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: project_dir.display().to_string(),
                 dst: "/workspace".to_owned(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             }],
             allowed_roles: vec!["agent-smith".to_owned()],
             default_role: Some("agent-smith".to_owned()),
@@ -170,7 +169,7 @@ fn resolve_agent_from_context_matches_workspace_from_host_workdir_root() {
     let mut config = AppConfig::default();
     config.roles.insert(
         "agent-smith".to_owned(),
-        config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
@@ -179,13 +178,13 @@ fn resolve_agent_from_context_matches_workspace_from_host_workdir_root() {
     config.workspaces.insert(
         "my-app".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: workspace_root.display().to_string(),
             mounts: vec![workspace::MountConfig {
                 src: repo_dir.canonicalize().unwrap().display().to_string(),
                 dst: "/workspace/jackin".to_owned(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             }],
             allowed_roles: vec!["agent-smith".to_owned()],
             default_role: Some("agent-smith".to_owned()),
@@ -224,7 +223,7 @@ fn resolve_agent_from_context_ignores_stale_last_agent() {
     let mut config = AppConfig::default();
     config.roles.insert(
         "agent-smith".to_owned(),
-        config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
@@ -233,13 +232,13 @@ fn resolve_agent_from_context_ignores_stale_last_agent() {
     config.workspaces.insert(
         "my-app".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: project_dir.display().to_string(),
                 dst: "/workspace".to_owned(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             }],
             allowed_roles: vec!["agent-smith".to_owned()],
             default_role: None,
@@ -278,7 +277,7 @@ fn config_with_workspace(
     let mut config = AppConfig::default();
     config.roles.insert(
         "agent-smith".to_owned(),
-        config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
@@ -286,7 +285,7 @@ fn config_with_workspace(
     );
     config.roles.insert(
         "the-architect".to_owned(),
-        config::RoleSource {
+        jackin_config::RoleSource {
             git: "https://github.com/jackin-project/jackin-the-architect.git".to_owned(),
             trusted: true,
             env: std::collections::BTreeMap::new(),
@@ -295,13 +294,13 @@ fn config_with_workspace(
     config.workspaces.insert(
         "my-app".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: project_dir.display().to_string(),
                 dst: "/workspace".to_owned(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             }],
             allowed_roles,
             default_role: None,
@@ -326,8 +325,8 @@ fn config_with_workspace(
     config
 }
 
-fn fake_docker_with_running_agents(names: &[&str]) -> crate::docker_client::FakeDockerClient {
-    use crate::docker_client::{ContainerRow, FakeDockerClient};
+fn fake_docker_with_running_agents(names: &[&str]) -> runtime::test_support::FakeDockerClient {
+    use jackin_docker::docker_client::ContainerRow;
     let rows: Vec<ContainerRow> = names
         .iter()
         .map(|name| ContainerRow {
@@ -335,7 +334,7 @@ fn fake_docker_with_running_agents(names: &[&str]) -> crate::docker_client::Fake
             labels: std::collections::HashMap::default(),
         })
         .collect();
-    FakeDockerClient {
+    runtime::test_support::FakeDockerClient {
         list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([rows])),
         ..Default::default()
     }
@@ -399,7 +398,7 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -418,9 +417,9 @@ async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
     // inspect returns Running → indexed candidate is live
-    let docker = crate::docker_client::FakeDockerClient {
+    let docker = runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            crate::docker_client::ContainerState::Running,
+            jackin_docker::docker_client::ContainerState::Running,
         ])),
         ..Default::default()
     };
@@ -450,7 +449,7 @@ async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
         host_workdir_fingerprint: &instance::manifest::host_path_fingerprint(&project),
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -469,9 +468,9 @@ async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
     manifest.write(&state_dir).unwrap();
     instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
     // inspect returns Running → ad-hoc indexed candidate is live
-    let docker = crate::docker_client::FakeDockerClient {
+    let docker = runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-            crate::docker_client::ContainerState::Running,
+            jackin_docker::docker_client::ContainerState::Running,
         ])),
         ..Default::default()
     };
@@ -496,7 +495,7 @@ fn hardline_candidate_prompt_label_includes_manifest_and_docker_state() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Claude,
+        agent_runtime: jackin_core::Agent::Claude,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -544,7 +543,7 @@ fn hardline_candidate_prompt_label_counts_running_agent_sessions() {
         host_workdir_fingerprint: "sha256:test",
         role_key: "agent-smith",
         role_display_name: "Agent Smith",
-        agent_runtime: crate::agent::Agent::Codex,
+        agent_runtime: jackin_core::Agent::Codex,
         role_source_git: "https://example.invalid/agent-smith.git",
         role_source_ref: None,
         image_tag: "jk_agent-smith",
@@ -638,13 +637,13 @@ fn persisted_config_with_workspace(paths: &JackinPaths, temp_path: &Path) -> App
     config.workspaces.insert(
         "my-app".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: "/workspace".to_owned(),
             mounts: vec![workspace::MountConfig {
                 src: temp_path.display().to_string(),
                 dst: "/workspace".to_owned(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             }],
             ..Default::default()
         },
@@ -715,13 +714,13 @@ fn broad_workdir_does_not_match_unrelated_subdirectory() {
     config.workspaces.insert(
         "jackin-roles".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
             mounts: vec![workspace::MountConfig {
                 src: agent_repo.canonicalize().unwrap().display().to_string(),
                 dst: "/workspace/role-repo".to_owned(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             }],
             ..Default::default()
         },
@@ -747,13 +746,13 @@ fn workspace_matches_when_cwd_is_under_mount_src() {
     config.workspaces.insert(
         "jackin-roles".to_owned(),
         WorkspaceConfig {
-            version: config::CURRENT_WORKSPACE_VERSION.to_owned(),
+            version: jackin_config::CURRENT_WORKSPACE_VERSION.to_owned(),
             workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
             mounts: vec![workspace::MountConfig {
                 src: agent_repo.canonicalize().unwrap().display().to_string(),
                 dst: "/workspace/role-repo".to_owned(),
                 readonly: false,
-                isolation: crate::isolation::MountIsolation::Shared,
+                isolation: jackin_core::MountIsolation::Shared,
             }],
             ..Default::default()
         },
@@ -780,7 +779,7 @@ fn requires_prompt_when_role_supports_two_agents_and_no_workspace_default() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::parse("the-architect").unwrap();
     write_role_manifest(
-        &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
+        &jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
@@ -796,7 +795,7 @@ plugins = []
         .expect("multi-agent role with no workspace default must trigger a prompt");
     assert_eq!(
         agents,
-        vec![crate::agent::Agent::Claude, crate::agent::Agent::Codex]
+        vec![jackin_core::Agent::Claude, jackin_core::Agent::Codex]
     );
 }
 
@@ -806,7 +805,7 @@ fn requires_prompt_includes_amp_when_role_supports_three_agents() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::parse("the-architect").unwrap();
     write_role_manifest(
-        &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
+        &jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp"]
@@ -825,9 +824,9 @@ plugins = []
     assert_eq!(
         agents,
         vec![
-            crate::agent::Agent::Claude,
-            crate::agent::Agent::Codex,
-            crate::agent::Agent::Amp,
+            jackin_core::Agent::Claude,
+            jackin_core::Agent::Codex,
+            jackin_core::Agent::Amp,
         ]
     );
 }
@@ -838,7 +837,7 @@ fn skips_prompt_when_workspace_default_agent_is_set() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::parse("the-architect").unwrap();
     write_role_manifest(
-        &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
+        &jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
@@ -851,7 +850,7 @@ plugins = []
     );
 
     let result =
-        supported_agents_requiring_prompt(&paths, &selector, Some(crate::agent::Agent::Codex));
+        supported_agents_requiring_prompt(&paths, &selector, Some(jackin_core::Agent::Codex));
     assert!(
         result.is_none(),
         "explicit workspace default_agent must short-circuit the prompt"
@@ -864,7 +863,7 @@ fn skips_prompt_when_role_supports_a_single_agent() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::parse("solo").unwrap();
     write_role_manifest(
-        &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
+        &jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir,
         r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["codex"]

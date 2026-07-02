@@ -78,7 +78,7 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("new-value"),
         "pending.env must reflect the edit"
     );
@@ -106,7 +106,7 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
     assert_eq!(
         ws.env
             .get("DB_URL")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("new-value"),
         "on-disk env must reflect the edit"
     );
@@ -230,7 +230,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
     let mut role_env = std::collections::BTreeMap::new();
     role_env.insert(
         "LOG_LEVEL".into(),
-        jackin::operator_env::EnvValue::Plain("debug".into()),
+        jackin_core::EnvValue::Plain("debug".into()),
     );
     let mut roles = std::collections::BTreeMap::new();
     roles.insert(
@@ -252,7 +252,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             src: host_path.clone(),
             dst: host_path,
             readonly: false,
-            isolation: jackin::isolation::MountIsolation::Shared,
+            isolation: jackin_core::MountIsolation::Shared,
         }],
         roles,
         ..Default::default()
@@ -337,10 +337,10 @@ fn secrets_dirty_detection_and_change_count() -> Result<()> {
     assert!(!editor(&state).is_dirty());
     assert_eq!(editor(&state).change_count(), 0);
 
-    editor_mut(&mut state).pending.env.insert(
-        "NEW_KEY".into(),
-        jackin::operator_env::EnvValue::Plain("v".into()),
-    );
+    editor_mut(&mut state)
+        .pending
+        .env
+        .insert("NEW_KEY".into(), jackin_core::EnvValue::Plain("v".into()));
 
     assert!(editor(&state).is_dirty(), "env add must flip is_dirty");
     assert!(
@@ -398,7 +398,7 @@ fn secrets_add_new_key_flow() -> Result<()> {
             .pending
             .env
             .get("API_KEY")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("s3cret"),
         "pending.env must contain the new key after the three-step add"
     );
@@ -493,7 +493,7 @@ fn op_picker_cancel_closes_modal() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("untouched"),
         "Esc-cancel must not mutate pending.env"
     );
@@ -505,8 +505,8 @@ fn op_picker_cancel_closes_modal() -> Result<()> {
 /// `pending.env[key]` and the modal must close. No follow-up text modal.
 #[test]
 fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
-    use jackin::operator_env::{OpField, OpItem, OpVault};
     use jackin_console::tui::components::op_picker::{OpLoadState, OpPickerStage};
+    use jackin_env::{OpField, OpItem, OpVault};
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -582,7 +582,7 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("op://v1/i1/password"),
         "picker commit must write the UUID-form op:// reference straight into pending.env[key]"
     );
@@ -602,8 +602,8 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
 /// key name writes both into pending.env at once.
 #[test]
 fn op_picker_sentinel_p_flow() -> Result<()> {
-    use jackin::operator_env::{OpField, OpItem, OpVault};
     use jackin_console::tui::components::op_picker::{OpLoadState, OpPickerStage};
+    use jackin_env::{OpField, OpItem, OpVault};
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -691,7 +691,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
         editor(&state)
             .pending_picker_value
             .as_ref()
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("op://v1/i1/credential"),
         "picker commit must stash the UUID-form op:// reference for the EnvKey commit"
     );
@@ -708,7 +708,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
             .pending
             .env
             .get("API_KEY")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("op://v1/i1/credential"),
         "EnvKey commit must write the stashed UUID-form OpRef into pending.env"
     );
@@ -793,7 +793,7 @@ fn enter_on_sentinel_opens_envkey_then_sourcepicker_then_value_modal() -> Result
             .pending
             .env
             .get("API_KEY")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("s3cret"),
         "Plain-text source path must land the typed value in pending.env"
     );
@@ -840,7 +840,7 @@ fn env_value_modal_allows_empty_commit() -> Result<()> {
             .pending
             .env
             .get("EMPTY_OK")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some(""),
         "EnvValue modal must allow committing an empty string \
          (POSIX VAR=\"\" semantics)"
@@ -1019,8 +1019,8 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn op_picker_multi_account_flow() -> Result<()> {
-    use jackin::operator_env::{OpAccount, OpField, OpItem, OpVault};
     use jackin_console::tui::components::op_picker::{OpLoadState, OpPickerStage};
+    use jackin_env::{OpAccount, OpField, OpItem, OpVault};
 
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -1137,7 +1137,7 @@ fn op_picker_multi_account_flow() -> Result<()> {
             .pending
             .env
             .get("DB_URL")
-            .map(jackin::operator_env::EnvValue::as_persisted_str),
+            .map(jackin_core::EnvValue::as_persisted_str),
         Some("op://v1/i1/password"),
         "multi-account picker commit must produce a UUID-form op:// reference"
     );

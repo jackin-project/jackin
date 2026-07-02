@@ -90,18 +90,6 @@ fn image_name_for_branch_lowercases_uppercase_branch() {
 }
 
 #[test]
-fn dind_certs_volume_derives_from_container_name() {
-    assert_eq!(
-        dind_certs_volume("jk-agent-smith"),
-        "jk-agent-smith-dind-certs"
-    );
-    assert_eq!(
-        dind_certs_volume("jk-k7p9m2xq-chainargos-thearchitect"),
-        "jk-k7p9m2xq-chainargos-thearchitect-dind-certs"
-    );
-}
-
-#[test]
 fn format_agent_display_appends_instance_id() {
     assert_eq!(
         format_role_display("jk-k7p9m2xq-thearchitect", "The Architect"),

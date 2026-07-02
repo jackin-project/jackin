@@ -428,7 +428,7 @@ The key source files an implementing agent reads before touching this architectu
 
 - <RepoFile path="crates/jackin-capsule/src/main.rs" /> — PID-1 detection and `JACKIN_CAPSULE_FORCE_DAEMON` dispatch for Apple Container
 - <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — daemon control plane and jackin-exec picker dispatch
-- <RepoFile path="crates/jackin-runtime/src/instance/manifest.rs" /> — `InstanceManifest`, `DockerResources`, and `BackendResources` with `AppleContainerResources`
+- <RepoFile path="crates/jackin-instance/src/manifest.rs" /> — `InstanceManifest`, `DockerResources`, and `BackendResources` with `AppleContainerResources`
 - <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — launch orchestration; backend split point
 - <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> — Docker lifecycle boundary; Apple Container gets a peer module
 - <RepoFile path="docker/construct/Dockerfile" /> — role base image; install `jackin-exec` and `zerobox` here

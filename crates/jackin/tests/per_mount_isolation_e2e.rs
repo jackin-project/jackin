@@ -5,16 +5,16 @@
 
 mod common;
 
-use jackin::docker::{CommandRunner, RunOptions};
-use jackin::isolation::MountIsolation;
-use jackin::isolation::finalize::{
+use jackin::workspace::{MountConfig, ResolvedWorkspace};
+use jackin_core::MountIsolation;
+use jackin_docker::{CommandRunner, RunOptions};
+use jackin_runtime::isolation::finalize::{
     AttachOutcome, ExitDialogChoice, FinalizeDecision, FinalizerPrompt, PreservedReason,
     finalize_foreground_session,
 };
-use jackin::isolation::materialize::{PreflightContext, materialize_workspace};
-use jackin::isolation::state::IsolationRecord;
-use jackin::isolation::state::{CleanupStatus, read_records};
-use jackin::workspace::{MountConfig, ResolvedWorkspace};
+use jackin_runtime::isolation::materialize::{PreflightContext, materialize_workspace};
+use jackin_runtime::isolation::state::IsolationRecord;
+use jackin_runtime::isolation::state::{CleanupStatus, read_records};
 use std::collections::VecDeque;
 use std::path::Path;
 use tempfile::TempDir;

@@ -200,7 +200,7 @@ pub(crate) struct BottomChromeWidget<'a> {
     pub(crate) pull_request: Option<&'a crate::pull_request::PullRequestInfo>,
     pub(crate) pull_request_loading: bool,
     pub(crate) instance_id_label: &'a str,
-    pub(crate) hover_target: Option<crate::tui::app::HoverTarget>,
+    pub(crate) hover_target: Option<crate::tui::model::HoverTarget>,
     pub(crate) scrollback_active: bool,
     pub(crate) scroll_axes: jackin_tui::scroll::ScrollAxes,
     pub(crate) debug_run_id: Option<&'a str>,
@@ -305,10 +305,10 @@ fn render_branch_bar_row(
     pull_request_loading: bool,
     debug_run_id: Option<&str>,
     instance_id_label: &str,
-    hover_target: Option<crate::tui::app::HoverTarget>,
+    hover_target: Option<crate::tui::model::HoverTarget>,
 ) {
-    use crate::tui::app::HoverTarget;
     use crate::tui::components::branch_context_bar::branch_context_bar_layout;
+    use crate::tui::model::HoverTarget;
     let Some(layout) = branch_context_bar_layout(
         area.height,
         area.width,

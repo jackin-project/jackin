@@ -77,15 +77,12 @@ fn empty_ws() -> WorkspaceConfig {
 }
 
 fn config_with_agents(names: &[&str]) -> AppConfig {
-    let mut config = AppConfig::default();
+    use jackin_config::test_support::config_with_agents as make_config;
+    let mut config = make_config(names);
     for name in names {
-        config.roles.insert(
-            (*name).into(),
-            jackin_config::RoleSource {
-                git: format!("https://example.test/{name}.git"),
-                ..Default::default()
-            },
-        );
+        if let Some(role) = config.roles.get_mut(*name) {
+            role.git = format!("https://example.test/{name}.git");
+        }
     }
     config.workspaces.insert("ws".into(), empty_ws());
     config

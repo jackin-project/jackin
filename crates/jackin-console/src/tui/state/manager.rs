@@ -8,11 +8,11 @@ use jackin_config::AppConfig;
 use jackin_tui::components::FocusOwner;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
-use crate::tui::app::{
+use crate::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
+use crate::tui::model::{
     ConsoleAnimationTick, ConsoleManagerStageState, LaunchAgentPromptManagerState,
     LaunchProviderPickerManagerState, LaunchRolePromptManagerState,
 };
-use crate::tui::message::{MountInfoRefreshSourceFacts, mount_info_refresh_source_plan};
 use crate::tui::screens::workspaces::model::hovered_list_row;
 use crate::tui::screens::workspaces::update::{
     PreviewFocusState, PreviewPaneCursorState, WorkspaceListHoverState,
@@ -803,7 +803,7 @@ impl ManagerState<'_> {
                 resolution.result,
                 matches!(
                     resolution.origin,
-                    crate::tui::app::ConsolePendingOpCommitOrigin::Settings
+                    crate::tui::model::ConsolePendingOpCommitOrigin::Settings
                 ),
             )
         })

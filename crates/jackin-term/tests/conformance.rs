@@ -48,6 +48,24 @@ impl From<Color> for ColorSnap {
 // Oracle abstraction
 // ---------------------------------------------------------------------------
 
+/// SGR text-attribute flags captured by the conformance snapshot.
+/// Bundled so `CellSnapshot` keeps the `struct_excessive_bools` clippy gate
+/// quiet while the assertion side reads the whole struct via `PartialEq`.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Four orthogonal SGR bits (bold / italic / underline / inverse) — \
+              the standard CSI SGR attribute set is intrinsically a 4-bit mask and \
+              named-field construction reads better than bit-position lookups in a \
+              conformance harness."
+)]
+#[derive(Debug, PartialEq, Eq, Default, Clone, Copy)]
+struct CellAttributes {
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    inverse: bool,
+}
+
 /// A comparable snapshot of a single screen cell.
 #[derive(Debug, PartialEq)]
 struct CellSnapshot {
@@ -56,10 +74,7 @@ struct CellSnapshot {
     is_wide_continuation: bool,
     foreground: ColorSnap,
     background: ColorSnap,
-    bold: bool,
-    italic: bool,
-    underline: bool,
-    inverse: bool,
+    attributes: CellAttributes,
 }
 
 /// A comparable snapshot of a full terminal screen.
@@ -138,10 +153,12 @@ fn snapshot_damagegrid(grid: &DamageGrid) -> ScreenSnapshot {
                 is_wide_continuation: cell.is_wide_continuation,
                 foreground: cell.fgcolor().into(),
                 background: cell.bgcolor().into(),
-                bold: cell.bold(),
-                italic: cell.italic(),
-                underline: cell.underline(),
-                inverse: cell.inverse(),
+                attributes: CellAttributes {
+                    bold: cell.bold(),
+                    italic: cell.italic(),
+                    underline: cell.underline(),
+                    inverse: cell.inverse(),
+                },
             });
         }
         cells.push(row);
