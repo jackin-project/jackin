@@ -223,7 +223,10 @@ fn long_failure_body_is_reachable_by_scrolling() {
         })
         .expect("render should succeed");
     let top = screen_text(terminal.backend().buffer(), area);
-    assert!(top.contains("FIRST"), "head of long body reachable at scroll 0");
+    assert!(
+        top.contains("FIRST"),
+        "head of long body reachable at scroll 0"
+    );
     assert!(
         !top.contains("LAST"),
         "tail of long body must not render at scroll 0: {top:?}"

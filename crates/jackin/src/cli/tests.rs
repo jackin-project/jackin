@@ -435,8 +435,7 @@ fn rejects_prewarm_image_workspace_with_role_git_override() {
 
 #[test]
 fn rejects_prewarm_keep_sidecar_container_without_sidecar_container() {
-    let err = Cli::try_parse_from(["jackin", "prewarm", "--keep-sidecar-container"])
-        .unwrap_err();
+    let err = Cli::try_parse_from(["jackin", "prewarm", "--keep-sidecar-container"]).unwrap_err();
     // `--keep-sidecar-container` requires `--sidecar-container`.
     assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     let msg = strip_ansi(&err.to_string());
@@ -461,9 +460,14 @@ fn rejects_prewarm_role_with_all_workspaces() {
 
 #[test]
 fn rejects_prewarm_workspace_with_all_workspaces() {
-    let err =
-        Cli::try_parse_from(["jackin", "prewarm", "--workspace", "demo", "--all-workspaces"])
-            .unwrap_err();
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--workspace",
+        "demo",
+        "--all-workspaces",
+    ])
+    .unwrap_err();
     assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
 }
 
@@ -518,8 +522,7 @@ fn rejects_prewarm_all_roles_without_image() {
 
 #[test]
 fn parses_prewarm_image_all_roles() {
-    let cli =
-        Cli::try_parse_from(["jackin", "prewarm", "--image", "--all-roles"]).unwrap();
+    let cli = Cli::try_parse_from(["jackin", "prewarm", "--image", "--all-roles"]).unwrap();
     assert!(matches!(
         cli.command,
         Some(Command::Prewarm(ref args))

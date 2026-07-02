@@ -65,7 +65,10 @@ fn stage_failed_clears_overlays_so_failure_cannot_be_hidden() {
         }),
     ));
 
-    assert!(!view.build_log_open, "build-log overlay must close on failure");
+    assert!(
+        !view.build_log_open,
+        "build-log overlay must close on failure"
+    );
     assert!(
         !view.build_log_scroll_dragging,
         "build-log drag binding must release on failure"
@@ -84,7 +87,8 @@ fn stage_failed_clears_overlays_so_failure_cannot_be_hidden() {
 }
 
 #[test]
-fn failure_copy_messages_track_hover_and_copied_target() {    let mut view = initial_view();
+fn failure_copy_messages_track_hover_and_copied_target() {
+    let mut view = initial_view();
 
     let _unused = update_launch_view(
         &mut view,

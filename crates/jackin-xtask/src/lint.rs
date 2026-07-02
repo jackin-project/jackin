@@ -170,13 +170,7 @@ fn check(root: &Path, budget: &Budget, counts: &BTreeMap<PathBuf, usize>) -> Res
         );
     }
     for (rel, budgeted) in &test_allowlist {
-        check_budget_entry(
-            &mut problems,
-            rel,
-            *budgeted,
-            budget.test_cap,
-            &rel_counts,
-        );
+        check_budget_entry(&mut problems, rel, *budgeted, budget.test_cap, &rel_counts);
     }
 
     for (path, lines) in counts {

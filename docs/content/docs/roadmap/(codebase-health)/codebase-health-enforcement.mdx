@@ -2,17 +2,17 @@
 title: "Codebase health: structure & reviewability"
 ---
 
-**Status**: Partially implemented — the original exception-ledger burn-down is complete, but the PR #664 merge-readiness audit found behavior and CI-wiring blockers that must be fixed before this item can be treated as shipped. The immediate checklist lives in <RepoFile path="plans/codebase-health-remaining.md">plans/codebase-health-remaining.md</RepoFile>; this page tracks the durable follow-up work that remains after that PR-local checklist closes.
+**Status**: Partially implemented — the original exception-ledger burn-down is complete, and the PR #664 merge-readiness audit blockers have been addressed on the refactor branch with regression tests (prewarm clap invariants restored, launch failures kept visible/actionable, the codebase-health gates wired into required CI, and the ratchets made shrink-only). This page tracks the durable follow-up work that remains after that PR-local checklist closes. The checklist itself lives in <RepoFile path="plans/codebase-health-remaining.md">plans/codebase-health-remaining.md</RepoFile>.
 
 ## Merge-Readiness Audit
 
-PR #664 is a structure-only refactor. Before it can merge, the audit checklist must restore or prove all pre-refactor behavior that was weakened during extraction:
+PR #664 is a structure-only refactor. The audit checklist restored or proved every pre-refactor behavior that was weakened during extraction:
 
-- Restore the `jackin prewarm` `clap` constraints that were dropped when flags moved into nested structs.
-- Make launch failure dialogs visible above lower-priority overlays, dismissible through the shared modal path, and safe for long diagnostics.
-- Wire the file-size, schema, and strict codebase-health gates into required CI aggregation and path filters.
-- Make file-size and test-layout ratchets fail stale or no-longer-needed exception rows.
-- Keep roadmap and PR text honest until the required gates and regression tests are in place.
+- Restored the `jackin prewarm` `clap` constraints that were dropped when flags moved into nested structs.
+- Made launch failure dialogs visible above lower-priority overlays, dismissible through the shared modal path, and safe for long diagnostics.
+- Wired the file-size, schema, and strict codebase-health gates into required CI aggregation and path filters.
+- Made the file-size and test-layout ratchets fail stale or no-longer-needed exception rows (shrink-only).
+- Kept roadmap and PR text honest alongside the required gates and regression tests.
 
 The detailed executor checklist is intentionally kept in the plan file so it can be worked down and closed without turning this roadmap item into a temporary task board.
 
@@ -74,6 +74,6 @@ The following are finished and intentionally no longer tracked as remaining work
 
 - Test-layout allowlist burn-down: 0 violations.
 - File-size budget burn-down: no grandfathered production or test files.
-- Dependency-direction gate: strict mode exists and passes locally; the PR #664 merge checklist must wire the full codebase-health gate set into required CI before this item can close.
+- Dependency-direction gate: strict mode exists and passes locally; the full codebase-health gate set (file-size, test-layout, schema) is wired into required CI as part of the PR #664 refactor, so this item closes once dependency-direction itself is promoted from informational to strict.
 - Clippy threshold burn-down: function length, complexity, nesting, and argument thresholds are at target.
 - Historical per-slice split maps from PR #664.

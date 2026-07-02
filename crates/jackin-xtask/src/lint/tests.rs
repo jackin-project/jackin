@@ -84,7 +84,8 @@ fn rejects_budget_row_when_file_drops_under_cap() {
     let err = check(dir.path(), &budget, &counts).unwrap_err().to_string();
     assert!(err.contains("crates/big.rs"), "{err}");
     assert!(
-        err.contains("at or under the 2000-line cap") && err.contains("delete the stale budget row"),
+        err.contains("at or under the 2000-line cap")
+            && err.contains("delete the stale budget row"),
         "{err}"
     );
 }
@@ -100,10 +101,7 @@ fn rejects_budget_row_when_recorded_count_higher_than_measured() {
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
     let err = check(dir.path(), &budget, &counts).unwrap_err().to_string();
     assert!(err.contains("crates/big.rs"), "{err}");
-    assert!(
-        err.contains("shrink the budget row to 1500"),
-        "{err}"
-    );
+    assert!(err.contains("shrink the budget row to 1500"), "{err}");
 }
 
 #[test]

@@ -123,17 +123,76 @@ fn clamp_failure_scroll(view: &mut LaunchView, ctx: CockpitContext<'_>) {
     let Some(failure) = view.failure.as_ref() else {
         return;
     };
-    let (body, content_height) = failure_popup_body_metrics(
-        ctx.area,
-        failure,
-        ctx.run_id,
-        ctx.terminal.is_debug_mode(),
-    );
+    let (body, content_height) =
+        failure_popup_body_metrics(ctx.area, failure, ctx.run_id, ctx.terminal.is_debug_mode());
     let max = content_height.saturating_sub(usize::from(body.height));
     view.failure_scroll.scroll_y = view
         .failure_scroll
         .scroll_y
         .min(u16::try_from(max).unwrap_or(u16::MAX));
+}
+
+/// Vertical-only scroll axes for the failure popup body, gated on whether the
+/// wrapped content actually overflows the body viewport.
+fn failure_body_scroll_axes(view: &LaunchView, ctx: CockpitContext<'_>) -> ScrollAxes {
+    let Some(failure) = view.failure.as_ref() else {
+        return ScrollAxes {
+            vertical: false,
+            horizontal: false,
+        };
+    };
+    let (body, content_height) =
+        failure_popup_body_metrics(ctx.area, failure, ctx.run_id, ctx.terminal.is_debug_mode());
+    ScrollAxes {
+        vertical: content_height > usize::from(body.height),
+        horizontal: false,
+    }
+}
+
+/// Apply a wheel event to the failure popup body. Extracted so the input match
+/// arm stays flat enough for `clippy::excessive_nesting`; the caller's guard
+/// already proved `view.failure.is_some()`.
+fn apply_failure_body_wheel_scroll(
+    view: &mut LaunchView,
+    ctx: CockpitContext<'_>,
+    kind: MouseEventKind,
+    modifiers: KeyModifiers,
+) {
+    let axes = failure_body_scroll_axes(view, ctx);
+    if view
+        .failure_scroll
+        .on_mouse_scroll_for_axes(kind, modifiers, axes)
+    {
+        clamp_failure_scroll(view, ctx);
+    }
+}
+
+/// Apply a vertical scroll key to the failure popup body. Extracted for the
+/// same nesting reason as `apply_failure_body_wheel_scroll`.
+fn apply_failure_body_key_scroll(
+    view: &mut LaunchView,
+    ctx: CockpitContext<'_>,
+    key: event::KeyEvent,
+) {
+    let Some(failure) = view.failure.as_ref() else {
+        return;
+    };
+    let (body, content_height) =
+        failure_popup_body_metrics(ctx.area, failure, ctx.run_id, ctx.terminal.is_debug_mode());
+    let viewport_h = usize::from(body.height);
+    let axes = ScrollAxes {
+        vertical: content_height > viewport_h,
+        horizontal: false,
+    };
+    let _consumed = view.failure_scroll.handle_key_for_axes(
+        key,
+        content_height,
+        viewport_h,
+        usize::MAX,
+        usize::MAX,
+        axes,
+    );
+    clamp_failure_scroll(view, ctx);
 }
 
 fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
@@ -526,21 +585,7 @@ pub fn handle_cockpit_input(
                     // the build-log overlay because `StageFailed` clears
                     // `build_log_open`). Long diagnostics scroll vertically.
                     kind if v.failure.is_some() => {
-                        if let Some(failure) = v.failure.as_ref() {
-                            let (body, content_height) = failure_popup_body_metrics(
-                                ctx.area,
-                                failure,
-                                ctx.run_id,
-                                ctx.terminal.is_debug_mode(),
-                            );
-                            let axes = ScrollAxes {
-                                vertical: content_height > usize::from(body.height),
-                                horizontal: false,
-                            };
-                            if v.failure_scroll.on_mouse_scroll_for_axes(kind, m.modifiers, axes) {
-                                clamp_failure_scroll(&mut v, ctx);
-                            }
-                        }
+                        apply_failure_body_wheel_scroll(&mut v, ctx, kind, m.modifiers);
                     }
                     kind if v.build_log_open => {
                         let _consumed =
@@ -654,28 +699,7 @@ pub fn handle_cockpit_input(
                             | KeyCode::Char('j' | 'J' | 'k' | 'K')
                     ) =>
             {
-                if let Some(failure) = v.failure.as_ref() {
-                    let (body, content_height) = failure_popup_body_metrics(
-                        ctx.area,
-                        failure,
-                        ctx.run_id,
-                        ctx.terminal.is_debug_mode(),
-                    );
-                    let viewport_h = usize::from(body.height);
-                    let axes = ScrollAxes {
-                        vertical: content_height > viewport_h,
-                        horizontal: false,
-                    };
-                    let _consumed = v.failure_scroll.handle_key_for_axes(
-                        k,
-                        content_height,
-                        viewport_h,
-                        usize::MAX,
-                        usize::MAX,
-                        axes,
-                    );
-                    clamp_failure_scroll(&mut v, ctx);
-                }
+                apply_failure_body_key_scroll(&mut v, ctx, k);
             }
             Event::Key(k)
                 if k.kind == KeyEventKind::Press
