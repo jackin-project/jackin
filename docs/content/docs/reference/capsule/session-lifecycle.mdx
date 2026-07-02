@@ -5,7 +5,7 @@ description: Technical reference for how jackin❯ creates, manages, and tears d
 
 ## Overview
 
-Every role container runs the jackin❯ Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/jackin/run/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /jackin/runtime/jackin-capsule` client. See [jackin❯ Capsule](/reference/capsule//) for the control-plane design and wire protocol.
+Every role container runs the jackin❯ Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/jackin/run/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /jackin/runtime/jackin-capsule` client. See [jackin❯ Capsule](/reference/capsule/) for the control-plane design and wire protocol.
 
 There are two session types:
 

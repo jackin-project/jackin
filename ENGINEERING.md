@@ -26,14 +26,14 @@ Choosing crate, prefer:
 - **popular, canonical option** — check crates.io download counts (recent + total), GitHub stars, breadth of ecosystem dependents. Famous crates get most bug reports, fixes, security review. Niche / low-download only when no maintained alternative;
 - **active recent maintenance** — commits / releases within ~12 months, ideally less. Open issues triaged. Multiple contributors, not single-person;
 - **stable major version** (1.x+) where possible — pre-1.0 acceptable when crate still canonical (e.g. `clap`'s subcommand derive history) but flag in PR;
-- **continuity with workspace** — if sibling dependency already in `Cargo.lock`, prefer over alternative adding new transitive tree;
+- **continuity with workspace** — if sibling dependency already appears in [Cargo.lock](Cargo.lock), prefer over alternative adding new transitive tree;
 - **panic-free / error-result-returning APIs** over panic-on-bad-input (matters at trust boundaries — host config, network responses, untrusted user input).
 
 Anti-pattern: pulling fresh-but-obscure crate from search results. Crate with 30 stars, no recent commits, one author *worse* than canonical-but-deprecated alternative — deprecated one battle-tested. Prefer (in order): popular + maintained → popular but stale → write few lines yourself. No fringe crates.
 
 When canonical crate *deprecated* but no clear successor: document choice in PR — name deprecation, candidate forks evaluated, criterion that picked winner. Stops re-debating later.
 
-Rationale: Rust ecosystem leverage point. Pulling crate usually 50–200 KB and one `Cargo.toml` line. Reinventing parsers wastes review attention, multiplies bug surface, misses upstream fixes.
+Rationale: Rust ecosystem leverage point. Pulling crate usually 50–200 KB and one [Cargo.toml](Cargo.toml) line. Reinventing parsers wastes review attention, multiplies bug surface, misses upstream fixes.
 
 When you do hand-roll something this rule covers, comment why (crate unavailable, scope tiny, dependency cost rejected) so later maintainer can replace without re-debating.
 
@@ -57,7 +57,7 @@ Patterns this blocks (real findings):
 
 - `sidebar_inputs_for_workspace` and `sidebar_inputs_for_current_dir` build same `SidebarInputs` struct with overlapping body. Extending one while leaving other untouched — the bug. Fix: factor divergent piece (picker-role resolution, role-binding presence) into helpers both call, not another sibling function for third selection kind.
 - `focused_block_still_scrollable` matching only `ManagerListRow::SavedWorkspace` for global-mounts focus while render path also accepts `ManagerListRow::CurrentDirectory`. Render and scrollability checks must read from same selection-to-rows helper, else focus calculation lags visible content.
-- Adding per-agent `LAUNCH=` block to `docker/runtime/entrypoint.sh` when existing block handles "agent X with optional credential mount" via `case`. Extend the `case`, not duplicate surrounding `seed_home_dir` / chmod / exec scaffolding.
+- Adding per-agent `LAUNCH=` block to [docker/runtime/entrypoint.sh](docker/runtime/entrypoint.sh) when existing block handles "agent X with optional credential mount" via `case`. Extend the `case`, not duplicate surrounding `seed_home_dir` / chmod / exec scaffolding.
 
 When you do duplicate (deltas too structural for shared body, or shared body defers divergent decision to runtime branch hurting readability), leave one-line comment on each copy naming sibling and *reason* divergence preserved.
 

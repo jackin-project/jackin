@@ -66,7 +66,7 @@ Exception: explicit operator instruction to hold.
 - Two-tier telemetry: `clog!` compact always-on; `cdebug!` firehose gated on `JACKIN_DEBUG=1`.
 - Comments: non-obvious WHY only — never narrate WHAT.
 
-Rust workspace specifics → `AGENTS.md` under `crates/`.
+Rust workspace specifics → [crates/AGENTS.md](crates/AGENTS.md).
 
 ## PRs, review, docs gates
 
@@ -75,12 +75,12 @@ Read [PULL_REQUESTS.md](PULL_REQUESTS.md) before opening/iterating/merging. Pre-
 - **Roadmap freshness** — update roadmap item status when change ships/advances/defers.
 - **Docs as source of truth** — update user-facing + contributor-facing docs same PR.
 
-Agent PR extras (base branch, force-push, CI-green, squash format) → `.github/AGENTS.md`.
+Agent PR extras (base branch, force-push, CI-green, squash format) → [.github/AGENTS.md](.github/AGENTS.md).
 
 ## Testing
 
 - Runner, render-conformance fixtures, `--debug` validation → [TESTING.md](TESTING.md).
-- `jackin-capsule` smoke-test mandate → `.github/AGENTS.md`.
+- `jackin-capsule` smoke-test mandate → [.github/AGENTS.md](.github/AGENTS.md).
 
 ## TUI
 

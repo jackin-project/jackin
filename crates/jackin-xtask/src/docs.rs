@@ -22,10 +22,20 @@ use clap::{Args, Subcommand};
 use serde_json::{Value, json};
 
 const DOCS_ROOT: &str = "docs/content/docs";
+const DOCS_MARKDOWN_ROOT: &str = "docs";
 const ROADMAP_REL: &str = "roadmap";
 const RESEARCH_REL: &str = "research";
 const REPO_FILE_PREFIXES: &[&str] = &[
     "crates/", "src/", "docs/", "docker/", ".github/", "scripts/",
+];
+const REPO_LINK_ROOT_DOCS: &[&str] = &[
+    "AGENTS.md",
+    "ENGINEERING.md",
+    "PROJECT_STRUCTURE.md",
+    "PULL_REQUESTS.md",
+    "README.md",
+    "RULES.md",
+    "TESTING.md",
 ];
 const REPO_TOP_LEVEL_FILES: &[&str] = &[
     "AGENTS.md",
@@ -377,8 +387,7 @@ fn check_repo_links_in(root: &Path, content_root: &Path) -> Result<()> {
         );
     }
 
-    let mut files = Vec::new();
-    collect_mdx_files(content_root, &mut files)?;
+    let files = collect_repo_link_files(root, content_root)?;
 
     let mut failures = Vec::new();
     for file in files {
@@ -397,9 +406,25 @@ fn check_repo_links_in(root: &Path, content_root: &Path) -> Result<()> {
     )
 }
 
+fn collect_repo_link_files(root: &Path, content_root: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    collect_mdx_files(content_root, &mut files)?;
+    collect_markdown_files(&root.join(DOCS_MARKDOWN_ROOT), &mut files)?;
+    for doc in REPO_LINK_ROOT_DOCS {
+        let path = root.join(doc);
+        if path.is_file() {
+            files.push(path);
+        }
+    }
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
 fn check_repo_links_file(root: &Path, file: &Path, failures: &mut Vec<String>) -> Result<()> {
     let text = fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
     let display_path = relative(root, file);
+    let is_fumadocs_content = file.starts_with(root.join(DOCS_ROOT));
     let mut in_fence = false;
     for (idx, line) in text.lines().enumerate() {
         let line_no = idx + 1;
@@ -410,9 +435,23 @@ fn check_repo_links_file(root: &Path, file: &Path, failures: &mut Vec<String>) -
         if in_fence {
             continue;
         }
-        check_repo_file_components(root, &display_path, line_no, line, failures);
+        check_repo_file_components(
+            root,
+            &display_path,
+            is_fumadocs_content,
+            line_no,
+            line,
+            failures,
+        );
         check_github_repo_urls(&display_path, line_no, line, failures);
-        check_inline_repo_paths(root, &display_path, line_no, line, failures);
+        check_inline_repo_paths(
+            root,
+            &display_path,
+            is_fumadocs_content,
+            line_no,
+            line,
+            failures,
+        );
     }
     Ok(())
 }
@@ -420,6 +459,7 @@ fn check_repo_links_file(root: &Path, file: &Path, failures: &mut Vec<String>) -
 fn check_repo_file_components(
     root: &Path,
     display_path: &str,
+    is_fumadocs_content: bool,
     line_no: usize,
     line: &str,
     failures: &mut Vec<String>,
@@ -431,6 +471,13 @@ fn check_repo_file_components(
             break;
         };
         let tag = &rest[..end];
+        if !is_fumadocs_content {
+            failures.push(format!(
+                "{display_path}:{line_no}: <RepoFile> is only allowed under {DOCS_ROOT}; use a Markdown link in this file"
+            ));
+            rest = &rest[end + 1..];
+            continue;
+        }
         if let Some(path) = tag_attr(tag, "path")
             && !existing_repo_file(root, &path)
         {
@@ -497,6 +544,7 @@ fn prefixed_urls(line: &str, prefix: &str) -> Vec<String> {
 fn check_inline_repo_paths(
     root: &Path,
     display_path: &str,
+    is_fumadocs_content: bool,
     line_no: usize,
     line: &str,
     failures: &mut Vec<String>,
@@ -514,9 +562,12 @@ fn check_inline_repo_paths(
             && let Some(path) = repo_path_candidate(value)
             && existing_repo_file(root, path)
         {
-            failures.push(format!(
-                "{display_path}:{line_no}: link existing repo file `{path}` with <RepoFile path=\"{path}\" />"
-            ));
+            let guidance = if is_fumadocs_content {
+                format!("link existing repo file `{path}` with <RepoFile path=\"{path}\" />")
+            } else {
+                format!("link existing repo file `{path}` with a Markdown link")
+            };
+            failures.push(format!("{display_path}:{line_no}: {guidance}"));
         }
         offset = close + 1;
     }
@@ -922,6 +973,35 @@ fn collect_mdx_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Recursively collect every Markdown source file under `root`.
+fn collect_markdown_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+        let path = entry?.path();
+        if path.is_dir() {
+            if path.file_name().is_some_and(skip_docs_vendor_dir) {
+                continue;
+            }
+            collect_markdown_files(&path, out)?;
+        } else if path
+            .extension()
+            .is_some_and(|ext| ext == "md" || ext == "mdx")
+        {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn skip_docs_vendor_dir(name: &std::ffi::OsStr) -> bool {
+    matches!(
+        name.to_str(),
+        Some("node_modules" | ".output" | ".tanstack" | ".astro")
+    )
 }
 
 fn report_clean(label: &str, meta_count: usize) {

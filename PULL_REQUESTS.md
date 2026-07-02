@@ -9,11 +9,11 @@ Read before opening, updating, merging PR.
 PR rules split by audience, avoid duplication:
 
 - **This file** — **shared** PR flow: body-shape spec, Verify-locally policy, mandatory isolation env-var rule, docs-only PR requirements, review rules, roadmap-retirement procedure. Humans + agents start here.
-- `AGENTS.md` under `.github/` holds **agent-only extras** — per-PR merge auth, base-branch requirement, force-push policy, body-construction shell-quoting, iteration-vs-merge-readiness, CI-green-before-merge, title/description reconciliation, squash-merge format, `jackin-capsule` smoke-test mandate. Plus GitHub Actions workflow authoring (mise-only installs, env scope, publish gating). Auto-loads when agent works under `.github/`.
+- [.github/AGENTS.md](.github/AGENTS.md) holds **agent-only extras** — per-PR merge auth, base-branch requirement, force-push policy, body-construction shell-quoting, iteration-vs-merge-readiness, CI-green-before-merge, title/description reconciliation, squash-merge format, `jackin-capsule` smoke-test mandate. Plus GitHub Actions workflow authoring (mise-only installs, env scope, publish gating). Auto-loads when agent works under `.github/`.
 
 When agent-only + shared rules cover same topic (e.g. "include Verify-locally section"), shared rule states *what*, agent-only states agent-specific *how/when/who*.
 
-## Canonical body shape — see `.github/PULL_REQUEST_TEMPLATE.md`
+## Canonical Body Shape
 
 Template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Copy as start for every new PR body; fill placeholders. GitHub auto-loads when PR opened via web UI.
 
@@ -62,7 +62,7 @@ A `crates/jackin-capsule/` PR that puts a `jackin` launch before Checkout block'
 
 Documentation PRs (changes under `docs/**` only — `.mdx` files, `astro.config.ts` sidebar, theme/CSS) must verify by running docs site **locally** in addition to checkout, not by pointing operator at GitHub Files-changed tab.
 
-Files-changed tab shows raw MDX. Does not show how Starlight renders page, whether `<RepoFile />` resolves, whether sidebar entry lands right group, whether internal `[link](/path/)` references resolve, whether tables/Asides render, or whether page reachable through navigation. Docs PR that "looks right in diff" can render visibly broken on site.
+Files-changed tab shows raw MDX. Does not show how Starlight renders page, whether Fumadocs repository-file links resolve, whether sidebar entry lands right group, whether internal `[link](/path/)` references resolve, whether tables/Asides render, or whether page reachable through navigation. Docs PR that "looks right in diff" can render visibly broken on site.
 
 Required pattern for docs-only PRs:
 
@@ -192,7 +192,7 @@ Roadmap pages for planned, researched, designed, deferred, or remaining work. On
 **The published docs site is the spec.** Every feature jackin❯ ships must be described from two angles, both kept current in same PR that lands change:
 
 - **User-facing docs** (the *Operator* and *Role Authoring* sidebar groups: `getting-started/`, `guides/`, `commands/`, `developing/`) describe **what jackin❯ does from outside the binary**. They answer "if I run this command or set this config, what will happen?" without naming on-disk paths operator never edits, internal Rust types, or implementation steps. Reader following only user-facing docs must use feature successfully.
-- **Contributor-facing docs** (the *Internals* sidebar group: `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, `reference/claude-token-orchestrator.mdx`, `reference/schema-versions.mdx`, `reference/tui/`, plus active items under `reference/roadmap/`) describe **how jackin❯ is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `src/`, links into source tree all live here.
+- **Contributor-facing docs** (the *Internals* sidebar group: `reference/getting-oriented/architecture.mdx`, `reference/runtime/configuration.mdx`, `reference/getting-oriented/codebase-map.mdx`, `reference/capsule/token-orchestrator.mdx`, `reference/runtime/schema-versions.mdx`, `reference/tui/`, plus active items under `roadmap/`) describe **how jackin❯ is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `crates/`, links into source tree all live here.
 
 Both surfaces load-bearing. If operator-visible behaviour ships without user-facing docs update, feature not shipped — operators can't learn it exists or how to invoke it. If internal change ships without contributor-facing docs update, next agent reading internals page debugs against stale spec.
 
@@ -213,17 +213,17 @@ When PR ships last remaining piece of roadmap item — every feature, sub-phase,
 
 1. **Confirm no remaining work.** Re-read page top to bottom. Any "Remaining Work", "Future Work", "Phase N — open", or open question not actually shipped is remaining-work signal — keep page + set status `Partially implemented`.
 2. **Confirm no load-bearing inbound links.** `rg "roadmap/<slug>" docs/` from repo root. References from roadmap overview + sidebar config expected + cleaned up below; references from *open* roadmap items mean page acts as internal contract for unfinished work — keep it, or repoint those references first.
-3. **Audit every detail on page + place it in its long-term home.** Operator behaviour goes to `guides/` or `commands/` page so users learn feature without reading internals; design decisions, on-disk layout, struct/enum/function names, architecture trade-offs go to `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, or another internals page so next contributor reads accurate internals. Git history is long-term archive of design rationale; roadmap directory is not. Apply **Documentation as the source of truth** rule above for audience split — never inline TOML schemas, on-disk paths, struct names on user-facing pages, never put `jackin foo --bar` operator instructions on internals pages.
+3. **Audit every detail on page + place it in its long-term home.** Operator behaviour goes to `guides/` or `commands/` page so users learn feature without reading internals; design decisions, on-disk layout, struct/enum/function names, architecture trade-offs go to `reference/getting-oriented/architecture.mdx`, `reference/runtime/configuration.mdx`, `reference/getting-oriented/codebase-map.mdx`, or another internals page so next contributor reads accurate internals. Git history is long-term archive of design rationale; roadmap directory is not. Apply **Documentation as the source of truth** rule above for audience split — never inline TOML schemas, on-disk paths, struct names on user-facing pages, never put `jackin foo --bar` operator instructions on internals pages.
 4. **Replace page with single bullet in Completed section** of `docs/content/docs/reference/roadmap/index.mdx`. Bullet names feature in plain prose + links to canonical user-facing or contributor-facing doc now describing shipped behaviour. No link back to deleted roadmap page.
 5. **Repoint inbound references.** Update any open roadmap item, goal prompt, or contributor doc that linked deleted page; point at canonical home from step 3.
-6. **Run sidebar + overview audits** documented in `docs/AGENTS.md`. Sidebar audit must show no diff after deleting entry from `docs/astro.config.ts`. Overview audit must continue passing (every roadmap file reachable from `roadmap.mdx` or covered by parent program entry).
+6. **Run sidebar + overview audits** documented in [docs/AGENTS.md](docs/AGENTS.md). Sidebar audit must show no diff after deleting entry from `docs/astro.config.ts`. Overview audit must continue passing (every roadmap file reachable from `roadmap.mdx` or covered by parent program entry).
 7. **Run docs verification gate.** Use template's Docs Checks block. Retirement that breaks build or repo-link references incomplete.
 
 A `Status: Resolved` roadmap page still sitting in directory is smell, not shipping target. Only legitimate reasons to keep one: (a) genuine remaining work tracked on same page, or (b) load-bearing inbound links from open roadmap items still treating page as internal contract. Anything else gets retired in PR that ships last piece — not deferred to later cleanup PR, because every later contributor reading resolved page treats it as authoritative until gone.
 
 ## Agent-only rules
 
-Following rules apply only to agents. Full text lives in `AGENTS.md` under `.github/`, which loads automatically when agent works under that directory; summaries here keep shared flow self-contained:
+Following rules apply only to agents. Full text lives in [.github/AGENTS.md](.github/AGENTS.md), which loads automatically when agent works under that directory; summaries here keep shared flow self-contained:
 
 - **Per-PR merge authorization** — agents never merge without explicit "merge it" confirmation; prior session authorizations don't carry forward.
 - **Base branch** — agent-created PRs target `main` unless operator explicitly names different target.
@@ -239,7 +239,7 @@ Following rules apply only to agents. Full text lives in `AGENTS.md` under `.git
 
 ## Workflow / CI changes
 
-All rules for authoring + modifying CI workflow files live in `AGENTS.md` under `.github/`, which loads automatically when agent works on workflow files there. Covers:
+All rules for authoring + modifying CI workflow files live in [.github/AGENTS.md](.github/AGENTS.md), which loads automatically when agent works on workflow files there. Covers:
 
 - **mise-only tool installation** — no language-specific setup actions; `jdx/mise-action` everywhere.
 - **Env-var scope** — third-party-CLI env vars at job level, never workflow level.

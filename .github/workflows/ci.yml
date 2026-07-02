@@ -122,9 +122,14 @@ jobs:
               - 'crates/jackin/src/repo_contract/**'
               - 'crates/jackin-capsule/**'
               - 'crates/jackin-docker/**'
+              - 'crates/jackin-host/**'
               - 'crates/jackin-image/**'
+              - 'crates/jackin-instance/**'
+              - 'crates/jackin-isolation/**'
               - 'crates/jackin-launch-tui/**'
+              - 'crates/jackin-manifest/**'
               - 'crates/jackin-runtime/**'
+              - 'crates/jackin-usage/**'
             workflows:
               - '.github/workflows/**'
             mise:

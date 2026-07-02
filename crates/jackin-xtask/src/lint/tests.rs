@@ -109,7 +109,13 @@ fn print_budget_only_emits_files_over_their_cap() {
     let dir = fixture("production_cap = 1000\ntest_cap = 10000\n");
     let counts = measure(dir.path()).unwrap();
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
-    // Capture stdout by buffering; print_budget prints directly. Just call it
-    // and confirm it does not panic.
-    print_budget(&counts, &budget);
+    let report = budget_report(dir.path(), &counts, &budget);
+
+    assert!(report.contains("path = \"crates/big.rs\""), "{report}");
+    assert!(
+        !report.contains(dir.path().to_string_lossy().as_ref()),
+        "{report}"
+    );
+    assert!(!report.contains("crates/small.rs"), "{report}");
+    assert!(!report.contains("crates/pkg/tests.rs"), "{report}");
 }

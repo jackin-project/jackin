@@ -29,7 +29,7 @@ toml = "=1.1.2"
 
 [features]
 # Enables `jackin_config::test_support::*` from in-crate tests. Tests must be
-# run with `cargo test -p jackin-console --features test-support` to compile.
+# run with `cargo nextest run -p jackin-console --features test-support` to compile.
 test-support = ["jackin-config/test-support"]
 
 [lints]

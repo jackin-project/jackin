@@ -10,6 +10,7 @@ members = [
     "crates/jackin-diagnostics",
     "crates/jackin-docker",
     "crates/jackin-env",
+    "crates/jackin-host",
     "crates/jackin-image",
     "crates/jackin-manifest",
     "crates/jackin-protocol",

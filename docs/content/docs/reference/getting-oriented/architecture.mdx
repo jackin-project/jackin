@@ -115,7 +115,7 @@ Every fresh launch gets a unique DNS-safe instance identity. Existing running or
 
 ### Capsule supervisor and session model
 
-Every role container runs the jackin❯ Capsule (<RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile>) as PID 1. In daemon mode it reaps children, manages PTYs, renders the multiplexer, and serves the socket API. `SIGTERM` / `SIGINT` trigger orderly shutdown, and the daemon exits when the last live session ends so Docker reports a clean container exit. The full Capsule design is documented in [jackin❯ Capsule](/reference/capsule//).
+Every role container runs the jackin❯ Capsule (<RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile>) as PID 1. In daemon mode it reaps children, manages PTYs, renders the multiplexer, and serves the socket API. `SIGTERM` / `SIGINT` trigger orderly shutdown, and the daemon exits when the last live session ends so Docker reports a clean container exit. The full Capsule design is documented in [jackin❯ Capsule](/reference/capsule/).
 
 Sessions are daemon-owned PTYs inside the running container. All agent sessions are equal — there is no "primary" or "secondary" distinction.
 

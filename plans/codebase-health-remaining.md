@@ -119,7 +119,7 @@ Why this blocks merge: invalid command combinations are now accepted and silentl
   - [x] Add `rejects_prewarm_all_roles_without_image`: `["jackin", "prewarm", "--all-roles"]` must return an error.
   - [x] Add `parses_prewarm_image_all_roles`: `["jackin", "prewarm", "--image", "--all-roles"]` must parse and set `args.flags.image == true` and `args.flags.all_roles == true`.
   - [x] Add `parses_prewarm_image_role_git`: `["jackin", "prewarm", "--image", "--role", "architect", "--role-git", "https://example.invalid/role.git"]` must parse and set `args.role == Some("architect")`, `args.role_git == Some(...)`, and `args.flags.image == true`.
-- [x] Run `cargo test -p jackin cli::tests::prewarm` or the closest available test filter that runs only the prewarm CLI tests.
+- [x] Run `cargo nextest run -p jackin -E 'test(cli::tests::prewarm)'` or the closest available test filter that runs only the prewarm CLI tests.
 - [x] Run the final verification commands after this blocker and the other blockers are complete.
 
 ## Blocker 2 — keep launch failures visible and actionable
@@ -152,10 +152,10 @@ Why this blocks merge: a failed launch can hide the actionable failure dialog be
   - [x] In the same subscriptions test file, add an inside-dialog non-target click test that proves the click is swallowed and does not trigger background build-log/container-info behavior.
   - [x] In <RepoFile path="crates/jackin-launch-tui/src/tui/components/failure_dialog/tests.rs">crates/jackin-launch-tui/src/tui/components/failure_dialog/tests.rs</RepoFile>, add a long-content test using enough diagnostic/next-step text to exceed the old body height; assert the content can be reached by scrolling or that the rendered output exposes the overflow through the chosen scroll mechanism.
 - [x] Run focused launch TUI tests:
-  - [x] `cargo test -p jackin-launch-tui update`
-  - [x] `cargo test -p jackin-launch-tui view`
-  - [x] `cargo test -p jackin-launch-tui subscriptions`
-  - [x] `cargo test -p jackin-launch-tui failure_dialog`
+  - [x] `cargo nextest run -p jackin-launch-tui -E 'test(update)'`
+  - [x] `cargo nextest run -p jackin-launch-tui -E 'test(view)'`
+  - [x] `cargo nextest run -p jackin-launch-tui -E 'test(subscriptions)'`
+  - [x] `cargo nextest run -p jackin-launch-tui -E 'test(failure_dialog)'`
 
 ## Blocker 3 — make codebase-health CI gates actually required
 
@@ -203,8 +203,8 @@ Why this blocks merge: PR #664 claims the codebase-health ledgers cannot grow st
   - [x] Add missing allowlist path rejection coverage if the parser can distinguish it from stale; otherwise document in the test name that missing paths are treated as stale rows.
   - [x] Keep new-violation rejection coverage.
 - [x] Run focused and umbrella xtask verification:
-  - [x] `cargo test -p jackin-xtask lint`
-  - [x] `cargo test -p jackin-xtask test_layout`
+  - [x] `cargo nextest run -p jackin-xtask -E 'test(lint)'`
+  - [x] `cargo nextest run -p jackin-xtask -E 'test(test_layout)'`
   - [x] `cargo run -p jackin-xtask --locked -- lint --strict`
 
 ## Final Verification

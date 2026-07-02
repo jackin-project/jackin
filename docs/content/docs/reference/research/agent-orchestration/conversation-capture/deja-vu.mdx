@@ -245,7 +245,7 @@ The host-side capture runs at the moments that matter and never depends on the o
 
 Three surfaces over the same archive, in priority order for V1:
 
-- **TUI (`jackin deja-vu`, console-style).** The headline deliverable. A `jackin console`-shaped browser: pick a workspace, narrow by instance or date, pick a conversation, read the rendered thread top to bottom. Follows the [TUI design decisions](/reference/tui//) (W3C Tabs navigation, scrollable blocks via `jackin_tui::scroll`, the shared color palette).
+- **TUI (`jackin deja-vu`, console-style).** The headline deliverable. A `jackin console`-shaped browser: pick a workspace, narrow by instance or date, pick a conversation, read the rendered thread top to bottom. Follows the [TUI design decisions](/reference/tui/) (W3C Tabs navigation, scrollable blocks via `jackin_tui::scroll`, the shared color palette).
 - **CLI (`jackin deja-vu list | show | search | export`).** Scriptable and, importantly, the surface an *agent* can call from inside a session. `show` renders a conversation to Markdown/JSON; `export` writes it out.
 - **MCP server.** Exposes `list` / `read` / `search` as MCP tools so an agent — in any runtime — can pull a past conversation into its current context. This is the seed of the future cross-agent "go back to that conversation" experience and the orchestration use case, gated behind the same host-mediated MCP/host-bridge surface as other agent-facing capabilities (see [Host bridge](/roadmap/host-bridge/)).
 
