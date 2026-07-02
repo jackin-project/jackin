@@ -8,7 +8,7 @@ title: "Claude usage: Fable and the limits array"
 
 The Capsule Claude usage overlay reads `https://api.anthropic.com/api/oauth/usage` and decodes a fixed set of named window keys (`five_hour`, `seven_day`, `seven_day_sonnet`, `seven_day_opus`, `seven_day_routines`). Anthropic has migrated the authoritative shape to a `limits` array. The model-scoped weekly limit for **Fable** (and Sonnet/Opus/Routines going forward) now appears only inside that array, so it is silently dropped.
 
-The [claude.ai usage page](https://claude.ai/new#settings/usage) renders three rows under *Weekly limits* — *All models*, *Fable* (model-scoped), and so on. jackin❯ today shows only the *All models* / Session windows and loses the per-model row the operator most wants to see.
+The claude.ai settings → usage page renders three rows under *Weekly limits* — *All models*, *Fable* (model-scoped), and so on. jackin❯ today shows only the *All models* / Session windows and loses the per-model row the operator most wants to see.
 
 ## Verified evidence (live API, 2026-07-03)
 
