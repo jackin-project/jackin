@@ -22,7 +22,7 @@ The item now has one concrete finish line: **empty both machine-checked exceptio
 - [x] **R3 — E1 isolation carve complete.** `finalize.rs` + `git_inspect.rs` moved into `jackin-isolation` behind re-export shims.
 - [x] **R4 — the four >2000L production files decomposed** (`launch.rs`, `editor/view.rs`, `dialog.rs`, `launch_pipeline.rs`).
 - [x] **R6 — all 58 Clippy `#[expect]` grandfathers cleared.** Zero `tracked in codebase-health-enforcement` markers remain; mutually-exclusive bool clusters became enums, orthogonal flag sets became documented `#[allow(…, reason = "…")]`. See the worklist for the full per-slice log.
-- [x] **R7 (steps 1–8) — thresholds ratcheted toward target.** `production_cap` 2000 → **1500L**; `too-many-lines` 450 → **200**; `cognitive-complexity` 100 → **60**; `excessive-nesting` 8 → **5**; `too-many-arguments` 9 → **7**; first band file (`dialog_widgets.rs`) decomposed.
+- [x] **R7 (steps 1–8) — thresholds ratcheted toward target.** `production_cap` 2000 → **1500L** (later relaxed back to 2000L for the hot-path files — see Ledger 2); `too-many-lines` 450 → **200**; `cognitive-complexity` 100 → **60**; `excessive-nesting` 8 → **5**; `too-many-arguments` 9 → **7**; first band file (`dialog_widgets.rs`) decomposed.
 - [x] **R8/R9/R10/R11 — hygiene, decision, bookkeeping.** Stale `deny.toml` entries pruned; non-blocking `workspace-depgraph` CI artifact added; the `jackin-config` persistence IO edge ruled *keep*; playbook retired and stale grandfathers pruned.
 
 ### Ledger 1 — `test-layout-allowlist.toml` → empty (gate green)
