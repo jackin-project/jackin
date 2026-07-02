@@ -2,9 +2,10 @@ name: Check deployed docs links
 description: |
   Dump the live sitemap into a URL list, and run a lychee link check
   against that list with the standard remap rules for github.com
-  edit/blob URLs. Used by docs.yml's `deploy` job (after publishing to
-  GitHub Pages) and `check-deployed` job (scheduled live validation) to
-  keep a single source of truth for the deployed link-check contract.
+  edit/blob URLs. Used by docs.yml's `verify-deployed` job (after
+  publishing to GitHub Pages) and `check-deployed` job (scheduled live
+  validation) to keep a single source of truth for the deployed
+  link-check contract.
   No lychee cache is restored here — deployed checks always hit live
   URLs so that stale 503s from a previous run never poison the results.
 inputs:
