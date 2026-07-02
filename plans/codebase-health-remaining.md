@@ -217,4 +217,4 @@ Run this only after every blocker above is implemented.
 - [x] `cargo run -p jackin-xtask --locked -- lint --strict`
 - [x] `cargo nextest run --all-features --no-fail-fast -E 'not test(/shell_session_gets_only_status_socket/)'`
 - [x] Docs gate: `bun run build`, `bun run check:repo-links`, `bun run check:roadmap-sidebar`, `bunx tsc --noEmit`, and `bun test`
-- [ ] `gh pr checks 664 --watch=false` shows the latest pushed head has the required checks, not only DCO.
+- [x] `gh pr checks 664 --watch=false` shows the latest pushed head has the required checks, not only DCO.
