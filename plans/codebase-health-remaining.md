@@ -51,7 +51,6 @@ The strict gates exist, but the aggregate required job does not currently depend
 - [ ] In <RepoFile path=".github/workflows/ci.yml">.github/workflows/ci.yml</RepoFile>, add `file-size-gate` to `ci-required.needs`.
 - [ ] Add the existing `schema-check` job to `ci-required.needs` so the aggregate job cannot pass while it is skipped, failed, or cancelled.
 - [ ] Add `clippy.toml`, `file-size-budget.toml`, and `test-layout-allowlist.toml` to the Rust path filter so ratchet edits run the Rust gate set.
-- [ ] Update stale comments around the file-size gate if they still describe dependency-direction checks as informational.
 - [ ] Run `actionlint` or the repo's workflow lint command after editing the workflow.
 
 ## Blocker 4 — make the ratchets shrink-only
@@ -65,13 +64,6 @@ The ledgers are empty today, but the lint implementation still accepts stale bud
 - [ ] Update xtask tests so stale/shrunken allowlist rows are rejected, not accepted.
 - [ ] Run `cargo run -p jackin-xtask --locked -- lint --strict`.
 
-## Blocker 5 — fix roadmap and PR truthfulness
-
-- [x] Keep <RepoFile path="docs/content/docs/roadmap/(codebase-health)/codebase-health-enforcement.mdx">docs/content/docs/roadmap/(codebase-health)/codebase-health-enforcement.mdx</RepoFile> as **Partially implemented** until these merge blockers are resolved.
-- [x] Update <RepoFile path="docs/content/docs/roadmap/index.mdx">docs/content/docs/roadmap/index.mdx</RepoFile> so it does not mark the codebase-health item as fully implemented or claim all gates are live in required CI before Blocker 3 lands.
-- [x] Refresh <RepoFile path="docs/content/docs/roadmap/(codebase-health)/(phase-2-file-splits)/split-runtime-launch.mdx">docs/content/docs/roadmap/(codebase-health)/(phase-2-file-splits)/split-runtime-launch.mdx</RepoFile> with the current launch files and remaining function split targets.
-- [x] Update the PR body verification section to include `cargo run -p jackin-xtask --locked -- lint --strict`.
-
 ## Final Verification
 
 - [ ] `cargo fmt --check`
@@ -82,7 +74,3 @@ The ledgers are empty today, but the lint implementation still accepts stale bud
 - [ ] Docs gate: `bun run build`, `bun run check:repo-links`, `bun run check:roadmap-sidebar`, `bunx tsc --noEmit`, and `bun test`
 - [ ] `gh pr checks 664 --watch=false` shows the latest pushed head has the required checks, not only DCO.
 - [ ] `gh pr view 664 --json mergeStateStatus` no longer reports `DIRTY`.
-
-## Audit Notes
-
-Local audit verification already passed for `cargo fmt --check`, workspace `cargo check`, workspace `clippy -D warnings`, `cargo run -p jackin-xtask --locked -- lint`, the broad `nextest` command above, and the docs gate. These passing results do not remove the blockers above because the audit found behavior and CI-wiring gaps that need source changes and new regression tests.
