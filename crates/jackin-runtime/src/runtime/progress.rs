@@ -1,4 +1,4 @@
-//! Re-export of `jackin-launch` progress types plus host-side prelaunch helpers.
+//! Re-export of launch TUI progress types plus host-side prelaunch helpers.
 //!
 //! Not responsible for rendering — the TUI render functions are re-exported
 //! only for test use (`#[cfg(test)]`). Production callers use `LaunchProgress`

@@ -35,8 +35,9 @@ pub(super) fn require_capsule_binary_override() {
         panic!(
             "e2e tests require JACKIN_CAPSULE_BIN to point at a locally built \
              Linux jackin-capsule binary. In PR checkouts, run \
-             `cargo xtask pr prepare <PR_NUMBER> --capsule` and source the \
-             generated env.sh first. Outside that flow, run \
+             `jackin-dev pr sync <PR_NUMBER>` and source \
+             `$(jackin-dev pr path <PR_NUMBER>)/env.sh` first. Outside that \
+             flow, run \
              `eval \"$(cargo run --bin build-jackin-capsule -- --export)\"`. \
              The e2e harness must not fall back to the preview-release \
              download verifier."
@@ -66,7 +67,7 @@ pub(super) fn require_capsule_binary_override() {
         "JACKIN_CAPSULE_BIN must point at a Linux jackin-capsule binary, got {}. \
          Build/export a Linux capsule with \
          `eval \"$(cargo run --bin build-jackin-capsule -- --export)\"` or \
-         `cargo xtask pr prepare <PR_NUMBER> --capsule`.",
+         `jackin-dev pr sync <PR_NUMBER>` plus the generated env.sh.",
         path.display()
     );
 }

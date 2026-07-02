@@ -112,6 +112,7 @@ jobs:
               - '.github/workflows/rust-nextest.yml'
               - 'docker/**'
               - 'crates/jackin/tests/dind_e2e.rs'
+              - 'crates/jackin/tests/dind_e2e/**'
               - 'crates/jackin/tests/fixtures/**'
               - 'crates/jackin/src/runtime.rs'
               - 'crates/jackin/src/app/**'

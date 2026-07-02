@@ -38,6 +38,9 @@ pub struct PrewarmArgs {
     pub role_branch: Option<String>,
 }
 
+#[cfg(test)]
+mod tests;
+
 /// Flags for `jackin prewarm` (flattened into `PrewarmArgs` for CLI ergonomics).
 #[allow(
     clippy::struct_excessive_bools,

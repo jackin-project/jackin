@@ -1543,6 +1543,10 @@ fn inject_status_env(cmd: &mut CommandBuilder, session_id: u64, agent: Option<&s
             "JACKIN_STATUS_SOURCE",
             format!("hook-{runtime}-{session_id}"),
         );
+    } else {
+        cmd.env_remove("JACKIN_SESSION_ID");
+        cmd.env_remove("JACKIN_AGENT_RUNTIME");
+        cmd.env_remove("JACKIN_STATUS_SOURCE");
     }
 }
 
