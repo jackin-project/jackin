@@ -19,6 +19,7 @@ The detailed executor checklist is intentionally kept in the plan file so it can
 Non-blocking audit context:
 
 - Roadmap and PR truthfulness were refreshed during the audit: the overview no longer marks this item as implemented, the launch split leaf now matches the current file layout, and the PR verification section uses the strict lint command.
+- The PR branch was synced with `main` after the audit; the <RepoFile path="Cargo.lock">Cargo.lock</RepoFile> conflict around `rand` was resolved in the merge commit, and GitHub no longer reports the branch as dirty.
 - Local audit verification passed for `cargo fmt --check`, workspace `cargo check`, workspace `clippy -D warnings`, `cargo run -p jackin-xtask --locked -- lint`, the broad non-Docker `nextest` command, and the docs gate. These results are useful evidence, but they do not close the merge blockers because the plan still requires source changes and regression tests.
 - Workflow comments that still describe dependency-direction checks as informational should be cleaned up when the CI wiring blocker is implemented; the comment cleanup itself is not a standalone merge blocker.
 

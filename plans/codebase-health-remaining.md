@@ -6,14 +6,6 @@
 
 PR #664 is intended to be a structure-only codebase-health refactor. Before merge, prove that it did not relax behavior, hide runtime failures, or weaken the CI gates that are supposed to prevent the codebase-health ledgers from regressing.
 
-## Blocker 0 — sync `main` and resolve the current conflict
-
-- [ ] Fetch `origin/main`.
-- [ ] Merge `origin/main` into `refactor/codebase-health-decomposition` with a normal merge commit, not a rebase.
-- [ ] Resolve the current `Cargo.lock` conflict around the `rand` package by preserving the branch's dependency graph and the newer lockfile state from `main`.
-- [ ] Run `cargo check --workspace --all-targets --all-features --locked`.
-- [ ] Commit with `-s` and push immediately.
-
 ## Blocker 1 — restore `jackin prewarm` CLI invariants
 
 The refactor moved `prewarm` flags into nested structs, but several previous `clap` constraints were dropped. Restore the old invalid-combination behavior before merge.
@@ -73,4 +65,3 @@ The ledgers are empty today, but the lint implementation still accepts stale bud
 - [ ] `cargo nextest run --all-features --no-fail-fast -E 'not test(/shell_session_gets_only_status_socket/)'`
 - [ ] Docs gate: `bun run build`, `bun run check:repo-links`, `bun run check:roadmap-sidebar`, `bunx tsc --noEmit`, and `bun test`
 - [ ] `gh pr checks 664 --watch=false` shows the latest pushed head has the required checks, not only DCO.
-- [ ] `gh pr view 664 --json mergeStateStatus` no longer reports `DIRTY`.
