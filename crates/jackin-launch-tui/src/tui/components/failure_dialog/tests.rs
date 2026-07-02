@@ -10,6 +10,26 @@ fn row_text(buf: &Buffer, row: u16, width: u16) -> String {
         .collect()
 }
 
+/// Concatenate every rendered cell so a test can assert what owns the screen
+/// without hard-coding row/col offsets.
+fn screen_text(buf: &Buffer, area: Rect) -> String {
+    (0..area.height)
+        .flat_map(|y| (0..area.width).map(move |x| buf[(x, y)].symbol().to_owned()))
+        .collect()
+}
+
+fn failure_with_summary(summary: &str) -> LaunchFailure {
+    LaunchFailure {
+        title: "Build failed".to_owned(),
+        summary: summary.to_owned(),
+        detail: None,
+        next_step: None,
+        stage: LaunchStage::DerivedImage,
+        diagnostics_path: None,
+        command_output_path: None,
+    }
+}
+
 #[test]
 fn failure_popup_keeps_status_footer_visible() {
     let area = Rect::new(0, 0, 90, 18);
@@ -119,5 +139,119 @@ fn failure_popup_hides_status_footer_when_debug_disabled() {
     assert!(
         !bottom.contains("jk-run-c46709") && !bottom.contains("2y0t4aw6"),
         "non-debug dialog must not keep the status footer visible: {bottom:?}"
+    );
+}
+
+#[test]
+fn failure_popup_renders_over_stale_build_log_overlay() {
+    // Defense-in-depth render guard: even if `build_log_open` is stale-true when
+    // a failure arrives, the failure popup must own the screen and the opaque
+    // build-log backdrop must not paint over it.
+    let area = Rect::new(0, 0, 90, 18);
+    let mut view = initial_view();
+    view.status = "docker build failed".to_owned();
+    view.build_log_open = true;
+    view.build_log_lines = vec!["ZZZ-BUILD-LOG-ONLY-MARKER-ZZZ".to_owned()];
+    view.failure = Some(failure_with_summary("docker build failed"));
+
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).expect("test backend should initialize");
+    terminal
+        .draw(|frame| {
+            render_launch_frame(
+                frame,
+                &view,
+                "jk-run-c46709",
+                "/tmp/jk-run-c46709.jsonl",
+                true,
+                None,
+                false,
+                "0.6.0-test",
+            );
+        })
+        .expect("render should succeed");
+
+    let screen = screen_text(terminal.backend().buffer(), area);
+    assert!(
+        screen.contains("Build failed"),
+        "failure title must render over stale build-log overlay: {screen:?}"
+    );
+    assert!(
+        screen.contains("docker build failed"),
+        "failure summary must render over stale build-log overlay: {screen:?}"
+    );
+    assert!(
+        !screen.contains("ZZZ-BUILD-LOG-ONLY-MARKER-ZZZ"),
+        "build-log-only content must not own the screen when failure is open: {screen:?}"
+    );
+}
+
+#[test]
+fn long_failure_body_is_reachable_by_scrolling() {
+    // Long diagnostics/next-step rows must not be silently clipped: the body
+    // scrolls, so the tail is reachable by advancing `failure_scroll`.
+    let area = Rect::new(0, 0, 90, 18);
+    // ~150 "filler " words wrap well past the viewport-safe popup body height,
+    // with distinct first/last markers so the scrolled viewport is observable.
+    let long_body = format!("FIRST {}", "filler ".repeat(150)) + "LAST";
+    let mut view = initial_view();
+    view.failure = Some(LaunchFailure {
+        title: "Build failed".to_owned(),
+        summary: "docker build failed".to_owned(),
+        detail: None,
+        next_step: Some(long_body),
+        stage: LaunchStage::DerivedImage,
+        diagnostics_path: None,
+        command_output_path: None,
+    });
+
+    // Top of the body: FIRST marker visible, tail marker clipped out.
+    let mut terminal = Terminal::new(TestBackend::new(area.width, area.height))
+        .expect("test backend should initialize");
+    terminal
+        .draw(|frame| {
+            render_launch_frame(
+                frame,
+                &view,
+                "jk-run-c46709",
+                "/tmp/jk-run-c46709.jsonl",
+                true,
+                None,
+                false,
+                "0.6.0-test",
+            );
+        })
+        .expect("render should succeed");
+    let top = screen_text(terminal.backend().buffer(), area);
+    assert!(top.contains("FIRST"), "head of long body reachable at scroll 0");
+    assert!(
+        !top.contains("LAST"),
+        "tail of long body must not render at scroll 0: {top:?}"
+    );
+
+    // Scroll to the tail: render clamps the offset, exposing LAST.
+    view.failure_scroll.scroll_y = u16::MAX;
+    terminal
+        .draw(|frame| {
+            render_launch_frame(
+                frame,
+                &view,
+                "jk-run-c46709",
+                "/tmp/jk-run-c46709.jsonl",
+                true,
+                None,
+                false,
+                "0.6.0-test",
+            );
+        })
+        .expect("render should succeed");
+    let tail = screen_text(terminal.backend().buffer(), area);
+    assert!(
+        tail.contains("LAST"),
+        "tail of long body must be reachable by scrolling: {tail:?}"
+    );
+    assert!(
+        !tail.contains("FIRST"),
+        "head of long body must scroll off once at the tail: {tail:?}"
     );
 }

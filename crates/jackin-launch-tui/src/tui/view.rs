@@ -48,8 +48,12 @@ pub fn render_launch_frame(
     }
 
     // The build-log overlay owns the whole screen behind an opaque backdrop,
-    // matching the capsule modal convention (hide everything, don't dim).
-    if view.build_log_open {
+    // matching the capsule modal convention (hide everything, don't dim). It
+    // must never win over a failure popup: a stale `build_log_open` flag (or a
+    // failure arriving while the log is open) would otherwise hide the
+    // actionable failure dialog behind the opaque log backdrop. `StageFailed`
+    // also clears the flag, so this guard is defense in depth.
+    if view.build_log_open && view.failure.is_none() {
         render_build_log_dialog(frame, area, view, run_id, debug_mode);
         return;
     }

@@ -12,6 +12,8 @@ use crate::LaunchHostTerminal;
 use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state,
 };
+use crate::tui::components::failure_dialog::failure_popup_block_rect;
+use crate::{LaunchFailure, LaunchStage};
 
 struct RecordingTerminal {
     copied: Mutex<Vec<String>>,
@@ -158,6 +160,82 @@ fn build_log_mouse_debug_telemetry_does_not_escape_to_compact_output() {
     assert_eq!(debug.len(), 1);
     assert_eq!(debug[0].0, "cockpit-dialog-mouse");
     assert!(debug[0].1.contains("build_log_open=true"));
+}
+
+fn failure_failure() -> LaunchFailure {
+    LaunchFailure {
+        title: "Build failed".to_owned(),
+        summary: "docker build failed".to_owned(),
+        detail: None,
+        next_step: None,
+        stage: LaunchStage::DerivedImage,
+        diagnostics_path: None,
+        command_output_path: None,
+    }
+}
+
+#[test]
+fn failure_popup_outside_click_acknowledges() {
+    let mut view = crate::tui::update::initial_view();
+    view.failure = Some(failure_failure());
+    let area = Rect::new(0, 0, 96, 24);
+    let terminal = RecordingTerminal::new();
+    let ctx = CockpitContext {
+        area,
+        run_id: "jk-run-test",
+        run_log_path: "/tmp/jk-run-test.jsonl",
+        terminal: &terminal,
+        jackin_version: "jackin 0.0.0-test",
+    };
+
+    // The top-left corner is outside the centered popup → acknowledge failure
+    // through the same path as Enter/Esc (FailureAcknowledged).
+    handle_cockpit_mouse_down(&mut view, ctx, 1, 1);
+
+    assert!(
+        view.failure_ack,
+        "outside click must acknowledge the failure popup"
+    );
+}
+
+#[test]
+fn failure_popup_inside_non_target_click_is_swallowed() {
+    let mut view = crate::tui::update::initial_view();
+    view.failure = Some(failure_failure());
+    // A build-log line is present so we can prove the swallowed click does not
+    // fall through to build-log/container-info behavior.
+    view.build_log_lines = vec!["short".to_owned()];
+    let area = Rect::new(0, 0, 96, 24);
+    let terminal = RecordingTerminal::new();
+    let ctx = CockpitContext {
+        area,
+        run_id: "jk-run-test",
+        run_log_path: "/tmp/jk-run-test.jsonl",
+        terminal: &terminal,
+        jackin_version: "jackin 0.0.0-test",
+    };
+
+    let failure = view.failure.as_ref().expect("failure set");
+    let rect = failure_popup_block_rect(area, failure, "jk-run-test", true);
+    // A point inside the popup border (top border row) that is not a copyable
+    // value cell: it must be swallowed, not acknowledged and not routed to a
+    // background overlay.
+    let inside_col = rect.x.saturating_add(2);
+    let inside_row = rect.y;
+    handle_cockpit_mouse_down(&mut view, ctx, inside_col, inside_row);
+
+    assert!(
+        !view.failure_ack,
+        "inside non-target click must not acknowledge the failure"
+    );
+    assert!(
+        !view.build_log_open,
+        "inside non-target click must not open the build-log overlay"
+    );
+    assert!(
+        view.failure.is_some(),
+        "failure popup must stay open after a swallowed inside click"
+    );
 }
 
 #[test]

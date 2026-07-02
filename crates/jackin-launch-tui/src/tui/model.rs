@@ -55,6 +55,10 @@ pub struct LaunchView {
     pub failure_revealed: Option<FailureCopyTarget>,
     /// Last failure-popup file path opened through the host file manager.
     pub failure_opened: Option<FailureCopyTarget>,
+    /// Scroll offsets for the failure popup body. Long diagnostics or next-step
+    /// rows can exceed the viewport-safe popup height; the offset persists here
+    /// so the body scrolls instead of silently clipping the overflow.
+    pub failure_scroll: jackin_tui::components::DialogBodyScroll,
     /// Operator opened the shared container info dialog from the footer chip.
     pub container_info_open: bool,
     /// Last copied row in the container info dialog.

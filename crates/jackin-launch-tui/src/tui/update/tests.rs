@@ -46,8 +46,45 @@ fn failure_acknowledged_clears_hover_and_sets_ack() {
 }
 
 #[test]
-fn failure_copy_messages_track_hover_and_copied_target() {
+fn stage_failed_clears_overlays_so_failure_cannot_be_hidden() {
     let mut view = initial_view();
+    view.build_log_open = true;
+    view.build_log_scroll_dragging = true;
+    view.container_info_open = true;
+
+    drop(update_launch_view(
+        &mut view,
+        LaunchMessage::StageFailed(LaunchFailure {
+            title: "Build failed".into(),
+            summary: "docker build failed".into(),
+            detail: None,
+            next_step: None,
+            stage: LaunchStage::DerivedImage,
+            diagnostics_path: None,
+            command_output_path: None,
+        }),
+    ));
+
+    assert!(!view.build_log_open, "build-log overlay must close on failure");
+    assert!(
+        !view.build_log_scroll_dragging,
+        "build-log drag binding must release on failure"
+    );
+    assert!(
+        !view.container_info_open,
+        "container-info overlay must close on failure"
+    );
+    assert!(view.failure.is_some(), "failure must be set");
+    assert!(!view.failure_ack, "failure must start unacknowledged");
+    assert_eq!(
+        view.failure_scroll,
+        jackin_tui::components::DialogBodyScroll::new(),
+        "failure body scroll resets for a fresh failure"
+    );
+}
+
+#[test]
+fn failure_copy_messages_track_hover_and_copied_target() {    let mut view = initial_view();
 
     let _unused = update_launch_view(
         &mut view,

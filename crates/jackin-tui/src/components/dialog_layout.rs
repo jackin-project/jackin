@@ -40,7 +40,7 @@ pub const DIALOG_HORIZONTAL_SCROLL_STEP: u16 = crate::scroll::DEFAULT_HORIZONTAL
 /// the current scroll offset. Attach it to the dialog's state struct, call
 /// `handle_key` for keyboard scroll events, and `render_scrollbars` after
 /// rendering the body content.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DialogBodyScroll {
     pub scroll_y: u16,
     pub scroll_x: u16,

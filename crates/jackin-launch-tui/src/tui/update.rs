@@ -41,6 +41,7 @@ pub fn initial_view() -> LaunchView {
         failure_copied: None,
         failure_revealed: None,
         failure_opened: None,
+        failure_scroll: jackin_tui::components::DialogBodyScroll::new(),
         container_info_open: false,
         container_info_copied: None,
         container_info_hover: None,
@@ -80,6 +81,16 @@ pub fn update_launch_view(view: &mut LaunchView, msg: LaunchMessage) -> LaunchUp
             view.failure_copied = None;
             view.failure_revealed = None;
             view.failure_opened = None;
+            view.failure_scroll = jackin_tui::components::DialogBodyScroll::new();
+            // The failure popup must own the screen. Close every lower-priority
+            // overlay that could otherwise hide it or intercept its input — the
+            // build-log overlay owns the whole frame behind an opaque backdrop,
+            // and the container-info dialog shares the same modal layer. The
+            // defensive render in `view.rs` also gates on `failure.is_some()`,
+            // so a stale overlay flag can never resurrect either surface.
+            view.build_log_open = false;
+            view.build_log_scroll_dragging = false;
+            view.container_info_open = false;
             view.failure = Some(failure);
         }
         LaunchMessage::FailureAcknowledged => {

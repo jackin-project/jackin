@@ -8,7 +8,7 @@ use crossterm::event::{
 };
 use jackin_tui::ModalOutcome;
 use jackin_tui::components::KeyChord;
-use jackin_tui::components::{ScrollAxes, StatusFooterHover};
+use jackin_tui::components::{ModalClickResult, ScrollAxes, StatusFooterHover, classify_click};
 use ratatui::layout::Rect;
 use tokio_util::sync::CancellationToken;
 
@@ -18,7 +18,10 @@ use crate::tui::components::build_log_dialog::{
 use crate::tui::components::container_info_dialog::{
     launch_container_info_rect, launch_container_info_state,
 };
-use crate::tui::components::failure_dialog::{failure_copy_payload, failure_copy_target_at};
+use crate::tui::components::failure_dialog::{
+    failure_copy_payload, failure_copy_target_at, failure_popup_block_rect,
+    failure_popup_body_metrics,
+};
 use crate::tui::components::footer::{footer_instance, format_activity};
 use crate::tui::input::{LaunchInput, is_ctrl_c_event};
 use crate::tui::terminal::current_terminal_area;
@@ -111,6 +114,26 @@ fn clamp_container_info_scroll(view: &mut LaunchView, ctx: CockpitContext<'_>) {
         state.content_height(),
         rect,
     );
+}
+
+/// Clamp the failure-popup body scroll to its content so over-scrolling cannot
+/// accumulate (mirrors `clamp_container_info_scroll`). Called after every
+/// failure-body scroll key/wheel; the renderer also clamps defensively.
+fn clamp_failure_scroll(view: &mut LaunchView, ctx: CockpitContext<'_>) {
+    let Some(failure) = view.failure.as_ref() else {
+        return;
+    };
+    let (body, content_height) = failure_popup_body_metrics(
+        ctx.area,
+        failure,
+        ctx.run_id,
+        ctx.terminal.is_debug_mode(),
+    );
+    let max = content_height.saturating_sub(usize::from(body.height));
+    view.failure_scroll.scroll_y = view
+        .failure_scroll
+        .scroll_y
+        .min(u16::try_from(max).unwrap_or(u16::MAX));
 }
 
 fn update_build_log_scroll(view: &mut LaunchView, area: Rect, delta: isize) {
@@ -239,9 +262,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             ctx.jackin_version,
         );
         let rect = launch_container_info_rect(ctx.area, &state, ctx.terminal.is_debug_mode());
-        if jackin_tui::components::classify_click(rect, col, row)
-            == jackin_tui::components::ModalClickResult::OutsideDismiss
-        {
+        if classify_click(rect, col, row) == ModalClickResult::OutsideDismiss {
             // Click outside the dialog → dismiss (Defect 11).
             let _dirty = update_launch_view(v, LaunchMessage::ContainerInfoClosed);
         } else if let Some((copy_row, payload)) =
@@ -255,22 +276,38 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         }
         // Click inside with no copy target → no-op (Defect 11: inside click swallowed).
     } else if let Some(failure) = v.failure.as_ref() {
-        if let Some(target) = failure_copy_target_at(
-            ctx.area,
-            failure,
-            ctx.run_id,
-            ctx.terminal.is_debug_mode(),
-            col,
-            row,
-        ) && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
-        {
-            if ctx.terminal.copy_to_clipboard(&payload) {
-                let _dirty = update_launch_view(v, LaunchMessage::FailureCopied(target));
-            } else {
-                ctx.terminal.emit_compact_line(
-                    "failure-popup-copy",
-                    "OSC 52 clipboard write failed — badge suppressed",
-                );
+        // The failure popup is modal: route the click through the shared modal
+        // classifier so outside clicks acknowledge the failure (same path as
+        // Enter/Esc), inside copy targets copy, and inside non-target clicks
+        // are swallowed instead of falling through to build-log/container-info
+        // behavior.
+        let popup_rect =
+            failure_popup_block_rect(ctx.area, failure, ctx.run_id, ctx.terminal.is_debug_mode());
+        match classify_click(popup_rect, col, row) {
+            ModalClickResult::OutsideDismiss => {
+                let _dirty = update_launch_view(v, LaunchMessage::FailureAcknowledged);
+                ctx.terminal.set_pointer_shape(false);
+            }
+            ModalClickResult::InsideHit => {
+                if let Some(target) = failure_copy_target_at(
+                    ctx.area,
+                    failure,
+                    ctx.run_id,
+                    ctx.terminal.is_debug_mode(),
+                    col,
+                    row,
+                ) && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
+                {
+                    if ctx.terminal.copy_to_clipboard(&payload) {
+                        let _dirty = update_launch_view(v, LaunchMessage::FailureCopied(target));
+                    } else {
+                        ctx.terminal.emit_compact_line(
+                            "failure-popup-copy",
+                            "OSC 52 clipboard write failed — badge suppressed",
+                        );
+                    }
+                }
+                // Inside non-target click → swallowed (no overlay behavior).
             }
         }
     } else if v.build_log_open {
@@ -485,6 +522,26 @@ pub fn handle_cockpit_input(
                     MouseEventKind::Moved => {
                         handle_cockpit_mouse_move(&mut v, ctx, m.column, m.row);
                     }
+                    // The failure popup owns the wheel while open (it wins over
+                    // the build-log overlay because `StageFailed` clears
+                    // `build_log_open`). Long diagnostics scroll vertically.
+                    kind if v.failure.is_some() => {
+                        if let Some(failure) = v.failure.as_ref() {
+                            let (body, content_height) = failure_popup_body_metrics(
+                                ctx.area,
+                                failure,
+                                ctx.run_id,
+                                ctx.terminal.is_debug_mode(),
+                            );
+                            let axes = ScrollAxes {
+                                vertical: content_height > usize::from(body.height),
+                                horizontal: false,
+                            };
+                            if v.failure_scroll.on_mouse_scroll_for_axes(kind, m.modifiers, axes) {
+                                clamp_failure_scroll(&mut v, ctx);
+                            }
+                        }
+                    }
                     kind if v.build_log_open => {
                         let _consumed =
                             update_build_log_mouse_scroll(&mut v, area, kind, m.modifiers);
@@ -580,6 +637,44 @@ pub fn handle_cockpit_input(
                         terminal.set_pointer_shape(false);
                     }
                     None => {}
+                }
+            }
+            // Vertical scroll for the failure popup body (arrows / j/k / PgUp /
+            // PgDn). Reaches long diagnostics or next-step rows that exceed the
+            // viewport-safe popup height; Enter/Esc still acknowledge below.
+            Event::Key(k)
+                if k.kind == KeyEventKind::Press
+                    && v.failure.is_some()
+                    && matches!(
+                        k.code,
+                        KeyCode::Up
+                            | KeyCode::Down
+                            | KeyCode::PageUp
+                            | KeyCode::PageDown
+                            | KeyCode::Char('j' | 'J' | 'k' | 'K')
+                    ) =>
+            {
+                if let Some(failure) = v.failure.as_ref() {
+                    let (body, content_height) = failure_popup_body_metrics(
+                        ctx.area,
+                        failure,
+                        ctx.run_id,
+                        ctx.terminal.is_debug_mode(),
+                    );
+                    let viewport_h = usize::from(body.height);
+                    let axes = ScrollAxes {
+                        vertical: content_height > viewport_h,
+                        horizontal: false,
+                    };
+                    let _consumed = v.failure_scroll.handle_key_for_axes(
+                        k,
+                        content_height,
+                        viewport_h,
+                        usize::MAX,
+                        usize::MAX,
+                        axes,
+                    );
+                    clamp_failure_scroll(&mut v, ctx);
                 }
             }
             Event::Key(k)

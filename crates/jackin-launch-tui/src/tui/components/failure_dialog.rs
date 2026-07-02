@@ -1,6 +1,6 @@
 //! Launch failure popup rendering and hit-testing.
 
-use jackin_tui::components::{ModalBackdrop, render_hint_bar};
+use jackin_tui::components::{ModalBackdrop, render_hint_bar, render_scrollable_dialog_body};
 use jackin_tui::theme::{DANGER_RED, LINK_BLUE, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 use jackin_tui::{HintSpan, centered_rect};
 use ratatui::Frame;
@@ -239,6 +239,40 @@ pub fn failure_copy_target_at(
     None
 }
 
+/// Outer block rect of the failure popup within `area`, so the input layer can
+/// classify clicks (inside vs outside the modal) without re-deriving the
+/// layout. Matches the rect `render_failure_popup` draws.
+#[must_use]
+pub fn failure_popup_block_rect(
+    area: Rect,
+    failure: &LaunchFailure,
+    run_id: &str,
+    debug_mode: bool,
+) -> Rect {
+    let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
+    let rows = failure_popup_rows(failure, run_id);
+    failure_popup_rect_for_rows(body_area, &rows)
+}
+
+/// `(body_rect, content_height)` for the failure popup body, so the input layer
+/// scrolls long diagnostics/next-step rows against the same geometry the
+/// renderer measures. `content_height` is the wrapped line count at the body
+/// width; vertical scroll is reachable when it exceeds the body viewport.
+#[must_use]
+pub fn failure_popup_body_metrics(
+    area: Rect,
+    failure: &LaunchFailure,
+    run_id: &str,
+    debug_mode: bool,
+) -> (Rect, usize) {
+    let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
+    let rows = failure_popup_rows(failure, run_id);
+    let rect = failure_popup_rect_for_rows(body_area, &rows);
+    let body = failure_popup_body_rect(rect);
+    let content_height = failure_popup_render_line_count(&rows, body.width);
+    (body, content_height)
+}
+
 #[must_use]
 pub fn failure_copy_payload(
     failure: &LaunchFailure,
@@ -370,15 +404,16 @@ pub fn render_failure_popup(
             )
         })
         .collect::<Vec<_>>();
-    for (idx, line) in lines.iter().take(usize::from(body.height)).enumerate() {
-        let row_area = Rect {
-            x: body.x,
-            y: body.y + u16::try_from(idx).unwrap_or(u16::MAX),
-            width: body.width,
-            height: 1,
-        };
-        frame.render_widget(Paragraph::new(line.clone()), row_area);
-    }
+    // Render the body through the shared scrollable-dialog helper so long
+    // diagnostics or next-step rows scroll instead of being silently clipped
+    // at `body.height`. The popup height stays viewport-safe (capped in
+    // `failure_popup_rect`); only the body viewport scrolls, and the OK button
+    // row below stays fixed. The scroll offset is threaded through the model
+    // (`view.failure_scroll`) and clamped by the input layer, mirroring the
+    // container-info dialog; render works on a clone so it cannot mutate the
+    // model under the immutable render ref.
+    let mut scroll = view.failure_scroll.clone();
+    render_scrollable_dialog_body(frame, rect, body, &lines, &mut scroll);
 
     let focused_style = Style::default()
         .bg(WHITE)
