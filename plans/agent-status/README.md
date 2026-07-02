@@ -29,21 +29,36 @@ targets the enabling condition, not the instance.
 | **Detection coverage** | `Agent::ALL` and the pack/reporter asset sets are unenforced **parallel lists**; a failed embedded-pack load zeroes the whole registry silently; unmatched agent → `Unknown` with no operator-visible signal. | grok shipped with zero detection; any future agent added to the enum is silently undetectable. | **006** |
 | **Testability** | `advance_status` (the assembly of collect→arbitrate→publish) has **zero** test coverage; unit tests inject a synthetic `EvidenceSnapshot` past the broken seam. Physics/authority is `/proc`-gated, so on the dev platform (macOS) it is never exercised. | Wiring breaks in every layer above ship green. | **008** |
 
+## Detection is not its own crate today (verified) — plan 011 isolates it
+
+Checked at `5d3661cff`: the workspace `Cargo.toml` has **no** `jackin-agent-status` member; all detection
+lives inside the 50K-line `jackin-capsule` crate at `crates/jackin-capsule/src/agent_status/`. The good news
+— the detection core is **already sync and pure** (no tokio/async) and imports **nothing** from capsule
+internals (no `jackin-term`, no `Session`/`tui`/`daemon`); it depends only on `jackin-protocol` (wire types),
+`jackin-core` (`Agent`), and `regex`/`semver`/`toml`. `Session::advance_status` already assembles a plain
+`EvidenceSnapshot` and calls the pure `arbitrate`/`apply_watchdog`. So extracting an independent
+`jackin-agent-status` crate is a low-risk mechanical move (plan 011) that gives detection its own isolated,
+independently-testable, reusable home — and becomes the owner for the render vocabulary source (001), the
+packs (005/007), the remote-pack channel (010), and the reporter gating (009).
+
 ## Execution order
 
 Fixing the render layer (001) is the operator's explicit ask and makes *any* correct state visible; do it
 first — but note it will surface the detection gaps (a working agent showing 🟡 requires working detection
-to actually fire). The dependency spine:
+to actually fire). **Structurally, extract the detection crate (011) early** — the detection core is already
+sync/pure, and moving 003/004/005/007 into a clean crate beats moving them twice. The dependency spine:
 
 ```
 001 render vocabulary  ── makes states visible (unblocks the operator ask)
 002 identification    ── agents must be recognized before any pack applies
+008 testability seam  ── prerequisite to safely change 003/004; enables the crate's ProcessSampler
+011 extract crate     ── the independent home for all detection (do early, after 008)
 003 cadence           ── state must keep advancing while busy
-008 testability seam  ── prerequisite to safely change 003/004/005 (adds the missing seam)
 004 evidence redundancy + freshness (OSC-133 emitter, uniform TTL)
 005 pack↔reality coupling (real goldens, kill circular fixtures, advisory versioning)
 006 exhaustiveness + grok + no-silent-empty registry
 007 pack content rewrite (real chrome + OSC-title rules)   [depends 002, 005]
+010 out-of-band signed pack updates (data push, not a release)   [depends 011, 005]
 009 semantic-authority spike (Claude Notification hook, Codex app-server)   [direction]
 ```
 
@@ -58,6 +73,8 @@ to actually fire). The dependency spine:
 | 007 | Rewrite kimi/amp/opencode/claude pack matchers from real chrome | detection | M | MED | 002, 005 |
 | 008 | Testability seam: injectable `EvidenceSnapshot` + `/proc` double | tests | M | LOW | — |
 | 009 | Spike: promote Claude Notification hook + Codex app-server to authority | direction | L | MED | 008 |
+| 010 | Out-of-band signed pack updates (restyle = data push, not a release) | detection infra | M–L | MED | 011, 005 |
+| 011 | Extract an independent `jackin-agent-status` crate | architecture | L | MED | 008 |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` | `REJECTED`. All rows start `TODO`.
 
@@ -76,6 +93,7 @@ Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` | `REJECTED`. All row
 | COMPUTE-03 (advance_status untested) | 008 | RESEARCH-06 (OSC-title spinner rules) | 007 |
 | COMPUTE-05 (/proc Linux-gated untestable) | 008 | REF-04 (version treadmill → dark) | 005 |
 | REF-03 (5 packs, no grok) | 006 | REF-07 (reporter advantage underused) | 009 |
+| REF-04 remote-refresh half (data-push pack updates) | 010 | detection-crate isolation (verified absent) | 011 |
 | RESEARCH-08 (CSI 6n) | rejected — see below | | |
 
 ## How herdr does it (the reference), and where jackin differs
