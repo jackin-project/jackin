@@ -5,10 +5,12 @@ use crate::constants::CLAUDE_OAUTH_TOKEN_ENV;
 use crate::env_model;
 
 use crate::agent::runtime::{
-    AgentRuntime, AgentStatePaths, looks_like_version, render_fallback_install_block,
+    AgentRuntime, AgentStatePaths, bounded_fallback_curl, looks_like_version,
+    render_fallback_install_block,
 };
 
-const FALLBACK_INSTALL_COMMAND: &str = "curl -fsSL https://claude.ai/install.sh | bash";
+const FALLBACK_INSTALL_COMMAND: &str =
+    bounded_fallback_curl!("https://claude.ai/install.sh", " | bash");
 
 #[derive(Debug)]
 pub struct ClaudeRuntime;
