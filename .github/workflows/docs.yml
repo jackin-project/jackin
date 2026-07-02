@@ -93,6 +93,9 @@ jobs:
       - name: Check roadmap sidebar completeness
         run: cargo xtask roadmap audit
 
+      - name: Check research sidebar completeness
+        run: cargo xtask research check
+
   docs-link-check:
     needs: changes
     if: needs.changes.outputs.docs == 'true'

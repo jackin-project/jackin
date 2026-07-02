@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 const DOCS_ROOT: &str = "docs/content/docs";
 const DOCS_MARKDOWN_ROOT: &str = "docs";
 const ROADMAP_REL: &str = "roadmap";
-const RESEARCH_REL: &str = "research";
+const RESEARCH_REL: &str = "reference/research";
 const REPO_FILE_PREFIXES: &[&str] = &[
     "crates/", "src/", "docs/", "docker/", ".github/", "scripts/",
 ];

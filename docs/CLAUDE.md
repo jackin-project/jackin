@@ -54,6 +54,7 @@ Populates `node_modules/` with platform-specific optional native binaries (e.g. 
 - Preview production build: `bun run preview`
 - Check source repository links: `cargo xtask docs repo-links`
 - Check roadmap sidebar completeness: `cargo xtask roadmap audit`
+- Check research sidebar completeness: `cargo xtask research check`
 - Check links in the existing production build: `bun run check:links`
 - Rebuild and then check links: `bun run check:links:fresh`
 - Run tests: `bun test`
@@ -91,9 +92,10 @@ bun install --frozen-lockfile
 
   ```sh
   cargo xtask roadmap audit
+  cargo xtask research check
   ```
 
-  Script reports any MDX file with no matching `meta.json` entry and any entry with no matching MDX file. Both directions must be clean.
+  Scripts report any MDX file with no matching `meta.json` entry and any entry with no matching MDX file. Both directions must be clean.
 - **Roadmap overview discipline.** `content/docs/roadmap/index.mdx` is the entry operators land on for a single picture of *what shipped, partial, planned, deferred, on hold*. Sidebar lists every item alphabetically/by phase; overview tells the **status story**. Different jobs, maintained together, not folded into one.
 
   On any add/rename/delete/`**Status**`-change of a roadmap item, update `roadmap.mdx` so item lands in matching section:
