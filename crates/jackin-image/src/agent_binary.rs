@@ -461,42 +461,16 @@ async fn fetch_text(url: &str) -> Result<String> {
     jackin_docker::net::fetch_text(url).await
 }
 
-/// Returns true when `error` is a TCP connect-phase timeout. Unlike a slow
-/// response or a server-side error, a connect timeout means the endpoint is
-/// unreachable and retrying immediately will not help.
-fn is_connect_timeout(error: &anyhow::Error) -> bool {
-    error.chain().any(|e| {
-        e.downcast_ref::<reqwest::Error>()
-            .is_some_and(|re| re.is_connect() && re.is_timeout())
-    })
-}
-
 /// Like `fetch_text` but retries transient HTTP/network errors up to 3 times
-/// with exponential back-off. Connect timeouts are NOT retried — when the CDN
-/// endpoint is unreachable, further attempts won't help and would only multiply
-/// the per-agent wait by the connect-timeout value (currently 15 s).
+/// with exponential back-off. Every HTTP GET uses this path so release pointers,
+/// manifests, and checksum sidecars share one retry contract.
 async fn fetch_text_with_retry(url: &str) -> Result<String> {
     let url = url.to_owned();
-    let mut last_err = anyhow::anyhow!("no attempts made");
-    for attempt in 0..3u32 {
-        if attempt > 0 {
-            let delay = Duration::from_millis(500) * (1 << (attempt - 1));
-            record(
-                "retry_backoff",
-                &format!("attempt {attempt}/3, waiting {delay:?}"),
-            );
-            tokio::time::sleep(delay).await;
-        }
-        match fetch_text(&url).await {
-            Ok(v) => return Ok(v),
-            Err(e) if is_connect_timeout(&e) => return Err(e),
-            Err(e) => {
-                record("retry_failed", &format!("attempt {}/3: {e:#}", attempt + 1));
-                last_err = e;
-            }
-        }
-    }
-    Err(last_err).context("giving up after 3 attempts")
+    retry_with_backoff(3, Duration::from_millis(500), || {
+        let url = url.clone();
+        async move { fetch_text(&url).await }
+    })
+    .await
 }
 
 async fn github_auth_token() -> Option<String> {
@@ -586,7 +560,6 @@ where
         }
         match f().await {
             Ok(v) => return Ok(v),
-            Err(e) if is_connect_timeout(&e) => return Err(e),
             Err(e) => {
                 record(
                     "retry_failed",
@@ -628,7 +601,13 @@ async fn download_and_cache_inner(
     tmp_download: &Path,
     tmp_binary: &Path,
 ) -> Result<()> {
-    jackin_docker::net::download_parallel(&release.url, tmp_download).await?;
+    retry_with_backoff(3, Duration::from_millis(500), || {
+        let url = release.url.clone();
+        let tmp_download = tmp_download.to_owned();
+        async move { jackin_docker::net::download_parallel(&url, &tmp_download).await }
+    })
+    .await
+    .with_context(|| format!("downloading {}", release.url))?;
     // A dropped chunk leaves a zeroed hole in the pre-sized file rather than a
     // short file, so the SHA-256 (when published) is the integrity guard.
     //

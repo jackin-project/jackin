@@ -19,6 +19,18 @@
 
 use crate::auth::AuthForwardMode;
 
+macro_rules! bounded_fallback_curl {
+    ($url:literal, $pipe:literal) => {
+        concat!(
+            "curl -fsSL --connect-timeout 15 --max-time 120 --retry 2 --retry-delay 2 --retry-connrefused ",
+            $url,
+            $pipe
+        )
+    };
+}
+
+pub(crate) use bounded_fallback_curl;
+
 /// Whether `token` looks like a bare version token: at least one `.` separator
 /// (≥2 dot-delimited parts) and a leading ASCII digit. Shared by every adapter's
 /// `parse_version`; the outer token-selection logic stays per-adapter.

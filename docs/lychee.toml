@@ -32,6 +32,8 @@ exclude = [
   "https://grok\\.com/supergrok",
   # Medium returns 403 to all automated clients for this page.
   "https://paul-hackenberger\\.medium\\.com/the-ultimate-token-saving-stack-rtk-caveman-and-tokensave-163badadd9ec",
+  # InfoQ returns 405/captcha to automated clients for this browser-visible page.
+  "https://www\\.infoq\\.com/news/2025/11/toon-reduce-llm-cost-tokens/",
   # handler.dev is a browser-visible research reference, but CI lychee
   # intermittently fails to connect to the site.
   "https://handler\\.dev/",

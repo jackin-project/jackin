@@ -2,7 +2,7 @@
 title: "Multi-Runtime Support for Codex, Amp, Kimi, OpenCode, and Grok"
 ---
 
-**Status**: Partially implemented — built-in `claude`, `codex`, `amp`, `kimi`, `opencode`, and `grok` launch support is shipped; deeper runtime parity remains
+**Status**: Partially implemented — built-in `claude`, `codex`, `amp`, `kimi`, `opencode`, and `grok` launch support is shipped, and agent binary acquisition now retries transient metadata and download failures with bounded Docker fallback installers; deeper runtime parity remains
 
 ## Canonical Docs For Shipped Behavior
 
@@ -22,7 +22,7 @@ The project now has basic built-in runtime support: the core `Agent` enum and `A
 - richer Codex/Amp/Kimi/OpenCode/Grok config defaults and documented tuning;
 - MCP / skill integration beyond simple config-file injection;
 - runtime-specific auth and state behavior where Codex, Amp, Kimi, OpenCode, or Grok need something more than `sync`, `api_key`, and `ignore`;
-- clearer version/update behavior for non-Claude runtimes.
+- clearer version/update detection, reporting, and operator controls for non-Claude runtimes.
 
 With the [AgentRuntime registry](/reference/getting-oriented/architecture/#agentruntime-and-provider-registry) in place, adding a built-in runtime is a centralized adapter registration instead of scattered edits across `runtime/`, `config/`, `console/`, and the entrypoint. That registry is the structural prerequisite for most of the parity-depth items above.
 
