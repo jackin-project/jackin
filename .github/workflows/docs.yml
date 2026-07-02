@@ -249,26 +249,65 @@ jobs:
   deploy:
     # docs-link-check covers full-site lychee + docs build; repo-link-check
     # covers <RepoFile /> path validity. Both must pass before publishing.
+    #
+    # GitHub Pages can report a terminal `deployment_failed` for a valid
+    # artifact, then accept the same artifact/SHA on the next deployment.
+    # Keep retries scoped to that opaque Pages handoff instead of rerunning
+    # the whole workflow or retrying source/build/link validation.
     needs: [docs-link-check, repo-link-check]
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 35
     outputs:
-      page-url: ${{ steps.deployment.outputs.page_url }}
+      page-url: ${{ steps.deploy1.outputs.page_url || steps.deploy2.outputs.page_url || steps.deploy3.outputs.page_url }}
     permissions:
       contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deploy1.outputs.page_url || steps.deploy2.outputs.page_url || steps.deploy3.outputs.page_url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Deploy to GitHub Pages
-        id: deployment
+        id: deploy1
+        continue-on-error: true
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+
+      - name: Back off before Pages deploy retry 2
+        if: steps.deploy1.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::notice::GitHub Pages deployment failed on attempt 1; retrying after 30 seconds"
+          sleep 30
+
+      - name: Deploy to GitHub Pages (retry 2)
+        id: deploy2
+        if: steps.deploy1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+
+      - name: Back off before Pages deploy retry 3
+        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::notice::GitHub Pages deployment failed on attempt 2; retrying after 60 seconds"
+          sleep 60
+
+      - name: Deploy to GitHub Pages (retry 3)
+        id: deploy3
+        if: steps.deploy1.outcome == 'failure' && steps.deploy2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+
+      - name: Require Pages deployment success
+        if: steps.deploy1.outcome != 'success' && steps.deploy2.outcome != 'success' && steps.deploy3.outcome != 'success'
+        shell: bash
+        run: |
+          echo "::error::GitHub Pages deployment failed after 3 attempts"
+          exit 1
 
   verify-deployed:
     needs: deploy
