@@ -227,7 +227,7 @@ jobs:
           key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ hashFiles('rust-toolchain.toml') }}
       - name: Log in to Docker Hub
         if: matrix.config.lane == 'GitHub' && env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
@@ -340,7 +340,7 @@ jobs:
           set -euo pipefail
           cargo fetch --locked --offline
       - name: Log in to Docker Hub
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
