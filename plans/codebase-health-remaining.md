@@ -70,7 +70,7 @@ The ledgers are empty today, but the lint implementation still accepts stale bud
 - [x] Keep <RepoFile path="docs/content/docs/roadmap/(codebase-health)/codebase-health-enforcement.mdx">docs/content/docs/roadmap/(codebase-health)/codebase-health-enforcement.mdx</RepoFile> as **Partially implemented** until these merge blockers are resolved.
 - [x] Update <RepoFile path="docs/content/docs/roadmap/index.mdx">docs/content/docs/roadmap/index.mdx</RepoFile> so it does not mark the codebase-health item as fully implemented or claim all gates are live in required CI before Blocker 3 lands.
 - [x] Refresh <RepoFile path="docs/content/docs/roadmap/(codebase-health)/(phase-2-file-splits)/split-runtime-launch.mdx">docs/content/docs/roadmap/(codebase-health)/(phase-2-file-splits)/split-runtime-launch.mdx</RepoFile> with the current launch files and remaining function split targets.
-- [ ] Update the PR body verification section to include `cargo run -p jackin-xtask --locked -- lint --strict`.
+- [x] Update the PR body verification section to include `cargo run -p jackin-xtask --locked -- lint --strict`.
 
 ## Final Verification
 
