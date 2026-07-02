@@ -106,7 +106,7 @@ pub fn resolve_op_uri_to_ref(
         _ => bail!("malformed op:// URI (expected 3 or 4 path segments): {input}"),
     };
 
-    // Item segment may carry [subtitle] filter — jackin❯'s display extension.
+    // Item segment may carry [subtitle] filter — a display extension from jackin❯.
     // Nested condition makes map_or awkward; allow the if-let pattern here.
     #[allow(clippy::option_if_let_else)]
     let (item_name, subtitle_filter): (&str, Option<&str>) = if let Some(open) = item_seg.rfind('[')
@@ -374,7 +374,7 @@ pub fn resolve_operator_env(
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
     // Each `op://` ref pins its own account at read time
     // (`OpRef::account`), so the runner carries no instance-level account.
-    let runner = OpCli::new();
+    let runner = OpCli::new_launch_env();
     resolve_operator_env_with(config, role_selector, workspace_name, &runner, |name| {
         std::env::var(name)
     })
@@ -392,7 +392,7 @@ pub fn resolve_operator_env_matching<F>(
 where
     F: Fn(&str) -> bool,
 {
-    let runner = OpCli::new();
+    let runner = OpCli::new_launch_env();
     resolve_operator_env_with_matching(
         config,
         role_selector,

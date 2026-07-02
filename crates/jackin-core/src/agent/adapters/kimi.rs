@@ -3,11 +3,12 @@
 use crate::auth::AuthForwardMode;
 
 use crate::agent::runtime::{
-    AgentRuntime, AgentStatePaths, looks_like_version, render_fallback_install_block,
+    AgentRuntime, AgentStatePaths, bounded_fallback_curl, looks_like_version,
+    render_fallback_install_block,
 };
 
 const FALLBACK_INSTALL_COMMAND: &str =
-    "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash";
+    bounded_fallback_curl!("https://code.kimi.com/kimi-code/install.sh", " | bash");
 
 #[derive(Debug)]
 pub struct KimiRuntime;

@@ -33,6 +33,7 @@ load_role (public API)
 | INV-4 | Foreground-attach finalization runs before teardown classification — isolated worktrees are finalized before deciding whether to preserve or clean the container | `finalize_foreground_session` happens before the `inspect_container_state(...)` cleanup match |
 | INV-5 | Cleanup classification preserves restartable sessions and tears down clean exits | `Running` / crash paths disarm cleanup; clean-exit path runs cleanup |
 | INV-6 | `render_exit` runs on both success and error exits from `load_role_with` | both `Ok(_)` and `Err(error)` arms call `render_exit` |
+| INV-7 | Operator `op://` env refs resolve concurrently with a bounded launch budget — 1Password app/daemon wakeups must not serialize the foreground path, and a wedged `op` must still fail instead of blocking forever | `resolve_operator_env` uses the launch-env `OpCli` budget and `resolve_operator_env_with_matching` spawns one resolver worker per included key |
 
 ## Test seams
 
