@@ -556,7 +556,7 @@ impl ClaudeOAuthUsageWindow {
             used: self.utilization,
             reset_at: self.resets_at.as_deref().and_then(parse_iso_epoch),
             window_seconds,
-            // Legacy named windows carry no severity field; the API's meter
+            // Legacy named windows carry no severity field; the API meter
             // color only arrived with `limits`.
             severity: UsageSeverity::Normal,
         }
