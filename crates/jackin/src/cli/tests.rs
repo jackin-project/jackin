@@ -425,3 +425,125 @@ fn rejects_prewarm_image_workspace_with_role_git_override() {
     .unwrap_err();
     assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
 }
+
+// ── prewarm clap invariant regression tests ─────────────────────────
+//
+// These pin the relationships the codebase-health refactor dropped when the
+// prewarm flags moved into the flattened `PrewarmFlags` struct. Each test maps
+// to one `#[arg]` constraint restored in `prewarm.rs`. Compare against the
+// pre-refactor baseline in `origin/main:crates/jackin/src/cli/prewarm.rs`.
+
+#[test]
+fn rejects_prewarm_keep_sidecar_container_without_sidecar_container() {
+    let err = Cli::try_parse_from(["jackin", "prewarm", "--keep-sidecar-container"])
+        .unwrap_err();
+    // `--keep-sidecar-container` requires `--sidecar-container`.
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    let msg = strip_ansi(&err.to_string());
+    assert!(
+        msg.contains("--sidecar-container"),
+        "error should name --sidecar-container: {msg:?}"
+    );
+}
+
+#[test]
+fn rejects_prewarm_role_with_all_workspaces() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--role",
+        "architect",
+        "--all-workspaces",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_workspace_with_all_workspaces() {
+    let err =
+        Cli::try_parse_from(["jackin", "prewarm", "--workspace", "demo", "--all-workspaces"])
+            .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_role_with_all_roles() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--role",
+        "architect",
+        "--all-roles",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_workspace_with_all_roles() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--workspace",
+        "demo",
+        "--all-roles",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_role_git_with_all_workspaces() {
+    let err = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--role",
+        "architect",
+        "--role-git",
+        "https://example.invalid/role.git",
+        "--all-workspaces",
+    ])
+    .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn rejects_prewarm_all_roles_without_image() {
+    let err = Cli::try_parse_from(["jackin", "prewarm", "--all-roles"]).unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+}
+
+#[test]
+fn parses_prewarm_image_all_roles() {
+    let cli =
+        Cli::try_parse_from(["jackin", "prewarm", "--image", "--all-roles"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.flags.image && args.flags.all_roles
+    ));
+}
+
+#[test]
+fn parses_prewarm_image_role_git() {
+    let cli = Cli::try_parse_from([
+        "jackin",
+        "prewarm",
+        "--image",
+        "--role",
+        "architect",
+        "--role-git",
+        "https://example.invalid/role.git",
+    ])
+    .unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Prewarm(ref args))
+            if args.role.as_deref() == Some("architect")
+                && args.role_git.as_deref() == Some("https://example.invalid/role.git")
+                && args.flags.image
+    ));
+}

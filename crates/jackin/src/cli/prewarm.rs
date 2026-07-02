@@ -24,14 +24,14 @@ pub struct PrewarmArgs {
     pub flags: PrewarmFlags,
 
     /// Role selector whose repo cache and/or derived image(s) should be prewarmed.
-    #[arg(long, conflicts_with_all = ["workspace"])]
+    #[arg(long, conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role: Option<String>,
     /// Saved workspace whose default role repo and/or agent image should be prewarmed.
-    #[arg(long, conflicts_with_all = ["role"])]
+    #[arg(long, conflicts_with_all = ["role", "all_workspaces"])]
     pub workspace: Option<String>,
 
     /// Role git URL override for role/image prewarm. Defaults to configured role source.
-    #[arg(long, requires = "role", conflicts_with_all = ["workspace"])]
+    #[arg(long, requires = "role", conflicts_with_all = ["workspace", "all_workspaces"])]
     pub role_git: Option<String>,
     /// Role branch to prewarm. Uses branch-scoped image tags.
     #[arg(long, requires = "image")]
@@ -59,11 +59,11 @@ pub struct PrewarmFlags {
     pub sidecar: bool,
     #[arg(long)]
     pub sidecar_container: bool,
-    #[arg(long)]
+    #[arg(long, requires = "sidecar_container")]
     pub keep_sidecar_container: bool,
-    #[arg(long, conflicts_with_all = ["workspace"])]
+    #[arg(long, conflicts_with_all = ["role", "workspace", "role_git", "all_roles"])]
     pub all_workspaces: bool,
-    #[arg(long)]
+    #[arg(long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git", "all_workspaces"])]
     pub all_roles: bool,
 }
 
