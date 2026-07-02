@@ -584,8 +584,12 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
-      - name: Install cargo-depgraph (compile from source; its sourcehut repo
-          ships no cargo-binstall manifest, so the binstall path cannot fetch it)
+      - name: Install cargo-depgraph (online; its sourcehut repo ships no
+          cargo-binstall manifest, so fetch the crates.io build directly. This
+          one step overrides the job's CARGO_NET_OFFLINE so the tool can be
+          fetched; the job stays non-blocking (continue-on-error) by design.)
+        env:
+          CARGO_NET_OFFLINE: "false"
         run: cargo install cargo-depgraph --locked
       - name: Install graphviz (DOT → SVG renderer)
         run: sudo apt-get install -y --no-install-recommends graphviz
