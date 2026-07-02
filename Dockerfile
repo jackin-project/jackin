@@ -91,6 +91,12 @@ RUN . ~/.profile && \
     test -f "${HOME}/.agents/skills/caveman/SKILL.md" && \
     rm -rf /tmp/caveman
 
+# improve skill (shadcn/improve).
+RUN . ~/.profile && \
+    npx -y skills add "shadcn/improve" -a codex --yes --global && \
+    npx -y skills add "shadcn/improve" -a amp --yes --global && \
+    test -f "${HOME}/.agents/skills/improve/SKILL.md"
+
 # Token opt: RTK + caveman + headroom.
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     --mount=type=cache,target=/home/agent/.cache/mise,uid=1000 \

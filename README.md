@@ -38,10 +38,16 @@ Shared shell/runtime tools come from the digest-pinned construct base.
 
 Declared in [`jackin.role.toml`](./jackin.role.toml) under `[claude].plugins` and bootstrapped at runtime by jackin. Marketplaces beyond `@claude-plugins-official`:
 
-- `@tailrocks-marketplace` — [tailrocks/tailrocks-marketplace](https://github.com/tailrocks/tailrocks-marketplace) (source of `rust-best-practices`)
+- `@tailrocks-marketplace` — [tailrocks/tailrocks-marketplace](https://github.com/tailrocks/tailrocks-marketplace) (source of `tailrocks-skills`, including Rust guidance, Rust project setup, proposal, and research skills)
 - `@caveman` — [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) (source of `caveman`; pinned to a tagged release via Dockerfile `CAVEMAN_VERSION`)
 
 Trust rationale: see [AGENTS.md § Threat model](./AGENTS.md#threat-model).
+
+## Skills
+
+Installed at build time via `skills add` (codex + amp profiles):
+
+- `improve` — [shadcn/improve](https://github.com/shadcn/improve): read-only advisor that audits a codebase and writes self-contained implementation plans under `plans/` for other agents to execute.
 
 ## Runtime hooks
 
