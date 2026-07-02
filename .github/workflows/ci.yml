@@ -89,7 +89,10 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'Cargo.toml'
               - 'Cargo.lock'
+              - 'clippy.toml'
               - 'deny.toml'
+              - 'file-size-budget.toml'
+              - 'test-layout-allowlist.toml'
               - 'rust-toolchain.toml'
               - 'build.rs'
               - 'src/**'
@@ -431,13 +434,14 @@ jobs:
           cache-all-crates: "true"
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
-      # Gate: all codebase-health lint checks via the umbrella command —
-      #   • file-size ratchet (file-size-budget.toml: production ≤2000L, tests ≤10000L)
-      #   • test-file-layout ratchet (test-layout-allowlist.toml: one sibling tests.rs)
-      #   • dependency-direction (informational, exits 0, until the P2 inversions
-      #     are cleaned up; `lint --strict` is the eventual hard mode).
-      # Grandfathered entries in each ratchet file may only ever shrink. See
-      # `roadmap/codebase-health-enforcement`.
+      # Gate: codebase-health lint checks via the umbrella `lint --strict`
+      # command. The file-size ratchet (file-size-budget.toml: production
+      # ≤2000L, tests ≤10000L) and the test-file-layout ratchet
+      # (test-layout-allowlist.toml: one sibling tests.rs) are STRICT here —
+      # they fail on growth above budget and on stale/missing/shrunken rows.
+      # dependency-direction stays informational (exits 0) until the P2 layer
+      # inversions are cleaned up. Grandfathered entries in each ratchet file
+      # may only ever shrink. See `roadmap/codebase-health-enforcement`.
       - run: cargo run -p jackin-xtask --locked -- lint --strict
 
   clippy:
@@ -1063,6 +1067,8 @@ jobs:
       - fmt
       - clippy
       - dependency-policy
+      - schema-check
+      - file-size-gate
       - check-default
       - construct-e2e-image
       - test
