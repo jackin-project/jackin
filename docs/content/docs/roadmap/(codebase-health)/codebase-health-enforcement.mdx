@@ -2,112 +2,57 @@
 title: "Codebase health: structure & reviewability"
 ---
 
-**Status**: Implemented — the enforcement gates are live with CI teeth (stricter Clippy, the file-size ratchet, the test-layout ratchet, the dependency-direction arch gate run `--strict`, and the `cargo-deny` + `cargo-shear` hygiene trio), the restructure is landed, and both machine-checked exception ledgers are now empty: `test-layout-allowlist.toml` is `files = []` (0 violations), `file-size-budget.toml` has zero `[[production]]` and `[[test]]` entries, and the `too-many-lines` threshold sits at its 150 target. The last over-cap file (`editor/model.rs`) was decomposed: its `EditorState` impl blocks moved as a group to a sibling `model/state_impl.rs` (1796L, under cap) so their cross-block generic method resolution stayed co-located, leaving `model.rs` at 511L.
+**Status**: Partially implemented — the original exception-ledger burn-down is complete, but the audit found several unfinished follow-ups still referenced by code comments or adjacent roadmap leaves. The closed ledger plan is <RepoFile path="plans/codebase-health-remaining.md">plans/codebase-health-remaining.md</RepoFile>; this page now tracks only work that still needs to happen.
 
-The thesis, in one line: **the structure of the code should reveal what the app does and where each thing lives — and that property has to be enforced, not remembered.** jackin❯ is ~20 crates and ~300k lines; this umbrella tracker makes the layout honest (crate name → layer → allowed dependencies) and keeps it that way with machine teeth.
+## Remaining Work
 
-<Aside type="caution">
-**Structure only — never behavior.** Every change under this item is a pure structural reorganization: moving code between files/crates, relocating types, tightening lint config, adding a CI gate. It must not alter business logic, control flow, public behavior, or **performance**. The reorganization is *correct* only if the existing test suite and the `runtime-launch` / `op-picker` behavioral specs pass **unchanged** — no test rewritten to accommodate a move. A real bug spotted during a split is filed and fixed separately, never folded into a structural PR.
-</Aside>
+### Root `jackin` Integration Decomposition
 
-## Remaining work — drive the two exception ledgers to empty
+The root binary still has command-dispatch and console-entry functions carrying codebase-health `#[allow(clippy::too_many_lines)]` justifications. Split these without changing CLI behavior:
 
-The item now has one concrete finish line: **empty both machine-checked exception ledgers, then land the final threshold notch.** The mechanical, copy-pasteable per-slice steps (exact files, symbols, line ranges, split-maps, commands, verified against the live tree on 2026-07-01) are in the executor worklist at <RepoFile path="plans/codebase-health-remaining.md">plans/codebase-health-remaining.md</RepoFile>. This section is the status index; that file owns the steps.
+- <RepoFile path="crates/jackin/src/app/load_cmd.rs">crates/jackin/src/app/load_cmd.rs</RepoFile> — `handle_console` still owns cwd/config/terminal setup plus the console run loop.
+- <RepoFile path="crates/jackin/src/app/token_cmd.rs">crates/jackin/src/app/token_cmd.rs</RepoFile> — `handle_claude_token` still carries the setup/rotate/revoke/doctor dispatcher body.
+- <RepoFile path="crates/jackin/src/app/workspace_cmd.rs">crates/jackin/src/app/workspace_cmd.rs</RepoFile> — `handle` still carries the workspace subcommand dispatcher and its largest arms.
+- <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile> — the bare-`jackin` routing comment still calls out the TTY-capability fallback and `launch` deprecation warning as follow-up behavior around the root command entry path.
 
-**All remaining work ships as a single umbrella change on the `refactor/codebase-health-decomposition` branch.** Each box below is one behavior-preserving *commit* on that branch, not a separate pull request; the whole ledger burn-down lands together rather than split across branches.
+### Launch And Build Orchestrator Body Extraction
 
-### Already done (context)
+The ledger cap is closed, but several large orchestrators still carry explicit deferred body-extraction notes. Extract cohesive phases only when the surrounding behavioral specs can stay unchanged:
 
-- [x] **R1/R2 — last inverted dependency broken + arch gate `--strict` in CI.** `jackin-runtime` names no `jackin_tui` symbol in production; `FORBIDDEN_EDGES` empty; the dependency direction is machine-enforced.
-- [x] **R3 — E1 isolation carve complete.** `finalize.rs` + `git_inspect.rs` moved into `jackin-isolation` behind re-export shims.
-- [x] **R4 — the four >2000L production files decomposed** (`launch.rs`, `editor/view.rs`, `dialog.rs`, `launch_pipeline.rs`).
-- [x] **R6 — all 58 Clippy `#[expect]` grandfathers cleared.** Zero `tracked in codebase-health-enforcement` markers remain; mutually-exclusive bool clusters became enums, orthogonal flag sets became documented `#[allow(…, reason = "…")]`. See the worklist for the full per-slice log.
-- [x] **R7 (steps 1–8) — thresholds ratcheted toward target.** `production_cap` 2000 → **1500L** (later relaxed back to 2000L for the hot-path files — see Ledger 2); `too-many-lines` 450 → **200**; `cognitive-complexity` 100 → **60**; `excessive-nesting` 8 → **5**; `too-many-arguments` 9 → **7**; first band file (`dialog_widgets.rs`) decomposed.
-- [x] **R8/R9/R10/R11 — hygiene, decision, bookkeeping.** Stale `deny.toml` entries pruned; non-blocking `workspace-depgraph` CI artifact added; the `jackin-config` persistence IO edge ruled *keep*; playbook retired and stale grandfathers pruned.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs">crates/jackin-runtime/src/runtime/launch/launch_runtime.rs</RepoFile> — split `launch_role_runtime` into named launch-profile validation, AppArmor probing, Docker-run sequencing, and session-finalization phases.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile> — split `load_role_with` into launch-input preparation, image materialization, env resolution, `run_launch_core` invocation, and post-launch cleanup phases.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core.rs</RepoFile> — split `run_launch_core` along its preflight, Docker-run, wait-for-state, and teardown phases.
+- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> and its child modules — replace the remaining large image decision/build parameter trains with named context structs only when doing so does not disturb the hot path.
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> and <RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile> — finish the deferred parallel-pass extraction notes around daemon/control-plane entry bodies.
 
-### Ledger 1 — `test-layout-allowlist.toml` → empty (gate green)
+The [Split runtime/launch.rs](/roadmap/split-runtime-launch/) leaf owns the most detailed launch-specific split plan. Keep the two pages consistent when any launch slice lands.
 
-The sweep emptied the allowlist (`files = [ ]`) and moved inline tests to sibling `tests.rs` for all 27 original files; `cargo xtask lint tests` reports **0 violations**.
+### Shared TUI Runtime Dispatch Follow-Through
 
-- [x] **Fix 2 inline `#[cfg(test)]`-module files** — move the body to a sibling and leave a `mod …;` declaration: <RepoFile path="crates/jackin-console/src/tui/input.rs">crates/jackin-console/src/tui/input.rs</RepoFile> (`test_support`), <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile>.
-- [x] **Flatten 5 `tests.rs` that declare child `mod`s** into one flat file (no child modules; `#[test]` bodies byte-identical): `jackin-capsule/src/tui/selection/tests.rs`, `jackin-console/src/tui/console/tests.rs`, `jackin-console/src/tui/op_picker/tests.rs`, `jackin-console/src/tui/screens/workspaces/view/list/tests.rs`, `jackin-instance/src/auth/tests.rs`.
-- [x] **Done when** `cargo xtask lint tests` reports 0 violations and `test-layout-allowlist.toml` stays `files = [ ]`.
+The shared TEA runtime traits exist, and thin wrappers satisfy the type-level contract, but the actual call sites still bypass those wrappers in several surfaces:
 
-### Ledger 2 — `file-size-budget.toml` → empty (production `.rs` ≤ 2000L)
+- <RepoFile path="crates/jackin-launch-tui/src/tui/model.rs">crates/jackin-launch-tui/src/tui/model.rs</RepoFile> — `RichRenderer::render` still calls the concrete render path directly.
+- <RepoFile path="crates/jackin-capsule/src/tui/runtime.rs">crates/jackin-capsule/src/tui/runtime.rs</RepoFile> — `daemon/compositor.rs` and `tui/run.rs` still need to dispatch through the shared runtime traits.
+- <RepoFile path="crates/jackin-console/src/tui/runtime.rs">crates/jackin-console/src/tui/runtime.rs</RepoFile> — the root console loop still calls the concrete view directly; the runtime-trait dispatch migration is still a later phase.
 
-The ledger is now empty — every production `.rs` sits under the cap.
+### Editor Model Cleanup
 
-- [x] **Prune 4 stale entries** (no code move): `jackin/src/cli/diagnostics.rs` (now 1341L), `jackin-capsule/src/tui/components/dialog_widgets.rs` (now 614L), and both `[[test]]` entries (`launch/tests.rs` 8611L, `daemon/tests.rs` 7612L — under the 10000L test cap, owned by [test-infra-behavioral-specs](/roadmap/test-infra-behavioral-specs/)).
-- [x] **Decompose the over-cap production files** (coordinator + siblings; split-maps in the worklist). The cold files landed below 1500L — `settings/model.rs`, `settings/update.rs` (→ 1386, sibling `update/env_helpers.rs`), `capsule/daemon.rs` (→ 1487, sibling `daemon/control.rs`), `settings/view.rs` (→ 1311, sibling `view/text_helpers.rs`), `console/tui/input/mouse.rs` (→ 383, five siblings under `input/mouse/`), `console/tui/model/modal.rs` (→ 271, siblings under `modal/`), `components/footer_hints.rs` (→ 60, five siblings under `footer_hints/`). The three hot-path files — `runtime/image.rs` (1973 → 1843), `jackin-term/grid.rs` (1908 → 1744), `capsule/session.rs` (1749 → 1637) — were decomposed to a safe floor above 1500L and the cap was relaxed to **2000L** rather than risk an unmeasured E0 thin-LTO hot-path regression. `editor/model.rs` (the last non-hot-path entry) moved its `EditorState` impl blocks as a group to `model/state_impl.rs` (1796L), leaving `model.rs` at 511L.
-- [x] **Decompose 2 integration-test files** (each counted as production since not named `tests.rs`; extracted into `mod …;` submodules, no `mod.rs`): `jackin/tests/dind_e2e.rs` (1669 → 382, siblings under `dind_e2e/`); `jackin/tests/manager_flow.rs` (1523 → 523, siblings under `manager_flow/`).
-- [x] **Done when** `[[production]]` and `[[test]]` are both empty. The hot-path slices (image, grid, session) split *within their own crates* (no new cross-crate boundary), so the E0 thin-LTO benchmark is N/A; the cap holds at 2000L rather than push those files to 1500L.
+<RepoFile path="crates/jackin-console/src/tui/screens/editor/model/state_impl.rs">crates/jackin-console/src/tui/screens/editor/model/state_impl.rs</RepoFile> still uses a wildcard import with a local `#[allow(clippy::wildcard_imports)]`. Replace it with an explicit import list once the extracted `EditorState` impl block settles enough that the name list is maintainable.
 
-The earlier "R5 blocked on unify-settings" park no longer holds up file size: the working tree already decomposed `editor/model.rs` and `settings/model.rs` toward the cap along their current cluster boundaries. If [unify-settings-editor-surfaces](/roadmap/unify-settings-editor-surfaces/) later merges the two surfaces, re-split the unified successor and refresh the budget — but that is not a blocker for reaching zero file-size exceptions.
+### Existing Leaf Roadmap Items
 
-### Ledger 3 — final threshold notch (only after Ledgers 1 + 2)
+Do not duplicate the detailed work already owned by these leaves; keep this umbrella page as the cross-reference and update it when a leaf closes:
 
-- [x] **Lower `clippy.toml` `too-many-lines-threshold` 200 → 150** (the stated target: fns ≤ 150 lines). Honest per-fn `#[allow]` only on the irreducible launch/build orchestrators already carrying a deferred-extraction note; every other newly-firing fn is extracted, not suppressed. **Done** — all four thresholds sit at target (too-many-lines 150, cognitive-complexity 60, excessive-nesting 5, too-many-arguments 7) and Clippy `-D warnings` is green.
+- [Split runtime/launch.rs](/roadmap/split-runtime-launch/) — remaining launch-function decomposition.
+- [Split input/editor.rs](/roadmap/split-input-editor/) — final editor input mount-tab split.
+- [Unify the settings and workspace-editor surfaces](/roadmap/unify-settings-editor-surfaces/) — config-surface unification after the structural splits.
 
-## Target architecture (the spec the remaining work serves)
+## Closed Ledger Scope
 
-A layered workspace with dependencies pointing **inward**, validated against [rust-analyzer](https://rust-analyzer.github.io/book/contributing/architecture.html), [matklad's "Large Rust Workspaces"](https://matklad.github.io/2021/08/22/large-rust-workspaces.html), and the [Rust "small crates" pattern](https://rust-unofficial.github.io/patterns/patterns/structural/small-crates.html). Principles:
+The following are finished and intentionally no longer tracked as remaining work:
 
-- **IO-free core.** `jackin-core` (and the schema half of `jackin-config`, `jackin-manifest`, `jackin-protocol`) hold types and pure logic only; Docker/PTY/1Password/file calls live in adapter crates that depend on core, never the reverse.
-- **Dependencies point inward.** Presentation → application → infrastructure → domain. A lower layer never depends on a higher one — the single still-violated edge is R1.
-- **Named facade crates** (pure core; the host runtime; the shared TUI), each documenting its allowed dependencies in its `//!` Architecture-Invariant header.
-- **One outermost crate owns serialization/presentation;** DTOs live at the edges.
-- **Screaming names** — a crate/module name announces its responsibility.
-- **Right-size crates** — carve god-crates along real subsystem seams; do not multiply crates needlessly.
-
-The end-state layer graph (L0 lowest, dependencies strictly inward):
-
-- **L0 domain (IO-free, owns the ports):** `jackin-core`, `jackin-config` (schema), `jackin-manifest`, `jackin-protocol`.
-- **L1 application:** `jackin-runtime` (launch/bootstrap pipeline), `jackin-instance`, `jackin-isolation`, `jackin-env`, `jackin-image`.
-- **L2 infrastructure:** `jackin-docker`, `jackin-host`, `jackin-diagnostics`, `jackin-term`.
-- **L3 presentation:** `jackin-tui` (design system + shared Elm runtime), `jackin-launch-tui`, `jackin-console`.
-- **L4 entry/glue:** `jackin` (CLI), `jackin-capsule` (PID1 + PTY daemon), `jackin-usage`.
-
-<Aside type="caution">
-**Performance guardrail.** Release builds enable `lto = "thin"` (E0); generics and `#[inline]` fns optimize across crates without it, but ordinary functions do not. Keep performance-critical, tightly-coupled code within one crate; any hot path that crosses a new boundary is perf-checked against the recorded launch/attach baseline. The R1 relocations and the R3 carve both ride this gate.
-</Aside>
-
-## Design decisions (reference)
-
-The decisions the remaining slices follow, settled through brainstorming. Each carries a one-line *why*.
-
-- **D1 — full layered topology.** Explicit per-concern layer crates with strictly inward dependencies — the most honest map; churn is acceptable because every move is behavior-preserving and independently shippable. Binding condition: `lto = "thin"` + perf-check before hot paths cross new boundaries.
-- **D2 — boundary pattern: trait ports (hexagonal).** When a lower layer must hand data to a higher one, it depends on a **trait port** defined in `jackin-core`; the higher layer provides the adapter; the entry layer injects it. Not an event channel, not a relocated global. Governs the *streaming sinks* (build-log, launch progress, and the R1 launch-output calls); misplaced *types* are fixed by plain relocation, no port. This is the literal Dependency-Inversion fix and maps cleanly to the arch-gate ban.
-- **D3 — four new crates** (`jackin-instance`, `jackin-isolation`, `jackin-host`, `jackin-usage`) by carving the two god-crates, so every crate name is a true subsystem boundary. `jackin-instance`/`jackin-isolation` are on the launch hot path → gated on E0; the cold carves are not.
-- **D4 — `jackin-launch` → `jackin-launch-tui`.** The name then announces a presentation surface; the launch *logic* lives in `jackin-runtime`. Establishes the `-tui` suffix convention for app UI surfaces, distinct from the shared `jackin-tui` design-system crate.
-- **D5 — one in-house shared Elm runtime in `jackin-tui`, not `tui-realm`.** One central `update(&mut Model, Message)` per app (canonical TEA); components translate input events → messages. In-house keeps full control over jackin❯'s custom terminal infrastructure and adds no dependency to clear against the `deny.toml` gate.
-- **D6 — no binary facade layer.** Callers import directly from the owning crate root; each library `lib.rs` is its single curated facade. One home per concept.
-- **D7 — one predictable stem vocabulary.** TUI stacks use the canonical TEA stems (`model`/`message`/`update`/`view`/`effect`, with `run`/`input`); `jackin-config`'s `app_config_*` fan-out converts to the standard coordinator + sibling layout. *Open sub-decision:* the `persist.rs` IO edge — see R10.
-
-## Refactor safety — zero behavior change
-
-Manage this as continuous, disciplined [Fowler-style](https://martinfowler.com/articles/refactoring-2nd-ed.html) refactoring, never an ad-hoc rewrite. [Branch by Abstraction](https://martinfowler.com/bliki/BranchByAbstraction.html) for the R1 port; [Parallel Change](https://martinfowler.com/bliki/ParallelChange.html) for relocations and the R3 move; [Strangler Fig](https://shopify.engineering/refactoring-legacy-code-strangler-fig-pattern) for the carve; [characterization tests](https://en.wikipedia.org/wiki/Characterization_test) where coverage is thin. Every PR lands with the suite and the `runtime-launch` / `op-picker` specs **green and unmodified** — that is the proof behavior is unchanged.
-
-## Per-PR checklist (every remaining slice)
-
-- [ ] Scope is exactly one slice — structure-only: no logic, control-flow, behavior, or performance change.
-- [ ] `cargo fmt --check` · `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` · `cargo nextest run --all-features` all green.
-- [ ] Behavioral specs (`runtime-launch`, `op-picker`) pass **unmodified**.
-- [ ] `cargo xtask lint` green (file-size + test-layout + dependency-direction); refresh the relevant ratchet and delete the fixed entry when a file drops under cap.
-- [ ] Any new or renamed crate carries `[lints] workspace = true` and an Architecture-Invariant `//!` header.
-- [ ] Docs synced same PR: `PROJECT_STRUCTURE.md` + [Codebase Map](/reference/getting-oriented/codebase-map/), this item's checkbox, and the worklist file.
-- [ ] DCO sign-off (`-s`); push immediately.
-- [ ] *(carve / hot-path slices only)* the launch/attach benchmark shows no regression vs the E0 baseline.
-
-## When this item closes
-
-The structural carves, the broken inversion, and the Clippy grandfather burn-down are all done. The item now closes when the **two exception ledgers are empty and the last threshold notch has landed**:
-
-1. **Ledger 1** — `test-layout-allowlist.toml` is `files = [ ]` and `cargo xtask lint tests` is green (7 remaining violators fixed, the sweep committed).
-2. **Ledger 2** — `file-size-budget.toml` has an empty `[[production]]` and `[[test]]` list at `production_cap = 2000` (the over-cap files decomposed below cap; the 1500L target was relaxed to 2000L for the three hot-path files whose decomposition reached a safe floor above 1500L). The hot-path splits stayed within-crate (no new cross-boundary, so the E0 thin-LTO benchmark is N/A).
-3. **Ledger 3** — `clippy.toml` `too-many-lines-threshold` is at the target 150, with all four thresholds at target.
-
-The payoff is concrete: "where is the Codex usage parser?" → `usage/codex.rs`; "what does launch do?" → the crate whose name says launch; "can `jackin-docker` touch the UI?" → no, CI forbids it; and every file is small enough to read in one sitting — enforced, not remembered.
-
-## References
-
-rust-analyzer architecture — [rust-analyzer.github.io/book/contributing/architecture.html](https://rust-analyzer.github.io/book/contributing/architecture.html) · matklad, Large Rust Workspaces — [matklad.github.io/2021/08/22/large-rust-workspaces.html](https://matklad.github.io/2021/08/22/large-rust-workspaces.html) · Rust small-crates pattern (+ LTO trade-off) — [rust-unofficial.github.io/patterns/patterns/structural/small-crates.html](https://rust-unofficial.github.io/patterns/patterns/structural/small-crates.html) · cargo-deny bans — [embarkstudios.github.io/cargo-deny/checks/bans/index.html](https://embarkstudios.github.io/cargo-deny/checks/bans/index.html) · ratatui TEA — [ratatui.rs/concepts/application-patterns/the-elm-architecture/](https://ratatui.rs/concepts/application-patterns/the-elm-architecture/) · tui-realm — [github.com/veeso/tui-realm](https://github.com/veeso/tui-realm) · Fowler, Refactoring — [martinfowler.com/articles/refactoring-2nd-ed.html](https://martinfowler.com/articles/refactoring-2nd-ed.html) · Branch by Abstraction — [martinfowler.com/bliki/BranchByAbstraction.html](https://martinfowler.com/bliki/BranchByAbstraction.html) · Parallel Change — [martinfowler.com/bliki/ParallelChange.html](https://martinfowler.com/bliki/ParallelChange.html) · Strangler Fig — [shopify.engineering/refactoring-legacy-code-strangler-fig-pattern](https://shopify.engineering/refactoring-legacy-code-strangler-fig-pattern) · Characterization tests — [en.wikipedia.org/wiki/Characterization_test](https://en.wikipedia.org/wiki/Characterization_test)
+- Test-layout allowlist burn-down: 0 violations.
+- File-size budget burn-down: no grandfathered production or test files.
+- Dependency-direction gate: strict mode is in CI.
+- Clippy threshold burn-down: function length, complexity, nesting, and argument thresholds are at target.
+- Historical per-slice split maps from PR #664.
