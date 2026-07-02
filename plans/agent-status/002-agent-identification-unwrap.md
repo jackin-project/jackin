@@ -92,7 +92,7 @@ binaries named `codex`/`opencode`/etc.).
 
 **Verify**: `cargo check -p jackin-capsule --all-targets` → exit 0.
 
-### Step 3: Tests (port herdr's guard cases)
+### Step 3: Tests (author jackin's own tests covering the same guard behavior — not copied from herdr)
 
 In `process/tests.rs`, add cases (build a `ProcessInfo` with `exe_path` + `cmdline`):
 - `node /usr/lib/node_modules/opencode/bin/opencode.js` → `Some(Opencode)`.

@@ -52,10 +52,13 @@ verifiable).
 
 ### Step 1: Replace circular fixtures with real captured goldens
 
-Capture the actual visible screen (bottom ~24 rows) of each agent in each state, from a real `--debug` run (see
-`TESTING.md`'s pty-fixture flow) or by vendoring herdr's real fixtures as reference (study, don't copy code —
-fixtures are data; confirm licensing before committing herdr's verbatim). Store one golden per (agent, state)
-and point `packs_load_and_match_fixtures` at the **captured** goldens. The rule: **a fixture must originate from
+Capture the actual visible screen (bottom ~24 rows) of each agent in each state **from a real `--debug` run**
+(see `TESTING.md`'s pty-fixture flow) — capture jackin's own goldens. **Do NOT commit herdr's fixture files**:
+they are files in an AGPL-3.0 repository, so copying them into this Apache-2.0 tree is a license-mixing risk,
+regardless that their *content* is agent terminal output. You may *read* herdr's fixtures in place to learn
+what a real screen looks like, but every committed golden must be captured by jackin from the real agent.
+Store one golden per (agent, state) and point `packs_load_and_match_fixtures` at the **captured** goldens.
+The rule: **a fixture must originate from
 the agent, never from the pack author.** A pack that doesn't match its captured golden must fail the test.
 
 **Verify**: `cargo nextest run -p jackin-capsule -E 'test(/packs_load_and_match_fixtures/)'` — will now **fail**
@@ -91,9 +94,9 @@ occurrences (b); `cargo clippy -p jackin-capsule -- -D warnings` → exit 0.
 
 ## STOP conditions
 
-- You can't capture real agent screens (no Docker/agent access) — vendoring herdr's fixtures as data may be
-  possible, but confirm AGPL fixture licensing before committing; if neither is possible, land Steps 2–3 and
-  mark Step 1 `BLOCKED (needs real captures)` — Steps 2/3 still remove structural rot.
+- You can't capture real agent screens (no Docker/agent access) — do **not** substitute herdr's fixture files
+  (AGPL; do not commit them into this Apache-2.0 tree). Land Steps 2–3 and mark Step 1
+  `BLOCKED (needs real captures)` — Steps 2/3 still remove structural rot.
 - Wiring the co-versioning build check would fail the build **today** (packs already lag the pinned CLI) — that
   is the correct signal; coordinate with plan 007 so the packs are fixed in the same change, or gate the build
   check behind a warning first and escalate to error once 007 lands.

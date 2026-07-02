@@ -96,6 +96,32 @@ Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` | `REJECTED`. All row
 | REF-04 remote-refresh half (data-push pack updates) | 010 | detection-crate isolation (verified absent) | 011 |
 | RESEARCH-08 (CSI 6n) | rejected — see below | | |
 
+## Licensing — herdr is AGPL; we borrow the concept, never the code (binding rule for every plan)
+
+**herdr** is dual-licensed **AGPL-3.0-or-later** or commercial (`herdr/LICENSE`); **jackin** is **Apache-2.0**
+(`LICENSE`, `Cargo.toml`). These are incompatible for code reuse — AGPL copyleft would attach to any derivative
+work. This plan set relies on the **idea/expression** boundary: copyright protects the *expression* (source
+code, its structure, and authored creative artifacts), **not** ideas, algorithms, methods, or functional
+approaches. Studying how herdr detects status and independently implementing that *approach* is allowed and is
+**not** a derivative work, so AGPL's terms do not reach jackin. Rules every executor must follow:
+
+- **Do NOT copy herdr source code** — not verbatim, not line-by-line translated, not lightly edited. Read it to
+  understand the *behavior*, then write jackin's own implementation from scratch.
+- **Do NOT copy herdr's authored artifacts** — its manifest/rule TOML files and its committed fixture files are
+  creative expression under AGPL; author jackin's own packs (plans 006/007) and capture jackin's own fixtures
+  (plan 005). Never commit a herdr file into this tree.
+- **Facts and functional constants are fine** — e.g. the 700 ms / 3-confirmation debounce values jackin already
+  uses (`policy.rs:10-15`, honestly attributed "Herdr-validated bound"): a numeric parameter is a fact/idea, not
+  protectable expression.
+- **Keep the clean-room posture** the project already states — the design doc records that jackin's implementation
+  was "written from scratch" from a concept review, "not source reuse." Preserve that: behavior → plan in our own
+  words → implement from the plan.
+
+Verified at `5d3661cff`: jackin's code contains **no** herdr source, no herdr references, and no copied
+artifacts (grep of `crates/` + `docker/` is clean); the debounce-constant attribution comment is the only
+mention, and that is an honest fact-attribution, not copied code. This is a factual/technical review, **not
+legal advice** — for anything ambiguous about a specific artifact, capture/author jackin's own rather than reuse.
+
 ## How herdr does it (the reference), and where jackin differs
 
 herdr = **zero-config observer**: foreground-process-group identification with generic wrapper unwrap
