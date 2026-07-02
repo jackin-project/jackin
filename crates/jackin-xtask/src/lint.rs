@@ -15,10 +15,13 @@
 //!      fix.
 //!
 //! Files currently over their cap are grandfathered in the budget file with
-//! their **current** line counts; the recorded count is the ratchet. The gate
-//! fails if a listed file grows past its recorded count, and fails if any
-//! non-listed file exceeds the cap. Recorded counts may only ever decrease;
-//! when a file drops under its cap, delete its entry from the budget file.
+//! their **current** line counts; the recorded count is the ratchet. The ratchet
+//! is **shrink-only**: the gate fails if a listed file grows past its recorded
+//! count, fails if any non-listed file exceeds the cap, and also fails on a
+//! stale row — a budgeted file that no longer exists, has dropped to or under
+//! its cap, or whose recorded count is higher than the current count. When a
+//! file drops, shrink its recorded count to the new measurement or delete the
+//! row entirely once the file is under its cap.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -144,6 +147,38 @@ fn check(root: &Path, budget: &Budget, counts: &BTreeMap<PathBuf, usize>) -> Res
         .map(|e| (e.path.as_str(), e.lines))
         .collect();
 
+    // Repo-relative measured counts so budget rows (also repo-relative) and
+    // measured files line up by the same key.
+    let rel_counts: BTreeMap<String, usize> = counts
+        .iter()
+        .map(|(path, lines)| (relative(root, path), *lines))
+        .collect();
+
+    // Shrink-only ratchet: every budgeted row must still point at a real
+    // over-cap file whose measured count exactly equals the recorded
+    // high-water-mark. A row for a file that no longer exists, a file that
+    // dropped to or under the cap, or a recorded count higher than the current
+    // count is stale and must be deleted or shrunk — the gate rejects it
+    // instead of silently accepting it.
+    for (rel, budgeted) in &prod_allowlist {
+        check_budget_entry(
+            &mut problems,
+            rel,
+            *budgeted,
+            budget.production_cap,
+            &rel_counts,
+        );
+    }
+    for (rel, budgeted) in &test_allowlist {
+        check_budget_entry(
+            &mut problems,
+            rel,
+            *budgeted,
+            budget.test_cap,
+            &rel_counts,
+        );
+    }
+
     for (path, lines) in counts {
         let rel = relative(root, path);
         let is_test = path.file_name().is_some_and(|n| n == TEST_FILE_NAME);
@@ -152,15 +187,19 @@ fn check(root: &Path, budget: &Budget, counts: &BTreeMap<PathBuf, usize>) -> Res
         } else {
             (budget.production_cap, &prod_allowlist)
         };
-        match allowlist.get(rel.as_str()) {
-            Some(&budgeted) if *lines > budgeted => problems.push(format!(
-                "{rel}: grew from {budgeted} to {lines} lines (ratchet exceeded — refactor or update the budget)"
-            )),
-            Some(_) => {} // at or under the recorded high-water-mark
-            None if *lines > cap => problems.push(format!(
-                "{rel}: {lines} lines exceeds {cap}-line cap (refactor before merging)"
-            )),
-            None => {}
+        if let Some(&budgeted) = allowlist.get(rel.as_str()) {
+            // Growth past the recorded high-water-mark is still a hard failure;
+            // the ratchet only ever shrinks. Steady-state and shrink cases are
+            // handled by `check_budget_entry`.
+            if *lines > budgeted {
+                problems.push(format!(
+                    "{rel}: grew from {budgeted} to {lines} lines (ratchet exceeded — refactor the file below {budgeted}, or shrink it under the {cap}-line cap)"
+                ));
+            }
+        } else if *lines > cap {
+            problems.push(format!(
+                "{rel}: {lines} lines exceeds {cap}-line cap (refactor before merging, or add a budget row at {lines})"
+            ));
         }
     }
 
@@ -179,6 +218,35 @@ fn check(root: &Path, budget: &Budget, counts: &BTreeMap<PathBuf, usize>) -> Res
         problems.len(),
         problems.join("\n  ")
     )
+}
+
+/// Reject a stale budget row: missing file, file now at/under the cap, or a
+/// recorded count higher than the current measured count. A row exactly at the
+/// measured count while still over the cap is the legitimate steady state.
+fn check_budget_entry(
+    problems: &mut Vec<String>,
+    rel: &str,
+    budgeted: usize,
+    cap: usize,
+    rel_counts: &BTreeMap<String, usize>,
+) {
+    let Some(&measured) = rel_counts.get(rel) else {
+        problems.push(format!(
+            "{rel}: budgeted at {budgeted} lines but the file no longer exists (delete the stale budget row)"
+        ));
+        return;
+    };
+    if measured <= cap {
+        problems.push(format!(
+            "{rel}: budgeted at {budgeted} lines but now {measured} lines, at or under the {cap}-line cap (delete the stale budget row — it no longer needs grandfathering)"
+        ));
+    } else if measured < budgeted {
+        problems.push(format!(
+            "{rel}: recorded at {budgeted} lines but now {measured} lines (shrink the budget row to {measured}, or refactor the file under the {cap}-line cap)"
+        ));
+    }
+    // measured == budgeted (> cap): steady state, no problem.
+    // measured > budgeted: growth, flagged by the counts loop.
 }
 
 fn relative(root: &Path, path: &Path) -> String {

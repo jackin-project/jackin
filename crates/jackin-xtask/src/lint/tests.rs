@@ -22,10 +22,11 @@ fn fixture(budget_text: &str) -> tempfile::TempDir {
 }
 
 #[test]
-fn passes_when_all_files_within_caps() {
-    // big.rs is 1500 lines but is in the allowlist at 1500 -> passes.
+fn passes_when_budgeted_file_matches_recorded_over_cap_count() {
+    // big.rs is 1500 lines, over the 1000-line cap, recorded at exactly 1500
+    // -> steady state, passes.
     let dir = fixture(
-        "production_cap = 2000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 1500\n",
+        "production_cap = 1000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 1500\n",
     );
     let counts = measure(dir.path()).unwrap();
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
@@ -44,7 +45,7 @@ fn fails_when_unlisted_file_exceeds_cap() {
 
 #[test]
 fn allowlist_entry_must_match_actual_count_down_only() {
-    // Recorded 1000 lines but file is now 1500 -> ratchet exceeded.
+    // Recorded 1000 lines but file is now 1500 -> ratchet exceeded (growth).
     let dir = fixture(
         "production_cap = 2000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 1000\n",
     );
@@ -56,14 +57,53 @@ fn allowlist_entry_must_match_actual_count_down_only() {
 }
 
 #[test]
-fn allowlist_within_tolerance_passes() {
-    // Recorded above current size — file has shrunk but entry stays.
+fn rejects_budget_row_for_missing_file() {
+    // The budget points at a file that does not exist on disk -> stale row.
+    let dir = fixture(
+        "production_cap = 1000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/ghost.rs\"\nlines = 1500\n",
+    );
+    let counts = measure(dir.path()).unwrap();
+    let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
+    let err = check(dir.path(), &budget, &counts).unwrap_err().to_string();
+    assert!(err.contains("crates/ghost.rs"), "{err}");
+    assert!(
+        err.contains("no longer exists") && err.contains("delete the stale budget row"),
+        "{err}"
+    );
+}
+
+#[test]
+fn rejects_budget_row_when_file_drops_under_cap() {
+    // big.rs is 1500 lines and under the 2000-line cap, yet it carries a
+    // budget row -> the row is no longer needed and must be deleted.
+    let dir = fixture(
+        "production_cap = 2000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 1500\n",
+    );
+    let counts = measure(dir.path()).unwrap();
+    let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
+    let err = check(dir.path(), &budget, &counts).unwrap_err().to_string();
+    assert!(err.contains("crates/big.rs"), "{err}");
+    assert!(
+        err.contains("at or under the 2000-line cap") && err.contains("delete the stale budget row"),
+        "{err}"
+    );
+}
+
+#[test]
+fn rejects_budget_row_when_recorded_count_higher_than_measured() {
+    // big.rs is 1500 lines (over the 1000-line cap) but recorded at 9999 -> the
+    // row must shrink to the measured count. Previously this passed silently.
     let dir = fixture(
         "production_cap = 1000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 9999\n",
     );
     let counts = measure(dir.path()).unwrap();
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
-    assert!(check(dir.path(), &budget, &counts).is_ok());
+    let err = check(dir.path(), &budget, &counts).unwrap_err().to_string();
+    assert!(err.contains("crates/big.rs"), "{err}");
+    assert!(
+        err.contains("shrink the budget row to 1500"),
+        "{err}"
+    );
 }
 
 #[test]

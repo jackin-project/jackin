@@ -19,10 +19,12 @@
 //! ```
 //!
 //! Files that violate today are grandfathered in `test-layout-allowlist.toml`;
-//! the gate fails on any violation **not** in the allowlist. As each file is
-//! fixed, delete its entry — the list may only shrink (the same ratchet as the
-//! file-size gate). Integration tests under `crates/*/tests/` (a sibling of
-//! `src/`, not under it) are Cargo's own test target and are not scanned.
+//! the gate fails on any violation **not** in the allowlist, and (shrink-only
+//! ratchet) on any allowlisted path that no longer violates — the file was
+//! fixed or never existed, so its entry must be removed. The list may only
+//! shrink (the same ratchet as the file-size gate). Integration tests under
+//! `crates/*/tests/` (a sibling of `src/`, not under it) are Cargo's own test
+//! target and are not scanned.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -239,22 +241,20 @@ fn read_allowlist(root: &Path) -> Result<BTreeSet<String>> {
 }
 
 fn check(violations: &BTreeMap<String, String>, allowed: &BTreeSet<String>) -> Result<()> {
+    // Shrink-only ratchet: an allowlist row whose path is not a current
+    // violation — the file was fixed, or never existed — is stale and must be
+    // removed. The gate fails on stale rows instead of only printing a note.
     let stale: Vec<&String> = allowed
         .iter()
         .filter(|p| !violations.contains_key(*p))
         .collect();
-    for path in &stale {
-        emit(&format!(
-            "note: `{path}` is in {ALLOWLIST_PATH} but no longer violates — remove its entry"
-        ));
-    }
 
     let new: Vec<(&String, &String)> = violations
         .iter()
         .filter(|(p, _)| !allowed.contains(*p))
         .collect();
 
-    if new.is_empty() {
+    if stale.is_empty() && new.is_empty() {
         emit(&format!(
             "test-layout gate OK — {} file(s) scanned-as-violations, all grandfathered ({} allowlisted)",
             violations.len(),
@@ -263,15 +263,22 @@ fn check(violations: &BTreeMap<String, String>, allowed: &BTreeSet<String>) -> R
         return Ok(());
     }
 
-    let detail = new
-        .iter()
-        .map(|(path, reason)| format!("{path}: {reason}"))
-        .collect::<Vec<_>>()
-        .join("\n  ");
+    let mut problems: Vec<String> = Vec::new();
+    for path in &stale {
+        problems.push(format!(
+            "{path}: listed in {ALLOWLIST_PATH} but no longer violates (remove the stale allowlist entry)"
+        ));
+    }
+    for (path, reason) in &new {
+        problems.push(format!("{path}: {reason}"));
+    }
+    problems.sort();
+
     bail!(
-        "{} test-layout violation(s) not in {ALLOWLIST_PATH}:\n  {detail}\n\nMove tests into a sibling `tests.rs` (see crates/AGENTS.md). To grandfather an unavoidable case, run `cargo xtask lint tests --print-allowlist`.",
-        new.len()
-    );
+        "{} test-layout violation(s):\n  {}\n\nMove tests into a sibling `tests.rs` (see crates/AGENTS.md). To refresh the allowlist, run `cargo xtask lint tests --print-allowlist`.",
+        problems.len(),
+        problems.join("\n  ")
+    )
 }
 
 fn print_allowlist(violations: &BTreeMap<String, String>) {
