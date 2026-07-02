@@ -137,7 +137,9 @@ COLORTERM=truecolor
    jackin config env set ANTHROPIC_API_KEY "op://Personal/Anthropic/key"
    ```
 
-Each `jackin load` that references `op://...` values shells out to `op read <ref>` per key. `op` failures (missing item, expired session, binary not on PATH) are reported in a single message that names every failing key. Each `op` invocation has a 30-second timeout.
+Each `jackin load` that references `op://...` values shells out to `op read <ref>` per key. 1Password values are resolved concurrently, and `op` failures (missing item, expired session, binary not on PATH) are reported in a single message that names every failing key. Each launch-time `op` invocation has a 120-second timeout so cold 1Password app and daemon wakeups can finish without turning into false credential failures.
+
+Prefer references picked through the 1Password picker in jackin❯ or otherwise backed by 1Password IDs. The 1Password CLI can resolve human-readable vault and item names, but ID-backed references are the stable and efficient form for launch-time automation. jackin❯ does not persist resolved secret values; it stores the reference metadata and asks `op` again when the value is needed.
 
 ## Launch diagnostic
 

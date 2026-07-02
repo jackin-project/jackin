@@ -264,6 +264,8 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      page-url: ${{ steps.deployment.outputs.page_url }}
     permissions:
       contents: read
       pages: write
@@ -279,6 +281,17 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
+  verify-deployed:
+    needs: deploy
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
       # Build a sitemap URL that is robust against future
       # actions/deploy-pages versions changing whether `page_url`
       # carries a trailing slash. The current contract has one, but
@@ -288,7 +301,7 @@ jobs:
         id: sitemap
         shell: bash
         env:
-          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          PAGE_URL: ${{ needs.deploy.outputs.page-url }}
         run: |
           set -euo pipefail
           echo "url=${PAGE_URL%/}/sitemap.xml" >> "$GITHUB_OUTPUT"
@@ -328,7 +341,7 @@ jobs:
   # one-job aggregator on schedule has no value.
   docs-required:
     if: always() && github.event_name != 'schedule'
-    needs: [changes, repo-link-check, docs-link-check, spell-check-docs, spell-check-source, deploy, check-deployed]
+    needs: [changes, repo-link-check, docs-link-check, spell-check-docs, spell-check-source, deploy, verify-deployed, check-deployed]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
