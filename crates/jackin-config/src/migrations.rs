@@ -459,7 +459,7 @@ pub const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
 ///
 /// Catches typos in `from` / `to`, missing middle steps, backward steps,
 /// cycles, and duplicate `from` values (which would silently fork the walker).
-/// Production registries call this from a `#[test]` so a registry mistake
+/// Production registries call this from a unit test so a registry mistake
 /// fails CI rather than surfacing on an operator's machine.
 #[expect(
     clippy::expect_used,

@@ -2,13 +2,15 @@
 //!
 //! Enforces the workspace hard rule (see `crates/AGENTS.md` → "Tests in own
 //! file"): every module's tests live in a single sibling `tests.rs`, declared
-//! with `#[cfg(test)] mod tests;`. Three things are forbidden in `crates/*/src`:
+//! with `#[cfg(test)] mod tests;`. Four things are forbidden in `crates/*/src`:
 //!
 //!   1. An inline `#[cfg(test)] mod <name> { … }` body in any non-`tests.rs`
 //!      source file — the body must move to a sibling `tests.rs`.
-//!   2. A `tests.rs` that declares child modules (`mod x;` / `mod x { … }`) —
+//!   2. A direct unit-test function attribute in a non-`tests.rs` source file
+//!      — the test must move to a sibling `tests.rs`.
+//!   3. A `tests.rs` that declares child modules (`mod x;` / `mod x { … }`) —
 //!      all tests stay inline in the one file, never split across sub-modules.
-//!   3. A `tests/` directory under `src/` holding split-out test files — the
+//!   4. A `tests/` directory under `src/` holding split-out test files — the
 //!      canonical layout is `foo.rs` + `foo/tests.rs`, not `foo/tests/*.rs`.
 //!
 //! ```sh
@@ -115,7 +117,7 @@ fn walk(dir: &Path, root: &Path, out: &mut BTreeMap<String, String>) -> Result<(
             let reason = if is_tests_rs {
                 tests_rs_violation(&text)
             } else {
-                inline_test_module_violation(&text)
+                non_tests_rs_violation(&text)
             };
             if let Some(reason) = reason {
                 out.insert(rel, reason.to_owned());
@@ -152,6 +154,29 @@ fn rel_path(path: &Path, root: &Path) -> String {
 /// `Some(reason)` if a non-`tests.rs` file has an inline `#[cfg(test)] mod X { … }`.
 /// A `#[cfg(test)] mod tests;` *declaration* (semicolon) is the correct form and
 /// is not flagged.
+fn non_tests_rs_violation(text: &str) -> Option<&'static str> {
+    direct_test_attr_violation(text).or_else(|| inline_test_module_violation(text))
+}
+
+/// `Some(reason)` if a non-`tests.rs` file has a direct test function attribute.
+/// Comments that mention test attributes are not flagged.
+fn direct_test_attr_violation(text: &str) -> Option<&'static str> {
+    text.lines().find_map(|line| {
+        let t = line.trim_start();
+        is_test_attr(t).then_some(
+            "direct test function attribute in non-`tests.rs` file — move the test to a sibling `tests.rs`",
+        )
+    })
+}
+
+fn is_test_attr(line: &str) -> bool {
+    const TEST_ATTR: &str = concat!("#", "[test]");
+    const TOKIO_TEST_ATTR: &str = concat!("#", "[tokio::test");
+    const RSTEST_ATTR: &str = concat!("#", "[rstest");
+
+    line == TEST_ATTR || line.starts_with(TOKIO_TEST_ATTR) || line.starts_with(RSTEST_ATTR)
+}
+
 fn inline_test_module_violation(text: &str) -> Option<&'static str> {
     let lines: Vec<&str> = text.lines().collect();
     for (i, line) in lines.iter().enumerate() {

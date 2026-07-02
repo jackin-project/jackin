@@ -31,6 +31,37 @@ fn inline_test_module_is_flagged_but_declaration_is_not() {
 }
 
 #[test]
+fn direct_test_attributes_are_flagged_outside_tests_rs() {
+    for attr in [
+        "#[test]",
+        "#[tokio::test]",
+        "#[tokio::test(flavor = \"multi_thread\")]",
+        "#[rstest]",
+        "#[rstest(case::empty(\"\"))]",
+    ] {
+        let text = format!("{attr}\nfn t() {{}}\n");
+        assert!(
+            direct_test_attr_violation(&text).is_some(),
+            "{attr} should be rejected outside tests.rs"
+        );
+        assert!(
+            non_tests_rs_violation(&text).is_some(),
+            "{attr} should make a non-tests file violate layout"
+        );
+    }
+}
+
+#[test]
+fn direct_test_attribute_scan_ignores_comments_and_helpers() {
+    let comment = "/// Production registries call this from a `#[test]` so mistakes fail.\n";
+    assert!(direct_test_attr_violation(comment).is_none());
+
+    let helper = "#[cfg(test)]\nfn helper() -> bool { true }\n";
+    assert!(direct_test_attr_violation(helper).is_none());
+    assert!(non_tests_rs_violation(helper).is_none());
+}
+
+#[test]
 fn tests_rs_child_module_is_flagged() {
     assert!(tests_rs_violation("use super::*;\nmod helpers;\n").is_some());
     assert!(tests_rs_violation("use super::*;\n#[test]\nfn t() {}\n").is_none());

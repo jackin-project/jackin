@@ -703,7 +703,7 @@ impl Drop for TerminalGuard {
 }
 
 #[cfg(test)]
-mod keymap_smoke;
+mod tests;
 
 #[allow(
     clippy::excessive_nesting,
