@@ -2,7 +2,7 @@
 title: "Codebase health: structure & reviewability"
 ---
 
-**Status**: Partially implemented — the original exception-ledger burn-down is complete, and the PR #664 merge-readiness audit blockers have been addressed on the refactor branch with regression tests (prewarm clap invariants restored, launch failures kept visible/actionable, the codebase-health gates wired into required CI, and the ratchets made shrink-only). This page tracks the durable follow-up work that remains after that PR-local checklist closes. The checklist itself lives in <RepoFile path="plans/codebase-health-remaining.md">plans/codebase-health-remaining.md</RepoFile>.
+**Status**: Partially implemented — the original exception-ledger burn-down is complete, and the PR #664 merge-readiness audit blockers have been addressed with regression tests (prewarm clap invariants restored, launch failures kept visible/actionable, the codebase-health gates wired into required CI, and the ratchets made shrink-only). This page tracks the durable follow-up work that remains after the structure-only refactor.
 
 ## Merge-Readiness Audit
 
@@ -14,7 +14,7 @@ PR #664 is a structure-only refactor. The audit checklist restored or proved eve
 - Made the file-size and test-layout ratchets fail stale or no-longer-needed exception rows (shrink-only).
 - Kept roadmap and PR text honest alongside the required gates and regression tests.
 
-The detailed executor checklist is intentionally kept in the plan file so it can be worked down and closed without turning this roadmap item into a temporary task board.
+The detailed executor checklist was closed with PR #664 and is intentionally not kept here as a long-term task board.
 
 Non-blocking audit context:
 
