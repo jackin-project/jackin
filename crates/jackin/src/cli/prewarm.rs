@@ -52,20 +52,28 @@ mod tests;
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::Args)]
 pub struct PrewarmFlags {
+    /// Also prewarm derived Docker image(s) for a role.
     #[arg(long)]
     pub image: bool,
+    /// Prewarm a kept Docker-in-Docker daemon for one-shot adoption by the next fresh launch.
     #[arg(long)]
     pub daemon: bool,
+    /// Also prefetch/update every configured role repo cache.
     #[arg(long)]
     pub roles: bool,
+    /// Also prewarm the Docker-in-Docker sidecar image used by fresh launches.
     #[arg(long)]
     pub sidecar: bool,
+    /// Also start a disposable Docker-in-Docker sidecar and wait for readiness.
     #[arg(long)]
     pub sidecar_container: bool,
+    /// Keep the prewarmed sidecar container running for future daemon/runtime reuse.
     #[arg(long, requires = "sidecar_container")]
     pub keep_sidecar_container: bool,
+    /// Prewarm targets for every saved workspace with a default role.
     #[arg(long, conflicts_with_all = ["role", "workspace", "role_git", "all_roles"])]
     pub all_workspaces: bool,
+    /// Prewarm image targets for every configured role.
     #[arg(long, requires = "image", conflicts_with_all = ["role", "workspace", "role_git", "all_workspaces"])]
     pub all_roles: bool,
 }
