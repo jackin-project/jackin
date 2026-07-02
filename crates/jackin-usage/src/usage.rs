@@ -44,13 +44,12 @@ pub use self::claude::ClaudeUsageDiagnostic;
 pub(crate) use self::claude::{
     ClaudeCliUsage, ClaudeOAuthCredentials, ClaudeOAuthExtraUsage, ClaudeOAuthLimit,
     ClaudeOAuthLimitModel, ClaudeOAuthLimitScope, ClaudeOAuthMoney, ClaudeOAuthSpend,
-    ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeSpend, claude_account_identity,
-    claude_code_user_agent, claude_code_user_agent_with, claude_code_version_from_text,
-    claude_email_from_value, claude_oauth_candidates, claude_oauth_from_value,
-    claude_organization_type_from_value, claude_snapshot, claude_spend_bucket,
-    claude_window_seconds, fetch_claude_cli_usage, fetch_claude_oauth_usage,
-    load_claude_account_email, normalize_claude_spend, push_claude_cli_bucket,
-    push_claude_dollar_windows, push_claude_limit_bucket, push_claude_window,
+    ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeQuotaWindow, ClaudeSpend,
+    claude_account_identity, claude_code_user_agent, claude_code_user_agent_with,
+    claude_code_version_from_text, claude_email_from_value, claude_oauth_candidates,
+    claude_oauth_from_value, claude_organization_type_from_value, claude_snapshot,
+    claude_spend_bucket, fetch_claude_cli_usage, fetch_claude_oauth_usage,
+    load_claude_account_email, normalize_claude_spend, push_claude_dollar_windows,
 };
 #[cfg(test)]
 #[allow(unused_imports)]

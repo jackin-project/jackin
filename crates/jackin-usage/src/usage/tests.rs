@@ -1112,11 +1112,14 @@ fn claude_oauth_response_maps_windows_to_buckets() {
             .find(|bucket| bucket.label == "Sonnet")
             .is_some_and(|bucket| bucket.status_slot.is_none())
     );
+    // Sonnet is a weekly window, so the unified model paces it the same way a
+    // `limits`-sourced Fable window is paced (it has both a reset and a 7-day
+    // duration). Daily Routines carries no `resets_at`, so it still has none.
     assert!(
         buckets
             .iter()
             .find(|bucket| bucket.label == "Sonnet")
-            .is_some_and(|bucket| bucket.pace_label.is_none())
+            .is_some_and(|bucket| bucket.pace_label.is_some())
     );
     assert!(buckets.iter().any(|bucket| bucket.label == "Daily Routines"
         && bucket.remaining_percent == Some(100)
@@ -1285,6 +1288,52 @@ fn claude_oauth_limits_array_skips_unnamed_scoped_window() {
     .expect("valid limits response");
     let buckets = usage.into_buckets(1_781_300_000);
     assert!(buckets.is_empty(), "unnamed scoped window must be omitted");
+}
+
+/// The unified model: a legacy `seven_day_sonnet` window and a `limits`
+/// `weekly_scoped` window carrying the same usage/resets produce the same
+/// bucket (modulo label). This is the design invariant — Fable is not a
+/// separate code path, it is the same path as a legacy model window, so a
+/// regression that re-introduces parallel builders would fail here.
+#[test]
+fn claude_legacy_and_limits_sources_share_one_builder() {
+    let reset_at = "2026-07-03T06:59:59Z";
+    let now = 1_781_300_000;
+    let legacy: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        // `utilization` is percent-form here (35.0 > 1.0), matching the limits
+        // `percent` field so both resolve to 35% used through the same helpers.
+        "seven_day_sonnet": { "utilization": 35.0, "resets_at": reset_at }
+    }))
+    .expect("legacy response");
+    let limits: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 35,
+              "severity": "normal", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Fable" } }, "is_active": true }
+        ]
+    }))
+    .expect("limits response");
+
+    let sonnet = legacy
+        .into_buckets(now)
+        .into_iter()
+        .find(|b| b.label == "Sonnet")
+        .expect("legacy Sonnet bucket");
+    let fable = limits
+        .into_buckets(now)
+        .into_iter()
+        .find(|b| b.label == "Fable")
+        .expect("limits Fable bucket");
+
+    // Same builder ⇒ identical meter, pace, reset, and severity. Only the label
+    // (the model the window is scoped to) differs.
+    assert_eq!(sonnet.used_label, fable.used_label);
+    assert_eq!(sonnet.remaining_percent, fable.remaining_percent);
+    assert_eq!(sonnet.reset_label, fable.reset_label);
+    assert_eq!(sonnet.resets_at, fable.resets_at);
+    assert_eq!(sonnet.pace_label, fable.pace_label);
+    assert_eq!(sonnet.severity, fable.severity);
+    assert_eq!(sonnet.status_slot, fable.status_slot);
 }
 
 #[test]
