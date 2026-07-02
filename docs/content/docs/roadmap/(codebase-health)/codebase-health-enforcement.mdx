@@ -2,7 +2,19 @@
 title: "Codebase health: structure & reviewability"
 ---
 
-**Status**: Partially implemented — the original exception-ledger burn-down is complete, but the audit found several unfinished follow-ups still referenced by code comments or adjacent roadmap leaves. The closed ledger plan is <RepoFile path="plans/codebase-health-remaining.md">plans/codebase-health-remaining.md</RepoFile>; this page now tracks only work that still needs to happen.
+**Status**: Partially implemented — the original exception-ledger burn-down is complete, but the PR #664 merge-readiness audit found behavior and CI-wiring blockers that must be fixed before this item can be treated as shipped. The immediate checklist lives in <RepoFile path="plans/codebase-health-remaining.md">plans/codebase-health-remaining.md</RepoFile>; this page tracks the durable follow-up work that remains after that PR-local checklist closes.
+
+## Merge-Readiness Audit
+
+PR #664 is a structure-only refactor. Before it can merge, the audit checklist must restore or prove all pre-refactor behavior that was weakened during extraction:
+
+- Restore the `jackin prewarm` `clap` constraints that were dropped when flags moved into nested structs.
+- Make launch failure dialogs visible above lower-priority overlays, dismissible through the shared modal path, and safe for long diagnostics.
+- Wire the file-size, schema, and strict codebase-health gates into required CI aggregation and path filters.
+- Make file-size and test-layout ratchets fail stale or no-longer-needed exception rows.
+- Keep roadmap and PR text honest until the required gates and regression tests are in place.
+
+The detailed executor checklist is intentionally kept in the plan file so it can be worked down and closed without turning this roadmap item into a temporary task board.
 
 ## Remaining Work
 
@@ -34,6 +46,7 @@ The shared TEA runtime traits exist, and thin wrappers satisfy the type-level co
 - <RepoFile path="crates/jackin-launch-tui/src/tui/model.rs">crates/jackin-launch-tui/src/tui/model.rs</RepoFile> — `RichRenderer::render` still calls the concrete render path directly.
 - <RepoFile path="crates/jackin-capsule/src/tui/runtime.rs">crates/jackin-capsule/src/tui/runtime.rs</RepoFile> — `daemon/compositor.rs` and `tui/run.rs` still need to dispatch through the shared runtime traits.
 - <RepoFile path="crates/jackin-console/src/tui/runtime.rs">crates/jackin-console/src/tui/runtime.rs</RepoFile> — the root console loop still calls the concrete view directly; the runtime-trait dispatch migration is still a later phase.
+- <RepoFile path="crates/jackin-console/src/tui/input/mouse/modal_scroll.rs">crates/jackin-console/src/tui/input/mouse/modal_scroll.rs</RepoFile> — modal wheel routing still matches `MouseEventKind` directly in one console path; route it through the shared scroll classifier when the runtime dispatch follow-through resumes.
 
 ### Editor Model Cleanup
 
@@ -53,6 +66,6 @@ The following are finished and intentionally no longer tracked as remaining work
 
 - Test-layout allowlist burn-down: 0 violations.
 - File-size budget burn-down: no grandfathered production or test files.
-- Dependency-direction gate: strict mode is in CI.
+- Dependency-direction gate: strict mode exists and passes locally; the PR #664 merge checklist must wire the full codebase-health gate set into required CI before this item can close.
 - Clippy threshold burn-down: function length, complexity, nesting, and argument thresholds are at target.
 - Historical per-slice split maps from PR #664.
