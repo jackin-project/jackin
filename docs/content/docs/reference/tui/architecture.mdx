@@ -5,13 +5,13 @@ description: "Elm Architecture layers, source code locations, typed effects flow
 
 ## Architecture — Model / Update / View
 
-Every jackin❯ terminal surface uses Ratatui with The Elm Architecture: Model, Message, Update, Effect/Subscription, View, and terminal/run-loop wiring. This is a **hard requirement** for `jackin-console`, `jackin-launch`, `jackin-capsule`, and every new TUI path. It keeps the update layer testable, the render layer pure, and external work outside the visual boundary.
+Every jackin❯ terminal surface uses Ratatui with The Elm Architecture: Model, Message, Update, Effect/Subscription, View, and terminal/run-loop wiring. This is a **hard requirement** for `jackin-console`, `jackin-launch-tui`, `jackin-capsule`, and every new TUI path. It keeps the update layer testable, the render layer pure, and external work outside the visual boundary.
 
 Each layer has a strict scope:
 
 | Layer | File | Owns |
 |---|---|---|
-| Model | `tui/app.rs`, screen `model.rs` | Visible terminal state: active screen, focus owner, modal stack, scroll offsets, hover/click state, picker state, animation state, render-safe snapshots |
+| Model | `tui/model.rs`, screen `model.rs` | Visible terminal state: active screen, focus owner, modal stack, scroll offsets, hover/click state, picker state, animation state, render-safe snapshots |
 | Message | `tui/message.rs` | Semantic TUI events and results: key/mouse intent, resize, tick, background completion, dialog outcome, screen transition |
 | Update | `tui/update.rs` | Deterministic state transitions: apply `Message` to the model and return typed effects |
 | Effect / Subscription | `tui/effect.rs`, `tui/subscriptions.rs` | Typed descriptions of non-TUI work and long-lived event sources; they describe work but do not execute external commands |
@@ -52,7 +52,7 @@ crates/<surface-crate>/src/tui/
 
 2. **`crates/<surface-crate>/src/tui.rs` + `crates/<surface-crate>/src/tui/`** — The whole TUI application layer for that surface: Model, Message, Update, Effects, Subscriptions, View, local components, terminal adapter, and event-loop wiring. Single-screen crates stay flat. Multi-screen crates add `screens.rs` plus `screens/<screen>/` under `src/tui/`.
 
-**Single-screen crate layout** (`jackin-capsule`, `jackin-launch`):
+**Single-screen crate layout** (`jackin-capsule`, `jackin-launch-tui`):
 ```
 src/
 ├── lib.rs
@@ -60,7 +60,7 @@ src/
 ├── services/            ← optional side-effect adapters
 ├── tui.rs               ← thin module root
 └── tui/
-    ├── app.rs           ← TUI Model
+    ├── model.rs         ← TUI Model
     ├── message.rs       ← Message / Action vocabulary
     ├── update.rs        ← update(model, message) -> effects
     ├── effect.rs        ← typed effect requests only
@@ -80,7 +80,7 @@ src/
 ├── services/            ← optional side-effect adapters
 ├── tui.rs               ← thin module root
 └── tui/
-    ├── app.rs           ← top-level TUI Model
+    ├── model.rs         ← top-level TUI Model
     ├── message.rs
     ├── update.rs
     ├── effect.rs
@@ -117,7 +117,7 @@ src/
 ```
 
 **MUV contract inside each surface crate:**
-- `tui/app.rs` and screen `model.rs` files — terminal interaction model only; no external I/O.
+- `tui/model.rs` and screen `model.rs` files — terminal interaction model only; no external I/O.
 - `tui/message.rs` — semantic events/results that drive the update loop.
 - `tui/update.rs` — state transition logic; may return effects but must not execute external commands.
 - `tui/effect.rs` — typed effect requests only; no Docker/git/`op`/`gh`/filesystem/network execution.
@@ -185,8 +185,8 @@ Terminal protocol bytes that are not pane cells still exist, but they are backen
 **Terminal model pipeline decisions:**
 
 - **Depend on `vte`, never rebuild the parser.** `vte` (by doy, MIT) is the canonical VT/ANSI parser crate. The capsule feeds raw PTY bytes to a `vte::Parser` which calls `vte::Perform` methods on the `DamageGrid`. No second parser.
-- **Own the grid.** `DamageGrid` (`crates/jackin-term/src/grid.rs`) is a ring-backed `RowStore` terminal grid owned by jackin-term; live capsule sessions share one daemon `RowArena` for primary, alternate, and scrollback row buffers. It records dirty rows at mutation time (`DirtyTracker`). It is the capsule's sole terminal model: screen cells, alternate screen, scrollback, cursor, mouse/focus/bracketed-paste/kitty-keyboard mode state, and the typed OSC/CSI passthrough stream all live here. The capsule previously used a forked `vt100::Parser`; that dependency has been removed from production, test, fuzz, benchmark, and source-policy paths.
-- **Render the model through Ratatui.** `PaneBodyWidget` (`crates/jackin-capsule/src/tui/components/pane.rs`) is a Ratatui `Widget` that paints a `GridSnapshot`'s cells into the Ratatui buffer alongside the rest of the chrome. `SocketBackend` (`crates/jackin-capsule/src/tui/socket_backend.rs`) implements the ratatui `Backend` trait: it diffs the buffer (`Buffer::diff`) and emits the minimal ANSI byte sequence over the attach socket.
+- **Own the grid.** `DamageGrid` (<RepoFile path="crates/jackin-term/src/grid.rs">crates/jackin-term/src/grid.rs</RepoFile>) is a ring-backed `RowStore` terminal grid owned by jackin-term; live capsule sessions share one daemon `RowArena` for primary, alternate, and scrollback row buffers. It records dirty rows at mutation time (`DirtyTracker`). It is the capsule's sole terminal model: screen cells, alternate screen, scrollback, cursor, mouse/focus/bracketed-paste/kitty-keyboard mode state, and the typed OSC/CSI passthrough stream all live here. The capsule previously used a forked `vt100::Parser`; that dependency has been removed from production, test, fuzz, benchmark, and source-policy paths.
+- **Render the model through Ratatui.** `PaneBodyWidget` (<RepoFile path="crates/jackin-capsule/src/tui/components/pane.rs">crates/jackin-capsule/src/tui/components/pane.rs</RepoFile>) is a Ratatui `Widget` that paints a `GridSnapshot`'s cells into the Ratatui buffer alongside the rest of the chrome. `SocketBackend` (<RepoFile path="crates/jackin-capsule/src/tui/socket_backend.rs">crates/jackin-capsule/src/tui/socket_backend.rs</RepoFile>) implements the ratatui `Backend` trait: it diffs the buffer (`Buffer::diff`) and emits the minimal ANSI byte sequence over the attach socket.
 - **Cell-level diffing and clearing is Ratatui's job.** `SocketBackend` serializes only the buffer's per-cell diff, so stale cells from a previous, differently-sized frame are overwritten by the next frame. The capsule's resize path additionally emits a full-screen erase on geometry change (see *Capsule resize* in the chrome reference).
 - **`CompactString` for cell contents.** `Cell::contents` uses `compact_str::CompactString` which stores ≤24 bytes inline with no heap allocation. This covers all ASCII and most Unicode grapheme clusters. The public `contents() -> &str` API is unchanged.
 - **Cutover complete.** `DamageGrid` is unconditional in `jackin-capsule` — there is no feature flag and no `vt100` fallback. `vt100` is no longer a `jackin-capsule` dependency.

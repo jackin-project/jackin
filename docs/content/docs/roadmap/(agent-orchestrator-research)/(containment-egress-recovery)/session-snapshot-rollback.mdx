@@ -8,7 +8,7 @@ title: "Session Snapshot and Rollback"
 
 <RepoFile path="crates/jackin-runtime/src/runtime/snapshot.rs">crates/jackin-runtime/src/runtime/snapshot.rs</RepoFile> and the `Snapshot`/`StatusCapture` control-channel messages in `jackin-protocol` fetch the in-container Capsule daemon's tab/pane state for the host TUI's preview pane. That is read-only diagnostic capture — it has no relationship to filesystem contents, no rollback semantics, and no persisted history.
 
-Per-mount isolation (<RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile>, <RepoFile path="crates/jackin-config/src/resolve.rs">crates/jackin-config/src/resolve.rs</RepoFile>) and worktree cleanup cover the common source-control recovery path, but they do not help when a mount isn't a Git repo, when generated files/caches need reverting, or when agent/auth/tool state gets poisoned across a session. No `jackin recovery` subcommand exists in `crates/jackin/src/cli.rs`, and no `[workspaces.*.recovery]` config key exists in `jackin-config`.
+Per-mount isolation (<RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs">crates/jackin-runtime/src/runtime/cleanup.rs</RepoFile>, <RepoFile path="crates/jackin-config/src/resolve.rs">crates/jackin-config/src/resolve.rs</RepoFile>) and worktree cleanup cover the common source-control recovery path, but they do not help when a mount isn't a Git repo, when generated files/caches need reverting, or when agent/auth/tool state gets poisoned across a session. No `jackin recovery` subcommand exists in <RepoFile path="crates/jackin/src/cli.rs">crates/jackin/src/cli.rs</RepoFile>, and no `[workspaces.*.recovery]` config key exists in `jackin-config`.
 
 ## Remaining work
 

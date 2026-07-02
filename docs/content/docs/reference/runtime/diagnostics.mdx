@@ -117,7 +117,7 @@ All attribute keys live in `otel_keys` in <RepoFile path="crates/jackin-diagnost
 
 ### Per-screen traces and span links
 
-`screen.rs` (<RepoFile path="crates/jackin-diagnostics/src/screen.rs">crates/jackin-diagnostics/src/screen.rs</RepoFile>) models each TUI screen as its own trace. `enter_screen` starts a span, detaches it into a fresh trace with `set_parent(Context::new())`, and `add_link`s the previous screen's `SpanContext` — so screens are separate but navigable. The current screen is a thread-local (sound: host TUI navigation is single-threaded); `carry_link_forward` snapshots it across the `run_console` return so the launch trace links to the list it started from. `launch_trace` enters the `launch` screen, tags workspace/agent/provider, and `future.instrument`s `load_role` so the existing `launch_stage` spans re-root under the launch trace with no change to `jackin-launch`.
+`screen.rs` (<RepoFile path="crates/jackin-diagnostics/src/screen.rs">crates/jackin-diagnostics/src/screen.rs</RepoFile>) models each TUI screen as its own trace. `enter_screen` starts a span, detaches it into a fresh trace with `set_parent(Context::new())`, and `add_link`s the previous screen's `SpanContext` — so screens are separate but navigable. The current screen is a thread-local (sound: host TUI navigation is single-threaded); `carry_link_forward` snapshots it across the `run_console` return so the launch trace links to the list it started from. `launch_trace` enters the `launch` screen, tags workspace/agent/provider, and `future.instrument`s `load_role` so the existing `launch_stage` spans re-root under the launch trace with no change to `jackin-launch-tui`.
 
 ### Cross-process propagation
 

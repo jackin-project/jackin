@@ -173,7 +173,7 @@ Concrete obligations:
 
 Three implementation shapes carry this contract today:
 
-1. **`Vec<Dialog>` stack** (canonical, used by `crates/jackin-capsule/src/tui/components/dialog.rs`). `dialog_top()` is "is a dialog open"; entries land via `dialog_push`; back-nav arms call `dialog_pop_one`; terminal-action arms call `dialog_clear`.
+1. **`Vec<Dialog>` stack** (canonical, used by <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile>). `dialog_top()` is "is a dialog open"; entries land via `dialog_push`; back-nav arms call `dialog_pop_one`; terminal-action arms call `dialog_clear`.
 2. **`modal_parents` stacks on host console state** (used by workspace editor modals, settings global-mount modals, and settings environment modals). `open_sub_modal` stashes the visible modal as a parent, `pop_modal_chain` restores it on Esc, and `clear_modal_chain` closes the whole flow after a terminal commit.
 3. **Per-flow return-path stash** (legacy, used by host console for auth form side trips — `pending_auth_form_return`, `pending_env_key`, `pending_picker_target`). The parent's state is stashed in an `EditorState` / settings-auth field before the child modal mounts, and the child's cancel arm rebuilds the parent from the stash. Works for shallow chains but does not compose past two levels and is easy to forget when adding a new transition.
 
@@ -185,7 +185,7 @@ Compliance is covered by focused tests for the container palette stack, editor e
 
 ## Hints / Footer Bar
 
-Every keyboard shortcut active on the current screen must appear in the footer. No hidden keys. See `AGENTS.md` → **Navigation hints** for the complete rule.
+Every keyboard shortcut active on the current screen must appear in the footer. No hidden keys. See <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> → **Navigation hints** for the complete rule.
 
 **This includes modals.** A modal is not a special case — when one is open, its keys replace the screen keys in the **same reserved footer rows**. There is no floating hint bar under a dialog; hints always live in the fixed footer. Two rules make this un-forgettable and keep it visible:
 

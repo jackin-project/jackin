@@ -56,6 +56,11 @@ enum Command {
     /// Use as `cargo xtask change new <slug> --group <group>`.
     #[command(subcommand)]
     Change(docs::ChangeCommand),
+    /// Documentation checks that do not require the TypeScript/Fumadocs runtime.
+    ///
+    /// Use as `cargo xtask docs repo-links`.
+    #[command(subcommand)]
+    Docs(docs::DocsCommand),
     /// Scaffold or validate research dossiers.
     ///
     /// Use as `cargo xtask research scaffold <slug>` / `research check`.
@@ -121,6 +126,7 @@ fn main() -> ExitCode {
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
         Command::Change(cmd) => docs::run_change(cmd),
+        Command::Docs(cmd) => docs::run_docs(cmd),
         Command::Research(cmd) => docs::run_research(cmd),
         Command::Roadmap(cmd) => docs::run_roadmap(cmd),
         Command::SchemaCheck(args) => schema::run(args),

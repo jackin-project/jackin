@@ -710,7 +710,7 @@ Additionally `jackin-capsule` needs a non-versioned env-var contract: `JACKIN_CA
 
 These need answers before Phase 0 hands-on work converts to design commitments:
 
-1. **`JACKIN_CAPSULE_FORCE_DAEMON` patch shape**: implement the opt-in in `crates/jackin-capsule/src/main.rs` PID detection. Confirm reaping (SIGCHLD propagation), exit-code visibility, and Ctrl+C behavior all still work when capsule is PID 2 under smolvm-agent. Hands-on test.
+1. **`JACKIN_CAPSULE_FORCE_DAEMON` patch shape**: implement the opt-in in <RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile> PID detection. Confirm reaping (SIGCHLD propagation), exit-code visibility, and Ctrl+C behavior all still work when capsule is PID 2 under smolvm-agent. Hands-on test.
 2. **smolvm OpenAPI schema shape**: export `smolvm serve openapi --output spec.json` from the v0.7.2 CLI and confirm it covers the endpoints jackin❯ would need (`/machines`, `/exec`, `/logs`, `/images`, `/files`). If gaps exist, decide whether shell-out is sufficient long-term or whether contributing back to the OpenAPI spec is worth it.
 3. **Docker-in-smolvm role-image substitution**: try replacing the Alpine base in the `docker.smolfile` example with a jackin❯ role image. If `dockerd` cannot start because the role's init differs from Alpine's, jackin❯ "Mode D" is locked to a separate VM running Alpine + Docker, not to the role's own VM. That reshapes Mode D from "all-in-one" to "sidecar VM".
 4. **Apple Developer ID signing for jackin❯ itself**: if jackin❯ ships smolvm bundled (not just recommended), the bundle needs to be re-signed under the operator's signing identity (or jackin❯). Establish a CI signing flow before any release that ships smolvm.

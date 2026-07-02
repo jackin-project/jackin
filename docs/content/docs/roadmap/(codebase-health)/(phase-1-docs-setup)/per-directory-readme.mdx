@@ -2,11 +2,11 @@
 title: "Per-directory README + AGENTS.md"
 ---
 
-**Status**: Partially implemented — workspace-wide Rust rules and several crate-level orientation files are already current; five crates in `crates/` still have no `README.md` or `AGENTS.md`
+**Status**: Partially implemented — workspace-wide Rust rules and several crate-level orientation files are already current; five crates in `crates/` still have no <RepoFile path="README.md">README.md</RepoFile> or <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>
 
 ## Shipped facts
 
-<RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile> already documents the workspace-wide Rust rules for the current crate layout: Rust 2024 self-named module files (no `mod.rs`), the `tests.rs` convention, naming, and the lint/supply-chain baseline. No stale pre-split `src/` language remains there. Seven of the nineteen `crates/*` directories have their own orientation file: <RepoFile path="crates/jackin-capsule/README.md">jackin-capsule</RepoFile>, <RepoFile path="crates/jackin-build-meta/README.md">jackin-build-meta</RepoFile>, <RepoFile path="crates/jackin-pr-trailers/README.md">jackin-pr-trailers</RepoFile>, <RepoFile path="crates/jackin-protocol/README.md">jackin-protocol</RepoFile>, <RepoFile path="crates/jackin-term/README.md">jackin-term</RepoFile>, and <RepoFile path="crates/jackin-tui/README.md">jackin-tui</RepoFile> each carry a `README.md`, and <RepoFile path="crates/jackin-tui-lookbook/AGENTS.md">jackin-tui-lookbook</RepoFile> carries an `AGENTS.md`. <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> is also current for the Fumadocs site layout.
+<RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile> already documents the workspace-wide Rust rules for the current crate layout: Rust 2024 self-named module files (no `mod.rs`), the `tests.rs` convention, naming, and the lint/supply-chain baseline. No stale pre-split `src/` language remains there. Seven of the nineteen `crates/*` directories have their own orientation file: <RepoFile path="crates/jackin-capsule/README.md">jackin-capsule</RepoFile>, <RepoFile path="crates/jackin-build-meta/README.md">jackin-build-meta</RepoFile>, <RepoFile path="crates/jackin-pr-trailers/README.md">jackin-pr-trailers</RepoFile>, <RepoFile path="crates/jackin-protocol/README.md">jackin-protocol</RepoFile>, <RepoFile path="crates/jackin-term/README.md">jackin-term</RepoFile>, and <RepoFile path="crates/jackin-tui/README.md">jackin-tui</RepoFile> each carry a <RepoFile path="README.md">README.md</RepoFile>, and <RepoFile path="crates/jackin-tui-lookbook/AGENTS.md">jackin-tui-lookbook</RepoFile> carries an <RepoFile path="AGENTS.md">AGENTS.md</RepoFile>. <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> is also current for the Fumadocs site layout.
 
 ## Target directories still missing an orientation file
 
@@ -26,5 +26,5 @@ title: "Per-directory README + AGENTS.md"
 
 ## Remaining work
 
-1. Add a crate-level `README.md` or `AGENTS.md` for the five crates listed above, each covering entrypoints and invariants only.
+1. Add a crate-level <RepoFile path="README.md">README.md</RepoFile> or <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> for the five crates listed above, each covering entrypoints and invariants only.
 2. Keep the docs-site and repo-root source maps aligned when a crate boundary changes.

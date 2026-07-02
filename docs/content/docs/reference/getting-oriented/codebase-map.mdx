@@ -13,7 +13,7 @@ jackin❯, start at [Concepts](/getting-started/concepts/) and the
 **This page is the canonical module map for jackin❯.** When module
 structure changes, this page is updated in the same PR — see the
 "Code ↔ Docs Cross-Reference" table in <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile>.
-`PROJECT_STRUCTURE.md` itself is a short, agent-facing pointer that
+<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> itself is a short, agent-facing pointer that
 covers the multi-repo ecosystem and the per-PR docs contract; it
 sends readers here for the actual module-level detail.
 </Aside>
@@ -63,7 +63,7 @@ Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
                            jackin (Tier 5) provides the side-effect adapter shell in
                            crates/jackin/src/console/ — Docker/runtime/config IO execution,
                            terminal ownership, event loop. NOT a duplicate, a complement.
-        jackin-launch      launch progress UI                     → protocol, tui
+        jackin-launch-tui  launch progress UI                     → core, diagnostics, tui
         jackin-capsule     in-container TUI (its own binary)      → core, tui, protocol
         jackin-term        owned terminal model (vte parser + DamageGrid + GridSnapshot) → (no workspace deps)
         jackin-xtask       workspace automation binary (cargo xtask; construct image + dev fixtures)

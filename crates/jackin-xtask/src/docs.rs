@@ -7,6 +7,7 @@
 //!
 //! ```sh
 //! cargo xtask change new <slug> --group <group>   # scaffold a roadmap item
+//! cargo xtask docs repo-links                     # validate repo-file links
 //! cargo xtask research scaffold <slug>            # scaffold a research dossier
 //! cargo xtask research check                      # validate research meta.json
 //! cargo xtask roadmap audit                       # validate roadmap meta.json
@@ -14,7 +15,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
@@ -23,6 +24,25 @@ use serde_json::{Value, json};
 const DOCS_ROOT: &str = "docs/content/docs";
 const ROADMAP_REL: &str = "roadmap";
 const RESEARCH_REL: &str = "research";
+const REPO_FILE_PREFIXES: &[&str] = &[
+    "crates/", "src/", "docs/", "docker/", ".github/", "scripts/",
+];
+const REPO_TOP_LEVEL_FILES: &[&str] = &[
+    "AGENTS.md",
+    "Cargo.lock",
+    "Cargo.toml",
+    "ENGINEERING.md",
+    "PROJECT_STRUCTURE.md",
+    "PULL_REQUESTS.md",
+    "README.md",
+    "TESTING.md",
+    "docker-bake.hcl",
+    "mise.toml",
+    "release.toml",
+    "renovate.json",
+];
+const GITHUB_BLOB_PREFIX: &str = "https://github.com/jackin-project/jackin/blob/main/";
+const GITHUB_TREE_PREFIX: &str = "https://github.com/jackin-project/jackin/tree/main/";
 
 // ---------------------------------------------------------------------------
 // CLI surface
@@ -32,6 +52,12 @@ const RESEARCH_REL: &str = "research";
 pub(crate) enum ChangeCommand {
     /// Scaffold a new roadmap item `.mdx` and register it in a group sidebar.
     New(ChangeNewArgs),
+}
+
+#[derive(Subcommand)]
+pub(crate) enum DocsCommand {
+    /// Validate that repository file references use checked link components.
+    RepoLinks,
 }
 
 #[derive(Args)]
@@ -97,6 +123,12 @@ pub(crate) struct RoadmapRetireArgs {
 pub(crate) fn run_change(command: ChangeCommand) -> Result<()> {
     match command {
         ChangeCommand::New(args) => change_new(args),
+    }
+}
+
+pub(crate) fn run_docs(command: DocsCommand) -> Result<()> {
+    match command {
+        DocsCommand::RepoLinks => check_repo_links(&repo_root()?),
     }
 }
 
@@ -325,6 +357,225 @@ fn report_created(paths: &[&Path]) {
         for path in paths {
             println!("  {}", path.display());
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Repository file reference validation
+// ---------------------------------------------------------------------------
+
+fn check_repo_links(root: &Path) -> Result<()> {
+    let content_root = root.join(DOCS_ROOT);
+    check_repo_links_in(root, &content_root)
+}
+
+fn check_repo_links_in(root: &Path, content_root: &Path) -> Result<()> {
+    if !content_root.is_dir() {
+        bail!(
+            "docs content directory not found: {}",
+            content_root.display()
+        );
+    }
+
+    let mut files = Vec::new();
+    collect_mdx_files(content_root, &mut files)?;
+
+    let mut failures = Vec::new();
+    for file in files {
+        check_repo_links_file(root, &file, &mut failures)?;
+    }
+
+    if failures.is_empty() {
+        report_repo_links_clean();
+        return Ok(());
+    }
+    failures.sort();
+    bail!(
+        "repository file references must be verifiable links ({} problem(s)):\n  {}",
+        failures.len(),
+        failures.join("\n  ")
+    )
+}
+
+fn check_repo_links_file(root: &Path, file: &Path, failures: &mut Vec<String>) -> Result<()> {
+    let text = fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+    let display_path = relative(root, file);
+    let mut in_fence = false;
+    for (idx, line) in text.lines().enumerate() {
+        let line_no = idx + 1;
+        if line.trim_start().starts_with("```") || line.trim_start().starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        check_repo_file_components(root, &display_path, line_no, line, failures);
+        check_github_repo_urls(&display_path, line_no, line, failures);
+        check_inline_repo_paths(root, &display_path, line_no, line, failures);
+    }
+    Ok(())
+}
+
+fn check_repo_file_components(
+    root: &Path,
+    display_path: &str,
+    line_no: usize,
+    line: &str,
+    failures: &mut Vec<String>,
+) {
+    let mut rest = line;
+    while let Some(start) = rest.find("<RepoFile") {
+        rest = &rest[start + "<RepoFile".len()..];
+        let Some(end) = rest.find('>') else {
+            break;
+        };
+        let tag = &rest[..end];
+        if let Some(path) = tag_attr(tag, "path")
+            && !existing_repo_file(root, &path)
+        {
+            failures.push(format!(
+                "{display_path}:{line_no}: RepoFile path does not exist in the repository: {path}"
+            ));
+        }
+        rest = &rest[end + 1..];
+    }
+}
+
+fn tag_attr(tag: &str, name: &str) -> Option<String> {
+    for quote in ['"', '\''] {
+        let needle = format!("{name}={quote}");
+        if let Some(start) = tag.find(&needle) {
+            let value_start = start + needle.len();
+            let value = &tag[value_start..];
+            let end = value.find(quote)?;
+            return Some(value[..end].to_owned());
+        }
+    }
+    None
+}
+
+fn check_github_repo_urls(
+    display_path: &str,
+    line_no: usize,
+    line: &str,
+    failures: &mut Vec<String>,
+) {
+    for path in prefixed_url_paths(line, GITHUB_BLOB_PREFIX) {
+        failures.push(format!(
+            "{display_path}:{line_no}: use <RepoFile path=\"{path}\" /> instead of a full GitHub blob URL"
+        ));
+    }
+    for url in prefixed_urls(line, GITHUB_TREE_PREFIX) {
+        failures.push(format!(
+            "{display_path}:{line_no}: use a blob/main file link instead of tree/main so CI can verify it: {url}"
+        ));
+    }
+}
+
+fn prefixed_url_paths(line: &str, prefix: &str) -> Vec<String> {
+    prefixed_urls(line, prefix)
+        .into_iter()
+        .map(|url| url[prefix.len()..].to_owned())
+        .collect()
+}
+
+fn prefixed_urls(line: &str, prefix: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    let mut rest = line;
+    while let Some(start) = rest.find(prefix) {
+        let candidate = &rest[start..];
+        let end = candidate
+            .find(|c: char| c.is_whitespace() || matches!(c, ')' | '>' | '"' | '\''))
+            .unwrap_or(candidate.len());
+        urls.push(candidate[..end].to_owned());
+        rest = &candidate[end..];
+    }
+    urls
+}
+
+fn check_inline_repo_paths(
+    root: &Path,
+    display_path: &str,
+    line_no: usize,
+    line: &str,
+    failures: &mut Vec<String>,
+) {
+    let mut offset = 0;
+    while let Some(open_rel) = line[offset..].find('`') {
+        let open = offset + open_rel;
+        let value_start = open + 1;
+        let Some(close_rel) = line[value_start..].find('`') else {
+            break;
+        };
+        let close = value_start + close_rel;
+        let value = &line[value_start..close];
+        if !is_markdown_link_text(line, open, close + 1 - open)
+            && let Some(path) = repo_path_candidate(value)
+            && existing_repo_file(root, path)
+        {
+            failures.push(format!(
+                "{display_path}:{line_no}: link existing repo file `{path}` with <RepoFile path=\"{path}\" />"
+            ));
+        }
+        offset = close + 1;
+    }
+}
+
+fn is_markdown_link_text(line: &str, match_start: usize, match_len: usize) -> bool {
+    let before = match_start
+        .checked_sub(1)
+        .and_then(|idx| line.as_bytes().get(idx))
+        .copied();
+    let after = line.as_bytes().get(match_start + match_len..);
+    before == Some(b'[') && after.is_some_and(|s| s.starts_with(b"]("))
+}
+
+fn repo_path_candidate(value: &str) -> Option<&str> {
+    let path = value.trim();
+    if path.is_empty()
+        || path
+            .chars()
+            .any(|c| c.is_whitespace() || matches!(c, ',' | '*'))
+    {
+        return None;
+    }
+    if REPO_FILE_PREFIXES
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
+        || REPO_TOP_LEVEL_FILES.contains(&path)
+    {
+        return Some(path);
+    }
+    None
+}
+
+fn existing_repo_file(root: &Path, path: &str) -> bool {
+    let relative = Path::new(path.trim());
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return false;
+    }
+    root.join(relative).is_file()
+}
+
+fn relative(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn report_repo_links_clean() {
+    #[expect(
+        clippy::print_stdout,
+        reason = "jackin-xtask is a CLI; the audit result is its output"
+    )]
+    {
+        println!("repo links OK - repository file references are verifiable.");
     }
 }
 

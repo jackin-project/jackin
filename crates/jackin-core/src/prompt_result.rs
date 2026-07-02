@@ -1,11 +1,11 @@
 //! Result of a one-shot user prompt (e.g. trust confirm, vault selection).
 //!
-//! Moved here from `jackin-launch` as part of Workstream 1
+//! Moved here from `jackin-launch-tui` as part of Workstream 1
 //! (architecture/boundaries) in `codebase-health-enforcement`. The
-//! `launch_cockpit` TUI used to live in `jackin-launch` and owned this
+//! `launch_cockpit` TUI used to live in `jackin-launch-tui` and owned this
 //! type; lower-layer crates (notably `jackin-env::env_resolver`) had to
-//! depend upward on `jackin-launch` purely to use it, inverting the
-//! layering. Now both `jackin-launch` and `jackin-env` depend on
+//! depend upward on the launch TUI crate purely to use it, inverting the
+//! layering. Now both `jackin-launch-tui` and `jackin-env` depend on
 //! `jackin-core` for the type, and the dependency edge flips to point
 //! inward.
 

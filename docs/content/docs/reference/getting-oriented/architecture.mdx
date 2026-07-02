@@ -344,7 +344,7 @@ When this list drifts from <RepoFile path="Cargo.toml">Cargo.toml</RepoFile>, <R
 
 ## Async architecture and the "no blocking on the render thread" rule
 
-Both the host CLI (`crates/jackin/src/main.rs`) and the capsule daemon (`crates/jackin-capsule/src/main.rs`) run on a **`current_thread` Tokio runtime**. The render/event loop and all spawned tasks share a single OS thread. This is intentional:
+Both the host CLI (<RepoFile path="crates/jackin/src/main.rs">crates/jackin/src/main.rs</RepoFile>) and the capsule daemon (<RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile>) run on a **`current_thread` Tokio runtime**. The render/event loop and all spawned tasks share a single OS thread. This is intentional:
 
 - The host CLI holds `!Send` terminal raw-mode state and signal handlers that must stay on the OS main thread.
 - The capsule daemon's multiplexer loop, PTY readers, and socket accept loop communicate via `mpsc` channels — the single-thread model prevents data races without locking.
@@ -369,7 +369,7 @@ Both the host CLI (`crates/jackin/src/main.rs`) and the capsule daemon (`crates/
 
 Adding a new agent runtime or provider must be one registration, not N call-site edits. This is enforced through two sealed adapter registries.
 
-**`AgentRuntime` trait** (`crates/jackin-core/src/agent/runtime.rs`). Every agent variant (`claude`, `codex`, `amp`, `kimi`, `opencode`) is represented by a zero-sized adapter struct that implements `AgentRuntime`. `Agent::runtime()` returns `&'static dyn AgentRuntime` — a compile-time-known dispatch point. Adding a sixth built-in runtime means adding the enum variant, adapter file, registry entry, and the small number of centralized named-field accessor rows that remain because the public TOML schemas still expose named agent sections.
+**`AgentRuntime` trait** (<RepoFile path="crates/jackin-core/src/agent/runtime.rs">crates/jackin-core/src/agent/runtime.rs</RepoFile>). Every agent variant (`claude`, `codex`, `amp`, `kimi`, `opencode`) is represented by a zero-sized adapter struct that implements `AgentRuntime`. `Agent::runtime()` returns `&'static dyn AgentRuntime` — a compile-time-known dispatch point. Adding a sixth built-in runtime means adding the enum variant, adapter file, registry entry, and the small number of centralized named-field accessor rows that remain because the public TOML schemas still expose named agent sections.
 
 Key trait methods:
 - `slug() / label()` — wire identifier and display name.
@@ -379,7 +379,7 @@ Key trait methods:
 - `state_paths()` — `AgentStatePaths { credential_dir, credential_file, folder_env_var }` — the per-agent credential location on the host and the environment hint for the operator. Used by provisioning and by `sync_source_dir` resolution.
 - `parse_version(output)` — parses `--version` stdout to extract a semver string, replacing five per-agent branches.
 
-**`ProviderAdapter` trait** (`crates/jackin-protocol/src/provider_adapter.rs`). Same sealed pattern for providers (Anthropic, Zai, MiniMax, Kimi). `Provider::adapter()` returns `&'static dyn ProviderAdapter`. `Provider::available_for(agent_slug, has_key: impl Fn(Provider) -> bool)` replaces the four-positional-bool form.
+**`ProviderAdapter` trait** (<RepoFile path="crates/jackin-protocol/src/provider_adapter.rs">crates/jackin-protocol/src/provider_adapter.rs</RepoFile>). Same sealed pattern for providers (Anthropic, Zai, MiniMax, Kimi). `Provider::adapter()` returns `&'static dyn ProviderAdapter`. `Provider::available_for(agent_slug, has_key: impl Fn(Provider) -> bool)` replaces the four-positional-bool form.
 
 Key trait methods:
 - `label()` — display name.

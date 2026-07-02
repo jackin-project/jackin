@@ -84,28 +84,14 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          working_directory: docs
-          install_args: "bun node"
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
-      - name: Cache bun modules
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('docs/bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-
-      - name: Install dependencies
-        working-directory: docs
-        run: bun ci
-
       - name: Check source repository links
-        working-directory: docs
-        run: bun run check:repo-links
+        run: cargo xtask docs repo-links
 
       - name: Check roadmap sidebar completeness
-        working-directory: docs
-        run: bun run check:roadmap-sidebar
+        run: cargo xtask roadmap audit
 
   docs-link-check:
     needs: changes

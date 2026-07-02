@@ -9,8 +9,8 @@
 //! - `jackin-protocol` (`ExitAction` for finalize)
 //! - `jackin-docker` (`DockerApi` for finalize)
 //!
-//! Must NOT depend on: `jackin-runtime`, `jackin-launch`, `jackin-tui`,
-//! `jackin-docker` (docker calls are in materialize via `CommandRunner` trait).
+//! Must NOT depend on: `jackin-runtime`, `jackin-launch-tui`, `jackin-tui`.
+//! Docker calls stay behind the `DockerApi` trait boundary.
 //!
 //! Three isolation strategies: `Shared` (read-write bind), `Worktree` (git
 //! worktree clone, finalized post-attach), `Clone` (full directory copy,

@@ -1,6 +1,6 @@
 //! Non-UI launch cockpit value types: stages, identity, failure, restore
 //! dialog data, and port traits. Shared by the orchestration layer
-//! (`jackin-runtime`) and the presentation layer (`jackin-launch`) with no
+//! (`jackin-runtime`) and the presentation layer (`jackin-launch-tui`) with no
 //! dependency on `ratatui` or `jackin-tui`.
 
 use std::future::Future;

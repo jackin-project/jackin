@@ -6,7 +6,7 @@ title: "CI gate: PROJECT_STRUCTURE.md freshness"
 
 ## Current shape
 
-<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> is now a root orientation map that delegates detailed source navigation to the [Codebase Map](/reference/getting-oriented/codebase-map/). The docs workflow already runs <RepoFile path="docs/scripts/check-repo-links.ts">docs/scripts/check-repo-links.ts</RepoFile> and `bun run check:roadmap-sidebar`, so published docs routes and roadmap sidebar coverage are gated.
+<RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> is now a root orientation map that delegates detailed source navigation to the [Codebase Map](/reference/getting-oriented/codebase-map/). The docs workflow already runs `cargo xtask docs repo-links` and `cargo xtask roadmap audit`, so published docs routes and roadmap sidebar coverage are gated.
 
 What is still missing is a repository-level assertion that newly added Rust module files are either represented in the root structure map or intentionally covered by the Codebase Map.
 

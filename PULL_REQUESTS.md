@@ -201,7 +201,7 @@ Both surfaces load-bearing. If operator-visible behaviour ships without user-fac
 1. Walk diff and ask, for each change: does this change what operator sees, types, or relies on? If yes, matching `guides/`, `commands/`, `getting-started/`, or `developing/` page must be updated in this PR.
 2. Walk diff again and ask: does this change struct, enum, function name, on-disk path, schema version, design decision, or any other detail internals page describes? If yes, matching `reference/` page must be updated in this PR.
 3. Apply **Roadmap freshness** rule above: status updates, sidebar/overview audits, retire-when-fully-resolved.
-4. Run `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, `bun test` from `docs/`. Docs change that doesn't compile or breaks repo-file references incomplete.
+4. Run `bun run build`, `cargo xtask docs repo-links`, `bunx tsc --noEmit`, `bun test`. Docs change that doesn't compile or breaks repo-file references incomplete.
 
 Do not split feature PR from its docs PR by default. Docs land with code that makes them true; landing later means docs wrong for the gap, and the gap exactly when other agents + operators read them. Exception: explicit "docs-only follow-up" pattern named above, which operator authorizes per case.
 

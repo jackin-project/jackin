@@ -52,8 +52,8 @@ Populates `node_modules/` with platform-specific optional native binaries (e.g. 
 - Start dev server: `bun run dev`
 - Build docs: `bun run build`
 - Preview production build: `bun run preview`
-- Check source repository links: `bun run check:repo-links`
-- Check roadmap sidebar completeness: `bun run check:roadmap-sidebar`
+- Check source repository links: `cargo xtask docs repo-links`
+- Check roadmap sidebar completeness: `cargo xtask roadmap audit`
 - Check links in the existing production build: `bun run check:links`
 - Rebuild and then check links: `bun run check:links:fresh`
 - Run tests: `bun test`
@@ -91,14 +91,14 @@ bun install --frozen-lockfile
 - Link docs pages with site-absolute routes (e.g. `/guides/mounts/`). Generated-site lychee check is authoritative guard, including fragments.
 - No GitHub blob links or `<RepoFile />` for pages published under `content/docs/`. Use site route instead (e.g. `/roadmap/per-mount-isolation/`). GitHub only for external repos and repo files not rendered as docs.
 - Link non-doc repo files with `<RepoFile path="src/runtime/image.rs" />`, not plain code spans, when reader should open the file. Component renders GitHub `blob/main` URL; CI link check remaps to PR checkout, so renames/deletions fail before merge. Avoid `tree/main` directory links unless a concrete file is impossible.
-- Plain inline-code refs to existing repo files under `src/`, `docs/`, `docker/`, `.github/` fail `bun run check:repo-links`; link them. Published docs pages → docs route. Non-doc repo files → `<RepoFile />`. Future files not yet existing may stay code spans.
+- Plain inline-code refs to existing repo files under `crates/`, `src/`, `docs/`, `docker/`, `.github/`, and `scripts/` fail `cargo xtask docs repo-links`; link them. Published docs pages → docs route. Non-doc repo files → `<RepoFile />`. Future files not yet existing may stay code spans.
 - `check:repo-links` exists because lychee only checks real links in rendered HTML. Plain code spans like `src/runtime/launch.rs` aren't links, so lychee can't detect renames/deletions. The source check forces `<RepoFile />`, then lychee verifies the generated URL.
 - `mailto:` links are lychee-checked; use real intentional addresses, not placeholders.
 - Sidebar + top-nav configured via `meta.json` files and `src/lib/layout.shared.tsx`.
 - **Roadmap sidebar discipline.** Every MDX file under `content/docs/roadmap/` must be referenced in at least one `meta.json` under the roadmap tree (nested group structure: root `meta.json` points to group dirs; each group's `meta.json` points to pages stored in that same category/subcategory directory). On any add/rename/delete/status-change of a roadmap item — or directory restructure — verify sidebar still matches directory contents in same PR. Operators discover open work via sidebar (not overview prose), so an item reachable only via direct URL or overview is effectively hidden. Audit from `docs/`:
 
   ```sh
-  bun run check:roadmap-sidebar
+  cargo xtask roadmap audit
   ```
 
   Script reports any MDX file with no matching `meta.json` entry and any entry with no matching MDX file. Both directions must be clean.

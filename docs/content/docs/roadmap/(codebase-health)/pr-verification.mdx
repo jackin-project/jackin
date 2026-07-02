@@ -10,7 +10,7 @@ title: "Workspace-Native PR Verification"
 
 Packaging is live: a dedicated <RepoFile path=".github/workflows/jackin-dev.yml">.github/workflows/jackin-dev.yml</RepoFile> workflow builds `jackin-dev` for four targets, gates PRs that touch its inputs on a version bump, and on `main` publishes a GitHub release plus opens and auto-merges a formula-update PR against `jackin-project/homebrew-tap`. This is a separate pipeline from the product's release/preview workflows, scoped by path filters to `crates/jackin-dev/**` and its few other inputs.
 
-`jackin-dev pr sync` is the adopted standard: `PULL_REQUESTS.md` documents it as the Checkout block's first step, ahead of any smoke command, specifically because launches resolve whichever binary comes first on `PATH` and miss the PR's container-side changes without the capsule export running first.
+`jackin-dev pr sync` is the adopted standard: <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> documents it as the Checkout block's first step, ahead of any smoke command, specifically because launches resolve whichever binary comes first on `PATH` and miss the PR's container-side changes without the capsule export running first.
 
 ## Remaining work
 

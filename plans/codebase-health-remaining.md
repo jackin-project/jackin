@@ -216,5 +216,5 @@ Run this only after every blocker above is implemented.
 - [x] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
 - [x] `cargo run -p jackin-xtask --locked -- lint --strict`
 - [x] `cargo nextest run --all-features --no-fail-fast -E 'not test(/shell_session_gets_only_status_socket/)'`
-- [x] Docs gate: `bun run build`, `bun run check:repo-links`, `bun run check:roadmap-sidebar`, `bunx tsc --noEmit`, and `bun test`
+- [x] Docs gate: `bun run build`, `cargo xtask docs repo-links`, `cargo xtask roadmap audit`, `bunx tsc --noEmit`, and `bun test`
 - [x] `gh pr checks 664 --watch=false` shows the latest pushed head has the required checks, not only DCO.

@@ -106,6 +106,94 @@ fn validate_tree_resolves_group_and_parent_cross_refs() {
     );
 }
 
+fn repo_link_fixture(page_body: &str) -> tempfile::TempDir {
+    let repo = tempfile::tempdir().unwrap();
+    let root = repo.path();
+    write(
+        &root.join("crates/jackin-host/src/host_desktop.rs"),
+        "pub fn open() {}\n",
+    );
+    write(&root.join("Cargo.toml"), "[workspace]\n");
+    write(&root.join("docs/content/docs/guide.mdx"), page_body);
+    repo
+}
+
+#[test]
+fn repo_links_reject_inline_code_repo_paths() {
+    let repo = repo_link_fixture(
+        "---\ntitle: Guide\n---\n\nSee `crates/jackin-host/src/host_desktop.rs`.\n",
+    );
+
+    let err = check_repo_links_in(repo.path(), &repo.path().join(DOCS_ROOT))
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        err.contains("link existing repo file")
+            && err.contains("crates/jackin-host/src/host_desktop.rs"),
+        "should flag raw inline repo path: {err}"
+    );
+}
+
+#[test]
+fn repo_links_accept_repo_file_component_and_markdown_link_text() {
+    let repo = repo_link_fixture(
+        "---\ntitle: Guide\n---\n\n\
+         See <RepoFile path=\"crates/jackin-host/src/host_desktop.rs\">crates/jackin-host/src/host_desktop.rs</RepoFile>.\n\
+         [`Cargo.toml`](../../Cargo.toml) is regular Markdown.\n",
+    );
+
+    check_repo_links_in(repo.path(), &repo.path().join(DOCS_ROOT)).unwrap();
+}
+
+#[test]
+fn repo_links_reject_missing_repo_file_component_path() {
+    let repo = repo_link_fixture(
+        "---\ntitle: Guide\n---\n\n\
+         See <RepoFile path=\"crates/jackin-host/src/missing.rs\" />.\n",
+    );
+
+    let err = check_repo_links_in(repo.path(), &repo.path().join(DOCS_ROOT))
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        err.contains("RepoFile path does not exist")
+            && err.contains("crates/jackin-host/src/missing.rs"),
+        "should flag missing RepoFile path: {err}"
+    );
+}
+
+#[test]
+fn repo_links_reject_repo_file_component_traversal() {
+    let repo = repo_link_fixture(
+        "---\ntitle: Guide\n---\n\n\
+         See <RepoFile path=\"docs/content/docs/../../Cargo.toml\" />.\n",
+    );
+
+    let err = check_repo_links_in(repo.path(), &repo.path().join(DOCS_ROOT))
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        err.contains("RepoFile path does not exist")
+            && err.contains("docs/content/docs/../../Cargo.toml"),
+        "should reject non-normal repo paths: {err}"
+    );
+}
+
+#[test]
+fn repo_links_ignore_code_fences() {
+    let repo = repo_link_fixture(
+        "---\ntitle: Guide\n---\n\n\
+         ```text\n\
+         crates/jackin-host/src/host_desktop.rs\n\
+         ```\n",
+    );
+
+    check_repo_links_in(repo.path(), &repo.path().join(DOCS_ROOT)).unwrap();
+}
+
 #[test]
 fn change_new_in_scaffolds_and_registers() {
     let roadmap = tempfile::tempdir().unwrap();

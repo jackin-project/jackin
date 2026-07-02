@@ -22,7 +22,7 @@ On the modeled heavy day (~$22, 6 sessions, ~27k output tok/session — see 01-e
 
 ## Local measurements 
 
-Method: free `count_tokens` API, model `claude-fable-5`, each payload sent as a single user message; 1-char baseline message = 7 tok envelope, subtracted in % columns. Measurement script reproduced in 31-validation-harness.md style: simulate the exact JSON a tool call would carry. File under test: `crates/jackin-config/src/app_config/workspaces.rs` (200 lines); change under test: a realistic 5-line method addition with a 5-line unique anchor.
+Method: free `count_tokens` API, model `claude-fable-5`, each payload sent as a single user message; 1-char baseline message = 7 tok envelope, subtracted in % columns. Measurement script reproduced in 31-validation-harness.md style: simulate the exact JSON a tool call would carry. File under test: <RepoFile path="crates/jackin-config/src/app_config/workspaces.rs">crates/jackin-config/src/app_config/workspaces.rs</RepoFile> (200 lines); change under test: a realistic 5-line method addition with a 5-line unique anchor.
 
 | Measurement | Tokens | Comparator | Tokens | Saved |
 |---|---|---|---|---|
