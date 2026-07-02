@@ -9,7 +9,7 @@ use jackin_core::op_types::{OpAccount, OpField, OpItem, OpVault};
 
 const OP_DEFAULT_BIN: &str = "op";
 const OP_DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-const OP_LAUNCH_ENV_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+const OP_LAUNCH_ENV_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(2);
 pub(crate) const OP_STDERR_MAX: usize = 4 * 1024;
 const OP_SPAWN_RETRIES: usize = 5;
 const TEXT_FILE_BUSY_OS_ERROR: i32 = 26;
@@ -43,7 +43,7 @@ impl OpCli {
     }
 
     /// Launch-time operator-env reads run on the foreground path, but real
-    /// 1Password app/daemon wakeups can exceed the default 30s budget while
+    /// 1Password app/daemon wake-up delays can exceed the default 30s budget while
     /// still completing successfully. Keep this finite and below the fully
     /// interactive SSO budget so a wedged `op` still fails with a bounded error.
     pub fn new_launch_env() -> Self {
@@ -122,18 +122,7 @@ impl Default for OpCli {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn launch_env_runner_uses_wider_bounded_timeout() {
-        let runner = OpCli::new_launch_env();
-
-        assert_eq!(runner.binary, OP_DEFAULT_BIN);
-        assert_eq!(runner.timeout, std::time::Duration::from_secs(120));
-        assert_eq!(runner.account, None);
-    }
-}
+mod tests;
 
 fn format_exit_status(status: std::process::ExitStatus) -> String {
     status
