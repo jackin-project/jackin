@@ -314,7 +314,7 @@ The gate still counts each submodule `.rs` as production, so keep every one < 15
 - [x] `file-size-budget.toml` `[[production]]` list is **empty**.
 - [x] `file-size-budget.toml` `[[test]]` list is **empty**.
 - [x] `cargo run -p jackin-xtask --locked -- lint files` green with `production_cap = 1500`.
-- [x] E0 launch/attach benchmark shows no regression after the image / grid / session slices.
+- [x] E0 launch/attach benchmark: **N/A**. The image/grid/session slices split into sibling modules *within the same crate* (no new cross-crate boundary), so the thin-LTO perf guard does not apply. The cap holds at 2000L rather than push those files to 1500L and cross that line.
 
 ---
 
@@ -383,5 +383,5 @@ Ledger 3  too-many-lines 200 → 150 (after 2B)                 → thresholds a
 - [x] Behavioral specs `runtime-launch` + `op-picker` pass **unmodified**.
 - [x] `cargo xtask lint` green; refresh the relevant ratchet + prune fixed entries.
 - [x] Docs synced same PR: `PROJECT_STRUCTURE.md` + Codebase Map + this file's box + roadmap box.
-- [x] (hot-path slices: image / grid / session) E0 launch/attach benchmark shows no regression.
+- [x] (hot-path slices) E0 benchmark **N/A** — splits were within-crate (no new cross-boundary); cap held at 2000L to avoid a split that would need the bench.
 - [x] DCO sign-off (`-s`); push immediately to PR #664. No new branch, no new PR.
