@@ -1037,11 +1037,6 @@ fn stdout_fragment(args: Arguments<'_>) {
     drop(write!(stdout, "{args}"));
 }
 
-fn stderr_line(args: Arguments<'_>) {
-    let mut stderr = std::io::stderr().lock();
-    drop(writeln!(stderr, "{args}"));
-}
-
 fn section(label: &str, detail: impl std::fmt::Display) {
     stdout_line(format_args!(""));
     stdout_line(format_args!("  {} {}", label.bold(), detail.dimmed()));
@@ -1049,12 +1044,12 @@ fn section(label: &str, detail: impl std::fmt::Display) {
 }
 
 fn ok_label() {
-    stdout_line(format_args!("    {}", "OK".green().bold()));
+    stdout_line(format_args!(" {}", "OK".green().bold()));
 }
 
 fn failed_label(detail: impl std::fmt::Display) {
-    stderr_line(format_args!("    {}", "FAILED".red().bold()));
-    stderr_line(format_args!("      {detail}"));
+    stdout_line(format_args!(" {}", "FAILED".red().bold()));
+    stdout_line(format_args!("      {detail}"));
 }
 
 fn start(action: &str, target: impl std::fmt::Display) -> PendingRow {
