@@ -42,14 +42,15 @@ pub(crate) use self::amp::{
 pub use self::claude::ClaudeUsageDiagnostic;
 #[allow(unused_imports)]
 pub(crate) use self::claude::{
-    ClaudeCliUsage, ClaudeOAuthCredentials, ClaudeOAuthExtraUsage, ClaudeOAuthMoney,
-    ClaudeOAuthSpend, ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeSpend,
-    claude_account_identity, claude_code_user_agent, claude_code_user_agent_with,
-    claude_code_version_from_text, claude_email_from_value, claude_oauth_candidates,
-    claude_oauth_from_value, claude_organization_type_from_value, claude_snapshot,
-    claude_spend_bucket, claude_window_seconds, fetch_claude_cli_usage, fetch_claude_oauth_usage,
+    ClaudeCliUsage, ClaudeOAuthCredentials, ClaudeOAuthExtraUsage, ClaudeOAuthLimit,
+    ClaudeOAuthLimitModel, ClaudeOAuthLimitScope, ClaudeOAuthMoney, ClaudeOAuthSpend,
+    ClaudeOAuthUsageResponse, ClaudeOAuthUsageWindow, ClaudeSpend, claude_account_identity,
+    claude_code_user_agent, claude_code_user_agent_with, claude_code_version_from_text,
+    claude_email_from_value, claude_oauth_candidates, claude_oauth_from_value,
+    claude_organization_type_from_value, claude_snapshot, claude_spend_bucket,
+    claude_window_seconds, fetch_claude_cli_usage, fetch_claude_oauth_usage,
     load_claude_account_email, normalize_claude_spend, push_claude_cli_bucket,
-    push_claude_dollar_windows, push_claude_window,
+    push_claude_dollar_windows, push_claude_limit_bucket, push_claude_window,
 };
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -1294,10 +1295,28 @@ pub(crate) fn parse_claude_usage_output(text: &str) -> Option<ClaudeCliUsage> {
             usage.weekly_used = percent_before_used(line);
         } else if line.starts_with("Current week (Sonnet only):") {
             usage.sonnet_used = percent_before_used(line);
+        } else if let Some(rest) = line.strip_prefix("Current week (") {
+            // Per-model weekly line, e.g. "Current week (Fable): 35% used · …".
+            // The model name is the text between the parens; "all models" and
+            // "Sonnet only" are handled by the explicit branches above, so
+            // anything reaching here is a model-scoped window (Fable today,
+            // future codenames tomorrow). Surfaced generically so a new model
+            // prints without a per-model parser edit.
+            if let Some(close) = rest.find(')') {
+                let label = rest[..close].trim();
+                if !label.is_empty()
+                    && let Some(percent) = percent_before_used(line)
+                {
+                    usage.scoped_weekly.push((label.to_owned(), percent));
+                }
+            }
         }
     }
-    (usage.session_used.is_some() || usage.weekly_used.is_some() || usage.sonnet_used.is_some())
-        .then_some(usage)
+    (usage.session_used.is_some()
+        || usage.weekly_used.is_some()
+        || usage.sonnet_used.is_some()
+        || !usage.scoped_weekly.is_empty())
+    .then_some(usage)
 }
 
 /// `Auth:` origin label for an OAuth credential resolved from `path`, with the

@@ -276,6 +276,14 @@ pub(crate) struct ClaudeOAuthUsageResponse {
     #[serde(alias = "seven_day_cowork")]
     #[serde(rename = "seven_day_routines")]
     pub(crate) seven_day_routines: Option<ClaudeOAuthUsageWindow>,
+    // Authoritative shape for Session / "All models" Weekly / per-model Weekly
+    // (Fable, and future model-scoped limits). The API migrated model-specific
+    // windows here: the legacy `seven_day_sonnet`/`seven_day_opus` keys are
+    // still returned but `null` on current accounts — the data lives only in
+    // `limits` as `weekly_scoped` entries. Surfaced generically so a new model
+    // codename (Fable today, others tomorrow) appears without per-model code.
+    #[serde(default)]
+    pub(crate) limits: Vec<ClaudeOAuthLimit>,
     #[serde(rename = "extra_usage")]
     pub(crate) extra_usage: Option<ClaudeOAuthExtraUsage>,
     // The newer, self-describing money object. Preferred over `extra_usage`
@@ -336,6 +344,53 @@ pub(crate) struct ClaudeOAuthUsageWindow {
     pub(crate) used_dollars: Option<f64>,
 }
 
+/// One entry in the `limits` array — the authoritative shape for Session,
+/// "All models" Weekly, and per-model Weekly (Fable, and future model-scoped
+/// limits). `percent` is already-scaled (0..=100); `kind` selects the bucket
+/// (`session` | `weekly_all` | `weekly_scoped`); `scope.model.display_name`
+/// labels a `weekly_scoped` window. `severity` mirrors the web console's meter
+/// color and maps to [`UsageSeverity`].
+#[derive(Debug, Deserialize)]
+pub(crate) struct ClaudeOAuthLimit {
+    pub(crate) kind: Option<String>,
+    pub(crate) group: Option<String>,
+    pub(crate) percent: Option<u8>,
+    pub(crate) severity: Option<String>,
+    #[serde(rename = "resets_at")]
+    pub(crate) resets_at: Option<String>,
+    pub(crate) scope: Option<ClaudeOAuthLimitScope>,
+    // Surfaced by the API but not yet rendered: today it flags the currently
+    // binding constraint, not whether to show the row (Session/All-models are
+    // `false` while a scoped model is `true`), so it must not gate visibility.
+    #[serde(rename = "is_active", default)]
+    #[expect(
+        dead_code,
+        reason = "API-shape field kept for completeness; not gated on yet"
+    )]
+    pub(crate) is_active: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ClaudeOAuthLimitScope {
+    pub(crate) model: Option<ClaudeOAuthLimitModel>,
+    #[expect(
+        dead_code,
+        reason = "API-shape field kept for completeness; not rendered yet"
+    )]
+    pub(crate) surface: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ClaudeOAuthLimitModel {
+    #[expect(
+        dead_code,
+        reason = "API-shape field kept for completeness; label uses display_name"
+    )]
+    pub(crate) id: Option<String>,
+    #[serde(rename = "display_name")]
+    pub(crate) display_name: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClaudeOAuthExtraUsage {
     #[serde(rename = "is_enabled")]
@@ -360,6 +415,11 @@ pub(crate) struct ClaudeCliUsage {
     pub(crate) session_used: Option<f64>,
     pub(crate) weekly_used: Option<f64>,
     pub(crate) sonnet_used: Option<f64>,
+    /// Per-model weekly windows the CLI prints as `Current week (<model>): …`
+    /// (Fable today; future model codenames). Each entry is `(model label,
+    /// percent used)`. Distinct from `sonnet_used`, which preserves the legacy
+    /// `(Sonnet only)` line and its "Sonnet" bucket label.
+    pub(crate) scoped_weekly: Vec<(String, f64)>,
 }
 
 impl ClaudeCliUsage {
@@ -381,6 +441,9 @@ impl ClaudeCliUsage {
             self.weekly_used,
         );
         push_claude_cli_bucket(&mut buckets, "Sonnet", None, self.sonnet_used);
+        for (label, used) in &self.scoped_weekly {
+            push_claude_cli_bucket(&mut buckets, label, None, Some(*used));
+        }
         buckets
     }
 }
@@ -411,35 +474,105 @@ pub(crate) fn push_claude_cli_bucket(
 impl ClaudeOAuthUsageResponse {
     pub(crate) fn into_buckets(self, now: i64) -> Vec<QuotaBucketView> {
         let mut buckets = Vec::new();
-        push_claude_window(
-            &mut buckets,
-            "Session",
-            Some(StatusSlot::Session),
-            self.five_hour,
-            now,
-        );
-        push_claude_window(
-            &mut buckets,
-            "Weekly",
-            Some(StatusSlot::Weekly),
-            self.seven_day,
-            now,
-        );
-        push_claude_window(&mut buckets, "Sonnet", None, self.seven_day_sonnet, now);
-        push_claude_window(&mut buckets, "Opus", None, self.seven_day_opus, now);
-        push_claude_window(
-            &mut buckets,
-            "Daily Routines",
-            None,
-            self.seven_day_routines,
-            now,
-        );
+        // The `limits` array is the authoritative shape on current accounts:
+        // it carries Session, "All models" Weekly, and per-model Weekly
+        // (`weekly_scoped` — Fable today, future model codenames tomorrow).
+        // When present, build buckets from it and skip the legacy named
+        // windows (which the API still returns but as `null` on current
+        // accounts — the data lives only in `limits`). The legacy path stays
+        // the fallback for accounts whose response predates `limits`.
+        if self.limits.is_empty() {
+            push_legacy_claude_windows(
+                &mut buckets,
+                self.five_hour,
+                self.seven_day,
+                self.seven_day_sonnet,
+                self.seven_day_opus,
+                self.seven_day_routines,
+                now,
+            );
+        } else {
+            push_claude_limit_buckets(&mut buckets, self.limits, now);
+        }
         if let Some(spend) = claude_spend_bucket(self.spend, self.extra_usage) {
             buckets.push(spend);
         }
         push_claude_dollar_windows(&mut buckets, self.other_windows, now);
         buckets
     }
+}
+
+/// Legacy pre-`limits` named-window buckets. Kept as the fallback for accounts
+/// whose OAuth response predates the `limits` array, so a regression on the
+/// legacy shape is not introduced by the `limits` migration.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn push_legacy_claude_windows(
+    buckets: &mut Vec<QuotaBucketView>,
+    five_hour: Option<ClaudeOAuthUsageWindow>,
+    seven_day: Option<ClaudeOAuthUsageWindow>,
+    seven_day_sonnet: Option<ClaudeOAuthUsageWindow>,
+    seven_day_opus: Option<ClaudeOAuthUsageWindow>,
+    seven_day_routines: Option<ClaudeOAuthUsageWindow>,
+    now: i64,
+) {
+    push_claude_window(
+        buckets,
+        "Session",
+        Some(StatusSlot::Session),
+        five_hour,
+        now,
+    );
+    push_claude_window(buckets, "Weekly", Some(StatusSlot::Weekly), seven_day, now);
+    push_claude_window(buckets, "Sonnet", None, seven_day_sonnet, now);
+    push_claude_window(buckets, "Opus", None, seven_day_opus, now);
+    push_claude_window(buckets, "Daily Routines", None, seven_day_routines, now);
+}
+
+/// Build buckets from the authoritative `limits` array: Session, "All models"
+/// Weekly, and one bucket per model-scoped weekly window (Fable, and future
+/// model codenames). A `weekly_scoped` window without a model display name is
+/// skipped — never fabricated into an empty-label row.
+pub(crate) fn push_claude_limit_buckets(
+    buckets: &mut Vec<QuotaBucketView>,
+    limits: Vec<ClaudeOAuthLimit>,
+    now: i64,
+) {
+    for limit in limits {
+        match limit.kind.as_deref() {
+            Some("session") => {
+                push_claude_limit_bucket(buckets, "Session", Some(StatusSlot::Session), limit, now);
+            }
+            Some("weekly_all") => {
+                push_claude_limit_bucket(
+                    buckets,
+                    "All models",
+                    Some(StatusSlot::Weekly),
+                    limit,
+                    now,
+                );
+            }
+            Some("weekly_scoped") => {
+                if let Some(label) = claude_scoped_limit_label(&limit) {
+                    push_claude_limit_bucket(buckets, &label, None, limit, now);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The model display name for a `weekly_scoped` limit, trimmed and non-empty;
+/// `None` when the API supplied no name, so the caller omits the window rather
+/// than fabricating a label.
+fn claude_scoped_limit_label(limit: &ClaudeOAuthLimit) -> Option<String> {
+    limit
+        .scope
+        .as_ref()
+        .and_then(|scope| scope.model.as_ref())
+        .and_then(|model| model.display_name.as_deref())
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(str::to_owned)
 }
 
 /// Surface rotating-codename dollar-budget windows (`amber_ladder` etc.) that a
@@ -599,6 +732,45 @@ pub(crate) fn push_claude_window(
         ),
         slot,
     ));
+}
+
+/// Build a bucket from a `limits`-array entry. `limit.percent` is already a
+/// scaled 0..=100 value (the `limits` shape, unlike the legacy `utilization`,
+/// never sends a fraction), so it is fed straight into the percent helpers.
+/// `window_seconds` is derived from `limit.group` rather than the label, so a
+/// `weekly_all` bucket labelled "All models" still gets the 7-day pace window.
+pub(crate) fn push_claude_limit_bucket(
+    buckets: &mut Vec<QuotaBucketView>,
+    label: &str,
+    slot: Option<StatusSlot>,
+    limit: ClaudeOAuthLimit,
+    now: i64,
+) {
+    let Some(percent) = limit.percent else {
+        return;
+    };
+    let used = f64::from(percent);
+    let reset_at = limit.resets_at.as_deref().and_then(parse_iso_epoch);
+    let window_seconds = match limit.group.as_deref() {
+        Some("session") => Some(5 * 60 * 60),
+        Some("weekly") => Some(7 * 24 * 60 * 60),
+        _ => None,
+    };
+    let remaining = remaining_from_fraction(used);
+    let pace = quota_pace_label(remaining, reset_at, window_seconds, now);
+    let mut view = timed_bucket(
+        label,
+        used_percent_label(used),
+        Some("100%".to_owned()),
+        remaining,
+        reset_at,
+        now,
+        pace.as_deref(),
+        UsageSnapshotStatus::Fresh,
+    );
+    view.status_slot = slot;
+    view.severity = severity_from_label(limit.severity.as_deref());
+    buckets.push(view);
 }
 
 pub(crate) fn claude_window_seconds(label: &str) -> Option<i64> {

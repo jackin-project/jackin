@@ -516,7 +516,13 @@ fn usage_bucket_order(provider: &str, label: &str) -> usize {
             "Credits",
         ]
     } else if provider_matches("anthropic", &provider) || provider_matches("claude", &provider) {
-        &["Session", "Weekly", "Sonnet", "Daily Routines"]
+        &[
+            "Session",
+            "Weekly",
+            "All models",
+            "Sonnet",
+            "Daily Routines",
+        ]
     } else if provider_matches("amp", &provider) {
         &["Amp Free", "Credits", "Individual credits"]
     } else if provider_matches("zai", &provider) || provider_matches("glm", &provider) {

@@ -1197,6 +1197,96 @@ fn claude_spend_object_preferred_and_scaled() {
     );
 }
 
+/// The `limits` array is the authoritative shape on current accounts: it
+/// carries Session, "All models" Weekly, and per-model Weekly (`weekly_scoped`
+/// — Fable today). When present, `into_buckets` builds from it and must NOT
+/// also emit the legacy `seven_day*` windows (the API returns both, so
+/// skipping the legacy path is what prevents double rows). Mirrors the live
+/// 2026-07-03 OAuth response: session 7%, all-models 28%, Fable 35%.
+#[test]
+fn claude_oauth_limits_array_surfaces_fable_and_all_models() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        // Legacy named windows are still present but null on current accounts;
+        // they must contribute nothing because `limits` takes precedence.
+        "five_hour": null,
+        "seven_day": null,
+        "seven_day_sonnet": null,
+        "seven_day_opus": null,
+        "seven_day_cowork": null,
+        "limits": [
+            { "kind": "session", "group": "session", "percent": 7,
+              "severity": "normal", "resets_at": "2026-07-03T03:19:59Z",
+              "scope": null, "is_active": false },
+            { "kind": "weekly_all", "group": "weekly", "percent": 28,
+              "severity": "normal", "resets_at": "2026-07-03T07:00:00Z",
+              "scope": null, "is_active": false },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 35,
+              "severity": "warn", "resets_at": "2026-07-03T06:59:59Z",
+              "scope": { "model": { "id": null, "display_name": "Fable" },
+                         "surface": null },
+              "is_active": true }
+        ]
+    }))
+    .expect("valid Claude OAuth limits-array response");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+
+    let session = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket from limits");
+    assert_eq!(session.label, "Session");
+    assert_eq!(session.remaining_percent, Some(93));
+    assert_eq!(session.used_label.as_deref(), Some("7% used"));
+
+    // "All models" fills the Weekly headline slot (status bar still reads
+    // "Weekly" via the slot), label matches the web console row.
+    let all_models = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly slot from limits");
+    assert_eq!(all_models.label, "All models");
+    assert_eq!(all_models.remaining_percent, Some(72));
+
+    // Fable — the model-scoped window the legacy parser dropped. Non-headline
+    // (no status slot), severity mirrored from the API for meter color.
+    let fable = buckets
+        .iter()
+        .find(|b| b.label == "Fable")
+        .expect("Fable model-scoped bucket");
+    assert_eq!(fable.remaining_percent, Some(65));
+    assert_eq!(fable.used_label.as_deref(), Some("35% used"));
+    assert_eq!(fable.status_slot, None);
+    assert_eq!(fable.severity, UsageSeverity::Warn);
+    // Reset epoch is carried (RC2) so the CLI report can emit `resets_at`.
+    assert!(fable.resets_at.is_some());
+
+    // No legacy fabricated rows leaked through: the null `seven_day*` windows
+    // produce nothing once `limits` is authoritative.
+    assert!(buckets.iter().all(|b| b.label != "Weekly"));
+    assert!(buckets.iter().all(|b| b.label != "Sonnet"));
+    assert!(buckets.iter().all(|b| b.label != "Opus"));
+    assert!(buckets.iter().all(|b| b.label != "Daily Routines"));
+}
+
+/// A `weekly_scoped` window with no model display name is skipped rather than
+/// fabricated into an empty-label row — the same "absent window must be
+/// omitted, never fabricated" rule the legacy path follows.
+#[test]
+fn claude_oauth_limits_array_skips_unnamed_scoped_window() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 40,
+              "severity": "normal", "resets_at": "2026-07-03T06:59:59Z",
+              "scope": { "model": { "id": null, "display_name": null } },
+              "is_active": true }
+        ]
+    }))
+    .expect("valid limits response");
+    let buckets = usage.into_buckets(1_781_300_000);
+    assert!(buckets.is_empty(), "unnamed scoped window must be omitted");
+}
+
 #[test]
 fn codex_refresh_request_body_uses_refresh_grant() {
     let body = codex_refresh_request_body("rt-abc");
@@ -1792,6 +1882,46 @@ fn claude_cli_usage_output_maps_current_windows() {
             &buckets
         ),
         "Session 100% · Weekly 54%"
+    );
+}
+
+/// The CLI prints per-model weekly lines as `Current week (<model>): …` (Fable
+/// today, future codenames tomorrow). The parser captures each generically so
+/// a new model prints without a per-model edit. Mirrors the live 2026-07-03
+/// `claude -p /usage` output, where Sonnet was replaced by Fable.
+#[test]
+fn claude_cli_usage_output_maps_scoped_weekly_fable() {
+    let usage = parse_claude_usage_output(
+        "You are currently using your subscription to power your Claude Code usage\n\
+             \n\
+             Current session: 9% used · resets Jul 3 at 10:19am (Asia/Saigon)\n\
+             Current week (all models): 28% used · resets Jul 3 at 2pm (Asia/Saigon)\n\
+             Current week (Fable): 35% used · resets Jul 3 at 1:59pm (Asia/Saigon)\n",
+    )
+    .expect("usage output");
+
+    // The model-scoped line lands in `scoped_weekly` (not `sonnet_used`).
+    assert_eq!(usage.scoped_weekly.len(), 1);
+    assert_eq!(usage.scoped_weekly[0].0, "Fable");
+    assert_eq!(usage.scoped_weekly[0].1, 35.0);
+
+    let buckets = usage.buckets();
+    let fable = buckets
+        .iter()
+        .find(|b| b.label == "Fable")
+        .expect("Fable CLI bucket");
+    assert_eq!(fable.remaining_percent, Some(65));
+    assert_eq!(fable.status_slot, None);
+
+    // Headline still binds to the slot from the explicit (all models) line.
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Claude,
+            "",
+            UsageSnapshotStatus::Fresh,
+            &buckets
+        ),
+        "Session 91% · Weekly 72%"
     );
 }
 
