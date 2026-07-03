@@ -367,7 +367,12 @@ pub fn render_form<V: AuthCredential>(
     form: &AuthForm<V>,
     focus: AuthFormFocus,
 ) {
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some("Edit auth"));
+    let inner = jackin_tui::components::render_dialog_shell(
+        frame,
+        area,
+        Some("Edit auth"),
+        jackin_tui::components::DialogBorder::Default,
+    );
 
     for (idx, row) in build_form_lines(form, focus).into_iter().enumerate() {
         let y = inner.y.saturating_add(idx as u16);

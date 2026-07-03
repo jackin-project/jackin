@@ -46,14 +46,16 @@ pub use container_info::{
     required_height as container_info_required_height,
 };
 pub use dialog_layout::{
-    DIALOG_HORIZONTAL_SCROLL_STEP, DialogBodyScroll, ScrollAxes, ScrollAxis, dialog_inner_chunks,
-    dialog_inner_height, dialog_scroll_axes, mouse_scroll_delta, render_dialog_shell,
-    render_scrollable_dialog_body, scroll_hint_spans,
+    DIALOG_HORIZONTAL_SCROLL_STEP, DialogBodyScroll, DialogBorder, ScrollAxes, ScrollAxis,
+    dialog_inner_chunks, dialog_inner_height, dialog_scroll_axes, mouse_scroll_delta,
+    render_dialog_shell, render_scrollable_dialog_body, scroll_hint_spans,
 };
 pub use diff_view::{DiffViewState, SinglePaneKind, diff_view_hint_spans, render_diff_view};
 pub use error_dialog::{
-    ERROR_POPUP_KEYMAP, ErrorPopupAction, ErrorPopupState, error_popup_hint_spans,
-    estimated_message_rows, render_error_dialog, render_error_dialog_in, required_height,
+    ERROR_POPUP_KEYMAP, ErrorPopupAction, ErrorPopupRow, ErrorPopupState, error_popup_hint_spans,
+    estimated_message_rows, hyperlink_overlay as error_popup_hyperlink_overlay,
+    hyperlink_regions as error_popup_hyperlink_regions, render_error_dialog,
+    render_error_dialog_in, required_height, row_value_rects as error_popup_row_value_rects,
 };
 pub use filter_input::{FilterInput, filter_input_line, render_filter_input};
 pub use focus_owner::FocusOwner;

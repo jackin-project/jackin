@@ -20,7 +20,7 @@ use crate::{
 };
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
-use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
+use super::dialog_layout::{DialogBorder, dialog_inner_chunks, render_dialog_shell};
 
 /// Actions the confirmation dialog can take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -281,7 +281,7 @@ pub fn exit_confirm_state_with_data_loss() -> ConfirmState {
 }
 
 pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
-    let inner = render_dialog_shell(frame, area, Some(&state.title));
+    let inner = render_dialog_shell(frame, area, Some(&state.title), DialogBorder::Default);
 
     let prompt = match &state.kind {
         ConfirmKind::Details {

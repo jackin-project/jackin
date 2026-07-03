@@ -68,10 +68,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
 };
 
-use jackin_tui::components::render_dialog_shell;
+use jackin_tui::components::{DialogBorder, render_dialog_shell};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
-    let inner = render_dialog_shell(frame, area, Some(state.title));
+    let inner = render_dialog_shell(frame, area, Some(state.title), DialogBorder::Default);
 
     // inner area is 3 rows (5 outer − 2 border): blank, button, blank.
     let chunks = Layout::default()

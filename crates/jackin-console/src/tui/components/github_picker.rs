@@ -90,12 +90,12 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_tui::components::render_dialog_shell;
 use jackin_tui::components::render_picker_lines;
+use jackin_tui::components::{DialogBorder, render_dialog_shell};
 use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &GithubPickerState) {
-    let inner = render_dialog_shell(frame, area, Some("Open in GitHub"));
+    let inner = render_dialog_shell(frame, area, Some("Open in GitHub"), DialogBorder::Default);
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

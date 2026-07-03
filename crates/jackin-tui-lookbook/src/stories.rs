@@ -6,11 +6,11 @@
 use jackin_tui::{
     HintSpan,
     components::{
-        ButtonStrip, ButtonStripItem, ConfirmState, DebugInfo, DiffViewState, ErrorPopupState,
-        Panel, PanelFocus, SaveDiscardFocus, SaveDiscardState, SelectListState, SinglePaneKind,
-        StatusFooterHover, TabStrip, TextInputState, Toast, hint_line, panel_body_area,
-        render_brand_header, render_confirm_dialog, render_container_info, render_diff_view,
-        render_error_dialog, render_filter_input, render_save_discard_dialog,
+        ButtonStrip, ButtonStripItem, ConfirmState, DebugInfo, DiffViewState, ErrorPopupRow,
+        ErrorPopupState, Panel, PanelFocus, SaveDiscardFocus, SaveDiscardState, SelectListState,
+        SinglePaneKind, StatusFooterHover, TabStrip, TextInputState, Toast, hint_line,
+        panel_body_area, render_brand_header, render_confirm_dialog, render_container_info,
+        render_diff_view, render_error_dialog, render_filter_input, render_save_discard_dialog,
         render_scrollable_block, render_select_list, render_status_footer, render_status_popup,
         render_text_input, render_toast, render_wrapped_hint_bar,
     },
@@ -156,6 +156,15 @@ pub(crate) fn stories() -> Vec<Story> {
             62,
             10, // 2 borders + 1 leading + 2-3 body rows + 1 spacer + 1 button + 1 trailing
             story_error_default,
+        ),
+        Story::new(
+            "error/structured-rows",
+            "Error dialog rows",
+            "ErrorDialog",
+            "Failure modal with structured run and diagnostics rows.",
+            72,
+            11, // 2 borders + 1 leading + 1 body + 2 rows + 1 spacer + 1 button + 1 trailing
+            story_error_structured_rows,
         ),
         Story::new(
             "save-discard/default",
@@ -445,6 +454,16 @@ fn story_error_default(frame: &mut Frame<'_>, area: Rect) {
         "Launch failed",
         "Derived image build failed while installing role dependencies.\nOpen diagnostics run jk-run-3d7e23 for the full log.",
     );
+    render_error_dialog(frame, area, &state);
+}
+
+fn story_error_structured_rows(frame: &mut Frame<'_>, area: Rect) {
+    let state =
+        ErrorPopupState::new("Launch failed", "Derived image build failed.").with_rows(vec![
+            ErrorPopupRow::new("Run ID", "jk-run-3d7e23"),
+            ErrorPopupRow::new("Diagnostics", "/tmp/jackin/jk-run-3d7e23.jsonl")
+                .hyperlink("file:///tmp/jackin/jk-run-3d7e23.jsonl"),
+        ]);
     render_error_dialog(frame, area, &state);
 }
 

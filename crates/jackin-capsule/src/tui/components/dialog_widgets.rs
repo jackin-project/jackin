@@ -522,7 +522,12 @@ fn render_usage_info(
     hovered_tab: Option<usize>,
 ) {
     let title = usage_panel_title(state, area.width);
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(title.as_str()));
+    let inner = jackin_tui::components::render_dialog_shell(
+        frame,
+        area,
+        Some(title.as_str()),
+        jackin_tui::components::DialogBorder::Default,
+    );
     if inner.height == 0 {
         return;
     }

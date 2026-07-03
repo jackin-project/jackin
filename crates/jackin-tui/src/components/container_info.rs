@@ -11,7 +11,7 @@ use ratatui::{
 use crate::ModalOutcome;
 use crate::ansi;
 use crate::components::dialog_layout::{
-    DialogBodyScroll, render_dialog_shell, render_scrollable_dialog_body,
+    DialogBodyScroll, DialogBorder, render_dialog_shell, render_scrollable_dialog_body,
 };
 use crate::components::panel::{Panel, PanelFocus};
 use crate::components::scrollable_panel::effective_offset;
@@ -425,7 +425,7 @@ pub fn render_container_info(frame: &mut Frame<'_>, area: Rect, state: &Containe
     if area.width < 20 || area.height < 5 {
         return;
     }
-    let inner = render_dialog_shell(frame, area, Some(&state.title));
+    let inner = render_dialog_shell(frame, area, Some(&state.title), DialogBorder::Default);
     let label_width = state.label_width();
     // The body is a single scrollable block: a leading spacer row then one
     // line per fact. render_scrollable_dialog_body applies both-axis scroll and

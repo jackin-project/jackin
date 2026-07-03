@@ -75,12 +75,12 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use jackin_tui::components::render_dialog_shell;
+use jackin_tui::components::{DialogBorder, render_dialog_shell};
 use jackin_tui::theme::PHOSPHOR_DARK;
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &SourcePickerState) {
     let title = format!("Source for {}", state.key);
-    let inner = render_dialog_shell(frame, area, Some(&title));
+    let inner = render_dialog_shell(frame, area, Some(&title), DialogBorder::Default);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)

@@ -12,7 +12,7 @@ use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
 use crate::{HintSpan, ModalOutcome};
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
-use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
+use super::dialog_layout::{DialogBorder, dialog_inner_chunks, render_dialog_shell};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveDiscardChoice {
@@ -163,7 +163,7 @@ impl SaveDiscardState {
 }
 
 pub fn render_save_discard_dialog(frame: &mut Frame<'_>, area: Rect, state: &SaveDiscardState) {
-    let inner = render_dialog_shell(frame, area, Some("Unsaved changes"));
+    let inner = render_dialog_shell(frame, area, Some("Unsaved changes"), DialogBorder::Default);
     let chunks = dialog_inner_chunks(inner, Some(1));
 
     frame.render_widget(

@@ -167,3 +167,92 @@ fn render_helper_does_not_add_extra_blank_row_after_ok() {
         "trailing spacer row should be blank inside the border: {trailing:?}"
     );
 }
+
+#[test]
+fn rows_extend_estimated_height() {
+    let base = ErrorPopupState::new("Launch failed", "build failed");
+    let with_rows = ErrorPopupState::new("Launch failed", "build failed").with_rows(vec![
+        ErrorPopupRow::new("Run", "jk-run-123"),
+        ErrorPopupRow::new("Log", "/tmp/jackin/run.jsonl"),
+    ]);
+
+    assert_eq!(
+        estimated_message_rows(&with_rows, 80),
+        estimated_message_rows(&base, 80) + 2
+    );
+    assert_eq!(
+        required_height(&with_rows, 80, 99),
+        required_height(&base, 80, 99) + 2
+    );
+}
+
+#[test]
+fn row_value_rects_are_inside_inner_area_and_non_overlapping() {
+    let state = ErrorPopupState::new("Launch failed", "build failed").with_rows(vec![
+        ErrorPopupRow::new("Run", "jk-run-123"),
+        ErrorPopupRow::new("Log", "/tmp/jackin/run.jsonl")
+            .hyperlink("file:///tmp/jackin/run.jsonl"),
+    ]);
+    let inner = Rect::new(1, 1, 58, 8);
+    let rects = state.row_value_rects(inner);
+
+    assert_eq!(rects.len(), 2);
+    assert!(rects.iter().all(|rect| rect.x >= inner.x));
+    assert!(rects.iter().all(|rect| rect.right() <= inner.right()));
+    assert!(rects.iter().all(|rect| rect.y >= inner.y));
+    assert!(rects.iter().all(|rect| rect.bottom() <= inner.bottom()));
+    assert_ne!(rects[0].y, rects[1].y);
+}
+
+#[test]
+fn hyperlink_overlay_emits_osc8_for_link_rows() {
+    let state = ErrorPopupState::new("Launch failed", "build failed").with_rows(vec![
+        ErrorPopupRow::new("Run", "jk-run-123"),
+        ErrorPopupRow::new("Log", "/tmp/jackin/run.jsonl")
+            .hyperlink("file:///tmp/jackin/run.jsonl"),
+    ]);
+    let inner = Rect::new(1, 1, 58, 8);
+    let overlay = String::from_utf8(hyperlink_overlay(inner, &state)).unwrap();
+
+    assert!(overlay.contains("\u{1b}]8;;file:///tmp/jackin/run.jsonl\u{1b}\\"));
+    assert!(overlay.contains("/tmp/jackin/run.jsonl"));
+    assert!(overlay.contains("\u{1b}]8;;\u{1b}\\"));
+    assert!(!overlay.contains("jk-run-123"));
+}
+
+#[test]
+fn rendering_rows_places_label_text_at_expected_cells() {
+    let state = ErrorPopupState::new("Launch failed", "build failed")
+        .with_rows(vec![ErrorPopupRow::new("Run", "jk-run-123")]);
+    let area = Rect::new(0, 0, 60, required_height(&state, 58, 20));
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| render_error_dialog_in(frame, area, &state))
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    assert_eq!(buffer[(3, 3)].symbol(), "R");
+    assert_eq!(buffer[(4, 3)].symbol(), "u");
+    assert_eq!(buffer[(5, 3)].symbol(), "n");
+    assert_eq!(buffer[(6, 3)].symbol(), ":");
+}
+
+#[test]
+fn plain_popup_renders_danger_border_and_ok_chip() {
+    let state = ErrorPopupState::new("Save failed", "workspace already exists");
+    let area = Rect::new(0, 0, 60, required_height(&state, 58, 20));
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| render_error_dialog_in(frame, area, &state))
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    assert_eq!(buffer[(0, 0)].fg, crate::theme::DANGER_RED);
+    let ok_cell = (0..buffer.area.height)
+        .flat_map(|y| (0..buffer.area.width).map(move |x| (x, y)))
+        .find(|(x, y)| buffer[(*x, *y)].symbol() == "O")
+        .expect("OK chip should render");
+    assert_eq!(buffer[ok_cell].bg, WHITE);
+}
