@@ -107,6 +107,9 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(cmd) => cmd,
         None => Command::Console(cli.console_args),
     };
+    if let Command::Role(command) = command {
+        return crate::role_authoring::run(command);
+    }
 
     let paths = JackinPaths::detect()?;
     let mut config = AppConfig::load_or_init(&paths)?;
@@ -129,12 +132,6 @@ pub async fn run(cli: Cli) -> Result<()> {
     if debug {
         announce_debug_run(&diagnostics);
     }
-    let command = match command {
-        // OTLP flush on this early return is handled by `_diagnostics_guard`'s
-        // Drop, same as every other exit path.
-        Command::Role(command) => return crate::role_authoring::run(command),
-        command => command,
-    };
     let mut runner = ShellRunner { debug };
     let connect_docker = || BollardDockerClient::connect();
 
