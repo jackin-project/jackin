@@ -91,7 +91,7 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
     // a background modal and must use the inactive border so exactly one bright
     // border is visible (Defect 9 — one-bright-border rule).
     let block = if state.pending_git_prompt.is_some() {
-        jackin_tui::components::modal_block_inactive()
+        jackin_tui::components::unfocused_block()
             .title(Span::styled(title.clone(), jackin_tui::theme::BOLD_WHITE))
     } else {
         Panel::new()

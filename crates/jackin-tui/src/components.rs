@@ -63,9 +63,7 @@ pub use hint_bar::{
 pub use hover_tracker::HoverTracker;
 pub use modal_backdrop::ModalBackdrop;
 pub use modal_lifecycle::{ModalClickResult, classify_click, render_backdrop};
-pub use panel::{
-    Panel, PanelFocus, modal_block, modal_block_inactive, panel_body_area, unfocused_block,
-};
+pub use panel::{Panel, PanelFocus, modal_block, panel_body_area, unfocused_block};
 pub use save_discard_dialog::{
     SAVE_DISCARD_KEYMAP, SaveDiscardAction, SaveDiscardChoice, SaveDiscardFocus, SaveDiscardState,
     render_save_discard_dialog, save_discard_hint_spans,
