@@ -57,7 +57,7 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
-      - uses: jackin-project/jackin-role-action@7c8b9da995fb1cf5936c3d4959e594b6d227cecc # pinned
+      - uses: jackin-project/jackin-role-action@80a1acd07257a23b441c546e6fcad12239ef7626 # pinned
         with:
           jackin-version: latest-build
           # Warm PR CI from the last published image's registry layer cache.
