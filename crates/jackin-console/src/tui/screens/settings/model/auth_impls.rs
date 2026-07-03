@@ -5,6 +5,7 @@ use super::{
     SettingsEnvState, SettingsPanelChangeCount, SettingsPanelDirty, SettingsPanelDiscard,
     SettingsPanelMarkSaved, SettingsPanelTakeError, SettingsState,
 };
+use jackin_tui::components::ModalStack;
 
 impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, PendingOpCommit> {
     #[must_use]
@@ -108,8 +109,10 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
         self.github_env = self.original_github_env.clone();
         self.selected_kind = None;
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
-        self.modal = None;
-        self.modal_parents.clear();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
         self.generating_token = false;
         self.error = None;
     }
@@ -225,21 +228,28 @@ impl<EnvValue, Modal, PendingOpCommit> SettingsAuthState<EnvValue, Modal, Pendin
     }
 
     pub fn open_child_modal(&mut self, parent_modal: Modal, child_modal: Modal) {
-        self.modal_parents.push(parent_modal);
-        self.modal = Some(child_modal);
+        let mut stack = ModalStack::from_parts(None, std::mem::take(&mut self.modal_parents));
+        stack.open_sub(parent_modal);
+        stack.open_sub(child_modal);
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn pop_parent_modal(&mut self) -> Option<Modal> {
-        self.modal_parents.pop()
+        let mut stack = ModalStack::from_parts(None, std::mem::take(&mut self.modal_parents));
+        stack.pop();
+        let restored = stack.take_current();
+        let (_, parents) = stack.into_parts();
+        self.modal_parents = parents;
+        restored
     }
 
     /// Push the current auth modal onto the parent stack so a sub-modal can
     /// open without losing the auth form's in-progress state.
     pub fn push_auth_modal(&mut self, sub_modal: Modal) {
-        if let Some(current) = self.modal.take() {
-            self.modal_parents.push(current);
-        }
-        self.modal = Some(sub_modal);
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.open_sub(sub_modal);
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 }
 

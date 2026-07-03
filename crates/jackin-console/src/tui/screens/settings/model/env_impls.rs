@@ -3,6 +3,7 @@ use super::{
     BTreeMap, SettingsEnvConfig, SettingsEnvScope, SettingsModalSlot, SettingsPanelChangeCount,
     SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved, SettingsPanelTakeError,
 };
+use jackin_tui::components::ModalStack;
 
 pub fn settings_env_config_from_app_config(
     config: &jackin_config::AppConfig,
@@ -98,8 +99,10 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
             )
             .saturating_sub(1),
         );
-        self.modal = None;
-        self.modal_parents.clear();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
 
         self.pending_picker_target = None;
         self.pending_picker_value = None;
@@ -149,14 +152,17 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
     }
 
     pub fn open_sub_modal(&mut self, child: Modal) {
-        if let Some(parent) = self.modal.take() {
-            self.modal_parents.push(parent);
-        }
-        self.modal = Some(child);
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.open_sub(child);
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn pop_modal_chain(&mut self) {
-        self.modal = self.modal_parents.pop();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.pop();
+        (self.modal, self.modal_parents) = stack.into_parts();
         if self.modal.is_none() {
             self.drop_modal_scratch();
         }
@@ -233,8 +239,10 @@ impl<EnvValue, Modal> SettingsEnvState<EnvValue, Modal> {
     }
 
     pub fn clear_modal_chain(&mut self) {
-        self.modal = None;
-        self.modal_parents.clear();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
         self.drop_modal_scratch();
     }
 

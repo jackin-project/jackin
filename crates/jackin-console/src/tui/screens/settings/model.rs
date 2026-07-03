@@ -33,7 +33,7 @@ use crate::tui::components::modal_rects::{
     ModalAuthFormState, ModalConfirmSavePrepareState, ModalConfirmSaveState, ModalConfirmState,
     ModalOpPickerState, ModalRectMode, ModalRolePickerState,
 };
-use jackin_tui::components::FocusOwner;
+use jackin_tui::components::{FocusOwner, ModalStack};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
@@ -1009,8 +1009,10 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
         self.mount_info_cache.clear();
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.add_draft = None;
-        self.modal = None;
-        self.modal_parents.clear();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
         self.error = None;
     }
 
@@ -1035,15 +1037,18 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
     }
 
     pub fn open_sub_modal(&mut self, child: Modal) {
-        if let Some(parent) = self.modal.take() {
-            self.modal_parents.push(parent);
-        }
-        self.modal = Some(child);
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.open_sub(child);
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn start_add_draft(&mut self) {
         self.add_draft = Some(GlobalMountDraft::default());
-        self.modal_parents.clear();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn remove_row_and_select(&mut self, remove_index: usize, selected: usize) {
@@ -1052,7 +1057,10 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
     }
 
     pub fn pop_modal_chain(&mut self) {
-        self.modal = self.modal_parents.pop();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.pop();
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn pop_modal_chain_and_clear_add_draft_if_closed(&mut self) {
@@ -1063,8 +1071,10 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
     }
 
     pub fn clear_modal_chain(&mut self) {
-        self.modal = None;
-        self.modal_parents.clear();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn set_error(&mut self, error: impl Into<String>) {

@@ -18,7 +18,7 @@
 - **Depends on**: plans/002-tui-component-contract.md (recommended)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
-- **Execution status**: BLOCKED — drift check found existing console TUI changes across component, input, and workspace view files before plan work.
+- **Execution status**: IN PROGRESS — current branch drift is the integrated #721 baseline; `ModalStack` now exists in `jackin-tui`, editor/settings lifecycle methods route through it, and the remaining work is full field/enum/stash convergence.
 
 ## Why this matters
 
