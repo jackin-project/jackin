@@ -1,0 +1,97 @@
+---
+title: "15 — Verification pass and the extended matrix"
+---
+
+# 15 — Verification pass and the extended matrix
+
+Round-2 of the source program (2026-07-03): every load-bearing claim in this hub's RTK/headroom/lean-ctx pages was re-verified against fresh clones with `file:line` evidence, codedb was folded into the comparison matrix, and the "best part from each" selection was re-derived from the corrected picture. Caveman-family results are on [14](/reference/research/token-optimization-tools/14-caveman-ecosystem/). Clones: rtk `develop@b52e02b` (no commits since), headroom `c75ebde` (no commits since), lean-ctx `a80350da` == v3.8.18 (no commits since), codedb `c12e1e2` == v0.2.5826 (history squashed to one commit; no changes since 2026-06-23).
+
+## TL;DR — the corrections that matter
+
+- **The "one independent 47.5% headroom measurement" is dead.** The figure appears nowhere outside headroom's own repo; its closest source is headroom's **own** "codebase exploration 47%" self-benchmark (41,254/78,502). The hub's long-standing "best-externally-evidenced tool" framing loses its only external datapoint. The 4.8%-median/50k+-sessions telemetry is real but **historical and unrepeatable**: the beacon that collected it was removed entirely (telemetry is now local-only, opt-in) — no newer aggregate can exist.
+- **lean-ctx counts, settled**: **77 shell-pattern modules (74 routed), 46 hook-rewritten command prefixes** — the hub's "56" (stale 3.4.x docs) and "81 patterns" (that's the MCP-tool count) were both wrong. Read modes: **13**, not 10. Binary: **75.9 MiB measured** from the v3.8.18 release artifact — the old 64.7 MB is stale *low* and upstream's "~17 MB" claim is unfounded. Lean proofs: **84 theorems** counted (the paper's own total says 53), 0 `sorry` confirmed. Contracts: ~30, not 24. Tool-count marketing drifts 71/80/81 across surfaces; actual registry 82; pinned `minimal` profile = 5 tools, unpinned default advertises 11.
+- **RTK counts, settled**: **77 CLI commands / 62 command modules / 63 TOML filters / 86 rewrite rules** (hub said 42/64/85). The full 12-strategy taxonomy is now captured verbatim (below). Telemetry is **consent-gated opt-in (GDPR flow), not unconditional phone-home** — but the payload is 26 fields and `low_savings_commands` can leak up to 3 command tokens (can include a user argument), contradicting its own TELEMETRY.md. Tee is not failure-only: `Failures(default)/Always/Never` modes plus unconditional force-tee pagination hints. #582 and #886 are **closed**; #1155 is still open; a second permission-escalation class (#1213, compound-command segments) was found and fixed. RTK Cloud is website-only — not evidenced in-repo.
+- **headroom nuances**: kompress-v2 is **gated, not replaced** (still the default fallback strategy; TextCrusher is opt-in default-off; the Rust live-zone dispatcher still no-ops PlainText). The `net_mutation_gain` cache-economics formula was **corrected upstream** (warm-case penalty over `S+ΔT` — the old form was systematically pro-mutation). The oat01 auth-mode bug is fixed. `learn` is LLM-distillation with a dry-run-default/`--apply` gate writing to `CLAUDE.local.md` (not shared CLAUDE.md). Memory: only 2 of 6 tables are agent-scoped, no schema migrations. New `--lossless` proxy mode ships **format-native reversible compaction with a runtime round-trip self-check** — the cleanest new mechanism in the sweep.
+- **codedb folded into the matrix** (below): the only tool of the five with a persistent call/dep graph; also the fattest default output in its own shootout (2.99× the cheapest backend per call), 1.7 GB steady RSS at 6.3k files, and an install surface that is the hub's new trust-boundary counterexample — undocumented global PreToolUse hook blocking 10 shell commands in *every* project, self-granted `mcp__codedb__*` permissions, competitor hook-fronting, and telemetry that **uploads to `codedb.codegraff.com` on session close** (the prior "local NDJSON" description was too kind). Version correction: current is **0.2.5826**, not 5827.
+
+## RTK: the 12 strategies, verbatim (finally captured)
+
+From `docs/contributing/ARCHITECTURE.md:199-308` — the taxonomy the hub cited for two rounds without enumerating:
+
+| # | Strategy | Definition | Example users |
+|---|---|---|---|
+| 1 | Stats extraction | count/aggregate, drop details (90–99%) | git status/log/diff |
+| 2 | Error only | stderr only, drop stdout (60–80%) | runner err mode |
+| 3 | Grouping by pattern | group by rule, count (80–90%) | lint, tsc, grep |
+| 4 | Deduplication | unique + count (70–85%) | log |
+| 5 | Structure only | keys + types, strip values (80–95%) | json schema |
+| 6 | Code filtering | none/minimal(comments)/aggressive(bodies) (0/20–40/60–90%) | read, smart |
+| 7 | Failure focus | failures only (94–99%) | vitest, playwright |
+| 8 | Tree compression | flat list → tree, aggregate dirs (50–70%) | ls |
+| 9 | Progress filtering | strip ANSI/progress, keep result (85–95%) | wget, installs |
+| 10 | JSON/text dual mode | JSON if available, text fallback (80%+) | ruff, pip |
+| 11 | State-machine parsing | track run phases, extract failures (90%+) | pytest |
+| 12 | NDJSON streaming | per-line JSON events, aggregate (90%+) | go test |
+
+New RTK mechanisms worth recording (all verified, all adoptable): the **anti-confusion truncation contract** (one `[N more lines]` end marker only — interleaved omission markers were parsed as code by agents and caused retry loops; kept+N==total is unit-tested); `unless` anti-swallow guards on TOML short-circuit rules; per-filter **panic isolation** (`catch_unwind` → raw passthrough — fail-open in both crash and quality dimensions with `never_worse`); content-sniffing auto-detection for piped input (1 KiB fingerprints, banner-anchored); `extract_json_object` (backward-walk brace-balancer for JSON islands in noisy stdout); `transparent_prefixes` (wrapper commands stripped before rule-match, re-prepended after); **trust-before-load** for repo-local filters (SHA-256 pin, read-once TOCTOU-safe, fail-closed, CI-env-gated override); hook integrity sidecars (5-state verification, version-header drift detection); global truncation-cap constants with a `reduced()` guard that can never empty a list; the ledger's self-measuring quality loop (parse-failure table + top-passthrough = missing-filter roadmap); cc-economics' honest dual valuation (blended CPT labeled UNDERESTIMATES, active CPT OVERESTIMATES).
+
+## headroom: verification detail
+
+Confirmed exactly: live-zone five-part algorithm (frozen floor/ceiling/512 B thresholds/token-validation gate/RawValue surgery + manifest), CCR schema and marker grammar (Python accepts 12–24 hex), TTL 30 min now env-tunable, 1.25×/0.1× multipliers, bug-classes #1006/#1077/#1307 all fixed in Unreleased, org move with HF model still on the founder's personal account, Serena installed **unpinned from git main** (supply-chain anti-pattern). Newly extracted: **TOIN** = Tool Output Intelligence Network — observation-only local pattern store (`(auth_mode, model_family, structure_hash)` keys, hashed field names, no network I/O) with an offline `toin_publish` → `recommendations.toml` flow the Rust proxy loads at startup; `toin_read_only=true` for subscription traffic quarantines the learning pool from UX-bound accounts. Output shaper: byte-stable verbosity levels appended *after* the last `cache_control` breakpoint (deliberate cache constraint), effort downgrade only on structurally-classified mechanical continuations, **conversation-stable holdout** (sha256 cohorting) with a stratified normal-approximation CI estimator — but no auto-disable gate and no committed results. The relevance layer is linear BM25+embedding fusion with **adaptive alpha** driven by content signals (UUIDs→0.85 lexical, hostnames→0.6), not RRF. `SharedContext` remains a RAM dict (confirmed unchanged). The rtk data plane is a **5-second-timeout shell-out to `rtk gain --format json`** whose result is collapsed via `max(cli_filtering, rtk)` — unattributable double-counting dodge, flagged do-not-copy.
+
+## lean-ctx: verification detail
+
+Beyond the TL;DR corrections: benchmark numbers regenerated upstream (map **98.1%@78%**, signatures **96.7%@96%** — the hub's 97.8/77 and 96.5/95.9 are one refresh stale; conclusions unchanged); the CFT bandit is fully specified — 3 Beta(2,1) arms carrying (entropy, jaccard, budget) triples, success ⇔ savings-ratio &gt; 0.3 AND task completed, ×0.98 session-end decay, and **deterministic argmax by default with stochastic exploration behind an env flag, explicitly to keep provider prompt caches stable** (#498) — the learning-must-not-destabilize-prefixes doctrine in code; bounce constants (5-tick window, ≥0.30 rate over ≥3 reads forces full, 10-tick post-edit exclusion so compression is never blamed for edit-forced re-reads); auto-mode default table (markdown/docs **never compressed**; learned results may never override to lossier than the static default); `anchored` read mode (per-line hash anchors making compressed-read→patch safe); Kolmogorov gzip-ratio gate before aggressive modes; **footprint self-ablation** (#959: each injected element A/B-ablated for pass-rate delta → `prune_recommended`, Ed25519-signed artifacts); `doctor overhead --gate` mechanics (runtime sum vs `[context] budget_tokens`; minimal-arm prefix budget pinned at 1,835 tokens; `net_of_injection()` can go negative); the eval testbench (same-budget arms, seeded deterministic bootstrap, record/replay, LLM-judge that hard-errors on unparsable verdicts); and one genuinely novel unrecorded subsystem — the **scent field** (stigmergic multi-agent coordination: 5 scent kinds with per-kind half-lives in one flocked JSON file, zero tokens; cites a 3.4× coordination-token claim). Security nuance: the A2A HMAC transport signs but the receiving endpoint **never verifies** — advisory only.
+
+## codedb: folded into the matrix
+
+| Axis | codedb |
+|---|---|
+| Compresses output / input | Opt-in output shapes (skeleton, paths_only, LEAN); **no input compression** — substitutes retrieval for reading; default search output is the fattest in its own shootout (1,350 tok/call ≈ 2.99× cheapest) |
+| Reaches native reads / shell | No native-tool reach; **hostile to shell** — installer's undocumented global PreToolUse hook blocks grep/rg/cat/head/tail/sed/awk/find/egrep/fgrep in every project (opposite pole from RTK) |
+| Persistent symbol index | **Yes — its unique row** among the five: word/trigram/symbol/dep indexes + deterministic call graph + PageRank, 2s watcher (+ `/tmp/codedb-notify` interop drain), CDB snapshot, warm daemon, handler-path-exact warmup replay |
+| Reversible / deterministic | Uninstall exists but hooks/settings edits/uploaded telemetry persist until nuked; engine deterministic, ranking kill-switches **fingerprinted into cache keys** (config change can never serve stale results) |
+| Cache interaction / MCP rent | Server-side result caches + `if_hash`→`unchanged:HASH`; stable ~5.16k-token schema (23 advertised, 24 defined; bundle hidden after OpenAI strict-mode `oneOf` rejection #443) |
+| Host writes / runtime | Heavy: `~/.codedb`, blocking hook + warmup hook + self-granted `mcp__codedb__*` allows in settings.json, 6 client configs, competitor hook-fronting; **telemetry uploaded to codegraff.com on session close** (default-on). 1.7 GB RSS @ 6.3k files; sub-ms hot queries; 2.9 s cold index @ 7.4k files |
+| Best evidence / license | Unusually honest self-benchmarks — publishes its own losses (FTS5 beats it end-to-end; near-baseline SWE-lite cost) and a **failed-experiments ledger** (4 hand-tuned rerank signals flat-lined, archived with metrics). BSD-3 |
+
+**Best case**: structural navigation of one large warm multi-session codebase — callers/callpath/transitive-deps in one ms-latency round-trip against a live graph none of the other four have, plus lifecycle (watcher, warmup, `unchanged:HASH`, hash-verified reader.md orientation, agent locks + ConvergenceGovernor anti-loop nudges). **Hardest failure**: plain text-search economics, per its own data — raw SQLite FTS5 used 23% fewer tokens end-to-end; wrong task + default config = schema rent + RAM + fattest-in-class outputs for something a `sqlite3` one-liner beats. New adoptables: ranking-env fingerprint in cache keys; ConvergenceGovernor (8-slot call-signature ring, 3 repeats → nudge); warmup replay through the exact handler path; reader.md hardening set (traversal rejection, entry caps, LOC ceiling, golden hash-parity test, length-gated prepend); the failed-experiments ledger as a practice; two-stage mtime→hash change detection; per-response token cost as a first-class benchmark axis.
+
+## The extended matrix (seven tools, corrected)
+
+| Axis | caveman | cavemem | caveman-code | headroom | RTK | lean-ctx | codedb |
+|---|---|---|---|---|---|---|---|
+| Class | output register (prompt) | memory store | full coding agent (4-layer stack) | input pipeline | shell-output filter | context runtime | code-intelligence server |
+| Output side | ✅ uncontested | ✗ | ✅ (register layer) | ◐ shaper default-off | ✗ | ✗ | ◐ opt-in shapes |
+| Input side | ✗ | ◐ (memory injection, lossy) | ✅ (budgets + dedup + RTK) | ✅ broad | ✅ Bash slice | ✅ broadest | retrieval-instead-of-read |
+| Persistent index/graph | ✗ | FTS + brute-force vectors | ✗ | ✗ (memory RAG ≠ code graph) | ✗ | property graph + BM25(+SPLADE) | **call/dep graph — unique** |
+| Reversible | ✗ | partial, semantically unsafe | ✗ | ✅ CCR + new lossless self-check mode | tee modes + hints | ✅ archive + anchored | uninstall only |
+| Honest self-measurement | eval w/ control arm | trivial bench, misses own targets | **best in family** (artifacts, fingerprints) | holdout estimator (no results yet) | ledger `len/4`, vendor pcts | bounce-netted, net-of-injection, self-ablation | own losses published + failed-experiments ledger |
+| Maintenance (2026-07-03) | frozen 3 wks, stars pumping | **dead 7 wks** | active | active | active | very active | squashed-history, active |
+| Verdict for the engine | prompt-pack donor | requirements donor (what not to do) + tokenizer | constants + harness donor | algorithm-spec donor | corpus + contracts donor | kernel + doctrine donor | verb/idiom + lifecycle donor |
+
+## Best-part-from-each, re-derived (the final selection)
+
+The round-2 findings sharpen — and in two cases change — what the [jackin Context Engine spec](/reference/research/jackin-context-engine/) takes:
+
+| From | Take (updated) | New this round |
+|---|---|---|
+| RTK | TOML corpus (63) + classifier (86 rules) + never_worse + ParseResult + tee | **+ anti-confusion end-marker contract, unless-guards, panic isolation, transparent_prefixes, trust-before-load, content-sniffing pipe, reduced() caps, integrity sidecars** |
+| headroom | live-zone, CCR wire format, typed router, auth-mode policy | **+ corrected net_mutation_gain (S+ΔT), lossless-compaction round-trip self-check, TextCrusher (already Rust), TOIN observe-only architecture + subscription write-quarantine, conversation-stable holdout; drop the "external evidence" halo (47.5% was self-report)** |
+| lean-ctx | read-stub cache, crushers, signatures_ts, CFT knapsack, doctrines | **+ deterministic-argmax bandit spec, bounce constants w/ edit-force exclusion, never-compress-docs default table + no-lossy-override guard, anchored mode, gzip gate, footprint self-ablation, typed-mode-enum pattern** |
+| codedb | verbs, output idioms, packing, ranking stack | **+ config-fingerprinted cache keys, ConvergenceGovernor, warmup replay, reader.md hardening, failed-experiments ledger, oneOf/strict-mode lesson; treat its install surface as the anti-pattern spec** |
+| caveman | register pack, guard lines, report registers | **+ cite README's own 65% line; family's first quality datapoint (honest-bench −1/−2 tasks) mandates the canary/holdout gate the spec already requires** |
+| caveman-code | (new) | **per-tool line-budget constants, register exception list (commits/PR text exempt), read-dedup stubs, subagent output contract, honest-bench harness template** |
+| cavemem | (new) | **preserved-segment tokenizer as the transform safety contract; its four defects as engine requirements (index canonical form, embed canonical, project-scoped retrieval, budgeted+measured injection)** |
+
+The layered verdict itself is unchanged — output register + write-time input pipeline + structural retrieval + honest measurement, composed in one runtime-owned engine — but the evidence hierarchy shifted: headroom loses its only external validation, lean-ctx gains the most spec-grade mechanism detail, RTK gains the most portable safety contracts, and the caveman family contributes constants and counterexamples rather than mechanisms.
+
+## Ledger
+
+| Item | Basis |
+|---|---|
+| RTK verification + strategy taxonomy + new mechanisms | clone develop@b52e02b re-audit 2026-07-03; ARCHITECTURE.md:199-308; file:line cites per finding in sweep transcript |
+| headroom verification + 47.5% conflation + telemetry provenance | clone c75ebde re-audit; docs/benchmarks.mdx:110-141 (March–April 2026 dataset, beacon since removed); README.md:117 |
+| lean-ctx verification + counts + 75.9 MiB measurement | clone a80350da re-audit; v3.8.18 release artifact download; BENCHMARKS.md 2026-07-02 |
+| codedb verification + matrix fold | clone c12e1e2 re-audit; install.sh:229-310; docs/telemetry.md:3; benchmarks/search-shootout/RESULTS.md |
+| caveman family | [14 — caveman ecosystem](/reference/research/token-optimization-tools/14-caveman-ecosystem/) |

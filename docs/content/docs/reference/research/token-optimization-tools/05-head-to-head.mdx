@@ -17,7 +17,7 @@ The framing to keep in mind throughout: **three of the four are points on one pi
 | Reaches native `Read`/`Grep`/`Glob` | ✗ | ✓ | ✗ | ✓ (via MCP `ctx_read`) |
 | Reaches RAG chunks / external providers | ✗ | ✓ | ✗ | ✓ (provider framework) |
 | Reaches conversation history | ✗ | ✓ | ✗ | ◐ (proxy mode, opt-in) |
-| Reaches shell / test / build / log output | ✗ | ✓ | ✓ | ✓ (56 pattern modules) |
+| Reaches shell / test / build / log output | ✗ | ✓ | ✓ | ✓ (77 pattern modules, 74 routed — count corrected in [15](/reference/research/token-optimization-tools/15-verification-pass-and-extended-matrix/)) |
 | Touches **thinking** (20% of dollars) | ✗ | ✗ | ✗ | ✗ |
 | Hits the 5×-priced output class | ✓ | ◐ | ✗ | ✗ |
 | **Deterministic** (no ML in the loop) | ✓ (it is a prompt) | ✗ (`kompress-base`) | ✓ | ✓ **by default** (ML opt-in) |
@@ -177,7 +177,7 @@ Adoption stars are PR-inflated for three of the four and must be ignored as a qu
 | Tool | Best evidence | Weakest spot |
 |---|---|---|
 | **caveman** | Locally reproduced **58.5%** output-token cut; mechanism is transparent (it is a prompt) | No agentic-task quality benchmark of register-compressed output exists anywhere |
-| **headroom** | Production telemetry across **50k+ sessions** (median 4.8%) + **one independent 47.5%** + academic backing for the write-time pattern | Product percentages are vendor self-report; the ML stage is unbenchmarked on code quality |
+| **headroom** | Production telemetry across **50k+ sessions** (median 4.8% — historical; collection beacon since removed) + academic backing for the write-time pattern | Product percentages are vendor self-report — including the "47.5%" once cited here as independent, which was a conflation with headroom's own codebase-exploration self-benchmark (corrected in [15](/reference/research/token-optimization-tools/15-verification-pass-and-extended-matrix/)); the ML stage is unbenchmarked on code quality |
 | **RTK** | The underlying levers (log filter −94.2%, JSON minify −34.3%) are locally reproduced in the dossier | **No whole-session telemetry and no independent benchmark of RTK itself** |
 | **lean-ctx** | **Reproduced here**: 96–99% on code reads, &lt;10% on prose/config; the most honest self-accounting (bounce-netted, signed ledger); 2,900+ tests | **No independent third-party benchmark**; youngest tool; GPT-tokenizer self-measurement; `map`-mode quality only 77% |
 
