@@ -12,6 +12,7 @@
 
 ## Status
 
+- **Execution status**: DONE — `TerminalSession::suspend` now owns the token-generation suspend/resume path; `run_console` is a small coordinator backed by named step functions in `crates/jackin/src/console/tui/run/steps.rs`; codebase-map references were updated for the split; package/full verification passed locally except docker-e2e, which remains a merge-readiness gate.
 - **Priority**: P3
 - **Effort**: M
 - **Risk**: MED–HIGH (owns raw-mode/alt-screen lifecycle; a mis-extraction can leave the operator's terminal broken on error paths)

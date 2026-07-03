@@ -94,13 +94,43 @@ enum ConsoleLoopStep {
     Exit(Option<ConsoleOutcome>),
 }
 
+fn handle_quit_key_step(
+    state: &mut ConsoleState,
+    key: crossterm::event::KeyEvent,
+) -> Option<ConsoleLoopStep> {
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    // Ctrl+C: immediate quit — hard exit on any screen, no confirmation, and it
+    // wins even when the exit confirm is already open. Mirrors the launch
+    // cockpit's Ctrl+C.
+    if matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL) {
+        return Some(ConsoleLoopStep::Exit(None));
+    }
+
+    if let Some(plan) = state.handle_quit_confirm_key(key) {
+        return Some(match plan {
+            QuitConfirmPlan::Exit => ConsoleLoopStep::Exit(None),
+            QuitConfirmPlan::Dismiss | QuitConfirmPlan::Continue => ConsoleLoopStep::Continue,
+        });
+    }
+
+    // Quit-confirm intercept: Ctrl+Q on any screen, or bare `q`/`Q` off the
+    // main screen (SHIFT tolerated for caps-lock parity). Checked before stage
+    // input.
+    if should_open_quit_confirm(key, quit_intercept_state_for_console(state)) {
+        state.open_quit_confirm();
+        return Some(ConsoleLoopStep::Continue);
+    }
+
+    None
+}
+
 fn run_token_generate_suspended(
     state: &mut ConsoleState,
     config: &AppConfig,
     paths: &JackinPaths,
     terminal: &mut ConsoleTerminal,
-    owned_screen: &Option<TerminalSession>,
-    parent_session: Option<&TerminalSession>,
+    session: Option<&TerminalSession>,
     needs_redraw: &mut bool,
 ) -> anyhow::Result<bool> {
     // Drain a pending token-generate request before render: suspend the TUI,
@@ -117,7 +147,6 @@ fn run_token_generate_suspended(
         return Ok(false);
     };
 
-    let session = owned_screen.as_ref().or(parent_session);
     let mint = if let Some(session) = session {
         session.suspend(|| {
             println!(
@@ -149,6 +178,12 @@ fn run_token_generate_suspended(
     Ok(true)
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Mouse routing is a named console-loop step: the parameters are \
+              the mutable loop fields it updates, and packing them into a \
+              context would only obscure the ownership boundaries."
+)]
 fn route_mouse(
     state: &mut ConsoleState,
     config: &mut AppConfig,
@@ -295,6 +330,12 @@ fn route_mouse(
     false
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Frame rendering updates the Ratatui terminal plus the console \
+              chrome trackers owned by the outer loop; explicit parameters keep \
+              the step's side effects visible."
+)]
 fn render_console_frame(
     state: &mut ConsoleState,
     config: &AppConfig,
@@ -478,6 +519,18 @@ async fn next_event_batch(
     Ok(event_batch)
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Key dispatch bridges state, config, terminal, effects, and async \
+              runners; a context object would have the same lifetime surface \
+              with less explicit borrowing."
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "This is the extracted per-key dispatcher. Remaining length comes \
+              from enumerating existing InputOutcome arms without changing \
+              behavior."
+)]
 async fn handle_key_event<H, R>(
     state: &mut ConsoleState,
     config: &mut AppConfig,
@@ -494,8 +547,6 @@ where
     H: InstanceActionHandler<jackin_core::Agent>,
     R: jackin_docker::CommandRunner,
 {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
     jackin_diagnostics::debug_log!(
         "tui",
         "key={} location={}",
@@ -505,26 +556,8 @@ where
         ),
         console_location_debug(state)
     );
-    // Ctrl+C: immediate quit — hard exit on any screen, no confirmation, and it
-    // wins even when the exit confirm is already open. Mirrors the launch
-    // cockpit's Ctrl+C.
-    if matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL) {
-        return Ok(ConsoleLoopStep::Exit(None));
-    }
-
-    if let Some(plan) = state.handle_quit_confirm_key(key) {
-        return Ok(match plan {
-            QuitConfirmPlan::Exit => ConsoleLoopStep::Exit(None),
-            QuitConfirmPlan::Dismiss | QuitConfirmPlan::Continue => ConsoleLoopStep::Continue,
-        });
-    }
-
-    // Quit-confirm intercept: Ctrl+Q on any screen, or bare `q`/`Q` off the
-    // main screen (SHIFT tolerated for caps-lock parity). Checked before stage
-    // input.
-    if should_open_quit_confirm(key, quit_intercept_state_for_console(state)) {
-        state.open_quit_confirm();
-        return Ok(ConsoleLoopStep::Continue);
+    if let Some(step) = handle_quit_key_step(state, key) {
+        return Ok(step);
     }
 
     let outcome = if let ConsoleStage::Manager(ms) = &mut state.stage {
@@ -854,8 +887,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             &config,
             paths,
             &mut terminal,
-            &owned_screen,
-            parent_session,
+            owned_screen.as_ref().or(parent_session),
             &mut needs_redraw,
         )? {
             continue;
@@ -906,7 +938,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     )
                     .await?
                     {
-                        ConsoleLoopStep::Continue => continue,
+                        ConsoleLoopStep::Continue => {}
                         ConsoleLoopStep::Exit(outcome) => break 'main Ok(outcome),
                     }
                 }
@@ -937,4 +969,40 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     // the console → loading transition stays on one alternate screen.
     drop(owned_screen);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fresh_state() -> ConsoleState {
+        let config = AppConfig::default();
+        let cwd = std::env::temp_dir();
+        jackin_console::tui::console::new_console_state(&config, &cwd).expect("console state")
+    }
+
+    fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
+        crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn quit_confirm_key_n_dismisses_and_continues() {
+        let mut state = fresh_state();
+        state.open_quit_confirm();
+
+        let step = handle_quit_key_step(&mut state, key(crossterm::event::KeyCode::Char('n')));
+
+        assert!(matches!(step, Some(ConsoleLoopStep::Continue)));
+        assert!(!state.quit_confirm_open());
+    }
+
+    #[test]
+    fn quit_confirm_key_y_exits() {
+        let mut state = fresh_state();
+        state.open_quit_confirm();
+
+        let step = handle_quit_key_step(&mut state, key(crossterm::event::KeyCode::Char('y')));
+
+        assert!(matches!(step, Some(ConsoleLoopStep::Exit(None))));
+    }
 }

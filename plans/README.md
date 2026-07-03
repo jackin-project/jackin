@@ -37,7 +37,7 @@ update the codebase map in the same PR.
 | 014 | ConfirmSaveState onto a keymap + ButtonFocus | P2 | M | 003 | BLOCKED — drift check found existing confirm/save component changes before plan work |
 | 015 | Settings ↔ editor row unification + labeled_field_line | P1 | L | — | BLOCKED — drift check found existing console row/auth/workspace view changes before plan work |
 | 016 | save_preview dual-pipeline dedup | P2 | L | — | DONE |
-| 017 | run_console decomposition + terminal guard | P3 | M | — | TODO |
+| 017 | run_console decomposition + terminal guard | P3 | M | — | DONE |
 | 018 | jackin-tui lib.rs ansi-module extraction | P3 | M | — | TODO |
 | 019 | Hygiene: coalesce_cells dedup, runtime ratatui dev-dep | P3 | S | — | TODO |
 
