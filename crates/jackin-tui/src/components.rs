@@ -62,7 +62,8 @@ pub use error_dialog::{
 pub use filter_input::{FilterInput, filter_input_line, render_filter_input};
 pub use focus_owner::FocusOwner;
 pub use hint_bar::{
-    HintBar, line as hint_line, render_hint_bar, render_wrapped_hint_bar, wrapped_height,
+    HintBar, line as hint_line, render_hint_bar, render_wrapped_hint_bar, styled_hint_spans,
+    wrapped_height, wrapped_lines,
 };
 pub use hover_tracker::HoverTracker;
 pub use modal_backdrop::ModalBackdrop;
