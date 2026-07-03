@@ -6,7 +6,7 @@ use ratatui::layout::Rect;
 use super::{
     BUILD_LOG_SCROLL_STEP, CockpitContext, QuitConfirmOutcome, apply_quit_confirm_key,
     cockpit_outcome_for_quit_confirm, emit_dialog_mouse_debug_telemetry, handle_cockpit_mouse_down,
-    is_ctrl_c, update_build_log_mouse_scroll,
+    is_ctrl_c, should_emit_dialog_mouse, update_build_log_mouse_scroll,
 };
 use crate::LaunchHostTerminal;
 use crate::tui::components::container_info_dialog::{
@@ -140,10 +140,13 @@ fn build_log_mouse_debug_telemetry_does_not_escape_to_compact_output() {
     let terminal = RecordingTerminal::new();
     let mut view = crate::tui::update::initial_view();
     view.build_log_open = true;
+    let mut last_cell = None;
 
     emit_dialog_mouse_debug_telemetry(
         &terminal,
-        &view,
+        view.container_info_open,
+        view.build_log_open,
+        &mut last_cell,
         crossterm::event::MouseEvent {
             kind: MouseEventKind::Moved,
             column: 10,
@@ -160,6 +163,30 @@ fn build_log_mouse_debug_telemetry_does_not_escape_to_compact_output() {
     assert_eq!(debug.len(), 1);
     assert_eq!(debug[0].0, "cockpit-dialog-mouse");
     assert!(debug[0].1.contains("build_log_open=true"));
+}
+
+#[test]
+fn dialog_mouse_debug_telemetry_coalesces_same_cell_moves() {
+    assert!(should_emit_dialog_mouse(
+        MouseEventKind::Moved,
+        None,
+        (10, 10)
+    ));
+    assert!(!should_emit_dialog_mouse(
+        MouseEventKind::Moved,
+        Some((10, 10)),
+        (10, 10)
+    ));
+    assert!(should_emit_dialog_mouse(
+        MouseEventKind::Moved,
+        Some((10, 10)),
+        (11, 10)
+    ));
+    assert!(should_emit_dialog_mouse(
+        MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        Some((10, 10)),
+        (10, 10)
+    ));
 }
 
 fn failure_failure() -> LaunchFailure {
