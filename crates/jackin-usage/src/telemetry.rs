@@ -61,6 +61,7 @@ pub(crate) fn set_otlp_active_for_test(active: bool) {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeLevel {
+    Trace,
     Debug,
     Info,
     Warn,
@@ -74,6 +75,7 @@ pub fn bridge_log(level: BridgeLevel, message: &str) {
         return;
     }
     match level {
+        BridgeLevel::Trace => tracing::trace!(target: "jackin_capsule", "{message}"),
         BridgeLevel::Debug => tracing::debug!(target: "jackin_capsule", "{message}"),
         BridgeLevel::Info => tracing::info!(target: "jackin_capsule", "{message}"),
         BridgeLevel::Warn => tracing::warn!(target: "jackin_capsule", "{message}"),

@@ -28,6 +28,7 @@ use chrono::{SecondsFormat, Utc};
 static LOG_FILE: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 static PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
 static DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
+static TRACE_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// `true` when `JACKIN_DEBUG=1` (or any truthy value) was set in the
 /// container's env. Captured once at `init()` time so per-line emit
@@ -36,6 +37,12 @@ static DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
 /// production runs stay quiet, `--debug` runs get the firehose.
 pub fn debug_enabled() -> bool {
     DEBUG_ENABLED.load(Ordering::Relaxed)
+}
+
+/// `true` when the operator explicitly requested the trace telemetry tier. Raw
+/// PTY, input, and emitted-frame payloads live here instead of the debug tier.
+pub fn trace_enabled() -> bool {
+    TRACE_ENABLED.load(Ordering::Relaxed)
 }
 
 /// Default in-container path. The host's state-dir mount makes this
@@ -78,37 +85,47 @@ pub fn init() {
     // telemetry-level contract. Truthy `JACKIN_DEBUG` values: `1`, `true`,
     // `yes`, `on` (case-insensitive). `JACKIN_TELEMETRY_LEVEL=debug|trace`
     // also enables the verbose local capsule log surface.
+    let telemetry_level = std::env::var("JACKIN_TELEMETRY_LEVEL")
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase());
     let debug = std::env::var("JACKIN_DEBUG").is_ok_and(|v| {
         matches!(
             v.trim().to_ascii_lowercase().as_str(),
             "1" | "true" | "yes" | "on"
         )
-    }) || std::env::var("JACKIN_TELEMETRY_LEVEL")
-        .is_ok_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "debug" | "trace"));
+    }) || telemetry_level
+        .as_deref()
+        .is_some_and(|level| matches!(level, "debug" | "trace"));
+    let trace = telemetry_level.as_deref() == Some("trace");
     DEBUG_ENABLED.store(debug, Ordering::Relaxed);
+    TRACE_ENABLED.store(trace, Ordering::Relaxed);
 
     let path = resolve_log_path();
-    // Rotate only at daemon start so `tail -f` remains stable for a live session.
-    if let Err(e) = rotate_if_oversized(&path) {
-        crate::output::stderr_line(format_args!(
-            "[jackin-capsule] log rotation failed for {}: {e} (errno={:?})",
-            path.display(),
-            e.raw_os_error()
-        ));
-    }
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "capsule log opens once during logging initialization, before render loop work"
-    )]
-    let file = match OpenOptions::new().create(true).append(true).open(&path) {
-        Ok(f) => Some(f),
-        Err(e) => {
+    let file = if crate::telemetry::otlp_active() {
+        None
+    } else {
+        // Rotate only at daemon start so `tail -f` remains stable for a live session.
+        if let Err(e) = rotate_if_oversized(&path) {
             crate::output::stderr_line(format_args!(
-                "[jackin-capsule] log file open failed for {}: {e} (errno={:?})",
+                "[jackin-capsule] log rotation failed for {}: {e} (errno={:?})",
                 path.display(),
                 e.raw_os_error()
             ));
-            None
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "capsule log opens once during logging initialization, before render loop work"
+        )]
+        match OpenOptions::new().create(true).append(true).open(&path) {
+            Ok(f) => Some(f),
+            Err(e) => {
+                crate::output::stderr_line(format_args!(
+                    "[jackin-capsule] log file open failed for {}: {e} (errno={:?})",
+                    path.display(),
+                    e.raw_os_error()
+                ));
+                None
+            }
         }
     };
     if let Some(mut f) = file.as_ref().and_then(|f| f.try_clone().ok()) {
@@ -122,7 +139,7 @@ pub fn init() {
         let ts = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         let _unused = writeln!(
             f,
-            "{ts} ---- multiplexer start pid={pid} debug={debug} path={} ----",
+            "{ts} ---- multiplexer start pid={pid} debug={debug} trace={trace} path={} ----",
             path.display()
         );
     }
@@ -200,16 +217,27 @@ macro_rules! cdebug {
     }};
 }
 
-/// Debug-only payload telemetry that stays local to stderr + `multiplexer.log`.
-/// Use for PTY bytes, rendered frame bytes, keystrokes, and other raw operator
-/// or agent payload content that must not leave the machine through OTLP.
+/// Trace-only payload telemetry. When OTLP is active, raw payload records are
+/// exported at TRACE and are not mirrored to stderr or `multiplexer.log`; when
+/// OTLP is inactive, they fall back to the local capsule log for offline triage.
+#[macro_export]
+macro_rules! ctrace_payload {
+    ($($arg:tt)*) => {{
+        if $crate::logging::trace_enabled() {
+            let line = format!("[jackin-capsule trace] {}", format_args!($($arg)*));
+            if $crate::telemetry::otlp_active() {
+                $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Trace, &line);
+            } else {
+                $crate::logging::write_line(&line);
+            }
+        }
+    }};
+}
+
 #[macro_export]
 macro_rules! cdebug_local {
     ($($arg:tt)*) => {{
-        if $crate::logging::debug_enabled() {
-            let line = format!("[jackin-capsule debug] {}", format_args!($($arg)*));
-            $crate::logging::write_line(&line);
-        }
+        $crate::ctrace_payload!($($arg)*);
     }};
 }
 

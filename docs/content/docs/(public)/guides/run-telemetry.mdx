@@ -68,11 +68,12 @@ launches are recorded as timestamped events on the screen they happened on.
 
 - **All logs** — the same event stream as the diagnostics file: lifecycle
   breadcrumbs, container start/exit/crash events, and (in `--debug`) the
-  external `docker`/`git` command firehose after diagnostics redaction. Raw
-  PTY bytes, rendered frame bytes, and decoded keystroke/input payloads stay
-  local to the capsule `multiplexer.log` and are not exported. The OTLP
-  transport's own logs are filtered out, so the export is jackin❯ story, not
-  its plumbing.
+  external `docker`/`git` command firehose after diagnostics redaction. With
+  `JACKIN_TELEMETRY_LEVEL=trace`, raw PTY bytes, rendered frame bytes, and
+  decoded keystroke/input payloads are captured at TRACE. When OTLP is active
+  they go to the backend and are not mirrored to `multiplexer.log`; without
+  OTLP they fall back to the local capsule log. The OTLP transport's own logs
+  are filtered out, so the export is jackin❯ story, not its plumbing.
 - **Run state** — the end-of-run summary (stage durations, event counts,
   cache hits/misses) arrives as a structured log record.
 - **Process metrics** — while the process runs, metrics export every 5
@@ -114,7 +115,7 @@ CLI's existing debug UI behavior:
 - `info` exports compact lifecycle telemetry.
 - `debug` exports debug-category diagnostics.
 - `trace` raises the OTLP allowlist to TRACE for jackin❯ targets and enables
-  debug-category diagnostics.
+  debug-category diagnostics plus raw capsule PTY/frame/input payload records.
 
 Set `JACKIN_TELEMETRY_CATEGORIES` to a comma-separated allowlist such as
 `docker,launch` to keep unrelated debug categories out of JSONL and OTLP. Use

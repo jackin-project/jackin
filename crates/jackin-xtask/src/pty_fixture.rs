@@ -1,7 +1,7 @@
-//! Extract a recorded PTY byte stream from a `--debug` run log.
+//! Extract a recorded PTY byte stream from a trace-level run log.
 //!
 //! `jackin-xtask pty-fixture <run.jsonl> <session-label> <out.bin>` extracts
-//! the capsule's `session feed_pty bytes:` debug lines, filters them to one
+//! the capsule's `session feed_pty bytes:` trace lines, filters them to one
 //! session label, decodes the hex byte dumps, and concatenates them in order
 //! into a binary fixture for the echo-back conformance harness
 //! (`crates/jackin-capsule/src/daemon/tests/render_conformance.rs`). The input
@@ -44,7 +44,7 @@ pub(crate) fn run(args: PtyFixtureArgs) -> Result<()> {
 
     if chunks == 0 {
         bail!(
-            "no `session feed_pty bytes:` lines with label={} in {} or its `capsule_log` files — was the run recorded with --debug?",
+            "no `session feed_pty bytes:` lines with label={} in {} or its `capsule_log` files — was the run recorded with JACKIN_TELEMETRY_LEVEL=trace and local capsule logs enabled?",
             args.session_label,
             args.run_log.display()
         );

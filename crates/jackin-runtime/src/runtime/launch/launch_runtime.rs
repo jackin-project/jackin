@@ -510,6 +510,10 @@ pub(crate) async fn launch_role_runtime(
     for env in &debug_envs {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
+    let telemetry_envs = telemetry_runtime_envs(*debug);
+    for env in &telemetry_envs {
+        run_args.extend_from_slice(&["-e", env.as_str()]);
+    }
     // Always pass the host jackin version so the capsule ContainerInfo dialog
     // can surface which host binary launched the container.
     let host_version_env = format!("JACKIN_HOST_VERSION={}", env!("JACKIN_VERSION"));
@@ -1152,6 +1156,19 @@ pub(crate) fn debug_runtime_envs(debug: bool) -> Vec<String> {
     let diagnostics_path = jackin_diagnostics::active_run()
         .and_then(|run| run.persists().then(|| run.path().to_path_buf()));
     debug_runtime_envs_for(debug, diagnostics_path.as_deref())
+}
+
+pub(crate) fn telemetry_runtime_envs_for(level: jackin_diagnostics::TelemetryLevel) -> Vec<String> {
+    let level = match level {
+        jackin_diagnostics::TelemetryLevel::Info => "info",
+        jackin_diagnostics::TelemetryLevel::Debug => "debug",
+        jackin_diagnostics::TelemetryLevel::Trace => "trace",
+    };
+    vec![format!("JACKIN_TELEMETRY_LEVEL={level}")]
+}
+
+pub(crate) fn telemetry_runtime_envs(debug: bool) -> Vec<String> {
+    telemetry_runtime_envs_for(jackin_diagnostics::telemetry_level(debug))
 }
 
 #[cfg(test)]

@@ -765,7 +765,7 @@ impl Session {
         // with the `rx ClientFrame::Input` line on the receive side so
         // a `--debug` trace shows the full path from operator keystroke
         // to slave fd write.
-        crate::cdebug!(
+        crate::ctrace_payload!(
             "session send_input: agent={:?} label={} bytes={:02x?}",
             self.agent,
             self.label,
@@ -1088,7 +1088,7 @@ impl Session {
         if !bytes.is_empty() {
             self.received_output = true;
         }
-        crate::cdebug_local!(
+        crate::ctrace_payload!(
             "session feed_pty bytes: agent={:?} label={} len={} bytes={:02x?}",
             self.agent,
             self.label,

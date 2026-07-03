@@ -4,7 +4,7 @@ use super::{Extraction, capsule_log_paths, extract_feed_pty_bytes, extract_from_
 
 #[test]
 fn extracts_matching_label_from_raw_log_line() {
-    let line = "[jackin-capsule debug] session feed_pty bytes: agent=Some(\"codex\") label=Codex len=4 bytes=[1b, 5b, 32, 4a]";
+    let line = "[jackin-capsule trace] session feed_pty bytes: agent=Some(\"codex\") label=Codex len=4 bytes=[1b, 5b, 32, 4a]";
     assert_eq!(
         extract_feed_pty_bytes(line, "Codex"),
         Some(vec![0x1b, 0x5b, 0x32, 0x4a])
@@ -14,7 +14,7 @@ fn extracts_matching_label_from_raw_log_line() {
 #[test]
 fn rejects_other_labels_and_prefix_collisions() {
     let line =
-        "[jackin-capsule debug] session feed_pty bytes: agent=None label=Shell len=1 bytes=[41]";
+        "[jackin-capsule trace] session feed_pty bytes: agent=None label=Shell len=1 bytes=[41]";
     assert_eq!(extract_feed_pty_bytes(line, "Codex"), None);
     assert_eq!(extract_feed_pty_bytes(line, "Shel"), None);
 }
@@ -32,7 +32,7 @@ fn follows_capsule_log_pointer_from_run_jsonl() {
     let mux_log = temp.path().join("multiplexer.log");
     fs::write(
         &mux_log,
-        "[jackin-capsule debug] session feed_pty bytes: agent=Some(\"codex\") label=Codex len=2 bytes=[41, 42]\n",
+        "[jackin-capsule trace] session feed_pty bytes: agent=Some(\"codex\") label=Codex len=2 bytes=[41, 42]\n",
     )
     .unwrap();
     let detail = serde_json::json!({
@@ -62,7 +62,7 @@ fn inline_feed_bytes_take_precedence_over_capsule_log_pointer() {
     let mux_log = temp.path().join("multiplexer.log");
     fs::write(
         &mux_log,
-        "[jackin-capsule debug] session feed_pty bytes: agent=Some(\"codex\") label=Codex len=1 bytes=[42]\n",
+        "[jackin-capsule trace] session feed_pty bytes: agent=Some(\"codex\") label=Codex len=1 bytes=[42]\n",
     )
     .unwrap();
     let detail = serde_json::json!({
@@ -74,7 +74,7 @@ fn inline_feed_bytes_take_precedence_over_capsule_log_pointer() {
         "{}\n{}",
         serde_json::json!({
             "kind": "debug",
-            "message": "[jackin-capsule debug] session feed_pty bytes: agent=Some(\"codex\") label=Codex len=1 bytes=[41]",
+            "message": "[jackin-capsule trace] session feed_pty bytes: agent=Some(\"codex\") label=Codex len=1 bytes=[41]",
         }),
         serde_json::json!({
             "kind": "container_started",

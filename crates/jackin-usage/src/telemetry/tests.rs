@@ -62,6 +62,7 @@ fn bridge_log_uses_requested_severity_and_target() {
     let subscriber = tracing_subscriber::registry().with(layer);
 
     tracing::subscriber::with_default(subscriber, || {
+        bridge_log(BridgeLevel::Trace, "trace line");
         bridge_log(BridgeLevel::Debug, "debug line");
         bridge_log(BridgeLevel::Info, "info line");
         bridge_log(BridgeLevel::Warn, "warn line");
@@ -73,6 +74,11 @@ fn bridge_log_uses_requested_severity_and_target() {
     assert_eq!(
         events,
         vec![
+            CapturedEvent {
+                level: tracing::Level::TRACE,
+                target: "jackin_capsule".to_owned(),
+                message: "trace line".to_owned(),
+            },
             CapturedEvent {
                 level: tracing::Level::DEBUG,
                 target: "jackin_capsule".to_owned(),

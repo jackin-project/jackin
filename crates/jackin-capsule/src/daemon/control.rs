@@ -125,7 +125,7 @@ pub async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             // canonical trace for "key X did nothing" triage: chunk
             // line proves the byte reached the daemon, event line
             // proves the parser classified it.
-            crate::cdebug_local!(
+            crate::ctrace_payload!(
                 "rx ClientFrame::Input len={} bytes={:02x?}",
                 bytes.len(),
                 bytes
@@ -133,7 +133,7 @@ pub async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             let events = mux.input_parser.parse(&bytes);
             for event in events {
                 let mode = mux.mux_mode();
-                crate::cdebug_local!("  → InputEvent::{:?} mode={mode:?}", event,);
+                crate::ctrace_payload!("  -> InputEvent::{:?} mode={mode:?}", event,);
                 mux.handle_input(event);
             }
             let prefix_mode = prefix_mode_for_mux_mode(mux.mux_mode());

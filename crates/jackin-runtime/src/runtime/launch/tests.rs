@@ -3,7 +3,7 @@
 use super::super::test_support::FakeRunner;
 use super::*;
 use crate::runtime::launch::launch_runtime::{
-    debug_runtime_envs_for, run_runtime_envs, run_runtime_envs_for,
+    debug_runtime_envs_for, run_runtime_envs, run_runtime_envs_for, telemetry_runtime_envs_for,
 };
 use jackin_config::AppConfig;
 use std::collections::HashMap;
@@ -1920,6 +1920,22 @@ fn debug_runtime_envs_omit_nonpersisted_diagnostics_path() {
     assert_eq!(
         run_runtime_envs_for(Some("jk-run-backend")),
         vec!["JACKIN_RUN_ID=jk-run-backend".to_owned()]
+    );
+}
+
+#[test]
+fn telemetry_runtime_envs_forward_effective_level_to_capsule() {
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Info),
+        vec!["JACKIN_TELEMETRY_LEVEL=info".to_owned()]
+    );
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Debug),
+        vec!["JACKIN_TELEMETRY_LEVEL=debug".to_owned()]
+    );
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Trace),
+        vec!["JACKIN_TELEMETRY_LEVEL=trace".to_owned()]
     );
 }
 
