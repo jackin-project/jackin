@@ -510,7 +510,7 @@ pub fn render_picker_list(
         .highlight_spacing(HighlightSpacing::Always)
         .offset(offset)
         .selected(selected)
-        .render(buf, area);
+        .render(area, buf);
 
     // Repaint section dividers edge-to-edge over the gutter the List reserved.
     let offset = usize::from(offset);

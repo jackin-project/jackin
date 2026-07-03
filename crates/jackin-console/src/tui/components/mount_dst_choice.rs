@@ -134,9 +134,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &MountDstChoiceState) {
         MountDstFocus::Edit => 1,
         MountDstFocus::Cancel => 2,
     };
-    jackin_tui::components::ButtonStrip::new(&items)
-        .focused(focused)
-        .render(frame, chunks[4]);
+    frame.render_widget(
+        jackin_tui::components::ButtonStrip::new(&items).focused(focused),
+        chunks[4],
+    );
 }
 
 #[cfg(test)]

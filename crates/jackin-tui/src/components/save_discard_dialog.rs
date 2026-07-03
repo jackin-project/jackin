@@ -182,9 +182,7 @@ pub fn render_save_discard_dialog(frame: &mut Frame<'_>, area: Rect, state: &Sav
         SaveDiscardFocus::Discard => 1,
         SaveDiscardFocus::Cancel => 2,
     };
-    ButtonStrip::new(&items)
-        .focused(focused)
-        .render(frame, chunks[3]);
+    frame.render_widget(ButtonStrip::new(&items).focused(focused), chunks[3]);
 }
 
 #[cfg(test)]

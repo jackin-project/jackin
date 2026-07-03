@@ -401,9 +401,7 @@ fn story_button_strip(frame: &mut Frame<'_>, area: Rect) {
         Constraint::Fill(1),
     ])
     .areas(area);
-    ButtonStrip::new(&items)
-        .focused(0)
-        .render(frame, strip_area);
+    frame.render_widget(ButtonStrip::new(&items).focused(0), strip_area);
 }
 
 fn story_tab_strip(frame: &mut Frame<'_>, area: Rect) {
@@ -413,10 +411,10 @@ fn story_tab_strip(frame: &mut Frame<'_>, area: Rect) {
         ("Roles", false),
         ("Secrets", false),
     ];
-    TabStrip::new(&labels)
-        .focused(true)
-        .hovered(Some(2))
-        .render(frame, area);
+    frame.render_widget(
+        TabStrip::new(&labels).focused(true).hovered(Some(2)),
+        area,
+    );
 }
 
 fn story_confirm_default(frame: &mut Frame<'_>, area: Rect) {
@@ -705,9 +703,7 @@ fn story_button_strip_all_disabled(frame: &mut Frame<'_>, area: Rect) {
         Constraint::Fill(1),
     ])
     .areas(area);
-    ButtonStrip::new(&items)
-        .focused(0)
-        .render(frame, strip_area);
+    frame.render_widget(ButtonStrip::new(&items).focused(0), strip_area);
 }
 
 fn story_save_discard_focus_save(frame: &mut Frame<'_>, area: Rect) {

@@ -531,10 +531,12 @@ fn render_usage_info(
         .iter()
         .map(|(label, active)| (label.as_str(), *active))
         .collect::<Vec<_>>();
-    TabStrip::new(&tab_refs)
-        .focused(tab_bar_focused)
-        .hovered(hovered_tab)
-        .render(frame, tab_area);
+    frame.render_widget(
+        TabStrip::new(&tab_refs)
+            .focused(tab_bar_focused)
+            .hovered(hovered_tab),
+        tab_area,
+    );
     // Body geometry comes from the shared `usage_body_rect`, the same source the
     // scroll-bound path uses, so the rendered viewport and the scroll clamp can
     // never disagree (Bug 2). (`usage_tab_strip_area` above gives the strip its

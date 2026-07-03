@@ -404,9 +404,7 @@ fn render_buttons(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
         ConfirmFocus::Yes => 0,
         ConfirmFocus::No => 1,
     };
-    ButtonStrip::new(&items)
-        .focused(focused)
-        .render(frame, area);
+    frame.render_widget(ButtonStrip::new(&items).focused(focused), area);
 }
 
 #[cfg(test)]

@@ -173,9 +173,10 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
         ConfirmSaveFocus::Save => 0,
         ConfirmSaveFocus::Cancel => 1,
     };
-    jackin_tui::components::ButtonStrip::new(&items)
-        .focused(focused)
-        .render(frame, chunks[3]);
+    frame.render_widget(
+        jackin_tui::components::ButtonStrip::new(&items).focused(focused),
+        chunks[3],
+    );
 }
 
 #[cfg(test)]

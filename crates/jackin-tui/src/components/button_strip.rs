@@ -1,11 +1,11 @@
 //! Shared centered button row.
 
 use ratatui::{
-    Frame,
+    buffer::Buffer,
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Paragraph, Widget},
 };
 
 use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
@@ -63,16 +63,17 @@ impl<'a> ButtonStrip<'a> {
         self
     }
 
-    pub fn render(self, frame: &mut Frame<'_>, area: Rect) {
-        frame.render_widget(
-            Paragraph::new(self.line()).alignment(Alignment::Center),
-            area,
-        );
-    }
-
     #[must_use]
     pub fn line(self) -> Line<'static> {
         button_strip_line(self.items, self.focused, self.gap)
+    }
+}
+
+impl Widget for ButtonStrip<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        Paragraph::new(self.line())
+            .alignment(Alignment::Center)
+            .render(area, buf);
     }
 }
 

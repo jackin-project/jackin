@@ -98,10 +98,7 @@ impl TabStripInteractor {
 
 impl StoryInteraction for TabStripInteractor {
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        TabStrip::new(&self.labels)
-            .focused(true)
-            .hovered(self.hovered)
-            .render(frame, area);
+        frame.render_widget(TabStrip::new(&self.labels).focused(true).hovered(self.hovered), area);
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {
@@ -449,9 +446,7 @@ impl StoryInteraction for ButtonStripInteractor {
             Constraint::Fill(1),
         ])
         .areas(area);
-        ButtonStrip::new(&self.items)
-            .focused(self.focused)
-            .render(frame, strip_area);
+        frame.render_widget(ButtonStrip::new(&self.items).focused(self.focused), strip_area);
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {

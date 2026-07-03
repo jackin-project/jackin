@@ -142,7 +142,7 @@ fn render_listing(frame: &mut Frame<'_>, area: Rect, state: &FileBrowserState) {
         .highlight_symbol(cursor_symbol)
         .offset(offset)
         .selected(selected);
-    list.render_with_block(frame.buffer_mut(), area, block);
+    list.render_with_block(area, frame.buffer_mut(), block);
 }
 
 #[cfg(test)]
