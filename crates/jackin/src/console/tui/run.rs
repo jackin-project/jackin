@@ -87,6 +87,63 @@ pub(crate) const fn no_modal_open(state: &ConsoleState) -> bool {
         && !matches!(&ms.stage, ManagerStage::Editor(e) if e.modal.is_some())
 }
 
+type ConsoleTerminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>;
+
+fn run_token_generate_suspended(
+    state: &mut ConsoleState,
+    config: &AppConfig,
+    paths: &JackinPaths,
+    terminal: &mut ConsoleTerminal,
+    owned_screen: &Option<TerminalSession>,
+    parent_session: Option<&TerminalSession>,
+    needs_redraw: &mut bool,
+) -> anyhow::Result<bool> {
+    // Drain a pending token-generate request before render: suspend the TUI,
+    // let the non-TUI effect executor run the interactive mint/write, then
+    // resume. Done at the top of the loop (no live `&mut state.stage` borrow,
+    // `config`/`paths`/`terminal` all in scope) so a request set by the
+    // previous iteration's input is handled before the next frame.
+    let pending = if let ConsoleStage::Manager(manager) = &mut state.stage {
+        manager.take_pending_token_generate()
+    } else {
+        None
+    };
+    let Some(req) = pending else {
+        return Ok(false);
+    };
+
+    let session = owned_screen.as_ref().or(parent_session);
+    let mint = if let Some(session) = session {
+        session.suspend(|| {
+            println!(
+                "{}",
+                token_generate_status_message(token_generate_scope_label_for_console(&req))
+            );
+            crate::console::effects::execute_token_generate(paths, config, &req)
+        })?
+    } else {
+        println!(
+            "{}",
+            token_generate_status_message(token_generate_scope_label_for_console(&req))
+        );
+        crate::console::effects::execute_token_generate(paths, config, &req)
+    };
+    // Force a full repaint next frame so leftover child output is overwritten.
+    // terminal.resize() resets Ratatui's internal diff buffer (marks every cell
+    // dirty) without emitting \x1b[2J — this avoids the blank-screen flash that
+    // terminal.clear() causes while still guaranteeing that every cell is
+    // redrawn next tick.
+    if let Ok(size) = terminal.size() {
+        let rect = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+        drop(terminal.resize(rect));
+    }
+    *needs_redraw = true;
+    if let ConsoleStage::Manager(ms) = &mut state.stage {
+        crate::console::effects::apply_token_generate_result(ms, mint);
+    }
+    Ok(true)
+}
+
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
@@ -255,46 +312,15 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             }
         }
 
-        // Drain a pending token-generate request before render: suspend the
-        // TUI, let the non-TUI effect executor run the interactive mint/write,
-        // then resume. Done at the top of the loop (no live `&mut state.stage`
-        // borrow, `config`/`paths`/`terminal` all in scope) so a request set by
-        // the previous iteration's input is handled before the next frame.
-        let pending = if let ConsoleStage::Manager(manager) = &mut state.stage {
-            manager.take_pending_token_generate()
-        } else {
-            None
-        };
-        if let Some(req) = pending {
-            let session = owned_screen.as_ref().or(parent_session);
-            let mint = if let Some(session) = session {
-                session.suspend(|| {
-                    println!(
-                        "{}",
-                        token_generate_status_message(token_generate_scope_label_for_console(&req))
-                    );
-                    crate::console::effects::execute_token_generate(paths, &config, &req)
-                })?
-            } else {
-                println!(
-                    "{}",
-                    token_generate_status_message(token_generate_scope_label_for_console(&req))
-                );
-                crate::console::effects::execute_token_generate(paths, &config, &req)
-            };
-            // Force a full repaint next frame so leftover child output is
-            // overwritten. terminal.resize() resets Ratatui's internal diff
-            // buffer (marks every cell dirty) without emitting \x1b[2J — this
-            // avoids the blank-screen flash that terminal.clear() causes while
-            // still guaranteeing that every cell is redrawn next tick.
-            if let Ok(size) = terminal.size() {
-                let rect = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                drop(terminal.resize(rect));
-            }
-            needs_redraw = true;
-            if let ConsoleStage::Manager(ms) = &mut state.stage {
-                crate::console::effects::apply_token_generate_result(ms, mint);
-            }
+        if run_token_generate_suspended(
+            &mut state,
+            &config,
+            paths,
+            &mut terminal,
+            &owned_screen,
+            parent_session,
+            &mut needs_redraw,
+        )? {
             continue;
         }
 
