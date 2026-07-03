@@ -55,7 +55,7 @@ Add a `limits: Vec<ClaudeOAuthLimit>` field to `ClaudeOAuthUsageResponse` in <Re
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClaudeOAuthLimit {
     pub(crate) kind: Option<String>,        // "session" | "weekly_all" | "weekly_scoped"
-    pub(crate) percent: Option<u8>,
+    pub(crate) percent: Option<serde_json::Value>,
     pub(crate) severity: Option<String>,
     pub(crate) resets_at: Option<String>,
     pub(crate) scope: Option<ClaudeOAuthLimitScope>,
@@ -72,17 +72,17 @@ pub(crate) struct ClaudeOAuthLimitModel {
 }
 ```
 
-Because the struct already carries `#[serde(flatten)] other_windows`, today the `limits` array lands in `other_windows` and is skipped by `push_claude_dollar_windows` (its entries do not match `ClaudeOAuthUsageWindow`). Naming the field pulls it out of the flatten.
+Because the struct already carries `#[serde(flatten)] other_windows`, today the `limits` array lands in `other_windows` and is skipped by `push_claude_dollar_windows` (its entries do not match `ClaudeOAuthUsageWindow`). Naming the field pulls it out of the flatten. `percent` stays a raw JSON value at the API boundary, then flows through the shared numeric parser, so string, float, and over-cap values do not fail the whole OAuth decode before the existing percent helpers can normalize them.
 
-### 2. `into_buckets` prefers `limits`, falls back to legacy windows
+### 2. `into_buckets` prefers `limits`, backfills from legacy windows
 
-When `limits` is non-empty, build buckets from it and skip the legacy named-window pushes (they are null on current accounts anyway):
+Build `ClaudeQuotaWindow`s from `limits` first, then build the legacy named windows into the same model and append only semantic gaps. This avoids double-counting when the live API returns both carriers, but it also protects older or transitional responses where `limits` is present but partial, unknown, or missing a usable model label while the legacy fields still carry valid Session / Weekly / Sonnet / Opus / Routines windows:
 
 - `kind == "session"` → Session bucket, `StatusSlot::Session`.
 - `kind == "weekly_all"` → "All models" weekly bucket, `StatusSlot::Weekly`.
 - `kind == "weekly_scoped"` → bucket labelled by `scope.model.display_name` (e.g. "Fable"), no status slot (non-headline). Surface every active scoped window so future models appear without per-model code.
 - Map `severity` → `UsageSeverity` via the existing `severity_from_label`.
-- Keep the legacy `push_claude_window` calls as a fallback for accounts whose API still returns populated `seven_day_*` and no `limits`, so no regression on older shapes.
+- Backfill a legacy Session or Weekly only when no `limits` window already owns that status slot; backfill a legacy scoped model only when no `limits` scoped bucket with the same label exists.
 - `spend` / `extra_usage` and the `push_claude_dollar_windows` codename handling stay unchanged.
 
 ### 3. CLI fallback: parse model-scoped weekly lines
@@ -95,9 +95,9 @@ An earlier draft flagged the macOS Keychain as a blocker for the authoritative p
 
 ## What shipped
 
-1. `limits` structs (`ClaudeOAuthLimit` / `…Scope` / `…Model`) + a `limits: Vec<ClaudeOAuthLimit>` field on `ClaudeOAuthUsageResponse` in <RepoFile path="crates/jackin-usage/src/usage/claude.rs">crates/jackin-usage/src/usage/claude.rs</RepoFile>. A single normalized `ClaudeQuotaWindow` model + one bucket builder (`into_bucket`) now serves every utilization source: the `limits` array (authoritative), the legacy named windows (`seven_day*`, fallback for pre-`limits` responses), and the `claude -p /usage` CLI fallback. Fable is not a special case — it is a `weekly_scoped` entry normalized like any legacy model window, so Session / "All models" / Fable / Sonnet all take one path (headline slots, over-cap labels, pace, severity mirrored). The source preference (`limits` when present, else legacy) only avoids double-counting, since the live API returns both carriers with identical data; it is not a parallel implementation.
+1. `limits` structs (`ClaudeOAuthLimit` / `…Scope` / `…Model`) + a `limits: Vec<ClaudeOAuthLimit>` field on `ClaudeOAuthUsageResponse` in <RepoFile path="crates/jackin-usage/src/usage/claude.rs">crates/jackin-usage/src/usage/claude.rs</RepoFile>. A single normalized `ClaudeQuotaWindow` model + one bucket builder (`into_bucket`) now serves every utilization source: the `limits` array (preferred), the legacy named windows (`seven_day*`, semantic-gap backfill for older or partial responses), and the `claude -p /usage` CLI fallback. Fable is not a special case — it is a `weekly_scoped` entry normalized like any legacy model window, so Session / "All models" / Fable / Sonnet all take one path (headline slots, over-cap labels, pace, severity mirrored). The source preference avoids double-counting while preserving valid legacy quotas if `limits` is partial or unknown; it is not a parallel implementation.
 2. CLI fallback in <RepoFile path="crates/jackin-usage/src/usage.rs">crates/jackin-usage/src/usage.rs</RepoFile> `parse_claude_usage_output`: a generic `Current week (<label>):` branch feeds a new `ClaudeCliUsage::scoped_weekly: Vec<(String, f64)>`, so `Current week (Fable):` renders as a Fable bucket while the legacy `(Sonnet only)` line keeps its "Sonnet" label. CLI buckets reuse the same `ClaudeQuotaWindow::into_bucket` builder.
-3. Tests in <RepoFile path="crates/jackin-usage/src/usage/tests.rs">crates/jackin-usage/src/usage/tests.rs</RepoFile>: the OAuth `limits` array surfacing Fable + "All models" with no legacy leakage, an unnamed-scoped-window omission guard, the CLI Fable line, a direct equivalence test proving a legacy Sonnet window and a `weekly_scoped` Fable limit produce the same bucket through the one builder, a multi-model test (Session + All models + Sonnet + Opus + Fable together) proving every scoped window renders, and an Overview-status test proving the compact row names the bottleneck model. All mirror the live 2026-07-03 response/output.
+3. Tests in <RepoFile path="crates/jackin-usage/src/usage/tests.rs">crates/jackin-usage/src/usage/tests.rs</RepoFile>: the OAuth `limits` array surfacing Fable + "All models" with no legacy leakage, an unnamed-scoped-window omission guard, partial-`limits` legacy backfill, lenient percent decoding for string/float/over-cap values, the CLI Fable line, a direct equivalence test proving a legacy Sonnet window and a `weekly_scoped` Fable limit produce the same bucket through the one builder, a multi-model test (Session + All models + Sonnet + Opus + Fable together) proving every scoped window renders, and an Overview-status test proving the compact row names the bottleneck model. All mirror the live 2026-07-03 response/output.
 4. The compact Overview / per-provider status row (`usage_tab_status_label`) now names the bottleneck model when a model-scoped window (Fable) is the most-constrained — so an operator watching the compact surface learns *which* model is the limit, not just the % left. Headline windows (Session/Weekly) stay bare (the slot already implies them). The Capsule usage-dialog snapshot fixture (<RepoFile path="crates/jackin-capsule/src/tui/components/dialog/tests.rs">crates/jackin-capsule/src/tui/components/dialog/tests.rs</RepoFile> `anthropic_usage_view_fixture`) is rebaselined to the `limits` shape and shows Fable rendering as a row.
 
 ## Remaining
