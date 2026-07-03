@@ -206,7 +206,7 @@ The hints update dynamically based on which block is focused and which axes over
 
 ## Env / Secrets Sentinel Indentation
 
-`+ Add environment variable` sentinel at workspace level must align with workspace-level content (2-char `cursor_col` indent only). It must **not** pick up the 5-space `marker_col` that role-level rows use.
+`+ Add environment variable` sentinel at workspace level must align with workspace-level content (2-char cursor gutter only). It must **not** pick up the 5-space marker column that role-level rows use.
 
 Role-level sentinels (`RoleAddSentinel`) and role section headers keep their `"     "` (5-space) indentation to visually group them under the role section.
 
@@ -226,6 +226,10 @@ The **settings panel** (`ManagerStage::Settings`, global config) and the **works
 They share the same visual language, the same tab-bar interaction pattern, and the same scrollable-block conventions. Operators move between them constantly and expect consistent behavior.
 
 **Rule: every fix or addition that lands in one panel must immediately be audited against the other panel.** If the same issue exists there, fix it in the same PR. This is not optional polish — inconsistent behavior between the two panels is a bug.
+
+Shared settings/editor row families live in <RepoFile path="crates/jackin-console/src/tui/components/editor_rows.rs">crates/jackin-console/src/tui/components/editor_rows.rs</RepoFile>. Auth rows use one `AuthLineRow` model and renderer, env/secrets rows use one line builder with panel-specific adapters, and simple label/value rows use `labeled_field_line`. Mount table headers route through the shared mount-row helpers. Do not add a settings-only or editor-only renderer for a row kind that already exists in the other panel; extend the shared row model instead.
+
+Parity is test-backed for the common auth rows: equivalent settings and editor rows must render to identical text. Add cases to that parity test whenever a new shared row kind appears in both panels.
 
 ### What to check on every change
 

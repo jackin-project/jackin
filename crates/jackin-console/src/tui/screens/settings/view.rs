@@ -26,16 +26,16 @@ use ratatui::{
 use std::collections::BTreeMap;
 
 use crate::tui::components::editor_rows::{
-    AUTH_LABEL_COL_WIDTH, AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind,
-    AuthSourceValue, SecretValueDisplay, action_row_style, auth_source_display, disclosure_style,
-    render_secret_key_line, render_tab_strip,
+    AuthLineRow, AuthSourceDisplay, AuthSourceValue, FieldEmphasis, SecretEnvLineFrame,
+    SecretLineRow, SecretValueDisplay, action_row_style, auth_lines as shared_auth_lines,
+    auth_source_display, labeled_field_line, render_tab_strip, secret_env_lines,
 };
 use crate::tui::components::footer_hints::{
     SettingsContextFooterMode, SettingsScreenFooterFacts, content_footer_items,
     settings_contextual_row_footer_items, settings_save_footer_label, settings_screen_footer_items,
     tab_bar_footer_items,
 };
-use crate::tui::components::mount_rows::MOUNT_MODE_COL_WIDTH;
+use crate::tui::components::mount_rows::{MOUNT_MODE_COL_WIDTH, render_global_mount_header};
 use crate::tui::input::settings_auth_can_generate_token;
 use crate::tui::mount_display::{
     MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
@@ -44,18 +44,6 @@ use crate::tui::state::SettingsModal;
 use crate::tui::view::{
     effective_footer_height, measured_footer_height, render_footer, render_header,
 };
-
-// Structural exception: settings rows are form/table rows with labels, values,
-// disclosures, masked secrets, and action sentinels, so they cannot use the
-// flat picker renderer even though they share its focus-gated cursor contract.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SettingsAuthLineRow {
-    Kind { label: String },
-    Mode { mode_label: String },
-    Source { display: AuthSourceDisplay },
-    SourceFolder { display: AuthSourceFolderDisplay },
-    Spacer,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SettingsFrameAreas {
@@ -741,15 +729,6 @@ pub fn general_lines(
     pending_dco: bool,
     show_cursor: bool,
 ) -> Vec<Line<'static>> {
-    let label_bold = Style::default()
-        .fg(jackin_tui::theme::WHITE)
-        .add_modifier(Modifier::BOLD);
-    let label_normal = Style::default().fg(jackin_tui::theme::WHITE);
-    let value_bold = Style::default()
-        .fg(jackin_tui::theme::PHOSPHOR_GREEN)
-        .add_modifier(Modifier::BOLD);
-    let value_normal = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
-
     let rows: [(usize, &str, bool); 2] = [
         (0, "Co-author trailer", pending_coauthor_trailer),
         (1, "DCO sign-off", pending_dco),
@@ -758,15 +737,8 @@ pub fn general_lines(
     rows.iter()
         .map(|(i, label, pending)| {
             let selected = show_cursor && (selected_row == *i);
-            let prefix = if selected { "\u{25b8} " } else { "  " };
-            let ls = if selected { label_bold } else { label_normal };
-            let vs = if selected { value_bold } else { value_normal };
             let value = if *pending { "enabled" } else { "disabled" };
-            Line::from(vec![
-                Span::styled(prefix, ls),
-                Span::styled(format!("{label:<26}"), ls),
-                Span::styled(value, vs),
-            ])
+            labeled_field_line(selected, "", label, 26, value, FieldEmphasis::SelectedValue)
         })
         .collect()
 }
@@ -844,53 +816,34 @@ pub fn env_lines<'a>(
     is_unmasked: impl Fn(&SettingsEnvScope, &str) -> bool,
     role_var_count: impl Fn(&str) -> usize,
 ) -> Vec<Line<'static>> {
-    let mut lines = Vec::with_capacity(rows.len());
-    let label_width = 22;
-    for (i, row) in rows.iter().enumerate() {
-        let selected = show_cursor && (selected_row == i);
-        let cursor_col = if selected { "\u{25b8} " } else { "  " };
-        match row {
-            SettingsEnvRow::Key { scope, key } => {
-                let Some(value) = value_for(scope, key) else {
-                    continue;
-                };
-                lines.push(render_secret_key_line(
-                    selected,
-                    cursor_col,
-                    key,
-                    value,
-                    !is_unmasked(scope, key),
-                    area_width,
-                    label_width,
-                ));
-            }
-            SettingsEnvRow::GlobalAddSentinel => {
-                lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}+ Add environment variable"),
-                    action_row_style(selected),
-                )));
-            }
-            SettingsEnvRow::RoleHeader { role, expanded } => {
-                let arrow = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
-                lines.push(Line::from(vec![
-                    Span::raw(cursor_col.to_owned()),
-                    Span::styled(arrow.to_owned(), disclosure_style()),
-                    Span::styled(
-                        format!(" Role: {role}  ({} vars)", role_var_count(role)),
-                        disclosure_style(),
-                    ),
-                ]));
-            }
-            SettingsEnvRow::RoleAddSentinel(role) => {
-                lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}+ Add {role} environment variable"),
-                    action_row_style(selected),
-                )));
-            }
-            SettingsEnvRow::SectionSpacer => lines.push(Line::from("")),
-        }
-    }
-    lines
+    let display_rows: Vec<SecretLineRow<SettingsEnvScope>> = rows
+        .iter()
+        .map(|row| match row {
+            SettingsEnvRow::Key { scope, key } => SecretLineRow::Key {
+                scope: scope.clone(),
+                key: key.clone(),
+            },
+            SettingsEnvRow::GlobalAddSentinel => SecretLineRow::WorkspaceAddSentinel,
+            SettingsEnvRow::RoleHeader { role, expanded } => SecretLineRow::RoleHeader {
+                role: role.clone(),
+                expanded: *expanded,
+            },
+            SettingsEnvRow::RoleAddSentinel(role) => SecretLineRow::RoleAddSentinel(role.clone()),
+            SettingsEnvRow::SectionSpacer => SecretLineRow::SectionSpacer,
+        })
+        .collect();
+    secret_env_lines(
+        &display_rows,
+        SecretEnvLineFrame {
+            cursor: selected_row,
+            show_cursor,
+            area_width,
+        },
+        value_for,
+        is_unmasked,
+        |_| true,
+        role_var_count,
+    )
 }
 
 #[must_use]
@@ -920,17 +873,11 @@ pub fn env_state_lines<Modal>(
 
 #[must_use]
 pub fn auth_lines(
-    rows: &[SettingsAuthLineRow],
+    rows: &[AuthLineRow],
     selected_row: usize,
     show_cursor: bool,
 ) -> Vec<Line<'static>> {
-    rows.iter()
-        .enumerate()
-        .map(|(i, row)| {
-            let selected = show_cursor && (selected_row == i);
-            render_auth_line(row, selected)
-        })
-        .collect()
+    shared_auth_lines(rows, selected_row, show_cursor)
 }
 
 #[must_use]
@@ -940,10 +887,10 @@ pub fn auth_state_lines<AuthModal, EnvModal, PendingOpCommit>(
     show_cursor: bool,
 ) -> Vec<Line<'static>> {
     let Some(kind) = auth.selected_kind else {
-        let rows: Vec<SettingsAuthLineRow> = auth
+        let rows: Vec<AuthLineRow> = auth
             .pending
             .iter()
-            .map(|row| SettingsAuthLineRow::Kind {
+            .map(|row| AuthLineRow::AuthKind {
                 label: row.kind.label().to_owned(),
             })
             .collect();
@@ -954,20 +901,21 @@ pub fn auth_state_lines<AuthModal, EnvModal, PendingOpCommit>(
         return Vec::new();
     };
 
-    let mut rows = vec![SettingsAuthLineRow::Mode {
+    let mut rows = vec![AuthLineRow::WorkspaceMode {
         mode_label: crate::tui::components::auth_panel::mode_str(row.mode).to_owned(),
+        inherited: false,
     }];
     if let Some(env_name) = kind.required_env_var(row.mode) {
-        rows.push(SettingsAuthLineRow::Source {
+        rows.push(AuthLineRow::WorkspaceSource {
             display: settings_auth_source_display(auth, env, kind, row.mode, env_name),
         });
     }
     if crate::tui::auth::auth_mode_supports_source_folder(kind, row.mode) {
-        rows.push(SettingsAuthLineRow::SourceFolder {
+        rows.push(AuthLineRow::WorkspaceSourceFolder {
             display: crate::tui::auth_config::settings_source_folder_display(row),
         });
     }
-    rows.push(SettingsAuthLineRow::Spacer);
+    rows.push(AuthLineRow::Spacer);
     auth_lines(&rows, auth.selected, show_cursor)
 }
 
@@ -998,112 +946,6 @@ fn settings_auth_source_value<'a, AuthModal, EnvModal, PendingOpCommit>(
     crate::tui::auth_config::settings_auth_env_value(kind, mode, &auth.github_env, &env.pending.env)
 }
 
-fn render_auth_line(row: &SettingsAuthLineRow, selected: bool) -> Line<'static> {
-    let bold_white = Style::default()
-        .fg(jackin_tui::theme::WHITE)
-        .add_modifier(Modifier::BOLD);
-    let phosphor = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
-
-    match row {
-        SettingsAuthLineRow::Kind { label } => {
-            let cursor_col = if selected { "\u{25b8} " } else { "  " };
-            Line::from(Span::styled(format!("{cursor_col}{label}"), bold_white))
-        }
-        SettingsAuthLineRow::Mode { mode_label } => {
-            let mode_style = if selected {
-                phosphor.add_modifier(Modifier::BOLD)
-            } else {
-                phosphor
-            };
-            let cursor_col = if selected { "\u{25b8} " } else { "  " };
-            Line::from(vec![
-                Span::styled(cursor_col, mode_style),
-                Span::styled(format!("{:<AUTH_LABEL_COL_WIDTH$}", "Mode"), bold_white),
-                Span::styled(mode_label.clone(), mode_style),
-            ])
-        }
-        SettingsAuthLineRow::Source { display } => render_auth_source_line(display, selected),
-        SettingsAuthLineRow::SourceFolder { display } => {
-            render_auth_source_folder_line(display, selected)
-        }
-        SettingsAuthLineRow::Spacer => Line::from(""),
-    }
-}
-
-fn render_auth_source_folder_line(
-    display: &AuthSourceFolderDisplay,
-    selected: bool,
-) -> Line<'static> {
-    let dim = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
-    let source_style = if selected {
-        dim.add_modifier(Modifier::BOLD)
-    } else {
-        dim
-    };
-    let cursor_col = if selected { "\u{25b8} " } else { "  " };
-    let value = match display.kind {
-        AuthSourceFolderKind::Default => format!("default: {}", display.path),
-        AuthSourceFolderKind::Explicit => display.path.clone(),
-        AuthSourceFolderKind::Inherited => format!("inherited: {}", display.path),
-    };
-    Line::from(vec![
-        Span::styled(cursor_col, source_style),
-        Span::styled(
-            format!("{:<AUTH_LABEL_COL_WIDTH$}", "Source folder"),
-            Style::default()
-                .fg(jackin_tui::theme::WHITE)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(value, source_style),
-    ])
-}
-
-fn render_auth_source_line(display: &AuthSourceDisplay, selected: bool) -> Line<'static> {
-    let dim = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
-    let source_style = if selected {
-        dim.add_modifier(Modifier::BOLD)
-    } else {
-        dim
-    };
-    let cursor_col = if selected { "\u{25b8} " } else { "  " };
-    let mut spans = vec![
-        Span::styled(cursor_col, source_style),
-        Span::styled(
-            format!("{:<AUTH_LABEL_COL_WIDTH$}", "Source"),
-            Style::default()
-                .fg(jackin_tui::theme::WHITE)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
-
-    match display {
-        AuthSourceDisplay::NotRequired => {
-            spans.push(Span::styled("not required", source_style));
-        }
-        AuthSourceDisplay::OpRefPath(path) => {
-            spans.push(Span::styled("[op] ", source_style));
-            crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans(&mut spans, path);
-        }
-        AuthSourceDisplay::MaskedPlain { chars } => {
-            spans.push(Span::styled(
-                "\u{25cf}".repeat((*chars).clamp(1, 12)),
-                source_style,
-            ));
-        }
-        AuthSourceDisplay::Unset {
-            env_name,
-            mode_label,
-        } => {
-            spans.push(Span::styled(
-                format!("unset  ({env_name} for {mode_label})"),
-                Style::default().fg(jackin_tui::theme::DANGER_RED),
-            ));
-        }
-    }
-
-    Line::from(spans)
-}
-
 #[must_use]
 pub fn global_mount_lines(
     rows: &[MountDisplayRow],
@@ -1113,14 +955,7 @@ pub fn global_mount_lines(
     let path_w = mount_path_width(rows);
     let mut lines: Vec<Line<'static>> = Vec::new();
     if !rows.is_empty() {
-        lines.push(Line::from(Span::styled(
-            format!(
-                "  {path:<path_w$}  {mode:<MOUNT_MODE_COL_WIDTH$}  Type",
-                path = "Destination",
-                mode = "Mode"
-            ),
-            Style::default().fg(jackin_tui::theme::WHITE),
-        )));
+        lines.push(render_global_mount_header(path_w));
     }
     for (i, row) in rows.iter().enumerate() {
         let is_selected = selected == Some(i);

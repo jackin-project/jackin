@@ -18,7 +18,7 @@
 - **Depends on**: none hard (independent of 012; touches different layers)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
-- **Execution status**: BLOCKED — drift check found existing changes in `auth_panel.rs`, `editor_rows.rs`, and the workspace view before plan work.
+- **Execution status**: DONE — current combined PR drift was reconciled by promoting shared auth rows, env/secrets line building, labeled field rows, and mount headers into shared helpers.
 
 ## Why this matters
 
@@ -148,13 +148,13 @@ Route settings `general_lines` (`view.rs:782`) and editor `general_tab.rs` rows 
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0
-- [ ] `rg 'SettingsAuthLineRow' crates/` → 0
-- [ ] `rg -n 'cursor_col = if' crates/jackin-console/src/tui` → 0
-- [ ] Settings mount header rendered by `render_mount_header` (grep call site)
-- [ ] One env/secrets line builder (`rg -n 'fn (secret|env)_lines' crates/jackin-console/src` → 1 shared fn or thin per-panel wrappers with no span logic)
-- [ ] Parity test exists and passes
-- [ ] `dialogs.mdx` parity section updated; `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0
+- [x] `rg 'SettingsAuthLineRow' crates/` → 0
+- [x] `rg -n 'cursor_col = if' crates/jackin-console/src/tui` → 0
+- [x] Settings mount header rendered by the shared mount-row header helper
+- [x] One env/secrets line builder (`secret_env_lines`) with thin per-panel wrappers and no span logic
+- [x] Parity test exists and passes
+- [x] `dialogs.mdx` parity section updated; `plans/README.md` updated
 
 ## STOP conditions
 
