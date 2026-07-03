@@ -60,6 +60,10 @@ fn run_registry() -> &'static Mutex<HashMap<String, Weak<RunDiagnostics>>> {
     RUN_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn locked<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[derive(Debug)]
 pub struct RunDiagnostics {
     run_id: String,
@@ -311,33 +315,24 @@ impl RunDiagnostics {
         let mut foreground_wait_ms: Option<u64> = None;
         let enriched_detail = match kind {
             "stage_started" => {
-                if let Ok(mut starts) = self.stage_starts.lock() {
-                    starts.insert(stage.to_owned(), Instant::now());
-                }
-                if let Ok(mut spans) = self.stage_spans.lock() {
-                    spans.insert(stage.to_owned(), launch_stage_span(stage));
-                }
+                locked(&self.stage_starts).insert(stage.to_owned(), Instant::now());
+                locked(&self.stage_spans).insert(stage.to_owned(), launch_stage_span(stage));
                 detail.map(String::from)
             }
             "stage_done" => {
-                let elapsed_ms =
-                    self.stage_starts.lock().ok().and_then(|starts| {
-                        starts.get(stage).map(|t| t.elapsed().as_millis() as u64)
-                    });
+                let elapsed_ms = locked(&self.stage_starts)
+                    .get(stage)
+                    .map(|t| t.elapsed().as_millis() as u64);
                 elapsed_ms.map_or_else(
                     || detail.map(String::from),
                     |ms| {
                         foreground_wait_ms = Some(ms);
-                        if let Ok(mut durs) = self.stage_durations_ms.lock() {
-                            durs.push((stage.to_owned(), ms));
-                        }
-                        if let Ok(mut metrics) = self.metrics.lock() {
-                            metrics
-                                .stage_duration_ms
-                                .entry(stage.to_owned())
-                                .or_default()
-                                .push(ms);
-                        }
+                        locked(&self.stage_durations_ms).push((stage.to_owned(), ms));
+                        locked(&self.metrics)
+                            .stage_duration_ms
+                            .entry(stage.to_owned())
+                            .or_default()
+                            .push(ms);
                         let base = detail.unwrap_or("");
                         if base.is_empty() {
                             Some(format!("{{\"duration_ms\":{ms}}}"))
@@ -406,9 +401,7 @@ impl RunDiagnostics {
 
     pub fn timing_started(&self, stage: &str, name: &str, detail: Option<&str>) {
         let key = timing_key(stage, name);
-        if let Ok(mut starts) = self.timing_starts.lock() {
-            starts.insert(key, Instant::now());
-        }
+        locked(&self.timing_starts).insert(key, Instant::now());
         let event_detail = timing_detail(name, None, detail);
         let span = self.current_stage_span(stage);
         let _entered = span.as_ref().map(tracing::Span::enter);
@@ -423,14 +416,11 @@ impl RunDiagnostics {
 
     pub fn timing_done(&self, stage: &str, name: &str, detail: Option<&str>) {
         let key = timing_key(stage, name);
-        let elapsed_ms = self
-            .timing_starts
-            .lock()
-            .ok()
-            .and_then(|mut starts| starts.remove(&key))
+        let elapsed_ms = locked(&self.timing_starts)
+            .remove(&key)
             .map(|start| start.elapsed().as_millis() as u64);
-        if let (Some(ms), Ok(mut metrics)) = (elapsed_ms, self.metrics.lock()) {
-            metrics
+        if let Some(ms) = elapsed_ms {
+            locked(&self.metrics)
                 .timing_duration_ms
                 .entry(format!("{stage}/{name}"))
                 .or_default()
@@ -452,17 +442,11 @@ impl RunDiagnostics {
     }
 
     fn current_stage_span(&self, stage: &str) -> Option<tracing::Span> {
-        self.stage_spans
-            .lock()
-            .ok()
-            .and_then(|spans| spans.get(stage).cloned())
+        locked(&self.stage_spans).get(stage).cloned()
     }
 
     fn stage_span_for(&self, kind: &str, stage: &str) -> tracing::Span {
-        let mut spans = self
-            .stage_spans
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut spans = locked(&self.stage_spans);
         if matches!(kind, "stage_done" | "stage_failed" | "stage_skipped") {
             spans
                 .remove(stage)
@@ -478,10 +462,7 @@ impl RunDiagnostics {
     /// Emit a summary event at the end of the run with per-stage wall-clock durations.
     pub fn emit_run_summary(&self) {
         let durations_snapshot: Vec<(String, u64)> = {
-            let durs = self
-                .stage_durations_ms
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let durs = locked(&self.stage_durations_ms);
             durs.clone()
         };
         let stage_durations: serde_json::Value = durations_snapshot
@@ -489,11 +470,7 @@ impl RunDiagnostics {
             .map(|(s, ms)| (s.clone(), serde_json::Value::from(*ms)))
             .collect::<serde_json::Map<_, _>>()
             .into();
-        let metrics = self
-            .metrics
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
+        let metrics = locked(&self.metrics).clone();
         let summary = serde_json::json!({
             "stage_durations_ms": stage_durations,
             "stage_duration_histograms_ms": metrics.stage_duration_ms,
@@ -718,9 +695,7 @@ impl RunDiagnostics {
     }
 
     fn record_metrics(&self, kind: &str) {
-        let Ok(mut metrics) = self.metrics.lock() else {
-            return;
-        };
+        let mut metrics = locked(&self.metrics);
         *metrics.event_counts.entry(kind.to_owned()).or_default() += 1;
         if kind.contains("cache_hit") {
             metrics.cache_hits += 1;
