@@ -15,13 +15,13 @@ Design direction the program encodes (validated against tracing 0.1 / tracing-op
 | 003 | Error severity truth: capsule WARN/ERROR tiers, host error path, panic capture, `error_type` | P1 | L | 001 | DONE |
 | 004 | Route `record_direct` through tracing (crash/build/timing reach OTLP); clean exported attrs | P1 | M | 001, 003 | DONE |
 | 005 | Redaction boundary: payload containment + export scrubber | P1 | L | 003, 004 | BLOCKED — STOP: `jackin-xtask pty-fixture` reads `session feed_pty bytes` from host run JSONL |
-| 006 | Structured event taxonomy: `event.name`/`log.category`, fingerprint-stable bodies | P1 | L | 003, 004, 005 | TODO |
+| 006 | Structured event taxonomy: `event.name`/`log.category`, fingerprint-stable bodies | P1 | L | 003, 004, 005 | BLOCKED — depends on blocked 005 payload-boundary work |
 | 007 | Spans that wrap work: stage guards + `otel.name`, subprocess duration/outcome, cleanup/git-pull coverage | P1 | L | 001, 002, 003 | DONE |
-| 008 | `--telemetry-level` / `--telemetry-category`; split export verbosity from `--debug` UI | P2 | L | 002, 003, 005, 006 | TODO |
+| 008 | `--telemetry-level` / `--telemetry-category`; split export verbosity from `--debug` UI | P2 | L | 002, 003, 005, 006 | BLOCKED — depends on blocked 005/006 telemetry structure |
 | 009 | Operator contract: `persists()` gating, capsule path honesty, run-end pointer | P1 | M | — | DONE |
-| 010 | `[telemetry]` config.toml section (5-artifact schema bump) | P2 | M | 008 | TODO |
+| 010 | `[telemetry]` config.toml section (5-artifact schema bump) | P2 | M | 008 | BLOCKED — depends on blocked 008 |
 | 011 | Hygiene batch: poison consistency, flush cadence, mouse coalescing, log rotation, TOCTOU, bounded maps | P2 | M | — | DONE |
-| 012 | Domain metrics via MetricsLayer + turso connection reuse | P3 | M | 002, 005, 008 | TODO |
+| 012 | Domain metrics via MetricsLayer + turso connection reuse | P3 | M | 002, 005, 008 | BLOCKED — depends on blocked 005/008 |
 | 013 | Docs truth sync: TESTING.md OTLP gate, run-id format, env-var reference | P1 | S | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
