@@ -33,7 +33,7 @@ update the codebase map in the same PR.
 | 010 | Capsule hint renderer consolidation (style single-source, wrap not truncate) | P1 | M | — (coordinate 005) | BLOCKED — shared styling extracted, but wrapping needs operator decision because extra hint rows change capsule content-area reservation |
 | 011 | Capsule footer via StatusFooter + shared confirm hit-test | P2 | M | — (coordinate 010) | BLOCKED — drift check found existing changes in capsule chrome/dialog/palette files and shared button/confirm components before plan work |
 | 012 | ModalStack primitive; settings modal enums converge; stash slots die | P2 | L | 002 (soft) | BLOCKED — drift check found existing console TUI changes across component/input/view files before plan work |
-| 013 | Modal-sizing registry promoted to jackin-tui | P2 | M | 012 | TODO |
+| 013 | Modal-sizing registry promoted to jackin-tui | P2 | M | 012 | BLOCKED — drift check found existing launch TUI failure-dialog/run changes before plan work |
 | 014 | ConfirmSaveState onto a keymap + ButtonFocus | P2 | M | 003 | TODO |
 | 015 | Settings ↔ editor row unification + labeled_field_line | P1 | L | — | TODO |
 | 016 | save_preview dual-pipeline dedup | P2 | L | — | TODO |
