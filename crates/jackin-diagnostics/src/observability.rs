@@ -66,7 +66,7 @@ impl<S> Layer<S> for JackinDiagnosticsLayer
 where
     S: Subscriber + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
 {
-    fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
+    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let metadata = event.metadata();
         if metadata.target() != JSONL_TARGET {
             // The OpenTelemetry SDK reports its own failures (export errors,
@@ -88,68 +88,6 @@ where
                     run.record_otlp_internal(metadata.level().as_str(), &visitor.into_message());
                 }
             }
-            return;
-        }
-        let mut visitor = DiagnosticsEventVisitor::default();
-        event.record(&mut visitor);
-        let Some(kind) = visitor.kind.as_deref() else {
-            return;
-        };
-        let Some(message) = visitor.message.as_deref() else {
-            return;
-        };
-        let span_id = ctx.event_scope(event).and_then(|scope| {
-            scope
-                .from_root()
-                .last()
-                .map(|span| span.id().into_u64().to_string())
-        });
-        let run = visitor
-            .run_id
-            .as_deref()
-            .and_then(crate::run::run_by_id)
-            .or_else(crate::active_run);
-        if let Some(run) = run {
-            run.record_from_layer(
-                kind,
-                message,
-                visitor.stage.as_deref(),
-                visitor.detail.as_deref(),
-                span_id.as_deref(),
-                metadata.level().as_str(),
-            );
-        }
-    }
-}
-
-#[derive(Default)]
-struct DiagnosticsEventVisitor {
-    run_id: Option<String>,
-    kind: Option<String>,
-    message: Option<String>,
-    stage: Option<String>,
-    detail: Option<String>,
-}
-
-impl Visit for DiagnosticsEventVisitor {
-    fn record_str(&mut self, field: &Field, value: &str) {
-        self.record_owned(field, value.to_owned());
-    }
-
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        self.record_owned(field, format!("{value:?}"));
-    }
-}
-
-impl DiagnosticsEventVisitor {
-    fn record_owned(&mut self, field: &Field, value: String) {
-        match field.name() {
-            "run_id" => self.run_id = Some(value),
-            "kind" => self.kind = Some(value),
-            "message" => self.message = Some(value),
-            "stage" if value != "<none>" => self.stage = Some(value),
-            "detail" if value != "<none>" => self.detail = Some(value),
-            _ => {}
         }
     }
 }
@@ -1436,6 +1374,27 @@ fn emit_jsonl_event_with_level(
             JsonlEventLevel::Error => "ERROR",
         },
     );
+    let span_id = tracing::Span::current()
+        .id()
+        .map(|id| id.into_u64().to_string());
+    let run = crate::run::run_by_id(run_id).or_else(crate::active_run);
+    if let Some(run) = run {
+        run.record_from_layer(
+            kind,
+            message.as_ref(),
+            stage,
+            detail,
+            span_id.as_deref(),
+            if kind == "debug" && !matches!(level, JsonlEventLevel::Error) {
+                "DEBUG"
+            } else {
+                match level {
+                    JsonlEventLevel::Info => "INFO",
+                    JsonlEventLevel::Error => "ERROR",
+                }
+            },
+        );
+    }
 
     // The `--debug` firehose is DEBUG-severity so external exporters filter
     // it by level; the JSONL layer ignores levels and records everything.

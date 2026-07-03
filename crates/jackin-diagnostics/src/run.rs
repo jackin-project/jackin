@@ -747,6 +747,7 @@ impl RunDiagnostics {
         level: &str,
     ) {
         self.record_direct(kind, message, stage, detail, span_id, level);
+        self.flush_writer();
     }
 
     /// Record an OpenTelemetry-internal diagnostic (an export failure, dropped
