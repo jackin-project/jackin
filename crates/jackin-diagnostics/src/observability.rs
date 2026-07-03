@@ -789,10 +789,9 @@ mod otlp {
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
-        // Scope the export to jackin❯'s own telemetry. Silencing the OTLP
-        // transport stack stops the log bridge from re-exporting the exporter's
-        // own request logs (a feedback loop under `--debug`) and keeps the
-        // backend free of dependency-internal spans the operator never asked for.
+        // Scope the export to jackin❯'s own telemetry. Dependency-internal
+        // spans/logs stay out of OTLP unless the operator asks for them with
+        // `JACKIN_OTEL_INTERNAL=1`.
         let directive = export_filter_directive(if debug { "debug" } else { "info" });
         let installed = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
@@ -917,11 +916,59 @@ mod otlp {
         })
     }
 
+    /// Tracing targets exported over OTLP. Global default is `off`: a
+    /// dependency that starts emitting `tracing` data must be added here
+    /// deliberately instead of leaking into the backend.
+    const EXPORT_TARGETS: &[&str] = &[
+        "jackin",
+        "jackin_build_meta",
+        "jackin_capsule",
+        "jackin_config",
+        "jackin_console",
+        "jackin_core",
+        "jackin_dev",
+        "jackin_diagnostics",
+        "jackin_diagnostics::jsonl",
+        "jackin_diagnostics::session",
+        "jackin_docker",
+        "jackin_env",
+        "jackin_host",
+        "jackin_image",
+        "jackin_instance",
+        "jackin_isolation",
+        "jackin_launch_tui",
+        "jackin_manifest",
+        "jackin_pr_trailers",
+        "jackin_protocol",
+        "jackin_runtime",
+        "jackin_term",
+        "jackin_tui",
+        "jackin_tui_lookbook",
+        "jackin_usage",
+    ];
+
     fn export_filter_directive(level: &str) -> String {
-        format!(
-            "{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
-             opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
+        export_filter_directive_with_internal(
+            level,
+            std::env::var("JACKIN_OTEL_INTERNAL")
+                .is_ok_and(|value| crate::run::flag_is_truthy(&value)),
         )
+    }
+
+    fn export_filter_directive_with_internal(level: &str, internal: bool) -> String {
+        let mut directive = String::from("off");
+        for target in EXPORT_TARGETS {
+            directive.push_str(&format!(",{target}={level}"));
+        }
+        if internal {
+            // Operator explicitly asked for dependency internals: restore the
+            // global default level while still blocking exporter feedback loops.
+            directive.push_str(&format!(
+                ",{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
+                 opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
+            ));
+        }
+        directive
     }
 
     #[cfg(test)]

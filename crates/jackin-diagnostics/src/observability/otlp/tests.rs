@@ -5,8 +5,8 @@ use opentelemetry_sdk::trace::SpanData;
 
 use super::keys;
 use super::{
-    TestExport, build_resource, grpc_endpoint, parse_traceparent, resolve_endpoint,
-    resolve_endpoints, test_layers, unsupported_protocol,
+    TestExport, build_resource, export_filter_directive_with_internal, grpc_endpoint,
+    parse_traceparent, resolve_endpoint, resolve_endpoints, test_layers, unsupported_protocol,
 };
 
 fn attr(resource: &opentelemetry_sdk::Resource, key: &'static str) -> Option<String> {
@@ -289,13 +289,61 @@ fn launch_stage_span_name_is_constant() {
 }
 
 #[test]
-fn dependency_targets_pass_the_filter_today() {
+fn dependency_targets_are_filtered_out() {
     let logs = exported_logs!(false, "run1", || {
         tracing::info!(target: "turso_core", "vm step");
+        tracing::info!(target: "some_random_crate", "random step");
     });
 
-    assert_eq!(logs.len(), 1);
-    assert_eq!(log_body(&logs[0].record).as_deref(), Some("vm step"));
+    assert!(logs.is_empty());
+}
+
+#[test]
+fn jackin_targets_still_export() {
+    let logs = exported_logs!(false, "run1", || {
+        crate::observability::emit_jsonl_event("run1", "compact_kind", "hello", None, None);
+        tracing::info!(target: "jackin_capsule", "capsule line");
+    });
+
+    assert_eq!(logs.len(), 2);
+    let bodies = logs
+        .iter()
+        .filter_map(|log| log_body(&log.record))
+        .collect::<Vec<_>>();
+    assert!(bodies.iter().any(|body| body == "hello"));
+    assert!(bodies.iter().any(|body| body == "capsule line"));
+}
+
+#[test]
+fn spans_from_workspace_crates_still_export() {
+    let spans = exported_spans(false, "run1", || {
+        let span = tracing::info_span!("launch_stage", stage = "derived image");
+        drop(span.enter());
+    });
+
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name.as_ref(), "launch_stage");
+}
+
+#[test]
+fn export_filter_directive_is_jackin_allowlist() {
+    let directive = export_filter_directive_with_internal("info", false);
+
+    assert!(directive.starts_with("off,jackin=info"));
+    assert!(directive.contains(",jackin_capsule=info"));
+    assert!(directive.contains(",jackin_diagnostics::jsonl=info"));
+    assert!(!directive.split(',').any(|part| part == "info"));
+    assert!(!directive.contains("hyper=off"));
+}
+
+#[test]
+fn export_filter_directive_internal_flag_restores_global_level() {
+    let directive = export_filter_directive_with_internal("debug", true);
+
+    assert!(directive.starts_with("off,jackin=debug"));
+    assert!(directive.split(',').any(|part| part == "debug"));
+    assert!(directive.contains("hyper=off"));
+    assert!(directive.contains("opentelemetry_sdk=off"));
 }
 
 #[test]
