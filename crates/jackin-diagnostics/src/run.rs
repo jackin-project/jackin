@@ -43,6 +43,10 @@ mod tests;
 const RUN_DIR: &str = "diagnostics/runs";
 pub(crate) const MAX_RUN_ARTIFACTS: usize = 200;
 pub(crate) const MAX_RUN_ARTIFACT_AGE: Duration = Duration::from_hours(720);
+// Interim export bound until plan 005 moves crash evidence through the full
+// redaction/artifact-routing boundary.
+const CRASH_EVIDENCE_EXPORT_CAP: usize = 4096;
+const CRASH_EVIDENCE_TRUNCATED_PREFIX: &str = "(truncated to last 4096 bytes)\n";
 
 static ACTIVE_RUN: OnceLock<Mutex<Option<Arc<RunDiagnostics>>>> = OnceLock::new();
 static RUN_REGISTRY: OnceLock<Mutex<HashMap<String, Weak<RunDiagnostics>>>> = OnceLock::new();
@@ -190,10 +194,10 @@ impl RunDiagnostics {
             run.compact("otlp", &line);
             crate::logging::emit_compact_line("otlp", &line);
         }
-        run.record_direct(
+        crate::observability::emit_jsonl_event(
+            &run.run_id,
             "run",
             &format!("command {command} started"),
-            None,
             None,
             None,
         );
@@ -405,12 +409,12 @@ impl RunDiagnostics {
             starts.insert(key, Instant::now());
         }
         let event_detail = timing_detail(name, None, detail);
-        self.record_direct(
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
             "timing_started",
             &format!("{name} started"),
             Some(stage),
             Some(&event_detail),
-            None,
         );
     }
 
@@ -430,12 +434,12 @@ impl RunDiagnostics {
                 .push(ms);
         }
         let event_detail = timing_detail(name, elapsed_ms, detail);
-        self.record_direct(
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
             "timing_done",
             &format!("{name} done"),
             Some(stage),
             Some(&event_detail),
-            None,
         );
         if let Some(ms) = elapsed_ms {
             self.explain_foreground_wait(&key, ms);
@@ -516,12 +520,12 @@ impl RunDiagnostics {
             "capsule_log": capsule_log_path,
         })
         .to_string();
-        self.record_direct(
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
             "container_started",
             &format!("container {container_name} started"),
             Some(container_name),
             Some(&detail),
-            None,
         );
     }
 
@@ -561,14 +565,31 @@ impl RunDiagnostics {
         } else {
             format!("container {container_name} exited (exit {exit_code})")
         };
-        self.record_direct(kind, &msg, Some(container_name), Some(&detail), None);
-        if let Some(evidence) = crash_evidence.filter(|s| !s.is_empty()) {
-            self.record_direct(
-                "container_crash_log",
-                evidence,
+        if kind == "container_crash" {
+            crate::observability::emit_jsonl_error(
+                &self.run_id,
+                kind,
+                &msg,
                 Some(container_name),
-                None,
-                None,
+                Some(&detail),
+            );
+        } else {
+            crate::observability::emit_jsonl_event(
+                &self.run_id,
+                kind,
+                &msg,
+                Some(container_name),
+                Some(&detail),
+            );
+        }
+        if let Some(evidence) = crash_evidence.filter(|s| !s.is_empty()) {
+            let capped_evidence = cap_crash_evidence_for_export(evidence);
+            crate::observability::emit_jsonl_error(
+                &self.run_id,
+                "container_crash_log",
+                &format!("container {container_name} crash evidence"),
+                Some(container_name),
+                Some(&capped_evidence),
             );
         }
     }
@@ -587,12 +608,12 @@ impl RunDiagnostics {
             "cached": cached,
         })
         .to_string();
-        self.record_direct(
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
             "docker_build_step",
             &format!("docker build step {step} {label}"),
             Some("derived image"),
             Some(&detail),
-            None,
         );
     }
 
@@ -632,6 +653,8 @@ impl RunDiagnostics {
         }
     }
 
+    // Sink-only helper. Call directly only from `record_from_layer` and
+    // `record_otlp_internal`; normal diagnostics should emit tracing events.
     fn record_direct(
         &self,
         kind: &str,
@@ -969,6 +992,18 @@ fn timing_detail(name: &str, duration_ms: Option<u64>, detail: Option<&str>) -> 
         value["detail"] = serde_json::Value::from(detail);
     }
     value.to_string()
+}
+
+fn cap_crash_evidence_for_export(evidence: &str) -> String {
+    if evidence.len() <= CRASH_EVIDENCE_EXPORT_CAP {
+        return evidence.to_owned();
+    }
+
+    let mut start = evidence.len() - CRASH_EVIDENCE_EXPORT_CAP;
+    while !evidence.is_char_boundary(start) {
+        start += 1;
+    }
+    format!("{}{}", CRASH_EVIDENCE_TRUNCATED_PREFIX, &evidence[start..])
 }
 
 /// Owner-only mode for new diagnostics files. The JSONL firehose and the

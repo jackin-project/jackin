@@ -275,6 +275,7 @@ fn command_output_sidecar_strips_ansi_sequences() {
     use std::os::unix::process::ExitStatusExt;
     use std::process::ExitStatus;
 
+    init_test_tracing();
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, false, "load").unwrap();

@@ -222,14 +222,8 @@ fn exported_log_carries_body_and_attributes() {
     assert_eq!(log_attr(&log.record, "stage").as_deref(), Some("plan"));
     assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("d"));
     assert_eq!(log_attr(&log.record, "run_id").as_deref(), Some("run1"));
-    assert_eq!(
-        log_attr(&log.record, "diagnostics_message").as_deref(),
-        Some("hello world")
-    );
-    assert_eq!(
-        log_attr(&log.record, "jackin_jsonl").as_deref(),
-        Some("true")
-    );
+    assert_eq!(log_attr(&log.record, "diagnostics_message"), None);
+    assert_eq!(log_attr(&log.record, "jackin_jsonl"), None);
 }
 
 #[test]
@@ -255,25 +249,21 @@ fn debug_kind_is_debug_severity_and_filtered_at_info() {
     assert_eq!(debug_logs.len(), 1);
     let log = &debug_logs[0];
     assert_eq!(log.record.severity_number(), Some(Severity::Debug));
-    assert_eq!(log_attr(&log.record, "stage").as_deref(), Some("<none>"));
+    assert_eq!(log_attr(&log.record, "stage"), None);
     assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("docker"));
 }
 
 #[test]
-fn sentinel_none_values_are_exported() {
+fn absent_stage_and_detail_are_not_exported_as_sentinels() {
     let logs = exported_logs!(false, "run1", || {
         crate::observability::emit_jsonl_event("run1", "compact_kind", "hello world", None, None);
     });
 
     assert_eq!(logs.len(), 1);
-    assert_eq!(
-        log_attr(&logs[0].record, "stage").as_deref(),
-        Some("<none>")
-    );
-    assert_eq!(
-        log_attr(&logs[0].record, "detail").as_deref(),
-        Some("<none>")
-    );
+    assert_eq!(log_attr(&logs[0].record, "stage"), None);
+    assert_eq!(log_attr(&logs[0].record, "detail"), None);
+    assert_eq!(log_attr(&logs[0].record, "diagnostics_message"), None);
+    assert_eq!(log_attr(&logs[0].record, "jackin_jsonl"), None);
 }
 
 #[test]
@@ -393,6 +383,72 @@ fn fatal_error_carries_error_type() {
         log_attr(&error.record, "error_type").as_deref(),
         Some("E014")
     );
+}
+
+#[test]
+fn direct_diagnostics_events_reach_otlp() {
+    let logs = exported_logs!(false, "run1", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
+
+        run.timing_started("credentials", "operator_env", Some("layers"));
+        run.timing_done("credentials", "operator_env", Some("2 vars"));
+        run.docker_build_step("12", "DONE", Some(76_500), false);
+        run.container_started("jk-test", "/capsule.log");
+        run.container_exited("jk-test", 137, true, "/capsule.log", Some("crash tail"));
+    });
+
+    let by_kind = |kind: &str| {
+        logs.iter()
+            .find(|log| log_attr(&log.record, "kind").as_deref() == Some(kind))
+            .unwrap_or_else(|| panic!("{kind} log exported"))
+    };
+
+    assert_eq!(
+        by_kind("timing_done").record.severity_number(),
+        Some(Severity::Info)
+    );
+    assert_eq!(
+        by_kind("docker_build_step").record.severity_number(),
+        Some(Severity::Info)
+    );
+    assert_eq!(
+        by_kind("container_started").record.severity_number(),
+        Some(Severity::Info)
+    );
+    assert_eq!(
+        by_kind("container_crash").record.severity_number(),
+        Some(Severity::Error)
+    );
+    let crash_log = by_kind("container_crash_log");
+    assert_eq!(crash_log.record.severity_number(), Some(Severity::Error));
+    assert_eq!(
+        log_attr(&crash_log.record, "detail").as_deref(),
+        Some("crash tail")
+    );
+}
+
+#[test]
+fn crash_evidence_is_capped() {
+    let logs = exported_logs!(false, "run1", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
+        let evidence = format!("prefix-{}{}", "x".repeat(10 * 1024), "tail");
+
+        run.container_exited("jk-test", 1, false, "/capsule.log", Some(&evidence));
+    });
+
+    let crash_log = logs
+        .iter()
+        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("container_crash_log"))
+        .expect("container_crash_log exported");
+    let detail = log_attr(&crash_log.record, "detail").expect("capped evidence detail");
+
+    assert!(detail.starts_with("(truncated to last 4096 bytes)\n"));
+    assert!(detail.ends_with("tail"));
+    assert!(detail.len() <= "(truncated to last 4096 bytes)\n".len() + 4096);
 }
 
 #[test]

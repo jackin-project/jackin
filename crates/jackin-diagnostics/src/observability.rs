@@ -92,9 +92,6 @@ where
         }
         let mut visitor = DiagnosticsEventVisitor::default();
         event.record(&mut visitor);
-        if !visitor.jackin_jsonl {
-            return;
-        }
         let Some(kind) = visitor.kind.as_deref() else {
             return;
         };
@@ -126,7 +123,6 @@ where
 
 #[derive(Default)]
 struct DiagnosticsEventVisitor {
-    jackin_jsonl: bool,
     run_id: Option<String>,
     kind: Option<String>,
     message: Option<String>,
@@ -135,12 +131,6 @@ struct DiagnosticsEventVisitor {
 }
 
 impl Visit for DiagnosticsEventVisitor {
-    fn record_bool(&mut self, field: &Field, value: bool) {
-        if field.name() == "jackin_jsonl" {
-            self.jackin_jsonl = value;
-        }
-    }
-
     fn record_str(&mut self, field: &Field, value: &str) {
         self.record_owned(field, value.to_owned());
     }
@@ -155,7 +145,7 @@ impl DiagnosticsEventVisitor {
         match field.name() {
             "run_id" => self.run_id = Some(value),
             "kind" => self.kind = Some(value),
-            "diagnostics_message" | "message" => self.message = Some(value),
+            "message" => self.message = Some(value),
             "stage" if value != "<none>" => self.stage = Some(value),
             "detail" if value != "<none>" => self.detail = Some(value),
             _ => {}
@@ -1277,48 +1267,115 @@ fn emit_jsonl_event_with_level(
     error_type: Option<&str>,
     level: JsonlEventLevel,
 ) {
-    let stage = stage.unwrap_or("<none>");
-    let detail = detail.unwrap_or("<none>");
-    let error_type = error_type.unwrap_or("<none>");
     // The `--debug` firehose is DEBUG-severity so external exporters filter
     // it by level; the JSONL layer ignores levels and records everything.
     // The trailing format message becomes the OTLP log body — without it,
     // exported records carry attributes but an empty body.
-    if matches!(level, JsonlEventLevel::Error) {
-        tracing::error!(
-            target: JSONL_TARGET,
-            jackin_jsonl = true,
-            run_id = run_id,
-            kind = kind,
-            diagnostics_message = message,
-            stage = stage,
-            detail = detail,
-            error_type = error_type,
-            "{message}"
-        );
-    } else if kind == "debug" {
-        tracing::debug!(
-            target: JSONL_TARGET,
-            jackin_jsonl = true,
-            run_id = run_id,
-            kind = kind,
-            diagnostics_message = message,
-            stage = stage,
-            detail = detail,
-            error_type = error_type,
-            "{message}"
-        );
+    if kind == "debug" && !matches!(level, JsonlEventLevel::Error) {
+        emit_debug_jsonl_event(run_id, kind, message, stage, detail, error_type);
+    } else if matches!(level, JsonlEventLevel::Error) {
+        emit_error_jsonl_event(run_id, kind, message, stage, detail, error_type);
     } else {
-        tracing::info!(
-            target: JSONL_TARGET,
-            jackin_jsonl = true,
-            run_id = run_id,
-            kind = kind,
-            diagnostics_message = message,
-            stage = stage,
-            detail = detail,
-            error_type = error_type,
-            "{message}"
-        );
+        emit_info_jsonl_event(run_id, kind, message, stage, detail, error_type);
     }
+}
+
+macro_rules! emit_jsonl_event_fields {
+    ($emit:ident, $run_id:expr, $kind:expr, $message:expr, $stage:expr, $detail:expr, $error_type:expr) => {
+        match ($stage, $detail, $error_type) {
+            (Some(stage), Some(detail), Some(error_type)) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                stage = stage,
+                detail = detail,
+                error_type = error_type,
+                "{}", $message
+            ),
+            (Some(stage), Some(detail), None) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                stage = stage,
+                detail = detail,
+                "{}", $message
+            ),
+            (Some(stage), None, Some(error_type)) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                stage = stage,
+                error_type = error_type,
+                "{}", $message
+            ),
+            (Some(stage), None, None) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                stage = stage,
+                "{}", $message
+            ),
+            (None, Some(detail), Some(error_type)) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                detail = detail,
+                error_type = error_type,
+                "{}", $message
+            ),
+            (None, Some(detail), None) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                detail = detail,
+                "{}", $message
+            ),
+            (None, None, Some(error_type)) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                error_type = error_type,
+                "{}", $message
+            ),
+            (None, None, None) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                "{}", $message
+            ),
+        }
+    }
+}
+
+fn emit_info_jsonl_event(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    error_type: Option<&str>,
+) {
+    emit_jsonl_event_fields!(info, run_id, kind, message, stage, detail, error_type);
+}
+
+fn emit_debug_jsonl_event(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    error_type: Option<&str>,
+) {
+    emit_jsonl_event_fields!(debug, run_id, kind, message, stage, detail, error_type);
+}
+
+fn emit_error_jsonl_event(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    error_type: Option<&str>,
+) {
+    emit_jsonl_event_fields!(error, run_id, kind, message, stage, detail, error_type);
 }
