@@ -1,4 +1,4 @@
-use super::{DiffViewState, SinglePaneKind};
+use super::{DiffViewState, SinglePaneKind, diff_view_hint_spans};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[test]
@@ -56,4 +56,15 @@ fn handle_key_scrolls_and_cancels() {
         state.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
         crate::ModalOutcome::Cancel
     ));
+}
+
+#[test]
+fn diff_view_hints_come_from_scroll_keymap() {
+    assert_eq!(
+        diff_view_hint_spans(),
+        crate::keymap::SCROLL_HINT_KEYMAP.hint_spans_for_axes(crate::scroll::ScrollAxes {
+            vertical: true,
+            horizontal: false,
+        })
+    );
 }

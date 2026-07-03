@@ -7,6 +7,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+use crate::tui::components::cells::coalesce_cells;
 use crate::{LaunchStage, LaunchView, StageStatus, active_stage_index};
 
 const STAGE_PULSE_PERIOD: usize = 12;
@@ -221,23 +222,4 @@ pub fn animated_label_center(view: &LaunchView, centers: &[usize]) -> Option<usi
     let eased = 1.0 - (1.0 - progress).powi(3);
     let center = (from as f32).mul_add(1.0 - eased, to as f32 * eased);
     Some(center.round() as usize)
-}
-
-fn coalesce_cells(cells: impl IntoIterator<Item = (char, Style)>) -> Vec<Span<'static>> {
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut buf = String::new();
-    let mut cur: Option<Style> = None;
-    for (ch, style) in cells {
-        if cur != Some(style) {
-            if let Some(prev) = cur.take() {
-                spans.push(Span::styled(std::mem::take(&mut buf), prev));
-            }
-            cur = Some(style);
-        }
-        buf.push(ch);
-    }
-    if let Some(prev) = cur {
-        spans.push(Span::styled(buf, prev));
-    }
-    spans
 }

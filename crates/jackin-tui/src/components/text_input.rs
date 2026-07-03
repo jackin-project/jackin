@@ -7,11 +7,11 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
+use ratatui::widgets::{Block, Clear, Paragraph, Widget};
 
 use crate::centered_rect;
 use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Mods, Visibility};
-use crate::theme::{DANGER_RED, INK, INPUT_BG_DIM, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{DANGER_RED, INK, INPUT_BG_DIM, PHOSPHOR_GREEN};
 use crate::{HintSpan, ModalOutcome};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -387,15 +387,14 @@ impl TextInputState<'_> {
 fn render_text_input_in(area: Rect, buf: &mut Buffer, state: &TextInputState<'_>) {
     Clear.render(area, buf);
 
-    let title = Span::styled(format!(" {} ", state.label), crate::theme::BOLD_WHITE);
-    let border_color = match state.border_style() {
-        BorderStyle::Error => DANGER_RED,
-        BorderStyle::Default => PHOSPHOR_GREEN,
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color))
-        .title(title);
+    let block = crate::components::Panel::new()
+        .title(&state.label)
+        .focus(crate::components::PanelFocus::Focused)
+        .block()
+        .border_style(Style::default().fg(match state.border_style() {
+            BorderStyle::Error => DANGER_RED,
+            BorderStyle::Default => PHOSPHOR_GREEN,
+        }));
 
     let inner = block.inner(area);
     block.render(area, buf);
@@ -442,22 +441,7 @@ fn render_text_input_in(area: Rect, buf: &mut Buffer, state: &TextInputState<'_>
 }
 
 fn render_input_value(area: Rect, buf: &mut Buffer, state: &TextInputState<'_>) {
-    let value = state.field.value();
-    let cursor = state.field.cursor().min(value.len());
-    let (before, after) = value.split_at(cursor);
-    let base_style = crate::theme::GREEN.bg(INPUT_BG_DIM);
-    let cursor_style = Style::default()
-        .bg(WHITE)
-        .fg(INK)
-        .add_modifier(Modifier::SLOW_BLINK);
-    let mut spans = vec![Span::styled(before.to_owned(), base_style)];
-    if let Some(ch) = after.chars().next() {
-        spans.push(Span::styled(ch.to_string(), cursor_style));
-        spans.push(Span::styled(after[ch.len_utf8()..].to_string(), base_style));
-    } else {
-        spans.push(Span::styled(" ", cursor_style));
-    }
-    Paragraph::new(Line::from(spans)).render(area, buf);
+    render_input_value_from_parts(area, buf, state.field.value(), state.field.cursor());
 }
 
 pub fn render_text_input(frame: &mut ratatui::Frame<'_>, area: Rect, state: &TextInputState<'_>) {
@@ -522,13 +506,12 @@ fn render_input_value_from_parts(area: Rect, buf: &mut Buffer, value: &str, curs
         .fg(INK)
         .bg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
-    let mut spans = vec![Span::styled(before.to_owned(), crate::theme::GREEN)];
+    let base_style = crate::theme::GREEN.bg(INPUT_BG_DIM);
+    let tail_style = crate::theme::DIM.bg(INPUT_BG_DIM);
+    let mut spans = vec![Span::styled(before.to_owned(), base_style)];
     if let Some(ch) = after.chars().next() {
         spans.push(Span::styled(ch.to_string(), cursor_style));
-        spans.push(Span::styled(
-            after[ch.len_utf8()..].to_owned(),
-            crate::theme::DIM,
-        ));
+        spans.push(Span::styled(after[ch.len_utf8()..].to_owned(), tail_style));
     } else {
         spans.push(Span::styled(" ", cursor_style));
     }

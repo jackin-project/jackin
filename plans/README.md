@@ -24,7 +24,7 @@ update the codebase map in the same PR.
 | 001 | Docs catalog + lookbook truth repair | P1 | M | — | DONE |
 | 002 | Uniform component API contract (shared crate) | P1 | L | 001 | DONE |
 | 003 | Focus taxonomy + ButtonFocus cycling | P2 | M | 002 | DONE |
-| 004 | Shared-crate drift fixes (text_input cursor, diff_view keymap/palette) | P1 | S | — | BLOCKED (lookbook regen changed brand-header/confirm previews outside allowed text-input/diff-view scope) |
+| 004 | Shared-crate drift fixes (text_input cursor, diff_view keymap/palette) | P1 | S | — | DONE |
 | 005 | Shared key-glyph constants | P1 | M | — | DONE |
 | 006 | theme::INK token (raw Color::Black sweep) | P3 | S | — (coordinate 004/007) | DONE |
 | 007 | ErrorPopup on the dialog shell + structured rows | P1 | M | 002 (soft) | DONE |
@@ -39,7 +39,7 @@ update the codebase map in the same PR.
 | 016 | save_preview dual-pipeline dedup | P2 | L | — | DONE |
 | 017 | run_console decomposition + terminal guard | P3 | M | — | DONE |
 | 018 | jackin-tui lib.rs ansi-module extraction | P3 | M | — | DONE |
-| 019 | Hygiene: coalesce_cells dedup, runtime ratatui dev-dep | P3 | S | — | BLOCKED — drift check found existing launch TUI component changes in `failure_dialog.rs` before plan work |
+| 019 | Hygiene: coalesce_cells dedup, runtime ratatui dev-dep | P3 | S | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 
