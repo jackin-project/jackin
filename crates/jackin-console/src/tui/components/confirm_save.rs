@@ -6,7 +6,7 @@
 //! Mount-collapse warnings fold into the same dialog as an extra
 //! section so the operator sees ONE confirm for the full plan.
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -14,11 +14,15 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-use jackin_tui::ModalOutcome;
 use jackin_tui::components::scrollable_panel::{
     apply_scroll_delta, clamp_scroll_offset, is_scrollable, render_lines_with_offset_in_area,
 };
 use jackin_tui::components::{DialogBorder, ScrollAxes, dialog_inner_chunks, render_dialog_shell};
+use jackin_tui::{
+    HintSpan, ModalOutcome,
+    components::ButtonFocus,
+    keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, SCROLL_HINT_KEYMAP, Visibility},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveChoice {
@@ -26,9 +30,109 @@ pub enum SaveChoice {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmSaveAction {
+    Save,
+    Cancel,
+    Activate,
+    FocusNext,
+    FocusPrev,
+    ScrollUp,
+    ScrollDown,
+}
+
+const CONFIRM_SAVE_BINDINGS: &[KeyBinding<ConfirmSaveAction>] = &[
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Enter)],
+        action: ConfirmSaveAction::Activate,
+        hint: Some("select"),
+        visibility: Visibility::Shown,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('s')),
+            KeyChord::plain(LogicalKey::Char('S')),
+        ],
+        action: ConfirmSaveAction::Save,
+        hint: Some("save"),
+        visibility: Visibility::Shown,
+        glyph: Some("S"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Char('c')),
+            KeyChord::plain(LogicalKey::Char('C')),
+        ],
+        action: ConfirmSaveAction::Cancel,
+        hint: Some("cancel"),
+        visibility: Visibility::Shown,
+        glyph: Some("C/Esc"),
+    },
+    KeyBinding {
+        chords: &[KeyChord::plain(LogicalKey::Esc)],
+        action: ConfirmSaveAction::Cancel,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Tab),
+            KeyChord::plain(LogicalKey::Right),
+            KeyChord::plain(LogicalKey::Char('l')),
+            KeyChord::plain(LogicalKey::Char('L')),
+        ],
+        action: ConfirmSaveAction::FocusNext,
+        hint: Some("move"),
+        visibility: Visibility::Shown,
+        glyph: Some("⇥/→"),
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::BackTab),
+            KeyChord::plain(LogicalKey::Left),
+            KeyChord::plain(LogicalKey::Char('h')),
+            KeyChord::plain(LogicalKey::Char('H')),
+        ],
+        action: ConfirmSaveAction::FocusPrev,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Up),
+            KeyChord::plain(LogicalKey::Char('k')),
+            KeyChord::plain(LogicalKey::Char('K')),
+        ],
+        action: ConfirmSaveAction::ScrollUp,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+    KeyBinding {
+        chords: &[
+            KeyChord::plain(LogicalKey::Down),
+            KeyChord::plain(LogicalKey::Char('j')),
+            KeyChord::plain(LogicalKey::Char('J')),
+        ],
+        action: ConfirmSaveAction::ScrollDown,
+        hint: None,
+        visibility: Visibility::HiddenAlias,
+        glyph: None,
+    },
+];
+
+pub static CONFIRM_SAVE_KEYMAP: Keymap<ConfirmSaveAction> = Keymap::new(CONFIRM_SAVE_BINDINGS);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmSaveFocus {
     Save,
     Cancel,
+}
+
+impl ButtonFocus for ConfirmSaveFocus {
+    const RING: &'static [Self] = &[Self::Save, Self::Cancel];
 }
 
 /// State for the `ConfirmSave` modal. The caller pre-builds the content
@@ -72,36 +176,30 @@ impl<M: Clone> ConfirmSaveState<M> {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<SaveChoice> {
-        match key.code {
-            KeyCode::Char('s' | 'S') => ModalOutcome::Commit(SaveChoice::Save),
-            KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
-            // Up/Down/j/k scroll the content preview.
-            KeyCode::Up | KeyCode::Char('k' | 'K') => {
+        match CONFIRM_SAVE_KEYMAP.dispatch(KeyChord::from(key)) {
+            Some(ConfirmSaveAction::Save) => ModalOutcome::Commit(SaveChoice::Save),
+            Some(ConfirmSaveAction::Cancel) => ModalOutcome::Cancel,
+            Some(ConfirmSaveAction::ScrollUp) => {
                 self.scroll_preview_by(-1);
                 ModalOutcome::Continue
             }
-            KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            Some(ConfirmSaveAction::ScrollDown) => {
                 self.scroll_preview_by(1);
                 ModalOutcome::Continue
             }
-            // Tab / BackTab / Right / Left — only two buttons,
-            // so every "move focus" key just toggles between them.
-            KeyCode::Tab
-            | KeyCode::BackTab
-            | KeyCode::Right
-            | KeyCode::Left
-            | KeyCode::Char('l' | 'L' | 'h' | 'H') => {
-                self.focus = match self.focus {
-                    ConfirmSaveFocus::Save => ConfirmSaveFocus::Cancel,
-                    ConfirmSaveFocus::Cancel => ConfirmSaveFocus::Save,
-                };
+            Some(ConfirmSaveAction::FocusNext) => {
+                self.focus = self.focus.next();
                 ModalOutcome::Continue
             }
-            KeyCode::Enter => match self.focus {
+            Some(ConfirmSaveAction::FocusPrev) => {
+                self.focus = self.focus.prev();
+                ModalOutcome::Continue
+            }
+            Some(ConfirmSaveAction::Activate) => match self.focus {
                 ConfirmSaveFocus::Save => ModalOutcome::Commit(SaveChoice::Save),
                 ConfirmSaveFocus::Cancel => ModalOutcome::Cancel,
             },
-            _ => ModalOutcome::Continue,
+            None => ModalOutcome::Continue,
         }
     }
 
@@ -121,6 +219,22 @@ impl<M: Clone> ConfirmSaveState<M> {
             horizontal: false,
         }
     }
+}
+
+#[must_use]
+pub fn confirm_save_hint_spans<M: Clone>(state: &ConfirmSaveState<M>) -> Vec<HintSpan<'static>> {
+    confirm_save_hint_spans_for_axes(state.scroll_axes())
+}
+
+#[must_use]
+pub fn confirm_save_hint_spans_for_axes(scroll_axes: ScrollAxes) -> Vec<HintSpan<'static>> {
+    let mut items = CONFIRM_SAVE_KEYMAP.hint_spans();
+    let scroll_items = SCROLL_HINT_KEYMAP.hint_spans_for_axes(scroll_axes);
+    if !scroll_items.is_empty() {
+        items.push(HintSpan::GroupSep);
+        items.extend(scroll_items);
+    }
+    items
 }
 
 /// Total rows the `ConfirmSave` modal wants given its current line count.

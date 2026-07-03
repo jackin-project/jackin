@@ -176,23 +176,7 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
 
 #[must_use]
 pub fn confirm_save_footer_items(scroll_axes: ScrollAxes) -> Vec<HintSpan<'static>> {
-    let mut items = vec![
-        HintSpan::Key(
-            crate::tui::keymap::EDITOR_GLOBAL_KEYMAP
-                .glyph_for(crate::tui::keymap::EditorGlobalAction::Save),
-        ),
-        HintSpan::Text("save"),
-        HintSpan::GroupSep,
-        // UNREGISTERABLE(multi-key-display-group): combined C/Esc cancel display.
-        HintSpan::Key("C/Esc"),
-        HintSpan::Text("cancel"),
-    ];
-    let scroll_items = jackin_tui::components::scroll_hint_spans(scroll_axes);
-    if !scroll_items.is_empty() {
-        items.push(HintSpan::GroupSep);
-        items.extend(scroll_items);
-    }
-    items
+    confirm_save::confirm_save_hint_spans_for_axes(scroll_axes)
 }
 
 /// Hint spans for inline yes/no confirm modals (`Modal::Confirm`,

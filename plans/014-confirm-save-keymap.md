@@ -18,7 +18,7 @@
 - **Depends on**: plans/003-tui-focus-taxonomy.md (uses `ButtonFocus`)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
-- **Execution status**: BLOCKED — drift check found existing changes in `confirm_save.rs`, `confirm_dialog.rs`, and `save_discard_dialog.rs` before plan work.
+- **Execution status**: DONE — drift was absorbed by the aggregate TUI refactor branch; `ConfirmSaveState` now dispatches through `CONFIRM_SAVE_KEYMAP`, derives footer hints from that keymap plus scroll axes, and uses `ButtonFocus`.
 
 ## Why this matters
 
@@ -73,7 +73,7 @@ Plan 003's `ButtonFocus` trait (in `focus_owner.rs` after 003 lands): implement 
 
 ## Git workflow
 
-Branch (operator confirm): `refactor/confirm-save-keymap`. `git commit -s` + push.
+Branch: folded into the aggregate `chore/tui-refactor-plans` PR per operator direction. `git commit -s` + push.
 
 ## Steps
 
@@ -101,11 +101,11 @@ Add `pub fn confirm_save_hint_spans(state: &ConfirmSaveState<M>) -> Vec<HintSpan
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0
-- [ ] `rg 'match key.code' crates/jackin-console/src/tui/components/confirm_save.rs` → 0
-- [ ] `rg 'CONFIRM_SAVE_KEYMAP' crates/jackin-console/src` → table + dispatch + hints
-- [ ] `ConfirmSaveFocus: ButtonFocus` impl exists
-- [ ] `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0
+- [x] `rg 'match key.code' crates/jackin-console/src/tui/components/confirm_save.rs` → 0
+- [x] `rg 'CONFIRM_SAVE_KEYMAP' crates/jackin-console/src` → table + dispatch + hints
+- [x] `ConfirmSaveFocus: ButtonFocus` impl exists
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 
