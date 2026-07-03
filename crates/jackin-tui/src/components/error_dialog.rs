@@ -123,8 +123,7 @@ pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 
         let len = line.chars().count().max(1);
         rows = rows.saturating_add(u32::try_from(len.div_ceil(width)).unwrap_or(u32::MAX));
     }
-    let result = u16::try_from(rows.max(1)).unwrap_or(u16::MAX);
-    result
+    u16::try_from(rows.max(1)).unwrap_or(u16::MAX)
 }
 
 #[must_use]
