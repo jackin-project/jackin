@@ -1192,14 +1192,16 @@ fn anthropic_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView 
                 Some("Resets in 2h 12m (Jun 17, 19:19)"),
                 Some("34% in reserve"),
             ),
+            // limits-array shape: weekly_all is labelled "All models", and a
+            // model-scoped window (Fable) renders as its own non-headline row.
             quota_bucket(
-                "Weekly",
+                "All models",
                 55,
                 Some("Resets in 1w 1d (Jun 26, 13:59)"),
                 Some("28% in reserve"),
             ),
+            quota_bucket("Fable", 57, Some("Resets in 1w 1d (Jun 26, 13:59)"), None),
             quota_bucket("Sonnet", 85, Some("Resets in 1w 1d (Jun 26, 13:59)"), None),
-            quota_bucket("Daily Routines", 100, None, None),
         ],
     )
 }

@@ -214,7 +214,6 @@ impl AppConfig {
 
     /// Mark a role source as trusted.  Returns `true` when the flag changed.
     // pub(crate): test-only affordance; production callers use ConfigEditor.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn trust_agent(&mut self, key: &str) -> bool {
         if let Some(source) = self.roles.get_mut(key)
             && !source.trusted
@@ -229,7 +228,6 @@ impl AppConfig {
     /// Note: does not prevent revoking builtins — the caller should check
     /// [`is_builtin_agent`] first.
     // pub(crate): test-only affordance; production callers use ConfigEditor.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn untrust_agent(&mut self, key: &str) -> bool {
         if let Some(source) = self.roles.get_mut(key)
             && source.trusted

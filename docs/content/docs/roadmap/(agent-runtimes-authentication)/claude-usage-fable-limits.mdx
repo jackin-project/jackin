@@ -1,0 +1,124 @@
+---
+title: "Claude usage: Fable and the limits array"
+---
+
+**Status**: Partially implemented — the Capsule usage overlay now parses the Anthropic `limits` array, surfacing the per-model weekly limit for **Fable** (and any future model-scoped window) on both the OAuth and CLI paths, with the legacy named windows kept as a fallback. The Session and "All models" Weekly rows bind to the existing headline slots; Fable renders as a non-headline bucket with API-reported severity. See the *Implementation* section for what shipped and the remaining macOS-authoritative-path note.
+
+## Problem
+
+The Capsule Claude usage overlay reads `https://api.anthropic.com/api/oauth/usage` and decodes a fixed set of named window keys (`five_hour`, `seven_day`, `seven_day_sonnet`, `seven_day_opus`, `seven_day_routines`). Anthropic has migrated the authoritative shape to a `limits` array. The model-scoped weekly limit for **Fable** (and Sonnet/Opus/Routines going forward) now appears only inside that array, so it is silently dropped.
+
+The claude.ai settings → usage page renders three rows under *Weekly limits* — *All models*, *Fable* (model-scoped), and so on. jackin❯ today shows only the *All models* / Session windows and loses the per-model row the operator most wants to see.
+
+## Verified evidence (live API, 2026-07-03)
+
+Called the real OAuth endpoint with the locally-resolved Claude Code token. Top-level keys returned:
+
+```text
+amber_ladder, cinder_cove, extra_usage, five_hour, iguana_necktie, limits,
+member_dashboard_available, nimbus_quill, omelette_promotional, seven_day,
+seven_day_cowork, seven_day_oauth_apps, seven_day_omelette, seven_day_opus,
+seven_day_sonnet, spend, tangelo
+```
+
+The `limits` array is the authoritative new shape and carries Fable:
+
+```json
+"limits": [
+  { "kind": "session",       "group": "session", "percent": 7,  "severity": "normal",
+    "resets_at": "2026-07-03T03:19:59+00:00", "scope": null, "is_active": false },
+  { "kind": "weekly_all",    "group": "weekly",  "percent": 28, "severity": "normal",
+    "resets_at": "2026-07-03T07:00:00+00:00", "scope": null, "is_active": false },
+  { "kind": "weekly_scoped", "group": "weekly",  "percent": 35, "severity": "normal",
+    "resets_at": "2026-07-03T06:59:59+00:00",
+    "scope": { "model": { "id": null, "display_name": "Fable" }, "surface": null },
+    "is_active": true }
+]
+```
+
+Key facts the implementation must respect:
+
+- `weekly_scoped` is the per-model window; its label comes from `scope.model.display_name` (today `Fable`). New model-scoped limits will appear here without a code change per model — surfacing them generically is the whole point.
+- `weekly_all` is the "All models" row (replaces the legacy `seven_day` semantics).
+- `session` replaces the legacy `five_hour` semantics.
+- The legacy `seven_day_sonnet` / `seven_day_opus` / `seven_day_cowork` keys are still present but **null** — they are vestigial. The model data lives only in `limits`.
+- `is_active` marks the window currently contributing; `severity` (`normal`/`warn`/`danger`) drives meter color and should map to [`UsageSeverity`](/reference/capsule/).
+- The CLI fallback (`claude -p /usage`) also reports Fable: `Current week (Fable): 35% used · resets …`. The existing parser only matches `Current week (Sonnet only):`, so Fable is dropped on the CLI path too.
+
+## Design
+
+### 1. Parse the `limits` array (authoritative path)
+
+Add a `limits: Vec<ClaudeOAuthLimit>` field to `ClaudeOAuthUsageResponse` in <RepoFile path="crates/jackin-usage/src/usage/claude.rs">crates/jackin-usage/src/usage/claude.rs</RepoFile>. Only the fields the renderer reads are modeled — the API also sends `group`, `is_active`, `scope.surface`, and `model.id`, but serde ignores unknown fields and they are added back only when something reads them (no dead fields):
+
+```rust
+#[derive(Debug, Deserialize)]
+pub(crate) struct ClaudeOAuthLimit {
+    pub(crate) kind: Option<String>,        // "session" | "weekly_all" | "weekly_scoped"
+    pub(crate) percent: Option<serde_json::Value>,
+    pub(crate) severity: Option<String>,
+    pub(crate) resets_at: Option<String>,
+    pub(crate) scope: Option<ClaudeOAuthLimitScope>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ClaudeOAuthLimitScope {
+    pub(crate) model: Option<ClaudeOAuthLimitModel>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ClaudeOAuthLimitModel {
+    pub(crate) display_name: Option<String>,
+}
+```
+
+Because the struct already carries `#[serde(flatten)] other_windows`, today the `limits` array lands in `other_windows` and is skipped by `push_claude_dollar_windows` (its entries do not match `ClaudeOAuthUsageWindow`). Naming the field pulls it out of the flatten. `percent` stays a raw JSON value at the API boundary, then flows through the shared numeric parser, so string, float, and over-cap values do not fail the whole OAuth decode before the existing percent helpers can normalize them.
+
+### 2. `into_buckets` prefers `limits`, backfills from legacy windows
+
+Build `ClaudeQuotaWindow`s from `limits` first, then build the legacy named windows into the same model and append only semantic gaps. This avoids double-counting when the live API returns both carriers, but it also protects older or transitional responses where `limits` is present but partial, unknown, or missing a usable model label while the legacy fields still carry valid Session / Weekly / Sonnet / Opus / Routines windows:
+
+- `kind == "session"` → Session bucket, `StatusSlot::Session`.
+- `kind == "weekly_all"` → "All models" weekly bucket, `StatusSlot::Weekly`.
+- `kind == "weekly_scoped"` → bucket labelled by `scope.model.display_name` (e.g. "Fable"), no status slot (non-headline). Surface every active scoped window so future models appear without per-model code.
+- Map `severity` → `UsageSeverity` via the existing `severity_from_label`.
+- Backfill a legacy Session or Weekly only when no `limits` window already owns that status slot; backfill a legacy scoped model only when no `limits` scoped bucket with the same label exists.
+- `spend` / `extra_usage` and the `push_claude_dollar_windows` codename handling stay unchanged.
+
+### 3. CLI fallback: parse model-scoped weekly lines
+
+In <RepoFile path="crates/jackin-usage/src/usage.rs">crates/jackin-usage/src/usage.rs</RepoFile> `parse_claude_usage_output`, generalize the `Current week (Sonnet only):` branch to `Current week (<label>):` and collect each into a `(label, percent)` vec. `ClaudeCliUsage` gains a `scoped_weekly: Vec<(String, f64)>` field rendered as per-model buckets (marked `Estimated`, matching the existing degraded-confidence policy for the CLI path).
+
+### 4. macOS Keychain is already covered by host auth-forward
+
+An earlier draft flagged the macOS Keychain as a blocker for the authoritative path. That was wrong: the host auth-forward resolver (<RepoFile path="crates/jackin-instance/src/auth.rs">crates/jackin-instance/src/auth.rs</RepoFile> `read_host_credentials`) already reads the macOS Keychain (`security find-generic-password -s "Claude Code-credentials" -w`, plus per-`CLAUDE_CONFIG_DIR` service names) and writes the credential blob to the `/jackin/claude/credentials.json` handoff. The Capsule reads that handoff as the last candidate in `claude_oauth_candidates`, so a normal jackin❯ launch on macOS resolves the OAuth token and reaches the authoritative `limits` path without any Capsule-side Keychain read. No change needed here.
+
+## What shipped
+
+1. `limits` structs (`ClaudeOAuthLimit` / `…Scope` / `…Model`) + a `limits: Vec<ClaudeOAuthLimit>` field on `ClaudeOAuthUsageResponse` in <RepoFile path="crates/jackin-usage/src/usage/claude.rs">crates/jackin-usage/src/usage/claude.rs</RepoFile>. A single normalized `ClaudeQuotaWindow` model + one bucket builder (`into_bucket`) now serves every utilization source: the `limits` array (preferred), the legacy named windows (`seven_day*`, semantic-gap backfill for older or partial responses), and the `claude -p /usage` CLI fallback. Fable is not a special case — it is a `weekly_scoped` entry normalized like any legacy model window, so Session / "All models" / Fable / Sonnet all take one path (headline slots, over-cap labels, pace, severity mirrored). The source preference avoids double-counting while preserving valid legacy quotas if `limits` is partial or unknown; it is not a parallel implementation.
+2. CLI fallback in <RepoFile path="crates/jackin-usage/src/usage.rs">crates/jackin-usage/src/usage.rs</RepoFile> `parse_claude_usage_output`: a generic `Current week (<label>):` branch feeds a new `ClaudeCliUsage::scoped_weekly: Vec<(String, f64)>`, so `Current week (Fable):` renders as a Fable bucket while the legacy `(Sonnet only)` line keeps its "Sonnet" label. CLI buckets reuse the same `ClaudeQuotaWindow::into_bucket` builder.
+3. Tests in <RepoFile path="crates/jackin-usage/src/usage/tests.rs">crates/jackin-usage/src/usage/tests.rs</RepoFile>: the OAuth `limits` array surfacing Fable + "All models" with no legacy leakage, an unnamed-scoped-window omission guard, partial-`limits` legacy backfill, lenient percent decoding for string/float/over-cap values, the CLI Fable line, a direct equivalence test proving a legacy Sonnet window and a `weekly_scoped` Fable limit produce the same bucket through the one builder, a multi-model test (Session + All models + Sonnet + Opus + Fable together) proving every scoped window renders, and an Overview-status test proving the compact row names the bottleneck model. All mirror the live 2026-07-03 response/output.
+4. The compact Overview / per-provider status row (`usage_tab_status_label`) now names the bottleneck model when a model-scoped window (Fable) is the most-constrained — so an operator watching the compact surface learns *which* model is the limit, not just the % left. Headline windows (Session/Weekly) stay bare (the slot already implies them). The Capsule usage-dialog snapshot fixture (<RepoFile path="crates/jackin-capsule/src/tui/components/dialog/tests.rs">crates/jackin-capsule/src/tui/components/dialog/tests.rs</RepoFile> `anthropic_usage_view_fixture`) is rebaselined to the `limits` shape and shows Fable rendering as a row.
+
+## Remaining
+
+- Manual `--debug` validation inside a Capsule Claude session: confirm Session / All models / Fable buckets render with correct percents and the authoritative `provider` source tag (not `Estimated`) on an account that has a Fable limit. The decoder, the dialog row rendering (snapshot), and the Overview naming are all covered by automated tests.
+
+## Out of scope
+
+- Other top-level rotating-codename windows (`amber_ladder`, `cinder_cove`, …) — already handled generically by `push_claude_dollar_windows`; only acted on when they carry a `limit_dollars`.
+- Non-Claude provider usage adapters (Codex/Amp/Grok/Kimi/MiniMax/Z.AI) — unaffected.
+- Changing the refresh cadence or shared-snapshot cache — the new bucket set flows through the existing `UsageCache` unchanged.
+
+## Source evidence
+
+- <RepoFile path="crates/jackin-usage/src/usage/claude.rs">crates/jackin-usage/src/usage/claude.rs</RepoFile> — `ClaudeOAuthUsageResponse` (named windows + flatten catch-all), `fetch_claude_oauth_usage` (`api.anthropic.com/api/oauth/usage`, `anthropic-beta: oauth-2025-04-20`, Claude Code UA), `claude_oauth_candidates` (file-only, home-first/handoff-last), `into_buckets`.
+- <RepoFile path="crates/jackin-usage/src/usage.rs">crates/jackin-usage/src/usage.rs</RepoFile> — `parse_claude_usage_output` (matches `Current session:` / `Current week (all models):` / `Current week (Sonnet only):` / generic `Current week (<model>):`).
+- <RepoFile path="crates/jackin-protocol/src/control.rs">crates/jackin-protocol/src/control.rs</RepoFile> — `StatusSlot`, `QuotaBucketView`, `UsageSeverity`.
+- <RepoFile path="crates/jackin-usage/src/usage/tests.rs">crates/jackin-usage/src/usage/tests.rs</RepoFile> — live-shape fixtures: the OAuth body (line ~160) and the Fable/limits-array + CLI scoped-weekly tests added by this change.
+
+## Cross-references
+
+- [Auth health and operator visibility](/roadmap/auth-health-and-visibility/) — parent surface that owns Capsule usage/account status.
+- [Auth reliability and convenience program](/roadmap/auth-reliability-program/) — the host-side Keychain read that feeds the Capsule OAuth path lives in `jackin-instance` auth-forward.
+- [Capsule reference](/reference/capsule/) — usage overlay rendering contract.

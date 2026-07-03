@@ -530,7 +530,17 @@ pub(crate) fn usage_tab_status_label(view: &FocusedUsageView) -> String {
         && let Some(bucket) = most_constrained_fresh_bucket(&view.buckets)
         && let Some(remaining) = bucket.remaining_percent
     {
-        let mut label = format!("{remaining}% left");
+        // A model-scoped window (Fable, Sonnet, …) winning the compact headline
+        // is the actionable signal — name it so the Overview/status row tells
+        // the operator *which* model is the bottleneck, not just the % left.
+        // Headline windows (Session/Weekly) stay bare: their slot already
+        // implies them and the status bar carries those separately.
+        let mut label = String::new();
+        if bucket.status_slot.is_none() && !bucket.label.is_empty() {
+            label.push_str(&bucket.label);
+            label.push(' ');
+        }
+        label.push_str(&format!("{remaining}% left"));
         if let Some(reset) = &bucket.reset_label {
             label.push_str(" · ");
             label.push_str(reset);
