@@ -8,12 +8,11 @@ use jackin_tui::{
     components::{
         ButtonStrip, ButtonStripItem, ConfirmState, DebugInfo, DiffViewState, ErrorPopupState,
         Panel, PanelFocus, SaveDiscardFocus, SaveDiscardState, SelectListState, SinglePaneKind,
-        StatusFooterHover, TabStrip, TextInputState, Toast, panel_body_area, render_brand_header,
-        render_confirm_dialog, render_container_info, render_diff_view, render_error_dialog,
-        render_filter_input, hint_line,
-        render_save_discard_dialog, render_scrollable_block, render_select_list,
-        render_status_footer, render_status_popup, render_text_input, render_toast,
-        render_wrapped_hint_bar,
+        StatusFooterHover, TabStrip, TextInputState, Toast, hint_line, panel_body_area,
+        render_brand_header, render_confirm_dialog, render_container_info, render_diff_view,
+        render_error_dialog, render_filter_input, render_save_discard_dialog,
+        render_scrollable_block, render_select_list, render_status_footer, render_status_popup,
+        render_text_input, render_toast, render_wrapped_hint_bar,
     },
 };
 use ratatui::{
