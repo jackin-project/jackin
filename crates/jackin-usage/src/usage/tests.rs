@@ -1290,6 +1290,78 @@ fn claude_oauth_limits_array_skips_unnamed_scoped_window() {
     assert!(buckets.is_empty(), "unnamed scoped window must be omitted");
 }
 
+/// A non-empty `limits` array must not erase legacy windows that are still the
+/// only usable source for a semantic slot. Current Claude responses can mix the
+/// new carrier with older fields; unknown/partial limits backfill from legacy
+/// windows, while duplicate Session/Weekly windows are not emitted twice.
+#[test]
+fn claude_oauth_limits_array_backfills_missing_legacy_windows() {
+    let reset_at = "2026-07-03T06:59:59Z";
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 22.0, "resets_at": "2026-07-03T03:19:59Z" },
+        "seven_day": { "utilization": 44.0, "resets_at": reset_at },
+        "seven_day_sonnet": { "utilization": 55.0, "resets_at": reset_at },
+        "limits": [
+            { "kind": "session", "group": "session", "percent": 7,
+              "severity": "normal", "resets_at": "2026-07-03T03:19:59Z",
+              "scope": null },
+            { "kind": "future_shape", "group": "weekly", "percent": 99,
+              "severity": "normal", "resets_at": reset_at, "scope": null }
+        ]
+    }))
+    .expect("mixed limits/legacy response");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+
+    let session_buckets = buckets
+        .iter()
+        .filter(|b| b.status_slot == Some(StatusSlot::Session))
+        .count();
+    assert_eq!(session_buckets, 1, "Session duplicate must be skipped");
+    let weekly = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Weekly))
+        .expect("legacy Weekly backfill");
+    assert_eq!(weekly.label, "Weekly");
+    assert_eq!(weekly.remaining_percent, Some(56));
+    let sonnet = buckets
+        .iter()
+        .find(|b| b.label == "Sonnet")
+        .expect("legacy Sonnet backfill");
+    assert_eq!(sonnet.remaining_percent, Some(45));
+}
+
+/// `limits.percent` is an external API boundary: accept string/float/over-cap
+/// values instead of narrowing serde to `u8` before the existing percent helpers
+/// can normalize and render them.
+#[test]
+fn claude_oauth_limits_percent_accepts_string_float_and_over_cap() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "session", "group": "session", "percent": "35.4",
+              "severity": "normal", "resets_at": null, "scope": null },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 150.0,
+              "severity": "danger", "resets_at": null,
+              "scope": { "model": { "display_name": "Fable" } } }
+        ]
+    }))
+    .expect("lenient percent response");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+    let session = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket");
+    assert_eq!(session.used_label.as_deref(), Some("35% used"));
+    assert_eq!(session.remaining_percent, Some(65));
+    let fable = buckets
+        .iter()
+        .find(|b| b.label == "Fable")
+        .expect("Fable bucket");
+    assert_eq!(fable.used_label.as_deref(), Some("150% used"));
+    assert_eq!(fable.remaining_percent, Some(0));
+}
+
 /// The unified model: a legacy `seven_day_sonnet` window and a `limits`
 /// `weekly_scoped` window carrying the same usage/resets produce the same
 /// bucket (modulo label). This is the design invariant — Fable is not a

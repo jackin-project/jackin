@@ -356,7 +356,7 @@ pub(crate) struct ClaudeOAuthUsageWindow {
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClaudeOAuthLimit {
     pub(crate) kind: Option<String>,
-    pub(crate) percent: Option<u8>,
+    pub(crate) percent: Option<serde_json::Value>,
     pub(crate) severity: Option<String>,
     #[serde(rename = "resets_at")]
     pub(crate) resets_at: Option<String>,
@@ -546,7 +546,7 @@ impl ClaudeOAuthLimit {
     /// unknown `kind`, or a `weekly_scoped` window whose model has no display
     /// name (omitted, never fabricated into an empty-label row).
     fn as_quota(&self) -> Option<ClaudeQuotaWindow> {
-        let percent = self.percent?;
+        let percent = json_number(self.percent.as_ref()?)?;
         let (label, slot, window_seconds) = match self.kind.as_deref()? {
             "session" => (
                 "Session".to_owned(),
@@ -568,7 +568,7 @@ impl ClaudeOAuthLimit {
         Some(ClaudeQuotaWindow {
             label,
             slot,
-            used: Some(f64::from(percent)),
+            used: Some(percent),
             reset_at: self.resets_at.as_deref().and_then(parse_iso_epoch),
             window_seconds,
             severity: severity_from_label(self.severity.as_deref()),
@@ -605,26 +605,25 @@ impl ClaudeOAuthUsageResponse {
             spend,
             other_windows,
         } = self;
-        // The `limits` array is authoritative on current accounts; the legacy
-        // named windows are the fallback for responses that predate `limits`.
-        // This source preference is not a parallel implementation — both arms
-        // produce the same `ClaudeQuotaWindow` type — it only avoids
-        // double-counting, because the live API returns both carriers with
-        // identical data, so they cannot be merged.
-        let windows: Vec<ClaudeQuotaWindow> = if limits.is_empty() {
-            legacy_claude_quota_windows(
-                five_hour,
-                seven_day,
-                seven_day_sonnet,
-                seven_day_opus,
-                seven_day_routines,
-            )
-        } else {
-            limits
-                .iter()
-                .filter_map(ClaudeOAuthLimit::as_quota)
-                .collect()
-        };
+        // The `limits` array is preferred on current accounts, but it can be
+        // partial while the legacy named fields still carry usable windows.
+        // Build both into the same model and backfill only semantic gaps so an
+        // unknown or unnamed `limits` entry cannot erase valid legacy quotas.
+        let mut windows: Vec<ClaudeQuotaWindow> = limits
+            .iter()
+            .filter_map(ClaudeOAuthLimit::as_quota)
+            .collect();
+        for window in legacy_claude_quota_windows(
+            five_hour,
+            seven_day,
+            seven_day_sonnet,
+            seven_day_opus,
+            seven_day_routines,
+        ) {
+            if !has_equivalent_claude_window(&windows, &window) {
+                windows.push(window);
+            }
+        }
         let mut buckets: Vec<QuotaBucketView> =
             windows.into_iter().map(|w| w.into_bucket(now)).collect();
         if let Some(spend) = claude_spend_bucket(spend, extra_usage) {
@@ -632,6 +631,23 @@ impl ClaudeOAuthUsageResponse {
         }
         push_claude_dollar_windows(&mut buckets, other_windows, now);
         buckets
+    }
+}
+
+fn has_equivalent_claude_window(
+    windows: &[ClaudeQuotaWindow],
+    candidate: &ClaudeQuotaWindow,
+) -> bool {
+    match candidate.slot {
+        Some(StatusSlot::Session) => windows
+            .iter()
+            .any(|window| window.slot == Some(StatusSlot::Session)),
+        Some(StatusSlot::Weekly) => windows
+            .iter()
+            .any(|window| window.slot == Some(StatusSlot::Weekly)),
+        _ => windows.iter().any(|window| {
+            window.slot.is_none() && window.label.eq_ignore_ascii_case(&candidate.label)
+        }),
     }
 }
 
