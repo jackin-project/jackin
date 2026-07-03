@@ -81,6 +81,11 @@ launches are recorded as timestamped events on the screen they happened on.
   `tokio.runtime.global.queue.depth`. The same run-id resource attribute rides
   on every point, so CPU and memory line up with the run's traces and logs on
   one timeline.
+- **Run-domain metrics** — the active run exports low-cardinality counters such
+  as `jackin.diagnostics.events` (tagged by `kind`), `jackin.cache.hits`, and
+  `jackin.cache.misses`. Dependency-internal storage spans such as Turso VM
+  internals stay out of the default export; use workflow/domain counters and
+  the allowlisted jackin❯ targets for normal analysis.
 
 ## Following a run into the container
 

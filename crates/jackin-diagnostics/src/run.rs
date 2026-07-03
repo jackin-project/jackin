@@ -148,6 +148,14 @@ struct DiagnosticsMetrics {
     cache_misses: u64,
 }
 
+#[cfg(feature = "otlp")]
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DomainMetricsSnapshot {
+    pub event_counts: BTreeMap<String, u64>,
+    pub cache_hits: u64,
+    pub cache_misses: u64,
+}
+
 impl DiagnosticsMetrics {
     fn push_stage_duration(&mut self, key: String, value: u64) {
         push_capped_sample(
@@ -820,6 +828,16 @@ impl RunDiagnostics {
         }
         if kind.contains("cache_miss") {
             metrics.cache_misses += 1;
+        }
+    }
+
+    #[cfg(feature = "otlp")]
+    pub(crate) fn domain_metrics_snapshot(&self) -> DomainMetricsSnapshot {
+        let metrics = locked(&self.metrics);
+        DomainMetricsSnapshot {
+            event_counts: metrics.event_counts.clone(),
+            cache_hits: metrics.cache_hits,
+            cache_misses: metrics.cache_misses,
         }
     }
 }

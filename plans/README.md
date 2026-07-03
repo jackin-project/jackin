@@ -19,11 +19,11 @@ The findings record that motivated the program remains at `docs/content/docs/ref
 | 009 Honest diagnostics-file operator contract | Done | `18c9e6622 fix(diagnostics): hide nonpersisted run paths` |
 | 010 `[telemetry]` config schema | Done | `config.toml` now accepts `[telemetry].level` and `[telemetry].categories`, applied before diagnostics startup with env vars taking precedence. |
 | 011 Telemetry hygiene batch | Done | `a14c138ec`, `a93fe1e63`, `48cf955f5`, `fc1d01793`, `72d26c86d`, `afeb05713`, `f71b99bbf` |
-| 012 Domain metrics and turso reuse | Pending | Depends on a scoped domain-metrics pass. |
+| 012 Domain metrics and turso reuse | Done | Active-run domain counters export as OTLP metrics while dependency-internal Turso spans remain filtered by the allowlisted jackin❯ targets. |
 | 013 Docs truth sync | Done | `12efe33df docs: sync telemetry diagnostics contract` |
 
 ## Remaining Items
 
 The fixture extraction blocker was removed by teaching `crates/jackin-xtask/src/pty_fixture.rs` to read raw `session feed_pty bytes` records from the capsule `multiplexer.log` path already recorded in host run diagnostics. Raw payload debug lines remain available locally for fixture replay, but are no longer bridged into host JSONL or OTLP.
 
-Plan 012 remains pending and should be implemented on this same branch/PR if the telemetry program continues. Treat this archive as the status source of truth; do not revive the retired step-by-step plan files.
+All archived telemetry plans are now represented on this branch. Treat this archive as the status source of truth; do not revive the retired step-by-step plan files.

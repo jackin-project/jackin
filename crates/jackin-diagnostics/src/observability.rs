@@ -1107,6 +1107,7 @@ mod otlp {
         metrics_endpoint: &str,
         app_handle: Option<tokio::runtime::Handle>,
     ) -> anyhow::Result<SdkMeterProvider> {
+        use opentelemetry::KeyValue;
         use opentelemetry::metrics::MeterProvider as _;
         use std::sync::Mutex;
 
@@ -1201,6 +1202,44 @@ mod otlp {
                     .build(),
             );
         }
+
+        drop(
+            meter
+                .u64_observable_counter("jackin.diagnostics.events")
+                .with_description("Diagnostics events recorded during the active jackin run")
+                .with_callback(|observer| {
+                    let Some(run) = crate::active_run() else {
+                        return;
+                    };
+                    let snapshot = run.domain_metrics_snapshot();
+                    for (kind, count) in snapshot.event_counts {
+                        observer.observe(count, &[KeyValue::new("kind", kind)]);
+                    }
+                })
+                .build(),
+        );
+        drop(
+            meter
+                .u64_observable_counter("jackin.cache.hits")
+                .with_description("Cache-hit diagnostics recorded during the active jackin run")
+                .with_callback(|observer| {
+                    if let Some(run) = crate::active_run() {
+                        observer.observe(run.domain_metrics_snapshot().cache_hits, &[]);
+                    }
+                })
+                .build(),
+        );
+        drop(
+            meter
+                .u64_observable_counter("jackin.cache.misses")
+                .with_description("Cache-miss diagnostics recorded during the active jackin run")
+                .with_callback(|observer| {
+                    if let Some(run) = crate::active_run() {
+                        observer.observe(run.domain_metrics_snapshot().cache_misses, &[]);
+                    }
+                })
+                .build(),
+        );
 
         Ok(provider)
     }
