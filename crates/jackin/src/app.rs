@@ -196,6 +196,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
     // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
+    announce_run_teardown(&diagnostics);
     result
 }
 
@@ -215,6 +216,27 @@ fn record_run_error(result: &Result<()>) {
     } else {
         run.error_typed("error", &format!("{error:#}"), Some("error"));
     }
+}
+
+fn announce_run_teardown(diagnostics: &jackin_diagnostics::RunDiagnostics) {
+    let line = if diagnostics.persists() {
+        format!(
+            "telemetry: run {} - file {}",
+            diagnostics.run_id(),
+            diagnostics.path().display()
+        )
+    } else {
+        let backend = jackin_diagnostics::configured_endpoint_summary().map_or_else(
+            || "your OpenTelemetry backend".to_owned(),
+            |endpoint| format!("your OpenTelemetry backend ({endpoint})"),
+        );
+        format!(
+            "telemetry: run {} - query {backend} for parallax.run.id={}",
+            diagnostics.run_id(),
+            diagnostics.run_id()
+        )
+    };
+    jackin_diagnostics::emit_operator_notice(&line);
 }
 
 const fn command_name(command: &Command) -> &'static str {

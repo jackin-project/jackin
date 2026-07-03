@@ -11,11 +11,13 @@ Every `jackin` command invocation mints a **run ID** before any work begins and 
 ~/.jackin/data/diagnostics/runs/<run-id>.jsonl
 ```
 
-A run ID is a bare unique value with no prefix: a jackin-minted id is six hex characters (for example, `8b4766`); when a wrapper such as Parallax propagates its run id, jackin adopts that value instead. The host CLI prints the run ID at startup in `--debug` mode. Debug launches also inject `JACKIN_RUN_ID` and `JACKIN_RUN_DIAGNOSTICS_PATH` into the role container so Capsule's Debug info dialog can copy the exact host JSONL path instead of guessing from the container's home directory.
+A run ID is a bare unique value with no prefix: a jackin-minted id is six hex characters (for example, `8b4766`); when a wrapper such as Parallax propagates its run id, jackin adopts that value instead. The host CLI prints the run ID at exit for every run and at startup in `--debug` mode. Launches inject `JACKIN_RUN_ID` into the role container whenever a run is active; debug launches inject `JACKIN_RUN_DIAGNOSTICS_PATH` only when a host JSONL file is actually being written, so Capsule's Debug info dialog never fabricates a host file path.
 
 Up to 200 run artifacts are retained; any artifact older than 30 days is pruned on the next run. Command-specific output logs (from `write_command_output`) are stored as sibling files named `<run-id>.<command-name>.log`.
 
 The file is the **fallback sink**, gated on whether OTLP export is active — not on `--debug`. With no OTLP endpoint configured, the file is written (it is the only durable sink). With OTLP active, the backend is the sink and no file is written unless the operator forces it with `JACKIN_DIAGNOSTICS_FILE=1`. If OTLP is configured but the exporter cannot be built, jackin❯ falls back to writing the file and surfaces a compact `otlp` notice. When the file is gated off, `RunDiagnostics` still exists (it carries the run id and powers OTLP export and `active_run`) but holds no writer; `RunDiagnostics::persists()` reports whether a file is being written, and the command-output sidecars share the same gate.
+
+Operator surfaces follow the same contract: startup banners, launch cockpit Debug info, launch failure popups, Capsule Debug info, and the run-exit notice show a diagnostics file path only when `persists()` is true. In backend-only mode they show the bare run id and backend query hint instead.
 
 Use `jackin diagnostics summary <run-id>` to print the slowest broad stages, nested timings, build-context sizes, Docker build steps, and cache decisions for a run without hand-parsing the JSONL file.
 

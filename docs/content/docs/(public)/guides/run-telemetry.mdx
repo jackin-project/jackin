@@ -3,7 +3,7 @@ title: Run Telemetry
 description: Stream every jackin❯ run — logs, stage timings, lifecycle events — to a local OpenTelemetry backend such as Parallax
 ---
 
-Every `jackin` command can record its full story — logs, lifecycle events, and per-stage timings — keyed by a **run id** (printed at startup in `--debug` mode). It goes to one of two sinks: a live external view streamed to any OpenTelemetry (OTLP) backend, or a local diagnostics file. Set one environment variable to stream to a backend; with none configured, jackin❯ falls back to the file. See [Where the run is recorded](#where-the-run-is-recorded) for how the two relate.
+Every `jackin` command can record its full story — logs, lifecycle events, and per-stage timings — keyed by a **run id** (printed again at run exit). It goes to one of two sinks: a live external view streamed to any OpenTelemetry (OTLP) backend, or a local diagnostics file. Set one environment variable to stream to a backend; with none configured, jackin❯ falls back to the file. See [Where the run is recorded](#where-the-run-is-recorded) for how the two relate.
 
 ## Turn it on
 
@@ -24,6 +24,8 @@ The backend and the file are alternatives, not duplicates:
 - **An OTLP endpoint configured** → the backend is the sink and no file is written. Set `JACKIN_DIAGNOSTICS_FILE=1` to additionally write the file and see the run on both sides at once.
 
 `--debug` controls how much detail is recorded (see [Severity follows the debug flag](#severity-follows-the-debug-flag)) — not whether the file is written. If an export is configured but can't be delivered, jackin❯ surfaces a notice and falls back to writing the file so the run is never lost silently.
+
+At exit, jackin❯ prints the run id and the active sink. File-mode runs include the JSONL path. Backend-mode runs tell you to query the backend for `parallax.run.id=<run-id>`; debug dialogs and failure popups only show a `Diagnostics log` / reveal row when that local file actually exists.
 
 ## What you can see in the backend
 

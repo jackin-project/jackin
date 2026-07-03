@@ -13,6 +13,9 @@ impl LaunchDiagnostics for TestDiagnostics {
     fn path(&self) -> &Path {
         Path::new("/tmp")
     }
+    fn persists(&self) -> bool {
+        true
+    }
     fn command_output_path(&self, name: &str) -> PathBuf {
         PathBuf::from("/tmp").join(name)
     }

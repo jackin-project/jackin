@@ -13,6 +13,9 @@ impl LaunchDiagnostics for TestDiagnostics {
     fn path(&self) -> &'static Path {
         Path::new("/tmp/jackin-test-run.jsonl")
     }
+    fn persists(&self) -> bool {
+        true
+    }
     fn command_output_path(&self, name: &str) -> PathBuf {
         PathBuf::from(format!("/tmp/jackin-test-{name}.log"))
     }

@@ -183,7 +183,7 @@ fn failure_popup_outside_click_acknowledges() {
     let ctx = CockpitContext {
         area,
         run_id: "jk-run-test",
-        run_log_path: "/tmp/jk-run-test.jsonl",
+        run_log_path: Some("/tmp/jk-run-test.jsonl"),
         terminal: &terminal,
         jackin_version: "jackin 0.0.0-test",
     };
@@ -210,7 +210,7 @@ fn failure_popup_inside_non_target_click_is_swallowed() {
     let ctx = CockpitContext {
         area,
         run_id: "jk-run-test",
-        run_log_path: "/tmp/jk-run-test.jsonl",
+        run_log_path: Some("/tmp/jk-run-test.jsonl"),
         terminal: &terminal,
         jackin_version: "jackin 0.0.0-test",
     };
@@ -251,7 +251,7 @@ fn build_log_body_click_is_swallowed() {
         CockpitContext {
             area,
             run_id: "jk-run-test",
-            run_log_path: "/tmp/jk-run-test.jsonl",
+            run_log_path: Some("/tmp/jk-run-test.jsonl"),
             terminal,
             jackin_version: "jackin 0.0.0-test",
         },
@@ -274,16 +274,18 @@ fn container_info_click_copies_real_run_id_and_log_path() {
     let ctx = CockpitContext {
         area,
         run_id,
-        run_log_path,
+        run_log_path: Some(run_log_path),
         terminal: &terminal,
         jackin_version: "jackin 0.0.0-test",
     };
 
-    let state = launch_container_info_state(&view, run_id, run_log_path, true, "jackin 0.0.0-test");
+    let state =
+        launch_container_info_state(&view, run_id, Some(run_log_path), true, "jackin 0.0.0-test");
     let (run_col, run_row) = hit_point_for_payload(area, &state, run_id);
     handle_cockpit_mouse_down(&mut view, ctx, run_col, run_row);
 
-    let state = launch_container_info_state(&view, run_id, run_log_path, true, "jackin 0.0.0-test");
+    let state =
+        launch_container_info_state(&view, run_id, Some(run_log_path), true, "jackin 0.0.0-test");
     let (log_col, log_row) = hit_point_for_payload(area, &state, run_log_path);
     handle_cockpit_mouse_down(&mut view, ctx, log_col, log_row);
 

@@ -1253,6 +1253,10 @@ impl jackin_core::launch_progress::LaunchDiagnostics for RunDiagnostics {
         &self.path
     }
 
+    fn persists(&self) -> bool {
+        self.persists()
+    }
+
     fn command_output_path(&self, name: &str) -> PathBuf {
         self.command_output_path(name)
     }

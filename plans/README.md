@@ -18,7 +18,7 @@ Design direction the program encodes (validated against tracing 0.1 / tracing-op
 | 006 | Structured event taxonomy: `event.name`/`log.category`, fingerprint-stable bodies | P1 | L | 003, 004, 005 | TODO |
 | 007 | Spans that wrap work: stage guards + `otel.name`, subprocess duration/outcome, cleanup/git-pull coverage | P1 | L | 001, 002, 003 | DONE |
 | 008 | `--telemetry-level` / `--telemetry-category`; split export verbosity from `--debug` UI | P2 | L | 002, 003, 005, 006 | TODO |
-| 009 | Operator contract: `persists()` gating, capsule path honesty, run-end pointer | P1 | M | — | TODO |
+| 009 | Operator contract: `persists()` gating, capsule path honesty, run-end pointer | P1 | M | — | DONE |
 | 010 | `[telemetry]` config.toml section (5-artifact schema bump) | P2 | M | 008 | TODO |
 | 011 | Hygiene batch: poison consistency, flush cadence, mouse coalescing, log rotation, TOCTOU, bounded maps | P2 | M | — | TODO |
 | 012 | Domain metrics via MetricsLayer + turso connection reuse | P3 | M | 002, 005, 008 | TODO |

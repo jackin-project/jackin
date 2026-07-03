@@ -24,7 +24,7 @@ pub mod terminal;
 
 pub use logging::{
     begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line, emit_debug_line,
-    end_debug_buffering, format_debug_line, is_debug_mode, set_debug_mode,
+    emit_operator_notice, end_debug_buffering, format_debug_line, is_debug_mode, set_debug_mode,
 };
 pub use observability::{
     ContainerOtlp, configured_endpoint, configured_endpoint_summary, container_otlp,

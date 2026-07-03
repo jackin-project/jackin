@@ -94,7 +94,7 @@ pub use jackin_core::PromptResult;
 #[derive(Debug)]
 pub struct LaunchRenderContext<'a> {
     pub run_id: &'a str,
-    pub run_log_path: &'a str,
+    pub run_log_path: Option<&'a str>,
     pub no_motion: bool,
     pub rain: Option<&'a crate::tui::components::rain::RainState>,
     pub debug_mode: bool,

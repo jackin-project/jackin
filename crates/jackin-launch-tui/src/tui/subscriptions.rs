@@ -91,7 +91,7 @@ fn cockpit_outcome_for_quit_confirm(outcome: QuitConfirmOutcome) -> CockpitOutco
 struct CockpitContext<'a> {
     area: Rect,
     run_id: &'a str,
-    run_log_path: &'a str,
+    run_log_path: Option<&'a str>,
     terminal: &'a dyn LaunchHostTerminal,
     jackin_version: &'static str,
 }
@@ -498,7 +498,7 @@ fn emit_dialog_mouse_debug_telemetry(
 pub fn handle_cockpit_input(
     view: &SharedView,
     run_id: &str,
-    run_log_path: &str,
+    run_log_path: Option<&str>,
     terminal: &dyn LaunchHostTerminal,
     jackin_version: &'static str,
     _cancel_token: &CancellationToken,

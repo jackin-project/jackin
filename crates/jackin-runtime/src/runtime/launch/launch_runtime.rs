@@ -502,6 +502,10 @@ pub(crate) async fn launch_role_runtime(
             &dind_hostname,
         ]);
     }
+    let run_envs = run_runtime_envs();
+    for env in &run_envs {
+        run_args.extend_from_slice(&["-e", env.as_str()]);
+    }
     let debug_envs = debug_runtime_envs(*debug);
     for env in &debug_envs {
         run_args.extend_from_slice(&["-e", env.as_str()]);
@@ -723,15 +727,6 @@ pub(crate) async fn launch_role_runtime(
         otlp_propagation.push(format!("OTEL_EXPORTER_OTLP_ENDPOINT={}", otlp.endpoint));
         if let Some(traceparent) = jackin_diagnostics::current_traceparent() {
             otlp_propagation.push(format!("TRACEPARENT={traceparent}"));
-        }
-        // Share parallax.run.id so capsule telemetry groups with the host run.
-        // In debug runs JACKIN_RUN_ID is already injected above; avoid a dupe.
-        if !debug_envs
-            .iter()
-            .any(|env| env.starts_with("JACKIN_RUN_ID="))
-            && let Some(run) = jackin_diagnostics::active_run()
-        {
-            otlp_propagation.push(format!("JACKIN_RUN_ID={}", run.run_id()));
         }
     }
     for env_str in &otlp_propagation {
@@ -1139,17 +1134,33 @@ pub(crate) fn host_runtime_passthrough_env(
         .collect()
 }
 
-pub(crate) fn debug_runtime_envs(debug: bool) -> Vec<String> {
+pub(crate) fn debug_runtime_envs_for(
+    debug: bool,
+    diagnostics_path: Option<&std::path::Path>,
+) -> Vec<String> {
     if !debug {
         return Vec::new();
     }
     let mut envs = vec!["JACKIN_DEBUG=1".to_owned()];
-    if let Some(run) = jackin_diagnostics::active_run() {
-        envs.push(format!("JACKIN_RUN_ID={}", run.run_id()));
-        envs.push(format!(
-            "JACKIN_RUN_DIAGNOSTICS_PATH={}",
-            run.path().display()
-        ));
+    if let Some(path) = diagnostics_path {
+        envs.push(format!("JACKIN_RUN_DIAGNOSTICS_PATH={}", path.display()));
     }
     envs
+}
+
+pub(crate) fn debug_runtime_envs(debug: bool) -> Vec<String> {
+    let diagnostics_path = jackin_diagnostics::active_run()
+        .and_then(|run| run.persists().then(|| run.path().to_path_buf()));
+    debug_runtime_envs_for(debug, diagnostics_path.as_deref())
+}
+
+#[cfg(test)]
+pub(crate) fn run_runtime_envs_for(run_id: Option<&str>) -> Vec<String> {
+    run_id.map_or_else(Vec::new, |run_id| vec![format!("JACKIN_RUN_ID={run_id}")])
+}
+
+pub(crate) fn run_runtime_envs() -> Vec<String> {
+    jackin_diagnostics::active_run().map_or_else(Vec::new, |run| {
+        vec![format!("JACKIN_RUN_ID={}", run.run_id())]
+    })
 }

@@ -54,7 +54,9 @@ impl LaunchProgress {
             rich,
             Arc::clone(&view),
             diagnostics.run_id().to_owned(),
-            diagnostics.path().display().to_string(),
+            diagnostics
+                .persists()
+                .then(|| diagnostics.path().display().to_string()),
             host,
             jackin_version,
             cancel_token.clone(),
@@ -147,7 +149,10 @@ impl LaunchProgress {
         let summary = failure.summary.clone();
         let next_step = failure.next_step.clone();
         let detail = failure.detail.clone();
-        failure.diagnostics_path = Some(self.diagnostics.path().to_path_buf());
+        failure.diagnostics_path = self
+            .diagnostics
+            .persists()
+            .then(|| self.diagnostics.path().to_path_buf());
         if failure.command_output_path.is_none() {
             let docker_output = self.diagnostics.command_output_path("docker-build");
             if docker_output.exists() {
