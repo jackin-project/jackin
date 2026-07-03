@@ -89,6 +89,11 @@ pub(crate) const fn no_modal_open(state: &ConsoleState) -> bool {
 
 type ConsoleTerminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>;
 
+enum ConsoleLoopStep {
+    Continue,
+    Exit(Option<ConsoleOutcome>),
+}
+
 fn run_token_generate_suspended(
     state: &mut ConsoleState,
     config: &AppConfig,
@@ -399,6 +404,221 @@ fn render_console_frame(
     Ok(())
 }
 
+async fn handle_key_event<H, R>(
+    state: &mut ConsoleState,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    cwd: &std::path::Path,
+    terminal: &mut ConsoleTerminal,
+    key: crossterm::event::KeyEvent,
+    startup_error_pending: bool,
+    needs_redraw: &mut bool,
+    action_handler: &mut H,
+    runner: &mut R,
+) -> anyhow::Result<ConsoleLoopStep>
+where
+    H: InstanceActionHandler<jackin_core::Agent>,
+    R: jackin_docker::CommandRunner,
+{
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    jackin_diagnostics::debug_log!(
+        "tui",
+        "key={} location={}",
+        jackin_console::tui::debug::key_debug_name_for_input(
+            key,
+            jackin_console::tui::run::consumes_letter_input(letter_input_state_for_console(state)),
+        ),
+        console_location_debug(state)
+    );
+    // Ctrl+C: immediate quit — hard exit on any screen, no confirmation, and it
+    // wins even when the exit confirm is already open. Mirrors the launch
+    // cockpit's Ctrl+C.
+    if matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL) {
+        return Ok(ConsoleLoopStep::Exit(None));
+    }
+
+    if let Some(plan) = state.handle_quit_confirm_key(key) {
+        return Ok(match plan {
+            QuitConfirmPlan::Exit => ConsoleLoopStep::Exit(None),
+            QuitConfirmPlan::Dismiss | QuitConfirmPlan::Continue => ConsoleLoopStep::Continue,
+        });
+    }
+
+    // Quit-confirm intercept: Ctrl+Q on any screen, or bare `q`/`Q` off the
+    // main screen (SHIFT tolerated for caps-lock parity). Checked before stage
+    // input.
+    if should_open_quit_confirm(key, quit_intercept_state_for_console(state)) {
+        state.open_quit_confirm();
+        return Ok(ConsoleLoopStep::Continue);
+    }
+
+    let outcome = if let ConsoleStage::Manager(ms) = &mut state.stage {
+        crate::console::tui::handle_key(ms, config, paths, cwd, key)?
+    } else {
+        crate::console::tui::InputOutcome::Continue
+    };
+    if startup_error_dismissed(state, startup_error_pending) {
+        return Ok(ConsoleLoopStep::Exit(None));
+    }
+    if let ConsoleStage::Manager(ms) = &mut state.stage {
+        for effect in ms.drain_effects() {
+            *needs_redraw |=
+                crate::console::effects::execute_manager_effect(ms, config, paths, effect);
+        }
+    }
+    // A launching outcome ends the console (and its list-screen span) before
+    // the launch flow starts in a later frame; snap the link so the launch
+    // trace still points back to the list.
+    jackin_diagnostics::carry_link_forward();
+    match outcome {
+        crate::console::tui::InputOutcome::Continue => {
+            if let ConsoleStage::Manager(ms) = &mut state.stage
+                && crate::console::effects::execute_pending_workspace_save_commit(
+                    ms, config, paths, cwd,
+                )?
+            {
+                *needs_redraw = true;
+            }
+            Ok(ConsoleLoopStep::Continue)
+        }
+        crate::console::tui::InputOutcome::ExitJackin => Ok(ConsoleLoopStep::Exit(None)),
+        crate::console::tui::InputOutcome::LaunchNamed(name) => {
+            jackin_diagnostics::set_workspace(&name);
+            jackin_diagnostics::set_workspace_kind("named");
+            jackin_diagnostics::record_action("launch", Some(&name));
+            let dispatch =
+                dispatch_launch_prompt(state, config, cwd, LoadWorkspaceInput::Saved(name))?;
+            if let Some(outcome) = execute_launch_prompt_dispatch(
+                terminal, state, paths, config, cwd, runner, dispatch,
+            )
+            .await?
+            {
+                Ok(ConsoleLoopStep::Exit(Some(outcome)))
+            } else {
+                Ok(ConsoleLoopStep::Continue)
+            }
+        }
+        crate::console::tui::InputOutcome::PrewarmNamed(name) => Ok(ConsoleLoopStep::Exit(Some(
+            ConsoleOutcome::PrewarmNamed(name),
+        ))),
+        crate::console::tui::InputOutcome::LaunchCurrentDir => {
+            jackin_diagnostics::set_workspace_kind("current-dir");
+            jackin_diagnostics::record_action("launch", Some("current-dir"));
+            let dispatch =
+                dispatch_launch_prompt(state, config, cwd, LoadWorkspaceInput::CurrentDir)?;
+            if let Some(outcome) = execute_launch_prompt_dispatch(
+                terminal, state, paths, config, cwd, runner, dispatch,
+            )
+            .await?
+            {
+                Ok(ConsoleLoopStep::Exit(Some(outcome)))
+            } else {
+                Ok(ConsoleLoopStep::Continue)
+            }
+        }
+        crate::console::tui::InputOutcome::LaunchWithAgent(role) => {
+            let dispatch = committed_role_prompt(state, config, cwd, role)?;
+            if let Some(outcome) = execute_launch_prompt_dispatch(
+                terminal, state, paths, config, cwd, runner, dispatch,
+            )
+            .await?
+            {
+                Ok(ConsoleLoopStep::Exit(Some(outcome)))
+            } else {
+                Ok(ConsoleLoopStep::Continue)
+            }
+        }
+        crate::console::tui::InputOutcome::LaunchWithRuntimeAgent(agent) => {
+            if let Some(outcome) = launch_with_committed_agent(state, config, cwd, agent)? {
+                Ok(ConsoleLoopStep::Exit(Some(outcome)))
+            } else {
+                Ok(ConsoleLoopStep::Continue)
+            }
+        }
+        crate::console::tui::InputOutcome::NewSessionWithProvider {
+            container,
+            agent,
+            provider,
+        } => Ok(ConsoleLoopStep::Exit(Some(
+            ConsoleOutcome::NewSessionWithProvider {
+                container,
+                agent,
+                provider,
+            },
+        ))),
+        crate::console::tui::InputOutcome::LaunchWithProvider {
+            selector,
+            agent,
+            provider,
+        } => {
+            let Some(input) = take_pending_launch_plan(state) else {
+                return Ok(ConsoleLoopStep::Exit(None));
+            };
+            let workspace = jackin_console::services::launch::resolve_provider_launch_workspace(
+                config, cwd, &input, &selector,
+            )?;
+            let Some(workspace) = workspace else {
+                return Ok(ConsoleLoopStep::Exit(None));
+            };
+            Ok(ConsoleLoopStep::Exit(Some(
+                ConsoleOutcome::LaunchWithProvider {
+                    selector,
+                    workspace,
+                    agent,
+                    provider,
+                },
+            )))
+        }
+        crate::console::tui::InputOutcome::InstanceAction { container, action } => {
+            if action.runs_in_place() {
+                if let ConsoleStage::Manager(ms) = &mut state.stage {
+                    let action_fact = action.workspace_action_fact();
+                    let busy_title = instance_action_busy_title(action_fact);
+                    let busy_body = instance_action_busy_message(action_fact, &container);
+                    let _unused = crate::console::tui::update_manager(
+                        ms,
+                        crate::console::tui::ManagerMessage::OpenStatusPopup {
+                            title: busy_title.into(),
+                            message: busy_body,
+                        },
+                    );
+                    terminal.draw(|frame| {
+                        let full_area = frame.area();
+                        let (main_area, _debug_bar) =
+                            split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
+                        crate::console::tui::render(frame, main_area, ms, config, cwd);
+                    })?;
+                }
+                let result = action_handler.run_in_place(&container, action).await;
+                if let ConsoleStage::Manager(ms) = &mut state.stage {
+                    let _unused = crate::console::tui::update_manager(
+                        ms,
+                        crate::console::tui::ManagerMessage::DismissStatusPopup,
+                    );
+                    if let Err(error) = result {
+                        let err_title =
+                            instance_action_failed_error_title(action.workspace_action_fact());
+                        let _unused = crate::console::tui::update_manager(
+                            ms,
+                            crate::console::tui::ManagerMessage::OpenListErrorPopup {
+                                title: err_title.into(),
+                                message: instance_action_failed_error_message(error),
+                            },
+                        );
+                    }
+                    ms.force_refresh_instances();
+                }
+                *needs_redraw = true;
+                return Ok(ConsoleLoopStep::Continue);
+            }
+            Ok(ConsoleLoopStep::Exit(Some(
+                ConsoleOutcome::InstanceAction { container, action },
+            )))
+        }
+    }
+}
+
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
@@ -505,7 +725,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
-    use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+    use crossterm::event::{Event, KeyCode, KeyEventKind};
     use futures_util::{FutureExt as _, StreamExt as _};
 
     let parent_session = options.parent_session;
@@ -648,240 +868,22 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                     {
                         continue;
                     }
-                    jackin_diagnostics::debug_log!(
-                        "tui",
-                        "key={} location={}",
-                        jackin_console::tui::debug::key_debug_name_for_input(
-                            key,
-                            jackin_console::tui::run::consumes_letter_input(
-                                letter_input_state_for_console(&state)
-                            ),
-                        ),
-                        console_location_debug(&state)
-                    );
-                    // Ctrl+C: immediate quit — hard exit on any screen, no
-                    // confirmation, and it wins even when the exit confirm is
-                    // already open. Mirrors the launch cockpit's Ctrl+C.
-                    if matches!(key.code, KeyCode::Char('c'))
-                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                    match handle_key_event(
+                        &mut state,
+                        &mut config,
+                        paths,
+                        cwd,
+                        &mut terminal,
+                        key,
+                        startup_error_pending,
+                        &mut needs_redraw,
+                        action_handler,
+                        runner,
+                    )
+                    .await?
                     {
-                        break 'main Ok(None);
-                    }
-
-                    if let Some(plan) = state.handle_quit_confirm_key(key) {
-                        match plan {
-                            QuitConfirmPlan::Exit => break 'main Ok(None),
-                            QuitConfirmPlan::Dismiss => {}
-                            QuitConfirmPlan::Continue => {}
-                        }
-                        continue;
-                    }
-
-                    // Quit-confirm intercept: Ctrl+Q on any screen, or bare
-                    // `q`/`Q` off the main screen (SHIFT tolerated for
-                    // caps-lock parity). Checked before stage input.
-                    if should_open_quit_confirm(key, quit_intercept_state_for_console(&state)) {
-                        state.open_quit_confirm();
-                        continue;
-                    }
-
-                    let outcome = if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        crate::console::tui::handle_key(ms, &mut config, paths, cwd, key)?
-                    } else {
-                        crate::console::tui::InputOutcome::Continue
-                    };
-                    if startup_error_dismissed(&state, startup_error_pending) {
-                        break 'main Ok(None);
-                    }
-                    if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        for effect in ms.drain_effects() {
-                            needs_redraw |= crate::console::effects::execute_manager_effect(
-                                ms,
-                                &mut config,
-                                paths,
-                                effect,
-                            );
-                        }
-                    }
-                    // A launching outcome ends the console (and its list-screen
-                    // span) before the launch flow starts in a later frame; snap
-                    // the link so the launch trace still points back to the list.
-                    jackin_diagnostics::carry_link_forward();
-                    match outcome {
-                        crate::console::tui::InputOutcome::Continue => {
-                            if let ConsoleStage::Manager(ms) = &mut state.stage
-                                && crate::console::effects::execute_pending_workspace_save_commit(
-                                    ms,
-                                    &mut config,
-                                    paths,
-                                    cwd,
-                                )?
-                            {
-                                needs_redraw = true;
-                            }
-                        }
-                        crate::console::tui::InputOutcome::ExitJackin => {
-                            break 'main Ok(None);
-                        }
-                        crate::console::tui::InputOutcome::LaunchNamed(name) => {
-                            jackin_diagnostics::set_workspace(&name);
-                            jackin_diagnostics::set_workspace_kind("named");
-                            jackin_diagnostics::record_action("launch", Some(&name));
-                            let dispatch = dispatch_launch_prompt(
-                                &mut state,
-                                &config,
-                                cwd,
-                                LoadWorkspaceInput::Saved(name),
-                            )?;
-                            if let Some(outcome) = execute_launch_prompt_dispatch(
-                                &mut terminal,
-                                &mut state,
-                                paths,
-                                &config,
-                                cwd,
-                                runner,
-                                dispatch,
-                            )
-                            .await?
-                            {
-                                break 'main Ok(Some(outcome));
-                            }
-                        }
-                        crate::console::tui::InputOutcome::PrewarmNamed(name) => {
-                            break 'main Ok(Some(ConsoleOutcome::PrewarmNamed(name)));
-                        }
-                        crate::console::tui::InputOutcome::LaunchCurrentDir => {
-                            jackin_diagnostics::set_workspace_kind("current-dir");
-                            jackin_diagnostics::record_action("launch", Some("current-dir"));
-                            let dispatch = dispatch_launch_prompt(
-                                &mut state,
-                                &config,
-                                cwd,
-                                LoadWorkspaceInput::CurrentDir,
-                            )?;
-                            if let Some(outcome) = execute_launch_prompt_dispatch(
-                                &mut terminal,
-                                &mut state,
-                                paths,
-                                &config,
-                                cwd,
-                                runner,
-                                dispatch,
-                            )
-                            .await?
-                            {
-                                break 'main Ok(Some(outcome));
-                            }
-                        }
-                        crate::console::tui::InputOutcome::LaunchWithAgent(role) => {
-                            let dispatch = committed_role_prompt(&mut state, &config, cwd, role)?;
-                            if let Some(outcome) = execute_launch_prompt_dispatch(
-                                &mut terminal,
-                                &mut state,
-                                paths,
-                                &config,
-                                cwd,
-                                runner,
-                                dispatch,
-                            )
-                            .await?
-                            {
-                                break 'main Ok(Some(outcome));
-                            }
-                        }
-                        crate::console::tui::InputOutcome::LaunchWithRuntimeAgent(agent) => {
-                            if let Some(outcome) =
-                                launch_with_committed_agent(&mut state, &config, cwd, agent)?
-                            {
-                                break 'main Ok(Some(outcome));
-                            }
-                        }
-                        crate::console::tui::InputOutcome::NewSessionWithProvider {
-                            container,
-                            agent,
-                            provider,
-                        } => {
-                            break 'main Ok(Some(ConsoleOutcome::NewSessionWithProvider {
-                                container,
-                                agent,
-                                provider,
-                            }));
-                        }
-                        crate::console::tui::InputOutcome::LaunchWithProvider {
-                            selector,
-                            agent,
-                            provider,
-                        } => {
-                            let Some(input) = take_pending_launch_plan(&mut state) else {
-                                break 'main Ok(None);
-                            };
-                            let workspace =
-                                jackin_console::services::launch::resolve_provider_launch_workspace(
-                                    &config, cwd, &input, &selector,
-                                )?;
-                            let Some(workspace) = workspace else {
-                                break 'main Ok(None);
-                            };
-                            break 'main Ok(Some(ConsoleOutcome::LaunchWithProvider {
-                                selector,
-                                workspace,
-                                agent,
-                                provider,
-                            }));
-                        }
-                        crate::console::tui::InputOutcome::InstanceAction { container, action } => {
-                            if action.runs_in_place() {
-                                if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                    let action_fact = action.workspace_action_fact();
-                                    let busy_title = instance_action_busy_title(action_fact);
-                                    let busy_body =
-                                        instance_action_busy_message(action_fact, &container);
-                                    let _unused = crate::console::tui::update_manager(
-                                        ms,
-                                        crate::console::tui::ManagerMessage::OpenStatusPopup {
-                                            title: busy_title.into(),
-                                            message: busy_body,
-                                        },
-                                    );
-                                    terminal.draw(|frame| {
-                                        let full_area = frame.area();
-                                        let (main_area, _debug_bar) = split_debug_area(
-                                            full_area,
-                                            jackin_diagnostics::is_debug_mode(),
-                                        );
-                                        crate::console::tui::render(
-                                            frame, main_area, ms, &config, cwd,
-                                        );
-                                    })?;
-                                }
-                                let result = action_handler.run_in_place(&container, action).await;
-                                if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                    let _unused = crate::console::tui::update_manager(
-                                        ms,
-                                        crate::console::tui::ManagerMessage::DismissStatusPopup,
-                                    );
-                                    if let Err(error) = result {
-                                        let err_title = instance_action_failed_error_title(
-                                            action.workspace_action_fact(),
-                                        );
-                                        let _unused = crate::console::tui::update_manager(
-                                            ms,
-                                            crate::console::tui::ManagerMessage::OpenListErrorPopup {
-                                                title: err_title.into(),
-                                                message: instance_action_failed_error_message(error),
-                                            },
-                                        );
-                                    }
-                                    ms.force_refresh_instances();
-                                }
-                                needs_redraw = true;
-                                continue;
-                            }
-                            break 'main Ok(Some(ConsoleOutcome::InstanceAction {
-                                container,
-                                action,
-                            }));
-                        }
+                        ConsoleLoopStep::Continue => continue,
+                        ConsoleLoopStep::Exit(outcome) => break 'main Ok(outcome),
                     }
                 }
                 Event::Mouse(mouse) => {
