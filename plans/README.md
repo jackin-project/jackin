@@ -15,15 +15,15 @@ The findings record that motivated the program remains at `docs/content/docs/ref
 | 005 Payload containment and redaction boundary | Done | `pty-fixture` now follows the `container_started.detail.capsule_log` pointer to raw `multiplexer.log` bytes; raw PTY/frame/input debug lines use local-only capsule logging, and exported diagnostics text is redacted/capped at the host boundary. |
 | 006 Structured event taxonomy | Done | Diagnostics JSONL and OTLP records now carry `event.name`, `event.outcome`, `jackin.component`, `jackin.operation`, and `jackin.category` beside the compatibility fields. |
 | 007 Real launch spans and subprocess coverage | Done | `d45e9559c feat(diagnostics): make launch spans cover work` |
-| 008 Telemetry level and category controls | Pending | Unblocked by 006; still needs the explicit level/category control surface. |
+| 008 Telemetry level and category controls | Done | `JACKIN_TELEMETRY_LEVEL=info|debug|trace` now drives host/capsule OTLP verbosity and debug capture; `JACKIN_TELEMETRY_CATEGORIES` filters debug categories before JSONL/OTLP export. |
 | 009 Honest diagnostics-file operator contract | Done | `18c9e6622 fix(diagnostics): hide nonpersisted run paths` |
-| 010 `[telemetry]` config schema | Pending | Depends on 008 and its telemetry-level model. |
+| 010 `[telemetry]` config schema | Pending | Unblocked by 008; needs persisted config-file mapping for the env-level telemetry model. |
 | 011 Telemetry hygiene batch | Done | `a14c138ec`, `a93fe1e63`, `48cf955f5`, `fc1d01793`, `72d26c86d`, `afeb05713`, `f71b99bbf` |
-| 012 Domain metrics and turso reuse | Pending | Depends on 008 and a scoped domain-metrics pass. |
+| 012 Domain metrics and turso reuse | Pending | Depends on 010 config decisions and a scoped domain-metrics pass. |
 | 013 Docs truth sync | Done | `12efe33df docs: sync telemetry diagnostics contract` |
 
 ## Remaining Items
 
 The fixture extraction blocker was removed by teaching `crates/jackin-xtask/src/pty_fixture.rs` to read raw `session feed_pty bytes` records from the capsule `multiplexer.log` path already recorded in host run diagnostics. Raw payload debug lines remain available locally for fixture replay, but are no longer bridged into host JSONL or OTLP.
 
-Plans 008, 010, and 012 remain pending and should be implemented on this same branch/PR if the telemetry program continues. Treat this archive as the status source of truth; do not revive the retired step-by-step plan files.
+Plans 010 and 012 remain pending and should be implemented on this same branch/PR if the telemetry program continues. Treat this archive as the status source of truth; do not revive the retired step-by-step plan files.

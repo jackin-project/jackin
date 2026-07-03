@@ -6,7 +6,10 @@ use std::time::{Duration, SystemTime};
 
 use jackin_core::JackinPaths;
 
-use crate::logging::{DEBUG_BUFFER_ACTIVE, drain_debug_buffer, should_tee_debug_to_stderr};
+use crate::logging::{
+    DEBUG_BUFFER_ACTIVE, TelemetryLevel, debug_capture_enabled_with_env, drain_debug_buffer,
+    parse_telemetry_level, should_tee_debug_to_stderr,
+};
 use crate::run::{
     MAX_RUN_ARTIFACT_AGE, MAX_RUN_ARTIFACTS, RunDiagnostics,
     external_run_id_from_resource_attributes, flag_is_truthy, mint_run_id, normalize_stage_name,
@@ -135,6 +138,61 @@ fn writes_jsonl_events() {
     assert_eq!(event["jackin.component"], "host");
     assert_eq!(event["jackin.operation"], "breadcrumb");
     assert_eq!(event["jackin.category"], "breadcrumb");
+}
+
+#[test]
+fn telemetry_level_env_parses_supported_values() {
+    assert_eq!(parse_telemetry_level("info"), Some(TelemetryLevel::Info));
+    assert_eq!(parse_telemetry_level("DEBUG"), Some(TelemetryLevel::Debug));
+    assert_eq!(
+        parse_telemetry_level(" trace "),
+        Some(TelemetryLevel::Trace)
+    );
+    assert_eq!(parse_telemetry_level("verbose"), None);
+}
+
+#[test]
+fn telemetry_level_env_enables_debug_capture_without_legacy_debug() {
+    assert!(debug_capture_enabled_with_env(
+        Some("debug"),
+        None,
+        "docker",
+        false
+    ));
+    assert!(debug_capture_enabled_with_env(
+        Some("trace"),
+        None,
+        "docker",
+        false
+    ));
+    assert!(!debug_capture_enabled_with_env(
+        Some("info"),
+        None,
+        "docker",
+        false
+    ));
+}
+
+#[test]
+fn telemetry_categories_filter_debug_capture() {
+    assert!(debug_capture_enabled_with_env(
+        Some("debug"),
+        Some("docker,launch"),
+        "docker",
+        false
+    ));
+    assert!(!debug_capture_enabled_with_env(
+        Some("debug"),
+        Some("docker,launch"),
+        "role",
+        false
+    ));
+    assert!(debug_capture_enabled_with_env(
+        Some("debug"),
+        Some("*"),
+        "role",
+        false
+    ));
 }
 
 #[test]

@@ -101,6 +101,8 @@ These variables affect host run telemetry and diagnostics capture; see [Run Tele
 | `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_ENDPOINT` | Overrides the endpoint per signal. jackin❯ still exports over gRPC only. |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_PROTOCOL` | Must be `grpc` or unset when an endpoint is configured; any other value stops startup with [E016](/reference/errors/E016/). |
 | `JACKIN_DEBUG` | Backs `--debug` for verbose local diagnostics and capsule debug logging. |
+| `JACKIN_TELEMETRY_LEVEL` | Overrides telemetry verbosity: `info` (default), `debug`, or `trace`. `debug`/`trace` enable debug-category diagnostics even when `--debug` is not set. |
+| `JACKIN_TELEMETRY_CATEGORIES` | Optional comma-separated debug-category allowlist such as `docker,launch`; `*` allows every debug category. Applies before debug-category events enter JSONL or OTLP. |
 | `JACKIN_DIAGNOSTICS_FILE` | Set to `1`, `true`, `yes`, or `on` to write the local run JSONL file even when OTLP export is active. |
 | `PARALLAX_RUN_ID` | Supplies an external run id for jackin❯ to adopt instead of minting a six-hex id. |
 | `OTEL_RESOURCE_ATTRIBUTES` | If it contains `parallax.run.id=<value>`, jackin❯ adopts that external run id and stamps the same value on exported telemetry. |

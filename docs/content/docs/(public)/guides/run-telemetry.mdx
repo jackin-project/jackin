@@ -23,7 +23,7 @@ The backend and the file are alternatives, not duplicates:
 - **No OTLP endpoint configured** → jackin❯ writes the run to a local diagnostics file at `~/.jackin/data/diagnostics/runs/<run-id>.jsonl`. The file is the fallback sink.
 - **An OTLP endpoint configured** → the backend is the sink and no file is written. Set `JACKIN_DIAGNOSTICS_FILE=1` to additionally write the file and see the run on both sides at once.
 
-`--debug` controls how much detail is recorded (see [Severity follows the debug flag](#severity-follows-the-debug-flag)) — not whether the file is written. If an export is configured but can't be delivered, jackin❯ surfaces a notice and falls back to writing the file so the run is never lost silently.
+`--debug` controls how much detail is recorded (see [Severity and category controls](#severity-and-category-controls)) — not whether the file is written. For telemetry-only overrides, set `JACKIN_TELEMETRY_LEVEL=info|debug|trace` and optionally `JACKIN_TELEMETRY_CATEGORIES=docker,launch`. If an export is configured but can't be delivered, jackin❯ surfaces a notice and falls back to writing the file so the run is never lost silently.
 
 At exit, jackin❯ prints the run id and the active sink. File-mode runs include the JSONL path. Backend-mode runs tell you to query the backend for `parallax.run.id=<run-id>`; debug dialogs and failure popups only show a `Diagnostics log` / reveal row when that local file actually exists.
 
@@ -95,13 +95,25 @@ still leaves everything up to the moment of failure in the backend.
 
 The container reaches a backend running on the host loopback (`127.0.0.1`/`localhost`) automatically: jackin❯ rewrites the endpoint to `host.docker.internal` and wires it to the host gateway. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at an already-routable address and it is passed through unchanged.
 
-## Severity follows the debug flag
+## Severity and category controls
 
 Without `--debug`, the export is compact: lifecycle events, stage
 boundaries, and errors. With `--debug`, the export includes the
 DEBUG-severity firehose — the same two-tier rule the diagnostics file
 follows, so an exported run is never noisier than the flag you launched
 with.
+
+`JACKIN_TELEMETRY_LEVEL` can override the telemetry side without changing the
+CLI's existing debug UI behavior:
+
+- `info` exports compact lifecycle telemetry.
+- `debug` exports debug-category diagnostics.
+- `trace` raises the OTLP allowlist to TRACE for jackin❯ targets and enables
+  debug-category diagnostics.
+
+Set `JACKIN_TELEMETRY_CATEGORIES` to a comma-separated allowlist such as
+`docker,launch` to keep unrelated debug categories out of JSONL and OTLP. Use
+`*` to allow every category.
 
 ## Viewing a run in Parallax
 

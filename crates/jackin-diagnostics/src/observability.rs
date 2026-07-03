@@ -783,7 +783,7 @@ mod otlp {
         // Scope the export to jackin❯'s own telemetry. Dependency-internal
         // spans/logs stay out of OTLP unless the operator asks for them with
         // `JACKIN_OTEL_INTERNAL=1`.
-        let directive = export_filter_directive(if debug { "debug" } else { "info" });
+        let directive = export_filter_directive(export_level(debug));
         let installed = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
             .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
@@ -864,7 +864,7 @@ mod otlp {
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
-        let directive = export_filter_directive(if capsule_debug() { "debug" } else { "info" });
+        let directive = export_filter_directive(export_level(capsule_debug()));
         // Surface OTLP exporter/SDK diagnostics (export failures, refused
         // endpoint, gRPC errors) to the capsule's stderr — captured by
         // `docker logs` and mirrored into `multiplexer.log`. The OTLP span/log
@@ -946,6 +946,14 @@ mod otlp {
         )
     }
 
+    fn export_level(debug: bool) -> &'static str {
+        match crate::telemetry_level(debug) {
+            crate::TelemetryLevel::Info => "info",
+            crate::TelemetryLevel::Debug => "debug",
+            crate::TelemetryLevel::Trace => "trace",
+        }
+    }
+
     fn export_filter_directive_with_internal(level: &str, internal: bool) -> String {
         let mut directive = String::from("off");
         for target in EXPORT_TARGETS {
@@ -988,7 +996,7 @@ mod otlp {
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
-        let directive = export_filter_directive(if debug { "debug" } else { "info" });
+        let directive = export_filter_directive(export_level(debug));
         let subscriber = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
             .with(span_layer.with_filter(EnvFilter::new(directive.clone())))

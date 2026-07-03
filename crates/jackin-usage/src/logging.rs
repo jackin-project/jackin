@@ -74,16 +74,17 @@ fn rotate_if_oversized(path: &PathBuf) -> std::io::Result<()> {
 /// point. Failures (path not writable, dir missing) are swallowed —
 /// the logger keeps emitting to stderr.
 pub fn init() {
-    // Honour the same env var the host CLI sets when the operator
-    // launches with `--debug`. Truthy values: `1`, `true`, `yes`, `on`
-    // (case-insensitive). Anything else (including unset) leaves the
-    // verbose surface off.
+    // Honour the legacy env var the host CLI sets for `--debug` plus the newer
+    // telemetry-level contract. Truthy `JACKIN_DEBUG` values: `1`, `true`,
+    // `yes`, `on` (case-insensitive). `JACKIN_TELEMETRY_LEVEL=debug|trace`
+    // also enables the verbose local capsule log surface.
     let debug = std::env::var("JACKIN_DEBUG").is_ok_and(|v| {
         matches!(
             v.trim().to_ascii_lowercase().as_str(),
             "1" | "true" | "yes" | "on"
         )
-    });
+    }) || std::env::var("JACKIN_TELEMETRY_LEVEL")
+        .is_ok_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "debug" | "trace"));
     DEBUG_ENABLED.store(debug, Ordering::Relaxed);
 
     let path = resolve_log_path();

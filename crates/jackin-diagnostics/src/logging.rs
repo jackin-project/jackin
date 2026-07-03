@@ -12,6 +12,13 @@ const DEBUG_BUFFER_LIMIT: usize = 2048;
 
 static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum TelemetryLevel {
+    Info,
+    Debug,
+    Trace,
+}
+
 pub fn set_debug_mode(enabled: bool) {
     DEBUG_MODE.store(enabled, Ordering::Relaxed);
 }
@@ -20,6 +27,70 @@ pub fn set_debug_mode(enabled: bool) {
 #[must_use]
 pub fn is_debug_mode() -> bool {
     DEBUG_MODE.load(Ordering::Relaxed)
+}
+
+pub fn telemetry_level(debug: bool) -> TelemetryLevel {
+    std::env::var("JACKIN_TELEMETRY_LEVEL")
+        .ok()
+        .and_then(|value| parse_telemetry_level(&value))
+        .unwrap_or(if debug {
+            TelemetryLevel::Debug
+        } else {
+            TelemetryLevel::Info
+        })
+}
+
+pub fn parse_telemetry_level(value: &str) -> Option<TelemetryLevel> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "info" => Some(TelemetryLevel::Info),
+        "debug" => Some(TelemetryLevel::Debug),
+        "trace" => Some(TelemetryLevel::Trace),
+        _ => None,
+    }
+}
+
+pub(crate) fn debug_capture_enabled(category: &str, legacy_debug: bool) -> bool {
+    debug_capture_enabled_with_env(
+        std::env::var("JACKIN_TELEMETRY_LEVEL").ok().as_deref(),
+        std::env::var("JACKIN_TELEMETRY_CATEGORIES").ok().as_deref(),
+        category,
+        legacy_debug,
+    )
+}
+
+pub(crate) fn debug_capture_enabled_with_env(
+    level_env: Option<&str>,
+    categories_env: Option<&str>,
+    category: &str,
+    legacy_debug: bool,
+) -> bool {
+    let level = level_env
+        .and_then(parse_telemetry_level)
+        .unwrap_or(if legacy_debug {
+            TelemetryLevel::Debug
+        } else {
+            TelemetryLevel::Info
+        });
+    level >= TelemetryLevel::Debug && telemetry_category_enabled(category, categories_env)
+}
+
+fn telemetry_category_enabled(category: &str, categories_env: Option<&str>) -> bool {
+    categories_env
+        .filter(|raw| !raw.trim().is_empty())
+        .is_none_or(|raw| {
+            raw.split(',')
+                .map(normalize_telemetry_category)
+                .any(|candidate| {
+                    candidate == "*" || candidate == normalize_telemetry_category(category)
+                })
+        })
+}
+
+fn normalize_telemetry_category(category: &str) -> String {
+    category
+        .trim()
+        .to_ascii_lowercase()
+        .replace(['_', ' '], "-")
 }
 
 fn debug_buffer() -> &'static Mutex<Vec<String>> {

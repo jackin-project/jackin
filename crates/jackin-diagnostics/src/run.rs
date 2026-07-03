@@ -597,7 +597,7 @@ impl RunDiagnostics {
     }
 
     pub fn debug(&self, category: &str, line: &str) -> bool {
-        if !self.debug {
+        if !crate::logging::debug_capture_enabled(category, self.debug) {
             return false;
         }
         crate::observability::emit_jsonl_event(&self.run_id, "debug", line, None, Some(category));
