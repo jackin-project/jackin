@@ -1,6 +1,6 @@
 # AGENTS.md — jackin-agent-brown
 
-A Claude Code / Codex agent image for the ChainArgos Java + Rust monorepo. Extends the digest-pinned `projectjackin/construct:<version>-trixie` base and layers Node.js, Rust, Oracle GraalVM, Protoc, ctx7, and a curated plugin set including `pr-review-toolkit`, `security-guidance`, `tailrocks-skills`, and `caveman`.
+A Claude Code / Codex agent image for the ChainArgos Java + Rust monorepo. Extends the digest-pinned `projectjackin/construct:<version>-trixie` base and layers Node.js, Rust, Oracle GraalVM, Protoc, ctx7, and a curated plugin set including `pr-review-toolkit`, `security-guidance`, `rust-best-practices`, and `caveman`.
 
 **This repo and the published image are INTERNAL to ChainArgos and must always remain private.** See Hard rule 1 below.
 
@@ -10,7 +10,7 @@ The image runs against the ChainArgos monorepo with the operator's GitHub creden
 
 Threat surface for this image:
 
-1. **Plugin breadth.** Each plugin in `jackin.role.toml` has its own update cadence; a compromised plugin runs with the agent's full capability inside `/workspace`. Two trust anchors live outside `@claude-plugins-official`: `tailrocks-skills@tailrocks-marketplace` and `caveman@caveman` (source [`JuliusBrussee/caveman`](https://github.com/JuliusBrussee/caveman), pinned in the Dockerfile via `CAVEMAN_VERSION`). Trust is anchored in operator vetting of the maintainer, not in source audit. The third-party `improve` skill ([shadcn/improve](https://github.com/shadcn/improve)) is installed via `skills add` — a read-only advisor by convention, but trust is anchored in maintainer vetting, not enforcement.
+1. **Plugin breadth.** Each plugin in `jackin.role.toml` has its own update cadence; a compromised plugin runs with the agent's full capability inside `/workspace`. Two trust anchors live outside `@claude-plugins-official`: `rust-best-practices@tailrocks-marketplace` and `caveman@caveman` (source [`JuliusBrussee/caveman`](https://github.com/JuliusBrussee/caveman), pinned in the Dockerfile via `CAVEMAN_VERSION`). Trust is anchored in operator vetting of the maintainer, not in source audit. The third-party `improve` skill ([shadcn/improve](https://github.com/shadcn/improve)) is installed via `skills add` for Claude Code, Codex, Amp, OpenCode, and Kimi Code CLI — a read-only advisor by convention, but trust is anchored in maintainer vetting, not enforcement.
 2. **GitHub credential adjacency.** An operator running this image against `ChainArgos/*` exports `GITHUB_TOKEN` (or a `gh` device-flow session) into the shell. Anything the agent does (any plugin, any skill) can see that token via `/proc/*/environ`.
 3. **Supply chain.** mise, cargo, npm, GitHub refs.
 4. **Context7 MCP.** Optional `CONTEXT7_API_KEY` configures a third-party MCP server with read access to the agent's docs corpus. Treat the key like any other credential — do not commit, do not bake into the image.

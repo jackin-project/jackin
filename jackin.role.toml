@@ -20,7 +20,7 @@ plugins = [
   "github@claude-plugins-official",
   "security-guidance@claude-plugins-official",
   "pr-review-toolkit@claude-plugins-official",
-  "tailrocks-skills@tailrocks-marketplace",
+  "rust-best-practices@tailrocks-marketplace",
   "caveman@caveman",
 ]
 
