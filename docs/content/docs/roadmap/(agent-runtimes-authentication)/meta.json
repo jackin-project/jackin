@@ -7,7 +7,6 @@
     "auth-reliability-program",
     "auth-overwrite-on-new-tab",
     "auth-health-and-visibility",
-    "claude-usage-fable-limits",
     "workspace-claude-token-setup",
     "github-cli-auth-strategy",
     "onepassword-integration",
