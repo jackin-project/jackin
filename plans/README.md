@@ -35,7 +35,7 @@ update the codebase map in the same PR.
 | 012 | ModalStack primitive; settings modal enums converge; stash slots die | P2 | L | 002 (soft) | BLOCKED — drift check found existing console TUI changes across component/input/view files before plan work |
 | 013 | Modal-sizing registry promoted to jackin-tui | P2 | M | 012 | BLOCKED — drift check found existing launch TUI failure-dialog/run changes before plan work |
 | 014 | ConfirmSaveState onto a keymap + ButtonFocus | P2 | M | 003 | BLOCKED — drift check found existing confirm/save component changes before plan work |
-| 015 | Settings ↔ editor row unification + labeled_field_line | P1 | L | — | TODO |
+| 015 | Settings ↔ editor row unification + labeled_field_line | P1 | L | — | BLOCKED — drift check found existing console row/auth/workspace view changes before plan work |
 | 016 | save_preview dual-pipeline dedup | P2 | L | — | TODO |
 | 017 | run_console decomposition + terminal guard | P3 | M | — | TODO |
 | 018 | jackin-tui lib.rs ansi-module extraction | P3 | M | — | TODO |
