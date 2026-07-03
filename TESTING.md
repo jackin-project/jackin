@@ -58,13 +58,14 @@ Capsule echo-back harness (`crates/jackin-capsule/src/daemon/render_conformance_
    ```
 
    Session label = pane label in capsule tab (e.g. `Codex`). Extractor also accepts raw in-container `multiplexer.log`.
+   `--debug` writes this JSONL file only when OTLP export is inactive. If `OTEL_EXPORTER_OTLP_ENDPOINT` is set in your shell, the backend is the sink and no file is written; unset it for JSONL fixture extraction or set `JACKIN_DIAGNOSTICS_FILE=1` to write both the backend record and local file.
 3. Reference fixture from harness scenario with `include_bytes!`.
 
 ## Walking the operator through local validation
 
 Every `jackin <subcommand>` invocation in manual validation MUST include `--debug`. Includes `cargo run --bin jackin -- <subcommand> --debug` from checkout.
 
-`--debug` captures every external command (`docker`, `git`, `id`, etc.) with output plus `[jackin debug ...]` instrumentation into `~/.jackin/data/diagnostics/runs/<run-id>.jsonl`. CLI prints run id. When something misbehaves, ask for run id — agent reads JSONL to localize issue, not a pasted terminal scrollback.
+`--debug` captures every external command (`docker`, `git`, `id`, etc.) with output plus `[jackin debug ...]` instrumentation into `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` only when OTLP export is inactive. If `OTEL_EXPORTER_OTLP_ENDPOINT` is set in the shell, the backend is the sink and no file is written; unset it for JSONL-based triage or set `JACKIN_DIAGNOSTICS_FILE=1` to write both. CLI prints the run id either way: in OTLP-only mode, ask for the run id and query the backend for `parallax.run.id=<run-id>` instead of looking for a file.
 
 Smoke tests: suggest `jackin console` first, prefer `the-architect` role over `agent-smith`. Standard smoke command:
 
