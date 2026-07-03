@@ -27,6 +27,11 @@ fn init_test_tracing() {
     drop(init_tracing(false, "jk-run-test00"));
 }
 
+fn event_detail_json(line: &str) -> serde_json::Value {
+    let event: serde_json::Value = serde_json::from_str(line).unwrap();
+    serde_json::from_str(event["detail"].as_str().unwrap()).unwrap()
+}
+
 // ── run.rs tests ─────────────────────────────────────────────────────────────
 
 #[test]
@@ -212,6 +217,58 @@ fn timing_events_include_nested_duration_summary() {
         "{summary}"
     );
     assert!(summary.contains("credentials/operator_env"), "{summary}");
+}
+
+#[test]
+fn run_summary_reports_and_clears_unclosed_timing_keys() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    run.timing_started("credentials", "operator_env", None);
+    run.emit_run_summary();
+    run.emit_run_summary();
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    let diagnostics = contents
+        .lines()
+        .filter(|line| line.contains("\"kind\":\"diagnostics\""))
+        .collect::<Vec<_>>();
+    assert_eq!(diagnostics.len(), 1, "{contents}");
+    assert!(
+        diagnostics[0].contains("unclosed: timing:credentials/operator_env"),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn duration_histograms_cap_samples_and_count_drops() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    for _ in 0..2000 {
+        run.timing_started("credentials", "operator_env", None);
+        run.timing_done("credentials", "operator_env", None);
+    }
+    run.emit_run_summary();
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    let summary = contents
+        .lines()
+        .find(|line| line.contains("\"kind\":\"run_summary\""))
+        .unwrap();
+    let detail = event_detail_json(summary);
+    let samples = detail["timing_duration_histograms_ms"]["credentials/operator_env"]
+        .as_array()
+        .unwrap();
+    assert_eq!(samples.len(), 1024);
+    assert_eq!(
+        detail["timing_duration_dropped"]["credentials/operator_env"],
+        serde_json::Value::from(976)
+    );
 }
 
 #[test]

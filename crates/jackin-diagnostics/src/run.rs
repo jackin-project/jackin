@@ -20,7 +20,7 @@
 //! off, `writer` is `None`. Failures stay visible regardless via the compact
 //! operator-notice channel (`emit_compact_line`), which never depends on the file.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Arguments;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -48,6 +48,7 @@ pub(crate) const MAX_RUN_ARTIFACT_AGE: Duration = Duration::from_hours(720);
 // redaction/artifact-routing boundary.
 const CRASH_EVIDENCE_EXPORT_CAP: usize = 4096;
 const CRASH_EVIDENCE_TRUNCATED_PREFIX: &str = "(truncated to last 4096 bytes)\n";
+const MAX_HISTOGRAM_SAMPLES: usize = 1024;
 
 static ACTIVE_RUN: OnceLock<Mutex<Option<Arc<RunDiagnostics>>>> = OnceLock::new();
 static RUN_REGISTRY: OnceLock<Mutex<HashMap<String, Weak<RunDiagnostics>>>> = OnceLock::new();
@@ -134,8 +135,48 @@ struct DiagnosticsMetrics {
     event_counts: BTreeMap<String, u64>,
     stage_duration_ms: BTreeMap<String, Vec<u64>>,
     timing_duration_ms: BTreeMap<String, Vec<u64>>,
+    stage_duration_dropped: BTreeMap<String, u64>,
+    timing_duration_dropped: BTreeMap<String, u64>,
     cache_hits: u64,
     cache_misses: u64,
+}
+
+impl DiagnosticsMetrics {
+    fn push_stage_duration(&mut self, key: String, value: u64) {
+        push_capped_sample(
+            &mut self.stage_duration_ms,
+            &mut self.stage_duration_dropped,
+            key,
+            value,
+        );
+    }
+
+    fn push_timing_duration(&mut self, key: String, value: u64) {
+        push_capped_sample(
+            &mut self.timing_duration_ms,
+            &mut self.timing_duration_dropped,
+            key,
+            value,
+        );
+    }
+}
+
+fn push_capped_sample(
+    histograms: &mut BTreeMap<String, Vec<u64>>,
+    dropped: &mut BTreeMap<String, u64>,
+    key: String,
+    value: u64,
+) {
+    let samples = histograms.entry(key.clone()).or_default();
+    if samples.len() < MAX_HISTOGRAM_SAMPLES {
+        samples.push(value);
+    } else {
+        *dropped.entry(key).or_default() += 1;
+    }
+}
+
+fn display_unclosed_key(key: &str) -> String {
+    key.replace('\0', "/")
 }
 
 impl RunDiagnostics {
@@ -331,18 +372,14 @@ impl RunDiagnostics {
             }
             "stage_done" => {
                 let elapsed_ms = locked(&self.stage_starts)
-                    .get(stage)
+                    .remove(stage)
                     .map(|t| t.elapsed().as_millis() as u64);
                 elapsed_ms.map_or_else(
                     || detail.map(String::from),
                     |ms| {
                         foreground_wait_ms = Some(ms);
                         locked(&self.stage_durations_ms).push((stage.to_owned(), ms));
-                        locked(&self.metrics)
-                            .stage_duration_ms
-                            .entry(stage.to_owned())
-                            .or_default()
-                            .push(ms);
+                        locked(&self.metrics).push_stage_duration(stage.to_owned(), ms);
                         let base = detail.unwrap_or("");
                         if base.is_empty() {
                             Some(format!("{{\"duration_ms\":{ms}}}"))
@@ -351,6 +388,10 @@ impl RunDiagnostics {
                         }
                     },
                 )
+            }
+            "stage_failed" | "stage_skipped" => {
+                let _ = locked(&self.stage_starts).remove(stage);
+                detail.map(String::from)
             }
             _ => detail.map(String::from),
         };
@@ -430,11 +471,7 @@ impl RunDiagnostics {
             .remove(&key)
             .map(|start| start.elapsed().as_millis() as u64);
         if let Some(ms) = elapsed_ms {
-            locked(&self.metrics)
-                .timing_duration_ms
-                .entry(format!("{stage}/{name}"))
-                .or_default()
-                .push(ms);
+            locked(&self.metrics).push_timing_duration(format!("{stage}/{name}"), ms);
         }
         let event_detail = timing_detail(name, elapsed_ms, detail);
         let span = self.current_stage_span(stage);
@@ -481,10 +518,13 @@ impl RunDiagnostics {
             .collect::<serde_json::Map<_, _>>()
             .into();
         let metrics = locked(&self.metrics).clone();
+        let unclosed = self.drain_unclosed_keys();
         let summary = serde_json::json!({
             "stage_durations_ms": stage_durations,
             "stage_duration_histograms_ms": metrics.stage_duration_ms,
             "timing_duration_histograms_ms": metrics.timing_duration_ms,
+            "stage_duration_dropped": metrics.stage_duration_dropped,
+            "timing_duration_dropped": metrics.timing_duration_dropped,
             "event_counts": metrics.event_counts,
             "cache_hits": metrics.cache_hits,
             "cache_misses": metrics.cache_misses,
@@ -497,7 +537,48 @@ impl RunDiagnostics {
             None,
             Some(&summary),
         );
+        if !unclosed.is_empty() {
+            crate::observability::emit_jsonl_event(
+                &self.run_id,
+                "diagnostics",
+                &format!("unclosed: {}", unclosed.join(", ")),
+                None,
+                None,
+            );
+        }
         self.flush_writer();
+    }
+
+    fn drain_unclosed_keys(&self) -> Vec<String> {
+        let mut unclosed = BTreeSet::new();
+        {
+            let mut starts = locked(&self.stage_starts);
+            unclosed.extend(
+                starts
+                    .keys()
+                    .map(|key| format!("stage:{}", display_unclosed_key(key))),
+            );
+            starts.clear();
+        }
+        {
+            let mut spans = locked(&self.stage_spans);
+            unclosed.extend(
+                spans
+                    .keys()
+                    .map(|key| format!("span:{}", display_unclosed_key(key))),
+            );
+            spans.clear();
+        }
+        {
+            let mut starts = locked(&self.timing_starts);
+            unclosed.extend(
+                starts
+                    .keys()
+                    .map(|key| format!("timing:{}", display_unclosed_key(key))),
+            );
+            starts.clear();
+        }
+        unclosed.into_iter().collect()
     }
 
     pub(crate) fn flush_writer(&self) {
