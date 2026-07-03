@@ -64,6 +64,10 @@ fn locked<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+fn should_flush_immediately(kind: &str, level: &str) -> bool {
+    level.eq_ignore_ascii_case("ERROR") || kind.ends_with("_failed")
+}
+
 #[derive(Debug)]
 pub struct RunDiagnostics {
     run_id: String,
@@ -95,6 +99,9 @@ impl Drop for ActiveRunGuard {
         let mut guard = active_slot()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(run) = guard.as_ref() {
+            run.flush_writer();
+        }
         *guard = self.previous.take();
         drop(guard);
         // Flush OTLP batches here, not at the call sites in `app::run`: the
@@ -487,6 +494,15 @@ impl RunDiagnostics {
             None,
             Some(&summary),
         );
+        self.flush_writer();
+    }
+
+    pub(crate) fn flush_writer(&self) {
+        let Some(writer) = &self.writer else {
+            return;
+        };
+        let mut guard = locked(writer);
+        drop(guard.flush());
     }
 
     pub fn debug(&self, category: &str, line: &str) -> bool {
@@ -629,8 +645,9 @@ impl RunDiagnostics {
         stage: Option<&str>,
         detail: Option<&str>,
         span_id: Option<&str>,
+        level: &str,
     ) {
-        self.record_direct(kind, message, stage, detail, span_id);
+        self.record_direct(kind, message, stage, detail, span_id, level);
     }
 
     /// Record an OpenTelemetry-internal diagnostic (an export failure, dropped
@@ -647,7 +664,7 @@ impl RunDiagnostics {
             .metrics
             .lock()
             .is_ok_and(|metrics| !metrics.event_counts.contains_key("otlp_internal"));
-        self.record_direct("otlp_internal", message, None, Some(level), None);
+        self.record_direct("otlp_internal", message, None, Some(level), None, level);
         if first {
             // Terminal-only notice: record_direct already wrote the file, and a
             // tracing emit here would re-enter the subscriber (this runs inside
@@ -667,6 +684,7 @@ impl RunDiagnostics {
         stage: Option<&str>,
         detail: Option<&str>,
         span_id: Option<&str>,
+        level: &str,
     ) {
         self.record_metrics(kind);
         // Counts above always update (they feed the run summary, which OTLP also
@@ -691,7 +709,12 @@ impl RunDiagnostics {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         drop(writeln!(guard, "{line}"));
-        drop(guard.flush());
+        if should_flush_immediately(kind, level) {
+            // Routine records flush when the run guard drops or the summary is
+            // emitted. Error-tier records force a flush so a crash immediately
+            // after the error still leaves evidence in the local fallback file.
+            drop(guard.flush());
+        }
     }
 
     fn record_metrics(&self, kind: &str) {

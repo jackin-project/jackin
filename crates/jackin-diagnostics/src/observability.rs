@@ -116,6 +116,7 @@ where
                 visitor.stage.as_deref(),
                 visitor.detail.as_deref(),
                 span_id.as_deref(),
+                metadata.level().as_str(),
             );
         }
     }

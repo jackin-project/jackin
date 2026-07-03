@@ -112,6 +112,7 @@ fn writes_jsonl_events() {
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
     run.compact("breadcrumb", "hello");
     assert!(run.debug("cmd", "docker ps"));
+    run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     assert!(contents.contains("\"run_id\""));
@@ -120,7 +121,7 @@ fn writes_jsonl_events() {
 }
 
 #[test]
-fn writes_error_jsonl_events() {
+fn error_events_flush_immediately() {
     init_test_tracing();
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
@@ -143,6 +144,7 @@ fn jsonl_events_include_current_span_id() {
     let span = tracing::info_span!("load_stage", stage = "build");
     let _entered = span.enter();
     run.compact("breadcrumb", "inside span");
+    run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     let event = contents
@@ -220,6 +222,7 @@ fn docker_build_step_event_records_structured_detail() {
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
     run.docker_build_step("12", "DONE", Some(76_500), false);
+    run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     let event = contents
@@ -243,6 +246,7 @@ fn stage_events_reuse_one_stage_span_id() {
     run.stage("stage_started", "derived image", "building", None);
     run.stage("stage_progress", "derived image", "still building", None);
     run.stage("stage_done", "derived image", "built", None);
+    run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     let span_ids = contents
@@ -271,6 +275,7 @@ fn debug_is_not_consumed_when_capture_is_disabled() {
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, false, "load").unwrap();
     assert!(!run.debug("cmd", "docker ps"));
+    run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     assert!(
@@ -521,6 +526,7 @@ fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
     set_rich_surface_active(true);
     emit_compact_line("warning", "jackin: warning: hidden by cockpit");
     set_rich_surface_active(false);
+    run.flush_writer();
 
     let jsonl = fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("\"kind\":\"warning\""), "{jsonl}");
@@ -545,6 +551,7 @@ fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
     set_host_screen_owned(true);
     emit_compact_line("operator_env", "jackin: hidden while host owns raw screen");
     set_host_screen_owned(false);
+    run.flush_writer();
 
     let jsonl = fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
