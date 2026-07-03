@@ -33,6 +33,7 @@ use crate::tui::op_picker::OpPickerState;
 
 pub use crate::mount_info_cache::MountInfoCache;
 pub use crate::tui::focus::MountScrollFocus;
+pub use crate::tui::model::SecretsPickerTarget;
 pub use crate::tui::screens::editor::model::{
     AuthRow as GenericAuthRow, CreateStep, EditorHoverTarget, EditorMode, EditorTab, ExitIntent,
     FieldFocus, FileBrowserTarget, SecretsEnterPlan, SecretsRow, SecretsScopeTag, TextInputTarget,

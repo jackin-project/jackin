@@ -18,7 +18,7 @@
 - **Depends on**: plans/002-tui-component-contract.md (recommended)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
-- **Execution status**: IN PROGRESS — current branch drift is the integrated #721 baseline; `ModalStack` now exists in `jackin-tui`, editor/settings lifecycle methods route through it, and settings env picker context now lives on `SettingsEnvModal` variants instead of stash fields. Remaining work is settings enum convergence plus editor/auth stash removal.
+- **Execution status**: IN PROGRESS — current branch drift is the integrated #721 baseline; `ModalStack` now exists in `jackin-tui`, editor/settings lifecycle methods route through it, and settings env plus editor picker context now lives on modal variants instead of stash fields. Remaining work is settings enum convergence plus the auth-form return stash.
 
 ## Why this matters
 

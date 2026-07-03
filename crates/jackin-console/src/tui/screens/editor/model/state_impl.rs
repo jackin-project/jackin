@@ -428,8 +428,7 @@ impl<
             secrets_expanded: BTreeSet::default(),
             auth_expanded: BTreeSet::default(),
             auth_selected_kind: None,
-            pending_picker_target: None,
-            pending_picker_value: None,
+            _env_value: PhantomData,
             workspace_mounts_scroll_x: 0,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
@@ -726,9 +725,6 @@ impl<
             ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
         stack.pop();
         (self.modal, self.modal_parents) = stack.into_parts();
-        if self.modal.is_none() {
-            self.drop_modal_scratch();
-        }
     }
 
     pub fn clear_modal_chain(&mut self) {
@@ -736,7 +732,6 @@ impl<
             ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
         stack.clear_chain();
         (self.modal, self.modal_parents) = stack.into_parts();
-        self.drop_modal_scratch();
     }
 
     pub fn dismiss_active_modal(&mut self) {
@@ -769,10 +764,6 @@ impl<
         self.modal
             .as_ref()
             .is_some_and(EditorRoleOverridePickerModal::is_role_override_picker)
-    }
-
-    fn drop_modal_scratch(&mut self) {
-        self.pending_picker_value = None;
     }
 
     #[must_use]

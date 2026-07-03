@@ -93,11 +93,11 @@ pub fn invalidate_cache_for_ref(
 pub fn poll_picker_loads(state: &mut crate::tui::state::ManagerState<'_>) -> bool {
     use crate::tui::state::{ManagerStage, Modal, SettingsAuthModal, SettingsEnvModal};
     let mut dirty = false;
-    if let Some(Modal::OpPicker { state }) = state.list_modal.as_mut() {
+    if let Some(Modal::OpPicker { state, .. }) = state.list_modal.as_mut() {
         dirty |= poll_op_picker_load(state);
     }
     if let ManagerStage::Editor(editor) = &mut state.stage
-        && let Some(Modal::OpPicker { state }) = editor.modal.as_mut()
+        && let Some(Modal::OpPicker { state, .. }) = editor.modal.as_mut()
     {
         dirty |= poll_op_picker_load(state);
     }

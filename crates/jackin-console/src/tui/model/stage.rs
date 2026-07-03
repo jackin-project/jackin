@@ -497,7 +497,7 @@ where
 {
     fn tick_active_animation(&mut self) -> bool {
         match self {
-            Self::OpPicker { state } => state.tick_active_animation(),
+            Self::OpPicker { state, .. } => state.tick_active_animation(),
             Self::TextInput { .. }
             | Self::FileBrowser { .. }
             | Self::MountDstChoice { .. }

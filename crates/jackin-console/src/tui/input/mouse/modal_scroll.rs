@@ -138,7 +138,7 @@ pub fn scroll_list_modal_selection(state: &mut ManagerState<'_>, delta: i16) -> 
             let _changed = state.scroll_selection(delta);
             true
         }
-        (ListModalScrollTarget::OpPicker, Modal::OpPicker { state }) => {
+        (ListModalScrollTarget::OpPicker, Modal::OpPicker { state, .. }) => {
             let _changed = state.scroll_selection(delta);
             true
         }
@@ -169,7 +169,7 @@ pub fn scroll_modal_selection(modal: Option<&mut Modal<'_>>, delta: i16) -> bool
             let _changed = state.scroll_selection(delta);
             true
         }
-        (SharedModalScrollTarget::OpPicker, Modal::OpPicker { state }) => {
+        (SharedModalScrollTarget::OpPicker, Modal::OpPicker { state, .. }) => {
             let _changed = state.scroll_selection(delta);
             true
         }

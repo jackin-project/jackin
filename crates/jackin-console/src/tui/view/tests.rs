@@ -1332,6 +1332,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
     let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
     editor.set_tab_bar_focused(false);
     editor.modal = Some(Modal::OpPicker {
+        secrets_target: None,
         state: Box::new(crate::tui::op_picker::OpPickerState::new()),
     });
     editor_op_picker.stage = ManagerStage::Editor(editor);
