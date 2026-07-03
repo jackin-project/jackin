@@ -1088,7 +1088,7 @@ impl Session {
         if !bytes.is_empty() {
             self.received_output = true;
         }
-        crate::cdebug!(
+        crate::cdebug_local!(
             "session feed_pty bytes: agent={:?} label={} len={} bytes={:02x?}",
             self.agent,
             self.label,

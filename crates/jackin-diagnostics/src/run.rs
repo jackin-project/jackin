@@ -44,10 +44,7 @@ mod tests;
 const RUN_DIR: &str = "diagnostics/runs";
 pub(crate) const MAX_RUN_ARTIFACTS: usize = 200;
 pub(crate) const MAX_RUN_ARTIFACT_AGE: Duration = Duration::from_hours(720);
-// Interim export bound until plan 005 moves crash evidence through the full
-// redaction/artifact-routing boundary.
 const CRASH_EVIDENCE_EXPORT_CAP: usize = 4096;
-const CRASH_EVIDENCE_TRUNCATED_PREFIX: &str = "(truncated to last 4096 bytes)\n";
 const MAX_HISTOGRAM_SAMPLES: usize = 1024;
 
 static ACTIVE_RUN: OnceLock<Mutex<Option<Arc<RunDiagnostics>>>> = OnceLock::new();
@@ -1134,15 +1131,7 @@ fn timing_detail(name: &str, duration_ms: Option<u64>, detail: Option<&str>) -> 
 }
 
 fn cap_crash_evidence_for_export(evidence: &str) -> String {
-    if evidence.len() <= CRASH_EVIDENCE_EXPORT_CAP {
-        return evidence.to_owned();
-    }
-
-    let mut start = evidence.len() - CRASH_EVIDENCE_EXPORT_CAP;
-    while !evidence.is_char_boundary(start) {
-        start += 1;
-    }
-    format!("{}{}", CRASH_EVIDENCE_TRUNCATED_PREFIX, &evidence[start..])
+    crate::redact::redact_and_cap(evidence, CRASH_EVIDENCE_EXPORT_CAP)
 }
 
 /// Owner-only mode for new diagnostics files. The JSONL firehose and the

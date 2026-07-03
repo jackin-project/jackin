@@ -1268,16 +1268,20 @@ fn emit_jsonl_event_with_level(
     error_type: Option<&str>,
     level: JsonlEventLevel,
 ) {
+    let message = crate::redact::redact_text(message);
+    let detail = detail.map(crate::redact::redact_text);
+    let detail = detail.as_ref().map(AsRef::as_ref);
+
     // The `--debug` firehose is DEBUG-severity so external exporters filter
     // it by level; the JSONL layer ignores levels and records everything.
     // The trailing format message becomes the OTLP log body — without it,
     // exported records carry attributes but an empty body.
     if kind == "debug" && !matches!(level, JsonlEventLevel::Error) {
-        emit_debug_jsonl_event(run_id, kind, message, stage, detail, error_type);
+        emit_debug_jsonl_event(run_id, kind, message.as_ref(), stage, detail, error_type);
     } else if matches!(level, JsonlEventLevel::Error) {
-        emit_error_jsonl_event(run_id, kind, message, stage, detail, error_type);
+        emit_error_jsonl_event(run_id, kind, message.as_ref(), stage, detail, error_type);
     } else {
-        emit_info_jsonl_event(run_id, kind, message, stage, detail, error_type);
+        emit_info_jsonl_event(run_id, kind, message.as_ref(), stage, detail, error_type);
     }
 }
 

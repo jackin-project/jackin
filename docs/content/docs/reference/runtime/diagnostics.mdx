@@ -142,7 +142,7 @@ The operator-facing setup lives in the [Run Telemetry guide](/guides/run-telemet
 
 ## Redaction
 
-`container_name` and `capsule_log` are paths and identifiers, not secrets. The docker log tail (`crash_evidence`) is freeform text from the container process; env-var values that the agent printed to stdout/stderr may appear there. No filtering is applied — the assumption is that the operator who runs `jackin load` trusts the agent output they requested.
+`container_name` and `capsule_log` are paths and identifiers, not secrets. Raw payload streams — PTY bytes, rendered frame bytes, and decoded keystroke/input events — stay in the local capsule `multiplexer.log` and are not bridged through host run JSONL or OTLP. Exported run text (`message`, `detail`, command stdout/stderr debug lines, docker exec command debug lines, and crash evidence) passes through the diagnostics redaction boundary before it reaches either JSONL or OTLP. The boundary masks secret-shaped names and token families (`token`, `secret`, `password`, `authorization`, GitHub/OpenAI/Slack/AWS/JWT-shaped tokens, PEM private keys, and long assigned base64/hex payloads), then caps crash evidence to the last 4096 bytes.
 
 ## See also
 

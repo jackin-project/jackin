@@ -44,6 +44,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rand = "0.10"
 anyhow = "1.0"
+regex = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # Inlined from `jackin_core::ansi_text` (A3) and `jackin_core::prune_output`

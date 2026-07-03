@@ -17,6 +17,7 @@ pub mod debug_log;
 pub mod logging;
 pub mod observability;
 pub mod operator_notice;
+pub mod redact;
 pub mod run;
 pub mod screen;
 pub mod summary;

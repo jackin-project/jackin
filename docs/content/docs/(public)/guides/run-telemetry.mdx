@@ -65,7 +65,9 @@ launches are recorded as timestamped events on the screen they happened on.
 
 - **All logs** — the same event stream as the diagnostics file: lifecycle
   breadcrumbs, container start/exit/crash events, and (in `--debug`) the
-  full firehose including every external `docker`/`git` command. The OTLP
+  external `docker`/`git` command firehose after diagnostics redaction. Raw
+  PTY bytes, rendered frame bytes, and decoded keystroke/input payloads stay
+  local to the capsule `multiplexer.log` and are not exported. The OTLP
   transport's own logs are filtered out, so the export is jackin❯ story, not
   its plumbing.
 - **Run state** — the end-of-run summary (stage durations, event counts,

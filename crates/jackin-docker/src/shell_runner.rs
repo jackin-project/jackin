@@ -90,25 +90,62 @@ fn record_subprocess_done(program: &str, started: Instant, status: ExitStatus) {
     );
 }
 
-/// Mask the value portion of `-e KEY=VALUE` / `--env KEY=VALUE` args.
+/// Mask the value portion of env/build args and token-shaped freeform args.
 pub fn redact_env_args(args: &[&str]) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(args.len());
     let mut i = 0;
     while i < args.len() {
         let arg = args[i];
-        out.push(arg.to_owned());
-        if (arg == "-e" || arg == "--env") && i + 1 < args.len() {
+        if (arg == "-e" || arg == "--env" || arg == "--build-arg") && i + 1 < args.len() {
+            out.push(arg.to_owned());
             let next = args[i + 1];
             match next.find('=') {
                 Some(eq) => out.push(format!("{}=<redacted>", &next[..eq])),
-                None => out.push(next.to_owned()),
+                None => out.push(redact_arg(next)),
             }
             i += 2;
+        } else if let Some(value) = arg.strip_prefix("--build-arg=") {
+            match value.find('=') {
+                Some(eq) => out.push(format!("--build-arg={}{}", &value[..=eq], "<redacted>")),
+                None => out.push(redact_arg(arg)),
+            }
+            i += 1;
         } else {
+            out.push(redact_arg(arg));
             i += 1;
         }
     }
     out
+}
+
+fn redact_arg(arg: &str) -> String {
+    if let Some((key, _value)) = arg.split_once('=')
+        && is_sensitive_arg_key(key)
+    {
+        return format!("{key}=<redacted>");
+    }
+    jackin_diagnostics::redact::redact_text(arg).into_owned()
+}
+
+fn is_sensitive_arg_key(key: &str) -> bool {
+    let key = key
+        .trim_start_matches('-')
+        .replace(['-', '_'], "")
+        .to_ascii_lowercase();
+    [
+        "authorization",
+        "bearer",
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "credential",
+        "apikey",
+        "accesskey",
+        "privatekey",
+    ]
+    .iter()
+    .any(|needle| key.contains(needle))
 }
 
 async fn read_process_pipe<R, W>(
@@ -421,9 +458,11 @@ impl ShellRunner {
         }
         let command = format!("{} {}", program, redact_env_args(args).join(" "));
         for line in String::from_utf8_lossy(stdout).lines() {
+            let line = jackin_diagnostics::redact::redact_text(line);
             jackin_diagnostics::active_debug("cmd.stdout", &format!("{command}: {line}"));
         }
         for line in String::from_utf8_lossy(stderr).lines() {
+            let line = jackin_diagnostics::redact::redact_text(line);
             jackin_diagnostics::active_debug("cmd.stderr", &format!("{command}: {line}"));
         }
     }

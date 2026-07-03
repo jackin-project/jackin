@@ -172,6 +172,45 @@ fn redact_env_args_handles_dash_e_at_end_with_no_value() {
     assert_eq!(redacted, vec!["run", "-e"]);
 }
 
+#[test]
+fn redact_env_args_masks_build_arg_value() {
+    let args = &[
+        "build",
+        "--build-arg",
+        "GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+        ".",
+    ];
+    let redacted = redact_env_args(args);
+    assert_eq!(
+        redacted,
+        vec!["build", "--build-arg", "GITHUB_TOKEN=<redacted>", "."],
+    );
+}
+
+#[test]
+fn redact_env_args_masks_inline_build_arg_value() {
+    let args = &[
+        "build",
+        "--build-arg=OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz0123456789",
+        ".",
+    ];
+    let redacted = redact_env_args(args);
+    assert_eq!(
+        redacted,
+        vec!["build", "--build-arg=OPENAI_API_KEY=<redacted>", "."],
+    );
+}
+
+#[test]
+fn redact_env_args_masks_token_shaped_freeform_args() {
+    let args = &[
+        "login",
+        "--password=sk-abcdefghijklmnopqrstuvwxyz0123456789",
+    ];
+    let redacted = redact_env_args(args);
+    assert_eq!(redacted, vec!["login", "--password=<redacted>"]);
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn capture_secret_omits_stderr_from_error_on_failure() {

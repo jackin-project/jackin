@@ -199,6 +199,19 @@ macro_rules! cdebug {
     }};
 }
 
+/// Debug-only payload telemetry that stays local to stderr + `multiplexer.log`.
+/// Use for PTY bytes, rendered frame bytes, keystrokes, and other raw operator
+/// or agent payload content that must not leave the machine through OTLP.
+#[macro_export]
+macro_rules! cdebug_local {
+    ($($arg:tt)*) => {{
+        if $crate::logging::debug_enabled() {
+            let line = format!("[jackin-capsule debug] {}", format_args!($($arg)*));
+            $crate::logging::write_line(&line);
+        }
+    }};
+}
+
 #[macro_export]
 macro_rules! cwarn {
     ($($arg:tt)*) => {{

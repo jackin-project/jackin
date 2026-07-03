@@ -605,7 +605,12 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String> {
-        jackin_diagnostics::debug_log!("docker", "exec {} {}", container, cmd.join(" "));
+        let redacted_cmd = cmd
+            .iter()
+            .map(|arg| jackin_diagnostics::redact::redact_text(arg).into_owned())
+            .collect::<Vec<_>>()
+            .join(" ");
+        jackin_diagnostics::debug_log!("docker", "exec {} {}", container, redacted_cmd);
         let exec = self
             .inner
             .create_exec(

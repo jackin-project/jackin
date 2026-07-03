@@ -12,18 +12,18 @@ The findings record that motivated the program remains at `docs/content/docs/ref
 | 002 OTLP target allowlist | Done | `942657a5e fix(diagnostics): allowlist OTLP export targets` |
 | 003 Truthful severity and error typing | Done | `14ad8c43b fix(diagnostics): export failures at error severity` |
 | 004 Route direct events through tracing | Done | `fe08cbf2d fix(diagnostics): route direct events through tracing` |
-| 005 Payload containment and redaction boundary | Blocked | STOP: `jackin-xtask pty-fixture` reads `session feed_pty bytes` from host run JSONL, so removing/localizing that payload stream would break fixture extraction without a replacement contract. |
-| 006 Structured event taxonomy | Blocked | Depends on the blocked 005 payload boundary. |
+| 005 Payload containment and redaction boundary | Done | `pty-fixture` now follows the `container_started.detail.capsule_log` pointer to raw `multiplexer.log` bytes; raw PTY/frame/input debug lines use local-only capsule logging, and exported diagnostics text is redacted/capped at the host boundary. |
+| 006 Structured event taxonomy | Pending | Unblocked by 005; still needs a scoped implementation pass. |
 | 007 Real launch spans and subprocess coverage | Done | `d45e9559c feat(diagnostics): make launch spans cover work` |
-| 008 Telemetry level and category controls | Blocked | Depends on blocked 005/006 telemetry structure. |
+| 008 Telemetry level and category controls | Pending | Depends on 006 taxonomy decisions. |
 | 009 Honest diagnostics-file operator contract | Done | `18c9e6622 fix(diagnostics): hide nonpersisted run paths` |
-| 010 `[telemetry]` config schema | Blocked | Depends on blocked 008 and its telemetry-level model. |
+| 010 `[telemetry]` config schema | Pending | Depends on 008 and its telemetry-level model. |
 | 011 Telemetry hygiene batch | Done | `a14c138ec`, `a93fe1e63`, `48cf955f5`, `fc1d01793`, `72d26c86d`, `afeb05713`, `f71b99bbf` |
-| 012 Domain metrics and turso reuse | Blocked | Depends on blocked 005/008. |
+| 012 Domain metrics and turso reuse | Pending | Depends on 008 and a scoped domain-metrics pass. |
 | 013 Docs truth sync | Done | `12efe33df docs: sync telemetry diagnostics contract` |
 
-## Remaining Blocker
+## Remaining Items
 
-The open blocker is the fixture extraction contract: `crates/jackin-xtask/src/pty_fixture.rs` consumes raw `session feed_pty bytes` records from host run JSONL. Plan 005 cannot safely move PTY/frame/keystroke payloads to local-only capsule logs until fixture extraction has an alternate source, likely the capsule `multiplexer.log` path already recorded in run diagnostics.
+The fixture extraction blocker was removed by teaching `crates/jackin-xtask/src/pty_fixture.rs` to read raw `session feed_pty bytes` records from the capsule `multiplexer.log` path already recorded in host run diagnostics. Raw payload debug lines remain available locally for fixture replay, but are no longer bridged into host JSONL or OTLP.
 
-Because 006, 008, 010, and 012 were designed to build on 005's payload boundary, they are intentionally not implemented in this PR. Treat any future continuation as a new scoped design starting from the fixture-contract blocker, not by reviving the retired step-by-step plans.
+Plans 006, 008, 010, and 012 remain pending and should be implemented on this same branch/PR if the telemetry program continues. Treat this archive as the status source of truth; do not revive the retired step-by-step plan files.

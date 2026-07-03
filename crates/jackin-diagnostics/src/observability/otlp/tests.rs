@@ -228,6 +228,26 @@ fn exported_log_carries_body_and_attributes() {
 }
 
 #[test]
+fn exported_log_body_and_detail_are_redacted() {
+    let logs = exported_logs!(false, "run1", || {
+        crate::observability::emit_jsonl_event(
+            "run1",
+            "compact_kind",
+            "token=ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+            Some("plan"),
+            Some("authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789"),
+        );
+    });
+
+    assert_eq!(logs.len(), 1);
+    assert_eq!(log_body(&logs[0].record).as_deref(), Some("<redacted>"));
+    assert_eq!(
+        log_attr(&logs[0].record, "detail").as_deref(),
+        Some("<redacted>")
+    );
+}
+
+#[test]
 fn exported_error_log_is_error_severity() {
     let logs = exported_logs!(false, "run1", || {
         crate::observability::emit_jsonl_error("run1", "failure", "boom", None, None);
@@ -548,12 +568,16 @@ fn direct_diagnostics_events_reach_otlp() {
 }
 
 #[test]
-fn crash_evidence_is_capped() {
+fn crash_evidence_is_redacted_and_capped() {
     let logs = exported_logs!(false, "run1", || {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
-        let evidence = format!("prefix-{}{}", "x".repeat(10 * 1024), "tail");
+        let evidence = format!(
+            "token=ghp_abcdefghijklmnopqrstuvwxyz0123456789 prefix-{}{}",
+            "x".repeat(10 * 1024),
+            "tail"
+        );
 
         run.container_exited("jk-test", 1, false, "/capsule.log", Some(&evidence));
     });
@@ -565,6 +589,7 @@ fn crash_evidence_is_capped() {
     let detail = log_attr(&crash_log.record, "detail").expect("capped evidence detail");
 
     assert!(detail.starts_with("(truncated to last 4096 bytes)\n"));
+    assert!(!detail.contains("ghp_"));
     assert!(detail.ends_with("tail"));
     assert!(detail.len() <= "(truncated to last 4096 bytes)\n".len() + 4096);
 }
