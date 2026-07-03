@@ -404,6 +404,80 @@ fn render_console_frame(
     Ok(())
 }
 
+fn sync_screen_trace(
+    state: &ConsoleState,
+    active_screen: &mut Option<(jackin_diagnostics::Screen, jackin_diagnostics::ScreenGuard)>,
+) {
+    let screen = screen_of(state);
+    if active_screen.as_ref().map(|(s, _)| *s) != Some(screen) {
+        let from = active_screen.as_ref().map(|(s, _)| s.as_str());
+        *active_screen = Some((screen, jackin_diagnostics::enter_screen(screen)));
+        if let Some(from) = from {
+            jackin_diagnostics::record_action("navigate", Some(from));
+        }
+    }
+}
+
+fn drain_background_results(
+    state: &mut ConsoleState,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    cwd: &std::path::Path,
+    needs_redraw: &mut bool,
+) {
+    // Drain worker results before render so a fresh result lands this frame
+    // instead of a stale Loading one.
+    if let ConsoleStage::Manager(ms) = &mut state.stage {
+        let messages = crate::console::effects::poll_background_messages(ms, config, paths);
+        for message in messages {
+            *needs_redraw |=
+                crate::console::effects::apply_background_event(ms, config, paths, cwd, message);
+        }
+    }
+}
+
+async fn next_event_batch(
+    event_stream: &mut crossterm::event::EventStream,
+    animation_tick: &mut tokio::time::Interval,
+    state: &mut ConsoleState,
+    needs_redraw: &mut bool,
+) -> anyhow::Result<Vec<crossterm::event::Event>> {
+    use futures_util::{FutureExt as _, StreamExt as _};
+
+    // Async event wait: yield to the Tokio reactor until either a terminal
+    // event arrives or the animation tick fires. This frees the reactor between
+    // events so background tasks can progress instead of blocking for up to
+    // TICK_MS.
+    let mut tick_fired = false;
+    let first = tokio::select! {
+        event = event_stream.next() => event.map(|r| r.map_err(anyhow::Error::from)),
+        _ = animation_tick.tick() => {
+            tick_fired = true;
+            None
+        },
+    };
+    if tick_fired && let ConsoleStage::Manager(ms) = &mut state.stage {
+        *needs_redraw |= ms.tick_active_animation();
+    }
+
+    // Collect the first event then drain any stream-ready events non-blocking
+    // (same batch-up-to-256 behavior as the previous poll loop, so a burst of
+    // key/mouse events still coalesces into one render rather than one render
+    // per event).
+    let mut event_batch: Vec<crossterm::event::Event> = Vec::new();
+    if let Some(first_event) = first {
+        event_batch.push(first_event?);
+        while event_batch.len() < MAX_EVENTS_PER_TICK {
+            let Some(Some(event)) = event_stream.next().now_or_never() else {
+                break;
+            };
+            event_batch.push(event?);
+        }
+    }
+    *needs_redraw |= !event_batch.is_empty();
+    Ok(event_batch)
+}
+
 async fn handle_key_event<H, R>(
     state: &mut ConsoleState,
     config: &mut AppConfig,
@@ -726,7 +800,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     use std::time::Duration;
 
     use crossterm::event::{Event, KeyCode, KeyEventKind};
-    use futures_util::{FutureExt as _, StreamExt as _};
 
     let parent_session = options.parent_session;
     let startup_error_pending = options.startup_error.is_some();
@@ -774,18 +847,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         None;
 
     let result = 'main: loop {
-        // Sync the screen trace to the visible stage. On a change, the old
-        // screen span ends and a fresh linked trace starts for the new one.
-        {
-            let screen = screen_of(&state);
-            if active_screen.as_ref().map(|(s, _)| *s) != Some(screen) {
-                let from = active_screen.as_ref().map(|(s, _)| s.as_str());
-                active_screen = Some((screen, jackin_diagnostics::enter_screen(screen)));
-                if let Some(from) = from {
-                    jackin_diagnostics::record_action("navigate", Some(from));
-                }
-            }
-        }
+        sync_screen_trace(&state, &mut active_screen);
 
         if run_token_generate_suspended(
             &mut state,
@@ -799,22 +861,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             continue;
         }
 
-        // Drain worker results before render so a fresh result lands
-        // this frame instead of a stale Loading one.
-        if let ConsoleStage::Manager(ms) = &mut state.stage {
-            let messages =
-                crate::console::effects::poll_background_messages(ms, &mut config, paths);
-            for message in messages {
-                needs_redraw |= crate::console::effects::apply_background_event(
-                    ms,
-                    &mut config,
-                    paths,
-                    cwd,
-                    message,
-                );
-            }
-        }
-
+        drain_background_results(&mut state, &mut config, paths, cwd, &mut needs_redraw);
         render_console_frame(
             &mut state,
             &config,
@@ -827,36 +874,13 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         )?;
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
 
-        // Async event wait: yield to the Tokio reactor until either a
-        // terminal event arrives or the animation tick fires. This frees
-        // the reactor between events so background tasks can progress
-        // instead of blocking for up to TICK_MS.
-        let mut tick_fired = false;
-        let first = tokio::select! {
-            event = event_stream.next() => event.map(|r| r.map_err(anyhow::Error::from)),
-            _ = animation_tick.tick() => {
-                tick_fired = true;
-                None
-            },
-        };
-        if tick_fired && let ConsoleStage::Manager(ms) = &mut state.stage {
-            needs_redraw |= ms.tick_active_animation();
-        }
-        // Collect the first event then drain any stream-ready events
-        // non-blocking (same batch-up-to-256 behavior as the previous
-        // poll loop, so a burst of key/mouse events still coalesces into
-        // one render rather than one render per event).
-        let mut event_batch: Vec<Event> = Vec::new();
-        if let Some(first_event) = first {
-            event_batch.push(first_event?);
-            while event_batch.len() < MAX_EVENTS_PER_TICK {
-                let Some(Some(event)) = event_stream.next().now_or_never() else {
-                    break;
-                };
-                event_batch.push(event?);
-            }
-        }
-        needs_redraw |= !event_batch.is_empty();
+        let event_batch = next_event_batch(
+            &mut event_stream,
+            &mut animation_tick,
+            &mut state,
+            &mut needs_redraw,
+        )
+        .await?;
         for event in event_batch {
             match event {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
