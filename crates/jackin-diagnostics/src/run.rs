@@ -315,10 +315,7 @@ impl RunDiagnostics {
                     starts.insert(stage.to_owned(), Instant::now());
                 }
                 if let Ok(mut spans) = self.stage_spans.lock() {
-                    spans.insert(
-                        stage.to_owned(),
-                        tracing::info_span!("launch_stage", stage = stage),
-                    );
+                    spans.insert(stage.to_owned(), launch_stage_span(stage));
                 }
                 detail.map(String::from)
             }
@@ -353,6 +350,10 @@ impl RunDiagnostics {
             _ => detail.map(String::from),
         };
         let span = self.stage_span_for(kind, stage);
+        if kind == "stage_failed" {
+            span.record("otel.status_code", "ERROR");
+            span.record("otel.status_description", message);
+        }
         let _entered = span.enter();
         if kind.ends_with("_failed") {
             crate::observability::emit_jsonl_error_typed(
@@ -409,6 +410,8 @@ impl RunDiagnostics {
             starts.insert(key, Instant::now());
         }
         let event_detail = timing_detail(name, None, detail);
+        let span = self.current_stage_span(stage);
+        let _entered = span.as_ref().map(tracing::Span::enter);
         crate::observability::emit_jsonl_event(
             &self.run_id,
             "timing_started",
@@ -434,6 +437,8 @@ impl RunDiagnostics {
                 .push(ms);
         }
         let event_detail = timing_detail(name, elapsed_ms, detail);
+        let span = self.current_stage_span(stage);
+        let _entered = span.as_ref().map(tracing::Span::enter);
         crate::observability::emit_jsonl_event(
             &self.run_id,
             "timing_done",
@@ -446,6 +451,13 @@ impl RunDiagnostics {
         }
     }
 
+    fn current_stage_span(&self, stage: &str) -> Option<tracing::Span> {
+        self.stage_spans
+            .lock()
+            .ok()
+            .and_then(|spans| spans.get(stage).cloned())
+    }
+
     fn stage_span_for(&self, kind: &str, stage: &str) -> tracing::Span {
         let mut spans = self
             .stage_spans
@@ -454,11 +466,11 @@ impl RunDiagnostics {
         if matches!(kind, "stage_done" | "stage_failed" | "stage_skipped") {
             spans
                 .remove(stage)
-                .unwrap_or_else(|| tracing::info_span!("launch_stage", stage = stage))
+                .unwrap_or_else(|| launch_stage_span(stage))
         } else {
             spans
                 .entry(stage.to_owned())
-                .or_insert_with(|| tracing::info_span!("launch_stage", stage = stage))
+                .or_insert_with(|| launch_stage_span(stage))
                 .clone()
         }
     }
@@ -617,6 +629,22 @@ impl RunDiagnostics {
         );
     }
 
+    pub fn subprocess_done(&self, program: &str, elapsed_ms: u64, exit_code: Option<i32>) {
+        let detail = serde_json::json!({
+            "program": program,
+            "elapsed_ms": elapsed_ms,
+            "exit_code": exit_code,
+        })
+        .to_string();
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
+            "subprocess_done",
+            "subprocess exited",
+            Some(program),
+            Some(&detail),
+        );
+    }
+
     pub(crate) fn record_from_layer(
         &self,
         kind: &str,
@@ -716,6 +744,12 @@ pub fn active_timing_started(stage: &str, name: &str, detail: Option<&str>) {
 pub fn active_timing_done(stage: &str, name: &str, detail: Option<&str>) {
     if let Some(run) = active_run() {
         run.timing_done(stage, name, detail);
+    }
+}
+
+pub fn active_subprocess_done(program: &str, elapsed_ms: u64, exit_code: Option<i32>) {
+    if let Some(run) = active_run() {
+        run.subprocess_done(program, elapsed_ms, exit_code);
     }
 }
 
@@ -951,6 +985,32 @@ fn now_ms() -> u128 {
 
 fn timing_key(stage: &str, name: &str) -> String {
     format!("{stage}\0{name}")
+}
+
+fn launch_stage_span(stage: &str) -> tracing::Span {
+    let otel_name = format!("launch.{}", normalize_stage_name(stage));
+    tracing::info_span!(
+        "launch_stage",
+        stage = stage,
+        otel.name = otel_name.as_str(),
+        otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
+    )
+}
+
+pub(crate) fn normalize_stage_name(stage: &str) -> String {
+    let mut normalized = String::with_capacity(stage.len());
+    let mut last_was_separator = false;
+    for ch in stage.chars() {
+        if ch.is_ascii_alphanumeric() {
+            normalized.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if (ch.is_whitespace() || ch == '-' || ch == '_') && !last_was_separator {
+            normalized.push('_');
+            last_was_separator = true;
+        }
+    }
+    normalized.trim_matches('_').to_owned()
 }
 
 /// A `slow_foreground_wait` diagnostic ready to emit. Named fields instead of a

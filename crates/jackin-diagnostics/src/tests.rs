@@ -9,8 +9,8 @@ use jackin_core::JackinPaths;
 use crate::logging::{DEBUG_BUFFER_ACTIVE, drain_debug_buffer, should_tee_debug_to_stderr};
 use crate::run::{
     MAX_RUN_ARTIFACT_AGE, MAX_RUN_ARTIFACTS, RunDiagnostics,
-    external_run_id_from_resource_attributes, flag_is_truthy, mint_run_id, prune_old_runs_in_dir,
-    prune_runs_preserving, run_dir,
+    external_run_id_from_resource_attributes, flag_is_truthy, mint_run_id, normalize_stage_name,
+    prune_old_runs_in_dir, prune_runs_preserving, run_dir,
 };
 use crate::summary::summarize_reader;
 use crate::terminal::{
@@ -92,6 +92,16 @@ fn flag_is_truthy_vocabulary() {
     for falsy in ["0", "false", "no", "off", "", "  ", "2", "enable"] {
         assert!(!flag_is_truthy(falsy), "{falsy:?} should be falsy");
     }
+}
+
+#[test]
+fn normalize_stage_name_is_export_safe() {
+    assert_eq!(normalize_stage_name("derived image"), "derived_image");
+    assert_eq!(normalize_stage_name("Sidecar"), "sidecar");
+    assert_eq!(
+        normalize_stage_name("role-state prepare"),
+        "role_state_prepare"
+    );
 }
 
 #[test]

@@ -1,6 +1,7 @@
 use jackin_core::JackinPaths;
 use opentelemetry::Key;
 use opentelemetry::logs::{AnyValue, Severity};
+use opentelemetry::trace::Status;
 use opentelemetry_sdk::logs::SdkLogRecord;
 use opentelemetry_sdk::trace::SpanData;
 
@@ -267,7 +268,7 @@ fn absent_stage_and_detail_are_not_exported_as_sentinels() {
 }
 
 #[test]
-fn launch_stage_span_name_is_constant() {
+fn manual_launch_stage_span_name_stays_constant_without_otel_name() {
     let spans = exported_spans(false, "run1", || {
         let span = tracing::info_span!("launch_stage", stage = "derived image");
         drop(span.enter());
@@ -277,6 +278,103 @@ fn launch_stage_span_name_is_constant() {
     let span = &spans[0];
     assert_eq!(span.name.as_ref(), "launch_stage");
     assert_eq!(span_attr(span, "stage").as_deref(), Some("derived image"));
+}
+
+#[test]
+fn stage_span_duration_covers_stage() {
+    let spans = exported_spans(false, "run1", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
+        run.stage("stage_started", "derived image", "building", None);
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "test needs wall time between stage start and end to assert exported duration"
+        )]
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        run.stage("stage_done", "derived image", "built", None);
+    });
+
+    let span = spans
+        .iter()
+        .find(|span| span_attr(span, "stage").as_deref() == Some("derived image"))
+        .expect("derived image stage span exported");
+    let duration = span.end_time.duration_since(span.start_time).unwrap();
+    assert!(
+        duration >= std::time::Duration::from_millis(50),
+        "stage span duration should cover stage work, got {duration:?}"
+    );
+}
+
+#[test]
+fn stage_span_exported_name_is_stage_specific() {
+    let spans = exported_spans(false, "run1", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
+        run.stage("stage_started", "derived image", "building", None);
+        run.stage("stage_done", "derived image", "built", None);
+    });
+
+    assert!(
+        spans
+            .iter()
+            .any(|span| span.name.as_ref() == "launch.derived_image"),
+        "stage span should export under dynamic otel.name: {spans:#?}"
+    );
+}
+
+#[test]
+fn failed_stage_span_has_error_status() {
+    let spans = exported_spans(false, "run1", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
+        run.stage("stage_started", "derived image", "building", None);
+        run.stage("stage_failed", "derived image", "build failed", None);
+    });
+
+    let span = spans
+        .iter()
+        .find(|span| span.name.as_ref() == "launch.derived_image")
+        .expect("failed stage span exported");
+    assert_eq!(
+        span.status,
+        Status::Error {
+            description: "build failed".into()
+        }
+    );
+}
+
+#[test]
+fn timing_event_inherits_stage_span_context() {
+    let export = export_after(false, "run1", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
+        run.stage("stage_started", "derived image", "building", None);
+        run.timing_started("derived image", "docker_build", None);
+        run.timing_done("derived image", "docker_build", None);
+        run.stage("stage_done", "derived image", "built", None);
+    });
+    let spans = export.spans.get_finished_spans().unwrap();
+    let logs = export.logs.get_emitted_logs().unwrap();
+
+    let span = spans
+        .iter()
+        .find(|span| span.name.as_ref() == "launch.derived_image")
+        .expect("stage span exported");
+    let timing = logs
+        .iter()
+        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("timing_done"))
+        .expect("timing_done log exported");
+    let context = timing
+        .record
+        .trace_context()
+        .expect("timing log should carry trace context");
+
+    assert_eq!(context.span_id, span.span_context.span_id());
+    assert_eq!(context.trace_id, span.span_context.trace_id());
 }
 
 #[test]
@@ -314,6 +412,26 @@ fn spans_from_workspace_crates_still_export() {
 
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].name.as_ref(), "launch_stage");
+}
+
+#[test]
+fn subprocess_done_carries_duration_and_exit() {
+    let logs = exported_logs!(false, "run1", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
+        run.subprocess_done("git", 42, Some(0));
+    });
+
+    let log = logs
+        .iter()
+        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("subprocess_done"))
+        .expect("subprocess_done log exported");
+    assert_eq!(log_attr(&log.record, "stage").as_deref(), Some("git"));
+    let detail = log_attr(&log.record, "detail").expect("subprocess detail");
+    assert!(detail.contains("\"program\":\"git\""), "{detail}");
+    assert!(detail.contains("\"elapsed_ms\":42"), "{detail}");
+    assert!(detail.contains("\"exit_code\":0"), "{detail}");
 }
 
 #[test]

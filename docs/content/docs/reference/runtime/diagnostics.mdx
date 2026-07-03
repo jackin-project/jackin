@@ -116,9 +116,13 @@ The export filter is an allowlist: the global default is `off`, and only jackin�
 
 All attribute keys live in `otel_keys` in <RepoFile path="crates/jackin-diagnostics/src/observability.rs">crates/jackin-diagnostics/src/observability.rs</RepoFile> — one source of truth. Every key is dotted, never underscored: jackin❯ keys are `jackin.component`, `jackin.screen.name`, `jackin.workspace`, `jackin.agent.selected`, …; the run id uses the `parallax.run.id` key (Parallax is the reference backend, which promotes it to a queryable column — `parallax logs --run <id>`); `service.*` and `session.*` reuse the OpenTelemetry standard namespaces. There is no separate `jackin.run.id` — one dotted key groups the run. The OTLP resource carries `service.name=jackin`, `service.version`, `jackin.component=host`, and `parallax.run.id` — omitted when a wrapper already supplies it via `OTEL_RESOURCE_ATTRIBUTES` (then the wrapper's value wins and the env detector provides it). Because the run id must be on the resource, `RunDiagnostics::start` mints it **before** installing the subscriber.
 
-### Per-screen traces and span links
+### Trace shape
 
 `screen.rs` (<RepoFile path="crates/jackin-diagnostics/src/screen.rs">crates/jackin-diagnostics/src/screen.rs</RepoFile>) models each TUI screen as its own trace. `enter_screen` starts a span, detaches it into a fresh trace with `set_parent(Context::new())`, and `add_link`s the previous screen's `SpanContext` — so screens are separate but navigable. The current screen is a thread-local (sound: host TUI navigation is single-threaded); `carry_link_forward` snapshots it across the `run_console` return so the launch trace links to the list it started from. `launch_trace` enters the `launch` screen, tags workspace/agent/provider, and `future.instrument`s `load_role` so the existing `launch_stage` spans re-root under the launch trace with no change to `jackin-launch-tui`.
+
+Launch stages export as child spans named `launch.<stage>` (for example, `launch.derived_image`) via `otel.name`, while keeping the internal tracing span name constant. The span lifetime runs from `stage_started` through `stage_done` / `stage_failed`, so the waterfall duration reflects the real stage wall time. Failed stages set OTLP span status to ERROR with the failure message. Nested timing events such as credential probes and Docker build timings enter the current stage span, so exported logs carry the matching span context.
+
+External commands emit `subprocess_done` events with `program`, `elapsed_ms`, and `exit_code` in `detail`; argv stays out of this event. Git-pull batches, cleanup paths, and cancel cleanup also emit timing / compact outcome records so slow or failed repair paths are visible in the same run.
 
 ### Cross-process propagation
 

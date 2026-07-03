@@ -32,9 +32,9 @@ pub use observability::{
     unsupported_otlp_protocol,
 };
 pub use run::{
-    ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_timing_done,
-    active_timing_started, install_host_panic_hook, mint_session_id, prune_all_runs,
-    prune_old_runs,
+    ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_subprocess_done,
+    active_timing_done, active_timing_started, install_host_panic_hook, mint_session_id,
+    prune_all_runs, prune_old_runs,
 };
 pub use screen::{
     Screen, ScreenGuard, carry_link_forward, current_traceparent, enter_screen, launch_trace,

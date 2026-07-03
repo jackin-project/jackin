@@ -8,6 +8,8 @@
 //! parsing Docker output formats (those live in the callers).
 
 use std::path::Path;
+use std::process::ExitStatus;
+use std::time::Instant;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
@@ -78,6 +80,14 @@ impl ShellRunner {
 
 fn should_null_stdin(opts: &RunOptions) -> bool {
     opts.null_stdin || (!opts.interactive && jackin_diagnostics::rich_terminal_owned())
+}
+
+fn record_subprocess_done(program: &str, started: Instant, status: ExitStatus) {
+    jackin_diagnostics::active_subprocess_done(
+        program,
+        started.elapsed().as_millis() as u64,
+        status.code(),
+    );
 }
 
 /// Mask the value portion of `-e KEY=VALUE` / `--env KEY=VALUE` args.
@@ -198,7 +208,9 @@ impl CommandRunner for ShellRunner {
             // long-lived session — so inherit stdio directly and never capture.
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
+            let started = Instant::now();
             let status = cmd.status().await?;
+            record_subprocess_done(program, started, status);
             anyhow::ensure!(
                 status.success(),
                 "command failed: {} {}",
@@ -208,11 +220,13 @@ impl CommandRunner for ShellRunner {
         } else if opts.quiet {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
+            let started = Instant::now();
             let status = cmd
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .status()
                 .await?;
+            record_subprocess_done(program, started, status);
             anyhow::ensure!(
                 status.success(),
                 "command failed: {} {}",
@@ -236,7 +250,9 @@ impl CommandRunner for ShellRunner {
         } else {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
+            let started = Instant::now();
             let status = cmd.status().await?;
+            record_subprocess_done(program, started, status);
             anyhow::ensure!(
                 status.success(),
                 "command failed: {} {}",
@@ -284,6 +300,7 @@ impl ShellRunner {
         if opts.capture_stderr {
             cmd.stderr(std::process::Stdio::piped());
         }
+        let started = Instant::now();
         let mut child = cmd.spawn()?;
         let stdout_pipe = child.stdout.take();
         let stderr_pipe = child.stderr.take();
@@ -325,6 +342,7 @@ impl ShellRunner {
         let stdout_buf = stdout_result?;
         let stderr_buf = stderr_result?;
         let status = status?;
+        record_subprocess_done(program, started, status);
         self.log_captured_output(program, args, &stdout_buf, &stderr_buf);
         let command = format!("{} {}", program, redact_env_args(args).join(" "));
         if opts.tee_to_build_log
@@ -425,7 +443,9 @@ impl ShellRunner {
         if jackin_diagnostics::rich_terminal_owned() {
             command.stdin(std::process::Stdio::null());
         }
+        let started = Instant::now();
         let output = command.output().await?;
+        record_subprocess_done(program, started, output.status);
         if !output.status.success() {
             match mode {
                 CaptureMode::Secret => {
