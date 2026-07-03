@@ -17,6 +17,7 @@
     "12-implementation-comparison",
     "13-reuse-surfaces-and-deltas",
     "14-caveman-ecosystem",
-    "15-verification-pass-and-extended-matrix"
+    "15-verification-pass-and-extended-matrix",
+    "16-global-comparison"
   ]
 }
