@@ -34,6 +34,9 @@ and metric carries the run id of the invocation that produced it (resource
 attribute `parallax.run.id`, which a backend such as Parallax promotes to a
 queryable column). One run id is the thread that ties the whole invocation
 together — even though, as below, it is split across several traces on purpose.
+Diagnostics log records also carry `event.name`, `event.outcome`,
+`jackin.component`, `jackin.operation`, and `jackin.category`, so backend
+queries do not need to parse console prefixes or freeform bodies.
 
 ### Each screen is its own trace, linked to the next
 

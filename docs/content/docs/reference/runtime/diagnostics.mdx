@@ -140,6 +140,16 @@ The operator-facing setup lives in the [Run Telemetry guide](/guides/run-telemet
 
 **The firehose never reaches the operator's screen, in either the full-screen TUI or plain CLI commands.** It flows only to the active sink (the run JSONL and/or OTLP export); `--debug` raises the captured detail level, it does not stream events to stderr. This is why `init_tracing` attaches no `fmt` layer: a layer writing to stdout/stderr would corrupt the alternate screen the console / launch cockpit owns, and would clutter ordinary CLI output. Operator-visible lifecycle lines are a separate, deliberately compact surface (`emit_compact_line`): printed to stderr on a plain CLI, but when a rich surface owns the screen they are *deferred* into the debug buffer and flushed at teardown rather than dropped — so a notice such as a failed export reaches the operator (and any wrapping parent process) without spewing over the cockpit, and without depending on the optional run file.
 
+## Event taxonomy
+
+Every diagnostics event keeps the compatibility fields `kind`, `message`, `stage`, `detail`, and `error_type` where applicable, and also carries stable taxonomy fields in both JSONL and OTLP:
+
+- `event.name` is the dotted event name derived from `kind`, such as `container.started`, `stage.done`, or `docker.build.step`.
+- `event.outcome` is one of the stable outcome classes currently derived from severity and event kind (`success`, `failure`, `skipped`, `started`, or `cache_miss`).
+- `jackin.component` identifies the emitter (`host` or `capsule`).
+- `jackin.operation` names the operation grouping used for filtering and waterfall correlation.
+- `jackin.category` is a low-cardinality category such as `docker`, `launch`, `process`, `telemetry`, or a debug category.
+
 ## Redaction
 
 `container_name` and `capsule_log` are paths and identifiers, not secrets. Raw payload streams — PTY bytes, rendered frame bytes, and decoded keystroke/input events — stay in the local capsule `multiplexer.log` and are not bridged through host run JSONL or OTLP. Exported run text (`message`, `detail`, command stdout/stderr debug lines, docker exec command debug lines, and crash evidence) passes through the diagnostics redaction boundary before it reaches either JSONL or OTLP. The boundary masks secret-shaped names and token families (`token`, `secret`, `password`, `authorization`, GitHub/OpenAI/Slack/AWS/JWT-shaped tokens, PEM private keys, and long assigned base64/hex payloads), then caps crash evidence to the last 4096 bytes.

@@ -223,6 +223,26 @@ fn exported_log_carries_body_and_attributes() {
     assert_eq!(log_attr(&log.record, "stage").as_deref(), Some("plan"));
     assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("d"));
     assert_eq!(log_attr(&log.record, "run_id").as_deref(), Some("run1"));
+    assert_eq!(
+        log_attr(&log.record, "event.name").as_deref(),
+        Some("compact.kind")
+    );
+    assert_eq!(
+        log_attr(&log.record, "event.outcome").as_deref(),
+        Some("success")
+    );
+    assert_eq!(
+        log_attr(&log.record, "jackin.component").as_deref(),
+        Some("host")
+    );
+    assert_eq!(
+        log_attr(&log.record, "jackin.operation").as_deref(),
+        Some("compact.kind")
+    );
+    assert_eq!(
+        log_attr(&log.record, "jackin.category").as_deref(),
+        Some("compact")
+    );
     assert_eq!(log_attr(&log.record, "diagnostics_message"), None);
     assert_eq!(log_attr(&log.record, "jackin_jsonl"), None);
 }

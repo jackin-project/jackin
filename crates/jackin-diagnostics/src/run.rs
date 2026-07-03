@@ -120,6 +120,16 @@ struct JsonEvent<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     span_id: Option<&'a str>,
     kind: &'a str,
+    #[serde(rename = "event.name")]
+    event_name: &'a str,
+    #[serde(rename = "event.outcome")]
+    event_outcome: &'a str,
+    #[serde(rename = "jackin.component")]
+    jackin_component: &'a str,
+    #[serde(rename = "jackin.operation")]
+    jackin_operation: &'a str,
+    #[serde(rename = "jackin.category")]
+    jackin_category: &'a str,
     message: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     stage: Option<&'a str>,
@@ -770,12 +780,19 @@ impl RunDiagnostics {
         let Some(writer) = &self.writer else {
             return;
         };
+        let taxonomy =
+            crate::observability::event_taxonomy(kind, message, stage, detail, None, level);
         let event = JsonEvent {
             ts_ms: now_ms(),
             run_id: &self.run_id,
             trace_id: &self.run_id,
             span_id,
             kind,
+            event_name: &taxonomy.event_name,
+            event_outcome: taxonomy.outcome,
+            jackin_component: taxonomy.component,
+            jackin_operation: &taxonomy.operation,
+            jackin_category: &taxonomy.category,
             message,
             stage,
             detail,

@@ -1259,6 +1259,113 @@ enum JsonlEventLevel {
     Error,
 }
 
+pub(crate) struct EventTaxonomy {
+    pub event_name: String,
+    pub outcome: &'static str,
+    pub component: &'static str,
+    pub operation: String,
+    pub category: String,
+}
+
+pub(crate) fn event_taxonomy(
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    error_type: Option<&str>,
+    level: &str,
+) -> EventTaxonomy {
+    let event_name = kind.replace('_', ".");
+    EventTaxonomy {
+        operation: operation_for(kind, stage, &event_name),
+        category: category_for(kind, stage, detail),
+        outcome: outcome_for(kind, error_type, level),
+        component: component_for(kind, message),
+        event_name,
+    }
+}
+
+fn operation_for(kind: &str, stage: Option<&str>, event_name: &str) -> String {
+    match kind {
+        "stage_started" | "stage_done" | "stage_failed" | "stage_skipped" => stage.map_or_else(
+            || "stage".to_owned(),
+            |stage| format!("stage.{}", normalize_taxonomy_value(stage)),
+        ),
+        "timing_started" | "timing_done" => stage.map_or_else(
+            || "timing".to_owned(),
+            |stage| format!("timing.{}", normalize_taxonomy_value(stage)),
+        ),
+        "debug" => "debug".to_owned(),
+        _ => event_name.to_owned(),
+    }
+}
+
+fn category_for(kind: &str, stage: Option<&str>, detail: Option<&str>) -> String {
+    match kind {
+        "debug" => detail.map_or_else(|| "debug".to_owned(), normalize_taxonomy_value),
+        kind if kind.starts_with("docker_") || kind.starts_with("container_") => {
+            "docker".to_owned()
+        }
+        kind if kind.starts_with("stage_") => "launch".to_owned(),
+        kind if kind.starts_with("timing_") => stage.map_or_else(
+            || "timing".to_owned(),
+            |stage| format!("timing.{}", normalize_taxonomy_value(stage)),
+        ),
+        "subprocess_done" => "process".to_owned(),
+        "otlp_internal" => "telemetry".to_owned(),
+        "run_summary" => "summary".to_owned(),
+        "slow_foreground_wait" => "performance".to_owned(),
+        other => other.split_once('_').map_or_else(
+            || normalize_taxonomy_value(other),
+            |(prefix, _)| normalize_taxonomy_value(prefix),
+        ),
+    }
+}
+
+fn outcome_for(kind: &str, error_type: Option<&str>, level: &str) -> &'static str {
+    if error_type.is_some()
+        || level.eq_ignore_ascii_case("ERROR")
+        || kind.contains("failed")
+        || kind.contains("failure")
+        || kind.contains("crash")
+    {
+        "failure"
+    } else if kind.contains("skipped") {
+        "skipped"
+    } else if kind.contains("started") {
+        "started"
+    } else if kind.contains("cache_miss") {
+        "cache_miss"
+    } else {
+        "success"
+    }
+}
+
+fn component_for(kind: &str, message: &str) -> &'static str {
+    if message.starts_with("[jackin-capsule") || kind.starts_with("capsule_") {
+        "capsule"
+    } else {
+        "host"
+    }
+}
+
+fn normalize_taxonomy_value(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '.'
+            }
+        })
+        .collect::<String>()
+        .split('.')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
 fn emit_jsonl_event_with_level(
     run_id: &str,
     kind: &str,
@@ -1271,27 +1378,67 @@ fn emit_jsonl_event_with_level(
     let message = crate::redact::redact_text(message);
     let detail = detail.map(crate::redact::redact_text);
     let detail = detail.as_ref().map(AsRef::as_ref);
+    let taxonomy = event_taxonomy(
+        kind,
+        message.as_ref(),
+        stage,
+        detail,
+        error_type,
+        match level {
+            JsonlEventLevel::Info => "INFO",
+            JsonlEventLevel::Error => "ERROR",
+        },
+    );
 
     // The `--debug` firehose is DEBUG-severity so external exporters filter
     // it by level; the JSONL layer ignores levels and records everything.
     // The trailing format message becomes the OTLP log body — without it,
     // exported records carry attributes but an empty body.
     if kind == "debug" && !matches!(level, JsonlEventLevel::Error) {
-        emit_debug_jsonl_event(run_id, kind, message.as_ref(), stage, detail, error_type);
+        emit_debug_jsonl_event(
+            run_id,
+            kind,
+            message.as_ref(),
+            stage,
+            detail,
+            error_type,
+            &taxonomy,
+        );
     } else if matches!(level, JsonlEventLevel::Error) {
-        emit_error_jsonl_event(run_id, kind, message.as_ref(), stage, detail, error_type);
+        emit_error_jsonl_event(
+            run_id,
+            kind,
+            message.as_ref(),
+            stage,
+            detail,
+            error_type,
+            &taxonomy,
+        );
     } else {
-        emit_info_jsonl_event(run_id, kind, message.as_ref(), stage, detail, error_type);
+        emit_info_jsonl_event(
+            run_id,
+            kind,
+            message.as_ref(),
+            stage,
+            detail,
+            error_type,
+            &taxonomy,
+        );
     }
 }
 
 macro_rules! emit_jsonl_event_fields {
-    ($emit:ident, $run_id:expr, $kind:expr, $message:expr, $stage:expr, $detail:expr, $error_type:expr) => {
+    ($emit:ident, $run_id:expr, $kind:expr, $message:expr, $stage:expr, $detail:expr, $error_type:expr, $taxonomy:expr) => {
         match ($stage, $detail, $error_type) {
             (Some(stage), Some(detail), Some(error_type)) => tracing::$emit!(
                 target: JSONL_TARGET,
                 run_id = $run_id,
                 kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
                 stage = stage,
                 detail = detail,
                 error_type = error_type,
@@ -1301,6 +1448,11 @@ macro_rules! emit_jsonl_event_fields {
                 target: JSONL_TARGET,
                 run_id = $run_id,
                 kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
                 stage = stage,
                 detail = detail,
                 "{}", $message
@@ -1309,6 +1461,11 @@ macro_rules! emit_jsonl_event_fields {
                 target: JSONL_TARGET,
                 run_id = $run_id,
                 kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
                 stage = stage,
                 error_type = error_type,
                 "{}", $message
@@ -1317,6 +1474,11 @@ macro_rules! emit_jsonl_event_fields {
                 target: JSONL_TARGET,
                 run_id = $run_id,
                 kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
                 stage = stage,
                 "{}", $message
             ),
@@ -1324,6 +1486,11 @@ macro_rules! emit_jsonl_event_fields {
                 target: JSONL_TARGET,
                 run_id = $run_id,
                 kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
                 detail = detail,
                 error_type = error_type,
                 "{}", $message
@@ -1332,6 +1499,11 @@ macro_rules! emit_jsonl_event_fields {
                 target: JSONL_TARGET,
                 run_id = $run_id,
                 kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
                 detail = detail,
                 "{}", $message
             ),
@@ -1339,6 +1511,11 @@ macro_rules! emit_jsonl_event_fields {
                 target: JSONL_TARGET,
                 run_id = $run_id,
                 kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
                 error_type = error_type,
                 "{}", $message
             ),
@@ -1346,6 +1523,11 @@ macro_rules! emit_jsonl_event_fields {
                 target: JSONL_TARGET,
                 run_id = $run_id,
                 kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
                 "{}", $message
             ),
         }
@@ -1359,8 +1541,11 @@ fn emit_info_jsonl_event(
     stage: Option<&str>,
     detail: Option<&str>,
     error_type: Option<&str>,
+    taxonomy: &EventTaxonomy,
 ) {
-    emit_jsonl_event_fields!(info, run_id, kind, message, stage, detail, error_type);
+    emit_jsonl_event_fields!(
+        info, run_id, kind, message, stage, detail, error_type, taxonomy
+    );
 }
 
 fn emit_debug_jsonl_event(
@@ -1370,8 +1555,11 @@ fn emit_debug_jsonl_event(
     stage: Option<&str>,
     detail: Option<&str>,
     error_type: Option<&str>,
+    taxonomy: &EventTaxonomy,
 ) {
-    emit_jsonl_event_fields!(debug, run_id, kind, message, stage, detail, error_type);
+    emit_jsonl_event_fields!(
+        debug, run_id, kind, message, stage, detail, error_type, taxonomy
+    );
 }
 
 fn emit_error_jsonl_event(
@@ -1381,6 +1569,9 @@ fn emit_error_jsonl_event(
     stage: Option<&str>,
     detail: Option<&str>,
     error_type: Option<&str>,
+    taxonomy: &EventTaxonomy,
 ) {
-    emit_jsonl_event_fields!(error, run_id, kind, message, stage, detail, error_type);
+    emit_jsonl_event_fields!(
+        error, run_id, kind, message, stage, detail, error_type, taxonomy
+    );
 }

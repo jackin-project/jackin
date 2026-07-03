@@ -123,6 +123,18 @@ fn writes_jsonl_events() {
     assert!(contents.contains("\"run_id\""));
     assert!(contents.contains("\"hello\""));
     assert!(contents.contains("\"debug\""));
+    let event: serde_json::Value = contents
+        .lines()
+        .find(|line| line.contains("\"kind\":\"breadcrumb\""))
+        .map(serde_json::from_str)
+        .transpose()
+        .unwrap()
+        .unwrap();
+    assert_eq!(event["event.name"], "breadcrumb");
+    assert_eq!(event["event.outcome"], "success");
+    assert_eq!(event["jackin.component"], "host");
+    assert_eq!(event["jackin.operation"], "breadcrumb");
+    assert_eq!(event["jackin.category"], "breadcrumb");
 }
 
 #[test]
