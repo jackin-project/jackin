@@ -1510,7 +1510,7 @@ fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
         )
     );
     assert!(
-        hints.contains("PgUp/PgDn"),
+        hints.contains(jackin_tui::keymap::glyph::PGUP_PGDN),
         "footer hints missing page keys: {hints}"
     );
 

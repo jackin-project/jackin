@@ -1,8 +1,8 @@
 //! Modal footer dispatcher + the per-modal-mode hint-span builders
 //! (auth form, confirm save, container info, status popup, op picker).
 
-use jackin_tui::HintSpan;
 use jackin_tui::components::{ScrollAxes, error_popup_hint_spans, save_discard_hint_spans};
+use jackin_tui::{HintSpan, keymap::glyph};
 
 use crate::tui::components::auth_panel;
 use crate::tui::components::confirm_save;
@@ -273,7 +273,7 @@ pub fn auth_form_footer_items(
             HintSpan::Text("browse"),
             HintSpan::Sep,
             // UNREGISTERABLE(multi-key-display-group): combined navigate display.
-            HintSpan::Key("↑/↓"),
+            HintSpan::Key(glyph::UP_DOWN),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
             // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
@@ -295,7 +295,7 @@ pub fn auth_form_footer_items(
         ],
         AuthFormFocus::Save | AuthFormFocus::Cancel | AuthFormFocus::Reset => vec![
             // UNREGISTERABLE(multi-key-display-group): combined left/right display.
-            HintSpan::Key("←/→"),
+            HintSpan::Key(glyph::LEFT_RIGHT),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
             // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.

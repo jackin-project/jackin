@@ -345,7 +345,7 @@ pub fn diff_view_hint_spans() -> Vec<crate::HintSpan<'static>> {
         crate::HintSpan::Key("↑↓"),
         crate::HintSpan::Text("scroll"),
         crate::HintSpan::Sep,
-        crate::HintSpan::Key("PgUp PgDn"),
+        crate::HintSpan::Key(crate::keymap::glyph::PGUP_PGDN),
         crate::HintSpan::Text("page"),
     ]
 }

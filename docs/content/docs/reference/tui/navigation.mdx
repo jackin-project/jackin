@@ -56,8 +56,10 @@ The `h`/`l` bindings remain horizontal-scroll aliases; they do not expand or col
 
 **Every keyboard shortcut that is active on the current screen must appear in the footer hint bar. No key may be silently available — users must never have to guess.** The hint bar updates whenever the focused area or row context changes.
 
+Shared keys use `jackin_tui::keymap::glyph` constants. A hint PR introducing `Tab`, `↑/↓`, `←/→`, `PgUp PgDn`, or `+`-joined modifiers is a design violation.
+
 Rules:
-- `↑/↓ navigate` must appear whenever a list, table, or form with multiple rows is active. It is a global footer item, not a conditional one.
+- `↑↓ navigate` must appear whenever a list, table, or form with multiple rows is active. It is a global footer item, not a conditional one.
 - Every action key (`Enter`, `Space`, `D`, `A`, `R`, `N`, `1`, `2`, `3`, `O`, `P`, `M`, etc.) that is live on the current row must be shown alongside its one-word description.
 - When a key applies only under certain conditions (e.g. `O open in GitHub` only for GitHub-origin mounts), show it only when the condition holds — but never suppress a key that is unconditionally active.
 - `Tab switch tab`, `S save`, and `Esc back/discard` are always shown in the global footer.

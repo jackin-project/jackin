@@ -195,10 +195,10 @@ fn chord_glyph_reproduces_existing_glyphs() {
 
 #[test]
 fn canonical_glyph_constants_reject_known_drift_spellings() {
-    assert_ne!(glyph::TAB, "Tab");
+    assert_ne!(glyph::TAB, concat!("T", "ab"));
     assert_ne!(glyph::UP_DOWN, "\u{2191}/\u{2193}");
     assert_ne!(glyph::LEFT_RIGHT, "\u{2190}/\u{2192}");
-    assert_ne!(glyph::PGUP_PGDN, "PgUp PgDn");
+    assert_ne!(glyph::PGUP_PGDN, concat!("PgUp", " PgDn"));
     assert!(!glyph::ALL_ARROWS.contains('+'));
     assert_eq!(
         chord_glyph(Some(KeyChord::plain(LogicalKey::Tab))),

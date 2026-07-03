@@ -800,6 +800,7 @@ impl RichRenderer {
             DiffViewState, SelectListState, SinglePaneKind, render_diff_view, render_hint_bar,
             render_select_list,
         };
+        use jackin_tui::keymap::glyph;
         use ratatui::layout::{Constraint, Direction, Layout};
 
         if worktrees.is_empty() {
@@ -810,7 +811,7 @@ impl RichRenderer {
             HintSpan::Key("↑↓"),
             HintSpan::Text("files"),
             HintSpan::Sep,
-            HintSpan::Key("Tab"),
+            HintSpan::Key(glyph::TAB),
             HintSpan::Text("pane"),
             HintSpan::Sep,
             HintSpan::Key("Esc"),

@@ -1,5 +1,5 @@
 use jackin_config::{AppConfig, WorkspaceConfig};
-use jackin_tui::HintSpan;
+use jackin_tui::{HintSpan, keymap::glyph};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
 
@@ -41,7 +41,7 @@ fn assert_file_browser_hints(items: Vec<HintSpan<'static>>) {
     for expected in [
         "\u{2191}\u{2193}/j/k",
         "navigate",
-        "PgUp/PgDn",
+        glyph::PGUP_PGDN,
         "page",
         "S",
         "select",
