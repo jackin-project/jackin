@@ -21,7 +21,7 @@ update the codebase map in the same PR.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Docs catalog + lookbook truth repair | P1 | M | — | IN PROGRESS |
+| 001 | Docs catalog + lookbook truth repair | P1 | M | — | DONE |
 | 002 | Uniform component API contract (shared crate) | P1 | L | 001 | TODO |
 | 003 | Focus taxonomy + ButtonFocus cycling | P2 | M | 002 | TODO |
 | 004 | Shared-crate drift fixes (text_input cursor, diff_view keymap/palette) | P1 | S | — | TODO |
