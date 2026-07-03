@@ -70,18 +70,6 @@ pub fn help_banner(width: u16) -> String {
     let box_lo = lc.min(bc).saturating_sub(3);
     let box_hi = (lc + PILL_W).max(bc + byl_w) + 3;
 
-    // Same age -> colour ramp as the launch rain's `age_to_color`.
-    let age_to_rgb = |age: u16| -> Option<Rgb> {
-        match age {
-            0 => Some(crate::RAIN_HEAD),
-            1..=2 => Some(crate::RAIN_FRESH),
-            3..=5 => Some(crate::RAIN_BODY),
-            6..=10 => Some(crate::RAIN_MID),
-            11..=16 => Some(crate::RAIN_DIM),
-            17..=24 => Some(crate::RAIN_DARK),
-            _ => None,
-        }
-    };
     let xorshift = |mut s: u64| -> u64 {
         s ^= s << 13;
         s ^= s >> 7;
@@ -117,7 +105,7 @@ pub fn help_banner(width: u16) -> String {
                 let fade = 1 + (col_seed >> 24) % 3;
                 if (r as u64) <= head {
                     // Trail tops out at 24 age units, so this fits u16.
-                    age_to_rgb(((head - r as u64) * fade) as u16)
+                    crate::animation::rain_age_to_color(((head - r as u64) * fade) as u16)
                 } else {
                     None
                 }

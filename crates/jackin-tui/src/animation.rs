@@ -10,7 +10,10 @@ use owo_colors::OwoColorize as _;
 use std::io::{self, Write};
 
 use crate::output::clear_screen;
-use crate::{BRAND_BLOCK, Rgb, WHITE, owo_rgb};
+use crate::{
+    BRAND_BLOCK, RAIN_BODY, RAIN_DARK, RAIN_DIM, RAIN_FRESH, RAIN_HEAD, RAIN_MID, Rgb, WHITE,
+    owo_rgb,
+};
 
 fn stderr_fragment(args: std::fmt::Arguments<'_>) {
     let mut stderr = io::stderr().lock();
@@ -139,6 +142,19 @@ const fn xorshift(seed: &mut u64) -> u64 {
 
 fn random_char(seed: &mut u64) -> char {
     RAIN_CHARS[(xorshift(seed) as usize) % RAIN_CHARS.len()] as char
+}
+
+#[must_use]
+pub const fn rain_age_to_color(age: u16) -> Option<Rgb> {
+    match age {
+        0 => Some(RAIN_HEAD),
+        1..=2 => Some(RAIN_FRESH),
+        3..=5 => Some(RAIN_BODY),
+        6..=10 => Some(RAIN_MID),
+        11..=16 => Some(RAIN_DIM),
+        17..=24 => Some(RAIN_DARK),
+        _ => None,
+    }
 }
 
 // ── Session warp (hyperspace intro / outro) ───────────────────────────────
