@@ -10,7 +10,7 @@ use jackin_tui::{
         Panel, PanelFocus, SaveDiscardFocus, SaveDiscardState, SelectListState, SinglePaneKind,
         StatusFooterHover, TabStrip, TextInputState, Toast, panel_body_area, render_brand_header,
         render_confirm_dialog, render_container_info, render_diff_view, render_error_dialog,
-        render_filter_input,
+        render_filter_input, hint_line,
         render_save_discard_dialog, render_scrollable_block, render_select_list,
         render_status_footer, render_status_popup, render_text_input, render_toast,
         render_wrapped_hint_bar,
@@ -599,12 +599,18 @@ fn story_text_input_workspace_name(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn story_toast_selection_copied(frame: &mut Frame<'_>, area: Rect) {
+    let hints = [
+        HintSpan::Key("Ctrl-\\"),
+        HintSpan::Text("menu"),
+        HintSpan::GroupSep,
+        HintSpan::Text("click focus pane"),
+    ];
     frame.render_widget(
         Paragraph::new(vec![
             Line::from("Capsule pane content remains visible behind the toast."),
             Line::from("The footer rows below are reserved for available actions."),
             Line::from(""),
-            Line::from("Ctrl+\\ menu   click focus pane"),
+            hint_line(&hints),
             Line::from("PR #495 · refactor: finish TUI architecture epic"),
         ]),
         area,
