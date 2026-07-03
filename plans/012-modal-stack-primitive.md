@@ -18,6 +18,7 @@
 - **Depends on**: plans/002-tui-component-contract.md (recommended)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
+- **Execution status**: BLOCKED — drift check found existing console TUI changes across component, input, and workspace view files before plan work.
 
 ## Why this matters
 
