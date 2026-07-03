@@ -26,7 +26,7 @@ update the codebase map in the same PR.
 | 003 | Focus taxonomy + ButtonFocus cycling | P2 | M | 002 | TODO |
 | 004 | Shared-crate drift fixes (text_input cursor, diff_view keymap/palette) | P1 | S | — | TODO |
 | 005 | Shared key-glyph constants | P1 | M | — | TODO |
-| 006 | theme::INK token (raw Color::Black sweep) | P3 | S | — (coordinate 004/007) | IN PROGRESS |
+| 006 | theme::INK token (raw Color::Black sweep) | P3 | S | — (coordinate 004/007) | DONE |
 | 007 | ErrorPopup on the dialog shell + structured rows | P1 | M | 002 (soft) | TODO |
 | 008 | Launch failure popup onto ErrorPopup | P2 | L | 007 | TODO |
 | 009 | Capsule spawn failure onto ErrorPopup | P2 | M | 007 | TODO |
