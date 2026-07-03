@@ -172,6 +172,44 @@ impl RuntimeConfig {
     }
 }
 
+// ─── Telemetry selection ─────────────────────────────────────────────────────
+
+/// Host-wide telemetry verbosity (`config.toml` `[telemetry].level`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TelemetryLevelConfig {
+    Info,
+    Debug,
+    Trace,
+}
+
+impl TelemetryLevelConfig {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Debug => "debug",
+            Self::Trace => "trace",
+        }
+    }
+}
+
+/// Host-wide telemetry filtering (`config.toml` `[telemetry]`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct TelemetryConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<TelemetryLevelConfig>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<String>,
+}
+
+impl TelemetryConfig {
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        self.level.is_none() && self.categories.is_empty()
+    }
+}
+
 /// Per-workspace container backend override (`workspaces/<name>.toml`
 /// `[runtime]`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]

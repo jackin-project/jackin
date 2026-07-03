@@ -109,6 +109,8 @@ pub async fn run(cli: Cli) -> Result<()> {
     };
 
     let paths = JackinPaths::detect()?;
+    let mut config = AppConfig::load_or_init(&paths)?;
+    apply_telemetry_config(&config);
     let command_name = command_name(&command);
     // Installs the global tracing subscriber (Defect 47.1 foundation) with
     // the freshly minted run id, so OTLP export (when configured) stamps the
@@ -133,7 +135,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Role(command) => return crate::role_authoring::run(command),
         command => command,
     };
-    let mut config = AppConfig::load_or_init(&paths)?;
     let mut runner = ShellRunner { debug };
     let connect_docker = || BollardDockerClient::connect();
 
@@ -198,6 +199,15 @@ pub async fn run(cli: Cli) -> Result<()> {
     diagnostics.emit_run_summary();
     announce_run_teardown(&diagnostics);
     result
+}
+
+fn apply_telemetry_config(config: &AppConfig) {
+    let level = config.telemetry.level.map(|level| match level {
+        jackin_config::TelemetryLevelConfig::Info => jackin_diagnostics::TelemetryLevel::Info,
+        jackin_config::TelemetryLevelConfig::Debug => jackin_diagnostics::TelemetryLevel::Debug,
+        jackin_config::TelemetryLevelConfig::Trace => jackin_diagnostics::TelemetryLevel::Trace,
+    });
+    jackin_diagnostics::set_config_telemetry(level, &config.telemetry.categories);
 }
 
 fn record_run_error(result: &Result<()>) {

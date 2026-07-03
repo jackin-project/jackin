@@ -74,6 +74,30 @@ readonly = true
 }
 
 #[test]
+fn deserializes_global_telemetry_config() {
+    let toml_str = r#"
+[telemetry]
+level = "trace"
+categories = ["docker", "launch"]
+"#;
+    let config: AppConfig = toml::from_str(toml_str).unwrap();
+
+    assert_eq!(
+        config.telemetry.level,
+        Some(crate::TelemetryLevelConfig::Trace)
+    );
+    assert_eq!(config.telemetry.categories, vec!["docker", "launch"]);
+}
+
+#[test]
+fn default_telemetry_config_is_not_serialized() {
+    let config = AppConfig::default();
+    let toml = toml::to_string_pretty(&config).unwrap();
+
+    assert!(!toml.contains("[telemetry]"), "{toml}");
+}
+
+#[test]
 fn rejects_workspace_with_workdir_outside_mounts() {
     let temp = tempdir().unwrap();
 

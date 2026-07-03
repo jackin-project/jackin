@@ -140,9 +140,11 @@ The operator-facing setup lives in the [Run Telemetry guide](/guides/run-telemet
 
 **The firehose never reaches the operator's screen, in either the full-screen TUI or plain CLI commands.** It flows only to the active sink (the run JSONL and/or OTLP export); `--debug` raises the captured detail level, it does not stream events to stderr. This is why `init_tracing` attaches no `fmt` layer: a layer writing to stdout/stderr would corrupt the alternate screen the console / launch cockpit owns, and would clutter ordinary CLI output. Operator-visible lifecycle lines are a separate, deliberately compact surface (`emit_compact_line`): printed to stderr on a plain CLI, but when a rich surface owns the screen they are *deferred* into the debug buffer and flushed at teardown rather than dropped — so a notice such as a failed export reaches the operator (and any wrapping parent process) without spewing over the cockpit, and without depending on the optional run file.
 
-`JACKIN_TELEMETRY_LEVEL=debug|trace` enables debug-category diagnostics even
-when the operator did not pass `--debug`; `JACKIN_TELEMETRY_CATEGORIES` narrows
-those debug-category records by category. These controls affect telemetry
+`[telemetry].level = "debug" | "trace"` in `config.toml` enables debug-category
+diagnostics even when the operator did not pass `--debug`;
+`[telemetry].categories` narrows those debug-category records by category.
+`JACKIN_TELEMETRY_LEVEL` and `JACKIN_TELEMETRY_CATEGORIES` override the
+corresponding config values for one process. These controls affect telemetry
 capture/export and do not replace the CLI's existing debug UI affordances.
 
 ## Event taxonomy

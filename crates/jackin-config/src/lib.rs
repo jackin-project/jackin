@@ -61,9 +61,10 @@ pub use resolve::{
 };
 pub use schema::{
     DirtyExitPolicy, DockerConfig, DockerMounts, GitConfig, GlobalMountConfig, KeepAwakeConfig,
-    MountConfig, MountEntry, ResolvedWorkspace, RoleSource, RuntimeConfig, WorkspaceConfig,
-    WorkspaceDockerConfig, WorkspaceEdit, WorkspaceRoleOverride, WorkspaceRuntimeConfig,
-    validate_mount_paths, validate_mount_specs, validate_mounts,
+    MountConfig, MountEntry, ResolvedWorkspace, RoleSource, RuntimeConfig, TelemetryConfig,
+    TelemetryLevelConfig, WorkspaceConfig, WorkspaceDockerConfig, WorkspaceEdit,
+    WorkspaceRoleOverride, WorkspaceRuntimeConfig, validate_mount_paths, validate_mount_specs,
+    validate_mounts,
 };
 pub use sensitive::{SensitiveMount, find_sensitive_mounts};
 pub use validation::{validate_isolation_layout, validate_workspace_config};
