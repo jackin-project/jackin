@@ -290,6 +290,115 @@ fn route_mouse(
     false
 }
 
+fn render_console_frame(
+    state: &mut ConsoleState,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    terminal: &mut ConsoleTerminal,
+    chrome_hover_tracker: &mut jackin_tui::components::HoverTracker<ConsoleChromeHover>,
+    chrome_hover: Option<ConsoleChromeHover>,
+    container_info_overlay_active: &mut bool,
+    needs_redraw: &mut bool,
+) -> anyhow::Result<()> {
+    if !*needs_redraw {
+        return Ok(());
+    }
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    let full_area: ratatui::layout::Rect = terminal.size()?.into();
+    let (main_area, debug_bar_area) =
+        split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
+    // If the Debug-info dialog's raw overlay was painted last frame and the
+    // dialog has since closed, force a full clear so the OSC 8 link residue
+    // (which Ratatui's diff does not track) is wiped.
+    if *container_info_overlay_active
+        && !matches!(
+            ms.list_modal,
+            Some(crate::console::tui::state::Modal::ContainerInfo { .. })
+        )
+    {
+        terminal.clear()?;
+        *container_info_overlay_active = false;
+    }
+    crate::console::tui::prepare_for_render(ms, config, cwd, main_area);
+    let confirm_state = state.quit_confirm.as_ref();
+    terminal.draw(|frame| {
+        crate::console::tui::render(frame, main_area, ms, config, cwd);
+        if let Some(confirm) = confirm_state {
+            // Reserve the body's bottom row for the confirm hint bar and center
+            // the dialog above it. The backdrop dims only the body; the status
+            // bar (debug chip) renders below in `debug_bar_area`, so the bottom
+            // chrome reads: dialog backdrop, hint row, blank spacer, status bar
+            // — the same ordering every jackin❯ surface uses.
+            let hint_row = ratatui::layout::Rect {
+                x: main_area.x,
+                y: main_area.bottom().saturating_sub(1),
+                width: main_area.width,
+                height: 1,
+            };
+            let body = ratatui::layout::Rect {
+                height: main_area.height.saturating_sub(1),
+                ..main_area
+            };
+            jackin_console::tui::view::render_modal_backdrop(frame, body);
+            let area = quit_confirm_area(body, confirm);
+            jackin_tui::components::render_confirm_dialog(frame, area, confirm);
+            jackin_tui::components::render_hint_bar(
+                frame,
+                hint_row,
+                &jackin_tui::components::confirm_hint_spans(),
+            );
+        }
+        chrome_hover_tracker.clear();
+        if let Some(bar_area) = debug_bar_area {
+            let active_run = jackin_diagnostics::active_run();
+            let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
+            let run_id = debug_run_id_label(
+                active_run.as_ref().map(|r| r.run_id()),
+                env_run_id.as_deref(),
+            );
+            // Use only the bottom row of the 2-row bar for the chip; the top
+            // row is the blank spacer (Defect 39).
+            let chip_row = debug_chip_row(bar_area);
+            if let Some(chip) =
+                jackin_tui::components::status_footer_debug_chip_rect(chip_row, &run_id)
+            {
+                chrome_hover_tracker.register(chip, ConsoleChromeHover::DebugChip);
+            }
+            jackin_tui::components::render_status_footer_right_group(
+                frame,
+                chip_row,
+                "",
+                jackin_tui::components::StatusRightGroup {
+                    usage: None,
+                    container: "",
+                    run_id: Some(&run_id),
+                },
+                1.0,
+                jackin_tui::components::StatusFooterHover {
+                    left: false,
+                    usage: false,
+                    right: false,
+                    right_debug: chrome_hover == Some(ConsoleChromeHover::DebugChip),
+                },
+            );
+        }
+    })?;
+    if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
+        ms.list_modal.as_ref()
+    {
+        let rect = modal.rect(main_area);
+        let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, info);
+        if !overlay.is_empty() {
+            let mut out = std::io::stdout();
+            drop(std::io::Write::write_all(&mut out, &overlay));
+            drop(std::io::Write::flush(&mut out));
+        }
+        *container_info_overlay_active = true;
+    }
+    *needs_redraw = false;
+    Ok(())
+}
+
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
@@ -486,103 +595,16 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             }
         }
 
-        if let ConsoleStage::Manager(ms) = &mut state.stage
-            && needs_redraw
-        {
-            let full_area: ratatui::layout::Rect = terminal.size()?.into();
-            let (main_area, debug_bar_area) =
-                split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
-            // If the Debug-info dialog's raw overlay was painted last frame and
-            // the dialog has since closed, force a full clear so the OSC 8 link
-            // residue (which Ratatui's diff does not track) is wiped.
-            if container_info_overlay_active
-                && !matches!(
-                    ms.list_modal,
-                    Some(crate::console::tui::state::Modal::ContainerInfo { .. })
-                )
-            {
-                terminal.clear()?;
-                container_info_overlay_active = false;
-            }
-            crate::console::tui::prepare_for_render(ms, &config, cwd, main_area);
-            let confirm_state = state.quit_confirm.as_ref();
-            terminal.draw(|frame| {
-                crate::console::tui::render(frame, main_area, ms, &config, cwd);
-                if let Some(confirm) = confirm_state {
-                    // Reserve the body's bottom row for the confirm hint bar and
-                    // center the dialog above it. The backdrop dims only the
-                    // body; the status bar (debug chip) renders below in
-                    // `debug_bar_area`, so the bottom chrome reads: dialog
-                    // backdrop, hint row, blank spacer, status bar — the same
-                    // ordering every jackin❯ surface uses.
-                    let hint_row = ratatui::layout::Rect {
-                        x: main_area.x,
-                        y: main_area.bottom().saturating_sub(1),
-                        width: main_area.width,
-                        height: 1,
-                    };
-                    let body = ratatui::layout::Rect {
-                        height: main_area.height.saturating_sub(1),
-                        ..main_area
-                    };
-                    jackin_console::tui::view::render_modal_backdrop(frame, body);
-                    let area = quit_confirm_area(body, confirm);
-                    jackin_tui::components::render_confirm_dialog(frame, area, confirm);
-                    jackin_tui::components::render_hint_bar(
-                        frame,
-                        hint_row,
-                        &jackin_tui::components::confirm_hint_spans(),
-                    );
-                }
-                chrome_hover_tracker.clear();
-                if let Some(bar_area) = debug_bar_area {
-                    let active_run = jackin_diagnostics::active_run();
-                    let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
-                    let run_id = debug_run_id_label(
-                        active_run.as_ref().map(|r| r.run_id()),
-                        env_run_id.as_deref(),
-                    );
-                    // Use only the bottom row of the 2-row bar for the chip;
-                    // the top row is the blank spacer (Defect 39).
-                    let chip_row = debug_chip_row(bar_area);
-                    if let Some(chip) =
-                        jackin_tui::components::status_footer_debug_chip_rect(chip_row, &run_id)
-                    {
-                        chrome_hover_tracker.register(chip, ConsoleChromeHover::DebugChip);
-                    }
-                    jackin_tui::components::render_status_footer_right_group(
-                        frame,
-                        chip_row,
-                        "",
-                        jackin_tui::components::StatusRightGroup {
-                            usage: None,
-                            container: "",
-                            run_id: Some(&run_id),
-                        },
-                        1.0,
-                        jackin_tui::components::StatusFooterHover {
-                            left: false,
-                            usage: false,
-                            right: false,
-                            right_debug: chrome_hover == Some(ConsoleChromeHover::DebugChip),
-                        },
-                    );
-                }
-            })?;
-            if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
-                ms.list_modal.as_ref()
-            {
-                let rect = modal.rect(main_area);
-                let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, info);
-                if !overlay.is_empty() {
-                    let mut out = std::io::stdout();
-                    drop(std::io::Write::write_all(&mut out, &overlay));
-                    drop(std::io::Write::flush(&mut out));
-                }
-                container_info_overlay_active = true;
-            }
-            needs_redraw = false;
-        }
+        render_console_frame(
+            &mut state,
+            &config,
+            cwd,
+            &mut terminal,
+            &mut chrome_hover_tracker,
+            chrome_hover,
+            &mut container_info_overlay_active,
+            &mut needs_redraw,
+        )?;
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
 
         // Async event wait: yield to the Tokio reactor until either a
