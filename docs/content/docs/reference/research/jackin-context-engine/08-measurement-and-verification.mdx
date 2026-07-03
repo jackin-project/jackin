@@ -1,0 +1,47 @@
+---
+title: "08 — Measurement and verification (L0)"
+---
+
+# 08 — Measurement and verification (L0)
+
+The engine's differentiator is not a cleverer compressor — the market has plenty — it is being the first tool whose numbers are **produced the way the research says numbers must be produced**. L0 ships before any compression does, and every other layer reports through it.
+
+## The ledger
+
+Per-capsule, turso-backed, extending the existing `jackin-usage` monitors:
+
+- **Token classes, exact**: per-call `usage` fields from session JSONL (`message.id`-deduplicated — the ~3× overcount trap), split uncached / cache-write (5m vs 1h TTL) / cache-read / output, per agent, per subagent (`task:` scope), per tool.
+- **Observation attribution**: tool-result sizes attributed to producing tool (the measurement that produced the 76.2%-native-reads / 16.5%-Bash split) — continuously, per capsule, so RTK-slot vs read-slot coverage is a live number, not a one-off study.
+- **Transform accounting**: per-transform tokens_in/out counted with **Claude tokenizers via the free `count_tokens` endpoint** (batched, own RPM pool, never inline) — not `chars/4` (RTK), not GPT BPE (lean-ctx/caveman/headroom). Family-correct: counts against the capsule's actual model; never ported across tokenizer families.
+- **Bounce netting**: a compressed read followed by a full re-read of the same content within a short window writes a *negative* ledger event; per-extension bounce rates above threshold auto-upgrade that class to fuller modes (lean-ctx's `adjusted_total_saved` + auto-pin, adopted wholesale). Command re-runs after filtered output are the shell-side bounce equivalent.
+- **Injection overhead as cost**: every standing token the engine adds (instructions, schemas, codebook, `[related:]` hints, recovery footers) is debited — savings are reported **net-of-injection** (the tokbench lesson), and `ctx doctor --gate` fails CI when the standing footprint exceeds the role budget (INV-6).
+- Optional hash-chained event log for tamper-evidence (lean-ctx's signed ledger) — off by default, available for fleet billing contexts.
+
+## The estimators nobody ships
+
+- **Thinking estimator**: JSONL redacts thinking; the engine computes `output_tokens − count_tokens(visible blocks replayed)` per message (±5%), closing the blind spot every JSONL dashboard has and bounding the register pack's honest ceiling per workload.
+- **Cache-bust detector**: `cache_creation_input_tokens` spike detection with cause classification (model/effort switch, tool-set change, MCP flap, compaction, fleet misalignment) and per-bust cost ($2.30–3.80 at 200k history class) — the invalidator list from dossier 13 as running diagnostics, surfaced via `clog!` and the usage dialog.
+- **Counterfactual repricing**: what this session would have cost uncached / unrouted / unfiltered — the honest "saved" number, reconciled against `session_cost.py`-style ground truth within 5% before any A/B is trusted.
+- **Cap prober** (subscription capsules): fits per-account cap weights from captured `unified-*` headers (L4), converting tasks-per-cap from folklore to a fitted model.
+
+## The harness (dossier 31, runnable per role)
+
+`jackin ctx bench` drives the paired-task A/B protocol: headless agent runs (`claude -p --output-format json` class), fixture repo reset between tasks, arms differing in exactly one engine feature (or the composed pack validated as a unit), n=12 screening / n=30 confirmation, non-inferiority margin 5pp on objective checkers, cost compared only between quality-indistinguishable arms; batch-lane execution (50% off + cache stacking makes confirmation runs cheap). Standard arms: measure-only baseline / +shims / +read-verbs / +register / +routing / full pack — plus external-tool comparison arms (RTK binary, headroom-MCP, lean-ctx faithful-arm profile) so the engine's claim of subsuming the stack is a measured statement, closing the "first controlled cross-tool numbers" gap the tools hub named its highest-value open deliverable.
+
+## Round-2 estimator upgrades
+
+- **Conversation-stable holdout with online variance**: behavioral features (registers, effort shaping) measure themselves against a control cohort keyed by `blake3(system ‖ first user msg) mod 10,000` — same conversation, same arm, across turns and machines (prefix-cache-safe) — with sum-of-squares online variance giving a CI without storing per-turn data (headroom/lean-ctx convergent design). The engine adds what both upstreams lack: an **auto-disable gate when the CI lower bound crosses zero**.
+- **Footprint self-ablation**: each element the engine injects (rules block, tool schemas, codebook, briefing) gets periodically A/B-ablated for pass-rate delta, emitting `prune_recommended` per element (lean-ctx #959) — "does my own injection earn its tokens" as a running answer, not an assumption.
+- **Failed-experiments ledger**: negative results are archived with their metrics next to the harness results (codedb's `failed.md` practice) — prevents re-trying dead ends and keeps the tuning history honest.
+
+## Canaries and online quality
+
+The six compression-failure canaries (negation, ordering, numeric precision, don't-do-X, multi-step dependency, caveat retention) run in every screening/confirmation round with exact string-level assertions; any Arm-B-only failure vetoes. On live traffic: sampled async reference-free judge (1–10% high-volume, alarm-don't-block) watching register-active roles for dropped caveats, wired to per-role auto-demotion (V7). Regression tripwires seeded with known-bad traces.
+
+## CI token-budget linter (K14)
+
+`cargo xtask` gains a context-budget check: `count_tokens` over every always-loaded file (root instruction chain, role files, engine-injected pack) with per-file budgets; PRs fail on over-budget growth — ~30 lines of tooling that prevents the ~70k-tokens-in-5-days prefix-drift class and the "bloated CLAUDE.md causes instruction-ignoring" quality failure. Budgets counted against the worst-case (Fable-family) tokenizer.
+
+## Surfaces
+
+Capsule TUI usage dialog and status bar gain the engine panel (4-class token bars with 5m/1h write split, cache hit rate + bust events, net savings, bounce rate, cap %); host console aggregates per-fleet; everything also lands in `clog!`/JSONL diagnostics for offline analysis. No web dashboard, no external telemetry (INV-10).

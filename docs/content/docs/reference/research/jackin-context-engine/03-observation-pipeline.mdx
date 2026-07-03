@@ -1,0 +1,86 @@
+---
+title: "03 — Observation pipeline (L2)"
+---
+
+# 03 — Observation pipeline (L2)
+
+The write-time layer: shrink every observation **once, at ingestion, before it is first cached** — the only cache-safe input-compression design point on hosted Claude (tools hub 02/03; dossier 53/56). This layer targets the 61%-of-dollars cache bucket and is where the engine composes RTK's breadth, lean-ctx's safety, and headroom's typed routing into one pipeline.
+
+## Pipeline
+
+```text
+ shim / MCP read / web fetch                    (ingestion point)
+   │
+   ▼
+ CLASSIFY   command classifier (85 rules, RTK-derived) OR content detector
+   │        (magika ONNX tier optional → unidiff parse-oracle → aho-corasick keywords)
+   ▼
+ POLICY     verbatim-class gate: build/lint errors, test failures, security warnings,
+   │        explicitly-requested raw reads → PASS THROUGH untouched (INV-7)
+   ▼
+ TRANSFORM  exactly one typed transform, deterministic:
+   │          shell filters (64-file TOML corpus + native streaming filters)
+   │          json/tabular/yaml crushers (stats-compaction, sampled arrays, anomalies kept)
+   │          code outline (tree-sitter signatures; never regex+brace-counting)
+   │          search-result shaping (file:line:content, dedup, import-line de-noise)
+   │          log dedup/grouping (template clustering, counts)
+   │          markdown section slicing (mq; see L1)
+   │          extractive prose scoring (BM25+recency+salience; TextCrusher-class, no ML)
+   ▼
+ GUARD      never_worse: estimated tokens(out) ≤ tokens(raw) or emit raw (INV-3)
+   │        ParseResult tiers: Full / Degraded(+warnings) / Passthrough with marker
+   ▼
+ ARCHIVE    verbatim original → CCR store (blake3, TTL ≥30 min), all exit codes
+   │        emission carries recovery footer:  [full output: ctx expand <<ccr:HASH>>]
+   ▼
+ LEDGER     tokens_in/out, transform id, per-block manifest → measure/ (L0)
+```
+
+## Shell boundary (shims)
+
+- **Coverage**: vendor RTK's 64 TOML filters verbatim (Apache-2.0, inline tests included) + port the high-traffic native filters as streaming Rust (`cargo`, `git`, `gh`, `pytest`, `go test` NDJSON, `tsc`, `vitest`, `docker`, `kubectl`) using RTK's `StreamFilter` trait shape (`feed_line/flush/on_exit`). The TOML pipeline is the *primary* extension form — roles drop `filters.toml` files without recompiling; project-local filters are content-hash trusted like RTK's `rtk trust`.
+- **Classifier**: port RTK's 85-rule table + shell lexer: split on `&&`/`||`/`;` and rewrite each segment; anything with backticks, `$( )`, or file redirects is unattestable → passthrough. Ignore-list for shell built-ins and one-liners.
+- **Safety**: exit codes bit-exact (INV-4); stderr filtered separately; signal exits propagate 128+n; package-manager sniffing before JS tool rewrites.
+- **What shims buy over hooks**: identical behavior for every runtime (Claude Code, Codex, Amp, Kimi, Opencode, Grok) with zero per-agent integration code, no settings.json surface, no permission-prompt mediation (the agent's permission system sees the original command; the shim is transparent downstream of approval).
+
+## Native-read boundary (MCP verbs + optional PostToolUse dedup)
+
+- `ctx_read` with lean-ctx-shaped modes — `full` / `signatures` / `outline` / `lines:N-M` / `section:<heading>` — defaulting to `signatures` for source files above a size gate (lean-ctx measured signatures at 96.5% compression / 95.9% self-rated quality vs `map`'s 97.8%/77% — the engine ships the honest sweet spot and **does not ship a `map`-class mode**).
+- **Read-stub cache**: content-addressed re-read suppression — second read of an unchanged file returns a ~13-token `[unchanged since you read it: <path>]` stub; changed files return an entity-level delta against the version this session saw (sem's delta-fill, >120-line deltas fall back to full). Scoping: per conversation, per subagent (`task:<id>`), purged on compaction events. This generalizes sem's attention ledger across *all* tool traffic — the single most valuable idea in the seven-tool sweep, and one only the runtime owner can implement completely.
+- **Steering, honestly**: role instructions advertise the verbs and when to prefer them; native tools stay available and (where the runtime supports PostToolUse output mutation) get transparent read-dedup so even un-steered reads benefit. No deny-hooks, no "always use X" absolutism — codedb's blocking installer hook and lean-ctx's abandoned "NEVER use native tools" rulebook are the documented anti-patterns.
+
+## Code outlining
+
+tree-sitter only (INV: no regex+brace-counting — RTK's `filter.rs` corrupts on braces-in-strings and silently keeps Python bodies; it needed a `Data`-class escape hatch after corrupting JSON). Grammar set is **per-role**: the manifest declares languages; the image links only those grammars (lean-ctx links 26 and pays 20+ MB for it; a Rust-only role needs one). Output shape follows codedb's skeleton idiom: declaration line + `{ … N lines }` elision + an escalation footer naming the exact follow-up verb (`ctx_read lines:164-190`).
+
+## Structured-data crushers
+
+Deterministic, byte-stable, never-inflate: JSON stats-compaction (schema + sampled rows + kept anomalies — headroom SmartCrusher semantics, lean-ctx `json_crush` as the deterministic reference port), CSV/TSV row sampling with disclosed counts, YAML/TOML minification where lossless. Serialization hygiene from dossier 11 applied at emission: minified JSON (−29–41%), tabular re-serialization where schema repeats (−34–45%), epoch timestamps (−67.1%) and de-grouped numbers (+50.6% tax avoided) in engine-owned outputs, `NO_COLOR=1` + ASCII-table env defaults in the capsule.
+
+## Media policy (Vol II ch. 42)
+
+Text-first enforcement at the boundary: born-digital PDFs transcode to text via `pdftotext` baked in the construct image (~2× PDF tax avoided; 25-page PDF ≈ 78.8k tokens as pages vs ~40k as text); screenshots of textual content are rejected with a pointer to the text source when one exists (2–6× cost); images client-side downsampled to the model family's pixel cap before send (up to −73% on Opus-family caps); vision work routes to a Sonnet/Haiku-tier subagent returning text (−67%/frame, the ~3.0–3.1× per-image cap divergence).
+
+## Prose (the residual)
+
+No ML. Extractive scoring only (sentence-level BM25-vs-task + recency + salience, near-dup suppression) for oversized free-form text — headroom's own TextCrusher retreat validates this class (~94% buried-answer retention at 30% size vs ~36% for truncation). Everything dropped is CCR-recoverable. Web/HTML ingests through mq's HTML→markdown conversion then section slicing, replacing tag-stripping heuristics.
+
+## Guard contracts adopted from the round-2 source verification
+
+The [verification pass](/reference/research/token-optimization-tools/15-verification-pass-and-extended-matrix/) surfaced battle-tested micro-contracts this pipeline adopts wholesale:
+
+- **Anti-confusion truncation**: exactly one `[N more lines]` end marker per truncated payload, never interleaved omission markers (agents parse those as code and retry-loop); the kept+N==total invariant is property-tested (RTK).
+- **`unless` anti-swallow guards**: any short-circuit summary rule ("N tests passed") carries an `unless` regex so error-bearing output is never swallowed by the happy-path summary (RTK TOML DSL).
+- **Per-filter panic isolation**: every filter runs under `catch_unwind`; panic → warn + raw passthrough — fail-open in both the crash and quality dimensions when combined with the never-worse guard (RTK).
+- **`transparent_prefixes`**: wrapper commands (`docker exec c`, `poetry run`, `direnv exec .`) are stripped before classification and re-prepended after, so wrappers never defeat filtering (RTK).
+- **Content-sniffing pipe mode**: `cmd | ctx pipe` fingerprints the first 1 KiB (banner-anchored to avoid misroutes) and auto-selects a filter — zero-flag usage for role scripts (RTK).
+- **Trust-before-load for role/project filter files**: SHA-256 content pinning, single read returning the verified bytes (TOCTOU-safe), fail-closed on canonicalization errors, CI-only env override (RTK `trust.rs` — the threat model is an attacker-committed filter shaping what the model sees).
+- **Lossless-compaction tier with a runtime round-trip self-check**: format-native reversible transforms (run-collapse with exact counts, grep-result reshaping, ANSI strip) verify `inverse(compressed) == original` at runtime and emit the original on any mismatch — a store-free tier below CCR (headroom `--lossless`).
+- **Kolmogorov gate**: a gzip-ratio probe classifies payload compressibility before attempting aggressive modes — never spend effort on incompressible content (lean-ctx).
+- **Per-tool line budgets** as defense-in-depth behind the typed filters: head/tail caps per tool class (bash 80, read 300, grep 120 — caveman-code's "Flint Chipper" constants) for anything the typed path doesn't recognize.
+- **`anchored` read mode**: verbatim content with per-line hash anchors, making compressed-read → patch workflows drift-safe (lean-ctx; excluded from bounce accounting as lossless).
+- **Preserved-segment span classification** for any prose transform: fences, inline code, URLs, paths, versions, numbers, identifiers pass byte-exact through every lossy path (cavemem's tokenizer — the one keepable artifact of that project, adopted as the transform safety contract).
+
+## Explicit exclusions
+
+No whole-prompt rewriting, no history pruning, no conversation compaction — Claude Code owns those (microcompact, context editing); the engine composes upstream of them and measures the *incremental* win over native features, not over a naive baseline (tools hub 11 §c).

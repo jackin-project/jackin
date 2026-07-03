@@ -1,0 +1,43 @@
+---
+title: "01 — Goals and non-goals"
+---
+
+# 01 — Goals and non-goals
+
+## Goals
+
+1. **Out-of-box token optimization for every capsule.** A freshly launched jackin❯ container is born with the negative-cost set active (tool-search deferral intact, Edit-over-Write guards, observation filtering, subagent model/effort pins) — zero operator discipline required. This is the dossier's K16 "jackin-baked optimization pack" (ESTIMATE 20–35% integrated) made concrete.
+2. **Cover both interception points.** Write-time compression must reach shell output (RTK's slot) *and* native reads (headroom/lean-ctx's slot), because the measured Bash share of observation tokens ranged 16.5% (docs workload) to dominant (test-heavy workloads). One engine, both boundaries, exactly one shell-rewrite path per capsule.
+3. **Reversible by default.** Every lossy transform leaves a content-addressed verbatim copy retrievable by handle on *all* exit codes — fixing RTK's success-path gap and adopting headroom-CCR/lean-ctx-archive semantics. Recovery hints ride on every compressed payload (lean-ctx #625 doctrine: agents fight irreversible compression; undiscoverable escape hatches are the root cause of "too compressed" failures).
+4. **Deterministic core, no ML in the hot path.** Typed deterministic transforms (filters, crushers, outlines, extractive prose scoring) only. This is now the *converged* industry position: headroom itself is demoting its ModernBERT stage after timeout cascades, and CompressionAttack (arXiv 2510.22963, ≤80% ASR) turned hot-path ML compressors into a security finding, not just a latency cost.
+5. **Cache-safety by construction.** All input-side work happens at content-ingestion time (append-only), never by rewriting history or the cached prefix. The engine ships the prefix-stability regression tests headroom pioneered and surfaces `cache_read` continuity as a monitored invariant.
+6. **Retrieval before reading.** Bounded, task-shaped retrieval (outline → section/symbol → span) replaces whole-file reads where it measurably wins: −91% outline / −98% symbol-search (T1 local, dossier ch. 51), 12–53× markdown section retrieval (measured on mq, ch. 57), with size gates so small files are returned whole.
+7. **Fleet-aware economics.** Spawn staggering, prefix pre-warm, `excludeDynamicSections`, batch-lane routing, effort tiering, and advisor escalation are orchestrator-enforced. Dual cost model: dollars *and* tasks-per-cap, selected by the capsule's auth mode.
+8. **Prove it or lose it.** Every layer reports through one bounce-netted, Claude-tokenizer-honest ledger; features that fail the acceptance bar (below) get disabled per role, automatically. The engine is its own validation harness.
+9. **Agent-agnostic by layer.** ~80% of the stack ports as discipline across Claude Code/Codex/other runtimes (Vol II ch. 45); the engine abstracts effort tier, routing, rules-file compilation, output caps, and cache-stability per `Agent` adapter, and degrades gracefully where a runtime lacks a hook surface (Codex: instructions-only).
+
+## Non-goals (the graveyard, enforced)
+
+Each entry below was killed by the research with evidence; the engine treats these as tripwires in review, not options:
+
+| Non-goal | Killed by |
+|---|---|
+| Whole-prompt / mid-stream proxy compression (LLMLingua-class) in front of Claude Code | Break-even ~5.5× mixed / ~10× cacheable prefix; 358-run Sonnet 4.5 RCT: aggressive compression **+1.8% cost**; double-stabilization conflicts (dossier 19, 53, 54) |
+| ML compression model in the hot path | CompressionAttack ≤80% ASR; headroom P99 4.17 s + executor-saturation outages; deterministic TextCrusher-class reaches ~94% retention (13-reuse ch.) |
+| API gateway that re-serializes requests | Custom `ANTHROPIC_BASE_URL` disables tool-search deferral; one nondeterministic serializer = broken cache = ~3.8× session cost (dossier 12, 19) |
+| Semantic response caching for coding traffic | Zero published coding hit rates; repetition lives in the prefix already priced 0.1×; 3–7% confidently-wrong on code (dossier 14, 19) |
+| base64/gzip/glyph-DSL/wenyan "compression" | base64 = 4.33× MORE tokens; gzip+base64 = 2.68× MORE; glyphs 3.9–4.9 tok each with 26% instruction-fidelity; wenyan char/token illusion (dossier 10, 11, 19) |
+| Cache-keepalive pinger on the interactive main loop | Subscription main loop already 1h-TTL; 1h break-even ~19 h idle (dossier 20 K13) — only SDK/API fleet lanes with sub-40-min gaps qualify |
+| Vector DB / embeddings for **code navigation** as default | Flagship agents dropped code embeddings; acceptance bar ≥20% tokens-per-solved-task over `rust-analyzer + ast-grep + structural + fff` never met publicly (dossier 51, 52) |
+| A second memory store, a second shell-rewrite path, a second output policy | Doubling rules from the combining page: pure overhead, double-compression risk (tools hub 06) |
+| Renaming existing identifiers for token shape | Cache bust + blame destruction; design-time-only lever (dossier 11) |
+| KV-cache eviction/quantization, soft prompts, speculative decoding | Self-host-only; no hosted API channel (dossier 46, 20 K1/K2) |
+| Trusting per-payload percentages as savings | Per-payload ≠ whole-bill: the correction that killed every vendor headline (tools hub 07) |
+| `max_tokens` as a spend governor | Truncates `tool_use`, bills the attempt, forces retry at higher cap (dossier 15, 47) |
+
+## Evidence bars (every feature, no exceptions)
+
+- **Adoption bar** (from dossier 31 + tools hub 07): task/test success ≥ baseline (non-inferiority, 5pp margin, n=12 screening / n=30 confirmation); `cache_read` continuity preserved; command re-run / bounce rate not worse; **total tokens per solved task ≤ baseline by ≥20% net of the feature's own overhead** (schema rent, injected instructions, retrieval round-trips, handles).
+- **Net-of-injection accounting** (the tokbench lesson from lean-ctx's first independent benchmark): any standing prefix the engine injects is a first-class cost in its own ledger, CI-gated like lean-ctx's `doctor overhead --gate` (its headline self-footprint metric is ~2.1K tokens/session — ours must be lower and gated from day one).
+- **Canary gate**: the six compression-failure canaries (negation, ordering, numeric precision, don't-do-X, multi-step, caveat retention — dossier 31 §3) run in both arms of every A/B; one Arm-B-only failure vetoes the feature regardless of savings.
+- **Quality-risk features run behind holdouts**: aggressive registers and effort downgrades ship with a headroom-style holdout control group and an online sampled canary (Vol II ch. 47: alarm, don't block), so the "does register compression degrade agentic success" open question finally gets an answer on live traffic.

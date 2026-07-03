@@ -1,0 +1,44 @@
+---
+title: "05 — Output and prompt layer (L3)"
+---
+
+# 05 — Output and prompt layer (L3)
+
+Output is the 5×-priced token class (~17% of heavy-session dollars; 1 output token = 50 cache-read tokens) and the one place a prompt — not a program — is the whole mechanism. The engine ships caveman's validated core as **role-generated policy text**, with the honest numbers and the guard rails the research demanded, and none of the plugin delivery (hooks, ~940-token skill listing, per-turn re-injection machinery).
+
+## The register pack
+
+Compiled per role into the instruction file the capsule already provisions (one source → per-runtime paths), selected by a `[context.output]` level:
+
+| Level | Mechanism | Honest expectation (evidence) |
+|---|---|---|
+| `off` | nothing injected | baseline |
+| `terse` (default) | plain terse-instruction: drop pleasantries/filler/hedging, complete sentences | captures most of the realizable win at lowest misread risk (dossier 15: register ladder −54% at "plain") |
+| `compact` | + fragments allowed, telegraphic | −60% visible prose class |
+| `register` | full caveman-ultra-style register (word deletion, `→` causal arrows — the one glyph that pays at 1.0 tok) | **58.5%** of visible prose (T1 local); ≈10% of session dollars realized, 17% hard cap; ~50% over a terse baseline per caveman's own honest eval |
+
+Rules baked into every level above `off` (the parts of caveman's SKILL.md that are guards, not compression): code blocks, API names, identifiers, error strings, commit keywords verbatim; never abbreviate code symbols; **auto-clarity carve-outs** — security warnings, destructive-op confirmations, order-sensitive sequences, and anything where compression creates ambiguity drop to plain prose. No wenyan tiers (no token gain over ultra, maximal risk — killed). No prose-word abbreviation lists beyond genuinely multi-token words (BPE already compressed the common ones: `fn`=2 tok > `function`=1).
+
+## Guard lines (negative-cost, always on)
+
+Two lines the dossier measured and tiered S, injected regardless of register level: "Prefer Edit over Write on existing files; never rewrite a file to change a few lines" (−89.3% per avoided rewrite, T1, and quality *up* per the aider diff-format evidence) and "Reference `file:line` instead of restating code; no post-edit summaries beyond one line" (−352 tokens per avoided restatement, 91.4%, T1). Plus the pointer rule: cite decision/doc handles, don't restate (−77.3% per recalled item).
+
+## Subagent report registers (the fleet multiplier)
+
+Enforced *format* registers on subagent final messages — the dossier's decisive finding is that **enforced format does all the work; politeness asks do none** (the "Answer concisely" control arm saved nothing; the format register saved 43.9%). The engine writes the output-format contract into every generated agent definition: labeled compact lines (not JSON — +35% tax; not prose), `file:line` references, an `anomalies` free-text escape field, artifact-reference passing for anything over ~1k tokens (write to file, return path + ≤5-line abstract — ~80× vs copy-through), and the corruption boundary: **reports of completed work compress; specs of pending work never do** (one corrupted spec wastes an entire subagent run).
+
+## Session codebook (K6/K7, bounded)
+
+An optional per-role codebook: ≤8 aliases for genuinely hot multi-token identifiers/paths (legend ~212 tokens, −71% per aliased mention, break-even at second use), pinned in the stable prefix, byte-stable across turns (INV-1), re-pinned after compaction events. Alias admission is ledger-driven (hit-rate instrumented, LRU-evicted — K8's gate) so the codebook can never bloat into net-negative prefix rent. Single-token anchors are explicitly out (physics floor: 2–3 tokens minimum).
+
+## Structured-output sidecars
+
+For engine-run SDK calls (harness tasks, batch jobs, summarizers): `output_config.format` json_schema with `strict: true`, one stable schema per thread (changing it mid-thread invalidates the cache — the documented pitfall), killing wrapper prose and the parse-retry class. Not applicable to the interactive agent loop.
+
+## Round-2 calibration
+
+caveman-code's shipped register (the family's production-hardened variant) budgets **120–195 system-prompt tokens** for the full three-level block — the engine's register pack targets the same envelope, CI-gated (INV-6). Its exception list adds one item the flagship lacks and jackin adopts: **commit messages and PR descriptions are exempt at every level** (matching this repo's own "code/commits/PRs: write normal" rule; the caveman plugin's `/caveman-commit` — same author, opposite policy — is the documented anti-pattern). The family's first agentic quality datapoint (honest-bench: the register-active arm resolved 1–2 fewer tasks than Codex, n=25) is directionally negative and too small to settle — it *mandates* the canary/holdout gating below rather than changing the default (`terse`).
+
+## Quality instrumentation (this layer's open question, finally answered)
+
+Register compression's agentic-task quality impact is the largest unmeasured risk in the entire research corpus — no benchmark exists anywhere. The engine closes it operationally: registers above `terse` run behind (a) the C1–C6 canaries in the role's screening A/B before activation, and (b) a sampled online judge (Vol II ch. 47: async, reference-free, alarm-don't-block, 1–10% sampling) watching for dropped caveats/negations on live traffic, with automatic per-role fallback to `terse` on alarm — V7's canary-gated adaptive compression, shipped.

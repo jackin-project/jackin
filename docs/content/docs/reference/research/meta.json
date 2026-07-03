@@ -13,6 +13,7 @@
     "documentation",
     "infrastructure",
     "isolation",
+    "jackin-context-engine",
     "operator-surface",
     "product-growth",
     "runtime",

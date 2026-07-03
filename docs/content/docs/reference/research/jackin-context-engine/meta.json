@@ -1,0 +1,17 @@
+{
+  "title": "jackin Context Engine (spec)",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "01-goals-and-non-goals",
+    "02-architecture",
+    "03-observation-pipeline",
+    "04-retrieval-layer",
+    "05-output-and-prompt-layer",
+    "06-routing-and-fleet-economics",
+    "07-memory-and-state",
+    "08-measurement-and-verification",
+    "09-reuse-decision-matrix",
+    "10-rollout-and-validation"
+  ]
+}
