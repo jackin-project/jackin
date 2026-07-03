@@ -7,7 +7,6 @@
 
 use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
-    resume_console_terminal, suspend_console_terminal,
 };
 use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
 use jackin_console::tui::components::error_popup::{
@@ -197,6 +196,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
     use futures_util::{FutureExt as _, StreamExt as _};
 
+    let parent_session = options.parent_session;
     let startup_error_pending = options.startup_error.is_some();
     let mut state = jackin_console::tui::console::new_console_state_with_startup_error(
         &config,
@@ -207,10 +207,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     // When the launch flow in `app` already owns the host screen, draw into it
     // and leave teardown to that guard; otherwise own the screen here for the
     // lifetime of the console (standalone `jackin console` with no launch).
-    let owned_screen = if options
-        .parent_session
-        .is_some_and(TerminalSession::is_active)
-    {
+    let owned_screen = if parent_session.is_some_and(TerminalSession::is_active) {
         None
     } else {
         Some(TerminalSession::enter(host_console_terminal())?)
@@ -269,14 +266,22 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             None
         };
         if let Some(req) = pending {
-            let mut out = std::io::stdout();
-            suspend_console_terminal(&mut out);
-            println!(
-                "{}",
-                token_generate_status_message(token_generate_scope_label_for_console(&req))
-            );
-            let mint = crate::console::effects::execute_token_generate(paths, &config, &req);
-            drop(resume_console_terminal(&mut out));
+            let session = owned_screen.as_ref().or(parent_session);
+            let mint = if let Some(session) = session {
+                session.suspend(|| {
+                    println!(
+                        "{}",
+                        token_generate_status_message(token_generate_scope_label_for_console(&req))
+                    );
+                    crate::console::effects::execute_token_generate(paths, &config, &req)
+                })?
+            } else {
+                println!(
+                    "{}",
+                    token_generate_status_message(token_generate_scope_label_for_console(&req))
+                );
+                crate::console::effects::execute_token_generate(paths, &config, &req)
+            };
             // Force a full repaint next frame so leftover child output is
             // overwritten. terminal.resize() resets Ratatui's internal diff
             // buffer (marks every cell dirty) without emitting \x1b[2J — this
