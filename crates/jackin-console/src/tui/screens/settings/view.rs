@@ -1,16 +1,11 @@
 //! Settings screen view helpers.
 
-use super::model::AuthFormFocus;
-use super::model::AuthFormTarget;
 use super::model::GlobalMountConfirm;
-use super::model::GlobalMountModal;
 use super::model::GlobalMountTextTarget;
 use super::model::GlobalMountsState;
-use super::model::SettingsAuthModal;
 use super::model::SettingsAuthRow;
 use super::model::SettingsAuthState;
 use super::model::SettingsEnvConfig;
-use super::model::SettingsEnvModal;
 use super::model::SettingsEnvRow;
 use super::model::SettingsEnvScope;
 use super::model::SettingsEnvState;
@@ -45,6 +40,7 @@ use crate::tui::input::settings_auth_can_generate_token;
 use crate::tui::mount_display::{
     MountDisplayRow, format_config_mount_rows_with_cache, mount_path_width,
 };
+use crate::tui::state::SettingsModal;
 use crate::tui::view::{
     effective_footer_height, measured_footer_height, render_footer, render_header,
 };
@@ -564,122 +560,81 @@ fn settings_env_value_is_op_ref<
         .is_some_and(|value| matches!(value, jackin_core::EnvValue::OpRef(_)))
 }
 
-pub fn render_global_mount_modal<R, M>(
-    frame: &mut Frame<'_>,
-    modal: &GlobalMountModal<
-        jackin_tui::components::TextInputState<'_>,
-        crate::tui::components::file_browser::FileBrowserState,
-        crate::tui::components::mount_dst_choice::MountDstChoiceState,
-        crate::tui::components::scope_picker::ScopePickerState,
-        crate::tui::components::role_picker::RolePickerState<R>,
-        jackin_tui::components::ConfirmState,
-        crate::tui::components::confirm_save::ConfirmSaveState<M>,
-    >,
-) where
-    R: crate::tui::components::role_picker::RoleChoice,
-    M: Clone,
-{
+pub fn render_global_mount_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_>) {
     let area =
         crate::tui::components::modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
     match modal {
-        GlobalMountModal::Text { state, .. } => {
+        SettingsModal::MountText { state, .. } => {
             jackin_tui::components::render_text_input(frame, area, state);
         }
-        GlobalMountModal::FileBrowser { state } => {
+        SettingsModal::MountFileBrowser { state } => {
             crate::tui::components::file_browser::render(frame, area, state);
         }
-        GlobalMountModal::MountDstChoice { state } => {
+        SettingsModal::MountDstChoice { state } => {
             crate::tui::components::mount_dst_choice::render(frame, area, state);
         }
-        GlobalMountModal::ScopePicker { state } => {
+        SettingsModal::MountScopePicker { state } => {
             crate::tui::components::scope_picker::render(frame, area, state);
         }
-        GlobalMountModal::RolePicker { state } => {
+        SettingsModal::MountRolePicker { state } => {
             crate::tui::components::role_picker::render(frame, area, state);
         }
-        GlobalMountModal::Confirm { state, .. } => {
+        SettingsModal::MountConfirm { state, .. } => {
             jackin_tui::components::render_confirm_dialog(frame, area, state);
         }
-        GlobalMountModal::PreviewSave { state } => {
+        SettingsModal::MountPreviewSave { state } => {
             crate::tui::components::confirm_save::render(frame, area, state);
         }
+        _ => unreachable!("mount renderer received a non-mount settings modal"),
     }
 }
 
-pub fn render_settings_env_modal<O, R>(
-    frame: &mut Frame<'_>,
-    modal: &SettingsEnvModal<
-        jackin_core::EnvValue,
-        jackin_tui::components::TextInputState<'_>,
-        crate::tui::components::source_picker::SourcePickerState,
-        O,
-        crate::tui::components::role_picker::RolePickerState<R>,
-        crate::tui::components::scope_picker::ScopePickerState,
-        jackin_tui::components::ConfirmState,
-    >,
-) where
-    O: crate::tui::components::op_picker::OpPickerRenderState
-        + crate::tui::components::modal_rects::ModalOpPickerState,
-    R: crate::tui::components::role_picker::RoleChoice,
-{
+pub fn render_settings_env_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_>) {
     let area =
         crate::tui::components::modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
     match modal {
-        SettingsEnvModal::Text { state, .. } => {
+        SettingsModal::EnvText { state, .. } => {
             jackin_tui::components::render_text_input(frame, area, state);
         }
-        SettingsEnvModal::SourcePicker { state, .. } => {
+        SettingsModal::EnvSourcePicker { state, .. } => {
             crate::tui::components::source_picker::render(frame, area, state);
         }
-        SettingsEnvModal::OpPicker { state, .. } => {
+        SettingsModal::EnvOpPicker { state, .. } => {
             crate::tui::components::op_picker::render_picker(frame, area, state.as_ref());
         }
-        SettingsEnvModal::RolePicker { state } => {
+        SettingsModal::EnvRolePicker { state } => {
             crate::tui::components::role_picker::render(frame, area, state);
         }
-        SettingsEnvModal::ScopePicker { state } => {
+        SettingsModal::EnvScopePicker { state } => {
             crate::tui::components::scope_picker::render(frame, area, state);
         }
-        SettingsEnvModal::Confirm { state, .. } => {
+        SettingsModal::EnvConfirm { state, .. } => {
             jackin_tui::components::render_confirm_dialog(frame, area, state);
         }
+        _ => unreachable!("env renderer received a non-env settings modal"),
     }
 }
 
-pub fn render_settings_auth_modal<O, K, V>(
-    frame: &mut Frame<'_>,
-    modal: &SettingsAuthModal<
-        jackin_tui::components::TextInputState<'_>,
-        crate::tui::components::source_picker::SourcePickerState,
-        O,
-        crate::tui::components::file_browser::FileBrowserState,
-        AuthFormTarget<K>,
-        crate::tui::components::auth_panel::AuthForm<V>,
-        AuthFormFocus,
-    >,
-) where
-    O: crate::tui::components::op_picker::OpPickerRenderState
-        + crate::tui::components::modal_rects::ModalOpPickerState,
-    V: crate::tui::components::auth_panel::AuthCredential,
-{
+pub fn render_settings_auth_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'_>) {
     let area =
         crate::tui::components::modal_rects::modal_rect_for_mode(frame.area(), modal.rect_mode());
     match modal {
-        SettingsAuthModal::AuthForm { state, focus, .. } => {
+        SettingsModal::AuthForm { state, focus, .. } => {
             crate::tui::components::auth_panel::render_form(frame, area, state, *focus);
         }
-        SettingsAuthModal::SourcePicker { state } => {
+        SettingsModal::AuthSourcePicker { state } => {
             crate::tui::components::source_picker::render(frame, area, state);
         }
-        SettingsAuthModal::TextInput { state } => {
+        SettingsModal::AuthTextInput { state } => {
             jackin_tui::components::render_text_input(frame, area, state);
         }
-        SettingsAuthModal::SourceFolderPicker { state } => {
+        SettingsModal::AuthSourceFolderPicker { state } => {
             crate::tui::components::file_browser::render(frame, area, state);
         }
-        SettingsAuthModal::OpPicker { state } => {
+        SettingsModal::AuthOpPicker { state } => {
             crate::tui::components::op_picker::render_picker(frame, area, state.as_ref());
         }
+        _ => unreachable!("auth renderer received a non-auth settings modal"),
     }
 }
 
@@ -1293,13 +1248,17 @@ pub fn settings_screen_footer_for_state(
         auth_modal_items: state
             .auth
             .modal_ref()
-            .map(|modal| modal.footer_items(settings_auth_can_generate_token(&state.auth))),
-        env_modal_items: state.env.modal.as_ref().map(SettingsEnvModal::footer_items),
+            .map(|modal| modal.auth_footer_items(settings_auth_can_generate_token(&state.auth))),
+        env_modal_items: state
+            .env
+            .modal
+            .as_ref()
+            .map(SettingsModal::env_footer_items),
         mounts_modal_items: state
             .mounts
             .modal
             .as_ref()
-            .map(GlobalMountModal::footer_items),
+            .map(SettingsModal::mounts_footer_items),
         screen_items: settings_footer_items(state, op_available, body_area),
     })
 }

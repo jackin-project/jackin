@@ -1005,7 +1005,7 @@ fn console_input_dispatch_plan_routes_stage_modal_precedence() {
             settings_auth_modal_open: true,
             ..base
         }),
-        ConsoleInputDispatchPlan::SettingsEnvModal
+        ConsoleInputDispatchPlan::SettingsEnvDialog
     );
     assert_eq!(
         console_input_dispatch_plan(ConsoleInputDispatchFacts {
@@ -1013,7 +1013,7 @@ fn console_input_dispatch_plan_routes_stage_modal_precedence() {
             create_prelude_modal_open: true,
             ..base
         }),
-        ConsoleInputDispatchPlan::SettingsAuthModal
+        ConsoleInputDispatchPlan::SettingsAuthDialog
     );
     assert_eq!(
         console_input_dispatch_plan(ConsoleInputDispatchFacts {

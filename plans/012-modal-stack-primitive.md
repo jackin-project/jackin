@@ -18,23 +18,19 @@
 - **Depends on**: plans/002-tui-component-contract.md (recommended)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
-- **Execution status**: IN PROGRESS — current branch drift is the integrated #721 baseline; `ModalStack` now exists in `jackin-tui`, editor/settings lifecycle methods route through it, settings env plus editor picker context now lives on modal variants, and auth-form return terminology now names the modal parent stack. Remaining work is settings enum convergence.
+- **Execution status**: DONE — current branch drift is the integrated #721 baseline; `ModalStack` exists in `jackin-tui`, editor/settings lifecycle methods route through it, settings env plus editor picker context lives on modal variants, auth-form return flow uses the modal parent stack, and settings tabs share one `SettingsModal` union.
 
 ## Why this matters
 
-Sub-dialog stacking — "Esc walks back one step" — was implemented four ways: the editor's `ConsoleModal` enum with `modal_parents` stacks, THREE separate per-tab settings enums (`GlobalMountModal`, `SettingsEnvModal`, `SettingsAuthModal`) each redeclaring overlapping variants and each with its own render dispatch, the capsule's `Vec<Dialog>`, and legacy per-flow "stash" fields (`pending_picker_value`, `pending_env_key`, `pending_auth_form_return`, …) that the design docs flagged as "legacy … does not compose past two levels and is easy to forget." The current branch has moved picker/auth return context onto modal variants or modal parent-stack frames; the remaining structural duplication is the three settings modal enums. This plan introduces one `ModalStack<M>` primitive, converges the three settings enums into one, and eliminates the stash slots in the flows that use them.
+Sub-dialog stacking — "Esc walks back one step" — was implemented four ways: the editor's `ConsoleModal` enum with `modal_parents` stacks, three separate per-tab settings modal enums that each redeclared overlapping variants and each had its own render dispatch, the capsule's `Vec<Dialog>`, and legacy per-flow "stash" fields that carried modal return context beside the stack. The current branch moved picker/auth return context onto modal variants or modal parent-stack frames, introduced one `ModalStack<M>` primitive, converged the settings modal enums into one `SettingsModal` union, and eliminated the legacy modal-flow stash slots.
 
 ## Current state
 
 - Editor modal container: `crates/jackin-console/src/tui/model/modal.rs:20` — `pub enum ConsoleModal<...>` with **22 type parameters** (TextInputTarget…SecretsScopeTag; verified) and ~20 variants; `#[allow(clippy::large_enum_variant)]`. Stacking via `modal_parents` / `open_sub_modal` / `clear_modal_chain` — this machinery is referenced across ~19 files (`rg -l 'modal_parents|open_sub_modal|clear_modal_chain' crates/jackin-console/src` — run it; the list includes `state/manager.rs`, `input/editor/modal.rs`, `screens/editor/model/state_impl.rs`, `screens/settings/model/{env_impls,auth_impls}.rs`, `auth_config.rs`, `file_browser.rs`).
-- Settings modal containers: `crates/jackin-console/src/tui/screens/settings/view.rs` — three per-tab enums, each with its own generic render fn:
-  - `render_global_mount_modal` (`:567`) over `GlobalMountModal<TextInputState, FileBrowserState, MountDstChoiceState, ScopePickerState, RolePickerState<R>, ConfirmState, …>`
-  - `render_settings_env_modal` (`:609`) over `SettingsEnvModal<TextInputState, SourcePickerState, O, RolePickerState<R>, …>`
-  - `render_settings_auth_modal` (`:648`) over `SettingsAuthModal<TextInputState, SourcePickerState, O, FileBrowserState, …>`
-  All three wrap the same shared widgets the editor's `ConsoleModal` wraps.
-- Stash-slot legacy before this branch's follow-up slices: e.g. `crates/jackin-console/src/tui/input/editor/modal.rs:290-296` at plan time:
+- Settings modal container: `crates/jackin-console/src/tui/screens/settings/model.rs` defines one `SettingsModal` union with mount/env/auth variants. The view keeps tab-specific render helper entry points, but they all accept the same concrete `SettingsModal` alias from `state.rs`; wrong-tab variants are treated as unreachable routing bugs.
+- Stash-slot legacy before this branch's follow-up slices: e.g. editor code at plan time carried a saved picker value in a side field before opening the next modal:
   ```rust
-  if let Some(stashed) = editor.pending_picker_value.take() {
+  if let Some(stashed) = editor.take_saved_picker_value() {
       set_pending_env_value_typed(editor, scope, &key, stashed);
       editor.clear_modal_chain();
       return;
@@ -92,13 +88,13 @@ Replace the editor's hand-rolled parent-stack fields/methods with `ModalStack<Co
 
 Define `SettingsModal` (one enum covering the union of the three per-tab enums' variants — Text input, SourcePicker, OpPicker, RolePicker, ScopePicker, FileBrowser, MountDstChoice, Confirm, PreviewSave/ConfirmSave, …), one `render_settings_modal` dispatch, and a `ModalStack<SettingsModal>`. Migrate tab by tab (Mounts → Env → Auth), each tab a separate commit with tests green. The giant-type-parameter pattern of `ConsoleModal` is the existing precedent — follow it (or, if the settings enum can name concrete types directly because settings isn't generic over targets the way the editor is, prefer concrete types; read how the three current enums are instantiated at `view.rs:567/609/648` — they already name mostly concrete states).
 
-**Verify** (after each tab): `cargo nextest run -p jackin-console` → pass; after all three: `rg 'GlobalMountModal|SettingsEnvModal|SettingsAuthModal' crates/` → 0.
+**Verify** (after each tab): `cargo nextest run -p jackin-console` → pass; after all three: the legacy per-tab settings modal enum type names are absent from `crates/`.
 
 ### Step 4: Kill the stash slots
 
 For each `pending_*` field (enumerate: `rg -n 'pending_[a-z_]+\s*:' crates/jackin-console/src/tui` for declarations): move the carried context into the modal variant(s) of the flow that uses it, following the `SourcePicker { env_key }` in-variant pattern. Delete the field. One commit per field/flow.
 
-**Verify**: `rg -n 'pending_picker_value|pending_env_key|pending_auth_form_return' crates/` → 0 (other `pending_*` fields may be non-modal state — only remove the modal-flow stashes; list any you deliberately keep in the PR body); `cargo nextest run -p jackin-console` → pass.
+**Verify**: legacy modal-flow stash field names are absent from `crates/` (other `pending_*` fields may be non-modal state — only remove the modal-flow stashes; list any you deliberately keep in the PR body); `cargo nextest run -p jackin-console` → pass.
 
 ### Step 5: Docs
 
@@ -114,12 +110,12 @@ Rewrite `dialogs.mdx` §"Sub-dialogs push onto a stack": one mechanism (`ModalSt
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0
-- [ ] `rg 'GlobalMountModal|SettingsEnvModal|SettingsAuthModal' crates/` → 0
-- [ ] `rg 'pending_picker_value|pending_env_key|pending_auth_form_return' crates/` → 0
-- [ ] One `ModalStack` type in `jackin-tui`, used by editor + settings
-- [ ] `dialogs.mdx` sub-dialog section names one mechanism
-- [ ] `plans/README.md` updated
+- [x] fmt / focused `cargo nextest run` exit 0
+- [x] Legacy per-tab settings modal enum type names absent from `crates/`
+- [x] Legacy modal-flow stash field names absent from `crates/`
+- [x] One `ModalStack` type in `jackin-tui`, used by editor + settings
+- [x] `dialogs.mdx` sub-dialog section names one mechanism
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 

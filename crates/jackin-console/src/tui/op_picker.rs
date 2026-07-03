@@ -91,7 +91,7 @@ pub fn invalidate_cache_for_ref(
 ///
 /// Returns `true` if any picker state changed (caller should redraw).
 pub fn poll_picker_loads(state: &mut crate::tui::state::ManagerState<'_>) -> bool {
-    use crate::tui::state::{ManagerStage, Modal, SettingsAuthModal, SettingsEnvModal};
+    use crate::tui::state::{ManagerStage, Modal, SettingsModal};
     let mut dirty = false;
     if let Some(Modal::OpPicker { state, .. }) = state.list_modal.as_mut() {
         dirty |= poll_op_picker_load(state);
@@ -102,12 +102,12 @@ pub fn poll_picker_loads(state: &mut crate::tui::state::ManagerState<'_>) -> boo
         dirty |= poll_op_picker_load(state);
     }
     if let ManagerStage::Settings(settings) = &mut state.stage
-        && let Some(SettingsEnvModal::OpPicker { state, .. }) = settings.env.modal.as_mut()
+        && let Some(SettingsModal::EnvOpPicker { state, .. }) = settings.env.modal.as_mut()
     {
         dirty |= poll_op_picker_load(state);
     }
     if let ManagerStage::Settings(settings) = &mut state.stage
-        && let Some(SettingsAuthModal::OpPicker { state }) = settings.auth.modal_mut()
+        && let Some(SettingsModal::AuthOpPicker { state }) = settings.auth.modal_mut()
     {
         dirty |= poll_op_picker_load(state);
     }

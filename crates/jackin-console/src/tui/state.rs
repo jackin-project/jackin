@@ -108,7 +108,7 @@ pub type ManagerStage<'a> = crate::tui::model::ConsoleManagerStage<
 
 pub type GlobalMountsState<'a> = crate::tui::screens::settings::model::GlobalMountsState<
     jackin_config::GlobalMountRow,
-    GlobalMountModal<'a>,
+    SettingsModal<'a>,
 >;
 
 pub type SettingsState<'a> = crate::tui::screens::settings::model::SettingsState<
@@ -134,42 +134,28 @@ pub type ConfirmTarget =
     crate::tui::screens::editor::model::ConfirmTarget<jackin_config::RoleSource, PendingSaveCommit>;
 
 pub type SettingsEnvState<'a> =
-    crate::tui::screens::settings::model::SettingsEnvState<EnvValue, SettingsEnvModal<'a>>;
+    crate::tui::screens::settings::model::SettingsEnvState<EnvValue, SettingsModal<'a>>;
 
-pub type SettingsEnvModal<'a> = crate::tui::screens::settings::model::SettingsEnvModal<
+pub type SettingsModal<'a> = crate::tui::screens::settings::model::SettingsModal<
     EnvValue,
-    TextInputState<'a>,
-    SourcePickerState,
-    OpPickerState,
-    RolePickerState,
-    ScopePickerState,
-    ConfirmState,
->;
-
-pub type SettingsAuthState = crate::tui::screens::settings::model::SettingsAuthState<
-    EnvValue,
-    SettingsAuthModal<'static>,
-    PendingOpCommit,
->;
-
-pub type SettingsAuthModal<'a> = crate::tui::screens::settings::model::SettingsAuthModal<
     TextInputState<'a>,
     SourcePickerState,
     OpPickerState,
     FileBrowserState,
+    MountDstChoiceState,
+    RolePickerState,
+    ScopePickerState,
+    ConfirmState,
+    ConfirmSaveState<MountConfig>,
     AuthFormTarget,
     AuthForm,
     AuthFormFocus,
 >;
 
-pub type GlobalMountModal<'a> = crate::tui::screens::settings::model::GlobalMountModal<
-    TextInputState<'a>,
-    FileBrowserState,
-    MountDstChoiceState,
-    ScopePickerState,
-    RolePickerState,
-    ConfirmState,
-    ConfirmSaveState<MountConfig>,
+pub type SettingsAuthState = crate::tui::screens::settings::model::SettingsAuthState<
+    EnvValue,
+    SettingsModal<'static>,
+    PendingOpCommit,
 >;
 
 pub type PendingTokenGenerate = crate::tui::subscriptions::PendingTokenGenerate<

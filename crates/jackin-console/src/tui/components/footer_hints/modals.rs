@@ -196,7 +196,7 @@ pub fn confirm_save_footer_items(scroll_axes: ScrollAxes) -> Vec<HintSpan<'stati
 }
 
 /// Hint spans for inline yes/no confirm modals (`Modal::Confirm`,
-/// `GlobalMountModal::Confirm`, `SettingsEnvModal::Confirm`).
+/// `SettingsModal::MountConfirm`, `SettingsModal::EnvConfirm`).
 ///
 /// Delegates to [`jackin_tui::components::confirm_hint_spans`] so this matches
 #[must_use]

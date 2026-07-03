@@ -1,9 +1,9 @@
 /// `SettingsAuthState` impls + helper fns.
 use super::{
-    AuthKind, AuthMode, BTreeMap, GlobalMountsState, SettingsAuthModalSlot,
-    SettingsAuthRestorePendingForm, SettingsAuthRow, SettingsAuthSaveRefs, SettingsAuthState,
-    SettingsEnvState, SettingsPanelChangeCount, SettingsPanelDirty, SettingsPanelDiscard,
-    SettingsPanelMarkSaved, SettingsPanelTakeError, SettingsState,
+    AuthKind, AuthMode, BTreeMap, GlobalMountsState, SettingsAuthRestorePendingForm,
+    SettingsAuthRow, SettingsAuthSaveRefs, SettingsAuthSlot, SettingsAuthState, SettingsEnvState,
+    SettingsPanelChangeCount, SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved,
+    SettingsPanelTakeError, SettingsState,
 };
 use jackin_tui::components::ModalStack;
 
@@ -290,7 +290,7 @@ impl<EnvValue, Modal, OpRef> crate::tui::model::ConsolePendingOpCommit
     }
 }
 
-impl<EnvValue, Modal, PendingOpCommit> SettingsAuthModalSlot
+impl<EnvValue, Modal, PendingOpCommit> SettingsAuthSlot
     for SettingsAuthState<EnvValue, Modal, PendingOpCommit>
 {
     type Modal = Modal;

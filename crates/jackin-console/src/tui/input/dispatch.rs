@@ -86,8 +86,8 @@ pub fn handle_key(
         ConsoleInputDispatchPlan::EditorModal => {}
         ConsoleInputDispatchPlan::SettingsErrorPopup => {}
         ConsoleInputDispatchPlan::SettingsMountsModal => {}
-        ConsoleInputDispatchPlan::SettingsEnvModal => {}
-        ConsoleInputDispatchPlan::SettingsAuthModal => {}
+        ConsoleInputDispatchPlan::SettingsEnvDialog => {}
+        ConsoleInputDispatchPlan::SettingsAuthDialog => {}
         ConsoleInputDispatchPlan::CreatePreludeModal => {}
         ConsoleInputDispatchPlan::Stage(route) => {
             let outcome = match route {
@@ -256,7 +256,7 @@ pub fn handle_key(
         after_settings_event(state);
         return Ok(InputOutcome::Continue);
     }
-    if matches!(dispatch_plan, ConsoleInputDispatchPlan::SettingsEnvModal) {
+    if matches!(dispatch_plan, ConsoleInputDispatchPlan::SettingsEnvDialog) {
         let ManagerStage::Settings(settings) = &mut state.stage else {
             return Ok(InputOutcome::Continue);
         };
@@ -264,7 +264,7 @@ pub fn handle_key(
         after_settings_event(state);
         return Ok(InputOutcome::Continue);
     }
-    if matches!(dispatch_plan, ConsoleInputDispatchPlan::SettingsAuthModal) {
+    if matches!(dispatch_plan, ConsoleInputDispatchPlan::SettingsAuthDialog) {
         let ManagerStage::Settings(settings) = &mut state.stage else {
             return Ok(InputOutcome::Continue);
         };

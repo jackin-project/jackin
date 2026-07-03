@@ -4,7 +4,7 @@ use super::*;
 use crate::tui::components::auth_panel::CredentialInput;
 use crate::tui::components::file_browser::FileBrowserState;
 use crate::tui::state::{
-    ManagerStage, ManagerState, SettingsEnvModal, SettingsEnvRow, SettingsEnvTextTarget,
+    ManagerStage, ManagerState, SettingsEnvRow, SettingsEnvTextTarget, SettingsModal,
     SettingsState, SettingsTab,
 };
 use jackin_config::{AppConfig, RoleSource};
@@ -49,7 +49,7 @@ fn confirm_modal(
             Ok(file_browser) => {
                 settings
                     .mounts
-                    .open_sub_modal(GlobalMountModal::FileBrowser {
+                    .open_sub_modal(SettingsModal::MountFileBrowser {
                         state: Box::new(file_browser),
                     });
             }
@@ -98,13 +98,13 @@ fn add_flow_asks_scope_before_workspace_mount_flow() {
     };
     assert!(matches!(
         settings.mounts.modal,
-        Some(GlobalMountModal::ScopePicker { .. })
+        Some(SettingsModal::MountScopePicker { .. })
     ));
 
     confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
     assert!(matches!(
         settings.mounts.modal,
-        Some(GlobalMountModal::FileBrowser { .. })
+        Some(SettingsModal::MountFileBrowser { .. })
     ));
 }
 
@@ -126,7 +126,7 @@ fn global_mount_add_filebrowser_esc_closes_chain() {
     confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
     assert!(matches!(
         settings.mounts.modal,
-        Some(GlobalMountModal::FileBrowser { .. })
+        Some(SettingsModal::MountFileBrowser { .. })
     ));
 
     confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
@@ -182,7 +182,7 @@ fn global_mount_filebrowser_open_git_url_returns_typed_outcome() {
         FileBrowserState::from_listing(crate::services::file_browser::listing_from_home().unwrap());
     browser.pending_git_prompt = Some(tmp.path().to_path_buf());
     browser.pending_git_url = Some("file:///tmp/settings-url".into());
-    settings.mounts.modal = Some(GlobalMountModal::FileBrowser {
+    settings.mounts.modal = Some(SettingsModal::MountFileBrowser {
         state: Box::new(browser),
     });
 
@@ -198,7 +198,7 @@ fn global_mount_filebrowser_open_git_url_returns_typed_outcome() {
     ));
     assert!(matches!(
         settings.mounts.modal,
-        Some(GlobalMountModal::FileBrowser { .. })
+        Some(SettingsModal::MountFileBrowser { .. })
     ));
 }
 
@@ -225,7 +225,7 @@ fn add_flow_specific_scope_uses_shared_role_picker() {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         panic!("expected settings stage");
     };
-    let Some(GlobalMountModal::ScopePicker { state: picker }) = settings.mounts.modal.as_mut()
+    let Some(SettingsModal::MountScopePicker { state: picker }) = settings.mounts.modal.as_mut()
     else {
         panic!("expected scope picker");
     };
@@ -233,13 +233,13 @@ fn add_flow_specific_scope_uses_shared_role_picker() {
     confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
     assert!(matches!(
         settings.mounts.modal,
-        Some(GlobalMountModal::RolePicker { .. })
+        Some(SettingsModal::MountRolePicker { .. })
     ));
 
     confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
     assert!(matches!(
         settings.mounts.modal,
-        Some(GlobalMountModal::FileBrowser { .. })
+        Some(SettingsModal::MountFileBrowser { .. })
     ));
     assert_eq!(
         settings
@@ -274,7 +274,7 @@ fn global_mount_role_picker_esc_returns_scope_picker() {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         panic!("expected settings stage");
     };
-    let Some(GlobalMountModal::ScopePicker { state: picker }) = settings.mounts.modal.as_mut()
+    let Some(SettingsModal::MountScopePicker { state: picker }) = settings.mounts.modal.as_mut()
     else {
         panic!("expected scope picker");
     };
@@ -282,7 +282,7 @@ fn global_mount_role_picker_esc_returns_scope_picker() {
     confirm_modal(settings, &mut config, &paths, key(KeyCode::Enter));
     assert!(matches!(
         settings.mounts.modal,
-        Some(GlobalMountModal::RolePicker { .. })
+        Some(SettingsModal::MountRolePicker { .. })
     ));
 
     confirm_modal(settings, &mut config, &paths, key(KeyCode::Esc));
@@ -597,7 +597,7 @@ fn auth_tab_mode_row_ignores_space_and_enter_opens_form() {
     };
     assert!(matches!(
         settings.auth.modal,
-        Some(SettingsAuthModal::AuthForm { .. })
+        Some(SettingsModal::AuthForm { .. })
     ));
 }
 
@@ -616,7 +616,7 @@ fn settings_auth_generate_opens_source_picker_and_arms_flag() {
     settings.auth.selected_kind = Some(AuthKind::Claude);
     open_settings_auth_form(&mut settings.auth, &settings.env);
     // Drive the mode to OAuthToken so the generate gate holds.
-    let Some(SettingsAuthModal::AuthForm { state: form, .. }) = settings.auth.modal.as_mut() else {
+    let Some(SettingsModal::AuthForm { state: form, .. }) = settings.auth.modal.as_mut() else {
         panic!("auth form must be open");
     };
     form.set_mode(AuthMode::OAuthToken);
@@ -638,7 +638,7 @@ fn settings_auth_generate_opens_source_picker_and_arms_flag() {
     assert!(
         matches!(
             settings.auth.modal,
-            Some(SettingsAuthModal::SourcePicker { .. })
+            Some(SettingsModal::AuthSourcePicker { .. })
         ),
         "generate must open the source picker as the first step"
     );
@@ -682,7 +682,7 @@ fn settings_auth_generate_op_mint_remounts_form_focus_save() {
     settings.set_tab_bar_focused(false);
     settings.auth.selected_kind = Some(AuthKind::Claude);
     open_settings_auth_form(&mut settings.auth, &settings.env);
-    let Some(SettingsAuthModal::AuthForm { state: form, .. }) = settings.auth.modal.as_mut() else {
+    let Some(SettingsModal::AuthForm { state: form, .. }) = settings.auth.modal.as_mut() else {
         panic!("auth form must be open");
     };
     form.set_mode(AuthMode::OAuthToken);
@@ -715,7 +715,7 @@ fn settings_auth_generate_op_mint_remounts_form_focus_save() {
         &StubRunner,
     );
 
-    let Some(SettingsAuthModal::AuthForm { state, focus, .. }) = &settings.auth.modal else {
+    let Some(SettingsModal::AuthForm { state, focus, .. }) = &settings.auth.modal else {
         panic!("mint completion must re-mount the settings auth form");
     };
     assert_eq!(
@@ -747,7 +747,7 @@ fn settings_auth_generate_is_noop_for_non_oauth_token_mode() {
     settings.set_tab_bar_focused(false);
     settings.auth.selected_kind = Some(AuthKind::Claude);
     open_settings_auth_form(&mut settings.auth, &settings.env);
-    let Some(SettingsAuthModal::AuthForm { state: form, .. }) = settings.auth.modal.as_mut() else {
+    let Some(SettingsModal::AuthForm { state: form, .. }) = settings.auth.modal.as_mut() else {
         panic!("auth form must be open");
     };
     form.set_mode(AuthMode::ApiKey);
@@ -768,7 +768,7 @@ fn settings_auth_generate_is_noop_for_non_oauth_token_mode() {
 
     assert!(matches!(
         settings.auth.modal,
-        Some(SettingsAuthModal::AuthForm { .. })
+        Some(SettingsModal::AuthForm { .. })
     ));
     assert!(!settings.auth.generating_token);
     assert!(pending.is_none());
@@ -799,22 +799,19 @@ fn settings_auth_dialog_source_folder_stages_and_save_persists_global_kimi() {
     settings.set_tab_bar_focused(false);
     settings.auth.selected_kind = Some(AuthKind::Kimi);
     open_settings_auth_form(&mut settings.auth, &settings.env);
-    let Some(SettingsAuthModal::AuthForm { state, .. }) = settings.auth.modal.take() else {
+    let Some(SettingsModal::AuthForm { state, .. }) = settings.auth.modal.take() else {
         panic!("auth form must be open");
     };
     assert!(state.shows_source_folder());
-    settings
-        .auth
-        .modal_parents
-        .push(SettingsAuthModal::AuthForm {
-            target: AuthFormTarget::Workspace {
-                kind: AuthKind::Kimi,
-            },
-            state,
-            focus: AuthFormFocus::SourceFolder,
-            literal_buffer: String::new(),
-        });
-    settings.auth.modal = Some(SettingsAuthModal::SourceFolderPicker {
+    settings.auth.modal_parents.push(SettingsModal::AuthForm {
+        target: AuthFormTarget::Workspace {
+            kind: AuthKind::Kimi,
+        },
+        state,
+        focus: AuthFormFocus::SourceFolder,
+        literal_buffer: String::new(),
+    });
+    settings.auth.modal = Some(SettingsModal::AuthSourceFolderPicker {
         state: FileBrowserState::from_listing(crate::services::file_browser::listing_at(
             tmp.path().to_path_buf(),
             source_dir.clone(),
@@ -853,7 +850,7 @@ fn settings_auth_dialog_source_folder_stages_and_save_persists_global_kimi() {
         panic!("expected settings stage");
     };
 
-    let Some(SettingsAuthModal::AuthForm { state, focus, .. }) = &settings.auth.modal else {
+    let Some(SettingsModal::AuthForm { state, focus, .. }) = &settings.auth.modal else {
         panic!("source folder commit must return to auth form");
     };
     assert_eq!(focus, &AuthFormFocus::Save);
@@ -924,21 +921,18 @@ fn settings_auth_dialog_invalid_source_folder_keeps_picker_open_and_sets_error()
     settings.set_tab_bar_focused(false);
     settings.auth.selected_kind = Some(AuthKind::Kimi);
     open_settings_auth_form(&mut settings.auth, &settings.env);
-    let Some(SettingsAuthModal::AuthForm { state, .. }) = settings.auth.modal.take() else {
+    let Some(SettingsModal::AuthForm { state, .. }) = settings.auth.modal.take() else {
         panic!("auth form must be open");
     };
-    settings
-        .auth
-        .modal_parents
-        .push(SettingsAuthModal::AuthForm {
-            target: AuthFormTarget::Workspace {
-                kind: AuthKind::Kimi,
-            },
-            state,
-            focus: AuthFormFocus::SourceFolder,
-            literal_buffer: String::new(),
-        });
-    settings.auth.modal = Some(SettingsAuthModal::SourceFolderPicker {
+    settings.auth.modal_parents.push(SettingsModal::AuthForm {
+        target: AuthFormTarget::Workspace {
+            kind: AuthKind::Kimi,
+        },
+        state,
+        focus: AuthFormFocus::SourceFolder,
+        literal_buffer: String::new(),
+    });
+    settings.auth.modal = Some(SettingsModal::AuthSourceFolderPicker {
         state: FileBrowserState::from_listing(crate::services::file_browser::listing_at(
             tmp.path().to_path_buf(),
             source_dir.clone(),
@@ -984,7 +978,7 @@ fn settings_auth_dialog_invalid_source_folder_keeps_picker_open_and_sets_error()
     assert!(
         matches!(
             settings.auth.modal,
-            Some(SettingsAuthModal::SourceFolderPicker { .. })
+            Some(SettingsModal::AuthSourceFolderPicker { .. })
         ),
         "the picker must stay open after a rejected folder"
     );
@@ -1002,7 +996,7 @@ fn settings_auth_dialog_source_folder_row_is_generic_for_codex() {
     settings.auth.selected_kind = Some(AuthKind::Codex);
     open_settings_auth_form(&mut settings.auth, &settings.env);
 
-    let Some(SettingsAuthModal::AuthForm { state, .. }) = &settings.auth.modal else {
+    let Some(SettingsModal::AuthForm { state, .. }) = &settings.auth.modal else {
         panic!("auth form must be open");
     };
     assert!(state.shows_source_folder());
@@ -1024,7 +1018,7 @@ fn env_tab_add_flow_asks_scope_before_key() {
     };
     assert!(matches!(
         settings.env.modal,
-        Some(SettingsEnvModal::ScopePicker { .. })
+        Some(SettingsModal::EnvScopePicker { .. })
     ));
 
     handle_settings_env_modal(
@@ -1034,7 +1028,7 @@ fn env_tab_add_flow_asks_scope_before_key() {
     );
     assert!(matches!(
         settings.env.modal,
-        Some(SettingsEnvModal::Text {
+        Some(SettingsModal::EnvText {
             target: SettingsEnvTextTarget::EnvKey {
                 scope: SettingsEnvScope::Global
             },
@@ -1064,7 +1058,7 @@ fn env_tab_key_input_esc_closes_chain() {
     );
     assert!(matches!(
         settings.env.modal,
-        Some(SettingsEnvModal::Text {
+        Some(SettingsModal::EnvText {
             target: SettingsEnvTextTarget::EnvKey { .. },
             ..
         })
@@ -1151,7 +1145,7 @@ fn env_tab_source_picker_esc_returns_key_input() {
     commit_env_text(&mut settings.env, &target, None, "API_KEY");
     assert!(matches!(
         settings.env.modal,
-        Some(SettingsEnvModal::SourcePicker { .. })
+        Some(SettingsModal::EnvSourcePicker { .. })
     ));
 
     handle_settings_env_modal(
@@ -1163,7 +1157,7 @@ fn env_tab_source_picker_esc_returns_key_input() {
     assert!(
         matches!(
             settings.env.modal,
-            Some(SettingsEnvModal::Text {
+            Some(SettingsModal::EnvText {
                 target: SettingsEnvTextTarget::EnvKey { .. },
                 ..
             })
@@ -1195,7 +1189,7 @@ fn env_tab_specific_scope_uses_workspace_role_picker() {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         panic!("expected settings stage");
     };
-    let Some(SettingsEnvModal::ScopePicker { state: picker }) = settings.env.modal.as_mut() else {
+    let Some(SettingsModal::EnvScopePicker { state: picker }) = settings.env.modal.as_mut() else {
         panic!("expected scope picker");
     };
     picker.focused = crate::tui::components::scope_picker::ScopeChoice::SpecificAgent;
@@ -1206,7 +1200,7 @@ fn env_tab_specific_scope_uses_workspace_role_picker() {
     );
     assert!(matches!(
         settings.env.modal,
-        Some(SettingsEnvModal::RolePicker { .. })
+        Some(SettingsModal::EnvRolePicker { .. })
     ));
 
     handle_settings_env_modal(
@@ -1216,7 +1210,7 @@ fn env_tab_specific_scope_uses_workspace_role_picker() {
     );
     assert!(matches!(
         &settings.env.modal,
-        Some(SettingsEnvModal::Text {
+        Some(SettingsModal::EnvText {
             target: SettingsEnvTextTarget::EnvKey {
                 scope: SettingsEnvScope::Role(role)
             },

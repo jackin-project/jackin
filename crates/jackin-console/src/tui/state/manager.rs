@@ -1181,7 +1181,7 @@ impl ManagerState<'_> {
         let ManagerStage::Settings(settings) = &mut self.stage else {
             return;
         };
-        let Some(super::SettingsAuthModal::AuthForm {
+        let Some(super::SettingsModal::AuthForm {
             target,
             mut state,
             literal_buffer,
@@ -1196,7 +1196,7 @@ impl ManagerState<'_> {
             return;
         };
         state.set_op_ref(op_ref);
-        settings.auth.set_modal(super::SettingsAuthModal::AuthForm {
+        settings.auth.set_modal(super::SettingsModal::AuthForm {
             target,
             state,
             focus: crate::tui::screens::settings::model::AuthFormFocus::Save,
