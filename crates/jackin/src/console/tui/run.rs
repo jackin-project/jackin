@@ -144,6 +144,152 @@ fn run_token_generate_suspended(
     Ok(true)
 }
 
+fn route_mouse(
+    state: &mut ConsoleState,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    startup_error_pending: bool,
+    mouse: crossterm::event::MouseEvent,
+    term_size: ratatui::layout::Rect,
+    chrome_hover_tracker: &jackin_tui::components::HoverTracker<ConsoleChromeHover>,
+    chrome_hover: &mut Option<ConsoleChromeHover>,
+    pointer_shape: &mut jackin_tui::PointerShape,
+    needs_redraw: &mut bool,
+) -> bool {
+    if should_debug_log_mouse(mouse) {
+        jackin_diagnostics::debug_log!(
+            "tui",
+            "mouse={mouse:?} location={}",
+            console_location_debug(state)
+        );
+    }
+    // Single-consumer mouse precedence:
+    //   1. quit_confirm (supersedes everything) — consumes all input
+    //   2. list_modal — consumes all input while open
+    //   3. debug chip (chrome layer, only when no modal)
+    //   4. base surface (handle_mouse_with_config)
+    // A layer that handles the event does not fall through.
+    let no_modal_open = no_modal_open(state);
+
+    // Layer 1 & 2: modal layers consume all input. Click outside = dismiss.
+    let modal_plan = {
+        let full_area: ratatui::layout::Rect = term_size;
+        let (main_area, _) = split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
+        let quit_confirm_rect = state
+            .quit_confirm_state()
+            .map(|confirm| quit_confirm_area(main_area, confirm));
+        let ConsoleStage::Manager(ms) = &state.stage;
+        let list_modal_rect = ms.list_modal.as_ref().map(|modal| modal.rect(main_area));
+        modal_mouse_layer_plan(
+            mouse,
+            ConsoleModalMouseLayerFacts {
+                quit_confirm_rect,
+                list_modal_rect,
+                list_modal_container_info: matches!(
+                    ms.list_modal,
+                    Some(crate::console::tui::state::Modal::ContainerInfo { .. })
+                ),
+                startup_error_modal_active: startup_error_modal_active_for_console(
+                    state,
+                    startup_error_pending,
+                ),
+            },
+        )
+    };
+    if modal_plan.dismiss_quit_confirm {
+        state.dismiss_quit_confirm();
+    }
+    if modal_plan.dismiss_list_modal {
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        let _unused = crate::console::tui::update_manager(
+            ms,
+            crate::console::tui::ManagerMessage::DismissListModal,
+        );
+    }
+
+    if modal_plan.consumed {
+        if startup_error_dismissed(state, startup_error_pending) {
+            return true;
+        }
+        // Modal owned this event — clear chrome hover and revert pointer.
+        if chrome_hover.is_some() {
+            *chrome_hover = None;
+            *needs_redraw = true;
+        }
+        if *pointer_shape != jackin_tui::PointerShape::Default {
+            *pointer_shape = jackin_tui::PointerShape::Default;
+            let mut out = std::io::stdout();
+            let seq = jackin_tui::osc22_pointer_shape(*pointer_shape);
+            let _unused = std::io::Write::write_all(&mut out, seq.as_bytes());
+            drop(std::io::Write::flush(&mut out));
+        }
+    } else if let ConsoleStage::Manager(ms) = &mut state.stage {
+        // Layer 3: chrome (debug chip) — only fires when no modal.
+        // Debug chip click: open the shared container/session info popup.
+        let debug_chip_hovered = chrome_hover_tracker.is_hovered(
+            mouse.column,
+            mouse.row,
+            &ConsoleChromeHover::DebugChip,
+        );
+        let active_run = jackin_diagnostics::active_run();
+        if debug_chip_activation_allowed(
+            mouse,
+            no_modal_open,
+            debug_chip_hovered,
+            active_run.is_some(),
+        ) && let Some(run) = active_run
+        {
+            let log_path = run.path().display().to_string();
+            let _unused = crate::console::tui::update_manager(
+                ms,
+                crate::console::tui::ManagerMessage::OpenListContainerInfo {
+                    state: jackin_console::tui::components::container_info::debug_run_info_state(
+                        env!("JACKIN_VERSION"),
+                        run.run_id(),
+                        log_path,
+                    ),
+                },
+            );
+        }
+
+        // Layer 4: base surface.
+        let _outcome = crate::console::tui::input::handle_mouse_with_config(
+            ms,
+            mouse,
+            term_size,
+            Some(config),
+        );
+        for effect in ms.drain_effects() {
+            *needs_redraw |=
+                crate::console::effects::execute_manager_effect(ms, config, paths, effect);
+        }
+        // Pointer + chip hover tracking.
+        let next_chrome_hover = no_modal_open
+            .then(|| {
+                chrome_hover_tracker
+                    .hovered(mouse.column, mouse.row)
+                    .copied()
+            })
+            .flatten();
+        if next_chrome_hover != *chrome_hover {
+            *chrome_hover = next_chrome_hover;
+            *needs_redraw = true;
+        }
+        let next_pointer_shape = console_pointer_shape(
+            chrome_hover.is_some(),
+            crate::console::tui::input::clickable_at(ms, mouse, term_size, Some(config)),
+        );
+        if next_pointer_shape != *pointer_shape {
+            *pointer_shape = next_pointer_shape;
+            let seq = jackin_tui::osc22_pointer_shape(*pointer_shape);
+            let mut out = std::io::stdout();
+            drop(std::io::Write::write_all(&mut out, seq.as_bytes()));
+            drop(std::io::Write::flush(&mut out));
+        }
+    }
+    false
+}
+
 async fn execute_launch_prompt<B>(
     terminal: &mut ratatui::Terminal<B>,
     state: &mut ConsoleState,
@@ -718,147 +864,19 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
                 }
                 Event::Mouse(mouse) => {
                     last_mouse_event_at = Some(std::time::Instant::now());
-                    if should_debug_log_mouse(mouse) {
-                        jackin_diagnostics::debug_log!(
-                            "tui",
-                            "mouse={mouse:?} location={}",
-                            console_location_debug(&state)
-                        );
-                    }
-                    // Single-consumer mouse precedence:
-                    //   1. quit_confirm (supersedes everything) — consumes all input
-                    //   2. list_modal — consumes all input while open
-                    //   3. debug chip (chrome layer, only when no modal)
-                    //   4. base surface (handle_mouse_with_config)
-                    // A layer that handles the event does not fall through.
-                    let no_modal_open = no_modal_open(&state);
-
-                    // Layer 1 & 2: modal layers consume all input. Click outside = dismiss.
-                    let modal_plan = {
-                        let full_area: ratatui::layout::Rect = term_size;
-                        let (main_area, _) =
-                            split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
-                        let quit_confirm_rect = state
-                            .quit_confirm_state()
-                            .map(|confirm| quit_confirm_area(main_area, confirm));
-                        let ConsoleStage::Manager(ms) = &state.stage;
-                        let list_modal_rect =
-                            ms.list_modal.as_ref().map(|modal| modal.rect(main_area));
-                        modal_mouse_layer_plan(
-                            mouse,
-                            ConsoleModalMouseLayerFacts {
-                                quit_confirm_rect,
-                                list_modal_rect,
-                                list_modal_container_info: matches!(
-                                    ms.list_modal,
-                                    Some(crate::console::tui::state::Modal::ContainerInfo { .. })
-                                ),
-                                startup_error_modal_active: startup_error_modal_active_for_console(
-                                    &state,
-                                    startup_error_pending,
-                                ),
-                            },
-                        )
-                    };
-                    if modal_plan.dismiss_quit_confirm {
-                        state.dismiss_quit_confirm();
-                    }
-                    if modal_plan.dismiss_list_modal {
-                        let ConsoleStage::Manager(ms) = &mut state.stage;
-                        let _unused = crate::console::tui::update_manager(
-                            ms,
-                            crate::console::tui::ManagerMessage::DismissListModal,
-                        );
-                    }
-
-                    if modal_plan.consumed {
-                        if startup_error_dismissed(&state, startup_error_pending) {
-                            break 'main Ok(None);
-                        }
-                        // Modal owned this event — clear chrome hover and revert pointer.
-                        if chrome_hover.is_some() {
-                            chrome_hover = None;
-                            needs_redraw = true;
-                        }
-                        if pointer_shape != jackin_tui::PointerShape::Default {
-                            pointer_shape = jackin_tui::PointerShape::Default;
-                            let mut out = std::io::stdout();
-                            let seq = jackin_tui::osc22_pointer_shape(pointer_shape);
-                            let _unused = std::io::Write::write_all(&mut out, seq.as_bytes());
-                            drop(std::io::Write::flush(&mut out));
-                        }
-                    } else if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        // Layer 3: chrome (debug chip) — only fires when no modal.
-                        // Debug chip click: open the shared container/session info popup.
-                        let debug_chip_hovered = chrome_hover_tracker.is_hovered(
-                            mouse.column,
-                            mouse.row,
-                            &ConsoleChromeHover::DebugChip,
-                        );
-                        let active_run = jackin_diagnostics::active_run();
-                        if debug_chip_activation_allowed(
-                            mouse,
-                            no_modal_open,
-                            debug_chip_hovered,
-                            active_run.is_some(),
-                        ) && let Some(run) = active_run
-                        {
-                            let log_path = run.path().display().to_string();
-                            let _unused = crate::console::tui::update_manager(
-                                ms,
-                                crate::console::tui::ManagerMessage::OpenListContainerInfo {
-                                    state: jackin_console::tui::components::container_info::debug_run_info_state(
-                                        env!("JACKIN_VERSION"),
-                                        run.run_id(),
-                                        log_path,
-                                    ),
-                                },
-                            );
-                        }
-
-                        // Layer 4: base surface.
-                        let _outcome = crate::console::tui::input::handle_mouse_with_config(
-                            ms,
-                            mouse,
-                            term_size,
-                            Some(&config),
-                        );
-                        for effect in ms.drain_effects() {
-                            needs_redraw |= crate::console::effects::execute_manager_effect(
-                                ms,
-                                &mut config,
-                                paths,
-                                effect,
-                            );
-                        }
-                        // Pointer + chip hover tracking.
-                        let next_chrome_hover = no_modal_open
-                            .then(|| {
-                                chrome_hover_tracker
-                                    .hovered(mouse.column, mouse.row)
-                                    .copied()
-                            })
-                            .flatten();
-                        if next_chrome_hover != chrome_hover {
-                            chrome_hover = next_chrome_hover;
-                            needs_redraw = true;
-                        }
-                        let next_pointer_shape = console_pointer_shape(
-                            chrome_hover.is_some(),
-                            crate::console::tui::input::clickable_at(
-                                ms,
-                                mouse,
-                                term_size,
-                                Some(&config),
-                            ),
-                        );
-                        if next_pointer_shape != pointer_shape {
-                            pointer_shape = next_pointer_shape;
-                            let seq = jackin_tui::osc22_pointer_shape(pointer_shape);
-                            let mut out = std::io::stdout();
-                            drop(std::io::Write::write_all(&mut out, seq.as_bytes()));
-                            drop(std::io::Write::flush(&mut out));
-                        }
+                    if route_mouse(
+                        &mut state,
+                        &mut config,
+                        paths,
+                        startup_error_pending,
+                        mouse,
+                        term_size,
+                        &chrome_hover_tracker,
+                        &mut chrome_hover,
+                        &mut pointer_shape,
+                        &mut needs_redraw,
+                    ) {
+                        break 'main Ok(None);
                     }
                 }
                 _ => {}
