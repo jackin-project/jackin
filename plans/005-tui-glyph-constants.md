@@ -140,12 +140,12 @@ Add a test in `crates/jackin-tui/src/keymap.rs`'s test module: for each constant
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0
-- [ ] `rg -n 'HintSpan::Key\("Tab"\)|HintSpan::Key\("↑/↓"\)|HintSpan::Key\("←/→"\)' crates/` → 0
-- [ ] `rg -n '"PgUp PgDn"' crates/ --type rust` → 0
-- [ ] `rg -n 'Alt\+|Shift\+' crates/ --type rust` → 0 (excluding genuine string content unrelated to hints — verify each residual hit and list it in the PR body if intentionally kept)
-- [ ] Lookbook `--check` exits 0 (regen first if a story glyph changed)
-- [ ] `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0
+- [x] `rg -n 'HintSpan::Key\("Tab"\)|HintSpan::Key\("↑/↓"\)|HintSpan::Key\("←/→"\)' crates/` → 0
+- [x] `rg -n '"PgUp PgDn"' crates/ --type rust` → 0
+- [x] `rg -n 'Alt\+|Shift\+' crates/ --type rust` → 0 (excluding genuine string content unrelated to hints — verify each residual hit and list it in the PR body if intentionally kept)
+- [x] Lookbook `--check` exits 0 (regen first if a story glyph changed)
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 

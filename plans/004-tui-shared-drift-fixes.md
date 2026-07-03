@@ -119,12 +119,12 @@ In `theme.rs`, add (following the `_RGB` + `color()` idiom): `DIFF_REMOVED_BG`, 
 
 ## Done criteria
 
-- [ ] fmt / clippy `-D warnings` / `cargo nextest run` exit 0
-- [ ] `rg 'SLOW_BLINK' crates/jackin-tui/src` → 0
-- [ ] `rg 'HintSpan::Key' crates/jackin-tui/src/components/diff_view.rs` → 0
-- [ ] `rg 'Color::(Rgb|Red|Green)' crates/jackin-tui/src/components/diff_view.rs` → 0
-- [ ] Lookbook `--check` exits 0 after regen; only text-input/diff-view SVGs changed
-- [ ] `plans/README.md` updated
+- [x] fmt / clippy `-D warnings` / `cargo nextest run` exit 0
+- [x] `rg 'SLOW_BLINK' crates/jackin-tui/src` → 0
+- [x] `rg 'HintSpan::Key' crates/jackin-tui/src/components/diff_view.rs` → 0
+- [x] `rg 'Color::(Rgb|Red|Green)' crates/jackin-tui/src/components/diff_view.rs` → 0
+- [x] Lookbook `--check` exits 0 after regen; only text-input/diff-view SVGs changed
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 

@@ -122,12 +122,12 @@ Verification: `cargo nextest run -p jackin-tui` → all pass including new tests
 
 ## Done criteria
 
-- [ ] `cargo fmt --check`, clippy `-D warnings`, `cargo nextest run` all exit 0
-- [ ] `rg 'ButtonFocus' crates/jackin-tui/src` → trait + 2 impls
-- [ ] No hand-written focus-toggle `match` remains in the two `handle_key` fns (cycling goes through `next`/`prev`)
-- [ ] Lookbook `--check` exits 0 with zero SVG diffs
-- [ ] `navigation.mdx` has the Focus layers subsection
-- [ ] `plans/README.md` updated
+- [x] `cargo fmt --check`, clippy `-D warnings`, `cargo nextest run` all exit 0
+- [x] `rg 'ButtonFocus' crates/jackin-tui/src` → trait + 2 impls
+- [x] No hand-written focus-toggle `match` remains in the two `handle_key` fns (cycling goes through `next`/`prev`)
+- [x] Lookbook `--check` exits 0 with zero SVG diffs
+- [x] `navigation.mdx` has the Focus layers subsection
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 

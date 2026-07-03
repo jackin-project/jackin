@@ -91,11 +91,11 @@ If the extracted fns exceed ~300 lines together, move them to a sibling (`run/st
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0; docker-e2e profile at merge time
-- [ ] `run_console` body ≤ ~150 lines (loop + step calls)
-- [ ] Terminal restore is structurally guaranteed (guard) — cite the type in the PR
-- [ ] ≥2 new unit tests on previously-inline logic
-- [ ] `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0; docker-e2e profile at merge time
+- [x] `run_console` body ≤ ~150 lines (loop + step calls)
+- [x] Terminal restore is structurally guaranteed (guard) — cite the type in the PR
+- [x] ≥2 new unit tests on previously-inline logic
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 

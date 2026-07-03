@@ -108,11 +108,11 @@ Popup dismisses on Enter/Esc/o via `ERROR_POPUP_KEYMAP` (NOT on any keystroke). 
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0
-- [ ] `rg 'SpawnFailureBannerWidget' crates/` → 0
-- [ ] `rg 'error_dialog|ErrorPopupState' crates/jackin-capsule/src` → ≥1 real use (the capsule finally consumes the shared error surface)
-- [ ] New variant has hint arm, key arm, render arm, geometry arm (compiler-enforced)
-- [ ] `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0
+- [x] `rg 'SpawnFailureBannerWidget' crates/` → 0
+- [x] `rg 'error_dialog|ErrorPopupState' crates/jackin-capsule/src` → ≥1 real use (the capsule finally consumes the shared error surface)
+- [x] New variant has hint arm, key arm, render arm, geometry arm (compiler-enforced)
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 

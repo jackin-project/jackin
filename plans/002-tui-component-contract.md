@@ -162,13 +162,13 @@ Ensure `components.rs` re-exports exactly the surviving public API (no dangling 
 
 ## Done criteria
 
-- [ ] `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo nextest run` all exit 0
-- [ ] `cargo run -p jackin-tui-lookbook -- --check docs/public/tui-lookbook` exits 0 with no regenerated diffs
-- [ ] `rg 'fn render\(self, buf' crates/jackin-tui/src` → 0 matches
-- [ ] `rg 'handle_key_in_rect|modal_block_inactive' crates/` → 0 matches
-- [ ] `rg 'fn handle_key\(&self,' crates/jackin-tui/src` → 0 matches
-- [ ] `components.mdx` contains the Component API contract subsection
-- [ ] `plans/README.md` status row updated
+- [x] `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo nextest run` all exit 0
+- [x] `cargo run -p jackin-tui-lookbook -- --check docs/public/tui-lookbook` exits 0 with no regenerated diffs
+- [x] `rg 'fn render\(self, buf' crates/jackin-tui/src` → 0 matches
+- [x] `rg 'handle_key_in_rect|modal_block_inactive' crates/` → 0 matches
+- [x] `rg 'fn handle_key\(&self,' crates/jackin-tui/src` → 0 matches
+- [x] `components.mdx` contains the Component API contract subsection
+- [x] `plans/README.md` status row updated
 
 ## STOP conditions
 

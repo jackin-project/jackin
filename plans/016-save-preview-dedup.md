@@ -96,12 +96,12 @@ Arrange as coordinator + submodules (`diff.rs`, `workspace.rs`, `settings.rs`, s
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0 with ZERO preview-output expectation changes
-- [ ] One counting implementation: `rg -n 'fn .*diff_counts' crates/jackin-console/src` → 1 (or 0 if folded into the builder)
-- [ ] `workspace_save_lines` and `settings_save_lines` each < ~60 lines (drivers, not builders)
-- [ ] Codebase-map updated for the split
-- [ ] Step 0 verdict recorded in module docs
-- [ ] `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0 with ZERO preview-output expectation changes
+- [x] One counting implementation: `rg -n 'fn .*diff_counts' crates/jackin-console/src` → 1 (or 0 if folded into the builder)
+- [x] `workspace_save_lines` and `settings_save_lines` each < ~60 lines (drivers, not builders)
+- [x] Codebase-map updated for the split
+- [x] Step 0 verdict recorded in module docs
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 

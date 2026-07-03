@@ -90,11 +90,11 @@ Update codebase-map for the new module. Full sweep: fmt, clippy, nextest, lookbo
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0; lookbook `--check` zero diffs
-- [ ] `lib.rs` ≈290 lines; contains no `fn` bodies over ~10 lines
-- [ ] `jackin_tui::ansi::*` paths unchanged for consumers (`rg 'jackin_tui::ansi' crates/` all compile)
-- [ ] Codebase-map updated
-- [ ] `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0; lookbook `--check` zero diffs
+- [x] `lib.rs` ≈290 lines; contains no `fn` bodies over ~10 lines
+- [x] `jackin_tui::ansi::*` paths unchanged for consumers (`rg 'jackin_tui::ansi' crates/` all compile)
+- [x] Codebase-map updated
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 

@@ -131,12 +131,12 @@ Add `button_rects` to `ButtonStrip` (compute the same x-offsets `render`/`line()
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0
-- [ ] `rg 'Rgb\(' crates/jackin-capsule/src/tui/components/chrome.rs` → 0
-- [ ] Capsule bar painted by `StatusFooter` (grep for the render call)
-- [ ] `rg 'YES_LABEL' crates/` → 0
-- [ ] Lookbook `--check` exits 0
-- [ ] `chrome.mdx` updated; `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0
+- [x] `rg 'Rgb\(' crates/jackin-capsule/src/tui/components/chrome.rs` → 0
+- [x] Capsule bar painted by `StatusFooter` (grep for the render call)
+- [x] `rg 'YES_LABEL' crates/` → 0
+- [x] Lookbook `--check` exits 0
+- [x] `chrome.mdx` updated; `plans/README.md` updated
 
 ## STOP conditions
 

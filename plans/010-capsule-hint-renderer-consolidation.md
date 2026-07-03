@@ -125,12 +125,12 @@ Replace the truncation path: compute `wrapped_height(spans, width)` (shared, `hi
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0
-- [ ] `rg 'PHOSPHOR_DARK' crates/jackin-capsule/src/tui/components/chrome.rs` → 0 (in hint context)
-- [ ] `rg 'truncate_spans_to_cols' crates/` → 0
-- [ ] Exactly one span→style map in the workspace: `rg -l 'HintSpan::Sep =>' crates/` → only `hint_bar.rs`
-- [ ] Lookbook `--check` exits 0
-- [ ] `navigation.mdx` updated; `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0
+- [x] `rg 'PHOSPHOR_DARK' crates/jackin-capsule/src/tui/components/chrome.rs` → 0 (in hint context)
+- [x] `rg 'truncate_spans_to_cols' crates/` → 0
+- [x] Exactly one span→style map in the workspace: `rg -l 'HintSpan::Sep =>' crates/` → only `hint_bar.rs`
+- [x] Lookbook `--check` exits 0
+- [x] `navigation.mdx` updated; `plans/README.md` updated
 
 ## STOP conditions
 

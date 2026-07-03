@@ -72,10 +72,10 @@ No new tests — pixel-identical alias. Lookbook `--check` with zero diffs is th
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0
-- [ ] `rg -n 'Color::Black' crates/jackin-tui/src --type rust | grep -v 'ansi_text.rs|theme.rs|tests'` → 0
-- [ ] Lookbook `--check` exits 0, zero SVG diffs
-- [ ] `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0
+- [x] `rg -n 'Color::Black' crates/jackin-tui/src --type rust | grep -v 'ansi_text.rs|theme.rs|tests'` → 0
+- [x] Lookbook `--check` exits 0, zero SVG diffs
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 

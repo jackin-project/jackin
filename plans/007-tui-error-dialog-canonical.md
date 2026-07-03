@@ -139,12 +139,12 @@ In `error_dialog.rs` tests (model on existing test module there):
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0
-- [ ] `rg 'Layout::default' crates/jackin-tui/src/components/error_dialog.rs` → 0 matches (skeleton composed, not hand-rolled)
-- [ ] `rg '"  OK  "' crates/jackin-tui/src/components/error_dialog.rs` → 0 raw-painted matches (button via ButtonStrip)
-- [ ] `ErrorPopupRow` exported from `components.rs`
-- [ ] Lookbook regen + `--check` exit 0; diffs confined to error-dialog stories
-- [ ] `dialogs.mdx` updated; `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0
+- [x] `rg 'Layout::default' crates/jackin-tui/src/components/error_dialog.rs` → 0 matches (skeleton composed, not hand-rolled)
+- [x] `rg '"  OK  "' crates/jackin-tui/src/components/error_dialog.rs` → 0 raw-painted matches (button via ButtonStrip)
+- [x] `ErrorPopupRow` exported from `components.rs`
+- [x] Lookbook regen + `--check` exit 0; diffs confined to error-dialog stories
+- [x] `dialogs.mdx` updated; `plans/README.md` updated
 
 ## STOP conditions
 

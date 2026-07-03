@@ -157,17 +157,17 @@ Run, in order: `cargo fmt --check`, `cargo clippy --all-targets --all-features -
 
 Machine-checkable. ALL must hold:
 
-- [ ] `cargo fmt --check` exits 0
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings` exits 0
-- [ ] `cargo nextest run -p jackin-tui -p jackin-tui-lookbook -p jackin-capsule` exits 0
-- [ ] `cargo run -p jackin-tui-lookbook -- --check docs/public/tui-lookbook` exits 0
-- [ ] `cd docs && bun run build` exits 0
-- [ ] `grep -n 'Panel rain' docs/content/docs/reference/tui/components.mdx` — no table row
-- [ ] Catalog table contains rows for `select_list`, `scrollable_panel`, `status_footer`, `hint_bar`, `diff_view`, `container_info`, `tab_strip`, `button_strip`, `brand_header`, `filter_input`, `panel`, `status_popup`
-- [ ] `docs/content/docs/reference/tui/lookbook/diff-view.mdx` and `container-info.mdx` exist and are linked from `index.mdx`
-- [ ] `grep -rn 'Ctrl+' crates/jackin-tui-lookbook/src/stories.rs` returns nothing
-- [ ] No files outside the in-scope list modified (`git status`)
-- [ ] `plans/README.md` status row updated
+- [x] `cargo fmt --check` exits 0
+- [x] `cargo clippy --all-targets --all-features -- -D warnings` exits 0
+- [x] `cargo nextest run -p jackin-tui -p jackin-tui-lookbook -p jackin-capsule` exits 0
+- [x] `cargo run -p jackin-tui-lookbook -- --check docs/public/tui-lookbook` exits 0
+- [x] `cd docs && bun run build` exits 0
+- [x] `grep -n 'Panel rain' docs/content/docs/reference/tui/components.mdx` — no table row
+- [x] Catalog table contains rows for `select_list`, `scrollable_panel`, `status_footer`, `hint_bar`, `diff_view`, `container_info`, `tab_strip`, `button_strip`, `brand_header`, `filter_input`, `panel`, `status_popup`
+- [x] `docs/content/docs/reference/tui/lookbook/diff-view.mdx` and `container-info.mdx` exist and are linked from `index.mdx`
+- [x] `grep -rn 'Ctrl+' crates/jackin-tui-lookbook/src/stories.rs` returns nothing
+- [x] No files outside the in-scope list modified (`git status`)
+- [x] `plans/README.md` status row updated
 
 ## STOP conditions
 
