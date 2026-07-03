@@ -55,7 +55,9 @@ pub use error_dialog::{
     ERROR_POPUP_KEYMAP, ErrorPopupAction, ErrorPopupRow, ErrorPopupState, error_popup_hint_spans,
     estimated_message_rows, hyperlink_overlay as error_popup_hyperlink_overlay,
     hyperlink_regions as error_popup_hyperlink_regions, render_error_dialog,
-    render_error_dialog_in, required_height, row_value_rects as error_popup_row_value_rects,
+    render_error_dialog_in, required_height,
+    row_value_rect_groups as error_popup_row_value_rect_groups,
+    row_value_rects as error_popup_row_value_rects,
 };
 pub use filter_input::{FilterInput, filter_input_line, render_filter_input};
 pub use focus_owner::FocusOwner;
