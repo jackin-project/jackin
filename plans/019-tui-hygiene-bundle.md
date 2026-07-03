@@ -18,7 +18,7 @@
 - **Depends on**: none
 - **Category**: tech-debt / build
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
-- **Execution status**: BLOCKED — drift check found existing launch TUI component changes in `crates/jackin-launch-tui/src/tui/components/failure_dialog.rs` before plan work.
+- **Execution status**: DONE — current combined PR drift was reconciled; launch TUI now has one local `coalesce_cells` helper and `jackin-runtime` keeps `ratatui` test-only.
 
 ## Why this matters
 
@@ -82,10 +82,10 @@ In `crates/jackin-runtime/Cargo.toml`, move `ratatui = "0.30"` from `[dependenci
 
 ## Done criteria
 
-- [ ] fmt / clippy / full `cargo nextest run` exit 0
-- [ ] `rg -n 'fn coalesce_cells' crates/` → 1
-- [ ] `grep -A2 '\[dependencies\]' crates/jackin-runtime/Cargo.toml | grep ratatui` → empty; present under `[dev-dependencies]`
-- [ ] `plans/README.md` updated
+- [x] fmt / clippy / full `cargo nextest run` exit 0
+- [x] `rg -n 'fn coalesce_cells' crates/` → 1
+- [x] `grep -A2 '\[dependencies\]' crates/jackin-runtime/Cargo.toml | grep ratatui` → empty; present under `[dev-dependencies]`
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 
