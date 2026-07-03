@@ -1,0 +1,24 @@
+---
+title: "jackin Context Engine"
+description: "Embed a native token-optimization context engine in jackin — write-time observation compression, bounded retrieval, output/prompt policy, fleet routing economics, and honest measurement — synthesizing the validated mechanisms from caveman, headroom, RTK, lean-ctx, sem, fff, codedb, and mq without their delivery tax."
+---
+
+**Status**: Open — design spec drafted, implementation not started.
+
+## Objective
+
+Make every jackin❯ capsule token-optimized out of the box by embedding one Rust engine (`crates/jackin-context`) that owns six layers: measurement (ledger, cache-bust detection, thinking estimation, validation harness), observation compression at the tool boundary (shims + deterministic filters + reversible archive), bounded retrieval (embedded fff/sem/mq + codedb-shaped query verbs), output/prompt policy (register pack, guard lines, subagent report contracts), routing and fleet economics (effort tiers, model pins, advisor, spawn choreography, batch lane, quota metering), and a single reversible memory/state layer.
+
+## Why jackin, not a stack of third-party tools
+
+The research corpus concluded every external tool pays most of its complexity for *not owning the runtime* (installers, self-healing hooks, permission mediation, proxy plumbing) and none can prove its savings honestly (GPT tokenizers, per-payload marketing numbers, no net-of-injection accounting). jackin❯ composes capsule config at launch, supervises every tool boundary, and already parses per-session usage — so it can ship the mechanisms without the delivery tax and measure them properly.
+
+## Canonical documents
+
+- Design spec (source of truth): [jackin Context Engine](/reference/research/jackin-context-engine/) — architecture, cache-safety invariants, per-layer specs, reuse decision matrix, rollout phases.
+- Evidence base: [token-optimization dossier](/reference/research/token-optimization/) (incl. [57 — sem and mq](/reference/research/token-optimization/57-sem-and-mq-structural-and-markdown-retrieval/)) and [token-optimization tools hub](/reference/research/token-optimization-tools/) (incl. [13 — reuse surfaces and deltas](/reference/research/token-optimization-tools/13-reuse-surfaces-and-deltas/)).
+- Related pilot: [Code-intelligence tooling for the-architect role](/reference/research/infrastructure/code-intelligence/architect-code-intelligence-tooling/) — the third-party stack the engine is designed to subsume, which becomes its external comparison arms.
+
+## Remaining work
+
+Phases P0–P6 per the spec's [rollout page](/reference/research/jackin-context-engine/10-rollout-and-validation/): measurement-only foundation first (ledger, attribution, CI token-budget gate), then the negative-cost config set, then shims/filters, retrieval, output pack, routing, memory — each gated by the harness acceptance bar (≥20% tokens-per-solved-task at quality parity, net of the engine's own overhead). Requires one versioned `jackin.role.toml` schema bump for the `[context]` table.
