@@ -6,10 +6,11 @@
 use jackin_tui::{
     HintSpan,
     components::{
-        ButtonStrip, ButtonStripItem, ConfirmState, DebugInfo, ErrorPopupState, Panel, PanelFocus,
-        SaveDiscardFocus, SaveDiscardState, SelectListState, StatusFooterHover, TabStrip,
-        TextInputState, Toast, panel_body_area, render_brand_header, render_confirm_dialog,
-        render_container_info, render_error_dialog, render_filter_input,
+        ButtonStrip, ButtonStripItem, ConfirmState, DebugInfo, DiffViewState, ErrorPopupState,
+        Panel, PanelFocus, SaveDiscardFocus, SaveDiscardState, SelectListState, SinglePaneKind,
+        StatusFooterHover, TabStrip, TextInputState, Toast, panel_body_area, render_brand_header,
+        render_confirm_dialog, render_container_info, render_diff_view, render_error_dialog,
+        render_filter_input,
         render_save_discard_dialog, render_scrollable_block, render_select_list,
         render_status_footer, render_status_popup, render_text_input, render_toast,
         render_wrapped_hint_bar,
@@ -264,6 +265,24 @@ pub(crate) fn stories() -> Vec<Story> {
             72,
             12,
             story_container_info_debug,
+        ),
+        Story::new(
+            "diff-view/side-by-side",
+            "Diff view side-by-side",
+            "DiffView",
+            "Modified-file diff with paired removed and added rows.",
+            74,
+            11,
+            story_diff_view_side_by_side,
+        ),
+        Story::new(
+            "diff-view/single-pane",
+            "Diff view single-pane",
+            "DiffView",
+            "Added-file diff rendered as one scrollable pane.",
+            58,
+            9,
+            story_diff_view_single_pane,
         ),
         Story::new(
             "select-list/empty",
@@ -627,6 +646,35 @@ fn story_container_info_debug(frame: &mut Frame<'_>, area: Rect) {
     }
     .into_state();
     render_container_info(frame, area, &state);
+}
+
+fn story_diff_view_side_by_side(frame: &mut Frame<'_>, area: Rect) {
+    let before = r#"roles:
+  architect:
+    agent: claude
+    trust: prompt
+env:
+  JACKIN_DEBUG: "0"
+"#;
+    let after = r#"roles:
+  architect:
+    agent: claude
+    trust: full
+env:
+  JACKIN_DEBUG: "1"
+"#;
+    let mut state = DiffViewState::side_by_side(before, after, "before", "after");
+    render_diff_view(frame, area, &mut state);
+}
+
+fn story_diff_view_single_pane(frame: &mut Frame<'_>, area: Rect) {
+    let content = r#"name = "capsule-tools"
+image = "ghcr.io/jackin-project/capsule-tools"
+agent = "codex"
+trust = "prompt"
+"#;
+    let mut state = DiffViewState::single_pane(content, SinglePaneKind::Added, "added role.toml");
+    render_diff_view(frame, area, &mut state);
 }
 
 fn story_select_list_empty(frame: &mut Frame<'_>, area: Rect) {
