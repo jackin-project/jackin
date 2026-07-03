@@ -485,6 +485,30 @@ fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
 }
 
 #[test]
+fn otlp_internal_notice_emits_once() {
+    let _lock = DEBUG_BUFFER_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    DEBUG_BUFFER_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
+    drop(drain_debug_buffer());
+    set_rich_surface_active(true);
+
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, false, "load").unwrap();
+    run.record_otlp_internal("WARN", "first export failure");
+    run.record_otlp_internal("WARN", "second export failure");
+
+    let notices = drain_debug_buffer();
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(
+        notices[0].contains("first export failure"),
+        "first OTLP issue should be the announced one: {notices:?}"
+    );
+    set_rich_surface_active(false);
+}
+
+#[test]
 fn debug_lines_tee_only_before_rich_terminal_ownership() {
     use std::sync::atomic::Ordering;
     let _lock = DEBUG_BUFFER_TEST_LOCK

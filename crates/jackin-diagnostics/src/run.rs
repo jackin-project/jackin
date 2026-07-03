@@ -26,6 +26,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -87,6 +88,7 @@ pub struct RunDiagnostics {
     /// Accumulated per-stage durations for the end-of-run summary.
     stage_durations_ms: Mutex<Vec<(String, u64)>>,
     metrics: Mutex<DiagnosticsMetrics>,
+    otlp_internal_notified: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -192,6 +194,7 @@ impl RunDiagnostics {
             timing_starts: Mutex::new(HashMap::new()),
             stage_durations_ms: Mutex::new(Vec::new()),
             metrics: Mutex::new(DiagnosticsMetrics::default()),
+            otlp_internal_notified: AtomicBool::new(false),
         });
         run_registry()
             .lock()
@@ -660,10 +663,7 @@ impl RunDiagnostics {
     /// visible even when the file sink is gated off (the common OTLP-active case).
     /// Only the first is announced; the rest are silent to avoid 5-second spam.
     pub(crate) fn record_otlp_internal(&self, level: &str, message: &str) {
-        let first = self
-            .metrics
-            .lock()
-            .is_ok_and(|metrics| !metrics.event_counts.contains_key("otlp_internal"));
+        let first = !self.otlp_internal_notified.swap(true, Ordering::Relaxed);
         self.record_direct("otlp_internal", message, None, Some(level), None, level);
         if first {
             // Terminal-only notice: record_direct already wrote the file, and a
