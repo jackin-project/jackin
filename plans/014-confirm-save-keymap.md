@@ -18,6 +18,7 @@
 - **Depends on**: plans/003-tui-focus-taxonomy.md (uses `ButtonFocus`)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
+- **Execution status**: BLOCKED — drift check found existing changes in `confirm_save.rs`, `confirm_dialog.rs`, and `save_discard_dialog.rs` before plan work.
 
 ## Why this matters
 
