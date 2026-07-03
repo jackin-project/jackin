@@ -28,7 +28,7 @@ update the codebase map in the same PR.
 | 005 | Shared key-glyph constants | P1 | M | — | TODO |
 | 006 | theme::INK token (raw Color::Black sweep) | P3 | S | — (coordinate 004/007) | TODO |
 | 007 | ErrorPopup on the dialog shell + structured rows | P1 | M | 002 (soft) | DONE |
-| 008 | Launch failure popup onto ErrorPopup | P2 | L | 007 | TODO |
+| 008 | Launch failure popup onto ErrorPopup | P2 | L | 007 | IN PROGRESS |
 | 009 | Capsule spawn failure onto ErrorPopup | P2 | M | 007 | TODO |
 | 010 | Capsule hint renderer consolidation (style single-source, wrap not truncate) | P1 | M | — (coordinate 005) | TODO |
 | 011 | Capsule footer via StatusFooter + shared confirm hit-test | P2 | M | — (coordinate 010) | TODO |
