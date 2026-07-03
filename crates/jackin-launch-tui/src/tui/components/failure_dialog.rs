@@ -1,11 +1,11 @@
 //! Launch failure popup rendering and hit-testing.
 
+use jackin_tui::HintSpan;
 use jackin_tui::components::{
-    ErrorPopupRow, ErrorPopupState, ModalBackdrop, dialog_inner_chunks,
-    error_popup_hyperlink_overlay, error_popup_row_value_rect_groups, render_error_dialog_in,
-    render_hint_bar, required_height,
+    ErrorPopupRow, ErrorPopupState, ModalBackdrop, ModalRectSpec, dialog_inner_chunks,
+    error_popup_hyperlink_overlay, error_popup_row_value_rect_groups, modal_rect,
+    render_error_dialog_in, render_hint_bar, required_height,
 };
-use jackin_tui::{HintSpan, centered_rect};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
@@ -137,7 +137,13 @@ fn failure_popup_rect(area: Rect, state: &ErrorPopupState) -> Rect {
         popup_w.saturating_sub(2),
         area.height.saturating_sub(2).max(7),
     );
-    centered_rect(popup_w, height, area)
+    modal_rect(
+        area,
+        ModalRectSpec::Exact {
+            width: popup_w,
+            height,
+        },
+    )
 }
 
 #[must_use]

@@ -1,10 +1,10 @@
 //! Launch container-info dialog helpers.
 
 use jackin_tui::HintSpan;
-use jackin_tui::centered_rect;
+use jackin_tui::components::ModalRectSpec;
 use jackin_tui::components::{
     ContainerInfoRow, ContainerInfoState, DebugInfo, ModalBackdrop, container_info_required_height,
-    debug_info_hint_spans, dialog_scroll_axes, render_container_info, render_hint_bar,
+    debug_info_hint_spans, dialog_scroll_axes, modal_rect, render_container_info, render_hint_bar,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -87,11 +87,18 @@ pub fn launch_container_info_rect(
     state: &ContainerInfoState,
     debug_mode: bool,
 ) -> Rect {
-    // Structural exception: launch supplies surface width while shared Debug info owns row height and rendering.
     let body = launch_overlay_chrome_areas(area, debug_mode).body;
-    let width = (body.width.saturating_mul(3) / 5).clamp(40, body.width.max(40));
     let height = container_info_required_height(state);
-    centered_rect(width, height.min(body.height), body)
+    modal_rect(
+        body,
+        ModalRectSpec::PercentClampWithMargin {
+            width_pct: 60,
+            min_width: 40,
+            width_margin: 2,
+            height_margin: 2,
+            height,
+        },
+    )
 }
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ pub mod hint_bar;
 pub mod hover_tracker;
 pub mod modal_backdrop;
 pub mod modal_lifecycle;
+pub mod modal_rects;
 pub mod panel;
 pub mod save_discard_dialog;
 pub mod scrollable_panel;
@@ -71,6 +72,12 @@ pub use hint_bar::{
 pub use hover_tracker::HoverTracker;
 pub use modal_backdrop::ModalBackdrop;
 pub use modal_lifecycle::{ModalClickResult, ModalStack, classify_click, render_backdrop};
+pub use modal_rects::{
+    ModalRectMode, ModalRectSpec, auth_form_rect_for_height, centered_rect_exact,
+    centered_rect_fixed, centered_rect_preferred, confirm_rect, modal_rect, modal_rect_for_mode,
+    mount_choice_rect, op_picker_rect, role_picker_rect_for_count, scope_picker_rect,
+    source_picker_rect, text_input_rect,
+};
 pub use panel::{Panel, PanelFocus, modal_block, panel_body_area, unfocused_block};
 pub use save_discard_dialog::{
     SAVE_DISCARD_KEYMAP, SaveDiscardAction, SaveDiscardChoice, SaveDiscardFocus, SaveDiscardState,

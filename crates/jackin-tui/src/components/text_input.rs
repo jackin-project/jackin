@@ -451,9 +451,8 @@ pub fn render_text_input(frame: &mut ratatui::Frame<'_>, area: Rect, state: &Tex
 /// Canonical outer rectangle for one-label text-input prompts.
 ///
 /// Launch currently owns the only variable-width prompt surface, so this helper
-/// preserves that 60%-of-content sizing while moving the geometry into the
-/// shared component next to the renderer. Console modal rects intentionally keep
-/// their fixed 160-column reference sizing until that modal layer is migrated.
+/// preserves that 60%-of-content sizing while keeping prompt geometry in the
+/// shared crate next to the renderer and modal sizing registry.
 #[must_use]
 pub fn text_input_prompt_rect(area: Rect) -> Rect {
     let min_w = 50.min(area.width);

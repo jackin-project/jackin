@@ -5,7 +5,7 @@ description: "Modal sizing rules, confirmation layouts, sub-dialog stacking, err
 
 ## Modal Sizing Rules
 
-Modals use `centered_rect_fixed(outer, pct_w, rows)`. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
+Modal sizes come from the `modal_rects` registry in `jackin-tui`. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
 
 | Modal | `pct_w` | `rows` | Reasoning |
 |---|---|---|---|
@@ -19,13 +19,13 @@ Never add excess padding rows to modals. The outer rect must be exactly tight en
 
 Dialog width is a **stable preferred size** derived from `pct_w% of a 160-column reference terminal`, capped at `outer.width - 4` margin. The dialog holds that width whenever the terminal is at least that wide and only shrinks when the terminal is genuinely too narrow.
 
-`centered_rect_fixed(outer, pct_w, rows)` already implements this. Never compute `outer.width * pct_w / 100` directly — that rescales proportionally on every resize.
+`modal_rects::centered_rect_fixed(outer, pct_w, rows)` implements this policy for fixed-reference dialogs, and registry specs cover the launch and capsule variants that intentionally use different width policies. Never compute dialog width ad hoc in surface code — that hides sizing policy outside the registry and makes resize behavior drift.
 
 ### Status bar always reserved — modals never draw over it
 
 The reserved status/hint rows at the bottom of every screen are inviolable: no modal, dialog, or border may draw onto them. All modal rects are computed against the **content area** (full terminal minus footer height), not the full terminal area.
 
-`prepare_visible_modal()` subtracts `footer_height` before centering modals. Every new modal computation must use the content area, not the raw terminal size.
+`prepare_visible_modal()` subtracts `footer_height` before centering modals. Every new modal computation must use the content area, not the raw terminal size, then pass that reserved area through the shared registry.
 
 ### Text input dialogs use shared widgets
 

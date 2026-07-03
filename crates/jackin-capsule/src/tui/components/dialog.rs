@@ -37,7 +37,9 @@ pub use super::container_info_dialog::ContainerInfoDiagnostics;
 pub(super) use super::palette::{PALETTE_ITEMS, palette_filtered_indices};
 pub use super::palette::{PaletteCloseLabel, PaletteCommand};
 
-use jackin_tui::components::{CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction};
+use jackin_tui::components::{
+    CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction, ModalRectSpec, modal_rect,
+};
 use jackin_tui::keymap::raw_bytes_to_chord;
 
 use crate::tui::keymap::{FILTER_LIST_KEYMAP, FilterListAction, READ_ONLY_DISMISS_KEYMAP};
@@ -1296,23 +1298,6 @@ impl Dialog {
     /// pathologically small; the trade-off is that the host terminal
     /// stays in a recoverable state regardless.
     pub(crate) fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
-        let width = match self {
-            Self::ContainerInfo { .. } | Self::GitHubContext { .. } | Self::Usage { .. } => {
-                CONTAINER_INFO_WIDTH
-                    .min(term_cols.saturating_sub(4))
-                    .max(PALETTE_WIDTH)
-            }
-            // Exit data-loss confirm has two warning notes wider than PALETTE_WIDTH.
-            // Use the shared Details width percentage (70%) so the notes don't truncate.
-            Self::ConfirmAction {
-                kind: ConfirmKind::Exit,
-                ..
-            } => (term_cols.saturating_mul(70) / 100).clamp(
-                PALETTE_WIDTH,
-                term_cols.saturating_sub(4).max(PALETTE_WIDTH),
-            ),
-            _ => PALETTE_WIDTH,
-        };
         // Filterable dialogs reserve 2 extra rows: one for the filter
         // input and one for the separator above the items list. Item
         // count tracks the *filtered* set so the box shrinks as the
@@ -1376,13 +1361,48 @@ impl Dialog {
         };
         let height = natural_height.min(max_height);
         let top_row = crate::tui::components::status_bar::STATUS_BAR_ROWS;
-        let row = if matches!(self, Self::Usage { .. }) {
+        let area_y = if matches!(self, Self::Usage { .. }) {
             top_row.saturating_add(1)
         } else {
-            top_row + (content_height.saturating_sub(height)) / 2
+            top_row
         };
-        let col = (term_cols.saturating_sub(width)) / 2;
-        (row, col, height, width)
+        let area_height = if matches!(self, Self::Usage { .. }) {
+            content_height.saturating_sub(1)
+        } else {
+            content_height
+        };
+        let area = ratatui::layout::Rect::new(0, area_y, term_cols, area_height);
+        let spec = match self {
+            Self::ContainerInfo { .. } | Self::GitHubContext { .. } => ModalRectSpec::MaxWidthMin {
+                max_width: CONTAINER_INFO_WIDTH,
+                min_width: PALETTE_WIDTH,
+                side_margin: 4,
+                height,
+            },
+            Self::Usage { .. } => ModalRectSpec::TopAlignedMaxWidthMin {
+                max_width: CONTAINER_INFO_WIDTH,
+                min_width: PALETTE_WIDTH,
+                side_margin: 4,
+                height,
+            },
+            // Exit data-loss confirm has two warning notes wider than PALETTE_WIDTH.
+            // Use the shared Details width percentage (70%) so the notes don't truncate.
+            Self::ConfirmAction {
+                kind: ConfirmKind::Exit,
+                ..
+            } => ModalRectSpec::PercentClamp {
+                width_pct: 70,
+                min_width: PALETTE_WIDTH,
+                side_margin: 4,
+                height,
+            },
+            _ => ModalRectSpec::Exact {
+                width: PALETTE_WIDTH,
+                height,
+            },
+        };
+        let rect = modal_rect(area, spec);
+        (rect.y, rect.x, rect.height, rect.width)
     }
 
     /// Footer hint spans for this dialog. Rendered by the multiplexer

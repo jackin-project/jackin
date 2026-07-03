@@ -1,13 +1,14 @@
 //! Launch prompt dialog rendering and geometry.
 
+use jackin_tui::HintSpan;
+use jackin_tui::components::ModalRectSpec;
 use jackin_tui::components::{
     ConfirmState, ErrorPopupState, SelectListState, TextInputState, confirm_hint_spans,
-    confirm_required_height, confirm_width_pct, error_popup_hint_spans, render_confirm_dialog,
-    render_error_dialog_in, render_hint_bar, render_select_list, render_text_input,
-    required_height as error_dialog_required_height, select_list_hint_spans,
+    confirm_required_height, confirm_width_pct, error_popup_hint_spans, modal_rect,
+    render_confirm_dialog, render_error_dialog_in, render_hint_bar, render_select_list,
+    render_text_input, required_height as error_dialog_required_height, select_list_hint_spans,
     text_input_prompt_rect,
 };
-use jackin_tui::{HintSpan, centered_rect};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
@@ -76,21 +77,26 @@ fn picker_rect(area: Rect, picker: &SelectListState, context: &[Line<'_>]) -> Re
         .max(context_w)
         .saturating_add(6)
         .clamp(min_w, max_w);
-    centered_rect(width, height, area)
+    modal_rect(area, ModalRectSpec::Exact { width, height })
 }
 
 fn confirm_rect(area: Rect, state: &ConfirmState) -> Rect {
-    // Structural exception: launch confirm prompt adapts shared confirm state into the launch backdrop body.
-    let width = area.width.saturating_mul(confirm_width_pct(state)) / 100;
-    let height = confirm_required_height(state);
-    centered_rect(width, height, area)
+    modal_rect(
+        area,
+        ModalRectSpec::PercentClampWithMargin {
+            width_pct: confirm_width_pct(state),
+            min_width: 0,
+            width_margin: 2,
+            height_margin: 2,
+            height: confirm_required_height(state),
+        },
+    )
 }
 
 fn error_popup_rect(area: Rect, state: &ErrorPopupState) -> Rect {
-    // Structural exception: launch error popup derives height from shared error content before centering in the launch backdrop body.
     let width = (area.width.saturating_mul(3) / 4).clamp(40, area.width.max(40));
     let height = error_dialog_required_height(state, width.saturating_sub(2), area.height);
-    centered_rect(width, height, area)
+    modal_rect(area, ModalRectSpec::Exact { width, height })
 }
 
 /// Footer-hint keys for the launch text prompt. `skippable` adds the

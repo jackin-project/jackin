@@ -18,7 +18,7 @@
 - **Depends on**: plans/012-modal-stack-primitive.md (recommended — unified modal kinds shrink the registry)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
-- **Execution status**: BLOCKED — drift check found existing launch TUI failure-dialog and run-loop changes before plan work.
+- **Execution status**: DONE — drift was absorbed by the aggregate TUI refactor branch; modal sizing and placement specs now live in `jackin-tui`, with console, capsule, and launch routing dialog rectangles through the shared registry.
 
 ## Why this matters
 
@@ -55,7 +55,7 @@ Docs canon (`dialogs.mdx`): §"Modal Sizing Rules" — stable preferred dialog s
 
 ## Git workflow
 
-Branch (operator confirm): `refactor/tui-modal-rect-registry`. `git commit -s` + push. dialogs.mdx same PR.
+Branch: folded into the aggregate `chore/tui-refactor-plans` PR per operator direction. `git commit -s` + push. dialogs.mdx same PR.
 
 ## Steps
 
@@ -90,13 +90,13 @@ For each `Dialog` variant in `box_rect` (`dialog.rs:1272+`), express its width/h
 
 ## Done criteria
 
-- [ ] fmt / clippy / full `cargo nextest run` exit 0
-- [ ] `modal_rects` lives in `jackin-tui`; `rg 'modal_rect' crates/jackin-console/src/tui/components/` → only imports
-- [ ] Capsule `box_rect` contains no per-variant width arithmetic (specs only + edge conversion + clamps)
-- [ ] `rg 'centered_rect' crates/jackin-launch-tui/src` → only via registry (or zero)
-- [ ] Equivalence tests green (zero rect changes at all covered sizes)
-- [ ] dialogs.mdx updated; `plans/README.md` updated
-- [ ] Codebase Map (`docs/.../codebase-map.mdx`) updated for the moved module (repo rule: module moves update the map same PR)
+- [x] fmt / clippy / full `cargo nextest run` exit 0
+- [x] `modal_rects` lives in `jackin-tui`; `rg 'modal_rect' crates/jackin-console/src/tui/components/` → only imports
+- [x] Capsule `box_rect` contains no per-variant width arithmetic (specs only + edge conversion + clamps)
+- [x] `rg 'centered_rect' crates/jackin-launch-tui/src` → only via registry (or zero)
+- [x] Equivalence tests green (zero rect changes at all covered sizes)
+- [x] dialogs.mdx updated; `plans/README.md` updated
+- [x] Codebase Map (`docs/.../codebase-map.mdx`) updated for the moved module (repo rule: module moves update the map same PR)
 
 ## STOP conditions
 

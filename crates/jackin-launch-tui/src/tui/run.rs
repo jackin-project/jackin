@@ -664,9 +664,8 @@ impl RichRenderer {
     ) -> anyhow::Result<crate::LaunchDialogResult> {
         use crate::tui::components::dialog::dialog_backdrop;
         use jackin_tui::HintSpan;
-        use jackin_tui::centered_rect;
-        use jackin_tui::components::render_hint_bar;
         use jackin_tui::components::{ConfirmState, render_confirm_dialog};
+        use jackin_tui::components::{ModalRectSpec, modal_rect, render_hint_bar};
 
         // Item 0 = "Start new session"; items 1..=N = candidates.
         let mut labels = vec!["Start new session".to_owned()];
@@ -707,9 +706,16 @@ impl RichRenderer {
                                     .saturating_add(4);
                                 let height =
                                     rows.clamp(6, box_area.height.saturating_sub(2).max(6));
-                                let width = (box_area.width.saturating_mul(4) / 5)
-                                    .max(40.min(box_area.width));
-                                centered_rect(width, height, box_area)
+                                modal_rect(
+                                    box_area,
+                                    ModalRectSpec::PercentClampWithMargin {
+                                        width_pct: 80,
+                                        min_width: 40.min(box_area.width),
+                                        width_margin: 2,
+                                        height_margin: 2,
+                                        height,
+                                    },
+                                )
                             };
                             use jackin_tui::components::render_select_list;
                             render_select_list(frame, picker_rect, &picker, title, &[]);
@@ -764,10 +770,16 @@ impl RichRenderer {
                             use jackin_tui::components::{
                                 confirm_hint_spans, confirm_required_height, confirm_width_pct,
                             };
-                            let width =
-                                box_area.width.saturating_mul(confirm_width_pct(&confirm)) / 100;
-                            let height = confirm_required_height(&confirm);
-                            let rect = centered_rect(width, height, box_area);
+                            let rect = modal_rect(
+                                box_area,
+                                ModalRectSpec::PercentClampWithMargin {
+                                    width_pct: confirm_width_pct(&confirm),
+                                    min_width: 0,
+                                    width_margin: 2,
+                                    height_margin: 2,
+                                    height: confirm_required_height(&confirm),
+                                },
+                            );
                             render_confirm_dialog(frame, rect, &confirm);
                             render_hint_bar(frame, hint_area, &confirm_hint_spans());
                         })
