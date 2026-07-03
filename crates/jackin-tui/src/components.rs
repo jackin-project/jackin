@@ -56,7 +56,7 @@ pub use error_dialog::{
     estimated_message_rows, render_error_dialog, render_error_dialog_in, required_height,
 };
 pub use filter_input::{FilterInput, filter_input_line, render_filter_input};
-pub use focus_owner::FocusOwner;
+pub use focus_owner::{ButtonFocus, FocusOwner};
 pub use hint_bar::{
     HintBar, line as hint_line, render_hint_bar, render_wrapped_hint_bar, wrapped_height,
 };
