@@ -29,7 +29,7 @@ update the codebase map in the same PR.
 | 006 | theme::INK token (raw Color::Black sweep) | P3 | S | — (coordinate 004/007) | DONE |
 | 007 | ErrorPopup on the dialog shell + structured rows | P1 | M | 002 (soft) | DONE |
 | 008 | Launch failure popup onto ErrorPopup | P2 | L | 007 | DONE |
-| 009 | Capsule spawn failure onto ErrorPopup | P2 | M | 007 | BLOCKED — drift check found existing capsule TUI changes in `components.rs`, `dialog_widgets.rs`, and `palette.rs` before plan work |
+| 009 | Capsule spawn failure onto ErrorPopup | P2 | M | 007 | DONE |
 | 010 | Capsule hint renderer consolidation (style single-source, wrap not truncate) | P1 | M | — (coordinate 005) | BLOCKED — shared styling extracted, but wrapping needs operator decision because extra hint rows change capsule content-area reservation |
 | 011 | Capsule footer via StatusFooter + shared confirm hit-test | P2 | M | — (coordinate 010) | BLOCKED — drift check found existing changes in capsule chrome/dialog/palette files and shared button/confirm components before plan work |
 | 012 | ModalStack primitive; settings modal enums converge; stash slots die | P2 | L | 002 (soft) | BLOCKED — drift check found existing console TUI changes across component/input/view files before plan work |

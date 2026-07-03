@@ -199,6 +199,10 @@ pub enum Dialog {
         hovered_tab: Option<usize>,
         scroll: jackin_tui::components::DialogBodyScroll,
     },
+    /// Operator-facing spawn failure surfaced through the shared error popup.
+    /// This is intentionally modal: Enter / Esc / O dismiss, while unrelated
+    /// printable input is consumed so the reason cannot vanish unread.
+    SpawnFailure(jackin_tui::components::ErrorPopupState),
     /// Direction sub-dialog opened when the operator picks "Split pane"
     /// in the main menu. Operator chooses Left / Right / Above / Below;
     /// on confirm, the dialog is replaced with an `AgentPicker` carrying
@@ -451,6 +455,20 @@ impl Dialog {
         {
             return export_file_handle_key(input, *reveal_after_export, *open_after_export, key);
         }
+        if let Self::SpawnFailure(state) = self {
+            return match raw_bytes_to_chord(key)
+                .and_then(|chord| jackin_tui::components::ERROR_POPUP_KEYMAP.dispatch(chord))
+            {
+                Some(jackin_tui::components::ErrorPopupAction::Dismiss) => DialogAction::Dismiss,
+                None => {
+                    // Touch the state so this branch remains explicitly tied to
+                    // `ErrorPopupState`; printable input is consumed and does
+                    // not reach the PTY behind the modal.
+                    let _ = state;
+                    DialogAction::Redraw
+                }
+            };
+        }
         // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
         // dismiss keys close, Enter copies the dialog's value to the
         // operator's clipboard with the `copied` flag flipped to true
@@ -680,6 +698,7 @@ impl Dialog {
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
+                    | Self::SpawnFailure(_)
                     | Self::ConfirmAction { .. }
                     | Self::ExecPicker(_) => {}
                     Self::ExitDirty { selected, .. } => {
@@ -742,6 +761,7 @@ impl Dialog {
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
+                    | Self::SpawnFailure(_)
                     | Self::ConfirmAction { .. }
                     | Self::ExecPicker(_) => {}
                     Self::ExitDirty { selected, .. } => {
@@ -925,6 +945,9 @@ impl Dialog {
         if matches!(self, Self::RenameTab { .. } | Self::ExportFile { .. }) {
             return DialogAction::Consume;
         }
+        if matches!(self, Self::SpawnFailure(_)) {
+            return DialogAction::Consume;
+        }
         // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
         // log) copies via the shared hit-test. The clicked row's value goes to
         // the clipboard and that row shows the "Copied!" badge.
@@ -1075,6 +1098,7 @@ impl Dialog {
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::Usage { .. }
+            | Self::SpawnFailure(_)
             | Self::ConfirmAction { .. }
             | Self::ProviderPicker { .. }
             | Self::ExecPicker(_)
@@ -1153,7 +1177,8 @@ impl Dialog {
             | Self::ProviderPicker { .. }
             | Self::ExecPicker(_)
             | Self::ExitDirty { .. }
-            | Self::ExitInspect { .. } => DialogAction::Consume,
+            | Self::ExitInspect { .. }
+            | Self::SpawnFailure(_) => DialogAction::Consume,
         }
     }
 
@@ -1181,7 +1206,10 @@ impl Dialog {
             return false;
         }
         match self {
-            Self::RenameTab { .. } | Self::ExportFile { .. } | Self::ExecPicker(_) => false,
+            Self::RenameTab { .. }
+            | Self::ExportFile { .. }
+            | Self::ExecPicker(_)
+            | Self::SpawnFailure(_) => false,
             Self::ContainerInfo { .. } => {
                 let area = ratatui::layout::Rect {
                     x: box_col,
@@ -1320,6 +1348,10 @@ impl Dialog {
             Self::Usage { .. } => self.usage_state().map_or(10, |state| {
                 crate::tui::components::dialog_widgets::usage_info_required_height(&state)
             }),
+            Self::SpawnFailure(state) => {
+                let inner_width = PALETTE_WIDTH.saturating_sub(2);
+                jackin_tui::components::required_height(state, inner_width, term_rows)
+            }
             // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
             // Matches the canonical symmetric dialog layout (Defect 5).
             // Exit shows the shared data-loss variant (extra warning notes), so

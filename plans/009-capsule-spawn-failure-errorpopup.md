@@ -18,7 +18,7 @@
 - **Depends on**: plans/007-tui-error-dialog-canonical.md
 - **Category**: bug (documented design-rule violation) / tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
-- **Execution status**: BLOCKED — drift check found existing capsule TUI changes in `components.rs`, `dialog_widgets.rs`, and `palette.rs` before plan work.
+- **Execution status**: DONE
 
 ## Why this matters
 

@@ -274,27 +274,6 @@ impl Widget for DialogBottomChromeWidget<'_> {
     }
 }
 
-/// Spawn-failure banner: a red one-line notice painted over the top row.
-/// Cleared by the next operator keystroke.
-pub(crate) struct SpawnFailureBannerWidget<'a> {
-    pub(crate) reason: &'a str,
-}
-
-impl Widget for SpawnFailureBannerWidget<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        if area.height == 0 {
-            return;
-        }
-        let style = Style::default()
-            .fg(color(jackin_tui::DANGER_RED))
-            .add_modifier(Modifier::BOLD);
-        for x in area.left()..area.right() {
-            buf[(x, area.top())].reset();
-        }
-        buf.set_string(area.x, area.y, format!("jackin: {}", self.reason), style);
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn render_branch_bar_row(
     buf: &mut Buffer,

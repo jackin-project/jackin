@@ -389,7 +389,6 @@ impl Multiplexer {
         let branch = self.context_bar_branch().map(str::to_owned);
         let pull_request = self.pull_request_context.clone();
         let pull_request_loading = self.pull_request_context_loading();
-        let spawn_failure = self.spawn_failure.clone();
         let palette_key = self.input_parser.palette_key().unwrap_or(0x1C);
         let clipboard_image_notice = self.clipboard_image_notice.clone();
         let link_hover_notice = self
@@ -454,7 +453,6 @@ impl Multiplexer {
                     main_scroll_axes,
                     debug_run_id: debug_run_id_owned.as_deref(),
                     dialog_hint_spans: dialog_hint_spans.as_deref(),
-                    spawn_failure: spawn_failure.as_deref(),
                     palette_key,
                     clipboard_image_notice: clipboard_image_notice.as_deref(),
                     link_hover_notice: link_hover_notice.as_deref(),

@@ -283,9 +283,6 @@ pub struct Multiplexer {
     /// tab list on every redraw. Reset to `None` when a child pane
     /// updates its own title so the next full frame re-asserts.
     last_outer_terminal_title: Option<String>,
-    /// Spawn-failure notice rendered as a top-row banner widget until the
-    /// next operator keystroke clears it.
-    spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
     /// Link target under an Alt/Ctrl hover in a mouse-disabled pane. Rendered
     /// as a compositor-owned notice so no hover bytes are written into the PTY.
@@ -551,7 +548,6 @@ impl Multiplexer {
             attached_terminal: ClientTerminal::default(),
             attached_capabilities: AttachCapabilities::default(),
             last_outer_terminal_title: None,
-            spawn_failure: None,
             hover_target: None,
             link_hover_url: None,
             tab_bar_focused: false,
@@ -1064,12 +1060,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // sees the reason in their terminal — silently
                 // landing on an empty multiplexer would otherwise be
                 // indistinguishable from "no spawn requested".
-                let mut spawn_failure: Option<String> = None;
+                let mut pending_spawn_failure = None;
                 if let Some(request) = spawn {
                     let label = spawn_request_label(&request);
                     if let Err(err) = mux.spawn_request(request, &env) {
                         crate::clog!("attach: spawn {label} failed: {err:#}");
-                        spawn_failure = Some(spawn_request_failure_message(&label, &err));
+                        pending_spawn_failure = Some(spawn_request_failure_message(&label, &err));
                     }
                 }
                 // Take over from any existing attach client. The shared
@@ -1123,7 +1119,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // A fresh client has no asserted cursor/mode state; the
                 // first frame's reconciliation asserts everything explicitly.
                 mux.last_asserted_client_state = None;
-                mux.spawn_failure = spawn_failure;
+                if let Some(message) = pending_spawn_failure {
+                    mux.open_spawn_failure_dialog(message);
+                }
                 mux.invalidate(first_attach_redraw_reason());
                 let mut initial = crate::tui::terminal::RESET_CLEAR_HOME.to_vec();
                 initial.extend(mux.compose_pending_frame());

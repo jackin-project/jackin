@@ -64,34 +64,35 @@ impl MasterPty for NullMasterPty {
 }
 
 #[test]
-fn spawn_failure_banner_rides_the_frame_until_a_keystroke_clears_it() {
+fn spawn_failure_popup_stays_open_until_dismissed() {
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
     let mut mux = single_pane_tab_mux();
     let (session, rx) = test_session(20, 78);
     drop(rx);
     mux.sessions.insert(1, session);
-    mux.spawn_failure = Some("boom: agent slug rejected".to_owned());
-    let frame = compose_after(&mut mux, FullRedrawReason::StatusChange);
+    mux.open_spawn_failure_dialog("boom: agent slug rejected".to_owned());
+    let frame = compose_after(&mut mux, FullRedrawReason::DialogChange);
     assert!(
         contains(&frame, b"boom: agent slug rejected"),
-        "banner must ride the composed frame: {:?}",
+        "spawn failure popup must ride the composed frame: {:?}",
         String::from_utf8_lossy(&frame)
     );
+    assert!(matches!(mux.dialog_top(), Some(Dialog::SpawnFailure(_))));
 
-    // The next operator keystroke dismisses it.
     drop(handle_input_frame(
         &mut mux,
         InputEvent::Data(b"x".to_vec()),
     ));
     assert!(
-        mux.spawn_failure.is_none(),
-        "keystroke must clear the banner"
+        matches!(mux.dialog_top(), Some(Dialog::SpawnFailure(_))),
+        "printable input must not dismiss the failure popup"
     );
-    let after = compose_after(&mut mux, FullRedrawReason::StatusChange);
-    assert!(
-        !contains(&after, b"boom: agent slug rejected"),
-        "cleared banner must not repaint"
-    );
+
+    drop(handle_input_frame(
+        &mut mux,
+        InputEvent::Data(b"\x1b".to_vec()),
+    ));
+    assert!(mux.dialog_top().is_none(), "Esc must dismiss the popup");
 }
 
 fn test_mux(rows: u16, cols: u16) -> Multiplexer {

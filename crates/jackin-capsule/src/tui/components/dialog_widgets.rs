@@ -82,6 +82,8 @@ pub(crate) enum DialogRatatuiSnapshot {
         value: String,
         cursor: usize,
     },
+    /// Shared error popup used for capsule-owned modal errors.
+    ErrorPopup(jackin_tui::components::ErrorPopupState),
     /// The "Debug info" dialog, rendered through the shared jackin-tui
     /// `ContainerInfoState` so its rows, copy affordances, focused shell,
     /// spacing, link styling, and hover behaviour are identical to the host
@@ -320,6 +322,7 @@ impl Dialog {
                 value: input.value().to_owned(),
                 cursor: input.cursor(),
             },
+            Dialog::SpawnFailure(state) => DialogRatatuiSnapshot::ErrorPopup(state.clone()),
 
             Dialog::ContainerInfo { .. } => DialogRatatuiSnapshot::DebugInfo(
                 self.container_info_state()
@@ -473,6 +476,9 @@ pub(crate) fn render_dialog_ratatui(
                 value,
                 *cursor,
             );
+        }
+        DialogRatatuiSnapshot::ErrorPopup(state) => {
+            jackin_tui::components::render_error_dialog_in(frame, area, state);
         }
         DialogRatatuiSnapshot::DebugInfo(state) => {
             jackin_tui::components::render_container_info(frame, area, state);
