@@ -1,0 +1,97 @@
+---
+title: "02 — SpecStory CLI Internals"
+---
+
+# 02 — SpecStory CLI Internals
+
+**Research conducted:** 2026-07-03, against a same-day clone of [specstoryai/getspecstory](https://github.com/specstoryai/getspecstory) (CLI v2.0.0, 2026-06-29). Everything in this chapter is **tier A** — read from source — unless marked otherwise. Paths are relative to the repo root.
+
+## The core design: no PTY, no hooks — watch the agent's own files
+
+`specstory run <agent>` spawns the real agent binary via `exec.Command` with **inherited stdio** (`cmd.Stdin/Stdout/Stderr = os.Stdin/Stdout/Stderr` — `specstory-cli/pkg/providers/claudecode/claude_code_exec.go`); there is no pty library anywhere in `go.mod`. SpecStory never sits in the byte stream and never installs hooks. Capture is entirely **out-of-band**: an [fsnotify](https://github.com/fsnotify/fsnotify) watcher on the agent's native session store fires on every `.jsonl`/db write, re-parses only the changed session, and re-renders markdown. The agent is completely unaware of being captured, and a crash of SpecStory cannot corrupt an agent session.
+
+Three capture modes share the machinery:
+
+- `specstory run <agent>` — launch + watch (blocks until agent exits, propagates exit code).
+- `specstory watch [<agent>]` — watch-only, for agents launched separately; fans out across all providers concurrently (`pkg/utils/watch_agents.go`).
+- `specstory sync [<agent>]` — retroactive batch conversion of already-stored sessions (`-s <session-id>` for one).
+
+v2.0.0 added the archive-side commands: `specstory resume` (cross-project, cross-agent resume TUI), `specstory search` (FTS over all projects), `specstory reindex`, `specstory list`, `specstory check`, `login`/`logout`. Config precedence: CLI flags > `./.specstory/cli/config.toml` > `~/.specstory/cli/config.toml`.
+
+## Provider SPI
+
+Six providers with fixed IDs register in `pkg/spi/factory/registry.go`: `claude` (default), `cursor` (Cursor CLI), `codex`, `gemini`, `droid`, `deepseek`. Each provider is one package under `pkg/providers/<id>/` with a uniform layout — `provider.go`, `agent_session.go` (native → normalized), `<agent>_exec.go` (binary discovery + spawn), `path_utils.go` (store location), `watcher.go` (fsnotify), `markdown_tools.go` (per-tool rendering), `reconstruct.go` (normalized → native).
+
+The `spi.Provider` interface (`pkg/spi/provider.go`) is the whole contract, 11 methods: `Name`, `Check`, `DetectAgent`, `GetAgentChatSession(s)`, `ListAgentChatSessions` (lightweight metadata), `ListAllAgentChatSessions` (global enumeration for reindex — the project each session belongs to is *discovered from inside the session file*, not supplied), `ExecAgentAndWatch`, `WatchAgent`, `ReconstructSession`, `NativeSessionPath`. Optional capability interfaces bolt on: `PathSessionReader` (parse by known path — added to fix an O(N²) Codex lookup) and a shared parallel scan engine (`ScanSessionsInParallel`, `min(NumCPU,12)` workers, panic-safe per file).
+
+This SPI shape — locate, parse, normalize, watch, reconstruct, per provider — is the direct prior art for [Déjà Vu](/reference/research/agent-orchestration/conversation-capture/deja-vu/)'s per-agent provider layer.
+
+## Where each provider reads (verbatim from source)
+
+| Provider | Store | Extraction detail |
+|---|---|---|
+| `claude` | `~/.claude/projects/<encoded-cwd>/*.jsonl` | Dir = symlink-resolved cwd, `[^a-zA-Z0-9-]` → `-` (`/Users/sean/app` → `-Users-sean-app`). JSONL records dedup'd by `uuid` (keep earliest), sidechain records re-parented, warmup messages filtered (`pkg/providers/claudecode/jsonl_parser.go`) |
+| `cursor` | `~/.cursor/chats/<md5(canonical-path)>/<session-uuid>/store.db` | SQLite read with pure-Go `modernc.org/sqlite`; tables `blobs(id,data)` + `meta(key,value)`; conversation order recovered by **topological sort of the blob-reference DAG** (`pkg/providers/cursorcli/dag_sort.go`) — Cursor CLI, not the IDE's `state.vscdb` |
+| `codex` | `$CODEX_HOME/sessions` else `~/.codex/sessions/YYYY/MM/DD/*.jsonl` | Line 1 must be `"type":"session_meta"` (session id + originating cwd; 64 KB first-line cap); not directory-keyed by project, so project filtering matches the recorded cwd |
+| `gemini` | `~/.gemini/tmp/<sha256(project-path)>/chats/session-*.json` | Two filename generations handled; also reads `logs.json`; Gemini ≥0.30 layout change absorbed in v1.11.0 |
+| `droid` | `~/.factory/sessions/<project-derived-dir>/*.jsonl` | Factory Droid CLI |
+| `deepseek` | `~/.deepseek/sessions/<uuid>.json` | One JSON per session, mtime-sorted |
+
+The editor-side stores (Cursor IDE `state.vscdb` `cursorDiskKV` keys, VS Code Copilot `workspaceStorage/<hash>/chatSessions/*.json`) are read by the **closed** extension — mechanism confirmed only via FAQ statements and community reverse engineering; see [01](/reference/research/session-capture/01-specstory-product/) (tier B/C).
+
+## The normalized record: `SessionData`
+
+All providers converge on one schema (`pkg/spi/schema/types.go`, `schemaVersion: "1.0"`, `Validate()` enforced): `provider{id,name,version}` · `sessionId` · `createdAt`/`updatedAt` · `slug` · `workspaceRoot` · `exchanges[]`. An `Exchange` is a turn holding `messages[]`; a `Message` is `role` (`user`|`agent` only), `model`, `content[]` (parts typed `text`|`thinking`), optional `tool` (`ToolInfo`: name, type ∈ write/read/search/shell/task/generic/unknown, input, output, provider-prerendered `formattedMarkdown`), `pathHints[]`, `usage`, `metadata` (e.g. `isSidechain`). Token usage is per-provider-shaped (Claude cache-creation/cache-read fields, Codex reasoning tokens, Gemini thought/tool tokens); **no cost fields**. A shared `ExtractShellPathHints` helper mines write-target paths out of shell tool commands (redirects, `touch`, `tee`, `cp`/`mv` destinations) so downstream features know which files a session touched.
+
+## Markdown output
+
+- **Location/name:** `./.specstory/history/<timestamp>-<slug>.md`; timestamp `2006-01-02_15-04-05Z` UTC (opt-in local time); slug = first 4 words of the first real user message, unicode-normalized.
+- **Rewrite, not append:** every update regenerates the whole file from `SessionData`, skips the write if byte-identical, else overwrites. The path is stable (derived from CreatedAt+slug), so a live session keeps rewriting one file.
+- **Structure:** no YAML frontmatter — HTML comments: `<!-- Generated by SpecStory, Markdown v2.1.0 -->`, `# <first-exchange-time>` title, `<!-- Claude Code Session <uuid> (<ts>) -->` provenance comment, then `_**User (ts)**_` / `_**Agent (model-id ts)**_` role headers with `---` separators on role transitions. Thinking renders as `<think><details>…</details></think>`; tool calls as `<tool-use data-tool-type="…" data-tool-name="…"><details><summary>Tool use: **Read**</summary>…</details></tool-use>` — collapsed-by-default in renderers, tool results included. Subagent messages get a ` - sidechain` suffix in the role header. Verified against committed samples in the repo's own `.specstory/history/`.
+
+## The session index: `~/.specstory/sessions.db`
+
+SQLite (pure-Go driver), explicitly a **derived cache** — "can be deleted and fully rebuilt at any time" (`pkg/sessionindex/store.go`). WAL, tuned pragmas, 1 writer / 4 reader connections. `sessions` table PK `(agent, session_id)` with project id/name, timestamps, turn counts, `native_path`, `origin_cwd`, size/mtime fingerprint; **FTS5** table `sessions_fts(name, body)` indexes the full conversation text. Freshness = native-file `size + mtime + index_version` (`reindexVersion = 6`); reindex re-parses only changed files, commits in batches of 200, and `run`/`watch`/`sync` mirror writes live. Design lesson: the index never owns data — the agents' native files stay the source of truth.
+
+## Cross-agent resume (session portability)
+
+The v2.0.0 headline. `specstory resume` opens a Bubble Tea TUI over `sessions.db`: pick any session from any project and any agent, pick a **target** agent, and either native-resume (same agent, `--resume <id>` / `codex resume <id>`) or **reconstruct**: `FlattenSessionData` collapses the thread (text, thinking, tool use) into plain role-tagged turns, prepends a `MigrationNote` agent turn ("this history was imported"), serializes to the *target* agent's native format, writes it into the target's live store via `NativeSessionPath`, and launches the target with the fresh session id (`pkg/spi/reconstruct.go`, `pkg/cmd/resume.go`). Staged roadmap in `specstory-cli/docs/SESSION-PORTABILITY.md`: cross-agent → cross-project → cross-machine (Cloud) → cross-user (Teams). Serializers shipped for Claude Code + Codex first; others return `ErrReconstructionUnsupported`.
+
+This is the same ambition as Déjà Vu's future "cross-agent recall", implemented by *writing into* the target agent's store — a vector Déjà Vu has not needed to consider yet (its scope is read-only capture).
+
+## Cloud sync
+
+Device-code login (`specstory login` → 6-digit code → long-lived refresh JWT at `~/.specstory/cli/auth.json`, 0600; 1-hour access JWTs minted lazily). Upload is `PUT /api/v1/projects/{projectID}/sessions/{sessionID}` carrying **both rendered markdown and the raw native session data** plus client metadata. `run`/`watch` autosave with a per-session 10-second debounce, coalescing, flush-on-exit; manual `sync` HEAD-checks (or batch-preloads all sizes) to skip unchanged sessions; ≤10 concurrent requests; 120-second shutdown budget (`pkg/cloud/sync.go`, `specstory-cli/docs/CLOUD-DEBOUNCE.md`). Project identity for the cloud key prefers a **git-remote-derived id** (origin URL, HTTPS/SSH forms normalized to the same hash) over the SHA256-of-path `workspace_id`, both persisted in `./.specstory/.project.json` (`pkg/utils/project_identity.go`).
+
+## Provenance engine (unreleased direction)
+
+`pkg/provenance/` answers "which file changes were caused by which AI exchanges": filesystem events (fsnotify, 100 ms debounce, `.gitignore`-aware) and agent tool-use events (from `SessionData`) land in a SQLite `events` table; correlation = agent-reported path is a suffix of the FS path at a `/` boundary AND timestamps within **±5 s** → a `ProvenanceRecord` linking the file change to a specific exchange. Wired behind a hidden `--provenance` flag. `specstory-cli/docs/git-provenance/` is a research corpus recommending a future git-native design: line-range → exchange attribution maps stored in **Git Notes**. Recommendation only — not implemented.
+
+## Downstream consumers in the monorepo
+
+- **Lore** (`lore/`, Apache-2.0, v3.9.0): zero-dep Node ≥22.5 skill that parses `.specstory/history/*.md` into intent→method→outcome "beats" in `~/.specstory/lore.db` (`node:sqlite`), mines candidates (command n-grams, intent keys, LLM theme lenses), deep-mines evidence dossiers, and forges approved ones into agent skills installed across every harness on the machine. v3.9.0 added secret redaction (`[REDACTED:type]` for AWS/GitHub/Slack/OpenAI/Anthropic keys, JWTs, private keys) and prompt-injection guardrails at the emit boundary.
+- **Workthreads** (`workthreads/`): skill that rolls `.specstory/history` into weekly per-project work-thread reports (new/open/closed); deterministic clustering — sessions merge only on ≥2 shared *rare* file/symbol keys — with the LLM used only for final synthesis.
+
+Both prove the capture layer's leverage: once sessions are durable markdown, mining, reporting, and skill-forging are cheap follow-ons.
+
+## Telemetry
+
+PostHog product analytics **on by default** (opt-out `--no-usage-analytics`; ~25 event types incl. autosave success/error, resume reconstructions); API key baked in at release. Optional OpenTelemetry: OTLP gRPC exporter, per-session traces with deterministic trace ids, `--no-telemetry-prompts` strips prompt text.
+
+## Engineering facts
+
+| Fact | Value |
+|---|---|
+| Language | Go 1.26.4; lore/workthreads: zero-dep Node ≥22.5 ESM |
+| Size | 57,988 LOC Go, 23,177 in `_test.go` (~40% test code), 17 packages with tests |
+| Key deps | cobra + fang (CLI), bubbletea/v2 + lipgloss/v2 + glamour (TUIs), fsnotify (watchers), `modernc.org/sqlite` (pure-Go — index, Cursor store.db, provenance), PostHog, OTel SDK. **No pty dependency** |
+| Release | goreleaser: darwin/linux × amd64/arm64, CGO disabled; no Windows (open PR) |
+| Cadence | v1.10.0 (2026-02-23, OTel) → v1.11.0 (2026-03-02) → v1.12.0 (2026-03-19) → v1.13.0 (2026-05-18, DeepSeek) → v2.0.0 (2026-06-29, resume/search/reindex) |
+
+## What the implementation teaches (mechanism lessons)
+
+1. **Native-file watching is the whole trick** — no PTY, no hooks, no proxy. Everything else (index, search, resume, cloud, mining) is downstream of "parse the agent's own store into one schema".
+2. **Full-rewrite rendering with byte-identical skip** is simpler and more robust than append logic against stores that rewrite themselves (Claude dedup/sidechains, Cursor DAG ordering prove native stores are not append-only from the reader's perspective).
+3. **The index is disposable; the native files are truth.** Fingerprint (size+mtime+version) makes reindex incremental and deletion always safe.
+4. **Normalization pays twice**: the same `SessionData` powers markdown rendering *and* cross-agent reconstruction — capture and portability are one schema apart.
+5. **Watching costs CPU when done naively** — the busy-wait and polling complaints in [01](/reference/research/session-capture/01-specstory-product/) show even the no-PTY design needs debounce discipline (SpecStory debounces cloud sync at 10 s but not the file-watch layer itself).
