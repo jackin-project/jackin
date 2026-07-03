@@ -1,14 +1,66 @@
 use opentelemetry::Key;
+use opentelemetry::logs::{AnyValue, Severity};
+use opentelemetry_sdk::logs::SdkLogRecord;
+use opentelemetry_sdk::trace::SpanData;
 
 use super::keys;
 use super::{
-    build_resource, grpc_endpoint, resolve_endpoint, resolve_endpoints, unsupported_protocol,
+    TestExport, build_resource, grpc_endpoint, parse_traceparent, resolve_endpoint,
+    resolve_endpoints, test_layers, unsupported_protocol,
 };
 
 fn attr(resource: &opentelemetry_sdk::Resource, key: &'static str) -> Option<String> {
     resource
         .get(&Key::from_static_str(key))
         .map(|value| value.to_string())
+}
+
+fn log_attr(record: &SdkLogRecord, key: &str) -> Option<String> {
+    record
+        .attributes_iter()
+        .find(|(name, _)| name.as_str() == key)
+        .map(|(_, value)| any_value_to_string(value))
+}
+
+fn span_attr(span: &SpanData, key: &str) -> Option<String> {
+    span.attributes
+        .iter()
+        .find(|kv| kv.key.as_str() == key)
+        .map(|kv| kv.value.to_string())
+}
+
+fn any_value_to_string(value: &AnyValue) -> String {
+    match value {
+        AnyValue::String(value) => value.to_string(),
+        AnyValue::Boolean(value) => value.to_string(),
+        AnyValue::Int(value) => value.to_string(),
+        AnyValue::Double(value) => value.to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn log_body(record: &SdkLogRecord) -> Option<String> {
+    record.body().map(any_value_to_string)
+}
+
+fn export_after(debug: bool, run_id: &str, emit: impl FnOnce()) -> TestExport {
+    let (export, subscriber) = test_layers(debug, run_id);
+    tracing::subscriber::with_default(subscriber, emit);
+    export.logger_provider.force_flush().unwrap();
+    export.tracer_provider.force_flush().unwrap();
+    export
+}
+
+fn exported_spans(debug: bool, run_id: &str, emit: impl FnOnce()) -> Vec<SpanData> {
+    let export = export_after(debug, run_id, emit);
+    export.spans.get_finished_spans().unwrap()
+}
+
+macro_rules! exported_logs {
+    ($debug:expr, $run_id:expr, $emit:expr) => {{
+        let export = export_after($debug, $run_id, $emit);
+        export.logs.get_emitted_logs().unwrap()
+    }};
 }
 
 #[test]
@@ -144,4 +196,133 @@ fn otel_internal_visitor_empty_uses_fallback() {
         OtelInternalVisitor::default().into_message(),
         "opentelemetry internal event"
     );
+}
+
+#[test]
+fn exported_log_carries_body_and_attributes() {
+    let logs = exported_logs!(false, "run1", || {
+        crate::observability::emit_jsonl_event(
+            "run1",
+            "compact_kind",
+            "hello world",
+            Some("plan"),
+            Some("d"),
+        );
+    });
+
+    assert_eq!(logs.len(), 1);
+    let log = &logs[0];
+    assert_eq!(log.record.severity_number(), Some(Severity::Info));
+    assert_eq!(log_body(&log.record).as_deref(), Some("hello world"));
+    assert_eq!(
+        log_attr(&log.record, "kind").as_deref(),
+        Some("compact_kind")
+    );
+    assert_eq!(log_attr(&log.record, "stage").as_deref(), Some("plan"));
+    assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("d"));
+    assert_eq!(log_attr(&log.record, "run_id").as_deref(), Some("run1"));
+    assert_eq!(
+        log_attr(&log.record, "diagnostics_message").as_deref(),
+        Some("hello world")
+    );
+    assert_eq!(
+        log_attr(&log.record, "jackin_jsonl").as_deref(),
+        Some("true")
+    );
+}
+
+#[test]
+fn exported_error_log_is_error_severity() {
+    let logs = exported_logs!(false, "run1", || {
+        crate::observability::emit_jsonl_error("run1", "failure", "boom", None, None);
+    });
+
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].record.severity_number(), Some(Severity::Error));
+}
+
+#[test]
+fn debug_kind_is_debug_severity_and_filtered_at_info() {
+    let info_logs = exported_logs!(false, "run1", || {
+        crate::observability::emit_jsonl_event("run1", "debug", "debug line", None, Some("docker"));
+    });
+    assert!(info_logs.is_empty());
+
+    let debug_logs = exported_logs!(true, "run1", || {
+        crate::observability::emit_jsonl_event("run1", "debug", "debug line", None, Some("docker"));
+    });
+    assert_eq!(debug_logs.len(), 1);
+    let log = &debug_logs[0];
+    assert_eq!(log.record.severity_number(), Some(Severity::Debug));
+    assert_eq!(log_attr(&log.record, "stage").as_deref(), Some("<none>"));
+    assert_eq!(log_attr(&log.record, "detail").as_deref(), Some("docker"));
+}
+
+#[test]
+fn sentinel_none_values_are_exported() {
+    let logs = exported_logs!(false, "run1", || {
+        crate::observability::emit_jsonl_event("run1", "compact_kind", "hello world", None, None);
+    });
+
+    assert_eq!(logs.len(), 1);
+    assert_eq!(
+        log_attr(&logs[0].record, "stage").as_deref(),
+        Some("<none>")
+    );
+    assert_eq!(
+        log_attr(&logs[0].record, "detail").as_deref(),
+        Some("<none>")
+    );
+}
+
+#[test]
+fn launch_stage_span_name_is_constant() {
+    let spans = exported_spans(false, "run1", || {
+        let span = tracing::info_span!("launch_stage", stage = "derived image");
+        drop(span.enter());
+    });
+
+    assert_eq!(spans.len(), 1);
+    let span = &spans[0];
+    assert_eq!(span.name.as_ref(), "launch_stage");
+    assert_eq!(span_attr(span, "stage").as_deref(), Some("derived image"));
+}
+
+#[test]
+fn dependency_targets_pass_the_filter_today() {
+    let logs = exported_logs!(false, "run1", || {
+        tracing::info!(target: "turso_core", "vm step");
+    });
+
+    assert_eq!(logs.len(), 1);
+    assert_eq!(log_body(&logs[0].record).as_deref(), Some("vm step"));
+}
+
+#[test]
+fn wire_log_resource_carries_run_id_service_and_component() {
+    let logs = exported_logs!(false, "wire-run", || {
+        crate::observability::emit_jsonl_event("wire-run", "compact_kind", "hello", None, None);
+    });
+    assert_eq!(logs.len(), 1);
+    let resource = &logs[0].resource;
+    assert_eq!(attr(resource, keys::SERVICE_NAME), Some("jackin".into()));
+    assert_eq!(attr(resource, keys::COMPONENT), Some("host".into()));
+    assert_eq!(attr(resource, keys::RUN_ID), Some("wire-run".into()));
+}
+
+#[test]
+fn format_parse_traceparent_roundtrip() {
+    let trace_id = "0123456789abcdef0123456789abcdef";
+    let span_id = "0123456789abcdef";
+    let header = format!("00-{trace_id}-{span_id}-01");
+
+    let context = parse_traceparent(&header).unwrap();
+    assert_eq!(context.trace_id().to_string(), trace_id);
+    assert_eq!(context.span_id().to_string(), span_id);
+    assert!(context.trace_flags().is_sampled());
+
+    assert!(parse_traceparent(&format!("01-{trace_id}-{span_id}-01")).is_none());
+    assert!(parse_traceparent(&format!("00-{trace_id}-{span_id}")).is_none());
+    assert!(parse_traceparent(&format!("00-{trace_id}-{span_id}-01-extra")).is_none());
+    assert!(parse_traceparent(&format!("00-not-hex-{span_id}-01")).is_none());
 }

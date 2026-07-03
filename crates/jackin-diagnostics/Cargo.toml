@@ -87,6 +87,7 @@ sysinfo = { version = "0.39", optional = true, default-features = false, feature
 tokio = { version = "1", optional = true, default-features = false, features = ["rt", "rt-multi-thread"] }
 
 [dev-dependencies]
+opentelemetry_sdk = { version = "0.32", features = ["testing", "trace", "logs"] }
 tempfile = "=3.27.0"
 
 [lints]

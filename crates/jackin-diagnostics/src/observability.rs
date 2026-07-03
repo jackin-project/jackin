@@ -789,15 +789,11 @@ mod otlp {
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
-        let level = if debug { "debug" } else { "info" };
         // Scope the export to jackin❯'s own telemetry. Silencing the OTLP
         // transport stack stops the log bridge from re-exporting the exporter's
         // own request logs (a feedback loop under `--debug`) and keeps the
         // backend free of dependency-internal spans the operator never asked for.
-        let directive = format!(
-            "{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
-             opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
-        );
+        let directive = export_filter_directive(if debug { "debug" } else { "info" });
         let installed = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
             .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
@@ -878,11 +874,7 @@ mod otlp {
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
-        let level = if capsule_debug() { "debug" } else { "info" };
-        let directive = format!(
-            "{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
-             opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
-        );
+        let directive = export_filter_directive(if capsule_debug() { "debug" } else { "info" });
         // Surface OTLP exporter/SDK diagnostics (export failures, refused
         // endpoint, gRPC errors) to the capsule's stderr — captured by
         // `docker logs` and mirrored into `multiplexer.log`. The OTLP span/log
@@ -923,6 +915,56 @@ mod otlp {
                 "1" | "true" | "yes" | "on"
             )
         })
+    }
+
+    fn export_filter_directive(level: &str) -> String {
+        format!(
+            "{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
+             opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
+        )
+    }
+
+    #[cfg(test)]
+    pub(super) struct TestExport {
+        pub(super) spans: opentelemetry_sdk::trace::InMemorySpanExporter,
+        pub(super) logs: opentelemetry_sdk::logs::InMemoryLogExporter,
+        pub(super) tracer_provider: SdkTracerProvider,
+        pub(super) logger_provider: SdkLoggerProvider,
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_layers(debug: bool, run_id: &str) -> (TestExport, impl tracing::Subscriber) {
+        use opentelemetry::trace::TracerProvider as _;
+
+        let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+        let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
+        let resource = resource(run_id);
+        let tracer_provider = SdkTracerProvider::builder()
+            .with_simple_exporter(spans.clone())
+            .with_resource(resource.clone())
+            .build();
+        let logger_provider = SdkLoggerProvider::builder()
+            .with_simple_exporter(logs.clone())
+            .with_resource(resource)
+            .build();
+        let tracer = tracer_provider.tracer("jackin");
+        let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+        let directive = export_filter_directive(if debug { "debug" } else { "info" });
+        let subscriber = tracing_subscriber::registry()
+            .with(JackinDiagnosticsLayer)
+            .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
+            .with(log_layer.with_filter(EnvFilter::new(directive)));
+
+        (
+            TestExport {
+                spans,
+                logs,
+                tracer_provider,
+                logger_provider,
+            },
+            subscriber,
+        )
     }
 
     /// Emit the session-start marker: a short span in its own trace, linked to
