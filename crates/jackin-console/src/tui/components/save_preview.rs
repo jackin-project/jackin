@@ -732,12 +732,6 @@ pub struct TrustPreviewRow {
 }
 
 #[must_use]
-#[allow(
-    clippy::too_many_lines,
-    reason = "Workspace-save preview renderer: per-section (header / mount / auth / \
-              env / role / status) line builder. Inline shape preserves the \
-              per-section readability."
-)]
 pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>> {
     let heading = Style::default()
         .fg(jackin_tui::theme::WHITE)
@@ -745,222 +739,354 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
     let value = Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN);
     let dim = Style::default().fg(jackin_tui::theme::PHOSPHOR_DIM);
 
-    let mut out: Vec<Line<'static>> = Vec::new();
-
     match &preview.mode {
-        WorkspaceSaveMode::Create { name } => {
-            out.push(Line::from(vec![
-                Span::styled("Create workspace: ", heading),
-                Span::styled(name.clone(), value),
-            ]));
-            out.push(Line::raw(""));
-            out.push(Line::from(vec![
-                Span::styled("Working directory: ", heading),
-                Span::styled(preview.pending_workdir.clone(), value),
-            ]));
-
-            let mounts: Vec<_> = preview
-                .mount_diffs
-                .iter()
-                .filter_map(|diff| match diff {
-                    WorkspaceMountDiff::Added(row) => Some(row.summary()),
-                    WorkspaceMountDiff::Removed(_)
-                    | WorkspaceMountDiff::Modified { .. }
-                    | WorkspaceMountDiff::Unchanged => None,
-                })
-                .collect();
-            if !mounts.is_empty() {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled(
-                    format!("Mounts ({}):", mounts.len()),
-                    heading,
-                )));
-                for mount in mounts {
-                    out.push(Line::from(Span::styled(
-                        format!("  \u{2022} {mount}"),
-                        value,
-                    )));
-                }
-            }
-
-            out.push(Line::raw(""));
-            out.push(Line::from(vec![
-                Span::styled("Allowed roles: ", heading),
-                Span::styled(allowed_roles_summary(preview), value),
-            ]));
-            out.push(Line::raw(""));
-            out.push(Line::from(vec![
-                Span::styled("Default role: ", heading),
-                Span::styled(
-                    preview
-                        .pending_default_role
-                        .clone()
-                        .unwrap_or_else(|| "(none)".into()),
-                    value,
-                ),
-            ]));
-            if preview.pending_toggles.keep_awake {
-                out.push(Line::raw(""));
-                out.push(Line::from(vec![
-                    Span::styled("Keep awake: ", heading),
-                    Span::styled("enabled", value),
-                ]));
-            }
-            if preview.pending_toggles.git_pull {
-                out.push(Line::raw(""));
-                out.push(Line::from(vec![
-                    Span::styled("Git pull: ", heading),
-                    Span::styled("enabled", value),
-                ]));
-            }
-            let env_lines =
-                settings_env_diff_lines(&preview.env_original, &preview.env_pending, value, dim);
-            if !env_lines.is_empty() {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Env vars:", heading)));
-                out.extend(env_lines);
-            }
-            append_workspace_auth_lines(&mut out, &preview.auth_changes, heading, value, dim);
-        }
+        WorkspaceSaveMode::Create { name } => workspace_create_save_lines(
+            preview,
+            name,
+            WorkspaceStyles {
+                heading,
+                value,
+                dim,
+            },
+        ),
         WorkspaceSaveMode::Edit {
             original_name,
             display_name,
             pending_name,
-        } => {
-            out.push(Line::from(vec![
-                Span::styled("Edit workspace: ", heading),
-                Span::styled(display_name.clone(), value),
-            ]));
+        } => workspace_edit_save_lines(
+            preview,
+            original_name,
+            display_name,
+            pending_name.as_deref(),
+            WorkspaceStyles {
+                heading,
+                value,
+                dim,
+            },
+        ),
+    }
+}
 
-            if let Some(new_name) = pending_name
-                && new_name != original_name
-            {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Rename:", heading)));
+#[derive(Debug, Clone, Copy)]
+struct WorkspaceStyles {
+    heading: Style,
+    value: Style,
+    dim: Style,
+}
+
+fn workspace_create_save_lines(
+    preview: &WorkspaceSavePreview,
+    name: &str,
+    styles: WorkspaceStyles,
+) -> Vec<Line<'static>> {
+    let mut out: Vec<Line<'static>> = Vec::new();
+    out.push(Line::from(vec![
+        Span::styled("Create workspace: ", styles.heading),
+        Span::styled(name.to_owned(), styles.value),
+    ]));
+    out.push(Line::raw(""));
+    out.push(Line::from(vec![
+        Span::styled("Working directory: ", styles.heading),
+        Span::styled(preview.pending_workdir.clone(), styles.value),
+    ]));
+
+    append_workspace_create_mounts(&mut out, preview, styles);
+    append_workspace_create_options(&mut out, preview, styles);
+    append_workspace_env_and_auth(&mut out, preview, styles);
+    append_workspace_collapse_lines(&mut out, preview, styles.heading);
+    out
+}
+
+fn workspace_edit_save_lines(
+    preview: &WorkspaceSavePreview,
+    original_name: &str,
+    display_name: &str,
+    pending_name: Option<&str>,
+    styles: WorkspaceStyles,
+) -> Vec<Line<'static>> {
+    let mut out: Vec<Line<'static>> = Vec::new();
+    out.push(Line::from(vec![
+        Span::styled("Edit workspace: ", styles.heading),
+        Span::styled(display_name.to_owned(), styles.value),
+    ]));
+
+    append_workspace_name_change(&mut out, original_name, pending_name, styles);
+    append_workspace_workdir_change(&mut out, preview, styles);
+    append_workspace_mount_changes(&mut out, preview, styles);
+    append_workspace_role_changes(&mut out, preview, styles);
+    append_workspace_toggle_change(
+        &mut out,
+        "Keep awake",
+        preview.original_toggles.keep_awake,
+        preview.pending_toggles.keep_awake,
+        styles,
+    );
+    append_workspace_toggle_change(
+        &mut out,
+        "Git pull",
+        preview.original_toggles.git_pull,
+        preview.pending_toggles.git_pull,
+        styles,
+    );
+    append_workspace_env_and_auth(&mut out, preview, styles);
+    append_workspace_collapse_lines(&mut out, preview, styles.heading);
+    out
+}
+
+fn append_workspace_create_mounts(
+    out: &mut Vec<Line<'static>>,
+    preview: &WorkspaceSavePreview,
+    styles: WorkspaceStyles,
+) {
+    let mounts: Vec<_> = preview
+        .mount_diffs
+        .iter()
+        .filter_map(|diff| match diff {
+            WorkspaceMountDiff::Added(row) => Some(row.summary()),
+            WorkspaceMountDiff::Removed(_)
+            | WorkspaceMountDiff::Modified { .. }
+            | WorkspaceMountDiff::Unchanged => None,
+        })
+        .collect();
+    if !mounts.is_empty() {
+        out.push(Line::raw(""));
+        out.push(Line::from(Span::styled(
+            format!("Mounts ({}):", mounts.len()),
+            styles.heading,
+        )));
+        for mount in mounts {
+            out.push(Line::from(Span::styled(
+                format!("  \u{2022} {mount}"),
+                styles.value,
+            )));
+        }
+    }
+}
+
+fn append_workspace_create_options(
+    out: &mut Vec<Line<'static>>,
+    preview: &WorkspaceSavePreview,
+    styles: WorkspaceStyles,
+) {
+    out.push(Line::raw(""));
+    out.push(Line::from(vec![
+        Span::styled("Allowed roles: ", styles.heading),
+        Span::styled(allowed_roles_summary(preview), styles.value),
+    ]));
+    out.push(Line::raw(""));
+    out.push(Line::from(vec![
+        Span::styled("Default role: ", styles.heading),
+        Span::styled(
+            preview
+                .pending_default_role
+                .clone()
+                .unwrap_or_else(|| "(none)".into()),
+            styles.value,
+        ),
+    ]));
+    if preview.pending_toggles.keep_awake {
+        out.push(Line::raw(""));
+        out.push(Line::from(vec![
+            Span::styled("Keep awake: ", styles.heading),
+            Span::styled("enabled", styles.value),
+        ]));
+    }
+    if preview.pending_toggles.git_pull {
+        out.push(Line::raw(""));
+        out.push(Line::from(vec![
+            Span::styled("Git pull: ", styles.heading),
+            Span::styled("enabled", styles.value),
+        ]));
+    }
+}
+
+fn append_workspace_name_change(
+    out: &mut Vec<Line<'static>>,
+    original_name: &str,
+    pending_name: Option<&str>,
+    styles: WorkspaceStyles,
+) {
+    if let Some(new_name) = pending_name
+        && new_name != original_name
+    {
+        out.push(Line::raw(""));
+        out.push(Line::from(Span::styled("Rename:", styles.heading)));
+        out.push(Line::from(Span::styled(
+            format!("  - {original_name}"),
+            styles.dim,
+        )));
+        out.push(Line::from(Span::styled(
+            format!("  + {new_name}"),
+            styles.value,
+        )));
+    }
+}
+
+fn append_workspace_workdir_change(
+    out: &mut Vec<Line<'static>>,
+    preview: &WorkspaceSavePreview,
+    styles: WorkspaceStyles,
+) {
+    if let Some(original_workdir) = &preview.original_workdir
+        && original_workdir != &preview.pending_workdir
+    {
+        out.push(Line::raw(""));
+        out.push(Line::from(Span::styled(
+            "Working directory:",
+            styles.heading,
+        )));
+        out.push(Line::from(Span::styled(
+            format!("  - {original_workdir}"),
+            styles.dim,
+        )));
+        out.push(Line::from(Span::styled(
+            format!("  + {}", preview.pending_workdir),
+            styles.value,
+        )));
+    }
+}
+
+fn append_workspace_mount_changes(
+    out: &mut Vec<Line<'static>>,
+    preview: &WorkspaceSavePreview,
+    styles: WorkspaceStyles,
+) {
+    if !preview
+        .mount_diffs
+        .iter()
+        .any(|diff| !matches!(diff, WorkspaceMountDiff::Unchanged))
+    {
+        return;
+    }
+    out.push(Line::raw(""));
+    out.push(Line::from(Span::styled("Mounts:", styles.heading)));
+    for diff in &preview.mount_diffs {
+        match diff {
+            WorkspaceMountDiff::Added(row) => {
                 out.push(Line::from(Span::styled(
-                    format!("  - {original_name}"),
-                    dim,
-                )));
-                out.push(Line::from(Span::styled(format!("  + {new_name}"), value)));
-            }
-
-            if let Some(original_workdir) = &preview.original_workdir
-                && original_workdir != &preview.pending_workdir
-            {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Working directory:", heading)));
-                out.push(Line::from(Span::styled(
-                    format!("  - {original_workdir}"),
-                    dim,
-                )));
-                out.push(Line::from(Span::styled(
-                    format!("  + {}", preview.pending_workdir),
-                    value,
+                    format!("  + {}", row.summary()),
+                    styles.value,
                 )));
             }
-
-            if preview
-                .mount_diffs
-                .iter()
-                .any(|diff| !matches!(diff, WorkspaceMountDiff::Unchanged))
-            {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Mounts:", heading)));
-                for diff in &preview.mount_diffs {
-                    match diff {
-                        WorkspaceMountDiff::Added(row) => {
-                            let summary = row.summary();
-                            out.push(Line::from(Span::styled(format!("  + {summary}"), value)));
-                        }
-                        WorkspaceMountDiff::Removed(row) => {
-                            let summary = row.summary();
-                            out.push(Line::from(Span::styled(format!("  - {summary}"), dim)));
-                        }
-                        WorkspaceMountDiff::Modified { original, pending } => {
-                            let original = original.summary();
-                            let pending = pending.summary();
-                            out.push(Line::from(Span::styled(format!("  ~ {pending}"), value)));
-                            out.push(Line::from(Span::styled(
-                                format!("      was: {original}"),
-                                dim,
-                            )));
-                        }
-                        WorkspaceMountDiff::Unchanged => {}
-                    }
-                }
-            }
-
-            let added_roles: Vec<_> = preview
-                .pending_allowed_roles
-                .iter()
-                .filter(|role| !preview.original_allowed_roles.contains(*role))
-                .collect();
-            let removed_roles: Vec<_> = preview
-                .original_allowed_roles
-                .iter()
-                .filter(|role| !preview.pending_allowed_roles.contains(*role))
-                .collect();
-            if !added_roles.is_empty() || !removed_roles.is_empty() {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Allowed roles:", heading)));
-                for role in added_roles {
-                    out.push(Line::from(Span::styled(format!("  + {role}"), value)));
-                }
-                for role in removed_roles {
-                    out.push(Line::from(Span::styled(format!("  - {role}"), dim)));
-                }
-            }
-
-            if preview.pending_default_role != preview.original_default_role {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Default role:", heading)));
-                if let Some(old) = &preview.original_default_role {
-                    out.push(Line::from(Span::styled(format!("  - {old}"), dim)));
-                }
-                if let Some(new) = &preview.pending_default_role {
-                    out.push(Line::from(Span::styled(format!("  + {new}"), value)));
-                } else {
-                    out.push(Line::from(Span::styled("  + (none)", value)));
-                }
-            }
-
-            if preview.pending_toggles.keep_awake != preview.original_toggles.keep_awake {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Keep awake:", heading)));
+            WorkspaceMountDiff::Removed(row) => {
                 out.push(Line::from(Span::styled(
-                    format!("  - {}", enabled_label(preview.original_toggles.keep_awake)),
-                    dim,
+                    format!("  - {}", row.summary()),
+                    styles.dim,
+                )));
+            }
+            WorkspaceMountDiff::Modified { original, pending } => {
+                out.push(Line::from(Span::styled(
+                    format!("  ~ {}", pending.summary()),
+                    styles.value,
                 )));
                 out.push(Line::from(Span::styled(
-                    format!("  + {}", enabled_label(preview.pending_toggles.keep_awake)),
-                    value,
+                    format!("      was: {}", original.summary()),
+                    styles.dim,
                 )));
             }
+            WorkspaceMountDiff::Unchanged => {}
+        }
+    }
+}
 
-            if preview.pending_toggles.git_pull != preview.original_toggles.git_pull {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Git pull:", heading)));
-                out.push(Line::from(Span::styled(
-                    format!("  - {}", enabled_label(preview.original_toggles.git_pull)),
-                    dim,
-                )));
-                out.push(Line::from(Span::styled(
-                    format!("  + {}", enabled_label(preview.pending_toggles.git_pull)),
-                    value,
-                )));
-            }
-
-            let env_lines =
-                settings_env_diff_lines(&preview.env_original, &preview.env_pending, value, dim);
-            if !env_lines.is_empty() {
-                out.push(Line::raw(""));
-                out.push(Line::from(Span::styled("Env vars:", heading)));
-                out.extend(env_lines);
-            }
-            append_workspace_auth_lines(&mut out, &preview.auth_changes, heading, value, dim);
+fn append_workspace_role_changes(
+    out: &mut Vec<Line<'static>>,
+    preview: &WorkspaceSavePreview,
+    styles: WorkspaceStyles,
+) {
+    let added_roles: Vec<_> = preview
+        .pending_allowed_roles
+        .iter()
+        .filter(|role| !preview.original_allowed_roles.contains(*role))
+        .collect();
+    let removed_roles: Vec<_> = preview
+        .original_allowed_roles
+        .iter()
+        .filter(|role| !preview.pending_allowed_roles.contains(*role))
+        .collect();
+    if !added_roles.is_empty() || !removed_roles.is_empty() {
+        out.push(Line::raw(""));
+        out.push(Line::from(Span::styled("Allowed roles:", styles.heading)));
+        for role in added_roles {
+            out.push(Line::from(Span::styled(
+                format!("  + {role}"),
+                styles.value,
+            )));
+        }
+        for role in removed_roles {
+            out.push(Line::from(Span::styled(format!("  - {role}"), styles.dim)));
         }
     }
 
+    if preview.pending_default_role != preview.original_default_role {
+        out.push(Line::raw(""));
+        out.push(Line::from(Span::styled("Default role:", styles.heading)));
+        if let Some(old) = &preview.original_default_role {
+            out.push(Line::from(Span::styled(format!("  - {old}"), styles.dim)));
+        }
+        if let Some(new) = &preview.pending_default_role {
+            out.push(Line::from(Span::styled(format!("  + {new}"), styles.value)));
+        } else {
+            out.push(Line::from(Span::styled("  + (none)", styles.value)));
+        }
+    }
+}
+
+fn append_workspace_toggle_change(
+    out: &mut Vec<Line<'static>>,
+    label: &str,
+    original: bool,
+    pending: bool,
+    styles: WorkspaceStyles,
+) {
+    if pending == original {
+        return;
+    }
+    out.push(Line::raw(""));
+    out.push(Line::from(Span::styled(
+        format!("{label}:"),
+        styles.heading,
+    )));
+    out.push(Line::from(Span::styled(
+        format!("  - {}", enabled_label(original)),
+        styles.dim,
+    )));
+    out.push(Line::from(Span::styled(
+        format!("  + {}", enabled_label(pending)),
+        styles.value,
+    )));
+}
+
+fn append_workspace_env_and_auth(
+    out: &mut Vec<Line<'static>>,
+    preview: &WorkspaceSavePreview,
+    styles: WorkspaceStyles,
+) {
+    let env_lines = settings_env_diff_lines(
+        &preview.env_original,
+        &preview.env_pending,
+        styles.value,
+        styles.dim,
+    );
+    if !env_lines.is_empty() {
+        out.push(Line::raw(""));
+        out.push(Line::from(Span::styled("Env vars:", styles.heading)));
+        out.extend(env_lines);
+    }
+    append_workspace_auth_lines(
+        out,
+        &preview.auth_changes,
+        styles.heading,
+        styles.value,
+        styles.dim,
+    );
+}
+
+fn append_workspace_collapse_lines(
+    out: &mut Vec<Line<'static>>,
+    preview: &WorkspaceSavePreview,
+    heading: Style,
+) {
     if !preview.collapse_lines.is_empty() {
         out.push(Line::raw(""));
         out.push(Line::from(Span::styled(
@@ -969,8 +1095,6 @@ pub fn workspace_save_lines(preview: &WorkspaceSavePreview) -> Vec<Line<'static>
         )));
         out.extend(preview.collapse_lines.iter().cloned());
     }
-
-    out
 }
 
 fn append_workspace_auth_lines(
@@ -1018,136 +1142,17 @@ pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> 
     let sep_style = Style::default().fg(jackin_tui::theme::PHOSPHOR_DARK);
 
     let mut out: Vec<Line<'static>> = Vec::new();
-
     out.push(Line::from(Span::styled("Save settings", heading)));
     out.push(Line::raw(""));
 
-    let general_stats = settings_general_stats(preview.general);
-    let mount_stats = settings_mount_stats(&preview.mounts_original, &preview.mounts_pending);
-    let env_stats = settings_env_stats(&preview.env_original, &preview.env_pending);
-    let auth_stats = settings_auth_stats(
-        &preview.auth_original,
-        &preview.auth_pending,
-        &preview.auth_github_env_original,
-        &preview.auth_github_env_pending,
-    );
-    let trust_stats = settings_trust_stats(&preview.trust_original, &preview.trust_pending);
-
-    if let Some(s) = general_stats.as_deref() {
-        out.push(Line::from(vec![
-            Span::styled("  General:      ", heading),
-            Span::styled(s.to_owned(), add_style),
-        ]));
-    }
-    if let Some(s) = mount_stats.as_deref() {
-        out.push(Line::from(vec![
-            Span::styled("  Mounts:       ", heading),
-            Span::styled(s.to_owned(), add_style),
-        ]));
-    }
-    if let Some(s) = env_stats.as_deref() {
-        out.push(Line::from(vec![
-            Span::styled("  Environments: ", heading),
-            Span::styled(s.to_owned(), add_style),
-        ]));
-    }
-    if let Some(s) = auth_stats.as_deref() {
-        out.push(Line::from(vec![
-            Span::styled("  Auth:         ", heading),
-            Span::styled(s.to_owned(), add_style),
-        ]));
-    }
-    if let Some(s) = trust_stats.as_deref() {
-        out.push(Line::from(vec![
-            Span::styled("  Trust:        ", heading),
-            Span::styled(s.to_owned(), add_style),
-        ]));
-    }
+    let stats = SettingsPreviewStats::new(preview);
+    append_settings_summary(&mut out, &stats, heading, add_style);
 
     out.push(Line::raw(""));
     out.push(Line::from(Span::styled("  \u{2500}".repeat(30), sep_style)));
     out.push(Line::raw(""));
 
-    if general_stats.is_some() {
-        out.push(Line::from(Span::styled("General:", heading)));
-        let arrow = "\u{2192}";
-
-        if preview.general.pending_toggles.coauthor_trailer
-            != preview.general.original_toggles.coauthor_trailer
-        {
-            let from = enabled_label(preview.general.original_toggles.coauthor_trailer);
-            let to = enabled_label(preview.general.pending_toggles.coauthor_trailer);
-            out.push(Line::from(vec![
-                Span::styled("  co-author trailer: ", heading),
-                Span::styled(from, remove_style),
-                Span::styled(format!(" {arrow} "), Style::default()),
-                Span::styled(to, add_style),
-            ]));
-        }
-
-        if preview.general.pending_toggles.dco != preview.general.original_toggles.dco {
-            let from = enabled_label(preview.general.original_toggles.dco);
-            let to = enabled_label(preview.general.pending_toggles.dco);
-            out.push(Line::from(vec![
-                Span::styled("  dco: ", heading),
-                Span::styled(from, remove_style),
-                Span::styled(format!(" {arrow} "), Style::default()),
-                Span::styled(to, add_style),
-            ]));
-        }
-
-        out.push(Line::raw(""));
-    }
-
-    let mount_lines = settings_mount_diff_lines(
-        &preview.mounts_original,
-        &preview.mounts_pending,
-        add_style,
-        remove_style,
-    );
-    if !mount_lines.is_empty() {
-        out.push(Line::from(Span::styled("Mounts:", heading)));
-        out.extend(mount_lines);
-        out.push(Line::raw(""));
-    }
-
-    let env_lines = settings_env_diff_lines(
-        &preview.env_original,
-        &preview.env_pending,
-        add_style,
-        remove_style,
-    );
-    if !env_lines.is_empty() {
-        out.push(Line::from(Span::styled("Environments:", heading)));
-        out.extend(env_lines);
-        out.push(Line::raw(""));
-    }
-
-    let auth_lines = settings_auth_diff_lines(
-        &preview.auth_original,
-        &preview.auth_pending,
-        &preview.auth_github_env_original,
-        &preview.auth_github_env_pending,
-        add_style,
-        remove_style,
-    );
-    if !auth_lines.is_empty() {
-        out.push(Line::from(Span::styled("Auth:", heading)));
-        out.extend(auth_lines);
-        out.push(Line::raw(""));
-    }
-
-    let trust_lines = settings_trust_diff_lines(
-        &preview.trust_original,
-        &preview.trust_pending,
-        add_style,
-        remove_style,
-    );
-    if !trust_lines.is_empty() {
-        out.push(Line::from(Span::styled("Trust:", heading)));
-        out.extend(trust_lines);
-        out.push(Line::raw(""));
-    }
+    append_settings_details(&mut out, preview, &stats, heading, add_style, remove_style);
 
     while out
         .last()
@@ -1157,6 +1162,179 @@ pub fn settings_save_lines(preview: &SettingsSavePreview) -> Vec<Line<'static>> 
     }
 
     out
+}
+
+#[derive(Debug, Clone)]
+struct SettingsPreviewStats {
+    general: Option<String>,
+    mounts: Option<String>,
+    env: Option<String>,
+    auth: Option<String>,
+    trust: Option<String>,
+}
+
+impl SettingsPreviewStats {
+    fn new(preview: &SettingsSavePreview) -> Self {
+        Self {
+            general: settings_general_stats(preview.general),
+            mounts: settings_mount_stats(&preview.mounts_original, &preview.mounts_pending),
+            env: settings_env_stats(&preview.env_original, &preview.env_pending),
+            auth: settings_auth_stats(
+                &preview.auth_original,
+                &preview.auth_pending,
+                &preview.auth_github_env_original,
+                &preview.auth_github_env_pending,
+            ),
+            trust: settings_trust_stats(&preview.trust_original, &preview.trust_pending),
+        }
+    }
+}
+
+fn append_settings_summary(
+    out: &mut Vec<Line<'static>>,
+    stats: &SettingsPreviewStats,
+    heading: Style,
+    add_style: Style,
+) {
+    for (label, value) in [
+        ("  General:      ", stats.general.as_deref()),
+        ("  Mounts:       ", stats.mounts.as_deref()),
+        ("  Environments: ", stats.env.as_deref()),
+        ("  Auth:         ", stats.auth.as_deref()),
+        ("  Trust:        ", stats.trust.as_deref()),
+    ] {
+        if let Some(value) = value {
+            out.push(Line::from(vec![
+                Span::styled(label, heading),
+                Span::styled(value.to_owned(), add_style),
+            ]));
+        }
+    }
+}
+
+fn append_settings_details(
+    out: &mut Vec<Line<'static>>,
+    preview: &SettingsSavePreview,
+    stats: &SettingsPreviewStats,
+    heading: Style,
+    add_style: Style,
+    remove_style: Style,
+) {
+    append_settings_general_lines(out, preview, stats, heading, add_style, remove_style);
+    append_settings_section(
+        out,
+        "Mounts:",
+        settings_mount_diff_lines(
+            &preview.mounts_original,
+            &preview.mounts_pending,
+            add_style,
+            remove_style,
+        ),
+        heading,
+    );
+    append_settings_section(
+        out,
+        "Environments:",
+        settings_env_diff_lines(
+            &preview.env_original,
+            &preview.env_pending,
+            add_style,
+            remove_style,
+        ),
+        heading,
+    );
+    append_settings_section(
+        out,
+        "Auth:",
+        settings_auth_diff_lines(
+            &preview.auth_original,
+            &preview.auth_pending,
+            &preview.auth_github_env_original,
+            &preview.auth_github_env_pending,
+            add_style,
+            remove_style,
+        ),
+        heading,
+    );
+    append_settings_section(
+        out,
+        "Trust:",
+        settings_trust_diff_lines(
+            &preview.trust_original,
+            &preview.trust_pending,
+            add_style,
+            remove_style,
+        ),
+        heading,
+    );
+}
+
+fn append_settings_general_lines(
+    out: &mut Vec<Line<'static>>,
+    preview: &SettingsSavePreview,
+    stats: &SettingsPreviewStats,
+    heading: Style,
+    add_style: Style,
+    remove_style: Style,
+) {
+    if stats.general.is_none() {
+        return;
+    }
+    out.push(Line::from(Span::styled("General:", heading)));
+    append_settings_toggle_line(
+        out,
+        "  co-author trailer: ",
+        preview.general.original_toggles.coauthor_trailer,
+        preview.general.pending_toggles.coauthor_trailer,
+        heading,
+        add_style,
+        remove_style,
+    );
+    append_settings_toggle_line(
+        out,
+        "  dco: ",
+        preview.general.original_toggles.dco,
+        preview.general.pending_toggles.dco,
+        heading,
+        add_style,
+        remove_style,
+    );
+    out.push(Line::raw(""));
+}
+
+fn append_settings_toggle_line(
+    out: &mut Vec<Line<'static>>,
+    label: &str,
+    original: bool,
+    pending: bool,
+    heading: Style,
+    add_style: Style,
+    remove_style: Style,
+) {
+    if pending == original {
+        return;
+    }
+    let arrow = "\u{2192}";
+    out.push(Line::from(vec![
+        Span::styled(label.to_owned(), heading),
+        Span::styled(enabled_label(original), remove_style),
+        Span::styled(format!(" {arrow} "), Style::default()),
+        Span::styled(enabled_label(pending), add_style),
+    ]));
+}
+
+fn append_settings_section(
+    out: &mut Vec<Line<'static>>,
+    title: &str,
+    lines: Vec<Line<'static>>,
+    heading: Style,
+) {
+    if lines.is_empty() {
+        return;
+    }
+    out.push(Line::from(Span::styled(title.to_owned(), heading)));
+    out.extend(lines);
+    out.push(Line::raw(""));
 }
 
 fn enabled_label(enabled: bool) -> &'static str {
@@ -1179,7 +1357,9 @@ fn settings_mount_stats(
     original: &[MountPreviewRow],
     pending: &[MountPreviewRow],
 ) -> Option<String> {
-    let (added, removed, modified) = mount_diff_counts(original, pending);
+    let orig_map = mount_map(original);
+    let pend_map = mount_map(pending);
+    let (added, removed, modified) = diff_counts(&orig_map, &pend_map);
     summarize_diff_counts(added, removed, modified)
 }
 
@@ -1187,7 +1367,16 @@ fn settings_env_stats(
     original: &SettingsEnvPreview,
     pending: &SettingsEnvPreview,
 ) -> Option<String> {
-    let (added, removed, modified) = env_config_diff_counts(original, pending);
+    let (ga, gr, gm) = diff_counts(&original.env, &pending.env);
+    let all_roles: BTreeSet<&String> = original.roles.keys().chain(pending.roles.keys()).collect();
+    let empty = BTreeMap::default();
+    let (ra, rr, rm) = all_roles.into_iter().fold((0, 0, 0), |(a, r, m), role| {
+        let oe = original.roles.get(role).unwrap_or(&empty);
+        let pe = pending.roles.get(role).unwrap_or(&empty);
+        let (da, dr, dm) = diff_counts(oe, pe);
+        (a + da, r + dr, m + dm)
+    });
+    let (added, removed, modified) = (ga + ra, gr + rr, gm + rm);
     summarize_diff_counts(added, removed, modified)
 }
 
@@ -1219,8 +1408,7 @@ fn settings_auth_stats(
         .zip(pending.iter())
         .filter(|(a, b)| a.mode != b.mode)
         .count();
-    let (env_added, env_removed, env_modified) =
-        env_map_diff_counts(orig_github_env, pend_github_env);
+    let (env_added, env_removed, env_modified) = diff_counts(orig_github_env, pend_github_env);
     let total = row_changes + env_added + env_removed + env_modified;
     if total == 0 {
         return None;
@@ -1243,58 +1431,26 @@ fn settings_trust_stats(
     Some(format!("{changed} changed"))
 }
 
-fn mount_diff_counts(
-    original: &[MountPreviewRow],
-    pending: &[MountPreviewRow],
-) -> (usize, usize, usize) {
-    let orig_map = mount_map(original);
-    let pend_map = mount_map(pending);
-    let added = pend_map
-        .keys()
-        .filter(|k| !orig_map.contains_key(*k))
-        .count();
-    let removed = orig_map
-        .keys()
-        .filter(|k| !pend_map.contains_key(*k))
-        .count();
-    let modified = pend_map
-        .iter()
-        .filter(|(k, prow)| orig_map.get(*k).is_some_and(|orow| orow != *prow))
-        .count();
-    (added, removed, modified)
-}
-
-fn env_config_diff_counts(
-    original: &SettingsEnvPreview,
-    pending: &SettingsEnvPreview,
-) -> (usize, usize, usize) {
-    let (ga, gr, gm) = env_map_diff_counts(&original.env, &pending.env);
-    let all_roles: BTreeSet<&String> = original.roles.keys().chain(pending.roles.keys()).collect();
-    let empty = BTreeMap::default();
-    let (ra, rr, rm) = all_roles.into_iter().fold((0, 0, 0), |(a, r, m), role| {
-        let oe = original.roles.get(role).unwrap_or(&empty);
-        let pe = pending.roles.get(role).unwrap_or(&empty);
-        let (da, dr, dm) = env_map_diff_counts(oe, pe);
-        (a + da, r + dr, m + dm)
-    });
-    (ga + ra, gr + rr, gm + rm)
-}
-
-fn env_map_diff_counts(
-    original: &BTreeMap<String, String>,
-    pending: &BTreeMap<String, String>,
-) -> (usize, usize, usize) {
+fn diff_counts<K, V>(original: &BTreeMap<K, V>, pending: &BTreeMap<K, V>) -> (usize, usize, usize)
+where
+    K: Ord,
+    V: PartialEq,
+{
     let added = pending
         .keys()
-        .filter(|k| !original.contains_key(*k))
+        .filter(|key| !original.contains_key(*key))
         .count();
     let removed = original
         .keys()
-        .filter(|k| !pending.contains_key(*k))
+        .filter(|key| !pending.contains_key(*key))
         .count();
     let modified = pending
         .iter()
-        .filter(|(k, v)| original.get(*k).is_some_and(|ov| ov != *v))
+        .filter(|(key, pending)| {
+            original
+                .get(*key)
+                .is_some_and(|original| original != *pending)
+        })
         .count();
     (added, removed, modified)
 }
