@@ -17,6 +17,14 @@ jackin❯ TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed i
 
 **PageUp / PageDown** are page-scrolling keys for long list-like modals that expose them, currently the File Browser. They move the selected row by the visible listing height, use the same selection-follow math as rendering, and saturate at the first or last row instead of wrapping. A modal that accepts PageUp/PageDown must advertise them in the footer hints.
 
+### Focus layers
+
+Focus state has three layers, and new components must use the narrowest layer that matches the interaction:
+
+1. `FocusOwner<Tab>` is the screen-level owner for tabbed screens. It answers which region owns input: the tab bar, or one named content block. Borders, tab underlines, cursors, and footer scope derive from that one owner value.
+2. A per-dialog semantic enum implementing `ButtonFocus` is element-level focus inside a button dialog. Use named states such as `Yes` / `No` or `Save` / `Discard` / `Cancel`; do not store a parallel raw index or bool.
+3. `PanelFocus` is border styling only. It is computed from screen-level or dialog-level focus state when rendering; do not store it as independent state.
+
 ### W3C Tabs pattern (required for all tabbed interfaces)
 
 All tabbed surfaces (workspace editor, settings) must implement the W3C tablist/tabpanel pattern:
