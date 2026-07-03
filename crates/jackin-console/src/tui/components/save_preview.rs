@@ -1,4 +1,8 @@
 //! Save-confirm preview line builders for console-local dialogs.
+//!
+//! This module deliberately does not use `jackin_tui::components::diff_view`:
+//! that component renders text hunks, while save previews render semantic
+//! config-change rows with domain labels, summaries, and secret redaction.
 
 use std::collections::{BTreeMap, BTreeSet};
 
