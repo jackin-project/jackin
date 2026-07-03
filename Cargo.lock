@@ -3115,6 +3115,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "turso",
  "url",
 ]

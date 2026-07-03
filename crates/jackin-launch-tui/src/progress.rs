@@ -161,6 +161,7 @@ impl LaunchProgress {
             &summary,
             detail.as_deref().or(next_step.as_deref()),
         );
+        self.diagnostics.error("launch_failed", &summary, None);
         // On a rich surface the render task draws the failure popup and owns the
         // terminal's input; poll for the operator's Enter/Esc dismiss. Yielding
         // with an async sleep (rather than a blocking stdin read) is essential on

@@ -105,6 +105,13 @@ pub fn init() {
             let bt = std::backtrace::Backtrace::force_capture();
             write_line(&format!("[jackin-capsule] PANIC: {info}"));
             write_line(&format!("[jackin-capsule] BACKTRACE:\n{bt}"));
+            // The hook runs while unwinding; keep the bridged record one-line
+            // and leave the backtrace in the local multiplexer log.
+            crate::telemetry::bridge_log(
+                crate::telemetry::BridgeLevel::Error,
+                &format!("PANIC: {info}"),
+            );
+            crate::telemetry::shutdown();
             default_hook(info);
         }));
     });
@@ -142,7 +149,7 @@ macro_rules! clog {
     ($($arg:tt)*) => {{
         let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
         $crate::logging::write_line(&line);
-        $crate::telemetry::bridge_log(false, &line);
+        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Info, &line);
     }};
 }
 
@@ -158,7 +165,25 @@ macro_rules! cdebug {
         if $crate::logging::debug_enabled() {
             let line = format!("[jackin-capsule debug] {}", format_args!($($arg)*));
             $crate::logging::write_line(&line);
-            $crate::telemetry::bridge_log(true, &line);
+            $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Debug, &line);
         }
+    }};
+}
+
+#[macro_export]
+macro_rules! cwarn {
+    ($($arg:tt)*) => {{
+        let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
+        $crate::logging::write_line(&line);
+        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Warn, &line);
+    }};
+}
+
+#[macro_export]
+macro_rules! cerror {
+    ($($arg:tt)*) => {{
+        let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
+        $crate::logging::write_line(&line);
+        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Error, &line);
     }};
 }

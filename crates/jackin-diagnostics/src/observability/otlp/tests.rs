@@ -1,3 +1,4 @@
+use jackin_core::JackinPaths;
 use opentelemetry::Key;
 use opentelemetry::logs::{AnyValue, Severity};
 use opentelemetry_sdk::logs::SdkLogRecord;
@@ -356,6 +357,42 @@ fn wire_log_resource_carries_run_id_service_and_component() {
     assert_eq!(attr(resource, keys::SERVICE_NAME), Some("jackin".into()));
     assert_eq!(attr(resource, keys::COMPONENT), Some("host".into()));
     assert_eq!(attr(resource, keys::RUN_ID), Some("wire-run".into()));
+}
+
+#[test]
+fn stage_failed_exports_as_error() {
+    let logs = exported_logs!(false, "run1", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
+        run.stage("stage_failed", "derived image", "boom", None);
+    });
+
+    let failed = logs
+        .iter()
+        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("stage_failed"))
+        .expect("stage_failed log exported");
+    assert_eq!(failed.record.severity_number(), Some(Severity::Error));
+}
+
+#[test]
+fn fatal_error_carries_error_type() {
+    let logs = exported_logs!(false, "run1", || {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let run = crate::RunDiagnostics::start(&paths, false, "load").unwrap();
+        run.error_typed("E014", "capsule download failed", Some("E014"));
+    });
+
+    let error = logs
+        .iter()
+        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("E014"))
+        .expect("typed error log exported");
+    assert_eq!(error.record.severity_number(), Some(Severity::Error));
+    assert_eq!(
+        log_attr(&error.record, "error_type").as_deref(),
+        Some("E014")
+    );
 }
 
 #[test]

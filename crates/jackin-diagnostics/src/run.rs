@@ -46,6 +46,7 @@ pub(crate) const MAX_RUN_ARTIFACT_AGE: Duration = Duration::from_hours(720);
 
 static ACTIVE_RUN: OnceLock<Mutex<Option<Arc<RunDiagnostics>>>> = OnceLock::new();
 static RUN_REGISTRY: OnceLock<Mutex<HashMap<String, Weak<RunDiagnostics>>>> = OnceLock::new();
+static HOST_PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
 
 fn active_slot() -> &'static Mutex<Option<Arc<RunDiagnostics>>> {
     ACTIVE_RUN.get_or_init(|| Mutex::new(None))
@@ -286,6 +287,17 @@ impl RunDiagnostics {
         crate::observability::emit_jsonl_error(&self.run_id, kind, message, None, None);
     }
 
+    pub fn error_typed(&self, kind: &str, message: &str, error_type: Option<&str>) {
+        crate::observability::emit_jsonl_error_typed(
+            &self.run_id,
+            kind,
+            message,
+            None,
+            None,
+            error_type,
+        );
+    }
+
     pub fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
         // Track wall-clock stage timings for the end-of-run summary (Defect 47.5).
         // A stage runs on the operator's foreground launch path, so a slow one is a
@@ -338,13 +350,24 @@ impl RunDiagnostics {
         };
         let span = self.stage_span_for(kind, stage);
         let _entered = span.enter();
-        crate::observability::emit_jsonl_event(
-            &self.run_id,
-            kind,
-            message,
-            Some(stage),
-            enriched_detail.as_deref(),
-        );
+        if kind.ends_with("_failed") {
+            crate::observability::emit_jsonl_error_typed(
+                &self.run_id,
+                kind,
+                message,
+                Some(stage),
+                enriched_detail.as_deref(),
+                None,
+            );
+        } else {
+            crate::observability::emit_jsonl_event(
+                &self.run_id,
+                kind,
+                message,
+                Some(stage),
+                enriched_detail.as_deref(),
+            );
+        }
         if let Some(ms) = foreground_wait_ms {
             self.explain_foreground_wait(stage, ms);
         }
@@ -678,6 +701,19 @@ pub fn active_run() -> Option<Arc<RunDiagnostics>> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
+}
+
+pub fn install_host_panic_hook() {
+    let () = HOST_PANIC_HOOK_INSTALLED.get_or_init(|| {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if let Some(run) = active_run() {
+                run.error_typed("panic", &format!("PANIC: {info}"), Some("panic"));
+            }
+            crate::observability::shutdown_otlp();
+            default_hook(info);
+        }));
+    });
 }
 
 pub(crate) fn run_by_id(run_id: &str) -> Option<Arc<RunDiagnostics>> {
@@ -1128,6 +1164,10 @@ impl jackin_core::launch_progress::LaunchDiagnostics for RunDiagnostics {
 
     fn compact(&self, kind: &str, message: &str) {
         self.compact(kind, message);
+    }
+
+    fn error(&self, kind: &str, message: &str, error_type: Option<&str>) {
+        self.error_typed(kind, message, error_type);
     }
 
     fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {

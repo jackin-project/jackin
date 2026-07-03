@@ -1223,7 +1223,15 @@ pub(crate) fn emit_jsonl_event(
     stage: Option<&str>,
     detail: Option<&str>,
 ) {
-    emit_jsonl_event_with_level(run_id, kind, message, stage, detail, JsonlEventLevel::Info);
+    emit_jsonl_event_with_level(
+        run_id,
+        kind,
+        message,
+        stage,
+        detail,
+        None,
+        JsonlEventLevel::Info,
+    );
 }
 
 pub(crate) fn emit_jsonl_error(
@@ -1233,7 +1241,26 @@ pub(crate) fn emit_jsonl_error(
     stage: Option<&str>,
     detail: Option<&str>,
 ) {
-    emit_jsonl_event_with_level(run_id, kind, message, stage, detail, JsonlEventLevel::Error);
+    emit_jsonl_error_typed(run_id, kind, message, stage, detail, None);
+}
+
+pub(crate) fn emit_jsonl_error_typed(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    error_type: Option<&str>,
+) {
+    emit_jsonl_event_with_level(
+        run_id,
+        kind,
+        message,
+        stage,
+        detail,
+        error_type,
+        JsonlEventLevel::Error,
+    );
 }
 
 enum JsonlEventLevel {
@@ -1247,10 +1274,12 @@ fn emit_jsonl_event_with_level(
     message: &str,
     stage: Option<&str>,
     detail: Option<&str>,
+    error_type: Option<&str>,
     level: JsonlEventLevel,
 ) {
     let stage = stage.unwrap_or("<none>");
     let detail = detail.unwrap_or("<none>");
+    let error_type = error_type.unwrap_or("<none>");
     // The `--debug` firehose is DEBUG-severity so external exporters filter
     // it by level; the JSONL layer ignores levels and records everything.
     // The trailing format message becomes the OTLP log body — without it,
@@ -1264,6 +1293,7 @@ fn emit_jsonl_event_with_level(
             diagnostics_message = message,
             stage = stage,
             detail = detail,
+            error_type = error_type,
             "{message}"
         );
     } else if kind == "debug" {
@@ -1275,6 +1305,7 @@ fn emit_jsonl_event_with_level(
             diagnostics_message = message,
             stage = stage,
             detail = detail,
+            error_type = error_type,
             "{message}"
         );
     } else {
@@ -1286,6 +1317,7 @@ fn emit_jsonl_event_with_level(
             diagnostics_message = message,
             stage = stage,
             detail = detail,
+            error_type = error_type,
             "{message}"
         );
     }

@@ -12,7 +12,7 @@ Design direction the program encodes (validated against tracing 0.1 / tracing-op
 |------|-------|----------|--------|------------|--------|
 | 001 | In-memory OTLP export test seam + contract characterization | P1 | M | — | DONE |
 | 002 | Export filter denylist → jackin-target allowlist (+`JACKIN_OTEL_INTERNAL`) | P1 | S | 001 | DONE |
-| 003 | Error severity truth: capsule WARN/ERROR tiers, host error path, panic capture, `error_type` | P1 | L | 001 | TODO |
+| 003 | Error severity truth: capsule WARN/ERROR tiers, host error path, panic capture, `error_type` | P1 | L | 001 | DONE |
 | 004 | Route `record_direct` through tracing (crash/build/timing reach OTLP); clean exported attrs | P1 | M | 001, 003 | TODO |
 | 005 | Redaction boundary: payload containment + export scrubber | P1 | L | 003, 004 | TODO |
 | 006 | Structured event taxonomy: `event.name`/`log.category`, fingerprint-stable bodies | P1 | L | 003, 004, 005 | TODO |

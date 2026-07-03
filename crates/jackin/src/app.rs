@@ -89,6 +89,7 @@ async fn play_construct_intro_if_needed(
 pub async fn run(cli: Cli) -> Result<()> {
     let debug = cli.debug;
     jackin_diagnostics::set_debug_mode(debug);
+    jackin_diagnostics::install_host_panic_hook();
 
     // Fail fast and loud on an unsupported OTLP protocol: jackin exports over
     // gRPC only. An OTLP endpoint configured with a non-grpc protocol would
@@ -191,10 +192,29 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
     };
+    record_run_error(&result);
     // Emit per-stage duration summary before the run guard drops (Defect 47.5).
     // The guard's Drop then flushes OTLP, so the summary makes the export.
     diagnostics.emit_run_summary();
     result
+}
+
+fn record_run_error(result: &Result<()>) {
+    let Err(error) = result else {
+        return;
+    };
+    if runtime::progress::LaunchCancelled::is_cancel(error) {
+        return;
+    }
+    let Some(run) = jackin_diagnostics::active_run() else {
+        return;
+    };
+    if let Some(jackin_err) = error.downcast_ref::<crate::error::JackinError>() {
+        let code = jackin_err.user_message().code.as_str();
+        run.error_typed(code, &jackin_err.to_string(), Some(code));
+    } else {
+        run.error_typed("error", &format!("{error:#}"), Some("error"));
+    }
 }
 
 const fn command_name(command: &Command) -> &'static str {
