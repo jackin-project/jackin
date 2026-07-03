@@ -180,6 +180,7 @@ pub struct ContainerInfoState {
     rows: Vec<ContainerInfoRow>,
     copied_row: Option<usize>,
     hovered_row: Option<usize>,
+    viewport: Option<Rect>,
     /// Scroll offsets for when the content overflows the dialog area. Shared
     /// with every other dialog through [`DialogBodyScroll`] so vertical and
     /// horizontal scroll behave identically everywhere.
@@ -194,6 +195,7 @@ impl ContainerInfoState {
             rows,
             copied_row: None,
             hovered_row: None,
+            viewport: None,
             scroll: DialogBodyScroll::new(),
         }
     }
@@ -213,7 +215,16 @@ impl ContainerInfoState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<()> {
-        // Viewport is unknown here; pass 0 so the key is accepted and the
+        if let Some(dialog_rect) = self.viewport {
+            let content_height = self.content_height();
+            let content_width = self.content_width();
+            let axes =
+                crate::components::dialog_scroll_axes(content_width, content_height, dialog_rect);
+            let viewport_width = usize::from(dialog_rect.width.saturating_sub(2));
+            let viewport_height = usize::from(dialog_rect.height.saturating_sub(2));
+            return self.handle_scroll_key(key, viewport_height, viewport_width, axes);
+        }
+        // Viewport is unknown here; pass 0 so the key is accepted and the next
         // render-time clamp settles the final offset, and advertise both axes.
         self.handle_scroll_key(
             key,
@@ -226,14 +237,8 @@ impl ContainerInfoState {
         )
     }
 
-    pub fn handle_key_in_rect(&mut self, key: KeyEvent, dialog_rect: Rect) -> ModalOutcome<()> {
-        let content_height = self.content_height();
-        let content_width = self.content_width();
-        let axes =
-            crate::components::dialog_scroll_axes(content_width, content_height, dialog_rect);
-        let viewport_width = usize::from(dialog_rect.width.saturating_sub(2));
-        let viewport_height = usize::from(dialog_rect.height.saturating_sub(2));
-        self.handle_scroll_key(key, viewport_height, viewport_width, axes)
+    pub fn set_viewport(&mut self, dialog_rect: Rect) {
+        self.viewport = Some(dialog_rect);
     }
 
     /// Shared Esc/q dismiss + scroll-key dispatch for the Debug-info dialog. The

@@ -1,7 +1,5 @@
 //! Single-button error dialog component.
 
-use std::cell::Cell;
-
 use crossterm::event::KeyEvent;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -52,7 +50,7 @@ pub fn error_popup_hint_spans() -> Vec<HintSpan<'static>> {
 pub struct ErrorPopupState {
     pub title: String,
     pub message: String,
-    cached_rows: Cell<Option<(u16, u16)>>,
+    cached_rows: Option<(u16, u16)>,
 }
 
 impl ErrorPopupState {
@@ -61,12 +59,12 @@ impl ErrorPopupState {
         Self {
             title: title.into(),
             message: message.into(),
-            cached_rows: Cell::new(None),
+            cached_rows: None,
         }
     }
 
     #[must_use]
-    pub fn handle_key(&self, key: KeyEvent) -> ModalOutcome<()> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<()> {
         match ERROR_POPUP_KEYMAP.dispatch(KeyChord::from(key)) {
             Some(ErrorPopupAction::Dismiss) => ModalOutcome::Cancel,
             None => ModalOutcome::Continue,
@@ -114,7 +112,7 @@ fn render_error_dialog_buffer(area: Rect, buf: &mut Buffer, state: &ErrorPopupSt
 
 #[must_use]
 pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 {
-    if let Some((cached_width, rows)) = state.cached_rows.get()
+    if let Some((cached_width, rows)) = state.cached_rows
         && cached_width == inner_width
     {
         return rows;
@@ -126,7 +124,6 @@ pub fn estimated_message_rows(state: &ErrorPopupState, inner_width: u16) -> u16 
         rows = rows.saturating_add(u32::try_from(len.div_ceil(width)).unwrap_or(u32::MAX));
     }
     let result = u16::try_from(rows.max(1)).unwrap_or(u16::MAX);
-    state.cached_rows.set(Some((inner_width, result)));
     result
 }
 

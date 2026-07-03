@@ -234,7 +234,7 @@ fn update_forced_select(picker: &mut SelectListState, msg: SelectLoopMessage) ->
     }
 }
 
-fn update_error_prompt(state: &ErrorPopupState, msg: ErrorPromptMessage) -> Option<()> {
+fn update_error_prompt(state: &mut ErrorPopupState, msg: ErrorPromptMessage) -> Option<()> {
     match msg {
         ErrorPromptMessage::Key(key) => match state.handle_key(key) {
             ModalOutcome::Cancel => Some(()),
@@ -612,13 +612,13 @@ impl RichRenderer {
                   through the modal dispatch. The modal nesting is the protocol."
     )]
     fn error_popup_loop(&mut self, title: &str, message: &str) -> anyhow::Result<()> {
-        let state = ErrorPopupState::new(title, message);
+        let mut state = ErrorPopupState::new(title, message);
         loop {
             self.terminal
                 .draw(|frame| draw_error_popup(frame, &state))
                 .context("rendering launch error popup")?;
             if update_error_prompt(
-                &state,
+                &mut state,
                 ErrorPromptMessage::Key(read_pressed_key(
                     &self.input,
                     "reading error popup input",
@@ -941,7 +941,7 @@ impl RichRenderer {
                         }
                     };
                 }
-                KeyCode::Up => match focus {
+                KeyCode::Up | KeyCode::Char('k' | 'K') => match focus {
                     InspFocus::Repos => {
                         wt_sel = wt_sel.saturating_sub(1);
                         file_sel = 0;
@@ -955,12 +955,12 @@ impl RichRenderer {
                     }
                     InspFocus::Diff => {
                         if let Some(d) = diff_state.as_mut() {
-                            d.scroll_up();
+                            drop(d.handle_key(key));
                             diff_scroll_y = d.scroll_y();
                         }
                     }
                 },
-                KeyCode::Down => match focus {
+                KeyCode::Down | KeyCode::Char('j' | 'J') => match focus {
                     InspFocus::Repos => {
                         if wt_sel + 1 < worktrees.len() {
                             wt_sel += 1;
@@ -979,20 +979,20 @@ impl RichRenderer {
                     }
                     InspFocus::Diff => {
                         if let Some(d) = diff_state.as_mut() {
-                            d.scroll_down();
+                            drop(d.handle_key(key));
                             diff_scroll_y = d.scroll_y();
                         }
                     }
                 },
                 KeyCode::PageUp => {
                     if let Some(d) = diff_state.as_mut() {
-                        d.page_up(20);
+                        drop(d.handle_key(key));
                         diff_scroll_y = d.scroll_y();
                     }
                 }
                 KeyCode::PageDown => {
                     if let Some(d) = diff_state.as_mut() {
-                        d.page_down(20);
+                        drop(d.handle_key(key));
                         diff_scroll_y = d.scroll_y();
                     }
                 }

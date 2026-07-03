@@ -3,6 +3,7 @@
 //! Two modes: side-by-side (modified files, before │ after) and single-pane
 //! (added / untracked / deleted). Uses `similar::TextDiff` for hunk computation.
 
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -200,6 +201,29 @@ impl DiffViewState {
         let max = self.total_rows().saturating_sub(1) as u16;
         let step = (viewport_height / 2).max(1);
         self.scroll_y = self.scroll_y.saturating_add(step).min(max);
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent) -> crate::ModalOutcome<()> {
+        match key.code {
+            KeyCode::Esc => crate::ModalOutcome::Cancel,
+            KeyCode::Up | KeyCode::Char('k' | 'K') => {
+                self.scroll_up();
+                crate::ModalOutcome::Continue
+            }
+            KeyCode::Down | KeyCode::Char('j' | 'J') => {
+                self.scroll_down();
+                crate::ModalOutcome::Continue
+            }
+            KeyCode::PageUp => {
+                self.page_up(20);
+                crate::ModalOutcome::Continue
+            }
+            KeyCode::PageDown => {
+                self.page_down(20);
+                crate::ModalOutcome::Continue
+            }
+            _ => crate::ModalOutcome::Continue,
+        }
     }
 }
 
