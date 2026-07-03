@@ -12,6 +12,7 @@
 
 ## Status
 
+- **Execution status**: DONE — the raw ANSI banner/splash/helpers moved from `crates/jackin-tui/src/lib.rs` to `crates/jackin-tui/src/ansi.rs`; `lib.rs` now declares `pub mod ansi;` and remains 292 lines; `help_banner` uses `animation::rain_age_to_color`; codebase-map references were updated.
 - **Priority**: P3
 - **Effort**: M
 - **Risk**: LOW (pure relocation; re-export discipline is the only trap)
