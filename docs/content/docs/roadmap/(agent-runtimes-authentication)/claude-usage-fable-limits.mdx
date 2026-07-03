@@ -49,29 +49,25 @@ Key facts the implementation must respect:
 
 ### 1. Parse the `limits` array (authoritative path)
 
-Add a `limits: Option<Vec<ClaudeOAuthLimit>>` field to `ClaudeOAuthUsageResponse` in <RepoFile path="crates/jackin-usage/src/usage/claude.rs">crates/jackin-usage/src/usage/claude.rs</RepoFile>:
+Add a `limits: Vec<ClaudeOAuthLimit>` field to `ClaudeOAuthUsageResponse` in <RepoFile path="crates/jackin-usage/src/usage/claude.rs">crates/jackin-usage/src/usage/claude.rs</RepoFile>. Only the fields the renderer reads are modeled — the API also sends `group`, `is_active`, `scope.surface`, and `model.id`, but serde ignores unknown fields and they are added back only when something reads them (no dead fields):
 
 ```rust
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClaudeOAuthLimit {
     pub(crate) kind: Option<String>,        // "session" | "weekly_all" | "weekly_scoped"
-    pub(crate) group: Option<String>,       // "session" | "weekly"
     pub(crate) percent: Option<u8>,
     pub(crate) severity: Option<String>,
     pub(crate) resets_at: Option<String>,
     pub(crate) scope: Option<ClaudeOAuthLimitScope>,
-    pub(crate) is_active: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClaudeOAuthLimitScope {
     pub(crate) model: Option<ClaudeOAuthLimitModel>,
-    pub(crate) surface: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClaudeOAuthLimitModel {
-    pub(crate) id: Option<String>,
     pub(crate) display_name: Option<String>,
 }
 ```

@@ -157,7 +157,6 @@ impl AppConfig {
     }
 
     // Test-only; production writes go through ConfigEditor.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn add_mount(&mut self, name: &str, mount: MountConfig, scope: Option<&str>) {
         debug_assert!(
             matches!(mount.isolation, MountIsolation::Shared),

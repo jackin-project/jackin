@@ -348,51 +348,28 @@ pub(crate) struct ClaudeOAuthUsageWindow {
 /// "All models" Weekly, and per-model Weekly (Fable, and future model-scoped
 /// limits). `percent` is already-scaled (0..=100); `kind` selects the bucket
 /// (`session` | `weekly_all` | `weekly_scoped`); `scope.model.display_name`
-/// labels a `weekly_scoped` window. `severity` mirrors the web console's meter
-/// color and maps to [`UsageSeverity`].
+/// labels a `weekly_scoped` window; `severity` mirrors the web console's meter
+/// color and maps to [`UsageSeverity`]. The API also sends `group`, `is_active`,
+/// `scope.surface`, and `model.id`, but those carry no rendering meaning today,
+/// so they are intentionally not modeled — serde ignores unknown fields, and a
+/// field is added back here only when something reads it (no dead fields).
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClaudeOAuthLimit {
     pub(crate) kind: Option<String>,
-    // `group` ("session"/"weekly") duplicates the window duration `kind`
-    // already implies, so it is kept for API-shape completeness, not read.
-    #[expect(
-        dead_code,
-        reason = "API-shape field kept for completeness; window duration derives from `kind`"
-    )]
-    pub(crate) group: Option<String>,
     pub(crate) percent: Option<u8>,
     pub(crate) severity: Option<String>,
     #[serde(rename = "resets_at")]
     pub(crate) resets_at: Option<String>,
     pub(crate) scope: Option<ClaudeOAuthLimitScope>,
-    // Surfaced by the API but not yet rendered: today it flags the currently
-    // binding constraint, not whether to show the row (Session/All-models are
-    // `false` while a scoped model is `true`), so it must not gate visibility.
-    #[serde(rename = "is_active", default)]
-    #[expect(
-        dead_code,
-        reason = "API-shape field kept for completeness; not gated on yet"
-    )]
-    pub(crate) is_active: bool,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClaudeOAuthLimitScope {
     pub(crate) model: Option<ClaudeOAuthLimitModel>,
-    #[expect(
-        dead_code,
-        reason = "API-shape field kept for completeness; not rendered yet"
-    )]
-    pub(crate) surface: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClaudeOAuthLimitModel {
-    #[expect(
-        dead_code,
-        reason = "API-shape field kept for completeness; label uses display_name"
-    )]
-    pub(crate) id: Option<String>,
     #[serde(rename = "display_name")]
     pub(crate) display_name: Option<String>,
 }
