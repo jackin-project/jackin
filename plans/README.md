@@ -32,7 +32,7 @@ update the codebase map in the same PR.
 | 009 | Capsule spawn failure onto ErrorPopup | P2 | M | 007 | DONE |
 | 010 | Capsule hint renderer consolidation (style single-source, wrap not truncate) | P1 | M | — (coordinate 005) | DONE |
 | 011 | Capsule footer via StatusFooter + shared confirm hit-test | P2 | M | — (coordinate 010) | DONE |
-| 012 | ModalStack primitive; settings modal enums converge; stash slots die | P2 | L | 002 (soft) | IN PROGRESS — ModalStack primitive and lifecycle adapters landed; settings-env/editor picker stash slots moved into modal variants; settings enum convergence plus auth-form return stash remain |
+| 012 | ModalStack primitive; settings modal enums converge; stash slots die | P2 | L | 002 (soft) | IN PROGRESS — ModalStack primitive and lifecycle adapters landed; picker/auth return stash terms removed by modal-stack context; settings modal enum convergence remains |
 | 013 | Modal-sizing registry promoted to jackin-tui | P2 | M | 012 | BLOCKED — drift check found existing launch TUI failure-dialog/run changes before plan work |
 | 014 | ConfirmSaveState onto a keymap + ButtonFocus | P2 | M | 003 | BLOCKED — drift check found existing confirm/save component changes before plan work |
 | 015 | Settings ↔ editor row unification + labeled_field_line | P1 | L | — | BLOCKED — drift check found existing console row/auth/workspace view changes before plan work |

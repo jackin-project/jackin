@@ -18,11 +18,11 @@
 - **Depends on**: plans/002-tui-component-contract.md (recommended)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
-- **Execution status**: IN PROGRESS — current branch drift is the integrated #721 baseline; `ModalStack` now exists in `jackin-tui`, editor/settings lifecycle methods route through it, and settings env plus editor picker context now lives on modal variants instead of stash fields. Remaining work is settings enum convergence plus the auth-form return stash.
+- **Execution status**: IN PROGRESS — current branch drift is the integrated #721 baseline; `ModalStack` now exists in `jackin-tui`, editor/settings lifecycle methods route through it, settings env plus editor picker context now lives on modal variants, and auth-form return terminology now names the modal parent stack. Remaining work is settings enum convergence.
 
 ## Why this matters
 
-Sub-dialog stacking — "Esc walks back one step" — is implemented four ways: the editor's `ConsoleModal` enum with `modal_parents` stacks, THREE separate per-tab settings enums (`GlobalMountModal`, `SettingsEnvModal`, `SettingsAuthModal`) each redeclaring overlapping variants and each with its own render dispatch, the capsule's `Vec<Dialog>`, and legacy per-flow "stash" fields (`pending_picker_value`, `pending_env_key`, `pending_auth_form_return`, …) that the design docs themselves flag as "legacy … does not compose past two levels and is easy to forget." Every multi-step flow re-implements Esc-back/commit-clear plumbing, and the docs treat resulting Esc-back regressions as bugs. This plan introduces one `ModalStack<M>` primitive, converges the three settings enums into one, and eliminates the stash slots in the flows that use them.
+Sub-dialog stacking — "Esc walks back one step" — was implemented four ways: the editor's `ConsoleModal` enum with `modal_parents` stacks, THREE separate per-tab settings enums (`GlobalMountModal`, `SettingsEnvModal`, `SettingsAuthModal`) each redeclaring overlapping variants and each with its own render dispatch, the capsule's `Vec<Dialog>`, and legacy per-flow "stash" fields (`pending_picker_value`, `pending_env_key`, `pending_auth_form_return`, …) that the design docs flagged as "legacy … does not compose past two levels and is easy to forget." The current branch has moved picker/auth return context onto modal variants or modal parent-stack frames; the remaining structural duplication is the three settings modal enums. This plan introduces one `ModalStack<M>` primitive, converges the three settings enums into one, and eliminates the stash slots in the flows that use them.
 
 ## Current state
 
@@ -32,7 +32,7 @@ Sub-dialog stacking — "Esc walks back one step" — is implemented four ways: 
   - `render_settings_env_modal` (`:609`) over `SettingsEnvModal<TextInputState, SourcePickerState, O, RolePickerState<R>, …>`
   - `render_settings_auth_modal` (`:648`) over `SettingsAuthModal<TextInputState, SourcePickerState, O, FileBrowserState, …>`
   All three wrap the same shared widgets the editor's `ConsoleModal` wraps.
-- Stash-slot legacy: e.g. `crates/jackin-console/src/tui/input/editor/modal.rs:290-296` (verified):
+- Stash-slot legacy before this branch's follow-up slices: e.g. `crates/jackin-console/src/tui/input/editor/modal.rs:290-296` at plan time:
   ```rust
   if let Some(stashed) = editor.pending_picker_value.take() {
       set_pending_env_value_typed(editor, scope, &key, stashed);
@@ -45,7 +45,7 @@ Sub-dialog stacking — "Esc walks back one step" — is implemented four ways: 
 - The capsule `Vec<Dialog>` stack is fine as a mechanism (single enum + vec) — it is NOT migrated here; the primitive should merely be compatible with its semantics.
 - Shared crate has `modal_lifecycle.rs` (1.7K, small) — read it first; if it already models open/close lifecycle, `ModalStack` belongs beside (or inside) it.
 
-Docs canon (`dialogs.mdx` §"Sub-dialogs push onto a stack — Esc walks back one step"): names the three shapes, flags the stash form as legacy, and warns the bare `Option<Modal>` slot "regresses this rule by construction". `components.mdx` wizard rules: multi-step flow = chain of reusable components on a stack.
+Docs canon (`dialogs.mdx` §"Sub-dialogs push onto a stack — Esc walks back one step"): names `ModalStack`, modal-variant context, and modal parent-stack return as the current mechanisms, and warns the bare `Option<Modal>` slot "regresses this rule by construction". `components.mdx` wizard rules: multi-step flow = chain of reusable components on a stack.
 
 ## Commands you will need
 

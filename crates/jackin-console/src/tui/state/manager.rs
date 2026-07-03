@@ -1163,7 +1163,7 @@ impl ManagerState<'_> {
             jackin_diagnostics::debug_log!(
                 "auth",
                 "AUTH005 apply_op_picker_op_ref_committed_for_editor: \
-                 pending_auth_form_return missing — async OpRef commit dropped"
+                 modal parent auth form missing — async OpRef commit dropped"
             );
         }
     }

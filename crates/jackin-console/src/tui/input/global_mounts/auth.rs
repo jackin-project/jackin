@@ -198,7 +198,7 @@ pub fn handle_settings_auth_modal(
             let outcome = state.handle_key(key);
             // Generate wins over the provide dispatch: the `g`/`G` trigger
             // sets `generating_token` (and stashes the form into
-            // `pending_auth_form_return` for the post-mint re-mount), so
+            // the modal parent stack for the post-mint re-mount), so
             // the generate branch is reachable only on that path and the
             // provide arms below stay untouched.
             if auth.is_generating_token() {
@@ -436,7 +436,7 @@ pub fn apply_plain_text_to_settings_auth_form(
     else {
         jackin_diagnostics::debug_log!(
             "auth",
-            "apply_plain_text_to_settings_auth_form: pending_auth_form_return missing — \
+            "apply_plain_text_to_settings_auth_form: modal parent auth form missing — \
              minted plain token dropped"
         );
         return;
@@ -517,7 +517,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
         // stashes), so a hit here means a broken stash invariant.
         jackin_diagnostics::debug_log!(
             "auth",
-            "apply_op_picker_to_settings_auth_form: pending_auth_form_return missing — \
+            "apply_op_picker_to_settings_auth_form: modal parent auth form missing — \
              minted op ref dropped"
         );
         return;

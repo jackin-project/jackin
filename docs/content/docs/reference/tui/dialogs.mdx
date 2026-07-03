@@ -175,7 +175,7 @@ The shared mechanism for this contract is `ModalStack` in <RepoFile path="crates
 
 The capsule's `Vec<Dialog>` stack in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile> has the same semantics and is compatible with `ModalStack`; migrating that storage shape is optional uniformity work, not required for correctness.
 
-Per-flow return-path stash fields (`pending_env_key`, `pending_picker_target`, auth-form return state) are legacy compatibility only. New modal-to-modal flows must carry their return context in the modal variant or the shared stack frame, not in a side slot. A bare `Option<Modal>` slot is not a valid shape for any flow that can open a child modal, because it cannot represent the parent under the child.
+Modal-to-modal flows carry return context in the modal variant or the shared stack frame, not in a side slot. Environment pickers carry their scope/key/value context on modal variants, and auth-form source/picker flows return through the modal parent stack. A bare `Option<Modal>` slot is not a valid shape for any flow that can open a child modal, because it cannot represent the parent under the child.
 
 Compliance is covered by focused tests for the container palette stack, editor environment-source and mount-destination chains, settings environment chains, settings global-mount add chains, and the shared `ModalStack` push/pop/clear semantics. Treat new Esc-back regressions on any surface as bugs; fix the flow with `ModalStack` semantics rather than adding a new stash.
 

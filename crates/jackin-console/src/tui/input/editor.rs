@@ -767,7 +767,7 @@ pub fn handle_editor_modal(
                     editor.save_flow = EditorSaveFlow::Idle;
                     // If the popup was raised by a failed OpPicker commit
                     // for the auth form, the form's state was re-stashed
-                    // into `pending_auth_form_return` instead of being
+                    // into the modal parent stack instead of being
                     // re-mounted directly — restore it now so the operator
                     // lands back on the form with the prior credential
                     // unchanged, ready to retry through the source picker.
@@ -845,7 +845,7 @@ pub fn handle_editor_modal(
             let outcome = source.handle_key(key);
             // Generate wins over the provide dispatch: the `g`/`G` trigger
             // sets `generating_token_target` (and stashes the form into
-            // `pending_auth_form_return` for the post-mint re-mount), so
+            // the modal parent stack for the post-mint re-mount), so
             // the generate branch is reachable only on that path and the
             // provide arms below stay untouched.
             if editor.generating_token_target.is_some() {
@@ -938,7 +938,7 @@ pub fn handle_editor_modal(
                 )) => {
                     // Auth-form round trip wins over the Secrets-tab
                     // dispatch: the auth form sets
-                    // `pending_auth_form_return` exactly when it's the
+                    // the modal parent stack exactly when it's the
                     // caller, so the two paths can never collide.
                     if editor.has_modal_parent() {
                         // Close the OpPicker — the auth form stays stashed on
@@ -975,7 +975,7 @@ pub fn handle_editor_modal(
                     // Auth-form round trip: re-mount the form
                     // unchanged. Mirrors the Commit branch — the two
                     // callers (Secrets-tab `P`, auth-form Enter) are
-                    // disambiguated by `pending_auth_form_return`.
+                    // disambiguated by the modal parent stack.
                     if editor.has_modal_parent() {
                         super::auth::restore_auth_form_after_op_picker_cancel(editor);
                         return EditorModalOutcome::Continue;

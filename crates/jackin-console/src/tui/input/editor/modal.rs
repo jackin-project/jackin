@@ -55,7 +55,7 @@ fn generate_scope_for_target(
 /// [`PendingTokenGenerate`] that mints the token. The minted literal is
 /// staged into the stashed auth form (via the re-mount the loop runs on
 /// completion) and persisted only when the operator Saves — the form
-/// stash in `pending_auth_form_return` survives `clear_modal_chain`.
+/// modal parent stack survives `clear_modal_chain`.
 pub fn start_plain_token_generate(editor: &mut EditorState<'_>) {
     let Some(target) = editor.generating_token_target.take() else {
         super::super::auth::restore_auth_form_after_op_picker_cancel(editor);
