@@ -12,6 +12,7 @@ use jackin_config::{
     AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, WorkspaceConfig, WorkspaceRoleOverride,
 };
 use jackin_core::env_model;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 type TestEditorState =
@@ -59,8 +60,8 @@ fn empty_settings_preview() -> SettingsSavePreview {
         env_pending: SettingsEnvPreview::default(),
         auth_original: Vec::new(),
         auth_pending: Vec::new(),
-        auth_github_env_original: Default::default(),
-        auth_github_env_pending: Default::default(),
+        auth_github_env_original: BTreeMap::default(),
+        auth_github_env_pending: BTreeMap::default(),
         trust_original: Vec::new(),
         trust_pending: Vec::new(),
     }

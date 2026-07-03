@@ -18,6 +18,7 @@
 - **Depends on**: none (independent; complements plan 015's parity theme)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
+- **Execution status**: DONE — added byte-level characterization tests, recorded the `diff_view` verdict, split the save-preview module, and shared the semantic diff-count path.
 
 ## Why this matters
 
