@@ -215,7 +215,7 @@ fn dynamic_key_hint_uses_key_style() {
     let key_cell = (0..area.width)
         .find(|x| buf[(*x, 0)].symbol() == "C")
         .expect("key rendered");
-    assert_eq!(buf[(key_cell, 0)].fg, color(jackin_tui::WHITE));
+    assert_eq!(buf[(key_cell, 0)].fg, jackin_tui::theme::WHITE);
     assert!(
         buf[(key_cell, 0)]
             .style()

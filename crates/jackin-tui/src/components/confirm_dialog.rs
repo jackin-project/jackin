@@ -320,6 +320,54 @@ pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmS
     render_buttons(frame, chunks[3], state);
 }
 
+#[must_use]
+pub fn confirm_button_hit(
+    dialog_area: Rect,
+    state: &ConfirmState,
+    col: u16,
+    row: u16,
+) -> Option<bool> {
+    let button_area = confirm_button_area(dialog_area, state)?;
+    let items = [ButtonStripItem::new("Yes"), ButtonStripItem::new("No")];
+    ButtonStrip::new(&items)
+        .focused(state.focus.index())
+        .button_rects(button_area)
+        .into_iter()
+        .enumerate()
+        .find(|(_, rect)| {
+            row >= rect.y
+                && row < rect.y.saturating_add(rect.height)
+                && col >= rect.x
+                && col < rect.x.saturating_add(rect.width)
+        })
+        .map(|(idx, _)| idx == 0)
+}
+
+fn confirm_button_area(dialog_area: Rect, state: &ConfirmState) -> Option<Rect> {
+    if dialog_area.width < 2 || dialog_area.height < 2 {
+        return None;
+    }
+    let inner = Rect {
+        x: dialog_area.x.saturating_add(1),
+        y: dialog_area.y.saturating_add(1),
+        width: dialog_area.width.saturating_sub(2),
+        height: dialog_area.height.saturating_sub(2),
+    };
+    match &state.kind {
+        ConfirmKind::Default { prompt } => {
+            let prompt_lines = prompt.lines().count().max(1) as u16;
+            let chunks = dialog_inner_chunks(inner, Some(prompt_lines));
+            Some(chunks[3])
+        }
+        ConfirmKind::Details { rows, notes, .. } => {
+            let detail_rows = u16::try_from(rows.len()).unwrap_or(u16::MAX);
+            let note_rows = u16::try_from(notes.len()).unwrap_or(u16::MAX);
+            let rows = confirm_details_chunks(inner, detail_rows, note_rows);
+            Some(rows[7])
+        }
+    }
+}
+
 fn render_details(
     frame: &mut Frame<'_>,
     inner: Rect,
@@ -331,20 +379,7 @@ fn render_details(
     let detail_rows = u16::try_from(details.len()).unwrap_or(u16::MAX);
     let note_rows = u16::try_from(notes.len()).unwrap_or(u16::MAX);
     // Canonical dialog layout: leading spacer + content + spacer + buttons + trailing spacer.
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),           // rows[0]: leading spacer
-            Constraint::Length(1),           // rows[1]: prompt
-            Constraint::Length(1),           // rows[2]: separator
-            Constraint::Length(detail_rows), // rows[3]: detail rows
-            Constraint::Length(1),           // rows[4]: separator
-            Constraint::Length(note_rows),   // rows[5]: note rows
-            Constraint::Length(1),           // rows[6]: spacer before buttons
-            Constraint::Length(1),           // rows[7]: buttons
-            Constraint::Length(1),           // rows[8]: trailing spacer
-        ])
-        .split(inner);
+    let rows = confirm_details_chunks(inner, detail_rows, note_rows);
 
     let key = crate::theme::BOLD_WHITE;
     let value = Style::default()
@@ -389,6 +424,23 @@ fn render_details(
     frame.render_widget(Paragraph::new(note_lines), inset(rows[5], 3));
 
     render_buttons(frame, rows[7], state);
+}
+
+fn confirm_details_chunks(inner: Rect, detail_rows: u16, note_rows: u16) -> std::rc::Rc<[Rect]> {
+    Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),           // rows[0]: leading spacer
+            Constraint::Length(1),           // rows[1]: prompt
+            Constraint::Length(1),           // rows[2]: separator
+            Constraint::Length(detail_rows), // rows[3]: detail rows
+            Constraint::Length(1),           // rows[4]: separator
+            Constraint::Length(note_rows),   // rows[5]: note rows
+            Constraint::Length(1),           // rows[6]: spacer before buttons
+            Constraint::Length(1),           // rows[7]: buttons
+            Constraint::Length(1),           // rows[8]: trailing spacer
+        ])
+        .split(inner)
 }
 
 const fn inset(area: Rect, x: u16) -> Rect {

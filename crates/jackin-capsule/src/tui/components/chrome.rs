@@ -14,7 +14,9 @@ use ratatui::{
 
 use crate::tui::components::status_bar::{PrefixMode, StatusBarPlan, StatusTabCell, TabGlyph};
 
-use jackin_tui::components::{Panel, PanelFocus, tab_cell_style};
+use jackin_tui::components::{
+    FooterLeft, Panel, PanelFocus, StatusFooter, StatusRightGroup, tab_cell_style,
+};
 
 // ── Status bar (row 0 + row 1) ────────────────────────────────────────────────
 
@@ -182,13 +184,6 @@ impl Widget for PaneBorderWidget {
 }
 
 pub use jackin_tui::components::ModalBackdrop as DialogBackdrop;
-use jackin_tui::theme::color;
-
-const BAR_BG: Color = color(jackin_tui::WHITE);
-const BAR_FG: Color = color(jackin_tui::BLACK);
-const BAR_LINK_FG: Color = color(jackin_tui::LINK_BLUE);
-const BAR_HOVER_BG: Color = Color::Rgb(225, 245, 255);
-const BAR_HOVER_FG: Color = Color::Rgb(0, 55, 140);
 
 /// Bottom chrome (branch/PR bar, hint row, debug chip) as a widget. Replaces
 /// the raw-ANSI append + byte cache: the rows ride the Ratatui cell buffer
@@ -301,68 +296,32 @@ fn render_branch_bar_row(
         return;
     };
     let bar_y = area.height.saturating_sub(1);
-    let base = Style::default().bg(BAR_BG).fg(BAR_FG);
-    for x in area.left()..area.right() {
-        buf.set_string(x, bar_y, " ", base);
-    }
     let left_hovered = hover_target == Some(HoverTarget::BranchContext);
-    let left_style = chunk_style(left_hovered, BAR_FG, true);
-    buf.set_string(area.x, bar_y, &layout.left, left_style);
-    if let Some(region) = layout.container_region {
-        let container_hovered = hover_target == Some(HoverTarget::Container);
-        let container_style = chunk_style(container_hovered, BAR_LINK_FG, false);
-        buf.set_string(
-            area.x + region.start.saturating_sub(1),
-            bar_y,
-            &layout.container,
-            container_style,
-        );
-    }
-    if let Some(region) = layout.debug_chip_region {
-        let debug_hovered = hover_target == Some(HoverTarget::DebugChip);
-        let debug_style = if debug_hovered {
-            Style::default()
-                .bg(BAR_BG)
-                .fg(color(jackin_tui::DANGER_RED))
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-                .bg(color(jackin_tui::DANGER_RED))
-                .fg(color(jackin_tui::WHITE))
-                .add_modifier(Modifier::BOLD)
-        };
-        buf.set_string(
-            area.x + region.start.saturating_sub(1),
-            bar_y,
-            &layout.debug_chip,
-            debug_style,
-        );
-    }
-    if let Some(region) = layout.usage_region {
-        let usage_hovered = hover_target == Some(HoverTarget::UsageStatus);
-        let usage_style = chunk_style(usage_hovered, BAR_FG, false);
-        buf.set_string(
-            area.x + region.start.saturating_sub(1),
-            bar_y,
-            &layout.usage,
-            usage_style,
-        );
-    }
-}
-
-/// Per-chunk colour rule, ported from the raw renderer: the left chunk is
-/// always bold; the container chunk is bold only on hover and uses the link
-/// foreground when idle.
-fn chunk_style(hovered: bool, idle_fg: Color, always_bold: bool) -> Style {
-    let mut style = if hovered {
-        Style::default().bg(BAR_HOVER_BG).fg(BAR_HOVER_FG)
+    let left = if layout.left_region.is_some() {
+        FooterLeft::link(layout.left.trim())
     } else {
-        Style::default().bg(BAR_BG).fg(idle_fg)
+        FooterLeft::plain("")
     };
-    if always_bold || hovered {
-        style = style.add_modifier(Modifier::BOLD);
-    }
-    style
+    StatusFooter::new("")
+        .left(left)
+        .right_group(StatusRightGroup {
+            usage: usage_status_label,
+            container: instance_id_label,
+            run_id: debug_run_id,
+        })
+        .left_hover(left_hovered)
+        .usage_hover(hover_target == Some(HoverTarget::UsageStatus))
+        .right_hover(hover_target == Some(HoverTarget::Container))
+        .right_debug_hover(hover_target == Some(HoverTarget::DebugChip))
+        .render(
+            Rect {
+                x: area.x,
+                y: bar_y,
+                width: area.width,
+                height: 1,
+            },
+            buf,
+        );
 }
 
 /// Centered hint spans in the reserved rows above the separator pad.

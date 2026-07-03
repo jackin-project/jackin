@@ -2,12 +2,13 @@
 
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Widget},
+    widgets::Widget,
 };
 
+use crate::display_cols;
 use crate::theme::{INK, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,13 +68,30 @@ impl<'a> ButtonStrip<'a> {
     pub fn line(self) -> Line<'static> {
         button_strip_line(self.items, self.focused, self.gap)
     }
+
+    #[must_use]
+    pub fn button_rects(self, area: Rect) -> Vec<Rect> {
+        button_rects(area, self.items, self.gap)
+    }
 }
 
 impl Widget for ButtonStrip<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        Paragraph::new(self.line())
-            .alignment(Alignment::Center)
-            .render(area, buf);
+        if area.height == 0 || area.width == 0 {
+            return;
+        }
+        let rects = self.button_rects(area);
+        for (idx, (item, rect)) in self.items.iter().zip(rects.iter()).enumerate() {
+            if rect.width == 0 {
+                continue;
+            }
+            buf.set_string(
+                rect.x,
+                rect.y,
+                button_label(item.label),
+                button_style(idx == self.focused, item.disabled),
+            );
+        }
     }
 }
 
@@ -89,9 +107,46 @@ pub fn button_strip_line(
             spans.push(Span::raw(gap.to_owned()));
         }
         let style = button_style(idx == focused, item.disabled);
-        spans.push(Span::styled(format!("  {}  ", item.label), style));
+        spans.push(Span::styled(button_label(item.label), style));
     }
     Line::from(spans)
+}
+
+#[must_use]
+pub fn button_rects(area: Rect, items: &[ButtonStripItem<'_>], gap: &str) -> Vec<Rect> {
+    let total_cols = items
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| {
+            let button_cols = display_cols(&button_label(item.label));
+            let gap_cols = if idx == 0 { 0 } else { display_cols(gap) };
+            button_cols.saturating_add(gap_cols)
+        })
+        .sum::<usize>();
+    let start = area.x.saturating_add(
+        u16::try_from(usize::from(area.width).saturating_sub(total_cols) / 2).unwrap_or(0),
+    );
+    let mut x = start;
+    let mut rects = Vec::with_capacity(items.len());
+    for (idx, item) in items.iter().enumerate() {
+        if idx > 0 {
+            x = x.saturating_add(u16::try_from(display_cols(gap)).unwrap_or(u16::MAX));
+        }
+        let width = u16::try_from(display_cols(&button_label(item.label))).unwrap_or(u16::MAX);
+        rects.push(Rect {
+            x,
+            y: area.y,
+            width,
+            height: area.height.min(1),
+        });
+        x = x.saturating_add(width);
+    }
+    rects
+}
+
+#[must_use]
+pub fn button_label(label: &str) -> String {
+    format!("  {label}  ")
 }
 
 #[must_use]

@@ -179,6 +179,36 @@ fn details_prompt_renders_readable_source_details() {
 }
 
 #[test]
+fn confirm_button_hit_matches_data_loss_rendered_buttons() {
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+    let s = exit_confirm_state_with_data_loss();
+    let area = Rect::new(0, 0, 80, required_height(&s));
+    let backend = TestBackend::new(area.width, area.height);
+    let mut term = Terminal::new(backend).unwrap();
+    term.draw(|f| render_confirm_dialog(f, area, &s)).unwrap();
+    let buf = term.backend().buffer();
+
+    let find = |needle: &str| {
+        for y in 0..area.height {
+            for x in 0..area.width {
+                if buf[(x, y)].symbol() == needle {
+                    return (x, y);
+                }
+            }
+        }
+        panic!("missing rendered button cell {needle:?}");
+    };
+
+    let yes = find("Y");
+    let no = find("N");
+
+    assert_eq!(confirm_button_hit(area, &s, yes.0, yes.1), Some(true));
+    assert_eq!(confirm_button_hit(area, &s, no.0, no.1), Some(false));
+    assert_eq!(confirm_button_hit(area, &s, area.x, area.y), None);
+}
+
+#[test]
 fn default_dialog_has_symmetric_vertical_padding() {
     // The canonical dialog layout has exactly 1 leading spacer (row 1, after the top border)
     // and 1 trailing spacer (last inner row, before the bottom border). Verify that neither

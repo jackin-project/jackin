@@ -1011,35 +1011,33 @@ impl Dialog {
                 None => DialogAction::Consume,
             };
         }
-        // ConfirmAction: only the visible Yes/No button cells confirm
-        // or dismiss; other inside-box clicks (title, explanation,
-        // padding) are swallowed. Mirrors the layout in
-        // `render_confirm_action`.
-        if let Self::ConfirmAction { kind, .. } = self {
-            const YES_LABEL: &str = "  Yes  ";
-            const GAP: &str = "    ";
-            const NO_LABEL: &str = "  No  ";
-            let interior_left = box_col + 1;
-            let interior_cols = width.saturating_sub(2) as usize;
-            let buttons_w =
-                YES_LABEL.chars().count() + GAP.chars().count() + NO_LABEL.chars().count();
-            let button_col = interior_left
-                + u16::try_from(interior_cols.saturating_sub(buttons_w) / 2).unwrap_or(0);
-            let button_row = box_row + height.saturating_sub(2);
-            if row != button_row {
-                return DialogAction::Consume;
+        // ConfirmAction: only the visible Yes/No button cells confirm or
+        // dismiss. The shared confirm widget owns button geometry, including
+        // the taller data-loss exit variant.
+        if let Self::ConfirmAction { kind, selected_yes } = self {
+            let mut state = if matches!(kind, ConfirmKind::Exit) {
+                jackin_tui::components::exit_confirm_state_with_data_loss()
+            } else {
+                jackin_tui::components::ConfirmState::new(format!(
+                    "{}\n\n{}",
+                    kind.title(),
+                    kind.message()
+                ))
+            };
+            if *selected_yes {
+                state = state.with_focus_yes();
             }
-            let yes_start = button_col;
-            let yes_end = yes_start + YES_LABEL.chars().count() as u16;
-            let no_start = yes_end + GAP.chars().count() as u16;
-            let no_end = no_start + NO_LABEL.chars().count() as u16;
-            if col >= yes_start && col < yes_end {
-                return DialogAction::ConfirmedAction(*kind);
-            }
-            if col >= no_start && col < no_end {
-                return DialogAction::Dismiss;
-            }
-            return DialogAction::Consume;
+            let area = ratatui::layout::Rect {
+                x: box_col,
+                y: box_row,
+                width,
+                height,
+            };
+            return match jackin_tui::components::confirm_button_hit(area, &state, col, row) {
+                Some(true) => DialogAction::ConfirmedAction(*kind),
+                Some(false) => DialogAction::Dismiss,
+                None => DialogAction::Consume,
+            };
         }
         // ProviderPicker: flat list, no filter row. Items start at box_row + 1.
         if let Self::ProviderPicker {
