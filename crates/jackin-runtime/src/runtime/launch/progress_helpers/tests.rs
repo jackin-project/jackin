@@ -17,6 +17,7 @@ impl LaunchDiagnostics for TestDiagnostics {
         PathBuf::from(format!("/tmp/jackin-test-{name}.log"))
     }
     fn compact(&self, _kind: &str, _message: &str) {}
+    fn error(&self, _kind: &str, _message: &str, _detail: Option<&str>) {}
     fn stage(&self, _kind: &str, _stage: &str, _message: &str, _detail: Option<&str>) {}
 }
 

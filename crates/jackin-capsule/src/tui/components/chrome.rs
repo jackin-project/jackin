@@ -365,70 +365,44 @@ fn chunk_style(hovered: bool, idle_fg: Color, always_bold: bool) -> Style {
     style
 }
 
-/// Returns the largest prefix of `spans` whose column width fits inside `max_cols`,
-/// always truncating at a `GroupSep` boundary to avoid splitting a key+text pair.
-/// Returns an empty slice if even the first group overflows.
-fn truncate_spans_to_cols<'a>(
-    spans: &'a [jackin_tui::HintSpan<'_>],
-    max_cols: usize,
-) -> &'a [jackin_tui::HintSpan<'a>] {
-    // Split into groups at GroupSep boundaries; accumulate greedily.
-    let mut last_fit_end = 0usize;
-    let mut running_cols = 0usize;
-
-    let mut i = 0;
-    while i < spans.len() {
-        // Measure from i to next GroupSep (exclusive) — one logical group.
-        let group_end = spans[i..]
-            .iter()
-            .position(|s| matches!(s, jackin_tui::HintSpan::GroupSep))
-            .map_or(spans.len(), |rel| i + rel + 1); // include the GroupSep itself
-
-        let group_cols = jackin_tui::hint_row_cols(&spans[i..group_end]);
-        let candidate = running_cols.saturating_add(group_cols);
-        if candidate > max_cols {
-            break;
-        }
-        running_cols = candidate;
-        last_fit_end = group_end;
-        i = group_end;
-    }
-
-    // Strip trailing GroupSep if present so the last group doesn't end with whitespace.
-    let mut end = last_fit_end;
-    while end > 0 && matches!(spans[end - 1], jackin_tui::HintSpan::GroupSep) {
-        end -= 1;
-    }
-    &spans[..end]
-}
-
-/// Centered hint spans on the row above the separator pad — the widget port
-/// of `render_hint_row`, same column math so centring is identical.
-/// Gracefully truncates at group boundaries when the full row is too wide.
+/// Centered hint spans in the reserved rows above the separator pad.
+/// Uses the shared hint renderer so capsule styling and wrapping cannot drift
+/// from the console/launch surfaces.
 fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::HintSpan<'_>]) {
     use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
-    if area.height < BRANCH_CONTEXT_BAR_ROWS + 2 {
+    use crate::tui::layout::{CAPSULE_HINT_BAR_ROWS, CAPSULE_HINT_SEPARATOR_ROWS};
+    if area.height < BRANCH_CONTEXT_BAR_ROWS + CAPSULE_HINT_SEPARATOR_ROWS + CAPSULE_HINT_BAR_ROWS {
         return;
     }
-    let available = usize::from(area.width).saturating_sub(4); // 2 col padding each side
-    let visible = truncate_spans_to_cols(spans, available);
-    if visible.is_empty() {
+    let available = area.width.saturating_sub(4); // 2 col padding each side
+    let lines = jackin_tui::components::wrapped_lines(spans, available);
+    let hint_rows = usize::from(CAPSULE_HINT_BAR_ROWS);
+    if lines.is_empty() {
         return;
     }
-    let total = jackin_tui::hint_row_cols(visible);
-    let padded_total = total.saturating_add(4);
-    let row_y = area.height - (BRANCH_CONTEXT_BAR_ROWS + 2);
-    let start_col = ((usize::from(area.width)).saturating_sub(padded_total) / 2) as u16;
-    let mut x = area.x + start_col + 2;
-    let styled = jackin_tui::components::styled_hint_spans(visible, remap_hint_color);
-    for span in &styled {
-        buf.set_string(x, row_y, span.content.as_ref(), span.style);
-        x += jackin_tui::display_cols(span.content.as_ref()) as u16;
+    let visible = &lines[..lines.len().min(hint_rows)];
+    let first_row = area.height.saturating_sub(
+        BRANCH_CONTEXT_BAR_ROWS + CAPSULE_HINT_SEPARATOR_ROWS + CAPSULE_HINT_BAR_ROWS,
+    );
+    for (idx, line) in visible.iter().enumerate() {
+        let total = line_display_cols(line);
+        let padded_total = total.saturating_add(4);
+        let start_col = ((usize::from(area.width)).saturating_sub(padded_total) / 2) as u16;
+        let mut x = area.x + start_col + 2;
+        let row_y = area.y + first_row + u16::try_from(idx).unwrap_or(0);
+        for span in &line.spans {
+            let content = span.content.as_ref();
+            buf.set_string(x, row_y, content, span.style);
+            x += jackin_tui::display_cols(content) as u16;
+        }
     }
 }
 
-const fn remap_hint_color(color: Color) -> Color {
-    color
+fn line_display_cols(line: &ratatui::text::Line<'_>) -> usize {
+    line.spans
+        .iter()
+        .map(|span| jackin_tui::display_cols(span.content.as_ref()))
+        .sum()
 }
 
 #[cfg(test)]

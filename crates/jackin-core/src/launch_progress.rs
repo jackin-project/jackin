@@ -228,8 +228,12 @@ impl LaunchCancelled {
 pub trait LaunchDiagnostics: Send + Sync {
     fn run_id(&self) -> &str;
     fn path(&self) -> &Path;
+    fn persists(&self) -> bool {
+        true
+    }
     fn command_output_path(&self, name: &str) -> PathBuf;
     fn compact(&self, kind: &str, message: &str);
+    fn error(&self, kind: &str, message: &str, detail: Option<&str>);
     fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>);
 }
 

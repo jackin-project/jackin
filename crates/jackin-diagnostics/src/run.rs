@@ -1122,12 +1122,20 @@ impl jackin_core::launch_progress::LaunchDiagnostics for RunDiagnostics {
         &self.path
     }
 
+    fn persists(&self) -> bool {
+        self.persists()
+    }
+
     fn command_output_path(&self, name: &str) -> PathBuf {
         self.command_output_path(name)
     }
 
     fn compact(&self, kind: &str, message: &str) {
         self.compact(kind, message);
+    }
+
+    fn error(&self, kind: &str, message: &str, detail: Option<&str>) {
+        crate::observability::emit_jsonl_error(&self.run_id, kind, message, None, detail);
     }
 
     fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {

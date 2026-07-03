@@ -8,8 +8,10 @@
 ///
 /// Each node is either a Leaf (holds one session) or an HSplit/VSplit
 /// that divides its rectangle between two child subtrees.
-/// One row reserved for the persistent hint bar shown in the main pane view.
-pub(crate) const CAPSULE_HINT_BAR_ROWS: u16 = 1;
+/// Bounded rows reserved for the persistent hint bar shown in the main pane
+/// view. The shared hint renderer wraps into this region instead of dropping
+/// later key groups on narrow terminals.
+pub(crate) const CAPSULE_HINT_BAR_ROWS: u16 = 3;
 
 /// One blank separator row between the hint bar and the branch context bar,
 /// matching the console layout (hint → separator → chrome).

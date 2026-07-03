@@ -18,7 +18,7 @@
 - **Depends on**: none hard (coordinate with plan 005 glyphs — flexible order)
 - **Category**: tech-debt + bug (separator color drift is visible today; truncation violates the no-hidden-keys rule)
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
-- **Execution status**: BLOCKED — Steps 1–2 shipped shared hint styling and the capsule separator color fix, but Step 3 wrapping needs operator decision because extra hint rows change the capsule content-area reservation.
+- **Execution status**: DONE
 
 ## Why this matters
 
