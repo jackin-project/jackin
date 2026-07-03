@@ -74,57 +74,42 @@ impl ErrorPopupState {
     }
 }
 
-#[derive(Debug)]
-pub struct ErrorDialog<'a> {
-    state: &'a ErrorPopupState,
-}
+fn render_error_dialog_buffer(area: Rect, buf: &mut Buffer, state: &ErrorPopupState) {
+    let title = format!(" {} ", state.title);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(DANGER_RED))
+        .title(Span::styled(title, crate::theme::DANGER));
+    let inner = block.inner(area);
+    Clear.render(area, buf);
+    block.render(area, buf);
 
-impl<'a> ErrorDialog<'a> {
-    #[must_use]
-    pub const fn new(state: &'a ErrorPopupState) -> Self {
-        Self { state }
-    }
-}
+    // Canonical dialog layout: leading spacer + body + spacer + button + trailing spacer.
+    let body_rows = estimated_message_rows(state, inner.width).min(inner.height.saturating_sub(4));
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),         // leading spacer
+            Constraint::Length(body_rows), // message body
+            Constraint::Length(1),         // spacer
+            Constraint::Length(1),         // OK button
+            Constraint::Length(1),         // trailing spacer
+        ])
+        .split(inner);
 
-impl Widget for ErrorDialog<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = format!(" {} ", self.state.title);
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(DANGER_RED))
-            .title(Span::styled(title, crate::theme::DANGER));
-        let inner = block.inner(area);
-        Clear.render(area, buf);
-        block.render(area, buf);
+    Paragraph::new(state.message.as_str())
+        .style(Style::default().fg(WHITE))
+        .alignment(Alignment::Center)
+        .wrap(Wrap { trim: false })
+        .render(chunks[1], buf);
 
-        // Canonical dialog layout: leading spacer + body + spacer + button + trailing spacer.
-        let body_rows =
-            estimated_message_rows(self.state, inner.width).min(inner.height.saturating_sub(4));
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),         // leading spacer
-                Constraint::Length(body_rows), // message body
-                Constraint::Length(1),         // spacer
-                Constraint::Length(1),         // OK button
-                Constraint::Length(1),         // trailing spacer
-            ])
-            .split(inner);
-
-        Paragraph::new(self.state.message.as_str())
-            .style(Style::default().fg(WHITE))
-            .alignment(Alignment::Center)
-            .wrap(Wrap { trim: false })
-            .render(chunks[1], buf);
-
-        let focused_style = Style::default()
-            .bg(WHITE)
-            .fg(Color::Black)
-            .add_modifier(Modifier::BOLD);
-        Paragraph::new(Line::from(Span::styled("  OK  ", focused_style)))
-            .alignment(Alignment::Center)
-            .render(chunks[3], buf);
-    }
+    let focused_style = Style::default()
+        .bg(WHITE)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+    Paragraph::new(Line::from(Span::styled("  OK  ", focused_style)))
+        .alignment(Alignment::Center)
+        .render(chunks[3], buf);
 }
 
 #[must_use]
@@ -160,7 +145,7 @@ pub fn render_error_dialog(frame: &mut ratatui::Frame<'_>, area: Rect, state: &E
 }
 
 pub fn render_error_dialog_in(frame: &mut ratatui::Frame<'_>, area: Rect, state: &ErrorPopupState) {
-    frame.render_widget(ErrorDialog::new(state), area);
+    render_error_dialog_buffer(area, frame.buffer_mut(), state);
 }
 
 #[cfg(test)]

@@ -80,8 +80,8 @@ pub use scrollable_panel::{
     vertical_scrollbar_area, viewport_height, viewport_width,
 };
 pub use select_list::{
-    PickerRow, SELECT_LIST_KEYMAP, SelectList, SelectListAction, SelectListState,
-    render_picker_lines, render_picker_list, render_select_list, select_list_hint_spans,
+    PickerRow, SELECT_LIST_KEYMAP, SelectListAction, SelectListState, render_picker_lines,
+    render_picker_list, render_select_list, select_list_hint_spans,
 };
 pub use status_footer::{
     StatusFooter, StatusFooterHover, StatusRightChunk, StatusRightGroup,
@@ -91,7 +91,7 @@ pub use status_footer::{
 pub use status_popup::{StatusPopupState, render_status_popup};
 pub use tab_strip::{TabStrip, tab_cell_style, tab_label_line, tab_underline_line};
 pub use text_input::{
-    BorderStyle, TEXT_INPUT_KEYMAP, TextField, TextInput, TextInputAction, TextInputState,
+    BorderStyle, TEXT_INPUT_KEYMAP, TextField, TextInputAction, TextInputState,
     render_labeled_text_input_dialog, render_text_input, text_input_hint_spans,
     text_input_prompt_rect,
 };

@@ -75,7 +75,7 @@ fn render_single_line_message_is_visible() {
     let backend = TestBackend::new(area.width, area.height);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|frame| frame.render_widget(ErrorDialog::new(&state), area))
+        .draw(|frame| render_error_dialog_in(frame, area, &state))
         .unwrap();
 
     let buffer = terminal.backend().buffer();
@@ -102,7 +102,7 @@ fn render_single_line_message_has_one_blank_row_before_ok() {
     let backend = TestBackend::new(area.width, area.height);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
-        .draw(|frame| frame.render_widget(ErrorDialog::new(&state), area))
+        .draw(|frame| render_error_dialog_in(frame, area, &state))
         .unwrap();
 
     let buffer = terminal.backend().buffer();

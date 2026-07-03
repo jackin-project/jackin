@@ -384,74 +384,60 @@ impl TextInputState<'_> {
     }
 }
 
-#[derive(Debug)]
-pub struct TextInput<'a> {
-    state: &'a TextInputState<'a>,
-}
+fn render_text_input_in(area: Rect, buf: &mut Buffer, state: &TextInputState<'_>) {
+    Clear.render(area, buf);
 
-impl<'a> TextInput<'a> {
-    #[must_use]
-    pub const fn new(state: &'a TextInputState<'a>) -> Self {
-        Self { state }
-    }
-}
+    let title = Span::styled(format!(" {} ", state.label), crate::theme::BOLD_WHITE);
+    let border_color = match state.border_style() {
+        BorderStyle::Error => DANGER_RED,
+        BorderStyle::Default => PHOSPHOR_GREEN,
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color))
+        .title(title);
 
-impl Widget for TextInput<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        Clear.render(area, buf);
+    let inner = block.inner(area);
+    block.render(area, buf);
 
-        let title = Span::styled(format!(" {} ", self.state.label), crate::theme::BOLD_WHITE);
-        let border_color = match self.state.border_style() {
-            BorderStyle::Error => DANGER_RED,
-            BorderStyle::Default => PHOSPHOR_GREEN,
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    let input_row = rows[1];
+    let input_area = Rect {
+        x: input_row.x.saturating_add(1),
+        y: input_row.y,
+        width: input_row.width.saturating_sub(2),
+        height: input_row.height,
+    };
+    Block::default()
+        .style(Style::default().bg(INPUT_BG_DIM))
+        .render(input_area, buf);
+    render_input_value(input_area, buf, state);
+
+    if state.is_duplicate() {
+        let key = state.trimmed_value();
+        let message = if state.forbidden_label.is_empty() {
+            format!("\u{26a0} \"{key}\" already exists")
+        } else {
+            format!(
+                "\u{26a0} \"{key}\" already exists in {}",
+                state.forbidden_label
+            )
         };
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
-            .title(title);
-
-        let inner = block.inner(area);
-        block.render(area, buf);
-
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),
-                Constraint::Min(1),
-                Constraint::Length(1),
-            ])
-            .split(inner);
-
-        let input_row = rows[1];
-        let input_area = Rect {
-            x: input_row.x.saturating_add(1),
-            y: input_row.y,
-            width: input_row.width.saturating_sub(2),
-            height: input_row.height,
-        };
-        Block::default()
-            .style(Style::default().bg(INPUT_BG_DIM))
-            .render(input_area, buf);
-        render_input_value(input_area, buf, self.state);
-
-        if self.state.is_duplicate() {
-            let key = self.state.trimmed_value();
-            let message = if self.state.forbidden_label.is_empty() {
-                format!("\u{26a0} \"{key}\" already exists")
-            } else {
-                format!(
-                    "\u{26a0} \"{key}\" already exists in {}",
-                    self.state.forbidden_label
-                )
-            };
-            Paragraph::new(message)
-                .style(
-                    Style::default()
-                        .fg(DANGER_RED)
-                        .add_modifier(Modifier::BOLD | Modifier::ITALIC),
-                )
-                .render(rows[2], buf);
-        }
+        Paragraph::new(message)
+            .style(
+                Style::default()
+                    .fg(DANGER_RED)
+                    .add_modifier(Modifier::BOLD | Modifier::ITALIC),
+            )
+            .render(rows[2], buf);
     }
 }
 
@@ -475,7 +461,7 @@ fn render_input_value(area: Rect, buf: &mut Buffer, state: &TextInputState<'_>) 
 }
 
 pub fn render_text_input(frame: &mut ratatui::Frame<'_>, area: Rect, state: &TextInputState<'_>) {
-    frame.render_widget(TextInput::new(state), area);
+    render_text_input_in(area, frame.buffer_mut(), state);
 }
 
 /// Canonical outer rectangle for one-label text-input prompts.

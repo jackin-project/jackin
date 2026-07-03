@@ -411,10 +411,7 @@ fn story_tab_strip(frame: &mut Frame<'_>, area: Rect) {
         ("Roles", false),
         ("Secrets", false),
     ];
-    frame.render_widget(
-        TabStrip::new(&labels).focused(true).hovered(Some(2)),
-        area,
-    );
+    frame.render_widget(TabStrip::new(&labels).focused(true).hovered(Some(2)), area);
 }
 
 fn story_confirm_default(frame: &mut Frame<'_>, area: Rect) {
