@@ -23,6 +23,16 @@ description: "The hard reuse rule, the full reusable component catalog, and shar
 
 7. **Component APIs follow the TUI boundary.** Component props/state/messages may describe UI state and emit semantic outcomes. They must not own Docker/git/`op`/`gh` calls, config persistence, workspace resolution, or protocol authority. When a component needs work done, it emits an outcome/message that update turns into a typed effect.
 
+### Component API contract
+
+Shared `jackin-tui` components use one of three API shapes:
+
+1. **Stateful interactive component** — `pub struct XState` owns UI state only; rendering is a free function such as `render_x(frame: &mut Frame<'_>, area: Rect, state: &XState)`. Use `&mut XState` only when rendering must clamp scroll state, and document that reason in the component. Keyboard input lives on `XState::handle_key(&mut self, key: KeyEvent) -> ModalOutcome<T>`, where `T` is the component's semantic commit value. Do not add a parallel `impl Widget` wrapper for the same stateful component.
+2. **Pure value widget** — display-only values with no interaction implement Ratatui `Widget`. They may expose one thin `render_x(frame, area, ...)` convenience function, but that function delegates to the widget instead of carrying a second render body.
+3. **Layout and primitive helpers** — rectangle math, scrollbars, blocks, hit testing, and backdrop helpers stay as free functions or small helper types. They do not introduce widget wrappers unless they render a concrete reusable value.
+
+`handle_key` always takes `&mut self` and returns `ModalOutcome<T>`. Mouse and scroll input use separately named methods such as `on_mouse_*`, `handle_scroll`, or viewport setters; do not add a second `handle_key_*` variant for key handling with extra context.
+
 ### What to check before writing new code
 
 Before adding any new TUI widget or state type:
