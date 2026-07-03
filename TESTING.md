@@ -57,7 +57,7 @@ Capsule echo-back harness (`crates/jackin-capsule/src/daemon/render_conformance_
      crates/jackin-capsule/tests/fixtures/pty/<agent>-<scenario>.bin
    ```
 
-   Session label = pane label in capsule tab (e.g. `Codex`). Extractor also accepts raw in-container `multiplexer.log`.
+   Session label = pane label in capsule tab (e.g. `Codex`). When the run JSONL contains only the `capsule_log` pointer, the extractor follows that path to the raw in-container `multiplexer.log`; passing `multiplexer.log` directly also works.
    `--debug` writes this JSONL file only when OTLP export is inactive. If `OTEL_EXPORTER_OTLP_ENDPOINT` is set in your shell, the backend is the sink and no file is written; unset it for JSONL fixture extraction or set `JACKIN_DIAGNOSTICS_FILE=1` to write both the backend record and local file.
 3. Reference fixture from harness scenario with `include_bytes!`.
 

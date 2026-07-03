@@ -1,13 +1,16 @@
 //! Extract a recorded PTY byte stream from a `--debug` run log.
 //!
-//! `jackin-xtask pty-fixture <run.jsonl> <session-label> <out.bin>` scans the
-//! log for the capsule's `session feed_pty bytes:` debug lines, filters them
-//! to one session label, decodes the hex byte dumps, and concatenates them in
-//! order into a binary fixture for the echo-back conformance harness
-//! (`crates/jackin-capsule/src/daemon/tests/render_conformance.rs`). The
-//! input may be the host diagnostics run JSONL (feed lines embedded in JSON
-//! string fields) or a raw `multiplexer.log` — both line shapes are handled.
+//! `jackin-xtask pty-fixture <run.jsonl> <session-label> <out.bin>` extracts
+//! the capsule's `session feed_pty bytes:` debug lines, filters them to one
+//! session label, decodes the hex byte dumps, and concatenates them in order
+//! into a binary fixture for the echo-back conformance harness
+//! (`crates/jackin-capsule/src/daemon/tests/render_conformance.rs`). The input
+//! may be a raw `multiplexer.log` or a host diagnostics run JSONL. For JSONL,
+//! inline feed lines are scanned first; if the run file only contains the
+//! `capsule_log` pointer, the extractor follows that path and reads the raw
+//! `multiplexer.log` instead.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -31,32 +34,17 @@ pub(crate) fn run(args: PtyFixtureArgs) -> Result<()> {
     let raw = fs::read_to_string(&args.run_log)
         .with_context(|| format!("failed to read {}", args.run_log.display()))?;
 
-    let mut out = Vec::new();
-    let mut chunks = 0usize;
-    for line in raw.lines() {
-        // Run JSONL embeds the capsule log line inside JSON string fields;
-        // the serde unescape recovers the original text. Raw log lines are
-        // scanned as-is.
-        if line.trim_start().starts_with('{')
-            && let Ok(value) = serde_json::from_str::<serde_json::Value>(line)
-        {
-            visit_strings(&value, &mut |text| {
-                if let Some(bytes) = extract_feed_pty_bytes(text, &args.session_label) {
-                    out.extend_from_slice(&bytes);
-                    chunks += 1;
-                }
-            });
-            continue;
-        }
-        if let Some(bytes) = extract_feed_pty_bytes(line, &args.session_label) {
-            out.extend_from_slice(&bytes);
-            chunks += 1;
-        }
-    }
+    let Extraction { out, chunks } = extract_from_run_or_log(&raw, &args.session_label)
+        .with_context(|| {
+            format!(
+                "failed to extract PTY bytes from {}",
+                args.run_log.display()
+            )
+        })?;
 
     if chunks == 0 {
         bail!(
-            "no `session feed_pty bytes:` lines with label={} in {} — was the run recorded with --debug?",
+            "no `session feed_pty bytes:` lines with label={} in {} or its `capsule_log` files — was the run recorded with --debug?",
             args.session_label,
             args.run_log.display()
         );
@@ -80,6 +68,78 @@ pub(crate) fn run(args: PtyFixtureArgs) -> Result<()> {
         );
     }
     Ok(())
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Extraction {
+    out: Vec<u8>,
+    chunks: usize,
+}
+
+fn extract_from_run_or_log(raw: &str, label: &str) -> Result<Extraction> {
+    let mut extraction = extract_feed_pty_from_text(raw, label);
+    if extraction.chunks != 0 {
+        return Ok(extraction);
+    }
+
+    for path in capsule_log_paths(raw) {
+        let log = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read capsule_log {}", path.display()))?;
+        let next = extract_feed_pty_from_text(&log, label);
+        extraction.out.extend(next.out);
+        extraction.chunks += next.chunks;
+    }
+    Ok(extraction)
+}
+
+fn extract_feed_pty_from_text(raw: &str, label: &str) -> Extraction {
+    let mut extraction = Extraction::default();
+    for line in raw.lines() {
+        // Run JSONL may embed the capsule log line inside JSON string fields;
+        // the serde unescape recovers the original text. Raw log lines are
+        // scanned as-is.
+        if line.trim_start().starts_with('{')
+            && let Ok(value) = serde_json::from_str::<serde_json::Value>(line)
+        {
+            visit_strings(&value, &mut |text| {
+                if let Some(bytes) = extract_feed_pty_bytes(text, label) {
+                    extraction.out.extend_from_slice(&bytes);
+                    extraction.chunks += 1;
+                }
+            });
+            continue;
+        }
+        if let Some(bytes) = extract_feed_pty_bytes(line, label) {
+            extraction.out.extend_from_slice(&bytes);
+            extraction.chunks += 1;
+        }
+    }
+    extraction
+}
+
+fn capsule_log_paths(raw: &str) -> Vec<PathBuf> {
+    let mut paths = BTreeSet::new();
+    for line in raw.lines() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if value.get("kind").and_then(serde_json::Value::as_str) != Some("container_started") {
+            continue;
+        }
+        let Some(detail) = value.get("detail").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let Ok(detail) = serde_json::from_str::<serde_json::Value>(detail) else {
+            continue;
+        };
+        if let Some(path) = detail
+            .get("capsule_log")
+            .and_then(serde_json::Value::as_str)
+        {
+            paths.insert(PathBuf::from(path));
+        }
+    }
+    paths.into_iter().collect()
 }
 
 fn visit_strings(value: &serde_json::Value, visit: &mut impl FnMut(&str)) {
