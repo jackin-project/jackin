@@ -5,13 +5,13 @@ use std::marker::PhantomData;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 
 use crate::centered_rect;
 use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Mods, Visibility};
-use crate::theme::{DANGER_RED, INPUT_BG_DIM, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{DANGER_RED, INK, INPUT_BG_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::{HintSpan, ModalOutcome};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -462,7 +462,7 @@ fn render_input_value(area: Rect, buf: &mut Buffer, state: &TextInputState<'_>) 
     let base_style = crate::theme::GREEN.bg(INPUT_BG_DIM);
     let cursor_style = Style::default()
         .bg(WHITE)
-        .fg(Color::Black)
+        .fg(INK)
         .add_modifier(Modifier::SLOW_BLINK);
     let mut spans = vec![Span::styled(before.to_owned(), base_style)];
     if let Some(ch) = after.chars().next() {
@@ -533,7 +533,7 @@ fn render_input_value_from_parts(area: Rect, buf: &mut Buffer, value: &str, curs
     let cursor = cursor.min(value.len());
     let (before, after) = value.split_at(cursor);
     let cursor_style = Style::default()
-        .fg(Color::Black)
+        .fg(INK)
         .bg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
     let mut spans = vec![Span::styled(before.to_owned(), crate::theme::GREEN)];

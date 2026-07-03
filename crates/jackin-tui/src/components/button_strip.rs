@@ -3,12 +3,12 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
 
-use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{INK, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ButtonStripItem<'a> {
@@ -103,7 +103,7 @@ pub fn button_style(focused: bool, disabled: bool) -> Style {
     if focused {
         Style::default()
             .bg(WHITE)
-            .fg(Color::Black)
+            .fg(INK)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default()

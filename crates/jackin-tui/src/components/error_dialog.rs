@@ -5,12 +5,12 @@ use std::cell::Cell;
 use crossterm::event::KeyEvent;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
 use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
-use crate::theme::{DANGER_RED, WHITE};
+use crate::theme::{DANGER_RED, INK, WHITE};
 use crate::{HintSpan, ModalOutcome, centered_rect};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,7 +119,7 @@ impl Widget for ErrorDialog<'_> {
 
         let focused_style = Style::default()
             .bg(WHITE)
-            .fg(Color::Black)
+            .fg(INK)
             .add_modifier(Modifier::BOLD);
         Paragraph::new(Line::from(Span::styled("  OK  ", focused_style)))
             .alignment(Alignment::Center)
