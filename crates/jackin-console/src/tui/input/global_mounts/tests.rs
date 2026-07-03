@@ -1148,7 +1148,7 @@ fn env_tab_source_picker_esc_returns_key_input() {
     let target = SettingsEnvTextTarget::EnvKey {
         scope: SettingsEnvScope::Global,
     };
-    commit_env_text(&mut settings.env, &target, "API_KEY");
+    commit_env_text(&mut settings.env, &target, None, "API_KEY");
     assert!(matches!(
         settings.env.modal,
         Some(SettingsEnvModal::SourcePicker { .. })

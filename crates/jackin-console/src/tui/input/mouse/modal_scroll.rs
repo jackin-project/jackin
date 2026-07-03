@@ -207,7 +207,7 @@ pub fn scroll_settings_env_modal_selection(
     match (target, modal) {
         (
             SettingsEnvModalScrollTarget::OpPicker,
-            crate::tui::state::SettingsEnvModal::OpPicker { state },
+            crate::tui::state::SettingsEnvModal::OpPicker { state, .. },
         ) => {
             let area = modal_rects::op_picker_rect(term_size);
             scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {

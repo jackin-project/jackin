@@ -1480,6 +1480,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
         target: SettingsEnvTextTarget::EnvKey {
             scope: SettingsEnvScope::Global,
         },
+        pending_value: None,
         state: Box::new(jackin_tui::components::TextInputState::new(
             "Environment key",
             "TOKEN",
@@ -1494,6 +1495,7 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &config,
             &cwd,
             SettingsEnvModal::SourcePicker {
+                key: (SettingsEnvScope::Global, "TOKEN".to_owned()),
                 state: crate::tui::components::source_picker::SourcePickerState::new(
                     "TOKEN".into(),
                     true,
@@ -1508,6 +1510,10 @@ fn host_console_modal_states_have_one_green_border_cluster() {
             &config,
             &cwd,
             SettingsEnvModal::OpPicker {
+                target: crate::tui::state::SettingsEnvOpPickerTarget::Existing {
+                    scope: SettingsEnvScope::Global,
+                    key: "TOKEN".to_owned(),
+                },
                 state: Box::new(crate::tui::op_picker::OpPickerState::new()),
             },
         ),

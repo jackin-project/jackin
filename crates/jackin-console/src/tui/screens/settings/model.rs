@@ -590,8 +590,20 @@ pub enum SettingsEnvEnterPlan {
     Noop,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvOpPickerTarget {
+    Existing {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    NewKey {
+        scope: SettingsEnvScope,
+    },
+}
+
 #[derive(Debug)]
 pub enum SettingsEnvModal<
+    EnvValue,
     TextInputState,
     SourcePickerState,
     OpPickerState,
@@ -601,12 +613,15 @@ pub enum SettingsEnvModal<
 > {
     Text {
         target: SettingsEnvTextTarget,
+        pending_value: Option<EnvValue>,
         state: Box<TextInputState>,
     },
     SourcePicker {
+        key: (SettingsEnvScope, String),
         state: SourcePickerState,
     },
     OpPicker {
+        target: SettingsEnvOpPickerTarget,
         state: Box<OpPickerState>,
     },
     RolePicker {
@@ -622,6 +637,7 @@ pub enum SettingsEnvModal<
 }
 
 impl<
+    EnvValue,
     TextInputState,
     SourcePickerState,
     OpPickerState,
@@ -630,6 +646,7 @@ impl<
     ConfirmState,
 > crate::tui::model::ConsoleAnimationTick
     for SettingsEnvModal<
+        EnvValue,
         TextInputState,
         SourcePickerState,
         OpPickerState,
@@ -642,7 +659,7 @@ where
 {
     fn tick_active_animation(&mut self) -> bool {
         match self {
-            Self::OpPicker { state } => state.tick_active_animation(),
+            Self::OpPicker { state, .. } => state.tick_active_animation(),
             Self::Text { .. }
             | Self::SourcePicker { .. }
             | Self::RolePicker { .. }
@@ -653,6 +670,7 @@ where
 }
 
 impl<
+    EnvValue,
     TextInputState,
     SourcePickerState,
     OpPickerState,
@@ -661,6 +679,7 @@ impl<
     ConfirmState,
 >
     SettingsEnvModal<
+        EnvValue,
         TextInputState,
         SourcePickerState,
         OpPickerState,
@@ -678,7 +697,9 @@ where
         match self {
             Self::Text { .. } => ModalRectMode::TextInput,
             Self::SourcePicker { .. } => ModalRectMode::SourcePicker,
-            Self::OpPicker { state } if state.has_naming_stage_input() => ModalRectMode::TextInput,
+            Self::OpPicker { state, .. } if state.has_naming_stage_input() => {
+                ModalRectMode::TextInput
+            }
             Self::OpPicker { .. } => ModalRectMode::OpPicker,
             Self::RolePicker { state } => ModalRectMode::RolePicker {
                 filtered_len: state.filtered_len(),
@@ -711,7 +732,7 @@ where
             Self::SourcePicker { .. } | Self::ScopePicker { .. } => {
                 footer_items_for_mode(ModalFooterMode::SegmentedChoice)
             }
-            Self::OpPicker { state } => footer_items_for_mode(state.footer_mode(false)),
+            Self::OpPicker { state, .. } => footer_items_for_mode(state.footer_mode(false)),
             Self::RolePicker { .. } => footer_items_for_mode(ModalFooterMode::FilteredPicker {
                 include_refresh: false,
                 include_collapse: false,

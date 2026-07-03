@@ -39,8 +39,9 @@ pub use crate::tui::screens::editor::model::{
 };
 pub use crate::tui::screens::settings::model::{
     AuthFormFocus, GlobalMountConfirm, GlobalMountDraft, GlobalMountTextTarget, SettingsEnvConfirm,
-    SettingsEnvEnterPlan, SettingsEnvRow, SettingsEnvScope, SettingsEnvTextTarget,
-    SettingsGeneralState, SettingsHoverTarget, SettingsTab, SettingsTrustRow, SettingsTrustState,
+    SettingsEnvEnterPlan, SettingsEnvOpPickerTarget, SettingsEnvRow, SettingsEnvScope,
+    SettingsEnvTextTarget, SettingsGeneralState, SettingsHoverTarget, SettingsTab,
+    SettingsTrustRow, SettingsTrustState,
 };
 pub use crate::tui::screens::workspaces::model::{
     ManagerHoverTarget, ManagerListRow, WorkspaceSummary,
@@ -135,6 +136,7 @@ pub type SettingsEnvState<'a> =
     crate::tui::screens::settings::model::SettingsEnvState<EnvValue, SettingsEnvModal<'a>>;
 
 pub type SettingsEnvModal<'a> = crate::tui::screens::settings::model::SettingsEnvModal<
+    EnvValue,
     TextInputState<'a>,
     SourcePickerState,
     OpPickerState,

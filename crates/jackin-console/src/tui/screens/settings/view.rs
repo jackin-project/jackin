@@ -609,6 +609,7 @@ pub fn render_global_mount_modal<R, M>(
 pub fn render_settings_env_modal<O, R>(
     frame: &mut Frame<'_>,
     modal: &SettingsEnvModal<
+        jackin_core::EnvValue,
         jackin_tui::components::TextInputState<'_>,
         crate::tui::components::source_picker::SourcePickerState,
         O,
@@ -627,10 +628,10 @@ pub fn render_settings_env_modal<O, R>(
         SettingsEnvModal::Text { state, .. } => {
             jackin_tui::components::render_text_input(frame, area, state);
         }
-        SettingsEnvModal::SourcePicker { state } => {
+        SettingsEnvModal::SourcePicker { state, .. } => {
             crate::tui::components::source_picker::render(frame, area, state);
         }
-        SettingsEnvModal::OpPicker { state } => {
+        SettingsEnvModal::OpPicker { state, .. } => {
             crate::tui::components::op_picker::render_picker(frame, area, state.as_ref());
         }
         SettingsEnvModal::RolePicker { state } => {

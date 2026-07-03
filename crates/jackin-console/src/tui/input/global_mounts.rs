@@ -29,9 +29,8 @@ use crate::tui::screens::settings::update::{
     GlobalMountAddFinalizeApplyPlan, GlobalMountAddTextApplyPlan, GlobalMountEditTextApplyPlan,
     GlobalMountGithubOpenPlan, GlobalMountRolePickerCommitPlan, GlobalMountScopePickerCommitPlan,
     GlobalMountTextCommitPlan, RolePickerOpenPlan, SettingsAuthKeyPlan, SettingsEnvHeaderKeyPlan,
-    SettingsEnvOpPickerCommitPlan, SettingsEnvScopePickerCommitPlan,
-    SettingsEnvScopePickerSelection, SettingsEnvSourcePickerCommitPlan,
-    SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
+    SettingsEnvScopePickerCommitPlan, SettingsEnvScopePickerSelection,
+    SettingsEnvSourcePickerCommitPlan, SettingsEnvSourcePickerSelection, SettingsEnvTextCommitPlan,
 };
 use crate::tui::screens::settings::view::{
     global_mount_add_draft_lost_message, global_mount_confirm_state,
@@ -52,8 +51,8 @@ use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::state::{
     AuthForm, AuthFormFocus, AuthFormTarget, GlobalMountConfirm, GlobalMountModal,
     GlobalMountTextTarget, ManagerStage, ManagerState, RolePickerState, SettingsAuthModal,
-    SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvScope,
-    SettingsEnvTextTarget, SettingsTab,
+    SettingsEnvConfirm, SettingsEnvEnterPlan, SettingsEnvModal, SettingsEnvOpPickerTarget,
+    SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
 };
 use crate::tui::update::{
     BoolConfirmModalPlan, ConfirmSaveModalPlan, FileBrowserModalPlan, InlinePickerPlan,
@@ -716,48 +715,67 @@ pub fn handle_settings_env_modal(
         return;
     };
     match modal {
-        SettingsEnvModal::Text { target, mut state } => {
-            match inline_picker_plan(state.handle_key(key)) {
-                InlinePickerPlan::Commit(value) => {
-                    let committed_target = target.clone();
-                    env.modal = Some(SettingsEnvModal::Text { target, state });
-                    commit_env_text(env, &committed_target, &value);
-                }
-                InlinePickerPlan::Dismiss => {
-                    env.pop_modal_chain_and_clear_pending_env_key_if_closed();
-                }
-                InlinePickerPlan::Continue => {
-                    env.modal = Some(SettingsEnvModal::Text { target, state });
-                }
+        SettingsEnvModal::Text {
+            target,
+            pending_value,
+            mut state,
+        } => match inline_picker_plan(state.handle_key(key)) {
+            InlinePickerPlan::Commit(value) => {
+                let committed_target = target.clone();
+                env.modal = Some(SettingsEnvModal::Text {
+                    target,
+                    pending_value: pending_value.clone(),
+                    state,
+                });
+                commit_env_text(env, &committed_target, pending_value, &value);
             }
-        }
-        SettingsEnvModal::SourcePicker { state: mut source } => {
-            match source_picker_plan(source.handle_key(key)) {
-                SourcePickerPlan::Plain => {
-                    commit_settings_env_source_picker(
-                        env,
-                        SettingsEnvSourcePickerSelection::Plain,
-                        source,
-                        op_cache,
-                    );
-                }
-                SourcePickerPlan::Op => {
-                    commit_settings_env_source_picker(
-                        env,
-                        SettingsEnvSourcePickerSelection::Op,
-                        source,
-                        op_cache,
-                    );
-                }
-                SourcePickerPlan::Dismiss => {
-                    env.pop_modal_chain_and_clear_pending_env_key();
-                }
-                SourcePickerPlan::Continue => {
-                    env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
-                }
+            InlinePickerPlan::Dismiss => {
+                env.pop_modal_chain();
             }
-        }
-        SettingsEnvModal::OpPicker { state: mut picker } => {
+            InlinePickerPlan::Continue => {
+                env.modal = Some(SettingsEnvModal::Text {
+                    target,
+                    pending_value,
+                    state,
+                });
+            }
+        },
+        SettingsEnvModal::SourcePicker {
+            key: env_key,
+            state: mut source,
+        } => match source_picker_plan(source.handle_key(key)) {
+            SourcePickerPlan::Plain => {
+                commit_settings_env_source_picker(
+                    env,
+                    SettingsEnvSourcePickerSelection::Plain,
+                    env_key,
+                    source,
+                    op_cache,
+                );
+            }
+            SourcePickerPlan::Op => {
+                commit_settings_env_source_picker(
+                    env,
+                    SettingsEnvSourcePickerSelection::Op,
+                    env_key,
+                    source,
+                    op_cache,
+                );
+            }
+            SourcePickerPlan::Dismiss => {
+                env.pop_modal_chain();
+            }
+            SourcePickerPlan::Continue => {
+                env.modal = Some(SettingsEnvModal::SourcePicker {
+                    key: env_key,
+                    state: source,
+                });
+            }
+        },
+        SettingsEnvModal::OpPicker {
+            target,
+            state: mut picker,
+        } => {
             match inline_picker_plan(picker.handle_key(key)) {
                 // Browse-mode caller: only `Existing` is reachable.
                 InlinePickerPlan::Commit(
@@ -766,44 +784,41 @@ pub fn handle_settings_env_modal(
                 ) => unreachable!("settings-env OpPicker runs in Browse mode"),
                 InlinePickerPlan::Commit(crate::tui::op_picker::OpPickerSelection::Existing(
                     op_ref,
-                )) => {
-                    let plan = settings_update::settings_env_op_picker_commit_plan(
-                        env.pending_picker_target.as_ref(),
-                    );
-                    env.clear_pending_picker_target();
-                    match plan {
-                        SettingsEnvOpPickerCommitPlan::SetExisting { scope, key } => {
-                            set_settings_env_value_typed(
-                                env,
-                                &scope,
-                                &key,
-                                jackin_core::EnvValue::OpRef(op_ref),
-                            );
-                            env.clear_modal_chain();
-                        }
-                        SettingsEnvOpPickerCommitPlan::StashForNewKey { scope } => {
-                            env.stash_pending_picker_value(jackin_core::EnvValue::OpRef(op_ref));
-                            let plan = settings_env_new_key_after_picker_text_plan(scope);
-                            let state = settings_env_key_input_state(
-                                &env.pending,
-                                &plan.scope,
-                                plan.label,
-                                "",
-                            );
-                            env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
-                            env.open_sub_modal(SettingsEnvModal::Text {
-                                target: plan.target,
-                                state: Box::new(state),
-                            });
-                        }
-                        SettingsEnvOpPickerCommitPlan::MissingTarget => env.clear_modal_chain(),
+                )) => match target {
+                    SettingsEnvOpPickerTarget::Existing { scope, key } => {
+                        set_settings_env_value_typed(
+                            env,
+                            &scope,
+                            &key,
+                            jackin_core::EnvValue::OpRef(op_ref),
+                        );
+                        env.clear_modal_chain();
                     }
-                }
+                    SettingsEnvOpPickerTarget::NewKey { scope } => {
+                        let plan = settings_env_new_key_after_picker_text_plan(scope);
+                        let state =
+                            settings_env_key_input_state(&env.pending, &plan.scope, plan.label, "");
+                        env.modal = Some(SettingsEnvModal::OpPicker {
+                            target: SettingsEnvOpPickerTarget::NewKey {
+                                scope: plan.scope.clone(),
+                            },
+                            state: picker,
+                        });
+                        env.open_sub_modal(SettingsEnvModal::Text {
+                            target: plan.target,
+                            pending_value: Some(jackin_core::EnvValue::OpRef(op_ref)),
+                            state: Box::new(state),
+                        });
+                    }
+                },
                 InlinePickerPlan::Dismiss => {
-                    env.pop_modal_chain_and_clear_picker_target();
+                    env.pop_modal_chain();
                 }
                 InlinePickerPlan::Continue => {
-                    env.modal = Some(SettingsEnvModal::OpPicker { state: picker });
+                    env.modal = Some(SettingsEnvModal::OpPicker {
+                        target,
+                        state: picker,
+                    });
                 }
             }
         }
@@ -821,6 +836,7 @@ pub fn handle_settings_env_modal(
                     env.modal = Some(SettingsEnvModal::RolePicker { state: picker });
                     env.open_sub_modal(SettingsEnvModal::Text {
                         target: text_plan.target,
+                        pending_value: None,
                         state: Box::new(state),
                     });
                 }
@@ -955,38 +971,34 @@ fn commit_text(
 fn commit_env_text(
     env: &mut crate::tui::state::SettingsEnvState<'_>,
     target: &SettingsEnvTextTarget,
+    pending_value: Option<jackin_core::EnvValue>,
     value: &str,
 ) {
-    match settings_update::settings_env_text_commit_plan(
-        target,
-        value,
-        env.has_pending_picker_value(),
-    ) {
+    match settings_update::settings_env_text_commit_plan(target, value, pending_value.is_some()) {
         SettingsEnvTextCommitPlan::EmptyKey { scope } => {
             env.set_error(settings_env_empty_key_error_message());
             let plan = settings_env_empty_key_text_plan(scope);
             let state = settings_env_key_input_state(&env.pending, &plan.scope, plan.label, "");
             env.modal = Some(SettingsEnvModal::Text {
                 target: plan.target,
+                pending_value,
                 state: Box::new(state),
             });
         }
-        SettingsEnvTextCommitPlan::SetPendingPickerValue { scope, key } => {
-            if let Some(stashed) = env.take_pending_picker_value() {
+        SettingsEnvTextCommitPlan::SetCarriedPickerValue { scope, key } => {
+            if let Some(stashed) = pending_value {
                 set_settings_env_value_typed(env, &scope, &key, stashed);
-                env.clear_pending_env_key();
                 env.clear_modal_chain();
             }
         }
         SettingsEnvTextCommitPlan::OpenSourcePicker { scope, key } => {
-            env.set_pending_env_key(scope, key.clone());
             env.open_sub_modal(SettingsEnvModal::SourcePicker {
+                key: (scope, key.clone()),
                 state: settings_env_source_picker_state(key),
             });
         }
         SettingsEnvTextCommitPlan::SetPlainValue { scope, key, value } => {
             set_settings_env_value_typed(env, &scope, &key, jackin_core::EnvValue::Plain(value));
-            env.clear_pending_env_key();
             env.clear_modal_chain();
         }
     }
@@ -995,26 +1007,26 @@ fn commit_env_text(
 fn commit_settings_env_source_picker(
     env: &mut crate::tui::state::SettingsEnvState<'_>,
     selection: SettingsEnvSourcePickerSelection,
+    key: (SettingsEnvScope, String),
     source: crate::tui::components::source_picker::SourcePickerState,
     op_cache: std::rc::Rc<std::cell::RefCell<jackin_env::OpCache>>,
 ) {
-    match settings_update::settings_env_source_picker_commit_plan(
-        selection,
-        env.pending_env_key.as_ref(),
-    ) {
-        SettingsEnvSourcePickerCommitPlan::MissingPendingKey => {
-            env.clear_modal_chain();
-        }
+    match settings_update::settings_env_source_picker_commit_plan(selection, &key) {
         SettingsEnvSourcePickerCommitPlan::OpenPlainText { scope, key } => {
-            env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
+            env.modal = Some(SettingsEnvModal::SourcePicker {
+                key: (scope.clone(), key.clone()),
+                state: source,
+            });
             let plan = settings_env_plain_value_text_plan(scope, key);
             env.open_sub_modal(env_text_modal(plan.target, plan.label, plan.current));
         }
         SettingsEnvSourcePickerCommitPlan::OpenOpPicker { scope, key } => {
-            env.set_pending_picker_target((scope, Some(key)));
-            env.clear_pending_env_key();
-            env.modal = Some(SettingsEnvModal::SourcePicker { state: source });
+            env.modal = Some(SettingsEnvModal::SourcePicker {
+                key: (scope.clone(), key.clone()),
+                state: source,
+            });
             env.open_sub_modal(SettingsEnvModal::OpPicker {
+                target: SettingsEnvOpPickerTarget::Existing { scope, key },
                 state: Box::new(crate::tui::op_picker::OpPickerState::new_with_cache(
                     op_cache,
                 )),
@@ -1038,6 +1050,7 @@ fn commit_settings_env_scope_picker(
             // child modal with an empty parent chain.
             env.open_sub_modal(SettingsEnvModal::Text {
                 target: plan.target,
+                pending_value: None,
                 state: Box::new(input_state),
             });
         }
@@ -1139,6 +1152,7 @@ fn open_settings_env_enter_modal(settings: &mut crate::tui::state::SettingsState
             let state = settings_env_text_input_state(&plan.target, plan.label, plan.current);
             settings.env.modal = Some(SettingsEnvModal::Text {
                 target: plan.target,
+                pending_value: None,
                 state: Box::new(state),
             });
         }
@@ -1156,6 +1170,7 @@ fn open_settings_env_enter_modal(settings: &mut crate::tui::state::SettingsState
                 settings_env_key_input_state(&settings.env.pending, &plan.scope, plan.label, "");
             settings.env.modal = Some(SettingsEnvModal::Text {
                 target: plan.target,
+                pending_value: None,
                 state: Box::new(state),
             });
         }
@@ -1175,6 +1190,7 @@ fn open_settings_env_add_modal(settings: &mut crate::tui::state::SettingsState<'
     let state = settings_env_key_input_state(&settings.env.pending, &plan.scope, plan.label, "");
     settings.env.modal = Some(SettingsEnvModal::Text {
         target: plan.target,
+        pending_value: None,
         state: Box::new(state),
     });
 }
@@ -1213,8 +1229,12 @@ fn open_settings_env_picker_modal(
     ) else {
         return;
     };
-    settings.env.set_pending_picker_target(target);
+    let target = match target {
+        (scope, Some(key)) => SettingsEnvOpPickerTarget::Existing { scope, key },
+        (scope, None) => SettingsEnvOpPickerTarget::NewKey { scope },
+    };
     settings.env.modal = Some(SettingsEnvModal::OpPicker {
+        target,
         state: Box::new(crate::tui::op_picker::OpPickerState::new_with_cache(
             op_cache,
         )),
@@ -1329,6 +1349,7 @@ fn env_text_modal(
     let state = settings_env_text_input_state(&target, label, initial);
     SettingsEnvModal::Text {
         target,
+        pending_value: None,
         state: Box::new(state),
     }
 }
