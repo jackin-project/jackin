@@ -33,6 +33,46 @@ setup_context7() {
     fi
 }
 
+# Context7 MCP for agents ctx7 setup does not target (amp/kimi/grok).
+# ctx7 setup (v0.5.3) has no --amp/--kimi/--grok flag, so --cli writes no MCP
+# config — the agent gets only the ctx7 binary with no integration. Wire the
+# server directly per agent, mirroring the headroom wiring pattern below.
+setup_context7_native_mcp() {
+    local agent="$1"
+
+    if [[ -z "${CONTEXT7_API_KEY:-}" ]]; then
+        log "CONTEXT7_API_KEY unset — skipping Context7 MCP for ${agent}"
+        return 0
+    fi
+
+    log "configuring Context7 MCP (native) for ${agent}"
+    case "${agent}" in
+        amp)
+            # amp settings.json uses a flat "amp.mcpServers" key; HTTP is auto-detected.
+            local f="${HOME}/.config/amp/settings.json"
+            json_set "${f}" --arg key "${CONTEXT7_API_KEY}" \
+                '.["amp.mcpServers"].context7 = {"url":"https://mcp.context7.com/mcp","headers":{"CONTEXT7_API_KEY":$key}}' \
+                || { err "amp Context7 MCP wire failed"; exit 1; }
+            ;;
+        kimi)
+            # kimi global MCP lives in ~/.kimi-code/mcp.json (not config.toml).
+            local f="${HOME}/.kimi-code/mcp.json"
+            json_set "${f}" --arg key "${CONTEXT7_API_KEY}" \
+                '.mcpServers.context7 = {"url":"https://mcp.context7.com/mcp","headers":{"CONTEXT7_API_KEY":$key}}' \
+                || { err "kimi Context7 MCP wire failed"; exit 1; }
+            ;;
+        grok)
+            # grok's streamable-HTTP client wraps every remote in an OAuth AuthClient;
+            # only Authorization is treated as static-bearer. context7 accepts
+            # Authorization: Bearer (verified), so use it to avoid the OAuth collision.
+            grok mcp remove context7 >/dev/null 2>&1 || true
+            grok mcp add --transport http context7 https://mcp.context7.com/mcp \
+                --header "Authorization: Bearer ${CONTEXT7_API_KEY}" \
+                || { err "grok Context7 MCP wire failed"; exit 1; }
+            ;;
+    esac
+}
+
 seed_caveman_flag() {
     local claude_dir="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
     local flag="${claude_dir}/.caveman-active"
@@ -112,7 +152,7 @@ case "${JACKIN_AGENT:-}" in
         register_headroom_mcp
         ;;
     amp|kimi|grok)
-        setup_context7 "$JACKIN_AGENT" --cli
+        setup_context7_native_mcp "$JACKIN_AGENT"
         register_headroom_mcp
         ;;
     "")     warn "JACKIN_AGENT unset — skipping per-agent setup" ;;
