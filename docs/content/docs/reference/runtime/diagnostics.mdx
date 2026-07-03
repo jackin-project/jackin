@@ -59,6 +59,8 @@ Every line in the run artifact is a JSON object with the following fields (all r
 
 A single run may start multiple containers — the role container plus a Docker-in-Docker sidecar. The `container_started` event records the container name and the **host path of the in-container capsule diagnostics log** (`~/.jackin/data/<container-name>/state/multiplexer.log`) so an agent reading the run JSONL can locate the per-container crash log without knowing the on-disk layout.
 
+Capsule rotates `multiplexer.log` at daemon start when it exceeds 32 MiB, replacing `multiplexer.log.1` with the previous file and opening a fresh live log. Rotation is start-only so `tail -f` stays attached for the lifetime of a running session.
+
 Example flow after a container crash:
 
 1. The run JSONL records `container_started` with `"capsule_log": "~/.jackin/data/jk-xxxx-thearchitect/state/multiplexer.log"`.

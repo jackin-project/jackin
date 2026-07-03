@@ -17,7 +17,7 @@
 //!   - If the file cannot be opened for append, the logger silently
 //!     falls back to stderr-only. Logging must never block startup.
 
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -41,12 +41,33 @@ pub fn debug_enabled() -> bool {
 /// Default in-container path. The host's state-dir mount makes this
 /// readable from outside the container.
 const DEFAULT_LOG_PATH: &str = "/jackin/state/multiplexer.log";
+const MAX_LOG_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Resolve the log path. Honours `JACKIN_CAPSULE_LOG_PATH` first,
 /// falls back to the default.
 fn resolve_log_path() -> PathBuf {
     std::env::var_os("JACKIN_CAPSULE_LOG_PATH")
         .map_or_else(|| PathBuf::from(DEFAULT_LOG_PATH), PathBuf::from)
+}
+
+fn rotate_if_oversized(path: &PathBuf) -> std::io::Result<()> {
+    if path
+        .metadata()
+        .is_ok_and(|metadata| metadata.len() > MAX_LOG_BYTES)
+    {
+        let rotated_name = path
+            .file_name()
+            .map(|name| format!("{}.1", name.to_string_lossy()))
+            .unwrap_or_else(|| "multiplexer.log.1".to_owned());
+        let rotated = path.with_file_name(rotated_name);
+        match fs::remove_file(&rotated) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        fs::rename(path, rotated)?;
+    }
+    Ok(())
 }
 
 /// Open the log file for append. Called once from the daemon entry
@@ -66,6 +87,14 @@ pub fn init() {
     DEBUG_ENABLED.store(debug, Ordering::Relaxed);
 
     let path = resolve_log_path();
+    // Rotate only at daemon start so `tail -f` remains stable for a live session.
+    if let Err(e) = rotate_if_oversized(&path) {
+        crate::output::stderr_line(format_args!(
+            "[jackin-capsule] log rotation failed for {}: {e} (errno={:?})",
+            path.display(),
+            e.raw_os_error()
+        ));
+    }
     #[expect(
         clippy::disallowed_methods,
         reason = "capsule log opens once during logging initialization, before render loop work"
@@ -177,6 +206,30 @@ macro_rules! cwarn {
         $crate::logging::write_line(&line);
         $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Warn, &line);
     }};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rotates_oversized_multiplexer_log() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("multiplexer.log");
+        let old = File::create(&path).unwrap();
+        old.set_len(MAX_LOG_BYTES + 1).unwrap();
+        drop(old);
+
+        rotate_if_oversized(&path).unwrap();
+        drop(OpenOptions::new().create(true).append(true).open(&path));
+
+        let rotated = temp.path().join("multiplexer.log.1");
+        assert!(rotated.exists(), "oversized log should rotate to .1");
+        assert!(
+            path.metadata().unwrap().len() < MAX_LOG_BYTES,
+            "live log should reopen fresh after rotation"
+        );
+    }
 }
 
 #[macro_export]
