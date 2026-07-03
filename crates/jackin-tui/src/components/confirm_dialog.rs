@@ -15,12 +15,13 @@ use ratatui::{
 
 use crate::{
     HintSpan, ModalOutcome,
+    components::ButtonFocus,
     keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility},
     theme::{PHOSPHOR_GREEN, WARNING_YELLOW},
 };
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
-use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
+use super::dialog_layout::{DialogBorder, dialog_inner_chunks, render_dialog_shell};
 
 /// Actions the confirmation dialog can take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,6 +122,10 @@ pub enum ConfirmFocus {
     No,
 }
 
+impl ButtonFocus for ConfirmFocus {
+    const RING: &'static [Self] = &[Self::Yes, Self::No];
+}
+
 #[derive(Debug, Clone)]
 pub struct ConfirmState {
     pub(crate) focus: ConfirmFocus,
@@ -205,10 +210,7 @@ impl ConfirmState {
             Some(ConfirmAction::No) => ModalOutcome::Commit(false),
             Some(ConfirmAction::Cancel) => ModalOutcome::Cancel,
             Some(ConfirmAction::ToggleFocus) => {
-                self.focus = match self.focus {
-                    ConfirmFocus::Yes => ConfirmFocus::No,
-                    ConfirmFocus::No => ConfirmFocus::Yes,
-                };
+                self.focus = self.focus.next();
                 ModalOutcome::Continue
             }
             Some(ConfirmAction::CommitFocused) => {
@@ -281,7 +283,7 @@ pub fn exit_confirm_state_with_data_loss() -> ConfirmState {
 }
 
 pub fn render_confirm_dialog(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
-    let inner = render_dialog_shell(frame, area, Some(&state.title));
+    let inner = render_dialog_shell(frame, area, Some(&state.title), DialogBorder::Default);
 
     let prompt = match &state.kind {
         ConfirmKind::Details {
@@ -400,13 +402,7 @@ const fn inset(area: Rect, x: u16) -> Rect {
 
 fn render_buttons(frame: &mut Frame<'_>, area: Rect, state: &ConfirmState) {
     let items = [ButtonStripItem::new("Yes"), ButtonStripItem::new("No")];
-    let focused = match state.focus {
-        ConfirmFocus::Yes => 0,
-        ConfirmFocus::No => 1,
-    };
-    ButtonStrip::new(&items)
-        .focused(focused)
-        .render(frame, area);
+    frame.render_widget(ButtonStrip::new(&items).focused(state.focus.index()), area);
 }
 
 #[cfg(test)]

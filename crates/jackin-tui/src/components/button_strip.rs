@@ -1,14 +1,14 @@
 //! Shared centered button row.
 
 use ratatui::{
-    Frame,
+    buffer::Buffer,
     layout::{Alignment, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Paragraph, Widget},
 };
 
-use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
+use crate::theme::{INK, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ButtonStripItem<'a> {
@@ -63,16 +63,17 @@ impl<'a> ButtonStrip<'a> {
         self
     }
 
-    pub fn render(self, frame: &mut Frame<'_>, area: Rect) {
-        frame.render_widget(
-            Paragraph::new(self.line()).alignment(Alignment::Center),
-            area,
-        );
-    }
-
     #[must_use]
     pub fn line(self) -> Line<'static> {
         button_strip_line(self.items, self.focused, self.gap)
+    }
+}
+
+impl Widget for ButtonStrip<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        Paragraph::new(self.line())
+            .alignment(Alignment::Center)
+            .render(area, buf);
     }
 }
 
@@ -103,7 +104,7 @@ pub fn button_style(focused: bool, disabled: bool) -> Style {
     if focused {
         Style::default()
             .bg(WHITE)
-            .fg(Color::Black)
+            .fg(INK)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default()

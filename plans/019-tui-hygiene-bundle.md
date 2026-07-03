@@ -18,6 +18,7 @@
 - **Depends on**: none
 - **Category**: tech-debt / build
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
+- **Execution status**: BLOCKED — drift check found existing launch TUI component changes in `crates/jackin-launch-tui/src/tui/components/failure_dialog.rs` before plan work.
 
 ## Why this matters
 

@@ -440,25 +440,16 @@ fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::Hint
     let padded_total = total.saturating_add(4);
     let row_y = area.height - (BRANCH_CONTEXT_BAR_ROWS + 2);
     let start_col = ((usize::from(area.width)).saturating_sub(padded_total) / 2) as u16;
-    let key_style = Style::default()
-        .fg(color(jackin_tui::WHITE))
-        .add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(color(jackin_tui::PHOSPHOR_GREEN));
-    let dyn_style = Style::default().fg(color(jackin_tui::PHOSPHOR_DIM));
-    let sep_style = Style::default().fg(color(jackin_tui::PHOSPHOR_DARK));
     let mut x = area.x + start_col + 2;
-    for span in visible {
-        let (text, style): (String, Style) = match span {
-            jackin_tui::HintSpan::Key(k) => ((*k).to_owned(), key_style),
-            jackin_tui::HintSpan::DynKey(k) => (k.clone(), key_style),
-            jackin_tui::HintSpan::Text(t) => (format!(" {t}"), text_style),
-            jackin_tui::HintSpan::Dyn(t) => (format!(" {t}"), dyn_style),
-            jackin_tui::HintSpan::Sep => (" · ".to_owned(), sep_style),
-            jackin_tui::HintSpan::GroupSep => ("   ".to_owned(), sep_style),
-        };
-        buf.set_string(x, row_y, &text, style);
-        x += jackin_tui::display_cols(&text) as u16;
+    let styled = jackin_tui::components::styled_hint_spans(visible, remap_hint_color);
+    for span in &styled {
+        buf.set_string(x, row_y, span.content.as_ref(), span.style);
+        x += jackin_tui::display_cols(span.content.as_ref()) as u16;
     }
+}
+
+const fn remap_hint_color(color: Color) -> Color {
+    color
 }
 
 #[cfg(test)]

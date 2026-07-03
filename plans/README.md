@@ -21,25 +21,25 @@ update the codebase map in the same PR.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Docs catalog + lookbook truth repair | P1 | M | — | TODO |
-| 002 | Uniform component API contract (shared crate) | P1 | L | 001 | TODO |
-| 003 | Focus taxonomy + ButtonFocus cycling | P2 | M | 002 | TODO |
-| 004 | Shared-crate drift fixes (text_input cursor, diff_view keymap/palette) | P1 | S | — | TODO |
-| 005 | Shared key-glyph constants | P1 | M | — | TODO |
-| 006 | theme::INK token (raw Color::Black sweep) | P3 | S | — (coordinate 004/007) | TODO |
-| 007 | ErrorPopup on the dialog shell + structured rows | P1 | M | 002 (soft) | TODO |
-| 008 | Launch failure popup onto ErrorPopup | P2 | L | 007 | TODO |
-| 009 | Capsule spawn failure onto ErrorPopup | P2 | M | 007 | TODO |
-| 010 | Capsule hint renderer consolidation (style single-source, wrap not truncate) | P1 | M | — (coordinate 005) | TODO |
-| 011 | Capsule footer via StatusFooter + shared confirm hit-test | P2 | M | — (coordinate 010) | TODO |
-| 012 | ModalStack primitive; settings modal enums converge; stash slots die | P2 | L | 002 (soft) | TODO |
-| 013 | Modal-sizing registry promoted to jackin-tui | P2 | M | 012 | TODO |
-| 014 | ConfirmSaveState onto a keymap + ButtonFocus | P2 | M | 003 | TODO |
-| 015 | Settings ↔ editor row unification + labeled_field_line | P1 | L | — | TODO |
-| 016 | save_preview dual-pipeline dedup | P2 | L | — | TODO |
-| 017 | run_console decomposition + terminal guard | P3 | M | — | TODO |
-| 018 | jackin-tui lib.rs ansi-module extraction | P3 | M | — | TODO |
-| 019 | Hygiene: coalesce_cells dedup, runtime ratatui dev-dep | P3 | S | — | TODO |
+| 001 | Docs catalog + lookbook truth repair | P1 | M | — | DONE |
+| 002 | Uniform component API contract (shared crate) | P1 | L | 001 | DONE |
+| 003 | Focus taxonomy + ButtonFocus cycling | P2 | M | 002 | DONE |
+| 004 | Shared-crate drift fixes (text_input cursor, diff_view keymap/palette) | P1 | S | — | BLOCKED (lookbook regen changed brand-header/confirm previews outside allowed text-input/diff-view scope) |
+| 005 | Shared key-glyph constants | P1 | M | — | DONE |
+| 006 | theme::INK token (raw Color::Black sweep) | P3 | S | — (coordinate 004/007) | DONE |
+| 007 | ErrorPopup on the dialog shell + structured rows | P1 | M | 002 (soft) | DONE |
+| 008 | Launch failure popup onto ErrorPopup | P2 | L | 007 | DONE |
+| 009 | Capsule spawn failure onto ErrorPopup | P2 | M | 007 | BLOCKED — drift check found existing capsule TUI changes in `components.rs`, `dialog_widgets.rs`, and `palette.rs` before plan work |
+| 010 | Capsule hint renderer consolidation (style single-source, wrap not truncate) | P1 | M | — (coordinate 005) | BLOCKED — shared styling extracted, but wrapping needs operator decision because extra hint rows change capsule content-area reservation |
+| 011 | Capsule footer via StatusFooter + shared confirm hit-test | P2 | M | — (coordinate 010) | BLOCKED — drift check found existing changes in capsule chrome/dialog/palette files and shared button/confirm components before plan work |
+| 012 | ModalStack primitive; settings modal enums converge; stash slots die | P2 | L | 002 (soft) | BLOCKED — drift check found existing console TUI changes across component/input/view files before plan work |
+| 013 | Modal-sizing registry promoted to jackin-tui | P2 | M | 012 | BLOCKED — drift check found existing launch TUI failure-dialog/run changes before plan work |
+| 014 | ConfirmSaveState onto a keymap + ButtonFocus | P2 | M | 003 | BLOCKED — drift check found existing confirm/save component changes before plan work |
+| 015 | Settings ↔ editor row unification + labeled_field_line | P1 | L | — | BLOCKED — drift check found existing console row/auth/workspace view changes before plan work |
+| 016 | save_preview dual-pipeline dedup | P2 | L | — | DONE |
+| 017 | run_console decomposition + terminal guard | P3 | M | — | DONE |
+| 018 | jackin-tui lib.rs ansi-module extraction | P3 | M | — | DONE |
+| 019 | Hygiene: coalesce_cells dedup, runtime ratatui dev-dep | P3 | S | — | BLOCKED — drift check found existing launch TUI component changes in `failure_dialog.rs` before plan work |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 

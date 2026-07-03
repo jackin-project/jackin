@@ -827,7 +827,7 @@ pub fn render_picker_sidebar(
         .selected(selected)
         .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
     list = list.highlight_symbol(if focused { "▸ " } else { "  " });
-    list.render(frame.buffer_mut(), inner);
+    frame.render_widget(list, inner);
 }
 
 pub fn render_provider_picker_sidebar(

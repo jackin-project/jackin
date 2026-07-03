@@ -109,10 +109,12 @@ pub fn render_tab_strip(
     tab_bar_focused: bool,
     hovered: Option<usize>,
 ) {
-    jackin_tui::components::TabStrip::new(labels)
-        .focused(tab_bar_focused)
-        .hovered(hovered)
-        .render(frame, area);
+    frame.render_widget(
+        jackin_tui::components::TabStrip::new(labels)
+            .focused(tab_bar_focused)
+            .hovered(hovered),
+        area,
+    );
 }
 
 /// `OpRef` rows skip masking and render as a breadcrumb (3-segment:

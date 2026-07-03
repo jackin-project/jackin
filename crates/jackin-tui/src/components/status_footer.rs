@@ -2,12 +2,12 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Widget};
 
 use crate::display_cols;
-use crate::theme::{DANGER_RED, DEBUG_AMBER, LINK_BLUE, WHITE, faded};
+use crate::theme::{DANGER_RED, DEBUG_AMBER, INK, LINK_BLUE, WHITE, faded};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[allow(
@@ -214,11 +214,7 @@ impl<'a> StatusFooter<'a> {
 impl Widget for StatusFooter<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         Block::default()
-            .style(
-                Style::default()
-                    .bg(faded(WHITE, self.alpha))
-                    .fg(Color::Black),
-            )
+            .style(Style::default().bg(faded(WHITE, self.alpha)).fg(INK))
             .render(area, buf);
 
         let right_layout = status_right_group_layout(area.width, self.right);
@@ -229,11 +225,7 @@ impl Widget for StatusFooter<'_> {
                 Style::default()
                     .bg(faded(WHITE, self.alpha))
                     .fg(faded(
-                        if self.hover.usage {
-                            DEBUG_AMBER
-                        } else {
-                            Color::Black
-                        },
+                        if self.hover.usage { DEBUG_AMBER } else { INK },
                         self.alpha,
                     ))
                     .add_modifier(Modifier::BOLD),
@@ -288,7 +280,7 @@ impl Widget for StatusFooter<'_> {
         let activity_fg = if self.hover.left {
             faded(LINK_BLUE, self.alpha)
         } else {
-            Color::Black
+            INK
         };
         let left_spans = vec![
             Span::raw(" "),

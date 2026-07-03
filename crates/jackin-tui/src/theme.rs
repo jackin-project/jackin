@@ -49,6 +49,10 @@ pub const DIALOG_SURFACE: Color = Color::Reset;
 pub const DIALOG_SCROLL_THUMB: Color = color(DIALOG_SCROLL_THUMB_RGB);
 pub const DIALOG_SCROLL_TRACK: Color = color(DIALOG_SCROLL_TRACK_RGB);
 pub const WHITE: Color = color(WHITE_RGB);
+/// Foreground for text on bright chips/buttons.
+///
+/// ANSI black by design so terminals map it consistently with their palette.
+pub const INK: Color = Color::Black;
 pub const TAB_BG_INACTIVE: Color = color(TAB_BG_INACTIVE_RGB);
 pub const TAB_BG_INACTIVE_HOVER: Color = color(TAB_BG_INACTIVE_HOVER_RGB);
 pub const TAB_BG_ACTIVE: Color = color(TAB_BG_ACTIVE_RGB);

@@ -18,6 +18,7 @@
 - **Depends on**: none hard (independent of 012; touches different layers)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
+- **Execution status**: BLOCKED — drift check found existing changes in `auth_panel.rs`, `editor_rows.rs`, and the workspace view before plan work.
 
 ## Why this matters
 

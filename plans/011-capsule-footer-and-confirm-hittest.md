@@ -18,6 +18,7 @@
 - **Depends on**: none hard (order-flexible with 010; both touch `chrome.rs` — coordinate)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
+- **Execution status**: BLOCKED — drift check found existing changes in capsule `chrome.rs`, `dialog_widgets.rs`, `palette.rs`, and shared `button_strip.rs` / `confirm_dialog.rs` before plan work.
 
 ## Why this matters
 

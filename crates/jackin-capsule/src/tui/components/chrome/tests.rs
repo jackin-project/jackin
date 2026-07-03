@@ -174,7 +174,7 @@ fn truncate_spans_all_fit() {
 
 #[test]
 fn truncate_spans_first_group_too_wide_returns_empty() {
-    // A single span wider than max_cols → nothing rendered.
+    // A single span wider than max_cols -> nothing rendered.
     let spans: &[jackin_tui::HintSpan<'_>] = &[jackin_tui::HintSpan::Key(
         "a very long key that exceeds the narrow terminal",
     )];
@@ -198,7 +198,6 @@ fn truncate_spans_keeps_fitting_groups_drops_overflowing() {
         jackin_tui::HintSpan::Key("C"),
         jackin_tui::HintSpan::Text("overflows-the-budget-clearly"),
     ];
-    let full = jackin_tui::hint_row_cols(spans);
     let two_groups = jackin_tui::hint_row_cols(&spans[..5]); // A short GroupSep B short
     let result = truncate_spans_to_cols(spans, two_groups + 2);
     // Should keep groups 1+2 (spans[0..5]); trailing GroupSep is stripped.
@@ -211,7 +210,6 @@ fn truncate_spans_keeps_fitting_groups_drops_overflowing() {
         !matches!(result.last(), Some(jackin_tui::HintSpan::GroupSep)),
         "trailing GroupSep must be stripped"
     );
-    let _ = full; // suppress unused warning
 }
 
 #[test]
@@ -237,4 +235,26 @@ fn dynamic_key_hint_uses_key_style() {
             .add_modifier
             .contains(Modifier::BOLD)
     );
+}
+
+#[test]
+fn separator_hint_uses_shared_border_gray() {
+    let area = Rect::new(0, 0, 40, 4);
+    let mut buf = Buffer::empty(area);
+    render_hint_spans_row(
+        &mut buf,
+        area,
+        &[
+            jackin_tui::HintSpan::Key("A"),
+            jackin_tui::HintSpan::Text("alpha"),
+            jackin_tui::HintSpan::Sep,
+            jackin_tui::HintSpan::Key("B"),
+            jackin_tui::HintSpan::Text("bravo"),
+        ],
+    );
+
+    let sep_cell = (0..area.width)
+        .find(|x| buf[(*x, 1)].symbol() == "·")
+        .expect("separator rendered");
+    assert_eq!(buf[(sep_cell, 1)].fg, jackin_tui::theme::BORDER_GRAY);
 }

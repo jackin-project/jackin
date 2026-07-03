@@ -18,6 +18,7 @@
 - **Depends on**: plans/012-modal-stack-primitive.md (recommended — unified modal kinds shrink the registry)
 - **Category**: tech-debt
 - **Planned at**: commit `a2ec1b237`, 2026-07-03
+- **Execution status**: BLOCKED — drift check found existing launch TUI failure-dialog and run-loop changes before plan work.
 
 ## Why this matters
 

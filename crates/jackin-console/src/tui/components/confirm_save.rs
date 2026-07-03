@@ -18,7 +18,7 @@ use jackin_tui::ModalOutcome;
 use jackin_tui::components::scrollable_panel::{
     apply_scroll_delta, clamp_scroll_offset, is_scrollable, render_lines_with_offset_in_area,
 };
-use jackin_tui::components::{ScrollAxes, dialog_inner_chunks, render_dialog_shell};
+use jackin_tui::components::{DialogBorder, ScrollAxes, dialog_inner_chunks, render_dialog_shell};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveChoice {
@@ -145,7 +145,7 @@ pub fn prepare_for_render<M: Clone>(area: Rect, state: &mut ConfirmSaveState<M>)
 }
 
 pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveState<M>) {
-    let inner = render_dialog_shell(frame, area, Some("Confirm changes"));
+    let inner = render_dialog_shell(frame, area, Some("Confirm changes"), DialogBorder::Default);
 
     // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
     // responsible for any deeper indentation; we just add a uniform
@@ -173,9 +173,10 @@ pub fn render<M: Clone>(frame: &mut Frame<'_>, area: Rect, state: &ConfirmSaveSt
         ConfirmSaveFocus::Save => 0,
         ConfirmSaveFocus::Cancel => 1,
     };
-    jackin_tui::components::ButtonStrip::new(&items)
-        .focused(focused)
-        .render(frame, chunks[3]);
+    frame.render_widget(
+        jackin_tui::components::ButtonStrip::new(&items).focused(focused),
+        chunks[3],
+    );
 }
 
 #[cfg(test)]

@@ -109,11 +109,11 @@ Replace the geometry internals of `failure_popup_value_rect`/`failure_copy_targe
 
 ## Done criteria
 
-- [ ] fmt / clippy / `cargo nextest run` exit 0
-- [ ] `rg 'Block::default|"  OK  "' crates/jackin-launch-tui/src/tui/components/failure_dialog.rs` → 0
-- [ ] Popup renders via `render_error_dialog_in` (grep confirms the call)
-- [ ] Click/copy/reveal tests pass with geometry sourced from `row_value_rects`
-- [ ] `plans/README.md` updated
+- [x] fmt / clippy / `cargo nextest run` exit 0
+- [x] `rg 'Block::default|"  OK  "' crates/jackin-launch-tui/src/tui/components/failure_dialog.rs` → 0
+- [x] Popup renders via `render_error_dialog_in` (grep confirms the call)
+- [x] Click/copy/reveal tests pass with geometry sourced from `row_value_rects`
+- [x] `plans/README.md` updated
 
 ## STOP conditions
 

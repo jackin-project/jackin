@@ -9,7 +9,7 @@ use ratatui::{
 
 use crate::theme::WHITE;
 
-use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
+use super::dialog_layout::{DialogBorder, dialog_inner_chunks, render_dialog_shell};
 
 #[derive(Debug, Clone)]
 pub struct StatusPopupState {
@@ -31,7 +31,7 @@ pub fn render_status_popup(frame: &mut Frame<'_>, area: Rect, state: &StatusPopu
     if area.width < 8 || area.height < 7 {
         return;
     }
-    let inner = render_dialog_shell(frame, area, Some(&state.title));
+    let inner = render_dialog_shell(frame, area, Some(&state.title), DialogBorder::Default);
     let chunks = dialog_inner_chunks(inner, None);
 
     frame.render_widget(

@@ -1,5 +1,6 @@
 //! Tests for `confirm_dialog`.
 use super::*;
+use crate::components::ButtonFocus;
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -79,6 +80,40 @@ fn tab_cycles_focus() {
     assert_eq!(s.focus, ConfirmFocus::Yes);
     s.handle_key(key(KeyCode::Tab));
     assert_eq!(s.focus, ConfirmFocus::No);
+}
+
+#[test]
+fn confirm_focus_ring_and_index_match_button_order() {
+    assert_eq!(ConfirmFocus::Yes.index(), 0);
+    assert_eq!(ConfirmFocus::No.index(), 1);
+    assert_eq!(ConfirmFocus::Yes.next(), ConfirmFocus::No);
+    assert_eq!(ConfirmFocus::No.next(), ConfirmFocus::Yes);
+    assert_eq!(ConfirmFocus::Yes.prev(), ConfirmFocus::No);
+    assert_eq!(ConfirmFocus::No.prev(), ConfirmFocus::Yes);
+}
+
+#[test]
+fn confirm_focus_keys_keep_existing_toggle_semantics() {
+    for code in [
+        KeyCode::Tab,
+        KeyCode::BackTab,
+        KeyCode::Left,
+        KeyCode::Right,
+        KeyCode::Char('h'),
+        KeyCode::Char('l'),
+    ] {
+        let mut state = ConfirmState::new("Delete?");
+        assert_eq!(state.focus, ConfirmFocus::No);
+        assert!(matches!(
+            state.handle_key(key(code)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(
+            state.focus,
+            ConfirmFocus::Yes,
+            "{code:?} should toggle focus"
+        );
+    }
 }
 
 #[test]

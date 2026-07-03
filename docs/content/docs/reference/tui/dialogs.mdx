@@ -248,7 +248,7 @@ Any dialog or info panel that displays a long value (file path, container ID, UR
 
 1. **OSC 8 hyperlink** (preferred for file system paths and URLs). Render the path as a terminal hyperlink via `]8;;file:///full/path\visible text]8;;\`. The operator clicks to open the file. The visible text can be abbreviated; the href carries the full path. The failure popup's "run diagnostics" and "docker output" rows must use this approach, and its `R` key reveal action must use the same row values instead of re-deriving paths.
 
-2. **Word-wrap onto multiple lines**. If the value is a long string (not a path), wrap it within the dialog width. The dialog height adjusts accordingly (the failure popup already computes height from row count).
+2. **Word-wrap onto multiple lines**. If the value is a long string (not a path), wrap it within the dialog width. `ErrorPopup` owns the row wrapping, height estimate, scroll offset, and value-cell rectangles so render, OSC 8 overlays, and copy/reveal hit-testing stay aligned.
 
 3. **Horizontal scroll**. Only use this when neither hyperlink nor wrap is feasible. Use `render_scrollable_block` so the shared scrollbar and clamp math apply.
 
@@ -259,6 +259,8 @@ Never silently truncate: `path.display().to_string().chars().take(N).collect()` 
 All error conditions surfaced to the operator must use the red-border `ErrorPopup` dialog (<RepoFile path="crates/jackin-tui/src/components/error_dialog.rs">crates/jackin-tui/src/components/error_dialog.rs</RepoFile>). Ephemeral overlays (shimmer banners, auto-expiring toasts, single-line status strips) are banned for error display.
 
 **Why:** Auto-expiring errors vanish before the operator reads them, have no scroll support for long messages, and render over content rather than blocking it. `ErrorPopup` is dismissible (Enter / Esc / O), scrollable, and modal — the operator cannot miss it or accidentally dismiss it.
+
+`ErrorPopup` may include structured label/value rows with OSC 8 hyperlink targets for paths and URLs; use this mode for long diagnostic values per the long-values rule above.
 
 **Scope:** Every error path in every stage (list, editor, settings, create-prelude) must route through the stage's designated error slot:
 
