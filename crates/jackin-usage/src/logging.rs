@@ -55,10 +55,10 @@ fn rotate_if_oversized(path: &PathBuf) -> std::io::Result<()> {
         .metadata()
         .is_ok_and(|metadata| metadata.len() > MAX_LOG_BYTES)
     {
-        let rotated_name = path
-            .file_name()
-            .map(|name| format!("{}.1", name.to_string_lossy()))
-            .unwrap_or_else(|| "multiplexer.log.1".to_owned());
+        let rotated_name = path.file_name().map_or_else(
+            || "multiplexer.log.1".to_owned(),
+            |name| format!("{}.1", name.to_string_lossy()),
+        );
         let rotated = path.with_file_name(rotated_name);
         match fs::remove_file(&rotated) {
             Ok(()) => {}
@@ -208,6 +208,15 @@ macro_rules! cwarn {
     }};
 }
 
+#[macro_export]
+macro_rules! cerror {
+    ($($arg:tt)*) => {{
+        let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
+        $crate::logging::write_line(&line);
+        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Error, &line);
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,22 +230,12 @@ mod tests {
         drop(old);
 
         rotate_if_oversized(&path).unwrap();
-        drop(OpenOptions::new().create(true).append(true).open(&path));
 
         let rotated = temp.path().join("multiplexer.log.1");
         assert!(rotated.exists(), "oversized log should rotate to .1");
         assert!(
-            path.metadata().unwrap().len() < MAX_LOG_BYTES,
-            "live log should reopen fresh after rotation"
+            !path.exists(),
+            "rotation should move the oversized live log before init reopens it"
         );
     }
-}
-
-#[macro_export]
-macro_rules! cerror {
-    ($($arg:tt)*) => {{
-        let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
-        $crate::logging::write_line(&line);
-        $crate::telemetry::bridge_log($crate::telemetry::BridgeLevel::Error, &line);
-    }};
 }

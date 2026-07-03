@@ -20,7 +20,7 @@ Design direction the program encodes (validated against tracing 0.1 / tracing-op
 | 008 | `--telemetry-level` / `--telemetry-category`; split export verbosity from `--debug` UI | P2 | L | 002, 003, 005, 006 | TODO |
 | 009 | Operator contract: `persists()` gating, capsule path honesty, run-end pointer | P1 | M | — | DONE |
 | 010 | `[telemetry]` config.toml section (5-artifact schema bump) | P2 | M | 008 | TODO |
-| 011 | Hygiene batch: poison consistency, flush cadence, mouse coalescing, log rotation, TOCTOU, bounded maps | P2 | M | — | TODO |
+| 011 | Hygiene batch: poison consistency, flush cadence, mouse coalescing, log rotation, TOCTOU, bounded maps | P2 | M | — | DONE |
 | 012 | Domain metrics via MetricsLayer + turso connection reuse | P3 | M | 002, 005, 008 | TODO |
 | 013 | Docs truth sync: TESTING.md OTLP gate, run-id format, env-var reference | P1 | S | — | TODO |
 
