@@ -23,10 +23,10 @@ update the codebase map in the same PR.
 |------|-------|----------|--------|------------|--------|
 | 001 | Docs catalog + lookbook truth repair | P1 | M | — | DONE |
 | 002 | Uniform component API contract (shared crate) | P1 | L | 001 | DONE |
-| 003 | Focus taxonomy + ButtonFocus cycling | P2 | M | 002 | TODO |
-| 004 | Shared-crate drift fixes (text_input cursor, diff_view keymap/palette) | P1 | S | — | TODO |
-| 005 | Shared key-glyph constants | P1 | M | — | TODO |
-| 006 | theme::INK token (raw Color::Black sweep) | P3 | S | — (coordinate 004/007) | TODO |
+| 003 | Focus taxonomy + ButtonFocus cycling | P2 | M | 002 | DONE |
+| 004 | Shared-crate drift fixes (text_input cursor, diff_view keymap/palette) | P1 | S | — | BLOCKED (lookbook regen changed brand-header/confirm previews outside allowed text-input/diff-view scope) |
+| 005 | Shared key-glyph constants | P1 | M | — | DONE |
+| 006 | theme::INK token (raw Color::Black sweep) | P3 | S | — (coordinate 004/007) | DONE |
 | 007 | ErrorPopup on the dialog shell + structured rows | P1 | M | 002 (soft) | DONE |
 | 008 | Launch failure popup onto ErrorPopup | P2 | L | 007 | DONE |
 | 009 | Capsule spawn failure onto ErrorPopup | P2 | M | 007 | BLOCKED — drift check found existing capsule TUI changes in `components.rs`, `dialog_widgets.rs`, and `palette.rs` before plan work |
