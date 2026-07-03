@@ -6,7 +6,7 @@ title: "Rust Build Cache Hygiene"
 
 ## Problem
 
-Rust-heavy jackin❯ work can silently turn host-local cache directories into the largest disk consumer on the machine. The July 2026 operator disk audit found `~/.cache/jackin` at roughly 410 GB, with one jackin❯ project cache target around 402 GB. Separate Rust workspaces also had large local `target/` trees: one ChainArgos workspace around 30 GB, this jackin❯ checkout around 18 GB, and a Parallax checkout around 13 GB.
+Rust-heavy jackin❯ work can silently turn host-local cache directories into the largest disk consumer on the machine. The July 2026 operator disk audit found `~/.cache/jackin` at roughly 410 GB, with one jackin❯ project cache target around 402 GB. Separate Rust workspaces also had large local `target/` trees: one non-jackin❯ Rust workspace around 30 GB, this jackin❯ checkout around 18 GB, and another Rust checkout around 13 GB.
 
 The root bug class is not "one bad directory". jackin❯ has multiple places that create or preserve build/cache state for speed, but there is no single Rust build-cache ownership model with quotas, TTLs, eviction order, operator-visible accounting, or an automatic cleanup path. A cache can be created because it improves launch or build latency, then survive indefinitely because no policy owns its lifetime.
 
