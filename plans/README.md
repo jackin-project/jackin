@@ -31,7 +31,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 003 | Authenticate callers of the `host.sock` credential resolver | security | P1 | M | HIGH | — | DONE (Linux peercred; non-Linux residual documented) |
 | 004 | Default-deny OSC 52 clipboard-write passthrough | security | P1 | S | HIGH | — | DONE |
 | 005 | Scrub secrets from captured `--debug` command output | security | P2 | M | LOW | — | DONE (latent; output scrubber added) |
-| 006 | Clamp `spin_wait` inter-attempt delay for sub-80ms intervals | bug | P2 | S | HIGH | — | TODO |
+| 006 | Clamp `spin_wait` inter-attempt delay for sub-80ms intervals | bug | P2 | S | HIGH | — | DONE (interval-accurate) |
 | 007 | Stop blanking Claude account metadata on `.claude.json` read errors | bug | P2 | S | MED | — | TODO |
 | 008 | Guard IL/DL against cursor outside the scroll region | bug | P2 | S | MED | — | TODO |
 | 009 | Investigate per-tab vs global pane zoom | bug | P3 | M | LOW | — | TODO |

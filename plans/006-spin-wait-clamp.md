@@ -13,6 +13,7 @@
 - **Depends on**: none (but plan 012 builds on this — do 006 first)
 - **Category**: bug
 - **Planned at**: commit `46511939d`, 2026-07-03
+- **Implemented choice**: decoupled poll delay from spinner cadence, so sub-80ms intervals sleep the requested interval instead of over-waiting at 80ms.
 
 ## Why this matters
 
