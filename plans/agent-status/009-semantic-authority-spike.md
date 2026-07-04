@@ -95,7 +95,7 @@ remaining work). Defer anything whose event surface Step 1 shows is unreliable.
 - [x] `gating.rs` maps the safe subset to state at a graded confidence; order-fragile events stay `heartbeat`
 - [x] A flagged Codex app-server authority prototype compiles and is proven via the plan-008 seam at the pure
   event-mapping/session-authority layer
-- [ ] Screen-blocked override safety net preserved (test: a visible dialog overrides a stale reported idle)
+- [x] Screen-blocked override safety net preserved (test: a visible dialog overrides a stale reported idle)
 - [x] Follow-up plans (009a/009b) written; unreliable surfaces explicitly deferred with rationale
 - [x] `plans/agent-status/README.md` row updated
 

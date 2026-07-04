@@ -81,12 +81,17 @@ Every pack must match its plan-005 captured goldens for blocked/working/idle. Un
 
 ## Done criteria
 
-- [ ] kimi/amp/opencode/claude/codex packs match real captured goldens for blocked, working, and idle
-- [ ] The Claude idle caret uses the real `❯` (U+276F) via an anchored `line_regex`
-- [ ] Loose idle rules (`requires_all=[">"]`) are tightened; no false-idle on arbitrary `>` lines
-- [ ] OSC-title working/idle rules added where the agent emits a title spinner
-- [ ] `packs_load_and_match_fixtures` passes with no `#[ignore]` remaining for these agents
-- [ ] `plans/agent-status/README.md` row updated
+- [ ] kimi/amp/opencode/claude/codex packs match real captured goldens for blocked, working, and idle — BLOCKED
+  until plan 005 real jackin-captured goldens exist
+- [ ] The Claude idle caret uses the real `❯` (U+276F) via an anchored `line_regex` — BLOCKED until the real
+  Claude idle capture exists
+- [ ] Loose idle rules (`requires_all=[">"]`) are tightened; no false-idle on arbitrary `>` lines — BLOCKED
+  until real captures prove the replacement rules
+- [ ] OSC-title working/idle rules added where the agent emits a title spinner — BLOCKED until real captures
+  prove which agents emit title state in-container
+- [ ] `packs_load_and_match_fixtures` passes with no `#[ignore]` remaining for these agents — BLOCKED until
+  plan 005 real goldens exist
+- [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions
 
