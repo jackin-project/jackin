@@ -6875,7 +6875,7 @@ async fn load_agent_injects_op_cli_resolved_value() {
     // with the canonical UUID URI. The fake must handle both.
     std::fs::write(
             &bin_path,
-            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"--\" ] && [ \"$3\" = \"op://abc-vault/abc-item/api-token\" ]; then printf '%s' 'resolved-op-token'; exit 0; fi\nexit 99\n",
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ]; then\n  for arg in \"$@\"; do\n    if [ \"$arg\" = \"op://abc-vault/abc-item/api-token\" ]; then printf '%s' 'resolved-op-token'; exit 0; fi\n  done\nfi\nexit 99\n",
         )
         .unwrap();
     let mut perms = std::fs::metadata(&bin_path).unwrap().permissions();

@@ -487,8 +487,24 @@ pub(super) async fn start_or_hardline_agent(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    start_or_reconnect_capsule_client(paths, container_name, docker, runner).await?;
-    finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
+    use crate::runtime::backend::ContainerBackend as _;
+
+    match crate::runtime::backend::backend_for_state(paths, container_name) {
+        crate::runtime::backend::InstanceBackend::Docker => {
+            let backend = crate::runtime::backend::DockerBackend::new(docker);
+            backend
+                .reconnect(paths, container_name, None, runner)
+                .await?;
+            backend.finalize(paths, container_name, runner).await
+        }
+        crate::runtime::backend::InstanceBackend::AppleContainer => {
+            let backend = crate::runtime::backend::AppleContainerBackend::production();
+            backend
+                .reconnect(paths, container_name, None, runner)
+                .await?;
+            backend.finalize(paths, container_name, runner).await
+        }
+    }
 }
 
 /// Verify the container is reachable (running/paused/restarting).
@@ -741,6 +757,29 @@ pub async fn hardline_agent_with_focus(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    use crate::runtime::backend::ContainerBackend as _;
+
+    match crate::runtime::backend::backend_for_state(paths, container_name) {
+        crate::runtime::backend::InstanceBackend::Docker => {
+            crate::runtime::backend::DockerBackend::new(docker)
+                .hardline(paths, container_name, focus_session, runner)
+                .await
+        }
+        crate::runtime::backend::InstanceBackend::AppleContainer => {
+            crate::runtime::backend::AppleContainerBackend::production()
+                .hardline(paths, container_name, focus_session, runner)
+                .await
+        }
+    }
+}
+
+pub(crate) async fn hardline_docker_agent_with_focus(
+    paths: &JackinPaths,
+    container_name: &str,
+    focus_session: Option<u64>,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
     // Reconcile keep_awake right before each `reconnect_or_create_session_with_focus`
     // call. The attach blocks on the jackin-capsule exec until the session ends,
     // so the post-hardline reconcile in `app::Command::Hardline` would fire
@@ -827,7 +866,7 @@ pub async fn hardline_agent_with_focus(
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
 
-async fn finalize_reconnected_foreground_session(
+pub(crate) async fn finalize_reconnected_foreground_session(
     paths: &JackinPaths,
     container_name: &str,
     docker: &impl DockerApi,

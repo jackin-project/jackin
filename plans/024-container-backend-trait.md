@@ -14,6 +14,11 @@
 - **Depends on**: none
 - **Category**: tech-debt / direction (DEBT-03 + DIRECTION-01)
 - **Planned at**: commit `46511939d`, 2026-07-03
+- **Completed at**: PR 713, 2026-07-04 — `ContainerBackend` now covers persisted lifecycle dispatch
+  (`eject`, purge guard, `reconnect`, `hardline`, required `finalize`). Launch remains backend-specific
+  because its input shape is materially different across Docker and Apple Container; ADR-007 records that
+  decision. Apple Container finalization returns an explicit Phase 0 error until hardware validation proves
+  the real behavior.
 
 ## Why this matters
 
@@ -86,12 +91,21 @@ the `ContainerBackend` trait, Docker-CLI-vs-bollard choice, and the Phase-0 open
 
 ## Done criteria
 
-- [ ] `ContainerBackend` trait exists with `finalize` **required**
-- [ ] Both backends impl it; eject/purge/hardline/reconnect all dispatch through it (no Docker-only lifecycle path remains)
-- [ ] apple-container `finalize` returns an explicit typed error, not a silent no-op
-- [ ] `cargo nextest run -p jackin-runtime` green with backend-agnostic tests using the fake client
-- [ ] ADR written; roadmap `apple-container-backend` Status/Related-Files updated (docs gate)
-- [ ] `plans/README.md` row updated
+- [x] `ContainerBackend` trait exists with `finalize` **required**
+- [x] Both backends impl it; eject/purge/hardline/reconnect all dispatch through it for persisted instances
+- [x] apple-container `finalize` returns an explicit typed error, not a silent no-op
+- [x] `cargo nextest run -p jackin-runtime` green with backend-agnostic tests using the fake client
+- [x] ADR written; roadmap `apple-container-backend` Status/Related-Files updated (docs gate)
+- [x] `plans/README.md` row updated
+
+### Completion notes
+
+- The roadmap path drifted from `docs/content/docs/reference/roadmap/apple-container-backend/` to
+  `docs/content/docs/roadmap/(isolation-security)/apple-container-backend.mdx`; this PR updated the current
+  docs-site location.
+- `launch` was not forced into the trait. Docker and Apple Container launch signatures diverge enough that
+  a shared lowest-common-denominator method would hide meaningful backend capability. ADR-007 makes the
+  narrower persisted-lifecycle boundary explicit.
 
 ## STOP conditions
 
