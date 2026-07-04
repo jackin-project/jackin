@@ -12,7 +12,7 @@ title: "04 — Style and Language Compression — Beyond Caveman"
 - Glyph/symbol prompt DSLs are **anti-recommended on Claude**: telegraphic ASCII English beat a SynthLang-style prompt by ~26% in two independent local samples; exotic glyphs cost **3.9–4.9 tokens each**; the one comprehension study found Claude Haiku 4.5 parses symbolic instructions at 100% but obeys operators at **26% fidelity** (silent disobedience).
 - Because one visible-output token costs as much as **50 cache-read tokens** ($50 vs $1/MTok on Fable 5), compressing the always-cached instruction side is ~50x less valuable per token: a 60% cut of this repo's 2,738-token <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> saves **≈$0.05/session (~1.4%)** — and carries rule-misread risk disproportionate to that.
 
-Cross-references: dollar split and pricing in 01-economics-and-measurement.md; always-on token inventory in 02-baseline-audit.md; instruction-side architecture in 06-context-architecture.md; the output-side sibling levers in 09-output-discipline.md; experiment harness in 16-validation-harness.md.
+Cross-references: dollar split and pricing in [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/); always-on token inventory in [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/); instruction-side architecture in [06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/); the output-side sibling levers in [09 — Output discipline and structured generation](/reference/research/token-optimization-techniques/09-output-discipline/); experiment harness in [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/).
 
 ## Why output register is the only style slice worth real money
 
@@ -184,7 +184,7 @@ Thinking is 54.8% of output tokens, billed in full though displayed summarized, 
 - **Quality risk:** **QUALITY-TRADE by design** ("Significant token savings with some capability reduction" at low), but vendor-tuned: "Lower effort settings on Claude Fable 5 still perform well and often exceed `xhigh` performance on prior models" (live docs). For Opus 4.7+ docs say raise effort rather than prompting around shallow reasoning. Degradation manifests as scoped-to-the-letter work and skipped verification.
 - **Availability:** CLAUDE-CODE-TODAY — `/effort` slider (low/medium/high/xhigh/max + ultracode = xhigh + workflow orchestration permission), `CLAUDE_CODE_EFFORT_LEVEL` env, `effortLevel` setting, and per-skill/per-subagent `effort` frontmatter (live model-config page) — that last one enables effort-routing inside one session. SDK: `output_config.effort`.
 - **Effort to adopt:** trivial (one setting).
-- **Composability:** the complement to everything here — style handles visible 17%, effort handles thinking 20% + tool calls, context hygiene handles the 61% cache side (see 06-context-architecture.md). Subagent frontmatter effort + terse style is the natural stack for delegated work.
+- **Composability:** the complement to everything here — style handles visible 17%, effort handles thinking 20% + tool calls, context hygiene handles the 61% cache side (see [06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/)). Subagent frontmatter effort + terse style is the natural stack for delegated work.
 - **Validation protocol:** fixed 20-task suite at effort = &#123;low, medium, high&#125; × &#123;default, telegraphic&#125; style: record output tokens, thinking share (output_tokens − visible count_tokens), tool calls, tests-pass. This produces the missing public number (effort-level token deltas) AND tests whether style and effort interact; also A/B a CLAUDE.md line "think less often on routine steps" to quantify the newly documented frequency guidance.
 
 ### 10. Instruction-side compression (caveman-compress on CLAUDE.md/memory files) — real but cache-discounted ~50:1
@@ -198,7 +198,7 @@ Compressing always-on instructions saves every turn, but at cache-read rates: a 
 - **Quality risk:** **RISKY disproportionately to the tiny savings**: compressed RULES are re-interpreted every turn and no one has benchmarked instruction-following fidelity of caveman-register rule files; one misread hard rule (this repo's never-commit-to-`main`) outweighs a year of nickels. Verdict: RISKY; prefer deleting stale rules over compressing live ones.
 - **Availability:** CLAUDE-CODE-TODAY (`/caveman-compress FILE`).
 - **Effort to adopt:** minutes per file.
-- **Composability:** orthogonal to output-side techniques; **dominated by deferred tool loading on the same surface** (phase-0: 11 MCP schemas = 1,420 tok loaded vs ~60 tok as deferred names — a bigger instruction-side win with zero comprehension risk; see 06-context-architecture.md).
+- **Composability:** orthogonal to output-side techniques; **dominated by deferred tool loading on the same surface** (phase-0: 11 MCP schemas = 1,420 tok loaded vs ~60 tok as deferred names — a bigger instruction-side win with zero comprehension risk; see [06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/)).
 - **Validation protocol:** instruction-following A/B — 30 prompts that each tempt violation of one CLAUDE.md rule, original vs compressed file, score violations; plus measure turns-to-compaction on a long session with each file to quantify the deferral benefit.
 
 ### 11. System-2-to-System-1 distillation — verbosity baked out at training time
@@ -237,7 +237,7 @@ Meta distilled System-2 pipelines into direct answers: 147 → 56 output tokens 
 4. **No published effort-level token percentages** — the single most important comparison (effort=medium vs caveman-ultra, same task) has no public numbers; technique 9's protocol generates them.
 5. **MetaGlyph is a single-author, unreplicated preprint** with no Fable/Opus-class Claude data; the 26%-fidelity figure needs replication before it graduates past T4.
 6. **Cross-tokenizer transfer** of relative register savings held in two local pairs (−59.7% Fable vs −64.4% Sonnet 4.6; sweep: 51.4% vs 52.8%) but absolute counts differ +22–38%; no systematic study. The research field optimizes prompt-side compression while cached agent workloads make output-side register the 50x-leveraged target.
-7. The phase-0 figures leaned on throughout (thinking 54.8%, caveman-ultra 58.5%, dollar split) are **n=1 session-level measurements** pending replication (see 16-validation-harness.md).
+7. The phase-0 figures leaned on throughout (thinking 54.8%, caveman-ultra 58.5%, dollar split) are **n=1 session-level measurements** pending replication (see [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/)).
 
 ## Verification ledger
 
@@ -251,7 +251,7 @@ Meta distilled System-2 pipelines into direct answers: 147 → 56 output tokens 
 | Wenyan 9 vs 8 tok; 32/30/25; 0.89–0.91 chars/tok | Local, same script |
 | Alias 29→3 (−89.7%), 18→5; legend 32 tok; CoD prompt 48; "Be concise." 4; budget line 17 | Local, same script + follow-up run |
 | Fable vs Sonnet 4.6 +22.0% / +38.1%; relative cut −59.7 vs −64.4% | Local, same script, both model ids |
-| Caveman-ultra 58.5%; wenyan-full 56.6% (80.9% char); wenyan-ultra 74.5%; thinking 54.8% of output; prompt mix 0.44/6.73/92.83%; dollar split 32/29/20/17/2; <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> 2,738 tok; MCP 1,420 vs ~60 tok | Local phase-0 measurements (see 01-economics-and-measurement.md, 02-baseline-audit.md) |
+| Caveman-ultra 58.5%; wenyan-full 56.6% (80.9% char); wenyan-ultra 74.5%; thinking 54.8% of output; prompt mix 0.44/6.73/92.83%; dollar split 32/29/20/17/2; <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> 2,738 tok; MCP 1,420 vs ~60 tok | Local phase-0 measurements (see [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/), [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/)) |
 | ≈$0.05/session for 60% <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> cut; 50:1 output:cache-read value; 10.2% / 12.7% session-dollar arithmetic | ESTIMATE, arithmetic shown inline, on modeled session profile + reference pricing ($10/$50, cache read 0.1x, write 1.25x) |
 | Output-styles mechanism quotes; keep-coding-instructions default false; style-change cache note | https://code.claude.com/docs/en/output-styles |
 | "charged for the full thinking tokens... not the summary tokens"; Fable 5 thinking cannot be disabled; budget_tokens deprecated | https://platform.claude.com/docs/en/build-with-claude/extended-thinking |

@@ -34,9 +34,9 @@ Partially.
 
 | Existing file | What it already says | Gap this file closes |
 |---|---|---|
-| `08-retrieval-memory-and-state.md` | Semantic/RAG repo indexes may improve accuracy, but token savings vs agentic grep/read are unmeasured; validation protocol required. | Names Qdrant and scores whether it should be the backend for that protocol. |
-| `13-infrastructure-level.md` | Qdrant appears as a possible semantic-cache backend in LiteLLM; semantic response caching is a poor fit for coding agents. | Separates Qdrant-as-vector-store from semantic whole-response caching. |
-| `19-code-intelligence-tools.md` | Compares codedb, fff, CodeGraff, Serena, Code Context Engine, Claude Context, Sourcegraph, Qodo, and others. | Adds the raw vector database layer beneath Code Context Engine / Claude Context. |
+| [08 — Retrieval, memory, and state offloading](/reference/research/token-optimization-techniques/08-retrieval-memory-and-state/) | Semantic/RAG repo indexes may improve accuracy, but token savings vs agentic grep/read are unmeasured; validation protocol required. | Names Qdrant and scores whether it should be the backend for that protocol. |
+| [13 — Infrastructure-level (self-hosted / gateway tier)](/reference/research/token-optimization-techniques/13-infrastructure-level/) | Qdrant appears as a possible semantic-cache backend in LiteLLM; semantic response caching is a poor fit for coding agents. | Separates Qdrant-as-vector-store from semantic whole-response caching. |
+| [19 — Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization-tools/19-code-intelligence-tools/) | Compares codedb, fff, CodeGraff, Serena, Code Context Engine, Claude Context, Sourcegraph, Qodo, and others. | Adds the raw vector database layer beneath Code Context Engine / Claude Context. |
 
 So Qdrant is **not missing as a concept**, but it was missing as a concrete
 candidate for the current `fff + codedb` plan.
@@ -399,6 +399,6 @@ it is a backend candidate, not part of the default stack.
 - Turbopuffer documentation: [https://turbopuffer.com/docs/index](https://turbopuffer.com/docs/index)
 - Pinecone vector database explainer: [https://www.pinecone.io/learn/vector-database/](https://www.pinecone.io/learn/vector-database/)
 - pgvector repository: [https://github.com/pgvector/pgvector](https://github.com/pgvector/pgvector)
-- Existing semantic/RAG discussion: `token-optimization-techniques/08-retrieval-memory-and-state.md`
-- Existing semantic-cache discussion: `token-optimization-techniques/13-infrastructure-level.md`
-- Existing code-intelligence comparison: `token-optimization-tools/19-code-intelligence-tools.md`
+- Existing semantic/RAG discussion: [08 — Retrieval, memory, and state offloading](/reference/research/token-optimization-techniques/08-retrieval-memory-and-state/)
+- Existing semantic-cache discussion: [13 — Infrastructure-level (self-hosted / gateway tier)](/reference/research/token-optimization-techniques/13-infrastructure-level/)
+- Existing code-intelligence comparison: [19 — Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization-tools/19-code-intelligence-tools/)

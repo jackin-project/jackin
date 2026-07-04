@@ -4,11 +4,11 @@ title: "11 — Multi-agent protocols and subagent compression"
 
 # 11 — Multi-agent protocols and subagent compression
 
-Area H. Siblings: cost model and heavy-day profile in `01-economics-and-measurement.md` (§5); register mechanics in `04-style-and-language-compression.md`; tokenizer effects in `05-tokenizer-arbitrage.md`; cache mechanics in `07-caching-exploitation.md`; worker down-routing in `10-model-routing-and-delegation.md`; self-host-only inference plays in `13-infrastructure-level.md`; eval design in `16-validation-harness.md`.
+Area H. Siblings: cost model and heavy-day profile in [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) (§5); register mechanics in [04 — Style and Language Compression — Beyond Caveman](/reference/research/token-optimization-techniques/04-style-and-language-compression/); tokenizer effects in [05 — Tokenizer arbitrage](/reference/research/token-optimization-techniques/05-tokenizer-arbitrage/); cache mechanics in [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/); worker down-routing in [10 — Model routing and tiered delegation](/reference/research/token-optimization-techniques/10-model-routing-and-delegation/); self-host-only inference plays in [13 — Infrastructure-level (self-hosted / gateway tier)](/reference/research/token-optimization-techniques/13-infrastructure-level/); eval design in [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/).
 
 Arithmetic in this file uses the **$17/day floor variant** of the modeled profile from [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) unless
 explicitly tied to the local 25-agent fleet case study. Multiply floor-profile dollar figures by
-~1.28 to compare against the $22/day working variant used in `15-composed-stacks.md`.
+~1.28 to compare against the $22/day working variant used in [15 — Composed Stacks: Conservative / Aggressive / Unbelievable](/reference/research/token-optimization-techniques/15-composed-stacks/).
 
 **TL;DR**
 
@@ -57,12 +57,12 @@ Readings (all local measurement or arithmetic on it):
 
 **Layer:** orchestration / context hygiene
 **Mechanism:** SDK semantics above; Claude Code costs docs: "the verbose output stays in the subagent's context while only a summary returns to your main conversation." Each spawn re-pays project context (CLAUDE.md = 2,744 tok in this repo, local re-count via /tmp/ct.py) plus tool defs; subagents cannot nest. Orchestrator-side spec discipline is part of the protocol: "Each subagent needs an objective, an output format, guidance on the tools and sources to use, and clear task boundaries" — Anthropic reports vague specs made subagents "misinterpret the task" and duplicate work.
-**Expected savings:** Keeping a 10k-tok log/test payload out of a parent with 30 turns left avoids ~10k×(1.25+2.9)×$10/M ≈ $0.42 input spend per occurrence, against ~$0.11 spawn overhead (local) plus report cost → net ~$0.25-0.30/occurrence. On the `01-economics-and-measurement.md` §5 profile ($17.00/day), five such delegations/day ≈ $1.3-1.5 ≈ 8-9% (ESTIMATE), plus deferred compaction. Counterweight: agents ≈4x chat, parallel research multi-agent ≈15x — delegation saves only on verbose side-tasks.
+**Expected savings:** Keeping a 10k-tok log/test payload out of a parent with 30 turns left avoids ~10k×(1.25+2.9)×$10/M ≈ $0.42 input spend per occurrence, against ~$0.11 spawn overhead (local) plus report cost → net ~$0.25-0.30/occurrence. On the [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) §5 profile ($17.00/day), five such delegations/day ≈ $1.3-1.5 ≈ 8-9% (ESTIMATE), plus deferred compaction. Counterweight: agents ≈4x chat, parallel research multi-agent ≈15x — delegation saves only on verbose side-tasks.
 **Evidence tier:** T1 — shipped product + vendor measurements (code.claude.com/docs/en/agent-sdk/subagents; anthropic.com/engineering/multi-agent-research-system; code.claude.com/docs/en/costs) + local arithmetic.
 **Quality risk:** NEGATIVE-COST for verbose side-ops; RISKY for tightly-coupled implementation work — Cognition: "Actions carry implicit decisions, and conflicting decisions carry bad results." Falsification: A/B tightly-coupled refactors inline vs delegated; if the delegated arm shows conflicting-edit rework, restrict delegation to read-only/verbose ops. Verdict: NEGATIVE-COST within scope.
 **Availability:** CLAUDE-CODE-TODAY (built-in Explore/Plan/general-purpose + custom agents; /usage attributes subagent spend).
 **Effort to adopt:** None for built-ins; minutes for a custom agent file.
-**Composability:** Substrate for H2-H5; pairs with worker down-routing (`10-model-routing-and-delegation.md`); conflicts with nothing.
+**Composability:** Substrate for H2-H5; pairs with worker down-routing ([10 — Model routing and tiered delegation](/reference/research/token-optimization-techniques/10-model-routing-and-delegation/)); conflicts with nothing.
 **Validation protocol:** One week of delegating log-reads/test-runs vs one week inline; compare /usage subagent attribution, parent compaction frequency, and task outcomes.
 
 ### H2. Compressed report registers at the agent→agent interface (cavecrew baseline) — reports are machine-audience text; enforce a terse format, and plan on 40-50%, not the advertised 60-75%
@@ -74,8 +74,8 @@ Readings (all local measurement or arithmetic on it):
 **Quality risk:** NEUTRAL for single-hop locator/review reports (paths, symbols, line numbers preserved verbatim by design; the agent file has an auto-clarity escape hatch for security warnings); RISKY for multi-hop relay of nuanced rationale — decode-side reliability is unmeasured anywhere (gap). Falsification: 20-question decode eval — orchestrator answers questions from register vs prose reports; if downstream error rate rises >2 points, restrict register to locator content. Verdict: NEUTRAL within single-hop scope.
 **Availability:** CLAUDE-CODE-TODAY (plugin installed here; any output-format paragraph in an agent definition reproduces the effect with zero dependencies).
 **Effort to adopt:** Trivial — the savings come from the format constraint, not plugin machinery.
-**Composability:** Multiplies with H1 (applies exactly at the re-read interface); stacks with Haiku down-routing (same payload 135 vs 170 tok under the Sonnet/Haiku tokenizer — `05-tokenizer-arbitrage.md`); choose one register per interface vs H3.
-**Validation protocol:** count_tokens A/B on same-information report pairs (harness per `16-validation-harness.md`); always count with the Anthropic tokenizer, never tiktoken.
+**Composability:** Multiplies with H1 (applies exactly at the re-read interface); stacks with Haiku down-routing (same payload 135 vs 170 tok under the Sonnet/Haiku tokenizer — [05 — Tokenizer arbitrage](/reference/research/token-optimization-techniques/05-tokenizer-arbitrage/)); choose one register per interface vs H3.
+**Validation protocol:** count_tokens A/B on same-information report pairs (harness per [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/)); always count with the Anthropic tokenizer, never tiktoken.
 
 ### H3. Schema-constrained interchange (StructuredOutput between agents) — schemas save by what they FORBID; JSON syntax itself is a token tax
 
@@ -119,7 +119,7 @@ JSON costs +35% over compact lines and +10.6% over a table for the same content 
 **Quality risk:** NEUTRAL — identical work either way; pure cost-latency trade. Falsification: spawn 5 identical agents simultaneously vs staggered and diff per-spawn cache_creation_input_tokens; if equal, the harness already staggers and this technique is moot in Claude Code. Verdict: NEUTRAL.
 **Availability:** CLAUDE-CODE-TODAY (spawn phrasing: "one at a time" vs "in parallel"); SDK gives full control.
 **Effort to adopt:** None — one sentence of orchestrator instruction (pre-warm pattern).
-**Composability:** Interacts with everything that fattens the shared prefix — CLAUDE.md (2,744 tok), MCP schemas (1,420 tok loaded vs ~60 deferred, local) — the fatter the prefix, the more staggering pays; see `07-caching-exploitation.md`.
+**Composability:** Interacts with everything that fattens the shared prefix — CLAUDE.md (2,744 tok), MCP schemas (1,420 tok loaded vs ~60 deferred, local) — the fatter the prefix, the more staggering pays; see [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/).
 **Validation protocol:** The falsification experiment above, run once per harness version.
 
 ### H6. KV-cache and latent interchange (DroidSpeak, C2C, activation channels) — the research frontier, NOT-USER-ACCESSIBLE
@@ -129,7 +129,7 @@ JSON costs +35% over compact lines and +10.6% over a table for the same content 
 **Expected savings:** 0 billed tokens on any metered API. Self-host: 2.5-4x latency/throughput class, per papers.
 **Evidence tier:** T2 (arXiv + ICLR'26, code released for C2C; no independent replication with numbers found).
 **Quality risk:** NEUTRAL per paper metrics ("negligible" loss, unquantified in abstracts); RISKY systemically — latent messages are unauditable, colliding with any review/safety gate that reads inter-agent traffic. Falsification: n/a for hosted users. Verdict: NOT-USER-ACCESSIBLE; the shipped analog of "don't re-prefill shared context" is prompt caching at 0.1x reads.
-**Availability:** NOT-USER-ACCESSIBLE (GATEWAY-OR-SELF-HOST at absolute best, same-architecture pairs, custom serving — see `13-infrastructure-level.md`).
+**Availability:** NOT-USER-ACCESSIBLE (GATEWAY-OR-SELF-HOST at absolute best, same-architecture pairs, custom serving — see [13 — Infrastructure-level (self-hosted / gateway tier)](/reference/research/token-optimization-techniques/13-infrastructure-level/)).
 **Effort to adopt:** Research-grade.
 **Composability:** Family-exclusive with text protocols; conceptually motivates the deployable middle ground (H2 registers + H4 artifacts).
 **Validation protocol:** None possible against the hosted API. Citation hygiene: pin arXiv versions — the seeded 2.78x is stale by two revisions (now 3.1x/4x).
@@ -144,7 +144,7 @@ JSON costs +35% over compact lines and +10.6% over a table for the same content 
 **Availability:** CLAUDE-CODE-TODAY (design rule).
 **Effort to adopt:** None.
 **Composability:** Gates H2/H3; H4 is the escape hatch (fidelity via byte-exact files, economy via terse summaries).
-**Validation protocol:** Track rework rate on compressed vs full task specs; run the 1-2-hop decode eval per `16-validation-harness.md`.
+**Validation protocol:** Track rework rate on compressed vs full task specs; run the 1-2-hop decode eval per [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/).
 
 ### H8. Script-side orchestration (Workflow tool, hook preprocessing) — coordination tokens that never touch the model
 
@@ -210,5 +210,5 @@ JSON costs +35% over compact lines and +10.6% over a table for the same content 
 | 25 | Workflow tool (script-side orchestration), version | TS SDK v0.3.149+ | code.claude.com/docs/en/agent-sdk/subagents |
 | 26 | A2A envelope overhead (request / Task response) | +88 / +203 tok | local minimal-envelope count_tokens from a2a-protocol.org v1.0.0 spec fields |
 | 27 | MCP schemas loaded vs deferred | 1,420 vs ~60 tok | local measurement |
-| 28 | Modeled day profile used for % arithmetic | $17.00/day; $1.70/task | `01-economics-and-measurement.md` §5 (local model) |
-| 29 | Tokenizer divergence (Fable vs Sonnet/Haiku) on identical text | 15-38% sample-dependent; register payload 170 vs 135 tok | local measurement; `05-tokenizer-arbitrage.md` |
+| 28 | Modeled day profile used for % arithmetic | $17.00/day; $1.70/task | [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) §5 (local model) |
+| 29 | Tokenizer divergence (Fable vs Sonnet/Haiku) on identical text | 15-38% sample-dependent; register payload 170 vs 135 tok | local measurement; [05 — Tokenizer arbitrage](/reference/research/token-optimization-techniques/05-tokenizer-arbitrage/) |

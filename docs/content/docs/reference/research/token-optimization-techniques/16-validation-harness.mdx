@@ -19,7 +19,7 @@ Any technique or stack in this dossier earns "no quality loss" only by passing t
  exact string-level assertion.
 - **Tokens by class** come from `usage` in `claude -p --output-format json` (plus OTel or session
  JSONL for per-call decomposition); dollars are computed with the live price table in
- 01-economics-and-measurement.md.
+ [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/).
 - A technique is **NEGATIVE-COST** only if it wins cost *and* its success rate is ≥ baseline at
  n≥30 — the bar folklore numbers never clear.
 
@@ -79,7 +79,7 @@ suite score. Exact assertions:
 
 Rationale: these are precisely what register compression (caveman/wenyan), terse-output prompts,
 summarization, and aggressive pruning are most likely to silently drop — short connectives,
-negations, and qualifiers carry disproportionate meaning per token (04-style-and-language-compression.md).
+negations, and qualifiers carry disproportionate meaning per token ([04 — Style and Language Compression — Beyond Caveman](/reference/research/token-optimization-techniques/04-style-and-language-compression/)).
 
 ## 4. Runner (concrete)
 
@@ -109,9 +109,9 @@ CLAUDE.md, plugins) so arms cannot leak into each other. For techniques that are
 rather than config (e.g. "/clear between tasks"), encode the habit in the driver, not the prompt.
 
 Dollars: prefer `total_cost_usd` from the envelope; recompute from `usage` × the price table
-(01-economics-and-measurement.md §1) as a cross-check. Per-call class decomposition when needed:
+([01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) §1) as a cross-check. Per-call class decomposition when needed:
 enable OTel (`claude_code.token.usage` by `type`) or parse the session JSONL **deduplicating by
-`message.id`** (trap documented in 02-baseline-audit.md §1).
+`message.id`** (trap documented in [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/) §1).
 
 ## 5. Judging
 
@@ -188,6 +188,6 @@ instantiation of this harness:
 | Item | Basis |
 |---|---|
 | `claude -p --output-format json` envelope fields (usage, total_cost_usd, num_turns) | Claude Code headless mode docs — code.claude.com/docs ; field names cross-checked against local CLI output format |
-| Price table used for $ math | 01-economics-and-measurement.md (live-) |
-| JSONL dedup + thinking-redaction traps | Local measurement, 02-baseline-audit.md |
+| Price table used for $ math | [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) (live-) |
+| JSONL dedup + thinking-redaction traps | Local measurement, [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/) |
 | δ=5pp, n=12/30, bootstrap procedure | Design choices (stated, not claimed as external standard); power statements are arithmetic over binomial outcomes — ESTIMATE |

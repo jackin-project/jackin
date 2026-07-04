@@ -21,7 +21,7 @@ Method: every doc claim re-fetched live from platform.claude.com (docs.claude.co
 | Cache reads 32% | ~$7.0 | compaction (caps re-read context), context editing, tool search (smaller prefix), 1M discipline |
 | Cache writes 29% | ~$6.4 | compaction (shorter prefixes re-written), avoiding cache busts (defer_loading, stable thinking mode) |
 | Thinking output 20% | ~$4.4 | effort (only lever on Fable 5), per-message steering |
-| Visible output 17% | ~$3.7 | effort (affects ALL response tokens), see 09-output-discipline.md |
+| Visible output 17% | ~$3.7 | effort (affects ALL response tokens), see [09 — Output discipline and structured generation](/reference/research/token-optimization-techniques/09-output-discipline/) |
 | Uncached input 2% | ~$0.4 | nothing needed — caching already absorbs it |
 
 ## Local measurements (count_tokens API, method: /tmp/ct.py)
@@ -60,7 +60,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 - **Quality risk:** NEUTRAL — identical model output; pure price arbitrage. Falsification: none needed; verify via `usage.cache_read_input_tokens > 0`.
 - **Availability:** CLAUDE-CODE-TODAY (applied automatically; the 92.83% read share is the proof) + SDK for breakpoint/TTL control.
 - **Effort to adopt:** zero in Claude Code; minutes in API code. 1h TTL only wins when request gaps exceed 5 min — free refresh makes 5m TTL sufficient for active sessions.
-- **Composability:** multipliers stack with Batch 50% and data-residency 1.1x ("These multipliers stack with other pricing modifiers"). Tension: context editing/compaction invalidate cache at the edit point; defer_loading and stable adaptive thinking preserve it. See 07-caching-exploitation.md.
+- **Composability:** multipliers stack with Batch 50% and data-residency 1.1x ("These multipliers stack with other pricing modifiers"). Tension: context editing/compaction invalidate cache at the edit point; defer_loading and stable adaptive thinking preserve it. See [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/).
 - **Validation protocol:** for any session, assert `cache_read_input_tokens / (input + cache_creation + cache_read) > 0.85` across calls 2..N; alert on zero reads with identical prefixes (silent invalidator). Distinguish 5m vs 1h writes via the per-TTL cache_creation breakdown fields in usage.
 
 ### 2. Server-side compaction (`compact_20260112`) — API-native auto-summarization
@@ -94,7 +94,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 - **Availability:** CLAUDE-CODE-TODAY (effort menu) + SDK.
 - **Effort to adopt:** minutes (menu item / one field); the real work is the eval.
 - **Composability:** consecutive adaptive-mode requests preserve cache; SWITCHING thinking mode busts message cache (system/tools survive). Per-message steering ("Answer directly without deliberating.") works with no parameter change at all → zero cache impact.
-- **Validation protocol:** fixed Claude Code task set at low/medium/high/xhigh; read `output_tokens_details.thinking_tokens` per run; report tokens + pass-rate per level. This closes the dossier's biggest missing number and re-bases the 54.8% n=1. See 16-validation-harness.md.
+- **Validation protocol:** fixed Claude Code task set at low/medium/high/xhigh; read `output_tokens_details.thinking_tokens` per run; report tokens + pass-rate per level. This closes the dossier's biggest missing number and re-bases the 54.8% n=1. See [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/).
 
 ### 5. Prior-turn thinking retention — the hidden input-side cost of reasoning models
 - **Layer:** input / context lifecycle.
@@ -148,7 +148,7 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 - **Quality risk:** RISKY if treated as free headroom — the same page warns "more context isn't automatically better. As token count grows, accuracy and recall degrade, a phenomenon known as context rot." Compaction/editing stay worthwhile below the hard limit.
 - **Availability:** CLAUDE-CODE-TODAY (the [1m] variant / Fable 5 default) + SDK. Bedrock/Vertex 1M listed for Opus 4.8/4.7/4.6/Sonnet 4.6; Fable 5 wording covers the Claude API.
 - **Effort to adopt:** none (update spreadsheets, not code).
-- **Composability:** see records 2-3 for the quality counterweight; see 06-context-architecture.md.
+- **Composability:** see records 2-3 for the quality counterweight; see [06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/).
 - **Validation protocol:** n/a for pricing; for quality, recall probes at 100k/300k/600k context on your tasks before relying on deep-window placement.
 
 ### 10. Tokenizer-aware model offload — cheap models also count fewer tokens
@@ -260,5 +260,5 @@ One negative result: count_tokens REJECTS fabricated thinking-block signatures (
 | Tokenizer deltas +37.9% prose / +27.7% Rust / +8.9% JSON; Fable 5 ≡ Opus 4.8; Sonnet 4.6 ≡ Haiku 4.5; 2.81 vs 3.88 chars/tok | local measurement, /tmp/ct.py vs count_tokens API (samples: repo README/stories.rs/8x get_weather JSON) |
 | Tool overhead: 403/19 (Fable 5 & Opus 4.8), 793/24 (4.7), 587/16 (Sonnet 4.6), 586/16 (Haiku 4.5) | local measurement, /tmp/ct.py with --tools (exact match to docs' 403 example) |
 | count_tokens rejects fabricated thinking signatures (400) | local measurement, /tmp/ct.py |
-| 54.8% thinking share; 0.44/6.73/92.83% prompt mix; 32/29/20/17/2% dollar split; ~$22/day; 1,420 vs ~60 tok MCP schemas; caveman/wenyan cuts | local Phase-0 measurements (see 01-economics-and-measurement.md, 02-baseline-audit.md) |
+| 54.8% thinking share; 0.44/6.73/92.83% prompt mix; 32/29/20/17/2% dollar split; ~$22/day; 1,420 vs ~60 tok MCP schemas; caveman/wenyan cuts | local Phase-0 measurements (see [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/), [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/)) |
 | ~$85 vs ~$22 no-cache counterfactual; 0.05x batched cache read; 4.3-4.6x effective Fable:Sonnet ratio; 150k-vs-1M ≈ 85% cap; 10% session cut per 50% thinking reduction | ESTIMATE — arithmetic shown inline on the modeled session profile |

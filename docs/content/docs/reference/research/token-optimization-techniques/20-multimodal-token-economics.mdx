@@ -7,7 +7,7 @@ title: "20 — Multimodal token economics: images, screenshots, PDFs"
 Volume II area file for blind spot 2 (multimodal), which Volume
 I left near-blank: a grep of all 4,303 dossier lines for image/screenshot/vision/PDF terms returns
 zero substantive hits, the lone adjacent fact being one "~125k tokens per 500 kB PDF" page-size
-estimate in `03-prior-art-and-market-scan.md:267` and `12-provider-features.md:165`. Every number
+estimate in [03 — Prior art and market scan](/reference/research/token-optimization-techniques/03-prior-art-and-market-scan/):267` and [12 — Provider-level features, current and beta](/reference/research/token-optimization-techniques/12-provider-features/):165`. Every number
 below is either a live primary-doc quote or a local `count_tokens`
 measurement with the method shown. Plain-language writing rules per Volume I §10.
 
@@ -36,7 +36,7 @@ measurement with the method shown. Plain-language writing rules per Volume I §1
  PDFs, and crop to the region of interest. All are `CLAUDE-CODE-TODAY` or hook-level and
  NEGATIVE-COST-to-NEUTRAL on quality. None appear in Volume I.
 
-Pricing and the modeled session profile are inherited from `01-economics-and-measurement.md`. The
+Pricing and the modeled session profile are inherited from [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/). The
 Fable-family tokenizer is measured on `claude-opus-4-8` (its documented tokenizer twin) because
 `count_tokens` now accepts `claude-fable-5` directly (live probe HTTP 200, count identical to `claude-opus-4-8`); it rejected the id at Volume II research time (see 18), which is why the measurements below were counted on `claude-opus-4-8` — same tokenizer either way, so they stand.
 
@@ -314,6 +314,6 @@ text paths (DOM, logs, file reads) are exhausted.
 | 6 | PDF: 1pg×5ln = 1,742/1,700; 1pg×50ln = 3,182/2,780; 3/10/25 pg = 9,484/31,541/78,806 (Opus, ~3,150 tok/pg); 2txt+1img = 7,886/7,083 | `/tmp/mkpdf.py` (zlib, correct xref) → `/tmp/ctpdf.py` |
 | 7 | PDF tax: same 50 lines raw-text Opus 1,605 / Sonnet 1,206 vs PDF 3,182 / 2,780 = 1.98× / 2.30× | count_tokens on identical text vs its 1-page PDF |
 | 8 | Per-page "1,500–3,000 tokens"; each page = page-image + extracted text; Bedrock text-only ≈1,000 vs full ≈7,000 tok/3 pages; limits 32 MB / 600 pages (100 for 200k-context) | platform.claude.com/docs/en/build-with-claude/pdf-support (live fetch) |
-| 9 | Screenful as text: dense Rust (~2 KB) Opus 765 / Sonnet 593; wide markdown (~4.6 KB) Opus 1,951 / Sonnet 1,468 | count_tokens on real repo files (<RepoFile path="crates/jackin-capsule/src/git_context.rs">crates/jackin-capsule/src/git_context.rs</RepoFile> L100-149; `03-prior-art-and-market-scan.md` L1-50) |
+| 9 | Screenful as text: dense Rust (~2 KB) Opus 765 / Sonnet 593; wide markdown (~4.6 KB) Opus 1,951 / Sonnet 1,468 | count_tokens on real repo files (<RepoFile path="crates/jackin-capsule/src/git_context.rs">crates/jackin-capsule/src/git_context.rs</RepoFile> L100-149; [03 — Prior art and market scan](/reference/research/token-optimization-techniques/03-prior-art-and-market-scan/) L1-50) |
 | 10 | Wrapper constant ~6–8 tok ("a" = 7; empty rejected) | count_tokens probe |
 | 11 | Local env runs Opus 4.8 main (465/560 calls) + Haiku subagents (95) | transcript scan, `~/.claude/projects/**/*.jsonl` |

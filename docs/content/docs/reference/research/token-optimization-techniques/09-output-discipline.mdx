@@ -14,7 +14,7 @@ title: "09 — Output discipline and structured generation"
 
 ## Why this layer matters
 
-On the modeled heavy day (~$22, 6 sessions, ~27k output tok/session — see 01-economics-and-measurement.md), output is ~$8.14/day: ~$4.40 thinking + ~$3.74 visible (prose + tool arguments). Three structural facts shape everything below:
+On the modeled heavy day (~$22, 6 sessions, ~27k output tok/session — see [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/)), output is ~$8.14/day: ~$4.40 thinking + ~$3.74 visible (prose + tool arguments). Three structural facts shape everything below:
 
 1. **Thinking is the majority of output (54.8% locally) and is prompt-immune on Fable 5.** "Thinking cannot be turned off on Fable 5. The session toggle, `alwaysThinkingEnabled`, and `MAX_THINKING_TOKENS=0` have no effect there" (code.claude.com/docs/en/model-config). Effort is the only knob.
 2. **Tool arguments are output.** A Write call's `content` field is model-generated text billed at $50/MTok. Edit-vs-Write is therefore an output-discipline question, not a tooling preference.
@@ -22,7 +22,7 @@ On the modeled heavy day (~$22, 6 sessions, ~27k output tok/session — see 01-e
 
 ## Local measurements 
 
-Method: free `count_tokens` API, model `claude-fable-5`, each payload sent as a single user message; 1-char baseline message = 7 tok envelope, subtracted in % columns. Measurement script reproduced in 16-validation-harness.md style: simulate the exact JSON a tool call would carry. File under test: <RepoFile path="crates/jackin-config/src/app_config/workspaces.rs">crates/jackin-config/src/app_config/workspaces.rs</RepoFile> (200 lines); change under test: a realistic 5-line method addition with a 5-line unique anchor.
+Method: free `count_tokens` API, model `claude-fable-5`, each payload sent as a single user message; 1-char baseline message = 7 tok envelope, subtracted in % columns. Measurement script reproduced in [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/) style: simulate the exact JSON a tool call would carry. File under test: <RepoFile path="crates/jackin-config/src/app_config/workspaces.rs">crates/jackin-config/src/app_config/workspaces.rs</RepoFile> (200 lines); change under test: a realistic 5-line method addition with a 5-line unique anchor.
 
 | Measurement | Tokens | Comparator | Tokens | Saved |
 |---|---|---|---|---|
@@ -105,7 +105,7 @@ One-line pitch: grammar-constrained decoding kills both the prose wrapper around
 - **Quality risk:** NEUTRAL on format. Two documented schema-violating edge cases: `stop_reason: "refusal"` (200 status, billed, schema overridden) and `stop_reason: "max_tokens"` (truncated JSON — "Retry with a higher max_tokens"). Schema limits: no recursive schemas, no numeric `minimum`/`maximum`/`multipleOf`, max 20 strict tools, 24 optional params across strict schemas. Falsification: log schema-parse failures; should be exactly zero outside those two stop reasons.
 - **Availability:** SDK (and subagent/SDK tool-schema paths). The Claude Code REPL does NOT expose schema-constrained final answers (open feature request, github.com/anthropics/claude-code/issues/9058) — though this very research task returns via a StructuredOutput tool schema, the subagent path.
 - **Effort to adopt:** hours (schema design + pipeline wiring).
-- **Composability:** **CACHE PITFALL** — "Changing the `output_config.format` parameter will invalidate any prompt cache for that conversation thread." Against the local profile (92.83% of prompt-side tokens are 0.1x cache reads), rotating schemas mid-thread converts reads back to 1x + 1.25x writes and can swamp the output saving. One stable schema per thread; see 07-caching-exploitation.md. Supersedes prefill (#6); redundant with stop sequences (#8) for JSON.
+- **Composability:** **CACHE PITFALL** — "Changing the `output_config.format` parameter will invalidate any prompt cache for that conversation thread." Against the local profile (92.83% of prompt-side tokens are 0.1x cache reads), rotating schemas mid-thread converts reads back to 1x + 1.25x writes and can swamp the output saving. One stable schema per thread; see [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/). Supersedes prefill (#6); redundant with stop sequences (#8) for JSON.
 - **Validation protocol:** 200-call extraction batch, constrained vs unconstrained: measure parse-failure rate, total output tokens, input-token delta (quantifies the hidden prompt), and cache-hit rate across the thread. Accept if failures → 0 with input-token overhead < wrapper savings and zero unintended cache invalidations.
 
 ### 6. Assistant prefill to skip preamble — a dying technique
@@ -235,7 +235,7 @@ One-line pitch: the anti-claim that bounds every entry above — each problem ha
 | Output styles deprecate/un-deprecate/v2.1.91 removal | timeline | github.com/anthropics/claude-code/issues/10671 |
 | Caveman/wenyan register cuts | 58.5% / 56.6% / 74.5% token; 80.9% char | local Phase-0 measurement |
 | Thinking share of output at max effort | 54.8% (n=1) | local Phase-0: usage.output_tokens − count_tokens(visible blocks) |
-| Session dollar split (reads 32/writes 29/thinking 20/visible 17/uncached 2) | modeled day ~$22 | local Phase-0 heavy-session profile — see 01-economics-and-measurement.md |
+| Session dollar split (reads 32/writes 29/thinking 20/visible 17/uncached 2) | modeled day ~$22 | local Phase-0 heavy-session profile — see [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) |
 | Root <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> always-on size | 2,738 tok | local Phase-0 measurement |
 | Claude Code system prompt "&lt;4 lines"/"minimize output tokens" | community-documented | NOT locally verifiable (v2.1.175 compiled Bun bundle; strings not greppable); T3 |
 | Pricing (Fable 5 $10/$50; cache 0.1x/1.25x/2x; batch 50%) | reference | task brief, consistent with live docs |

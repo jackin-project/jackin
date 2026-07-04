@@ -32,7 +32,7 @@ Specification: [`prompt.md`](prompt/). This dossier is one of three separated re
 
 ## How to read
 
-- Start: [`00-executive-summary.md`](00-executive-summary/) — the stack, the math, the
+- Start: [00 — Executive Summary](/reference/research/token-optimization-techniques/00-executive-summary/) — the stack, the math, the
  verdict, the graveyard.
 - Foundations: [01 — Token Economics and Measurement](01-economics-and-measurement/) economics + instruments,
  [02 — Baseline Audit of This Environment (Phase 0)](02-baseline-audit/) measured baseline of this environment,
@@ -102,7 +102,7 @@ The former Volume III chapters 51–57 left this dossier entirely and now live i
 4. "Deliverables exactly as specified" = the 19 files of §10 and nothing else in the folder;
  measurement scripts are embedded in reports as reproducible snippets.
 5. **Operator mid-run instructions** were folded in: (a) cavemem / cavekit / fff and the
- industry-standard/proven/engineer-verified buckets → `03-prior-art-and-market-scan.md`;
+ industry-standard/proven/engineer-verified buckets → [03 — Prior art and market scan](/reference/research/token-optimization-techniques/03-prior-art-and-market-scan/);
  (b) the request to "add this to token-optimization.md" was interpreted as the
  dossier (the brief forbids modifying pre-existing repo files, including the brief itself);
  (c) chat output kept in caveman-ultra; dossier files follow the brief's own writing rules
@@ -124,12 +124,12 @@ The former Volume III chapters 51–57 left this dossier entirely and now live i
  numbers, tables, tiers on every claim); README carries tier list, headline numbers, Assumptions.
 - [x] **≥40 techniques** across files [04 — Style and Language Compression — Beyond Caveman](/reference/research/token-optimization-techniques/04-style-and-language-compression/) through [13 — Infrastructure-level (self-hosted / gateway tier)](/reference/research/token-optimization-techniques/13-infrastructure-level/): **110 cataloged**, every one carrying the full
  record schema including a validation protocol (≥15 complete required — far exceeded).
-- [x] **≥10 frontier ideas**: 12 in `14-frontier-ideas.md`, each with mechanism → math →
+- [x] **≥10 frontier ideas**: 12 in [14 — Frontier — unrealistic but maybe real](/reference/research/token-optimization-techniques/14-frontier-ideas/), each with mechanism → math →
  feasibility verdict.
 - [x] **Phase-0 baseline audit with real measured numbers**: agent rule chain token masses, the
  6×7 caveman/wenyan tokenizer table, MCP schema costs, hook-duplication waste,
  thinking-vs-visible decomposition (54.8%) with the transcript-redaction workaround documented
- (`02-baseline-audit.md`).
+ ([02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/)).
 - [x] **Headline numbers survived the adversarial pass**: agent-reported local measurements
  spot-reproduced (arrow/casing/epoch checks — 3/3 confirmed), primary sources re-fetched
  independently (pricing, caching, CoD, RouteLLM, LLMLingua, aider, multi-agent 15x), internal
@@ -137,11 +137,11 @@ The former Volume III chapters 51–57 left this dossier entirely and now live i
  graveyard included** (00 §graveyard + per-file kill tables, incl. corrections to the
  operator's own plugin claims: 75%→58.5% visible-prose, cavecrew 60%→43.9%).
 - [x] **Three composed stacks with end-to-end dollar math** and an explicit 10x verdict + named
- binding constraint (`15-composed-stacks.md`).
+ binding constraint ([15 — Composed Stacks: Conservative / Aggressive / Unbelievable](/reference/research/token-optimization-techniques/15-composed-stacks/)).
 - [x] **Negative-cost set explicitly identified** (15 §4: eight techniques).
-- [x] **`16-validation-harness.md` runnable as written**: task table with objective checkers,
+- [x] **[16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/) runnable as written**: task table with objective checkers,
  six canary classes with assertions, headless runner script, bootstrap decision rule.
-- [x] **`17-adoption-roadmap.md`** separates automatic (hooks/skills/plugin/jackin❯-baked, with
+- [x] **[17 — Adoption Roadmap: Day 1 / Week 1 / Month 1](/reference/research/token-optimization-techniques/17-adoption-roadmap/)** separates automatic (hooks/skills/plugin/jackin❯-baked, with
  in-repo insertion points) from discipline-dependent adoption, day-1/week-1/month-1.
 - [x] **Every external claim has source + access date; every measurement has its method**
  (per-file Verification ledgers).
@@ -160,7 +160,7 @@ The former Volume III chapters 51–57 left this dossier entirely and now live i
 **(Volume I froze; all Volume II claims pinned to 06-13
 with drift delta, sources + access dates in each file's ledger). Volume II is an additive
 layer on top of the frozen Volume I (files [00 — Executive Summary](/reference/research/token-optimization-techniques/00-executive-summary/) through [17 — Adoption Roadmap: Day 1 / Week 1 / Month 1](/reference/research/token-optimization-techniques/17-adoption-roadmap/) unedited); it fills the gaps Volume I left blank or
-drew too thin. Governing gap audit and extension scope: [`18-extension-overview.md`](18-extension-overview/).
+drew too thin. Governing gap audit and extension scope: [18 — Volume II extension: gap audit and blind-spot map](/reference/research/token-optimization-techniques/18-extension-overview/).
 
 ### Volume II index (18–27 band)
 
@@ -280,17 +280,17 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
 - **Runnable [`tools/`](tools/)** — `count_tokens.py`, `image_tokens.py`, `session_cost.py`
   reproduce the dossier's core numbers against the live Anthropic tokenizer: real token counts, the
   image-token formula, and the dollar/token split deduplicated by `message.id`.
-- **[`19-code-intelligence-tools.md`](/reference/research/token-optimization-tools/19-code-intelligence-tools/)** — deep dive comparing
+- **[19 — Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization-tools/19-code-intelligence-tools/)** — deep dive comparing
   **codedb**, **Codegraff**, and **fff** — whether they help AI coding agents and save tokens. They
   productize the same context-architecture lever (serve outlines/symbols, not whole files), measured
   locally at ≈91% (outline) / 98% (symbol search) fewer tokens than reading the file; with setup
   recipes and the MCP-schema-overhead caveat.
-- **[`20-qdrant-and-vector-databases.md`](/reference/research/token-optimization-tools/20-qdrant-and-vector-databases/)** — Qdrant/vector DB
+- **[20 — Qdrant and vector databases for agent context](/reference/research/token-optimization-tools/20-qdrant-and-vector-databases/)** — Qdrant/vector DB
   follow-up: vector search is an optional semantic-memory/RAG backend, not a replacement for fff or
   codedb. Default recommendation remains `rust-analyzer + ast-grep + codedb + fff`; pilot Qdrant only
   for docs/examples/decisions/pattern recall and accept it only if it beats that planned stack by
   ≥20% tokens per solved task at equal quality.
-- **[`21-headroom-and-context-compression.md`](/reference/research/token-optimization-tools/21-headroom-and-context-compression/)** — deep dive on
+- **[21 — Headroom and the context-compression layer (vs the caveman ecosystem)](/reference/research/token-optimization-tools/21-headroom-and-context-compression/)** — deep dive on
   `chopratejas/headroom` (the input-side context-compression layer); the cross-tool comparison to the
   caveman ecosystem and RTK is consolidated in the dedicated [token-optimization tools](/reference/research/token-optimization-tools/) folder. Headroom compresses what the model *reads* (tool outputs/logs/RAG/files, the 61%
   cache buckets); caveman compresses what the model *writes* (prose, 17%) — orthogonal, they stack,
@@ -300,7 +300,7 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   per-payload/double-counted and corrected here (K1-style). Verdict: pilot MCP mode as an A/B arm
   against existing hooks (record 20) + code-intelligence (19) + serialization (record 14); never
   default the whole-prompt proxy in a jackin❯ container.
-- **[`22-context-compression-literature-and-market.md`](/reference/research/token-optimization-tools/22-context-compression-literature-and-market/)** —
+- **[22 — Context-compression literature and market delta (2024–2026)](/reference/research/token-optimization-tools/22-context-compression-literature-and-market/)** —
   the compression-layer internet re-sweep (other projects) + fresh literature (2024–2026), companion to 21.
   Headline: a **cache-safety classification** of every compression move (output brevity = cache-neutral;
   write-time observation compression = safe; whole-prompt input compression = breaks the cache, must beat
@@ -308,7 +308,7 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   accuracy (Squeez, AgentDiet, SWEzze, SWE-Pruner, LongCodeZip) — refuting [24 — Fresh literature & market delta (clean-room re-sweep)](/reference/research/token-optimization-techniques/24-fresh-literature-and-market-delta/)'s "no compressor safe
   for code." Stars are a PR artifact in this niche; rank by evidence. Credible challengers (the-complexity-trap,
   OpenHands batched condensation, ACON, llmtrim, claw-compactor) ranked by evidence, not stars.
-- **[`23-token-observability-and-visualization.md`](/reference/research/token-optimization-tools/23-token-observability-and-visualization/)** — the
+- **[23 — Token observability and session visualization (token-optimizer and peers)](/reference/research/token-optimization-tools/23-token-observability-and-visualization/)** — the
   *observability* layer (distinct from compression): a deep dive on `alexgreensh/token-optimizer` and a
   survey of full-per-token-visibility / session-visualization tools. token-optimizer reads Claude Code
   JSONL transcripts locally (no proxy, cache-safe) and renders the dossier's own per-turn
@@ -317,7 +317,7 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   inferred via `count_tokens`). Caveats: PolyForm-Noncommercial license; dollar views assume API pricing,
   not a Max subscription ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)). The JSONL-reading, no-proxy class is the safe measurement front-end of
   the validation harness.
-- **[`24-rtk-and-write-time-observation-compression.md`](/reference/research/token-optimization-tools/24-rtk-and-write-time-observation-compression/)** —
+- **[24 — RTK and write-time observation compression](/reference/research/token-optimization-tools/24-rtk-and-write-time-observation-compression/)** —
   deep dive on `rtk-ai/rtk` ("Rust Token Killer") — the dossier's RTK record. The cross-tool
   comparison it originally carried now lives, expanded to four tools (adds **lean-ctx**), in the dedicated [token-optimization tools](/reference/research/token-optimization-tools/) folder (single source of truth). RTK is the deterministic, Claude-Code-native productization of the
   cache-safe **write-time observation-compression** design point [21 — Headroom and the context-compression layer](/reference/research/token-optimization-tools/21-headroom-and-context-compression/) (H1) and [22 — Context-compression literature and market delta](/reference/research/token-optimization-tools/22-context-compression-literature-and-market/) named: it compresses
@@ -332,7 +332,7 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
   three, pilot it role-scoped with the host-write/hook-conflict guardrails. [19 — Subscription & quota economics](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)'s ast-grep coverage was
   also extended into a full verdict (structural-search token economics + the skill-vs-MCP-vs-CLI
   form-factor analysis).
-- **[`25-sem-and-mq-structural-and-markdown-retrieval.md`](/reference/research/token-optimization-tools/25-sem-and-mq-structural-and-markdown-retrieval/)** —
+- **[25 — sem and mq: entity-level retrieval and structural markdown queries](/reference/research/token-optimization-tools/25-sem-and-mq-structural-and-markdown-retrieval/)** —
   2026-07-03 addendum covering two tools the dossier had missed: **sem** (entity-level diff/impact/context on tree-sitter entities; `sem-core` is a real crates.io library; its **attention ledger** — tracking what the agent's context already holds and suppressing re-sends with `≡ unchanged` stubs and entity-level delta-fills — is the one genuinely novel mechanism in the 2026 tool wave) and **mq** (jq for Markdown; `mq-lang`/`mq-markdown` crates, nushell-proven), whose TOC-then-section retrieval (measured 12–53× on 11–15 KB docs) is the first surveyed lever for the docs/prose read bucket that dominates this repo's own measured observation traffic (76.2% native reads). Reuse verdicts feed the [jackin❯ Context Engine spec](/reference/research/jackin-context-engine/); same-date deltas for caveman/headroom/RTK/lean-ctx live in [tools hub 13](/reference/research/token-optimization-tools/13-reuse-surfaces-and-deltas/).
 
 ## Volume IV — drift delta (2026-07-05)
@@ -357,7 +357,7 @@ Chapter [28 — Drift delta](/reference/research/token-optimization-techniques/2
 
 Focused live analysis requested after the final audit, then expanded with an internet re-sweep for
 alternatives:
-[`19-code-intelligence-tools.md`](/reference/research/token-optimization-tools/19-code-intelligence-tools/) compares `codedb`, `fff`, the
+[19 — Code-intelligence tools: codedb, fff, CodeGraff, and alternatives](/reference/research/token-optimization-tools/19-code-intelligence-tools/) compares `codedb`, `fff`, the
 CodeGraff codedb article, the CodeGraff product/toolchain, and stronger alternatives such as
 Serena, Code Context Engine, Augment Context Engine, Sourcegraph MCP, Qodo Context Engine,
 Claude Context, and CodeGraphContext.
@@ -373,7 +373,7 @@ Claude Context, and CodeGraphContext.
  where installable, include Code Context Engine in the token benchmark, and treat CodeGraff
  Pro/Augment/Sourcegraph/Qodo as explicit opt-in agent-stack
  experiments rather than default jackin-core dependencies.
-- **Qdrant follow-up:** [`20-qdrant-and-vector-databases.md`](/reference/research/token-optimization-tools/20-qdrant-and-vector-databases/)
+- **Qdrant follow-up:** [20 — Qdrant and vector databases for agent context](/reference/research/token-optimization-tools/20-qdrant-and-vector-databases/)
   concludes Qdrant is a credible backend for semantic memory/RAG but should stay optional and scoped;
   a live check found Milvus/Zilliz, Vespa, Turbopuffer, LanceDB, Chroma, Pinecone, and pgvector
   are real alternatives, but none proves better coding-agent token economy than `fff + codedb`.

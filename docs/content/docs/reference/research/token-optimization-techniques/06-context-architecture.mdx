@@ -10,7 +10,7 @@ title: "06 — Context architecture — what enters the window at all"
 - The defaults already moved: MCP tool schemas are **deferred by default** in Claude Code — only names load until a tool is used. Most 2025-era "your MCP server eats 50K of context" advice is obsolete for Claude Code users. Local ground truth: 11 MCP schemas = 1,420 tok loaded vs ~60 tok deferred (95.8% cut).
 - Load-less beats load-then-evict, and dumb beats clever: grep signature outlines of two real Rust files measured **85.1% and 92.5%** token cuts vs full reads (local, Fable 5 count_tokens); plain observation masking halves cost while matching or beating LLM summarization on SWE-bench Verified (T2, NeurIPS '25 workshop).
 - The biggest unmanaged variable is the harness itself: Claude Code's fixed prefix grew **~70K tokens in 5 days** in April 2026 (median first-cache 38-52K → 112-119K; issue #45188 closed "not planned"). On the modeled heavy day that swing ≈ **$13/day ESTIMATE** — re-audit every release. Today (v2.1.175) a deferred-MCP subagent session's entire first-prompt cache footprint is 28,669 tok (locally measured twice).
-- Prefix economics compound through caching: every 10K of always-on prefix ≈ $0.01/turn in cache reads ≈ **$1.89/day** on the modeled profile (114 reads + 6 writes/day). Cache reads are 32% of heavy-session dollars (local Phase-0; see 01-economics-and-measurement.md).
+- Prefix economics compound through caching: every 10K of always-on prefix ≈ $0.01/turn in cache reads ≈ **$1.89/day** on the modeled profile (114 reads + 6 writes/day). Cache reads are 32% of heavy-session dollars (local Phase-0; see [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/)).
 
 ## Why this layer is mostly NEGATIVE-COST: the context-rot evidence base
 
@@ -51,7 +51,7 @@ Method: `cat FILE | python3 /tmp/ct.py claude-fable-5` (free count_tokens API). 
 | Full repo content | — | ≈3.3M ESTIMATE | 11,241,888 bytes measured ÷ ~3.4 chars/tok |
 | This session's first cache write | — | 28,669 | v2.1.175 subagent profile, 37 deferred tool names, incl. ~9K task prompt; from session JSONL `cache_creation_input_tokens`; independently matches the sweep session's figure |
 
-**Arithmetic constants used below** (modeled heavy day from local Phase-0, see 01-economics-and-measurement.md): 6 sessions × 19 API calls = 114 prefix reads/day; prefix cache-written ≥6×/day. Fable 5: cache read $1/MTok, cache write $12.5/MTok (5-min TTL). So **each 1K tok of always-on prefix ≈ $0.114 reads + $0.075 writes ≈ $0.19/day**; each 10K ≈ $1.89/day ≈ 8.6% of the $22 modeled day. Note: the official costs page reports enterprise average "around $13 per developer per active day," 90% below $30/day — the modeled $22 profile is a plausible heavy-user anchor.
+**Arithmetic constants used below** (modeled heavy day from local Phase-0, see [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/)): 6 sessions × 19 API calls = 114 prefix reads/day; prefix cache-written ≥6×/day. Fable 5: cache read $1/MTok, cache write $12.5/MTok (5-min TTL). So **each 1K tok of always-on prefix ≈ $0.114 reads + $0.075 writes ≈ $0.19/day**; each 10K ≈ $1.89/day ≈ 8.6% of the $22 modeled day. Note: the official costs page reports enterprise average "around $13 per developer per active day," 90% below $30/day — the modeled $22 profile is a plausible heavy-user anchor.
 
 ## Techniques
 
@@ -78,7 +78,7 @@ Your fixed prefix bills into every request; measure it, keep CLAUDE.md under 200
 - **Quality risk:** NEGATIVE-COST — bloated always-on instructions are noise the model must ignore. Inversion: minimal ≠ short; cutting load-bearing rules is QUALITY-TRADE.
 - **Availability:** CLAUDE-CODE-TODAY (all instruments built-in or free).
 - **Effort to adopt:** minutes — `grep -o '"cache_creation_input_tokens":[0-9]*' SESSION.jsonl | head -1`; pipe CLAUDE.md through /tmp/ct.py.
-- **Composability:** the meta-technique that prioritizes all others; prefix cuts compound via the 0.1x cache-read multiplier on every turn (cache reads = 32% of heavy-session dollars; see 07-caching-exploitation.md).
+- **Composability:** the meta-technique that prioritizes all others; prefix cuts compound via the 0.1x cache-read multiplier on every turn (cache reads = 32% of heavy-session dollars; see [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/)).
 - **Validation protocol:** per release: fresh session, one trivial prompt, read first `cache_creation_input_tokens`; alert on ±10K vs last release. For CLAUDE.md edits: count_tokens before/after + a 10-task regression run checking rule adherence (branch policy, brand spelling, etc.) is unchanged.
 
 ### 06.3 Skills as lazy loading (progressive disclosure)
@@ -156,7 +156,7 @@ Old tool outputs are the bulk of a long session and mostly dead weight: surgical
 - **Quality risk:** NEGATIVE-COST — +29% with 84% fewer tokens; masking matches summarization solve rates at half cost. Risk: agent needs an evicted result and re-runs the tool (usually small re-read cost).
 - **Availability:** CLAUDE-CODE-TODAY (automatic, not user-tunable) / SDK (beta; Bedrock, Vertex).
 - **Effort to adopt:** zero in Claude Code; one config block on the API.
-- **Composability:** complements deferral (06.1: prefix vs history); interacts with caching — naive client-side deletion invalidates the cached prefix; Claude Code's cache-edit approach exists precisely for this (see 07-caching-exploitation.md).
+- **Composability:** complements deferral (06.1: prefix vs history); interacts with caching — naive client-side deletion invalidates the cached prefix; Claude Code's cache-edit approach exists precisely for this (see [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/)).
 - **Validation protocol:** API replay of a 50+-turn agentic task with context_management on/off: compare completion rate, correctness, total tokens. Anthropic's 100-turn protocol predicts the on-arm completes tasks the off-arm fails on context exhaustion.
 
 ### 06.9 Compaction discipline: /clear over /compact, steered compaction
@@ -227,7 +227,7 @@ A 0.6B-parameter "skimmer" prunes irrelevant code lines from agent context on th
 1. No public aggregate token count for the CURRENT interactive (non-subagent) Claude Code system prompt at v2.1.17x — a 10-minute fresh-session JSONL probe closes it; repeat per release (demonstrated ±70K/5-day volatility).
 2. LSP/Serena navigation has zero published quantitative benchmarks (06.6's protocol is cheap, unclaimed territory).
 3. Anthropic's 85%/84%/29%/39% are internal evals without public harnesses — directionally corroborated by the independent T2 JetBrains result, unreplicable as stated.
-4. The cache-economics interaction is unpublished: eviction rewrites cached prefix (1.25-2x write) while prefix-shrinking saves 0.1x reads forever; with reads at 32% and writes at 29% of heavy-day dollars, optimal eviction FREQUENCY is an open optimization problem (see 07-caching-exploitation.md).
+4. The cache-economics interaction is unpublished: eviction rewrites cached prefix (1.25-2x write) while prefix-shrinking saves 0.1x reads forever; with reads at 32% and writes at 29% of heavy-day dollars, optimal eviction FREQUENCY is an open optimization problem (see [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/)).
 5. Microcompact's exact constants ("keeps ~5 most recent tool results") rest on secondary source-reads; not officially documented (one community source returned HTTP 403).
 6. Repo-map quality evidence is stale (aider design 2023, no modern A/B); SWE-Pruner is the nearest modern datapoint but tests learned pruning, not static maps.
 
@@ -252,4 +252,4 @@ A 0.6B-parameter "skimmer" prunes irrelevant code lines from agent context on th
 | git ls-files = 1,245 files = 29,087 tok; repo = 11,241,888 bytes ≈ 3.3M tok ESTIMATE | local: git ls-files \| ct.py; xargs wc -c; ÷3.4 chars/tok |
 | First cache_creation_input_tokens = 28,669 (×2 sessions); harness v2.1.175; 37 deferred tool names | local: session JSONL grep; claude --version; system-reminder count |
 | 11 MCP schemas 1,420 vs ~60 deferred; dollar split 32/29/20/17/2; session profile (19 calls, 1.17M cache-read, 27K out); caveman 58.5%/56.6%/80.9% | local Phase-0 measurements (ground truth per dossier brief) |
-| Fable 5 $10/$50/MTok; cache read 0.1x, write 1.25x (5min); all $/day arithmetic | dossier reference pricing (see 01-economics-and-measurement.md) + arithmetic shown inline, labeled ESTIMATE |
+| Fable 5 $10/$50/MTok; cache read 0.1x, write 1.25x (5min); all $/day arithmetic | dossier reference pricing (see [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/)) + arithmetic shown inline, labeled ESTIMATE |

@@ -16,7 +16,7 @@ title: "05 — Tokenizer arbitrage"
 
 All "local" numbers: against the live `count_tokens` API via `/tmp/ct.py` (battery script `/tmp/tok-arb/measure.py`, raw results `/tmp/tok-arb/results.json`). Delta method: `tokens(payload) = count(payload as single user message) − overhead`, with overhead calibrated per model as `count("a") − 1` (measured: 6 on `claude-fable-5` and `claude-opus-4-8`, 7 on `claude-sonnet-4-6` and `claude-haiku-4-5`). Caveats: (a) docs say counts are an **estimate** that "may differ by a small amount" from billing; (b) payloads are n=1 samples — a parallel local battery the same day ("run B", different 10x7 dataset, same method) produced the same orderings with shifted magnitudes, quoted below where it widens the range; (c) isolated 1–12 digit probes on Sonnet read a constant +1 over the ceil(n/3) law (single-message boundary artifact); the law is confirmed exactly in-context (20 8-digit ints + 19 newlines = 79 Fable tokens = 20x3+19).
 
-Dollar arithmetic uses the modeled heavy-day profile from 01-economics-and-measurement.md: ~$22/day at Fable 5 list prices, split 32% cache reads / 29% cache writes / 20% thinking / 17% visible output / 2% uncached input (local measurement).
+Dollar arithmetic uses the modeled heavy-day profile from [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/): ~$22/day at Fable 5 list prices, split 32% cache reads / 29% cache writes / 20% thinking / 17% visible output / 2% uncached input (local measurement).
 
 ## The measured format table (10 records x 7 fields: id, name, email, role, region, ISO date, float score)
 
@@ -48,7 +48,7 @@ One-line pitch: state the schema once, not per record — the biggest input-form
 - **Quality risk:** NEUTRAL for TOON; **RISKY for bare CSV** on retrieval-heavy tasks — repo benchmark shows CSV materially worst, and in its truncation-detection test CSV scored 100% vs TOON 0.0% the other way (TOON's declared `[N]` can mask silently dropped rows it was designed to catch — read the fine print both ways). Degradation manifests as wrong-row lookups.
 - **Availability:** CLAUDE-CODE-TODAY — transform at the MCP/tool boundary or via a hook; a community Claude Code **UserPromptSubmit** hook already auto-converts JSON in prompts to TOON (gist).
 - **Effort to adopt:** hours (hook or serializer change); only for uniform arrays — repo's own caveat: compact JSON often *wins* on deeply nested/non-uniform data.
-- **Composability:** multiplies through caching (smaller static content = cheaper cache write AND 0.1x reads thereafter; see 07-caching-exploitation.md); stacks with numeric/ID normalization below (those dominate per-row cost); orthogonal to model routing.
+- **Composability:** multiplies through caching (smaller static content = cheaper cache write AND 0.1x reads thereafter; see [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/)); stacks with numeric/ID normalization below (those dominate per-row cost); orthogonal to model routing.
 - **Validation protocol:** take 50 retrieval questions over your own top-3 highest-volume tool outputs; run each task with JSON vs CSV vs TOON payloads on your production model; accept the cheapest format whose accuracy drop is &lt;1pp; record token delta via `count_tokens`.
 
 ### Minify JSON — and stop arguing about indentation, which is free
@@ -87,7 +87,7 @@ One-line pitch: the premium is 0% to +132% by content, so route ASCII-heavy bulk
 - **Quality risk:** QUALITY-TRADE at routing level (cheaper family = less capable models — that's the real trade, covered elsewhere); NEGATIVE-COST at budgeting level (counting with the right model id is free and prevents 30–130% misestimates). Degradation = subagent task failures; falsify per task class.
 - **Availability:** CLAUDE-CODE-TODAY (subagent `model:` selection; `count_tokens` with the target model id).
 - **Effort to adopt:** minutes (budgeting) / hours (routing rules by content type).
-- **Composability:** rescales every other technique's denominator — minification saves 41% on Sonnet but 29% on Fable; never port format-ROI numbers across the 4.7 boundary. Pairs with subagent delegation patterns in 06-context-architecture.md.
+- **Composability:** rescales every other technique's denominator — minification saves 41% on Sonnet but 29% on Fable; never port format-ROI numbers across the 4.7 boundary. Pairs with subagent delegation patterns in [06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/).
 - **Validation protocol:** for each bulk task class, run 20 instances on both families; compare $/accepted-output (LLM-judge + human spot-check 20%); adopt the cheap family where acceptance is within 2pp.
 
 ### ID, hash, and timestamp representation
@@ -113,7 +113,7 @@ One-line pitch: comma/underscore grouping costs +50.6%; every ~3 excess decimal 
 - **Quality risk:** NEGATIVE-COST for de-grouping (locale separators also occasionally parse as list delimiters); QUALITY-TRADE for precision truncation only if downstream math needs the digits.
 - **Availability:** CLAUDE-CODE-TODAY (formatter flags: no locale grouping, `round(x,2)`).
 - **Effort to adopt:** minutes.
-- **Composability:** stacks inside tabular re-serialization; pairs with output-side rules in 09-output-discipline.md (told-to-emit numbers ride the ~5x output price).
+- **Composability:** stacks inside tabular re-serialization; pairs with output-side rules in [09 — Output discipline and structured generation](/reference/research/token-optimization-techniques/09-output-discipline/) (told-to-emit numbers ride the ~5x output price).
 - **Validation protocol:** numeric-comparison QA ("which row has max latency?") on grouped vs plain payloads — expect equal or better accuracy plain; token delta via `count_tokens`.
 
 ### Strip Unicode decoration from machine-bound text
@@ -126,7 +126,7 @@ One-line pitch: emoji ≈ 2.7 tokens each, box-drawing tables +25–39% over ASC
 - **Quality risk:** NEGATIVE-COST — same information, fewer tokens, plus fewer tokenizer-fragile glyphs. Falsification: none needed beyond confirming tools still parse.
 - **Availability:** CLAUDE-CODE-TODAY (`NO_COLOR=1`, `--no-unicode` flags on CLIs the agent invokes; a style line in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> / output style).
 - **Effort to adopt:** minutes (env vars + one instruction line).
-- **Composability:** output-side wins ride the ~5x output price multiplier (see 09-output-discipline.md); input-side stacks with everything.
+- **Composability:** output-side wins ride the ~5x output price multiplier (see [09 — Output discipline and structured generation](/reference/research/token-optimization-techniques/09-output-discipline/)); input-side stacks with everything.
 - **Validation protocol:** run the agent's usual test/lint/build commands with and without plain-ASCII env flags; diff tool-result token counts across 10 sessions; verify zero parsing regressions.
 
 ### Natural-language arbitrage — VERDICT: dead for Claude (QUALITY-TRADE, near-zero savings)
@@ -137,7 +137,7 @@ One-line pitch: wenyan/Chinese prompting does not survive BPE; compressed Englis
 - **Expected savings:** ~0% to negative vs telegraphic English. Folklore claims 75–80%; measured reality 37–57% vs *verbose* English only — which plain English compression beats without the costs below.
 - **Evidence tier:** T1 (two independent + Phase-0) + T3 (ai.rs replication) + T2 (Petrov et al., arXiv:2305.15425).
 - **Quality risk:** RISKY-to-QUALITY-TRADE: cross-lingual instruction-following degrades, transcripts become unreviewable by most operators, savings small-to-negative. Verdict: do not adopt.
-- **Availability:** CLAUDE-CODE-TODAY (trivially — by *not* doing it; use English-register compression instead, covered in 03-prior-art-and-market-scan.md and 09-output-discipline.md).
+- **Availability:** CLAUDE-CODE-TODAY (trivially — by *not* doing it; use English-register compression instead, covered in [03 — Prior art and market scan](/reference/research/token-optimization-techniques/03-prior-art-and-market-scan/) and [09 — Output discipline and structured generation](/reference/research/token-optimization-techniques/09-output-discipline/)).
 - **Effort to adopt:** n/a.
 - **Composability:** replaced by English style compression; anti-synergy with everything reviewable.
 - **Validation protocol:** (for anyone tempted) translate your own 5 longest always-loaded prompts; `count_tokens` both versions on your production model; you will measure ≈0 or negative savings — then stop.
@@ -152,7 +152,7 @@ One-line pitch: the same 40 two-word identifiers cost 143 (snake) to 355 (SCREAM
 - **Quality risk:** NEUTRAL for new-schema choice; **RISKY if misread as "rename your codebase"** — do not.
 - **Availability:** CLAUDE-CODE-TODAY (for new names only).
 - **Effort to adopt:** zero at design time.
-- **Composability:** applies to MCP schema design (see 02-baseline-audit.md tool-schema overhead) and any codegen target.
+- **Composability:** applies to MCP schema design (see [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/) tool-schema overhead) and any codegen target.
 - **Validation protocol:** `count_tokens` the candidate tool schema / DSL sample in both casings under the production model before freezing names; pick the cheaper if otherwise tied.
 
 ### Free `count_tokens` as the arbitrage instrument — and the death of cl100k-proxy calculators
@@ -165,7 +165,7 @@ One-line pitch: every claim in this file is checkable in seconds for $0; anythin
 - **Quality risk:** NEGATIVE-COST. Residual risk: documented estimate-vs-billing drift is unquantified (gap).
 - **Availability:** CLAUDE-CODE-TODAY (API key or the Claude Code OAuth token — `/tmp/ct.py` is a 35-line working reference).
 - **Effort to adopt:** minutes.
-- **Composability:** prerequisite for all of the above; feeds the regression harness in 16-validation-harness.md.
+- **Composability:** prerequisite for all of the above; feeds the regression harness in [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/).
 - **Validation protocol:** self-validating; for billing-drift, compare `count_tokens` predictions vs `usage.input_tokens` on 20 real calls and record the residual.
 
 ## Claims killed (folklore that failed measurement)
@@ -190,7 +190,7 @@ One-line pitch: every claim in this file is checkable in seconds for $0; anythin
 2. No format-vs-accuracy benchmark on Sonnet 4.6/Fable 5 — TOON's suite only covers claude-haiku; all CSV/TOON quality verdicts on current models are extrapolated.
 3. Output-side format arbitrage untested: output bills ~5x input and thinking is 54.8% of output (Phase-0); whether instructing Claude to *emit* CSV/minified JSON harms generation correctness is the highest-value open experiment here (the 862→611→402 input ratios should roughly apply to emitted data).
 4. Thinking-token tokenization is unobservable (transcripts redact thinking text) — format effects inside the biggest output bucket can't be verified.
-5. Cache interplay shown only as arithmetic (smaller content → cheaper write and 0.1x reads immediately); not yet demonstrated end-to-end in a live session — see 07-caching-exploitation.md.
+5. Cache interplay shown only as arithmetic (smaller content → cheaper write and 0.1x reads immediately); not yet demonstrated end-to-end in a live session — see [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/).
 6. `count_tokens`-vs-billed drift ("may differ by a small amount") unmeasured.
 7. All numbers are black-box behavior of an unpublished tokenizer that changed once (Opus 4.7) without a content-stable migration constant — re-measure after every model-family release.
 
@@ -212,5 +212,5 @@ One-line pitch: every claim in this file is checkable in seconds for $0; anythin
 | ai.rs wenyan debunk: 28% claim char-counted; +6.4% worse on cl100k (234 vs 220); -13.2% on o200k (191 vs 220) | https://ai.rs/ai-developer/classical-chinese-agent-memory-compression |
 | ONTO: 46–51% vs JSON; YAML 1–6%; false "cl100k … used by GPT-4 and Claude models" quote; cross-tokenizer validation future work | https://arxiv.org/html/2604.17512v1 |
 | UsageBox "up to 35% more tokens" framing; pricing table Fable $10/$50, Opus 4.8 $5/$25, Sonnet $3/$15, Haiku $1/$5 (matches reference pricing; article) | https://usagebox.com/articles/claude-fable-5-pricing-1m-context-real-cost |
-| Phase-0 ground truth: thinking 54.8% of output; wenyan-full 80.9% chars→56.6% tokens; wenyan-ultra 74.5%; caveman-ultra 58.5%; Fable premium ~+15% code / ~+38% prose corpus; day split 32/29/20/17/2 | Local Phase-0 measurement (see 01-economics-and-measurement.md) |
+| Phase-0 ground truth: thinking 54.8% of output; wenyan-full 80.9% chars→56.6% tokens; wenyan-ultra 74.5%; caveman-ultra 58.5%; Fable premium ~+15% code / ~+38% prose corpus; day split 32/29/20/17/2 | Local Phase-0 measurement (see [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/)) |
 | Structured-data share of prompt tokens (~15%); session-level 1–5% ranges | ESTIMATE — assumptions and arithmetic stated inline |

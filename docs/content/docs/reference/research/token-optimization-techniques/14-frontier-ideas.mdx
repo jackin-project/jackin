@@ -4,7 +4,7 @@ title: "14 — Frontier — unrealistic but maybe real"
 
 # 14 — Frontier — unrealistic but maybe real
 
-Area K of the dossier: the ideas that sound like science fiction, costed honestly against the modeled heavy-day profile from `01-economics-and-measurement.md` §5. Every idea is worked as mechanism → savings arithmetic → feasibility verdict (REAL-NOW / BUILDABLE / RESEARCH-STAGE / BLOCKED-BY-\<x\> / PHYSICS-SAYS-NO).
+Area K of the dossier: the ideas that sound like science fiction, costed honestly against the modeled heavy-day profile from [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) §5. Every idea is worked as mechanism → savings arithmetic → feasibility verdict (REAL-NOW / BUILDABLE / RESEARCH-STAGE / BLOCKED-BY-\<x\> / PHYSICS-SAYS-NO).
 
 ## TL;DR
 
@@ -16,9 +16,9 @@ Area K of the dossier: the ideas that sound like science fiction, costed honestl
 
 ## Baseline for all arithmetic ($17 floor variant)
 
-Modeled heavy-day profile (`01-economics-and-measurement.md` §5, Fable 5 list prices): 25k uncached in ($0.25) + 400k cache-write at 5m rate ($5.00) + 5.5M cache-read ($5.50) + 125k output ($6.25, of which 45% thinking = 56.25k tok = $2.81; visible = 68.75k tok = $3.44) = **$17.00/day**, ~10 tasks → $1.70/task. Request count ESTIMATE: 5.5M cache-read ÷ ~37k average prefix ≈ 150 requests/day. Output tokens cost 50x cache-read tokens per unit ($50 vs $1/MTok) — every output-side idea inherits that multiplier; every prefix-rewriting idea pays the 12.5x (5m) or 20x (1h) write-vs-read penalty.
+Modeled heavy-day profile ([01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) §5, Fable 5 list prices): 25k uncached in ($0.25) + 400k cache-write at 5m rate ($5.00) + 5.5M cache-read ($5.50) + 125k output ($6.25, of which 45% thinking = 56.25k tok = $2.81; visible = 68.75k tok = $3.44) = **$17.00/day**, ~10 tasks → $1.70/task. Request count ESTIMATE: 5.5M cache-read ÷ ~37k average prefix ≈ 150 requests/day. Output tokens cost 50x cache-read tokens per unit ($50 vs $1/MTok) — every output-side idea inherits that multiplier; every prefix-rewriting idea pays the 12.5x (5m) or 20x (1h) write-vs-read penalty.
 This is the floor-profile variant from [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/); multiply dollar figures by ~1.28 to compare against
-the $22/day working variant used in `15-composed-stacks.md`.
+the $22/day working variant used in [15 — Composed Stacks: Conservative / Aggressive / Unbelievable](/reference/research/token-optimization-techniques/15-composed-stacks/).
 
 ## The frontier board
 
@@ -86,7 +86,7 @@ The largest deployable vendor number in the field — from the vendor, not acade
 - **Availability:** SDK; CLAUDE-CODE-TODAY only as auto-compact.
 - **Effort to adopt:** low (beta flag).
 - **Composability:** conflicts with K13 (edits kill the prefix being kept alive) and overlaps K15 (pick one seam).
-- **Validation protocol:** the dossier's top open measurement — SDK harness comparing `usage` lines with/without the beta over identical 50-turn tasks; see `12-provider-features.md`.
+- **Validation protocol:** the dossier's top open measurement — SDK harness comparing `usage` lines with/without the beta over identical 50-turn tasks; see [12 — Provider-level features, current and beta](/reference/research/token-optimization-techniques/12-provider-features/).
 
 ### K4. Context distillation into fine-tunes of repeated instructions
 
@@ -147,7 +147,7 @@ The literal version is dead on arrival; the reframed version is the best per-use
 - **Quality risk:** RISKY — alias collision with code identifiers; keep an explicit legend. Falsified by referent-confusion incidents.
 - **Availability:** CLAUDE-CODE-TODAY.
 - **Effort to adopt:** trivial.
-- **Composability:** tokenizer-specific — re-measure aliases on the Sonnet/Haiku tokenizer before reusing tables across models (counts differ; see `05-tokenizer-arbitrage.md`).
+- **Composability:** tokenizer-specific — re-measure aliases on the Sonnet/Haiku tokenizer before reusing tables across models (counts differ; see [05 — Tokenizer arbitrage](/reference/research/token-optimization-techniques/05-tokenizer-arbitrage/)).
 - **Validation protocol:** one-liner per candidate alias: `printf '%s' "RCF" | python3 /tmp/ct.py claude-fable-5`.
 
 ### K8. Self-extending abbreviation registries in memory files
@@ -162,7 +162,7 @@ Let the agent coin and persist its own abbreviations across sessions — compoun
 - **Quality risk:** RISKY — stale aliases across sessions plus instruction-following degradation from registry bloat. Falsified if a transcript audit shows median alias reuse above breakeven without curation.
 - **Availability:** CLAUDE-CODE-TODAY (memory files) / SDK (memory tool beta).
 - **Effort to adopt:** medium.
-- **Composability:** feeds K6; requires K14; see `08-retrieval-memory-and-state.md` for the memory substrate.
+- **Composability:** feeds K6; requires K14; see [08 — Retrieval, memory, and state offloading](/reference/research/token-optimization-techniques/08-retrieval-memory-and-state/) for the memory substrate.
 - **Validation protocol:** instrument alias hit-rate per session for two weeks; evict below 1.3 uses/day.
 
 ### K9. Prompt-as-program / run-length encoding of repeated structure
@@ -177,7 +177,7 @@ Write the generator, not the enumeration — the compressed form is also the bet
 - **Quality risk:** NEGATIVE-COST (crisper specs); only failure mode is model mis-expansion where exact literals matter — expand client-side then. Falsified by expansion-error incidents.
 - **Availability:** CLAUDE-CODE-TODAY.
 - **Effort to adopt:** trivial.
-- **Composability:** pairs with `09-output-discipline.md` macros and hook-based client-side expansion in K16.
+- **Composability:** pairs with [09 — Output discipline and structured generation](/reference/research/token-optimization-techniques/09-output-discipline/) macros and hook-based client-side expansion in K16.
 - **Validation protocol:** re-measure your own enumerations: pipe both forms through /tmp/ct.py.
 
 ### K10. Token-aligned identifier naming (tokenizer-aware code style)
@@ -207,7 +207,7 @@ Identical bytes cost 13.5x less read by Haiku — the price sheet says 10x, the 
 - **Quality risk:** NEGATIVE-COST when the task fits (fresh-context readers/reviewers); QUALITY-TRADE if pushed onto reasoning. Falsified per-task-class by eval deltas.
 - **Availability:** CLAUDE-CODE-TODAY.
 - **Effort to adopt:** trivial.
-- **Composability:** separate model = separate cache (no shared prefix); stacks with compressed subagent output (~60% smaller per the cavecrew pattern). Full treatment: `05-tokenizer-arbitrage.md`, `10-model-routing-and-delegation.md`.
+- **Composability:** separate model = separate cache (no shared prefix); stacks with compressed subagent output (~60% smaller per the cavecrew pattern). Full treatment: [05 — Tokenizer arbitrage](/reference/research/token-optimization-techniques/05-tokenizer-arbitrage/), [10 — Model routing and tiered delegation](/reference/research/token-optimization-techniques/10-model-routing-and-delegation/).
 - **Validation protocol:** one-liner ratio check on your dominant file types with /tmp/ct.py against both models.
 
 ### K12. Thinking-channel compression: effort routing now, Chain-of-Draft as the ceiling
@@ -237,7 +237,7 @@ Folklore prices this on 5-minute TTL; Claude Code was observed writing `ephemera
 - **Quality risk:** NEUTRAL (pure economics, zero output effect). Falsified if transcript audit shows post-idle rewrites are a trivial share of writes.
 - **Availability:** BUILDABLE today.
 - **Effort to adopt:** low (cron job).
-- **Composability:** conflicts with K3 (edits invalidate the prefix being kept alive); pointless on no-surcharge providers (K5); natural cron payload for K16. See `07-caching-exploitation.md`.
+- **Composability:** conflicts with K3 (edits invalidate the prefix being kept alive); pointless on no-surcharge providers (K5); natural cron payload for K16. See [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/).
 - **Validation protocol:** measure post-idle rewrite share from local transcripts; then run the daemon for a week and diff daily cache-write dollars.
 
 ## Band C — infrastructure: where the discipline gets baked in
@@ -281,7 +281,7 @@ Text-level compression works on any hosted API — but on cache-heavy traffic it
 - **Quality risk:** QUALITY-TRADE — perplexity pruning mangles code and exact identifiers; safe for prose-y tool output. Falsified by task-failure deltas on compressed-history sessions.
 - **Availability:** GATEWAY-OR-SELF-HOST / SDK.
 - **Effort to adopt:** high.
-- **Composability:** redundant where K3 is enabled (pick one seam); ingestion-only is the cache-compatibility invariant. See `06-context-architecture.md`.
+- **Composability:** redundant where K3 is enabled (pick one seam); ingestion-only is the cache-compatibility invariant. See [06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/).
 - **Validation protocol:** first measure tool-result share of appended context from local transcripts; pilot on web/prose tools only.
 
 ### K16. The jackin❯-baked optimization pack (orchestrator as delivery vehicle)
@@ -294,7 +294,7 @@ The meta-technique: nothing above survives contact with human forgetfulness — 
 - **Feasibility verdict:** BUILDABLE — this repo is the natural home; nothing comparable ships today.
 - **Evidence tier:** T1 components; T4 for the compounding claim.
 - **Quality risk:** NEUTRAL to NEGATIVE-COST — defaults encode the quality-safe variants of each idea. Falsified component-wise; the pack ships with K12's A/B harness as its own validator.
-- **Availability:** BUILDABLE (jackin❯ roadmap item; see `13-infrastructure-level.md`).
+- **Availability:** BUILDABLE (jackin❯ roadmap item; see [13 — Infrastructure-level (self-hosted / gateway tier)](/reference/research/token-optimization-techniques/13-infrastructure-level/)).
 - **Effort to adopt:** high once, amortized across every capsule launch.
 - **Composability:** is the composition layer; must respect tool-list stability (modifying tool definitions invalidates the entire cache — platform docs) and the K3-vs-K13 conflict.
 - **Validation protocol:** land `[token_policy]` behind a flag; per-capsule before/after dollar diff over one week of fleet telemetry (the OTLP plumbing from recent diagnostics work is the natural carrier).
@@ -315,7 +315,7 @@ The meta-technique: nothing above survives contact with human forgetfulness — 
 | # | Number / claim | Value | Source / method | Date |
 |---|---|---|---|---|
 | 1 | Fable 5 pricing in/out/cache-read/5m-write/1h-write | $10 / $50 / $1 / $12.50 / $20 per MTok | live pricing, dossier preamble | |
-| 2 | Modeled heavy day | 25k/400k/5.5M/125k tok = $17.00 | `01-economics-and-measurement.md` §5, arithmetic verified | |
+| 2 | Modeled heavy day | 25k/400k/5.5M/125k tok = $17.00 | [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) §5, arithmetic verified | |
 | 3 | Requests/day ≈ 150 | 5.5M ÷ ~37k avg prefix | ESTIMATE (own arithmetic) | |
 | 4 | Gist 26x / 40% FLOPs | paper abstract | arxiv.org/abs/2304.08467 | |
 | 5 | ICAE 4x, ~1% params | paper abstract | arxiv.org/abs/2307.06945 | |

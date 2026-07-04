@@ -7,14 +7,14 @@ title: "03 — Prior art and market scan"
 **TL;DR**
 
 - All four operator-named tools exist, verified from primary pages: **caveman** (71,891 stars) compresses visible prose; **cavemem** (521) stores pre-compressed memory; **cavekit** (1,014) is a spec-driven build loop; **fff** (8,351) is a resident file-search MCP with latency numbers (3–9 s -> sub-10 ms) but **no published token percentage**.
-- The market crowds onto the two smallest cost buckets of a real heavy session — visible prose (17% of dollars) and memory files (slice of the 2% uncached input) — while **nothing ships** for the big three: cache reads (32%), cache writes (29%), thinking (20%) (local measurement; see 01-economics-and-measurement.md).
+- The market crowds onto the two smallest cost buckets of a real heavy session — visible prose (17% of dollars) and memory files (slice of the 2% uncached input) — while **nothing ships** for the big three: cache reads (32%), cache writes (29%), thinking (20%) (local measurement; see [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/)).
 - The best-evidenced technique is negative-cost and already a Claude Code default: MCP tool deferral / Tool Search Tool — **85% tool-token cut with accuracy up 49% -> 74%** (Anthropic); locally 1,420 -> ~60 tok (96%) on an 11-tool fleet.
 - Caching is the floor, not free money: on the modeled heavy day it already turns ~$84 into ~$22 (**-74%, ESTIMATE** from local profile + live multipliers) — the remaining bill is 61% cache reads+writes, and any technique that breaks prefix stability must beat ~5.5x compression just to break even (ESTIMATE, record 19).
 - Local kills (fresh, /tmp/ct.py, Fable-family tokenizer): TOON saves **41.2% vs minified JSON**, not "60%" (34.3% of the headline is just minification); caveman's "~75%" replicates as **58.5%** on tokens; the Fable-vs-Sonnet tokenizer gap is content-specific — prose/ASCII gets the premium, but code/CJK probes were near-neutral.
 
 ## Scope and method
 
-Scanned: the four operator-named tools, Claude Code's official cost levers, the plugin/MCP ecosystem, gateways, and research-grade prompt compression. Every external claim carries URL +. Local numbers use `/tmp/ct.py` (free `count_tokens` endpoint; the single-user-message wrapper adds a constant 7 tokens — percentages below are conservative by &lt;1 point). Dollar arithmetic uses the modeled heavy-day profile from 01-economics-and-measurement.md: ~6 sessions/day, ~19 calls/session, 5.5k uncached input, 85k cache-write, 1.17M cache-read, 27k output (54.8% thinking), ~$22/day split 32% cache-read / 29% cache-write / 20% thinking / 17% visible output / 2% uncached input. Validation protocols are designed to run on the harness in 16-validation-harness.md; this machine's own overhead baseline is in 02-baseline-audit.md.
+Scanned: the four operator-named tools, Claude Code's official cost levers, the plugin/MCP ecosystem, gateways, and research-grade prompt compression. Every external claim carries URL +. Local numbers use `/tmp/ct.py` (free `count_tokens` endpoint; the single-user-message wrapper adds a constant 7 tokens — percentages below are conservative by &lt;1 point). Dollar arithmetic uses the modeled heavy-day profile from [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/): ~6 sessions/day, ~19 calls/session, 5.5k uncached input, 85k cache-write, 1.17M cache-read, 27k output (54.8% thinking), ~$22/day split 32% cache-read / 29% cache-write / 20% thinking / 17% visible output / 2% uncached input. Validation protocols are designed to run on the harness in [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/); this machine's own overhead baseline is in [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/).
 
 ## Market map 
 
@@ -109,7 +109,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 ### 05. Prompt caching — reads 0.1x, writes 1.25x/2x, automatic in Claude Code; the single biggest shipped lever
 
 - **Layer:** cache / price multiplier. **Mechanism:** prefix storage with free refresh-on-hit; 512-token minimum on Fable 5; Claude Code places breakpoints automatically (platform.claude.com/docs/en/build-with-claude/prompt-caching).
-- **Expected savings:** already banked. Counterfactual on the modeled day: without caching, reads bill 10x — day ~$84 vs $22 = **-74% (ESTIMATE)**. Vendor launch table: up to -90% (book chat), -53% (multi-turn) (claude.com/blog/prompt-caching). The remaining bill is still 61% reads+writes — the target of 07-caching-exploitation.md.
+- **Expected savings:** already banked. Counterfactual on the modeled day: without caching, reads bill 10x — day ~$84 vs $22 = **-74% (ESTIMATE)**. Vendor launch table: up to -90% (book chat), -53% (multi-turn) (claude.com/blog/prompt-caching). The remaining bill is still 61% reads+writes — the target of [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/).
 - **Evidence tier:** T1 (live pricing + launch table); locally corroborated: heavy-session prompt mix 0.44% uncached / 6.73% write / 92.83% read (local measurement).
 - **Quality risk:** NEGATIVE-COST (pure price, no behavior change). Failure mode is economic: prefix churn converts 0.1x reads into 1.25x writes; falsify by diffing usage fields across a deliberately churned prefix.
 - **Availability:** CLAUDE-CODE-TODAY (automatic) / SDK (explicit breakpoints, 1h TTL). **Effort to adopt:** zero in Claude Code; hours of prefix-stability discipline in SDK.
@@ -251,7 +251,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 - **Evidence tier:** T1 (shipped tools on real local data); the dev.to JSONL trace is the strongest independent accounting published.
 - **Quality risk:** NEUTRAL. Failure mode: misattribution; falsify by reconciling ccusage totals against console billing.
 - **Availability:** CLAUDE-CODE-TODAY. **Effort to adopt:** minutes.
-- **Composability:** foundation for every validation protocol here; see 16-validation-harness.md.
+- **Composability:** foundation for every validation protocol here; see [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/).
 - **Validation protocol:** reconcile one week of ccusage vs console invoice; require &lt;5% divergence before trusting any A/B in this file.
 
 ### 19. LLMLingua / LongLLMLingua / LLMLingua-2 — peer-reviewed ceiling ("up to 20x"), absent from every shipped coding agent
@@ -281,7 +281,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 - **Evidence tier:** T3 (converging independent traces) + T1 (Anthropic's own figures). All cached after first write — overhead seeds the 32% read line, not full-price input (kill K9).
 - **Quality risk:** NEUTRAL (a fact, not an action); mis-reading it as uncached cost overstates the problem 10x.
 - **Availability:** CLAUDE-CODE-TODAY (audit via /context). **Effort to adopt:** minutes to audit.
-- **Composability:** the denominator for every percentage in this file; this machine's own numbers in 02-baseline-audit.md.
+- **Composability:** the denominator for every percentage in this file; this machine's own numbers in [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/).
 - **Validation protocol:** /context on this setup; decompose system prompt / tools / memory / skills; reconcile with first-call cache_creation_input_tokens in JSONL; re-audit after applying 07 + 10.
 
 ---
@@ -304,12 +304,12 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 ## White space — what nobody ships 
 
 1. **Thinking-token optimization** — 54.8% of output tokens, 20% of dollars, not disableable on Fable 5; only blunt levers exist (/effort, MAX_THINKING_TOKENS). No per-task-type effort routing, no thinking-waste detection. Caveman's README concedes the bucket explicitly.
-2. **Cache-economics tooling** — reads+writes = 61% of heavy-session dollars; nothing optimizes breakpoint placement, predicts 5-min-vs-1-h TTL value, schedules compaction to minimize write spikes, or reports write amplification (ccusage shows totals, not causes). See 07-caching-exploitation.md.
+2. **Cache-economics tooling** — reads+writes = 61% of heavy-session dollars; nothing optimizes breakpoint placement, predicts 5-min-vs-1-h TTL value, schedules compaction to minimize write spikes, or reports write amplification (ccusage shows totals, not causes). See [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/).
 3. **Tokenizer-aware routing** — the prose/ASCII tokenizer premium means every $/MTok router can mis-price cross-boundary switches; nobody normalizes, and code-heavy work needs separate counts.
 4. **Mid-session selective context pruning in Claude Code** — the API has context editing (84% cut, vendor-proven); end users get only whole-conversation compaction.
 5. **Net-accounted memory** — claude-mem (82k stars) and cavemem inject context and run compression calls; neither publishes injection-cost-vs-exploration-saved accounting.
 6. **Format-aware tool-result serialization** — the locally-verified 41.2%/34.3% wins are not integrated into any agent's tool-result path or popular MCP server.
-7. **Independent replication infrastructure** — every vendor self-reports; a public ct.py-style harness re-measuring plugin claims against live tokenizers does not exist (this dossier's method is itself novel prior art; see 16-validation-harness.md).
+7. **Independent replication infrastructure** — every vendor self-reports; a public ct.py-style harness re-measuring plugin claims against live tokenizers does not exist (this dossier's method is itself novel prior art; see [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/)).
 8. **Output brevity with quality gates** — caveman trades readability blindly; nothing compresses output only when a verifier confirms zero information loss.
 
 ## Surprising findings
@@ -325,7 +325,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 |---|---|
 | Stars: caveman 71,891; cavemem 521; cavekit 1,014; fff 8,351; claude-mem 81,976; ccusage 16,080; LLMLingua 6,284 | `gh api repos/&lt;repo&gt; --jq .stargazers_count`, run locally |
 | caveman "~75% of output tokens"; mean 65% (range 22–87%); pooled 1214 -> 294 (=75.8%); "Answer concisely." baseline; "thinking... untouched"; "cost savings a bonus"; compress ~46%; cavecrew ~60%; caveman-code "~2x fewer than Codex"; arXiv 2604.00025 "+26 points" (paper not independently verified) | curl of raw.githubusercontent.com/JuliusBrussee/caveman/main/README.md, lines 27/136/151/154/168/126/128/88/170 |
-| caveman local: ultra 58.5%; wenyan-full 56.6% tok / 80.9% chars; wenyan-ultra 74.5%; CJK ~1.47 chars/tok; tool deferral 1,420 -> ~60 (96%); prompt mix 0.44/6.73/92.83%; dollar split 32/29/20/17/2; thinking 54.8% of output; day ~$22 | local measurement (phase-0); profile detailed in 01-economics-and-measurement.md |
+| caveman local: ultra 58.5%; wenyan-full 56.6% tok / 80.9% chars; wenyan-ultra 74.5%; CJK ~1.47 chars/tok; tool deferral 1,420 -> ~60 (96%); prompt mix 0.44/6.73/92.83%; dollar split 32/29/20/17/2; thinking 54.8% of output; day ~$22 | local measurement (phase-0); profile detailed in [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) |
 | caveman ~4% of session total (independent); ~14k stars April 2026 | mayhemcode.com/2026/04/caveman-claude-code-how-to-save-tokens.html |
 | cavemem "~75% fewer prose tokens", architecture; family positioning | raw cavemem README + getcaveman.dev |
 | fff "3-9 SECONDS per ripgrep spawn and sub-10 ms"; ~26 MB/14k files; "fewer grep roundtrips"; no token % in text | curl of raw fff README lines 22/72/673/714 |
