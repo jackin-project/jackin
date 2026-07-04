@@ -12,8 +12,8 @@ lean-ctx (brand **LeanCTX**, "Lean Context") is the **integrated context runtime
 | Pitch | "Context intelligence layer for AI agents… decides what they read, remembers what they learn, guards what they touch — and proves what they save. 60–90% fewer tokens (cached: 99%)." |
 | Languages | Rust (single binary, 1,200+ source files); TS/Python client SDKs; a Lean 4 proof crate |
 | Form factor | One Rust binary that is simultaneously a **shell hook**, an **MCP server** (77 tools), an **HTTP/team server**, a **daemon**, an **LLM proxy**, and a **browser dashboard** |
-| Latest seen | `v3.8.9` (created 2026-03-23 — the youngest of the four) |
-| Adoption (2026-06-20) | 2,800★ / 19 watchers / 278 forks / 13 open issues — see [evidence](/reference/research/token-optimization-tools/07-evidence-and-claims/) |
+| Latest seen | `v3.8.18` (2026-07-01; a v3.9.0 CHANGELOG cut exists in-repo, unreleased — crates.io still 3.8.18; re-verified 2026-07-05) (created 2026-03-23 — the youngest of the four) |
+| Adoption (2026-06-20) | 2,800★ / 19 watchers / 278 forks / 13 open issues (3,085★ / 21 watchers / 294 forks / 34 open issues re-verified 2026-07-05) — see [evidence](/reference/research/token-optimization-tools/07-evidence-and-claims/) |
 | License | Apache-2.0; local engine "free forever" (CI-enforced), paid cloud sync |
 | Bucket hit | **All input buckets** (native reads via MCP, shell output via hook, RAG/providers, history via proxy) + persistent code-graph retrieval; **not** the output bucket |
 | Cache interaction | **Safe** in MCP/hook mode (write-time + ~13-tok handle re-reads); proxy mode is cache-safe **by design** (frozen-region rewrites) but lossy on prose |
@@ -143,7 +143,7 @@ This is where lean-ctx pays for spanning the whole pipeline, and it pays the mos
 
 ## Commercial model
 
-lean-ctx is **open-core, done more cleanly than RTK's**. The local engine is Apache-2.0 and "free forever" — the project states it as a CI-enforced invariant ("Free isn't a plan we maintain, it's an invariant our CI enforces"), and the paid tiers (**Pro $9/mo** personal cloud sync, **Team $18/seat/mo** shared index + audit log) add only hosting, sync, and governance — never gating a local capability. That is a structurally lower open-core risk than the [RTK Cloud](/reference/research/token-optimization-tools/03-rtk-design/) tension the hub flags (where features *could* migrate behind the paywall), though "free forever" is a promise that only time tests.
+lean-ctx is **open-core, done more cleanly than RTK's**. The local engine is Apache-2.0 and "free forever" — the project states it as a CI-enforced invariant ("Free isn't a plan we maintain, it's an invariant our CI enforces"), and the paid tiers (**Pro $9/mo** personal cloud sync, **Team $18/seat/mo** shared index + audit log) add only hosting, sync, and governance — never gating a local capability. That is a structurally lower open-core risk than the [RTK Cloud](/reference/research/token-optimization-tools/03-rtk-design/) tension the hub flags (where features *could* migrate behind the paywall), though "free forever" is a promise that only time tests. [Update 2026-07-05: the in-repo, unreleased v3.9.0 CHANGELOG (cut 2026-07-04; https://raw.githubusercontent.com/yvgude/lean-ctx/HEAD/CHANGELOG.md) adds a self-hosted "AI Gateway" team mode — an org reverse proxy with policy gates, metering, and evidence exports, compiled into the default binary — plus a grammar-addon dylib mechanism (signed, hash-pinned on every load, zero-config network fetch with an egress opt-out); revisit the form-factor, supply-chain, and commercial descriptions above when v3.9.0 ships.]
 
 ## Evidence and claims to kill
 

@@ -33,13 +33,14 @@ it changes a Volume I number..
 - **A new risk axis: prompt-compression proxies are an attack surface.** CompressionAttack (arXiv
  2510.22963) flips downstream agent behavior with up to 80% success by perturbing inputs that survive
  compression — adding a *security* reason to Volume I's cost-based "don't put a compressor in the hot
- path" verdict. Two new lossless-compression papers (LoPace at-rest; LTSC meta-tokens) do **not** help
+ path" verdict. [Re-verified 2026-07-05: the paper was revised on arXiv — title now "When Compression Becomes an Attack Surface: Black-Box Attacks on Prompt-Compressed LLM Agents", attack named COMA, abstract reports 0.71 average ASR vs 0.21 for the strongest baseline; risk-axis verdict unchanged.] Two new lossless-compression papers (LoPace at-rest; LTSC meta-tokens) do **not** help
  a hosted-API token bill (one compresses disk bytes, the other needs a fine-tuned model).
 - **No post-06-12 change to Anthropic's API cost primitives** (caching multipliers, context-editing
  beta, memory tool, effort ladder all unchanged, re-). The deltas are Claude Code
  *app* features (`/cd` preserves cache; subagents now nest 5 deep; `/usage` gained a cache-miss line)
  and the 06-15 billing split (file 41). Routing research broadened past RouteLLM (LLMRouterBench,
  OrcaRouter) but none produces a Claude-cache-aware number that overrides Volume I's verdict.
+ [Re-verified 2026-07-05: one exception — **Claude Sonnet 5** (2026-06-30) is a new Anthropic billable model: default in Claude Code 2.1.197, native 1M context, 128K output, $2/$10 per MTok promo through 2026-08-31 then $3/$15. The "API primitives did not move" verdict now carries this exception, and the Fable-promo-end tiering flip to Opus 4.8 is superseded for workloads Sonnet 5 covers. Sources: Claude Code CHANGELOG 2.1.197; https://www.anthropic.com/news/claude-sonnet-5]
 
 Dollar/quota context inherited from Volume I and file 41; tiers per finding.
 
@@ -49,11 +50,12 @@ Dollar/quota context inherited from Volume I and file 41; tiers per finding.
 
 | Change | Date | Tier | Effect on a Volume I number |
 |---|---|---|---|
-| **Fable 5 free window ends; removed from plans 06-23** | | T1 | Big — model-tiering flips to Opus 4.8 for subscribers (49) |
+| **Fable 5 free window ends; removed from plans 06-23** | | T1 | Big — model-tiering flips to Opus 4.8 for subscribers (49). [Update 2026-07-05: Fable 5 was suspended 2026-06-12..06-30 under an export-control directive and redeployed 2026-07-01; Pro/Max/Team/select Enterprise include it up to 50% of weekly usage limits through 2026-07-07, then usage credits at API rates — the Opus-4.8-only subscriber tiering applies only after 07-07. https://www.anthropic.com/news/redeploying-fable-5] |
 | **SDK/`claude -p`/GitHub-Actions usage off the subscription cap** → separate API-rate credit | | T1 | Bifurcates the cost model by surface (file 41 Q7) |
 | **Claude Code: subagents nest up to 5 levels deep** (2.1.172) | | T1 | Compounds the ~7× team blowup geometrically (47 governance) |
 | **Claude Code `/cd` preserves the prompt cache** across a dir change (2.1.169) | | T1 | New negative-cost cache lever (technique FL2) |
-| **`/usage` adds cache-miss + subagent/long-context attribution** (2.1.174) | | T1 | Partially closes Volume I white-space #2 (cache tooling) |
+| **`/usage` adds cache-miss + subagent/long-context attribution** (2.1.174) | | T1 | Partially closes Volume I white-space #2 (cache tooling). [Re-verified 2026-07-05: the 2.1.174 entry is scoped [VSCode] — attribution (cache misses, long context, subagents, per-skill/agent/plugin/MCP, 24h/7d) landed in the VSCode Account & usage dialog, not the CLI `/usage`.] |
+| **Claude Sonnet 5 ships** (2026-06-30; default model in Claude Code 2.1.197; native 1M context; 128K output; $2/$10 per MTok promo through 2026-08-31 then $3/$15) | 2026-06-30 | T1 | New billable Anthropic model — exception to the "API primitives unchanged" verdict below; supersedes the Opus-4.8 tiering flip for workloads Sonnet 5 covers (added re-verification 2026-07-05; anthropic.com/news/claude-sonnet-5 + Claude Code CHANGELOG 2.1.197) |
 | OpenAI **GPT-5.5** in API ($5/$30, $0.50 cached = 0.1×; effort none→xhigh; 1.05M ctx; >272K billed 2×/1.5×) | | T1 | Portability (45); no Claude-side change |
 | OpenAI **`prompt_cache_retention` defaults to 24h** (non-ZDR) | | T1 | Strengthens OpenAI cross-provider cache case (45) |
 | OpenAI **container sessions billed per-minute** (5-min min) | | T1 | Minor; rewards finishing fast (43) |
@@ -62,7 +64,7 @@ Dollar/quota context inherited from Volume I and file 41; tiers per finding.
 
 The verdict on the changelog: **Anthropic's billable API primitives did not move; the operator-facing
 deltas are app features and the two billing changes (Fable promo, 06-15 split).** Both billing changes
-hit the *subscriber* directly and are folded into files 41 and the verdict (49).
+hit the *subscriber* directly and are folded into files 41 and the verdict (49). [Re-verified 2026-07-05: the verdict now needs a Sonnet 5 exception — see the Sonnet 5 row above.]
 
 ## B. The KV-cache compression family (eviction + quantization) — self-host-only
 
@@ -105,7 +107,7 @@ approximable with prompt caching — preload the stable corpus as a cached prefi
 | **LoPace** (2602.13266, Feb 2026) | lossless compression *at rest* (Zstd/BPE+packing), 72.2% disk saving, 100% reconstruction | **Irrelevant to tokens** — compresses bytes on disk, not tokens sent; only helps a memory-store's footprint (Vol I 14). Category error to avoid. |
 | **LTSC meta-tokens** (2506.00307, May 2025) | *lossless* token compression, 18–27% sequence reduction | **Self-host-only** — needs a model fine-tuned to decode meta-tokens; a frontier hosted model can't read them. Bounds the "lossless input compression on hosted APIs" hope as still empty. |
 | **CompactPrompt** (secondary, 2026) | pruning + abbreviation + data-quantization, "up to 60%" | **T4, do not propagate** — single vendor guide, lossy NL-oriented; the LLMLingua code-degradation + cache-breaking caveats almost certainly hold. |
-| **CompressionAttack** (2510.22963, Oct 2025) | security: perturbations surviving compression flip agent behavior (≤80% ASR) | **New risk axis** — adds a security reason to Volume I's cost-based "no compressor in the hot path." |
+| **CompressionAttack** (2510.22963, Oct 2025) | security: perturbations surviving compression flip agent behavior (≤80% ASR) | **New risk axis** — adds a security reason to Volume I's cost-based "no compressor in the hot path." (Re-verified 2026-07-05: revised on arXiv as "When Compression Becomes an Attack Surface: Black-Box Attacks on Prompt-Compressed LLM Agents"; attack named COMA; 0.71 average ASR vs 0.21 strongest baseline.) |
 
 Net: the prompt-compression frontier since LLMLingua-2/500x produced **no new lossy compressor that is
 both user-reachable on hosted Claude and safe for code** — the two lossless advances are either
@@ -201,7 +203,7 @@ Volume I disfavored LLMLingua-class proxies on cost; CompressionAttack adds an i
 - **Layer:** infra / security (meta).
 - **Mechanism:** CompressionAttack (2510.22963) crafts inputs that survive a compression module but
  flip downstream agent behavior (≤80% ASR, 98% preference-flip, high stealth) — targeting both hard
- (LLMLingua/Selective-Context) and soft (ICAE/AutoCompressors) compressors. A compressor in the
+ (LLMLingua/Selective-Context) and soft (ICAE/AutoCompressors) compressors. [Re-verified 2026-07-05: revised paper names the attack COMA and reports 0.71 average ASR vs 0.21 strongest baseline.] A compressor in the
  request path is therefore both a cost risk (Volume I) and an exploitable integrity boundary.
 - **Expected savings:** none — loss-avoidance. Reinforces routing compression to ingestion-only seams
  (Volume I 20 K15) or avoiding it entirely for code.
@@ -281,12 +283,12 @@ When the Fable 5 promo ends, the dominant-profile model choice flips for subscri
 |---|---|---|
 | 1 | Fable 5 free through 06-22, removed 06-23 (credits after); Fable $10/$50, Opus 4.8 $5/$25 | anthropic.com/news/claude-fable-5-mythos-5 |
 | 2 | 06-15 SDK/headless/CI off subscription cap → separate API-rate credit | support.claude.com/.../use-the-claude-agent-sdk-with-your-claude-plan |
-| 3 | Claude Code: nested subagents 5-deep (2.1.172); `/cd` preserves cache (2.1.169); `/usage` cache-miss + attribution (2.1.174) | code.claude.com/docs/en/changelog |
+| 3 | Claude Code: nested subagents 5-deep (2.1.172); `/cd` preserves cache (2.1.169); `/usage` cache-miss + attribution (2.1.174; re-verified 2026-07-05: entry is scoped [VSCode] — VSCode Account & usage dialog) | code.claude.com/docs/en/changelog |
 | 4 | SnapKV 2404.14469 (NeurIPS'24, 8.2×@16K); H2O 2306.14048 (NeurIPS'23, 5×@20%); PyramidKV 2406.02069 (parity@12%); KVQuant 2401.18079 (NeurIPS'24, 3-bit &lt;0.1 ppl, 10M ctx); KVCache-Factory | arxiv.org + proceedings.neurips.cc + github.com/Zefan-Cai/KVCache-Factory |
 | 5 | KV compression on reasoning lengthens traces at low budgets | arxiv.org/abs/2512.12008 (excerpt; full numbers need PDF) |
 | 6 | CAG 2412.15605 (WWW'25): preload+persist KV, meets/beats RAG when corpus fits context; literal mechanism self-host | arxiv.org/abs/2412.15605 (latency/BERTScore figures secondary-sourced, flagged) |
 | 7 | LoPace 2602.13266 (lossless at-rest, 72.2%); LTSC 2506.00307 (lossless tokens, needs fine-tuned model); CompactPrompt (T4 secondary) | arxiv.org/html/{2602.13266,2506.00307}; morphllm.com/prompt-compression |
-| 8 | CompressionAttack 2510.22963: ≤80% ASR on prompt-compression modules | arxiv.org/html/2510.22963v2 |
+| 8 | CompressionAttack 2510.22963: ≤80% ASR on prompt-compression modules (re-verified 2026-07-05: paper revised — title now "When Compression Becomes an Attack Surface: Black-Box Attacks on Prompt-Compressed LLM Agents"; attack named COMA; abstract reports 0.71 average ASR vs 0.21 strongest baseline; cite the versioned v2 URL) | arxiv.org/html/2510.22963v2 |
 | 9 | LLMRouterBench 2601.07206 (+4% acc / 31.7% cost); OrcaRouter 2605.30736 (RouterArena #2); RouterEval (EMNLP'25, pointer) | arxiv.org/html/2601.07206; arxiv.org/abs/2605.30736 |
 | 10 | OpenAI GPT-5.5 ($5/$30, $0.50 cached, 1.05M ctx); cache retention default 24h (05-29); container per-min billing (06-02) | developers.openai.com/api/docs/changelog |
 | 11 | Gemini implicit cache default, 90% discount ; no Anthropic API primitive change post-06-12 | ai.google.dev/gemini-api/docs/caching; platform.claude.com prompt-caching |

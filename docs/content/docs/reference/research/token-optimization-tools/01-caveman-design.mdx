@@ -11,10 +11,10 @@ Caveman is the **output-side** member of the trio. It compresses what the model 
 | Field | Value |
 |---|---|
 | Repository | `JuliusBrussee/caveman` |
-| Pitch | Terse-register output compression; README headline "cuts ~75% of output tokens" |
+| Pitch | Terse-register output compression; README headline "cuts ~75% of output tokens" [retired in v1.9.1 (2026-07-03, #234): headline is now a flat "65% average output reduction (range 22–87%)" — https://github.com/JuliusBrussee/caveman/releases/tag/v1.9.1, accessed 2026-07-05] |
 | Form factor | Claude Code plugin (skills + hooks); not a binary, not a proxy, not an MCP server |
-| Latest seen | `v1.9.0` |
-| Adoption (2026-06-18) | 74,446★ / 166 watchers — PR-inflated; see [evidence](/reference/research/token-optimization-tools/07-evidence-and-claims/) |
+| Latest seen | `v1.9.1` (2026-07-03, "65%, honestly"; re-verified 2026-07-05) |
+| Adoption (2026-06-18) | 74,446★ / 166 watchers (83,839★ / 194 watchers re-verified 2026-07-05) — PR-inflated; see [evidence](/reference/research/token-optimization-tools/07-evidence-and-claims/) |
 | Bucket hit | Visible output (~17% of heavy-session dollars) |
 | Cache interaction | **Neutral** — never touches the cached prefix |
 
@@ -162,7 +162,7 @@ Two members are worth singling out because they create the only genuine overlaps
 
 ## Evidence and claims to kill
 
-- **"Caveman cuts ~75% of tokens."** The 75% is the pooled benchmark ratio; the per-task mean is 65%; the local Claude-tokenizer replication is 58.5% (ultra). And it targets visible prose only (~17% of dollars), so the whole-bill effect is ~4–6% per day. The README itself calls the cost saving "a bonus."
+- **"Caveman cuts ~75% of tokens."** The 75% is the pooled benchmark ratio; the per-task mean is 65%; the local Claude-tokenizer replication is 58.5% (ultra). And it targets visible prose only (~17% of dollars), so the whole-bill effect is ~4–6% per day. The README itself calls the cost saving "a bonus." [Update 2026-07-05: the project itself retired the ~75% headline in v1.9.1 and now claims a 65% output-only average, shipping `docs/HONEST-NUMBERS.md` conceding cases where caveman costs tokens (https://github.com/JuliusBrussee/caveman/blob/v1.9.1/docs/HONEST-NUMBERS.md); the 58.5% Claude-tokenizer replication and the ~17%-of-dollars ceiling remain the deeper correction.]
 - **"Wenyan/Classical-Chinese saves ~80%."** Character-token confusion: 80.9% character cut = 56.6% token cut; wenyan-ultra reaches 74.5% tokens only at maximum lossiness and on some short phrases costs *more* than English.
 - **"A terse style cuts your Claude Code bill proportionally."** No — visible output is 17% of dollars; thinking (20%) is billed in full though displayed summarized.
 

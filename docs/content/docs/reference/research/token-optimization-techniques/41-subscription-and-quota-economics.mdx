@@ -48,7 +48,7 @@ exactly what Anthropic does not publish.
  **Opus-specific caps were removed** in Opus 4.5 (Opus now draws the general weekly limit; Max keeps
  a separate *Sonnet-only* weekly limit); subscription context is **capped at 200K** even though the
  API exposes 1M; and from non-interactive Agent-SDK/headless usage bills separately**
- (API-rate credits), off the interactive cap.
+ (API-rate credits), off the interactive cap. [Re-verified 2026-07-05: the Agent-SDK split is PAUSED — "For now, nothing has changed: Claude Agent SDK, claude -p, and third-party app usage still draw from your subscription's usage limits" (support article 15036540); and the 5-hour-limit doubling + peak-hours-throttle removal were announced and effective 2026-05-06 (not 2026-06-05) — the announcement page does not mention counter resets, a sub-claim resting only on the morphllm.com secondary source.]
 - **What you can measure vs. what you can't:** `/usage` reports session-% and weekly-% of cap
  (reading the `unified-*` headers); `ccusage`/`ccusage_go` report **dollars only and are blind to
  the cap**. Local JSONL transcripts give token classes (this account, this run: 33.5M cache-read /
@@ -297,6 +297,8 @@ Volume I's dollar model.
 
 , Agent-SDK / `claude -p` / GitHub-Actions usage no longer draws the interactive cap.
 
+[Re-verified 2026-07-05: Anthropic PAUSED this usage split. The support article now says "For now, nothing has changed: Claude Agent SDK, claude -p, and third-party app usage still draw from your subscription's usage limits." The separate monthly credit described below (Pro $20 / Max-5x $100 / Max-20x $200, API rates, no rollover) is a suspended plan, not live behavior — this lever currently does not work; headless usage drains the same interactive cap. https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan]
+
 - **Coverage-delta:** New (a change, after Volume I's cutoff).
 - **Layer:** infra / workload placement.
 - **Mechanism:** non-interactive usage (Agent SDK, headless `claude -p`, Claude Code GitHub Actions,
@@ -347,17 +349,17 @@ header-capturing proxy. This is the boundary of the INCOMPLETE.
 | # | Number / claim | Source (access) |
 |---|---|---|
 | 1 | Pro $20/mo ($17 annual); Max-5x $100; Max-20x $200 | support.claude.com what-is-the-pro-plan / what-is-the-max-plan; claude.com/pricing |
-| 2 | 5-hour rolling session limit; weekly limit(s); Max has all-model + Sonnet-only weekly; fixed weekly reset anchor | support.claude.com what-is-the-max-plan / models-usage-and-limits-in-claude-code |
+| 2 | 5-hour rolling session limit; weekly limit(s); Max has all-model + Sonnet-only weekly; fixed weekly reset anchor | support.claude.com what-is-the-max-plan / models-usage-and-limits-in-claude-code (re-verified 2026-07-05: 5-hour reset now evidenced by support article 12429409 — "session limits continue to reset every five hours" — and weekly structure by article 11049741; article 14552983 was restructured and no longer states window durations) |
 | 3 | Opus-specific caps removed (Opus 4.5); Opus draws general weekly limit | anthropic.com/news/claude-opus-4-5 |
-| 4 | 5-hour limits doubled + peak-hours throttle removed; counters reset | anthropic.com/news/higher-limits-spacex; morphllm.com/claude-code-usage-limits |
+| 4 | 5-hour limits doubled + peak-hours throttle removed; counters reset | anthropic.com/news/higher-limits-spacex; morphllm.com/claude-code-usage-limits (re-verified 2026-07-05: doubling + throttle removal announced and effective 2026-05-06, not 2026-06-05; the announcement page does not mention counter resets — that sub-claim rests only on the morphllm.com secondary source) |
 | 5 | Usage pooled across all surfaces; subscription context 200K (vs 1M API) | support.claude.com how-usage-and-length-limits-work |
-| 6 | Overage = usage credits at standard API rates; $2,000/day redemption cap; optional monthly cap + auto-reload | support.claude.com manage-extra-usage |
+| 6 | Overage = usage credits at standard API rates; $2,000/day redemption cap; optional monthly cap + auto-reload | support.claude.com manage-extra-usage (re-verified 2026-07-05: page is now "Manage usage credits for paid Claude plans", article 12429409; numbers unchanged) |
 | 7 | API rule: cache_read excluded from ITPM, cache_creation counts, reads billed 10% (NOT the cap) | platform.claude.com/docs/en/api/rate-limits |
 | 8 | Cap cache_read weight ≈0.1× (3 datasets converge; moved 0.0→0.1×); cap metered via `anthropic-ratelimit-unified-*` headers (undocumented) | github.com/anthropics/claude-code/issues/45756; github.com/ArkNill/claude-code-hidden-problem-analysis |
 | 9 | 1h applied selectively to subscribers; subagents pinned 5m; 1h only inside allowance, overage→5m; ENABLE_PROMPT_CACHING_1H=1; "small win" | github.com/anthropics/claude-code/issues/46829 (bcherny; Anthropic email via lizthegrey) |
 | 10 | 1h-TTL bugs fixed v2.1.90 / v2.1.106 (be on v2.1.108+) | github.com/anthropics/claude-code/issues/46829 |
 | 11 | Anthropic drain attribution: stale large-context cache misses + subagent/plugin volume; subagents ≈61% of calls; AUTO_COMPACT_WINDOW=400000 | github.com/anthropics/claude-code/issues/45756; theregister.com |
 | 12 | #24147 still open, no Anthropic-staff comment ever | github.com/anthropics/claude-code/issues/24147 |
-| 13 | Agent-SDK/headless usage split off the cap into separate API-rate credit | support.claude.com use-the-claude-agent-sdk-with-your-claude-plan |
+| 13 | Agent-SDK/headless usage split off the cap into separate API-rate credit | support.claude.com use-the-claude-agent-sdk-with-your-claude-plan (re-verified 2026-07-05: split PAUSED — "For now, nothing has changed: Claude Agent SDK, claude -p, and third-party app usage still draw from your subscription's usage limits"; the separate credit is a suspended plan, not live behavior) |
 | 14 | Local: 33.5M read / 7.0M write / 0.32M uncached; 44.7:1 read:I/O; Opus 465 + Haiku 95 calls; effort=max | local JSONL scan `~/.claude/projects/**/*.jsonl` |
 | 15 | Subscription = Max (this environment) | `~/.claude/.credentials.json` → subscriptionType:max |

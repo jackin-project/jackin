@@ -22,7 +22,7 @@ scope `user:inference`). **The token is read at runtime and never printed.** `co
 inference, so re-running these is free. No `ANTHROPIC_API_KEY` is required or used.
 
 Note: `count_tokens` rejects `claude-fable-5` (HTTP 404, "use Opus 4.8"); Fable 5 and Opus 4.8 share
-a tokenizer, so measure the Fable family on `claude-opus-4-8`.
+a tokenizer, so measure the Fable family on `claude-opus-4-8`. [Re-verified 2026-07-05: no longer true — a live probe returned HTTP 200 for `claude-fable-5` (9 tokens for the reference message, identical to `claude-opus-4-8`), and the token-counting docs now list `claude-fable-5` as a directly supported model id ("All active models support token counting"). The Opus-4.8 proxy remains a valid tokenizer twin but is no longer required.]
 
 ## Two traps these encode
 

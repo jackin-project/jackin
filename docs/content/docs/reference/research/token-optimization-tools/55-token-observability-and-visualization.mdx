@@ -21,8 +21,8 @@ Volume III deep-dive on the **observability** layer, requested after the headroo
 |---|---|
 | Repository | [github.com/alexgreensh/token-optimizer](https://github.com/alexgreensh/token-optimizer) |
 | Pitch | "Find the ghost tokens. Fix them. Survive compaction. Avoid context quality decay." |
-| Created / activity | 2026-02-26 (~4 months); pushed 2026-06-15 |
-| Adoption | 1,341 stars / **8 watchers** / 110 forks / 1 open issue (gh api 2026-06-15). The 168:1 star:watcher ratio is the same PR-inflation signal as the compression niche (file 54 §A) — modest here; rank by what it shows, not stars. |
+| Created / activity | 2026-02-26 (~4 months); pushed 2026-06-15 (pushed 2026-07-03, latest release v5.11.35 2026-07-03 — re-verified 2026-07-05) |
+| Adoption | 1,341 stars / **8 watchers** / 110 forks / 1 open issue (gh api 2026-06-15; 1,542★ / 8 watchers / 122 forks / 1 open issue re-verified 2026-07-05). The 168:1 star:watcher ratio is the same PR-inflation signal as the compression niche (file 54 §A) — modest here; rank by what it shows, not stars. |
 | Language | Python (Claude Code/Codex hooks) + TypeScript (`openclaw/dist/*`) |
 | License | **PolyForm Noncommercial 1.0.0** (auto-commercial for teams &lt;5 people / &lt;$20k-mo) |
 | Data source | Claude Code native **JSONL transcripts**, parsed locally to **SQLite** — CompletionStart/End events, tool invocations, compaction markers. **No proxy, no telemetry endpoint.** |
@@ -38,7 +38,7 @@ Volume III deep-dive on the **observability** layer, requested after the headroo
 
 ### Its optimization half (secondary to visibility)
 
-token-optimizer also ships an active-compression layer (v5): structure-map re-reads (95–99% on large code files), delta-mode re-reads (~97%), read-cache dedup (a 180,000-token file becomes a ~250-token skeleton), bash compression (16 handlers, ~10%, "lossy by design"), smart-compaction decision checkpointing, quality nudges, loop detection, and an opt-in keep-warm cache pinger. Claimed monthly savings: $80–150 light / $300–600 heavy / $1,500–2,500 high-waste.
+token-optimizer also ships an active-compression layer (v5): structure-map re-reads (95–99% on large code files), delta-mode re-reads (~97%), read-cache dedup (a 180,000-token file becomes a ~250-token skeleton), bash compression (16 handlers, ~10%, "lossy by design"), smart-compaction decision checkpointing, quality nudges, loop detection, and an opt-in keep-warm cache pinger. Claimed monthly savings: $80–150 light / $300–600 heavy / $1,500–2,500 high-waste. [README rewritten by 2026-07-05: the tiers are replaced with ~$313/mo counted/metered and ~$1,877/mo (~18%) counterfactual over a 30-day/684-session snapshot, plus a claim of 75% context-waste coverage vs competitors' 15–25% — https://raw.githubusercontent.com/alexgreensh/token-optimizer/HEAD/README.md, accessed 2026-07-05; still vendor self-report (T4).]
 
 ## How it maps onto the dossier
 
@@ -65,8 +65,8 @@ The dossier's central measurement insight is that **thinking tokens are invisibl
 
 | Tool | Stars/watch · license | Granularity | Cache / I/O split | Surface | Data source | Live? | CC-native? |
 |---|---|---|---|---|---|---|---|
-| **nateherkai/token-dashboard** | 584/11 · MIT | message / session / day / project | **Yes** (input/output/cacheRead) | Web (`localhost:8080`) | JSONL `~/.claude/projects/` | Yes (30s) | **Yes** — pure observability; dedupes CC's 2–3× JSONL stream-writes |
-| **phuryn/claude-usage** | 1,826/16 · MIT | message / session / day / model | **Yes** (input/output/cache_creation/cache_read) | Web + **VS Code sidebar** + CLI | JSONL | Yes (30s) | Yes — discloses $ is API-equivalent, not subscription |
+| **nateherkai/token-dashboard** | 584/11 · MIT [619★/11w re-verified 2026-07-05; last push 2026-04-20 — dormant ~2.5 months, 20 open issues, no releases] | message / session / day / project | **Yes** (input/output/cacheRead) | Web (`localhost:8080`) | JSONL `~/.claude/projects/` | Yes (30s) | **Yes** — pure observability; dedupes CC's 2–3× JSONL stream-writes |
+| **phuryn/claude-usage** | 1,826/16 · MIT [1,952★/16w re-verified 2026-07-05; v1.5.4 released 2026-07-01, actively maintained] | message / session / day / model | **Yes** (input/output/cache_creation/cache_read) | Web + **VS Code sidebar** + CLI | JSONL | Yes (30s) | Yes — discloses $ is API-equivalent, not subscription |
 | **alexgreensh/token-optimizer** (anchor) | 1,341/8 · PolyForm-NC | per-turn / message / session / 30-day | **Yes + 5m/1h TTL write split** | Web + status line + CLI | JSONL → SQLite | Yes (status line) | Yes — richest split; but an optimizer, not pure viz |
 | **ColeMurray/claude-code-otel** + official Grafana | ~441 · MIT | session / day / model (aggregated) | **Yes** (OTel `type` = input/output/cacheRead/cacheCreation) | Grafana + Prometheus | **Claude Code native OTel** (no proxy) | Yes | Yes — org-grade, counters only (no per-message drilldown) |
 | **delexw/claude-code-trace** | 311/1 · MIT | message + tool calls | partial (counts where available) | Desktop (Tauri) + Web + TUI | JSONL | Yes (live tail) | Yes — best *session replay*; token surface minimal |
@@ -82,7 +82,7 @@ The pattern mirrors file 54's compression sweep: **the JSONL-reading, no-proxy c
 
 ### Best for "visualize my latest session"
 
-1. **nateherkai/token-dashboard** — the *pure-observability* pick for this brief: per-prompt→session→day with input/output/cacheRead split, heatmaps, subagent attribution, local web UI, no proxy, no compression side-effects, and it correctly dedupes Claude Code's 2–3× JSONL stream-writes (an accuracy point most miss). MIT. Does only visibility — exactly what was asked.
+1. **nateherkai/token-dashboard** — the *pure-observability* pick for this brief: per-prompt→session→day with input/output/cacheRead split, heatmaps, subagent attribution, local web UI, no proxy, no compression side-effects, and it correctly dedupes Claude Code's 2–3× JSONL stream-writes (an accuracy point most miss). MIT. Does only visibility — exactly what was asked. [Maintenance caveat, re-verified 2026-07-05: last push 2026-04-20 (~2.5 months dormant), 20 open issues, no releases — phuryn/claude-usage (v1.5.4, 2026-07-01) is the actively maintained alternative if dormancy matters.]
 2. **phuryn/claude-usage** — closest runner-up; cleanest cache_creation/cache_read separation plus a VS Code sidebar; honestly flags that its dollars are API-equivalent (the file-41 subscription caveat, disclosed by the tool itself). MIT.
 3. **token-optimizer (anchor) — observability layer only** — the *richest* numbers (cache-write 5m/1h TTL split, exact-from-`usage`-object, four pricing tiers, wasteful-thinking flag, live status line). Third *for this brief* only because it is an optimizer that also rewrites reads/compaction; #1 on raw capability if you want (or don't mind) the active features. Source-available (PolyForm-NC), not OSI.
 4. **claude-code-otel + official Grafana** — best durable, queryable, org-grade dashboard on Claude Code's native OTel (no proxy); loses on grain (aggregated, no per-message).

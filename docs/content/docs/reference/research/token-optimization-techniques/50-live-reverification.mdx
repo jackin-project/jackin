@@ -1,0 +1,220 @@
+---
+title: "50 — Live re-verification and drift delta (2026-07-05)"
+---
+
+# 50 — Live re-verification and drift delta (2026-07-05)
+
+The Volume IV drift chapter: on 2026-07-05 every drift-prone, load-bearing claim in the dossier was re-checked against live primary sources — platform/code/support docs, the Claude Code changelog, Anthropic announcements, provider pricing pages, GitHub issues, and arXiv. **Volumes I–III stay frozen as written.** Where a recorded claim is now false, the correction lives here; for the worst (load-bearing) cases an inline stale-claim marker was also added in the affected file (list in [Corrections applied inline](#corrections-applied-inline)). Each area table lists **all** changes and only the materially interesting confirmations. Status vocabulary distinguishes honesty classes: **CONFIRMED** (claim verbatim-true today), **DOCS CHANGED** (claim was correct when recorded; the world moved), **WAS WRONG** (the recorded claim was incorrect on its own date), **UNVERIFIABLE** (source no longer states it either way). All sources in this chapter were accessed 2026-07-05; full URLs in the [verification ledger](#verification-ledger).
+
+**TL;DR**
+
+- **Claude Sonnet 5 (`claude-sonnet-5`) shipped 2026-06-30 and is the single biggest drift.** Default model in Claude Code (2.1.197), 1M native context, 128k output, intro pricing $2/$10 per MTok through 2026-08-31 then $3/$15 — and it uses the **new (Opus 4.7+) tokenizer**. The dossier's compounded "price ratio × tokenizer ratio" downtier arithmetic (11, 16) now applies **only** to legacy Sonnet 4.6 / Haiku 4.5, not to the current mid tier. Also supersedes file 46's "no post-06-12 change to API cost primitives" verdict.
+- **The Fable 5 subscription story was superseded twice.** Access was suspended 2026-06-12→06-30 under a government export-control directive, then redeployed 2026-07-01; Pro/Max/Team/select Enterprise include Fable 5 up to 50% of weekly usage limits **through 2026-07-07**, after which it moves to usage credits at API rates. The 06-23-removal narrative in files 41/46/49 is wrong during the July 1–7 window and reverts to credits-only after 07-07.
+- **The 2026-06-15 Agent-SDK/headless billing split was PAUSED by Anthropic** — `claude -p`, SDK, and third-party usage still draw the interactive subscription cap. File 41 Q7's "route CI off the cap" lever is currently inoperative.
+- **Beta/status drift, all in the loosening direction:** the memory tool (`memory_20250818`) went **GA** (no beta header, 14); mid-conversation system messages are GA on Opus 4.8 (no beta header, 13); the context-windows-page thinking-retention contradiction recorded in 18 was **fixed upstream**; and Claude Code 2.1.198 made the built-in Explore agent inherit the main session's model instead of running on haiku — Explore's implicit cheap-model-routing saving (12) is gone.
+- **Docs bookkeeping moved under several recorded numbers without changing substance:** `count_tokens` rate tiers renamed Start/Build/Scale at 2,000/4,000/8,000 RPM (the 100-RPM tier-1 row is gone; 01, 11); the pricing page's tokenizer note now says "approximately 30% more tokens" (the "up to 35%" phrasing is gone; 01); the limits doubling was announced 2026-05-06, not 2026-06-05 as recorded (41); and the token-counting docs now document `claude-fable-5` as a directly supported `count_tokens` model id, staling the opus-4-8-proxy workaround (tools/40/42).
+- **The headline verdict stands: ≈2.5× defensible / ≈5–6.2× with validated routing / no honest 10× at equal quality, with tasks-per-cap as the subscriber metric.** No delta touches either binding constraint (frontier thinking billed as output; the cache-read floor of genuinely-used context); Sonnet 5's intro pricing changes absolute dollars and *which* routing target is correct — the ≈5–6.2× routing path must now be pinned to old-tokenizer targets (Sonnet 4.6/Haiku 4.5) or re-derived at Sonnet 5's ratio — and the paused SDK split plus the Fable churn make the cap even more clearly the subscriber's binding constraint.
+
+---
+
+## A. Pricing & models
+
+All headline dollar numbers in the dossier remain correct: Fable 5 $10/$50 (cache $1/$12.50/$20, batch $5/$25), Opus 4.8 $5/$25, Sonnet 4.6 $3/$15, Haiku 4.5 $1/$5, batch −50% stacking with cache, 1M-context standard-priced, US data residency 1.1×, web search $10/1,000, code execution 1,550 free hrs then $0.05/hr — all confirmed on the live pricing page. The changes:
+
+| Claim (file) | Status | Latest (2026-07-05) | Source |
+|---|---|---|---|
+| Model lineup: Fable 5 / Opus 4.8 / Sonnet 4.6 / Haiku 4.5 is current (16) | **DOCS CHANGED — load-bearing** | Claude Sonnet 5 (`claude-sonnet-5`) shipped: $2/$10 intro through 2026-08-31 then $3/$15; 1M context; 128k output; adaptive thinking; effort defaults high on Claude API and Claude Code; **new (Opus 4.7+) tokenizer**. Sonnet 4.6 demoted to the Legacy accordion. The "downtier to Sonnet gains ~1.3–1.45× tokenizer ratio" argument does **not** apply to Sonnet 5 | platform.claude.com pricing + models/overview |
+| Fable 5 removed from plans 2026-06-23; tiering flips to Opus 4.8 (46) | **DOCS CHANGED — load-bearing** | Superseded twice: suspended 06-12→06-30 (export-control directive), redeployed 07-01 with an improved safety classifier; Pro/Max/Team/select Enterprise include Fable 5 up to 50% of weekly usage limits through 07-07, then usage credits at API rates. No commitment to restore full plan inclusion | anthropic.com/news/redeploying-fable-5 |
+| Fast mode: Opus 4.8 $10/$50; Opus 4.6/4.7 $30/$150 (18) | **DOCS CHANGED** | Live table lists only Opus 4.8 ($10/$50) and Opus 4.7 ($30/$150, deprecated, removed 2026-07-24). Opus 4.6 fast mode ended 2026-06-29: `speed: "fast"` requests run and bill at standard rates | platform.claude.com pricing, Fast mode |
+| Pricing-page tokenizer note: "may use up to 35% more tokens" (01) | **DOCS CHANGED** | Now: newer tokenizer "produces approximately 30% more tokens for the same text. The exact increase depends on the content and workload shape"; note now lists Sonnet 5 among new-tokenizer models | platform.claude.com pricing |
+| Sonnet 4.6 max output 64k (16) | **DOCS CHANGED** | Legacy table lists Sonnet 4.6 max output as 128k (Sonnet 4.5/Opus 4.5 remain 64k) | platform.claude.com models/overview |
+| Tool-use system-prompt tax table; Fable 5 absent (18) | CONFIRMED | All recorded rows verbatim; table gained a Sonnet 5 row: 354 (auto/none) / 474 (any/tool). Fable 5 still absent | platform.claude.com pricing, Tool use |
+| Mythos 5 limited availability (Project Glasswing), Fable-5 specs/pricing (18) | CONFIRMED | Still invitation-only; no self-serve sign-up | platform.claude.com pricing + introducing-fable-5 |
+
+New facts the dossier predates: batch extended-output beta `output-300k-2026-03-24` gives Opus 4.8/4.7/4.6, Sonnet 5, and Sonnet 4.6 up to 300k output tokens in the Batch API (synchronous stays 128k — 15/18); Fable 5's refusal/fallback billing surface is documented (`stop_reason` `refusal` at HTTP 200, no billing for pre-output refusals, server-side `fallbacks` beta, and "fallback credit" refunding the prompt-cache cost of a cross-model retry — changes the fallback-cost arithmetic in 13/16).
+
+## B. Caching
+
+Cleanest area of the sweep: multipliers (0.1×/1.25×/2×), free TTL refresh, every min-cacheable-prefix floor, 4 breakpoints / 20-position lookback, `max_tokens: 0` pre-warm with its full rejection list, workspace-scoped isolation (2026-02-05), the concurrency rule, **all 8 Claude Code invalidators** (with the v2.1.86 and v2.1.163 gates), the cache-safe list, the TTL policy (1h main loop on subscription / 5m subagents / 5m on credits and API, both env vars), `/rewind` past-TTL warmth, and `excludeDynamicSections` — all verified verbatim on the live pages. No load-bearing drift. The changes:
+
+| Claim (file) | Status | Latest (2026-07-05) | Source |
+|---|---|---|---|
+| Mid-conversation `{role: system}` messages: Opus 4.8 only, SDK beta header `mid-conversation-system-2026-04-07` (13) | **DOCS CHANGED** | GA on Opus 4.8: "No beta header is required." Available on Claude API/AWS-Platform/Foundry, not Bedrock/Google Cloud; ZDR-eligible. Model list unchanged, so Gap #7 stays open | platform.claude.com mid-conversation-system-messages |
+| Min-prefix table membership (13) | CONFIRMED + additive | All recorded floors verbatim; table adds Sonnet 5 = 1,024 and lifecycle annotations (Opus 4.1 deprecated; Opus 4/Sonnet 4/Haiku 3.5 retired except Bedrock/Google Cloud) | platform.claude.com prompt-caching |
+| Deferred tool loading unavailable on Haiku/Vertex/custom gateways (13) | CONFIRMED | Docs renamed "Vertex AI" → "Google Cloud's Agent Platform"; same substance | code.claude.com prompt-caching |
+
+New: a dedicated **Cache diagnostics** docs page now exists for locating exactly where two requests diverged on an expected cache hit (13 technique 12 predates it); Claude Code gained a model-family-specific `DISABLE_PROMPT_CACHING_FABLE` env var; and Anthropic published a design-rationale blog ("Lessons from building Claude Code: Prompt caching is everything") citable for techniques 1/5/6 in file 13.
+
+## C. Claude Code changelog
+
+The dossier's reference point was ~v2.1.175; latest is **2.1.201 (2026-07-03)** — ~26 releases of drift, two of them load-bearing.
+
+| Claim (file) | Status | Latest (2026-07-05) | Source |
+|---|---|---|---|
+| No post-06-12 change to Anthropic's billable API/model primitives; deltas are app features only (46) | **DOCS CHANGED — load-bearing** | Claude Sonnet 5 (2.1.197, released 2026-06-30) is a new billable model tier: default in Claude Code, 1M native context, 128k output, $2/$10 promo then $3/$15. The "API primitives did not move" verdict needs a Sonnet 5 exception; the "tiering flips to Opus 4.8" delta is superseded for workloads Sonnet 5 covers | CHANGELOG.md 2.1.197 + anthropic.com/news/claude-sonnet-5 |
+| Explore subagent runs as cheap/disposable context; cheap-model routing multiplies with subagent isolation (12) | **DOCS CHANGED — load-bearing** | 2.1.198: Explore "now inherits the main session's model (capped at opus) instead of running on haiku". Context isolation holds; the implicit cheap-model saving is gone unless the operator pins a cheaper model | code.claude.com changelog 2.1.198 |
+| v2.1.175 subagent cache-write profile (28,669 tok) as fixed-prefix reference (12) | **DOCS CHANGED** | Latest is 2.1.201; the default-model change (Sonnet 5) alters the fixed-prefix/cache-write baseline that measurement anchored; 2.1.201 also stops Sonnet 5 sessions using the mid-conversation system role for harness reminders | code.claude.com changelog |
+| `/usage` gained cache-miss + subagent/long-context attribution (2.1.174) (46) | CONFIRMED, precision gap | Entry is tagged **[VSCode]** — attribution landed in the VSCode Account & usage dialog; the dossier does not record the scoping | CHANGELOG.md 2.1.174 |
+| Subagents nest 5 deep (2.1.172); `/cd` preserves cache (2.1.169) (46) | CONFIRMED | Both verbatim in the live changelog | CHANGELOG.md |
+
+Other post-2.1.175 token-relevant releases: 2.1.198 subagents run in background by default and subagents+compaction inherit extended-thinking config (raises their output cost); 2.1.199/2.1.200 subagents cut off by rate limits/server errors return partial work (reduces wasted-token cost of failed runs); 2.1.181 fixed cache reads silently broken on custom `ANTHROPIC_BASE_URL` and Foundry (gateway users paid 1× miss rates before it); 2.1.191 self-compaction reminder for MEMORY.md; 2.1.178 TeamCreate/TeamDelete removed, spawn-time classifier gates team blowup (47); 2.1.196/2.1.187/2.1.175 org default models and model restrictions enforced across all pickers (49 governance lever).
+
+## D. Effort & thinking
+
+All headline claims hold: effort ladder low→max, high the universal API default (`effort: "high"` ≡ omitting), **still zero published per-level token percentages** (the dossier's biggest-gap statement stands), Fable 5 thinking cannot be disabled, `MAX_THINKING_TOKENS` a no-op on Fable 5, `budget_tokens` deprecated (4.6-era) or 400 (4.7+), `usage.output_tokens_details.thinking_tokens` live, prior-turn thinking kept+billed on Opus 4.5+/Sonnet 4.6+, ultrathink prompt-level-only, ultracode = xhigh + orchestration permission, per-model effort calibration, billing invariant under thinking display modes. The changes:
+
+| Claim (file) | Status | Latest (2026-07-05) | Source |
+|---|---|---|---|
+| LIVE CONTRADICTION: context-windows page still says prior thinking is "automatically stripped" (18) | **DOCS CHANGED — contradiction fixed upstream** | Page now states per-model behavior (Opus 4.5+/Sonnet 4.6+/Fable 5/Mythos keep; earlier Opus/Sonnet and all Haiku strip). Only the token-counting page still carries the blanket "do not count" note — the recorded two-page contradiction is down to one page, and that one is about the counting endpoint | platform.claude.com context-windows + token-counting |
+| xhigh only on Fable 5/Mythos 5/Opus 4.8/4.7; max list closed (18) | **DOCS CHANGED** (additive) | xhigh now also on Sonnet 5; max also on Sonnet 5 and Mythos Preview. Existing-model availability unchanged — lists stale only because new models post-date the dossier | platform.claude.com effort |
+| max is session-only in Claude Code (15) | **DOCS CHANGED** | Documented exception: max persists when set through `CLAUDE_CODE_EFFORT_LEVEL` | code.claude.com model-config |
+| Claude Code defaults: high on Fable 5/Opus 4.8/4.6/Sonnet 4.6, xhigh on Opus 4.7 (15) | CONFIRMED | Sonnet 5 added at high; existing models unchanged | code.claude.com model-config |
+
+New facts: Sonnet 5 supports the full effort ladder with a sanctioned cross-model anchor ("Sonnet 5 medium ≈ Sonnet 4.6 at high effort") and, unlike Fable 5, allows `thinking: {type: "disabled"}`; Mythos Preview exists (max but not xhigh, manual `budget_tokens` still accepted); **Task budgets** (beta) add an advisory token budget for the full agentic loop on Opus 4.7+/Fable 5/Mythos 5 — these models no longer receive the injected `<budget:token_budget>`/`<system_warning>` tags that Sonnet 5/4.6/4.5 and Haiku 4.5 get (candidate new record for 18, composability note for 15); `CLAUDE_CODE_EFFORT_LEVEL` accepts `auto`, orgs can cap effort levels per model, and unsupported levels fall back to the highest supported level at or below; on Fable 5, prompting for internal reasoning in response text can hard-refuse with `stop_details.category: "reasoning_extraction"` (affects any elicit-reasoning-in-text advice in 10); Fable 5/Mythos 5 are not available under zero-data-retention arrangements.
+
+## E. Context-management betas
+
+Context editing (`context-management-2025-06-27`, `clear_tool_uses_20250919` at 100k/keep-3, `clear_thinking_20251015` first-in-array) and compaction (`compact-2026-01-12`, `compact_20260112`, 150k trigger / 50k minimum, same-model-only, `usage.iterations` billing shape, custom instructions replace the default prompt) all remain beta with unchanged defaults and types; still zero Claude Code exposure on any of the three pages. The changes:
+
+| Claim (file) | Status | Latest (2026-07-05) | Source |
+|---|---|---|---|
+| Memory tool `memory_20250818` is public beta (14) | **DOCS CHANGED — load-bearing** | **GA**: "The memory tool is generally available on the Messages API: no beta header is required." Type unchanged, all Claude 4+ models; SDK helpers still live in beta namespaces despite GA. Still no Claude Code exposure | platform.claude.com memory-tool |
+| `usage.iterations[]` populated only on compaction-triggering turns (18) | **WAS WRONG** (precision) | With the beta enabled **every** response includes `usage.iterations`; only the compaction *entry* is conditional on a new compaction being triggered. Re-applying a previous compaction block incurs no additional compaction cost | platform.claude.com compaction (raw .md) |
+| Compaction supported models: Fable 5, Mythos 5/Preview, Opus 4.8/4.7/4.6, Sonnet 4.6 (14, 18) | **DOCS CHANGED** (additive) | List now also includes Claude Sonnet 5 | platform.claude.com compaction |
+| Memory positioned as persisting info "across compaction boundaries so that nothing critical is lost in the summary" (14) | **DOCS CHANGED** (wording) | Quote gone; live wording: "memory preserves the information that must survive summarization". Positioning identical | platform.claude.com memory-tool |
+
+New: the `clear_thinking_20251015` default is now documented as model-specific (Opus 4.5+/Sonnet 4.6+ keep all prior thinking; earlier models keep last turn) — a second live page corroborating 18's retention record; the default compaction summarization prompt now "varies by model"; and the memory-tool docs ship the multi-session initializer→progress-log pattern that 14 technique 6 already describes, now doc-backed.
+
+## F. Tool-use features
+
+All headline numbers in records 6/7/13 hold: both tool-search variant strings and limits (200-char regex, 10,000 deferred max, 30–50-tool degradation, ~55k example, "over 85 percent"), the cache-preservation and strict-mode-composition quotes verbatim, PTC's billing-exclusion quote + platform matrix + all four benchmark figures (+11%/24%, ~38%, 20–40%, τ²-bench −8%), container pricing, structured-outputs GA + 24h grammar cache + 20-strict-tools limit. The changes:
+
+| Claim (file) | Status | Latest (2026-07-05) | Source |
+|---|---|---|---|
+| Tool search incompatible with tool-use examples (18) | **DOCS CHANGED** | Now compatible: "when Claude discovers a deferred tool, the API expands its `input_examples` along with its definition" | platform.claude.com tool-search-tool |
+| 3–5 tool references returned per search (18) | **DOCS CHANGED** (phrasing) | "each search returns up to 5 matching tools by default" | platform.claude.com tool-search-tool |
+| Structured outputs incompatible with citations (18) | UNVERIFIABLE | The live structured-outputs page no longer mentions citations at all; drop or re-source. The PTC incompatibility stands (confirmed on the PTC page) | platform.claude.com structured-outputs |
+
+New: `code_execution_20260521` (same runtime as `_20260120`, discloses the 90-second per-cell limit; interchangeable in `allowed_callers`) — record 7's "requires `code_execution_20260120`" should read "or later"; Sonnet 5 and Mythos 5 join the tool-search/PTC/structured-outputs matrices; tool search is ZDR-eligible while PTC is not, and on Bedrock server-side tool search works only via InvokeModel; a `defer_loading: true` tool cannot also carry `cache_control` (400) and at least one tool must stay non-deferred; PTC gained documented constraints (`disable_parallel_tool_use: true` unsupported, recursive `$ref` 400s, ~4-min pending-call timeout, ~5-min idle container reclaim); structured-outputs complexity limits itemized (20 strict tools, 24 optional params, 16 union-typed params per request).
+
+## G. Quota & subscription
+
+Prices ($20/$17 Pro, $100/$200 Max), the 5-hour + weekly window structure, the Sonnet-only weekly limit, no Opus-specific cap, cross-surface pooling, 200K subscription context, usage credits at API rates with the $2,000/day redemption cap, the cache-read ITPM exclusion + 10% billing, the undocumented `anthropic-ratelimit-unified-*` family, and the silence on #24147 (no staff comment ever) and #45756 (none since 2026-04-12) all confirmed. The changes:
+
+| Claim (file) | Status | Latest (2026-07-05) | Source |
+|---|---|---|---|
+| Agent-SDK/headless usage split off the interactive cap into a separate monthly credit, effective 2026-06-15 (41 Q7) | **DOCS CHANGED — load-bearing** | **Paused**: "For now, nothing has changed: Claude Agent SDK, `claude -p`, and third-party app usage still draw from your subscription's usage limits." The separate credit (Pro $20 / Max-5x $100 / Max-20x $200) is a described-but-suspended plan. Q7's lever is currently inoperative | support.claude.com article 15036540 |
+| 5-hour limits doubled + peak-throttle removed on 2026-06-05 (41) | **WAS WRONG** (date) | Announcement dated and effective **2026-05-06**; the page does not mention counter resets — that sub-claim rests only on the morphllm.com secondary source | anthropic.com/news/higher-limits-spacex |
+| Ledger row 2 cites article 14552983 for the 5-hour/weekly structure (41) | **DOCS CHANGED** (citation rot) | Article restructured — now the official subscriber drain list (`/clear`, pasted files, long CLAUDE.md, skipped planning; Opus "costs several times more per turn than Sonnet"). Window structure now evidenced by articles 12429409 + 11049741 | support.claude.com article 14552983 |
+
+New: rate-limit tables now carry Fable 5 and Sonnet 5 as separate model classes (Fable 5: 1,000 RPM / 500K ITPM / 100K OTPM at Start tier; Opus is one combined 4.5–4.8 bucket); Haiku 3.5 — the sole cache-read-counts-toward-ITPM exception — is retired except Bedrock/Google Cloud, making the exclusion near-universal; fast mode has its own limits and a new `anthropic-fast-*` header family (second undocumented-to-dossier family beside `unified-*`); API monthly spend caps renamed and revalued Start $500 / Build $1,000 / Scale $200,000.
+
+## H. Cross-provider
+
+All headline numbers hold: GPT-5.5 $5/$30 with $0.50 cached and 24h default retention, `gpt-5.5-pro` with no cached tier, `reasoning_effort` none→xhigh, no GPT-5.5 successor; Gemini implicit caching default on 2.5+ (2,048–4,096 minimums), explicit-cache ~0.1× reads + storage rent; Copilot 1 AI credit = $0.01, token billing at published per-model rates, Auto −10%, Fable 5/Opus 4.8 first-class rows. The changes:
+
+| Claim (file) | Status | Latest (2026-07-05) | Source |
+|---|---|---|---|
+| Gemini 3 uses `thinkingLevel` with `thinkingBudget` as companion lever (45) | **DOCS CHANGED** | Thinking page is now `thinking_level`-only (gemini-3-pro-preview low/high; 3-flash-preview low/medium/high; 3.5-flash minimal→high; 3.1-pro-preview low/medium/high); `thinkingBudget` no longer appears | ai.google.dev thinking |
+| Ledger source path docs.github.com/copilot/concepts/billing/models-and-pricing (45) | **DOCS CHANGED** (URL rot) | Page moved to copilot/reference/copilot-billing/models-and-pricing; old path 404s | docs.github.com |
+
+New: the Gemini caching doc now targets the Interactions API, which supports **implicit caching only** — the explicit-cache + storage-rent lever narrows to the legacy generateContent surface (18/45); Gemini lineup advanced (3.5-flash GA $1.50/$9.00; 3.1-pro-preview $2/$12 ≤200k; 3.1-flash-lite $0.25/$1.50); Copilot GPT-5.5 gained a long-context tier ($10/$1/$45 vs default $5/$0.50/$30); Copilot included credits are Pro 1,500 / Pro+ 7,000 / Max 20,000 pooled at billing-entity level, with a legacy request-billed cohort ($0.04/request) persisting; OpenAI container sessions bill per-minute with a 5-minute minimum since 2026-06-02.
+
+## I. Fresh literature
+
+Sweep window 2026-06-15→07-05: **no new paper moves a dossier headline number.** "Hold Onto That Thought" (2512.12008) and CAG (2412.15605) confirmed at their recorded claims; the KV-compression family verdict (self-host-only, $0 on hosted Claude) is reinforced by three new in-window members that all land inside the inference engine. One recorded claim drifted:
+
+| Claim (file) | Status | Latest (2026-07-05) | Source |
+|---|---|---|---|
+| CompressionAttack (2510.22963) flips agent behavior with up to 80% ASR (46) | **DOCS CHANGED** (paper revised) | Retitled "When Compression Becomes an Attack Surface: Black-Box Attacks on Prompt-Compressed LLM Agents"; attack renamed **COMA**; abstract headline now "0.71 average ASR, versus 0.21 for the strongest baseline". FL3's verdict (compressors are an attack surface) holds; the "≤80% ASR" figure and old name no longer match the live abstract | arxiv.org/abs/2510.22963 |
+
+New in-window and oversight items worth folding in: **InfoKV** (2606.26875, entropy-aware KV compression for reasoning), **CompressKV** (2606.24467, >97% performance at 3% KV budget), **MosaicKV** (2607.00760, 2-D compression, 16× attention speedup) — all self-host, FL4 unchanged; **FastContext** (2606.14066, Microsoft, up to 60% token reduction + up to +5.5% SWE-bench resolution — **currently withdrawn by author over product-IP concerns**, cite only with that flag); "Brevity is the Soul of Inference Efficiency" (2606.25432, 35× Cost-of-Pass from curated concision, VLM — supports 15/42's direction); and two pre-window oversights uncited in 46: **"Don't Break the Cache"** (2601.06007 — 500+ agent sessions across three providers, caching cuts API cost 41–80% and TTFT 13–31%, strategic placement beats naive full-context caching; first peer-style empirical validation of the dossier's cache-first math, belongs in 13/46) and **2605.11051** (In-Context Autoencoder soft compression fails on multi-step agentic coding — direct reinforcement of FL3), plus **TACO** (2604.19572 — training-free rule-based filtering of terminal observations that *gains* 1–4% accuracy while cutting tokens; a counter-datapoint that nuances FL3's scope to model-based compressors, deterministic observation filtering can be negative-cost).
+
+## J. Tokenizer & counting
+
+Confirmed: `count_tokens` free with an independent rate pool, estimate semantics, system-added tokens unbilled, prior-turn thinking ignored by the counter, never warms the cache, ZDR-eligible; the token-counting page's "roughly 30% more tokens" quote and the count-twice-across-the-4.7-boundary guidance verbatim; all recorded prices, so the 3.3× list / 5.3× effective ratios remain arithmetically valid **for the old-family route**. The changes:
+
+| Claim (file) | Status | Latest (2026-07-05) | Source |
+|---|---|---|---|
+| Two live tokenizer families: old = Haiku 4.5/Sonnet 4.6; new = Opus 4.7+/Fable 5/Mythos 5 (11) | **DOCS CHANGED — load-bearing** | Still two families, but membership grew: **Sonnet 5 is new-family** (with Mythos Preview); Sonnet 4.6 and earlier remain old-family. Cross-family arbitrage must be pinned explicitly to Sonnet 4.6/Haiku 4.5 | platform.claude.com pricing + token-counting |
+| Fable→Sonnet cuts price 3.3× AND tokens ~1.2–1.4× (effective ~4–5.3×) (01, 11) | **DOCS CHANGED — load-bearing** | True for Fable 5 → Sonnet **4.6** (still active, still old tokenizer). False if "Sonnet" is read as Sonnet 5: same tokenizer, so the multiplier vanishes; Sonnet 5's list ratio is 5× at intro pricing then 3.3×. Bare "Sonnet" in dossier text is now ambiguous | platform.claude.com pricing + token-counting |
+| `count_tokens` rejects `claude-fable-5` (HTTP 404); use Opus 4.8 proxy (tools/index, 40, 42) | **DOCS CHANGED — load-bearing** | Docs now state "All active models support token counting, including Claude Sonnet 5" and prescribe counting with `model: "claude-fable-5"` directly; the endpoint returns the count under the passed model's tokenizer. The recorded 404 was observed API behavior — **re-verify with one live call before rewording**; docs-only check this pass | platform.claude.com token-counting |
+| `count_tokens` RPM tiers 100/2,000/4,000/8,000 for tiers 1–4 (01, 11) | **DOCS CHANGED** | Tiers renamed Start/Build/Scale = 2,000/4,000/8,000 RPM; the 100-RPM entry row is gone | platform.claude.com token-counting |
+| UsageBox "35% Tokenizer Tax" framing (11) | CONFIRMED (as attribution) | Recorded as third-party attribution; official pages now say ~30%, so the direction-right-magnitude-high caveat sharpens | — |
+
+The local family-equality measurements (Fable 5 ≡ Opus 4.8; Sonnet 4.6 ≡ Haiku 4.5) are consistent with the updated docs and need no change.
+
+## Corrections applied inline
+
+The load-bearing findings above also received inline stale-claim markers in the affected files (applied by the sibling correction pass; this list is the authoritative index):
+
+1. [16 — model routing & delegation](/reference/research/token-optimization-techniques/16-model-routing-and-delegation/) — add Sonnet 5 to the baseline and effective-multiplier tables ($2/$10 intro → $3/$15; 1M context; 128k output; new tokenizer; effort default high); mark Sonnet 4.6 legacy with 128k max output; scope the tokenizer-ratio bonus to Sonnet 4.6/Haiku 4.5 only.
+2. [46 — fresh literature & market delta](/reference/research/token-optimization-techniques/46-fresh-literature-and-market-delta/) — Fable 5 suspension 06-12→06-30, redeployment 07-01, 50%-of-weekly-limits plan inclusion through 07-07, credits after; Sonnet 5 exception to the "API primitives did not move" verdict and to the "tiering flips to Opus 4.8" delta.
+3. [12 — context architecture](/reference/research/token-optimization-techniques/12-context-architecture/) — since 2.1.198 Explore inherits the main session's model (capped at opus) instead of haiku; subagents and compaction inherit extended-thinking config; subagents run in background by default.
+4. [14 — retrieval, memory & state](/reference/research/token-optimization-techniques/14-retrieval-memory-and-state/) — memory tool is GA on the Messages API, no beta header (type still `memory_20250818`, all Claude 4+ models).
+5. [41 — subscription & quota economics](/reference/research/token-optimization-techniques/41-subscription-and-quota-economics/) — the 2026-06-15 Agent-SDK split is paused; headless/`claude -p`/third-party usage still draws the interactive cap; Q7's lever inoperative until unpaused.
+6. [11 — tokenizer arbitrage](/reference/research/token-optimization-techniques/11-tokenizer-arbitrage/) — new-family membership now includes Sonnet 5 (and Mythos Preview); all cross-family arbitrage numbers pinned explicitly to Sonnet 4.6/Haiku 4.5; Fable→Sonnet 5 carries no tokenizer discount.
+7. [tools hub](/reference/research/token-optimization-techniques/tools/), [40 — extension overview](/reference/research/token-optimization-techniques/40-extension-overview/), [42 — multimodal token economics](/reference/research/token-optimization-techniques/42-multimodal-token-economics/) — the "`count_tokens` rejects `claude-fable-5`, use Opus 4.8 proxy" note is stale per docs; marked for one live-call re-verification before final rewording.
+
+## Verification ledger
+
+Every source consulted in this pass, all accessed 2026-07-05. Fetch failures: `anthropic.com/news/redeploying-fable-5-mythos-5` (404 as linked from the introducing-fable-5 Tip; successor fetched), `support.claude.com/en/articles/11049408` (404; successor 11049741 fetched), `docs.github.com/en/copilot/concepts/billing/models-and-pricing` (404; moved under reference/copilot-billing), and two WebFetch truncations on the very long compaction page (resolved via the raw `.md` variant).
+
+| # | Source | Evidenced |
+|---|---|---|
+| 1 | https://platform.claude.com/docs/en/about-claude/pricing | All model/cache/batch/tool prices; fast-mode table; tokenizer note (~30%); Sonnet 5 intro pricing; tool-use tax rows; data residency 1.1× |
+| 2 | https://platform.claude.com/docs/en/about-claude/models/overview | Sonnet 5 in Latest table; Sonnet 4.6 legacy, 128k output; contexts/max outputs; `output-300k-2026-03-24` batch beta |
+| 3 | https://platform.claude.com/docs/en/about-claude/models/introducing-claude-fable-5-and-claude-mythos-5 | Fable 5 GA platforms; Mythos 5 Glasswing; refusal/fallback billing surface; access-restored Tip |
+| 4 | https://www.anthropic.com/news/redeploying-fable-5 | Suspension 06-12→06-30; redeployment 07-01; 50%-of-weekly-limits through 07-07, credits after |
+| 5 | https://www.aljazeera.com/economy/2026/7/1/us-lifts-restrictions-on-powerful-ai-models-fable-mythos-anthropic-says | Corroboration of the export-control suspension/lift |
+| 6 | https://www.anthropic.com/news/claude-sonnet-5 | Sonnet 5 release 2026-06-30; $3/$15 after Aug 31; 128K output |
+| 7 | https://platform.claude.com/docs/en/build-with-claude/prompt-caching | Multipliers; TTL refresh; min-prefix table (+ Sonnet 5 = 1,024, lifecycle annotations); breakpoints/lookback; pre-warm; isolation; concurrency |
+| 8 | https://code.claude.com/docs/en/prompt-caching | All 8 invalidators; cache-safe list; TTL policy; local cache scope; deferred-loading exclusions; `DISABLE_PROMPT_CACHING_FABLE`; blog link |
+| 9 | https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages | GA on Opus 4.8, no beta header; placement rules; platform matrix; cache-diagnostics link |
+| 10 | https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md | 2.1.169/172/174 verbatim; 2.1.178/181/187/191/196/197/199/200/201 deltas |
+| 11 | https://code.claude.com/docs/en/changelog | Latest 2.1.201 (2026-07-03); 2.1.198 Explore/model + thinking inheritance |
+| 12 | https://platform.claude.com/docs/en/build-with-claude/effort | Ladder + defaults; qualitative-only savings; Sonnet 5 medium ≈ Sonnet 4.6 high anchor; xhigh/max availability; Opus 4.7/4.8 strictness guidance |
+| 13 | https://platform.claude.com/docs/en/build-with-claude/adaptive-thinking | Fable 5 always-on thinking; `budget_tokens` 400s; `thinking_tokens` usage field; retention by model; display billing invariance; `reasoning_extraction`; ZDR exclusions |
+| 14 | https://platform.claude.com/docs/en/build-with-claude/context-windows | Contradiction fixed: per-model keep/strip; `<budget:token_budget>` tag model list |
+| 15 | https://platform.claude.com/docs/en/build-with-claude/token-counting | Free + separate pool; Start/Build/Scale 2,000/4,000/8,000 RPM; estimate semantics; fable-5 as supported count model; roughly-30% quote |
+| 16 | https://code.claude.com/docs/en/model-config | Claude Code effort defaults (+ Sonnet 5 high); `MAX_THINKING_TOKENS` no-op on Fable 5; ultrathink/ultracode; effort surfaces + precedence; `auto`; org effort limits; max persistence exception |
+| 17 | https://platform.claude.com/docs/en/build-with-claude/task-budgets | Task budgets beta (Opus 4.7+/Fable 5/Mythos 5) |
+| 18 | https://platform.claude.com/docs/en/build-with-claude/context-editing | Beta header; `clear_tool_uses_20250919` defaults; `clear_thinking_20251015` first-in-array + model-specific keep; cache tension; `applied_edits` |
+| 19 | https://platform.claude.com/docs/en/build-with-claude/compaction (+ raw .md) | Beta header/type; 150k/50k; same-model-only; `content: null`; `usage.iterations` always present with beta; Sonnet 5 in model list; per-model default prompt |
+| 20 | https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool | GA, no beta header; six commands; injected protocol prompt; ZDR; compaction positioning wording; multi-session pattern |
+| 21 | https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool | Both variant strings; limits; cache-preservation quote; up-to-5 default; examples compatibility; `defer_loading`+`cache_control` 400; ZDR; Bedrock InvokeModel nuance |
+| 22 | https://platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling | `allowed_callers`; billing-exclusion quote; platform matrix; all four benchmark figures; strict/MCP exclusions; timeout/container constraints |
+| 23 | https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool | Container pricing; free-with-web-tools; `code_execution_20260521` 90s disclosure |
+| 24 | https://platform.claude.com/docs/en/build-with-claude/structured-outputs | GA; grammar cache 24h; 20-strict-tools + itemized complexity limits; citations mention gone |
+| 25 | https://platform.claude.com/docs/en/api/rate-limits | Cache-read ITPM exclusion + 10% billing; Fable 5/Sonnet 5 model classes; Haiku 3.5 retirement; `anthropic-fast-*` headers; Start/Build/Scale spend caps; no `unified-*` docs |
+| 26 | https://support.claude.com/en/articles/8325606-what-is-the-pro-plan | Pro $20/$17 |
+| 27 | https://support.claude.com/en/articles/11049741-what-is-the-max-plan | Max $100/$200; two weekly limits (all-models + Sonnet-only); fixed reset anchor |
+| 28 | https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans | Credits at API rates; $2,000/day; 5-hour session resets; monthly cap + auto-reload |
+| 29 | https://support.claude.com/en/articles/11647753-how-do-usage-and-length-limits-work | Cross-surface pooling; 200K subscription context (500K some Enterprise) |
+| 30 | https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan | SDK split paused; "nothing has changed"; no monthly credit currently available |
+| 31 | https://support.claude.com/en/articles/14552983-models-usage-and-limits-in-claude-code | Restructured drain list; Opus several-times-per-turn quota statement |
+| 32 | https://claude.com/pricing | Plan price corroboration (Max 20x render artifact noted; 11049741 authoritative) |
+| 33 | https://www.anthropic.com/news/higher-limits-spacex | Limits doubling + peak-throttle removal dated 2026-05-06; no counter-reset mention |
+| 34 | gh api repos/anthropics/claude-code/issues/24147 | Open; no Anthropic-staff comment ever |
+| 35 | gh api repos/anthropics/claude-code/issues/45756 | Open; only staff comment bcherny 2026-04-12; nothing after 2026-06-18 |
+| 36 | https://developers.openai.com/api/docs/pricing | GPT-5.5 $5/$0.50/$30; gpt-5.5-pro no cached tier |
+| 37 | https://developers.openai.com/api/docs/guides/prompt-caching | ≥1024 automatic; up-to-80%/90%; 24h retention |
+| 38 | https://developers.openai.com/api/docs/guides/reasoning | `reasoning_effort` none→xhigh; per-model subsets |
+| 39 | https://developers.openai.com/api/docs/changelog | 24h retention default (05-29); per-minute containers (06-02); no new models |
+| 40 | https://ai.google.dev/gemini-api/docs/caching | Implicit default on 2.5+; minimums; Interactions API implicit-only |
+| 41 | https://ai.google.dev/gemini-api/docs/pricing | Explicit-cache reads + storage rents; 3.5-flash/3.1-pro-preview/3.1-flash-lite prices |
+| 42 | https://ai.google.dev/gemini-api/docs/thinking | `thinking_level` per model; `thinkingBudget` absent |
+| 43 | https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing | 1 credit = $0.01; Fable 5/Opus 4.8 rows; GPT-5.5 long-context tier; moved URL |
+| 44 | https://docs.github.com/en/copilot/concepts/auto-model-selection | Auto −10% |
+| 45 | https://docs.github.com/en/copilot/concepts/billing/copilot-requests + github.com/orgs/community/discussions/197089 | Included credits Pro 1,500 / Pro+ 7,000 / Max 20,000; legacy request-billed cohort |
+| 46 | https://arxiv.org/abs/2512.12008 | KV eviction lengthens reasoning traces at low budgets |
+| 47 | https://arxiv.org/abs/2412.15605 | CAG preload/bypass-retrieval claim |
+| 48 | https://arxiv.org/abs/2510.22963 | Paper revised: COMA, 0.71 avg ASR vs 0.21 baseline |
+| 49 | https://arxiv.org/abs/2606.26875 | InfoKV |
+| 50 | https://arxiv.org/abs/2606.24467 | CompressKV |
+| 51 | https://arxiv.org/abs/2607.00760 | MosaicKV |
+| 52 | https://arxiv.org/abs/2606.14066 | FastContext (withdrawn — cite with flag) |
+| 53 | https://arxiv.org/abs/2606.25432 | Brevity/Cost-of-Pass 35× |
+| 54 | https://arxiv.org/abs/2601.06007 | "Don't Break the Cache": 41–80% cost cut, 13–31% TTFT, placement beats naive |
+| 55 | https://arxiv.org/abs/2605.11051 | ICAE soft compression fails on multi-step SWE agents |
+| 56 | https://arxiv.org/abs/2604.19572 | TACO: rule-based observation filtering, +1–4% accuracy at lower tokens |
