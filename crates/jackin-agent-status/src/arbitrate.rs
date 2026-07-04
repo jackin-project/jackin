@@ -17,13 +17,18 @@ pub fn arbitrate(
     previous_raw: RawAgentState,
     now: Instant,
 ) -> EvidenceSummary {
-    let fresh_shell_state = snapshot.osc.shell_state.and_then(|shell_state| {
-        snapshot
-            .osc
-            .shell_state_marked_at
-            .filter(|marked_at| now.duration_since(*marked_at) <= OSC_SHELL_TTL)
-            .map(|_| shell_state)
-    });
+    let fresh_shell_state = snapshot
+        .process
+        .foreground_is_agent
+        .then_some(())
+        .and(snapshot.osc.shell_state)
+        .and_then(|shell_state| {
+            snapshot
+                .osc
+                .shell_state_marked_at
+                .filter(|marked_at| now.duration_since(*marked_at) <= OSC_SHELL_TTL)
+                .map(|_| shell_state)
+        });
     let mut summary = EvidenceSummary {
         visible_blocker: snapshot.screen.state == Some(RawAgentState::Blocked),
         visible_idle: snapshot.screen.state == Some(RawAgentState::Idle),
@@ -164,7 +169,9 @@ pub fn arbitrate(
         );
     }
 
-    if snapshot.process.child_process_count > 0 || snapshot.process.cpu_jiffies_delta > 0 {
+    if snapshot.process.foreground_is_agent
+        && (snapshot.process.child_process_count > 0 || snapshot.process.cpu_jiffies_delta > 0)
+    {
         return finish(
             RawAgentState::Working,
             AgentStatusConfidence::Weak,

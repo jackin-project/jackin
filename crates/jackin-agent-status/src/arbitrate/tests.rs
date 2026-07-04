@@ -274,6 +274,21 @@ fn osc_shell_marker_is_shell_integration_evidence() {
 }
 
 #[test]
+fn osc_shell_marker_before_agent_foreground_is_not_status_evidence() {
+    let now = Instant::now();
+    let mut snapshot = base_snapshot();
+    snapshot.process.foreground_is_agent = false;
+    snapshot.osc.shell_state = Some(RawAgentState::Working);
+    snapshot.osc.shell_state_marked_at = Some(now);
+
+    let result = arbitrate(&snapshot, RawAgentState::Unknown, now);
+
+    assert_eq!(result.raw_state, RawAgentState::Unknown);
+    assert_eq!(result.winner, EvidenceWinner::Unknown);
+    assert!(!result.shell_integration);
+}
+
+#[test]
 fn stale_osc_shell_marker_expires() {
     let now = Instant::now();
     let mut snapshot = base_snapshot();
@@ -343,6 +358,20 @@ fn physics_only_promotes_to_weak_working() {
     assert_eq!(result.raw_state, RawAgentState::Working);
     assert_eq!(result.confidence, AgentStatusConfidence::Weak);
     assert_eq!(result.winner, EvidenceWinner::Physics);
+}
+
+#[test]
+fn pre_agent_physics_does_not_promote_to_working() {
+    let now = Instant::now();
+    let mut snapshot = base_snapshot();
+    snapshot.process.foreground_is_agent = false;
+    snapshot.process.child_process_count = 1;
+    snapshot.process.cpu_jiffies_delta = 1;
+
+    let result = arbitrate(&snapshot, RawAgentState::Unknown, now);
+
+    assert_eq!(result.raw_state, RawAgentState::Unknown);
+    assert_eq!(result.winner, EvidenceWinner::Unknown);
 }
 
 #[test]
