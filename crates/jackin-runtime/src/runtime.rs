@@ -55,6 +55,7 @@ pub use self::launch::{
 pub use self::naming::matching_family;
 pub use self::prewarm_trigger::{
     BackgroundPrewarmTarget, background_prewarm_targets, spawn_background_image_prewarm,
+    spawn_background_sidecar_prewarm,
 };
 pub use self::repo_cache::{RepoError, normalize_github_url};
 pub use self::universe::{

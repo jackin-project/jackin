@@ -169,6 +169,7 @@ pub(super) async fn handle_console(
                 runtime::background_prewarm_targets(&config),
                 debug,
             );
+            runtime::spawn_background_sidecar_prewarm(&paths, debug);
             (Some((docker, claim)), None)
         }
         Err(error) => (None, Some(docker_startup_error(&error))),

@@ -175,6 +175,7 @@ where
     // --- VERBATIM PASTED BODY (supers pre-adjusted) ---
     let container_state = paths.data_dir.join(&container_name);
     let adopted_sidecar = super::super::adopt_prewarmed_dind_sidecar(paths, docker).await;
+    let adopted_sidecar_was_used = adopted_sidecar.is_some();
     let resources = adopted_sidecar.as_ref().map_or_else(
         || DockerResources::from_container_name(&container_name),
         |sidecar| DockerResources {
@@ -1039,6 +1040,11 @@ where
             }
         }),
         reuse_staleness_sentinel,
+        sidecar_prewarm_replenish: if adopted_sidecar_was_used {
+            super::super::SidecarPrewarmReplenish::AfterAttach
+        } else {
+            super::super::SidecarPrewarmReplenish::None
+        },
         sibling_prewarm: super::super::SiblingPrewarm {
             role_git: &source.git,
             branch_override: opts.role_branch.as_deref(),

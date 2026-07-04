@@ -5531,7 +5531,7 @@ plugins = []
     assert!(dind_spec.privileged, "DinD must run privileged");
     let expected_network = dind.strip_suffix("-dind").unwrap().to_owned() + "-net";
     assert_eq!(dind_spec.network, expected_network);
-    assert_eq!(dind_spec.image, "docker:dind");
+    assert_eq!(dind_spec.image, "docker:29-dind");
 
     // Role container: TLS client config
     let run_cmd = runner

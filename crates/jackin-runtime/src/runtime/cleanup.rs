@@ -22,7 +22,8 @@ use owo_colors::OwoColorize;
 
 use super::discovery::{list_managed_role_names, list_role_names};
 use super::naming::{
-    LABEL_IMAGE_KEY, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, LABEL_ROLE_KEY,
+    LABEL_IMAGE_KEY, LABEL_KIND_DIND, LABEL_KIND_PREWARM_DIND, LABEL_KIND_ROLE, LABEL_MANAGED,
+    LABEL_ROLE_KEY,
 };
 use crate::instance::naming::{dind_certs_volume, role_network_name};
 
@@ -233,7 +234,7 @@ fn filter_orphaned_dind(sidecars: Vec<DindInfo>, running: &[String]) -> Vec<Dind
 /// Remove orphaned `DinD` containers, their associated role containers, cert
 /// volumes, and networks.  Errors are logged but do not abort the launch — GC
 /// is best-effort.
-pub(super) async fn gc_orphaned_resources(docker: &impl DockerApi) {
+pub(super) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl DockerApi) {
     let sidecars = match collect_labeled_dind(docker).await {
         Ok(v) => v,
         Err(err) => {
@@ -248,6 +249,7 @@ pub(super) async fn gc_orphaned_resources(docker: &impl DockerApi) {
     if sidecars.is_empty() {
         // No orphaned DinD sidecars — still check for orphaned networks.
         gc_orphaned_networks(docker, None).await;
+        gc_orphaned_prewarm_dind(paths, docker).await;
         return;
     }
 
@@ -302,6 +304,52 @@ pub(super) async fn gc_orphaned_resources(docker: &impl DockerApi) {
     }
 
     gc_orphaned_networks(docker, Some(&running)).await;
+    gc_orphaned_prewarm_dind(paths, docker).await;
+}
+
+async fn gc_orphaned_prewarm_dind(paths: &JackinPaths, docker: &impl DockerApi) {
+    let state_dind = super::launch::prewarmed_dind_state_container_name(paths);
+    let rows = match docker
+        .list_containers(&[LABEL_KIND_PREWARM_DIND], true)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            eprintln!(
+                "  {} GC: could not list orphaned prewarm DinD containers: {err}",
+                "warning:".yellow().bold()
+            );
+            return;
+        }
+    };
+    for row in rows {
+        if state_dind.as_deref() == Some(row.name.as_str()) {
+            continue;
+        }
+        if row.name != "jk-prewarm-dind-dind" {
+            continue;
+        }
+        let certs_volume = "jk-prewarm-dind-certs";
+        let network = "jk-prewarm-dind-net";
+        let (r1, r2, r3) = tokio::join!(
+            docker.remove_container(&row.name),
+            docker.remove_volume(certs_volume),
+            docker.remove_network(network),
+        );
+        for (result, label) in [&r1, &r2, &r3].iter().zip([
+            "prewarm sidecar",
+            "prewarm certs volume",
+            "prewarm network",
+        ]) {
+            if let Err(err) = result {
+                eprintln!(
+                    "  {} GC of {label} for {}: {err}",
+                    "warning:".yellow().bold(),
+                    row.name
+                );
+            }
+        }
+    }
 }
 
 /// Remove jackin-managed Docker networks whose owning role container no longer

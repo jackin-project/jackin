@@ -351,7 +351,7 @@ pub(crate) async fn load_role_with(
 ) -> anyhow::Result<()> {
     // Pre-launch garbage collection is independent from git identity probes.
     let ((), git) = tokio::join!(
-        crate::runtime::cleanup::gc_orphaned_resources(docker),
+        crate::runtime::cleanup::gc_orphaned_resources(paths, docker),
         crate::runtime::identity::load_git_identity(runner)
     );
 

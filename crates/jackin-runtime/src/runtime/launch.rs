@@ -24,10 +24,13 @@
 mod launch_dind;
 pub use launch_dind::DIND_IMAGE;
 pub(super) use launch_dind::create_role_network;
+pub(crate) use launch_dind::prewarmed_dind_state_container_name;
 pub use launch_dind::{
     DindSidecarPrewarm, prewarm_dind_sidecar_container, write_prewarmed_dind_state,
 };
 use launch_dind::{adopt_prewarmed_dind_sidecar, run_dind_sidecar_headless};
+#[cfg(not(test))]
+pub(crate) use launch_dind::{prewarmed_dind_state_is_live, try_lock_prewarmed_dind};
 
 mod launch_slot;
 #[cfg(test)]
@@ -232,8 +235,9 @@ pub(crate) use restore_resolve::{
 mod launch_runtime;
 #[allow(unused_imports)]
 pub(crate) use launch_runtime::{
-    LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm, debug_runtime_envs,
-    host_runtime_passthrough_env, launch_role_runtime, spawn_sibling_auth_prewarm,
+    LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm,
+    SidecarPrewarmReplenish, debug_runtime_envs, host_runtime_passthrough_env, launch_role_runtime,
+    spawn_sibling_auth_prewarm,
 };
 
 /// Present the stale-instance decision. "Start fresh" is always the

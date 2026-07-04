@@ -14,7 +14,7 @@ use jackin_core::paths::JackinPaths;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
 use serde::{Deserialize, Serialize};
 
-pub const DIND_IMAGE: &str = "docker:dind";
+pub const DIND_IMAGE: &str = crate::runtime::docker_profile::DIND_PRIVILEGED_IMAGE;
 const PREWARM_CONTAINER_BASE: &str = "jk-prewarm-dind";
 const PREWARM_STATE_FILE: &str = "prewarm-dind.json";
 
@@ -147,9 +147,9 @@ async fn run_dind_sidecar_headless_with_owner(
     grant: crate::runtime::docker_profile::DindGrant,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    // WP4 Part B: image + privileged flag are tier-aware. `rootless` runs
-    // `docker:dind-rootless` without `--privileged`; `privileged` keeps the
-    // classic `docker:dind` + `--privileged` path.
+    // WP4 Part B: image + privileged flag are tier-aware. `rootless` uses the
+    // rootless DinD image without `--privileged`; `privileged` keeps the
+    // standard DinD image + `--privileged` path.
     let (dind_image, dind_privileged) =
         crate::runtime::docker_profile::dind_image_and_privileged(grant);
     // Create Docker network (sidecar networks are never internal).
@@ -400,6 +400,41 @@ fn prewarmed_dind_state_detail(reason: &str, state: &DindSidecarPrewarmState) ->
     )
 }
 
+#[cfg(not(test))]
+pub(crate) async fn prewarmed_dind_state_is_live(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+) -> bool {
+    let Ok(Some(state)) = read_prewarmed_dind_state(paths) else {
+        return false;
+    };
+    if state.schema_version != 1 || !state.kept {
+        return false;
+    }
+    if !matches!(
+        docker.inspect_container_state(&state.dind).await,
+        ContainerState::Running
+    ) {
+        return false;
+    }
+    let Ok(Some(network_row)) = docker.inspect_network(&state.network).await else {
+        return false;
+    };
+    if network_row.labels.get("jackin.kind").map(String::as_str) != Some("prewarm-dind") {
+        return false;
+    }
+    wait_for_dind(&state.dind, &state.certs_volume, docker)
+        .await
+        .is_ok()
+}
+
+pub(crate) fn prewarmed_dind_state_container_name(paths: &JackinPaths) -> Option<String> {
+    let Ok(Some(state)) = read_prewarmed_dind_state(paths) else {
+        return None;
+    };
+    (state.schema_version == 1 && state.kept).then_some(state.dind)
+}
+
 /// Opportunistically consume the explicit kept sidecar prewarm as a one-shot
 /// launch resource. The warmed resource names are recorded in the instance
 /// manifest and normal session/eject cleanup owns them after launch succeeds.
@@ -557,7 +592,7 @@ pub(super) async fn adopt_prewarmed_dind_sidecar(
     })
 }
 
-fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::File> {
+pub(crate) fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::File> {
     if let Err(error) = std::fs::create_dir_all(&paths.data_dir) {
         jackin_diagnostics::debug_log!(
             "sidecar",
