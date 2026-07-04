@@ -3808,7 +3808,7 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
         &repo_workspace(&cached_repo.repo_dir),
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap_err();
@@ -6051,7 +6051,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
