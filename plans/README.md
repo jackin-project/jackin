@@ -72,7 +72,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 043 | Track: finish the security-hardening cluster (compat→standard) | direction | P2 | L | HIGH | 003 | DONE (sudo audit resolved; follow-ups 049-053) |
 | 044 | Store pane zoom state per tab | bug | P3 | M | MED | 009 | DONE |
 | 045 | Prepare op-picker for a safe leaf-crate extraction | perf/tech-debt | P3 | M | MED | 015 | DONE |
-| 047 | Build the host-daemon lifecycle foundation | direction | P2 | M | MED | 042 | TODO |
+| 047 | Build the host-daemon lifecycle foundation | direction | P2 | M | MED | 042 | DONE |
 | 048 | Build the first production attention adapter | direction | P2 | M | MED | 047 | TODO |
 | 049 | Run the `standard` compatibility matrix | direction | P1 | M | HIGH | 043 | TODO |
 | 050 | Flip the compiled Docker default to `standard` | direction | P1 | S | HIGH | 049 | TODO |

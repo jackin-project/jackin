@@ -13,6 +13,9 @@
 - **Depends on**: 042
 - **Category**: direction (DIRECTION-02)
 - **Planned at**: Plan 042 spike, 2026-07-04
+- **Completed**: Plan 047 shipped the empty production daemon lifecycle in
+  `crates/jackin-runtime/src/host_daemon.rs`, wired through `jackin daemon ...`. It intentionally
+  reports no enabled adapters.
 
 ## Why this matters
 
@@ -62,13 +65,13 @@ Out of scope:
 
 ## Done criteria
 
-- [ ] `jackin daemon serve/start/stop/restart/status/logs/install/uninstall` are implemented and documented
-- [ ] socket directory is `0700`, protocol/build skew fails closed, and request size is bounded
-- [ ] daemon logs use shared redaction and status reports coredump policy
-- [ ] no reactive adapter is enabled by this plan
-- [ ] focused lifecycle/protocol tests pass on macOS/Linux-compatible code paths
-- [ ] docs and roadmap are updated
-- [ ] `plans/README.md` row updated
+- [x] `jackin daemon serve/start/stop/restart/status/logs/install/uninstall` are implemented and documented
+- [x] socket directory is `0700`, protocol/build skew fails closed, and request size is bounded
+- [x] daemon logs use shared redaction and status reports coredump policy
+- [x] no reactive adapter is enabled by this plan
+- [x] focused lifecycle/protocol tests pass on macOS/Linux-compatible code paths
+- [x] docs and roadmap are updated
+- [x] `plans/README.md` row updated
 
 ## Stop conditions
 

@@ -9,6 +9,8 @@
 
 mod config_cmd;
 pub(crate) mod context;
+#[cfg(unix)]
+mod daemon_cmd;
 mod helpers;
 mod load_cmd;
 mod prune_cmd;
@@ -171,6 +173,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             .await?
         }
         Command::Config(config_cmd) => config_cmd::handle(config_cmd, &mut config, &paths, debug),
+        #[cfg(unix)]
+        Command::Daemon(command) => daemon_cmd::handle(command, &paths).await,
         Command::Workspace(command) => {
             workspace_cmd::handle(command, &mut config, &paths, debug).await
         }
@@ -210,6 +214,8 @@ const fn command_name(command: &Command) -> &'static str {
         Command::Role(_) => "role",
         Command::Workspace(_) => "workspace",
         Command::Config(_) => "config",
+        #[cfg(unix)]
+        Command::Daemon(_) => "daemon",
         Command::Logs(_) => "logs",
         Command::Doctor(_) => "doctor",
         Command::Diagnostics(_) => "diagnostics",
