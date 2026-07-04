@@ -14,6 +14,10 @@
 - **Depends on**: none
 - **Category**: bug
 - **Planned at**: commit `46511939d`, 2026-07-03
+- **Decision**: No documented Docker engine version floor was found. Public install docs name Docker
+  Desktop/OrbStack and recommend the containerd image store for faster local builds, while runtime code
+  uses `docker buildx build`/BuildKit without a project-owned minimum-version range. The check therefore
+  remains informational and no unsupported-version gate is invented.
 
 ## Why this matters
 
@@ -63,10 +67,10 @@ exists. Update any docs that describe preflight checks.
 
 ## Done criteria
 
-- [ ] A written decision (floor exists vs not) with evidence in this plan's row note
-- [ ] Branch 2a: version parse + `Fail`/`Warn` floor + test; **or** Branch 2b: check renamed/re-documented
-- [ ] `cargo clippy -p jackin -- -D warnings` exits 0
-- [ ] `plans/README.md` row updated
+- [x] A written decision (floor exists vs not) with evidence in this plan's row note
+- [x] Branch 2a: version parse + `Fail`/`Warn` floor + test; **or** Branch 2b: check renamed/re-documented
+- [x] `cargo clippy -p jackin -- -D warnings` exits 0
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 
