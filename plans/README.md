@@ -56,7 +56,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 027 | Finish or rename the "Transitional" console facade | tech-debt | P3 | M | MED | 023 | DONE (steady-state adapter shell documented; Transitional removed) |
 | 028 | Adopt `[workspace.dependencies]`; exact-pin `turso` | migration/dx | P2 | M | HIGH | — | DONE (shared workspace deps; turso exact-pinned) |
 | 029 | Migrate `fs2` → `fs4` (unmaintained since 2018) | migration | P2 | S | MED | 028 | DONE (workspace fs4 1.1.0; lock tests green) |
-| 030 | Fix the `bans.skip` posture (warn-only gate) | migration/dx | P3 | S | HIGH | — | TODO |
+| 030 | Fix the `bans.skip` posture (warn-only gate) | migration/dx | P3 | S | HIGH | — | DONE (Option A: duplicate-version deny with transitive allowlist) |
 | 031 | Add `cargo xtask ci` reproducing the full CI gate | dx | P2 | M | HIGH | — | TODO |
 | 032 | Stop the git-SHA build stamp from forcing per-commit rebuilds | dx | P2 | S | HIGH | — | TODO |
 | 033 | Make `mise install` the single documented bootstrap | dx | P2 | S | HIGH | — | TODO |

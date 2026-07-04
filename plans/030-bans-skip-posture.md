@@ -7,12 +7,19 @@
 
 ## Status
 
+- **Result**: DONE — Option A, duplicate-version gate promoted to deny
 - **Priority**: P3
 - **Effort**: S
 - **Risk**: MED (flipping to deny fails CI until transitive dups are skipped)
 - **Depends on**: none (cleaner after 028)
 - **Category**: migration / dx
 - **Planned at**: commit `46511939d`, 2026-07-03
+
+## Completion notes
+
+Chose Option A. `multiple-versions = "deny"` now makes the duplicate-version skip list an enforced allowlist. The list was reconciled to the current transitive graph after plans 028 and 029: first-party workspace duplicates are gone, current transitive duplicates are skipped with the existing rationale style, and unmatched target-specific `windows-sys` skips were removed.
+
+`cargo deny check bans` is green in deny mode. `cargo deny check advisories bans licenses sources` also exits 0; it still prints the pre-existing unmatched `ring@0.17.14` license-exception warning, but reports `advisories ok, bans ok, licenses ok, sources ok`. `cargo audit` exits 0.
 
 ## Why this matters
 
@@ -75,12 +82,12 @@ plan touches bans, not advisories, but confirm no ignore drift was introduced:
 
 ## Done criteria
 
-- [ ] A recorded posture decision (A or B) in the row note
-- [ ] Option A: `multiple-versions = "deny"` and `cargo deny check bans` green (skip list complete); **or**
+- [x] A recorded posture decision (A or B) in the row note
+- [x] Option A: `multiple-versions = "deny"` and `cargo deny check bans` green (skip list complete); **or**
       Option B: warn documented as advisory-only
-- [ ] `cargo deny check advisories bans licenses sources` exits 0
-- [ ] `cargo audit` exits 0
-- [ ] `plans/README.md` row updated
+- [x] `cargo deny check advisories bans licenses sources` exits 0
+- [x] `cargo audit` exits 0
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 
