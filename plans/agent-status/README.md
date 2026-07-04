@@ -66,7 +66,7 @@ sync/pure, and moving 003/004/005/007 into a clean crate beats moving them twice
 |------|--------|-------|-------|--------|------|---------|
 | 001 | DONE | One total tab-glyph vocabulary (4 states + unknown) | render | S | LOW | — |
 | 002 | DONE | Generic runtime/shell unwrap in agent identification | identify | M | MED | — |
-| 003 | TODO | Decouple `advance_status` from the biased I/O select | cadence | M | MED | 008 (test first) |
+| 003 | DONE | Decouple `advance_status` from the biased I/O select | cadence | M | MED | 008 (test first) |
 | 004 | TODO | Uniform evidence freshness + wire the OSC-133 emitter | redundancy | M | MED | 008 |
 | 005 | TODO | Couple packs to reality (real goldens; fix version gating) | detection | M | MED | — |
 | 006 | TODO | Exhaustive agent↔detector coverage; grok pack; no silent-empty | detection | M | LOW | 005 |

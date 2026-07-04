@@ -13,6 +13,7 @@
 - **Depends on**: 008 (add the test seam before changing this)
 - **Category**: bug (compute cadence)
 - **Planned at**: commit `5d3661cff`, 2026-07-03
+- **Implementation status**: DONE in PR 714 (`state_ticker` is now above PTY output in the biased daemon select; the output arm remains one-event-per-pass bounded and regression tests pin the ordering/ready-tick behavior)
 
 ## Why this matters
 
@@ -92,11 +93,11 @@ paused-clock daemon test (`grep -rn "time::pause\|start_paused" crates/jackin-ca
 
 ## Done criteria
 
-- [ ] `advance_status` runs ≥ once per `STATE_TICK_INTERVAL` even under a saturating output stream (test proves)
-- [ ] The output arm no longer starves the state arm (budget/drain bound in place)
-- [ ] `cargo nextest run -p jackin-capsule` green (no regression in the loop's other arms)
-- [ ] `cargo clippy -p jackin-capsule -- -D warnings` exits 0
-- [ ] `plans/agent-status/README.md` row updated
+- [x] `advance_status` runs ≥ once per `STATE_TICK_INTERVAL` even under a saturating output stream (test proves)
+- [x] The output arm no longer starves the state arm (budget/drain bound in place)
+- [x] `cargo nextest run -p jackin-capsule` green (no regression in the loop's other arms)
+- [x] `cargo clippy -p jackin-capsule -- -D warnings` exits 0
+- [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions
 
