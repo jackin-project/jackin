@@ -19,6 +19,7 @@ pub mod observability;
 pub mod operator_notice;
 pub mod run;
 pub mod screen;
+pub mod secret_scrub;
 pub mod summary;
 pub mod terminal;
 
@@ -40,6 +41,7 @@ pub use screen::{
     record_action, record_capsule_activity, set_agent_selected, set_agents_active, set_provider,
     set_workspace, set_workspace_kind,
 };
+pub use secret_scrub::scrub_secrets;
 pub use summary::{
     BuildContextSnapshotSummary, CacheEventSummary, DiagnosticsSummary, DockerBuildStepSummary,
     ImageBuildSourceSummary, LaunchPlanEventSummary, PrewarmedDindAdoptionSummary,

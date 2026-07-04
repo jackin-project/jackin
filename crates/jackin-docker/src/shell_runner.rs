@@ -403,9 +403,11 @@ impl ShellRunner {
         }
         let command = format!("{} {}", program, redact_env_args(args).join(" "));
         for line in String::from_utf8_lossy(stdout).lines() {
+            let line = jackin_diagnostics::scrub_secrets(line);
             jackin_diagnostics::active_debug("cmd.stdout", &format!("{command}: {line}"));
         }
         for line in String::from_utf8_lossy(stderr).lines() {
+            let line = jackin_diagnostics::scrub_secrets(line);
             jackin_diagnostics::active_debug("cmd.stderr", &format!("{command}: {line}"));
         }
     }

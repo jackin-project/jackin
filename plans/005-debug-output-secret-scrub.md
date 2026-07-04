@@ -15,6 +15,14 @@
 - **Category**: security
 - **Planned at**: commit `46511939d`, 2026-07-03
 
+## Investigation finding
+
+- `ShellRunner::log_captured_output` was reachable under `--debug` and wrote captured stdout/stderr lines without output scrubbing.
+- `RunDiagnostics::write_command_output` stripped ANSI sequences but persisted sidecar stdout/stderr without token-shape scrubbing.
+- Known credential-producing launch paths use `capture_secret`, so no confirmed current command was found leaking a credential into these sinks.
+- The risk is latent defense-in-depth: a future debug command or build step that echoes a token could persist it to owner-only diagnostics files.
+- The guard now scrubs captured output at both sinks before JSONL/debug or sidecar persistence.
+
 ## Why this matters
 
 The launch path correctly redacts injected secrets at the **command-string** layer (`redact_env_args`

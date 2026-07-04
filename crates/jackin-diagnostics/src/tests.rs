@@ -298,6 +298,32 @@ fn command_output_sidecar_strips_ansi_sequences() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn command_output_sidecar_scrubs_secret_shapes() {
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::ExitStatus;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, false, "load").unwrap();
+    let path = run
+        .write_command_output(
+            "docker-build",
+            "docker build .",
+            None,
+            ExitStatus::from_raw(1),
+            b"token=ghp_1234567890abcdef\n",
+            b"OPENAI_API_KEY=sk-test-1234567890abcdef\n",
+        )
+        .unwrap();
+
+    let contents = fs::read_to_string(path).unwrap();
+    assert!(!contents.contains("ghp_1234567890abcdef"));
+    assert!(!contents.contains("sk-test-1234567890abcdef"));
+    assert!(contents.contains("<secret redacted>"));
+}
+
 #[test]
 fn prune_all_runs_except_preserves_active_run_file() {
     let tmp = tempfile::tempdir().unwrap();
