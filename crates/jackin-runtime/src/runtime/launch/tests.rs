@@ -3524,13 +3524,6 @@ plugins = []
     docker
         .inspect_image_labels_queue
         .borrow_mut()
-        .push_back(HashMap::from([(
-            crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
-            "old-sha".to_owned(),
-        )]));
-    docker
-        .inspect_image_labels_queue
-        .borrow_mut()
         .push_back(labels);
     let mut runner = FakeRunner::for_load_agent([
         "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
@@ -3560,33 +3553,33 @@ plugins = []
     let recorded = runner.recorded.join("\n");
     assert!(
         !recorded.contains("docker buildx build "),
-        "refresh-background decision must skip docker build; recorded:\n{recorded}"
+        "reuse decision must skip docker build; recorded:\n{recorded}"
     );
     assert!(
         !recorded.contains("gh auth token"),
-        "refresh-background decision must skip GitHub token lookup; recorded:\n{recorded}"
+        "reuse decision must skip GitHub token lookup; recorded:\n{recorded}"
     );
     assert!(
         !recorded.contains("docker run --rm --entrypoint"),
-        "refresh-background decision must skip foreground version probe; recorded:\n{recorded}"
+        "reuse decision must skip foreground version probe; recorded:\n{recorded}"
     );
     assert!(
         !recorded.contains("agent_binary_resolve_started"),
-        "refresh-background decision must skip runtime binary preparation; recorded:\n{recorded}"
+        "reuse decision must skip runtime binary preparation; recorded:\n{recorded}"
     );
 
     let docker_recorded = docker.recorded.borrow();
     assert!(
-        docker_recorded
+        !docker_recorded
             .iter()
             .any(|call| call == "docker pull docker.io/myorg/my-role:latest"),
-        "refresh-background decision must check published image freshness: {docker_recorded:?}"
+        "reuse decision must not check published image freshness in the foreground: {docker_recorded:?}"
     );
     assert!(
         docker_recorded
             .iter()
             .any(|call| call == &format!("docker inspect image:{image}")),
-        "refresh-background decision must inspect valid local recipe labels: {docker_recorded:?}"
+        "reuse decision must inspect valid local recipe labels: {docker_recorded:?}"
     );
 }
 

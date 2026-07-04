@@ -940,6 +940,18 @@ where
         }
     }
 
+    let reuse_staleness_sentinel = (selected_image_reused
+        && crate::runtime::image::reuse_needs_background_staleness_check(
+            paths,
+            &validated_repo,
+            &image,
+        ))
+    .then_some(super::super::launch_runtime::ReuseStalenessSentinel {
+        role_git: &source.git,
+        branch_override: opts.role_branch.as_deref(),
+        image: &image,
+    });
+
     let ctx = super::super::LaunchContext {
         container_name: &container_name,
         image: &image,
@@ -968,6 +980,7 @@ where
                 reason,
             }
         }),
+        reuse_staleness_sentinel,
         sibling_prewarm: super::super::SiblingPrewarm {
             role_git: &source.git,
             branch_override: opts.role_branch.as_deref(),

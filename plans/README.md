@@ -18,7 +18,7 @@ avoidable serial network work.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001  | Image decision purely local; network staleness → background sentinel | P1 | M | — | TODO |
+| 001  | Image decision purely local; network staleness → background sentinel | P1 | M | — | DONE |
 | 002  | Derived Dockerfile: jackin runtime payload after heavy layers | P1 | M | — | TODO |
 | 003  | Overlap independent launch stages (op://, git pull, sidecar ∥ build) | P1 | L | best after 001 | TODO |
 | 004  | Role-repo `git fetch` freshness TTL + slimmer cleanliness gate | P2 | M | — | TODO |

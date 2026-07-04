@@ -62,6 +62,7 @@ pub(crate) struct LaunchContext<'a> {
     /// `keep_awake` count is back to zero.
     pub(crate) paths: &'a JackinPaths,
     pub(crate) selected_image_refresh: Option<SelectedImageRefresh<'a>>,
+    pub(crate) reuse_staleness_sentinel: Option<ReuseStalenessSentinel<'a>>,
     pub(crate) sibling_prewarm: SiblingPrewarm<'a>,
     pub(crate) sibling_auth_prewarm: SiblingAuthPrewarm<'a>,
 }
@@ -70,6 +71,12 @@ pub(crate) struct SelectedImageRefresh<'a> {
     pub(crate) role_git: &'a str,
     pub(crate) branch_override: Option<&'a str>,
     pub(crate) reason: crate::runtime::image::ImageInvalidationReason,
+}
+
+pub(crate) struct ReuseStalenessSentinel<'a> {
+    pub(crate) role_git: &'a str,
+    pub(crate) branch_override: Option<&'a str>,
+    pub(crate) image: &'a str,
 }
 
 pub(crate) struct SiblingPrewarm<'a> {
@@ -233,6 +240,7 @@ pub(crate) async fn launch_role_runtime(
         github_env,
         paths,
         selected_image_refresh,
+        reuse_staleness_sentinel,
         sibling_prewarm,
         sibling_auth_prewarm,
     } = ctx;
@@ -1050,6 +1058,17 @@ pub(crate) async fn launch_role_runtime(
             refresh.branch_override,
             *agent,
             refresh.reason,
+            *debug,
+        );
+    }
+    if let Some(sentinel) = reuse_staleness_sentinel {
+        crate::runtime::image::spawn_reuse_staleness_sentinel(
+            paths,
+            selector,
+            sentinel.role_git,
+            sentinel.branch_override,
+            *agent,
+            sentinel.image,
             *debug,
         );
     }
