@@ -10,8 +10,7 @@ use std::sync::Arc;
 use jackin_env::OpStructRunner;
 use jackin_tui::runtime::{BlockingSubscription, Subscription, SubscriptionPoll};
 
-use crate::tui::components::list_helpers::list_state_for_count;
-use crate::tui::components::op_picker::{
+use super::model::{
     AccountsLoadedPlan, FieldsLoadedPlan, OpLoadState, OpPickerAccount, OpPickerCache,
     OpPickerError, OpPickerFatalState, OpPickerLoadRequest, OpPickerLoadResult, OpPickerMode,
     OpPickerPendingLoad, OpPickerStage, VaultsLoadedPlan, accounts_loaded_plan,
@@ -19,6 +18,7 @@ use crate::tui::components::op_picker::{
     item_name_input_state, items_loaded_plan, probe_load_error_state, recoverable_load_error_state,
     section_name_input_state, sort_fields_by_concealed_first, vaults_loaded_plan,
 };
+use crate::tui::components::list_helpers::list_state_for_count;
 
 use super::state::{LoadResult, OpPickerState};
 
@@ -82,7 +82,7 @@ impl OpPickerState {
             field_label_input: field_label_input_state(field_default),
             section_name_input: section_name_input_state(""),
             pending_section: None,
-            field_label_origin: crate::tui::components::op_picker::FieldLabelOrigin::NewItem,
+            field_label_origin: super::model::FieldLabelOrigin::NewItem,
             field_refresh_in_place: false,
             rx: None,
             pending_load: None,
@@ -212,24 +212,21 @@ impl OpPickerState {
     }
 
     fn selected_account_id_ref(&self) -> Option<&str> {
-        crate::tui::components::op_picker::selected_account_id_ref(
-            self.selected_account.as_ref(),
-            |account| account.id.as_str(),
-        )
+        super::model::selected_account_id_ref(self.selected_account.as_ref(), |account| {
+            account.id.as_str()
+        })
     }
 
     pub fn selected_vault_id_or_default(&self) -> String {
-        crate::tui::components::op_picker::selected_entity_id_or_default(
-            self.selected_vault.as_ref(),
-            |vault| vault.id.as_str(),
-        )
+        super::model::selected_entity_id_or_default(self.selected_vault.as_ref(), |vault| {
+            vault.id.as_str()
+        })
     }
 
     pub fn selected_item_id_or_default(&self) -> String {
-        crate::tui::components::op_picker::selected_entity_id_or_default(
-            self.selected_item.as_ref(),
-            |item| item.id.as_str(),
-        )
+        super::model::selected_entity_id_or_default(self.selected_item.as_ref(), |item| {
+            item.id.as_str()
+        })
     }
 
     /// Public so the outer console event loop can drain pending

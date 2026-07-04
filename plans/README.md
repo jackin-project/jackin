@@ -40,7 +40,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 012 | Probe the bind-mounted socket for daemon readiness (drop 500ms exec poll) | perf | P2 | M | HIGH | 006 | DONE (socket-first; measurement deferred) |
 | 013 | Coalesce console instance-refresh docker fan-out (N+1) | perf | P2 | M | MED | — | DONE (exec fallback backs off; stopped instances skipped) |
 | 014 | Gate capsule per-frame region scans on the damage signal | perf | P2 | L | MED | — | DONE (p95 882us→701us) |
-| 015 | Split the mega-crates to parallelize rustc | perf/tech-debt | P3 | L | MED | — | BLOCKED (op-picker pre-refactor plan 045) |
+| 015 | Split the mega-crates to parallelize rustc | perf/tech-debt | P3 | L | MED | — | TODO (unblocked by plan 045; extraction still pending) |
 | 016 | Reuse one turso connection per telemetry store path | perf | P3 | S | HIGH | — | DONE |
 | 017 | Cover the `jackin-env` secret-resolution path + widen e2e filter | tests | P1 | M | HIGH | — | DONE |
 | 018 | Commit real PTY render-conformance fixtures + fix harness doc drift | tests | P2 | M | HIGH | — | DONE |
@@ -71,7 +71,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 042 | Spike: scope the reactive-daemon program | direction | P3 | L | HIGH | — | DONE (design + daemon-spike prototype; follow-ups 047/048) |
 | 043 | Track: finish the security-hardening cluster (compat→standard) | direction | P2 | L | HIGH | 003 | DONE (sudo audit resolved; follow-ups 049-053) |
 | 044 | Store pane zoom state per tab | bug | P3 | M | MED | 009 | DONE |
-| 045 | Prepare op-picker for a safe leaf-crate extraction | perf/tech-debt | P3 | M | MED | 015 | TODO |
+| 045 | Prepare op-picker for a safe leaf-crate extraction | perf/tech-debt | P3 | M | MED | 015 | DONE |
 | 047 | Build the host-daemon lifecycle foundation | direction | P2 | M | MED | 042 | TODO |
 | 048 | Build the first production attention adapter | direction | P2 | M | MED | 047 | TODO |
 | 049 | Run the `standard` compatibility matrix | direction | P1 | M | HIGH | 043 | TODO |

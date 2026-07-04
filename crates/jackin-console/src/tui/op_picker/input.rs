@@ -3,10 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jackin_tui::ModalOutcome;
 
-use crate::tui::components::list_helpers::{
-    clamp_selection, cycle_select, first_selection, list_state_for_count, selected_choice,
-};
-use crate::tui::components::op_picker::{
+use super::model::{
     AccountStageCommitPlan, ExistingFieldCommitSelectionInput, FieldStageCommitPlan,
     ItemStageCommitPlan, OpLoadState, OpPickerBlockedLoadKeyPlan, OpPickerField, OpPickerItem,
     OpPickerStage, SectionCollapseIntent, SectionStageCommitPlan, VaultStageBackPlan,
@@ -19,6 +16,9 @@ use crate::tui::components::op_picker::{
     section_header_collapse_target, section_name_input_state, section_stage_back_plan,
     section_stage_commit_plan, vault_stage_back_plan, vault_stage_commit_plan,
     vault_stage_refresh_plan,
+};
+use crate::tui::components::list_helpers::{
+    clamp_selection, cycle_select, first_selection, list_state_for_count, selected_choice,
 };
 
 use super::OpPickerSelection;

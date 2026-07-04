@@ -1,4 +1,6 @@
 //! Tests for `op_picker` component.
+use std::collections::HashSet;
+
 use super::*;
 
 #[test]

@@ -13,6 +13,8 @@
 - **Depends on**: plan 015
 - **Category**: perf / tech-debt
 - **Planned at**: commit `166c51b52`, 2026-07-04
+- **Completed at**: current PR branch, 2026-07-04
+- **Result**: DONE — pure op-picker model/planning now lives under `tui::op_picker::model`; render-only component code is a facade/adapter.
 
 ## Why this matters
 
@@ -34,11 +36,11 @@ either introduce a dependency cycle or move too much surface in the first extrac
 
 ## Done Criteria
 
-- [ ] `tui/op_picker/{state,input,load}` no longer imports from render-only op-picker code.
-- [ ] Any shared list/filter helper moved to a lower crate or injected through small pure functions.
-- [ ] No dependency cycle would be required for a future `jackin-console-oppicker` crate.
-- [ ] `cargo clippy -p jackin-console --features test-support -- -D warnings` exits 0.
-- [ ] `plans/README.md` row updated.
+- [x] `tui/op_picker/{state,input,load}` no longer imports from render-only op-picker code.
+- [x] Any shared list/filter helper moved to a lower crate or injected through small pure functions.
+- [x] No dependency cycle would be required for a future `jackin-console-oppicker` crate.
+- [x] `cargo clippy -p jackin-console --features test-support -- -D warnings` exits 0.
+- [x] `plans/README.md` row updated.
 
 ## STOP Conditions
 
