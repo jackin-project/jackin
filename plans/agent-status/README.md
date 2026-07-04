@@ -71,7 +71,7 @@ sync/pure, and moving 003/004/005/007 into a clean crate beats moving them twice
 | 005 | TODO | Couple packs to reality (real goldens; fix version gating) | detection | M | MED | — |
 | 006 | TODO | Exhaustive agent↔detector coverage; grok pack; no silent-empty | detection | M | LOW | 005 |
 | 007 | TODO | Rewrite kimi/amp/opencode/claude pack matchers from real chrome | detection | M | MED | 002, 005 |
-| 008 | TODO | Testability seam: injectable `EvidenceSnapshot` + `/proc` double | tests | M | LOW | — |
+| 008 | DONE | Testability seam: injectable `EvidenceSnapshot` + `/proc` double | tests | M | LOW | — |
 | 009 | TODO | Spike: promote Claude Notification hook + Codex app-server to authority | direction | L | MED | 008 |
 | 010 | TODO | Out-of-band signed pack updates (restyle = data push, not a release) | detection infra | M–L | MED | 011, 005 |
 | 011 | TODO | Extract an independent `jackin-agent-status` crate | architecture | L | MED | 008 |

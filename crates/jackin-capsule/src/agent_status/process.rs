@@ -123,6 +123,49 @@ pub fn sample_cpu_jiffies_delta(
     sample_cpu_jiffies_delta_from_total(read_process_cpu_jiffies(pid), previous, now)
 }
 
+pub trait ProcessSampler {
+    fn physics_available(&self) -> bool;
+    fn read_process_info(&self, pid: u32) -> Option<ProcessInfo>;
+    fn foreground_group(&self, root_info: &ProcessInfo) -> ForegroundGroup;
+    fn descendant_process_count(&self, root_pid: u32) -> u32;
+    fn sample_cpu_jiffies_delta(
+        &mut self,
+        pid: u32,
+        previous: &mut Option<ProcessCpuSample>,
+        now: Instant,
+    ) -> u64;
+}
+
+#[derive(Debug, Default)]
+pub struct ProcfsProcessSampler;
+
+impl ProcessSampler for ProcfsProcessSampler {
+    fn physics_available(&self) -> bool {
+        physics_available()
+    }
+
+    fn read_process_info(&self, pid: u32) -> Option<ProcessInfo> {
+        read_process_info(pid)
+    }
+
+    fn foreground_group(&self, root_info: &ProcessInfo) -> ForegroundGroup {
+        detect_foreground_agent(root_info)
+    }
+
+    fn descendant_process_count(&self, root_pid: u32) -> u32 {
+        descendant_process_count(root_pid)
+    }
+
+    fn sample_cpu_jiffies_delta(
+        &mut self,
+        pid: u32,
+        previous: &mut Option<ProcessCpuSample>,
+        now: Instant,
+    ) -> u64 {
+        sample_cpu_jiffies_delta(pid, previous, now)
+    }
+}
+
 fn sample_cpu_jiffies_delta_from_total(
     total_jiffies: Option<u64>,
     previous: &mut Option<ProcessCpuSample>,

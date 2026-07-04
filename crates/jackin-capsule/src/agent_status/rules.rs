@@ -321,6 +321,16 @@ impl RulePackRegistry {
         Self::from_pack_dirs(Some(Path::new(RUNTIME_PACK_DIR)), override_dir.as_deref())
     }
 
+    #[cfg(test)]
+    pub(crate) fn from_packs(packs: impl IntoIterator<Item = RulePack>) -> Self {
+        Self {
+            packs: packs
+                .into_iter()
+                .map(|pack| (pack.agent.clone(), pack))
+                .collect(),
+        }
+    }
+
     fn from_pack_dirs(
         runtime_pack_dir: Option<&Path>,
         override_pack_dir: Option<&Path>,
