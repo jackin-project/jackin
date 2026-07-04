@@ -65,7 +65,7 @@ Workspace source under [crates/](crates/); supporting files at repo root:
 | [docker-bake.hcl](docker-bake.hcl) | Declarative Docker Bake build graph for construct image |
 | `rust-toolchain.toml` | Pinned Rust toolchain (CI-enforced MSRV) |
 
-For **Rust source tree** — [crates/jackin/src/app/](crates/jackin/src/app/), [crates/jackin/src/cli/](crates/jackin/src/cli/), [crates/jackin-runtime/src/runtime/](crates/jackin-runtime/src/runtime/), [crates/jackin/src/workspace/](crates/jackin/src/workspace/), [crates/jackin/src/console/](crates/jackin/src/console/), and extracted subsystem crates under [crates/](crates/) — see [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/). That page (and this) updated in same PR as any module-level structural change (R1 added core/ansi_tokens.rs + launch-tui/launch_output.rs; R2 flipped arch gate + CI to --strict), so never falls behind.
+For **Rust source tree** — [crates/jackin/src/app/](crates/jackin/src/app/), [crates/jackin/src/cli/](crates/jackin/src/cli/), [crates/jackin-runtime/src/runtime/](crates/jackin-runtime/src/runtime/), [crates/jackin/src/workspace/](crates/jackin/src/workspace/), [crates/jackin/src/console/](crates/jackin/src/console/), and extracted subsystem crates under [crates/](crates/) — see [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/). That page (and this) updated in same PR as any module-level structural change (R1 added core/ansi_tokens.rs + launch-tui/launch_output.rs; R2 flipped arch gate + CI to --strict; R3 split console editor state impls by responsibility), so never falls behind.
 
 ## Documentation site (`docs/`)
 
