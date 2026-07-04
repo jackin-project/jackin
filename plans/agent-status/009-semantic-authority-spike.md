@@ -8,6 +8,11 @@
 
 ## Status
 
+- **Implementation status**: BLOCKED/PARTIAL in PR #714. Official docs validation is recorded and the pure
+  gating prototype is landed: Claude `Notification:permission_prompt`/`idle_prompt`/`elicitation_*` can author
+  partial authority, and a feature-gated `codex-app-server-authority` prototype maps Codex app-server
+  `turn/started`/`turn/completed` events. Full completion is blocked on live in-container ordering validation
+  and a real Codex app-server reader; ordinary Claude/Codex lifecycle hooks remain heartbeat-only.
 - **Priority**: P2 (highest reliability ceiling; direction)
 - **Effort**: L
 - **Risk**: MED
@@ -17,11 +22,11 @@
 
 ## Why this matters
 
-jackin's one structural advantage over herdr is that it **owns the image and container**, so it can install a
+jackin❯ owns the image and container, so it can install a
 first-party semantic reporter that gives authoritative state — herdr can only *offer* optional integrations
 the user installs. Today that advantage is used for only 2 of 6 agents (opencode plugin, amp event mapping);
 claude/codex/kimi/grok ride the version-fragile screen path. Meanwhile the two flagship agents now expose
-**reliable semantic surfaces** jackin leaves unused: Claude Code's **Notification hook** emits typed events
+**reliable semantic surfaces** jackin❯ leaves unused: Claude Code's **Notification hook** emits typed events
 (`permission_prompt`, `idle_prompt`, `elicitation_*`), and Codex ships an **app-server** with `turn/started`
 (inProgress) and `turn/completed` (completed|interrupted|failed). These are exactly the blocked/idle/done edges
 the tab needs. Decision 0a made claude/codex hooks identity-only because *completion-class* events
@@ -43,7 +48,12 @@ resurrecting the Decision-0a hazard.
     (`https://code.claude.com/docs/en/hooks`).
   - Codex app-server — `turn/started` (`status: inProgress`), `turn/completed` (`completed|interrupted|failed`),
     `command/exec` streaming (`https://developers.openai.com/codex/app-server`).
-- jackin already TTL- and identity-guards authority (`arbitrate.rs:73-87`), so a stale reporter can't pin.
+- PR #714 doc validation (2026-07-04): Claude's hooks guide/reference documents `Notification` as firing when
+  Claude Code waits for input or permission, with `permission_prompt`, `idle_prompt`, and `elicitation_*`
+  matchers. OpenAI's Codex app-server docs document `turn/start`, streamed turn/item notifications, and
+  `turn/completed` as the final turn status event. This validates the event names for a prototype but does not
+  replace a live in-container ordering run.
+- jackin❯ already TTL- and identity-guards authority (`arbitrate.rs:73-87`), so a stale reporter can't pin.
 
 ## Steps (spike — produce a design + one prototype + follow-up plans; do NOT wire all agents)
 
@@ -66,7 +76,7 @@ can't hide a visible dialog.
 
 ### Step 3: Prototype ONE authority behind a flag (Codex app-server — cleanest lifecycle)
 
-Prototype the Codex app-server reader as a container-local reporter (jackin owns the launch, so it can start
+Prototype the Codex app-server reader as a container-local reporter (jackin❯ owns the launch, so it can start
 codex via app-server) feeding the existing `ReportRuntimeEvent` → gating → authority path, behind a feature
 flag. Prove it with plan 008's test seam (injected `turn/*` events → published state). Do **not** also wire
 Claude/kimi/grok in this spike — those become follow-ups.
@@ -80,12 +90,14 @@ remaining work). Defer anything whose event surface Step 1 shows is unreliable.
 
 ## Done criteria
 
-- [ ] Step 1 finding: which events are safe to promote (ordering-verified) recorded in the row note
-- [ ] `gating.rs` maps the safe subset to state at a graded confidence; order-fragile events stay `heartbeat`
-- [ ] A flagged Codex app-server authority prototype compiles and is proven via the plan-008 seam
+- [ ] Step 1 finding: which events are safe to promote (ordering-verified) recorded in the row note — docs
+  validation is recorded; live ordering validation is still blocked
+- [x] `gating.rs` maps the safe subset to state at a graded confidence; order-fragile events stay `heartbeat`
+- [x] A flagged Codex app-server authority prototype compiles and is proven via the plan-008 seam at the pure
+  event-mapping/session-authority layer
 - [ ] Screen-blocked override safety net preserved (test: a visible dialog overrides a stale reported idle)
-- [ ] Follow-up plans (009a/009b) written; unreliable surfaces explicitly deferred with rationale
-- [ ] `plans/agent-status/README.md` row updated
+- [x] Follow-up plans (009a/009b) written; unreliable surfaces explicitly deferred with rationale
+- [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions
 

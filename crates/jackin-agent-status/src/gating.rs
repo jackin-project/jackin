@@ -124,15 +124,9 @@ fn canonical_event(runtime: &str, event: &str) -> Option<&'static str> {
 
 fn canonical_vendor_event(runtime: &str, event: &str) -> Option<&'static str> {
     match (runtime, event) {
-        // Claude and Codex are identity-only authorities (Decision 0a): their
-        // hook events are unreliable in order and timing (a SubagentStop/recap
-        // can fire after the turn's Stop and would revive an idle pane), so they
-        // never author working/blocked/idle. Every lifecycle event refreshes
-        // freshness/liveness only; the screen rule pack + physics watchdog own
-        // their state. Promoting any of these back to a state mapping reintroduces
-        // the post-Stop revive hazard. Claude's SessionEnd is the one identity
-        // exit edge that carries through; Codex emits no exit hook, so its exit is
-        // detected via `/proc` process physics instead.
+        // Claude and Codex lifecycle hooks remain identity-only (Decision 0a):
+        // their Stop/Subagent ordering can revive an idle pane after a turn ends.
+        // Only documented wait-state notifications below author state.
         ("claude", "SessionEnd") => Some("agent-exit"),
         (
             "claude" | "codex",
@@ -140,7 +134,14 @@ fn canonical_vendor_event(runtime: &str, event: &str) -> Option<&'static str> {
             | "PostToolUseFailure" | "PermissionRequest" | "PermissionDenied" | "Stop"
             | "StopFailure" | "SubagentStart" | "SubagentStop",
         ) => Some("heartbeat"),
+        ("claude", "Notification:permission_prompt") => Some("permission-requested"),
+        ("claude", "Notification:idle_prompt") => Some("turn-complete"),
+        ("claude", e) if e.starts_with("Notification:elicitation_") => Some("elicitation"),
         ("claude", e) if e.starts_with("Notification:") => Some("heartbeat"),
+        #[cfg(feature = "codex-app-server-authority")]
+        ("codex-app-server", "turn/started") => Some("tool-start"),
+        #[cfg(feature = "codex-app-server-authority")]
+        ("codex-app-server", "turn/completed") => Some("turn-complete"),
         ("opencode", "session.status" | "tool.execute.before") => Some("tool-start"),
         ("opencode", "tool.execute.after") => Some("tool-end"),
         ("opencode", "session.idle") => Some("turn-complete"),

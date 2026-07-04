@@ -16,6 +16,9 @@ default = []
 # Enables the DHAT allocator in allocation regression tests and opt-in live
 # capsule allocation telemetry for the focused-pane render handoff.
 dhat-heap = ["dep:dhat"]
+# Plan 009 spike: enables the flagged Codex app-server status authority mapping
+# in the pure detection crate without changing the default Codex hook path.
+codex-app-server-authority = ["jackin-agent-status/codex-app-server-authority"]
 
 [lib]
 name = "jackin_capsule"

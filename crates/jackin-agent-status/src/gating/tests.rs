@@ -88,16 +88,12 @@ fn claude_and_codex_hooks_are_identity_only() {
         assert!(!state.pending_permission);
         assert_eq!(state.subagents_active, 0);
     }
-    // Claude's permission/idle Notification types are also freshness-only
-    // (never blocked — the documented idle-notification false-positive).
+    // Unknown notification types are still freshness-only.
     let mut state = SourceGateState::default();
-    for name in ["Notification:permission_prompt", "Notification:idle_prompt"] {
-        assert_eq!(
-            map_event(&event("claude", name), &mut state),
-            GateEffect::Heartbeat,
-            "claude {name} must be identity-only"
-        );
-    }
+    assert_eq!(
+        map_event(&event("claude", "Notification:auth_success"), &mut state),
+        GateEffect::Heartbeat
+    );
     assert!(!state.pending_permission);
     // The one carry-through identity edge: Claude SessionEnd clears.
     assert_eq!(
@@ -106,6 +102,82 @@ fn claude_and_codex_hooks_are_identity_only() {
             &mut SourceGateState::default()
         ),
         GateEffect::Clear
+    );
+}
+
+#[test]
+fn claude_notification_wait_states_author_partial_authority() {
+    let mut state = SourceGateState::default();
+    assert_eq!(
+        map_event(
+            &event("claude", "Notification:permission_prompt"),
+            &mut state
+        ),
+        GateEffect::Authority {
+            state: RawAgentState::Blocked,
+            pending_permission: true,
+            subagents_active: 0,
+            notes: Vec::new(),
+        }
+    );
+
+    assert_eq!(
+        map_event(&event("claude", "Notification:idle_prompt"), &mut state),
+        GateEffect::Authority {
+            state: RawAgentState::Blocked,
+            pending_permission: true,
+            subagents_active: 0,
+            notes: vec![EvidenceNote::StopSuppressed],
+        },
+        "idle notification must not clear an unresolved permission prompt"
+    );
+
+    state.pending_permission = false;
+    assert_eq!(
+        map_event(&event("claude", "Notification:idle_prompt"), &mut state),
+        GateEffect::Authority {
+            state: RawAgentState::Idle,
+            pending_permission: false,
+            subagents_active: 0,
+            notes: Vec::new(),
+        }
+    );
+
+    assert_eq!(
+        map_event(
+            &event("claude", "Notification:elicitation_dialog"),
+            &mut state
+        ),
+        GateEffect::Authority {
+            state: RawAgentState::Blocked,
+            pending_permission: true,
+            subagents_active: 0,
+            notes: Vec::new(),
+        }
+    );
+}
+
+#[cfg(feature = "codex-app-server-authority")]
+#[test]
+fn codex_app_server_turn_events_author_flagged_complete_authority() {
+    let mut state = SourceGateState::default();
+    assert_eq!(
+        map_event(&event("codex-app-server", "turn/started"), &mut state),
+        GateEffect::Authority {
+            state: RawAgentState::Working,
+            pending_permission: false,
+            subagents_active: 0,
+            notes: Vec::new(),
+        }
+    );
+    assert_eq!(
+        map_event(&event("codex-app-server", "turn/completed"), &mut state),
+        GateEffect::Authority {
+            state: RawAgentState::Idle,
+            pending_permission: false,
+            subagents_active: 0,
+            notes: Vec::new(),
+        }
     );
 }
 

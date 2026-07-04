@@ -1565,13 +1565,13 @@ fn inject_status_env(cmd: &mut CommandBuilder, session_id: u64, agent: Option<&s
     }
 }
 
-/// Authority grade for a runtime's semantic source. `opencode` ships a complete
-/// lifecycle event stream (Complete); `amp` and other event sources have partial
-/// coverage. Claude/Codex are identity-only (Decision 0a) and never reach this.
+/// Authority grade for a runtime's semantic source. `opencode` and the flagged
+/// Codex app-server prototype ship complete lifecycle streams; `amp` and other
+/// event sources have partial coverage.
 fn grade_for_runtime(runtime: &str) -> crate::agent_status::evidence::AuthorityGrade {
     use crate::agent_status::evidence::AuthorityGrade;
     match runtime {
-        "opencode" => AuthorityGrade::Complete,
+        "opencode" | "codex-app-server" => AuthorityGrade::Complete,
         _ => AuthorityGrade::Partial,
     }
 }

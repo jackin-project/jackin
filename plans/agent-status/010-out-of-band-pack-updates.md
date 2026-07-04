@@ -10,6 +10,10 @@
 
 ## Status
 
+- **Implementation status**: BLOCKED/PARTIAL in PR #714. Plan 011 has landed, so the detection crate is the
+  right home. The remaining production channel still depends on plan 005's real capture/provenance artifacts
+  and an org-controlled signing/publishing target. Until those exist, implement only fake/local bundle plumbing
+  in a future pass; do not introduce a live fetch path or arbitrary URL source.
 - **Priority**: P2
 - **Effort**: M–L
 - **Risk**: MED (network + trust boundary in a security-focused product)
@@ -21,21 +25,21 @@
 
 Detection packs (the per-agent TOML rules that map screen text → blocked/working/idle) are `include_str!`-baked
 into the binary and copied into the derived image. So the **only** way to fix a rule is to rebuild jackin and
-cut a release. Coding-agent TUIs restyle frequently; the day Claude renames `"esc to interrupt"`, jackin's
-baked rule stops matching and **every install's Claude tab goes dark until the jackin project ships a new
-release**. Detection correctness is gated on jackin's release cadence. The reference (herdr) avoids this by
+cut a release. Coding-agent TUIs restyle frequently; the day Claude renames `"esc to interrupt"`, jackin❯
+baked rule stops matching and **every install's Claude tab goes dark until the project ships a new
+release**. Detection correctness is gated on jackin❯ release cadence. The reference (herdr) avoids this by
 keeping bundled manifests as a fallback and layering **remotely-updatable** manifests on top, so a restyle is
 fixed same-day by publishing data, not by shipping a binary. This plan gives jackin the same resilience —
-but within jackin's security model (container boundary, no surprise mutation, signed artifacts), so it is a
+but within jackin❯ security model (container boundary, no surprise mutation, signed artifacts), so it is a
 **signed, verified, fallback-always** channel, not an arbitrary-URL fetch.
 
 ## What already exists (reuse it)
 
-- jackin already overlays operator-provided packs from a runtime directory: `load_packs_from_dir`
+- jackin❯ already overlays operator-provided packs from a runtime directory: `load_packs_from_dir`
   (`rules.rs:810-832`) reads `/jackin/runtime/agent-status/packs` and `~/.jackin/...` and overlays them onto
   the embedded packs (skip-and-log on a bad pack). So the **local apply mechanism exists** — the missing
   pieces are (a) a distribution channel, (b) trust/verification, (c) refresh.
-- jackin already does signature verification elsewhere: the capsule binary is sigstore-verified
+- jackin❯ already does signature verification elsewhere: the capsule binary is sigstore-verified
   (`crates/jackin-capsule/src/capsule_binary.rs`). Reuse that verification stack, don't invent one.
 - The `regex` crate (already the engine's matcher) is **linear-time / no catastrophic backtracking**, so
   classic ReDoS is largely mitigated by the crate choice — but still bound pack size and validate regexes at
@@ -50,7 +54,7 @@ The design in four parts. Keep the image-baked packs as the **guaranteed floor**
 Publish a single signed **pack bundle** (all agents' packs + a manifest: `{rule_engine_version, generated_at,
 per-agent validated_versions}`) to a well-known, org-controlled location:
 - **Preferred**: an **OCI artifact** pushed alongside the construct image to the same registry
-  (`ghcr.io/jackin-project/...`), tagged by `RULE_ENGINE_VERSION`. jackin already pulls from that registry, so
+  (`ghcr.io/jackin-project/...`), tagged by `RULE_ENGINE_VERSION`. jackin❯ already pulls from that registry, so
   no new trust root. Or a **GitHub release asset** in `jackin-project/jackin` (or a dedicated
   `jackin-project/agent-status-packs` repo).
 - **Not** an operator-supplied arbitrary URL by default (that widens the attack surface); an advanced operator
@@ -77,7 +81,7 @@ per-agent validated_versions}`) to a well-known, org-controlled location:
   background and hot-swap the registry when a verified newer bundle arrives), plus an optional periodic check.
   Never block the PTY/daemon loop on a network fetch.
 
-### 4. Consent + observability (honor jackin's no-surprise-mutation rule)
+### 4. Consent + observability (honor jackin❯ no-surprise-mutation rule)
 
 - Make the remote channel an **operator-visible capability**, surfaced in the launch summary
   (`HOST_AND_CONTAINER.md` rule). Decide the default with the maintainer: **baked-only** (opt-in to remote) is

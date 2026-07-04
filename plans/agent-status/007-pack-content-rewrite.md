@@ -7,6 +7,10 @@
 
 ## Status
 
+- **Implementation status**: BLOCKED in PR #714. This plan explicitly depends on plan 005's real captured
+  goldens. Plan 005 hit its STOP condition in this environment, so rewriting these packs now would preserve
+  the original circular-guessed-fixture failure mode. Do not change pack matchers until real jackin❯ captures
+  exist for the affected states.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED (broaden-to-match can add false positives)
@@ -40,7 +44,7 @@ version-stable OSC-title rules.
   Claude renders the prompt caret `❯` (U+276F), so the substring never matches.
 - `docker/runtime/agent-status/packs/codex.toml:33` — working `"• working ("` (herdr detects Codex working via
   the OSC braille title, not that screen literal).
-- jackin already captures `osc_title` / `osc_progress` into virtual regions (`rules.rs:266-268`,
+- jackin❯ already captures `osc_title` / `osc_progress` into virtual regions (`rules.rs:266-268`,
   `evidence.rs:32-42`) — available to rules but unused by the claude/codex packs for working/idle.
 - The rule engine supports `any` / `line_regex` / nested gates (`rules.rs`), so it can express herdr's
   disambiguators.

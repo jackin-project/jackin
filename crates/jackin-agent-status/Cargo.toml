@@ -10,6 +10,12 @@ repository.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = []
+# Plan 009 spike: allow a flagged Codex app-server authority prototype without
+# changing the default Codex hook reporter path.
+codex-app-server-authority = []
+
 [dependencies]
 anyhow = "1.0"
 jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }

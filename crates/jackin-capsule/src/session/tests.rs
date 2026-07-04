@@ -842,6 +842,41 @@ fn claude_event_never_sets_authority() {
 }
 
 #[test]
+fn claude_notification_permission_sets_partial_authority() {
+    use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event(
+        "hook-claude-1",
+        "claude",
+        "Notification:permission_prompt",
+        std::time::Instant::now(),
+    );
+    let a = session.authority.as_ref().expect("authority set");
+    assert_eq!(a.source_id, "hook-claude-1");
+    assert_eq!(a.mapped_state, RawAgentState::Blocked);
+    assert!(a.pending_permission);
+    assert_eq!(a.grade, AuthorityGrade::Partial);
+}
+
+#[cfg(feature = "codex-app-server-authority")]
+#[test]
+fn codex_app_server_event_sets_complete_authority() {
+    use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event(
+        "app-server-codex-1",
+        "codex-app-server",
+        "turn/started",
+        std::time::Instant::now(),
+    );
+    let a = session.authority.as_ref().expect("authority set");
+    assert_eq!(a.source_id, "app-server-codex-1");
+    assert_eq!(a.mapped_state, RawAgentState::Working);
+    assert!(!a.pending_permission);
+    assert_eq!(a.grade, AuthorityGrade::Complete);
+}
+
+#[test]
 fn clear_event_drops_authority_for_source() {
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
