@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Result**: DONE in PR #713 (`docs/advisor-improvement-plans`)
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW
@@ -55,10 +56,17 @@ following this doc edits a file that doesn't exist.
 
 ## Done criteria
 
-- [ ] `grep -n "astro.config.ts\|Starlight" PULL_REQUESTS.md` → no matches
-- [ ] Sidebar-audit procedure references `meta.json` + `cargo xtask roadmap audit` (matching the rest of the file)
-- [ ] Any `docs/src/content` path references corrected to `docs/content/docs`
-- [ ] `plans/README.md` row updated
+- [x] `grep -n "astro.config.ts\|Starlight" PULL_REQUESTS.md` → no matches
+- [x] Sidebar-audit procedure references `meta.json` + `cargo xtask roadmap audit` (matching the rest of the file)
+- [x] Any `docs/src/content` path references corrected to `docs/content/docs`
+- [x] `plans/README.md` row updated
+
+## Completion notes
+
+- Replaced the docs-only PR guidance's `astro.config.ts` sidebar wording with Fumadocs `meta.json` sidebar files.
+- Replaced the Starlight rendering wording with current Fumadocs rendering and repository-file link language.
+- Updated roadmap freshness and retirement references from the old reference-roadmap path to `docs/content/docs/roadmap/` and its overview.
+- Updated the sidebar-retirement procedure to edit the relevant roadmap `meta.json` entry and run `cargo xtask roadmap audit`.
 
 ## STOP conditions
 

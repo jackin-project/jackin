@@ -60,9 +60,9 @@ A `crates/jackin-capsule/` PR that puts a `jackin` launch before Checkout block'
 
 ### Documentation-only PRs
 
-Documentation PRs (changes under `docs/**` only — `.mdx` files, `astro.config.ts` sidebar, theme/CSS) must verify by running docs site **locally** in addition to checkout, not by pointing operator at GitHub Files-changed tab.
+Documentation PRs (changes under `docs/**` only — `.mdx` files, Fumadocs `meta.json` sidebar files, theme/CSS) must verify by running docs site **locally** in addition to checkout, not by pointing operator at GitHub Files-changed tab.
 
-Files-changed tab shows raw MDX. Does not show how Starlight renders page, whether Fumadocs repository-file links resolve, whether sidebar entry lands right group, whether internal `[link](/path/)` references resolve, whether tables/Asides render, or whether page reachable through navigation. Docs PR that "looks right in diff" can render visibly broken on site.
+Files-changed tab shows raw MDX. Does not show how Fumadocs renders the page, whether repository-file links resolve, whether sidebar entry lands in the right `meta.json` group, whether internal `[link](/path/)` references resolve, whether tables/Asides render, or whether page is reachable through navigation. Docs PR that "looks right in diff" can render visibly broken on site.
 
 Required pattern for docs-only PRs:
 
@@ -140,7 +140,7 @@ Missing or stale fixtures under `tests/fixtures/migrations/` break smooth-migrat
 
 ### Accepted-exceptions catalog
 
-Do not flag items listed under "Accepted exceptions" on the [Open review findings](docs/content/docs/reference/roadmap/open-review-findings.mdx) roadmap catalog. Those items retained intentionally + reviewed.
+Do not flag items listed under "Accepted exceptions" on the [Open review findings](<docs/content/docs/roadmap/(isolation-security)/open-review-findings.mdx>) roadmap catalog. Those items retained intentionally + reviewed.
 
 Catalog forward-looking backlog — consult on demand when review task calls for it. Not operational context; don't load at session start.
 
@@ -179,7 +179,7 @@ Practices designed for multi-developer teams (CODEOWNERS, mandatory second-human
 
 ## Roadmap freshness — check before marking any PR ready
 
-Before marking any PR ready to land, and again whenever operator asks to merge PR, check whether change ships, advances, defers, or invalidates anything under `docs/content/docs/reference/roadmap/`. If yes, update roadmap item's `**Status**`, related files, implementation notes in same PR, then update `docs/content/docs/reference/roadmap/index.mdx` so item appears only in correct overview section.
+Before marking any PR ready to land, and again whenever operator asks to merge PR, check whether change ships, advances, defers, or invalidates anything under `docs/content/docs/roadmap/`. If yes, update roadmap item's `**Status**`, related files, implementation notes in same PR, then update [the roadmap overview](docs/content/docs/roadmap/index.mdx) so item appears only in correct overview section.
 
 Do this check even when PR mostly code, tests, CI, or rule changes. Roadmap operator-facing source of truth, not retrospective cleanup task. Feature landing without moving its roadmap item leaves stale planning docs behind + should be treated as incomplete. If merge request reveals stale roadmap state, stop before merging, update roadmap + PR description, only then continue normal merge verification.
 
@@ -214,9 +214,9 @@ When PR ships last remaining piece of roadmap item — every feature, sub-phase,
 1. **Confirm no remaining work.** Re-read page top to bottom. Any "Remaining Work", "Future Work", "Phase N — open", or open question not actually shipped is remaining-work signal — keep page + set status `Partially implemented`.
 2. **Confirm no load-bearing inbound links.** `rg "roadmap/<slug>" docs/` from repo root. References from roadmap overview + sidebar config expected + cleaned up below; references from *open* roadmap items mean page acts as internal contract for unfinished work — keep it, or repoint those references first.
 3. **Audit every detail on page + place it in its long-term home.** Operator behaviour goes to `guides/` or `commands/` page so users learn feature without reading internals; design decisions, on-disk layout, struct/enum/function names, architecture trade-offs go to `reference/getting-oriented/architecture.mdx`, `reference/runtime/configuration.mdx`, `reference/getting-oriented/codebase-map.mdx`, or another internals page so next contributor reads accurate internals. Git history is long-term archive of design rationale; roadmap directory is not. Apply **Documentation as the source of truth** rule above for audience split — never inline TOML schemas, on-disk paths, struct names on user-facing pages, never put `jackin foo --bar` operator instructions on internals pages.
-4. **Replace page with single bullet in Completed section** of `docs/content/docs/reference/roadmap/index.mdx`. Bullet names feature in plain prose + links to canonical user-facing or contributor-facing doc now describing shipped behaviour. No link back to deleted roadmap page.
+4. **Replace page with single bullet in Completed section** of [the roadmap overview](docs/content/docs/roadmap/index.mdx). Bullet names feature in plain prose + links to canonical user-facing or contributor-facing doc now describing shipped behaviour. No link back to deleted roadmap page.
 5. **Repoint inbound references.** Update any open roadmap item, goal prompt, or contributor doc that linked deleted page; point at canonical home from step 3.
-6. **Run sidebar + overview audits** documented in [docs/AGENTS.md](docs/AGENTS.md). Sidebar audit must show no diff after deleting entry from `docs/astro.config.ts`. Overview audit must continue passing (every roadmap file reachable from `roadmap.mdx` or covered by parent program entry).
+6. **Run sidebar + overview audits** documented in [docs/AGENTS.md](docs/AGENTS.md). Update the relevant roadmap `meta.json` entry, then run `cargo xtask roadmap audit`; the audit must pass after the sidebar entry and roadmap page are removed. Overview audit must continue passing.
 7. **Run docs verification gate.** Use template's Docs Checks block. Retirement that breaks build or repo-link references incomplete.
 
 A `Status: Resolved` roadmap page still sitting in directory is smell, not shipping target. Only legitimate reasons to keep one: (a) genuine remaining work tracked on same page, or (b) load-bearing inbound links from open roadmap items still treating page as internal contract. Anything else gets retired in PR that ships last piece — not deferred to later cleanup PR, because every later contributor reading resolved page treats it as authoritative until gone.
