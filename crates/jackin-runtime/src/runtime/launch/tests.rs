@@ -2017,7 +2017,7 @@ plugins = ["code-review@claude-plugins-official"]
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
         auto_trust,
         |_, _, _| Ok(()),
     )
@@ -6113,7 +6113,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
