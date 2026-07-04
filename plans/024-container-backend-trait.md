@@ -17,7 +17,7 @@
 
 ## Why this matters
 
-jackin has **two** container backends — Docker (bollard) and Apple Container (`container` CLI) — with **no
+jackin❯ has **two** container backends — Docker (bollard) and Apple Container (`container` CLI) — with **no
 unifying trait**. Dispatch exists only in the launch path (`launch_core.rs:907` `match backend`), while
 `cleanup.rs`/`load_cleanup.rs` (eject/exile/purge) and the hardline/reconnect paths are **Docker-only** —
 they have no `Backend` arm. The Apple Container variant is also knowingly incomplete: finalization is "not

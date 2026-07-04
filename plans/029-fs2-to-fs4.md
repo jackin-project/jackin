@@ -17,7 +17,7 @@
 ## Why this matters
 
 `fs2` (0.4.3, no release since **2018**) is the file-locking dep on five crates. File locking coordinates
-concurrent jackin processes (runtime/instance/usage), so a future soundness/RUSTSEC issue on an abandoned
+concurrent `jackin` processes (runtime/instance/usage), so a future soundness/RUSTSEC issue on an abandoned
 crate would have no upstream fix path — and this is a class Renovate/`cargo audit` will **never** surface
 (no advisory exists today). The maintained drop-in fork is `fs4` (near-identical API). Cheap maintenance
 hedge, best done once via the workspace dep table.

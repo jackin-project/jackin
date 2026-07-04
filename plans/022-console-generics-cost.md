@@ -57,16 +57,18 @@ finding.
 
 ### Step 3: Recommend and write the follow-up
 
-Write `plans/022a-console-generics-collapse.md` (full template) **only if** Step 2 shows a real win:
-specify which params to concretize, which traits to delete, the exact 22 sites to touch, and a step order
-that keeps the crate compiling between steps. If the decoupling still pays (params genuinely vary), mark
-this plan `REJECTED (generics justified — measured)` with the data.
+Write the next monotonic follow-up plan (`plans/044-console-generics-collapse.md` if no newer plan exists;
+otherwise use the next available number) **only if** Step 2 shows a real win: specify which params to
+concretize, which traits to delete, the exact 22 sites to touch, and a step order that keeps the crate
+compiling between steps. If the decoupling still pays (params genuinely vary), mark this plan
+`REJECTED (generics justified — measured)` with the data.
 
 ## Done criteria
 
 - [ ] Cost quantified (trait count, single-concrete params, spell-out sites) in the row note
 - [ ] Spike result recorded (does a collapse compile / how much shrinks)
-- [ ] Either `plans/022a-*.md` written with concrete scope, or plan `REJECTED` with data
+- [ ] Either next-numbered `plans/NNN-console-generics-collapse.md` written with concrete scope, or plan
+      `REJECTED` with data
 - [ ] **No source committed by this plan** (only `plans/` files)
 
 ## STOP conditions

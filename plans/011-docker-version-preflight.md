@@ -1,6 +1,6 @@
 # Plan 011: Decide whether the `docker_version` preflight needs a minimum-version floor (investigate)
 
-> **Executor instructions**: Investigate-and-decide. Determine whether jackin has a real minimum Docker
+> **Executor instructions**: Investigate-and-decide. Determine whether jackin❯ has a real minimum Docker
 > engine version; then either add a floor or rename the check to reflect that it only reports. Update
 > `plans/README.md` when done.
 >

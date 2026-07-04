@@ -17,7 +17,7 @@
 
 ## Why this matters
 
-The reactive daemon is the project's stated next chapter and is still **all design, no code**. The roadmap
+The reactive daemon is jackin❯'s stated next chapter and is still **all design, no code**. The roadmap
 has a whole `(reactive-daemon-program)` group — an umbrella `/roadmap/jackin-daemon/` plus Phase-2/3
 adapters (`live-auth-sync`, `agent-attention-prompts`, `host-bridge`), all "open — design proposal" — and
 the user-facing Vision routes toward "Kubernetes-backed debug workflows". Several **already-shipped**
@@ -60,9 +60,10 @@ being proven first).
 
 ### Step 3: Write follow-up plans
 
-Based on what the prototype teaches, write `plans/042a-daemon-lifecycle.md`, `042b-attention-adapter.md`,
-etc. — each a scoped build plan. Defer `live-auth-sync` and `host-bridge` explicitly until the daemon shape
-is proven, and say so.
+Based on what the prototype teaches, write next-numbered follow-up plans such as
+`plans/044-daemon-lifecycle.md`, `plans/045-attention-adapter.md`, etc. (use the next available monotonic
+numbers if newer plans already exist). Each must be a scoped build plan. Defer `live-auth-sync` and
+`host-bridge` explicitly until the daemon shape is proven, and say so.
 
 ## Done criteria
 

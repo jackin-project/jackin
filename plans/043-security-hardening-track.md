@@ -23,7 +23,7 @@ finish-work: the `docker-runtime-hardening-contract` (flip `compat`→`standard`
 matrix), backed by three `TODO.md` sub-tasks (the `NOPASSWD:ALL` sudo audit at `docker/construct/Dockerfile:113`,
 `no-new-privileges` on `standard`, rootless DinD); the `jackin-exec` host.sock gap (plan 003);
 `network-egress-policy` DinD-inner coverage; and signed-releases in-process verification never run
-end-to-end. Closing this cluster is what moves jackin from "functional proof of concept" toward a boundary
+end-to-end. Closing this cluster advances jackin❯ from "functional proof of concept" toward a boundary
 an operator can trust by default — higher-value than any new feature at this stage. **The `compat` default
 itself is a maintainer-decided tradeoff (not re-litigated here); the direction is finishing the audit that
 unblocks flipping it.**
@@ -32,7 +32,7 @@ unblocks flipping it.**
 
 - **Keystone — sudo audit**: `docker/construct/Dockerfile` (~line 113) grants `agent ALL=(ALL) NOPASSWD:ALL`,
   incompatible with `--security-opt no-new-privileges`. `TODO.md` "audit `NOPASSWD:ALL` sudo in base image"
-  has findings-so-far (2026-06-04: zero sudo calls in jackin-controlled runtime code; the entry exists for
+  has findings-so-far (2026-06-04: zero sudo calls in jackin❯-controlled runtime code; the entry exists for
   role-authored hooks / agent `apt install`). This gates the default flip.
 - **Default flip**: `TODO.md` "flip default from `compat` to `standard`" — one line in
   `impl Default for DockerSecurityProfile` (`crates/jackin-runtime/src/runtime/docker_profile.rs`) + a
@@ -62,18 +62,19 @@ default in this plan — that's the next plan once the audit clears.
 
 ### Step 3: Write per-item follow-up plans
 
-For each cluster item, write a scoped plan: `043a-sudo-audit-resolution.md` (execute the setcap/restructure
-from Step 2), `043b-nnp-standard.md` (enable `no-new-privileges` on `standard`), `043c-default-flip.md`
-(the one-line default flip + `profile_base_grants` + docs table update), `043d-rootless-dind.md`. Reference
-plan 003 for host.sock. Each carries its own verification (compat matrix under `standard` with
-`no-new-privileges`).
+For each cluster item, write a scoped next-numbered plan: `044-sudo-audit-resolution.md` (execute the
+setcap/restructure from Step 2), `045-nnp-standard.md` (enable `no-new-privileges` on `standard`),
+`046-default-flip.md` (the one-line default flip + `profile_base_grants` + docs table update),
+`047-rootless-dind.md` if those are the next available numbers; otherwise use the current next numbers in
+order. Reference plan 003 for host.sock. Each carries its own verification (compat matrix under `standard`
+with `no-new-privileges`).
 
 ## Done criteria
 
 - [ ] The cluster's dependency order is documented (row note + roadmap page)
 - [ ] The sudo audit is completed: a concrete list of every runtime `sudo` operation + a per-item resolution
       (setcap / restructure / min_profile)
-- [ ] Per-item follow-up plans written (`043a`–`043d`), each with its own verification
+- [ ] Per-item follow-up plans written as next-numbered `plans/NNN-*.md` files, each with its own verification
 - [ ] Roadmap `docker-runtime-hardening-contract` Status/Related-Files updated (docs gate)
 - [ ] `plans/README.md` row updated
 - [ ] (Confirms TODO.md's `TODO(docker-security-profile-*)` markers — coordinate with plan 036 which adds them)
@@ -83,8 +84,8 @@ plan 003 for host.sock. Each carries its own verification (compat matrix under `
 - The sudo audit finds a privileged runtime operation with **no** setcap/restructure path (genuinely needs
   full sudo) — report it; that operation defines whether `standard`-with-`no-new-privileges` is achievable
   at all, and the maintainer must decide (e.g. keep it under `compat`-only).
-- Flipping any default is tempting mid-audit — do NOT; the default flip is `043c`, explicitly after the audit
-  clears. This plan produces the audit + the plan chain, not the flip.
+- Flipping any default is tempting mid-audit — do NOT; the default flip belongs in the next-numbered
+  default-flip follow-up after the audit clears. This plan produces the audit + the plan chain, not the flip.
 
 ## Maintenance notes
 

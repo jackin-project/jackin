@@ -20,8 +20,9 @@ status row when done. Plans are self-contained — you do **not** need the audit
 
 ## Execution order & status
 
-Ordered by leverage. Do P1 correctness/security first; the docs/DX cluster (034–041) is independent
-and can run in parallel by a second executor.
+Ordered by leverage. Do P1 correctness/security first. Independent docs/DX work can run in parallel only
+after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are independent; 038 must wait for
+035+036 (and coordinate with 039 if `PLAN.md` moves); 039 can run independently but affects 038's scope.
 
 | Plan | Title | Cat | Prio | Effort | Conf | Depends | Status |
 |------|-------|-----|------|--------|------|---------|--------|
@@ -114,6 +115,8 @@ Every raw finding ID emitted by the eight auditors, mapped to its plan. Nothing 
 - **038** depends on **035**+**036**: turning the link checker on those files fails CI until their dead
   links are fixed — land them first (or in the same PR).
 - **043** depends on **003**: the host.sock hardening is one item inside the hardening cluster.
+- Follow-up plans created by investigate/track plans stay in this same ledger and PR lineage. Use the next
+  available monotonic number (`044-*`, `045-*`, ...); do not merge suffix-numbered follow-ups.
 
 ## Notes on confidence & vetting
 

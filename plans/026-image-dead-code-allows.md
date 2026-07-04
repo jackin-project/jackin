@@ -1,6 +1,6 @@
 # Plan 026: Replace the blanket `#[allow(dead_code)]` cluster in `jackin-image`
 
-> **Executor instructions**: Concrete tech-debt fix that enforces the project's own suppression rule. Run
+> **Executor instructions**: Concrete tech-debt fix that enforces the repo's own suppression rule. Run
 > every verification command. Update `plans/README.md` when done.
 >
 > **Drift check**: `git diff --stat 46511939d..HEAD -- crates/jackin-image/src/image_decision.rs crates/jackin-image/src/image_recipe.rs crates/jackin-image/src/image_build.rs`
@@ -18,7 +18,7 @@
 
 `jackin-image` fights the workspace `dead_code = "deny"` lint with a cluster of **blanket
 `#[allow(dead_code)]`** on `pub` items that are actually *used cross-crate* (from `runtime/image.rs`,
-`launch_core.rs`, `launch_pipeline.rs`). This directly violates the project's own suppression discipline in
+`launch_core.rs`, `launch_pipeline.rs`). This directly violates the repo's own suppression discipline in
 `crates/AGENTS.md`: "Code intentionally unused: `#[expect(dead_code, reason = "…")]`, **never blanket
 `#[allow(dead_code)]`**". Worse, these items **aren't unused** — the lint fires because the crate can't see
 the cross-crate consumers, so the blanket allows are a lint/visibility mismatch, not a real

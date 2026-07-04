@@ -38,7 +38,7 @@ relaxation rather than by reducing responsibility, so navigation cost stays high
 
 **In scope:** `crates/jackin-console/src/tui/screens/editor/model/state_impl.rs` and the near-cap screen
 files above, `file-size-budget.toml`. **Out of scope:** behavior changes (this is behavior-preserving);
-the generics reshape (that's plan 022/022a — do it first).
+the generics reshape (that's plan 022 and its next-numbered follow-up, if one is written — do that first).
 
 ## Steps
 

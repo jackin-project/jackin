@@ -46,7 +46,8 @@ document, not to churn.
 
 ### Step 2 (only if bug): write the fix as a follow-up plan
 
-If per-tab is wanted, do **not** implement inline. Instead, write `plans/009a-zoom-per-tab-fix.md` (full
+If per-tab is wanted, do **not** implement inline. Instead, write the next monotonic follow-up plan
+(`plans/044-zoom-per-tab-fix.md` if no newer plan exists; otherwise use the next available number) (full
 template) specifying: move the zoomed-pane id onto the `Tab` struct; update every `active_zoomed_id` /
 `resize_panes` / compose call site; add a test that zoom in tab A survives switching to tab B and back.
 List the exact call sites (`grep -rn "active_zoomed_id\|self.zoomed\|\.zoomed" crates/jackin-capsule/src`).
@@ -54,8 +55,8 @@ List the exact call sites (`grep -rn "active_zoomed_id\|self.zoomed\|\.zoomed" c
 ## Done criteria
 
 - [ ] A written decision (by-design vs bug) with the quoted comment as evidence, in this plan's row note
-- [ ] If bug: `plans/009a-zoom-per-tab-fix.md` exists with concrete call-site list; row set to `BLOCKED
-      (fix plan 009a written, awaiting scheduling)`
+- [ ] If bug: the next-numbered `plans/NNN-zoom-per-tab-fix.md` exists with concrete call-site list; row
+      set to `BLOCKED (fix plan written, awaiting scheduling)`
 - [ ] If by-design: row set to `REJECTED (zoom is intentionally global — documented)` and a one-line doc
       note added near the code
 - [ ] No source behavior changed by this plan itself

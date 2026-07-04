@@ -14,14 +14,14 @@
 - **Depends on**: none
 - **Category**: security
 - **Planned at**: commit `46511939d`, 2026-07-03
-- **Operator decision**: default-deny + `JACKIN_OSC52=allow` opt-in (advisor recommendation; operator did
-  not override within the session). **If the maintainer prefers convenience-first (keep allow), skip
-  Step 1 and do only Step 3's documentation** — see "Escape hatch" below.
+- **Maintainer decision gate**: default-deny + `JACKIN_OSC52=allow` opt-in is the recommended posture. If
+  the maintainer explicitly chooses convenience-first (keep allow), skip Step 1 and do only Step 3's
+  documentation — see "Escape hatch" below.
 
 ## Why this matters
 
 OSC 52 is the escape sequence by which a terminal *program* sets the *terminal emulator's* system
-clipboard. In jackin the container is the untrusted side. The byte path: an agent emits OSC 52 →
+clipboard. In jackin❯, the container is the untrusted side. The byte path: an agent emits OSC 52 →
 capsule re-encodes it (`session.rs:1247`) → the host writes it straight to the operator's real terminal
 (`host_attach.rs`), setting the **host** clipboard. The only gate is capsule's `allow_osc52()`, which
 **defaults ON**. So a compromised/prompt-injected agent can silently overwrite the operator's clipboard

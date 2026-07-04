@@ -3,7 +3,7 @@
 > **Executor instructions**: Docs-parity fix for shipped-but-undocumented capability. Update
 > `plans/README.md` when done.
 >
-> **Drift check**: `git diff --stat 46511939d..HEAD -- crates/jackin-core/src/agent.rs crates/jackin/src/cli/role.rs docs/content/docs/(public)/commands/load.mdx crates/jackin-config/src/schema.rs docs/content/docs/reference/runtime/configuration.mdx README.md`
+> **Drift check**: `git diff --stat 46511939d..HEAD -- crates/jackin-core/src/agent.rs crates/jackin/src/cli/role.rs 'docs/content/docs/(public)/commands/load.mdx' crates/jackin-config/src/schema.rs docs/content/docs/reference/runtime/configuration.mdx README.md`
 
 ## Status
 
@@ -53,7 +53,7 @@ reference never mentions the backend selector — shipped capability that looks 
 - `docs/content/docs/(public)/commands/load.mdx:47` — add `grok` to the agent list, matching `prewarm.mdx:36`.
 - `README.md:12` — add Grok to the agents listed.
 
-**Verify**: `grep -rn "grok" crates/jackin/src/cli/role.rs docs/content/docs/(public)/commands/load.mdx README.md`
+**Verify**: `grep -rn "grok" crates/jackin/src/cli/role.rs 'docs/content/docs/(public)/commands/load.mdx' README.md`
 → ≥1 match each; `cargo run --bin jackin -- load --help 2>&1 | grep -i grok` → shows grok.
 
 ### Step 2: Document the `backend` config field
