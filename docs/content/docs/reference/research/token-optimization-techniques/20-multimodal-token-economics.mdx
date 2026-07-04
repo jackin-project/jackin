@@ -52,7 +52,7 @@ No image or PDF tooling exists on this machine (no PIL, ImageMagick, or qpdf), s
  of Helvetica lines, optionally a final embedded-image page (the scanned-PDF case).
 - **Token counts** via the free OAuth `count_tokens` endpoint (`/tmp/ctimg.py`, `/tmp/ctpdf.py`)
  sending real `image` / `document` content blocks. Counts are non-billable and cache-inert (Volume
- I, file 07). Raw `input_tokens` includes a constant ~6–8-token user-message wrapper (Volume I
+ I, [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/)). Raw `input_tokens` includes a constant ~6–8-token user-message wrapper (Volume I
  measured ~6–7); it is left in the tables and noted, never silently subtracted.
 
 Real validation: the five PNGs in `docs/public/` were measured against the synthetic curve and agree
@@ -148,7 +148,7 @@ the Sonnet/Haiku family because it clamps to the lower image-token budget.
 - **Expected savings:** per full-frame screenshot, roughly 4,760 → 1,520–1,570 tokens = **~−67%** on the image
  token class. A screenshot-driven debugging loop of, say, 20 frames/session shifts roughly
  64k tokens off the expensive family; at cache-read rates that is modest in dollars but
- large in **quota** (file 19) and in window pressure. A 25-page PDF: 78,806 → 68,804 tokens
+ large in **quota** ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)) and in window pressure. A 25-page PDF: 78,806 → 68,804 tokens
  (−12.7%, the text premium dominates once images are page-sized).
 - **Evidence tier:** T1 — local `count_tokens` (method above) + Anthropic vision docs.
 - **Quality risk:** **QUALITY-TRADE only if the visual needs >1,568-token fidelity** (fine print in a
@@ -282,7 +282,7 @@ text paths (DOM, logs, file reads) are exhausted.
  screenshot.
 - **Availability:** CLAUDE-CODE-TODAY (habit + an eviction hook for old image blocks).
 - **Effort to adopt:** minutes (habit) to hours (eviction hook).
-- **Composability:** pairs with context editing/observation masking (Volume I 06/12) applied to image
+- **Composability:** pairs with context editing/observation masking ([06 — Context architecture](/reference/research/token-optimization-techniques/06-context-architecture/)/12) applied to image
  blocks specifically.
 - **Validation protocol:** instrument screenshots-per-task and their re-reference rate; evict frames
  not referenced within N turns; confirm no task-success drop.

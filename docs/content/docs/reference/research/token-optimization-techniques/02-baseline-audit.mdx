@@ -230,7 +230,7 @@ Prompt-side mix: **0.44% uncached / 6.73% cache-write / 92.83% cache-read.** Cla
 automatic caching is working as designed; even so, *reading the cached prefix over and over is the
 single largest line item.* Every always-loaded token (instructions, schemas, hook spam) is re-read
 on every one of the session's API calls — context mass converts to dollars through the multiplier
-of call count, which is why input-architecture levers (file 06) outrank style levers despite the
+of call count, which is why input-architecture levers ([06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/)) outrank style levers despite the
 0.1× price.
 
 ## 8. Corrected value of the current caveman setup (this environment)

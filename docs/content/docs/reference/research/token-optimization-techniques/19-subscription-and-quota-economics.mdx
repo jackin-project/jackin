@@ -159,7 +159,7 @@ You cannot optimize a cap you cannot see; `/usage` shows it, `ccusage` does not.
 - **Evidence tier:** T1 (`/usage` is shipped; headers observed by multiple proxies) + T3 (the proxy
  tools).
 - **Quality risk:** **NEUTRAL.** A transparent proxy that mis-handles `cache_control` could *harm*
- caching — verify it passes breakpoints through (Volume I 03 record 17).
+ caching — verify it passes breakpoints through ([03 — Prior art and market scan](/reference/research/token-optimization-techniques/03-prior-art-and-market-scan/) record 17).
 - **Availability:** CLAUDE-CODE-TODAY (`/usage`); GATEWAY for per-call header logging.
 - **Effort to adopt:** minutes (`/usage`); hours (proxy logging).
 - **Composability:** the denominator for Q2–Q7; pairs with the local JSONL decomposition (which gives
@@ -190,7 +190,7 @@ than under dollars.
 - **Availability:** CLAUDE-CODE-TODAY.
 - **Effort to adopt:** minutes (habit) — pick model+effort at session start; schedule `/compact` and
  upgrades at task boundaries; be on v2.1.108+.
-- **Composability:** precondition for Q3/Q5; same discipline as Volume I 13 tech 1 with a bigger payoff.
+- **Composability:** precondition for Q3/Q5; same discipline as [13 — Infrastructure-level](/reference/research/token-optimization-techniques/13-infrastructure-level/) tech 1 with a bigger payoff.
 - **Validation protocol:** log `unified-*` 5h-% across a session with vs without one mid-task `/model`
  round-trip; the bust turn shows a cap-% spike proportional to the prefix.
 
@@ -221,7 +221,7 @@ The cap cost of a miss scales with prefix size; a smaller working window shrinks
 
 Volume I praised fan-out as cache arbitrage; against a cap, call count is itself a drain.
 
-- **Coverage-delta:** **Partial inversion** of Volume I 13 tech 4 / 16. Vol I's break-even is in
+- **Coverage-delta:** **Partial inversion** of [13 — Infrastructure-level](/reference/research/token-optimization-techniques/13-infrastructure-level/) tech 4 / 16. Vol I's break-even is in
  dollars; the quota break-even is different because each spawn writes a prefix and subagents were
  ≈61% of calls in a measured account — a fact post-Volume-I.
 - **Layer:** turn-structure / multi-agent.
@@ -247,7 +247,7 @@ Volume I praised fan-out as cache arbitrage; against a cap, call count is itself
 `ENABLE_PROMPT_CACHING_1H=1` keeps the main loop on 1h writes, but only while you are inside the
 included allowance.
 
-- **Coverage-delta:** Volume I 13 tech 2 covers the 1h/5m split as a *dollar* lever; the
+- **Coverage-delta:** [13 — Infrastructure-level](/reference/research/token-optimization-techniques/13-infrastructure-level/) tech 2 covers the 1h/5m split as a *dollar* lever; the
  quota-specific nuances (overage silently reverts to 5m; the v2.1.90/v2.1.106 bugs; Cherny's "small
  win" framing) are post-Volume-I and reframe it for the cap.
 - **Layer:** cache / config.
@@ -307,7 +307,7 @@ Anthropic PAUSED this usage split: the support article says "For now, nothing ha
 - **Availability:** CLAUDE-CODE-TODAY (workload placement) / SDK.
 - **Effort to adopt:** hours (route offline jobs to headless/SDK).
 - **Composability:** the jackin❯-fleet angle (a launcher placing fleet work on the SDK credit vs the
- interactive seat) is developed in 44; stacks with batch (Volume I 18).
+ interactive seat) is developed in 44; stacks with batch ([18 — Volume II extension](/reference/research/token-optimization-techniques/18-extension-overview/)).
 - **Validation protocol:** confirm headless runs no longer move `/usage` cap-% and instead accrue
  against the SDK credit balance.
 

@@ -42,7 +42,7 @@ those agents ship that a Claude Code user could borrow. All surfaces verified ag
  OAuth**. A portable stack must condition on these asymmetries.
 - **Net for the operator:** the Volume I stack is ~80% portable as discipline and ~60% as feature.
  The Anthropic-specific edge is `cache_control` breakpoints, the 1-hour-TTL-on-subscription behavior
- (file 19), and fast mode (file 21). The biggest *gains* from looking outward are reverse-ported:
+ ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)), and fast mode ([21 — Latency, wall-clock, and human-time as a second cost axis](/reference/research/token-optimization-techniques/21-latency-and-time-economics/)). The biggest *gains* from looking outward are reverse-ported:
  keepalive pinging, three-tier routing, and stale-read dedup.
 
 Dollar figures are live per-provider rates ; evidence tiers per finding.
@@ -94,7 +94,7 @@ Each cell: the surface that agent exposes for that Volume I lever (— = none fo
  inline" — Cursor/Copilot vendor guidance). Consistent with Volume I's finding that style
  compression is the smallest-leverage layer anyway.
 - **Quota/subscription specifics — DO NOT PORT.** Each provider's cap structure, cache-vs-storage
- billing, and auth-gating differ (below); file 19's Anthropic quota model is Anthropic-specific.
+ billing, and auth-gating differ (below); [19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)'s Anthropic quota model is Anthropic-specific.
 
 ---
 
@@ -138,10 +138,10 @@ ordering.
  the prefix stays byte-stable across turns. Both are portable patterns for any 5-min-TTL provider
  (i.e. Claude Code subagents, API keys, OpenAI, Gemini implicit).
 - **Expected savings:** avoids a full prefix re-ingestion across idle gaps on 5-min-TTL paths — the
- same per-bust economics as Volume I 07, realized as a shipped flag.
+ same per-bust economics as [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/), realized as a shipped flag.
 - **Evidence tier:** T1 (aider.chat/docs/usage/caching).
 - **Quality risk:** **NEUTRAL** (pure cache warming; pay for pings nothing reads is the only waste).
-- **Availability:** Aider today; the *pattern* is portable to any SDK harness (Volume I 07 tech 3).
+- **Availability:** Aider today; the *pattern* is portable to any SDK harness ([07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) tech 3).
 - **Effort to adopt:** minutes (Aider flag) to hours (replicate the pattern in a harness).
 - **Composability:** the keepalive pattern is moot on Claude Code's 1h main loop (19 Q5) but live for
  subagents/API-key fleets (22).
@@ -167,7 +167,7 @@ pinning.
 - **Quality risk:** **NEUTRAL-to-NEGATIVE-COST** — diff format reduces output tokens and edit errors;
  RISKY only if the editor model is too weak to apply the plan.
 - **Availability:** Aider / OpenCode today; portable to Claude Code as subagent-model pinning +
- Edit-tool discipline (Volume I 09/10).
+ Edit-tool discipline ([09 — Output discipline](/reference/research/token-optimization-techniques/09-output-discipline/)/10).
 - **Effort to adopt:** minutes (Aider/OpenCode config) to hours (replicate the split with Claude Code
  subagents).
 - **Composability:** the portable expression of Volume I's advisor pattern + Edit-diffs.
@@ -213,7 +213,7 @@ Two context-budgeting surfaces richer than the Claude Code equivalents.
  defaults; Cursor's `.cursor/rules` are typed — Always Apply, Apply Intelligently (agent-decided),
  glob-scoped, or manual @-mention — so context is injected conditionally rather than always-on.
 - **Expected savings:** bounds tool-output bloat (a top hidden cost in long sessions) and avoids
- always-loading rules that only matter on some paths — the conditional-context idea Volume I 08
+ always-loading rules that only matter on some paths — the conditional-context idea [08 — Retrieval, memory, and state offloading](/reference/research/token-optimization-techniques/08-retrieval-memory-and-state/)
  argues for, shipped as a feature.
 - **Evidence tier:** T1 (gemini-cli configuration reference; cursor.com/docs/context/rules).
 - **Quality risk:** **RISKY if a budget hides needed output**; NEUTRAL otherwise. Falsify by checking
@@ -232,7 +232,7 @@ Three Volume I advantages do not survive a switch; plan for their loss.
 - **Layer:** meta.
 - **Mechanism:** (a) `cache_control` breakpoint placement is Anthropic-only — elsewhere you protect
  caching by stability, not by control; (b) the 1-hour-TTL-on-subscription main-loop behavior (file
- 19) and **fast mode** (file 21) are Claude-Code-specific; (c) caveman register compression is a
+ 19) and **fast mode** ([21 — Latency, wall-clock, and human-time as a second cost axis](/reference/research/token-optimization-techniques/21-latency-and-time-economics/)) are Claude-Code-specific; (c) caveman register compression is a
  Claude Code plugin with no equivalent elsewhere. Cross-provider cache asymmetries also bite: Gemini
  bills explicit-cache **storage** ($4.50/1M tok-hour), `gpt-5.5-pro` has **no cached tier**, and
  Gemini CLI caching is off on free OAuth.
@@ -252,7 +252,7 @@ Three Volume I advantages do not survive a switch; plan for their loss.
 
 | Agent | Billing unit | Cached input | Notable |
 |---|---|---|---|
-| Claude Code | sub cap (file 19) / API $ | 0.1× (cache_read) | `cache_control`, 1h-TTL on sub, fast mode |
+| Claude Code | sub cap ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)) / API $ | 0.1× (cache_read) | `cache_control`, 1h-TTL on sub, fast mode |
 | Cursor | $-credits + per-1M | Auto $0.25/1M read | Max Mode for 1M context; typed rules |
 | GitHub Copilot | **token **, 1 credit=$0.01 | ~10% of input | Auto −10%; Opus 4.8/Fable 5 first-class |
 | Codex CLI | ChatGPT credits/1M or API $ | 10% of input | `gpt-5.5-pro` no cache tier |

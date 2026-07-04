@@ -5,7 +5,7 @@ title: "25 — Meta layer: the cost of optimizing, budget governance, and online
 # 25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding
 
 Volume II area file for blind spot 8. Volume I has an *offline*
-paired-task harness (file 16) and kills `max_tokens` as an optimizer keeping it as a safety rail
+paired-task harness ([16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/)) and kills `max_tokens` as an optimizer keeping it as a safety rail
 (`09:123-135`, `09:186`), but never asks (a) what the measurement/validation/compression machinery
 *itself* costs, (b) how to *hard-cap* runaway agent spend at runtime, or (c) how to detect quality
 regressions *in production* rather than in an offline suite. This file closes all three..
@@ -14,7 +14,7 @@ regressions *in production* rather than in an offline suite. This file closes al
 
 - **The optimizer has a cost, and for some levers it exceeds the saving.** A `count_tokens`
  pre-flight check is free in dollars but RPM-throttled (≤100 RPM Tier 1) and adds a round trip
- (file 21); the offline harness (file 16) costs n≥10 paired runs per technique; an online
+ ([21 — Latency, wall-clock, and human-time as a second cost axis](/reference/research/token-optimization-techniques/21-latency-and-time-economics/)); the offline harness ([16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/)) costs n≥10 paired runs per technique; an online
  LLM-as-judge costs the judge's own tokens plus a platform per-trace fee. **Adopt a lever only when
  its saving beats build + run + guard cost** — which is why Volume I's automatic/negative-cost set
  (defaults, prefix stability) dominates: their guard cost is ~zero.
@@ -39,10 +39,10 @@ regressions *in production* rather than in an offline suite. This file closes al
  complement to Volume I's offline harness.** Three vendors (LangSmith, Braintrust, Arize AX) converge
  on the same shape: judge **1–10%** of high-volume traffic (50–100% for low-volume/critical), run it
  **async so it adds no tail latency**, **validate the judge before trusting it**, and **alarm rather
- than block**. The pattern: **offline gate (file 16) + online canary (this file)**. Note: OSS Arize
+ than block**. The pattern: **offline gate ([16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/)) + online canary (this file)**. Note: OSS Arize
  Phoenix does *not* do production monitoring (paid AX only); Helicone is a score *sink*, not a judge.
 
-Dollar/quota context from Volume I and files 19/21; tiers per finding.
+Dollar/quota context from Volume I and [19 — Subscription & quota economics](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/) / [21 — Latency, wall-clock, and human-time](/reference/research/token-optimization-techniques/21-latency-and-time-economics/); tiers per finding.
 
 ---
 
@@ -62,11 +62,11 @@ Every optimization has three costs beyond its saving:
  stability, Edit-diffs, tool-search): no proxy, no judge, no harness round needed. This is the
  arithmetic behind Volume I's "automatic beats disciplined."
 - **Levers that need a hot-path proxy or a custom judge carry a high guard tax** and must clear a high
- bar — which is why a `count_tokens`-per-step compression proxy (RPM-bound, file 21) or an
- LLMLingua-class compressor (needs red-teaming, file 24 FL3) rarely pay off for code.
+ bar — which is why a `count_tokens`-per-step compression proxy (RPM-bound, [21 — Latency, wall-clock, and human-time as a second cost axis](/reference/research/token-optimization-techniques/21-latency-and-time-economics/)) or an
+ LLMLingua-class compressor (needs red-teaming, [24 — Fresh literature & market delta (clean-room re-sweep)](/reference/research/token-optimization-techniques/24-fresh-literature-and-market-delta/) FL3) rarely pay off for code.
 - **The harness itself should be sampled/batched, not inline.** Run validation offline (batch, file
  21 L5), sample online judging (below), and size `count_tokens` once per file class rather than per
- step (file 21 L2). The meta-rule: *don't let the meter cost more than the thing it measures.*
+ step ([21 — Latency, wall-clock, and human-time as a second cost axis](/reference/research/token-optimization-techniques/21-latency-and-time-economics/) L2). The meta-rule: *don't let the meter cost more than the thing it measures.*
 
 ## B. Budget governance — the alert-vs-block matrix
 
@@ -90,7 +90,7 @@ workspace rate limits (token/request), `/usage-credits` (monthly, subscriber), a
 For a jackin❯ fleet the practical governors are a **workspace rate limit** (cap the fleet's TPM share,
 isolate blast radius) and a **gateway `max_budget`/Spend-Limit** for dollar ceilings.
 
-## C. Online quality guarding — the live complement to file 16
+## C. Online quality guarding — the live complement to [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/)
 
 Volume I's harness (16) is offline: paired tasks, n≥10, deterministic checkers + LLM-judge, run
 *before* shipping. It cannot catch a regression that only appears on live traffic (a prompt change, a
@@ -102,7 +102,7 @@ model swap, drift). The market's answer, convergent across LangSmith / Braintrus
 - **Sampling tiers (cross-validated by two independent vendors):** **1–10%** for high-volume,
  **10–50%** mid, **50–100%** for low-volume or critical paths; "start at 10–20% and increase once the
  evaluator is validated."
-- **Validate the judge first** — the judge itself needs a harness (echoes Volume I 16 §5).
+- **Validate the judge first** — the judge itself needs a harness (echoes [16 — Validation Harness](/reference/research/token-optimization-techniques/16-validation-harness/) §5).
 - **It alarms, it does not block** — drift surfaces via monitors/thresholds/webhooks, unlike the
  budget governors in (B) which reject inline.
 
@@ -126,13 +126,13 @@ A spend cap that only emails you is not a circuit breaker; wire the ones that ac
  other workloads). For dollar ceilings on API traffic, use a **gateway** (`max_budget`/Cloudflare
  Spend Limits). Do **not** rely on the Anthropic workspace "spend limit" field — it only alerts.
 - **Expected savings:** loss-avoidance — bounds the worst case (a runaway loop, a 5-deep subagent
- recursion, file 24) instead of discovering it on the invoice. No token saving on the happy path.
+ recursion, [24 — Fresh literature & market delta (clean-room re-sweep)](/reference/research/token-optimization-techniques/24-fresh-literature-and-market-delta/)) instead of discovering it on the invoice. No token saving on the happy path.
 - **Evidence tier:** T1 (Claude Code costs doc, workspaces doc, gateway docs).
 - **Quality risk:** **NEUTRAL** (governors don't change outputs) — except a too-tight rate limit
- throttles legitimate work (429 backoff, file 21); size it from the per-user TPM table.
+ throttles legitimate work (429 backoff, [21 — Latency, wall-clock, and human-time as a second cost axis](/reference/research/token-optimization-techniques/21-latency-and-time-economics/)); size it from the per-user TPM table.
 - **Availability:** CLAUDE-CODE-TODAY (`/usage-credits`, workspace rate limit) / GATEWAY (dollar caps).
 - **Effort to adopt:** minutes (`/usage-credits`, rate limit) to days (gateway).
-- **Composability:** the fleet governor for file 22; pairs with degrade-don't-die routing (G5).
+- **Composability:** the fleet governor for [22 — Fleet, team & multi-tenant cache economics (hosted)](/reference/research/token-optimization-techniques/22-fleet-and-multitenant-cache/); pairs with degrade-don't-die routing (G5).
 - **Validation protocol:** trigger the cap in a sandbox (small limit) and confirm the *intended*
  behavior — `/usage-credits` pauses, rate limit 429s, gateway rejects — not a silent overshoot.
 
@@ -154,20 +154,20 @@ The tight-`max_tokens` folklore raises cost; the shipped alternative removes the
 - **Quality risk:** **NEUTRAL** (removes truncated-output failures).
 - **Availability:** SDK / CLAUDE-CODE-TODAY (Sonnet 4.5+ default).
 - **Effort to adopt:** minutes.
-- **Composability:** the governance partner of G1; reconfirms Volume I 09's kill.
+- **Composability:** the governance partner of G1; reconfirms [09 — Output discipline](/reference/research/token-optimization-techniques/09-output-discipline/)'s kill.
 - **Validation protocol:** compare a tight-`max_tokens` run (count the billed truncated attempts +
  retries) vs generous-`max_tokens` + budget; confirm fewer billed retries.
 
 ### G3. Add an online quality canary — a sampled async judge over production traces
 
-The live complement to file 16: catch the regressions an offline suite never sees.
+The live complement to [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/): catch the regressions an offline suite never sees.
 
-- **Coverage-delta:** New. Volume I 31 is offline-only; "online"/"canary" appears only as offline
+- **Coverage-delta:** New. [16 — Validation Harness](/reference/research/token-optimization-techniques/16-validation-harness/) is offline-only; "online"/"canary" appears only as offline
  re-runs (`17:13`).
 - **Layer:** meta / quality.
 - **Mechanism:** a reference-free LLM-as-judge scores a sampled fraction of production traces async
  (LangSmith online evals / Braintrust online scoring / Arize AX), firing alerts/webhooks on
- threshold breaches (drift, caveat-drop, format failures). It watches the deployed stack; file 16
+ threshold breaches (drift, caveat-drop, format failures). It watches the deployed stack; [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/)
  gates changes before they ship.
 - **Expected savings:** none directly — it protects the zero-quality-loss floor *in production*,
  enabling more aggressive optimization with a live safety net (so it indirectly unlocks savings the
@@ -201,7 +201,7 @@ The online judge can cost as much as the workload it watches; size it deliberate
  higher rates.
 - **Availability:** GATEWAY-OR-SELF-HOST.
 - **Effort to adopt:** hours (set sampling + alert thresholds).
-- **Composability:** governs G3; same discipline as file 21 L2 (the optimizer's latency tax).
+- **Composability:** governs G3; same discipline as [21 — Latency, wall-clock, and human-time as a second cost axis](/reference/research/token-optimization-techniques/21-latency-and-time-economics/) L2 (the optimizer's latency tax).
 - **Validation protocol:** measure the guard's monthly cost (platform fee + judge tokens at the chosen
  sample rate) and confirm it is a small fraction of the spend it protects.
 
@@ -209,13 +209,13 @@ The online judge can cost as much as the workload it watches; size it deliberate
 
 Connect the budget governor to routing so hitting a cap downgrades instead of failing.
 
-- **Coverage-delta:** New connection. Volume I 10 covers routing; triggering it from a *budget* event
+- **Coverage-delta:** New connection. [10 — Model routing and tiered delegation](/reference/research/token-optimization-techniques/10-model-routing-and-delegation/) covers routing; triggering it from a *budget* event
  is new (Cloudflare's fallback-on-cap).
 - **Layer:** governance + routing.
 - **Mechanism:** Cloudflare Spend Limits can route to a fallback model after a cap is hit; the same
  pattern applies at any gateway — on approaching a budget/quota ceiling, downgrade the routine lane
  to a cheaper model (or lower effort) rather than hard-stopping. On a subscription this is the
- wait-vs-pay-vs-downgrade choice at the cap edge (files 19 Q6, 21 L6).
+ wait-vs-pay-vs-downgrade choice at the cap edge ([19 — Subscription & quota economics](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/) Q6 and [21 — Latency, wall-clock, and human-time](/reference/research/token-optimization-techniques/21-latency-and-time-economics/) L6).
 - **Expected savings:** preserves throughput under a cap by spending the remaining budget on cheaper
  tokens — converts a hard stop into graceful degradation.
 - **Evidence tier:** T1 (Cloudflare spend-limits fallback routing).
@@ -244,7 +244,7 @@ geometrically.
 - **Quality risk:** **NEUTRAL** (a ceiling, not a behavior change) — too-tight a cap blocks legitimate
  deep delegation; size it to the workload.
 - **Availability:** CLAUDE-CODE-TODAY (rate limits) / orchestrator (depth caps; jackin❯ fleet policy,
- file 22 F6).
+ [22 — Fleet, team & multi-tenant cache economics (hosted)](/reference/research/token-optimization-techniques/22-fleet-and-multitenant-cache/) F6).
 - **Effort to adopt:** minutes (rate limit) to hours (orchestrator depth cap).
 - **Composability:** the recursion-aware extension of G1; feeds the jackin❯ fleet governance (22).
 - **Validation protocol:** run a deliberately recursive task with vs without a depth cap; confirm the

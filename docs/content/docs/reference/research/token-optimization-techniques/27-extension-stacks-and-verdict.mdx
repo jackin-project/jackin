@@ -5,7 +5,7 @@ title: "27 — Volume II: coverage-delta ledger, verdict delta, and corrections"
 # 27 — Volume II: coverage-delta ledger, verdict delta, and corrections
 
 The Volume II capstone: it collects the coverage-delta notes that
-prove novelty against files 00–32, states whether Volume II moves Volume I's headline verdict (with
+prove novelty against the Volume I files, states whether Volume II moves Volume I's headline verdict (with
 arithmetic), records cross-layer corrections and caveats, updates the composed stacks for the
 subscriber metric, and lists the Volume II graveyard of claims killed or downgraded this run.
 
@@ -17,7 +17,7 @@ subscriber metric, and lists the Volume II graveyard of claims killed or downgra
  dollar lever (vision-tier routing cuts 67% of *image* tokens, a minor share of most coding
  sessions); latency, governance, and portability change *which* choice is correct and *what is
  measurable*, not the dollar ceiling.
-- **But for this operator the metric is wrong.** The local credential is Max (file 19); a subscriber's
+- **But for this operator the metric is wrong.** The local credential is Max ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)); a subscriber's
  binding constraint is the **usage cap**, not dollars, so Volume II presents a **second cost model
  alongside** Volume I's: optimize **tasks-per-cap**, where the lever order re-sorts (prefix stability,
  context-window size, and request-volume discipline rise; subagent fan-out partially inverts; style
@@ -28,10 +28,10 @@ subscriber metric, and lists the Volume II graveyard of claims killed or downgra
  465/560 calls), and Fable 5 leaves the subscription. So Volume I's absolute daily
  dollars are **~2× high** for this operator — but ratios are price-invariant, so the multipliers and
  tier list are unaffected.
-- **42 genuinely-new techniques** (files 19–25), each with a coverage-delta note proving absence from
- 00–32, plus 8 new frontier ideas (48) — all with the full Volume I §10 record schema and validation
+- **42 genuinely-new techniques** (files [19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/) through [25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding](/reference/research/token-optimization-techniques/25-meta-cost-governance-and-online-quality/)), each with a coverage-delta note proving absence from
+ Volume I, plus 8 new frontier ideas in [26 — Volume II frontier](/reference/research/token-optimization-techniques/26-extension-frontier/) — all with the full Volume I §10 record schema and validation
  protocols. The coverage-delta ledger is below.
-- **Cross-layer corrections/caveats:** the server-cache-scope conflation was applied to `13`; the
+- **Cross-layer corrections/caveats:** the server-cache-scope conflation was applied to [13 — Infrastructure-level](/reference/research/token-optimization-techniques/13-infrastructure-level/); the
  subagent-caching-default conflict (#29966 vs Volume I's measured subagent cache writes) remains
  version/path-dependent and must be audited in the operator's own JSONL before acting.
 
@@ -64,8 +64,8 @@ Composability, Validation protocol) plus a coverage-delta line.
 - Volume I's binding constraints are structural: (1) frontier-model thinking bills as output and only
  effort/not-being-the-frontier-model touches it; (2) a cache-read floor of context the agent
  genuinely needs. **No Volume II lever removes either.** The KV-compression family that could attack
- the cache floor is self-host-only on hosted Claude (file 24) — same wall as Volume I's K1/K2.
-- The new dollar levers are real but small: vision-tier routing saves 67% of *image* tokens (file 20),
+ the cache floor is self-host-only on hosted Claude ([24 — Fresh literature & market delta (clean-room re-sweep)](/reference/research/token-optimization-techniques/24-fresh-literature-and-market-delta/)) — same wall as Volume I's K1/K2.
+- The new dollar levers are real but small: vision-tier routing saves 67% of *image* tokens ([20 — Multimodal token economics: images, screenshots, PDFs](/reference/research/token-optimization-techniques/20-multimodal-token-economics/)),
  but images are a minor share of a typical coding session; text-over-PDF saves ~50% on *document*
  tokens, only when PDFs are in play; CAG-via-caching (FL1) converts retrieval into 0.1× reads, a
  context-architecture win already in Volume I's family. None compounds into a new multiplier.
@@ -74,7 +74,7 @@ Composability, Validation protocol) plus a coverage-delta line.
  change correctness and measurability, not the ceiling.
 
 **On the metric: yes — and this is Volume II's real contribution.** For a subscriber (this operator is
-Max), "$ per task" is the wrong denominator. The quota model (file 19):
+Max), "$ per task" is the wrong denominator. The quota model ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)):
 
 - Below the cap, **dollars are sunk**; the objective is **tasks per 5-hour/weekly window**.
 - The cap weights re-sort the levers: **prefix stability** and **context-window size** and
@@ -82,7 +82,7 @@ Max), "$ per task" is the wrong denominator. The quota model (file 19):
  cap; subagent fan-out is ~61% of calls); **style/register compression matters even less** than in the
  dollar model (visible output is a sliver of cap-weighted tokens).
 - The cap weighting itself is **officially unpublished**; community triangulation puts cache-read at
- ~0.1× (T3, file 19), and the **token denominator is opaque** (bounded INCOMPLETE). So "tasks per cap"
+ ~0.1× (T3, [19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)), and the **token denominator is opaque** (bounded INCOMPLETE). So "tasks per cap"
  is *directional* without the per-account prober (frontier V2).
 
 **A pricing reconciliation (not a multiplier change):** Volume I modeled the day at Fable 5 prices
@@ -139,7 +139,7 @@ Two cache-layer facts that span Volume I and the fleet analysis:
 
 1. **Server cache scope vs local file cache (13 tech 7 + surprising-findings) — applied.** Original Volume I text stated "your
  git state is in the cache key… worktrees never share," citing the prompt-caching docs, implying the
- *server* prompt cache is keyed by machine/directory/git-snapshot. File 44's sources show the
+ *server* prompt cache is keyed by machine/directory/git-snapshot. [22 — Fleet, team & multi-tenant cache economics](/reference/research/token-optimization-techniques/22-fleet-and-multitenant-cache/) sources show the
  **server** prompt cache is **workspace-scoped** with **no** machine/dir/worktree
  key; the git-snapshot/worktree rules describe Claude Code's **local file cache** (a different layer,
  GitHub #17531). Practical effect is favorable: hosted fleets *can* share a prefix across machines/dirs.
@@ -147,7 +147,7 @@ Two cache-layer facts that span Volume I and the fleet analysis:
  cache (1,128/1,128 calls). #29966 (T3, one session, Claude Code 2.1.63 / SDK 0.2.63) reports
  Agent-tool subagents with `enablePromptCaching` hardcoded **false** (caching off). These may both be
  true at different versions/spawn paths (cavecrew/Task-tool subagents vs SDK Agent-tool subagents).
- **Recorded as version/path-dependent; operator should audit their own subagent JSONL** (file 22 F4)
+ **Recorded as version/path-dependent; operator should audit their own subagent JSONL** ([22 — Fleet, team & multi-tenant cache economics (hosted)](/reference/research/token-optimization-techniques/22-fleet-and-multitenant-cache/) F4)
  rather than assume either.
 
 No other Volume I claim was contradicted; the min-cacheable-prefix values (13 tech 11), tokenizer-family

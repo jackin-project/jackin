@@ -39,7 +39,7 @@ Method: deterministic samples piped through the free count_tokens harness (`pyth
 Findings (all local measurement):
 
 - Fable 5 ≡ Opus 4.8 tokenizer (5/5 identical) and Sonnet 4.6 ≡ Haiku 4.5 (5/5 identical). The divergence exists only across the Opus-4.7 tokenizer boundary.
-- **The premium is not universal:** prose measures +35%, but code −3% and CJK −4%; file 05's wider battery found Python +15.6%, minified JSON +34%, English prose +59%, and SCREAMING_SNAKE +132%. Treat the Rust rows above as sample-specific, not a code-wide rule. Use per-model `count_tokens` on your own corpus; never reuse one token count across tiers.
+- **The premium is not universal:** prose measures +35%, but code −3% and CJK −4%; [05 — Tokenizer arbitrage](/reference/research/token-optimization-techniques/05-tokenizer-arbitrage/)'s wider battery found Python +15.6%, minified JSON +34%, English prose +59%, and SCREAMING_SNAKE +132%. Treat the Rust rows above as sample-specific, not a code-wide rule. Use per-model `count_tokens` on your own corpus; never reuse one token count across tiers.
 - Phase-0's root <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> measurement (2,738 tok) reproduces as 2,744 on Fable (within 0.2%; wrapper overhead/file drift). The same always-on file is only 1,919 tokens on Sonnet/Haiku — repo instructions are 43% more expensive in tokens on Fable-tier models before the price ratio even applies.
 
 Effective cost multiplier when moving a corpus DOWN a tier = price ratio × token ratio:

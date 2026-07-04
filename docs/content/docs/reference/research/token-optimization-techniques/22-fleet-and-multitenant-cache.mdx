@@ -5,10 +5,10 @@ title: "22 — Fleet, team & multi-tenant cache economics (hosted)"
 # 22 — Fleet, team & multi-tenant cache economics (hosted)
 
 Volume II area file for blind spot 4. Volume I covered the
-**self-hosted** fleet tier fully (`13:116-187`, HiCache/LMCache across replicas) and the
-excludeDynamicSections *mechanism* as one technique (`07` tech 7), but left the **hosted** (Claude
+**self-hosted** fleet tier fully in [13 — Infrastructure-level](/reference/research/token-optimization-techniques/13-infrastructure-level/) (HiCache/LMCache across replicas) and the
+excludeDynamicSections *mechanism* in [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/), but left the **hosted** (Claude
 API / subscription) cross-container story thin and explicitly flagged the dynamic-section size as
-unmeasured (`07` Gaps #6). This file builds the hosted-fleet model: when N containers share one
+unmeasured in [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/). This file builds the hosted-fleet model: when N containers share one
 cached system prefix versus each paying its own, what a launcher (jackin❯) centralizes, and the
 fleet×quota interaction. This is the jackin❯-relevant gap — jackin❯ launches container fleets.
 
@@ -18,7 +18,7 @@ fleet×quota interaction. This is the jackin❯-relevant gap — jackin❯ launc
  containers share **one** cached system prefix if and only if they run under the **same workspace +
  same org + same model** and send a **byte-identical prefix**. There is no machine, directory,
  container, or worktree key on the *server* cache — the "machine+directory / git-snapshot / worktree"
- rules Volume I cited (`07` tech 7) describe Claude Code's **local file cache** (GitHub #17531), a
+ rules Volume I cited ([07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) tech 7) describe Claude Code's **local file cache** (GitHub #17531), a
  different layer.
 - **A ~111-token dynamic block silently un-shares a ~28–34k-token prefix.** The Agent SDK preset puts
  six per-container fields (working dir, git-repo flag, platform, shell, OS version, auto-memory
@@ -41,7 +41,7 @@ fleet×quota interaction. This is the jackin❯-relevant gap — jackin❯ launc
 - **Multi-tenant boundary: org isolation is absolute; workspace is the sharing unit.** Tenant-per-org
  → zero cross-tenant prefix sharing (each writes the prefix once per TTL). Tenant-as-workspace within
  one org → the shared system prefix pools. And on a **subscription**, the whole fleet shares **one
- pooled cap** (file 19); a headless/SDK fleet can draw the separate API-rate credit, off
+ pooled cap** ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)); a headless/SDK fleet can draw the separate API-rate credit, off
  the interactive cap — the cleanest way to keep a fleet from starving an operator's interactive seat.
 
 Cache multipliers and the $22/day profile are inherited from Volume I; fleet dollar figures are
@@ -59,11 +59,11 @@ There are three distinct caches, and a fleet's economics depend on the *server* 
 | Claude Code **local file cache** | machine + directory; git-snapshot; worktrees never share | code.claude.com prompt-caching / GitHub #17531 | Local read reuse, not the API cache |
 | **Subagent** caching | per-spawn; `enablePromptCaching` default false for Agent-tool (#29966) | GitHub #29966 | May be off entirely in fan-out |
 
-The original Volume I text (`07` tech 7 + surprising-findings: "your git state is in the cache key… worktrees never
+The original Volume I text ([07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) tech 7 + surprising-findings: "your git state is in the cache key… worktrees never
 share") attributed git-snapshot/worktree/machine+directory keys to the cache scope citing the
 prompt-caching docs. The hosted **server** cache has no such keys — it is workspace-scoped; the
 git/worktree rules belong to Claude Code's **local file cache**. The two are easy to merge because
-Claude Code's *observed* reuse blends both layers. This correction has now been applied to `07`;
+Claude Code's *observed* reuse blends both layers. This correction has now been applied to [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/);
 the practical upshot is favorable — hosted
 fleets *can* share across machines/dirs, which Volume I's framing implied they could not.
 
@@ -79,7 +79,7 @@ Server cache hit requires (platform.claude.com/docs/en/build-with-claude/prompt-
  match still costs from the divergence point; one differing byte *upstream* (the dynamic block)
  costs everything.
 5. **Prefix ≥ the model minimum** (Opus 4.8 = 1,024; Fable 5 = 512; Haiku 4.5 = 4,096 — live values
- match Volume I 07 tech 11; sub-minimum prefixes silently cache nothing).
+ match [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) tech 11; sub-minimum prefixes silently cache nothing).
 
 Given those, the fleet economics are: **first container writes the prefix (1.25–2×); every other
 container that meets the rule reads it (0.1×).** The entire game is making the prefix byte-identical
@@ -94,7 +94,7 @@ across the fleet — which is exactly what the six dynamic fields prevent by def
 The precondition for any cross-container reuse: same workspace + org + model, or the shared prefix
 never pools.
 
-- **Coverage-delta:** New. Volume I 07 tech 7 covers the SDK flag; the **workspace-scope rule** (the
+- **Coverage-delta:** New. [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) tech 7 covers the SDK flag; the **workspace-scope rule** (the
  isolation change) as the gating condition for hosted fleet sharing is not in Volume I.
 - **Layer:** infra / fleet architecture.
 - **Mechanism:** server caches are isolated per workspace (API/AWS-Platform/Foundry) or per org
@@ -118,7 +118,7 @@ never pools.
 
 Six per-container fields sit ahead of the prefix and bust it; move them into the first user message.
 
-- **Coverage-delta:** Volume I 07 tech 7 names the flag; **the enumerated six fields, the measured
+- **Coverage-delta:** [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) tech 7 names the flag; **the enumerated six fields, the measured
  ~111-token size, the version gating, and the mixed-cohort trap** are new (and partially close
  Volume I Gaps #6).
 - **Layer:** input / system-prompt structure.
@@ -147,7 +147,7 @@ Six per-container fields sit ahead of the prefix and bust it; move them into the
 A simultaneous N-container launch on a cold prefix pays N writes; one warm-up converts that to 1
 write + (N−1) reads.
 
-- **Coverage-delta:** Volume I 07 tech 8 covers the concurrency rule for subagent waves; applying it
+- **Coverage-delta:** [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) tech 8 covers the concurrency rule for subagent waves; applying it
  to a **container fleet cold-start** with the pre-warm-then-fan-out pattern is new framing.
 - **Layer:** cache / launch orchestration.
 - **Mechanism:** a cache entry is readable only after the first response begins streaming; N parallel
@@ -158,7 +158,7 @@ write + (N−1) reads.
  (N−1) × 0.1P. At N=25, P=30k, Opus 4.8 1h-TTL: ~$15 → ~$1.5 on the write line (ESTIMATE) — a ~10×
  cut on fleet cold-start input.
 - **Evidence tier:** T1 (concurrency + `max_tokens:0` docs); ESTIMATE for fleet dollars.
-- **Quality risk:** **NEUTRAL** (adds one TTFT of latency to the wave start — file 21).
+- **Quality risk:** **NEUTRAL** (adds one TTFT of latency to the wave start — [21 — Latency, wall-clock, and human-time as a second cost axis](/reference/research/token-optimization-techniques/21-latency-and-time-economics/)).
 - **Availability:** SDK (orchestrator awaits first token before fan-out).
 - **Effort to adopt:** hours (launch sequencing in the orchestrator).
 - **Composability:** essential with F1/F2; pairs with 1h TTL for bursty fleets (writes survive the
@@ -188,7 +188,7 @@ A fan-out fleet's biggest cache loss may not be sharing but that subagents cache
 - **Availability:** depends on SDK/CLI version; audit via JSONL (`cache_read`/`cache_creation` on
  subagent calls).
 - **Effort to adopt:** minutes to audit; the fix is upstream.
-- **Composability:** interacts with Volume I 07 tech 4 (subagent fan-out economics assume caching);
+- **Composability:** interacts with [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) tech 4 (subagent fan-out economics assume caching);
  if caching is off, fan-out is far more expensive than Volume I modeled.
 - **Validation protocol:** from subagent JSONL, check whether `cache_read_input_tokens` is ever >0; if
  always 0 with a >1,024-token repeated prefix, caching is disabled.
@@ -224,7 +224,7 @@ The launcher is the one place to enforce workspace pinning, the dynamic-section 
 version floor, and SDK-credit placement so the whole fleet inherits cache sharing without per-user
 discipline.
 
-- **Coverage-delta:** Volume I K16 (`14`) proposes baking the optimization pack into jackin❯; the
+- **Coverage-delta:** Volume I K16 in [14 — Frontier](/reference/research/token-optimization-techniques/14-frontier-ideas/) proposes baking the optimization pack into jackin❯; the
  **specific hosted-fleet items** (workspace auth, excludeDynamicSections, cold-start pre-warm,
  SDK-version floor, off-cap credit placement) are new and concrete.
 - **Layer:** infrastructure (all fleet layers).
@@ -239,7 +239,7 @@ discipline.
  integrated fleet number).
 - **Quality risk:** **NEUTRAL-to-NEGATIVE-COST** (defaults encode the safe variants; F2's mild
  authority tradeoff is the only quality note).
-- **Availability:** BUILDABLE (jackin❯ roadmap; insertion points mapped in Volume I 14 K16 / 17).
+- **Availability:** BUILDABLE (jackin❯ roadmap; insertion points mapped in [14 — Frontier](/reference/research/token-optimization-techniques/14-frontier-ideas/) K16 / 17).
 - **Effort to adopt:** high once, amortized across every launch.
 - **Composability:** the composition layer for F1–F5; must respect tool-list stability (any tool-def
  change busts the whole fleet's prefix).
@@ -272,7 +272,7 @@ discipline.
 | 4 | Dynamic block ≈111 tok (6 fields) / ≈201 with short git status; blast radius = full ~28–34k prefix | local count_tokens on a representative block + Volume I prefix size (02/07) |
 | 5 | Concurrency rule (entry readable after first stream begins); N cold = N writes; pre-warm/stagger → 1 write + (N−1) reads | platform.claude.com prompt-caching |
 | 6 | Subagent enablePromptCaching=false default; ~378k wasted tok/54 calls/session (open, unfixed) | github.com/anthropics/claude-code/issues/29966 (T3, one session) |
-| 7 | Min cacheable prefix Opus 4.8 = 1,024; Fable 5 = 512; Haiku 4.5 = 4,096 (matches Volume I 07) | platform.claude.com prompt-caching |
+| 7 | Min cacheable prefix Opus 4.8 = 1,024; Fable 5 = 512; Haiku 4.5 = 4,096 (matches [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/)) | platform.claude.com prompt-caching |
 | 8 | cache_hint/context_hint = sync-only routing hints (named in batch exclusions; no parameter reference) | platform.claude.com/docs/en/build-with-claude/batch-processing |
 | 9 | Cache multipliers 0.1× read / 1.25× 5m write / 2× 1h write; Opus 4.8 base $5 | platform.claude.com prompt-caching |
-| 10 | Subscription fleet shares one pooled cap; headless/SDK draws separate API-rate credit | support.claude.com (file 19 ledger) |
+| 10 | Subscription fleet shares one pooled cap; headless/SDK draws separate API-rate credit | support.claude.com ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/) ledger) |

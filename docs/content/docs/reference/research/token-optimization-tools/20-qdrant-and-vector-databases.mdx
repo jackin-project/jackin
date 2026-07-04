@@ -18,8 +18,8 @@ code-intelligence stack?
   docs. It loses when it adds embedding cost, stale chunks, MCP schema overhead,
   and extra retrieved text on top of normal search.
 - **The dossier already covered the category, but not Qdrant specifically.**
-  File `08` called semantic/RAG repo indexing the largest evidence gap; file `13`
-  rejected semantic response caching for coding agents; chapter `19` compared
+  [08 — Retrieval, memory, and state offloading](/reference/research/token-optimization-techniques/08-retrieval-memory-and-state/) called semantic/RAG repo indexing the largest evidence gap; [13 — Infrastructure-level](/reference/research/token-optimization-techniques/13-infrastructure-level/)
+  rejected semantic response caching for coding agents; [19 — Code-intelligence tools](/reference/research/token-optimization-tools/19-code-intelligence-tools/) compared
   purpose-built code context engines. This file adds Qdrant as a backend choice.
 - **Best current recommendation:** do not add raw Qdrant as a default third tool.
   Pilot it only as an optional semantic-memory/RAG arm against `fff + codedb`.
@@ -246,7 +246,7 @@ Expected negative or neutral cases:
 - active editing where vector chunks go stale;
 - broad semantic queries that return big chunks;
 - agent instructions that say "always search Qdrant" before every code change;
-- whole-response semantic caching, which file `13` already killed for coding
+- whole-response semantic caching, which [13 — Infrastructure-level](/reference/research/token-optimization-techniques/13-infrastructure-level/) already killed for coding
   agents.
 
 ## Recommended jackin❯ setup if piloted

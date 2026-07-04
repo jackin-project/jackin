@@ -26,7 +26,7 @@ documentation (URLs in the Verification ledger).
  full OTel metrics (`claude_code.token.usage` by type/model/agent).
 - **Modeled heavy-day profile (basis for stack math):** the $17 floor variant is ~25k uncached
  input, ~400k cache-write, ~5.5M cache-read, ~125k output tokens on Fable 5; the $22 working
- variant in `15` scales this to six sessions. The measured split is profile-specific; the stable
+ variant in [15 — Composed Stacks](/reference/research/token-optimization-techniques/15-composed-stacks/) scales this to six sessions. The measured split is profile-specific; the stable
  invariant is that cache reads dominate token volume while output + cache writes dominate dollars.
 
 ---

@@ -35,9 +35,9 @@ it changes a Volume I number..
  compression — adding a *security* reason to Volume I's cost-based "don't put a compressor in the hot
  path" verdict. The paper was revised on arXiv — title now "When Compression Becomes an Attack Surface: Black-Box Attacks on Prompt-Compressed LLM Agents", attack named COMA, abstract reporting 0.71 average ASR vs 0.21 for the strongest baseline; the risk-axis verdict is unchanged. Two new lossless-compression papers (LoPace at-rest; LTSC meta-tokens) do **not** help
  a hosted-API token bill (one compresses disk bytes, the other needs a fine-tuned model).
-- **No post-06-12 change to Anthropic's API cost primitives** (caching multipliers, context-editing beta, memory tool, effort ladder all unchanged) **with one exception: Claude Sonnet 5** (2026-06-30), a new Anthropic billable model — default in Claude Code 2.1.197, native 1M context, 128K output, $2/$10 per MTok promo through 2026-08-31 then $3/$15; the "API primitives did not move" verdict carries this exception, and the Fable-promo-end tiering flip to Opus 4.8 is superseded for workloads Sonnet 5 covers (Claude Code CHANGELOG 2.1.197; https://www.anthropic.com/news/claude-sonnet-5). The other deltas are Claude Code *app* features (`/cd` preserves cache; subagents now nest 5 deep; `/usage` gained a cache-miss line) and the 06-15 billing split (file 19). Routing research broadened past RouteLLM (LLMRouterBench, OrcaRouter) but none produces a Claude-cache-aware number that overrides Volume I's verdict.
+- **No post-06-12 change to Anthropic's API cost primitives** (caching multipliers, context-editing beta, memory tool, effort ladder all unchanged) **with one exception: Claude Sonnet 5** (2026-06-30), a new Anthropic billable model — default in Claude Code 2.1.197, native 1M context, 128K output, $2/$10 per MTok promo through 2026-08-31 then $3/$15; the "API primitives did not move" verdict carries this exception, and the Fable-promo-end tiering flip to Opus 4.8 is superseded for workloads Sonnet 5 covers (Claude Code CHANGELOG 2.1.197; https://www.anthropic.com/news/claude-sonnet-5). The other deltas are Claude Code *app* features (`/cd` preserves cache; subagents now nest 5 deep; `/usage` gained a cache-miss line) and the 06-15 billing split ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)). Routing research broadened past RouteLLM (LLMRouterBench, OrcaRouter) but none produces a Claude-cache-aware number that overrides Volume I's verdict.
 
-Dollar/quota context inherited from Volume I and file 19; tiers per finding.
+Dollar/quota context inherited from Volume I and [19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/); tiers per finding.
 
 ---
 
@@ -46,7 +46,7 @@ Dollar/quota context inherited from Volume I and file 19; tiers per finding.
 | Change | Date | Tier | Effect on a Volume I number |
 |---|---|---|---|
 | **Fable 5 free window ends; removed from plans 06-23** | | T1 | Big — model-tiering flips to Opus 4.8 for subscribers (27). Fable 5 was suspended 2026-06-12..06-30 under an export-control directive and redeployed 2026-07-01; Pro/Max/Team/select Enterprise include it up to 50% of weekly usage limits through 2026-07-07, then usage credits at API rates — the Opus-4.8-only subscriber tiering applies only after 07-07 (https://www.anthropic.com/news/redeploying-fable-5). |
-| **SDK/`claude -p`/GitHub-Actions usage off the subscription cap** → separate API-rate credit | | T1 | Bifurcates the cost model by surface (file 19 Q7) |
+| **SDK/`claude -p`/GitHub-Actions usage off the subscription cap** → separate API-rate credit | | T1 | Bifurcates the cost model by surface ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/) Q7) |
 | **Claude Code: subagents nest up to 5 levels deep** (2.1.172) | | T1 | Compounds the ~7× team blowup geometrically (25 governance) |
 | **Claude Code `/cd` preserves the prompt cache** across a dir change (2.1.169) | | T1 | New negative-cost cache lever (technique FL2) |
 | **`/usage` adds cache-miss + subagent/long-context attribution** (2.1.174) | | T1 | Partially closes Volume I white-space #2 (cache tooling). The 2.1.174 changelog entry is scoped [VSCode] — attribution (cache misses, long context, subagents, per-skill/agent/plugin/MCP, 24h/7d) landed in the VSCode Account & usage dialog, not the CLI `/usage`. |
@@ -59,7 +59,7 @@ Dollar/quota context inherited from Volume I and file 19; tiers per finding.
 
 The verdict on the changelog: **Anthropic's billable API primitives did not move; the operator-facing
 deltas are app features and the two billing changes (Fable promo, 06-15 split).** Both billing changes
-hit the *subscriber* directly and are folded into files 19 and the verdict (27). The verdict carries a Sonnet 5 exception — see the Sonnet 5 row above.
+hit the *subscriber* directly and are folded into [19 — Subscription & quota economics](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/) and the [27 — Volume II capstone](/reference/research/token-optimization-techniques/27-extension-stacks-and-verdict/). The verdict carries a Sonnet 5 exception — see the Sonnet 5 row above.
 
 ## B. The KV-cache compression family (eviction + quantization) — self-host-only
 
@@ -118,7 +118,7 @@ coding) is reinforced, now on security grounds too.
  cache-aware, so it does **not** override Volume I's verdict that per-request gateway routing breaks
  Claude's model-scoped cache.
 - **OrcaRouter** (2605.30736, May 2026): production LinUCB contextual-bandit router, RouterArena #2 at
- submission. Resolves part of Volume I 10's open "no current router eval" question — still a
+ submission. Resolves part of [10 — Model routing and tiered delegation](/reference/research/token-optimization-techniques/10-model-routing-and-delegation/)'s open "no current router eval" question — still a
  stateless-API metric, same cache caveat.
 - **RouterEval** (EMNLP 2025): pointer (secondary-sourced); confirms the routing-eval field broadened.
 
@@ -144,7 +144,7 @@ changes vocabulary, not the dollar or quota math. Logged so the dossier is not b
 The buildable residue of CAG: when a knowledge base fits the 200K subscription context, cache it once
 instead of retrieving per turn.
 
-- **Coverage-delta:** New. CAG is 0-hit in Volume I (confirmed 18-overview); Volume I 08 debates
+- **Coverage-delta:** New. CAG is 0-hit in Volume I (confirmed 18-overview); [08 — Retrieval, memory, and state offloading](/reference/research/token-optimization-techniques/08-retrieval-memory-and-state/) debates
  RAG-vs-agentic-search but never the preload-and-cache pattern.
 - **Layer:** input / cache / retrieval.
 - **Mechanism:** place a stable corpus (the repo's key files, a spec, an API reference) in the prompt
@@ -154,8 +154,8 @@ instead of retrieving per turn.
  LLMLingua which fights it.
 - **Expected savings:** converts per-turn RAG retrieval+injection into a one-time cached-prefix write
  + 0.1× reads. Wins when the corpus fits context and is queried many times within a TTL; on a
- subscription the cached reads are also ~0.1× against the cap (file 19). Bounded by the 200K
- subscription context (file 19) — large corpora still need retrieval.
+ subscription the cached reads are also ~0.1× against the cap ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)). Bounded by the 200K
+ subscription context ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)) — large corpora still need retrieval.
 - **Evidence tier:** T2 (CAG paper, WWW '25) for the pattern's quality-vs-RAG; T1 for the prompt-cache
  mechanics it rides.
 - **Quality risk:** **NEUTRAL-to-NEGATIVE-COST** when the corpus fits (CAG meets/beats RAG on
@@ -164,7 +164,7 @@ instead of retrieving per turn.
  corpus.
 - **Availability:** CLAUDE-CODE-TODAY (a stable prefix / read-only files) / SDK (`cache_control`).
 - **Effort to adopt:** hours (curate the corpus into a stable cached block).
-- **Composability:** stacks with prompt caching (07) and the codebook/pointer ideas (Volume I 08/14);
+- **Composability:** stacks with prompt caching (07) and the codebook/pointer ideas ([08 — Retrieval, memory, and state offloading](/reference/research/token-optimization-techniques/08-retrieval-memory-and-state/)/14);
  anti-synergy with anything that mutates the prefix (busts the corpus cache).
 - **Validation protocol:** for a repeatedly-queried corpus, A/B preload-and-cache vs per-turn
  retrieval; require equal answer quality and confirm later turns show `cache_read` on the corpus.
@@ -173,19 +173,19 @@ instead of retrieving per turn.
 
 A shipped post-06-12 cache-preservation lever Volume I's caching file predates.
 
-- **Coverage-delta:** New (Claude Code 2.1.169). Volume I 07 enumerates cache-safe vs
+- **Coverage-delta:** New (Claude Code 2.1.169). [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) enumerates cache-safe vs
  busting operations but predates `/cd`.
 - **Layer:** cache / session habits.
 - **Mechanism:** `/cd` moves a session to a new working directory "without breaking the prompt cache
  mid-session"; previously a directory change churned the dynamic prefix (the six-field block, file
  22) and forced a full rewrite at 1.25–2×.
 - **Expected savings:** one avoided full-history rewrite per directory change — the per-bust economics
- of Volume I 07 tech 1 / file 19 Q2 (≈150K × (1.25–2.0 − 0.1) tokens).
+ of [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) tech 1 / [19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/) Q2 (≈150K × (1.25–2.0 − 0.1) tokens).
 - **Evidence tier:** T1 (Claude Code changelog 2.1.169).
 - **Quality risk:** **NEGATIVE-COST** (same context, cache preserved).
 - **Availability:** CLAUDE-CODE-TODAY (v2.1.169+).
 - **Effort to adopt:** zero (use `/cd` instead of restarting in a new dir).
-- **Composability:** extends Volume I 07's cache-safe operation list; pairs with prefix-stability (19 Q2).
+- **Composability:** extends [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/)'s cache-safe operation list; pairs with prefix-stability (19 Q2).
 - **Validation protocol:** change directory via `/cd` vs a restart; confirm the `/cd` path shows
  `cache_read` continuity in JSONL.
 
@@ -193,7 +193,7 @@ A shipped post-06-12 cache-preservation lever Volume I's caching file predates.
 
 Volume I disfavored LLMLingua-class proxies on cost; CompressionAttack adds an integrity reason.
 
-- **Coverage-delta:** New risk axis. Volume I 13 covers the *cost* trap of compression proxies;
+- **Coverage-delta:** New risk axis. [13 — Infrastructure-level](/reference/research/token-optimization-techniques/13-infrastructure-level/) covers the *cost* trap of compression proxies;
  the compression-as-attack-surface result is 0-hit.
 - **Layer:** infra / security (meta).
 - **Mechanism:** CompressionAttack (2510.22963) crafts inputs that survive a compression module but
@@ -201,11 +201,11 @@ Volume I disfavored LLMLingua-class proxies on cost; CompressionAttack adds an i
  (LLMLingua/Selective-Context) and soft (ICAE/AutoCompressors) compressors. The revised paper names the attack COMA and reports 0.71 average ASR vs 0.21 strongest baseline. A compressor in the
  request path is therefore both a cost risk (Volume I) and an exploitable integrity boundary.
 - **Expected savings:** none — loss-avoidance. Reinforces routing compression to ingestion-only seams
- (Volume I 14 K15) or avoiding it entirely for code.
+ ([14 — Frontier](/reference/research/token-optimization-techniques/14-frontier-ideas/) K15) or avoiding it entirely for code.
 - **Evidence tier:** T2 (peer-reviewed-style preprint, Oct 2025).
 - **Quality risk:** **QUALITY-TRADE / security** — the proxy can be weaponized.
 - **Availability:** n/a (a reason not to deploy a class of tool).
-- **Effort to adopt:** minutes (policy: no compressor in the hot path; see file 25).
+- **Effort to adopt:** minutes (policy: no compressor in the hot path; see [25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding](/reference/research/token-optimization-techniques/25-meta-cost-governance-and-online-quality/)).
 - **Composability:** strengthens Volume I's LLMLingua kill; relevant to governance (25) and infra (13).
 - **Validation protocol:** if a compressor is unavoidable, red-team it with CompressionAttack-style
  perturbations before trusting its output.
@@ -214,7 +214,7 @@ Volume I disfavored LLMLingua-class proxies on cost; CompressionAttack adds an i
 
 A clear verdict so the operator stops chasing SnapKV/H2O/PyramidKV/KVQuant on a hosted API.
 
-- **Coverage-delta:** New (0-hit in Volume I). Extends Volume I 13 (self-host) and 14 K2; the
+- **Coverage-delta:** New (0-hit in Volume I). Extends [13 — Infrastructure-level](/reference/research/token-optimization-techniques/13-infrastructure-level/) (self-host) and 14 K2; the
  reasoning-trace-lengthening danger is from "Hold Onto That Thought" (2512.12008).
 - **Layer:** infra (self-host serving).
 - **Mechanism:** eviction (H2O/SnapKV/PyramidKV) and quantization (KVQuant) shrink the GPU KV cache to
@@ -228,7 +228,7 @@ A clear verdict so the operator stops chasing SnapKV/H2O/PyramidKV/KVQuant on a 
  memory-bound non-reasoning self-host.
 - **Availability:** GATEWAY-OR-SELF-HOST (KVCache-Factory unifies SnapKV/H2O/PyramidKV/StreamingLLM).
 - **Effort to adopt:** extreme (self-host stack) — irrelevant for the hosted-subscription operator.
-- **Composability:** self-host stack only (with Volume I 13/K2); orthogonal to everything hosted.
+- **Composability:** self-host stack only (with [13 — Infrastructure-level](/reference/research/token-optimization-techniques/13-infrastructure-level/)/K2); orthogonal to everything hosted.
 - **Validation protocol:** if self-hosting, benchmark the chosen method on *your* reasoning workload
  for trace-length inflation before adopting at low KV budgets.
 

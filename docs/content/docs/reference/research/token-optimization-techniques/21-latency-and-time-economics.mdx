@@ -74,7 +74,7 @@ fast mode and parallelism pay; the more autonomous, the more batch and standard 
 inequality reorders every latency decision below.
 
 Crucially, on a **subscription** the dollar term changes meaning: fast-mode tokens draw from usage
-credits (real dollars) but **do not count against the cap** (file 19) — so on a quota-bound Max seat,
+credits (real dollars) but **do not count against the cap** ([19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/)) — so on a quota-bound Max seat,
 fast mode is also a way to *finish without burning cap headroom*, at a dollar price.
 
 ---
@@ -91,7 +91,7 @@ The cleanest "pay more to finish faster" knob; the time-value inequality decides
 - **Mechanism:** `speed: "fast"` runs the same Opus 4.8 at up to 2.5× throughput for 2× the per-token
  price. **First enable in a conversation re-bills the entire context at the premium uncached rate**
  (charged once) — so enable at session start, never toggle mid-task (it also busts the cache prefix,
- Volume I 07). Separate rate-limit pool from standard Opus; falls back silently to standard on
+ [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/)). Separate rate-limit pool from standard Opus; falls back silently to standard on
  exhaustion. CLI only, v2.1.36+, requires usage credits on; not on Bedrock/Vertex/Foundry. Research
  preview — re-verify.
 - **Expected savings:** *spends* dollars to *save* time. By the inequality, net-positive whenever a
@@ -150,7 +150,7 @@ context or Anthropic's pooled Opus rate limit.
  ITPM/OTPM pool, so naive concurrent fan-out hits 429s and *increases* wall-clock via backoff; fast
  mode's separate pool is a partial escape. The latency win is real only when subtasks are genuinely
  independent and the prefix is staggered (await the first stream before firing the rest — else the
- wave forfeits cache, Volume I 07 tech 8).
+ wave forfeits cache, [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) tech 8).
 - **Expected savings:** large wall-clock cut for independent breadth (research, multi-file
  independent edits) at a token premium; ≈0 or negative for dependent coding chains. The time-value
  inequality with Δ$ = the ~15× token premium decides.
@@ -205,14 +205,14 @@ The slow-cheap end of the ladder; correct exactly when t≈0 in the time-value i
 - **Quality risk:** **NEUTRAL** (same model/prompts; async only).
 - **Availability:** SDK.
 - **Effort to adopt:** days (restructure offline jobs around a shared prefix).
-- **Composability:** batch × caching × cheaper model is the deepest dollar stack (Volume I 07 tech 9);
+- **Composability:** batch × caching × cheaper model is the deepest dollar stack ([07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/) tech 9);
  the time-axis counterpart of fast mode.
 - **Validation protocol:** run a recurring offline job (nightly review) via batch for a week; confirm
  equal output quality and the 50% dollar cut.
 
 ### L6. The quota-edge time decision — wait for reset (free, slow) vs spend (fast, $)
 
-At the subscription cap, the only remaining lever *is* a time-vs-dollar trade (bridges file 19 Q6).
+At the subscription cap, the only remaining lever *is* a time-vs-dollar trade (bridges [19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/) Q6).
 
 - **Coverage-delta:** New (Volume I models neither the cap nor time).
 - **Layer:** governance / scheduling.
@@ -225,8 +225,8 @@ At the subscription cap, the only remaining lever *is* a time-vs-dollar trade (b
 - **Evidence tier:** T1 (extra-usage + fast-mode docs).
 - **Quality risk:** **NEUTRAL.**
 - **Availability:** CLAUDE-CODE-TODAY.
-- **Effort to adopt:** minutes (set the policy + a monthly credit cap, file 25).
-- **Composability:** the join point of files 19 (quota), 21 (time), and 25 (governance).
+- **Effort to adopt:** minutes (set the policy + a monthly credit cap, [25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding](/reference/research/token-optimization-techniques/25-meta-cost-governance-and-online-quality/)).
+- **Composability:** the join point of [19 — Subscription & quota economics](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/) (quota), [21 — Latency, wall-clock, and human-time](/reference/research/token-optimization-techniques/21-latency-and-time-economics/) (time), and [25 — Meta layer](/reference/research/token-optimization-techniques/25-meta-cost-governance-and-online-quality/) (governance).
 - **Validation protocol:** when you next hit the cap, compute v·(time-to-reset) vs the overage dollars
  and record which you chose and whether it was right in hindsight.
 
@@ -243,7 +243,7 @@ At the subscription cap, the only remaining lever *is* a time-vs-dollar trade (b
 - The optimizer can cost more time than it saves: a per-step `count_tokens` proxy is RPM-throttled to
  ~1.6 req/s at Tier 1 and never caches, so a "compression check" loop can be the slowest link.
 - Caching is the only lever that is **negative-cost on dollars, quota, *and* time** simultaneously —
- which is why prefix hygiene (Volume I 07, file 19 Q2) is the highest-leverage habit on every axis.
+ which is why prefix hygiene ([07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/), [19 — Subscription & quota economics: the metric Volume I optimized was the wrong one for a subscriber](/reference/research/token-optimization-techniques/19-subscription-and-quota-economics/) Q2) is the highest-leverage habit on every axis.
 
 ## Verification ledger
 

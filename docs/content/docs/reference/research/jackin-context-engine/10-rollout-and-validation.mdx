@@ -49,8 +49,8 @@ Env kill switches override per launch; `jackin load --ctx=off` for instant bisec
 
 ## Validation program
 
-1. **Per-phase A/Bs** as above (techniques 16 protocol; batch-lane execution; canaries in every round).
-2. **The cross-tool harness** (tools hub 09's highest-value open deliverable): Native / engine-P2 / engine-P3 / engine-full / RTK / headroom-MCP / lean-ctx(faithful) / caveman+RTK stack / pxpipe proxy arm (gist-tolerant workloads only, allowlisted models, never stacked with headroom on the history region — [tools hub 17](/reference/research/token-optimization-tools/17-pxpipe-design/)) — first controlled multi-arm numbers, published back into the research hub.
+1. **Per-phase A/Bs** as above ([techniques 16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/) protocol; batch-lane execution; canaries in every round).
+2. **The cross-tool harness** ([tools hub 09 — Gaps, open questions, and the next-research brief](/reference/research/token-optimization-tools/09-gaps-open-questions-and-next-brief/)'s highest-value open deliverable): Native / engine-P2 / engine-P3 / engine-full / RTK / headroom-MCP / lean-ctx(faithful) / caveman+RTK stack / pxpipe proxy arm (gist-tolerant workloads only, allowlisted models, never stacked with headroom on the history region — [tools hub 17](/reference/research/token-optimization-tools/17-pxpipe-design/)) — first controlled multi-arm numbers, published back into the research hub.
 3. **Continuous**: online canaries, bust alerts, bounce-rate regression tripwires, `ctx doctor --gate` in CI, monthly platform-drift re-audit (prefix mass, schema mass — the ±70k/5-days lesson).
 4. **Docs gates per PR**: roadmap item freshness, this spec updated as design decisions land, behavioral spec (INV table) added under developer-reference/specs when implementation starts.
 

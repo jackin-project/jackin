@@ -4,7 +4,7 @@ title: "03 — Observation pipeline (L2)"
 
 # 03 — Observation pipeline (L2)
 
-The write-time layer: shrink every observation **once, at ingestion, before it is first cached** — the only cache-safe input-compression design point on hosted Claude (tools hub 02/03; tools hub 21/24). This layer targets the 61%-of-dollars cache bucket and is where the engine composes RTK's breadth, lean-ctx's safety, and headroom's typed routing into one pipeline.
+The write-time layer: shrink every observation **once, at ingestion, before it is first cached** — the only cache-safe input-compression design point on hosted Claude ([tools hub 02 — Headroom: design teardown](/reference/research/token-optimization-tools/02-headroom-design/)/[tools hub 03 — RTK: design teardown](/reference/research/token-optimization-tools/03-rtk-design/); [tools hub 21 — Headroom and the context-compression layer (vs the caveman ecosystem)](/reference/research/token-optimization-tools/21-headroom-and-context-compression/)/[tools hub 24 — RTK and write-time observation compression](/reference/research/token-optimization-tools/24-rtk-and-write-time-observation-compression/)). This layer targets the 61%-of-dollars cache bucket and is where the engine composes RTK's breadth, lean-ctx's safety, and headroom's typed routing into one pipeline.
 
 ## Pipeline
 
@@ -55,9 +55,9 @@ tree-sitter only (INV: no regex+brace-counting — RTK's `filter.rs` corrupts on
 
 ## Structured-data crushers
 
-Deterministic, byte-stable, never-inflate: JSON stats-compaction (schema + sampled rows + kept anomalies — headroom SmartCrusher semantics, lean-ctx `json_crush` as the deterministic reference port), CSV/TSV row sampling with disclosed counts, YAML/TOML minification where lossless. Serialization hygiene from techniques 05 applied at emission: minified JSON (−29–41%), tabular re-serialization where schema repeats (−34–45%), epoch timestamps (−67.1%) and de-grouped numbers (+50.6% tax avoided) in engine-owned outputs, `NO_COLOR=1` + ASCII-table env defaults in the capsule.
+Deterministic, byte-stable, never-inflate: JSON stats-compaction (schema + sampled rows + kept anomalies — headroom SmartCrusher semantics, lean-ctx `json_crush` as the deterministic reference port), CSV/TSV row sampling with disclosed counts, YAML/TOML minification where lossless. Serialization hygiene from [techniques 05 — Tokenizer arbitrage](/reference/research/token-optimization-techniques/05-tokenizer-arbitrage/) applied at emission: minified JSON (−29–41%), tabular re-serialization where schema repeats (−34–45%), epoch timestamps (−67.1%) and de-grouped numbers (+50.6% tax avoided) in engine-owned outputs, `NO_COLOR=1` + ASCII-table env defaults in the capsule.
 
-## Media policy (techniques 20)
+## Media policy ([techniques 20 — Multimodal token economics: images, screenshots, PDFs](/reference/research/token-optimization-techniques/20-multimodal-token-economics/))
 
 Text-first enforcement at the boundary: born-digital PDFs transcode to text via `pdftotext` baked in the construct image (~2× PDF tax avoided; 25-page PDF ≈ 78.8k tokens as pages vs ~40k as text); screenshots of textual content are rejected with a pointer to the text source when one exists (2–6× cost); images client-side downsampled to the model family's pixel cap before send (up to −73% on Opus-family caps); vision work routes to a Sonnet/Haiku-tier subagent returning text (−67%/frame, the ~3.0–3.1× per-image cap divergence). Text-to-image re-encoding of textual context — [pxpipe's "optical context compression"](/reference/research/token-optimization-tools/17-pxpipe-design/) — inverts this rule; the engine keeps text-first as the default and treats modality re-encoding as a harness-gated experiment only, because byte-exact content must never live only in pixels (silent-confabulation failure shape) and the economics depend on undocumented provider vision pricing.
 
@@ -83,4 +83,4 @@ The [verification pass](/reference/research/token-optimization-tools/15-verifica
 
 ## Explicit exclusions
 
-No whole-prompt rewriting, no history pruning, no conversation compaction — Claude Code owns those (microcompact, context editing); the engine composes upstream of them and measures the *incremental* win over native features, not over a naive baseline (tools hub 11 §c).
+No whole-prompt rewriting, no history pruning, no conversation compaction — Claude Code owns those (microcompact, context editing); the engine composes upstream of them and measures the *incremental* win over native features, not over a naive baseline ([tools hub 11 — Extended comparison axes](/reference/research/token-optimization-tools/11-extended-comparison-axes/) §c).

@@ -17,7 +17,7 @@ Area K of the dossier: the ideas that sound like science fiction, costed honestl
 ## Baseline for all arithmetic ($17 floor variant)
 
 Modeled heavy-day profile (`01-economics-and-measurement.md` §5, Fable 5 list prices): 25k uncached in ($0.25) + 400k cache-write at 5m rate ($5.00) + 5.5M cache-read ($5.50) + 125k output ($6.25, of which 45% thinking = 56.25k tok = $2.81; visible = 68.75k tok = $3.44) = **$17.00/day**, ~10 tasks → $1.70/task. Request count ESTIMATE: 5.5M cache-read ÷ ~37k average prefix ≈ 150 requests/day. Output tokens cost 50x cache-read tokens per unit ($50 vs $1/MTok) — every output-side idea inherits that multiplier; every prefix-rewriting idea pays the 12.5x (5m) or 20x (1h) write-vs-read penalty.
-This is the floor-profile variant from `01`; multiply dollar figures by ~1.28 to compare against
+This is the floor-profile variant from [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/); multiply dollar figures by ~1.28 to compare against
 the $22/day working variant used in `15-composed-stacks.md`.
 
 ## The frontier board
