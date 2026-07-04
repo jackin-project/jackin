@@ -144,6 +144,8 @@ source = "jackin-project/jackin-marketplace"
 
 Each `[[claude.marketplaces]]` block maps to `claude plugin marketplace add <source>`. If `sparse` is set, jackin passes those paths as `claude plugin marketplace add <source> --sparse path1 path2`.
 
+`jackin-role validate` and `jackin role validate` resolve each marketplace's `.claude-plugin/marketplace.json` before a role is published. Every plugin must use `plugin@marketplace` format, and the named marketplace must publish that plugin. For example, a marketplace named `tailrocks-marketplace` that publishes only `tailrocks-skills` accepts `tailrocks-skills@tailrocks-marketplace` and rejects `rust-best-practices@tailrocks-marketplace`.
+
 ## `[codex]`
 
 The `[codex]` table is required when `"codex"` appears in `agents`.
@@ -249,6 +251,8 @@ Each marketplace block declares one Claude marketplace source to register before
 |---|---|---|
 | `source` | Yes | Raw marketplace source passed to `claude plugin marketplace add` |
 | `sparse` | No | Optional sparse-checkout paths for monorepo-backed marketplaces |
+
+Role validation fetches the marketplace manifest from the declared GitHub source and matches plugin references against its published `plugins[].name` values. The built-in `claude-plugins-official` marketplace is available without a `[[claude.marketplaces]]` block.
 
 Example:
 

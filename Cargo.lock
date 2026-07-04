@@ -2710,6 +2710,7 @@ dependencies = [
  "owo-colors 4.3.0",
  "predicates",
  "ratatui",
+ "reqwest",
  "rustls",
  "serde",
  "serde_json",
