@@ -21,7 +21,7 @@ Per-capsule, turso-backed, extending the existing `jackin-usage` monitors:
 
 - **Thinking estimator**: JSONL redacts thinking; the engine computes `output_tokens − count_tokens(visible blocks replayed)` per message (±5%), closing the blind spot every JSONL dashboard has and bounding the register pack's honest ceiling per workload.
 - **Cache-bust detector**: `cache_creation_input_tokens` spike detection with cause classification (model/effort switch, tool-set change, MCP flap, compaction, fleet misalignment) and per-bust cost ($2.30–3.80 at 200k history class) — the invalidator list from dossier 13 as running diagnostics, surfaced via `clog!` and the usage dialog.
-- **Counterfactual repricing**: what this session would have cost uncached / unrouted / unfiltered — the honest "saved" number, reconciled against `session_cost.py`-style ground truth within 5% before any A/B is trusted.
+- **Counterfactual repricing**: what this session would have cost uncached / unrouted / unfiltered — the honest "saved" number, reconciled against `session_cost.py`-style ground truth within 5% before any A/B is trusted. Convergent prior art: [pxpipe](/reference/research/token-optimization-tools/17-pxpipe-design/) ships per-request `count_tokens` counterfactual accounting with a same-cache-state baseline and unfloored negative rows — the strongest self-measurement in the surveyed tool field, and the same design this ledger specifies.
 - **Cap prober** (subscription capsules): fits per-account cap weights from captured `unified-*` headers (L4), converting tasks-per-cap from folklore to a fitted model.
 
 ## The harness (dossier 31, runnable per role)

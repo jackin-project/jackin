@@ -10,7 +10,7 @@ Phases are ordered by the research's risk/reach ladder (measure → protect → 
 
 **P0 — Measure (no mutation).** `jackin-context` crate with L0 only: ledger, JSONL ingestion (`message.id` dedup), observation attribution, cache-bust detector, thinking estimator, `ctx doctor`, CI token-budget linter, TUI panel. Default-on for all roles (`JACKIN_CTX_MEASURE_ONLY`). Deliverable: every capsule knows its own Bash-vs-native-read split, cache health, and thinking share — the three numbers that decide everything downstream. Also: baseline windows recorded per role for later A/Bs.
 
-**P1 — Protect (negative-cost set).** Guard lines + subagent model/effort pins + report-register contracts in generated agent config; `excludeDynamicSections` + spawn stagger/pre-warm in the orchestrator; conflict probe (INV-8); cache-bust alerts live. All items are the dossier's S-tier negative-cost set — no quality risk, no A/B needed beyond screening.
+**P1 — Protect (negative-cost set).** Guard lines + subagent model/effort pins + report-register contracts in generated agent config; `excludeDynamicSections` + spawn stagger/pre-warm in the orchestrator; conflict probe (INV-8); cache-bust alerts live. All items are the dossier's S-tier negative-cost set — no quality risk, no A/B needed beyond screening. The model pins are now load-bearing, not belt-and-braces: since Claude Code 2.1.198 the Explore subagent inherits the session model instead of defaulting to Haiku, so cheap exploration exists only because the engine generates explicit pins (re-verified 2026-07-05).
 
 **P2 — Observation pipeline.** Shims + classifier + TOML filter corpus + crushers + never-worse guard + CCR archive + recovery footers. A/B arms: measure-only vs +shims (vs RTK-binary arm for the subsumption claim). Acceptance: ≥20% tool-result-token cut on shell-visible traffic at success/bounce parity.
 
@@ -45,12 +45,12 @@ batch_lane = true
 extra = ["filters/role.toml"]   # role-repo TOML filters, content-hash trusted
 ```
 
-Env kill switches override per launch; `jackin load --ctx=off` for instant bisection. Pilot vehicle: the-architect role (already the fff/codedb pilot), whose third-party stack (RTK binary + headroom MCP + fff/codedb MCP servers + caveman guidance) becomes the engine's external comparison arms and, on success, is retired in favor of the native pack.
+Env kill switches override per launch; `jackin load --ctx=off` for instant bisection. Pilot vehicle: the-architect role (already the fff/codedb pilot), whose third-party stack (RTK binary + headroom MCP + fff/codedb MCP servers + caveman guidance) becomes the engine's external comparison arms and, on success, is retired in favor of the native pack. The pxpipe proxy arm runs separately on the pilot's gist-tolerant task slices only — never in the same lane as the headroom arm (both mutate message history; stacking hazard per [tools hub 17](/reference/research/token-optimization-tools/17-pxpipe-design/)).
 
 ## Validation program
 
 1. **Per-phase A/Bs** as above (dossier 31 protocol; batch-lane execution; canaries in every round).
-2. **The cross-tool harness** (tools hub 09's highest-value open deliverable): Native / engine-P2 / engine-P3 / engine-full / RTK / headroom-MCP / lean-ctx(faithful) / caveman+RTK stack — first controlled multi-arm numbers, published back into the research hub.
+2. **The cross-tool harness** (tools hub 09's highest-value open deliverable): Native / engine-P2 / engine-P3 / engine-full / RTK / headroom-MCP / lean-ctx(faithful) / caveman+RTK stack / pxpipe proxy arm (gist-tolerant workloads only, allowlisted models, never stacked with headroom on the history region — [tools hub 17](/reference/research/token-optimization-tools/17-pxpipe-design/), added 2026-07-05) — first controlled multi-arm numbers, published back into the research hub.
 3. **Continuous**: online canaries, bust alerts, bounce-rate regression tripwires, `ctx doctor --gate` in CI, monthly platform-drift re-audit (prefix mass, schema mass — the ±70k/5-days lesson).
 4. **Docs gates per PR**: roadmap item freshness, this spec updated as design decisions land, behavioral spec (INV table) added under developer-reference/specs when implementation starts.
 
@@ -62,6 +62,6 @@ Env kill switches override per launch; `jackin load --ctx=off` for instant bisec
 | Engine's own overhead exceeds savings on small workloads | Measure-only default; net-of-injection ledger; per-role activation; size gates on retrieval |
 | Filtered output drops a needed line | never-worse guard, verbatim-class policy, CCR recovery on all exit codes, bounce auto-upgrade, re-run-rate metric |
 | Steering fails (agent ignores verbs) | Honest doctrine + transparent shims/dedup work without steering; adherence metered, not assumed |
-| Conflict with operator-installed tools (RTK hook, headroom proxy, caveman plugin) | Setup-time conflict probe (INV-8); role docs name the one-of-each rule |
+| Conflict with operator-installed tools (RTK hook, headroom proxy, pxpipe proxy, caveman plugin) | Setup-time conflict probe (INV-8); role docs name the one-of-each rule; prompt-mutating middlemen (headroom, pxpipe) additionally exclusive on the history region |
 | Schema change risk (`[context]` table) | Versioned manifest migration per PRERELEASE; `deny_unknown_fields` honored |
 | Quality regression from registers/effort | Canary veto, holdout, online judge auto-demotion, confirmation-grade n=30 for routing |
