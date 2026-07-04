@@ -113,14 +113,6 @@ fn min_engine_version_defaults_and_gates_future_engines() {
 }
 
 #[test]
-fn accepts_cli_version_gates_the_pinned_window() {
-    let pack = pack_with_versions(">=2.1.173, <2.2.0").unwrap();
-    assert!(pack.accepts_cli_version("2.1.180").unwrap());
-    assert!(!pack.accepts_cli_version("2.2.0").unwrap());
-    assert!(!pack.accepts_cli_version("2.0.9").unwrap());
-}
-
-#[test]
 fn prompt_caret_regions_isolate_live_prompt() {
     let pack: RulePack = toml::from_str(
         "schema_version = 1\n\

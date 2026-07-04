@@ -389,16 +389,6 @@ impl RulePack {
         toml::from_str::<Self>(&content)?.finalize()
     }
 
-    /// Whether this pack's `validated_versions` range accepts `cli_version`.
-    /// The image-build co-versioning check: a derived image must fail to build
-    /// if a bundled pack does not cover the agent CLI version pinned in that
-    /// image, so a pack and the TUI it targets can never silently drift apart.
-    pub fn accepts_cli_version(&self, cli_version: &str) -> anyhow::Result<bool> {
-        let req = semver::VersionReq::parse(self.validated_versions.trim())?;
-        let version = semver::Version::parse(cli_version.trim())?;
-        Ok(req.matches(&version))
-    }
-
     pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(self.schema_version == 1, "unsupported rule schema");
         anyhow::ensure!(!self.agent.trim().is_empty(), "agent is required");
@@ -419,11 +409,9 @@ impl RulePack {
             !self.validated_versions.trim().is_empty(),
             "validated_versions is required"
         );
-        // validated_versions must be a real, *bounded* semver range so a pack
-        // is pinned to a known CLI window — `*` or a lower-only range (`>=x`)
-        // would silently match any future CLI the agent's TUI may have changed
-        // under. (Image-build enforcement compares this range against the
-        // pinned CLI version; here we reject ranges that could never gate.)
+        // validated_versions must be a real, *bounded* semver range. Runtime
+        // matching always keeps bundled packs live; the bounded range is pack
+        // provenance for capture/update review, not a daemon-side dark switch.
         let req = semver::VersionReq::parse(self.validated_versions.trim())
             .with_context(|| format!("invalid validated_versions in pack {}", self.agent))?;
         anyhow::ensure!(

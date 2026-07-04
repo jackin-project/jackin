@@ -12,6 +12,7 @@
 - **Depends on**: none (blocks 007)
 - **Category**: bug (detection infrastructure)
 - **Planned at**: commit `5d3661cff`, 2026-07-03
+- **Implementation status**: BLOCKED in PR 714 on real jackin-captured agent screens. Partial progress landed: dead `accepts_cli_version` code and its false image-build promise were removed; `validated_versions` remains bounded provenance metadata and bundled packs stay live at runtime.
 
 ## Why this matters
 
@@ -86,11 +87,11 @@ occurrences (b); `cargo clippy -p jackin-capsule -- -D warnings` → exit 0.
 
 ## Done criteria
 
-- [ ] Pack fixtures are real captured goldens (agent-originated), not glosses of the pack strings
-- [ ] The match harness would FAIL a fabricated pack (proven by the fixtures the fabricated packs don't match)
-- [ ] Out-of-window CLI → loud `EvidenceNote`/`clog!`, never silent Unknown; newest pack stays live
-- [ ] `accepts_cli_version` is either wired into the image build (fails on drift) or removed with its comments
-- [ ] `plans/agent-status/README.md` row updated
+- [ ] Pack fixtures are real captured goldens (agent-originated), not glosses of the pack strings — BLOCKED: needs live agent capture; herdr fixtures and hand-written substitutes are forbidden
+- [ ] The match harness would FAIL a fabricated pack (proven by the fixtures the fabricated packs don't match) — BLOCKED with real goldens
+- [x] Out-of-window CLI does not make runtime matching dark; bundled packs stay live. A loud runtime drift note remains blocked until a non-invasive runtime CLI-version source exists
+- [x] `accepts_cli_version` is either wired into the image build (fails on drift) or removed with its comments
+- [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions
 
