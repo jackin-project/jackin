@@ -14,9 +14,9 @@ name = "tui-lookbook"
 path = "src/main.rs"
 
 [dependencies]
-jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
-ratatui = "0.30"
-crossterm = "0.29"
+jackin-tui = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
 
 [lints]
 workspace = true

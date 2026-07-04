@@ -8,24 +8,24 @@ publish = false
 license.workspace = true
 repository.workspace = true
 [dependencies]
-anyhow = "1.0"
-crossterm = "0.29"
-directories = "6.0"
-jackin-config = { version = "0.6.0-dev", path = "../jackin-config" }
-jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
-jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
-jackin-env = { version = "0.6.0-dev", path = "../jackin-env" }
-jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
-jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
-nix = { version = "0.31", features = ["term"] }
+anyhow = { workspace = true }
+crossterm = { workspace = true }
+directories = { workspace = true }
+jackin-config = { workspace = true }
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-env = { workspace = true }
+jackin-protocol = { workspace = true }
+jackin-tui = { workspace = true }
+nix = { workspace = true, features = ["term"] }
 open = "5.3.4"
-ratatui = "0.30"
-tui-widget-list = "0.15"
+ratatui = { workspace = true }
+tui-widget-list = { workspace = true }
 
 [dev-dependencies]
-insta = { version = "=1.48.0", features = ["filters"] }
-tempfile = "=3.27.0"
-toml = "=1.1.2"
+insta = { workspace = true, features = ["filters"] }
+tempfile = { workspace = true }
+toml = { workspace = true }
 
 [features]
 # Enables `jackin_config::test_support::*` from in-crate tests. Tests must be

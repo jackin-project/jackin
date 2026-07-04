@@ -7,12 +7,19 @@
 
 ## Status
 
+- **Result**: DONE — shared workspace dependency table adopted; `turso` exact-pinned
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW-MED (must reconcile per-crate feature sets)
 - **Depends on**: none (enables 029, 030)
 - **Category**: migration / dx (DEPS-01 + DEPS-02)
 - **Planned at**: commit `46511939d`, 2026-07-03
+
+## Completion notes
+
+The root `[workspace.dependencies]` table now owns shared first-party path dependencies plus the repeated external dependencies used across member manifests, including shared test/build dependencies. Member manifests use `workspace = true`, with per-crate feature additions preserved for `tokio`, `serde`, `nix`, `reqwest`, diagnostics OTLP, test-support, and benchmark/snapshot helpers. `turso` is declared once as `=0.7.0-pre.17` with `default-features = false`; both consumers inherit it from the workspace table, and `grep -c "0.7.0-pre" Cargo.lock` stayed at 9.
+
+`deny.toml` now denies `[bans.workspace-dependencies].duplicates`. `cargo deny check bans` still prints the existing transitive duplicate-version warnings that plan 030 owns, but the targeted gate exits successfully and reports no `workspace-duplicate` warnings.
 
 ## Why this matters
 
@@ -83,12 +90,12 @@ transitive-duplicate `skip` list posture to plan 030 — this step is about firs
 
 ## Done criteria
 
-- [ ] `[workspace.dependencies]` exists; shared external + internal deps declared once
-- [ ] Every member uses `dep = { workspace = true }` for shared deps; no drifted reqs remain
-- [ ] `turso` is `=0.7.0-pre.17` in both members (via workspace table)
-- [ ] `cargo deny check bans` reports 0 `workspace-duplicate` warnings
-- [ ] `cargo check --workspace --all-targets --all-features` exits 0; `cargo nextest run -p jackin-usage` green
-- [ ] `plans/README.md` row updated
+- [x] `[workspace.dependencies]` exists; shared external + internal deps declared once
+- [x] Every member uses `dep = { workspace = true }` for shared deps; no drifted reqs remain
+- [x] `turso` is `=0.7.0-pre.17` in both members (via workspace table)
+- [x] `cargo deny check bans` reports 0 `workspace-duplicate` warnings
+- [x] `cargo check --workspace --all-targets --all-features` exits 0; `cargo nextest run -p jackin-usage` green
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 

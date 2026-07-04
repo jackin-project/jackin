@@ -38,19 +38,19 @@ otlp = [
 ]
 
 [dependencies]
-jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
-jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-rand = "0.10"
-anyhow = "1.0"
-tracing = "0.1"
+jackin-core = { workspace = true }
+jackin-tui = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+rand = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # Inlined from `jackin_core::ansi_text` (A3) and `jackin_core::prune_output`
 # (A3) so this crate (L1, depended on by 8 L0/L1/L2 crates) does not need
 # to pull `jackin-tui` (L3) for the two small helpers `prune_all_runs` uses.
-anstyle-parse = "1.0"
-owo-colors = { version = "4", features = ["supports-colors"] }
+anstyle-parse = { workspace = true }
+owo-colors = { workspace = true, features = ["supports-colors"] }
 # OTLP export (optional — only compiled in with `--features otlp`)
 opentelemetry = { version = "0.32", optional = true }
 # gRPC/tonic is the ONLY transport. It is the reference backend's (Parallax)
@@ -84,10 +84,10 @@ sysinfo = { version = "0.39", optional = true, default-features = false, feature
 # `rt-multi-thread` powers the dedicated telemetry runtime (see
 # `observability::otlp::otel_runtime`); `Handle::metrics()` feeds the tokio
 # runtime gauges from the app's handle, captured at subscriber init.
-tokio = { version = "1", optional = true, default-features = false, features = ["rt", "rt-multi-thread"] }
+tokio = { workspace = true, optional = true, features = ["rt", "rt-multi-thread"] }
 
 [dev-dependencies]
-tempfile = "=3.27.0"
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

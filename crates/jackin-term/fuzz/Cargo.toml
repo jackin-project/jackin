@@ -10,7 +10,7 @@ cargo-fuzz = true
 [workspace]
 
 [dependencies]
-jackin-term = { path = ".." }
+jackin-term = { workspace = true }
 libfuzzer-sys = "0.4"
 
 [[bin]]

@@ -15,49 +15,49 @@ name = "jackin_runtime"
 path = "src/lib.rs"
 
 [dependencies]
-jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
-jackin-config = { version = "0.6.0-dev", path = "../jackin-config" }
-jackin-env = { version = "0.6.0-dev", path = "../jackin-env" }
-jackin-manifest = { version = "0.6.0-dev", path = "../jackin-manifest" }
-jackin-docker = { version = "0.6.0-dev", path = "../jackin-docker" }
-jackin-image = { version = "0.6.0-dev", path = "../jackin-image" }
-jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
-jackin-launch-tui = { version = "0.6.0-dev", path = "../jackin-launch-tui" }
-jackin-host = { version = "0.6.0-dev", path = "../jackin-host" }
-jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
-jackin-isolation = { version = "0.6.0-dev", path = "../jackin-isolation" }
-jackin-instance = { version = "0.6.0-dev", path = "../jackin-instance" }
+jackin-core = { workspace = true }
+jackin-config = { workspace = true }
+jackin-env = { workspace = true }
+jackin-manifest = { workspace = true }
+jackin-docker = { workspace = true }
+jackin-image = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-launch-tui = { workspace = true }
+jackin-host = { workspace = true }
+jackin-protocol = { workspace = true }
+jackin-isolation = { workspace = true }
+jackin-instance = { workspace = true }
 
-tracing = "0.1"
-tokio = { version = "1", features = ["rt", "process", "io-util", "io-std", "net", "signal", "sync", "macros", "time", "fs"] }
-futures-util = "0.3"
-anyhow = "1.0"
-thiserror = "2.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-owo-colors = { version = "4", features = ["supports-colors"] }
-ratatui = "0.30"
-crossterm = "0.29"
-dialoguer = "0.12"
-sha2 = "0.11"
-hex = "0.4"
-fs2 = "0.4"
-directories = "6.0"
-toml = "1.1"
-toml_edit = "0.25"
-tabled = "0.21.0"
-tempfile = "3.20"
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["rt", "process", "io-util", "io-std", "net", "signal", "sync", "macros", "time", "fs"] }
+futures-util = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+owo-colors = { workspace = true, features = ["supports-colors"] }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+dialoguer = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+fs2 = { workspace = true }
+directories = { workspace = true }
+toml = { workspace = true }
+toml_edit = { workspace = true }
+tabled = { workspace = true }
+tempfile = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", features = ["user"] }
+nix = { workspace = true, features = ["user"] }
 
 [dev-dependencies]
-jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
-criterion = { version = "=0.8.2", features = ["html_reports"] }
-tokio = { version = "=1.52.3", features = ["test-util"] }
+jackin-tui = { workspace = true }
+criterion = { workspace = true, features = ["html_reports"] }
+tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
-jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
+jackin-build-meta = { workspace = true }
 
 [features]
 test-support = []
