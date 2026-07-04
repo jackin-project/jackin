@@ -868,9 +868,11 @@ pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
 /// Returns a human-readable detail block; falls back to a signal-crash hint when
 /// both streams are empty.
 // Only called from the Linux `verify_version` exec path; on macOS/Windows the
-// sole non-test call site is compiled out (the unit test still exercises it),
-// so `allow` rather than `expect` — `expect` would be unfulfilled in the test build.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+// sole non-test call site is compiled out while unit tests still exercise it.
+#[cfg_attr(
+    all(not(target_os = "linux"), not(test)),
+    expect(dead_code, reason = "Linux-only verify_version exec detail formatter")
+)]
 fn format_exit_detail(stdout: &str, stderr: &str) -> String {
     let streams: Vec<String> = [("stdout", stdout.trim()), ("stderr", stderr.trim())]
         .into_iter()

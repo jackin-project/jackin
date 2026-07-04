@@ -13,6 +13,10 @@
 - **Depends on**: none
 - **Category**: tech-debt
 - **Planned at**: commit `46511939d`, 2026-07-03
+- **Completed**: `jackin-image` public API items are reachable through crate-root `pub mod` exports, so
+  the blanket allows were stale; all `allow(dead_code)` matches under `crates/jackin-image/src` are gone.
+  The sole remaining dead-code suppression is a cfg-narrow non-Linux `expect` on the capsule version
+  detail formatter.
 
 ## Why this matters
 
@@ -75,11 +79,11 @@ Because the fix may change visibility, verify downstream consumers still compile
 
 ## Done criteria
 
-- [ ] `grep -rn "allow(dead_code" crates/jackin-image/src` → no matches
-- [ ] Any remaining suppression is `#[expect(dead_code, reason = "…")]` with a real reason
-- [ ] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` exits 0 (the CI gate)
-- [ ] `cargo check --workspace` exits 0 (downstream consumers still compile)
-- [ ] `plans/README.md` row updated
+- [x] `grep -rn "allow(dead_code" crates/jackin-image/src` → no matches
+- [x] Any remaining suppression is `#[expect(dead_code, reason = "…")]` with a real reason
+- [x] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` exits 0 (the CI gate)
+- [x] `cargo check --workspace` exits 0 (downstream consumers still compile)
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 

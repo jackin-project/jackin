@@ -2259,6 +2259,10 @@ fn sync_idempotent_skips_write_when_content_unchanged() {
     RoleState::provision_github_auth(&hosts_yml, &ctx(GithubAuthMode::Sync, None), &host_home)
         .unwrap();
     let forced_mtime = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "test fixture forces mtime on an already-created hosts.yml file"
+    )]
     std::fs::File::options()
         .write(true)
         .open(&hosts_yml)
