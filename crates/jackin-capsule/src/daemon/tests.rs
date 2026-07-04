@@ -6620,10 +6620,9 @@ fn reattach_updates_capabilities_without_resetting_model_palette() {
 // direct `compose_pending_frame` / `compose_full_redraw` calls, no ticker,
 // no sleeps.
 //
-// Scenarios that still fail after PR 1 of the capsule rendering plan are the
-// executable spec for PR 3 / PR 4 and carry `#[ignore]` tags naming the
-// fixing PR. Recorded fixtures land in `tests/fixtures/pty/` once a Stage-0
-// operator run id exists; until then the byte streams below are synthetic.
+// Synthetic streams below cover focused regressions; recorded PTY fixtures
+// under `tests/fixtures/pty/` keep the same harness exercised against real
+// CLI/TUI output captured outside the unit test process.
 
 use crate::tui::model::{CursorVisibilityState, cursor_visible_for_state};
 use jackin_term::{Cell, DamageGrid};
@@ -6978,6 +6977,24 @@ fn alt_screen_session_enter_exit_keeps_screen_equal_to_model() {
 
     feed_and_compose(&mut mux, &mut client, sid, b"\x1b[?1049l");
     assert_frame_conformance(&mut mux, &client, "after alt-screen exit");
+}
+
+#[test]
+fn recorded_pty_fixtures_keep_screen_equal_to_model() {
+    for (label, bytes) in [
+        (
+            "codex version fixture",
+            include_bytes!("../../tests/fixtures/pty/codex-version.bin").as_slice(),
+        ),
+        (
+            "vim alt-screen fixture",
+            include_bytes!("../../tests/fixtures/pty/vim-tiny-open-edit-quit.bin").as_slice(),
+        ),
+    ] {
+        let (mut mux, mut client, sid) = attached_single_pane();
+        feed_and_compose(&mut mux, &mut client, sid, bytes);
+        assert_frame_conformance(&mut mux, &client, label);
+    }
 }
 
 #[test]

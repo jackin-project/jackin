@@ -47,7 +47,7 @@ Never `cargo test` — always `cargo nextest run`.
 
 ## Recording capsule render-conformance fixtures
 
-Capsule echo-back harness (`crates/jackin-capsule/src/daemon/render_conformance_tests.rs`) replays PTY byte streams through multiplexer, asserts emitted frames reproduce pane model on virtual client terminal. Synthetic streams live in harness; real-agent fixtures recorded from `--debug` run:
+Capsule echo-back harness (`crates/jackin-capsule/src/daemon/tests.rs`) replays PTY byte streams through multiplexer, asserts emitted frames reproduce pane model on virtual client terminal. Synthetic streams live in harness; real-agent fixtures recorded from `--debug` run:
 
 1. Run session with `--debug` (e.g. `cargo run --bin jackin -- console --debug`), exercise agent. Note run id CLI prints.
 2. Extract one session's PTY stream from run log into binary fixture:

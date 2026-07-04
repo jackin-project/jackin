@@ -4,7 +4,7 @@
 //! log for the capsule's `session feed_pty bytes:` debug lines, filters them
 //! to one session label, decodes the hex byte dumps, and concatenates them in
 //! order into a binary fixture for the echo-back conformance harness
-//! (`crates/jackin-capsule/src/daemon/tests/render_conformance.rs`). The
+//! (`crates/jackin-capsule/src/daemon/tests.rs`). The
 //! input may be the host diagnostics run JSONL (feed lines embedded in JSON
 //! string fields) or a raw `multiplexer.log` — both line shapes are handled.
 

@@ -77,12 +77,12 @@ reproduce the pane model, following the existing synthetic scenarios' structure 
 
 ## Done criteria
 
-- [ ] `TESTING.md` no longer references the non-existent `render_conformance_tests.rs`
-- [ ] The stale `#[ignore]`/"PR 3/4" comment is gone
-- [ ] ≥2 real `.bin` fixtures committed under `crates/jackin-capsule/tests/fixtures/pty/`
-- [ ] ≥1 non-synthetic harness scenario references them via `include_bytes!` and passes
-- [ ] `cargo nextest run -p jackin-capsule` green
-- [ ] `plans/README.md` row updated
+- [x] `TESTING.md` no longer references the non-existent `render_conformance_tests.rs`
+- [x] The stale `#[ignore]`/"PR 3/4" comment is gone
+- [x] ≥2 real `.bin` fixtures committed under `crates/jackin-capsule/tests/fixtures/pty/`
+- [x] ≥1 non-synthetic harness scenario references them via `include_bytes!` and passes
+- [x] `cargo nextest run -p jackin-capsule` green
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 
