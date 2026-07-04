@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! CLI dispatch: maps parsed `Cli` commands to runtime, console, workspace,
 //! and instance calls.
 //!

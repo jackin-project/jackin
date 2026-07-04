@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Plain-or-1Password choice between `EnvKey` input and value entry.
 
 use crossterm::event::{KeyCode, KeyEvent};

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Frame-time threshold test for the host console render path.
 //!
 //! Runs one console frame at 220×50 and asserts it completes within the

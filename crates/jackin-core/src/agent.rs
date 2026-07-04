@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `Agent` enum: the set of AI agents jackin❯ can provision inside a role
 //! container.
 //!

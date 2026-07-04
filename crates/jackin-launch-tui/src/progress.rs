@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Launch progress display: stage tracking and rich terminal progress bar
 //! for the `jackin load` cockpit.
 //!

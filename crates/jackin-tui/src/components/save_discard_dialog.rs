@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Three-way dirty-exit confirmation dialog.
 
 use crossterm::event::KeyEvent;

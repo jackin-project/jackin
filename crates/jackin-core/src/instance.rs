@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Instance index and session vocabulary types.
 //!
 //! Pure data types describing a container instance's identity and status.

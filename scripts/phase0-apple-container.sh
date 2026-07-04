@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 # Phase 0 empirical validation script for the apple-container backend.
 #
 # Run this script on a real macOS 26 ARM machine with apple/container

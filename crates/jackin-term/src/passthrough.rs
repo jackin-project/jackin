@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Typed passthrough event stream for OSC/CSI events the grid should not render.
 //!
 //! Phase 2 v0: collect events in a `Vec<PassthroughEvent>` for the caller to

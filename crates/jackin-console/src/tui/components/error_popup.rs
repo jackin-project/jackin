@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Console-local error popup state construction.
 
 use crate::tui::screens::workspaces::update::WorkspaceInstanceAction;

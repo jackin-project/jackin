@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host console TUI effect vocabulary.
 //!
 //! Effects describe non-TUI work requested by console update code. The root

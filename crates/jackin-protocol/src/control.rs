@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Control channel: length-prefixed JSON request / response messages.
 //!
 //! Used by the host CLI for one-shot queries — `status`, `snapshot`,

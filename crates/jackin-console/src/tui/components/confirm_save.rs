@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Two-button confirmation modal shown before committing an editor save.
 //!
 //! Replaces the old inline "bare S → save immediately" flow with a

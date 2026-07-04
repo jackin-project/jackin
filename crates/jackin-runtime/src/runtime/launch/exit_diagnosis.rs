@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Exit diagnosis helpers extracted from launch coordinator for premature exits,
 //! attach failures, and outcome inspection.
 

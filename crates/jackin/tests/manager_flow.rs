@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! End-to-end integration test for the workspace manager TUI.
 //! Drives `tui::handle_key` with a scripted key stream — no live
 //! terminal.

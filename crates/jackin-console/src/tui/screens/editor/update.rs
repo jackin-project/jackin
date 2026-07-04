@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Editor screen update logic: handle keyboard events and produce save,
 //! cancel, and field-navigation effects for the workspace editor.
 //!

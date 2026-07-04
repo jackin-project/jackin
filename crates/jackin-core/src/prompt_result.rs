@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Result of a one-shot user prompt (e.g. trust confirm, vault selection).
 //!
 //! Moved here from `jackin-launch-tui` as part of Workstream 1

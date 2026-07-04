@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Force-delete an isolated worktree, scratch branch, and `isolation.json` record.
 //!
 //! Tolerates idempotent paths (already-removed worktree, already-deleted

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Agent credential provisioning: copies or wipes per-agent auth files in the
 //! role-state directory before container launch.
 //!

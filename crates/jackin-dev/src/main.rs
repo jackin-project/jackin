@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Developer tooling for local jackin pull request verification.
 
 use std::collections::{BTreeMap, BTreeSet};

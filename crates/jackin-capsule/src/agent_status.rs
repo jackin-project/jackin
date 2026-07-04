@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Agent runtime status authority.
 //!
 //! This module owns all state-machine logic for determining what an agent is

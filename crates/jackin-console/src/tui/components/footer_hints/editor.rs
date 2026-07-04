@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Editor-screen footer facts + hint-span builders for the editor's
 //! per-row contextual footer (general / mount / role / secret / auth).
 

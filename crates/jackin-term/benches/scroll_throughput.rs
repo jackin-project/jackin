@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Scroll-throughput benchmark for the `scroll_up` line-feed hot path.
 //!
 //! `scroll_up` runs on every newline once the screen is full — the most

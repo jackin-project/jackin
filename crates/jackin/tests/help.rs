@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Integration tests for `jackin help [COMMAND]...`.
 //!
 //! These tests spawn the real binary with a pipe (non-TTY), so `man`

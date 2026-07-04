@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! jackin-core: universal vocabulary types shared across all jackin❯ crates.
 //!
 //! This is a leaf crate — it has no jackin❯ dependencies, no tokio, no

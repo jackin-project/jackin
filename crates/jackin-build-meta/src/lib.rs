@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Build-script helpers shared by jackin crates.
 //!
 //! Each workspace binary crate derives a runtime version string of the

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared host CLI ↔ in-container Capsule contracts.
 //!
 //! Lives in its own crate so the host (`jackin`) and the

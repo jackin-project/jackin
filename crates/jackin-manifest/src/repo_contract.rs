@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Dockerfile validation rules: ensure the role Dockerfile extends `projectjackin/construct`.
 //!
 //! Produces `ValidatedDockerfile` whose fields are guaranteed by the

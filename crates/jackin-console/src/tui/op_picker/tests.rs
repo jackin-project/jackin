@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Most tests inject a no-op `StubRunner` and overwrite
 //! `vaults`/`items`/`fields`/`load_state`/`stage`/selection
 //! directly before driving `handle_key` — bypasses the worker

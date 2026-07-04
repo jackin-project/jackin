@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `AppConfig` mount resolution impl blocks and display helpers.
 
 use std::collections::btree_map::Entry;

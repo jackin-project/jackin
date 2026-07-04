@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Read-only diff view component used by the D24 Inspect surface.
 //!
 //! Two modes: side-by-side (modified files, before │ after) and single-pane

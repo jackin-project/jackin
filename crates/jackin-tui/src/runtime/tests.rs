@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for `runtime`.
 use super::{
     Subscription, SubscriptionPoll, spawn_blocking_subscription, spawn_named_blocking_subscription,

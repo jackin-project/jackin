@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Parse helpers shared across operator-env modules.
 
 pub fn parse_host_ref(value: &str) -> Option<&str> {

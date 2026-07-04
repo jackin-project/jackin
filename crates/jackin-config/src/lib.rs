@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! jackin-config: configuration schema and workspace resolution.
 //!
 //! Merges the `config/` and `workspace/` modules into one crate to dissolve

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! jackin❯ library crate root.
 //!
 //! Re-exports the module tree consumed by `main.rs`, `src/bin/role.rs`, and

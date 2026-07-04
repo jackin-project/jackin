@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host-side path layout: `JackinPaths` centralises every directory jackin❯
 //! reads or writes on the host machine.
 //!

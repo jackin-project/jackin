@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Adapter wiring `jackin-diagnostics`' debug-log helpers to the
 //! `jackin-core::debug_log::DebugLogSink` port trait.
 

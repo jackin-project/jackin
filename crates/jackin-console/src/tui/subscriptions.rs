@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Long-lived event sources that drive the host console TUI loop.
 
 use jackin_tui::runtime::BlockingSubscription;

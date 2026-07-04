@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Resolve manifest `env` declarations (prompts, defaults, interpolation) into concrete `(name, value)` pairs.
 //!
 //! Handles `${env.VAR_NAME}` placeholder substitution left-to-right in a

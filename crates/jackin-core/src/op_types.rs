@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! 1Password picker data types shared between `jackin-env` and `jackin-console`.
 //!
 //! These plain-data structs are the transfer objects for `op` CLI results.

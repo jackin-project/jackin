@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 # File-size ratchet budget.
 #
 # Owned by Workstream B of the codebase-health-enforcement roadmap item

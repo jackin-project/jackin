@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Launch cockpit TUI — the presentation surface for `jackin load`.
 //!
 //! Architecture Invariant: this crate is a **presentation** crate.

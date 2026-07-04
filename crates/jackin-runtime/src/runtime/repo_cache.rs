@@ -1,4 +1,7 @@
 #![allow(clippy::too_many_lines)]
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Role-repo resolution: clone or update from git, validate, cache under `~/.jackin/roles/`.
 //!
 //! Typed errors (`RepoError`) allow callers to downcast and produce

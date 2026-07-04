@@ -1,4 +1,8 @@
 #![expect(
+
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
     clippy::unwrap_used,
     reason = "integration test fixture setup should fail immediately with source location"
 )]

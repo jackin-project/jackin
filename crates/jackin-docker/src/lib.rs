@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Concrete Docker daemon and subprocess runner for jackin❯.
 //!
 //! **Architecture Invariant:** L2 infrastructure crate. Allowed

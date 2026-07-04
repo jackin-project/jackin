@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Launch stage progress rail and label animation.
 
 use jackin_tui::theme::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};

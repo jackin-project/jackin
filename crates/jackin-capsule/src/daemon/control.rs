@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Control reply + status capture helpers extracted from the daemon
 //! coordinator: `write_status_capture`, `control_reply_for_request`, and the
 //! related reply builders.

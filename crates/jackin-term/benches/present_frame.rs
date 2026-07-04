@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Focused-pane present-frame benchmark for Defect 52.
 //!
 //! Run timing:

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 [profile.default]
 default-filter = 'not binary(dind_e2e)'
 slow-timeout = { period = "60s", terminate-after = 3, grace-period = "5s" }

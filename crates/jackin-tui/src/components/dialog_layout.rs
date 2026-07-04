@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared dialog inner layout helper.
 //!
 //! Every modal dialog in jackin❯ follows the canonical vertical layout:

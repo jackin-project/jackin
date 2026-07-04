@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Story definitions and render functions for the jackin-tui lookbook.
 //!
 //! Each `fn story_*` function renders a component snapshot into the frame area

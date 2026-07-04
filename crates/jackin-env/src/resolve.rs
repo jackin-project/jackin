@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Env layer resolution, merge, and launch diagnostics.
 
 use crate::env_layer::EnvLayer;

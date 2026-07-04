@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Capsule TUI input parsing: classify raw terminal bytes into palette/prefix
 //! key events, mouse events, and PTY pass-through sequences.
 //!

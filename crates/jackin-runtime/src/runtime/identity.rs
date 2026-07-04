@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Capture host git user.name/email for in-container git defaults, and the
 //! host operator's UID/GID for the runtime `docker run --user` mapping.
 //!

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! jackin-image: image generation and binary artifact management for jackin❯.
 //!
 //! Provides derived-image Dockerfile generation, agent binary acquisition and

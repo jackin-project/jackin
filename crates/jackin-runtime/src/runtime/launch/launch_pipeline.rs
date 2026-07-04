@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Role load pipeline: public entry points and the full launch-to-attach sequence.
 
 use crate::instance::{InstanceManifest, InstanceStatus, RoleState};

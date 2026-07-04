@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Fixture seeders + `Dockerfile` + fake-claude scripts that build the
 //! three role repos the e2e harness runs against (`agent-smith`,
 //! `sentinel`, `slow-exit`), plus the agent-binary stub installers used in

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! PTY transcript helpers: spawn per-stream pipe collectors that drain into
 //! `Arc<Mutex<Vec<u8>>>` buffers, plus substring / deadline-based waiters
 //! used by the `pty_runner` family.

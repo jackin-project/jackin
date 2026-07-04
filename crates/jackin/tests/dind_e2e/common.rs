@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared e2e prereq checks: `docker` daemon + `buildx` + `script(1)` probe,
 //! capsule-binary ELF + executable assertions, and the e2e serial lock that
 //! keeps `cargo nextest run -p jackin --features e2e` from spawning multiple

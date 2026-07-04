@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Status bar component: renders the per-pane tab strip and global capsule
 //! status line at the top of the host terminal (rows 0–1).
 //!

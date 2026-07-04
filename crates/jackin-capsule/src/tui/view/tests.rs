@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for `view`.
 use super::{
     CapsuleRatatuiFrame, pane_limit_failure_message, render_capsule_ratatui_frame,

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Launch cockpit keymaps — single source of truth for key dispatch and hint advertisement.
 //!
 //! Each keymap covers one cockpit mode (main cockpit, build log overlay, failure popup,

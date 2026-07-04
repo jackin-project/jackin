@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Terminal browser and SVG generator for the jackin-tui component lookbook.
 //!
 //! Usage:

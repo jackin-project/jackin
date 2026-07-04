@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! 1Password vault/item/field picker modal — generic state, input handlers,
 //! and load-execution helpers.
 

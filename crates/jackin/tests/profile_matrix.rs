@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! WP0 — Acceptance test matrix harness: Tier 1 mechanism probes.
 //!
 //! For each Docker security profile (`locked`, `hardened`, `standard`, `compat`),

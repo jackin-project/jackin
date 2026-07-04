@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `EnvLayer` enum and `merge_layers` function for the four-layer env merge.
 
 use std::collections::BTreeMap;

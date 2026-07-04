@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Non-UI launch cockpit value types: stages, identity, failure, restore
 //! dialog data, and port traits. Shared by the orchestration layer
 //! (`jackin-runtime`) and the presentation layer (`jackin-launch-tui`) with no

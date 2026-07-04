@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host OS integration for jackin❯: desktop, clipboard, caffeinate/keep-awake.
 //!
 //! Architecture Invariant: this crate is a **L2 infrastructure** crate.

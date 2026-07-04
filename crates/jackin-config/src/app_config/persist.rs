@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `AppConfig` load/init behavior: TOML read, workspace-split migration,
 //! reserved-env validation, and builtin-agent sync.
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspace Claude token setup orchestrator.
 //!
 //! Imperative pipeline glueing five primitives together:

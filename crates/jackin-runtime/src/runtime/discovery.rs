@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! List running and managed jackin role containers via Docker label queries.
 //!
 //! Not responsible for starting, stopping, or inspecting container internals —

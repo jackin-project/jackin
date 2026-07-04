@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Concrete console manager state and type bindings.
 //!
 //! `ManagerState` is the single central struct that the host console TUI

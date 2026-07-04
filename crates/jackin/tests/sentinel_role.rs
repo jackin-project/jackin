@@ -1,4 +1,8 @@
 #![expect(
+
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
     clippy::expect_used,
     reason = "integration test prompt fixtures should fail immediately when expected defaults are absent"
 )]

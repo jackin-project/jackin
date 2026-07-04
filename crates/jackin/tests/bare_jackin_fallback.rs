@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Integration coverage for the bare-`jackin` / `jackin console` dispatch.
 //!
 //! Each test spawns the real binary with a pipe (guaranteeing a

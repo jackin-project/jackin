@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Capsule wire protocol: message types exchanged between the host client and
 //! the in-container daemon.
 //!

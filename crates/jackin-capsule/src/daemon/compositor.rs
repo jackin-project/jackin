@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Compositor methods for the Multiplexer.
 //!
 //! Moved from daemon.rs to separate this concern from session lifecycle and

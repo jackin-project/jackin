@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Save-confirm preview line builders for console-local dialogs.
 
 use std::collections::{BTreeMap, BTreeSet};

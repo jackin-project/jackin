@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Model state for the 1Password picker.
 //!
 //! The runner is intentionally absent from `OpPickerState`: the host crate

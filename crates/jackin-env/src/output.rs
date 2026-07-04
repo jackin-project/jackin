@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Plain stderr writer for operator-facing environment warnings.
 
 use std::fmt::Arguments;

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! PTY-based runner family: spawn `script(1)` wrapping `jackin load`, drive
 //! stdin with either a sentinel file watch, a transcript script, or a quick
 //! exit probe, then collect stdout / stderr into `Arc<Mutex<Vec<u8>>>`

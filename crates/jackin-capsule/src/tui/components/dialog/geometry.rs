@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Geometry and scroll helpers for read-only dialogs extracted from the
 //! coordinator. `box_rect` stays in coordinator per plan.
 

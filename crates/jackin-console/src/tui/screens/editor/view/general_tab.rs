@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! General tab content lines, widths, and geometry extracted from the view
 //! coordinator. All items re-exported from parent to preserve `super::` call
 //! sites in `frame.rs` (via `render_general_tab`) and `view/tests.rs`.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Construction and background-load completion for the 1Password picker.
 //!
 //! All methods here operate on `OpPickerState` (defined in `state.rs`) and use

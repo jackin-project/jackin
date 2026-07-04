@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 """Real Anthropic tokenizer via /v1/messages/count_tokens, authed with the local
 Claude Code OAuth session credential (read-only; the token is never printed).
 

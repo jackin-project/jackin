@@ -1,4 +1,7 @@
 #![allow(clippy::too_many_lines)]
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Key handler for the Settings → Global Mounts tab and its modals.
 //!
 //! Dispatches keyboard events to the add/edit/delete flow for global mount

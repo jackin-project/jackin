@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Per-modal scroll helpers: dispatch mouse wheel events into the
 //! currently-open modal's body (file browser, picker, settings env/auth
 //! tabs).

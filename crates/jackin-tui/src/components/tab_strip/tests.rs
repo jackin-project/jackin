@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for `tab_strip`.
 use super::{TabStrip, tab_cell_style, tab_underline_line};
 use crate::{components::HoverTracker, lay_out_tabs};

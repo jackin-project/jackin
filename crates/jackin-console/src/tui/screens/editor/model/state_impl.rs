@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `EditorState` impl blocks — extracted verbatim from `model.rs` (codebase-health
 //! Ledger 2 decomposition). Behavior-preserving: the impls moved as a group so
 //! their cross-block method calls stay co-located; `model.rs` re-exports keep

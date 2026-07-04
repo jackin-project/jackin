@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Env policy model: reserved runtime env vars and interpolation parsing.
 //!
 //! Single source of truth for:

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Editor screen state: draft workspace config being edited and per-tab/
 //! per-field edit state for General, Mounts, Roles, Secrets, and Auth panels.
 //!

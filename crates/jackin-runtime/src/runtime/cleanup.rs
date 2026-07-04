@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Container and class teardown: purge role-state directories, remove Docker
 //! resources (containers, images, networks, volumes), and update the instance
 //! index to reflect the deletion.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Render a `DamageGrid` snapshot into the host terminal at a pane rectangle.
 //! Cursor positioning is offset by the pane's origin so the agent's
 //! `(0, 0)` lands at `(dest_row, dest_col)`.

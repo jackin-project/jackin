@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Role instance lifecycle: instance index, role-state directory, auth
 //! provisioning, and container naming.
 //!

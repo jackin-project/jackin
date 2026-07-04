@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Dialog components: modal overlays for the capsule TUI (tab rename,
 //! confirm, error, help, and the Ctrl+J command palette).
 //!

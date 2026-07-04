@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Named color palette for the capsule TUI: phosphor-green brand colors and
 //! semantic aliases used across capsule components.
 //!

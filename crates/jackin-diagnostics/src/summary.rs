@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Post-hoc summaries for run diagnostics JSONL artifacts.
 
 use std::collections::BTreeMap;

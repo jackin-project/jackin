@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Isolation record data types: the persistent state written for each mount
 //! under an isolated workspace.
 //!

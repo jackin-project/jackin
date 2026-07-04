@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Post-attach foreground-session finalizer: classifies worktree state and
 //! decides whether to auto-clean or preserve an isolated mount.
 //!

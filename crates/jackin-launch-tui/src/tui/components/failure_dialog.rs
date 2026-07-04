@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Launch failure popup rendering and hit-testing.
 
 use jackin_tui::components::{ModalBackdrop, render_hint_bar, render_scrollable_dialog_body};

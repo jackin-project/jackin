@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::op_cli::OpCli;
 use jackin_core::FieldTarget;
 use jackin_core::OpRef;

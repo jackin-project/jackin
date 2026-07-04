@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
 
 use super::{Screen, format_traceparent};

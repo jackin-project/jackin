@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Auth-tab input handling: open the form modal, route keystrokes to
 //! the form, and persist commits back to `editor.pending`.
 //!

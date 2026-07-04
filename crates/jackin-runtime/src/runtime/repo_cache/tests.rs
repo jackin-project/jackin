@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for `repo_cache`.
 use super::super::test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo};
 use super::*;

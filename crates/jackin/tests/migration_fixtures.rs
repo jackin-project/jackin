@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Walk every migration fixture in `tests/fixtures/migrations/` and prove the
 //! current binary still upgrades each historical input to a file that parses
 //! successfully against the current serde schema. The `after.toml` in each

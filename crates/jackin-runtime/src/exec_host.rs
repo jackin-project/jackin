@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host-side credential resolver for `jackin-exec`.
 //!
 //! Listens on a Unix socket at `~/.jackin/sockets/<container>/host.sock`

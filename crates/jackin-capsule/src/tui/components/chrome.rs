@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Ratatui widgets for capsule chrome: status bar, pane borders, branch bar.
 //!
 //! These widgets replace the raw-ANSI rendering in `compose_full_frame` and

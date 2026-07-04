@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Auth configuration types for the three-layer resolver.
 //!
 //! These types carry the auth-forwarding mode for a specific agent at a

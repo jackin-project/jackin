@@ -1,4 +1,7 @@
 #![allow(clippy::too_many_lines)]
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Launch cockpit input handling.
 
 use std::sync::{Arc, Mutex};

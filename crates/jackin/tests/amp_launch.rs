@@ -1,4 +1,8 @@
 #![expect(
+
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
     clippy::expect_used,
     reason = "integration test command capture should fail immediately when expected Docker commands are absent"
 )]

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Capsule keymaps — static binding tables for capsule TUI key dispatch.
 //!
 //! The capsule's outer input parser (`input.rs`) handles the palette key

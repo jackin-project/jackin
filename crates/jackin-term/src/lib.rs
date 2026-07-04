@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! jackin-term: owned terminal model for the jackin-capsule re-emitting PTY multiplexer.
 //!
 //! **Architecture Invariant:** L2 infrastructure crate. Allowed

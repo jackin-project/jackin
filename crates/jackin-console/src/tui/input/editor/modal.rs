@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Editor modal leaf helpers: secret picker, token generation, and text-input commits.
 
 use crate::tui::components::auth_panel::generated_token_op_item_name;

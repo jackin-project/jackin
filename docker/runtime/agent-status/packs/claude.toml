@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 schema_version = 1
 agent = "claude"
 validated_versions = ">=2.1.173, <2.2.0"

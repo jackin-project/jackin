@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Canonical host-console product surface.
 //!
 //! This crate owns reusable console state, update/input planning, view

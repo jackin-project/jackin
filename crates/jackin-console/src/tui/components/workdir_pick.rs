@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workdir path picker — choice list of mount dsts plus each ancestor.
 
 use std::path::PathBuf;

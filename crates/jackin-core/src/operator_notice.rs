@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Operator-notice port trait (D2 in `codebase-health-enforcement`).
 //!
 //! Domain crates (L0) emit short operator-visible messages

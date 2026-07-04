@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Mouse drag-resize tests for the console TUI.
 //! Unit tests for `handle_mouse`: the list/details seam is a
 //! mouse-draggable resize affordance driven entirely from `ManagerState`.

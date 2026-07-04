@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Download and cache agent CLI binaries (Kimi, etc.) for injection into derived images.
 //!
 //! Fetches from upstream CDN, verifies SHA-256, caches under `~/.jackin/cache/`

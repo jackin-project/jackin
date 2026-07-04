@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Stubs for L3 TUI widget types used as test fixtures by
 //! `runtime/progress/tests.rs` (and any other L0/L1/L2
 //! consumer of `jackin-launch-tui`'s progress fields).

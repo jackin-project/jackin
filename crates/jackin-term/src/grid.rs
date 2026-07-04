@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `DamageGrid` — the Phase 2 v0 terminal model implementation.
 
 #![allow(clippy::empty_line_after_doc_comments)]

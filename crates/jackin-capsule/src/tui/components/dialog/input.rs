@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Key, filter, and list-hit helpers for capsule dialogs.
 
 use jackin_tui::components::raw_bytes_to_chord;

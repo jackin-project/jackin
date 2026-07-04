@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 const CONSTRUCT_DOCKERFILE: &str = include_str!("../../../docker/construct/Dockerfile");
 
 #[test]

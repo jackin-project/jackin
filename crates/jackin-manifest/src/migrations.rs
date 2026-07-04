@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Role manifest (`jackin.role.toml`) version migration registry.
 //!
 //! `CURRENT_MANIFEST_VERSION` is defined in `jackin-core` and re-exported

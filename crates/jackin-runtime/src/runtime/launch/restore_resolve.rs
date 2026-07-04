@@ -1,4 +1,7 @@
 #![allow(clippy::too_many_lines)]
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Restore candidate resolution logic extracted from the launch coordinator
 //! (the ~508L cluster of resolve_* fns + Restore* types). All public items
 //! re-exported from the parent launch coordinator to preserve `super::` call

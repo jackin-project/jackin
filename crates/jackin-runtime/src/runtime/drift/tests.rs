@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 #[cfg(test)]
 use super::detect_workspace_edit_drift;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, write_records};

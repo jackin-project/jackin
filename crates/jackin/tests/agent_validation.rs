@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use jackin_manifest::validate::validate_agent_consistency;
 use tempfile::tempdir;
 

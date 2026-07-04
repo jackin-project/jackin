@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Settings screen state: per-tab state structs for the General, Mounts,
 //! Environments, Auth, and Trust panels.
 

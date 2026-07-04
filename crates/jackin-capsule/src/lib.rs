@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Capsule crate root: module declarations re-exported for the in-container
 //! daemon and host client binaries.
 //!

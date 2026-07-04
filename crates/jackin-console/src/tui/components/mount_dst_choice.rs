@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Three-button choice modal for picking a mount destination.
 //!
 //! Most operator mounts want `dst = src`. This modal offers a fast path

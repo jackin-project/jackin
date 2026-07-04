@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::op_runner::OpRunner;
 use crate::op_struct::{OpItemCreateParams, OpStructRunner, OpWriteRunner};
 use crate::picker::{

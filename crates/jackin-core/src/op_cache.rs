@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Session-scoped cache for `op` structural-metadata calls.
 //!
 // SAFETY: callers must store only structural metadata (UUIDs, names,

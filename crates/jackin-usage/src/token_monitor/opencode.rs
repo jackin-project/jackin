@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `SQLite` reader for `OpenCode` token usage, via the workspace-standard
 //! `turso` client (never `rusqlite`). Reads `opencode.db`'s `message` table
 //! incrementally by `rowid`.

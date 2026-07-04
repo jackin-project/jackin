@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Cell type for the `DamageGrid` implementation.
 //!
 //! Phase 2: representation matches the capsule terminal-model surface.

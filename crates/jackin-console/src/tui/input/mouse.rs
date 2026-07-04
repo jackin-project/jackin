@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Mouse event handling for the workspace manager: list/details seam drag,
 //! click-to-select in the list pane, and `FileBrowser` URL-click fallthrough.
 //!

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Auth tab lines, geometry, widths, `EditorAuthLineRow` and render helpers extracted
 //! from the view coordinator. Items re-exported from parent to preserve `super::*`
 //! call sites in tests and qualified calls from frame.rs (via `render_auth_tab` etc).

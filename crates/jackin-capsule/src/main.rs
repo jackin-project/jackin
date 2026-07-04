@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use anyhow::{Result, bail};
 use jackin_capsule::{
     client, config, daemon, exec, firewall, mcp_server, output, protocol::attach::SpawnRequest,

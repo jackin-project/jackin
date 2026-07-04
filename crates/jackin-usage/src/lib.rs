@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! jackin-usage: usage/pricing/telemetry + token monitors for the jackin-capsule daemon.
 //!
 //! Architecture Invariant: allowed inward dependencies are `jackin-core`,

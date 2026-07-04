@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Re-export of launch TUI progress types plus host-side prelaunch helpers.
 //!
 //! Not responsible for rendering — the TUI render functions are re-exported

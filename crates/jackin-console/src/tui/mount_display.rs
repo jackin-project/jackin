@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Mount row display data and the lines rendered for each mount block.
 //!
 //! Scroll extents are derived from the rendered lines, never recomputed: a

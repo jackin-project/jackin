@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Test helpers: `FakeRunner` for subprocess injection and minimal role-repo seed utilities.
 //!
 //! Not responsible for: asserting test outcomes — callers inspect `FakeRunner::recorded`

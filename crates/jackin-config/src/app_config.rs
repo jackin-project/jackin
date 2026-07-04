@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `AppConfig`: top-level operator configuration schema.
 //!
 //! Defines the `AppConfig` struct and its `Default` implementation.

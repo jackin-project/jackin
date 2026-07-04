@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! End-to-end smoke that drives `jackin load` against a real Docker daemon
 //! with proxy env declared in role config, then asserts the launched agent
 //! container's environment carries the `DinD` hostname in both `NO_PROXY`

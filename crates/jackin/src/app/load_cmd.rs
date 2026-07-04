@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Load, Console, Hardline, Eject, and Exile command handlers — extracted from `app::run`.
 
 use anyhow::{Context, Result};

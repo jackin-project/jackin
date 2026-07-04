@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Cross-crate colour types and brand palette tokens.
 //!
 //! Three-byte RGB triple and the canonical phosphor palette, plus the

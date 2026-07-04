@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared test helpers for launch integration tests.
 // pub items in a private test-helper module are intentionally unreachable
 // from outside this crate; they exist for code organisation, not export.

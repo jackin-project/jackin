@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Docker image build pipeline: prepare binaries, build derived image, tag and cache.
 
 #![allow(clippy::empty_line_after_doc_comments)]

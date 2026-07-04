@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Layout utilities shared across console screens: header/content/footer
 //! heights, seam geometry, and scrollbar axis constants.
 //!

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `tracing` subscriber setup for JSONL diagnostics plus optional OTLP export.
 //!
 //! The default subscriber installs only [`JackinDiagnosticsLayer`]. It has no

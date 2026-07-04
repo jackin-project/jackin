@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared TUI tokens, models, and components used by jackin❯'s
 //! terminal surfaces.
 //!

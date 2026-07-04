@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Integration coverage for the `JACKIN_DEBUG` env-backed `--debug` flag.
 //!
 //! `unsafe_code = "forbid"` rules out in-process `std::env::set_var` for

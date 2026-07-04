@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `DiagnosticsBuildLogSink`: adapter from the `BuildLogSink` port to the
 //! `jackin-diagnostics` process-global build-log buffer.
 //!

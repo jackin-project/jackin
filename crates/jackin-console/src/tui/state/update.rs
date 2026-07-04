@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Concrete manager message type aliases and the `update_manager` reducer.
 //!
 //! All generic parameters are lower-crate-owned types, making this module

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host observability substrate: structured JSONL run diagnostics, debug-mode
 //! flag, and the `debug_log!` macro. Terminal-ownership guards are re-exported
 //! from `jackin_tui::ownership`.

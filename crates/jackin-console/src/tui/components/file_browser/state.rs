@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! File-browser terminal state.
 //!
 //! Houses `FileBrowserState` (the modal's working state). Directory scanning,

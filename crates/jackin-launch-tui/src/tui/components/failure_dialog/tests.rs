@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::tui::model::{LaunchIdentity, LaunchTargetKind};
 use crate::tui::update::initial_view;
 use crate::tui::view::render_launch_frame;

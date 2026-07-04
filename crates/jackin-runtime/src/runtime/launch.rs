@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `jackin load` pipeline: resolve source and trust, claim instance, build
 //! image, prepare auth and mounts, launch runtime, attach, finalize.
 //!

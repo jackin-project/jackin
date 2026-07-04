@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Sentinel-report assertion helpers + `REPORT_BEGIN` / `REPORT_END`
 //! markers + `docker` `cleanup_role` + the generic `run` shell helper used
 //! by every fixture seeder.

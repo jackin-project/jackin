@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Console-owned config save diff planning.
 //!
 //! The root binary still applies these operations through `ConfigEditor`, but

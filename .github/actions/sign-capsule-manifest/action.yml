@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 name: Produce and sign the capsule manifest
 description: |
   Build `capsule-manifest.json` (version string plus per-Linux-target

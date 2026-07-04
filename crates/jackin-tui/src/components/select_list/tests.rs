@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::{PickerRow, SelectList, SelectListState, render_picker_list};
 use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

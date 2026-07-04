@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Image tag and Docker label constants for jackin❯-built derived images.
 //!
 //! Architecture Invariant: depends only on `jackin-core`.

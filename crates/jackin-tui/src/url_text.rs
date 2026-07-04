@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! URL text helpers that are small enough to avoid a parser dependency at
 //! shared-core level.
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Parse `src[:dst][:ro]` mount specs from CLI arguments into `MountConfig`.
 //!
 //! Not responsible for global mount config deserialization (`config::mounts`)

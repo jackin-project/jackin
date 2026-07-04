@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Modal and input-state constructors extracted from the view coordinator.
 //! Keep the use of `forbidden_secret_keys` from update as specified.
 

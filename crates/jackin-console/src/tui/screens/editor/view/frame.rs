@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Frame layout, top-level editor screen rendering, all tab renderers,
 //! `editor_*_lines_for_state` adapters, geometry prep, scroll clamp, and
 //! `render_editor_with_footer` extracted from the view coordinator.

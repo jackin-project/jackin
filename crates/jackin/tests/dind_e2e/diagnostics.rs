@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Failure-context dump helpers used by the e2e harness when a test
 //! panics: latest docker build log + diagnostics snapshot + tail of the
 //! captured stdout/stderr so the failure message lands with the context

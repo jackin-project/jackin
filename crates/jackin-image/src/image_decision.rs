@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `ImageInvalidationReason` + `ImageDecision` value types and the label-classifier helpers.
 //!
 //! Architecture Invariant: L1 application crate module. Depends on `jackin-core`,

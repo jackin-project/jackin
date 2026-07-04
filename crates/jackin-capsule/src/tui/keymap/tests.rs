@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::{
     CAPSULE_GLOBAL_KEYMAP, FILTER_LIST_KEYMAP, FilterListAction, GlobalCapsuleAction,
     PREFIX_COMMAND_KEYMAP, READ_ONLY_DISMISS_KEYMAP, RENAME_KEYMAP, ReadOnlyDismissAction,
