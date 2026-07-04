@@ -21,12 +21,12 @@
     "16-global-comparison",
     "17-pxpipe-design",
     "18-latest-versions-refresh",
-    "51-code-intelligence-tools",
-    "52-qdrant-and-vector-databases",
-    "53-headroom-and-context-compression",
-    "54-context-compression-literature-and-market",
-    "55-token-observability-and-visualization",
-    "56-rtk-and-write-time-observation-compression",
-    "57-sem-and-mq-structural-and-markdown-retrieval"
+    "19-code-intelligence-tools",
+    "20-qdrant-and-vector-databases",
+    "21-headroom-and-context-compression",
+    "22-context-compression-literature-and-market",
+    "23-token-observability-and-visualization",
+    "24-rtk-and-write-time-observation-compression",
+    "25-sem-and-mq-structural-and-markdown-retrieval"
   ]
 }

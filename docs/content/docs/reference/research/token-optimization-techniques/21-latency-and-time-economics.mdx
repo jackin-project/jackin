@@ -1,0 +1,260 @@
+---
+title: "21 — Latency, wall-clock, and human-time as a second cost axis"
+---
+
+# 21 — Latency, wall-clock, and human-time as a second cost axis
+
+Volume II area file for blind spot 3. Volume I optimizes dollars
+only; latency appears in scattered mentions (`11:110` "dollars-for-wallclock", `12:132` batch
+latency, `13:147` self-host TTFT, `01:52` "speed not savings") but is **never built into a decision
+model**. This file makes time a first-class axis: when spending more tokens or dollars to finish
+faster is correct, with the breakeven arithmetic Anthropic does not publish.
+
+**TL;DR**
+
+- **Time is priceable, and the same model spans a ~4× price range on the latency axis alone.** On
+ Opus 4.8: batch (slow, ≤24 h) = $2.50/$12.50 per MTok; standard = $5/$25; **fast mode (≤2.5× faster)
+ = $10/$50** — 2× the standard rate for up to 2.5× the speed . The model and
+ quality are identical across all three; only wall-clock and price change.
+- **For interactive work where a human waits, buying speed almost always wins on total cost.** A
+ fully-loaded developer-minute is ~$0.83–1.25 (ESTIMATE: $100–150k/yr ÷ 2,000 h ÷ 60). Fast mode's
+ extra dollars on a typical task (cents) are dwarfed by the value of the minutes returned to a
+ blocked human — so the time-optimal and the *total-cost*-optimal choice is fast mode for live
+ iteration and standard/batch for autonomous work. Anthropic ships the qualitative rubric but **no
+ quantitative breakeven**; this file supplies it.
+- **Prompt caching is the rare negative-cost-on-both-axes lever:** it cuts dollars (Volume I) *and*
+ time — measured TTFT −79% on a 100K-token prefix (11.5 s → 2.4 s), −75% on a 10-turn session — and
+ raises throughput, because cache reads are excluded from ITPM (a 2M ITPM limit at 80% hit ≈ 10M
+ effective tokens/min). Volume I credits only the dollar half.
+- **The validation/measurement machinery has a *time* tax, not a dollar one.** `count_tokens` is free
+ but draws a separate RPM pool (100 RPM at Tier 1), does not cache, and re-processes the whole
+ prompt — so using it as a tight-loop compression proxy throttles at ~1.6 req/s. The optimizer can
+ be slower than the thing it optimizes; its per-call wall-clock is unpublished (flagged).
+- **The seductive "parallelism cut research time 90%" number does not transfer to coding.** It is
+ Anthropic's breadth-first *research* system (≈15× tokens vs chat) and is **explicitly not
+ recommended for coding** (shared context, step dependencies). Worse, naive parallel fan-out
+ contends for one **pooled Opus rate limit**, so it can hit 429s and *increase* wall-clock via
+ backoff. Parallelism buys time with tokens only when the work is genuinely independent.
+
+Pricing; dollar profile per Volume I's $22/day. Time figures are wall-clock
+from primary Anthropic sources or labeled ESTIMATE with arithmetic.
+
+---
+
+## The latency price ladder (Opus 4.8, per MTok)
+
+| Mode | Input | Output | Wall-clock | When |
+|---|---|---|---|---|
+| **Batch** | $2.50 | $12.50 | async, ≤24 h (most &lt;1 h) | offline: evals, sweeps, nightly review |
+| **Standard** | $5.00 | $25.00 | baseline | default interactive |
+| **Fast mode** | $10.00 | $50.00 | **up to 2.5× faster** | live iteration, debugging, tight deadline |
+
+(code.claude.com/docs/en/fast-mode; platform.claude.com/docs/en/build-with-claude/batch-processing;
+. Opus 4.7/4.6 fast mode is $30/$150 = 6× standard — far worse; Opus 4.8 made fast
+mode "three times cheaper than previous models", anthropic.com/news/claude-opus-4-8.)
+
+The same model, same quality, occupies a 4× dollar range purely on how fast you want the answer.
+That is the proof that wall-clock is a priceable axis — and the thing Volume I's dollar-only model
+cannot represent.
+
+## The time-value model (the framework Anthropic doesn't publish)
+
+Let **v** = value of one developer-minute (ESTIMATE $0.83–1.25, fully-loaded), **t** = wall-clock
+minutes a human is *blocked* waiting on the agent, **Δ$** = extra dollars a speed lever costs, **s** =
+fraction of wait removed. Buying speed is correct when:
+
+> **v · t · s > Δ$**
+
+Worked: a task with $0.50 of tokens that blocks a developer for 5 min. Fast mode adds ~$0.50 (2×
+price) and removes ~60% of the wait (s≈0.6 from the 2.5× speedup → ~3 min saved). Value returned:
+1.25 × 5 × 0.6 = **$3.75** for **$0.50** extra → buy it, ~7:1. The breakeven is when Δ$ ≥ v·t·s,
+i.e. when the human is *not* waiting (autonomous/batch work, t≈0 → never buy speed) or when token
+cost is enormous relative to the minutes saved. **Rule:** the more interactive the loop, the more
+fast mode and parallelism pay; the more autonomous, the more batch and standard pay. This single
+inequality reorders every latency decision below.
+
+Crucially, on a **subscription** the dollar term changes meaning: fast-mode tokens draw from usage
+credits (real dollars) but **do not count against the cap** (file 19) — so on a quota-bound Max seat,
+fast mode is also a way to *finish without burning cap headroom*, at a dollar price.
+
+---
+
+## Techniques
+
+### L1. Fast mode — buy ~2.5× wall-clock for 2× dollars, at session start only
+
+The cleanest "pay more to finish faster" knob; the time-value inequality decides when.
+
+- **Coverage-delta:** New as a *model*. Volume I names fast mode only as a cache-buster fact
+ (`07:49`); the speed/price tradeoff and the breakeven are absent.
+- **Layer:** infra / latency (price multiplier at fixed quality).
+- **Mechanism:** `speed: "fast"` runs the same Opus 4.8 at up to 2.5× throughput for 2× the per-token
+ price. **First enable in a conversation re-bills the entire context at the premium uncached rate**
+ (charged once) — so enable at session start, never toggle mid-task (it also busts the cache prefix,
+ Volume I 07). Separate rate-limit pool from standard Opus; falls back silently to standard on
+ exhaustion. CLI only, v2.1.36+, requires usage credits on; not on Bedrock/Vertex/Foundry. Research
+ preview — re-verify.
+- **Expected savings:** *spends* dollars to *save* time. By the inequality, net-positive whenever a
+ human is blocked: e.g. +$0.50/task for ~$3.75 of returned developer time on a 5-min interactive
+ task (ESTIMATE). Net-negative for autonomous/overnight work (t≈0).
+- **Evidence tier:** T1 (fast-mode docs + Opus 4.8 announcement); ESTIMATE for the
+ developer-minute value (arithmetic shown).
+- **Quality risk:** **NEUTRAL** — Anthropic states identical quality/capabilities; only speed/price
+ change. The risk is purely economic (paying the premium when no human is waiting).
+- **Availability:** CLAUDE-CODE-TODAY (CLI, credits on).
+- **Effort to adopt:** minutes (enable at start of interactive sessions).
+- **Composability:** combine with low effort for max speed on straightforward tasks (two orthogonal
+ speed levers); anti-synergy with mid-session toggling (cache bust + full re-bill); on a subscription
+ it sidesteps the cap (19) at a dollar cost.
+- **Validation protocol:** time ten real interactive tasks at standard vs fast; record wall-clock and
+ the dollar delta; confirm v·t·s > Δ$ for your developer-minute value before defaulting it on.
+
+### L2. Mind the optimizer's own latency tax — count_tokens and the harness are RPM-bound, not dollar-bound
+
+The measurement machinery is free in dollars but costs time and request budget; a tight-loop proxy
+can be slower than the inference it guards.
+
+- **Coverage-delta:** New. Volume I's measurement file (01) and validation harness (16) never cost
+ their own latency; this is blind spot 8's time facet (see also 25).
+- **Layer:** meta / measurement.
+- **Mechanism:** `count_tokens` is $0 but draws a **separate RPM pool** (Tier 1 = 100 RPM, Tier 2 =
+ 2,000, Tier 3 = 4,000, Tier 4 = 8,000), does **not** use caching, and re-processes the full prompt
+ every call. Using it as a pre-flight sizing check before every agent step throttles at ~1.6 req/s
+ (Tier 1) and adds a round trip whose wall-clock Anthropic does not publish (flagged). The same holds
+ for a validation harness or a compression proxy interposed in the hot path: each adds latency the
+ dollar model ignores.
+- **Expected savings:** none — it is a *cost to avoid*. The lever is to batch/sample `count_tokens`
+ checks (size once per file class, not per step) and to run heavy validation offline (batch), not
+ inline.
+- **Evidence tier:** T1 (token-counting RPM + no-cache docs); the per-call ms latency is a
+ documented gap.
+- **Quality risk:** **NEUTRAL.**
+- **Availability:** CLAUDE-CODE-TODAY.
+- **Effort to adopt:** minutes (sampling discipline).
+- **Composability:** governs how aggressively the file-20 image-sizing and file-25 budget checks can
+ run inline; pairs with batch (L5) for offline validation.
+- **Validation protocol:** measure your harness's added wall-clock per task; if the proxy adds more
+ time than the tokens it saves are worth (L1 inequality, with the proxy as Δ time), move it offline.
+
+### L3. Parallel fan-out buys wall-clock with tokens — but only for independent work, and watch the pooled limit
+
+The "90% faster" headline is research-only and does not survive contact with a coding agent's shared
+context or Anthropic's pooled Opus rate limit.
+
+- **Coverage-delta:** Volume I's multi-agent file (11) covers parallel-vs-serial *token* economics;
+ the *wall-clock* model, the sourced 90% caveat, and the pooled-limit backoff trap are new.
+- **Layer:** turn-structure / latency.
+- **Mechanism:** Anthropic's multi-agent research system "cut research time by up to 90%" by spawning
+ 3–5 parallel searchers — at ≈15× the tokens of a chat — and **explicitly does not recommend it for
+ coding** (shared context + step dependencies). Independently, all Opus versions share **one** RPM/
+ ITPM/OTPM pool, so naive concurrent fan-out hits 429s and *increases* wall-clock via backoff; fast
+ mode's separate pool is a partial escape. The latency win is real only when subtasks are genuinely
+ independent and the prefix is staggered (await the first stream before firing the rest — else the
+ wave forfeits cache, Volume I 07 tech 8).
+- **Expected savings:** large wall-clock cut for independent breadth (research, multi-file
+ independent edits) at a token premium; ≈0 or negative for dependent coding chains. The time-value
+ inequality with Δ$ = the ~15× token premium decides.
+- **Evidence tier:** T1 (multi-agent post; rate-limits doc). The coding-agent
+ transfer of the 90% figure is unsourced (flagged — do not claim it).
+- **Quality risk:** **RISKY for coding** — Anthropic's own caveat; dependent steps parallelized
+ badly produce conflicting work. NEUTRAL for independent breadth.
+- **Availability:** CLAUDE-CODE-TODAY (subagents) / SDK.
+- **Effort to adopt:** minutes (when to fan out) to hours (stagger logic).
+- **Composability:** stagger (07 tech 8) to keep cache; cap concurrency below the pooled OTPM; on a
+ subscription, fan-out is *quota*-costly (19 Q4) even when it saves wall-clock.
+- **Validation protocol:** for an independent multi-part task, time serial vs staggered-parallel and
+ count 429/backoff events; adopt parallel only where wall-clock drops without retries.
+
+### L4. Caching cuts time and dollars together — the latency case for prefix hygiene
+
+Volume I made the dollar case for caching; the time case is just as strong and independent.
+
+- **Coverage-delta:** Volume I's caching file (07) is entirely dollar/quota; the **TTFT and
+ throughput** numbers are new here.
+- **Layer:** cache / latency.
+- **Mechanism:** warm cache reads return at 10% price *and* cut time-to-first-token (measured −79% on
+ a 100K prefix, −31% on 10K, −75% on a 10-turn session). Separately, cache reads are **excluded from
+ ITPM**, so an 80% hit rate ~5×'s your effective tokens-per-minute ceiling — the binding throughput
+ constraint for large agentic sweeps. `max_tokens: 0` pre-warming pays one cache write now to remove
+ cold-write TTFT from the next user-visible request.
+- **Expected savings:** TTFT −31% to −79% (prefix-size dependent) and up to ~5× throughput headroom,
+ on top of the dollar/quota savings — a genuine negative-cost-on-both-axes lever.
+- **Evidence tier:** T1 (prompt-caching blog TTFT numbers; rate-limits ITPM exempti).
+- **Quality risk:** **NEGATIVE-COST** (faster and cheaper, identical output).
+- **Availability:** CLAUDE-CODE-TODAY (automatic) / SDK (`max_tokens:0` warming).
+- **Effort to adopt:** zero (already on) to hours (pre-warming for staged prompts).
+- **Composability:** the time-axis complement of every Volume I cache technique; pre-warm pairs with
+ staggered fan-out (L3).
+- **Validation protocol:** measure TTFT on a large-prefix task cold vs warm; confirm the ITPM headroom
+ by pushing concurrent volume with and without cache hits.
+
+### L5. Batch for the no-human-waiting work — trade up-to-24 h latency for 50% off
+
+The slow-cheap end of the ladder; correct exactly when t≈0 in the time-value inequality.
+
+- **Coverage-delta:** Volume I (12) states the 50%/24 h facts; weighing them on the *time axis* (when
+ the latency is free because nobody waits) is the new framing.
+- **Layer:** infra / scheduling.
+- **Mechanism:** Message Batches run async (most &lt;1 h, hard 24 h cap, expire after) at exactly 50% of
+ standard prices, stacking with caching (best-effort 30–98% hit; use 1 h TTL). `speed:"fast"` is
+ rejected in batches. For evals, nightly review queues, and repo sweeps — where no human is blocked —
+ the wall-clock cost is ~zero value, so the 50% discount is pure win.
+- **Expected savings:** 50% dollars on all offline-able work; on a subscription, headless/SDK batch
+ also draws the separate credit pool, off the interactive cap (19 Q7).
+- **Evidence tier:** T1 (batch docs).
+- **Quality risk:** **NEUTRAL** (same model/prompts; async only).
+- **Availability:** SDK.
+- **Effort to adopt:** days (restructure offline jobs around a shared prefix).
+- **Composability:** batch × caching × cheaper model is the deepest dollar stack (Volume I 07 tech 9);
+ the time-axis counterpart of fast mode.
+- **Validation protocol:** run a recurring offline job (nightly review) via batch for a week; confirm
+ equal output quality and the 50% dollar cut.
+
+### L6. The quota-edge time decision — wait for reset (free, slow) vs spend (fast, $)
+
+At the subscription cap, the only remaining lever *is* a time-vs-dollar trade (bridges file 19 Q6).
+
+- **Coverage-delta:** New (Volume I models neither the cap nor time).
+- **Layer:** governance / scheduling.
+- **Mechanism:** at the 5-hour or weekly cap you either wait for reset (rolling 5-hour frees
+ continuously; weekly is a fixed anchor) — zero dollars, pure wall-clock — or enable credits / fast
+ mode and pay API-rate dollars to continue now. The time-value inequality with t = time-until-reset
+ and Δ$ = overage/fast-mode cost decides; for a blocked human near a long weekly reset, paying is
+ usually correct; for a background task, waiting is free.
+- **Expected savings:** converts a hard stop into the cheaper of &#123;wait, pay&#125; per the inequality.
+- **Evidence tier:** T1 (extra-usage + fast-mode docs).
+- **Quality risk:** **NEUTRAL.**
+- **Availability:** CLAUDE-CODE-TODAY.
+- **Effort to adopt:** minutes (set the policy + a monthly credit cap, file 25).
+- **Composability:** the join point of files 19 (quota), 21 (time), and 25 (governance).
+- **Validation protocol:** when you next hit the cap, compute v·(time-to-reset) vs the overage dollars
+ and record which you chose and whether it was right in hindsight.
+
+---
+
+## Surprising findings
+
+- The same Opus 4.8 spans **4× in price on the latency axis** (batch $2.50 → fast $10 input) with
+ identical quality — wall-clock is as real a cost lever as the token count, and Volume I's dollar-only
+ ledger is blind to three-quarters of that range.
+- Anthropic's own headline "90% faster" parallelism number is **anti-applicable** to the user's domain
+ (coding), and naive parallelism can make a coding agent *slower* by triggering pooled-limit backoff —
+ the opposite of the intuition.
+- The optimizer can cost more time than it saves: a per-step `count_tokens` proxy is RPM-throttled to
+ ~1.6 req/s at Tier 1 and never caches, so a "compression check" loop can be the slowest link.
+- Caching is the only lever that is **negative-cost on dollars, quota, *and* time** simultaneously —
+ which is why prefix hygiene (Volume I 07, file 19 Q2) is the highest-leverage habit on every axis.
+
+## Verification ledger
+
+| # | Number / claim | Source (access) |
+|---|---|---|
+| 1 | Fast mode Opus 4.8: up to 2.5× faster, $10/$50 (2× standard); Opus 4.7/4.6 $30/$150 (6×); "3× cheaper than previous" | code.claude.com/docs/en/fast-mode; anthropic.com/news/claude-opus-4-8 |
+| 2 | Fast mode: re-bills whole context on first enable; separate rate pool; credits-only; not on Bedrock/Vertex/Foundry; v2.1.36+; research preview | code.claude.com/docs/en/fast-mode |
+| 3 | Batch: 50% off, most &lt;1 h, hard 24 h cap; Opus 4.8 $2.50/$12.50; 100k req/256 MB; speed:fast rejected | platform.claude.com/docs/en/build-with-claude/batch-processing |
+| 4 | Multi-agent "cut research time by up to 90%"; ~15× tokens vs chat; not recommended for coding | anthropic.com/engineering/built-multi-agent-research-system (pub) |
+| 5 | Prompt-caching TTFT: −79% (100K, 11.5→2.4 s), −31% (10K), −75% (10-turn); read 10%, write 1.25× | claude.com/blog/prompt-caching (pub) |
+| 6 | Cache reads excluded from ITPM → 2M ITPM @ 80% hit ≈ 10M effective tok/min; Opus limits pooled across versions; fast mode separate pool | platform.claude.com/docs/en/api/rate-limits |
+| 7 | count_tokens: free; separate RPM pool (100/2,000/4,000/8,000 by tier); no caching; estimate | platform.claude.com/docs/en/build-with-claude/token-counting |
+| 8 | Developer-minute ≈ $0.83–1.25 ($100–150k/yr ÷ 2,000 h ÷ 60); time-value inequality v·t·s > Δ$ | ESTIMATE (arithmetic shown) |
+| 9 | No published Anthropic time-value framework; count_tokens round-trip ms unpublished; coding-agent transfer of 90% unsourced | documented gaps (deadEnds) |

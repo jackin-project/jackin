@@ -154,7 +154,7 @@ Structural facts that shape every lever (verify, then build on):
 
 ## 8. Research areas — the map (one report file per area; seeded leads are starting points, not limits)
 
-**A. Style and language compression — beyond caveman** (`10-style-and-language-compression.md`)
+**A. Style and language compression — beyond caveman** (`04-style-and-language-compression.md`)
 Where is the ceiling of register compression? Telegraphic English vs caveman-ultra vs classical
 Chinese vs constructed notations (math/logic symbols, APL-like dialects). In-context codebook
 bootstrapping: define a session dialect/abbreviation table once (~hundreds of tokens), amortize over
@@ -162,7 +162,7 @@ thousands of turns — does comprehension survive? Compression of *instructions 
 *output from* the model as separate problems. The thinking-token caveat from §5 belongs here.
 Measure everything with `count_tokens`.
 
-**B. Tokenizer arbitrage** (`11-tokenizer-arbitrage.md`)
+**B. Tokenizer arbitrage** (`05-tokenizer-arbitrage.md`)
 Information density per BPE token across languages and scripts (seed: "All languages are NOT
 created (tokenized) equal", tokenizer-fairness literature). Which scripts/symbols are cheap vs
 deceptively expensive for the current Claude tokenizer? Identifier and format choice: JSON vs YAML
@@ -170,7 +170,7 @@ vs TOON (Token-Oriented Object Notation) vs CSV vs custom DSV for structured dat
 tokens-per-record tables. Numbers, hex, base64, UUIDs as token sinks. Verdict on whether wenyan's
 character reduction survives as token reduction.
 
-**C. Context architecture — what enters the window at all** (`12-context-architecture.md`)
+**C. Context architecture — what enters the window at all** (`06-context-architecture.md`)
 The biggest input lever: don't send it. Repo maps instead of file dumps (seed: aider's tree-sitter +
 PageRank repo map; ctags outlines), partial reads (offset/limit), grep-first navigation,
 symbol-graph/AST context instead of raw source, multi-resolution context (summaries holding pointers
@@ -179,7 +179,7 @@ summarization (seed: "Lost in the Middle" — pruning as a *quality-improving* m
 and CLAUDE.md mass audits, MCP schema overhead (measure how many tokens connected MCP servers cost
 per request and what schema deferral saves), skills-as-lazy-loading.
 
-**D. Caching exploitation** (`13-caching-exploitation.md`)
+**D. Caching exploitation** (`07-caching-exploitation.md`)
 Squeeze the 0.1x read price for everything it's worth: stable-prefix discipline (what silently busts
 Claude Code's cache in practice — editing CLAUDE.md mid-session, toggling MCP servers, model
 switches), session-structure habits that maximize hit rate, the idle-gap problem and keepalive /
@@ -187,14 +187,14 @@ pre-warming strategies (`max_tokens: 0` warmers; 1h TTL trade-offs: 2x write nee
 scheduling work within cache windows, subagent cache economics (each spawn re-writes its prefix —
 when does fan-out cost more than it saves?), batch-API + caching for offline work.
 
-**E. Retrieval, memory, and state offloading** (`14-retrieval-memory-and-state.md`)
+**E. Retrieval, memory, and state offloading** (`08-retrieval-memory-and-state.md`)
 Replace re-derivation and re-reading with recall: persistent memory files, the API memory tool,
 MemGPT/Letta-style hierarchical memory, RAG over the repo vs agentic search (the industry argument
 both ways, with evidence), semantic caching of whole responses (seed: GPTCache), file-based state so
 a new session resumes from a 2-KB state file instead of a 200-KB transcript replay, embedding
 pointers ("see decision #14") vs restating.
 
-**F. Output discipline and structured generation** (`15-output-discipline.md`)
+**F. Output discipline and structured generation** (`09-output-discipline.md`)
 The 5x-priced token class. Diff/patch-style edits vs whole-file rewrites (measure Edit-tool patches
 vs Write-tool rewrites on real diffs), structured-output schemas to eliminate rambling, stop
 sequences, effort parameter sweeps (low/medium/high/xhigh/max) — measured quality-vs-output-tokens
@@ -202,21 +202,21 @@ curves per task class, suppressing restated code in explanations, terse-by-instr
 terse-by-persona, and the limits: when does forced terseness start dropping load-bearing caveats
 (negation loss, skipped warnings)?
 
-**G. Model routing and tiered delegation** (`16-model-routing-and-delegation.md`)
+**G. Model routing and tiered delegation** (`10-model-routing-and-delegation.md`)
 Right model per subtask: Haiku/Sonnet subagents for grunt work under a Fable/Opus orchestrator,
 draft-with-cheap / verify-with-expensive patterns, effort-level routing as intra-model tiering,
 measured quality deltas per task class (when does Haiku exploration actually hurt?), cost math for
 typical fan-outs, and routing products on the market (gateways, RouteLLM-style routers) with
 evidence quality.
 
-**H. Multi-agent protocols and subagent compression** (`17-multi-agent-protocols.md`)
+**H. Multi-agent protocols and subagent compression** (`11-multi-agent-protocols.md`)
 Agent-to-agent communication doesn't need human-readable English: compressed report formats
 (cavecrew as baseline), schema-constrained interchange, learned pidgins and emergent-communication
 research (seed: DroidSpeak — LLM-to-LLM communication via KV-cache/activation exchange), orchestrator
 context hygiene (what the main thread actually needs back), parallel-vs-serial token economics, and
 where compressed interchange starts corrupting information transfer.
 
-**I. Provider-level features, current and beta** (`18-provider-features.md`)
+**I. Provider-level features, current and beta** (`12-provider-features.md`)
 Sweep the current Anthropic feature surface for token-relevant features and quantify each: prompt
 caching, context editing (server-side clearing of stale tool results/thinking), server-side
 compaction, the memory tool, structured outputs, effort, task budgets, batch API, programmatic tool
@@ -224,14 +224,14 @@ calling (intermediate tool results that never enter context), tool search, fine-
 Same sweep, briefer, for the obvious comparison points (OpenAI prompt caching, Gemini context
 caching) to triangulate what's possible. Everything verified against live docs with dates.
 
-**J. Infrastructure-level (self-hosted / gateway tier)** (`19-infrastructure-level.md`)
+**J. Infrastructure-level (self-hosted / gateway tier)** (`13-infrastructure-level.md`)
 For the advanced operator: vLLM/SGLang automatic prefix caching and RadixAttention, KV-cache reuse
 and cross-request sharing, LLMLingua/LongLLMLingua/LLMLingua-2 as a compression proxy in front of an
 API (does a small-model compressor preserve coding-agent quality? evidence), local draft models,
 gateway-level dedup/semantic caching, and an honest section on what is NOT user-accessible on a
 hosted API (speculative decoding, distillation) so the operator stops chasing it.
 
-**K. Frontier — "unrealistic but maybe real"** (`20-frontier-ideas.md`)
+**K. Frontier — "unrealistic but maybe real"** (`14-frontier-ideas.md`)
 The crazy file. At least 10 ideas, each worked through mechanism → savings math → feasibility
 verdict (`REAL-NOW` / `BUILDABLE` / `RESEARCH-STAGE` / `BLOCKED-BY-&lt;x&gt;` / `PHYSICS-SAYS-NO`).
 Seeds — extend, don't stop at: learned session codebooks negotiated at boot; self-extending
@@ -273,7 +273,7 @@ workflows, parallel subagents) — fan out wide on search, verify adversarially,
   modeled session profile. Identify the negative-cost set. Write the executive summary last.
 - **Phase 5 — Completeness critic + roadmap.** A final pass asking "what's missing — an area not
   swept, a claim unverified, a file unwritten?" Whatever it finds becomes the last round of work.
-  Then write `32-adoption-roadmap.md`.
+  Then write `17-adoption-roadmap.md`.
 
 ## 10. Deliverables
 
@@ -286,20 +286,20 @@ token-optimization/
 ├── 01-economics-and-measurement.md      # token economics, measurement tooling, the modeled session profile
 ├── 02-baseline-audit.md                 # Phase-0 measurements of this environment + caveman verification
 ├── 03-prior-art-and-market-scan.md      # shipped products, papers, tools — the landscape with evidence tiers
-├── 10-style-and-language-compression.md
-├── 11-tokenizer-arbitrage.md
-├── 12-context-architecture.md
-├── 13-caching-exploitation.md
-├── 14-retrieval-memory-and-state.md
-├── 15-output-discipline.md
-├── 16-model-routing-and-delegation.md
-├── 17-multi-agent-protocols.md
-├── 18-provider-features.md
-├── 19-infrastructure-level.md
-├── 20-frontier-ideas.md                 # ≥10 ideas with feasibility verdicts
-├── 30-composed-stacks.md                # Conservative / Aggressive / Unbelievable stacks with full math
-├── 31-validation-harness.md             # the no-quality-loss proof protocol, runnable
-└── 32-adoption-roadmap.md               # day-1 / week-1 / month-1; manual vs automatable (hooks, skills, jackin❯)
+├── 04-style-and-language-compression.md
+├── 05-tokenizer-arbitrage.md
+├── 06-context-architecture.md
+├── 07-caching-exploitation.md
+├── 08-retrieval-memory-and-state.md
+├── 09-output-discipline.md
+├── 10-model-routing-and-delegation.md
+├── 11-multi-agent-protocols.md
+├── 12-provider-features.md
+├── 13-infrastructure-level.md
+├── 14-frontier-ideas.md                 # ≥10 ideas with feasibility verdicts
+├── 15-composed-stacks.md                # Conservative / Aggressive / Unbelievable stacks with full math
+├── 16-validation-harness.md             # the no-quality-loss proof protocol, runnable
+└── 17-adoption-roadmap.md               # day-1 / week-1 / month-1; manual vs automatable (hooks, skills, jackin❯)
 ```
 
 **Per-technique record schema** (every technique in files 10–20 uses exactly this structure):
@@ -324,7 +324,7 @@ the operator should never need to decode jargon.
 
 Score every technique: `value = expected $ saving on the modeled profile × confidence (by evidence
 tier) ÷ adoption effort`, then place it on a tier list (S/A/B/C/F) in the README. Build three stacks
-in `30-composed-stacks.md`:
+in `15-composed-stacks.md`:
 
 1. **Conservative** — T1/T2 only, `CLAUDE-CODE-TODAY` only, zero quality risk. The "do this
    tomorrow" stack.
@@ -337,7 +337,7 @@ For each stack: composed dollar math on the modeled profile (compose savings per
 convert to dollars — never multiply percentages across different token classes), the validation plan
 that proves quality is preserved, and the failure modes of the composition itself.
 
-## 12. Validation harness (`31-validation-harness.md`)
+## 12. Validation harness (`16-validation-harness.md`)
 
 Design a runnable protocol the operator can use to verify any technique or stack:
 
@@ -375,7 +375,7 @@ Design a runnable protocol the operator can use to verify any technique or stack
 - [ ] All 19 files in §10 exist and follow the writing rules; README carries the tier list,
       headline numbers, research date, and Assumptions section.
 - [ ] ≥ 40 techniques cataloged across files 10–19; ≥ 15 with the complete per-technique record.
-- [ ] ≥ 10 frontier ideas in `20-frontier-ideas.md`, each with a feasibility verdict and math.
+- [ ] ≥ 10 frontier ideas in `14-frontier-ideas.md`, each with a feasibility verdict and math.
 - [ ] Phase-0 baseline audit contains real measured numbers from this environment, including the
       caveman/wenyan tokenizer verification table and the thinking-vs-visible output decomposition
       (or an explicit note on why a measurement was impossible and what was done instead).
@@ -384,8 +384,8 @@ Design a runnable protocol the operator can use to verify any technique or stack
 - [ ] Three composed stacks with end-to-end dollar math; explicit verdict on whether 10x is
       achievable, and the binding constraint if not.
 - [ ] The negative-cost technique set is explicitly identified.
-- [ ] `31-validation-harness.md` is concrete enough to run without further design work.
-- [ ] `32-adoption-roadmap.md` separates automatic (hooks/skills/plugin/jackin❯-baked) from
+- [ ] `16-validation-harness.md` is concrete enough to run without further design work.
+- [ ] `17-adoption-roadmap.md` separates automatic (hooks/skills/plugin/jackin❯-baked) from
       discipline-dependent adoption, with a day-1 / week-1 / month-1 sequence.
 - [ ] Every external claim carries a source + access date; every measurement carries its method.
 - [ ] Every artifact landed as an incremental commit pushed to `origin` on

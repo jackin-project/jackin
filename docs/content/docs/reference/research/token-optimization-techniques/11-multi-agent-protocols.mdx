@@ -1,0 +1,214 @@
+---
+title: "11 — Multi-agent protocols and subagent compression"
+---
+
+# 11 — Multi-agent protocols and subagent compression
+
+Area H. Siblings: cost model and heavy-day profile in `01-economics-and-measurement.md` (§5); register mechanics in `04-style-and-language-compression.md`; tokenizer effects in `05-tokenizer-arbitrage.md`; cache mechanics in `07-caching-exploitation.md`; worker down-routing in `10-model-routing-and-delegation.md`; self-host-only inference plays in `13-infrastructure-level.md`; eval design in `16-validation-harness.md`.
+
+Arithmetic in this file uses the **$17/day floor variant** of the modeled profile from `01` unless
+explicitly tied to the local 25-agent fleet case study. Multiply floor-profile dollar figures by
+~1.28 to compare against the $22/day working variant used in `15-composed-stacks.md`.
+
+**TL;DR**
+
+- One load-bearing fact: in every shipped Claude multi-agent system, only the subagent's final message crosses to the parent, verbatim (T1, Agent SDK docs). That report then costs ~1.8x its face value because the parent re-reads it every later turn (arithmetic below) — compress this interface first. Real measured compression: 40-50%, not the advertised 60-75%.
+- This very run is the case study: 25 agents, 3.64M subagent tokens, 202 API calls ≈ $55.6 list (local self-observation). Cache writes were the largest line ($21.4, 38%), and fan-out ran cache-write share at 11.5% of prompt tokens vs 6.73% single-thread baseline. Staggered spawning beats simultaneous fan-out ~3.8x on shared-prefix cost at n=5 (ESTIMATE from documented cache-concurrency rule).
+- JSON is anti-compression for interchange: identical content = 303 tok prose / 230 JSON / 208 markdown table / 170 labeled compact lines (local count_tokens, fable-5). Schemas buy reliability, not size; put register text inside schema string fields.
+- DroidSpeak (3.1x prefill, v4), C2C (2.5x latency, ICLR'26), activation channels (&lt;1/4 compute): real paper wins, all NOT-USER-ACCESSIBLE — no hosted API exposes KV/activations, and they save GPU latency, not billed tokens. Prompt caching at 0.1x reads is the shipped analog.
+- Corruption bound: 100-hop LLM relays decay badly (BLEURT 0.949→0.670) but near-zero temperature + constrained formats stay stable (T2). Rule with teeth: compress REPORTS of completed work, never SPECS of pending work — one corrupted spec wastes a whole subagent run (~4x chat tokens, Anthropic).
+
+## 1. The interface and the multiplier landscape
+
+Per Agent SDK docs : "Each subagent runs in its own fresh conversation. Intermediate tool calls and results stay inside the subagent; only its final message returns to the parent... The parent receives the subagent's final message verbatim as the Agent tool result." Everything in this file is therefore one of four plays: (1) shrink what crosses that interface (H2-H4); (2) avoid paying full-session overhead per worker (H1, architecture table below); (3) sequence spawns to exploit the prompt cache (H5); (4) skip text entirely (H6 — not user-accessible). H7 bounds how far (1) can go; H8 moves coordination out of the model entirely.
+
+| Architecture | Token multiplier vs chat | Basis |
+|---|---|---|
+| Single agent | ~4x | Anthropic engineering blog, vendor-internal (T1) |
+| Subagent delegation of verbose side-ops | &lt;1x net for the parent (verbose tokens never enter the parent re-read loop) | T1 mechanism + arithmetic (H1) |
+| Claude Code agent teams, plan mode | ~7x session tokens; per-teammate full project context; broadcast = one message per recipient | Claude Code costs + agent-teams docs (T1) |
+| Anthropic research system (parallel multi-agent) | ~15x; token use explains 80% of eval variance | Anthropic engineering blog, vendor-internal (T1) |
+
+The two vendor multipliers (~7x, ~15x) measure different systems and don't contradict; neither is a universal law (see Claims to kill). For "focused tasks where only the result matters," the teams docs themselves route you to subagents.
+
+Report re-read leverage (why the interface is special): a 1,000-tok report on Fable 5 costs $0.050 to generate + $0.0125 first-turn cache write + $0.029 over 29 subsequent cached re-reads ≈ $0.0915 ≈ 1.8x its naive output price (ESTIMATE, arithmetic; consistent with the 92.83% cache-read prompt mix of heavy sessions). Report compression therefore has ~1.8x leverage over compressing tokens that appear once.
+
+## 2. Case study: this run's 25-agent fleet (local self-observation)
+
+Mid-run snapshot of the very fleet drafting this dossier: 25 agents, 3.64M subagent tokens, 668 tool uses, 202 API calls; input 180k uncached / 1.71M cache-write / 12.95M cache-read / 390k output ≈ $55.6 list (Fable 5 pricing).
+
+| Cost line | Tokens | $ list | Share |
+|---|---|---|---|
+| Cache writes (1.25x) | 1.71M | $21.4 | 38% |
+| Output (44.8% of it thinking across the fleet) | 390k | $19.5 | 35% |
+| Cache reads (0.1x) | 12.95M | $12.95 | 23% |
+| Uncached input | 180k | $1.8 | 3% |
+
+Readings (all local measurement or arithmetic on it):
+
+- Cache-write share of prompt tokens = 1.71M/14.84M = 11.5%, vs 6.73% in the single-thread heavy-session baseline — fan-out ~1.7x'd the write rate. Mean context per call: 14.84M/202 ≈ 73.5k tok; 87% of the prompt stream is cache reads, so fleet economics are dominated by re-reads — exactly where H2-H4 act.
+- Spawn overhead: 25 spawns × ~6.8-8.5k tok cache-write each (~$0.09-0.11) ≈ $2.1-2.7, only ~4-5% of run cost. The spawn tax is real but not dominant; per-agent conversation growth drives the 1.71M write line.
+- Observed spawn write (6.8-8.5k tok) ≪ base context (33,746 tok) → the harness already sources ~75-80% of the shared prefix from cache even during fan-out (local inference). The naive 3.8x serial-vs-parallel penalty (H5) is therefore an upper bound for raw SDK fan-out, not Claude Code's observed dispatch.
+- Thinking = 44.8% of fleet output ≈ 175k tok ≈ $8.7 (16% of run cost) — untouchable by any report-format compression (H2 quality note).
+
+## 3. Techniques
+
+### H1. Subagent context isolation (summary-only return) — orchestrator context hygiene: delegate verbose operations so thousands of intermediate tokens never enter the parent's re-read loop
+
+**Layer:** orchestration / context hygiene
+**Mechanism:** SDK semantics above; Claude Code costs docs: "the verbose output stays in the subagent's context while only a summary returns to your main conversation." Each spawn re-pays project context (CLAUDE.md = 2,744 tok in this repo, local re-count via /tmp/ct.py) plus tool defs; subagents cannot nest. Orchestrator-side spec discipline is part of the protocol: "Each subagent needs an objective, an output format, guidance on the tools and sources to use, and clear task boundaries" — Anthropic reports vague specs made subagents "misinterpret the task" and duplicate work.
+**Expected savings:** Keeping a 10k-tok log/test payload out of a parent with 30 turns left avoids ~10k×(1.25+2.9)×$10/M ≈ $0.42 input spend per occurrence, against ~$0.11 spawn overhead (local) plus report cost → net ~$0.25-0.30/occurrence. On the `01-economics-and-measurement.md` §5 profile ($17.00/day), five such delegations/day ≈ $1.3-1.5 ≈ 8-9% (ESTIMATE), plus deferred compaction. Counterweight: agents ≈4x chat, parallel research multi-agent ≈15x — delegation saves only on verbose side-tasks.
+**Evidence tier:** T1 — shipped product + vendor measurements (code.claude.com/docs/en/agent-sdk/subagents; anthropic.com/engineering/multi-agent-research-system; code.claude.com/docs/en/costs) + local arithmetic.
+**Quality risk:** NEGATIVE-COST for verbose side-ops; RISKY for tightly-coupled implementation work — Cognition: "Actions carry implicit decisions, and conflicting decisions carry bad results." Falsification: A/B tightly-coupled refactors inline vs delegated; if the delegated arm shows conflicting-edit rework, restrict delegation to read-only/verbose ops. Verdict: NEGATIVE-COST within scope.
+**Availability:** CLAUDE-CODE-TODAY (built-in Explore/Plan/general-purpose + custom agents; /usage attributes subagent spend).
+**Effort to adopt:** None for built-ins; minutes for a custom agent file.
+**Composability:** Substrate for H2-H5; pairs with worker down-routing (`10-model-routing-and-delegation.md`); conflicts with nothing.
+**Validation protocol:** One week of delegating log-reads/test-runs vs one week inline; compare /usage subagent attribution, parent compaction frequency, and task outcomes.
+
+### H2. Compressed report registers at the agent→agent interface (cavecrew baseline) — reports are machine-audience text; enforce a terse format, and plan on 40-50%, not the advertised 60-75%
+
+**Layer:** interchange format / output register
+**Mechanism:** The locally installed cavecrew-investigator agent constrains reports to "path:line — symbol — ≤6-word note" rows and claims "~60% fewer tokens than vanilla Explore" (design claim, no measurement attached). Local re-measurement (Anthropic count_tokens, fable-5): identical locator payload = 303 tok as realistic prose vs 170 tok in register → 43.9%. Recounting the plugin's own committed eval snapshot (10 prompts, opus-4-6 outputs) with the Anthropic tokenizer: baseline 3,161 / "Answer concisely." control 3,273 / caveman 1,729 → 45.3% vs baseline, 47.2% vs control (range -6% to +86%, median 46%). The control arm saved NOTHING (3,273 vs 3,161): enforced format registers do all the work; politeness asks do none. Vendor's own concession: "Caveman only affects output tokens — thinking/reasoning tokens untouched" — and thinking is 54.8% of output in a max-effort session (local), so a 47% prose cut is ≤~21% of output spend there.
+**Expected savings:** 40-50% of report text (honest planning number). On the §5 profile, 10 reports/day × 800 tok × 45% ≈ 3.6k tok saved × $91.5/M effective (generation + write + 29 re-reads) ≈ $0.33/day (~2%) — modest in dollars, larger in parent-context longevity (delayed compaction). Leverage scales with report volume and remaining parent turns.
+**Evidence tier:** T3 claims, locally re-measured to T1-grade for this environment (count_tokens on the plugin's committed outputs + constructed same-information pairs; github.com/JuliusBrussee/caveman read from local marketplace copy). Vendor-blessed version of the idea: subagents exist to "condens[e] the most important tokens for the lead research agent" (Anthropic multi-agent post).
+**Quality risk:** NEUTRAL for single-hop locator/review reports (paths, symbols, line numbers preserved verbatim by design; the agent file has an auto-clarity escape hatch for security warnings); RISKY for multi-hop relay of nuanced rationale — decode-side reliability is unmeasured anywhere (gap). Falsification: 20-question decode eval — orchestrator answers questions from register vs prose reports; if downstream error rate rises >2 points, restrict register to locator content. Verdict: NEUTRAL within single-hop scope.
+**Availability:** CLAUDE-CODE-TODAY (plugin installed here; any output-format paragraph in an agent definition reproduces the effect with zero dependencies).
+**Effort to adopt:** Trivial — the savings come from the format constraint, not plugin machinery.
+**Composability:** Multiplies with H1 (applies exactly at the re-read interface); stacks with Haiku down-routing (same payload 135 vs 170 tok under the Sonnet/Haiku tokenizer — `05-tokenizer-arbitrage.md`); choose one register per interface vs H3.
+**Validation protocol:** count_tokens A/B on same-information report pairs (harness per `16-validation-harness.md`); always count with the Anthropic tokenizer, never tiktoken.
+
+### H3. Schema-constrained interchange (StructuredOutput between agents) — schemas save by what they FORBID; JSON syntax itself is a token tax
+
+**Layer:** interchange format
+**Mechanism:** Identical information in four encodings (local count_tokens, fable-5):
+
+| Encoding | Tokens | vs prose |
+|---|---|---|
+| Verbose prose | 303 | — |
+| JSON | 230 | -24.1% |
+| Markdown table | 208 | -31.4% |
+| Labeled compact lines | 170 | -43.9% |
+
+JSON costs +35% over compact lines and +10.6% over a table for the same content (quote/brace/key overhead; JSON-escaping inflates embedded multi-line text). The schema's real win is reliability: enforced fields, enums/numbers where prose would ramble, zero parse ambiguity — this very subagent session returns through a StructuredOutput-class tool. Shipped surfaces: SDK structured outputs, MCP tool output schemas; file-defined Claude Code subagents approximate with a strict output-format section.
+**Expected savings:** -24% vs verbose prose; -35% forgone vs a compact text register. Net guidance: schema for reliability, register for economy — a schema whose string fields carry register text gets both. Same dollar class as H2 on the §5 profile.
+**Evidence tier:** T1 for availability (shipped SDK features, code.claude.com/docs/en/agent-sdk/subagents); local measurement for format numbers; T4 for the "JSON saves tokens" folklore (it's backwards).
+**Quality risk:** NEGATIVE-COST vs freeform prose (removes filler AND parse ambiguity); QUALITY-TRADE only if the schema is too rigid to carry surprises. Falsification: log how often returns need fields the schema lacks; add an optional free-text `anomalies` field and watch its usage. Verdict: NEGATIVE-COST with the escape-hatch field.
+**Availability:** SDK (structured outputs, output schemas); CLAUDE-CODE-TODAY via prompt-enforced formats.
+**Effort to adopt:** Low — one schema per agent type; already idiomatic in the SDK.
+**Composability:** Carries H2 registers inside string fields; carries H4 paths instead of payloads.
+**Validation protocol:** Track parse-failure rate and count_tokens of schema vs register encodings of identical reports.
+
+### H4. Artifact-reference passing — subagents write full work products to files and return pointers plus a ≤5-line abstract
+
+**Layer:** orchestration / memory
+**Mechanism:** Anthropic's production pattern, exact wording: "Subagents call tools to store their work in external systems, then pass lightweight references back to the coordinator"; the artifact path "prevents information loss during multi-stage processing and reduces token overhead from copying large outputs through conversation history." In Claude Code: Write the artifact to a path, return path + abstract; consumers Read only if needed — an unconditional context cost becomes conditional, and the artifact stays byte-exact instead of re-summarized.
+**Expected savings:** A 5,000-tok artifact copied through a parent with 30 turns left costs ~5k×(1.25+2.9)×$10/M ≈ $0.21 of input spend; a 60-tok pointer+abstract ≈ $0.0025 — ~80x (ESTIMATE). Two avoided copy-throughs/day ≈ $0.4 ≈ 2.4% of the §5 profile, plus fidelity.
+**Evidence tier:** T1 (shipped in Anthropic's research system, anthropic.com/engineering/multi-agent-research-system; trivially reproducible); Cognition post documents the failure mode it mitigates.
+**Quality risk:** NEGATIVE-COST for code and long reports — byte-exact, immune to broken-telephone re-summarization (H7); only stale-pointer hygiene. Falsification: count stale-path Read failures; if material, namespace under /tmp/&lt;task&gt;/. Verdict: NEGATIVE-COST.
+**Availability:** CLAUDE-CODE-TODAY (Write/Read + one paragraph of convention; no feature flag).
+**Effort to adopt:** One paragraph in agent definitions.
+**Composability:** Natural partner of H2 (register for the summary, file for the fidelity); the standard fix where Cognition's full-trace objection applies; maps onto A2A artifacts.
+**Validation protocol:** Track artifact read-back rate — if consumers immediately re-Read most artifacts, the content was always needed and indirection saved nothing.
+
+### H5. Serial vs parallel spawn scheduling under the cache-concurrency rule — parallel fan-out is a latency play that silently forfeits cache hits
+
+**Layer:** orchestration / caching
+**Mechanism:** Documented behavior (platform.claude.com prompt-caching docs): "a cache entry only becomes available after the first response begins. If you need cache hits for parallel requests, wait for the first response before sending subsequent requests." Multipliers: 1.25x 5-min writes, 2x 1-h writes, 0.1x reads. For n spawns sharing a stable prefix P (same agent type → same system prompt + tool defs + CLAUDE.md): simultaneous = n×1.25P; staggered = 1.25P+(n-1)×0.1P. At n=5: 6.25P vs 1.65P → 3.8x; at n=25 (this fleet): 31.25P vs 3.65P → 8.6x on the prefix term (ESTIMATE). Counter-pressure: Anthropic credits parallelism with cutting research time "by up to 90%" — the trade is dollars-for-wallclock, and pre-warming (launch one, spawn the rest after its first response begins) captures most of both.
+**Expected savings:** Prefix term at P=20k, n=5: $1.25 vs $0.33 per fan-out wave. Case-study bound: this run's spawn writes totaled ~$2.1-2.7; perfect staggering of the cross-agent-shared portion would recover order $1-1.5 of the $55.6 run (~2-3%, ESTIMATE) — and the local observation that spawn writes were 6.8-8.5k tok against a 33,746-tok base context shows Claude Code's dispatch already reuses ~75-80% of the shared prefix; the full 3.8x applies to naive simultaneous SDK fan-out.
+**Evidence tier:** T1 mechanism (exact documented rule) + ESTIMATE arithmetic + local fleet observation; no published end-to-end fan-out penalty measurement exists (gap).
+**Quality risk:** NEUTRAL — identical work either way; pure cost-latency trade. Falsification: spawn 5 identical agents simultaneously vs staggered and diff per-spawn cache_creation_input_tokens; if equal, the harness already staggers and this technique is moot in Claude Code. Verdict: NEUTRAL.
+**Availability:** CLAUDE-CODE-TODAY (spawn phrasing: "one at a time" vs "in parallel"); SDK gives full control.
+**Effort to adopt:** None — one sentence of orchestrator instruction (pre-warm pattern).
+**Composability:** Interacts with everything that fattens the shared prefix — CLAUDE.md (2,744 tok), MCP schemas (1,420 tok loaded vs ~60 deferred, local) — the fatter the prefix, the more staggering pays; see `07-caching-exploitation.md`.
+**Validation protocol:** The falsification experiment above, run once per harness version.
+
+### H6. KV-cache and latent interchange (DroidSpeak, C2C, activation channels) — the research frontier, NOT-USER-ACCESSIBLE
+
+**Layer:** inference / interchange channel
+**Mechanism:** DroidSpeak (arXiv 2411.02820): receiver reuses the sender's KV-cache with a few layers recomputed — v1 (2024-11) claimed "up to a 2.78x speedup in prefill latency"; v4 claims "up to 4x throughput... about 3.1x faster prefill... negligible loss of quality," same-architecture models only. C2C (arXiv 2510.03215, ICLR'26): trained per-pair projector fuses source KV into target — +6.4-14.2% accuracy vs individual models, +3.1-5.4% vs text-mediated communication, 2.5x lower latency; the strongest peer-reviewed evidence that text itself is the lossy bottleneck between models. Activation passing (arXiv 2501.14082): up to +27% over natural-language communication at &lt;1/4 the compute; Interlat (arXiv 2511.09149): latent messages + learned compression, up to 24x faster inference. Applicability audit: every one requires white-box KV/activation access on serving you control; no hosted Claude API exposes any of it; even self-hosted, the billable token count is unchanged — wins are compute/latency. Same-architecture constraints also exclude heterogeneous fleets (Fable lead + Haiku workers differ in tokenizer by 15-38% on identical text, local).
+**Expected savings:** 0 billed tokens on any metered API. Self-host: 2.5-4x latency/throughput class, per papers.
+**Evidence tier:** T2 (arXiv + ICLR'26, code released for C2C; no independent replication with numbers found).
+**Quality risk:** NEUTRAL per paper metrics ("negligible" loss, unquantified in abstracts); RISKY systemically — latent messages are unauditable, colliding with any review/safety gate that reads inter-agent traffic. Falsification: n/a for hosted users. Verdict: NOT-USER-ACCESSIBLE; the shipped analog of "don't re-prefill shared context" is prompt caching at 0.1x reads.
+**Availability:** NOT-USER-ACCESSIBLE (GATEWAY-OR-SELF-HOST at absolute best, same-architecture pairs, custom serving — see `13-infrastructure-level.md`).
+**Effort to adopt:** Research-grade.
+**Composability:** Family-exclusive with text protocols; conceptually motivates the deployable middle ground (H2 registers + H4 artifacts).
+**Validation protocol:** None possible against the hosted API. Citation hygiene: pin arXiv versions — the seeded 2.78x is stale by two revisions (now 3.1x/4x).
+
+### H7. The compression-corruption boundary — when NOT to compress inter-agent traffic (telephone-game risk)
+
+**Layer:** protocol design / quality
+**Mechanism:** arXiv 2502.20258 ("LLM as a Broken Telephone," HTML v2): iterative LLM-to-LLM transmission degrades — BLEURT 0.949→0.670 over 100 EN↔FR hops, 0.950→0.426 EN↔TH; FActScore gradients -0.004/iteration (EN↔FR) to -0.026 (EN↔TH). The two stabilizers are exactly coding-agent defaults: "at temperature 1x10^-6, factuality remained stable" and "more constrained prompts resulted in higher levels of relevance and factuality preservation." Cognition : "Share context, and share full agent traces, not just individual messages"; a dedicated compressor model is "hard to get right." Anthropic's resolution is H4: artifacts exist precisely because they "prevent[] information loss during multi-stage processing." Net rule with measured backing: compress the REPORT of completed work (40-50% savings, H2); never compress the SPECIFICATION of pending work — Anthropic's vague specs made subagents "misinterpret the task," and one corrupted hop = one wasted subagent run ≈ 4x chat tokens. Caution: repeated compaction/re-summarization re-creates the 100-hop regime inside a single session.
+**Expected savings:** None directly — this is the constraint bounding H2/H3; violating it converts token savings into multi-x token losses (rework).
+**Evidence tier:** T2 (telephone-game papers, incl. transmission-chain framing in arXiv 2407.04503) + T1 (Cognition and Anthropic production write-ups).
+**Quality risk:** The entry IS the risk analysis; QUALITY-TRADE zone begins at multi-hop relays, compressed task specs, and high-temperature re-summarization. Falsification of the safety claim: a 1-2-hop decode eval with technical content at temp≈0 — unrun anywhere, cheap to run (gap). Verdict: binding design rule.
+**Availability:** CLAUDE-CODE-TODAY (design rule).
+**Effort to adopt:** None.
+**Composability:** Gates H2/H3; H4 is the escape hatch (fidelity via byte-exact files, economy via terse summaries).
+**Validation protocol:** Track rework rate on compressed vs full task specs; run the 1-2-hop decode eval per `16-validation-harness.md`.
+
+### H8. Script-side orchestration (Workflow tool, hook preprocessing) — coordination tokens that never touch the model
+
+**Layer:** orchestration / harness
+**Mechanism:** Agent SDK: "For runs that coordinate dozens to hundreds of agents, use the Workflow tool, which moves the orchestration into a script the runtime executes outside the conversation context" (TS SDK v0.3.149+). Hooks (Claude Code costs docs): "Instead of Claude reading a 10,000-line log file to find errors, a hook can grep for ERROR and return only matching lines, reducing context from tens of thousands of tokens to hundreds." Agent teams keep task state in files (~/.claude/tasks/), not context, with automatic dependency unblocking.
+**Expected savings:** Vendor wording: "tens of thousands of tokens to hundreds" per preprocessed tool result; per-spawn coordination overhead avoided ≈ 100-200 tok × N spawns (ESTIMATE).
+**Evidence tier:** T1 (shipped, documented, example hook code published; code.claude.com/docs/en/costs, /agent-sdk/subagents, /agent-teams).
+**Quality risk:** NEGATIVE-COST for mechanical coordination (deterministic code beats LLM-mediated dispatch); RISKY if the filter hides signal (grep drops context around non-matching anomalies). Falsification: re-run a sample of hook-filtered incidents unfiltered and diff conclusions. Verdict: NEGATIVE-COST with periodic filter audits.
+**Availability:** SDK (Workflow tool); CLAUDE-CODE-TODAY (hooks, task files).
+**Effort to adopt:** Medium — one-time script/hook authoring.
+**Composability:** Orthogonal; stacks with H1-H5. Related protocol-hygiene rule: agent-interop envelopes (A2A v1.0.0 JSON-RPC) cost ~88 tok/request and ~203 tok/Task response if pasted into context (local minimal-envelope measurement) — terminate protocols in code and the model-side cost is ~0, same rule Claude Code applies to MCP (1,420 tok loaded vs ~60 deferred, local).
+**Validation protocol:** Token diff of an identical task with/without the PreToolUse filter; weekly spot-audit of filtered-away content.
+
+## 4. Claims to kill
+
+| Folklore claim | Reality | Basis |
+|---|---|---|
+| cavecrew: "~60% fewer tokens than vanilla Explore" | 43.9% on its core locator use case (303→170 tok); 45-47% on the plugin's own committed snapshot. Plan on 40-50%. | Local count_tokens, fable-5 |
+| caveman: "~75% cut" / "65% average" | 45.3% vs baseline, 47.2% vs terse control, recounted from the plugin's OWN snapshot; repo's evals/README admits earlier numbers were "inflated"; their counts use tiktoken o200k_base — an OpenAI tokenizer — for Claude-billed text. Only ultra-on-prose approaches 58.5% (local). | Local recount |
+| "JSON is the token-efficient interchange format" | Backwards: +35% vs labeled compact lines, +10.6% vs a markdown table, for identical content. Schemas save by forbidding prose; JSON syntax gives a third back. | Local count_tokens |
+| "Parallel subagents cost the same as serial, just faster" | Simultaneous same-prefix spawns each pay 1.25x writes; staggered pay 0.1x reads — ~3.8x prefix-cost gap at n=5. Parallelism buys up-to-90% wall-clock with cache dollars. | Prompt-caching docs + arithmetic |
+| "DroidSpeak lets agents swap KV-caches and slash costs 2.78x" | 2.78x is the stale v1 figure (v4: 3.1x prefill/4x throughput); same-architecture white-box serving only; saves prefill compute, not billed tokens. NOT-USER-ACCESSIBLE. | arXiv 2411.02820 v1 vs v4 |
+| "Multi-agent uses 15x more tokens" as a law | One internal Anthropic measurement of one research product. Same vendor publishes ~7x for Claude Code teams (plan mode), and delegating verbose ops is net CHEAPER than single-threading. Honest range: ~4x to ~15x; sign depends on architecture. | Anthropic blog + Claude Code costs docs |
+| "Compressing subagent reports compresses multi-agent costs" | Report text is a minority of spend: the 15x lives in subagent-internal tool calls/context; thinking (44.8-54.8% of output, local) is untouched by output registers; spawn prefix tax is fixed. The real leverage is parent-context longevity, ~1.8x nominal via the re-read loop. | Local measurements + arithmetic |
+| "A2A/interop protocols will blow up token budgets" | Envelope ≈ 88-290 tok/round-trip only if wire JSON enters context; competent integrations terminate the protocol in code → ~0 model-side cost. The hazard is the naive integration, not the protocol. | A2A v1.0.0 spec + local envelope measurement |
+
+## 5. Open gaps
+
+- No published number for Claude Code's per-subagent fixed overhead (subagent system preamble + tool defs); only CLAUDE.md (2,744 tok) and MCP schema (1,420/~60 tok) components are locally measured. Highest-value follow-up measurement.
+- Decode-side reliability of compressed registers is unmeasured everywhere — all published evals are encode-side size only. A 1-2-hop, temp≈0, technical-content decode eval would settle H2/H7 and is cheap.
+- Telephone-game literature tests 100-hop free-rewrite chains; the corruption boundary at coding-realistic settings (1-3 hops, constrained formats) is interpolated, not measured.
+- Whether Claude Code staggers parallel Task dispatch for cache warmth is undocumented; local spawn-write data (6.8-8.5k vs 33.7k base) suggests substantial prefix reuse already.
+- No independent replication with numbers for the KV/latent family; no hosted product exposes anything like it (absence verified by search only). Anthropic's 15x/7x/90.2% figures are vendor-internal and unreplicable.
+
+## Verification ledger
+
+| # | Number / claim | Value | Source + date or local method |
+|---|---|---|---|
+| 1 | Only final message returns to parent, verbatim; no nesting | mechanism | code.claude.com/docs/en/agent-sdk/subagents |
+| 2 | Single agent vs chat; multi-agent vs chat; eval lift; variance | ~4x; ~15x; +90.2%; 80% | anthropic.com/engineering/multi-agent-research-system (vendor-internal) |
+| 3 | Agent teams plan-mode multiplier; per-recipient broadcast; per-teammate context load | ~7x | code.claude.com/docs/en/costs + /agent-teams |
+| 4 | Fable 5 pricing (in/out, write, read) | $10/$50; 1.25x/2x; 0.1x | live pricing (dossier preamble) |
+| 5 | Report re-read leverage | ~1.8x ($0.0915 vs $0.050 per 1k-tok report, 30 turns) | arithmetic on #4 |
+| 6 | THIS RUN fleet: agents/tokens/tool uses/calls; in/cw/cr/out; list cost | 25; 3.64M; 668; 202; 180k/1.71M/12.95M/390k; ≈$55.6 | local fleet self-observation |
+| 7 | Fleet cache-write share vs single-thread baseline | 11.5% vs 6.73% of prompt tokens | derived from #6 + local heavy-session mix (0.44/6.73/92.83) |
+| 8 | Spawn cache-write; spawn cost; fleet spawn total | 6.8-8.5k tok; ~$0.09-0.11; ≈$2.1-2.7 | local measurement + arithmetic |
+| 9 | Claude Code base context; implied prefix reuse at spawn | 33,746 tok; ~75-80% | local measurement; inference from #8 |
+| 10 | Thinking share of output (fleet / max-effort main loop) | 44.8% / 54.8% | local measurement |
+| 11 | CLAUDE.md token cost per spawn (this repo) | 2,744 tok | re-measured this session: cat CLAUDE.md \| /tmp/ct.py claude-fable-5 (research JSON recorded 2,738) |
+| 12 | Locator report: prose vs cavecrew register | 303 vs 170 tok (-43.9%) | local count_tokens, fable-5 |
+| 13 | caveman snapshot recount: baseline / concise control / caveman | 3,161 / 3,273 / 1,729 (-45.3%, -47.2%; control saved ~0) | local Anthropic-tokenizer recount of plugin's committed eval snapshot |
+| 14 | caveman-ultra cut on prose; advertised claims | 58.5%; 60-75% claimed | local (Phase-0); github.com/JuliusBrussee/caveman README |
+| 15 | Format ranking: prose/JSON/table/compact | 303/230/208/170 tok (JSON +35% vs compact) | local count_tokens, fable-5 |
+| 16 | Artifact copy-through vs pointer (5k tok, 30 turns) | $0.21 vs $0.0025 (~80x); pattern quotes | arithmetic on #4; anthropic.com/engineering/multi-agent-research-system |
+| 17 | Cache concurrency rule; serial-vs-parallel prefix ratio | quote; 3.8x @ n=5, 8.6x @ n=25 (ESTIMATE) | platform.claude.com/docs/en/build-with-claude/prompt-caching + arithmetic |
+| 18 | Parallelism wall-clock benefit; fan-out width | up to 90%; 3-5 subagents | anthropic.com/engineering/multi-agent-research-system |
+| 19 | DroidSpeak v1 vs v4 figures; same-arch constraint | 2.78x → 3.1x prefill/4x throughput | arxiv.org/abs/2411.02820 (v1 and v4) |
+| 20 | C2C accuracy/latency vs text interchange | +6.4-14.2% / +3.1-5.4% / 2.5x | arxiv.org/abs/2510.03215 (ICLR'26) |
+| 21 | Activation comms; Interlat | +27% at &lt;1/4 compute; up to 24x inference | arxiv.org/abs/2501.14082; arxiv.org/abs/2511.09149 |
+| 22 | Broken-telephone decay; temperature/constraint stabilizers | BLEURT 0.949→0.670 (EN↔FR), 0.950→0.426 (EN↔TH); FActScore -0.004 to -0.026/iter; stable at temp 1e-6 | arxiv.org/html/2502.20258v2 (Tables 2,4; Sec 5.2-5.3) |
+| 23 | Full-trace principle; implicit-decisions; compressor caveat | quotes | cognition.ai/blog/dont-build-multi-agents |
+| 24 | Hook preprocessing magnitude | "tens of thousands of tokens to hundreds" | code.claude.com/docs/en/costs |
+| 25 | Workflow tool (script-side orchestration), version | TS SDK v0.3.149+ | code.claude.com/docs/en/agent-sdk/subagents |
+| 26 | A2A envelope overhead (request / Task response) | +88 / +203 tok | local minimal-envelope count_tokens from a2a-protocol.org v1.0.0 spec fields |
+| 27 | MCP schemas loaded vs deferred | 1,420 vs ~60 tok | local measurement |
+| 28 | Modeled day profile used for % arithmetic | $17.00/day; $1.70/task | `01-economics-and-measurement.md` §5 (local model) |
+| 29 | Tokenizer divergence (Fable vs Sonnet/Haiku) on identical text | 15-38% sample-dependent; register payload 170 vs 135 tok | local measurement; `05-tokenizer-arbitrage.md` |

@@ -12,8 +12,8 @@ Prevention beats compression: tokens never loaded cost nothing and improve quali
 |---|---|---|---|
 | Lexical (files, content, literals) | **fff** — `fff-search` + `fff-query-parser` crates, one `SharedFilePicker` per workspace mount, frecency LMDB under `/jackin/state/context/index/` | crates.io dependency (`=0.9.6`, MIT; nushell-proven) | "find the file / the string" — typo-tolerant, frecency+git ranked, warm sub-10 ms |
 | Structural (entities, diffs, impact) | **sem-core** crate — entity graph (33 grammars available, feature-gated per role), structural-hash diff, budgeted context packer, orient ranking | crates.io dependency (`sem-core = "0.16"`, MIT/Apache-2.0) | "what is this function / what changed / what breaks / entity-level blame" |
-| Markdown/docs (sections, TOC, code blocks) | **mq** — `mq-lang` (+`sync`, no `http-import`) compiled canned programs + `mq-markdown` for chunking | crates.io dependencies (`=0.6.3`, MIT) | "which section of this 15 KB doc answers the question" — TOC ≈50–100 tok + section ≈100–500 tok replaces a 4–8k read |
-| Semantic (fuzzy concept recall) | **none by default** | — | Deliberately absent: embeddings for code navigation never met the ≥20% bar (dossier 52); optional docs-corpus hybrid index stays a role-level experiment |
+| Markdown/docs (sections, TOC, code blocks) | **mq** — `mq-lang` (+`sync`, no `http-import`) compiled canned programs + `mq-markdown` for chunking | crates.io dependencies (`=0.6.4`, MIT) | "which section of this 15 KB doc answers the question" — TOC ≈50–100 tok + section ≈100–500 tok replaces a 4–8k read |
+| Semantic (fuzzy concept recall) | **none by default** | — | Deliberately absent: embeddings for code navigation never met the ≥20% bar (tools hub 20); optional docs-corpus hybrid index stays a role-level experiment |
 
 Compiler-grade truth stays with the existing role stack: `rust-analyzer` (LSP) and `ast-grep` (CLI) remain the routing targets for definitions/references and structural rewrites — the engine's verbs complement, never replace, them (the architect role's routing decision, inherited).
 
@@ -28,7 +28,7 @@ A small lazy-advertised set (lean-ctx's 5-tool lesson: default-advertise few, ke
 - `ctx_context` — the task-shaped composer: NL task → identifier extraction → one budget-packed block (symbols + ranked files + callers + snippets) with value-ordered packing under a token budget and one-line markers for omitted sections (codedb's `handleContext` two-step pack — the best single design in that codebase).
 - `ctx_expand` — dereference any handle (CCR hash, read-stub, section handle, omitted-tail marker).
 
-Output-shaping idioms applied uniformly (the grammar of "spend tokens only when forced"): bounded result counts, `file:line` + enclosing-symbol tags, disclosed omissions (`OmittedTail`, `+N more`), escalation footers naming the exact next verb, frecency rendered as words (`hot`/`warm`), compact per-line trees instead of JSON (sem measured 3.7× fewer tokens than pretty JSON; dossier 17: labeled compact lines beat JSON by 35%).
+Output-shaping idioms applied uniformly (the grammar of "spend tokens only when forced"): bounded result counts, `file:line` + enclosing-symbol tags, disclosed omissions (`OmittedTail`, `+N more`), escalation footers naming the exact next verb, frecency rendered as words (`hot`/`warm`), compact per-line trees instead of JSON (sem measured 3.7× fewer tokens than pretty JSON; techniques 11: labeled compact lines beat JSON by 35%).
 
 ## Ranking
 

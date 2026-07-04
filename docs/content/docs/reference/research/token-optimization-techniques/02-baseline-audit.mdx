@@ -134,7 +134,7 @@ slice, paid back only when a tool is actually fetched. The claude.ai connector s
 (Gmail/Calendar/Drive) were not measurable locally (interactive auth required); only their three
 `authenticate` tool names appear in the deferred list. Note these are *small* servers — published
 measurements for popular servers (e.g. GitHub MCP) run an order of magnitude larger; see
-`12-context-architecture.md`.
+`06-context-architecture.md`.
 
 ## 5. Caveman / wenyan tokenizer verification (the §5 mandate)
 
@@ -163,7 +163,7 @@ Verdicts on the plugin's claims:
  no token advantage over caveman-ultra on this tokenizer.
 - **Wenyan-ultra (74.5%) is the only variant beating caveman-ultra**, worth ~16 extra points of
  token cut at the cost of severe readability/ambiguity risk (see quality analysis in
- `10-style-and-language-compression.md`).
+ `04-style-and-language-compression.md`).
 
 Caveat: registers 1–4 of the test set were authored by the model under test following the plugin's
 rules; the two plugin-authored samples show the same ordering, and the full sample set + script are
@@ -183,7 +183,7 @@ Fable 5/Opus 4.8 share one tokenizer, Sonnet 4.6/Haiku 4.5 another — and the n
 **~15% (code) to ~38% (this prose sample) more tokens for identical text**. Cross-tier price
 comparisons understate the real gap: routing prose-heavy work from Fable 5 ($10/MTok input) to
 Sonnet 4.6 ($3/MTok) saves more than the 3.3× list ratio implies. Carried into
-`11-tokenizer-arbitrage.md` and `16-model-routing-and-delegation.md` with more samples.
+`05-tokenizer-arbitrage.md` and `10-model-routing-and-delegation.md` with more samples.
 
 ## 6. Thinking vs visible output — the §5 caveat, measured
 
@@ -206,7 +206,7 @@ caveman-ultra active:
 Consequence for style compression: it acts on the 45% visible slice only. Caveman-ultra's 58.5%
 × 45.2% ≈ **26% true cut of output tokens** in a session like this — less than half its face
 value. (At lower effort settings the thinking share should drop and style compression's relative
-value rise; the effort sweep lives in `15-output-discipline.md`.)
+value rise; the effort sweep lives in `09-output-discipline.md`.)
 
 Limitations, stated plainly: n = 1 session; this is a research-orchestration session at maximum
 effort, which inflates thinking share; subagent/worker sessions at default effort will differ.
@@ -230,14 +230,14 @@ Prompt-side mix: **0.44% uncached / 6.73% cache-write / 92.83% cache-read.** Cla
 automatic caching is working as designed; even so, *reading the cached prefix over and over is the
 single largest line item.* Every always-loaded token (instructions, schemas, hook spam) is re-read
 on every one of the session's API calls — context mass converts to dollars through the multiplier
-of call count, which is why input-architecture levers (file 12) outrank style levers despite the
+of call count, which is why input-architecture levers (file 06) outrank style levers despite the
 0.1× price.
 
 ## 8. Corrected value of the current caveman setup (this environment)
 
 - Visible-output spend: $0.61 of $3.63 (17%). Caveman-ultra cuts ~58.5% of *that*: **~$0.36, or
  ~10% of session dollars** — first-order, before second-order effects (shorter assistant turns
- also shrink subsequent cache writes/reads of those turns; quantified in `30-composed-stacks.md`).
+ also shrink subsequent cache writes/reads of those turns; quantified in `15-composed-stacks.md`).
 - The "~75%" face-value claim, applied naively to all output, would have promised ~$1.0 (28%).
  **The corrected number is ~2.8× smaller than the folklore number.** This is the brief's §5
  warning, confirmed with local data.

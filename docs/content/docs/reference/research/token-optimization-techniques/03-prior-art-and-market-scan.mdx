@@ -14,7 +14,7 @@ title: "03 — Prior art and market scan"
 
 ## Scope and method
 
-Scanned: the four operator-named tools, Claude Code's official cost levers, the plugin/MCP ecosystem, gateways, and research-grade prompt compression. Every external claim carries URL +. Local numbers use `/tmp/ct.py` (free `count_tokens` endpoint; the single-user-message wrapper adds a constant 7 tokens — percentages below are conservative by &lt;1 point). Dollar arithmetic uses the modeled heavy-day profile from 01-economics-and-measurement.md: ~6 sessions/day, ~19 calls/session, 5.5k uncached input, 85k cache-write, 1.17M cache-read, 27k output (54.8% thinking), ~$22/day split 32% cache-read / 29% cache-write / 20% thinking / 17% visible output / 2% uncached input. Validation protocols are designed to run on the harness in 31-validation-harness.md; this machine's own overhead baseline is in 02-baseline-audit.md.
+Scanned: the four operator-named tools, Claude Code's official cost levers, the plugin/MCP ecosystem, gateways, and research-grade prompt compression. Every external claim carries URL +. Local numbers use `/tmp/ct.py` (free `count_tokens` endpoint; the single-user-message wrapper adds a constant 7 tokens — percentages below are conservative by &lt;1 point). Dollar arithmetic uses the modeled heavy-day profile from 01-economics-and-measurement.md: ~6 sessions/day, ~19 calls/session, 5.5k uncached input, 85k cache-write, 1.17M cache-read, 27k output (54.8% thinking), ~$22/day split 32% cache-read / 29% cache-write / 20% thinking / 17% visible output / 2% uncached input. Validation protocols are designed to run on the harness in 16-validation-harness.md; this machine's own overhead baseline is in 02-baseline-audit.md.
 
 ## Market map 
 
@@ -109,7 +109,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 ### 05. Prompt caching — reads 0.1x, writes 1.25x/2x, automatic in Claude Code; the single biggest shipped lever
 
 - **Layer:** cache / price multiplier. **Mechanism:** prefix storage with free refresh-on-hit; 512-token minimum on Fable 5; Claude Code places breakpoints automatically (platform.claude.com/docs/en/build-with-claude/prompt-caching).
-- **Expected savings:** already banked. Counterfactual on the modeled day: without caching, reads bill 10x — day ~$84 vs $22 = **-74% (ESTIMATE)**. Vendor launch table: up to -90% (book chat), -53% (multi-turn) (claude.com/blog/prompt-caching). The remaining bill is still 61% reads+writes — the target of 13-caching-exploitation.md.
+- **Expected savings:** already banked. Counterfactual on the modeled day: without caching, reads bill 10x — day ~$84 vs $22 = **-74% (ESTIMATE)**. Vendor launch table: up to -90% (book chat), -53% (multi-turn) (claude.com/blog/prompt-caching). The remaining bill is still 61% reads+writes — the target of 07-caching-exploitation.md.
 - **Evidence tier:** T1 (live pricing + launch table); locally corroborated: heavy-session prompt mix 0.44% uncached / 6.73% write / 92.83% read (local measurement).
 - **Quality risk:** NEGATIVE-COST (pure price, no behavior change). Failure mode is economic: prefix churn converts 0.1x reads into 1.25x writes; falsify by diffing usage fields across a deliberately churned prefix.
 - **Availability:** CLAUDE-CODE-TODAY (automatic) / SDK (explicit breakpoints, 1h TTL). **Effort to adopt:** zero in Claude Code; hours of prefix-stability discipline in SDK.
@@ -251,7 +251,7 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 - **Evidence tier:** T1 (shipped tools on real local data); the dev.to JSONL trace is the strongest independent accounting published.
 - **Quality risk:** NEUTRAL. Failure mode: misattribution; falsify by reconciling ccusage totals against console billing.
 - **Availability:** CLAUDE-CODE-TODAY. **Effort to adopt:** minutes.
-- **Composability:** foundation for every validation protocol here; see 31-validation-harness.md.
+- **Composability:** foundation for every validation protocol here; see 16-validation-harness.md.
 - **Validation protocol:** reconcile one week of ccusage vs console invoice; require &lt;5% divergence before trusting any A/B in this file.
 
 ### 19. LLMLingua / LongLLMLingua / LLMLingua-2 — peer-reviewed ceiling ("up to 20x"), absent from every shipped coding agent
@@ -304,12 +304,12 @@ Self-cost of the optimizer: the caveman plugin family's always-on skill listing 
 ## White space — what nobody ships 
 
 1. **Thinking-token optimization** — 54.8% of output tokens, 20% of dollars, not disableable on Fable 5; only blunt levers exist (/effort, MAX_THINKING_TOKENS). No per-task-type effort routing, no thinking-waste detection. Caveman's README concedes the bucket explicitly.
-2. **Cache-economics tooling** — reads+writes = 61% of heavy-session dollars; nothing optimizes breakpoint placement, predicts 5-min-vs-1-h TTL value, schedules compaction to minimize write spikes, or reports write amplification (ccusage shows totals, not causes). See 13-caching-exploitation.md.
+2. **Cache-economics tooling** — reads+writes = 61% of heavy-session dollars; nothing optimizes breakpoint placement, predicts 5-min-vs-1-h TTL value, schedules compaction to minimize write spikes, or reports write amplification (ccusage shows totals, not causes). See 07-caching-exploitation.md.
 3. **Tokenizer-aware routing** — the prose/ASCII tokenizer premium means every $/MTok router can mis-price cross-boundary switches; nobody normalizes, and code-heavy work needs separate counts.
 4. **Mid-session selective context pruning in Claude Code** — the API has context editing (84% cut, vendor-proven); end users get only whole-conversation compaction.
 5. **Net-accounted memory** — claude-mem (82k stars) and cavemem inject context and run compression calls; neither publishes injection-cost-vs-exploration-saved accounting.
 6. **Format-aware tool-result serialization** — the locally-verified 41.2%/34.3% wins are not integrated into any agent's tool-result path or popular MCP server.
-7. **Independent replication infrastructure** — every vendor self-reports; a public ct.py-style harness re-measuring plugin claims against live tokenizers does not exist (this dossier's method is itself novel prior art; see 31-validation-harness.md).
+7. **Independent replication infrastructure** — every vendor self-reports; a public ct.py-style harness re-measuring plugin claims against live tokenizers does not exist (this dossier's method is itself novel prior art; see 16-validation-harness.md).
 8. **Output brevity with quality gates** — caveman trades readability blindly; nothing compresses output only when a verifier confirms zero information loss.
 
 ## Surprising findings

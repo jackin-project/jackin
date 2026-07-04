@@ -26,7 +26,7 @@ documentation (URLs in the Verification ledger).
  full OTel metrics (`claude_code.token.usage` by type/model/agent).
 - **Modeled heavy-day profile (basis for stack math):** the $17 floor variant is ~25k uncached
  input, ~400k cache-write, ~5.5M cache-read, ~125k output tokens on Fable 5; the $22 working
- variant in `30` scales this to six sessions. The measured split is profile-specific; the stable
+ variant in `15` scales this to six sessions. The measured split is profile-specific; the stable
  invariant is that cache reads dominate token volume while output + cache writes dominate dollars.
 
 ---
@@ -54,7 +54,7 @@ Verified side facts that matter for optimization math:
  standard pricing** — "a 900k-token request is billed at the same per-token rate as a 9k-token
  request" (pricing page). No premium tier to engineer around anymore; the cost of a
  bloated context is linear, not super-linear — but quality degradation with context length is
- not (see 12-context-architecture.md).
+ not (see 06-context-architecture.md).
 - **Fast mode** (research preview): Opus 4.8 at $10/$50 — i.e., Opus-fast costs exactly Fable 5
  list. Speed, not savings.
 - **US data residency** (`inference_geo: "us"`): 1.1× on every token class. Don't set it idly.
@@ -95,7 +95,7 @@ Consequences, mechanical but decisive:
  read within TTL (1.25 + 0.1 < 2 × 1.0). 1-hour write (2×) needs ≥2 reads (confirmed in live
  docs: "caching pays off after just one cache read for the 5-minute duration… after two cache
  reads for the 1-hour duration"). Re-deriving the idle-gap economics from these multipliers is
- done in 13-caching-exploitation.md.
+ done in 07-caching-exploitation.md.
 
 ## 3. Tokenizer divergence — tokens are not a stable unit across models
 
@@ -113,11 +113,11 @@ Implications:
 
 - **Cross-tier routing saves more than list prices imply.** Moving prose-heavy work Fable 5 →
  Sonnet 4.6 cuts price per token 3.3× *and* tokens per text ~1.2–1.4×: effective ~4–4.6× on
- input classes. Quantified per task class in 16-model-routing-and-delegation.md.
+ input classes. Quantified per task class in 10-model-routing-and-delegation.md.
 - **Never reuse token counts measured on one tokenizer to budget another** (docs say this
  explicitly for migration). All measurements in this dossier name the model they were counted on.
 - Tokens/char measured locally on Fable 5: ~2.3–3.4 for English/markdown, ~1.4–1.6 for CJK, more
- granular tables in 11-tokenizer-arbitrage.md.
+ granular tables in 05-tokenizer-arbitrage.md.
 
 ## 4. Measurement instruments (how to see spend at all)
 
@@ -132,7 +132,7 @@ messages/system/tools/thinking exactly like a real request. Verified live (token
 "estimate" that "may differ by a small amount" (system-added tokens are not billed), it never
 touches the cache, and **thinking blocks from previous assistant turns are ignored** — matching
 the production rule that prior-turn thinking is stripped from billed context (a built-in,
-automatic saving documented in 18-provider-features.md).
+automatic saving documented in 12-provider-features.md).
 
 **Claude Code surfaces.**
 
@@ -146,7 +146,7 @@ automatic saving documented in 18-provider-features.md).
  `claude_code.compaction`, `claude_code.tool_decision`. `OTEL_LOG_RAW_API_BODIES=1` captures
  full request/response bodies (60 KB truncation; **thinking content is always redacted**).
  This is the right backbone for a personal token dashboard; the per-`agent.name` attribution is
- exactly what's needed to measure subagent economics (17-multi-agent-protocols.md).
+ exactly what's needed to measure subagent economics (11-multi-agent-protocols.md).
  (code.claude.com/docs/en/monitoring-usage.)
 - **Session JSONL transcripts** (`~/.claude/projects/&lt;project&gt;/&lt;session&gt;.jsonl`) — per-call
  usage including cache fields. Two traps found locally (02-baseline-audit.md): the same
@@ -164,7 +164,7 @@ calls; 5,475 uncached input / 84,693 cache-write / 1,167,417 cache-read / 26,977
 
 **HEAVY-DAY profile.** Two internally-consistent variants are used in this dossier — a $17
 floor (5 sessions, 45% thinking — the table below) and a **$22 working figure (6 sessions, 55%
-thinking)** that the area files (10–19) and the composed stacks (30) adopt; both scale the same
+thinking)** that the area files (04–13) and the composed stacks (15) adopt; both scale the same
 measured session, and every stack multiplier is unchanged across them. Table for the $17 floor
 (assumption-explicit scaling; multiply rows by 1.2 and shift the thinking split for the $22
 variant):
@@ -179,16 +179,16 @@ variant):
 | **Total** | | | **$17.00** | 100% |
 
 Assumptions recorded: (a) main-loop only — subagent/workflow fan-out multiplies this profile and
-is modeled separately in 17-multi-agent-protocols.md; (b) cache behavior healthy (92.8% read
+is modeled separately in 11-multi-agent-protocols.md; (b) cache behavior healthy (92.8% read
 share measured) — a session with idle gaps >5 min degrades writes into the dominant line;
 (c) thinking share 45% (measured 54.8% at max effort; lower effort settings reduce it — sweep in
-15-output-discipline.md). Sensitivity: at 55% thinking the output rows become $3.44/$2.81
+09-output-discipline.md). Sensitivity: at 55% thinking the output rows become $3.44/$2.81
 reversed; total unchanged. At a 70% cache-read share (sloppier sessions), day cost rises ~$3–4
 from extra writes.
 
-**The $/task metric (brief §4).** All stack claims in 30-composed-stacks.md use:
+**The $/task metric (brief §4).** All stack claims in 15-composed-stacks.md use:
 `Nx = (baseline $/completed task) ÷ (optimized $/completed task)` at statistically
-indistinguishable success on the validation suite (31-validation-harness.md). With ~10 completed
+indistinguishable success on the validation suite (16-validation-harness.md). With ~10 completed
 tasks/heavy day, baseline ≈ **$1.70/task** on this profile.
 
 ## Verification ledger

@@ -98,7 +98,7 @@ An early reading of RTK held that its `read`/`cat` filter was "line-trimming, no
 - `Minimal` (20–40%) — strip comments.
 - `Aggressive` (60–90%) — strip comments **and function bodies**.
 
-So RTK's Aggressive read overlaps headroom's `CodeAwareCompressor` (keep signatures, drop bodies) more than first stated. **The real surviving distinction is statefulness, not capability.** Both RTK and headroom drop bodies on *a payload as it passes through*, one read at a time; neither builds the **persistent, queryable symbol index** that a code-intelligence tool (ast-grep / codedb) maintains. Structural *retrieval* — asking "where is `foo` defined?" without re-reading the file — is a different lever (the dossier's [code-intelligence chapter](/reference/research/token-optimization-tools/51-code-intelligence-tools/)); one-shot body-dropping on a file the agent reads is something RTK, headroom, and ast-grep can all do.
+So RTK's Aggressive read overlaps headroom's `CodeAwareCompressor` (keep signatures, drop bodies) more than first stated. **The real surviving distinction is statefulness, not capability.** Both RTK and headroom drop bodies on *a payload as it passes through*, one read at a time; neither builds the **persistent, queryable symbol index** that a code-intelligence tool (ast-grep / codedb) maintains. Structural *retrieval* — asking "where is `foo` defined?" without re-reading the file — is a different lever (the dossier's [code-intelligence chapter](/reference/research/token-optimization-tools/19-code-intelligence-tools/)); one-shot body-dropping on a file the agent reads is something RTK, headroom, and ast-grep can all do.
 
 ## The two hook modes
 
@@ -191,7 +191,7 @@ The RTK-specific claim graveyard:
 - **"Drop-in hook, `<10 ms`, free win"** — the compute is cheap and the cache-safety is real, but it writes a host-state hook and can silently truncate a needed line on a successful command.
 - **"Same output, just smaller" (lossless)** — lossless only where the dropped content was genuinely redundant; truncation is lossy with no success-path recovery.
 
-RTK's evidence tier is **T1 for the mechanism** (the underlying filter/dedup/group/JSON-sample levers are locally reproduced in the dossier) and **T4 for RTK's specific product numbers** (vendor self-report through its own counter). The full RTK record, the per-command table, the benchmark caveats, and the jackin❯ adoption guardrails live in the dossier's [RTK chapter](/reference/research/token-optimization-tools/56-rtk-and-write-time-observation-compression/).
+RTK's evidence tier is **T1 for the mechanism** (the underlying filter/dedup/group/JSON-sample levers are locally reproduced in the dossier) and **T4 for RTK's specific product numbers** (vendor self-report through its own counter). The full RTK record, the per-command table, the benchmark caveats, and the jackin❯ adoption guardrails live in the dossier's [RTK chapter](/reference/research/token-optimization-tools/24-rtk-and-write-time-observation-compression/).
 
 ---
 
