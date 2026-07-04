@@ -201,6 +201,7 @@ pub struct Multiplexer {
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
+    /// TODO(plan 044): intended per-tab zoom state currently uses one global slot.
     zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,

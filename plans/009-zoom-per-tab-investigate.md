@@ -15,6 +15,15 @@
 - **Category**: bug
 - **Planned at**: commit `46511939d`, 2026-07-03
 
+## Decision
+
+- The behavior should be per-tab. The strongest in-code evidence is the `active_zoomed_id` comment:
+  "`self.zoomed` narrowed to \"only when the zoomed session belongs to the active tab.\" The zoom field is global (one value across all tabs), but render / input / scroll / mouse paths must behave as if zoom is per-tab".
+- The `toggle_zoom` comment also says switching tabs should not surprise the operator by unzooming a different tab.
+- Docs only mention zoom as a command/redraw reason; no user-facing spec says only one pane may be zoomed mux-wide.
+- Current behavior still loses tab A's zoom when tab B zooms because `self.zoomed` stores a single pane id.
+- Follow-up Plan 044 specifies the per-tab fix; this plan is blocked awaiting that scheduled implementation.
+
 ## Why this matters
 
 `toggle_zoom` stores the zoomed pane in a **single global** `Option<u64>` (`self.zoomed`). With tab A
