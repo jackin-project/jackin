@@ -13,7 +13,6 @@ use jackin_tui::components::FocusOwner;
 use std::collections::BTreeSet;
 
 impl<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -26,7 +25,6 @@ impl<
     PendingOpCommit,
 > crate::tui::model::ConsoleEditorModalPresence
     for EditorState<
-        WorkspaceConfig,
         MountInfoCache,
         Modal,
         SaveFlow,
@@ -45,7 +43,6 @@ impl<
 }
 
 impl<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -58,7 +55,6 @@ impl<
     PendingOpCommit,
 > crate::tui::model::ConsoleAnimationTick
     for EditorState<
-        WorkspaceConfig,
         MountInfoCache,
         Modal,
         SaveFlow,
@@ -81,7 +77,6 @@ where
 }
 
 impl<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -94,7 +89,6 @@ impl<
     OpRef,
 > crate::tui::model::ConsolePendingOpCommit
     for EditorState<
-        WorkspaceConfig,
         MountInfoCache,
         Modal,
         SaveFlow,
@@ -126,7 +120,6 @@ impl<
 }
 
 impl<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -140,7 +133,6 @@ impl<
     PendingOpCommit,
 > crate::tui::model::ConsolePendingDriftCheck
     for EditorState<
-        WorkspaceConfig,
         MountInfoCache,
         Modal,
         SaveFlow,
@@ -178,7 +170,6 @@ impl<
 }
 
 impl<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -191,7 +182,6 @@ impl<
     PendingOpCommit,
 > crate::tui::model::ConsolePendingIsolationCleanup
     for EditorState<
-        WorkspaceConfig,
         MountInfoCache,
         Modal,
         SaveFlow,
@@ -225,7 +215,6 @@ impl<
 }
 
 impl<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -238,7 +227,6 @@ impl<
     PendingOpCommit,
 > crate::tui::model::ConsolePendingRoleLoad
     for EditorState<
-        WorkspaceConfig,
         MountInfoCache,
         Modal,
         SaveFlow,
@@ -270,7 +258,6 @@ impl<
 }
 
 impl<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -283,7 +270,6 @@ impl<
     PendingOpCommit,
 > crate::tui::model::ConsolePendingTokenGenerate
     for EditorState<
-        WorkspaceConfig,
         MountInfoCache,
         Modal,
         SaveFlow,
@@ -304,7 +290,6 @@ impl<
 }
 
 impl<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -317,7 +302,6 @@ impl<
     PendingOpCommit,
 > crate::tui::model::ConsoleEditorFooterHeight
     for EditorState<
-        WorkspaceConfig,
         MountInfoCache,
         Modal,
         SaveFlow,
@@ -336,7 +320,6 @@ impl<
 }
 
 impl<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -349,7 +332,6 @@ impl<
     PendingOpCommit,
 > crate::tui::debug::ConsoleEditorDebugFacts
     for EditorState<
-        WorkspaceConfig,
         MountInfoCache,
         Modal,
         SaveFlow,
@@ -378,7 +360,6 @@ where
 }
 
 impl<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -391,7 +372,6 @@ impl<
     PendingOpCommit,
 >
     EditorState<
-        WorkspaceConfig,
         MountInfoCache,
         Modal,
         SaveFlow,
@@ -842,7 +822,6 @@ impl<
     PendingOpCommit,
 >
     EditorState<
-        WorkspaceConfig,
         MountInfoCache,
         Modal,
         SaveFlow,

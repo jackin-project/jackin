@@ -12,8 +12,7 @@ use jackin_config::{
 use jackin_core::env_model;
 use std::path::PathBuf;
 
-type TestEditorState =
-    EditorState<WorkspaceConfig, MountInfoCache, (), (), EnvValue, (), (), (), (), (), ()>;
+type TestEditorState = EditorState<MountInfoCache, (), (), EnvValue, (), (), (), (), (), ()>;
 
 #[test]
 fn workspace_create_display_name_uses_pending_or_visible_fallback() {

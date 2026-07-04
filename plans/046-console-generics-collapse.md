@@ -11,6 +11,7 @@
 - **Risk**: MED
 - **Depends on**: 022
 - **Category**: tech-debt
+- **Completed at**: PR #713
 - **Planned at**: PR #713 after Plan 022 investigation
 
 ## Why this matters
@@ -24,18 +25,18 @@ preserving a real production seam.
 The throwaway spike removed only the `WorkspaceConfig` axis. It touched 9 files and removed roughly 60
 lines before compile errors exposed adjacent generic aliases that need deliberate sequencing:
 
-- `ConsoleManagerMessage` still expected a workspace-config parameter at its call sites.
-- `WorkspaceSaveEffect` still required its fourth `WorkspaceConfig` generic.
-- `tui/state/update.rs` needed matching alias arity changes.
+- `ConsoleManagerMessage` and `WorkspaceSaveEffect` appeared to need changes in the spike because the
+  throwaway rewrite removed standalone `WorkspaceConfig` generic lines too broadly. The final implementation
+  did not need to touch those aliases.
+- `tui/state/update.rs` compiled unchanged once only direct `EditorState<...>` spell-outs were rewritten.
 
 That is a real win, but not a drive-by cleanup.
 
 ## Scope
 
-**In scope:** concretize the `WorkspaceConfig` axis in `EditorState`, its view aliases, tests, and adjacent
-message/effect aliases that only forward the same concrete type. **Out of scope:** collapsing `Modal`,
-`SaveFlow`, `EnvValue`, `AuthFormTarget`, pending-subscription parameters, or deleting the broader
-`Console*` bridge trait layer.
+**In scope:** concretize the `WorkspaceConfig` axis in `EditorState`, its view aliases, and tests. **Out of
+scope:** collapsing `Modal`, `SaveFlow`, `EnvValue`, `AuthFormTarget`, pending-subscription parameters, or
+deleting the broader `Console*` bridge trait layer.
 
 ## Steps
 
@@ -55,16 +56,11 @@ Expected direct files:
 - `crates/jackin-console/src/tui/components/save_preview/tests.rs`
 - `crates/jackin-console/src/tui/state.rs`
 
-### Step 2: Update adjacent aliases deliberately
+### Step 2: Avoid adjacent alias churn
 
-Do not remove generic arguments by broad text substitution. Update the aliases that still carry
-`WorkspaceConfig` only as pass-through ceremony:
-
-- `crates/jackin-console/src/tui/effect.rs`
-- `crates/jackin-console/src/tui/message.rs`
-- `crates/jackin-console/src/tui/state/update.rs`
-
-Keep each alias compiling before moving to the next one.
+Do not remove generic arguments by broad text substitution. The final implementation should not need to
+change `ConsoleManagerMessage`, `WorkspaceSaveEffect`, or `tui/state/update.rs`; if it does, stop and
+re-check the rewrite scope.
 
 ### Step 3: Preserve test-fixture seams
 
@@ -81,17 +77,18 @@ uses a concrete workspace config but keeps the other parameters until separately
 ## Verification
 
 - `cargo fmt --check`
-- `cargo check -p jackin-console --all-targets`
-- `cargo nextest run -p jackin-console`
-- `cargo clippy -p jackin-console -- -D warnings`
+- `cargo check -p jackin-console`
+- `cargo check -p jackin-console --all-targets --features test-support`
+- `cargo nextest run -p jackin-console --features test-support`
+- `cargo clippy -p jackin-console --features test-support -- -D warnings`
 
 ## Done criteria
 
-- [ ] `EditorState` no longer has a `WorkspaceConfig` type parameter
-- [ ] Direct `EditorState<...>` spell-outs shrink by one argument where applicable
-- [ ] Adjacent message/effect aliases compile with concrete workspace config ownership
-- [ ] ADR recorded for the narrowed generics decision
-- [ ] `plans/README.md` row updated
+- [x] `EditorState` no longer has a `WorkspaceConfig` type parameter
+- [x] Direct `EditorState<...>` spell-outs shrink by one argument where applicable
+- [x] Adjacent message/effect aliases compile unchanged after the precise rewrite
+- [x] ADR recorded for the narrowed generics decision
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 

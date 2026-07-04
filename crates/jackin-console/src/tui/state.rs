@@ -175,7 +175,6 @@ pub type PendingTokenGenerate = crate::tui::subscriptions::PendingTokenGenerate<
 >;
 
 pub type EditorState<'a> = crate::tui::screens::editor::model::EditorState<
-    WorkspaceConfig,
     MountInfoCache,
     Modal<'a>,
     EditorSaveFlow,

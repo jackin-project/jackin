@@ -6,6 +6,7 @@
     "adr-002-rust-toolchain",
     "adr-003-ratatui",
     "adr-004-pane-body-rendering",
-    "adr-005-capsule-single-render-path"
+    "adr-005-capsule-single-render-path",
+    "adr-006-editor-state-workspace-config"
   ]
 }

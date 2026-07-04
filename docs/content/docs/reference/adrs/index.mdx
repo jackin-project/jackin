@@ -12,3 +12,4 @@ Architecture Decision Records (ADRs) document significant design choices — wha
 - **[ADR-003: Ratatui as the TUI rendering library](/reference/adrs/adr-003-ratatui)** — why ratatui over tui-rs, raw ANSI, or cursive, and how it is used across all three TUI surfaces.
 - **[ADR-004: Capsule pane-body rendering mechanism](/reference/adrs/adr-004-pane-body-rendering)** — why the capsule renders pane bodies through a custom cell widget rather than tui-term.
 - **[ADR-005: Capsule single render path](/reference/adrs/adr-005-capsule-single-render-path)** — why every capsule frame is one `Terminal::draw` written by one `ClientWriter` inside `?2026` brackets, and how derived rendering replaced the repaint tiers.
+- **[ADR-006: EditorState owns concrete workspace config](/reference/adrs/adr-006-editor-state-workspace-config)** — why the editor state concretizes workspace config while keeping the remaining generic test seams.
