@@ -5,6 +5,7 @@ members = [
     "crates/jackin-capsule",
     "crates/jackin-config",
     "crates/jackin-console",
+    "crates/jackin-console-oppicker",
     "crates/jackin-core",
     "crates/jackin-dev",
     "crates/jackin-diagnostics",
@@ -59,6 +60,7 @@ insta = "=1.48.0"
 jackin-build-meta = { version = "0.6.0-dev", path = "crates/jackin-build-meta" }
 jackin-config = { version = "0.6.0-dev", path = "crates/jackin-config" }
 jackin-console = { version = "0.6.0-dev", path = "crates/jackin-console" }
+jackin-console-oppicker = { version = "0.6.0-dev", path = "crates/jackin-console-oppicker" }
 jackin-core = { version = "0.6.0-dev", path = "crates/jackin-core" }
 jackin-diagnostics = { version = "0.6.0-dev", path = "crates/jackin-diagnostics" }
 jackin-docker = { version = "0.6.0-dev", path = "crates/jackin-docker" }

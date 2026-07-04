@@ -2782,6 +2782,7 @@ dependencies = [
  "directories",
  "insta",
  "jackin-config",
+ "jackin-console-oppicker",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-env",
@@ -2793,6 +2794,15 @@ dependencies = [
  "tempfile",
  "toml",
  "tui-widget-list",
+]
+
+[[package]]
+name = "jackin-console-oppicker"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-tui",
 ]
 
 [[package]]

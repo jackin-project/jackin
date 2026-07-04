@@ -40,7 +40,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 012 | Probe the bind-mounted socket for daemon readiness (drop 500ms exec poll) | perf | P2 | M | HIGH | 006 | DONE (socket-first; measurement deferred) |
 | 013 | Coalesce console instance-refresh docker fan-out (N+1) | perf | P2 | M | MED | — | DONE (exec fallback backs off; stopped instances skipped) |
 | 014 | Gate capsule per-frame region scans on the damage signal | perf | P2 | L | MED | — | DONE (p95 882us→701us) |
-| 015 | Split the mega-crates to parallelize rustc | perf/tech-debt | P3 | L | MED | — | TODO (unblocked by plan 045; extraction still pending) |
+| 015 | Split the mega-crates to parallelize rustc | perf/tech-debt | P3 | L | MED | — | DONE (pure op-picker model crate carved; full state carve tracked in 054) |
 | 016 | Reuse one turso connection per telemetry store path | perf | P3 | S | HIGH | — | DONE |
 | 017 | Cover the `jackin-env` secret-resolution path + widen e2e filter | tests | P1 | M | HIGH | — | DONE |
 | 018 | Commit real PTY render-conformance fixtures + fix harness doc drift | tests | P2 | M | HIGH | — | DONE |
@@ -79,6 +79,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 051 | Decide whether rootless DinD can become the `standard` default | direction | P2 | M | MED | 049 | TODO |
 | 052 | Cover network egress behavior for DinD inner containers | direction | P2 | M | MED | 043 | TODO |
 | 053 | Run signed-release end-to-end verification | direction | P2 | M | MED | 043 | TODO |
+| 054 | Extract the remaining op-picker state/input boundary | perf/tech-debt | P3 | M | MED | 015,045 | TODO |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` (+reason) | `REJECTED` (+rationale).
 
@@ -103,7 +104,7 @@ Every raw finding ID emitted by the eight auditors, mapped to its plan. Nothing 
 | PERF-01 (readiness poll) | 012 | DEBT-06 (transitional facade) | 027 |
 | PERF-02 (console N+1) | 013 | DEBT-07 (findings.md + linkcheck) | 038 |
 | PERF-03 (compositor scans) | 014 | DEPS-01 (turso caret) | 028 |
-| PERF-04 (mega-crate split) | 015 | DEPS-02 (workspace.deps) | 028 |
+| PERF-04 (mega-crate split) | 015,054 | DEPS-02 (workspace.deps) | 028 |
 | PERF-05 (turso conn/write) | 016 | DEPS-03 (fs2 abandoned) | 029 |
 | DX-01 (no CI-repro command) | 031 | DEPS-04 (bans.skip posture) | 030 |
 | DX-02 (build.rs stamp) | 032 | DOCS-01 (TODO.md rot) | 036 |
