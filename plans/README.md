@@ -76,7 +76,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 048 | Build the first production attention adapter | direction | P2 | M | MED | 047 | DONE |
 | 049 | Run the `standard` compatibility matrix | direction | P1 | M | HIGH | 043 | DONE |
 | 050 | Flip the compiled Docker default to `standard` | direction | P1 | S | HIGH | 049 | DONE |
-| 051 | Decide whether rootless DinD can become the `standard` default | direction | P2 | M | MED | 049 | TODO |
+| 051 | Decide whether rootless DinD can become the `standard` default | direction | P2 | M | MED | 049 | DONE |
 | 052 | Cover network egress behavior for DinD inner containers | direction | P2 | M | MED | 043 | TODO |
 | 053 | Run signed-release end-to-end verification | direction | P2 | M | MED | 043 | TODO |
 | 054 | Extract the remaining op-picker state/input boundary | perf/tech-debt | P3 | M | MED | 015,045 | TODO |

@@ -129,7 +129,14 @@ The active enforcement quality is reported in the launch summary and in `--debug
 dind = "none"        # "none" | "rootless" | "privileged"
 ```
 
-`rootless` runs DinD without `--privileged`. Most Compose/build workflows work. It requires cgroup v2 on the host and fails closed on cgroup v1. Rootless DinD is experimental and is not yet a default for any profile — opt in via a grant or role declaration.
+`rootless` runs DinD without `--privileged`. It is the recommended explicit grant for Compose, BuildKit, and Testcontainers workflows on cgroup v2 hosts:
+
+```toml
+[docker.grants]
+dind = "rootless"
+```
+
+It remains opt-in. The `standard` profile keeps `dind = "none"` by default because many launches do not need an inner Docker daemon, and enabling one automatically would weaken the default network/isolation posture. Rootless DinD requires cgroup v2 on the host and fails closed on cgroup v1 instead of silently falling back to privileged DinD.
 
 ### User and privilege grants
 
@@ -264,7 +271,7 @@ The profile model and most controls are live; a few items remain deferred. This 
 - DinD off by default in `standard`/`hardened`/`locked`, on in `compat` — the per-profile default and skip-when-disabled behavior
 - The `allowlist` network tier — the outbound allowlist firewall is applied at launch, fails closed if it cannot be installed, and always includes the model API and telemetry endpoints
 - The `locked` Docker-internal network
-- Rootless DinD tier (`dind = "rootless"`) — experimental, requires cgroup v2, fails closed on v1, and is not yet a profile default
+- Rootless DinD tier (`dind = "rootless"`) — recommended explicit grant for Docker workflows on cgroup v2, fails closed on v1, and is not a profile default
 - cgroup v2 required for `hardened`/`locked` — launches fail-closed on v1 hosts with a clear error; `standard` warns
 - The launch session contract and per-decision `--debug` telemetry
 - All validation errors at launch time (bad cap names, user+sudo conflict, memory sizing, profile conflicts)
@@ -301,6 +308,10 @@ cargo xtask profile-matrix standard
 ```
 
 The matrix asserts the cheap Docker posture probe directly and records the heavier host-specific cells with their prerequisites. On cgroup v2 hosts, rootless DinD remains an explicit grant and passes the default-flip gate. On cgroup v1 hosts, rootless DinD fails closed with guidance to use privileged DinD or move to cgroup v2.
+
+### Rootless DinD decision
+
+Rootless DinD is **recommended opt-in**, not a `standard` default. Use `dind = "rootless"` for Docker workflows on cgroup v2 hosts. Keep `standard` without DinD for ordinary build/test/edit agents so launches avoid an unnecessary daemon, avoid partial network-enforcement residuals, and preserve the smallest everyday capability set. Use `compat` or `dind = "privileged"` only for workflows that cannot run on rootless DinD.
 
 ### The `compat` profile stays permanently
 

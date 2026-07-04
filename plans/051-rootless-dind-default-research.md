@@ -12,6 +12,10 @@
 - **Depends on**: plan 049
 - **Category**: direction (DIRECTION-03)
 - **Planned at**: current PR branch, 2026-07-04
+- **Completed**: 2026-07-04 — decision is recommended explicit grant:
+  keep `standard` default DinD as `none`, recommend `dind = "rootless"` for
+  Docker workflows on cgroup v2, and reserve privileged DinD/`compat` for
+  workflows that cannot run rootless.
 
 ## Why this matters
 
@@ -35,12 +39,12 @@ default DinD tier.
 
 ## Done criteria
 
-- [ ] Rootless DinD decision is documented with evidence.
-- [ ] Docs say whether rootless DinD is default, recommended opt-in, or still
+- [x] Rootless DinD decision is documented with evidence.
+- [x] Docs say whether rootless DinD is default, recommended opt-in, or still
       experimental.
-- [ ] Any follow-up implementation plan is written if the decision requires
+- [x] Any follow-up implementation plan is written if the decision requires
       code changes.
-- [ ] `plans/README.md` row updated.
+- [x] `plans/README.md` row updated.
 
 ## Verification
 
