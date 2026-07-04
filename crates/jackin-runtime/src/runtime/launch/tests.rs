@@ -3306,6 +3306,10 @@ plugins = []
         "base build must load uncompressed jk_<role>__base; got: {base_build}"
     );
     assert!(
+        base_build.contains("--builder default"),
+        "base build consumes local images and must use the Docker-driver builder; got: {base_build}"
+    );
+    assert!(
         base_build.contains("--label jackin.construct.image=")
             && base_build.contains("--label jackin.role.git.sha="),
         "base build must stamp construct + role-sha labels for reuse; got: {base_build}"
@@ -3324,6 +3328,10 @@ plugins = []
     assert!(
         !derived_build.contains("--pull"),
         "derived build is FROM a local base and must never --pull; got: {derived_build}"
+    );
+    assert!(
+        derived_build.contains("--builder default"),
+        "derived build consumes the local role base and must use the Docker-driver builder; got: {derived_build}"
     );
     assert!(
         derived_build.contains("--label jackin.image.recipe.hash="),
