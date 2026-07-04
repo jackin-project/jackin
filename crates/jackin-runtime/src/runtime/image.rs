@@ -5,8 +5,13 @@
 #[path = "image/version.rs"]
 mod version;
 
+#[path = "image/published.rs"]
+mod published;
+
 #[allow(unused_imports, unreachable_pub)]
 pub use version::*;
+
+use published::{PublishedImageFreshness, published_image_freshness, published_image_is_stale};
 
 // Stages: collect agent binaries → build derived context → `docker build` →
 // tag. Not responsible for container start, session attach, or identity
@@ -1971,99 +1976,6 @@ pub(super) use jackin_image::image_build::{
     parse_completed_buildkit_step, parse_docker_build_steps, should_stream_build_output,
     split_buildkit_duration,
 };
-
-/// Returns `true` when the published image is out of date relative to the
-/// current role repo state.
-///
-/// Checks in order:
-/// 1. `jackin.role.git.sha` label: if present and matches `head_sha`, the
-///    image was built from the exact same commit — fresh, no rebuild needed.
-///    If present and different, the image is stale.
-/// 2. Fallback only when the current role SHA is not yet known:
-///    `jackin.construct.version` label must match `dockerfile_version`.
-///    Absent label is treated as fresh (backward compatibility).
-///
-/// If `docker pull` fails the image may not exist locally at all. Treating a
-/// missing image as "not stale" would let the prebuilt path proceed and produce
-/// a confusing late failure inside `docker build`. Return `true` (stale) so
-/// jackin falls back to workspace mode, which gives the operator a clearer
-/// error if the construct base is also unreachable.
-enum PublishedImageFreshness {
-    Fresh,
-    Stale,
-    NeedsRoleSha(String),
-}
-
-async fn published_image_freshness(
-    published: &str,
-    dockerfile_version: &str,
-    head_sha: Option<&str>,
-    docker: &impl DockerApi,
-) -> PublishedImageFreshness {
-    jackin_diagnostics::active_timing_started(
-        "derived image",
-        "published_image_pull",
-        Some(published),
-    );
-    let pull_result = docker.pull_image(published).await;
-    jackin_diagnostics::active_timing_done(
-        "derived image",
-        "published_image_pull",
-        if pull_result.is_ok() {
-            Some(published)
-        } else {
-            Some("error")
-        },
-    );
-    if let Err(e) = pull_result {
-        emit_compact_image_warning(&format!(
-            "docker pull {published} failed ({e}); treating published image as stale and rebuilding from workspace Dockerfile"
-        ));
-        return PublishedImageFreshness::Stale;
-    }
-
-    let labels = match docker.inspect_image_labels(published).await {
-        Err(e) => {
-            emit_compact_image_warning(&format!(
-                "could not read labels from {published} ({e}); treating published image as stale"
-            ));
-            return PublishedImageFreshness::Stale;
-        }
-        Ok(map) => map,
-    };
-
-    match (head_sha, labels.get(LABEL_IMAGE_ROLE_GIT_SHA)) {
-        (Some(sha), Some(label_sha)) if label_sha == sha => return PublishedImageFreshness::Fresh,
-        (Some(_), Some(_)) => return PublishedImageFreshness::Stale,
-        (None, Some(label_sha)) => {
-            return PublishedImageFreshness::NeedsRoleSha(label_sha.clone());
-        }
-        (Some(_), None) => return PublishedImageFreshness::Stale,
-        _ => {}
-    }
-
-    // Fallback: construct-version check for pre-role-git-sha images.
-    if labels
-        .get(LABEL_IMAGE_CONSTRUCT_VERSION)
-        .is_some_and(|stored| stored != dockerfile_version)
-    {
-        PublishedImageFreshness::Stale
-    } else {
-        PublishedImageFreshness::Fresh
-    }
-}
-
-async fn published_image_is_stale(
-    published: &str,
-    dockerfile_version: &str,
-    head_sha: Option<&str>,
-    docker: &impl DockerApi,
-) -> bool {
-    !matches!(
-        published_image_freshness(published, dockerfile_version, head_sha, docker).await,
-        PublishedImageFreshness::Fresh
-    )
-}
 
 #[cfg(test)]
 mod tests;
