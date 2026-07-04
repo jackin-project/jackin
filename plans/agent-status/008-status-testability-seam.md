@@ -7,6 +7,8 @@
 
 ## Status
 
+- **Implementation status**: DONE in PR 714 (`ProcessSampler` lives in `jackin-agent-status`, capsule exposes
+  `advance_status_with_process_sampler`, and host-portable tests drive the collect→arbitrate→publish path)
 - **Priority**: P1 (unblocks safe changes to 003/004)
 - **Effort**: M
 - **Risk**: LOW (test/abstraction only)
@@ -78,11 +80,11 @@ pass, and these tests run/pass on the dev host (macOS) — not `cfg(linux)`-gate
 
 ## Done criteria
 
-- [ ] A `ProcessSampler` trait with a real Linux impl + an in-memory test double
-- [ ] `advance_status` can be driven end-to-end in a test with injected evidence; production path unchanged
-- [ ] Tests exercise the collect→arbitrate→publish assembly, including the authority-wins branch, on any host
-- [ ] `cargo nextest run -p jackin-capsule` green (new tests included); clippy clean
-- [ ] `plans/agent-status/README.md` row updated
+- [x] A `ProcessSampler` trait with a real Linux impl + an in-memory test double
+- [x] `advance_status` can be driven end-to-end in a test with injected evidence; production path unchanged
+- [x] Tests exercise the collect→arbitrate→publish assembly, including the authority-wins branch, on any host
+- [x] `cargo nextest run -p jackin-capsule` green (new tests included); clippy clean
+- [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions
 

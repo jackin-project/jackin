@@ -9,6 +9,8 @@
 
 ## Status
 
+- **Implementation status**: DONE in PR 714 (`VisibleAgentState` is total over `AgentState`, tab glyphs cover
+  blocked/working/done/idle/unknown without a catch-all, and status-bar/chrome/model tests pin the mapping)
 - **Priority**: P1 (the operator's explicit ask; unblocks all state visibility)
 - **Effort**: S
 - **Risk**: LOW
@@ -141,12 +143,12 @@ Update/extend `status_bar/tests.rs`, `chrome/tests.rs`, `model/tests.rs`:
 
 ## Done criteria
 
-- [ ] `VisibleAgentState` has `Unknown`; the fold is 1:1 (no `Unknown→Idle`)
-- [ ] The state→glyph map is catch-all-free (adding an `AgentState` variant fails the build)
-- [ ] Working and Idle each paint a distinct, non-blank, non-red glyph; Unknown is blank
-- [ ] `cargo nextest run -p jackin-capsule` green with the new assertions
-- [ ] `cargo clippy -p jackin-capsule -- -D warnings` exits 0
-- [ ] `plans/agent-status/README.md` row updated
+- [x] `VisibleAgentState` has `Unknown`; the fold is 1:1 (no `Unknown→Idle`)
+- [x] The state→glyph map is catch-all-free (adding an `AgentState` variant fails the build)
+- [x] Working and Idle each paint a distinct, non-blank, non-red glyph; Unknown is blank
+- [x] `cargo nextest run -p jackin-capsule` green with the new assertions
+- [x] `cargo clippy -p jackin-capsule -- -D warnings` exits 0
+- [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions
 

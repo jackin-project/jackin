@@ -114,14 +114,14 @@ Do this as one behavior-preserving move; the tree must build and pass tests at t
 
 ## Done criteria
 
-- [ ] `crates/jackin-agent-status/` exists, is a workspace member, depends only on protocol/core + utility crates (no tokio/term/capsule)
-- [ ] All detection logic (evidence/rules/arbitrate/policy/gating/pure-process + packs + fixtures) lives in the crate
-- [ ] `jackin-capsule` depends on the crate; `Session::advance_status` calls it across the boundary; behavior unchanged
-- [ ] The derived image still ships the packs to `/jackin/runtime/agent-status/packs`
-- [ ] Pure detection tests run in the crate on the dev host (not container-gated)
-- [ ] `cargo nextest run --workspace` green; clippy + `cargo shear` clean
-- [ ] `PROJECT_STRUCTURE.md` + codebase-map doc updated for the new crate (structural-change docs gate)
-- [ ] `plans/agent-status/README.md` row updated
+- [x] `crates/jackin-agent-status/` exists, is a workspace member, depends only on protocol/core + utility crates (no tokio/term/capsule)
+- [x] All detection logic (evidence/rules/arbitrate/policy/gating/pure-process + packs + fixtures) lives in the crate
+- [x] `jackin-capsule` depends on the crate; `Session::advance_status` calls it across the boundary; behavior unchanged
+- [x] The derived image still ships the packs to `/jackin/runtime/agent-status/packs`
+- [x] Pure detection tests run in the crate on the dev host (not container-gated)
+- [x] `cargo nextest run --workspace` green; clippy + `cargo shear` clean
+- [x] `PROJECT_STRUCTURE.md` + codebase-map doc updated for the new crate (structural-change docs gate)
+- [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions
 
