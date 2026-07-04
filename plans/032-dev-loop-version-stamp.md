@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Result**: DONE in PR #713 (`docs/advisor-improvement-plans`)
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW
@@ -74,11 +75,29 @@ Add a one-line note to the local-dev setup (`CONTRIBUTING.md` or `TESTING.md`) e
 
 ## Done criteria
 
-- [ ] A committed, documented default sets `JACKIN_VERSION_OVERRIDE` for the local inner loop only
-- [ ] A no-op `git commit` no longer forces recompilation of the six build-meta consumers locally (timings prove)
-- [ ] Release/CI builds still stamp the real `<version>+<sha>` (confirm the override does not leak into
+- [x] A committed, documented default sets the local inner loop to a stable package-version stamp
+- [x] A no-op `git commit` no longer forces recompilation of the six build-meta consumers locally (timings prove)
+- [x] Release/CI builds still stamp the real `<version>+<sha>` (confirm the override does not leak into
       `release.yml`/`preview.yml`/`construct.yml`)
-- [ ] `plans/README.md` row updated
+- [x] `plans/README.md` row updated
+
+## Completion notes
+
+- `jackin-build-meta` now returns the package version for local non-CI builds, unless
+  `JACKIN_VERSION_OVERRIDE` is explicitly set.
+- CI/release/preview/construct builds still run with `CI` set, emit the `.git` `rerun-if-changed` watches,
+  and stamp `<version>+<sha>`.
+- Local non-CI builds no longer emit `.git/HEAD`, `.git/refs`, or `.git/packed-refs` watchers, so commits do
+  not dirty the build-meta consumers.
+- Updated contributor and GitHub-agent docs to explain that local cache keys are stable while CI/release
+  artifacts keep provenance.
+- Verification:
+  - `env -u CI mise exec -- cargo build -p jackin --locked --timings` before commit, then the same command
+    after commit `418094139`, finished fresh in 0.85s and `./target/debug/jackin --version` printed
+    `jackin 0.6.0-dev`.
+  - `CI=true mise exec -- cargo build -p jackin --locked` rebuilt the consumers and
+    `./target/debug/jackin --version` printed `jackin 0.6.0-dev+4180941`.
+  - `mise exec -- cargo test -p jackin-build-meta --locked` passed.
 
 ## STOP conditions
 
