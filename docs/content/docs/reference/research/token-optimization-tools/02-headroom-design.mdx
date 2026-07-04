@@ -8,12 +8,12 @@ Headroom is the **broad input-side** member of the original trio, and — until 
 
 | Field | Value |
 |---|---|
-| Repository | `headroomlabs-ai/headroom` (moved from `chopratejas/headroom`, redirect intact; re-verified 2026-07-05) |
+| Repository | `headroomlabs-ai/headroom` (moved from `chopratejas/headroom`, redirect intact) |
 | Pitch | "Compress tool outputs, logs, files, and RAG chunks before they reach the LLM. 60-95% fewer tokens, same answers. Library, proxy, MCP server." |
 | Languages | Python 78% (API/integrations), Rust 17.3% (`headroom-core`, `headroom-proxy` — the hot path), TypeScript 2.5% |
-| Companion model | `chopratejas/kompress-v2-base` (ModernBERT-base, 149M) on HuggingFace — a transformer trained on agentic traces, auto-downloaded (re-verified 2026-07-05; still on the `chopratejas` HF account) |
-| Latest seen | `v0.30.0` (195 PyPI releases — fast cadence; re-verified 2026-07-05) |
-| Adoption (2026-06-18) | 33,359★ / 111 watchers (56,509★ / 176 watchers re-verified 2026-07-05) — PR-inflated; see [evidence](/reference/research/token-optimization-tools/07-evidence-and-claims/) |
+| Companion model | `chopratejas/kompress-v2-base` (ModernBERT-base, 149M) on HuggingFace — a transformer trained on agentic traces, auto-downloaded (still on the `chopratejas` HF account) |
+| Latest seen | `v0.30.0` (195 PyPI releases — fast cadence) |
+| Adoption | 33,359★ / 111 watchers (2026-06-18); 56,509★ / 176 watchers (2026-07-05) — PR-inflated; see [evidence](/reference/research/token-optimization-tools/07-evidence-and-claims/) |
 | License | Apache-2.0 |
 | Bucket hit | Tool outputs / logs / RAG / files / history (the 61% cache lines) |
 | Cache interaction | **Safe** in MCP/library mode; **risk** in whole-prompt proxy mode |

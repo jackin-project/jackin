@@ -6,7 +6,7 @@ title: "16 — Model routing and tiered delegation"
 
 **TL;DR**
 
-- Routing is a shipped, in-product Claude Code surface with four mechanisms: per-subagent `model:` override, the built-in Explore subagent (already pinned to Haiku) [re-verified 2026-07-05: since Claude Code 2.1.198 Explore inherits the main session's model, capped at Opus — no longer Haiku-pinned], the `opusplan` plan/execute alias, and the experimental advisor tool. Only the advisor has Anthropic-published end-to-end numbers: **Sonnet-main + Opus-advisor = +2.7pp SWE-bench Multilingual AND −11.9% cost per agentic task vs Sonnet alone** (T1) — escalation measured as NEGATIVE-COST.
+- Routing is a shipped, in-product Claude Code surface with four mechanisms: per-subagent `model:` override, the built-in Explore subagent (since Claude Code 2.1.198 it inherits the main session's model, capped at Opus — no longer Haiku-pinned), the `opusplan` plan/execute alias, and the experimental advisor tool. Only the advisor has Anthropic-published end-to-end numbers: **Sonnet-main + Opus-advisor = +2.7pp SWE-bench Multilingual AND −11.9% cost per agentic task vs Sonnet alone** (T1) — escalation measured as NEGATIVE-COST.
 - Tokenizer divergence multiplies downtiers only for content that actually has the premium. Fable 5/Opus 4.8 bill "roughly 30% more tokens" on English/ASCII-heavy text, but probes found code/CJK near-neutral. Fable→Haiku is **10x on code/CJK** and **~13–14.5x on prose/markdown-heavy text**; Sonnet 4.6 and Haiku 4.5 tokenize **identically**, so that hop is the 3x price ratio only.
 - Subagents are NOT automatically cheap: the documented default is `model: inherit`. One frontmatter line (`model: haiku`) turns a 5-worker exploration fan-out from $2.75 (all-Fable) to ~$0.19–0.28 depending content mix — a **90–93% cut** (ESTIMATE, arithmetic shown below).
 - Route at task boundaries: a mid-session `/model` or `/effort` change invalidates the prompt cache and "re-reads the full history without cached context" (T1). ESTIMATE: on a 150K-token history the switch costs ~$0.43 vs $0.075 staying cached — **~9 turns to break even**. Cache-safe channels: subagents, advisor, forks, opusplan-at-the-plan-boundary.
@@ -18,8 +18,8 @@ title: "16 — Model routing and tiered delegation"
 |---|---|---|---|---|---|---|
 | Fable 5 | `claude-fable-5` | $10 / $50 | 1M | 128k | new (Opus 4.7+) | "tasks larger than a single sitting" (T1 docs framing); "95% SWE-bench Verified" is a T3 aggregator headline, UNVERIFIED vs primary |
 | Opus 4.8 | `claude-opus-4-8` | $5 / $25 | 1M (~555k words) | 128k | new (Opus 4.7+) | Opus 4.6 = 80.8% SWE-bench Verified (T3 aggregator) |
-| Sonnet 5 | `claude-sonnet-5` | $2 / $10 intro through 2026-08-31, then $3 / $15 | 1M | 128k | new (Opus 4.7+) | added re-verification 2026-07-05; effort defaults to `high` on API and Claude Code (T1, pricing + models overview) |
-| Sonnet 4.6 (legacy) | `claude-sonnet-4-6` | $3 / $15 | 1M (~750k words) | 128k (re-verified 2026-07-05; earlier recorded as 64k) | old | 79.6% SWE-bench Verified (T3); preferred over Opus 4.5 by 59% of Claude Code users (T1, Anthropic) |
+| Sonnet 5 | `claude-sonnet-5` | $2 / $10 intro through 2026-08-31, then $3 / $15 | 1M | 128k | new (Opus 4.7+) | effort defaults to `high` on API and Claude Code (T1, pricing + models overview) |
+| Sonnet 4.6 (legacy) | `claude-sonnet-4-6` | $3 / $15 | 1M (~750k words) | 128k | old | 79.6% SWE-bench Verified (T3); preferred over Opus 4.5 by 59% of Claude Code users (T1, Anthropic) |
 | Haiku 4.5 | `claude-haiku-4-5` | $1 / $5 | **200k** | 64k | old | 73.3% SWE-bench Verified (T1, Anthropic, 50-trial avg, 128K thinking budget) |
 
 Pricing matches the dossier reference sheet exactly (platform.claude.com models overview). The 80.8/79.6 pair is a third-party transcription of Anthropic's announcement table (the table renders as an image) — T3 until checked against the model card. Note Haiku's 200k context: you cannot downtier a subagent whose corpus exceeds ~200k Haiku tokens.
@@ -51,14 +51,14 @@ Effective cost multiplier when moving a corpus DOWN a tier = price ratio × toke
 | Opus 4.8 → Haiku 4.5 | 5x | 1.0 code/CJK; ~1.3–1.45 prose/ASCII | **5x code/CJK; ~6.5–7.3x prose/ASCII** |
 | Sonnet 4.6 → Haiku 4.5 | 3x | 1.00 (identical) | 3.0x |
 
-[Re-verified 2026-07-05: Claude Sonnet 5 uses the new (Opus 4.7+) tokenizer, so the token-ratio bonus in the downtier multipliers above applies only when the target is Sonnet 4.6 or Haiku 4.5 — Fable 5 → Sonnet 5 is the bare price ratio (5x at $2/$10 intro pricing through 2026-08-31, 3.33x at $3/$15 thereafter). Source: https://platform.claude.com/docs/en/about-claude/pricing + /docs/en/about-claude/models/overview.]
+Claude Sonnet 5 uses the new (Opus 4.7+) tokenizer, so the token-ratio bonus in the downtier multipliers above applies only when the target is Sonnet 4.6 or Haiku 4.5 — Fable 5 → Sonnet 5 is the bare price ratio (5x at $2/$10 intro pricing through 2026-08-31, 3.33x at $3/$15 thereafter). Source: https://platform.claude.com/docs/en/about-claude/pricing + /docs/en/about-claude/models/overview.
 
 ## Routing surface map (what ships today)
 
 | Mechanism | Direction | Cache impact | Availability |
 |---|---|---|---|
 | Subagent `model:` frontmatter / per-invocation / `CLAUDE_CODE_SUBAGENT_MODEL` | delegate DOWN for volume | parent cache untouched | CLAUDE-CODE-TODAY |
-| Built-in Explore subagent | down (Haiku, read-only) (re-verified 2026-07-05: inherits the main session's model, capped at Opus, since 2.1.198 — downtier explicitly if wanted) | parent cache untouched | CLAUDE-CODE-TODAY, default-on |
+| Built-in Explore subagent | read-only; since 2.1.198 it inherits the main session's model, capped at Opus — downtier explicitly if wanted | parent cache untouched | CLAUDE-CODE-TODAY, default-on |
 | `/model opusplan` | Opus plan → Sonnet execute | one bounded switch per plan cycle | CLAUDE-CODE-TODAY |
 | Advisor tool (`/advisor`) | escalate UP at decision points | explicitly cache-safe to toggle | CLAUDE-CODE-TODAY (experimental) / SDK |
 | `/effort`, `effort:` frontmatter | intra-model tiering | mid-session change invalidates cache | CLAUDE-CODE-TODAY / SDK |

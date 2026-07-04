@@ -38,7 +38,7 @@ measurement with the method shown. Plain-language writing rules per Volume I §1
 
 Pricing and the modeled session profile are inherited from `01-economics-and-measurement.md`. The
 Fable-family tokenizer is measured on `claude-opus-4-8` (its documented tokenizer twin) because
-`count_tokens` rejects `claude-fable-5` (see 40). [Re-verified 2026-07-05: `count_tokens` now accepts `claude-fable-5` (live probe HTTP 200, count identical to `claude-opus-4-8`) and the docs list it as directly supported; the measurements below stand — same tokenizer either way.]
+`count_tokens` now accepts `claude-fable-5` directly (live probe HTTP 200, count identical to `claude-opus-4-8`); it rejected the id at Volume II research time (see 40), which is why the measurements below were counted on `claude-opus-4-8` — same tokenizer either way, so they stand.
 
 ---
 

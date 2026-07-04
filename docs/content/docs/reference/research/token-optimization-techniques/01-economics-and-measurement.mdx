@@ -22,7 +22,7 @@ documentation (URLs in the Verification ledger).
  Cross-model dollar math must count the target corpus, not just prices.
 - **Ground truth lives in the API usage object** (`input_tokens`, `cache_creation_input_tokens`,
  `cache_read_input_tokens`, `output_tokens`); `count_tokens` is free (rate-limited 2,000–8,000
- RPM by usage tier; re-verified 2026-07-05) and is the experiment instrument; Claude Code exposes `/cost`, `/context`, and
+ RPM by usage tier) and is the experiment instrument; Claude Code exposes `/cost`, `/context`, and
  full OTel metrics (`claude_code.token.usage` by type/model/agent).
 - **Modeled heavy-day profile (basis for stack math):** the $17 floor variant is ~25k uncached
  input, ~400k cache-write, ~5.5M cache-read, ~125k output tokens on Fable 5; the $22 working
@@ -46,7 +46,7 @@ From the live pricing page (platform.claude.com/docs/en/about-claude/pricing):
 All $/MTok. Multipliers are uniform across the lineup: cache write 1.25× (5-min TTL) or 2×
 (1-hour TTL), cache read 0.1×, batch 0.5× — and they stack (batch + caching compose).
 
-[Re-verified 2026-07-05: Claude Sonnet 5 row added; its figures are introductory pricing through 2026-08-31, after which it moves to $3 input / $15 output with the standard multipliers. Source: https://platform.claude.com/docs/en/about-claude/pricing.]
+Claude Sonnet 5 figures are introductory pricing through 2026-08-31, after which it moves to $3 input / $15 output with the standard multipliers.
 
 Verified side facts that matter for optimization math:
 
@@ -101,10 +101,8 @@ Consequences, mechanical but decisive:
 
 Official, from the live docs :
 
-> "Opus 4.7 and later use a new tokenizer… This new tokenizer may use up to 35% more tokens for
-> the same fixed text." (pricing page)
+> The newer tokenizer (Opus 4.7 and later) "produces approximately 30% more tokens for the same text. The exact increase depends on the content and workload shape. Claude Sonnet 4.6 and earlier models use the previous tokenizer." (pricing page; Claude Sonnet 5 is listed among the new-tokenizer models)
 
-[Re-verified 2026-07-05: the pricing page dropped the "up to 35%" phrasing — it now says the newer tokenizer "produces approximately 30% more tokens for the same text. The exact increase depends on the content and workload shape. Claude Sonnet 4.6 and earlier models use the previous tokenizer." and lists Claude Sonnet 5 among the new-tokenizer models. The 35% figure no longer appears on official pages.]
 > "Claude Fable 5 … uses the tokenizer introduced with Claude Opus 4.7, which produces roughly
 > 30% more tokens than models before Claude Opus 4.7 for the same text." (token-counting page)
 
@@ -130,7 +128,7 @@ Implications:
 Total prompt size = input + cache_creation + cache_read. All dossier arithmetic uses these fields.
 
 **`count_tokens` — the free experiment instrument.** `POST /v1/messages/count_tokens` accepts
-messages/system/tools/thinking exactly like a real request. Verified live (token-counting page): **free**, separate rate limit (re-verified 2026-07-05: named usage tiers Start 2,000 / Build 4,000 / Scale 8,000 RPM — the numbered tiers and the 100-RPM tier were removed from the docs), counts are an
+messages/system/tools/thinking exactly like a real request. Verified live (token-counting page): **free**, separate rate limit (named usage tiers Start 2,000 / Build 4,000 / Scale 8,000 RPM), counts are an
 "estimate" that "may differ by a small amount" (system-added tokens are not billed), it never
 touches the cache, and **thinking blocks from previous assistant turns are ignored** — matching
 the production rule that prior-turn thinking is stripped from billed context (a built-in,
@@ -198,8 +196,8 @@ tasks/heavy day, baseline ≈ **$1.70/task** on this profile.
 | Claim / number | Basis |
 |---|---|
 | Full price table, multipliers, batch 50%, 1M standard pricing, fast-mode prices, inference_geo 1.1×, tool-use system prompt sizes, web search $10/1k | https://platform.claude.com/docs/en/about-claude/pricing |
-| count_tokens free, RPM tiers 100/2,000/4,000/8,000 (re-verified 2026-07-05: now named tiers Start/Build/Scale = 2,000/4,000/8,000 RPM), estimate caveat, prior-turn thinking ignored, no caching | https://platform.claude.com/docs/en/build-with-claude/token-counting |
-| Tokenizer "roughly 30% more tokens" (Opus 4.7+ tokenizer) | token-counting page, same access date; "up to 35%" on pricing page (re-verified 2026-07-05: pricing page now says "approximately 30% more tokens for the same text"; the 35% phrasing was removed) |
+| count_tokens free, RPM named tiers Start/Build/Scale = 2,000/4,000/8,000 RPM, estimate caveat, prior-turn thinking ignored, no caching | https://platform.claude.com/docs/en/build-with-claude/token-counting |
+| Tokenizer "roughly 30% more tokens" (Opus 4.7+ tokenizer) | token-counting page, same access date; "approximately 30% more tokens for the same text" on pricing page |
 | OTel metric names/attributes, OTEL_LOG_RAW_API_BODIES, thinking always redacted | https://code.claude.com/docs/en/monitoring-usage |
 | Session decomposition, thinking 54.8%, prompt mix 0.44/6.73/92.83, tokenizer +15–38% local (prose-specific; code/CJK near-neutral); session split is profile-specific | Local measurements, methods in 02-baseline-audit.md |
 | Heavy-day profile | ESTIMATE — measured session × 5, assumptions stated in §5 |

@@ -17,7 +17,7 @@ those agents ship that a Claude Code user could borrow. All surfaces verified ag
 - **Five of Volume I's lever classes port to essentially every coding agent** as first-class
  surfaces: (1) **prompt-cache discount** (all bill cached input at ~10% of input — OpenAI GPT-5.x,
  Gemini, Cursor's $0.25/1M, Copilot, Aider, OpenCode); (2) **reasoning/effort tiering** (Codex
- `model_reasoning_effort` none→xhigh, Gemini `thinkingLevel`/`thinkingBudget` (re-verified 2026-07-05: the Gemini thinking docs now expose only `thinking_level`; `thinkingBudget` no longer appears on the thinking page), Cursor named variants,
+ `model_reasoning_effort` none→xhigh, Gemini `thinking_level` (`thinkingBudget` no longer appears in the Gemini thinking docs), Cursor named variants,
  Copilot configurable levels, Aider `--reasoning-effort`/`--thinking-tokens`, OpenCode
  `reasoningEffort`); (3) **model routing** cheap→frontier; (4) **context-architecture rules files**
  (every agent has an AGENTS.md-class mechanism, several richer than CLAUDE.md); (5) **output caps**.
@@ -58,7 +58,7 @@ Each cell: the surface that agent exposes for that Volume I lever (— = none fo
 | **Prompt-cache discount** | `cache_control`, 0.1× | auto; $0.25/1M read | auto (~10%) | auto (OpenAI) | implicit on 2.5+; explicit `CachedContent` | `--cache-prompts` (4 blocks) | `setCacheKey`; Zen splits read/write |
 | **Cache breakpoint control** | **yes (cache_control)** | — (auto) | — (auto) | — (auto) | explicit cache only | block ordering | `setCacheKey` only |
 | **Cache keepalive** | (1h TTL on sub) | — | — | — | — | **`--cache-keepalive-pings`** | — |
-| **Effort / thinking tier** | `/effort`, MAX_THINKING | named variants (`-high`/`-max`) | configurable levels | `model_reasoning_effort` none→xhigh | `thinkingLevel` / `thinkingBudget` (re-verified 2026-07-05: only `thinking_level` documented) | `--reasoning-effort` / `--thinking-tokens` | `reasoningEffort` none→xhigh |
+| **Effort / thinking tier** | `/effort`, MAX_THINKING | named variants (`-high`/`-max`) | configurable levels | `model_reasoning_effort` none→xhigh | `thinking_level` (`thinkingBudget` no longer documented) | `--reasoning-effort` / `--thinking-tokens` | `reasoningEffort` none→xhigh |
 | **Model routing** | `/model`, subagent pins | Auto (flat rate) | **Auto (−10%)** | `/model`, `-mini` | model aliases | **architect/editor/weak** | **small_model + per-agent** |
 | **Context rules files** | CLAUDE.md/AGENTS.md, scoped | `.cursor/rules` (typed) + nested AGENTS.md | `copilot-instructions.md` + path-specific | AGENTS.md | GEMINI.md | repo map (`--map-tokens 1k`) | AGENTS.md |
 | **Repo map / index** | Explore agent, grep | vector index + Explore subagent | semantic index | (context mgmt) | — | **PageRank repo map** | Explore/Scout subagents |
@@ -78,8 +78,7 @@ Each cell: the surface that agent exposes for that Volume I lever (— = none fo
  but not steer. Aider is the exception that ports *more* than Claude Code: it hand-orders four
  cacheable blocks and offers keepalive pings.
 - **Effort tiering — PORTS as a first-class feature everywhere**, with finer granularity than Volume
- I documented (OpenAI/OpenCode now expose none→xhigh; Gemini 3 uses `thinkingLevel`
- minimal/low/medium/high — re-verified 2026-07-05: `thinking_level` values are per-model: gemini-3-pro-preview low/high; gemini-3-flash-preview low/medium/high; gemini-3.5-flash minimal/low/medium/high; gemini-3.1-pro-preview low/medium/high; `thinkingBudget` was dropped from the thinking page). Thinking-bills-as-output is universal, so "lower effort on routine work"
+ I documented (OpenAI/OpenCode now expose none→xhigh; Gemini 3 uses `thinking_level` with per-model values: gemini-3-pro-preview low/high; gemini-3-flash-preview low/medium/high; gemini-3.5-flash minimal/low/medium/high; gemini-3.1-pro-preview low/medium/high; `thinkingBudget` was dropped from the thinking page). Thinking-bills-as-output is universal, so "lower effort on routine work"
  is the single most portable dollar lever.
 - **Model routing — PORTS, and rivals ship richer versions.** Aider's architect/editor/weak split and
  OpenCode's `small_model` + per-agent model are more explicit than Claude Code's subagent model
@@ -284,8 +283,8 @@ not Anthropic quirks. The quirks are at the edges (storage fees, no-cache SKUs, 
 |---|---|---|
 | 1 | OpenAI auto cache, ≥1024 tok, GPT-5.x cached = 10% of input; reasoning_effort none→xhigh | developers.openai.com/api/docs/{prompt-caching,pricing,guides/reasoning} |
 | 2 | Codex CLI `model_reasoning_effort`/`model_verbosity`/`model_max_output_tokens`; plan metered credits/1M (5h window) | developers.openai.com/codex/{config-advanced,pricing,models} |
-| 3 | Gemini implicit cache on 2.5+; `thinkingLevel` (G3) / `thinkingBudget` (re-verified 2026-07-05: thinking page now documents only per-model `thinking_level`; `thinkingBudget` removed); cache 10% + storage $4.50/1M-hr; CLI per-tool budgets, `compressionThreshold` 0.5 | ai.google.dev/gemini-api/docs/{caching,thinking,gemini-3,pricing}; github.com/google-gemini/gemini-cli configuration.md |
-| 4 | Copilot token billing (1 credit=$0.01); Auto −10%; configurable reasoning levels; copilot-instructions.md + path-specific; 1M context toggle | docs.github.com/copilot/{billing,models-and-pricing,auto-model-selection,supported-models,custom-instructions,optimize-ai-usage} (re-verified 2026-07-05: models-and-pricing now lives at docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing; the old concepts/billing/models-and-pricing path 404s) |
+| 3 | Gemini implicit cache on 2.5+; per-model `thinking_level` (G3; `thinkingBudget` removed from the thinking page); cache 10% + storage $4.50/1M-hr; CLI per-tool budgets, `compressionThreshold` 0.5 | ai.google.dev/gemini-api/docs/{caching,thinking,gemini-3,pricing}; github.com/google-gemini/gemini-cli configuration.md |
+| 4 | Copilot token billing (1 credit=$0.01); Auto −10%; configurable reasoning levels; copilot-instructions.md + path-specific; 1M context toggle | docs.github.com/copilot/{billing,models-and-pricing,auto-model-selection,supported-models,custom-instructions,optimize-ai-usage} (models-and-pricing lives at docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing; the old concepts/billing/models-and-pricing path 404s) |
 | 5 | Cursor Auto $1.25/$6.00/$0.25-read per 1M; named effort variants; `.cursor/rules` typed + nested AGENTS.md; Max Mode | cursor.com/docs/{models-and-pricing,context/rules,context/codebase-indexing,context/mentions} |
 | 6 | Aider `--cache-prompts` (4 blocks), `--cache-keepalive-pings`, `--map-tokens 1k` PageRank, architect/editor/`--weak-model`, `--reasoning-effort`/`--thinking-tokens` | aider.chat/docs/{usage/caching,repomap,usage/modes,config/options,config/reasoning} |
 | 7 | OpenCode `small_model`, per-agent model, `reasoningEffort`, `setCacheKey`; Zen read/write split; Go $-caps ($12/5h, $30/wk, $60/mo) | opencode.ai/docs/{config,agents,models,zen,go} |

@@ -29,12 +29,7 @@ it. Volume I is treated as finished and correct; nothing here edits files 00–3
  only adjacent fact is one "~125k tokens per 500 kB PDF" page-size estimate). Coding agents
  screenshot TUIs and browsers, read PDFs, and paste diagrams; image/PDF token cost is measurable
  today via `count_tokens` and is unmeasured anywhere in Volume I.
-- **Live drift already found (rule #5):** `count_tokens` now **rejects `claude-fable-5`** ("not
- available — use Opus 4.8"), the model Volume I measured on directly. Volume
- I established Fable 5 and Opus 4.8 share one tokenizer (exact-family equality), so `claude-opus-4-8`
- is the valid Fable-family proxy for all Volume II token counts; this substitution is noted wherever
- used. Pricing, plan limits, and betas are re-verified live in the area files, not recalled.
- [Re-verified 2026-07-05: the rejection is gone — a live `count_tokens` probe on `claude-fable-5` returned HTTP 200 (9 tokens, identical to `claude-opus-4-8`), and the token-counting docs now list `claude-fable-5` as directly supported ("All active models support token counting"). Volume II's Opus-4.8-proxied counts remain valid (shared tokenizer); the proxy is simply no longer necessary.]
+- **Live drift already found (rule #5):** at Volume II research time `count_tokens` **rejected `claude-fable-5`** ("not available — use Opus 4.8"), the model Volume I measured on directly. Volume I established Fable 5 and Opus 4.8 share one tokenizer (exact-family equality), so `claude-opus-4-8` is the valid Fable-family proxy for all Volume II token counts; this substitution is noted wherever used. Pricing, plan limits, and betas are verified live in the area files, not recalled. The rejection has since lifted: a live `count_tokens` probe on `claude-fable-5` (2026-07-05) returned HTTP 200 (9 tokens, identical to `claude-opus-4-8`), and the token-counting docs now list `claude-fable-5` as directly supported ("All active models support token counting") — Volume II's Opus-4.8-proxied counts remain valid (shared tokenizer); the proxy is simply no longer necessary.
 - Volume II will ship area files 41–47 (one per pursued gap), a frontier file 48 (≥6 new ideas not
  duplicating Volume I's sixteen K-ideas), and a stacks-and-verdict file 49 (coverage-delta ledger,
  Corrections to Volume I, and whether any of this moves Volume I's ≈2.6x / ≈5–6.6x / no-true-10x

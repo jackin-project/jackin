@@ -10,8 +10,8 @@ Area K of the dossier: the ideas that sound like science fiction, costed honestl
 
 - The only levers bigger than ~40% of total dollars are provider-side and blocked: hypothetical 4x soft-prompt prefix compression (gist/ICAE family) would cut $7.88/day = 46% of the $17.00 modeled day, 26x would cut 59% — savings available to a hosted-Claude user today: $0.00 (T2 papers, BLOCKED-BY-hosted-API).
 - Biggest deployable surprise: Claude Code already writes 1-hour cache (`ephemeral_1h` observed locally), which stretches the keepalive-daemon breakeven from ~46 minutes (5m-TTL folklore math) to ~19 hours — bridging a 2 h lunch on a 150k prefix nets +$2.55 (T1 arithmetic; day-level net ESTIMATE $1–3, 6–18%).
-- Tokenizer folklore dies under count_tokens: there are no reliable 1-token anchors on fable-5 (codes floor at 2 tokens, acronyms at 3 — PHYSICS-SAYS-NO), but phrase→alias is −90% per use (30→3 tokens) and snake_case beats camelCase beats abbreviation (user_details=3 vs userDetails=4 vs usr_acct_dtls=9) — all re-verified locally with /tmp/ct.py.
-- Honest composite ceiling for everything user-deployable today: 20–35% of total dollars ($3.40–5.95/day, ESTIMATE) — best delivered not as operator discipline but baked into every container by jackin❯ via the launch.rs env assembly, a RoleManifest `[token_policy]` block, and the CapsuleConfig → /jackin/run/agent.toml → build_agent_command chain (all three insertion points verified in-).
+- Tokenizer folklore dies under count_tokens: there are no reliable 1-token anchors on fable-5 (codes floor at 2 tokens, acronyms at 3 — PHYSICS-SAYS-NO), but phrase→alias is −90% per use (30→3 tokens) and snake_case beats camelCase beats abbreviation (user_details=3 vs userDetails=4 vs usr_acct_dtls=9) — all verified locally with /tmp/ct.py.
+- Honest composite ceiling for everything user-deployable today: 20–35% of total dollars ($3.40–5.95/day, ESTIMATE) — best delivered not as operator discipline but baked into every container by jackin❯ via the launch.rs env assembly, a RoleManifest `[token_policy]` block, and the CapsuleConfig → /jackin/run/agent.toml → build_agent_command chain (all three insertion points verified).
 - The largest deployable vendor claim — Anthropic context editing, −84% tokens with +29% performance — remains unpriced against cache invalidation on traffic that is 92.83% cache-read; its net dollar sign for Claude-Code-shaped work is unknown (T1 vendor eval, key open gap).
 
 ## Baseline for all arithmetic ($17 floor variant)
@@ -94,7 +94,7 @@ Bake the standing rules into weights so requests omit them — blocked twice ove
 
 - **Layer:** always-on prefix.
 - **Mechanism:** classic context distillation (Askell et al. 2021 lineage). Availability check: fine-tuning exists only for Claude 3 Haiku on Amazon Bedrock (US West Oregon, 32K) — anthropic.com/news/fine-tune-claude-3-haiku + AWS GA blog; no Fable 5/Opus/Sonnet tuning anywhere, API or otherwise.
-- **Expected savings:** the economics died before the block matters: this repo's root agent-rules file (<RepoFile path="AGENTS.md">AGENTS.md</RepoFile>) = 2,744 fable-5 tokens , riding at cache-read ≈ **$0.0027/request**; absolute daily ceiling if deleted entirely: 2,744 × 150 req × $1e-6 ≈ $0.41 reads + ~$0.07 expiry writes ≈ **$0.48/day (2.8%)** (ESTIMATE). Not worth a training pipeline even where one existed.
+- **Expected savings:** the economics died before the block matters: this repo's root agent-rules file (<RepoFile path="AGENTS.md">AGENTS.md</RepoFile>) = 2,744 fable-5 tokens, riding at cache-read ≈ **$0.0027/request**; absolute daily ceiling if deleted entirely: 2,744 × 150 req × $1e-6 ≈ $0.41 reads + ~$0.07 expiry writes ≈ **$0.48/day (2.8%)** (ESTIMATE). Not worth a training pipeline even where one existed.
 - **Feasibility verdict:** BLOCKED-BY-provider for every Claude Code model — and economically dominated by prompt caching regardless.
 - **Evidence tier:** T1 (vendor availability pages + local measurement).
 - **Quality risk:** NEUTRAL if it existed; the "saves big" claim is killed in the graveyard below. Falsified only if Anthropic ships frontier customization (watch RFT-style programs).
@@ -140,7 +140,7 @@ Pay ~212 tokens once at boot to define C1..Cn codes for recurring long reference
 The literal version is dead on arrival; the reframed version is the best per-use ratio in Band B.
 
 - **Layer:** input + output prose.
-- **Mechanism:** the folklore says "pick 1-token codes." Local re-measurement (/tmp/ct.py, fable-5, message-wrapper overhead of 6 subtracted, calibrated on `a`=1): `C4`=2, `K7`=2, `RCF`=3 — short codes floor at 2 tokens, uppercase acronyms at 3; only common dictionary words hit 1 (`details`=1, `done`=1). The payable version: phrase→alias — "the render-conformance fixtures under crates/jackin-capsule/tests/fixtures/" = 30 tokens → `RCF` = 3 tokens (−90%, re-verified locally).
+- **Mechanism:** the folklore says "pick 1-token codes." Local re-measurement (/tmp/ct.py, fable-5, message-wrapper overhead of 6 subtracted, calibrated on `a`=1): `C4`=2, `K7`=2, `RCF`=3 — short codes floor at 2 tokens, uppercase acronyms at 3; only common dictionary words hit 1 (`details`=1, `done`=1). The payable version: phrase→alias — "the render-conformance fixtures under crates/jackin-capsule/tests/fixtures/" = 30 tokens → `RCF` = 3 tokens (−90%, verified locally).
 - **Expected savings:** −80% to −90% per use on long recurring references; targets the same token population as K6, so the same ~$0.2/day band — do not double-count.
 - **Feasibility verdict:** PHYSICS-SAYS-NO for "single-token" anchors (BPE merge tables, not policy, set the floor); REAL-NOW as phrase→alias.
 - **Evidence tier:** T1 (local measurement).
@@ -306,7 +306,7 @@ The meta-technique: nothing above survives contact with human forgetfulness — 
 | Drop vowels to save tokens | Backfires: implementation=3 vs implmnttn=5; usr_acct_dtls=9 vs user_details=3 |
 | Base64/gzip your context | 4.25x inflation (198 → 841 tokens); gzip bytes are not valid input |
 | Emoji are compact | thumbsup=2, rocket=3 vs done=1 — never cheaper than the short word |
-| Pick 1-token anchor codes | Floor is 2 (C4, K7), acronyms 3 (RCF) — re-verified with /tmp/ct.py |
+| Pick 1-token anchor codes | Floor is 2 (C4, K7), acronyms 3 (RCF) — verified with /tmp/ct.py |
 | Fine-tune away the system prompt | Haiku-3-on-Bedrock only, and caching already made it $0.0027/request (K4) |
 | Keepalive pings are free | $1/MTok-prefix per ping-hour; only gaps under the TTL-dependent breakeven pay (K13) |
 
@@ -315,7 +315,7 @@ The meta-technique: nothing above survives contact with human forgetfulness — 
 | # | Number / claim | Value | Source / method | Date |
 |---|---|---|---|---|
 | 1 | Fable 5 pricing in/out/cache-read/5m-write/1h-write | $10 / $50 / $1 / $12.50 / $20 per MTok | live pricing, dossier preamble | |
-| 2 | Modeled heavy day | 25k/400k/5.5M/125k tok = $17.00 | `01-economics-and-measurement.md` §5, arithmetic re-checked | |
+| 2 | Modeled heavy day | 25k/400k/5.5M/125k tok = $17.00 | `01-economics-and-measurement.md` §5, arithmetic verified | |
 | 3 | Requests/day ≈ 150 | 5.5M ÷ ~37k avg prefix | ESTIMATE (own arithmetic) | |
 | 4 | Gist 26x / 40% FLOPs | paper abstract | arxiv.org/abs/2304.08467 | |
 | 5 | ICAE 4x, ~1% params | paper abstract | arxiv.org/abs/2307.06945 | |
@@ -334,9 +334,9 @@ The meta-technique: nothing above survives contact with human forgetfulness — 
 | 18 | DeepSeek cache hit $0.003625 (Pro) / $0.0028 (Flash) → 276x | official pricing | api-docs.deepseek.com/quick_start/pricing (cloudzero.com discrepancy flagged) | |
 | 19 | OpenAI previous_response_id re-bills history | vendor docs | developers.openai.com conversation-state | |
 | 20 | Codebook 212 tok; message 107→31 (−71%) | local measurement (measure2.py) | research sweep | |
-| 21 | Anchor floor: C4=2, K7=2, RCF=3; details=1, done=1 | re-verified: raw counts 8/8/9/7/7 minus wrapper 6 ("a"→7) | /tmp/ct.py, count_tokens, this file's run | |
-| 22 | Phrase→alias 30→3 (−90%) | re-verified: raw 36 minus 6 → 30; RCF raw 9 → 3 | /tmp/ct.py, this file's run | |
-| 23 | user_details=3 / userDetails=4 / usr_acct_dtls=9; get_user_account_details=7 vs getUserAccountDetails=9; handleAuthenticationMiddlewareError=15 vs auth_error=4 | re-verified: raw 9/10/15/13/15/21/10 minus wrapper 6 | /tmp/ct.py, this file's run | |
+| 21 | Anchor floor: C4=2, K7=2, RCF=3; details=1, done=1 | measured: raw counts 8/8/9/7/7 minus wrapper 6 ("a"→7) | /tmp/ct.py, count_tokens, this file's run | |
+| 22 | Phrase→alias 30→3 (−90%) | measured: raw 36 minus 6 → 30; RCF raw 9 → 3 | /tmp/ct.py, this file's run | |
+| 23 | user_details=3 / userDetails=4 / usr_acct_dtls=9; get_user_account_details=7 vs getUserAccountDetails=9; handleAuthenticationMiddlewareError=15 vs auth_error=4 | measured: raw 9/10/15/13/15/21/10 minus wrapper 6 | /tmp/ct.py, this file's run | |
 | 24 | RLE 544→74 (−86.4%) | local measurement (measure2.py) | research sweep | |
 | 25 | Rust 8k chars: 2,577 fable vs 1,902 haiku/sonnet (+35.5%) → 13.5x per byte | local measurement (measure3.py) | research sweep | |
 | 26 | LLMLingua-2 2x–5x, 3x–6x faster | paper abstract | arxiv.org/abs/2403.12968 | |

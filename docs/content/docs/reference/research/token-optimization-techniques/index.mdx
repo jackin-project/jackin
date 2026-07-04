@@ -162,10 +162,8 @@ drew too thin. Governing gap audit and extension scope: [`40-extension-overview.
  it shows. (42)
 - **Latency is priceable:** the same Opus 4.8 spans **4× on the latency axis** (batch $2.50 / standard
  $5 / fast $10 input); buy speed only when a human is blocked (`v·t·s > Δ$`). (43)
-- **Drift since 06-12 (re-verified):** `count_tokens` rejects Fable 5 (use Opus 4.8 — its tokenizer
- twin); **Fable 5 leaves the subscription 06-23** (operator's effective main model → Opus 4.8, ~½ the
- sticker); 5-hour limits **doubled 06-05**; **06-15 headless/SDK usage split off the cap**; KV-eviction
- family (SnapKV/H2O/PyramidKV/KVQuant) and CAG are real but **self-host-only** on hosted Claude. (41, 46)
+- **Drift since 06-12** (Volume II state; the current picture is in 50): at Volume II research time `count_tokens` rejected Fable 5 (Opus 4.8 was the tokenizer-twin proxy; it accepts `claude-fable-5` directly as of 2026-07-05) and **Fable 5 was slated to leave the subscription 06-23** (it was instead suspended 06-12→30 under an export-control directive, then restored 07-01 with 50%-of-weekly-cap plan inclusion through 07-07); 5-hour limits **doubled** (effective 2026-05-06); the announced **headless/SDK off-cap billing split was paused before rollout** — headless still draws the interactive cap; KV-eviction
+ family (SnapKV/H2O/PyramidKV/KVQuant) and CAG are real but **self-host-only** on hosted Claude. (41, 46, 50)
 - **50 genuinely-new techniques** (42 in files 41–47 with the full §10 record + 8 frontier), each with
  a coverage-delta note proving absence from 00–32. (49)
 
@@ -305,7 +303,7 @@ Adds runnable measurement scripts and a comparison of external code-search / cod
 
 ## Volume IV — live re-verification (2026-07-05)
 
-Chapter [`50-live-reverification`](/reference/research/token-optimization-techniques/50-live-reverification/) is a drift re-verification pass: the dossier's load-bearing external claims (model lineup, pricing, tokenizer families, `count_tokens` behaviour, context-management betas, subscription/quota rules, Claude Code changelog) re-checked against live sources on 2026-07-05. The pass found nine load-bearing deltas — headline items: Claude Sonnet 5 shipped 2026-06-30 (new tokenizer family, $2/$10 intro pricing, new Claude Code default), the 2026-06-15 headless/SDK quota split was paused before rollout, the Explore subagent no longer defaults to haiku as of 2.1.198, and the memory tool went GA. The dossier's headline verdict — no defensible 10x at zero quality loss — stands; the deltas change model-tiering, tokenizer-arbitrage, and quota-routing arithmetic in files 11/12/14/16/41/46, and every Sonnet-based arbitrage claim must now be pinned explicitly to Sonnet 4.6/Haiku 4.5.
+Chapter [`50-live-reverification`](/reference/research/token-optimization-techniques/50-live-reverification/) is a drift re-verification pass: the dossier's load-bearing external claims (model lineup, pricing, tokenizer families, `count_tokens` behaviour, context-management betas, subscription/quota rules, Claude Code changelog) checked against live sources on 2026-07-05. The pass found nine load-bearing deltas — headline items: Claude Sonnet 5 shipped 2026-06-30 (new tokenizer family, $2/$10 intro pricing, new Claude Code default), the 2026-06-15 headless/SDK quota split was paused before rollout, the Explore subagent no longer defaults to haiku as of 2.1.198, and the memory tool went GA. The dossier's headline verdict — no defensible 10x at zero quality loss — stands; the deltas change model-tiering, tokenizer-arbitrage, and quota-routing arithmetic in files 11/12/14/16/41/46, and every Sonnet-based arbitrage claim must now be pinned explicitly to Sonnet 4.6/Haiku 4.5.
 
 ### Final completion audit 
 
@@ -343,7 +341,7 @@ Claude Context, and CodeGraphContext.
  experiments rather than default jackin-core dependencies.
 - **Qdrant follow-up:** [`52-qdrant-and-vector-databases.md`](/reference/research/token-optimization-tools/52-qdrant-and-vector-databases/)
   concludes Qdrant is a credible backend for semantic memory/RAG but should stay optional and scoped;
-  a live re-check found Milvus/Zilliz, Vespa, Turbopuffer, LanceDB, Chroma, Pinecone, and pgvector
+  a live check found Milvus/Zilliz, Vespa, Turbopuffer, LanceDB, Chroma, Pinecone, and pgvector
   are real alternatives, but none proves better coding-agent token economy than `fff + codedb`.
   The useful local case is a bounded hybrid docs/decision index over the repo's large documentation
   surface, not default code navigation. Qdrant should not become a default third tool unless a harness
