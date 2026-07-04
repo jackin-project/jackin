@@ -28,6 +28,48 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = anyhow::Result<()>>,
 {
+    spin_wait_with_intervals(message, max_attempts, |_| interval, &mut poll).await
+}
+
+pub async fn spin_wait_ramped<F, Fut>(
+    message: &str,
+    max_attempts: u32,
+    initial_interval: std::time::Duration,
+    max_interval: std::time::Duration,
+    mut poll: F,
+) -> anyhow::Result<()>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = anyhow::Result<()>>,
+{
+    spin_wait_with_intervals(
+        message,
+        max_attempts,
+        |attempt| ramped_interval(initial_interval, max_interval, attempt),
+        &mut poll,
+    )
+    .await
+}
+
+fn ramped_interval(
+    initial: std::time::Duration,
+    cap: std::time::Duration,
+    attempt: u32,
+) -> std::time::Duration {
+    let factor = 1_u32.checked_shl(attempt).unwrap_or(u32::MAX);
+    initial.saturating_mul(factor).min(cap)
+}
+
+async fn spin_wait_with_intervals<F, Fut>(
+    message: &str,
+    max_attempts: u32,
+    mut interval_for_attempt: impl FnMut(u32) -> std::time::Duration,
+    poll: &mut F,
+) -> anyhow::Result<()>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = anyhow::Result<()>>,
+{
     use owo_colors::OwoColorize as _;
 
     const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -41,7 +83,7 @@ where
     // its own waiting animation conveys progress, so the spinner must stay
     // silent or it streams over the alternate screen.
     let suppressed = rich_terminal_owned();
-    for _attempt in 0..max_attempts {
+    for attempt in 0..max_attempts {
         if debug && !suppressed {
             eprint!("\r\x1b[2K");
             drop(io::stderr().flush());
@@ -56,7 +98,8 @@ where
             }
             Err(e) => last_err = Some(e),
         }
-        let spins = interval.as_millis() as u64 / SPIN_MS;
+        let interval = interval_for_attempt(attempt);
+        let spins = (interval.as_millis() as u64 / SPIN_MS).max(1);
         for _ in 0..spins {
             if !suppressed {
                 let frame = FRAMES[frame_idx % FRAMES.len()];
@@ -76,4 +119,31 @@ where
         drop(io::stderr().flush());
     }
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("timed out: {message}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ramped_interval_doubles_until_cap() {
+        let initial = std::time::Duration::from_millis(100);
+        let cap = std::time::Duration::from_millis(500);
+
+        let intervals: Vec<_> = (0..6)
+            .map(|attempt| ramped_interval(initial, cap, attempt).as_millis())
+            .collect();
+
+        assert_eq!(intervals, vec![100, 200, 400, 500, 500, 500]);
+    }
+
+    #[test]
+    fn sub_spin_interval_still_yields_one_sleep() {
+        const SPIN_MS: u64 = 80;
+        let interval = std::time::Duration::from_millis(10);
+
+        let spins = (interval.as_millis() as u64 / SPIN_MS).max(1);
+
+        assert_eq!(spins, 1);
+    }
 }

@@ -63,6 +63,7 @@ pub use self::universe::{
     release_entry_if_idle,
 };
 pub use ::jackin_host::caffeinate::reconcile as reconcile_keep_awake;
+pub use ::jackin_host::caffeinate::reconcile_when_configured as reconcile_keep_awake_when_configured;
 
 pub use self::launch::resolve_supported_agents_for_console;
 

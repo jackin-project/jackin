@@ -25,7 +25,7 @@ avoidable serial network work.
 | 005  | Cached-binary-first provisioning; retry fast-fail; capsule dev cache | P2 | M | best after 001 | DONE |
 | 006  | Preserve layer cache on published-stale rebuilds; cache-bust ping-pong fix | P2 | M | rebase over 001 | BLOCKED — STOP: `CONSTRUCT_IMAGE` is mutable `projectjackin/construct:trixie`; fix needs digest check |
 | 007  | DinD sidecar auto-prewarm + pinned image | P2 | M | composes with 003 | DONE |
-| 008  | Launch round-trip diet (keep_awake gate, preflight probe, restore scan, polls…) | P3 | M | best after 003 | TODO |
+| 008  | Launch round-trip diet (keep_awake gate, preflight probe, restore scan, polls…) | P3 | M | best after 003 | DONE (c/g deferred) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) |
 REJECTED (with one-line rationale).
@@ -81,6 +81,12 @@ Expected effect (from measured baselines, same machine/network):
   removes the common contention window first.
 - **Gate role `docker run` on sidecar-start instead of TLS-ready** — deferred:
   agent could race a not-ready dockerd; needs an in-container lazy gate.
+- **Plan 008c restore-candidate reuse** — deferred: Plan 003 already reuses the
+  early resolution for start/recreate fast paths, but carrying it into the
+  related-candidate branch needs a larger launch-pipeline typed-result refactor.
+- **Plan 008g console config single-load** — deferred: console config writes
+  are async save-subscription driven, and `run_console` does not return a dirty
+  config signal to distinguish no-op exits from config-changing exits.
 - **Capsule daemon boot micro-costs** (git/gh probes before socket listener,
   `jackin-capsule/src/daemon.rs:858` + `git_context.rs:46-74`; post-run
   firewall/sudo execs serial before attach, `launch_runtime.rs:960-995`) —

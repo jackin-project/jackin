@@ -323,6 +323,14 @@ fn build_label_filter(label_filters: &[&str]) -> Option<HashMap<String, Vec<Stri
 }
 
 impl DockerApi for BollardDockerClient {
+    async fn ping(&self) -> anyhow::Result<()> {
+        self.inner
+            .ping()
+            .await
+            .map(|_| ())
+            .context("pinging Docker daemon")
+    }
+
     async fn inspect_container_state(&self, name: &str) -> ContainerState {
         jackin_diagnostics::debug_log!("docker", "inspect container {name}");
         let result = self

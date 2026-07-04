@@ -202,10 +202,9 @@ pub(crate) async fn preflight(
 async fn check_docker_daemon() -> CheckResult {
     match jackin_docker::docker_client::BollardDockerClient::connect() {
         Ok(docker) => {
-            // Attempt a lightweight operation (list_containers with empty filter)
-            // to verify the daemon is actually reachable.
-            match docker.list_containers(&[], false).await {
-                Ok(_) => CheckResult::ok("docker_daemon", "Docker daemon reachable"),
+            // Verify the daemon is actually reachable without scanning containers.
+            match docker.ping().await {
+                Ok(()) => CheckResult::ok("docker_daemon", "Docker daemon reachable"),
                 Err(e) => CheckResult::fail(
                     "docker_daemon",
                     format!("Docker daemon connected but not responding: {e:#}"),

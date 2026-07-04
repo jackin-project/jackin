@@ -114,17 +114,19 @@ pub(super) async fn wait_for_capsule_daemon(
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     const MAX_ATTEMPTS: u32 = 60;
-    const INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+    const INITIAL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+    const MAX_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
     jackin_diagnostics::active_timing_started(
         "capsule",
         "wait_capsule_socket",
         Some(container_name),
     );
-    let wait_result = crate::spin_wait::spin_wait(
+    let wait_result = crate::spin_wait::spin_wait_ramped(
         "Waiting for jackin-capsule daemon",
         MAX_ATTEMPTS,
-        INTERVAL,
+        INITIAL_INTERVAL,
+        MAX_INTERVAL,
         || async {
             docker
                 .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
@@ -1086,15 +1088,17 @@ pub(super) async fn wait_for_dind(
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     const MAX_ATTEMPTS: u32 = 30;
-    const INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+    const INITIAL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+    const MAX_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
     // Shared spinner helper: it suppresses its own stderr output while the
     // rich launch cockpit owns the screen, so the sidecar stage shows only
     // in the rail rather than streaming "Waiting for ..." over the frame.
-    crate::spin_wait::spin_wait(
+    crate::spin_wait::spin_wait_ramped(
         "Waiting for Docker-in-Docker to be ready",
         MAX_ATTEMPTS,
-        INTERVAL,
+        INITIAL_INTERVAL,
+        MAX_INTERVAL,
         || async {
             docker
                 .exec_capture(dind_name, &["docker", "info"])

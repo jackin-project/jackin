@@ -93,6 +93,7 @@ pub struct ContainerSpec {
 /// Async Docker daemon API seam. Dependency-injected so tests can stub Docker
 /// without a running daemon.
 pub trait DockerApi {
+    async fn ping(&self) -> anyhow::Result<()>;
     #[must_use]
     async fn inspect_container_state(&self, name: &str) -> ContainerState;
     async fn remove_container(&self, name: &str) -> anyhow::Result<()>;

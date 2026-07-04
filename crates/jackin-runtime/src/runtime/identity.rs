@@ -89,36 +89,72 @@ pub(super) async fn try_capture(
 }
 
 pub(super) async fn load_git_identity(runner: &mut impl CommandRunner) -> GitIdentity {
-    jackin_diagnostics::active_timing_started("identity", "git_user_name", None);
-    let user_name = try_capture(runner, "git", &["config", "user.name"])
-        .await
-        .unwrap_or_default();
+    jackin_diagnostics::active_timing_started("identity", "git_identity", None);
+    let output = try_capture(
+        runner,
+        "git",
+        &["config", "--get-regexp", "^user\\.(name|email)$"],
+    )
+    .await
+    .unwrap_or_default();
+    let identity = parse_git_identity_config(&output);
     jackin_diagnostics::active_timing_done(
         "identity",
-        "git_user_name",
-        Some(if user_name.is_empty() {
-            "missing"
-        } else {
-            "present"
-        }),
+        "git_identity",
+        Some(
+            match (
+                identity.user_name.is_empty(),
+                identity.user_email.is_empty(),
+            ) {
+                (false, false) => "present",
+                (true, true) => "missing",
+                (true, false) => "missing_name",
+                (false, true) => "missing_email",
+            },
+        ),
     );
 
-    jackin_diagnostics::active_timing_started("identity", "git_user_email", None);
-    let user_email = try_capture(runner, "git", &["config", "user.email"])
-        .await
-        .unwrap_or_default();
-    jackin_diagnostics::active_timing_done(
-        "identity",
-        "git_user_email",
-        Some(if user_email.is_empty() {
-            "missing"
-        } else {
-            "present"
-        }),
-    );
+    identity
+}
 
+fn parse_git_identity_config(output: &str) -> GitIdentity {
+    let mut identity = GitIdentity {
+        user_name: String::new(),
+        user_email: String::new(),
+    };
+    for line in output.lines() {
+        let Some((key, value)) = line.split_once(' ') else {
+            continue;
+        };
+        match key {
+            "user.name" => identity.user_name = value.trim().to_owned(),
+            "user.email" => identity.user_email = value.trim().to_owned(),
+            _ => {}
+        }
+    }
     GitIdentity {
-        user_name,
-        user_email,
+        user_name: identity.user_name,
+        user_email: identity.user_email,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_git_identity_config_reads_name_and_email_from_one_capture() {
+        let identity = parse_git_identity_config("user.name Neo\nuser.email neo@example.test\n");
+
+        assert_eq!(identity.user_name, "Neo");
+        assert_eq!(identity.user_email, "neo@example.test");
+    }
+
+    #[test]
+    fn parse_git_identity_config_tolerates_missing_keys() {
+        let identity = parse_git_identity_config("user.email trinity@example.test\n");
+
+        assert_eq!(identity.user_name, "");
+        assert_eq!(identity.user_email, "trinity@example.test");
     }
 }
