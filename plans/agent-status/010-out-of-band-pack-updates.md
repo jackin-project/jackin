@@ -125,7 +125,7 @@ infra / a CI job, a separate deliverable); changing the rule *engine* or pack *c
   org-controlled publishing/fetch target exists; no live fetch path is intentionally present
 - [ ] Remote channel is operator-visible (launch summary) with a chosen default; applied packs are logged —
   BLOCKED until the maintainer chooses the production default and publishing target; local registry notes exist
-- [ ] `cargo nextest run -p jackin-agent-status` green; clippy clean
+- [x] `cargo nextest run -p jackin-agent-status` green; clippy clean
 - [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions
