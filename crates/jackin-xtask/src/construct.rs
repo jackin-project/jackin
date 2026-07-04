@@ -220,6 +220,7 @@ fn reset_buildx(cfg: &Config) -> Result<()> {
 }
 
 fn build_local(cfg: &Config) -> Result<()> {
+    init_buildx(cfg)?;
     let mut cmd = docker([
         "buildx",
         "bake",
@@ -235,6 +236,7 @@ fn build_local(cfg: &Config) -> Result<()> {
 }
 
 fn build_platform(cfg: &Config, platform: Platform) -> Result<()> {
+    init_buildx(cfg)?;
     let mut cmd = docker([
         "buildx",
         "bake",
@@ -253,6 +255,7 @@ fn build_platform(cfg: &Config, platform: Platform) -> Result<()> {
 
 fn push_platform(cfg: &Config, platform: Platform) -> Result<()> {
     cfg.guard_local_publish()?;
+    init_buildx(cfg)?;
     fs::create_dir_all(&cfg.digest_dir)
         .with_context(|| format!("creating digest dir {}", cfg.digest_dir))?;
     let metadata_file = format!("{}/metadata-{}.json", cfg.digest_dir, platform.name());
@@ -410,6 +413,7 @@ fn publish_manifest(cfg: &Config) -> Result<()> {
 }
 
 fn inspect(cfg: &Config) -> Result<()> {
+    init_buildx(cfg)?;
     let mut cmd = docker([
         "buildx",
         "bake",
