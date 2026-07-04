@@ -1,6 +1,9 @@
-# Launch never reconnects to a live instance
+---
+title: "ADR-008: Launch never reconnects to a live instance"
+description: "Why launch creates or restores dead instances but never silently attaches to a healthy live one."
+---
 
-Status: accepted
+**Status**: Accepted
 
 A launch (operator picks workspace + role + agent) only ever **creates** a new instance, or **restores** an un-cleanly-terminated one (crashed, killed, interrupted). It never attaches to a healthy live instance. Reconnect (hardline) is reachable only by explicitly selecting a concrete instance from the instance/Running view. The two surfaces are orthogonal: **launch = create or restore-dead; instance selection = reconnect/manage live.**
 

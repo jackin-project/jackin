@@ -6,6 +6,7 @@
 
 ## Status
 
+- **Result**: DONE in PR #713 (`docs/advisor-improvement-plans`)
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW
@@ -79,12 +80,19 @@ if a build is cheap, `cd docs && bun run build` → succeeds (ADR pages render).
 
 ## Done criteria
 
-- [ ] One ADR scheme with no colliding numbers; the runtime ADRs are visible on the site (option A) or
+- [x] One ADR scheme with no colliding numbers; the runtime ADRs are visible on the site (option A) or
       explicitly scoped + linked (option B)
-- [ ] `docs/adr/` removed (A) or given a scoping README + renumber (B)
-- [ ] The "N foundational ADRs" count matches reality
-- [ ] Docs sidebar audit passes; ADR index lists all ADRs
-- [ ] `plans/README.md` row updated
+- [x] `docs/adr/` removed (A) or given a scoping README + renumber (B)
+- [x] The "N foundational ADRs" count matches reality
+- [x] Docs sidebar audit passes; ADR index lists all ADRs
+- [x] `plans/README.md` row updated
+
+## Completion notes
+
+- Chose option A: one published ADR scheme under `docs/content/docs/reference/adrs/`.
+- Migrated the three orphaned runtime ADRs to `adr-008`, `adr-009`, and `adr-010`; ADR-006 and ADR-007 already existed from earlier PR #713 work.
+- Removed the old `docs/adr/` files so there are no colliding root ADR numbers.
+- Updated the ADR `meta.json`, ADR index, and roadmap count to ten published foundational ADRs.
 
 ## STOP conditions
 
