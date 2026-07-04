@@ -12,6 +12,7 @@
 - **Risk**: MED (naively removing timing can mask the race/idempotency the test guards)
 - **Depends on**: none
 - **Category**: tests
+- **Completed at**: PR #713
 - **Planned at**: commit `46511939d`, 2026-07-03
 
 ## Why this matters
@@ -67,13 +68,24 @@ For each remaining `sleep(` in a `tests.rs`, add a one-line note in this plan's 
 needed (a real timing boundary), or (b) convertible to a barrier/paused-clock later? Do **not** convert
 them all now — just triage so the debt is visible.
 
+Remaining sleep audit after this change:
+
+- `crates/jackin-usage/src/usage/tests.rs`: 250ms worker sleep intentionally exercises timeout fallback;
+  keep until the timeout collector has an injectable clock/receiver seam.
+- `crates/jackin-capsule/src/socket/tests.rs`: 20ms accept-loop settling wait is convertible later to an
+  explicit server-side signal.
+- `crates/jackin-tui/src/runtime/tests.rs`: 1ms OS-worker poll is a bounded worker scheduling wait; low
+  priority, convertible to a worker-ready signal later.
+- `crates/jackin/tests/manager_flow.rs`: 1ms config-save worker poll is a bounded integration wait;
+  convertible to an explicit background-event notification later.
+
 ## Done criteria
 
-- [ ] `usage` concurrency test uses a deterministic barrier; passes 20× consecutively
-- [ ] `auth` mtime test no longer real-sleeps ~1.1s; still asserts idempotency
-- [ ] Remaining sleep sites triaged in the row note (needed vs convertible)
-- [ ] `cargo nextest run -p jackin-usage -p jackin-instance` green
-- [ ] `plans/README.md` row updated
+- [x] `usage` concurrency test uses a deterministic barrier; passes 20× consecutively
+- [x] `auth` mtime test no longer real-sleeps ~1.1s; still asserts idempotency
+- [x] Remaining sleep sites triaged in the row note (needed vs convertible)
+- [x] `cargo nextest run -p jackin-usage -p jackin-instance` green
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 

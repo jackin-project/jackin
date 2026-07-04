@@ -2251,20 +2251,22 @@ fn round_trip_ignore_sync_token_ignore_state_clean() {
 /// guard; a regression that drops the content-equal check would
 /// fire `write_private_file` (atomic rename) on every launch.
 #[test]
-fn sync_skips_write_when_content_unchanged() {
+fn sync_idempotent_skips_write_when_content_unchanged() {
     let temp = tempdir().unwrap();
     let host_home = stage_host_hosts_yml(&temp, "ghp_unchanged");
     let hosts_yml = temp.path().join("role-state-hosts.yml");
 
     RoleState::provision_github_auth(&hosts_yml, &ctx(GithubAuthMode::Sync, None), &host_home)
         .unwrap();
+    let forced_mtime = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    std::fs::File::options()
+        .write(true)
+        .open(&hosts_yml)
+        .unwrap()
+        .set_modified(forced_mtime)
+        .unwrap();
     let mtime_first = std::fs::metadata(&hosts_yml).unwrap().modified().unwrap();
 
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "mtime idempotency test needs a wall-clock boundary before checking no rewrite"
-    )]
-    std::thread::sleep(std::time::Duration::from_millis(1100));
     RoleState::provision_github_auth(&hosts_yml, &ctx(GithubAuthMode::Sync, None), &host_home)
         .unwrap();
     let mtime_second = std::fs::metadata(&hosts_yml).unwrap().modified().unwrap();
