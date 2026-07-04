@@ -33,7 +33,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 005 | Scrub secrets from captured `--debug` command output | security | P2 | M | LOW | — | DONE (latent; output scrubber added) |
 | 006 | Clamp `spin_wait` inter-attempt delay for sub-80ms intervals | bug | P2 | S | HIGH | — | DONE (interval-accurate) |
 | 007 | Stop blanking Claude account metadata on `.claude.json` read errors | bug | P2 | S | MED | — | DONE |
-| 008 | Guard IL/DL against cursor outside the scroll region | bug | P2 | S | MED | — | TODO |
+| 008 | Guard IL/DL against cursor outside the scroll region | bug | P2 | S | MED | — | DONE |
 | 009 | Investigate per-tab vs global pane zoom | bug | P3 | M | LOW | — | TODO |
 | 010 | Investigate poisoned-lock handling in launch failure-ack | bug | P3 | S | LOW | — | TODO |
 | 011 | Decide whether `docker_version` preflight needs a floor | bug | P3 | S | LOW | — | TODO |
