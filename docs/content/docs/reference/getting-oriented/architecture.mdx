@@ -88,7 +88,7 @@ Launch progress is emitted through <RepoFile path="crates/jackin-runtime/src/run
 | Stage label | Technical work behind the label |
 |---|---|
 | `identity` | Resolve the launch target, workspace/path label, role selector, requested agent, instance name, image tag, run diagnostics handle, and operator-visible loading title. |
-| `role` | Resolve the role source from config or command flags, acquire/update the role-repo cache, check out the requested ref/branch, and load the role manifest. |
+| `role` | Resolve the role source from config or command flags, acquire/update the role-repo cache, check out the requested ref/branch, and load the role manifest. Default-branch launch refreshes can reuse a fresh `.git/FETCH_HEAD` within `role_repo_refresh_ttl_seconds` (default `60`; `0` always fetches), while rebuilds, branch overrides, and background image refreshes still fetch. |
 | `credentials` | Inspect host-side agent/GitHub/1Password credential availability read-only, materialize per-instance auth state under jackin-owned state, and prepare the credential mounts/env that the container receives. Non-interactive operator-env reads start before image decision and are awaited before manifest prompts. |
 | `construct` | Verify or pull the shared construct base image (`projectjackin/construct:trixie`) that the derived role image builds from. |
 | `agent binaries` | Resolve and cache the declared agent runtime binaries plus the matching `jackin-capsule` binary under jackin-owned host cache state. If release metadata lookup fails after the metadata TTL expires, jackin❯ falls back to the newest executable cached agent binary and records a diagnostics warning; a cold cache still fails the launch. |

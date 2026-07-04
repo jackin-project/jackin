@@ -107,7 +107,9 @@ pub async fn prewarm_role_images(
         selector,
         role_git,
         &mut resolve_runner,
-        RepoResolveOptions::non_interactive().with_branch(branch_override),
+        RepoResolveOptions::non_interactive()
+            .with_branch(branch_override)
+            .with_refresh_ttl(std::time::Duration::ZERO),
         || Ok(false),
     )
     .await?;
@@ -894,7 +896,9 @@ async fn prewarm_agent_image(
         selector,
         role_git,
         &mut runner,
-        RepoResolveOptions::non_interactive().with_branch(branch_override),
+        RepoResolveOptions::non_interactive()
+            .with_branch(branch_override)
+            .with_refresh_ttl(std::time::Duration::ZERO),
         || Ok(false),
     )
     .await?;
@@ -935,7 +939,9 @@ async fn reuse_staleness_sentinel(
         selector,
         role_git,
         &mut runner,
-        RepoResolveOptions::non_interactive().with_branch(branch_override),
+        RepoResolveOptions::non_interactive()
+            .with_branch(branch_override)
+            .with_refresh_ttl(std::time::Duration::ZERO),
         || Ok(false),
     )
     .await?;
@@ -1270,7 +1276,9 @@ async fn prewarm_sibling_image(
         selector,
         role_git,
         &mut runner,
-        RepoResolveOptions::non_interactive().with_branch(branch_override),
+        RepoResolveOptions::non_interactive()
+            .with_branch(branch_override)
+            .with_refresh_ttl(std::time::Duration::ZERO),
         || Ok(false),
     )
     .await?;

@@ -21,7 +21,7 @@ avoidable serial network work.
 | 001  | Image decision purely local; network staleness → background sentinel | P1 | M | — | DONE |
 | 002  | Derived Dockerfile: jackin runtime payload after heavy layers | P1 | M | — | DONE |
 | 003  | Overlap independent launch stages (op://, git pull, sidecar ∥ build) | P1 | L | best after 001 | DONE |
-| 004  | Role-repo `git fetch` freshness TTL + slimmer cleanliness gate | P2 | M | — | TODO |
+| 004  | Role-repo `git fetch` freshness TTL + slimmer cleanliness gate | P2 | M | — | DONE |
 | 005  | Cached-binary-first provisioning; retry fast-fail; capsule dev cache | P2 | M | best after 001 | TODO |
 | 006  | Preserve layer cache on published-stale rebuilds; cache-bust ping-pong fix | P2 | M | rebase over 001 | TODO |
 | 007  | DinD sidecar auto-prewarm + pinned image | P2 | M | composes with 003 | TODO |

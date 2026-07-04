@@ -2,6 +2,7 @@
 
 use crate::instance::{InstanceManifest, InstanceStatus, RoleState};
 use jackin_config::AppConfig;
+use jackin_config::app_config::DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS;
 use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
@@ -585,7 +586,17 @@ pub(crate) async fn load_role_with(
         selector,
         &source.git,
         runner,
-        RepoResolveOptions::interactive(opts.debug).with_branch(opts.role_branch.as_deref()),
+        RepoResolveOptions::interactive(opts.debug)
+            .with_branch(opts.role_branch.as_deref())
+            .with_refresh_ttl(if opts.rebuild {
+                std::time::Duration::ZERO
+            } else {
+                std::time::Duration::from_secs(
+                    config
+                        .role_repo_refresh_ttl_seconds
+                        .unwrap_or(DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS),
+                )
+            }),
         &mut confirm_repo_removal,
     )
     .await;

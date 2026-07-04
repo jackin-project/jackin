@@ -53,6 +53,16 @@ for you, so you generally don't need to edit them by hand.
 
 Top-level `version` is the config schema version. jackin❯ writes `version = "v1alpha8"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
 
+### Role repo refresh
+
+Launch-time role repo refreshes are cached briefly to keep repeated loads from blocking on a network `git fetch` when the cached repo was just refreshed:
+
+```toml
+role_repo_refresh_ttl_seconds = 60
+```
+
+When the field is absent, jackin❯ uses `60` seconds. Set it to `0` to fetch on every launch, matching the pre-existing behavior. `jackin load --rebuild`, explicit branch overrides, and background image refresh/prewarm paths always fetch rather than using the TTL shortcut.
+
 ### Agent auth-forward settings
 
 `auth_forward` is configured per agent (`claude`, `codex`, `amp`, `kimi`, `opencode`) at three
