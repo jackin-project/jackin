@@ -23,7 +23,7 @@ avoidable serial network work.
 | 003  | Overlap independent launch stages (op://, git pull, sidecar ∥ build) | P1 | L | best after 001 | DONE |
 | 004  | Role-repo `git fetch` freshness TTL + slimmer cleanliness gate | P2 | M | — | DONE |
 | 005  | Cached-binary-first provisioning; retry fast-fail; capsule dev cache | P2 | M | best after 001 | DONE |
-| 006  | Preserve layer cache on published-stale rebuilds; cache-bust ping-pong fix | P2 | M | rebase over 001 | TODO |
+| 006  | Preserve layer cache on published-stale rebuilds; cache-bust ping-pong fix | P2 | M | rebase over 001 | BLOCKED — STOP: `CONSTRUCT_IMAGE` is mutable `projectjackin/construct:trixie`; fix needs digest check |
 | 007  | DinD sidecar auto-prewarm + pinned image | P2 | M | composes with 003 | TODO |
 | 008  | Launch round-trip diet (keep_awake gate, preflight probe, restore scan, polls…) | P3 | M | best after 003 | TODO |
 
