@@ -39,8 +39,8 @@ Creating a custom agent lets you define a specialized environment for a specific
    # Install Rust via mise
    RUN mise install rust@stable && mise use --global rust@stable
 
-   # Install additional Rust tools
-   RUN cargo install cargo-nextest cargo-watch
+   # Install additional Rust tools via mise's Cargo backend
+   RUN mise use --global cargo:cargo-nextest@0.9.136 cargo:cargo-watch@8.5.3
    ```
 
 3. **Validate locally**

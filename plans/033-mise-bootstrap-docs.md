@@ -1,4 +1,4 @@
-# Plan 033: Make `mise install` the single documented bootstrap; stop `cargo install cargo-nextest`
+# Plan 033: Make `mise install` the single documented bootstrap; stop ad hoc nextest installs
 
 > **Executor instructions**: Docs/DX consistency fix. Update `plans/README.md` when done.
 >
@@ -6,6 +6,7 @@
 
 ## Status
 
+- **Result**: DONE in PR #713 (`docs/advisor-improvement-plans`)
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW (docs only)
@@ -15,7 +16,7 @@
 
 ## Why this matters
 
-`TESTING.md` tells contributors to `cargo install cargo-nextest --locked` — which **directly contradicts**
+`TESTING.md` told contributors to install cargo-nextest directly with Cargo — which **directly contradicts**
 the repo's own hard rule ("All tools — in CI and locally — must be installed through mise. Never … cargo
 install", stated in `.github/AGENTS.md` and `crates/AGENTS.md`). `mise.toml` pins `cargo-nextest` to a
 specific version; a `cargo install` pulls an unpinned newer one that can diverge from CI's pinned runner.
@@ -24,7 +25,7 @@ hack all come from mise — so a contributor either gets a mismatched nextest, o
 
 ## Current state
 
-- `TESTING.md:5-9` — `cargo install cargo-nextest --locked`.
+- `TESTING.md:5-9` — direct cargo-nextest install.
 - `.github/AGENTS.md` / `crates/AGENTS.md:117` — "Tools installed via `mise`, not ad-hoc `cargo install`".
 - `mise.toml:9` — `cargo-nextest = "0.9.136"` (pinned).
 - No "run `mise install` first" in `README.md`/`CONTRIBUTING.md`/`TESTING.md`.
@@ -36,14 +37,14 @@ config itself; the nextest-only rule.
 
 ## Steps
 
-### Step 1: Replace the `cargo install` instruction
+### Step 1: Replace the direct cargo-nextest install instruction
 
-In `TESTING.md:5-9`, replace the `cargo install cargo-nextest --locked` block with:
+In `TESTING.md:5-9`, replace the direct cargo-nextest install block with:
 > Install the pinned toolchain and dev tools: `mise install` (installs `cargo-nextest`, `cargo-deny`,
 > `cargo-audit`, etc. at the versions pinned in `mise.toml`). Do **not** `cargo install` these — CI uses the
 > mise-pinned versions.
 
-**Verify**: `grep -n "cargo install cargo-nextest" TESTING.md` → no matches;
+**Verify**: grep for the old direct cargo-nextest install in `TESTING.md` → no matches;
 `grep -n "mise install" TESTING.md` → ≥1 match.
 
 ### Step 2: Add the first-clone bootstrap step
@@ -60,10 +61,22 @@ contributor to `cargo install` a mise-pinned tool.
 
 ## Done criteria
 
-- [ ] `grep -rn "cargo install cargo-nextest" .` → no matches (outside vendored `node_modules`/`target`)
-- [ ] `mise install` documented as the single bootstrap in `TESTING.md` + `CONTRIBUTING.md`
-- [ ] No remaining doc instructs `cargo install` of a mise-pinned tool
-- [ ] `plans/README.md` row updated
+- [x] direct cargo-nextest install instructions removed (outside vendored `node_modules`/`target`)
+- [x] `mise install` documented as the single bootstrap in `TESTING.md` + `CONTRIBUTING.md`
+- [x] No remaining doc instructs `cargo install` of a mise-pinned tool
+- [x] `plans/README.md` row updated
+
+## Completion notes
+
+- Replaced `TESTING.md` nextest installation with `mise install` and explained that mise pins the same tool
+  versions as CI.
+- Added first-clone `mise install` guidance to `CONTRIBUTING.md` and `README.md`.
+- Updated the role-authoring Dockerfile example to install additional Rust tools through mise's Cargo
+  backend instead of direct Cargo installs.
+- Verification:
+  - Repository grep for the old direct cargo-nextest install returns no matches outside this plan's
+    historical notes.
+  - `rg -n "mise install" README.md CONTRIBUTING.md TESTING.md` finds all three bootstrap docs.
 
 ## STOP conditions
 

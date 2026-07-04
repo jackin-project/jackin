@@ -5,8 +5,13 @@ Use [cargo-nextest](https://nexte.st) as test runner.
 Install:
 
 ```sh
-cargo install cargo-nextest --locked
+mise install
 ```
+
+This installs the pinned Rust toolchain and dev tools (`cargo-nextest`,
+`cargo-deny`, `cargo-audit`, and the rest of [mise.toml](mise.toml)) at the
+same versions CI uses. Do not install these tools with ad hoc `cargo install`
+commands.
 
 Run all tests:
 

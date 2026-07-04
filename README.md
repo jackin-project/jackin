@@ -20,7 +20,8 @@ brew tap jackin-project/tap
 brew install jackin@preview
 ```
 
-Or [build from source](https://jackin.tailrocks.com/getting-started/installation/) if you prefer.
+Or [build from source](https://jackin.tailrocks.com/getting-started/installation/) if you prefer. For source
+checkouts, run `mise install` first to install the pinned toolchain and dev tools.
 
 ## Quick Start
 

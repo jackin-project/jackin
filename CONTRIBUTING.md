@@ -13,8 +13,9 @@ Employer contributions: confirm authorization before submitting. Use personal em
 ## How to Submit
 
 1. Fork. Branch feature off `main`.
-2. Change. Sign every commit: `git commit -s`.
-3. Open PR describing problem solved. CI must pass.
+2. Run `mise install` from the repo root to install the pinned toolchain and dev tools.
+3. Change. Sign every commit: `git commit -s`.
+4. Open PR describing problem solved. CI must pass.
 
 ## Branching
 
