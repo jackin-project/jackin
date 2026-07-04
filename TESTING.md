@@ -43,7 +43,13 @@ In PR checkouts, run `jackin-dev pr sync <PR_NUMBER>` and source
 `eval "$(cargo run --bin build-jackin-capsule -- --export)"` before the
 Docker-backed smoke command.
 
-Never `cargo test` — always `cargo nextest run`.
+Never `cargo test` for normal Rust tests — always `cargo nextest run`.
+The one sanctioned `cargo test` invocation is doctests, which nextest does
+not run:
+
+```sh
+cargo test --doc --workspace --locked
+```
 
 ## Recording capsule render-conformance fixtures
 

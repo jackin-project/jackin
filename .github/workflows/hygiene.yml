@@ -68,7 +68,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "cargo-binstall rust cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack"
+          install_args: "cargo-binstall rust cargo:cargo-deny cargo:cargo-fuzz cargo:cargo-hack shellcheck"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -84,6 +84,8 @@ jobs:
           # reruns skip recompiling unchanged dependencies.
       - run: cargo deny check advisories
       - run: cargo hack check --workspace --feature-powerset --all-targets --locked
+      - run: cargo test --doc --workspace --locked
+      - run: shellcheck docker/runtime/entrypoint.sh docker/runtime/agent-status/hooks/*/report-hook.sh scripts/*.sh
       - name: Long jackin-term fuzz run
         run: |
           cd crates/jackin-term
@@ -111,7 +113,7 @@ jobs:
         with:
           version: "2026.6.11"
           cache_key_prefix: "mise-v2"
-          install_args: "rust"
+          install_args: "cargo-binstall rust cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - id: cargo-registry-cache
         uses: ./.github/actions/cache-cargo-registry
@@ -122,4 +124,4 @@ jobs:
           cache-workspace-crates: "true"
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
       - run: cargo build --release --locked
-      - run: cargo test --workspace --locked
+      - run: cargo nextest run --workspace --locked

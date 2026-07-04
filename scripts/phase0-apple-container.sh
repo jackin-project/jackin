@@ -57,6 +57,7 @@ skip() {
     echo "- [-] SKIP: $1" >> "$RESULTS_FILE"
 }
 
+# shellcheck disable=SC2329 # invoked by the EXIT trap below
 cleanup() {
     container stop "$TEST_CONTAINER" 2>/dev/null || true
     container rm   "$TEST_CONTAINER" 2>/dev/null || true
@@ -301,7 +302,7 @@ container run -d --name "${TEST_CONTAINER}-timing" \
     /jackin/runtime/jackin-capsule 2>/dev/null || true
 
 SOCKET_READY=0
-for i in $(seq 1 120); do
+for _ in $(seq 1 120); do
     if container exec "${TEST_CONTAINER}-timing" \
         sh -c 'test -S /jackin/run/jackin.sock && /jackin/runtime/jackin-capsule status' \
         2>/dev/null; then

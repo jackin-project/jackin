@@ -71,11 +71,11 @@ holds except for the sanctioned doctest carve-out.
 
 ## Done criteria
 
-- [ ] Doctests run via an explicit, documented `cargo test --doc` step; `TESTING.md` reconciled
-- [ ] `hygiene.yml` no longer runs the forbidden bare `cargo test --workspace`
-- [ ] A `shellcheck` step covers the runtime/entrypoint + report-hook + scripts shell
-- [ ] `actionlint` (via mise) passes on the edited workflows, or YAML parses
-- [ ] `plans/README.md` row updated
+- [x] Doctests run via an explicit, documented `cargo test --doc` step; `TESTING.md` reconciled
+- [x] `hygiene.yml` no longer runs the forbidden bare `cargo test --workspace`
+- [x] A `shellcheck` step covers the runtime/entrypoint + report-hook + scripts shell
+- [x] `actionlint` (via mise) passes on the edited workflows, or YAML parses
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 
