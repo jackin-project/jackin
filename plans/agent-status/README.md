@@ -62,21 +62,21 @@ sync/pure, and moving 003/004/005/007 into a clean crate beats moving them twice
 009 semantic-authority spike (Claude Notification hook, Codex app-server)   [direction]
 ```
 
-| Plan | Title | Layer | Effort | Risk | Depends |
-|------|-------|-------|--------|------|---------|
-| 001 | One total tab-glyph vocabulary (4 states + unknown) | render | S | LOW | — |
-| 002 | Generic runtime/shell unwrap in agent identification | identify | M | MED | — |
-| 003 | Decouple `advance_status` from the biased I/O select | cadence | M | MED | 008 (test first) |
-| 004 | Uniform evidence freshness + wire the OSC-133 emitter | redundancy | M | MED | 008 |
-| 005 | Couple packs to reality (real goldens; fix version gating) | detection | M | MED | — |
-| 006 | Exhaustive agent↔detector coverage; grok pack; no silent-empty | detection | M | LOW | 005 |
-| 007 | Rewrite kimi/amp/opencode/claude pack matchers from real chrome | detection | M | MED | 002, 005 |
-| 008 | Testability seam: injectable `EvidenceSnapshot` + `/proc` double | tests | M | LOW | — |
-| 009 | Spike: promote Claude Notification hook + Codex app-server to authority | direction | L | MED | 008 |
-| 010 | Out-of-band signed pack updates (restyle = data push, not a release) | detection infra | M–L | MED | 011, 005 |
-| 011 | Extract an independent `jackin-agent-status` crate | architecture | L | MED | 008 |
+| Plan | Status | Title | Layer | Effort | Risk | Depends |
+|------|--------|-------|-------|--------|------|---------|
+| 001 | DONE | One total tab-glyph vocabulary (4 states + unknown) | render | S | LOW | — |
+| 002 | TODO | Generic runtime/shell unwrap in agent identification | identify | M | MED | — |
+| 003 | TODO | Decouple `advance_status` from the biased I/O select | cadence | M | MED | 008 (test first) |
+| 004 | TODO | Uniform evidence freshness + wire the OSC-133 emitter | redundancy | M | MED | 008 |
+| 005 | TODO | Couple packs to reality (real goldens; fix version gating) | detection | M | MED | — |
+| 006 | TODO | Exhaustive agent↔detector coverage; grok pack; no silent-empty | detection | M | LOW | 005 |
+| 007 | TODO | Rewrite kimi/amp/opencode/claude pack matchers from real chrome | detection | M | MED | 002, 005 |
+| 008 | TODO | Testability seam: injectable `EvidenceSnapshot` + `/proc` double | tests | M | LOW | — |
+| 009 | TODO | Spike: promote Claude Notification hook + Codex app-server to authority | direction | L | MED | 008 |
+| 010 | TODO | Out-of-band signed pack updates (restyle = data push, not a release) | detection infra | M–L | MED | 011, 005 |
+| 011 | TODO | Extract an independent `jackin-agent-status` crate | architecture | L | MED | 008 |
 
-Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` | `REJECTED`. All rows start `TODO`.
+Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` | `REJECTED`.
 
 ## Finding → plan traceability (every auditor finding mapped)
 
