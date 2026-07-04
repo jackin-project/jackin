@@ -575,6 +575,33 @@ fn network_enforcement_label_all_cases() {
     );
 }
 
+#[test]
+fn session_contract_reports_dind_inner_egress_partial_enforcement() {
+    let grants = EffectiveGrants {
+        network: NetworkGrant::Allowlist,
+        dind: DindGrant::Rootless,
+        ..profile_base_grants(DockerSecurityProfile::Standard)
+    };
+    let contract = format_session_contract(
+        DockerSecurityProfile::Standard,
+        "config",
+        &grants,
+        true,
+        "docker-default",
+        "v2",
+        "provisioned",
+        true,
+    );
+    assert!(
+        contract.contains("enforcement: partial (DinD inner containers bypass host iptables)"),
+        "{contract}"
+    );
+    assert!(
+        contract.contains("DinD sidecar has kernel access"),
+        "{contract}"
+    );
+}
+
 /// Implicit caps are also present when hardened profile (Allowlist) has config grants.
 /// `apply_implicit_grants` must fire even when `apply_grants` already ran.
 #[test]

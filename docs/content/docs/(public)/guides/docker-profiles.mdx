@@ -251,7 +251,7 @@ jackin load the-architect . --docker-profile hardened --debug
 
 - **Shared host kernel.** Containers share the host kernel. A kernel exploit can escape the container regardless of profile. microVM-based backends (tracked in the roadmap) are the path to stronger isolation.
 - **Writable workspace mounts.** Even under `locked` with read-only root, the workspace bind mounts are writable if the mount was configured as writable. The profile does not retroactively make mounts read-only.
-- **DinD with `standard`/`compat`.** When DinD is active, inner containers can bypass network allowlists (they have their own network path). Enforcement quality is `partial` and is reported in the launch summary and `--debug` output.
+- **DinD with allowlist networking.** When DinD is active, inner containers can bypass network allowlists because they have their own network path. Enforcement quality is `partial (DinD inner containers bypass host iptables)` and is reported in the launch summary, `--debug` session contract, and `JACKIN_NETWORK_ENFORCEMENT` inside the role container.
 - **Credential files inside the container.** Auth tokens copied into the container via `sync` mode are readable by the agent. A future release will add a telemetry note for `hardened`/`locked` profiles recommending `api_key` or `oauth_token` mode over `sync`; enforcement is not planned.
 
 For the full design rationale and phased implementation plan, see the [Docker Runtime Hardening Contract](/roadmap/docker-runtime-hardening-contract/) roadmap item.

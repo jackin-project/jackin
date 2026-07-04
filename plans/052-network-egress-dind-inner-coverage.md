@@ -12,6 +12,10 @@
 - **Depends on**: plan 043
 - **Category**: direction (DIRECTION-03)
 - **Planned at**: current PR branch, 2026-07-04
+- **Completed**: 2026-07-04 — DinD-inner egress is covered as a
+  repeatable residual-risk assertion: allowlist networking plus DinD reports
+  `partial (DinD inner containers bypass host iptables)` in the debug session
+  contract and role-container enforcement label.
 
 ## Why this matters
 
@@ -34,10 +38,10 @@ risk into tested, documented behavior.
 
 ## Done criteria
 
-- [ ] DinD-inner egress behavior is covered by a repeatable scenario.
-- [ ] Partial enforcement is asserted in launch/debug output.
-- [ ] Docs and roadmap state the residual risk plainly.
-- [ ] `plans/README.md` row updated.
+- [x] DinD-inner egress behavior is covered by a repeatable scenario.
+- [x] Partial enforcement is asserted in launch/debug output.
+- [x] Docs and roadmap state the residual risk plainly.
+- [x] `plans/README.md` row updated.
 
 ## Verification
 

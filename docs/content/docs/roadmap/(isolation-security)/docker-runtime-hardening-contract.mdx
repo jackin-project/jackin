@@ -15,7 +15,7 @@ Shipped pieces:
 - cgroup/AppArmor probes run before launch; cgroup v1 fails closed for `hardened`/`locked` where the promised resource enforcement cannot be delivered.
 - Egress allowlist enforcement is wired through `firewall-apply` and fails closed under `hardened`/`locked` if the firewall cannot install the policy.
 - `locked` uses a Docker-internal role network.
-- DinD is tier-aware: `none`, `rootless`, and `privileged` are selectable; rootless uses `docker:dind-rootless`, fails closed where cgroup v2 is required, and is the recommended explicit grant for Docker workflows on cgroup v2.
+- DinD is tier-aware: `none`, `rootless`, and `privileged` are selectable; rootless uses `docker:dind-rootless`, fails closed where cgroup v2 is required, and is the recommended explicit grant for Docker workflows on cgroup v2. When DinD and allowlist networking are both active, the launch contract reports partial enforcement because inner containers bypass the role-container firewall.
 - The session contract and compact/debug telemetry report the effective profile decisions before launch.
 - `cargo xtask profile-matrix standard` records the default-flip compatibility matrix; the local cgroup-v2 run passed with expected rejects for runtime package installation without sudo and Docker workflows without DinD.
 - `standard` is the compiled-in default. `compat` remains available through CLI/config/workspace/role selection for legacy privileged DinD, standing sudo, or resource-unlimited workflows.
@@ -39,7 +39,7 @@ The remaining dependency order is:
 1. Keep the `standard` matrix green as new built-in roles and agent workflows are added.
 2. Continue the independent credential env-only posture work for `hardened`/`locked`.
 
-Parallel hardening tracks remain independent: host.sock auth is already implemented for Linux peer credentials, network-egress still needs DinD-inner coverage, signed releases still need end-to-end local verification, and credential env-only posture remains coordinated with the credential-exposure research.
+Parallel hardening tracks remain independent: host.sock auth is already implemented for Linux peer credentials, DinD-inner egress residual risk is documented and tested as partial enforcement, signed releases still need end-to-end local verification, and credential env-only posture remains coordinated with the credential-exposure research.
 
 ## Remaining work
 
@@ -67,7 +67,7 @@ Rootless DinD default research is closed for this track: keep `standard` default
 - <RepoFile path="plans/049-standard-compatibility-matrix.md" /> — completed default-flip evidence gate.
 - <RepoFile path="plans/050-standard-default-flip.md" /> — completed compiled-default flip.
 - <RepoFile path="plans/051-rootless-dind-default-research.md" /> — completed rootless DinD default decision.
-- <RepoFile path="plans/052-network-egress-dind-inner-coverage.md" /> — DinD-inner egress coverage.
+- <RepoFile path="plans/052-network-egress-dind-inner-coverage.md" /> — completed DinD-inner egress residual-risk coverage.
 - <RepoFile path="plans/053-signed-release-e2e-verification.md" /> — signed-release verification track.
 
 ## Related roadmap items
