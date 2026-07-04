@@ -158,7 +158,7 @@ When you load an agent, jackin❯ doesn't use the construct directly. It generat
 The volatile runtime payload is intentionally late in the Dockerfile. A jackin❯ version bump changes `jackin-capsule`, so placing that COPY block after agent installs, plugin installs, and the default-home snapshot means a jackin❯ upgrade rebuilds only the cheap tail layers instead of invalidating the expensive agent setup layers.
 
 <Aside type="note">
-jackin❯ tags derived images per role commit. Warm launches inspect recipe labels first; if the role source, construct/base image, runtime recipe, supported-agent set, `jackin-capsule`, hooks, Claude plugin recipe, host identity strategy, and host UID still match, launch reuses the local image and skips binary prep, build-context creation, GitHub build-token lookup, `docker build`, and the selected-agent version probe. Passing `--rebuild` forces a fresh derived image.
+jackin❯ tags derived images per role commit. Warm launches inspect recipe labels first; if the role source, construct/base image, runtime recipe, supported-agent set, `jackin-capsule`, hooks, Claude plugin recipe, host identity strategy, and host UID still match, launch reuses the local image and skips binary prep, build-context creation, GitHub build-token lookup, `docker build`, and the selected-agent version probe. Published-image lag falls back to a local role-base build while preserving Docker layer cache; passing `--rebuild` is the explicit full-refresh path.
 </Aside>
 ## Extending the construct
 

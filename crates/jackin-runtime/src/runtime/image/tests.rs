@@ -888,6 +888,26 @@ fn cache_bust_policy_preserves_stored_value_for_published_stale() {
 }
 
 #[test]
+fn cache_bust_policy_mints_for_explicit_rebuild() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (_, validated_repo) = validated_test_repo(&paths, &selector);
+    let image = image_name(&selector, Some("abc123"));
+    version_check::store_cache_bust(&paths, &image, "stored-bust");
+
+    let mint = should_mint_fresh_cache_bust(true, ImageInvalidationReason::ExplicitRebuild);
+    let value = cache_bust_value_for_build(&paths, &image, &validated_repo.manifest, mint).unwrap();
+
+    assert!(mint);
+    assert_ne!(value, "stored-bust");
+    assert_eq!(
+        version_check::stored_cache_bust(&paths, &image).as_deref(),
+        Some(value.as_str())
+    );
+}
+
+#[test]
 fn cache_bust_policy_mints_for_agent_version_refresh() {
     let temp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
