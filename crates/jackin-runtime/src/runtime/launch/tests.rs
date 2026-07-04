@@ -1863,6 +1863,13 @@ fn dind_env_from_run_cmd(run_cmd: &str) -> String {
         .to_owned()
 }
 
+fn compat_dind_load_options() -> LoadOptions {
+    LoadOptions {
+        docker_profile: Some(crate::runtime::docker_profile::DockerSecurityProfile::Compat),
+        ..LoadOptions::default()
+    }
+}
+
 #[test]
 fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
     let passthrough = host_runtime_passthrough_env([
@@ -5467,7 +5474,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -5552,7 +5559,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -5673,7 +5680,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -5791,7 +5798,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
