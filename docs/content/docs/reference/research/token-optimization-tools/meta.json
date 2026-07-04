@@ -18,6 +18,13 @@
     "13-reuse-surfaces-and-deltas",
     "14-caveman-ecosystem",
     "15-verification-pass-and-extended-matrix",
-    "16-global-comparison"
+    "16-global-comparison",
+    "51-code-intelligence-tools",
+    "52-qdrant-and-vector-databases",
+    "53-headroom-and-context-compression",
+    "54-context-compression-literature-and-market",
+    "55-token-observability-and-visualization",
+    "56-rtk-and-write-time-observation-compression",
+    "57-sem-and-mq-structural-and-markdown-retrieval"
   ]
 }

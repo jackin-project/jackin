@@ -67,7 +67,7 @@ Mechanically, caveman is a Claude Code **output-style** plus two hooks — so ha
 
 ## (e) Subscriber economics — tasks-per-cap ranking
 
-For a Max-plan subscriber, dollars below the cap are sunk; the objective is **tasks-per-cap** — how far each tool stretches the 5-hour window (dossier [chapter 41](/reference/research/token-optimization/41-subscription-and-quota-economics/)). This *re-orders* the $-per-task recommendation.
+For a Max-plan subscriber, dollars below the cap are sunk; the objective is **tasks-per-cap** — how far each tool stretches the 5-hour window (dossier [chapter 41](/reference/research/token-optimization-techniques/41-subscription-and-quota-economics/)). This *re-orders* the $-per-task recommendation.
 
 - The window fills with **input volume** — and [page 10](/reference/research/token-optimization-tools/10-first-party-measurements/) measured 94% of token volume here is cache-read. Reducing what gets written (and thus later re-read) extends the window; reducing output (caveman's target, 0.9% of volume) barely moves it.
 - So for window extension: **headroom ≈ lean-ctx (broad input) ≳ RTK (Bash input) ≫ caveman (output)** — the inverse of the $-per-task lean stack. lean-ctx's ~13-token cache-handle re-reads directly cut re-read volume, the dominant occupancy cost, so it is as strong a window-extender as headroom (and stronger on code-read-heavy work). The community "30 min → 3 hr session" headline is a tasks-per-cap/occupancy win, not a dollar cut, and it is driven by the input tools, not caveman.

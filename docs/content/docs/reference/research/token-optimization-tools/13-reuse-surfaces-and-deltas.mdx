@@ -4,7 +4,7 @@ title: "13 — Reuse surfaces and deltas (2026-07-03 source sweep)"
 
 # 13 — Reuse surfaces and deltas (2026-07-03 source sweep)
 
-This page records the 2026-07-03 re-sweep of the hub's four tools — fresh clones, registry checks, release deltas since the 06-15/06-18/06-20 snapshots — through a new lens the hub had not applied: **the Rust reuse surface**. The motivating question comes from the jackin❯ side: instead of *running* these tools in a container, which of their mechanisms can be **embedded natively** (crate dependency, vendored corpus, or ported kernel) into one engine? The resulting product design lives in the [jackin Context Engine spec](/reference/research/jackin-context-engine/); two tools new to the research (sem, mq) are covered in [dossier file 57](/reference/research/token-optimization/57-sem-and-mq-structural-and-markdown-retrieval/). Everything below is source-verified with the same T1–T4 discipline; corrections to earlier hub pages are consolidated at the end.
+This page records the 2026-07-03 re-sweep of the hub's four tools — fresh clones, registry checks, release deltas since the 06-15/06-18/06-20 snapshots — through a new lens the hub had not applied: **the Rust reuse surface**. The motivating question comes from the jackin❯ side: instead of *running* these tools in a container, which of their mechanisms can be **embedded natively** (crate dependency, vendored corpus, or ported kernel) into one engine? The resulting product design lives in the [jackin Context Engine spec](/reference/research/jackin-context-engine/); two tools new to the research (sem, mq) are covered in [dossier file 57](/reference/research/token-optimization-tools/57-sem-and-mq-structural-and-markdown-retrieval/). Everything below is source-verified with the same T1–T4 discipline; corrections to earlier hub pages are consolidated at the end.
 
 ## TL;DR
 
@@ -61,4 +61,4 @@ Every row-2 subsystem disappears under a runtime that composes capsule config at
 | rtk crates.io squat; invalid SPDX; rtk-registry/mcp-rtk third-party crates | crates.io API, 2026-07-03 |
 | headroom org move, versions, REALIGNMENT status, live-zone/CCR internals, ML retreat, bug classes | clone @ `c75ebde` 2026-07-02; PyPI/npm 0.28.0; HF kompress-v2 pages (2026-07-03) |
 | lean-ctx 3.8.12–3.8.18 deltas, tool-surface mechanics, tokbench R1, kernel map | clone @ `a80350da` 2026-07-03; CHANGELOG; crates.io `lean-ctx` 3.8.18 |
-| sem/mq findings referenced | [dossier 57](/reference/research/token-optimization/57-sem-and-mq-structural-and-markdown-retrieval/) |
+| sem/mq findings referenced | [dossier 57](/reference/research/token-optimization-tools/57-sem-and-mq-structural-and-markdown-retrieval/) |

@@ -1,5 +1,5 @@
 {
-  "title": "Token Optimization Research",
+  "title": "Token Optimization Techniques",
   "defaultOpen": false,
   "pages": [
     "index",
@@ -32,13 +32,6 @@
     "47-meta-cost-governance-and-online-quality",
     "48-extension-frontier",
     "49-extension-stacks-and-verdict",
-    "51-code-intelligence-tools",
-    "52-qdrant-and-vector-databases",
-    "53-headroom-and-context-compression",
-    "54-context-compression-literature-and-market",
-    "55-token-observability-and-visualization",
-    "56-rtk-and-write-time-observation-compression",
-    "57-sem-and-mq-structural-and-markdown-retrieval",
     "tools"
   ]
 }
