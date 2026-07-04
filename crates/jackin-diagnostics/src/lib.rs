@@ -52,6 +52,9 @@ pub use terminal::{
     set_host_screen_owned, set_rich_surface_active, set_terminal_title, shorten_home,
 };
 
+#[cfg(test)]
+pub(crate) static DIAGNOSTICS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Verbose-trace helper for `--debug` runs. No-op when the flag is off.
 ///
 /// `category` is a short tag (`isolation`, `worktree`, etc.) that keeps shared

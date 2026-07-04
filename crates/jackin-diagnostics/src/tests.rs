@@ -1,7 +1,6 @@
 //! Tests for `jackin-diagnostics`.
 
 use std::fs;
-use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use jackin_core::JackinPaths;
@@ -17,11 +16,9 @@ use crate::terminal::{
     host_screen_owned, rich_surface_active, set_host_screen_owned, set_rich_surface_active,
 };
 use crate::{
-    begin_debug_buffering, emit_compact_line, emit_debug_line, end_debug_buffering,
-    format_debug_line, init_tracing, is_debug_mode,
+    DIAGNOSTICS_TEST_LOCK, begin_debug_buffering, emit_compact_line, emit_debug_line,
+    end_debug_buffering, format_debug_line, init_tracing, is_debug_mode,
 };
-
-static DEBUG_BUFFER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn init_test_tracing() {
     drop(init_tracing(false, "jk-run-test00"));
@@ -454,7 +451,7 @@ fn debug_mode_default_is_off() {
 #[test]
 fn debug_lines_buffer_while_tui_is_active() {
     use std::sync::atomic::Ordering;
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
@@ -472,7 +469,7 @@ fn debug_lines_buffer_while_tui_is_active() {
 #[test]
 fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
     use std::sync::atomic::Ordering;
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
@@ -497,7 +494,7 @@ fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
 #[test]
 fn debug_lines_tee_only_before_rich_terminal_ownership() {
     use std::sync::atomic::Ordering;
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
@@ -523,7 +520,7 @@ fn debug_lines_tee_only_before_rich_terminal_ownership() {
 #[test]
 fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
     init_test_tracing();
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     set_rich_surface_active(false);
@@ -547,7 +544,7 @@ fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
 #[test]
 fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
     init_test_tracing();
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     set_rich_surface_active(false);

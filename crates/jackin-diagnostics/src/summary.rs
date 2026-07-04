@@ -398,3 +398,6 @@ fn parse_prewarmed_dind_adoption_detail(detail: Option<&str>) -> ParsedPrewarmed
     }
     parsed
 }
+
+#[cfg(test)]
+mod tests;

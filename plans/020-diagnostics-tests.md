@@ -11,6 +11,7 @@
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: tests
+- **Completed at**: PR #713
 - **Planned at**: commit `46511939d`, 2026-07-03
 
 ## Why this matters
@@ -61,10 +62,10 @@ formatting regression fails a test rather than shipping.
 
 ## Done criteria
 
-- [ ] `summary.rs`, `operator_notice.rs`, `debug_log.rs` each have a sibling `tests.rs` with ≥1 meaningful test
-- [ ] Tests assert on real rendered output, not `assert!(true)` placeholders
-- [ ] `cargo nextest run -p jackin-diagnostics` green; crate lines/test ratio improved
-- [ ] `plans/README.md` row updated
+- [x] `summary.rs`, `operator_notice.rs`, `debug_log.rs` each have a sibling `tests.rs` with ≥1 meaningful test
+- [x] Tests assert on real rendered output, not `assert!(true)` placeholders
+- [x] `cargo nextest run -p jackin-diagnostics` green; crate lines/test ratio improved
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 

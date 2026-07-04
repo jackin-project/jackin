@@ -45,7 +45,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 017 | Cover the `jackin-env` secret-resolution path + widen e2e filter | tests | P1 | M | HIGH | — | DONE |
 | 018 | Commit real PTY render-conformance fixtures + fix harness doc drift | tests | P2 | M | HIGH | — | DONE |
 | 019 | Close the verification-baseline blind spots (doctests, shell) | tests/dx | P2 | S | HIGH | — | DONE |
-| 020 | Characterization tests for `jackin-diagnostics` | tests | P2 | M | HIGH | — | TODO |
+| 020 | Characterization tests for `jackin-diagnostics` | tests | P2 | M | HIGH | — | DONE |
 | 021 | De-flake the wall-clock-sleep tests | tests | P2 | M | MED | — | TODO |
 | 022 | Investigate the cost of `jackin-console`'s 11-param generics | tech-debt | P3 | L | MED | — | TODO |
 | 023 | Decompose `jackin-console` by responsibility, re-tighten size cap | tech-debt | P3 | L | HIGH | 022 | TODO |
