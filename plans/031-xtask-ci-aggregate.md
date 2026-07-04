@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Result**: DONE in PR #713 (`docs/advisor-improvement-plans`)
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW (additive tooling)
@@ -79,12 +80,31 @@ prerequisites. Add a `mise.toml` `[tasks.ci]` that calls `cargo xtask ci`.
 
 ## Done criteria
 
-- [ ] `cargo xtask ci --fast` runs the full non-e2e gate and matches CI's pass/fail on a clean tree
-- [ ] `cargo xtask ci --e2e` runs the capsule-export pre-step + docker-e2e (or fails early if Docker is down)
-- [ ] `CONTRIBUTING.md` points at the single command; docker-e2e pre-steps documented
-- [ ] `mise.toml` has a `ci` task
-- [ ] `cargo clippy -p jackin-xtask -- -D warnings` exits 0
-- [ ] `plans/README.md` row updated
+- [x] `cargo xtask ci --fast` runs the full non-e2e gate and matches CI's pass/fail on a clean tree
+- [x] `cargo xtask ci --e2e` runs the capsule-export pre-step + docker-e2e (or fails early if Docker is down)
+- [x] `CONTRIBUTING.md` points at the single command; docker-e2e pre-steps documented
+- [x] `mise.toml` has a `ci` task
+- [x] `cargo clippy -p jackin-xtask -- -D warnings` exits 0
+- [x] `plans/README.md` row updated
+
+## Completion notes
+
+- Added `cargo xtask ci` with collect-all failure reporting, `--fast`, `--e2e`, and `--base`.
+- Wired the non-e2e aggregate to actionlint, fmt, clippy, check, nextest, audit, deny, schema-check, strict
+  xtask lint, cargo-shear, MSRV, and feature-powerset outside `--fast`.
+- Wired `--e2e` to check Docker, run `build-jackin-capsule --export`, parse the exported
+  `JACKIN_CAPSULE_BIN`, and invoke the `docker-e2e` nextest profile with that environment.
+- Updated `CONTRIBUTING.md` and `mise.toml` so `cargo xtask ci` / `mise run ci` are the documented local gate.
+- Raised the workspace `rust-version` to `1.95` because `sysinfo 0.39.5` already requires it; the new MSRV
+  gate exposed the stale declaration.
+- Moved `crates/jackin-runtime/src/runtime/backend.rs` inline tests into `backend/tests.rs` because the new
+  strict local gate exposed a pre-existing test-layout violation.
+- Verification: `mise exec -- cargo run -p jackin-xtask -- ci --fast` passed end-to-end, including the Rust
+  1.95 MSRV check. `mise exec -- cargo run -p jackin-xtask -- ci --fast --e2e` reached Docker preflight,
+  capsule export, and the docker-e2e nextest profile. The underlying local Docker e2e scenario did not
+  complete in this environment: the first aggregate attempt hit a transient missing linker object in the
+  `jackin` test binary; rerunning the exact docker-e2e profile linked successfully but the first existing
+  e2e test hung after a `docker run` failure. No Docker resources were left behind.
 
 ## STOP conditions
 

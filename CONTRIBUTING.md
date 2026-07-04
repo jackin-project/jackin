@@ -74,11 +74,17 @@ DCO fail on PR: fix first, before anything else.
 Run when PR ready to merge (not before every commit):
 
 ```sh
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo check --all-targets
-cargo nextest run --all-features
-cargo nextest run -p jackin --features e2e --profile docker-e2e
+cargo xtask ci
+# or
+mise run ci
 ```
+
+For a faster local pass that skips feature-powerset and Docker-backed smoke tests:
+
+```sh
+cargo xtask ci --fast
+```
+
+`cargo xtask ci --e2e` includes the Docker-backed lane. It first checks that Docker is running, builds and exports the local capsule binary, then runs `cargo nextest run -p jackin --features e2e --profile docker-e2e`. In PR checkouts, `jackin-dev pr sync <PR_NUMBER>` still prepares the isolated env and capsule export for manual smoke tests; source `$(jackin-dev pr path <PR_NUMBER>)/env.sh` before manual `jackin` commands.
 
 Fmt fail → `cargo fmt`, re-check. See [TESTING.md](TESTING.md).

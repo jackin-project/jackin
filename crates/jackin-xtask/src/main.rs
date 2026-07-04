@@ -17,6 +17,7 @@
 //! invokes rather than reimplementing in flag assembly.
 
 mod arch;
+mod ci;
 mod construct;
 mod docs;
 mod lint;
@@ -38,6 +39,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Run the local CI merge-readiness gate.
+    ///
+    /// Use as `cargo xtask ci --fast` for the non-e2e gate, or add `--e2e`
+    /// to include Docker-backed smoke tests.
+    Ci(ci::CiArgs),
     /// Construct base-image build and publish tasks.
     ///
     /// Use as `cargo xtask construct <subcommand>`.
@@ -123,6 +129,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Construct(cmd) => construct::run(cmd),
+        Command::Ci(args) => ci::run(args),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
         Command::Change(cmd) => docs::run_change(cmd),
