@@ -134,10 +134,14 @@ dind = "none"        # "none" | "rootless" | "privileged"
 ```toml
 [docker.grants]
 user = "agent"    # "agent" (default) | "root" | any image username
-sudo = false      # NOPASSWD:ALL sudo
+sudo = false      # passwordless sudo, provisioned only when granted
 
 # Validation error: user = "root" and sudo = true are mutually exclusive.
 ```
+
+When sudo is granted, jackin❯ provisions `/etc/sudoers.d/agent` after the
+container starts by executing the capsule helper as Docker root. The construct
+image does not bake a standing passwordless sudoers entry into the base layer.
 
 ### Filesystem grant
 

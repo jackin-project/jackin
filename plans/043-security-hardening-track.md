@@ -14,6 +14,33 @@
 - **Depends on**: plan 003 (host.sock auth is one item in this cluster)
 - **Category**: direction (DIRECTION-03)
 - **Planned at**: commit `46511939d`, 2026-07-03
+- **Completed at**: current PR branch, 2026-07-04
+- **Result**: DONE — the stale baked-`NOPASSWD:ALL` keystone is already resolved by WP-SUDO; remaining work is sequenced into plans 049-053.
+
+## Completion note
+
+This track drifted while the branch advanced. The planned keystone was a baked
+`agent ALL=(ALL) NOPASSWD:ALL` entry in `docker/construct/Dockerfile`, but the
+current tree no longer bakes that sudoers file. The construct installs the
+`sudo` package only; jackin❯ provisions `/etc/sudoers.d/agent` at runtime by
+executing the capsule helper as Docker root, and only when the effective
+profile/grants set `JACKIN_SUDO=1`.
+
+Current audit result:
+
+| Runtime privileged operation | Current mechanism | Resolution |
+|---|---|---|
+| jackin❯ runtime setup needing root inside the role container | Docker `exec --user root`, not in-container `sudo` | Already compatible with `no-new-privileges`; no setcap or baked sudoers needed |
+| Passwordless sudo for role-authored hooks or operator package installs | Runtime `sudo-provision` helper writes `/etc/sudoers.d/agent` only when `JACKIN_SUDO=1`; removes it otherwise | Keep behind explicit sudo grant / `compat`; roles that require runtime package installs declare the grant or `min_profile = "compat"` |
+| `standard` profile privileged escalation | Base grant is `sudo = false`; `no_new_privileges = true` while sudo is off | Already implemented; default flip waits on matrix and release note gates |
+| Rootless DinD | `dind = "rootless"` selects `docker:dind-rootless` and validates cgroup v2 | Implemented as opt-in; default posture remains research |
+
+No built-in jackin❯ runtime path currently requires full in-container sudo.
+The remaining order is: Tier-2 `standard` workload matrix → release-note/docs
+gate → `compat` to `standard` default flip → rootless DinD default research.
+Parallel tracks: host.sock auth is covered by plan 003; network-egress
+DinD-inner coverage is plan 052; signed-release end-to-end verification is plan
+053.
 
 ## Why this matters
 
@@ -28,7 +55,7 @@ an operator can trust by default — higher-value than any new feature at this s
 itself is a maintainer-decided tradeoff (not re-litigated here); the direction is finishing the audit that
 unblocks flipping it.**
 
-## Current state (the cluster — verify each)
+## Historical planned state (superseded by the completion note)
 
 - **Keystone — sudo audit**: `docker/construct/Dockerfile` (~line 113) grants `agent ALL=(ALL) NOPASSWD:ALL`,
   incompatible with `--security-opt no-new-privileges`. `TODO.md` "audit `NOPASSWD:ALL` sudo in base image"
@@ -71,13 +98,13 @@ with `no-new-privileges`).
 
 ## Done criteria
 
-- [ ] The cluster's dependency order is documented (row note + roadmap page)
-- [ ] The sudo audit is completed: a concrete list of every runtime `sudo` operation + a per-item resolution
+- [x] The cluster's dependency order is documented (row note + roadmap page)
+- [x] The sudo audit is completed: a concrete list of every runtime `sudo` operation + a per-item resolution
       (setcap / restructure / min_profile)
-- [ ] Per-item follow-up plans written as next-numbered `plans/NNN-*.md` files, each with its own verification
-- [ ] Roadmap `docker-runtime-hardening-contract` Status/Related-Files updated (docs gate)
-- [ ] `plans/README.md` row updated
-- [ ] (Confirms TODO.md's `TODO(docker-security-profile-*)` markers — coordinate with plan 036 which adds them)
+- [x] Per-item follow-up plans written as next-numbered `plans/NNN-*.md` files, each with its own verification
+- [x] Roadmap `docker-runtime-hardening-contract` Status/Related-Files updated (docs gate)
+- [x] `plans/README.md` row updated
+- [x] (Confirms TODO.md's `TODO(docker-security-profile-*)` markers — coordinate with plan 036 which adds them)
 
 ## STOP conditions
 

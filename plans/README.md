@@ -69,11 +69,16 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 040 | Update `PULL_REQUESTS.md` off the Astro/Starlight workflow | docs | P2 | S | HIGH | — | DONE |
 | 041 | Document `grok` agent + `backend` config across user surfaces | docs | P2 | S | HIGH | — | DONE |
 | 042 | Spike: scope the reactive-daemon program | direction | P3 | L | HIGH | — | DONE (design + daemon-spike prototype; follow-ups 047/048) |
-| 043 | Track: finish the security-hardening cluster (compat→standard) | direction | P2 | L | HIGH | 003 | TODO |
+| 043 | Track: finish the security-hardening cluster (compat→standard) | direction | P2 | L | HIGH | 003 | DONE (sudo audit resolved; follow-ups 049-053) |
 | 044 | Store pane zoom state per tab | bug | P3 | M | MED | 009 | TODO |
 | 045 | Prepare op-picker for a safe leaf-crate extraction | perf/tech-debt | P3 | M | MED | 015 | TODO |
 | 047 | Build the host-daemon lifecycle foundation | direction | P2 | M | MED | 042 | TODO |
 | 048 | Build the first production attention adapter | direction | P2 | M | MED | 047 | TODO |
+| 049 | Run the `standard` compatibility matrix | direction | P1 | M | HIGH | 043 | TODO |
+| 050 | Flip the compiled Docker default to `standard` | direction | P1 | S | HIGH | 049 | TODO |
+| 051 | Decide whether rootless DinD can become the `standard` default | direction | P2 | M | MED | 049 | TODO |
+| 052 | Cover network egress behavior for DinD inner containers | direction | P2 | M | MED | 043 | TODO |
+| 053 | Run signed-release end-to-end verification | direction | P2 | M | MED | 043 | TODO |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` (+reason) | `REJECTED` (+rationale).
 
@@ -107,7 +112,7 @@ Every raw finding ID emitted by the eight auditors, mapped to its plan. Nothing 
 | DX-05 (CLAUDE.md symlinks) | 034 | DOCS-04 (linkcheck coverage) | 038 |
 | DIRECTION-01 (backend abstraction) | 024 | DOCS-05 (root PLAN.md) | 039 |
 | DIRECTION-02 (reactive daemon) | 042, 047, 048 | DOCS-06 (PULL_REQUESTS Astro) | 040 |
-| DIRECTION-03 (hardening cluster) | 043 | DOCS-07 (grok/backend docs) | 041 |
+| DIRECTION-03 (hardening cluster) | 043, 049, 050, 051, 052, 053 | DOCS-07 (grok/backend docs) | 041 |
 | DIRECTION-04 (grok parity) | 041 | | |
 
 ## Dependency notes
@@ -149,8 +154,8 @@ candidates for a follow-up pass, not clean bills of health):
   `jackin-term/snapshot.rs` + `damage.rs`; capsule `firewall.rs`, `mcp_server.rs`, `sudo_provision.rs`,
   `exit_assess.rs`.
 - **Security**: `apple_container_client.rs` CLI arg construction; the full DinD sidecar launch path
-  (`launch_dind.rs`); `jackin-usage` turso schema internals — spot-checked only. `docker/construct/Dockerfile`
-  `NOPASSWD:ALL` treated as the documented deferred decision (see plan 043), not re-analyzed.
+  (`launch_dind.rs`); `jackin-usage` turso schema internals — spot-checked only. The historical
+  `docker/construct/Dockerfile` `NOPASSWD:ALL` concern was re-audited and retired in plan 043.
 - **Tests**: per-test assertion-quality of `jackin-console`'s ~1273 tests and the TUI widget suites (rough
   density scan only); whether all `insta` `.snap` files are still referenced.
 - **Deps/CI**: `preview.yml`/`release.yml`/`construct.yml`/`jackin-dev.yml` internals (only `ci.yml`,
