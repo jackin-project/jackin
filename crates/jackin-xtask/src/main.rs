@@ -25,6 +25,7 @@ mod lint;
 mod pr;
 mod profile_matrix;
 mod pty_fixture;
+mod release_verify;
 mod schema;
 mod test_layout;
 
@@ -111,6 +112,11 @@ enum Command {
     /// as gated evidence with their required host prerequisites.
     #[command(name = "profile-matrix")]
     ProfileMatrix(profile_matrix::ProfileMatrixArgs),
+    /// Verify a signed release archive and its published sidecars.
+    ///
+    /// Use as `cargo xtask release-verify <archive>.tar.gz`.
+    #[command(name = "release-verify")]
+    ReleaseVerify(release_verify::ReleaseVerifyArgs),
 }
 
 #[derive(Subcommand)]
@@ -153,6 +159,7 @@ fn main() -> ExitCode {
         Command::Roadmap(cmd) => docs::run_roadmap(cmd),
         Command::SchemaCheck(args) => schema::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
+        Command::ReleaseVerify(args) => release_verify::run(args),
         Command::Lint { command, strict } => match command {
             Some(LintCommand::Files(args)) => lint::run(args),
             Some(LintCommand::Tests(args)) => test_layout::run(args),

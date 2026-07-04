@@ -3135,8 +3135,10 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "clap",
+ "hex",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
  "toml",
 ]

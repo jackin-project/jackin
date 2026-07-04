@@ -12,6 +12,7 @@
 - **Depends on**: plan 043
 - **Category**: direction (DIRECTION-03)
 - **Planned at**: current PR branch, 2026-07-04
+- **Completed at**: current PR branch, 2026-07-04
 
 ## Why this matters
 
@@ -32,10 +33,31 @@ cluster called out that this path had not been exercised end to end.
 
 ## Done criteria
 
-- [ ] Release artifact verification is exercised end to end.
-- [ ] A tamper/mismatch case fails closed.
-- [ ] Docs tell operators how to verify artifacts.
-- [ ] `plans/README.md` row updated.
+- [x] Release artifact verification is exercised end to end.
+- [x] A tamper/mismatch case fails closed.
+- [x] Docs tell operators how to verify artifacts.
+- [x] `plans/README.md` row updated.
+
+## Result
+
+Added `cargo xtask release-verify <archive>.tar.gz`, which verifies the
+published SHA256 sidecar, cosign bundle identity/issuer policy, GitHub artifact
+attestation, and SBOM JSON. The command passed against
+`jackin-dev-v0.1.13` (`jackin-dev-0.1.13-aarch64-unknown-linux-gnu.tar.gz`,
+published 2026-07-02) on 2026-07-04.
+
+The fail-closed drill copied that archive, appended a byte, reused the original
+`.sha256` sidecar, and ran the digest-only tamper check:
+
+```sh
+mise exec -- cargo xtask release-verify \
+  --skip-signature \
+  --skip-attestation \
+  /tmp/tmp.dmMNA7biYw/tampered.tar.gz
+```
+
+The command rejected the archive with a SHA256 mismatch before signature or
+provenance checks could run.
 
 ## Verification
 

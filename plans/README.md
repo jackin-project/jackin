@@ -78,7 +78,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 050 | Flip the compiled Docker default to `standard` | direction | P1 | S | HIGH | 049 | DONE |
 | 051 | Decide whether rootless DinD can become the `standard` default | direction | P2 | M | MED | 049 | DONE |
 | 052 | Cover network egress behavior for DinD inner containers | direction | P2 | M | MED | 043 | DONE |
-| 053 | Run signed-release end-to-end verification | direction | P2 | M | MED | 043 | TODO |
+| 053 | Run signed-release end-to-end verification | direction | P2 | M | MED | 043 | DONE |
 | 054 | Extract the remaining op-picker state/input boundary | perf/tech-debt | P3 | M | MED | 015,045 | TODO |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` (+reason) | `REJECTED` (+rationale).
