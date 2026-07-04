@@ -39,6 +39,7 @@ pub struct OscEvidence {
     /// rule can never match progress that never happened.
     pub progress_raw: Option<String>,
     pub shell_state: Option<RawAgentState>,
+    pub shell_state_marked_at: Option<Instant>,
 }
 
 impl OscEvidence {
@@ -47,6 +48,8 @@ impl OscEvidence {
         self.progress_active = false;
         self.progress_cleared_at = None;
         self.progress_raw = None;
+        self.shell_state = None;
+        self.shell_state_marked_at = None;
     }
 }
 

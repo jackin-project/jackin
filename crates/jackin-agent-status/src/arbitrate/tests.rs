@@ -264,11 +264,58 @@ fn osc_shell_marker_is_shell_integration_evidence() {
     let now = Instant::now();
     let mut snapshot = base_snapshot();
     snapshot.osc.shell_state = Some(RawAgentState::Idle);
+    snapshot.osc.shell_state_marked_at = Some(now);
 
     let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
     assert_eq!(result.raw_state, RawAgentState::Idle);
     assert_eq!(result.winner, EvidenceWinner::StrongVisualOrOsc);
+    assert!(result.shell_integration);
+}
+
+#[test]
+fn stale_osc_shell_marker_expires() {
+    let now = Instant::now();
+    let mut snapshot = base_snapshot();
+    snapshot.osc.shell_state = Some(RawAgentState::Idle);
+    snapshot.osc.shell_state_marked_at = Some(
+        now.checked_sub(OSC_SHELL_TTL + Duration::from_secs(1))
+            .unwrap(),
+    );
+
+    let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+    assert_eq!(result.raw_state, RawAgentState::Unknown);
+    assert_eq!(result.winner, EvidenceWinner::Unknown);
+    assert!(!result.shell_integration);
+}
+
+#[test]
+fn osc_shell_marker_without_timestamp_is_not_evidence() {
+    let now = Instant::now();
+    let mut snapshot = base_snapshot();
+    snapshot.osc.shell_state = Some(RawAgentState::Idle);
+
+    let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+    assert_eq!(result.raw_state, RawAgentState::Unknown);
+    assert_eq!(result.winner, EvidenceWinner::Unknown);
+    assert!(!result.shell_integration);
+}
+
+#[test]
+fn strong_screen_blocker_overrides_fresh_shell_marker() {
+    let now = Instant::now();
+    let mut snapshot = base_snapshot();
+    snapshot.osc.shell_state = Some(RawAgentState::Idle);
+    snapshot.osc.shell_state_marked_at = Some(now);
+    snapshot.screen.state = Some(RawAgentState::Blocked);
+    snapshot.screen.strong = true;
+
+    let result = arbitrate(&snapshot, RawAgentState::Working, now);
+
+    assert_eq!(result.raw_state, RawAgentState::Blocked);
+    assert_eq!(result.winner, EvidenceWinner::Blocked);
     assert!(result.shell_integration);
 }
 

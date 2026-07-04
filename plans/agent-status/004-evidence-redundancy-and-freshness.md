@@ -13,6 +13,7 @@
 - **Depends on**: 008
 - **Category**: bug (compute redundancy)
 - **Planned at**: commit `5d3661cff`, 2026-07-03
+- **Implementation status**: DONE in PR 714 (`OscEvidence.shell_state` is timestamped, TTL-bounded, and cleared with agent OSC signals; the construct zsh config emits OSC-133 prompt/command marks; optional physics-idle was deferred)
 
 ## Why this matters
 
@@ -90,12 +91,12 @@ risks false-idle during a long model "think", scope it conservatively or defer (
 
 ## Done criteria
 
-- [ ] `shell_state` is TTL-bounded and reset in `clear_agent_signals`; a stale mark can't pin state (test proves)
-- [ ] OSC-133 emitter present in `docker/construct/zshrc`; `scan_osc133` consumes it; expiry works
-- [ ] Precedence: a strong on-screen blocked match is not overridden by a stale prompt mark (test proves)
-- [ ] (If Step 3) physics can author a debounced Weak idle for identity-only agents without flicker
-- [ ] `cargo nextest run -p jackin-capsule` green; clippy clean
-- [ ] `plans/agent-status/README.md` row updated
+- [x] `shell_state` is TTL-bounded and reset in `clear_agent_signals`; a stale mark can't pin state (test proves)
+- [x] OSC-133 emitter present in `docker/construct/zshrc`; `scan_osc133` consumes it; expiry works
+- [x] Precedence: a strong on-screen blocked match is not overridden by a stale prompt mark (test proves)
+- [x] (If Step 3) physics-idle not shipped; deferred to avoid false idle during long model thinking
+- [x] `cargo nextest run -p jackin-capsule` green; clippy clean
+- [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions
 

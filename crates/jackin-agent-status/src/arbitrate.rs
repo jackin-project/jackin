@@ -9,7 +9,7 @@ use crate::evidence::{
     AuthorityEvidence, AuthorityGrade, EvidenceNote, EvidenceSnapshot, EvidenceSummary,
     EvidenceWinner, RawAgentState,
 };
-use crate::policy::AUTHORITY_TTL;
+use crate::policy::{AUTHORITY_TTL, OSC_SHELL_TTL};
 use jackin_protocol::control::AgentState;
 
 pub fn arbitrate(
@@ -17,6 +17,13 @@ pub fn arbitrate(
     previous_raw: RawAgentState,
     now: Instant,
 ) -> EvidenceSummary {
+    let fresh_shell_state = snapshot.osc.shell_state.and_then(|shell_state| {
+        snapshot
+            .osc
+            .shell_state_marked_at
+            .filter(|marked_at| now.duration_since(*marked_at) <= OSC_SHELL_TTL)
+            .map(|_| shell_state)
+    });
     let mut summary = EvidenceSummary {
         visible_blocker: snapshot.screen.state == Some(RawAgentState::Blocked),
         visible_idle: snapshot.screen.state == Some(RawAgentState::Idle),
@@ -33,7 +40,7 @@ pub fn arbitrate(
         physics_sampled: snapshot.process.physics_sampled,
         subagents_active: snapshot.subagents_active,
         osc_progress_active: snapshot.osc.progress_active,
-        shell_integration: snapshot.osc.shell_state.is_some(),
+        shell_integration: fresh_shell_state.is_some(),
         ..EvidenceSummary::default()
     };
     if let Some(authority) = &snapshot.authority {
@@ -124,7 +131,7 @@ pub fn arbitrate(
         );
     }
 
-    if let Some(shell_state) = snapshot.osc.shell_state {
+    if let Some(shell_state) = fresh_shell_state {
         return finish(
             shell_state,
             AgentStatusConfidence::Strong,

@@ -162,9 +162,8 @@ pub struct Session {
     /// agent was actually in front).
     saw_agent_foreground: bool,
     /// Terminal-protocol evidence captured from the PTY parse and fed into the
-    /// evidence snapshot. The agent-authored signals (title, OSC 9;4 progress)
-    /// are wiped when the foreground is no longer the agent; the shell-authored
-    /// OSC 133 `shell_state` persists (it belongs to the shell, not the agent).
+    /// evidence snapshot. OSC signals are TTL-bounded or cleared with authority
+    /// so a stale terminal edge cannot pin session state indefinitely.
     osc: crate::agent_status::evidence::OscEvidence,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
@@ -1197,6 +1196,7 @@ impl Session {
                 OscShellMark::PromptStart => None,
             };
             if let Some(state) = shell_state {
+                self.osc.shell_state_marked_at = Some(std::time::Instant::now());
                 self.osc.shell_state = Some(state);
             }
         }

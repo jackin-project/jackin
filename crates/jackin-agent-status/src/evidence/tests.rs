@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn clearing_agent_osc_signals_preserves_shell_state() {
+fn clearing_agent_osc_signals_resets_shell_state() {
     let now = Instant::now();
     let mut evidence = OscEvidence {
         title: Some("Codex working".to_owned()),
@@ -9,6 +9,7 @@ fn clearing_agent_osc_signals_preserves_shell_state() {
         progress_cleared_at: Some(now),
         progress_raw: Some("4;1".to_owned()),
         shell_state: Some(RawAgentState::Idle),
+        shell_state_marked_at: Some(now),
     };
 
     evidence.clear_agent_signals();
@@ -17,6 +18,6 @@ fn clearing_agent_osc_signals_preserves_shell_state() {
     assert!(!evidence.progress_active);
     assert_eq!(evidence.progress_cleared_at, None);
     assert_eq!(evidence.progress_raw, None);
-    // Shell integration state survives the agent-signal clear.
-    assert_eq!(evidence.shell_state, Some(RawAgentState::Idle));
+    assert_eq!(evidence.shell_state, None);
+    assert_eq!(evidence.shell_state_marked_at, None);
 }

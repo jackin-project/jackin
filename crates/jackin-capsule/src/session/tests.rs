@@ -926,6 +926,7 @@ fn osc133_marks_set_shell_state() {
         session.osc_evidence().shell_state,
         Some(RawAgentState::Working)
     );
+    assert!(session.osc_evidence().shell_state_marked_at.is_some());
     session.feed_pty(b"\x1b]133;B\x07");
     assert_eq!(
         session.osc_evidence().shell_state,

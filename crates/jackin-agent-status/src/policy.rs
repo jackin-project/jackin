@@ -6,6 +6,7 @@ use crate::evidence::{EvidenceNote, EvidenceSummary, EvidenceWinner, RawAgentSta
 use jackin_protocol::control::AgentState;
 
 pub const AUTHORITY_TTL: Duration = Duration::from_secs(30);
+pub const OSC_SHELL_TTL: Duration = AUTHORITY_TTL;
 pub const WATCHDOG_QUIET: Duration = Duration::from_secs(10);
 pub const IDLE_CONFIRMATIONS: u8 = 3;
 /// Wall-clock cap on the inferred working→idle hold. A stuck confirmation loop
