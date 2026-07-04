@@ -60,10 +60,10 @@ STOP and report — a per-path pool may be the right shape and is a bigger chang
 
 ## Done criteria
 
-- [ ] Repeated writes to the same path reuse a connection (test or seam proves no per-write rebuild)
-- [ ] Upsert semantics unchanged; bounded table still bounded
-- [ ] `cargo clippy -p jackin-usage -- -D warnings` exits 0
-- [ ] `plans/README.md` row updated
+- [x] Repeated writes to the same path reuse a connection (test or seam proves no per-write rebuild)
+- [x] Upsert semantics unchanged; bounded table still bounded
+- [x] `cargo clippy -p jackin-usage -- -D warnings` exits 0
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 

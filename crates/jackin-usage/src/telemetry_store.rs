@@ -5,7 +5,7 @@
 //! not by opening this database. The schema mirrors the roadmap V1 account
 //! snapshot shape so the later host-daemon store can reuse the same rows.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
@@ -17,6 +17,9 @@ use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource
 use turso::{Connection, Row, params};
 
 const SCHEMA_VERSION: &str = "4";
+
+#[cfg(test)]
+static CONNECTION_BUILDS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredAccountUsageSnapshot {
@@ -94,6 +97,13 @@ async fn open_store(path: &Path) -> Result<Connection, String> {
             .map_err(|err| format!("create telemetry store dir failed: {err}"))?;
     }
     let path = path_to_turso(path)?;
+    static STORE_CONNECTIONS: OnceLock<tokio::sync::Mutex<HashMap<String, Connection>>> =
+        OnceLock::new();
+    let connections = STORE_CONNECTIONS.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()));
+    let mut connections = connections.lock().await;
+    if let Some(conn) = connections.get(&path) {
+        return Ok(conn.clone());
+    }
     let db = turso::Builder::new_local(&path)
         .build()
         .await
@@ -101,6 +111,7 @@ async fn open_store(path: &Path) -> Result<Connection, String> {
     let conn = db
         .connect()
         .map_err(|err| format!("connect telemetry store failed: {err}"))?;
+    record_connection_build(&path);
     // Schema creation + the ALTER-based migration are idempotent but not free;
     // run them once per database path per process. Keyed by the resolved turso
     // path so distinct stores (e.g. each test's temp DB) each migrate once.
@@ -113,6 +124,7 @@ async fn open_store(path: &Path) -> Result<Connection, String> {
             set.insert(path.clone());
         }
     }
+    connections.insert(path, conn.clone());
     Ok(conn)
 }
 
@@ -120,6 +132,29 @@ fn path_to_turso(path: &Path) -> Result<String, String> {
     path.to_str()
         .map(str::to_owned)
         .ok_or_else(|| "telemetry store path is not utf8".to_owned())
+}
+
+#[cfg(test)]
+fn record_connection_build(path: &str) {
+    if let Ok(mut builds) = CONNECTION_BUILDS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+    {
+        *builds.entry(path.to_owned()).or_default() += 1;
+    }
+}
+
+#[cfg(not(test))]
+fn record_connection_build(_path: &str) {}
+
+#[cfg(test)]
+fn connection_build_count(path: &Path) -> Result<usize, String> {
+    let path = path_to_turso(path)?;
+    Ok(CONNECTION_BUILDS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map(|builds| builds.get(&path).copied().unwrap_or_default())
+        .unwrap_or_default())
 }
 
 async fn initialize_schema(conn: &Connection) -> Result<(), String> {
