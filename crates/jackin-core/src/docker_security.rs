@@ -23,13 +23,10 @@ pub enum DockerSecurityProfile {
     Hardened,
     /// Typical dev work: open network, no `DinD` by default, no sudo by default,
     /// writable root, 16G memory. (`DinD`/sudo can be raised by an explicit grant.)
+    #[default]
     Standard,
     /// Maximum compatibility: privileged `DinD`, open network, sudo, no resource
-    /// limits. Remains the default until the WP6 flip (gated on the WP0 matrix
-    /// plus a changelog call-out, not on the now-removed sudo audit).
-    // TODO(docker-security-profile-default): flip default to Standard after the
-    // WP0 matrix and changelog call-out; see TODO.md.
-    #[default]
+    /// limits. Available as an explicit opt-back profile for legacy workflows.
     Compat,
 }
 

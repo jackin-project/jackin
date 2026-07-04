@@ -22,10 +22,10 @@ fn ord_ascending_capability() {
 }
 
 #[test]
-fn default_is_compat() {
+fn default_is_standard() {
     assert_eq!(
         DockerSecurityProfile::default(),
-        DockerSecurityProfile::Compat
+        DockerSecurityProfile::Standard
     );
 }
 

@@ -18,7 +18,7 @@ Four profiles are available, ordered from least to most capable:
 | `standard` | Open | None (opt-in via grant) | Opt-in | Writable | 16 GiB hard |
 | `compat` | Open | Privileged | Yes | Writable | None |
 
-**`compat`** is the current default — it matches today's behavior exactly. `standard` becomes the default once the compatibility matrix for standard-profile workloads is green.
+**`standard`** is the current default. It keeps everyday development usable while removing legacy standing sudo and privileged DinD. Use `compat` explicitly when a workflow still needs the old maximum-compatibility behavior.
 
 ### `locked` — minimal grant
 
@@ -50,11 +50,12 @@ profile = "hardened"
 
 ### `standard` — everyday dev work
 
-Full development capability with resource protection. `apt install`, Docker Compose, Testcontainers, `gh pr create` all work. Equivalent to working in a well-configured dev container.
+Everyday development capability with resource protection. `gh pr create`, normal build/test commands, and tools already present in the role image work by default. Runtime `apt install`, Docker Compose, and Testcontainers need explicit grants because `standard` does not grant sudo or DinD automatically.
 
 Use when:
 - Working with trusted role repos built by your team
-- Roles that install packages at runtime
+- Roles that install their tools at image-build time
+- You want the default jackin❯ profile without privileged DinD or standing sudo
 
 ```toml
 [docker]
@@ -69,6 +70,7 @@ Use when:
 - Docker Compose workflows inside the agent
 - Java Testcontainers with `--privileged` requirements
 - Exact backward compatibility needed
+- Runtime package installation needs passwordless sudo and the role has not been updated to request a narrower sudo grant
 
 ## CLI override
 
@@ -268,27 +270,41 @@ The profile model and most controls are live; a few items remain deferred. This 
 - All validation errors at launch time (bad cap names, user+sudo conflict, memory sizing, profile conflicts)
 
 **Deferred (described above as the target, not yet shipped):**
-- `standard` becoming the compiled-in default — waiting on the workload compatibility matrix
 - Credential env-only posture under `hardened`/`locked` — preferring `api_key`/`oauth_token` over `sync` mode
 - The non-HTTP network proxy sidecar (protocol-level egress allowlist beyond HTTP)
 
 See the [Docker Runtime Hardening Contract](/roadmap/docker-runtime-hardening-contract/) roadmap item for the remaining work and status.
 
-### Current default: `compat`
+### Current default: `standard`
 
-Every launch uses `compat` by default — this is the same behavior as before profiles existed. Nothing breaks for anyone who doesn't opt in.
+Every launch uses `standard` by default unless CLI, config, workspace config, or role metadata selects another profile. The Plan 049 compatibility matrix passed on the supported cgroup-v2 path with expected rejects for runtime package installation without sudo and Docker workflows without DinD.
 
-To use a stricter profile today: pass `--docker-profile <profile>` or set `[docker] profile = "…"` in config.
+To use the legacy maximum-compatibility profile:
 
-### What will change in a future release
+```sh
+jackin load fullstack . --docker-profile compat
+```
 
-**`standard` will become the default** once the compatibility matrix for standard-profile workloads (Testcontainers, Compose, BuildKit, common runtimes on cgroup v2 hosts) is green. Until then, the default stays `compat` and no existing user is affected.
+or:
 
-After the flip, `compat` remains available as an explicit opt-down for workflows needing privileged DinD or any other capability that `standard` doesn't grant.
+```toml
+[docker]
+profile = "compat"
+```
+
+### Compatibility matrix
+
+Run the default-flip gate locally with:
+
+```sh
+cargo xtask profile-matrix standard
+```
+
+The matrix asserts the cheap Docker posture probe directly and records the heavier host-specific cells with their prerequisites. On cgroup v2 hosts, rootless DinD remains an explicit grant and passes the default-flip gate. On cgroup v1 hosts, rootless DinD fails closed with guidance to use privileged DinD or move to cgroup v2.
 
 ### The `compat` profile stays permanently
 
-`compat` is not a temporary workaround — it is a valid named profile for roles that need privileged DinD, `apt install` at runtime, or any other capability that `standard` doesn't grant. After `standard` becomes the default, `compat` requires explicit opt-in:
+`compat` is not a temporary workaround — it is a valid named profile for roles that need privileged DinD, `apt install` at runtime, or any other capability that `standard` doesn't grant. Because `standard` is the default, `compat` requires explicit opt-in:
 ```sh
 jackin load fullstack . --docker-profile compat
 ```
@@ -308,6 +324,6 @@ min_profile = "compat"   # role needs full sudo + apt install at runtime
 
 | Item | Status |
 |---|---|
-| `standard` as compiled-in default | Deferred — waiting on workload compatibility matrix (cgroup v2 hosts) |
+| `standard` as compiled-in default | Shipped — gated by `cargo xtask profile-matrix standard` |
 | Credential posture: prefer `api_key`/`oauth_token` under `hardened`/`locked`; emit telemetry note on `sync` mode | Deferred — owned by [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) |
 | Network proxy sidecar (non-HTTP protocol allowlist) | Deferred — separate research; see [Network egress policy](/roadmap/network-egress-policy/) |

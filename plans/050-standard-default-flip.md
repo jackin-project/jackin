@@ -12,6 +12,8 @@
 - **Depends on**: plan 049
 - **Category**: direction (DIRECTION-03)
 - **Planned at**: current PR branch, 2026-07-04
+- **Completed**: 2026-07-04 — compiled default moved to `standard`;
+  `compat` remains available through explicit profile selection.
 
 ## Why this matters
 
@@ -33,11 +35,11 @@ profile that matches the hardening contract: `standard`.
 
 ## Done criteria
 
-- [ ] Default profile is `standard`.
-- [ ] `compat` remains available through CLI/config/workspace/role settings.
-- [ ] Docs and release notes explain the breaking behavior and opt-back.
-- [ ] Compatibility matrix from plan 049 is referenced.
-- [ ] `plans/README.md` row updated.
+- [x] Default profile is `standard`.
+- [x] `compat` remains available through CLI/config/workspace/role settings.
+- [x] Docs and release notes explain the breaking behavior and opt-back.
+- [x] Compatibility matrix from plan 049 is referenced.
+- [x] `plans/README.md` row updated.
 
 ## Verification
 

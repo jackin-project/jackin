@@ -37,14 +37,6 @@ Markers without TODO.md entry OK for transient in-flight work, but anything outl
 - **Last verified:** 2026-06-22 — checked v0.3.10 release assets; only `x86_64-linux.tar.xz` ships for Linux. PR #632 now builds/restores the pinned binary outside Docker and copies it from `docker/construct/prebuilt/shellfirm`.
 - **Done when:** shellfirm release at or after fix publishes `shellfirm-v<ver>-aarch64-linux.tar.xz` (or equivalent name) alongside existing x86_64 tarball. Replace the CI prebuild/staging step with TARGETARCH-aware curl + `tar -xJ` in the Dockerfile (mirror tirith pattern), then remove this TODO.
 
-### Docker security profile — flip default from `compat` to `standard`
-
-- **What:** `DockerSecurityProfile::Compat` is still the compiled-in default in [`crates/jackin-core/src/docker_security.rs`](crates/jackin-core/src/docker_security.rs). Flip the enum default to `Standard` after the WP0 compatibility matrix and changelog call-out are complete.
-- **Why:** `standard` now carries the intended baseline behavior (resource limits, no sudo by default, DinD disabled unless explicitly granted, `no-new-privileges` when sudo is off), but `compat` remains the default until the compatibility evidence is complete.
-- **Code change:** move the `#[default]` attribute from `Compat` to `Standard`.
-- **Done when:** the compatibility matrix passes for built-in roles under `standard`, the changelog calls out the breaking default-profile change, the default enum variant is flipped, and the profile defaults table in the Docker runtime hardening contract plus the Docker profiles guide are updated.
-- **Marker:** `TODO(docker-security-profile-default)` — in [`crates/jackin-core/src/docker_security.rs`](crates/jackin-core/src/docker_security.rs), `DockerSecurityProfile::Compat`.
-
 ### Internal cleanups
 
 #### `lychee-no-files-warn` — investigate "No files found for this input source" in deploy link check

@@ -12,6 +12,9 @@
 - **Depends on**: plan 043
 - **Category**: direction (DIRECTION-03)
 - **Planned at**: current PR branch, 2026-07-04
+- **Completed**: 2026-07-04 — `cargo xtask profile-matrix standard`
+  added and passed on the local cgroup-v2 Docker host; intentional rejects are
+  named in the matrix and Docker profile docs.
 
 ## Why this matters
 
@@ -59,12 +62,12 @@ Minimum scenarios:
 
 ## Done criteria
 
-- [ ] Matrix scenarios are automated or explicitly documented when automation is
+- [x] Matrix scenarios are automated or explicitly documented when automation is
       blocked by host prerequisites.
-- [ ] All green scenarios pass under `standard`.
-- [ ] Intentional rejects emit named, documented failures.
-- [ ] The roadmap says whether the default flip is ready or blocked.
-- [ ] `plans/README.md` row updated.
+- [x] All green scenarios pass under `standard`.
+- [x] Intentional rejects emit named, documented failures.
+- [x] The roadmap says whether the default flip is ready or blocked.
+- [x] `plans/README.md` row updated.
 
 ## Verification
 

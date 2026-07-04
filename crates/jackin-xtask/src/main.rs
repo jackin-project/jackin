@@ -23,6 +23,7 @@ mod construct;
 mod docs;
 mod lint;
 mod pr;
+mod profile_matrix;
 mod pty_fixture;
 mod schema;
 mod test_layout;
@@ -103,6 +104,13 @@ enum Command {
         #[arg(long)]
         strict: bool,
     },
+    /// Run Docker security-profile compatibility probes.
+    ///
+    /// Use as `cargo xtask profile-matrix standard`. The command runs the
+    /// cheap local probes directly and reports heavyweight/host-specific cells
+    /// as gated evidence with their required host prerequisites.
+    #[command(name = "profile-matrix")]
+    ProfileMatrix(profile_matrix::ProfileMatrixArgs),
 }
 
 #[derive(Subcommand)]
@@ -144,6 +152,7 @@ fn main() -> ExitCode {
         Command::Research(cmd) => docs::run_research(cmd),
         Command::Roadmap(cmd) => docs::run_roadmap(cmd),
         Command::SchemaCheck(args) => schema::run(args),
+        Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::Lint { command, strict } => match command {
             Some(LintCommand::Files(args)) => lint::run(args),
             Some(LintCommand::Tests(args)) => test_layout::run(args),

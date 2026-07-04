@@ -2,7 +2,7 @@
 title: "Docker Runtime Hardening Contract"
 ---
 
-**Status**: Partially implemented — Docker profile enforcement is wired; Tier-2 workload matrix, `compat` → `standard` default flip, credential env-only posture, and rootless-default research remain
+**Status**: Partially implemented — Docker profile enforcement is wired and `standard` is the compiled default; credential env-only posture and rootless-default research remain
 
 ## Shipped evidence
 
@@ -17,6 +17,8 @@ Shipped pieces:
 - `locked` uses a Docker-internal role network.
 - DinD is tier-aware: `none`, `rootless`, and `privileged` are selectable; rootless uses `docker:dind-rootless` and fails closed where cgroup v2 is required.
 - The session contract and compact/debug telemetry report the effective profile decisions before launch.
+- `cargo xtask profile-matrix standard` records the default-flip compatibility matrix; the local cgroup-v2 run passed with expected rejects for runtime package installation without sudo and Docker workflows without DinD.
+- `standard` is the compiled-in default. `compat` remains available through CLI/config/workspace/role selection for legacy privileged DinD, standing sudo, or resource-unlimited workflows.
 - Host Docker socket exclusion has a regression test.
 - Schema, guide, and runtime reference docs for the shipped fields exist in [Docker Security Profiles](/guides/docker-profiles/), [Role manifest](/developing/role-manifest/), [Configuration](/reference/runtime/configuration/), and [Schema Versions](/reference/runtime/schema-versions/).
 
@@ -34,22 +36,16 @@ Plan 043 was written before WP-SUDO and WP4 landed. The keystone audit result is
 
 The remaining dependency order is:
 
-1. Run the Tier-2 standard-profile compatibility matrix with sudo off and `no-new-privileges` on.
-2. If the matrix is green, ship the release-note/docs gate for the breaking default change.
-3. Flip the compiled default from `compat` to `standard`.
-4. Research whether rootless DinD can become the standard default after the same workload evidence exists.
+1. Research whether rootless DinD can become the standard default after the same workload evidence exists.
+2. Keep the `standard` matrix green as new built-in roles and agent workflows are added.
 
 Parallel hardening tracks remain independent: host.sock auth is already implemented for Linux peer credentials, network-egress still needs DinD-inner coverage, signed releases still need end-to-end local verification, and credential env-only posture remains coordinated with the credential-exposure research.
 
 ## Remaining work
 
-1. **Tier-2 workload matrix.** Run and keep green the real-workload matrix for supported agents/profiles: build workloads, package installs, GitHub flows, DinD build/Compose/Testcontainers where allowed, and named-error assertions where a profile intentionally rejects a workflow. This is Docker-daemon work and belongs in CI/nightly, not unit tests.
+1. **Credential env-only posture.** Under `hardened`/`locked`, prefer env-only or otherwise reduced credential exposure and emit a `credential_posture` decision per agent auth type. Coordinate with [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).
 
-2. **`compat` → `standard` default flip.** Flip the compiled-in default only after the matrix is green and release notes call out the behavior change. Until then `compat` stays default so existing workflows are not changed silently.
-
-3. **Credential env-only posture.** Under `hardened`/`locked`, prefer env-only or otherwise reduced credential exposure and emit a `credential_posture` decision per agent auth type. Coordinate with [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).
-
-4. **Rootless default research.** Rootless DinD is selectable, but making it the standard default remains research until the workload matrix proves it across supported hosts. Sysbox is dropped unless rootless proves insufficient.
+2. **Rootless default research.** Rootless DinD is selectable and passed the cgroup-v2 matrix cell as an explicit grant, but making it the standard default remains research until the supported-host evidence proves it should be granted automatically. Sysbox is dropped unless rootless proves insufficient.
 
 ## Constraints that stay true
 
@@ -68,8 +64,8 @@ Parallel hardening tracks remain independent: host.sock auth is already implemen
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — runtime startup and agent bypass flags.
 - <RepoFile path="docker/construct/Dockerfile" /> — base runtime image and sudo package posture.
 - <RepoFile path="plans/043-security-hardening-track.md" /> — completed track and audit result.
-- <RepoFile path="plans/049-standard-compatibility-matrix.md" /> — next workload evidence gate.
-- <RepoFile path="plans/050-standard-default-flip.md" /> — default flip after evidence and release-note gates.
+- <RepoFile path="plans/049-standard-compatibility-matrix.md" /> — completed default-flip evidence gate.
+- <RepoFile path="plans/050-standard-default-flip.md" /> — completed compiled-default flip.
 - <RepoFile path="plans/051-rootless-dind-default-research.md" /> — rootless DinD default research.
 - <RepoFile path="plans/052-network-egress-dind-inner-coverage.md" /> — DinD-inner egress coverage.
 - <RepoFile path="plans/053-signed-release-e2e-verification.md" /> — signed-release verification track.
