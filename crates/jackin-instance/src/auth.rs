@@ -1074,7 +1074,21 @@ fn wipe_kimi_state(kimi_dir: &Path) -> anyhow::Result<()> {
 /// Copy the host's `.claude.json` into the container state, or write `{}`
 /// if the host file doesn't exist.
 fn copy_host_claude_json(host_path: &Path, dest_path: &Path) -> anyhow::Result<()> {
-    let content = std::fs::read_to_string(host_path).unwrap_or_else(|_| "{}".to_owned());
+    let content = match std::fs::read_to_string(host_path) {
+        Ok(content) => content,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "{}".to_owned(),
+        Err(e) => {
+            jackin_diagnostics::debug_log!(
+                "auth",
+                "failed to read Claude account metadata at {} while forwarding credentials: {e}",
+                host_path.display()
+            );
+            return Err(anyhow::Error::new(e).context(format!(
+                "reading Claude account metadata at {}",
+                host_path.display()
+            )));
+        }
+    };
     write_private_file(dest_path, &content)
 }
 

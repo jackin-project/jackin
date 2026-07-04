@@ -203,6 +203,62 @@ fn sync_mode_copies_host_auth_on_first_run() {
 }
 
 #[test]
+fn copy_host_claude_json_copies_present_file() {
+    let temp = tempdir().unwrap();
+    let host = temp.path().join(".claude.json");
+    let dest_dir = temp.path().join("state");
+    let dest = dest_dir.join(".claude.json");
+    std::fs::create_dir_all(&dest_dir).unwrap();
+    std::fs::write(
+        &host,
+        r#"{"oauthAccount":{"emailAddress":"test@example.com"}}"#,
+    )
+    .unwrap();
+
+    super::copy_host_claude_json(&host, &dest).unwrap();
+
+    assert!(
+        std::fs::read_to_string(dest)
+            .unwrap()
+            .contains("test@example.com")
+    );
+}
+
+#[test]
+fn copy_host_claude_json_writes_empty_object_when_absent() {
+    let temp = tempdir().unwrap();
+    let host = temp.path().join("missing.claude.json");
+    let dest_dir = temp.path().join("state");
+    let dest = dest_dir.join(".claude.json");
+    std::fs::create_dir_all(&dest_dir).unwrap();
+
+    super::copy_host_claude_json(&host, &dest).unwrap();
+
+    assert_eq!(std::fs::read_to_string(dest).unwrap(), "{}");
+}
+
+#[test]
+fn copy_host_claude_json_propagates_read_errors_without_writing_empty_object() {
+    let temp = tempdir().unwrap();
+    let host = temp.path().join(".claude.json");
+    let dest_dir = temp.path().join("state");
+    let dest = dest_dir.join(".claude.json");
+    std::fs::create_dir_all(&host).unwrap();
+    std::fs::create_dir_all(&dest_dir).unwrap();
+
+    let err = super::copy_host_claude_json(&host, &dest).unwrap_err();
+
+    assert!(
+        err.to_string().contains("reading Claude account metadata"),
+        "error should preserve context: {err}"
+    );
+    assert!(
+        !dest.exists(),
+        "read errors must not write a synthetic empty account file"
+    );
+}
+
+#[test]
 fn sync_source_dir_copies_claude_config_dir_without_nested_home_layout() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
