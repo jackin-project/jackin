@@ -6,9 +6,9 @@
 
 ## Status
 
-- **Implementation status**: BLOCKED/PARTIAL in PR #714. Steps 1, 3, and the `verify` half of Step 4 are
-  landed; Step 2 is blocked by the plan's STOP condition because no real grok-originated blocked/working/idle
-  capture is available in this environment. Do not author `grok.toml` from guessed strings or herdr artifacts.
+- **Implementation status**: BLOCKED/PARTIAL in PR #714. Steps 1, 3, and 4 are landed; Step 2 is blocked by
+  the plan's STOP condition because no real grok-originated blocked/working/idle capture is available in this
+  environment. Do not author `grok.toml` from guessed strings or herdr artifacts.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW
@@ -98,10 +98,8 @@ happens to contain the path can't pass verify while opencode fails to parse it.
 - [x] An exhaustiveness test asserts every `Agent::ALL` slug has a pack or a reviewed opt-out
 - [ ] `grok.toml` exists, is baked + embedded, and matches a real grok golden — **BLOCKED** until a real grok
   capture exists
-- [ ] One broken embedded pack no longer zeroes the registry (test proves); an empty registry is operator-visible
-  — peer isolation is implemented, but an operator-visible startup degradation still needs wiring
-- [ ] Reporter-install failure is loud; `verify` parse-validates rather than substring-matches — parse validation is
-  implemented; operator-visible reporter failure still needs wiring
+- [x] One broken embedded pack no longer zeroes the registry (test proves); an empty registry is operator-visible
+- [x] Reporter-install failure is loud; `verify` parse-validates rather than substring-matches
 - [x] `cargo nextest run -p jackin-capsule` green; clippy clean
 - [x] `plans/agent-status/README.md` row updated
 

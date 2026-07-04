@@ -922,6 +922,10 @@ async fn handle_state_tick(mux: &mut Multiplexer, rule_registry: Option<&RulePac
     mux.invalidate(status_change_redraw_reason());
 }
 
+fn screen_detection_disabled_message(error: &anyhow::Error) -> String {
+    format!("Agent status screen detection is off: {error:#}")
+}
+
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
 #[allow(
     clippy::too_many_lines,
@@ -983,6 +987,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         Ok(registry) => Some(registry),
         Err(e) => {
             crate::clog!("agent-status: rule packs failed to load, screen detection off: {e:#}");
+            mux.spawn_failure = Some(screen_detection_disabled_message(&e));
             None
         }
     };

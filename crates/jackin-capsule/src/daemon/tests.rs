@@ -133,6 +133,21 @@ fn spawn_failure_banner_rides_the_frame_until_a_keystroke_clears_it() {
     );
 }
 
+#[test]
+fn screen_detection_disabled_message_is_operator_visible() {
+    let err = anyhow::anyhow!("bad embedded pack");
+    let message = screen_detection_disabled_message(&err);
+
+    assert!(
+        message.contains("Agent status screen detection is off"),
+        "message must name the disabled feature: {message}"
+    );
+    assert!(
+        message.contains("bad embedded pack"),
+        "message must carry the load failure: {message}"
+    );
+}
+
 fn test_mux(rows: u16, cols: u16) -> Multiplexer {
     Multiplexer::new(
         rows,
