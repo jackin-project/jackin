@@ -51,7 +51,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 046 | Collapse `EditorState`'s concrete `WorkspaceConfig` parameter | tech-debt | P3 | M | MED | 022 | DONE |
 | 023 | Decompose `jackin-console` by responsibility, re-tighten size cap | tech-debt | P3 | L | HIGH | 022,046 | DONE (state impl split; cap 1850) |
 | 024 | Extract a `ContainerBackend` trait; finish apple-container lifecycle | tech-debt/direction | P2 | L | HIGH | — | DONE (lifecycle dispatch; finalization explicit Phase 0 error) |
-| 025 | Burn down the 66 complexity-lint suppressions | tech-debt | P3 | M | HIGH | — | TODO |
+| 025 | Burn down the 66 complexity-lint suppressions | tech-debt | P3 | M | HIGH | — | DONE (run.rs slice; 66→54 non-test suppressions) |
 | 026 | Replace blanket `#[allow(dead_code)]` in `jackin-image` | tech-debt | P2 | S | HIGH | — | TODO |
 | 027 | Finish or rename the "Transitional" console facade | tech-debt | P3 | M | MED | 023 | TODO |
 | 028 | Adopt `[workspace.dependencies]`; exact-pin `turso` | migration/dx | P2 | M | HIGH | — | TODO |

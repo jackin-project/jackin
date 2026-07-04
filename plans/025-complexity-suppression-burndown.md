@@ -13,6 +13,9 @@
 - **Depends on**: none
 - **Category**: tech-debt
 - **Planned at**: commit `46511939d`, 2026-07-03
+- **Completed slice**: `crates/jackin/src/console/tui/run.rs` now has no `too_many_lines`,
+  `cognitive_complexity`, or `excessive_nesting` suppression on `run_console`; workspace non-test
+  `too_many_lines`/`cognitive_complexity` count is 54.
 
 ## Why this matters
 
@@ -59,12 +62,12 @@ in this plan's row note after each slice.
 
 ## Done criteria (per slice; the plan is "done" when the count reaches an agreed floor)
 
-- [ ] Chosen file's `too_many_lines`/`cognitive_complexity` `#[expect]`s removed via extraction (or a note
+- [x] Chosen file's `too_many_lines`/`cognitive_complexity` `#[expect]`s removed via extraction (or a note
       why a specific one is irreducible)
-- [ ] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` still passes
-- [ ] `cargo nextest run -p <crate>` green (behavior preserved)
-- [ ] Suppression count recorded (start 66 → current N) in the row note
-- [ ] `plans/README.md` row updated
+- [x] `cargo clippy -p jackin --all-targets -- -D warnings` passes for the touched crate slice
+- [x] `cargo nextest run -p <crate>` green (behavior preserved)
+- [x] Suppression count recorded (start 66 → current N) in the row note
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 

@@ -164,26 +164,617 @@ where
     }
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "Console TUI event loop carries the per-event dispatch arms (Esc / \
-              keys / mouse / focus / palette / paste / resize) inline; extracting \
-              each arm into its own helper would push the dispatcher into a \
-              fn-of-fns shape with the same overall body. Body remains ~234 lines \
-              until a follow-up slice extracts the heaviest arms."
-)]
-#[allow(
-    clippy::cognitive_complexity,
-    reason = "Same justification as the too_many_lines allow: console TUI event \
-              loop carries per-event dispatch arms inline. Branching depth tracks \
-              the per-event-arm richness, not actual algorithmic complexity."
-)]
-#[allow(
-    clippy::excessive_nesting,
-    reason = "Same justification as the too_many_lines allow on this fn: per- \
-                  stage / per-event-arm nested dispatch. The nesting is the \
-                  per-stage console event-loop protocol."
-)]
+enum ConsoleLoopFlow {
+    Continue,
+    Exit(Option<ConsoleOutcome>),
+}
+
+struct ConsoleLoopInputs<'a, H, R> {
+    config: &'a mut AppConfig,
+    paths: &'a JackinPaths,
+    cwd: &'a std::path::Path,
+    action_handler: &'a mut H,
+    runner: &'a mut R,
+    startup_error_pending: bool,
+}
+
+struct ConsoleMouseState {
+    last_event_at: Option<std::time::Instant>,
+    pointer_shape: jackin_tui::PointerShape,
+    chrome_hover_tracker: jackin_tui::components::HoverTracker<ConsoleChromeHover>,
+    chrome_hover: Option<ConsoleChromeHover>,
+}
+
+impl ConsoleMouseState {
+    fn new() -> Self {
+        Self {
+            last_event_at: None,
+            pointer_shape: jackin_tui::PointerShape::Default,
+            chrome_hover_tracker: jackin_tui::components::HoverTracker::new(),
+            chrome_hover: None,
+        }
+    }
+}
+
+fn sync_active_screen(
+    state: &ConsoleState,
+    active_screen: &mut Option<(jackin_diagnostics::Screen, jackin_diagnostics::ScreenGuard)>,
+) {
+    let screen = screen_of(state);
+    if active_screen.as_ref().map(|(s, _)| *s) != Some(screen) {
+        let from = active_screen.as_ref().map(|(s, _)| s.as_str());
+        *active_screen = Some((screen, jackin_diagnostics::enter_screen(screen)));
+        if let Some(from) = from {
+            jackin_diagnostics::record_action("navigate", Some(from));
+        }
+    }
+}
+
+fn drain_background_messages(
+    state: &mut ConsoleState,
+    config: &mut AppConfig,
+    paths: &JackinPaths,
+    cwd: &std::path::Path,
+    needs_redraw: &mut bool,
+) {
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    let messages = crate::console::effects::poll_background_messages(ms, config, paths);
+    for message in messages {
+        *needs_redraw |=
+            crate::console::effects::apply_background_event(ms, config, paths, cwd, message);
+    }
+}
+
+fn draw_console_frame<B>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+    mouse_state: &mut ConsoleMouseState,
+    container_info_overlay_active: &mut bool,
+) -> anyhow::Result<()>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+{
+    let full_area: ratatui::layout::Rect = terminal.size()?.into();
+    let (main_area, debug_bar_area) =
+        split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    if *container_info_overlay_active
+        && !matches!(
+            ms.list_modal,
+            Some(crate::console::tui::state::Modal::ContainerInfo { .. })
+        )
+    {
+        terminal.clear()?;
+        *container_info_overlay_active = false;
+    }
+    crate::console::tui::prepare_for_render(ms, config, cwd, main_area);
+    let confirm_state = state.quit_confirm.as_ref();
+    terminal.draw(|frame| {
+        crate::console::tui::render(frame, main_area, ms, config, cwd);
+        if let Some(confirm) = confirm_state {
+            let hint_row = ratatui::layout::Rect {
+                x: main_area.x,
+                y: main_area.bottom().saturating_sub(1),
+                width: main_area.width,
+                height: 1,
+            };
+            let body = ratatui::layout::Rect {
+                height: main_area.height.saturating_sub(1),
+                ..main_area
+            };
+            jackin_console::tui::view::render_modal_backdrop(frame, body);
+            let area = quit_confirm_area(body, confirm);
+            jackin_tui::components::render_confirm_dialog(frame, area, confirm);
+            jackin_tui::components::render_hint_bar(
+                frame,
+                hint_row,
+                &jackin_tui::components::confirm_hint_spans(),
+            );
+        }
+        mouse_state.chrome_hover_tracker.clear();
+        if let Some(bar_area) = debug_bar_area {
+            let active_run = jackin_diagnostics::active_run();
+            let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
+            let run_id = debug_run_id_label(
+                active_run.as_ref().map(|r| r.run_id()),
+                env_run_id.as_deref(),
+            );
+            let chip_row = debug_chip_row(bar_area);
+            if let Some(chip) =
+                jackin_tui::components::status_footer_debug_chip_rect(chip_row, &run_id)
+            {
+                mouse_state
+                    .chrome_hover_tracker
+                    .register(chip, ConsoleChromeHover::DebugChip);
+            }
+            jackin_tui::components::render_status_footer_right_group(
+                frame,
+                chip_row,
+                "",
+                jackin_tui::components::StatusRightGroup {
+                    usage: None,
+                    container: "",
+                    run_id: Some(&run_id),
+                },
+                1.0,
+                jackin_tui::components::StatusFooterHover {
+                    left: false,
+                    usage: false,
+                    right: false,
+                    right_debug: mouse_state.chrome_hover == Some(ConsoleChromeHover::DebugChip),
+                },
+            );
+        }
+    })?;
+    if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
+        ms.list_modal.as_ref()
+    {
+        let rect = modal.rect(main_area);
+        let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, info);
+        if !overlay.is_empty() {
+            let mut out = std::io::stdout();
+            drop(std::io::Write::write_all(&mut out, &overlay));
+            drop(std::io::Write::flush(&mut out));
+        }
+        *container_info_overlay_active = true;
+    }
+    Ok(())
+}
+
+async fn dispatch_launch_input<B, H, R>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    inputs: &mut ConsoleLoopInputs<'_, H, R>,
+    input: LoadWorkspaceInput,
+) -> anyhow::Result<Option<ConsoleOutcome>>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+    R: jackin_docker::CommandRunner,
+{
+    let dispatch = dispatch_launch_prompt(state, inputs.config, inputs.cwd, input)?;
+    execute_launch_prompt_dispatch(
+        terminal,
+        state,
+        inputs.paths,
+        inputs.config,
+        inputs.cwd,
+        inputs.runner,
+        dispatch,
+    )
+    .await
+}
+
+async fn dispatch_committed_role<B, H, R>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    inputs: &mut ConsoleLoopInputs<'_, H, R>,
+    role: jackin_core::RoleSelector,
+) -> anyhow::Result<Option<ConsoleOutcome>>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+    R: jackin_docker::CommandRunner,
+{
+    let dispatch = committed_role_prompt(state, inputs.config, inputs.cwd, role)?;
+    execute_launch_prompt_dispatch(
+        terminal,
+        state,
+        inputs.paths,
+        inputs.config,
+        inputs.cwd,
+        inputs.runner,
+        dispatch,
+    )
+    .await
+}
+
+async fn handle_in_place_instance_action<B, H, R>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    inputs: &mut ConsoleLoopInputs<'_, H, R>,
+    container: &str,
+    action: crate::console::ConsoleInstanceAction,
+) -> anyhow::Result<()>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+    H: InstanceActionHandler<jackin_core::Agent>,
+{
+    {
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        let action_fact = action.workspace_action_fact();
+        let busy_title = instance_action_busy_title(action_fact);
+        let busy_body = instance_action_busy_message(action_fact, container);
+        let _unused = crate::console::tui::update_manager(
+            ms,
+            crate::console::tui::ManagerMessage::OpenStatusPopup {
+                title: busy_title.into(),
+                message: busy_body,
+            },
+        );
+        terminal.draw(|frame| {
+            let full_area = frame.area();
+            let (main_area, _debug_bar) =
+                split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
+            crate::console::tui::render(frame, main_area, ms, inputs.config, inputs.cwd);
+        })?;
+    }
+    let result = inputs.action_handler.run_in_place(container, action).await;
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    let _unused = crate::console::tui::update_manager(
+        ms,
+        crate::console::tui::ManagerMessage::DismissStatusPopup,
+    );
+    if let Err(error) = result {
+        let err_title = instance_action_failed_error_title(action.workspace_action_fact());
+        let _unused = crate::console::tui::update_manager(
+            ms,
+            crate::console::tui::ManagerMessage::OpenListErrorPopup {
+                title: err_title.into(),
+                message: instance_action_failed_error_message(error),
+            },
+        );
+    }
+    ms.force_refresh_instances();
+    Ok(())
+}
+
+async fn handle_input_outcome<B, H, R>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    outcome: crate::console::tui::InputOutcome,
+    inputs: &mut ConsoleLoopInputs<'_, H, R>,
+    needs_redraw: &mut bool,
+) -> anyhow::Result<ConsoleLoopFlow>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+    H: InstanceActionHandler<jackin_core::Agent>,
+    R: jackin_docker::CommandRunner,
+{
+    match outcome {
+        crate::console::tui::InputOutcome::Continue => {
+            let ConsoleStage::Manager(ms) = &mut state.stage;
+            if crate::console::effects::execute_pending_workspace_save_commit(
+                ms,
+                inputs.config,
+                inputs.paths,
+                inputs.cwd,
+            )? {
+                *needs_redraw = true;
+            }
+        }
+        crate::console::tui::InputOutcome::ExitJackin => return Ok(ConsoleLoopFlow::Exit(None)),
+        crate::console::tui::InputOutcome::LaunchNamed(name) => {
+            jackin_diagnostics::set_workspace(&name);
+            jackin_diagnostics::set_workspace_kind("named");
+            jackin_diagnostics::record_action("launch", Some(&name));
+            if let Some(outcome) =
+                dispatch_launch_input(terminal, state, inputs, LoadWorkspaceInput::Saved(name))
+                    .await?
+            {
+                return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
+            }
+        }
+        crate::console::tui::InputOutcome::PrewarmNamed(name) => {
+            return Ok(ConsoleLoopFlow::Exit(Some(ConsoleOutcome::PrewarmNamed(
+                name,
+            ))));
+        }
+        crate::console::tui::InputOutcome::LaunchCurrentDir => {
+            jackin_diagnostics::set_workspace_kind("current-dir");
+            jackin_diagnostics::record_action("launch", Some("current-dir"));
+            if let Some(outcome) =
+                dispatch_launch_input(terminal, state, inputs, LoadWorkspaceInput::CurrentDir)
+                    .await?
+            {
+                return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
+            }
+        }
+        crate::console::tui::InputOutcome::LaunchWithAgent(role) => {
+            if let Some(outcome) = dispatch_committed_role(terminal, state, inputs, role).await? {
+                return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
+            }
+        }
+        crate::console::tui::InputOutcome::LaunchWithRuntimeAgent(agent) => {
+            if let Some(outcome) =
+                launch_with_committed_agent(state, inputs.config, inputs.cwd, agent)?
+            {
+                return Ok(ConsoleLoopFlow::Exit(Some(outcome)));
+            }
+        }
+        crate::console::tui::InputOutcome::NewSessionWithProvider {
+            container,
+            agent,
+            provider,
+        } => {
+            return Ok(ConsoleLoopFlow::Exit(Some(
+                ConsoleOutcome::NewSessionWithProvider {
+                    container,
+                    agent,
+                    provider,
+                },
+            )));
+        }
+        crate::console::tui::InputOutcome::LaunchWithProvider {
+            selector,
+            agent,
+            provider,
+        } => {
+            let Some(input) = take_pending_launch_plan(state) else {
+                return Ok(ConsoleLoopFlow::Exit(None));
+            };
+            let workspace = jackin_console::services::launch::resolve_provider_launch_workspace(
+                inputs.config,
+                inputs.cwd,
+                &input,
+                &selector,
+            )?;
+            let Some(workspace) = workspace else {
+                return Ok(ConsoleLoopFlow::Exit(None));
+            };
+            return Ok(ConsoleLoopFlow::Exit(Some(
+                ConsoleOutcome::LaunchWithProvider {
+                    selector,
+                    workspace,
+                    agent,
+                    provider,
+                },
+            )));
+        }
+        crate::console::tui::InputOutcome::InstanceAction { container, action } => {
+            if action.runs_in_place() {
+                handle_in_place_instance_action(terminal, state, inputs, &container, action)
+                    .await?;
+                *needs_redraw = true;
+                return Ok(ConsoleLoopFlow::Continue);
+            }
+            return Ok(ConsoleLoopFlow::Exit(Some(
+                ConsoleOutcome::InstanceAction { container, action },
+            )));
+        }
+    }
+    Ok(ConsoleLoopFlow::Continue)
+}
+
+async fn handle_key_event<B, H, R>(
+    terminal: &mut ratatui::Terminal<B>,
+    state: &mut ConsoleState,
+    key: crossterm::event::KeyEvent,
+    inputs: &mut ConsoleLoopInputs<'_, H, R>,
+    mouse_state: &ConsoleMouseState,
+    needs_redraw: &mut bool,
+) -> anyhow::Result<ConsoleLoopFlow>
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+    H: InstanceActionHandler<jackin_core::Agent>,
+    R: jackin_docker::CommandRunner,
+{
+    use std::time::Duration;
+
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    if matches!(key.code, KeyCode::Esc)
+        && key.modifiers.is_empty()
+        && mouse_state
+            .last_event_at
+            .is_some_and(|at| at.elapsed() <= Duration::from_millis(MOUSE_ESCAPE_GRACE_MS))
+    {
+        return Ok(ConsoleLoopFlow::Continue);
+    }
+    jackin_diagnostics::debug_log!(
+        "tui",
+        "key={} location={}",
+        jackin_console::tui::debug::key_debug_name_for_input(
+            key,
+            jackin_console::tui::run::consumes_letter_input(letter_input_state_for_console(state)),
+        ),
+        console_location_debug(state)
+    );
+    if matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL) {
+        return Ok(ConsoleLoopFlow::Exit(None));
+    }
+
+    if let Some(plan) = state.handle_quit_confirm_key(key) {
+        match plan {
+            QuitConfirmPlan::Exit => return Ok(ConsoleLoopFlow::Exit(None)),
+            QuitConfirmPlan::Dismiss | QuitConfirmPlan::Continue => {}
+        }
+        return Ok(ConsoleLoopFlow::Continue);
+    }
+
+    if should_open_quit_confirm(key, quit_intercept_state_for_console(state)) {
+        state.open_quit_confirm();
+        return Ok(ConsoleLoopFlow::Continue);
+    }
+
+    let outcome = {
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        crate::console::tui::handle_key(ms, inputs.config, inputs.paths, inputs.cwd, key)?
+    };
+    if startup_error_dismissed(state, inputs.startup_error_pending) {
+        return Ok(ConsoleLoopFlow::Exit(None));
+    }
+    {
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        for effect in ms.drain_effects() {
+            *needs_redraw |= crate::console::effects::execute_manager_effect(
+                ms,
+                inputs.config,
+                inputs.paths,
+                effect,
+            );
+        }
+    }
+    jackin_diagnostics::carry_link_forward();
+    handle_input_outcome(terminal, state, outcome, inputs, needs_redraw).await
+}
+
+fn reset_modal_mouse_state(mouse_state: &mut ConsoleMouseState, needs_redraw: &mut bool) {
+    if mouse_state.chrome_hover.is_some() {
+        mouse_state.chrome_hover = None;
+        *needs_redraw = true;
+    }
+    if mouse_state.pointer_shape != jackin_tui::PointerShape::Default {
+        mouse_state.pointer_shape = jackin_tui::PointerShape::Default;
+        let mut out = std::io::stdout();
+        let seq = jackin_tui::osc22_pointer_shape(mouse_state.pointer_shape);
+        let _unused = std::io::Write::write_all(&mut out, seq.as_bytes());
+        drop(std::io::Write::flush(&mut out));
+    }
+}
+
+fn update_console_pointer_shape(
+    ms: &jackin_console::tui::state::ManagerState<'_>,
+    config: &AppConfig,
+    mouse: crossterm::event::MouseEvent,
+    term_size: ratatui::layout::Rect,
+    mouse_state: &mut ConsoleMouseState,
+    needs_redraw: &mut bool,
+    no_modal_open: bool,
+) {
+    let next_chrome_hover = if no_modal_open {
+        mouse_state
+            .chrome_hover_tracker
+            .hovered(mouse.column, mouse.row)
+            .copied()
+    } else {
+        None
+    };
+    if next_chrome_hover != mouse_state.chrome_hover {
+        mouse_state.chrome_hover = next_chrome_hover;
+        *needs_redraw = true;
+    }
+    let next_pointer_shape = console_pointer_shape(
+        mouse_state.chrome_hover.is_some(),
+        crate::console::tui::input::clickable_at(ms, mouse, term_size, Some(config)),
+    );
+    if next_pointer_shape != mouse_state.pointer_shape {
+        mouse_state.pointer_shape = next_pointer_shape;
+        let seq = jackin_tui::osc22_pointer_shape(mouse_state.pointer_shape);
+        let mut out = std::io::stdout();
+        drop(std::io::Write::write_all(&mut out, seq.as_bytes()));
+        drop(std::io::Write::flush(&mut out));
+    }
+}
+
+fn handle_mouse_event<H, R>(
+    state: &mut ConsoleState,
+    mouse: crossterm::event::MouseEvent,
+    term_size: ratatui::layout::Rect,
+    inputs: &mut ConsoleLoopInputs<'_, H, R>,
+    mouse_state: &mut ConsoleMouseState,
+    needs_redraw: &mut bool,
+) -> anyhow::Result<ConsoleLoopFlow> {
+    mouse_state.last_event_at = Some(std::time::Instant::now());
+    if should_debug_log_mouse(mouse) {
+        jackin_diagnostics::debug_log!(
+            "tui",
+            "mouse={mouse:?} location={}",
+            console_location_debug(state)
+        );
+    }
+    let no_modal_open = no_modal_open(state);
+    let modal_plan = {
+        let (main_area, _) = split_debug_area(term_size, jackin_diagnostics::is_debug_mode());
+        let quit_confirm_rect = state
+            .quit_confirm_state()
+            .map(|confirm| quit_confirm_area(main_area, confirm));
+        let ConsoleStage::Manager(ms) = &state.stage;
+        let list_modal_rect = ms.list_modal.as_ref().map(|modal| modal.rect(main_area));
+        modal_mouse_layer_plan(
+            mouse,
+            ConsoleModalMouseLayerFacts {
+                quit_confirm_rect,
+                list_modal_rect,
+                list_modal_container_info: matches!(
+                    ms.list_modal,
+                    Some(crate::console::tui::state::Modal::ContainerInfo { .. })
+                ),
+                startup_error_modal_active: startup_error_modal_active_for_console(
+                    state,
+                    inputs.startup_error_pending,
+                ),
+            },
+        )
+    };
+    if modal_plan.dismiss_quit_confirm {
+        state.dismiss_quit_confirm();
+    }
+    if modal_plan.dismiss_list_modal {
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        let _unused = crate::console::tui::update_manager(
+            ms,
+            crate::console::tui::ManagerMessage::DismissListModal,
+        );
+    }
+
+    if modal_plan.consumed {
+        if startup_error_dismissed(state, inputs.startup_error_pending) {
+            return Ok(ConsoleLoopFlow::Exit(None));
+        }
+        reset_modal_mouse_state(mouse_state, needs_redraw);
+        return Ok(ConsoleLoopFlow::Continue);
+    }
+
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    let debug_chip_hovered = mouse_state.chrome_hover_tracker.is_hovered(
+        mouse.column,
+        mouse.row,
+        &ConsoleChromeHover::DebugChip,
+    );
+    let active_run = jackin_diagnostics::active_run();
+    if debug_chip_activation_allowed(
+        mouse,
+        no_modal_open,
+        debug_chip_hovered,
+        active_run.is_some(),
+    ) && let Some(run) = active_run
+    {
+        let log_path = run.path().display().to_string();
+        let _unused = crate::console::tui::update_manager(
+            ms,
+            crate::console::tui::ManagerMessage::OpenListContainerInfo {
+                state: jackin_console::tui::components::container_info::debug_run_info_state(
+                    env!("JACKIN_VERSION"),
+                    run.run_id(),
+                    log_path,
+                ),
+            },
+        );
+    }
+
+    let _outcome = crate::console::tui::input::handle_mouse_with_config(
+        ms,
+        mouse,
+        term_size,
+        Some(inputs.config),
+    );
+    for effect in ms.drain_effects() {
+        *needs_redraw |= crate::console::effects::execute_manager_effect(
+            ms,
+            inputs.config,
+            inputs.paths,
+            effect,
+        );
+    }
+    update_console_pointer_shape(
+        ms,
+        inputs.config,
+        mouse,
+        term_size,
+        mouse_state,
+        needs_redraw,
+        no_modal_open,
+    );
+    Ok(ConsoleLoopFlow::Continue)
+}
+
 pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     mut config: AppConfig,
     paths: &JackinPaths,
@@ -194,7 +785,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
-    use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
+    use crossterm::event::{Event, KeyEventKind};
     use futures_util::{FutureExt as _, StreamExt as _};
 
     let startup_error_pending = options.startup_error.is_some();
@@ -217,10 +808,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     };
     let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
     let mut terminal = ratatui::Terminal::new(backend)?;
-    let mut last_mouse_event_at: Option<std::time::Instant> = None;
-    // Tracks the terminal pointer shape so OSC 22 is emitted only when the
-    // hover crosses a clickable boundary rather than on every motion event.
-    let mut pointer_shape = jackin_tui::PointerShape::Default;
+    let mut mouse_state = ConsoleMouseState::new();
     // Async event source: yields to the Tokio reactor between events so
     // background tasks can progress instead of blocking for up to TICK_MS.
     let mut event_stream = crossterm::event::EventStream::new();
@@ -230,9 +818,6 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     animation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut needs_redraw = true;
 
-    let mut chrome_hover_tracker: jackin_tui::components::HoverTracker<ConsoleChromeHover> =
-        jackin_tui::components::HoverTracker::new();
-    let mut chrome_hover: Option<ConsoleChromeHover> = None;
     // The Debug-info dialog paints OSC 8 hyperlinks as a raw overlay outside the
     // Ratatui buffer; when it closes we must force a full clear so that residue
     // does not linger on the screen behind it.
@@ -247,16 +832,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let result = 'main: loop {
         // Sync the screen trace to the visible stage. On a change, the old
         // screen span ends and a fresh linked trace starts for the new one.
-        {
-            let screen = screen_of(&state);
-            if active_screen.as_ref().map(|(s, _)| *s) != Some(screen) {
-                let from = active_screen.as_ref().map(|(s, _)| s.as_str());
-                active_screen = Some((screen, jackin_diagnostics::enter_screen(screen)));
-                if let Some(from) = from {
-                    jackin_diagnostics::record_action("navigate", Some(from));
-                }
-            }
-        }
+        sync_active_screen(&state, &mut active_screen);
 
         // Drain a pending token-generate request before render: suspend the
         // TUI, let the non-TUI effect executor run the interactive mint/write,
@@ -295,115 +871,17 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
 
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
-        if let ConsoleStage::Manager(ms) = &mut state.stage {
-            let messages =
-                crate::console::effects::poll_background_messages(ms, &mut config, paths);
-            for message in messages {
-                needs_redraw |= crate::console::effects::apply_background_event(
-                    ms,
-                    &mut config,
-                    paths,
-                    cwd,
-                    message,
-                );
-            }
-        }
+        drain_background_messages(&mut state, &mut config, paths, cwd, &mut needs_redraw);
 
-        if let ConsoleStage::Manager(ms) = &mut state.stage
-            && needs_redraw
-        {
-            let full_area: ratatui::layout::Rect = terminal.size()?.into();
-            let (main_area, debug_bar_area) =
-                split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
-            // If the Debug-info dialog's raw overlay was painted last frame and
-            // the dialog has since closed, force a full clear so the OSC 8 link
-            // residue (which Ratatui's diff does not track) is wiped.
-            if container_info_overlay_active
-                && !matches!(
-                    ms.list_modal,
-                    Some(crate::console::tui::state::Modal::ContainerInfo { .. })
-                )
-            {
-                terminal.clear()?;
-                container_info_overlay_active = false;
-            }
-            crate::console::tui::prepare_for_render(ms, &config, cwd, main_area);
-            let confirm_state = state.quit_confirm.as_ref();
-            terminal.draw(|frame| {
-                crate::console::tui::render(frame, main_area, ms, &config, cwd);
-                if let Some(confirm) = confirm_state {
-                    // Reserve the body's bottom row for the confirm hint bar and
-                    // center the dialog above it. The backdrop dims only the
-                    // body; the status bar (debug chip) renders below in
-                    // `debug_bar_area`, so the bottom chrome reads: dialog
-                    // backdrop, hint row, blank spacer, status bar — the same
-                    // ordering every jackin❯ surface uses.
-                    let hint_row = ratatui::layout::Rect {
-                        x: main_area.x,
-                        y: main_area.bottom().saturating_sub(1),
-                        width: main_area.width,
-                        height: 1,
-                    };
-                    let body = ratatui::layout::Rect {
-                        height: main_area.height.saturating_sub(1),
-                        ..main_area
-                    };
-                    jackin_console::tui::view::render_modal_backdrop(frame, body);
-                    let area = quit_confirm_area(body, confirm);
-                    jackin_tui::components::render_confirm_dialog(frame, area, confirm);
-                    jackin_tui::components::render_hint_bar(
-                        frame,
-                        hint_row,
-                        &jackin_tui::components::confirm_hint_spans(),
-                    );
-                }
-                chrome_hover_tracker.clear();
-                if let Some(bar_area) = debug_bar_area {
-                    let active_run = jackin_diagnostics::active_run();
-                    let env_run_id = std::env::var("JACKIN_RUN_ID").ok();
-                    let run_id = debug_run_id_label(
-                        active_run.as_ref().map(|r| r.run_id()),
-                        env_run_id.as_deref(),
-                    );
-                    // Use only the bottom row of the 2-row bar for the chip;
-                    // the top row is the blank spacer (Defect 39).
-                    let chip_row = debug_chip_row(bar_area);
-                    if let Some(chip) =
-                        jackin_tui::components::status_footer_debug_chip_rect(chip_row, &run_id)
-                    {
-                        chrome_hover_tracker.register(chip, ConsoleChromeHover::DebugChip);
-                    }
-                    jackin_tui::components::render_status_footer_right_group(
-                        frame,
-                        chip_row,
-                        "",
-                        jackin_tui::components::StatusRightGroup {
-                            usage: None,
-                            container: "",
-                            run_id: Some(&run_id),
-                        },
-                        1.0,
-                        jackin_tui::components::StatusFooterHover {
-                            left: false,
-                            usage: false,
-                            right: false,
-                            right_debug: chrome_hover == Some(ConsoleChromeHover::DebugChip),
-                        },
-                    );
-                }
-            })?;
-            if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
-                ms.list_modal.as_ref()
-            {
-                let rect = modal.rect(main_area);
-                let overlay = jackin_tui::components::container_info_hyperlink_overlay(rect, info);
-                if !overlay.is_empty() {
-                    let mut out = std::io::stdout();
-                    drop(std::io::Write::write_all(&mut out, &overlay));
-                    drop(std::io::Write::flush(&mut out));
-                }
-                container_info_overlay_active = true;
-            }
+        if needs_redraw {
+            draw_console_frame(
+                &mut terminal,
+                &mut state,
+                &config,
+                cwd,
+                &mut mouse_state,
+                &mut container_info_overlay_active,
+            )?;
             needs_redraw = false;
         }
         let term_size: ratatui::layout::Rect = terminal.size()?.into();
@@ -441,393 +919,47 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
         for event in event_batch {
             match event {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    if matches!(key.code, KeyCode::Esc)
-                        && key.modifiers.is_empty()
-                        && last_mouse_event_at.is_some_and(|at| {
-                            at.elapsed() <= Duration::from_millis(MOUSE_ESCAPE_GRACE_MS)
-                        })
-                    {
-                        continue;
-                    }
-                    jackin_diagnostics::debug_log!(
-                        "tui",
-                        "key={} location={}",
-                        jackin_console::tui::debug::key_debug_name_for_input(
-                            key,
-                            jackin_console::tui::run::consumes_letter_input(
-                                letter_input_state_for_console(&state)
-                            ),
-                        ),
-                        console_location_debug(&state)
-                    );
-                    // Ctrl+C: immediate quit — hard exit on any screen, no
-                    // confirmation, and it wins even when the exit confirm is
-                    // already open. Mirrors the launch cockpit's Ctrl+C.
-                    if matches!(key.code, KeyCode::Char('c'))
-                        && key.modifiers.contains(KeyModifiers::CONTROL)
-                    {
-                        break 'main Ok(None);
-                    }
-
-                    if let Some(plan) = state.handle_quit_confirm_key(key) {
-                        match plan {
-                            QuitConfirmPlan::Exit => break 'main Ok(None),
-                            QuitConfirmPlan::Dismiss => {}
-                            QuitConfirmPlan::Continue => {}
-                        }
-                        continue;
-                    }
-
-                    // Quit-confirm intercept: Ctrl+Q on any screen, or bare
-                    // `q`/`Q` off the main screen (SHIFT tolerated for
-                    // caps-lock parity). Checked before stage input.
-                    if should_open_quit_confirm(key, quit_intercept_state_for_console(&state)) {
-                        state.open_quit_confirm();
-                        continue;
-                    }
-
-                    let outcome = if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        crate::console::tui::handle_key(ms, &mut config, paths, cwd, key)?
-                    } else {
-                        crate::console::tui::InputOutcome::Continue
+                    let mut inputs = ConsoleLoopInputs {
+                        config: &mut config,
+                        paths,
+                        cwd,
+                        action_handler,
+                        runner,
+                        startup_error_pending,
                     };
-                    if startup_error_dismissed(&state, startup_error_pending) {
-                        break 'main Ok(None);
-                    }
-                    if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        for effect in ms.drain_effects() {
-                            needs_redraw |= crate::console::effects::execute_manager_effect(
-                                ms,
-                                &mut config,
-                                paths,
-                                effect,
-                            );
-                        }
-                    }
-                    // A launching outcome ends the console (and its list-screen
-                    // span) before the launch flow starts in a later frame; snap
-                    // the link so the launch trace still points back to the list.
-                    jackin_diagnostics::carry_link_forward();
-                    match outcome {
-                        crate::console::tui::InputOutcome::Continue => {
-                            if let ConsoleStage::Manager(ms) = &mut state.stage
-                                && crate::console::effects::execute_pending_workspace_save_commit(
-                                    ms,
-                                    &mut config,
-                                    paths,
-                                    cwd,
-                                )?
-                            {
-                                needs_redraw = true;
-                            }
-                        }
-                        crate::console::tui::InputOutcome::ExitJackin => {
-                            break 'main Ok(None);
-                        }
-                        crate::console::tui::InputOutcome::LaunchNamed(name) => {
-                            jackin_diagnostics::set_workspace(&name);
-                            jackin_diagnostics::set_workspace_kind("named");
-                            jackin_diagnostics::record_action("launch", Some(&name));
-                            let dispatch = dispatch_launch_prompt(
-                                &mut state,
-                                &config,
-                                cwd,
-                                LoadWorkspaceInput::Saved(name),
-                            )?;
-                            if let Some(outcome) = execute_launch_prompt_dispatch(
-                                &mut terminal,
-                                &mut state,
-                                paths,
-                                &config,
-                                cwd,
-                                runner,
-                                dispatch,
-                            )
-                            .await?
-                            {
-                                break 'main Ok(Some(outcome));
-                            }
-                        }
-                        crate::console::tui::InputOutcome::PrewarmNamed(name) => {
-                            break 'main Ok(Some(ConsoleOutcome::PrewarmNamed(name)));
-                        }
-                        crate::console::tui::InputOutcome::LaunchCurrentDir => {
-                            jackin_diagnostics::set_workspace_kind("current-dir");
-                            jackin_diagnostics::record_action("launch", Some("current-dir"));
-                            let dispatch = dispatch_launch_prompt(
-                                &mut state,
-                                &config,
-                                cwd,
-                                LoadWorkspaceInput::CurrentDir,
-                            )?;
-                            if let Some(outcome) = execute_launch_prompt_dispatch(
-                                &mut terminal,
-                                &mut state,
-                                paths,
-                                &config,
-                                cwd,
-                                runner,
-                                dispatch,
-                            )
-                            .await?
-                            {
-                                break 'main Ok(Some(outcome));
-                            }
-                        }
-                        crate::console::tui::InputOutcome::LaunchWithAgent(role) => {
-                            let dispatch = committed_role_prompt(&mut state, &config, cwd, role)?;
-                            if let Some(outcome) = execute_launch_prompt_dispatch(
-                                &mut terminal,
-                                &mut state,
-                                paths,
-                                &config,
-                                cwd,
-                                runner,
-                                dispatch,
-                            )
-                            .await?
-                            {
-                                break 'main Ok(Some(outcome));
-                            }
-                        }
-                        crate::console::tui::InputOutcome::LaunchWithRuntimeAgent(agent) => {
-                            if let Some(outcome) =
-                                launch_with_committed_agent(&mut state, &config, cwd, agent)?
-                            {
-                                break 'main Ok(Some(outcome));
-                            }
-                        }
-                        crate::console::tui::InputOutcome::NewSessionWithProvider {
-                            container,
-                            agent,
-                            provider,
-                        } => {
-                            break 'main Ok(Some(ConsoleOutcome::NewSessionWithProvider {
-                                container,
-                                agent,
-                                provider,
-                            }));
-                        }
-                        crate::console::tui::InputOutcome::LaunchWithProvider {
-                            selector,
-                            agent,
-                            provider,
-                        } => {
-                            let Some(input) = take_pending_launch_plan(&mut state) else {
-                                break 'main Ok(None);
-                            };
-                            let workspace =
-                                jackin_console::services::launch::resolve_provider_launch_workspace(
-                                    &config, cwd, &input, &selector,
-                                )?;
-                            let Some(workspace) = workspace else {
-                                break 'main Ok(None);
-                            };
-                            break 'main Ok(Some(ConsoleOutcome::LaunchWithProvider {
-                                selector,
-                                workspace,
-                                agent,
-                                provider,
-                            }));
-                        }
-                        crate::console::tui::InputOutcome::InstanceAction { container, action } => {
-                            if action.runs_in_place() {
-                                if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                    let action_fact = action.workspace_action_fact();
-                                    let busy_title = instance_action_busy_title(action_fact);
-                                    let busy_body =
-                                        instance_action_busy_message(action_fact, &container);
-                                    let _unused = crate::console::tui::update_manager(
-                                        ms,
-                                        crate::console::tui::ManagerMessage::OpenStatusPopup {
-                                            title: busy_title.into(),
-                                            message: busy_body,
-                                        },
-                                    );
-                                    terminal.draw(|frame| {
-                                        let full_area = frame.area();
-                                        let (main_area, _debug_bar) = split_debug_area(
-                                            full_area,
-                                            jackin_diagnostics::is_debug_mode(),
-                                        );
-                                        crate::console::tui::render(
-                                            frame, main_area, ms, &config, cwd,
-                                        );
-                                    })?;
-                                }
-                                let result = action_handler.run_in_place(&container, action).await;
-                                if let ConsoleStage::Manager(ms) = &mut state.stage {
-                                    let _unused = crate::console::tui::update_manager(
-                                        ms,
-                                        crate::console::tui::ManagerMessage::DismissStatusPopup,
-                                    );
-                                    if let Err(error) = result {
-                                        let err_title = instance_action_failed_error_title(
-                                            action.workspace_action_fact(),
-                                        );
-                                        let _unused = crate::console::tui::update_manager(
-                                            ms,
-                                            crate::console::tui::ManagerMessage::OpenListErrorPopup {
-                                                title: err_title.into(),
-                                                message: instance_action_failed_error_message(error),
-                                            },
-                                        );
-                                    }
-                                    ms.force_refresh_instances();
-                                }
-                                needs_redraw = true;
-                                continue;
-                            }
-                            break 'main Ok(Some(ConsoleOutcome::InstanceAction {
-                                container,
-                                action,
-                            }));
-                        }
+                    match handle_key_event(
+                        &mut terminal,
+                        &mut state,
+                        key,
+                        &mut inputs,
+                        &mouse_state,
+                        &mut needs_redraw,
+                    )
+                    .await?
+                    {
+                        ConsoleLoopFlow::Continue => {}
+                        ConsoleLoopFlow::Exit(outcome) => break 'main Ok(outcome),
                     }
                 }
                 Event::Mouse(mouse) => {
-                    last_mouse_event_at = Some(std::time::Instant::now());
-                    if should_debug_log_mouse(mouse) {
-                        jackin_diagnostics::debug_log!(
-                            "tui",
-                            "mouse={mouse:?} location={}",
-                            console_location_debug(&state)
-                        );
-                    }
-                    // Single-consumer mouse precedence:
-                    //   1. quit_confirm (supersedes everything) — consumes all input
-                    //   2. list_modal — consumes all input while open
-                    //   3. debug chip (chrome layer, only when no modal)
-                    //   4. base surface (handle_mouse_with_config)
-                    // A layer that handles the event does not fall through.
-                    let no_modal_open = no_modal_open(&state);
-
-                    // Layer 1 & 2: modal layers consume all input. Click outside = dismiss.
-                    let modal_plan = {
-                        let full_area: ratatui::layout::Rect = term_size;
-                        let (main_area, _) =
-                            split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
-                        let quit_confirm_rect = state
-                            .quit_confirm_state()
-                            .map(|confirm| quit_confirm_area(main_area, confirm));
-                        let ConsoleStage::Manager(ms) = &state.stage;
-                        let list_modal_rect =
-                            ms.list_modal.as_ref().map(|modal| modal.rect(main_area));
-                        modal_mouse_layer_plan(
-                            mouse,
-                            ConsoleModalMouseLayerFacts {
-                                quit_confirm_rect,
-                                list_modal_rect,
-                                list_modal_container_info: matches!(
-                                    ms.list_modal,
-                                    Some(crate::console::tui::state::Modal::ContainerInfo { .. })
-                                ),
-                                startup_error_modal_active: startup_error_modal_active_for_console(
-                                    &state,
-                                    startup_error_pending,
-                                ),
-                            },
-                        )
+                    let mut inputs = ConsoleLoopInputs {
+                        config: &mut config,
+                        paths,
+                        cwd,
+                        action_handler,
+                        runner,
+                        startup_error_pending,
                     };
-                    if modal_plan.dismiss_quit_confirm {
-                        state.dismiss_quit_confirm();
-                    }
-                    if modal_plan.dismiss_list_modal {
-                        let ConsoleStage::Manager(ms) = &mut state.stage;
-                        let _unused = crate::console::tui::update_manager(
-                            ms,
-                            crate::console::tui::ManagerMessage::DismissListModal,
-                        );
-                    }
-
-                    if modal_plan.consumed {
-                        if startup_error_dismissed(&state, startup_error_pending) {
-                            break 'main Ok(None);
-                        }
-                        // Modal owned this event — clear chrome hover and revert pointer.
-                        if chrome_hover.is_some() {
-                            chrome_hover = None;
-                            needs_redraw = true;
-                        }
-                        if pointer_shape != jackin_tui::PointerShape::Default {
-                            pointer_shape = jackin_tui::PointerShape::Default;
-                            let mut out = std::io::stdout();
-                            let seq = jackin_tui::osc22_pointer_shape(pointer_shape);
-                            let _unused = std::io::Write::write_all(&mut out, seq.as_bytes());
-                            drop(std::io::Write::flush(&mut out));
-                        }
-                    } else if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        // Layer 3: chrome (debug chip) — only fires when no modal.
-                        // Debug chip click: open the shared container/session info popup.
-                        let debug_chip_hovered = chrome_hover_tracker.is_hovered(
-                            mouse.column,
-                            mouse.row,
-                            &ConsoleChromeHover::DebugChip,
-                        );
-                        let active_run = jackin_diagnostics::active_run();
-                        if debug_chip_activation_allowed(
-                            mouse,
-                            no_modal_open,
-                            debug_chip_hovered,
-                            active_run.is_some(),
-                        ) && let Some(run) = active_run
-                        {
-                            let log_path = run.path().display().to_string();
-                            let _unused = crate::console::tui::update_manager(
-                                ms,
-                                crate::console::tui::ManagerMessage::OpenListContainerInfo {
-                                    state: jackin_console::tui::components::container_info::debug_run_info_state(
-                                        env!("JACKIN_VERSION"),
-                                        run.run_id(),
-                                        log_path,
-                                    ),
-                                },
-                            );
-                        }
-
-                        // Layer 4: base surface.
-                        let _outcome = crate::console::tui::input::handle_mouse_with_config(
-                            ms,
-                            mouse,
-                            term_size,
-                            Some(&config),
-                        );
-                        for effect in ms.drain_effects() {
-                            needs_redraw |= crate::console::effects::execute_manager_effect(
-                                ms,
-                                &mut config,
-                                paths,
-                                effect,
-                            );
-                        }
-                        // Pointer + chip hover tracking.
-                        let next_chrome_hover = no_modal_open
-                            .then(|| {
-                                chrome_hover_tracker
-                                    .hovered(mouse.column, mouse.row)
-                                    .copied()
-                            })
-                            .flatten();
-                        if next_chrome_hover != chrome_hover {
-                            chrome_hover = next_chrome_hover;
-                            needs_redraw = true;
-                        }
-                        let next_pointer_shape = console_pointer_shape(
-                            chrome_hover.is_some(),
-                            crate::console::tui::input::clickable_at(
-                                ms,
-                                mouse,
-                                term_size,
-                                Some(&config),
-                            ),
-                        );
-                        if next_pointer_shape != pointer_shape {
-                            pointer_shape = next_pointer_shape;
-                            let seq = jackin_tui::osc22_pointer_shape(pointer_shape);
-                            let mut out = std::io::stdout();
-                            drop(std::io::Write::write_all(&mut out, seq.as_bytes()));
-                            drop(std::io::Write::flush(&mut out));
-                        }
+                    match handle_mouse_event(
+                        &mut state,
+                        mouse,
+                        term_size,
+                        &mut inputs,
+                        &mut mouse_state,
+                        &mut needs_redraw,
+                    )? {
+                        ConsoleLoopFlow::Continue => {}
+                        ConsoleLoopFlow::Exit(outcome) => break 'main Ok(outcome),
                     }
                 }
                 _ => {}
