@@ -348,12 +348,12 @@ fn osc_progress_clear_is_ignored_when_foreground_is_not_agent() {
 }
 
 #[test]
-fn physics_only_promotes_to_weak_working() {
+fn physics_keeps_known_working_alive() {
     let now = Instant::now();
     let mut snapshot = base_snapshot();
     snapshot.process.child_process_count = 1;
 
-    let result = arbitrate(&snapshot, RawAgentState::Unknown, now);
+    let result = arbitrate(&snapshot, RawAgentState::Working, now);
 
     assert_eq!(result.raw_state, RawAgentState::Working);
     assert_eq!(result.confidence, AgentStatusConfidence::Weak);
@@ -361,7 +361,33 @@ fn physics_only_promotes_to_weak_working() {
 }
 
 #[test]
-fn pre_agent_physics_does_not_promote_to_working() {
+fn physics_only_does_not_start_working_from_unknown() {
+    let now = Instant::now();
+    let mut snapshot = base_snapshot();
+    snapshot.process.child_process_count = 1;
+    snapshot.process.cpu_jiffies_delta = 1;
+
+    let result = arbitrate(&snapshot, RawAgentState::Unknown, now);
+
+    assert_eq!(result.raw_state, RawAgentState::Unknown);
+    assert_eq!(result.winner, EvidenceWinner::Unknown);
+}
+
+#[test]
+fn physics_only_does_not_start_working_from_idle() {
+    let now = Instant::now();
+    let mut snapshot = base_snapshot();
+    snapshot.process.child_process_count = 1;
+    snapshot.process.cpu_jiffies_delta = 1;
+
+    let result = arbitrate(&snapshot, RawAgentState::Idle, now);
+
+    assert_eq!(result.raw_state, RawAgentState::Unknown);
+    assert_eq!(result.winner, EvidenceWinner::Unknown);
+}
+
+#[test]
+fn pre_agent_physics_does_not_start_working() {
     let now = Instant::now();
     let mut snapshot = base_snapshot();
     snapshot.process.foreground_is_agent = false;

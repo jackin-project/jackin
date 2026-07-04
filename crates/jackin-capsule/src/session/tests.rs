@@ -316,6 +316,24 @@ fn advance_status_publishes_fresh_authority_with_injected_foreground_identity() 
 }
 
 #[test]
+fn advance_status_does_not_publish_working_from_helper_physics_alone() {
+    let now = std::time::Instant::now();
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+    sampler.descendants = 1;
+    sampler.cpu_delta = 1;
+
+    let tick = session.advance_status_with_process_sampler(None, &mut sampler, now);
+
+    assert_eq!(session.state, AgentState::Unknown);
+    assert!(tick.transition.is_none());
+    let report = session.status.report(session.agent.clone());
+    assert_eq!(report.raw_state, RawAgentState::Unknown);
+    assert_eq!(report.source, AgentStatusSource::None);
+}
+
+#[test]
 fn advance_status_publishes_unknown_when_no_evidence_matches() {
     let now = std::time::Instant::now();
     let mut session = test_session_with_policy(OscPolicy::default());

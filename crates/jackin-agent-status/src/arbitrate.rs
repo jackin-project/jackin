@@ -169,7 +169,8 @@ pub fn arbitrate(
         );
     }
 
-    if snapshot.process.foreground_is_agent
+    if previous_raw == RawAgentState::Working
+        && snapshot.process.foreground_is_agent
         && (snapshot.process.child_process_count > 0 || snapshot.process.cpu_jiffies_delta > 0)
     {
         return finish(
