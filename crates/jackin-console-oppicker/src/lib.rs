@@ -1,8 +1,24 @@
 //! Pure model and planning helpers for the 1Password picker.
 
+pub mod input;
+pub mod load;
+pub mod state;
+
 use std::collections::HashSet;
 
 use jackin_tui::components::TextInputState;
+
+pub use state::{LoadResult, OpPickerState};
+
+/// Concrete selection type for the picker: all five type parameters are bound
+/// to `jackin-core` types already available in this crate.
+pub type OpPickerCoreSelection = OpPickerSelection<
+    jackin_core::OpRef,
+    jackin_core::op_types::OpAccount,
+    jackin_core::op_types::OpVault,
+    jackin_core::op_types::OpItem,
+    jackin_core::FieldTarget,
+>;
 
 pub const fn first_selection(count: usize) -> Option<usize> {
     if count == 0 { None } else { Some(0) }

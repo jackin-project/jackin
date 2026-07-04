@@ -2801,8 +2801,11 @@ name = "jackin-console-oppicker"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
+ "crossterm",
  "jackin-core",
+ "jackin-diagnostics",
  "jackin-tui",
+ "tui-widget-list",
 ]
 
 [[package]]

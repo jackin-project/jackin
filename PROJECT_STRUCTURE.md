@@ -61,12 +61,12 @@ Workspace source under [crates/](crates/); supporting files at repo root:
 | [release.toml](release.toml) | Release configuration |
 | [mise.toml](mise.toml) | Tool versions and construct image task definitions |
 | `crates/jackin-dev/` | Installed developer helper binary (`jackin-dev`) for local PR checkout/sync/isolation workflows |
-| `crates/jackin-console-oppicker/` | Extracted pure 1Password picker model/planning crate used by the console TUI facade |
+| `crates/jackin-console-oppicker/` | Extracted 1Password picker model/state/input crate used by the console TUI facade; console keeps only render adapters and external `op` runner execution |
 | `crates/jackin-xtask/` | Workspace automation binary (`cargo xtask`): construct image tasks + PTY fixture extraction; full command inventory at [Workspace Automation](https://jackin.tailrocks.com/reference/getting-oriented/xtasks/) |
 | [docker-bake.hcl](docker-bake.hcl) | Declarative Docker Bake build graph for construct image |
 | `rust-toolchain.toml` | Pinned Rust toolchain (CI-enforced MSRV) |
 
-For **Rust source tree** — [crates/jackin/src/app/](crates/jackin/src/app/), [crates/jackin/src/cli/](crates/jackin/src/cli/), [crates/jackin-runtime/src/runtime/](crates/jackin-runtime/src/runtime/), [crates/jackin/src/workspace/](crates/jackin/src/workspace/), [crates/jackin/src/console/](crates/jackin/src/console/), and extracted subsystem crates under [crates/](crates/) — see [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/). That page (and this) updated in same PR as any module-level structural change (R1 added core/ansi_tokens.rs + launch-tui/launch_output.rs; R2 flipped arch gate + CI to --strict; R3 split console editor state impls by responsibility; R4 carved the op-picker pure model into `jackin-console-oppicker`), so never falls behind.
+For **Rust source tree** — [crates/jackin/src/app/](crates/jackin/src/app/), [crates/jackin/src/cli/](crates/jackin/src/cli/), [crates/jackin-runtime/src/runtime/](crates/jackin-runtime/src/runtime/), [crates/jackin/src/workspace/](crates/jackin/src/workspace/), [crates/jackin/src/console/](crates/jackin/src/console/), and extracted subsystem crates under [crates/](crates/) — see [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/). That page (and this) updated in same PR as any module-level structural change (R1 added core/ansi_tokens.rs + launch-tui/launch_output.rs; R2 flipped arch gate + CI to --strict; R3 split console editor state impls by responsibility; R4 carved the op-picker pure model into `jackin-console-oppicker`; R5 moved op-picker state/input/load-result polling into the same leaf crate), so never falls behind.
 
 ## Documentation site (`docs/`)
 

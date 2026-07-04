@@ -11,6 +11,7 @@
 - **Depends on**: 015, 045
 - **Category**: perf / tech-debt
 - **Planned at**: 2026-07-04, after the first op-picker model crate carve
+- **Completed at**: current PR branch, 2026-07-04
 
 ## Why this matters
 
@@ -35,13 +36,36 @@ vocabulary. Moving them in the first carve would have widened the blast radius b
 
 ## Done criteria
 
-- [ ] One additional op-picker boundary is owned by `jackin-console-oppicker`.
-- [ ] No dependency cycle from `jackin-console-oppicker` back into `jackin-console`.
-- [ ] `jackin-console` keeps thin facade modules for migrated APIs.
-- [ ] `cargo check --workspace --all-targets --all-features --locked` passes.
-- [ ] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` passes.
-- [ ] Focused op-picker tests pass.
-- [ ] `PROJECT_STRUCTURE.md`, codebase map, and `plans/README.md` are updated.
+- [x] One additional op-picker boundary is owned by `jackin-console-oppicker`.
+- [x] No dependency cycle from `jackin-console-oppicker` back into `jackin-console`.
+- [x] `jackin-console` keeps thin facade modules for migrated APIs.
+- [x] `cargo check --workspace --all-targets --all-features --locked` passes.
+- [x] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` passes.
+- [x] Focused op-picker tests pass.
+- [x] `PROJECT_STRUCTURE.md`, codebase map, and `plans/README.md` are updated.
+
+## Result
+
+Moved the remaining op-picker state/input boundary into
+`crates/jackin-console-oppicker`: concrete picker state, constructors,
+key-handling methods, pending-load request creation, load-result polling, and
+animation tick state now live in the leaf crate. `jackin-console` keeps facade
+modules for `model`, `state`, and `input`; its `load` module owns only external
+`op` runner execution and the console-local animation trait binding.
+
+The leaf crate has no dependency on `jackin-console`; it depends only on lower
+tiers (`jackin-core`, `jackin-tui`, `jackin-diagnostics`, `crossterm`, and
+`tui-widget-list`).
+
+Warm timing after the move:
+
+- Touching `crates/jackin-console/src/tui/op_picker/state.rs` rebuilt
+  `jackin-console` in 1.41s cargo / 1.45s wall.
+- Touching `crates/jackin-console-oppicker/src/state.rs` rebuilt
+  `jackin-console-oppicker` plus `jackin-console` in 1.39s cargo / 1.44s wall.
+
+Plan 015's post-first-carve console facade timing was 6.64s cargo / 6.70s wall,
+so this wider state/input carve materially improves the warm edit-check loop.
 
 ## STOP conditions
 
