@@ -49,6 +49,16 @@ fn cached_path_replaces_plus_in_version() {
 }
 
 #[test]
+fn cache_key_version_collapses_dev_shas_to_preview_channel() {
+    assert_eq!(cache_key_version("0.6.0-dev+bf7df07"), "0.6.0-dev+preview");
+    assert_eq!(
+        cache_key_version("0.6.0-preview.411+bf7df07"),
+        "0.6.0-preview.411+preview"
+    );
+    assert_eq!(cache_key_version("0.6.0"), "0.6.0");
+}
+
+#[test]
 fn normalize_sigstore_v03_bundle_maps_current_cosign_fields() {
     let raw = serde_json::json!({
         "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
@@ -98,7 +108,11 @@ async fn ensure_available_repairs_non_executable_cached_capsule_binary() {
 
     let dir = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(dir.path());
-    let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, container_arch());
+    let cached = cached_binary_path(
+        &paths.cache_dir,
+        &cache_key_version(REQUIRED_VERSION),
+        container_arch(),
+    );
     std::fs::create_dir_all(cached.parent().unwrap()).unwrap();
     std::fs::write(&cached, b"cached").unwrap();
     let mut permissions = std::fs::metadata(&cached).unwrap().permissions();

@@ -22,7 +22,7 @@ avoidable serial network work.
 | 002  | Derived Dockerfile: jackin runtime payload after heavy layers | P1 | M | — | DONE |
 | 003  | Overlap independent launch stages (op://, git pull, sidecar ∥ build) | P1 | L | best after 001 | DONE |
 | 004  | Role-repo `git fetch` freshness TTL + slimmer cleanliness gate | P2 | M | — | DONE |
-| 005  | Cached-binary-first provisioning; retry fast-fail; capsule dev cache | P2 | M | best after 001 | TODO |
+| 005  | Cached-binary-first provisioning; retry fast-fail; capsule dev cache | P2 | M | best after 001 | DONE |
 | 006  | Preserve layer cache on published-stale rebuilds; cache-bust ping-pong fix | P2 | M | rebase over 001 | TODO |
 | 007  | DinD sidecar auto-prewarm + pinned image | P2 | M | composes with 003 | TODO |
 | 008  | Launch round-trip diet (keep_awake gate, preflight probe, restore scan, polls…) | P3 | M | best after 003 | TODO |
@@ -65,6 +65,10 @@ Expected effect (from measured baselines, same machine/network):
 - **Provision only the selected agent (not all supported)** — deferred design
   tradeoff: sibling tabs exec sibling CLIs in the same container
   (`launch_core.rs:222-228` documents why). Needs lazy per-tab provisioning.
+- **Duplicate GitHub token lookup in image version probing** — deferred:
+  Plan 005 memoizes `gh auth token` for agent-binary release metadata, but
+  `runtime/image/version.rs` still has a separate lookup path. It runs outside
+  the foreground reuse decision after Plan 001, so leave it for a follow-up.
 - **Per-agent Dockerfile stage isolation** (one agent bump rebuilds sibling
   layers + default-home tail) — deferred; multi-stage `COPY --link=from`
   redesign (audit PERF-07). Plan 002 removes the worst case (capsule bump).
