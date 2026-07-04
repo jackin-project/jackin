@@ -71,7 +71,6 @@ pub fn docker_build_env() -> Vec<(String, String)> {
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
-#[allow(dead_code, reason = "consumed from runtime/image.rs")]
 pub struct BuildContextStats {
     pub files: u64,
     pub bytes: u64,
@@ -229,7 +228,6 @@ pub fn emit_docker_build_step_diagnostics() {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code, reason = "consumed from runtime/image.rs")]
 pub struct DockerBuildStep {
     pub step: String,
     pub label: String,

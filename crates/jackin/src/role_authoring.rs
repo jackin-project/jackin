@@ -27,7 +27,8 @@ pub fn run(command: RoleCommand) -> anyhow::Result<()> {
 
 fn validate(args: RoleRepoPathArgs) -> anyhow::Result<()> {
     let repo_dir = resolve_repo_path(args.path)?;
-    validate_role_repo(&repo_dir)?;
+    let validated = validate_role_repo(&repo_dir)?;
+    crate::role_claude_plugins::validate_claude_plugin_marketplaces(&validated.manifest)?;
     println!("Role repository is valid: {}", repo_dir.display());
     Ok(())
 }
@@ -83,7 +84,8 @@ fn migrate(args: RoleRepoPathArgs) -> anyhow::Result<()> {
         Some((old, new)) => println!("Migrated manifest {old} -> {new}"),
         None => println!("Manifest already at current version"),
     }
-    validate_role_repo(&repo_dir)?;
+    let validated = validate_role_repo(&repo_dir)?;
+    crate::role_claude_plugins::validate_claude_plugin_marketplaces(&validated.manifest)?;
     println!("Role repository is valid: {}", repo_dir.display());
     Ok(())
 }
@@ -100,7 +102,8 @@ fn create(args: &RoleCreateArgs) -> anyhow::Result<()> {
     }
     std::fs::create_dir(&repo_dir).with_context(|| format!("creating {}", repo_dir.display()))?;
     write_scaffold(&repo_dir, &selector)?;
-    validate_role_repo(&repo_dir)?;
+    let validated = validate_role_repo(&repo_dir)?;
+    crate::role_claude_plugins::validate_claude_plugin_marketplaces(&validated.manifest)?;
 
     println!("Created role repository: {}", repo_dir.display());
     println!(

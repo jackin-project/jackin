@@ -603,7 +603,6 @@ impl ConfigEditor {
     ///
     /// Used by tests that need to inject invalid TOML shapes (e.g. a role env
     /// block without the required `git` field) to exercise save-time rejection.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn insert_at_path(&mut self, path: &[String], key: &str, value: &str) {
         let table = table_path_mut(&mut self.doc, path);
         table.insert(key, toml_edit::value(value));
