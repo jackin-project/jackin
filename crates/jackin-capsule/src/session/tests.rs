@@ -435,7 +435,7 @@ fn osc_8_unsafe_scheme_dropped_even_when_policy_allows() {
 
 #[test]
 fn drain_clears_pending_between_calls() {
-    let mut session = test_session_with_policy(OscPolicy::default());
+    let mut session = test_session_with_policy(OscPolicy::for_test_allow_all());
     session.feed_pty(b"\x1b]52;c;AAAA\x07");
     let first = session.drain_passthrough();
     assert_eq!(first.len(), 1);

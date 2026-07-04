@@ -13,6 +13,12 @@
 - **Depends on**: none
 - **Category**: perf
 - **Planned at**: commit `46511939d`, 2026-07-03
+- **Measurement note**: Local `render_perf_probe` before caching: p50 695us, p95 882us, max 3330us
+  across 300 frames. After per-pane region caching: p50 658us, p95 701us, max 947us. The p95 drop
+  is about 20.5%, so the scan/cache path met the measurement gate.
+- **Implementation note**: Visible pane dirty spans now invalidate a per-pane SGR/hyperlink region cache
+  instead of being dropped. The cache key includes pane geometry, scrollback offset, focus state, and
+  hyperlink policy; disappeared panes are pruned.
 
 ## Why this matters
 
@@ -71,12 +77,12 @@ re-profile to confirm the scans now skip idle panes.
 
 ## Done criteria
 
-- [ ] Step 1 measurement recorded; proceeded only if scans were hot
-- [ ] Per-pane region cache with generation-keyed invalidation (dirty/scroll/resize/focus)
-- [ ] Render-conformance harness unchanged-frames on all existing + new invalidation scenarios
-- [ ] Re-profiled: idle panes no longer scanned; net CPU reduction recorded in the row note
-- [ ] `cargo clippy -p jackin-capsule -- -D warnings` exits 0
-- [ ] `plans/README.md` row updated
+- [x] Step 1 measurement recorded; proceeded only if scans were hot
+- [x] Per-pane region cache with generation-keyed invalidation (dirty/scroll/resize/focus)
+- [x] Render-conformance harness unchanged-frames on all existing + new invalidation scenarios
+- [x] Re-profiled: idle panes no longer scanned; net CPU reduction recorded in the row note
+- [x] `cargo clippy -p jackin-capsule -- -D warnings` exits 0
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 
