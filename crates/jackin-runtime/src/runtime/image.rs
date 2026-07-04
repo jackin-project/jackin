@@ -71,9 +71,17 @@ pub(super) struct PreparedRuntimeBinaries {
 fn local_image_buildx_args() -> Vec<&'static str> {
     // Runtime image builds consume local-only base tags such as
     // `jk_<role>__base:<sha>` and PR-local construct images. A docker-container
-    // buildx builder cannot see the host Docker image store, so force the
-    // Docker-driver default builder instead of inheriting a construct builder.
-    vec!["buildx", "build", "--builder", "default"]
+    // buildx builder cannot see the host Docker image store, so use the
+    // Docker-driver default builder. The global context flag keeps buildx from
+    // rejecting `default` when DOCKER_HOST or another active context is set.
+    vec![
+        "--context",
+        "default",
+        "buildx",
+        "build",
+        "--builder",
+        "default",
+    ]
 }
 
 /// Result status for one explicit role-image prewarm request.

@@ -1559,7 +1559,7 @@ async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
     assert_eq!(row.image, image);
     let recorded = runner.recorded.join("\n");
     assert!(
-        !recorded.contains("docker buildx build "),
+        !recorded.contains("buildx build "),
         "valid prewarm image should skip expensive build path; recorded:\n{recorded}"
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
@@ -1654,7 +1654,7 @@ plugins = []
     assert_eq!(row.image, image);
     let recorded = runner.recorded.join("\n");
     assert!(
-        recorded.contains("docker buildx build "),
+        recorded.contains("buildx build "),
         "explicit/background prewarm should rebuild refresh decisions; recorded:\n{recorded}"
     );
     assert!(
