@@ -34,7 +34,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 006 | Clamp `spin_wait` inter-attempt delay for sub-80ms intervals | bug | P2 | S | HIGH | — | DONE (interval-accurate) |
 | 007 | Stop blanking Claude account metadata on `.claude.json` read errors | bug | P2 | S | MED | — | DONE |
 | 008 | Guard IL/DL against cursor outside the scroll region | bug | P2 | S | MED | — | DONE |
-| 009 | Investigate per-tab vs global pane zoom | bug | P3 | M | LOW | — | BLOCKED (bug; fix plan 044 written) |
+| 009 | Investigate per-tab vs global pane zoom | bug | P3 | M | LOW | — | DONE (bug fixed by plan 044) |
 | 010 | Investigate poisoned-lock handling in launch failure-ack | bug | P3 | S | LOW | — | DONE (recover poisoned guard) |
 | 011 | Decide whether `docker_version` preflight needs a floor | bug | P3 | S | LOW | — | DONE (informational reporter; no floor found) |
 | 012 | Probe the bind-mounted socket for daemon readiness (drop 500ms exec poll) | perf | P2 | M | HIGH | 006 | DONE (socket-first; measurement deferred) |
@@ -70,7 +70,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 041 | Document `grok` agent + `backend` config across user surfaces | docs | P2 | S | HIGH | — | DONE |
 | 042 | Spike: scope the reactive-daemon program | direction | P3 | L | HIGH | — | DONE (design + daemon-spike prototype; follow-ups 047/048) |
 | 043 | Track: finish the security-hardening cluster (compat→standard) | direction | P2 | L | HIGH | 003 | DONE (sudo audit resolved; follow-ups 049-053) |
-| 044 | Store pane zoom state per tab | bug | P3 | M | MED | 009 | TODO |
+| 044 | Store pane zoom state per tab | bug | P3 | M | MED | 009 | DONE |
 | 045 | Prepare op-picker for a safe leaf-crate extraction | perf/tech-debt | P3 | M | MED | 015 | TODO |
 | 047 | Build the host-daemon lifecycle foundation | direction | P2 | M | MED | 042 | TODO |
 | 048 | Build the first production attention adapter | direction | P2 | M | MED | 047 | TODO |

@@ -903,6 +903,64 @@ fn split_metadata_inherits_focused_provider() {
     assert_eq!(env, expected_env);
 }
 
+#[test]
+fn zoom_state_is_independent_per_tab() {
+    let mut mux = split_tab_mux();
+    mux.toggle_zoom();
+    assert_eq!(mux.active_zoomed_id(), Some(1));
+
+    let mut tab_b = Tab::new_single("Shell", 3, "test-b");
+    assert!(tab_b.tree.split_h(3, 4, SplitPosition::After));
+    tab_b.focused_id = 4;
+    mux.tabs.push(tab_b);
+    mux.active_tab = 1;
+    mux.toggle_zoom();
+
+    assert_eq!(mux.active_zoomed_id(), Some(4));
+    assert_eq!(mux.tabs[0].zoomed, Some(1));
+    assert_eq!(mux.tabs[1].zoomed, Some(4));
+
+    mux.active_tab = 0;
+    assert_eq!(mux.active_zoomed_id(), Some(1));
+}
+
+#[test]
+fn unzooming_active_tab_does_not_clear_other_tab_zoom() {
+    let mut mux = split_tab_mux();
+    mux.toggle_zoom();
+    let mut tab_b = Tab::new_single("Shell", 3, "test-b");
+    assert!(tab_b.tree.split_h(3, 4, SplitPosition::After));
+    mux.tabs.push(tab_b);
+    mux.active_tab = 1;
+    mux.toggle_zoom();
+
+    mux.toggle_zoom();
+
+    assert_eq!(mux.tabs[1].zoomed, None);
+    assert_eq!(mux.tabs[0].zoomed, Some(1));
+    mux.active_tab = 0;
+    assert_eq!(mux.active_zoomed_id(), Some(1));
+}
+
+#[test]
+fn killing_zoomed_pane_clears_only_owning_tab_zoom() {
+    let mut mux = split_tab_mux();
+    mux.toggle_zoom();
+    let mut tab_b = Tab::new_single("Shell", 3, "test-b");
+    assert!(tab_b.tree.split_h(3, 4, SplitPosition::After));
+    mux.tabs.push(tab_b);
+    mux.active_tab = 1;
+    mux.toggle_zoom();
+
+    mux.close_focused_pane();
+
+    assert_eq!(mux.tabs[0].zoomed, Some(1));
+    assert_eq!(mux.tabs[1].zoomed, None);
+    assert_eq!(mux.tabs[1].focused_id, 4);
+    mux.active_tab = 0;
+    assert_eq!(mux.active_zoomed_id(), Some(1));
+}
+
 pub(super) fn split_tab_mux() -> Multiplexer {
     let mut mux = test_mux(24, 80);
     let mut tab = Tab::new_single("Shell", 1, "test");

@@ -13,6 +13,8 @@
 - **Depends on**: 009
 - **Category**: bug
 - **Planned at**: follow-up created by Plan 009, 2026-07-04
+- **Completed at**: current PR branch, 2026-07-04
+- **Result**: DONE — zoom state now lives on each tab; active rendering/input still goes through `active_zoomed_id`.
 
 ## Why this matters
 
@@ -79,10 +81,10 @@ If `cargo nextest` is available, also run:
 
 ## Done criteria
 
-- [ ] Zoom state survives independently per tab.
-- [ ] Existing active-tab rendering/input APIs still use `active_zoomed_id`.
-- [ ] Tests cover tab A/tab B independent zoom and kill cleanup.
-- [ ] `plans/README.md` rows 009 and 044 updated.
+- [x] Zoom state survives independently per tab.
+- [x] Existing active-tab rendering/input APIs still use `active_zoomed_id`.
+- [x] Tests cover tab A/tab B independent zoom and kill cleanup.
+- [x] `plans/README.md` rows 009 and 044 updated.
 
 ## STOP conditions
 

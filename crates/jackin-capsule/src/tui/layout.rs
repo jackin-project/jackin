@@ -601,6 +601,7 @@ pub struct Tab {
     custom_label: Option<String>,
     pub tree: PaneTree,
     pub focused_id: u64,
+    pub zoomed: Option<u64>,
     /// Unique human-readable codename assigned at tab creation (e.g. `"badger"`).
     /// Never reassigned; persists across agent process restarts and context resets
     /// because it is a tab property, not a process property. Injected into every
@@ -619,6 +620,7 @@ impl Tab {
             custom_label: None,
             tree: PaneTree::Leaf(session_id),
             focused_id: session_id,
+            zoomed: None,
             codename: codename.into(),
         }
     }
