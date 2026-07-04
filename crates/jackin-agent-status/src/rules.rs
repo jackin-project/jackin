@@ -5,7 +5,7 @@ use std::path::Path;
 use anyhow::Context as _;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::agent_status::evidence::RawAgentState;
+use crate::evidence::RawAgentState;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct VirtualRegions<'a> {
@@ -321,8 +321,7 @@ impl RulePackRegistry {
         Self::from_pack_dirs(Some(Path::new(RUNTIME_PACK_DIR)), override_dir.as_deref())
     }
 
-    #[cfg(test)]
-    pub(crate) fn from_packs(packs: impl IntoIterator<Item = RulePack>) -> Self {
+    pub fn from_packs(packs: impl IntoIterator<Item = RulePack>) -> Self {
         Self {
             packs: packs
                 .into_iter()
@@ -372,11 +371,11 @@ impl RulePackRegistry {
 
 fn load_embedded_packs(packs: &mut HashMap<String, RulePack>) -> anyhow::Result<()> {
     for content in [
-        include_str!("../../../../docker/runtime/agent-status/packs/claude.toml"),
-        include_str!("../../../../docker/runtime/agent-status/packs/codex.toml"),
-        include_str!("../../../../docker/runtime/agent-status/packs/amp.toml"),
-        include_str!("../../../../docker/runtime/agent-status/packs/kimi.toml"),
-        include_str!("../../../../docker/runtime/agent-status/packs/opencode.toml"),
+        include_str!("../packs/claude.toml"),
+        include_str!("../packs/codex.toml"),
+        include_str!("../packs/amp.toml"),
+        include_str!("../packs/kimi.toml"),
+        include_str!("../packs/opencode.toml"),
     ] {
         let pack = toml::from_str::<RulePack>(content)?.finalize()?;
         packs.insert(pack.agent.clone(), pack);
@@ -830,12 +829,7 @@ fn load_packs_from_dir(packs: &mut HashMap<String, RulePack>, dir: &Path) -> any
             Ok(pack) => {
                 packs.insert(pack.agent.clone(), pack);
             }
-            Err(e) => {
-                crate::clog!(
-                    "agent-status: skipping invalid pack {}: {e:#}",
-                    path.display()
-                );
-            }
+            Err(_e) => {}
         }
     }
     Ok(())

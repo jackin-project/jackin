@@ -336,7 +336,7 @@ fn report_attributes_source_by_winner_when_authority_did_not_win() {
 
 #[test]
 fn roll_up_priority_blocked_gt_done_gt_working_gt_idle_gt_unknown() {
-    use crate::agent_status::arbitrate::attention_priority;
+    use crate::arbitrate::attention_priority;
     assert!(attention_priority(AgentState::Blocked) > attention_priority(AgentState::Done));
     assert!(attention_priority(AgentState::Done) > attention_priority(AgentState::Working));
     assert!(attention_priority(AgentState::Working) > attention_priority(AgentState::Idle));
@@ -345,7 +345,7 @@ fn roll_up_priority_blocked_gt_done_gt_working_gt_idle_gt_unknown() {
 
 #[test]
 fn multiple_sessions_roll_up_reflects_most_urgent() {
-    use crate::agent_status::arbitrate::roll_up_states;
+    use crate::arbitrate::roll_up_states;
 
     let session_states = vec![
         AgentState::Working,

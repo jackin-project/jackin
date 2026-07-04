@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use jackin_core::agent::Agent;
 
-use crate::agent_status::policy::CPU_SAMPLE_WINDOW;
+use crate::policy::CPU_SAMPLE_WINDOW;
 
 #[cfg(not(target_os = "linux"))]
 mod procfs {

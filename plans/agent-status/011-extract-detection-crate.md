@@ -10,6 +10,7 @@
 ## Status
 
 - **Priority**: P2 (structural — the home for 001/005/006/007/010; do early)
+- **Implementation status**: DONE in PR 714 (`crates/jackin-agent-status/` now owns the pure detection core; capsule keeps reporter installation)
 - **Effort**: L
 - **Risk**: MED (wide mechanical move; low logic risk — the boundary is already clean)
 - **Depends on**: 008 (the injectable seam)

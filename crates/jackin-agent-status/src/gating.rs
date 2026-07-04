@@ -1,4 +1,4 @@
-use crate::agent_status::evidence::{EvidenceNote, RawAgentState};
+use crate::evidence::{EvidenceNote, RawAgentState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeEvent<'a> {

@@ -2,8 +2,8 @@ use std::time::{Duration, Instant};
 
 use jackin_protocol::agent_status::AgentStatusConfidence;
 
-use crate::agent_status::evidence::{EvidenceNote, EvidenceSummary, EvidenceWinner, RawAgentState};
-use crate::protocol::AgentState;
+use crate::evidence::{EvidenceNote, EvidenceSummary, EvidenceWinner, RawAgentState};
+use jackin_protocol::control::AgentState;
 
 pub const AUTHORITY_TTL: Duration = Duration::from_secs(30);
 pub const WATCHDOG_QUIET: Duration = Duration::from_secs(10);

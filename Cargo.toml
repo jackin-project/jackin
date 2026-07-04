@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/jackin",
+    "crates/jackin-agent-status",
     "crates/jackin-build-meta",
     "crates/jackin-capsule",
     "crates/jackin-config",

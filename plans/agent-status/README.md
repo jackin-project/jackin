@@ -74,7 +74,7 @@ sync/pure, and moving 003/004/005/007 into a clean crate beats moving them twice
 | 008 | DONE | Testability seam: injectable `EvidenceSnapshot` + `/proc` double | tests | M | LOW | — |
 | 009 | TODO | Spike: promote Claude Notification hook + Codex app-server to authority | direction | L | MED | 008 |
 | 010 | TODO | Out-of-band signed pack updates (restyle = data push, not a release) | detection infra | M–L | MED | 011, 005 |
-| 011 | TODO | Extract an independent `jackin-agent-status` crate | architecture | L | MED | 008 |
+| 011 | DONE | Extract an independent `jackin-agent-status` crate | architecture | L | MED | 008 |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` | `REJECTED`.
 

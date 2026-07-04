@@ -2722,6 +2722,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-agent-status"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "jackin-core",
+ "jackin-protocol",
+ "procfs",
+ "regex",
+ "semver",
+ "serde",
+ "tempfile",
+ "toml 1.1.2+spec-1.1.0",
+]
+
+[[package]]
 name = "jackin-build-meta"
 version = "0.6.0-dev"
 
@@ -2736,6 +2751,7 @@ dependencies = [
  "dhat",
  "hex",
  "insta",
+ "jackin-agent-status",
  "jackin-build-meta",
  "jackin-core",
  "jackin-diagnostics",
@@ -2745,10 +2761,7 @@ dependencies = [
  "jackin-usage",
  "nix 0.31.3",
  "portable-pty",
- "procfs",
  "ratatui",
- "regex",
- "semver",
  "serde",
  "serde_json",
  "sha2 0.11.0",

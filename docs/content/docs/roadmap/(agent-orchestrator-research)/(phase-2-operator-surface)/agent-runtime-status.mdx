@@ -6,7 +6,7 @@ title: "Agent Runtime Status Authority"
 
 ## Shipped facts
 
-<RepoFile path="crates/jackin-capsule/src/agent_status.rs" /> (and its `arbitrate`/`policy`/`gating`/`process`/`rules`/`hook_installer` children) is the source of truth for the implementation. This page carries only the stable status contract other roadmap items depend on, the per-runtime detection contract, and the remaining refinements. The prior-art review and the original forward-looking design proposal that shaped the implementation now live in [Agent runtime status: prior art and original design proposal](/reference/research/agent-orchestration/terminal-observation/agent-runtime-status-design/) — read that page for why the design took this shape, and for the specific list of proposed details that did not survive contact with the real implementation (notably the `session.report_agent_state` control-message family, and a "hook/API report wins" arbitration precedence — the shipped protocol instead uses a single `ReportRuntimeEvent` message plus an events-not-states gating layer, and Claude/Codex hooks are identity-only rather than state-authoring, per Decision 0a below).
+<RepoFile path="crates/jackin-agent-status/src/lib.rs" /> (and its `arbitrate`/`policy`/`gating`/`process`/`rules` children) is the source of truth for pure detection and arbitration. Capsule's <RepoFile path="crates/jackin-capsule/src/agent_status.rs" /> re-exports that crate and keeps the container reporter installers under `hook_installer`. This page carries only the stable status contract other roadmap items depend on, the per-runtime detection contract, and the remaining refinements. The prior-art review and the original forward-looking design proposal that shaped the implementation now live in [Agent runtime status: prior art and original design proposal](/reference/research/agent-orchestration/terminal-observation/agent-runtime-status-design/) — read that page for why the design took this shape, and for the specific list of proposed details that did not survive contact with the real implementation (notably the `session.report_agent_state` control-message family, and a "hook/API report wins" arbitration precedence — the shipped protocol instead uses a single `ReportRuntimeEvent` message plus an events-not-states gating layer, and Claude/Codex hooks are identity-only rather than state-authoring, per Decision 0a below).
 
 The built-in runtimes are `claude`, `codex`, `amp`, `kimi`, and `opencode`, defined in <RepoFile path="crates/jackin-core/src/agent.rs" />; runtime setup centralizes agent-home seeding in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" />; launch flags live in <RepoFile path="docker/runtime/entrypoint.sh" /> and are tracked separately by [Agent launch flags API](/roadmap/agent-launch-flags-api/). Capsule owns the PTY reader, `jackin-term` screen state, session lifecycle, the 1Hz ticker, the control socket at `/jackin/run/jackin.sock`, and in-container setup hooks; host-side code consumes structured state, it does not scrape terminal output through `docker exec`/`docker attach`.
 
@@ -53,12 +53,13 @@ Runtime setup hard rules (unchanged): assets under `/jackin/runtime/agent-status
 
 ## Related Files
 
-- <RepoFile path="crates/jackin-capsule/src/agent_status.rs" /> — module root; `arbitrate.rs` is the sole state path, `policy.rs` the debounce/watchdog, `gating.rs` the event table, `process.rs` the `/proc` sampler, `rules.rs` the screen rule-pack engine, `hook_installer.rs` the reporter installers.
+- <RepoFile path="crates/jackin-agent-status/src/lib.rs" /> — pure module root; `arbitrate.rs` is the sole state path, `policy.rs` the debounce/watchdog, `gating.rs` the event table, `process.rs` the `/proc` sampler, and `rules.rs` the screen rule-pack engine.
+- <RepoFile path="crates/jackin-capsule/src/agent_status/hook_installer.rs" /> — container-local reporter installers.
 - <RepoFile path="crates/jackin-capsule/src/session.rs" /> — PTY/process source; `advance_status` is the only state-authoring call.
 - <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — the tick that assembles evidence, arbitrates, and publishes.
 - <RepoFile path="crates/jackin-protocol/src/control.rs" /> and <RepoFile path="crates/jackin-protocol/src/agent_status.rs" /> — the status/report protocol surface.
 - <RepoFile path="crates/jackin-core/src/agent.rs" /> — built-in runtime enum and slugs.
-- <RepoFile path="docker/runtime/agent-status/packs/claude.toml" /> — the bundled rule packs live alongside this one (claude/codex/amp/kimi/opencode).
+- <RepoFile path="crates/jackin-agent-status/packs/claude.toml" /> — the bundled rule packs live alongside this one (claude/codex/amp/kimi/opencode) and are copied into the derived image at `/jackin/runtime/agent-status/packs/`.
 
 ## Related work
 

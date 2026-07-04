@@ -5,12 +5,12 @@ use std::time::Instant;
 
 use jackin_protocol::agent_status::AgentStatusConfidence;
 
-use crate::agent_status::evidence::{
+use crate::evidence::{
     AuthorityEvidence, AuthorityGrade, EvidenceNote, EvidenceSnapshot, EvidenceSummary,
     EvidenceWinner, RawAgentState,
 };
-use crate::agent_status::policy::AUTHORITY_TTL;
-use crate::protocol::AgentState;
+use crate::policy::AUTHORITY_TTL;
+use jackin_protocol::control::AgentState;
 
 pub fn arbitrate(
     snapshot: &EvidenceSnapshot,

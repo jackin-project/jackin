@@ -238,12 +238,12 @@ fn packs_load_and_match_fixtures() {
     for agent in ["claude", "codex", "amp", "kimi", "opencode"] {
         let pack = RulePack::load(
             &root
-                .join("docker/runtime/agent-status/packs")
+                .join("crates/jackin-agent-status/packs")
                 .join(format!("{agent}.toml")),
         )
         .unwrap();
         let fixture_dir = root
-            .join("crates/jackin-capsule/src/agent_status/screen/fixtures")
+            .join("crates/jackin-agent-status/src/screen/fixtures")
             .join(agent);
         for entry in fs::read_dir(fixture_dir).unwrap() {
             let path = entry.unwrap().path();

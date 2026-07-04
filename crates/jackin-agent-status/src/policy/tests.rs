@@ -1,5 +1,5 @@
 use super::*;
-use crate::agent_status::evidence::{EvidenceSummary, EvidenceWinner};
+use crate::evidence::{EvidenceSummary, EvidenceWinner};
 
 fn candidate(raw: RawAgentState, confidence: AgentStatusConfidence) -> EvidenceSummary {
     EvidenceSummary {
