@@ -65,7 +65,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 036 | Repair `TODO.md` stale paths, stray note, phantom markers | docs | P1 | S | HIGH | — | DONE |
 | 037 | Consolidate the two colliding ADR sets | docs | P2 | S | HIGH | — | DONE |
 | 038 | Extend the repo-link checker to `TODO.md`/`PLAN.md` + fix `findings.md` ref | docs/dx | P2 | S | HIGH | 035,036 | TODO |
-| 039 | Relocate/version the root `PLAN.md` docs-CSS plan | docs | P3 | S | MED | — | TODO |
+| 039 | Relocate/version the root `PLAN.md` docs-CSS plan | docs | P3 | S | MED | — | DONE (executed; root plan deleted) |
 | 040 | Update `PULL_REQUESTS.md` off the Astro/Starlight workflow | docs | P2 | S | HIGH | — | TODO |
 | 041 | Document `grok` agent + `backend` config across user surfaces | docs | P2 | S | HIGH | — | TODO |
 | 042 | Spike: scope the reactive-daemon program | direction | P3 | L | HIGH | — | TODO |

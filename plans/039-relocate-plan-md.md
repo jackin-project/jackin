@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Result**: DONE in PR #713 (`docs/advisor-improvement-plans`)
 - **Priority**: P3
 - **Effort**: S
 - **Risk**: LOW
@@ -66,10 +67,16 @@ If plan 038 adds `PLAN.md` to a checker, ensure it points at the **new** locatio
 
 ## Done criteria
 
-- [ ] A recorded decision (executed→deleted, or live→relocated) with token evidence in the row note
-- [ ] Root `PLAN.md` no longer exists; if live, it lives under `docs/` with a `Status:`/date header
-- [ ] No reference points at a now-missing root `PLAN.md`
-- [ ] `plans/README.md` row updated
+- [x] A recorded decision (executed→deleted, or live→relocated) with token evidence in the row note
+- [x] Root `PLAN.md` no longer exists; if live, it lives under `docs/` with a `Status:`/date header
+- [x] No reference points at a now-missing root `PLAN.md`
+- [x] `plans/README.md` row updated
+
+## Completion notes
+
+- Determined the light-mode redesign had already shipped, so the root `PLAN.md` was deleted rather than relocated.
+- Token evidence: `docs/src/styles/docs-theme.css` light scope uses `--jk-panel: #f4f5f7`, `--jk-accent: #0b774e`, and the neutral `rgba(17, 24, 39, ...)` border family; `docs/src/components/landing/styles.css` mirrors those values and uses neutral card shadows.
+- `git log -- PLAN.md` showed the stale root plan was last touched by `3bdfa3414` on 2026-06-28 (`feat(brand): ship identity system (#496)`), matching the executed redesign.
 
 ## STOP conditions
 
