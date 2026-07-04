@@ -19,6 +19,12 @@
 - **Depends on**: none (shares `runtime/image.rs` with 001 — rebase carefully)
 - **Category**: perf + bug
 - **Planned at**: commit `a2ec1b23`, 2026-07-03
+- **Execution note**: the Step 2 STOP was cleared after checking the repo
+  contract and Docker Hub tags. Role Dockerfiles are required to pin versioned
+  construct tags such as `projectjackin/construct:0.23-trixie`; the floating
+  `projectjackin/construct:trixie` tag is the stable/default override channel
+  and currently points at the same digest as `0.23-trixie` and
+  `trixie-09359ebd6aff`.
 
 ## Why this matters
 

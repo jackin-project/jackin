@@ -791,6 +791,122 @@ fn validated_test_repo(
     (cached_repo, validated_repo)
 }
 
+fn recorded_buildx_build(runner: &FakeRunner) -> &str {
+    runner
+        .run_recorded
+        .iter()
+        .find(|command| command.starts_with("docker buildx build "))
+        .map(String::as_str)
+        .expect("expected docker buildx build command")
+}
+
+#[tokio::test]
+async fn published_stale_role_base_build_keeps_layer_cache() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+
+    let base = ensure_local_role_base(
+        &selector,
+        None,
+        Some("abc123"),
+        &cached_repo,
+        &validated_repo,
+        None,
+        false,
+        false,
+        &docker,
+        &mut runner,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(base, role_base_image_name(&selector, None, Some("abc123")));
+    let build = recorded_buildx_build(&runner);
+    assert!(
+        !build.contains(" --pull "),
+        "published-stale role-base builds should preserve Docker layer cache: {build}"
+    );
+}
+
+#[tokio::test]
+async fn explicit_rebuild_role_base_still_pulls_default_construct() {
+    let _guard = rich_surface_test_guard();
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (cached_repo, validated_repo) = validated_test_repo(&paths, &selector);
+    let docker = FakeDockerClient::default();
+    let mut runner = FakeRunner::default();
+
+    ensure_local_role_base(
+        &selector,
+        None,
+        Some("abc123"),
+        &cached_repo,
+        &validated_repo,
+        None,
+        true,
+        false,
+        &docker,
+        &mut runner,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let build = recorded_buildx_build(&runner);
+    assert!(
+        build.contains(" --pull "),
+        "explicit rebuild should keep full base refresh semantics: {build}"
+    );
+}
+
+#[test]
+fn cache_bust_policy_preserves_stored_value_for_published_stale() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (_, validated_repo) = validated_test_repo(&paths, &selector);
+    let image = image_name(&selector, Some("abc123"));
+    version_check::store_cache_bust(&paths, &image, "stored-bust");
+
+    let mint = should_mint_fresh_cache_bust(false, ImageInvalidationReason::PublishedImageStale);
+    let value = cache_bust_value_for_build(&paths, &image, &validated_repo.manifest, mint).unwrap();
+
+    assert!(!mint);
+    assert_eq!(value, "stored-bust");
+    assert_eq!(
+        version_check::stored_cache_bust(&paths, &image).as_deref(),
+        Some("stored-bust")
+    );
+}
+
+#[test]
+fn cache_bust_policy_mints_for_agent_version_refresh() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    let selector = RoleSelector::new(None, "agent-smith");
+    let (_, validated_repo) = validated_test_repo(&paths, &selector);
+    let image = image_name(&selector, Some("abc123"));
+    version_check::store_cache_bust(&paths, &image, "stored-bust");
+
+    let mint = should_mint_fresh_cache_bust(false, ImageInvalidationReason::AgentVersionChanged);
+    let value = cache_bust_value_for_build(&paths, &image, &validated_repo.manifest, mint).unwrap();
+
+    assert!(mint);
+    assert_ne!(value, "stored-bust");
+    assert_eq!(
+        version_check::stored_cache_bust(&paths, &image).as_deref(),
+        Some(value.as_str())
+    );
+}
+
 #[test]
 fn image_recipe_canonicalizes_supported_agent_order() {
     let temp = tempfile::tempdir().unwrap();

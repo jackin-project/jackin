@@ -1380,6 +1380,33 @@ fn agent_binary_prepare_summary(
     )
 }
 
+fn should_mint_fresh_cache_bust(rebuild: bool, build_reason: ImageInvalidationReason) -> bool {
+    rebuild || build_reason == ImageInvalidationReason::AgentVersionChanged
+}
+
+fn cache_bust_value_for_build(
+    paths: &JackinPaths,
+    image: &str,
+    manifest: &jackin_core::manifest::RoleManifest,
+    mint_fresh_cache_bust: bool,
+) -> anyhow::Result<String> {
+    if !supported_set_uses_cache_bust(manifest) {
+        return Ok("unused".to_owned());
+    }
+
+    if mint_fresh_cache_bust {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| anyhow::anyhow!("system clock is before UNIX epoch: {e}"))?
+            .as_secs()
+            .to_string();
+        version_check::store_cache_bust(paths, image, &ts);
+        return Ok(ts);
+    }
+
+    Ok(version_check::stored_cache_bust(paths, image).unwrap_or_else(|| "0".to_owned()))
+}
+
 /// Resolve the role's **base** image into a local `jk_<role>__base:<sha>` image
 /// that the derived overlay is built `FROM`.
 ///
@@ -1626,7 +1653,8 @@ pub(super) async fn build_agent_image(
         |b| image_name_for_branch(selector, b, head_sha.as_deref()),
     );
 
-    let rebuild = rebuild || build_reason == ImageInvalidationReason::PublishedImageStale;
+    let force_base_rebuild = rebuild;
+    let mint_fresh_cache_bust = should_mint_fresh_cache_bust(rebuild, build_reason);
 
     // Resolve the role base into a local `jk_<role>__base:<sha>` image — tagged
     // from the pulled, label-verified published image when the decision found it
@@ -1641,7 +1669,7 @@ pub(super) async fn build_agent_image(
         cached_repo,
         validated_repo,
         build_base_image_override,
-        rebuild,
+        force_base_rebuild,
         debug,
         docker,
         runner,
@@ -1742,7 +1770,7 @@ pub(super) async fn build_agent_image(
     // When rebuild is already forced, the mismatch check result cannot change the
     // outcome — skip the round-trip. Treat inspect errors as label-absent (no
     // mismatch) so transient daemon errors never abort an otherwise-proceeding build.
-    let construct_mismatch = if rebuild {
+    let construct_mismatch = if force_base_rebuild {
         false
     } else {
         docker
@@ -1751,25 +1779,14 @@ pub(super) async fn build_agent_image(
             .unwrap_or(None)
             .is_some_and(|cached| cached != current_construct)
     };
-    let rebuild = rebuild || construct_mismatch;
+    let mint_fresh_cache_bust = mint_fresh_cache_bust || construct_mismatch;
 
-    let cache_bust_value = if !supported_set_uses_cache_bust(&validated_repo.manifest) {
-        "unused".to_owned()
-    } else if rebuild {
-        // System clock before UNIX_EPOCH is essentially impossible, but if it
-        // happens we must not silently fall back to 0 — that collapses to the
-        // Dockerfile's `JACKIN_CACHE_BUST=0` default and defeats the operator's
-        // explicit `--rebuild` request.
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| anyhow::anyhow!("system clock is before UNIX epoch: {e}"))?
-            .as_secs()
-            .to_string();
-        version_check::store_cache_bust(paths, &image, &ts);
-        ts
-    } else {
-        version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_owned())
-    };
+    let cache_bust_value = cache_bust_value_for_build(
+        paths,
+        &image,
+        &validated_repo.manifest,
+        mint_fresh_cache_bust,
+    )?;
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
     let recipe = jackin_image::image_recipe::build_image_recipe(

@@ -5141,11 +5141,12 @@ plugins = []
         .iter()
         .find(|call| call.contains("docker buildx build "))
         .unwrap();
-    // Workspace mode with rebuild=true passes --pull and must NOT use the
-    // published image as base.
+    // A stale published image falls back to a workspace role-base build, but it
+    // is not an operator-requested rebuild: keep Docker's layer cache and do
+    // not use the stale published image as base.
     assert!(
-        build_cmd.contains("--pull"),
-        "workspace rebuild must pass --pull; got: {build_cmd}"
+        !build_cmd.contains("--pull"),
+        "published-stale fallback should preserve layer cache; got: {build_cmd}"
     );
     assert!(
         !build_cmd.contains("docker.io/myorg/my-role:latest"),
