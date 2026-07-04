@@ -26,7 +26,7 @@ pxpipe joined the set on 2026-07-05 with its full teardown in [17 — pxpipe: de
 ### Output side (the 5×-priced class)
 
 | Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
-|---|---|---|---|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|---|---|---|---|---|
 | Output register (prose compression) | 🏆 6 levels, verbatim guards, auto-clarity | ✗ | ✅ 3 levels, 120–195 tok | ✗ | ◐ shaper off by default | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Commit/PR-text policy | ◐ compresses them (`/caveman-commit` — anti-pattern) | ✗ | 🏆 exempt at every level | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | Subagent report shaping | 🏆 cavecrew format registers (−43.9% measured) | ✗ | ✅ output contract ("file:line over prose") | ✗ | ✗ | ◐ handoff bundles | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -35,7 +35,7 @@ pxpipe joined the set on 2026-07-05 with its full teardown in [17 — pxpipe: de
 ### Observation side (write-time input compression)
 
 | Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
-|---|---|---|---|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|---|---|---|---|---|
 | Shell-output filtering | ✗ | ✗ | ◐ line budgets + RTK bridge | 🏆 breadth: 77 cmds + 63 user-extensible TOML filters, 86 rewrite rules | ◐ content-typed log compressor (exit-code-blind) | ✅ depth/safety: 77 modules, verbatim-policy classifier, never-compress-errors | ✗ (hostile: blocks shell tools) | ✗ | ✗ | ✗ | ◐ large `tool_result`s after source; lossy |
 | Native-read compression | ✗ | ✗ | ◐ read budget + dedup | ◐ wrappers only (`rtk read/grep`) | ✅ on the wire (sees everything) | 🏆 13 read modes + auto-mode + quality scores | ◐ substitutes retrieval | ◐ substitutes entities | ✗ | ◐ substitutes sections | ◐ large read/tool payloads after emission; lossy |
 | Structured-data crushing (JSON/tables/logs) | ✗ | ✗ | ◐ semantic JSON/XML extraction | ◐ schema/keys-only, dedup, grouping | 🏆 SmartCrusher (stats-compaction, anomalies kept) | ✅ deterministic ports (json/tabular/yaml_crush) | ✗ | ✗ | ✗ | ◐ query-shaped extraction | ✗ (renders bytes, no semantic crushing) |
@@ -48,7 +48,7 @@ pxpipe joined the set on 2026-07-05 with its full teardown in [17 — pxpipe: de
 ### Retrieval and code intelligence (prevent the read)
 
 | Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
-|---|---|---|---|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|---|---|---|---|---|
 | Resident lexical search | ✗ | ✗ | ✗ | ✗ | ✗ | ◐ BM25(+SPLADE) | ✅ word+trigram+BM25 | ◐ orient (term×centrality) | 🏆 frecency + typo-tolerant + git-aware, sub-10 ms warm | ✗ | ✗ |
 | Persistent symbol/call graph | ✗ | ✗ | ✗ | ✗ | ✗ | ✅ property graph + LSP refactor (broadest) | 🏆 deterministic call/dep graph + callers/callpath verbs (best query surface) | ✅ entity graph + scope chains | ✗ | ✗ | ✗ |
 | Entity-level diff / blame / history axis | ✗ | ✗ | ✗ | ✗ | ✗ | ◐ Context Time Machine (state snapshots) | ◐ co-change boost | 🏆 structural-hash diff, entity blame, hotspots, commit index — uncontested | ✗ | ✗ | ✗ |
@@ -61,7 +61,7 @@ pxpipe joined the set on 2026-07-05 with its full teardown in [17 — pxpipe: de
 ### Memory, state, and multi-agent
 
 | Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
-|---|---|---|---|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|---|---|---|---|---|
 | Persistent memory | ◐ cavemem (refuted) | ✅ but refuted as shipped | ◐ delegates to cavemem | ✗ | 🏆 reversible, cross-agent, dedup (best architecture) | ✅ bitemporal KG + supersede semantics (most featureful, unproven) | ✗ | ◐ commit index = code history | ◐ frecency/query history | ✗ | ✗ |
 | Cross-session handoff | ✗ | ◐ session summaries (unsearchable) | ✅ session branching + checkpoints | ✗ | ◐ learn → memory files | ✅ CCP snapshots | ◐ reader.md (hash-verified orientation) | ✗ | ✗ | ✗ | ✗ |
 | Multi-agent coordination | ◐ cavecrew convention | ✗ | ✅ 5 worktree-isolated subagents | ✗ | ◐ SharedContext (RAM dict) | 🏆 event bus + scent-field stigmergy (novel) | ✅ agent registry + per-path locks | ✗ | ✗ | ✗ | ✗ |
@@ -69,7 +69,7 @@ pxpipe joined the set on 2026-07-05 with its full teardown in [17 — pxpipe: de
 ### Measurement and verification (the differentiating layer)
 
 | Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
-|---|---|---|---|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|---|---|---|---|---|
 | Savings ledger | ◐ hook tally | ✗ | ◐ per-layer claims | ◐ SQLite gross `len/4` | ◐ per-session + holdout (no results) | 🏆 bounce-netted, hash-chained, **net-of-injection** | ◐ telemetry counters | ✅ ledger w/ measured suppression | ✗ | ✗ | 🏆 per-request `count_tokens` counterfactual + billed usage |
 | Bounce/re-read netting | ✗ | ✗ | ✗ | ✗ | ✗ | 🏆 negative events + auto-upgrade + edit-force exclusion | ✗ | ◐ (delta-fill implies it) | ✗ | ✗ | ◐ same-cache-state baseline; no task bounce netting |
 | Self-footprint accounting | ✗ (~940-tok listing unmetered) | ✗ (uncapped injection) | ◐ register budget documented | n/a (zero rent) | ◐ | 🏆 `doctor overhead --gate` CI gate + footprint self-ablation — unique | ✗ (5.2k schema unmetered) | ✗ | ✗ | ✗ | ◐ logs proxy/probe events; no full self-rent gate |
@@ -80,7 +80,7 @@ pxpipe joined the set on 2026-07-05 with its full teardown in [17 — pxpipe: de
 ### Safety, cache, and delivery
 
 | Feature | caveman | cavemem | caveman-code | RTK | headroom | lean-ctx | codedb | sem | fff | mq | pxpipe |
-|---|---|---|---|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|---|---|---|---|---|
 | Cache-safe by construction | ✅ output side | n/a | ✅ | 🏆 write-time at tool boundary, zero MCP rent | ◐ MCP/lib safe; proxy risky | ✅ hook/MCP safe + measured `cache_safe_ratio` (best instrumented) | ◐ | ✅ write-time | ✅ | ✅ | ◐ cache-aligned by engineering, not by construction |
 | Deterministic (no ML hot path) | ✅ prompt | ✅ regex | ✅ (ML opt-in) | 🏆 pure rules | ◐ kompress default fallback (gated) | ✅ default core | ✅ | ✅ | ✅ | ✅ | ✅ bitmap atlas + PNG encoder; no ML transform |
 | MCP schema rent | ~940 tok skills | ~300 tok (lean) | n/a | 🏆 zero | tools in MCP mode | ◐ lazy 5–11 advertised + invoker (of 82) | ~5.2k tok (23 tools) | 6 tools | 3 tools (lean) | 4 tools (lean) | 🏆 zero MCP rent; proxy/env-var instead |
