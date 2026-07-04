@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::LaunchProgress;
+use super::{LaunchProgress, failure_acknowledged};
 use crate::LaunchDiagnostics;
 
 struct TestDiagnostics;
@@ -72,4 +72,35 @@ async fn cancel_after_while_waiting_started_interrupts_pending_future() {
             .to_string()
             .contains("cancelled by operator")
     );
+}
+
+#[test]
+#[allow(clippy::panic)]
+fn poisoned_failure_ack_lock_recovers_without_auto_acknowledging() {
+    let progress = test_progress();
+    let view = Arc::clone(progress.view_for_test());
+    let poison_view = Arc::clone(&view);
+    drop(
+        std::thread::spawn(move || {
+            let _guard = poison_view
+                .lock()
+                .expect("test view lock should be healthy");
+            panic!("poison test view lock");
+        })
+        .join(),
+    );
+
+    assert!(
+        !failure_acknowledged(&view),
+        "poisoned lock must not be treated as acknowledged"
+    );
+
+    {
+        let mut view = view
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        view.failure_ack = true;
+    }
+
+    assert!(failure_acknowledged(&view));
 }

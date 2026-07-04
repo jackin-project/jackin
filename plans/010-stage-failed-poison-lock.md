@@ -14,6 +14,13 @@
 - **Category**: bug
 - **Planned at**: commit `46511939d`, 2026-07-03
 
+## Decision
+
+- Chosen fail-safe: recover the poisoned guard with `into_inner()` and read `failure_ack`.
+- Reason: the failure view remains the source of truth for whether the rich renderer's input path acknowledged the popup; poison should not synthesize an acknowledgement.
+- The helper logs the poison through `debug_log!` and keeps the healthy path behavior unchanged.
+- A focused test poisons the view mutex and proves the helper returns `false` until the recovered view sets `failure_ack = true`.
+
 ## Why this matters
 
 `stage_failed`'s failure-ack wait loop breaks when

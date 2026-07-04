@@ -35,7 +35,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 007 | Stop blanking Claude account metadata on `.claude.json` read errors | bug | P2 | S | MED | — | DONE |
 | 008 | Guard IL/DL against cursor outside the scroll region | bug | P2 | S | MED | — | DONE |
 | 009 | Investigate per-tab vs global pane zoom | bug | P3 | M | LOW | — | BLOCKED (bug; fix plan 044 written) |
-| 010 | Investigate poisoned-lock handling in launch failure-ack | bug | P3 | S | LOW | — | TODO |
+| 010 | Investigate poisoned-lock handling in launch failure-ack | bug | P3 | S | LOW | — | DONE (recover poisoned guard) |
 | 011 | Decide whether `docker_version` preflight needs a floor | bug | P3 | S | LOW | — | TODO |
 | 012 | Probe the bind-mounted socket for daemon readiness (drop 500ms exec poll) | perf | P2 | M | HIGH | 006 | TODO |
 | 013 | Coalesce console instance-refresh docker fan-out (N+1) | perf | P2 | M | MED | — | TODO |
