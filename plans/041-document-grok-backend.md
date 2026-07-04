@@ -76,11 +76,11 @@ variant, so a future new agent can't be omitted silently.
 
 ## Done criteria
 
-- [ ] `--agent` help, `load.mdx`, and `README.md` all list `grok`
-- [ ] `configuration.mdx` documents the `backend`/`default_backend` field (apple-container marked experimental)
-- [ ] `jackin load --help` output includes grok
-- [ ] Either the help is derived from `Agent::ALL`, or a test asserts help ⊇ `Agent::ALL`
-- [ ] `plans/README.md` row updated
+- [x] `--agent` help, `load.mdx`, and `README.md` all list `grok`
+- [x] `configuration.mdx` documents the `backend`/`default_backend` field (apple-container marked experimental)
+- [x] `jackin load --help` output includes grok
+- [x] Either the help is derived from `Agent::ALL`, or a test asserts help ⊇ `Agent::ALL`
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 

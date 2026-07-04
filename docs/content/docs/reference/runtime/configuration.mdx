@@ -53,9 +53,37 @@ for you, so you generally don't need to edit them by hand.
 
 Top-level `version` is the config schema version. jackin❯ writes `version = "v1alpha8"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/runtime/schema-versions/) for the full version history and migration matrix.
 
+### Runtime backend selection
+
+`[runtime]` selects the container backend used for fresh launches. The global
+`config.toml` field is `default_backend`; a workspace file can override it with
+`backend`.
+
+```toml
+# ~/.config/jackin/config.toml
+[runtime]
+default_backend = "docker"  # "docker" (default) or "apple-container"
+
+# ~/.config/jackin/workspaces/my-app.toml
+[runtime]
+backend = "docker"          # override the global default for this workspace
+```
+
+| Field | File | Description | Default |
+|---|---|---|---|
+| `runtime.default_backend` | `config.toml` | Host-wide backend for new launches. Accepted values are `docker` and `apple-container`. | `docker` |
+| `runtime.backend` | `workspaces/<name>.toml` | Workspace-specific backend override. Omit to inherit the host-wide `runtime.default_backend`. | inherited |
+
+`docker` is the stable Docker + DinD backend. `apple-container` routes launch to
+Apple's `container` CLI on supported macOS hosts, but it is still an
+experimental Phase 0 backend: launch selection, manifest state, and lifecycle
+dispatch are wired, while full hardware validation and finalization parity are
+still tracked on the [Apple Container backend](/roadmap/apple-container-backend/)
+roadmap.
+
 ### Agent auth-forward settings
 
-`auth_forward` is configured per agent (`claude`, `codex`, `amp`, `kimi`, `opencode`) at three
+`auth_forward` is configured per agent (`claude`, `codex`, `amp`, `kimi`, `opencode`, `grok`) at three
 layers, with most-specific wins:
 
 ```toml
@@ -78,6 +106,9 @@ auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Kimi rejec
 [opencode]
 auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — OpenCode rejects "oauth_token"
 
+[grok]
+auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Grok rejects "oauth_token"
+
 # Layer 2 — workspace-wide override
 [claude]
 auth_forward = "oauth_token"
@@ -92,6 +123,9 @@ auth_forward = "api_key"
 auth_forward = "sync"
 
 [opencode]
+auth_forward = "sync"
+
+[grok]
 auth_forward = "sync"
 
 # Layer 3 — most-specific (workspace × role × agent) override
@@ -110,6 +144,9 @@ auth_forward = "sync"
 
 [roles.agent-smith.opencode]
 auth_forward = "sync"
+
+[roles.agent-smith.grok]
+auth_forward = "api_key"
 ```
 
 The layer 2 and 3 examples above belong in
@@ -123,7 +160,7 @@ The layer 2 and 3 examples above belong in
 
 Accepted values: `sync` \| `api_key` \| `oauth_token` \| `ignore`.
 `oauth_token` is **Claude only** — setting it under any `[codex]`,
-`[amp]`, `[kimi]`, or `[opencode]` block is rejected at parse time.
+`[amp]`, `[kimi]`, `[opencode]`, or `[grok]` block is rejected at parse time.
 
 Locations the field may appear at, in resolution order
 (most-specific first):
@@ -133,21 +170,26 @@ Locations the field may appear at, in resolution order
 - `[roles.<role>.amp].auth_forward` in `workspaces/<ws>.toml`
 - `[roles.<role>.kimi].auth_forward` in `workspaces/<ws>.toml`
 - `[roles.<role>.opencode].auth_forward` in `workspaces/<ws>.toml`
+- `[roles.<role>.grok].auth_forward` in `workspaces/<ws>.toml`
 - `[claude].auth_forward` in `workspaces/<ws>.toml`
 - `[codex].auth_forward` in `workspaces/<ws>.toml`
 - `[amp].auth_forward` in `workspaces/<ws>.toml`
 - `[kimi].auth_forward` in `workspaces/<ws>.toml`
 - `[opencode].auth_forward` in `workspaces/<ws>.toml`
+- `[grok].auth_forward` in `workspaces/<ws>.toml`
 - `[claude].auth_forward` (global default)
 - `[codex].auth_forward` (global default)
 - `[amp].auth_forward` (global default)
 - `[kimi].auth_forward` (global default)
 - `[opencode].auth_forward` (global default)
+- `[grok].auth_forward` (global default)
 
 Credentials referenced by `api_key` and `oauth_token` live in ordinary
 `[*.env]` blocks under the well-known names `ANTHROPIC_API_KEY`,
 `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, `AMP_API_KEY`, and
-`KIMI_API_KEY`, and `OPENCODE_API_KEY`.
+`KIMI_API_KEY`, `OPENCODE_API_KEY`, and `XAI_API_KEY`. Grok `api_key`
+mode also exposes the configured key as `GROK_DEPLOYMENT_KEY` inside the
+container so the Grok CLI can use either personal or deployment-key auth.
 
 The workspace editor stages Auth-tab edits in memory until the operator confirms the workspace save. The save path in <RepoFile path="crates/jackin/src/console/services.rs">crates/jackin/src/console/services.rs</RepoFile> applies separate diff passes for general workspace fields, agent auth modes, agent sync source folders, and credential env values; the sync-source pass writes through `ConfigEditor` setters in <RepoFile path="crates/jackin-config/src/editor.rs">crates/jackin-config/src/editor.rs</RepoFile> for both workspace and role layers. This keeps the dialog staging model consistent: the Auth dialog changes pending state only, and disk writes happen only after the workspace save confirmation.
 
@@ -204,7 +246,7 @@ Resolution order, most-specific first:
 - `[github].auth_forward` (global default)
 
 Operator-only — role manifests cannot set or override `[github]`,
-same rule as `[claude]` / `[codex]` / `[kimi]` / `[opencode]`. Optional GHE-targeted env vars
+same rule as `[claude]` / `[codex]` / `[kimi]` / `[opencode]` / `[grok]`. Optional GHE-targeted env vars
 `GH_HOST` and `GH_ENTERPRISE_TOKEN` may also be set in the
 `[…github.env]` block; they are forwarded to the container as-is.
 
@@ -268,6 +310,9 @@ readonly = true
 [keep_awake]
 enabled = true
 
+[runtime]
+backend = "docker"
+
 git_pull_on_entry = true
 ```
 
@@ -285,9 +330,10 @@ This example is the contents of
 | `mounts[].isolation` | Per-mount isolation mode: `shared` (default), `worktree`, or `clone`. Omitting the field deserializes to `shared`, but every save writes the field explicitly so old configs migrate to the new shape on first save. Global mounts (under `[docker.mounts]`) reject this field at parse time. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation). |
 | `allowed_roles` | List of allowed role selectors |
 | `default_role` | Default role selector |
-| `default_agent` | Optional workspace default agent (`"claude"`, `"codex"`, `"amp"`, `"kimi"`, or `"opencode"`). Omit to let launch resolution use the role manifest: a single-agent role uses its only runtime, while a multi-agent role prompts interactively. |
+| `default_agent` | Optional workspace default agent (`"claude"`, `"codex"`, `"amp"`, `"kimi"`, `"opencode"`, or `"grok"`). Omit to let launch resolution use the role manifest: a single-agent role uses its only runtime, while a multi-agent role prompts interactively. |
 | `last_role` | Most recently used role selector for this workspace |
 | `keep_awake.enabled` | macOS-only: keep the host awake while any agent in this workspace is running (see [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake)). On Linux/Windows the flag is silently accepted but has no effect — useful when sharing a `config.toml` across machines, but the host will still sleep. |
+| `runtime.backend` | Optional per-workspace container backend override (`"docker"` or `"apple-container"`). Omit to inherit global `runtime.default_backend`. |
 | `git_pull_on_entry` | Run `git pull` on every mounted git repository from the host before the agent container starts. Failures are non-fatal — the launch continues even when offline or the working tree is dirty. Omitted from TOML when `false` (the default). See [Git pull on entry](/guides/workspaces/#git-pull-on-entry). |
 
 When you use `jackin workspace create`, `workdir` is only the container start path. Add an explicit `--mount` for every directory the container should see.
@@ -332,17 +378,19 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `kimi-code/credentials/` | Synced copy of host `~/.kimi-code/credentials/` OAuth token files under `auth_forward = "sync"`, `0600` perms |
 | `kimi-code/device_id` | Synced copy of host `~/.kimi-code/device_id` under `auth_forward = "sync"`, `0600` perms; Kimi includes this device id in OAuth/device headers |
 | `opencode/auth.json` | Synced copy of host `~/.local/share/opencode/auth.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/opencode/auth.json`; absent when host has no auth.json). OpenCode stores provider credentials in this file — for example, a Z.AI Coding Plan API key |
+| `grok/auth.json` | Synced copy of host `~/.grok/auth.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/grok/auth.json`; absent when host has no auth.json). Grok stores scoped OIDC credentials and refresh tokens in this file |
 | `home/.claude/` and `home/.claude.json` | Durable Claude Code home state, including conversation history, runtime-local plugins, account metadata, and settings written during the session |
 | `home/.codex/` | Durable Codex home state, including conversation history, runtime-local config, and login state created inside the session |
 | `home/.local/share/amp/` | Durable Amp data state created inside the session |
 | `home/.kimi-code/` | Durable Kimi home state, including runtime-local config and login state created inside the session |
 | `home/.local/share/opencode/` | Durable OpenCode data state (auth credentials, model preferences) created inside the session |
-| `state/` | jackin runtime state mounted at `/jackin/state`, including the `setup_once` marker |
+| `home/.grok/` | Durable Grok home state, including runtime-local config, auth files copied from `/jackin/grok/`, and cache written during the session |
+| `state/` | jackin❯ runtime state mounted at `/jackin/state`, including the `setup_once` marker |
 | `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |
 
 Host→container auth handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent home directories are bind-mounted from jackin-managed per-instance state, not from the operator's host home. `jackin-capsule runtime-setup` seeds image-baked defaults into that durable home on first launch, then copies the current auth handoff files from `/jackin/` into the durable home before starting the agent. This keeps conversation history and runtime-local plugins recoverable when Docker containers disappear while still letting the current auth mode override stale forwarded credentials.
 
-For roles that list multiple supported agents in their manifest, jackin provisions `claude/`, `codex/`, `amp/`, `kimi-code/`, and `opencode/` auth handoff directories and their corresponding `home/.claude/`, `home/.codex/`, `home/.local/share/amp/`, `home/.kimi-code/`, and `home/.local/share/opencode/` durable home directories for every agent the role supports — not just the agent selected for the initial launch. This means starting a second agent via `jackin hardline --new` does not require re-authentication: the credentials and durable home were already placed in the container when it first launched.
+For roles that list multiple supported agents in their manifest, jackin❯ provisions `claude/`, `codex/`, `amp/`, `kimi-code/`, `opencode/`, and `grok/` auth handoff directories and their corresponding `home/.claude/`, `home/.codex/`, `home/.local/share/amp/`, `home/.kimi-code/`, `home/.local/share/opencode/`, and `home/.grok/` durable home directories for every agent the role supports — not just the agent selected for the initial launch. This means starting a second agent via `jackin hardline --new` does not require re-authentication: the credentials and durable home were already placed in the container when it first launched.
 
 `claude/account.json` is rebuilt as `{}` (empty object) by every non-sync auth mode so it is always present on disk; the bind mount is the gate for whether the file flows into the container, not the file's existence. `claude/credentials.json` is wiped on every non-sync mode and never bind-mounted under `ignore`/`api_key`/`oauth_token`.
 
