@@ -8,6 +8,7 @@
 
 ## Status
 
+- **Result**: DONE in PR #713 (`docs/advisor-improvement-plans`)
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: MED (enabling the check fails CI until 035/036 land)
@@ -77,11 +78,19 @@ they now exist (plan 035) so the enumeration isn't a silent no-op — or update 
 
 ## Done criteria
 
-- [ ] `TODO.md`, `PLAN.md` (or its relocated path), `BRANCHING.md`, `COMMITS.md` are covered by the repo-link checker
-- [ ] `cargo xtask docs repo-links` exits 0 (all targets resolve)
-- [ ] A reintroduced dead link in a newly-covered file makes the check fail (proven, then reverted)
-- [ ] `crates/AGENTS.md` no longer references the non-existent `findings.md`; points at `test-layout-allowlist.toml`
-- [ ] `plans/README.md` row updated
+- [x] `TODO.md`, `BRANCHING.md`, `COMMITS.md` are covered by the repo-link checker; stale root `PLAN.md` was deleted by plan 039
+- [x] `cargo xtask docs repo-links` exits 0 (all targets resolve)
+- [x] A reintroduced dead link in a newly-covered file makes the check fail (proven, then reverted)
+- [x] `crates/AGENTS.md` no longer references the non-existent `findings.md`; points at `test-layout-allowlist.toml`
+- [x] `plans/README.md` row updated
+
+## Completion notes
+
+- Added `TODO.md` to the root-doc scan and added `BRANCHING.md`/`COMMITS.md` to the top-level repo-path allowlist.
+- Did not add `PLAN.md` because plan 039 proved the redesign had shipped and deleted the stale root file.
+- Converted newly-exposed inline repo paths in `TODO.md` and `PROJECT_STRUCTURE.md` to Markdown links.
+- Replaced the stale `findings.md` reference in `crates/AGENTS.md`; `crates/CLAUDE.md` follows via the symlink restored in plan 034.
+- Negative proof: a temporary raw `` `BRANCHING.md` `` path in `TODO.md` made `cargo xtask docs repo-links` fail, then the temporary line was removed.
 
 ## STOP conditions
 

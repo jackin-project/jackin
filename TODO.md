@@ -43,7 +43,7 @@ Markers without TODO.md entry OK for transient in-flight work, but anything outl
 - **Why:** `standard` now carries the intended baseline behavior (resource limits, no sudo by default, DinD disabled unless explicitly granted, `no-new-privileges` when sudo is off), but `compat` remains the default until the compatibility evidence is complete.
 - **Code change:** move the `#[default]` attribute from `Compat` to `Standard`.
 - **Done when:** the compatibility matrix passes for built-in roles under `standard`, the changelog calls out the breaking default-profile change, the default enum variant is flipped, and the profile defaults table in the Docker runtime hardening contract plus the Docker profiles guide are updated.
-- **Marker:** `TODO(docker-security-profile-default)` — in `crates/jackin-core/src/docker_security.rs`, `DockerSecurityProfile::Compat`.
+- **Marker:** `TODO(docker-security-profile-default)` — in [`crates/jackin-core/src/docker_security.rs`](crates/jackin-core/src/docker_security.rs), `DockerSecurityProfile::Compat`.
 
 ### Internal cleanups
 
@@ -102,14 +102,14 @@ Docs rot silently. Every PR must include a one-pass verification structure-sensi
 ### When your PR touches `crates/**/src/**`
 
 - [ ] Did you add, rename, move, or delete a module / directory under `crates/**/src/`? If yes, update [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md)'s "Module tree" and any affected row in "Code ↔ Docs Cross-Reference" in same PR.
-- [ ] Did you add a new `crates/*/src/bin/` binary? If yes, add it to "Crate root" table in `PROJECT_STRUCTURE.md`.
+- [ ] Did you add a new `crates/*/src/bin/` binary? If yes, add it to "Crate root" table in [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md).
 
 ### When your PR touches CLI behavior
 
 - [ ] Did you add, rename, or remove a CLI flag, subcommand, or change default behavior? If yes, matching `docs/content/docs/(public)/commands/<cmd>.mdx` needs updating in same PR.
 - [ ] Did you change `jackin.role.toml` schema or validation rules? If yes, update [`docs/content/docs/(public)/(role-authoring)/developing/role-manifest.mdx`](<docs/content/docs/(public)/(role-authoring)/developing/role-manifest.mdx>).
 - [ ] Did you change `config.toml` shape? If yes, update [`docs/content/docs/reference/runtime/configuration.mdx`](docs/content/docs/reference/runtime/configuration.mdx).
-- [ ] Did you change auth-forward, Keychain, symlink, or file-permission behavior in `crates/jackin-instance/src/auth.rs`? If yes, update [`docs/content/docs/(public)/guides/authentication/index.mdx`](<docs/content/docs/(public)/guides/authentication/index.mdx>) and [`docs/content/docs/(public)/guides/security-model.mdx`](<docs/content/docs/(public)/guides/security-model.mdx>).
+- [ ] Did you change auth-forward, Keychain, symlink, or file-permission behavior in [`crates/jackin-instance/src/auth.rs`](crates/jackin-instance/src/auth.rs)? If yes, update [`docs/content/docs/(public)/guides/authentication/index.mdx`](<docs/content/docs/(public)/guides/authentication/index.mdx>) and [`docs/content/docs/(public)/guides/security-model.mdx`](<docs/content/docs/(public)/guides/security-model.mdx>).
 
 ### When your PR touches a roadmap item
 
@@ -126,4 +126,4 @@ One command to surface obvious drift targets:
 git diff --name-only origin/main... | grep -E '^crates/.*/src/|^Cargo\.toml' | head
 ```
 
-If that list is non-empty, walk the checkboxes above before requesting review. Goal: a new operator opening `PROJECT_STRUCTURE.md` or a roadmap doc always sees paths that resolve, commands that exist, behaviors matching current code.
+If that list is non-empty, walk the checkboxes above before requesting review. Goal: a new operator opening [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) or a roadmap doc always sees paths that resolve, commands that exist, behaviors matching current code.

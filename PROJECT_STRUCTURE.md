@@ -131,4 +131,4 @@ Changing behaviour: update both sides in same PR. This table = **per-PR contract
 
 ## Keeping the docs fresh
 
-Codebase Map and cross-reference table above = two places structural changes show up first. If your PR adds new module directory, splits file into subdir, introduces new cross-cutting helper, or renames public surface — **update `docs/.../reference/getting-oriented/codebase-map.mdx` and (if relevant) cross-reference table above in same PR**. See `TODO.md` for stale-docs check every structural PR runs.
+Codebase Map and cross-reference table above = two places structural changes show up first. If your PR adds new module directory, splits file into subdir, introduces new cross-cutting helper, or renames public surface — **update `docs/.../reference/getting-oriented/codebase-map.mdx` and (if relevant) cross-reference table above in same PR**. See [`TODO.md`](TODO.md) for stale-docs check every structural PR runs.
