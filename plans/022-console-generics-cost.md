@@ -12,6 +12,7 @@
 - **Risk**: HIGH
 - **Depends on**: none (blocks 023)
 - **Category**: tech-debt
+- **Completed at**: PR #713
 - **Planned at**: commit `46511939d`, 2026-07-03
 
 ## Why this matters
@@ -65,11 +66,29 @@ compiling between steps. If the decoupling still pays (params genuinely vary), m
 
 ## Done criteria
 
-- [ ] Cost quantified (trait count, single-concrete params, spell-out sites) in the row note
-- [ ] Spike result recorded (does a collapse compile / how much shrinks)
-- [ ] Either next-numbered `plans/NNN-console-generics-collapse.md` written with concrete scope, or plan
+- [x] Cost quantified (trait count, single-concrete params, spell-out sites) in the row note
+- [x] Spike result recorded (does a collapse compile / how much shrinks)
+- [x] Either next-numbered `plans/NNN-console-generics-collapse.md` written with concrete scope, or plan
       `REJECTED` with data
-- [ ] **No source committed by this plan** (only `plans/` files)
+- [x] **No source committed by this plan** (only `plans/` files)
+
+## Investigation result
+
+- `crates/jackin-console/src`: 211 Rust files, 94 trait definitions, 19 `Console*` bridge traits.
+- Header-based impl scan: 28 single-impl traits and 64 multi-impl traits. The remaining 2 need manual
+  classification rather than deletion: `ConsoleHostTerminal` is implemented by the root binary, and
+  `ModalAuthFormFocusInspect` uses a fully qualified impl path that the scanner missed.
+- `EditorState<...>` appears 124 times across 26 files.
+- Production binds the editor through one concrete `crate::tui::state::EditorState<'a>` alias. The first
+  parameter, `WorkspaceConfig`, is always the concrete `jackin_config::WorkspaceConfig`; the remaining
+  parameters still support lightweight model/view tests with `()` or small test modal types.
+- Throwaway spike: removing only the `WorkspaceConfig` axis touched 9 files and removed roughly 60 lines, but
+  `cargo check -p jackin-console --all-targets` failed until adjacent `ConsoleManagerMessage`,
+  `WorkspaceSaveEffect`, and `tui/state/update.rs` alias arity is handled deliberately. The source spike was
+  reverted; no source changes are committed by Plan 022.
+
+Decision: collapse the concrete `WorkspaceConfig` axis in follow-up Plan 046 before Plan 023; leave the other
+ten editor parameters in place until separately measured.
 
 ## STOP conditions
 
