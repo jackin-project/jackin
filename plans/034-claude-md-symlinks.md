@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Result**: DONE in PR #713 (`docs/advisor-improvement-plans`)
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
@@ -73,11 +74,19 @@ replacing one symlink with a file makes it exit non-zero (then restore).
 
 ## Done criteria
 
-- [ ] All six first-party `CLAUDE.md` are symlinks to their sibling `AGENTS.md` (mode 120000), or
+- [x] All six first-party `CLAUDE.md` are symlinks to their sibling `AGENTS.md` (mode 120000), or
       byte-identical + CI-enforced if Step 1 chose that
-- [ ] `.github/CLAUDE.md` now matches `.github/AGENTS.md` (drift gone)
-- [ ] A lint fails on any future non-symlink/drifted `CLAUDE.md`
-- [ ] `plans/README.md` row updated
+- [x] `.github/CLAUDE.md` now matches `.github/AGENTS.md` (drift gone)
+- [x] A lint fails on any future non-symlink/drifted `CLAUDE.md`
+- [x] `plans/README.md` row updated
+
+## Completion notes
+
+- Restored the six first-party `CLAUDE.md` files as sibling-relative symlinks to `AGENTS.md`.
+- Added `cargo xtask lint agents` and wired it into the umbrella `cargo xtask lint --strict` gate.
+- Verified the new lint accepts the restored symlinks and rejects a temporary regular `docs/CLAUDE.md` copy.
+- Verified the docs site still builds with symlinked `docs/CLAUDE.md` via `cd docs && mise exec -- bun install --frozen-lockfile && mise exec -- bun run build`.
+- Verified the staged symlink entries use git mode `120000`.
 
 ## STOP conditions
 

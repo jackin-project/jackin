@@ -16,6 +16,7 @@
 //! declarative build graph stays in `docker-bake.hcl`, which this binary
 //! invokes rather than reimplementing in flag assembly.
 
+mod agent_files;
 mod arch;
 mod ci;
 mod construct;
@@ -84,13 +85,15 @@ enum Command {
     /// Codebase-health lint gates (codebase-health-enforcement W3 + W4).
     ///
     /// `cargo xtask lint` (no subcommand) runs **every** gate — the file-size
-    /// ratchet, the test-file-layout rule, and the dependency-direction check.
-    /// This is the CI entry point. Add `--strict` to fail on architecture
-    /// violations instead of just reporting them.
+    /// ratchet, the test-file-layout rule, the AGENTS/CLAUDE symlink rule, and
+    /// the dependency-direction check. This is the CI entry point. Add
+    /// `--strict` to fail on architecture violations instead of just reporting
+    /// them.
     ///
     /// Subcommands run a single gate: `cargo xtask lint files`
     /// (`--print-budget` refreshes the budget file), `cargo xtask lint tests`,
-    /// `cargo xtask lint arch` (`--dump` / `--strict`).
+    /// `cargo xtask lint agents`, `cargo xtask lint arch` (`--dump` /
+    /// `--strict`).
     Lint {
         #[command(subcommand)]
         command: Option<LintCommand>,
@@ -110,6 +113,9 @@ enum LintCommand {
     /// `tests.rs`, never inline `#[cfg(test)] mod tests` or split across
     /// `tests/` sub-modules).
     Tests(test_layout::LintTestsArgs),
+    /// Enforce that first-party `CLAUDE.md` files are symlinks to sibling
+    /// `AGENTS.md` files.
+    Agents(agent_files::LintAgentFilesArgs),
     /// Dependency-direction gate (Workstream 4).
     Arch(arch::LintArchArgs),
 }
@@ -122,6 +128,7 @@ enum LintCommand {
 fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     lint::enforce()?;
     test_layout::enforce()?;
+    agent_files::enforce()?;
     arch::check(strict)
 }
 
@@ -140,6 +147,7 @@ fn main() -> ExitCode {
         Command::Lint { command, strict } => match command {
             Some(LintCommand::Files(args)) => lint::run(args),
             Some(LintCommand::Tests(args)) => test_layout::run(args),
+            Some(LintCommand::Agents(args)) => agent_files::run(args),
             Some(LintCommand::Arch(args)) => arch::run(args),
             None => run_all_lints(strict),
         },
