@@ -38,7 +38,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use anyhow::Context;
-use fs2::FileExt;
+use fs4::{FileExt, TryLockError};
 
 use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
@@ -103,10 +103,10 @@ async fn reconcile_inner(
     // errors (EBADF, EIO, fcntl-unsupported FS) are NOT contention;
     // surface them so the operator sees that locking is broken on
     // this host instead of a permanent silent no-op.
-    match lock_file.try_lock_exclusive() {
+    match FileExt::try_lock(&lock_file) {
         Ok(()) => {}
-        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => return Ok(()),
-        Err(err) => {
+        Err(TryLockError::WouldBlock) => return Ok(()),
+        Err(TryLockError::Error(err)) => {
             return Err(anyhow::Error::new(err).context(format!("locking {}", lock_path.display())));
         }
     }

@@ -1,6 +1,6 @@
 //! Container name slot management: claim, lock, and credential verification.
 
-use fs2::FileExt;
+use fs4::FileExt;
 
 use super::super::attach::{ContainerState, docker_unavailable_msg};
 use jackin_core::paths::JackinPaths;
@@ -150,7 +150,8 @@ fn try_acquire_name_lock(
         Ok(f) => f,
         Err(lock) => return Err(NameLockError { lock, unlink: None }),
     };
-    if let Err(lock) = lock_file.try_lock_exclusive() {
+    if let Err(lock) = FileExt::try_lock(&lock_file) {
+        let lock = std::io::Error::from(lock);
         drop(lock_file);
         let unlink = std::fs::remove_file(&lock_path).err().inspect(|err| {
             jackin_diagnostics::debug_log!(

@@ -1781,13 +1781,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "fs2"
-version = "0.4.3"
+name = "fs4"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+checksum = "7e72ed92b67c146290f88e9c89d60ca163ea417a446f61ffd7b72df3e7f1dfd5"
 dependencies = [
- "libc",
- "winapi",
+ "rustix 1.1.4",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2692,7 +2692,7 @@ dependencies = [
  "crossterm",
  "dialoguer",
  "directories",
- "fs2",
+ "fs4",
  "futures-util",
  "jackin-build-meta",
  "jackin-config",
@@ -2889,7 +2889,7 @@ name = "jackin-host"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
- "fs2",
+ "fs4",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-docker",
@@ -2933,7 +2933,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "directories",
- "fs2",
+ "fs4",
  "hex",
  "jackin-config",
  "jackin-core",
@@ -3025,7 +3025,7 @@ dependencies = [
  "crossterm",
  "dialoguer",
  "directories",
- "fs2",
+ "fs4",
  "futures-util",
  "hex",
  "jackin-build-meta",
@@ -3104,7 +3104,7 @@ version = "0.6.0-dev"
 dependencies = [
  "base64 0.22.1",
  "chrono",
- "fs2",
+ "fs4",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-protocol",
@@ -6134,7 +6134,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",

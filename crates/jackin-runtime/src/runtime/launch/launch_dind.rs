@@ -8,7 +8,7 @@ use crate::runtime::naming::{
     LABEL_KIND_DIND, LABEL_KIND_PREWARM_DIND, LABEL_MANAGED, LABEL_PREWARM,
 };
 use anyhow::Context as _;
-use fs2::FileExt;
+use fs4::FileExt;
 use jackin_core::ContainerSpec;
 use jackin_core::paths::JackinPaths;
 use jackin_docker::docker_client::{ContainerState, DockerApi};
@@ -578,7 +578,7 @@ fn try_lock_prewarmed_dind(paths: &JackinPaths) -> Option<std::fs::File> {
             return None;
         }
     };
-    if let Err(error) = lock.try_lock_exclusive() {
+    if let Err(error) = FileExt::try_lock(&lock) {
         jackin_diagnostics::debug_log!(
             "sidecar",
             "prewarm sidecar lock {} is held by another launch: {error:#}",

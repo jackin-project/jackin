@@ -479,7 +479,7 @@ pub struct ResolvedWorkspace {
 
 // AppConfig stays in the binary crate — it has many inherent impl blocks
 // (load_or_init, edit_workspace, sync_builtin_agents, etc.) that depend on
-// binary-only types (ConfigEditor, fs2, JackinPaths). Moving AppConfig would
+// binary-only types (ConfigEditor, fs4, JackinPaths). Moving AppConfig would
 // require all those impls to also move, creating a very large extraction.
 // This note documents the deliberate deferral.
 
@@ -570,7 +570,7 @@ impl GitConfig {
 }
 
 // AppConfig stays in the binary crate for now — it has impl blocks that
-// depend on JackinPaths and fs2 (binary-crate types). Migration to
+// depend on JackinPaths and fs4 (binary-crate types). Migration to
 // jackin-config happens in Phase 2 after JackinPaths is extractable.
 // This note documents the deliberate deferral so the next agent doesn't
 // redo the analysis.

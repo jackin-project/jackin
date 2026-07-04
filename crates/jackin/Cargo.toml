@@ -54,7 +54,7 @@ tabled = { workspace = true }
 clap_mangen = { workspace = true }
 tokio = { workspace = true, features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
 futures-util = { workspace = true }
-fs2 = { workspace = true }
+fs4 = { workspace = true }
 rustls = { workspace = true, features = ["aws_lc_rs"] }
 
 [build-dependencies]

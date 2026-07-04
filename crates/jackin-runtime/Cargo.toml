@@ -41,7 +41,7 @@ crossterm = { workspace = true }
 dialoguer = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
-fs2 = { workspace = true }
+fs4 = { workspace = true }
 directories = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }

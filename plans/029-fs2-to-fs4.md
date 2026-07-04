@@ -7,12 +7,19 @@
 
 ## Status
 
+- **Result**: DONE — `fs2` removed; locking migrated to `fs4` 1.1.0
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW-MED (verify lock semantics at each call site)
 - **Depends on**: plan 028 (do it as one `[workspace.dependencies]` entry)
 - **Category**: migration
 - **Planned at**: commit `46511939d`, 2026-07-03
+
+## Completion notes
+
+`fs4 = "1.1.0"` is declared once in `[workspace.dependencies]`; the five former `fs2` consumers inherit it. Current Rust exposes inherent `std::fs::File::lock` / `try_lock`, so former `fs2` lock call sites use explicit `fs4::FileExt` UFCS (`FileExt::lock`, `FileExt::try_lock`, `FileExt::unlock`) to keep the migration pinned to `fs4` semantics. `fs4::available_space` replaces the previous disk-space helper.
+
+Existing concurrent-lock coverage in `runtime::cleanup::tests::prune_instances_reaps_only_unheld_name_locks` verifies that a held exclusive lock blocks a second try-lock. The five-crate test run passed 1490 tests.
 
 ## Why this matters
 
@@ -70,12 +77,12 @@ fails while held).
 
 ## Done criteria
 
-- [ ] `grep -rn "fs2" crates` → no matches (dep fully removed)
-- [ ] `fs4` declared once (workspace table) and used at all former `fs2` sites
-- [ ] Concurrent-lock behavior verified by test (a held exclusive lock blocks a second try-lock)
-- [ ] `cargo deny check licenses bans sources` exits 0 (fs4 license accepted)
-- [ ] `cargo nextest run` green across the five crates
-- [ ] `plans/README.md` row updated
+- [x] `grep -rn "fs2" crates` → no matches (dep fully removed)
+- [x] `fs4` declared once (workspace table) and used at all former `fs2` sites
+- [x] Concurrent-lock behavior verified by test (a held exclusive lock blocks a second try-lock)
+- [x] `cargo deny check licenses bans sources` exits 0 (fs4 license accepted)
+- [x] `cargo nextest run` green across the five crates
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 

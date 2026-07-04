@@ -13,7 +13,7 @@
 
 use super::prune_output;
 use crate::instance::{DockerResources, InstanceIndex, InstanceManifest, InstanceStatus};
-use fs2::FileExt;
+use fs4::FileExt;
 use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
@@ -742,12 +742,12 @@ fn reap_orphaned_name_locks(paths: &JackinPaths) {
         let lock_path = paths.data_dir.join(name.as_ref());
         #[expect(
             clippy::disallowed_methods,
-            reason = "lock-holder check requires opening the file to call try_lock_exclusive"
+            reason = "lock-holder check requires opening the file to call try_lock"
         )]
         let Ok(file) = std::fs::File::open(&lock_path) else {
             continue;
         };
-        if file.try_lock_exclusive().is_ok() {
+        if FileExt::try_lock(&file).is_ok() {
             // Lock acquired → no live holder → orphaned.
             drop(file); // Release before removing
             match std::fs::remove_file(&lock_path) {

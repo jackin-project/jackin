@@ -22,7 +22,7 @@ jackin-protocol = { workspace = true }
 jackin-diagnostics = { workspace = true, features = ["otlp"] }
 base64 = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
-fs2 = { workspace = true }
+fs4 = { workspace = true }
 nix = { workspace = true, features = ["term"] }
 reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
 serde = { workspace = true, features = ["derive"] }

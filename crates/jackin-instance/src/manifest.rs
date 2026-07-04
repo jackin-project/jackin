@@ -6,7 +6,7 @@
 //! persistence under `~/.jackin/data/`.
 
 use anyhow::Context;
-use fs2::FileExt;
+use fs4::FileExt;
 use jackin_core::agent::Agent;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -457,7 +457,7 @@ impl InstanceIndex {
             .truncate(false)
             .open(&lock_path)
             .with_context(|| format!("open index lock {}", lock_path.display()))?;
-        FileExt::lock_exclusive(&lock)
+        FileExt::lock(&lock)
             .with_context(|| format!("acquire index lock {}", lock_path.display()))?;
         let result = (|| {
             let mut index = Self::read_or_rebuild(data_dir)?;

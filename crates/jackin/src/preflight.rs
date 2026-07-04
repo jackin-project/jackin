@@ -522,5 +522,5 @@ fn check_stale_isolation(paths: &jackin_core::JackinPaths) -> CheckResult {
 
 /// Return available bytes for the filesystem containing `path`.
 fn available_bytes(path: &Path) -> Option<u64> {
-    fs2::available_space(path).ok()
+    fs4::available_space(path).ok()
 }
