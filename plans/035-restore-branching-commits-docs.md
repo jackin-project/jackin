@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Result**: DONE in PR #713 (`docs/advisor-improvement-plans`)
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
@@ -75,13 +76,20 @@ approval rule.
 
 ## Done criteria
 
-- [ ] `BRANCHING.md` and `COMMITS.md` exist at root (restored + reconciled to current policy), or their
+- [x] `BRANCHING.md` and `COMMITS.md` exist at root (restored + reconciled to current policy), or their
       content is inlined and all references repointed
-- [ ] All six dangling references resolve to existing files/sections
-- [ ] The force-push/branch-rewrite "full rule" link in `.github/AGENTS.md` resolves
-- [ ] `plans/README.md` row updated
-- [ ] (Coordinates with plan 038: once restored, add `BRANCHING.md`/`COMMITS.md` to the repo-link checker's
+- [x] All six dangling references resolve to existing files/sections
+- [x] The force-push/branch-rewrite "full rule" link in `.github/AGENTS.md` resolves
+- [x] `plans/README.md` row updated
+- [x] (Coordinates with plan 038: once restored, add `BRANCHING.md`/`COMMITS.md` to the repo-link checker's
       allowlist so this can't recur — see plan 038.)
+
+## Completion notes
+
+- Restored root `BRANCHING.md` and `COMMITS.md`.
+- Reconciled the restored branch policy with current repo rules: sync from `main` uses a normal merge commit by default; rebases, amends, squashes, and force-pushes require explicit operator approval.
+- Reconciled commit verification guidance with current aggregate gates: `cargo xtask ci`, `mise run ci`, `cargo xtask ci --fast`, and `cargo xtask ci --e2e`.
+- The `.github/AGENTS.md` force-push links now resolve through `BRANCHING.md`; `.github/CLAUDE.md` follows the same content via the Plan 034 symlink.
 
 ## STOP conditions
 
