@@ -13,6 +13,7 @@
 - **Depends on**: none
 - **Category**: bug (identification)
 - **Planned at**: commit `5d3661cff`, 2026-07-03
+- **Implementation status**: DONE in PR 714 (`jackin-agent-status` now unwraps node/bun/deno, python, and POSIX shell launch wrappers with eval/inline guards; current entrypoint launches native command names, so this is defense-in-depth for fallback and future wrapper installs)
 
 ## Why this matters
 
@@ -107,11 +108,11 @@ In `process/tests.rs`, add cases (build a `ProcessInfo` with `exe_path` + `cmdli
 
 ## Done criteria
 
-- [ ] Node/bun-wrapped opencode/codex/amp/kimi/grok identify correctly (tests prove each)
-- [ ] Eval/inline guards prevent false identification (`node -e …`, `bash -c …` → `None`, tests prove)
-- [ ] The Claude-only special case is gone; Claude still identifies (regression test passes)
-- [ ] `cargo clippy -p jackin-capsule -- -D warnings` exits 0
-- [ ] `plans/agent-status/README.md` row updated
+- [x] Node/bun-wrapped opencode/codex/amp/kimi/grok identify correctly (tests prove each)
+- [x] Eval/inline guards prevent false identification (`node -e …`, `bash -c …` → `None`, tests prove)
+- [x] The Claude-only special case is gone; Claude still identifies (regression test passes)
+- [x] `cargo clippy -p jackin-capsule -- -D warnings` exits 0
+- [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions
 

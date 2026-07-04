@@ -6,7 +6,7 @@
 //! a fallback detection signal.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use jackin_core::agent::Agent;
@@ -254,6 +254,99 @@ fn agent_from_name(name: &str) -> Option<Agent> {
     Agent::from_slug(slug)
 }
 
+fn basename(value: &str) -> &str {
+    value
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|part| !part.is_empty())
+        .unwrap_or(value)
+}
+
+fn strip_script_extension(name: &str) -> &str {
+    Path::new(name)
+        .file_stem()
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or(name)
+}
+
+fn agent_from_wrapped_path(path: &str) -> Option<Agent> {
+    if path.contains("@anthropic-ai/claude-code") || path.contains("claude-code") {
+        return Some(Agent::Claude);
+    }
+
+    path.split(['/', '\\']).rev().find_map(|component| {
+        if component.is_empty() || component.starts_with('@') {
+            return None;
+        }
+        agent_from_name(strip_script_extension(component))
+    })
+}
+
+fn is_argv0(exe_name: &str, arg: &str) -> bool {
+    basename(arg) == exe_name
+}
+
+fn first_node_script_arg<'a>(exe_name: &str, cmdline: &'a [String]) -> Option<&'a str> {
+    let mut skip_eval_operand = false;
+    for arg in cmdline {
+        if is_argv0(exe_name, arg) {
+            continue;
+        }
+        if skip_eval_operand {
+            skip_eval_operand = false;
+            continue;
+        }
+        match arg.as_str() {
+            "-e" | "-p" | "--eval" | "--print" => {
+                skip_eval_operand = true;
+            }
+            "--" => {}
+            flag if flag.starts_with("--eval=") || flag.starts_with("--print=") => {}
+            flag if flag.starts_with('-') => {}
+            script => return Some(script),
+        }
+    }
+    None
+}
+
+fn first_python_script_arg<'a>(exe_name: &str, cmdline: &'a [String]) -> Option<&'a str> {
+    for arg in cmdline {
+        if is_argv0(exe_name, arg) {
+            continue;
+        }
+        match arg.as_str() {
+            "-c" | "-m" => return None,
+            flag if flag.starts_with('-') => {}
+            script => return Some(script),
+        }
+    }
+    None
+}
+
+fn first_shell_script_arg<'a>(exe_name: &str, cmdline: &'a [String]) -> Option<&'a str> {
+    for arg in cmdline {
+        if is_argv0(exe_name, arg) {
+            continue;
+        }
+        match arg.as_str() {
+            "-c" => return None,
+            flag if flag.starts_with('-') => {}
+            script => return Some(script),
+        }
+    }
+    None
+}
+
+fn wrapped_agent_from_argv(exe_name: &str, cmdline: &[String]) -> Option<Agent> {
+    let script = match exe_name {
+        "node" | "bun" | "deno" => first_node_script_arg(exe_name, cmdline),
+        "python" | "python3" => first_python_script_arg(exe_name, cmdline),
+        "sh" | "bash" | "zsh" | "fish" => first_shell_script_arg(exe_name, cmdline),
+        _ => None,
+    }?;
+    agent_from_wrapped_path(script)
+}
+
 /// Identify the agent running in `proc`. Returns `None` when no recognized
 /// agent is found.
 pub fn identify_agent(info: &ProcessInfo) -> Option<Agent> {
@@ -264,15 +357,11 @@ pub fn identify_agent(info: &ProcessInfo) -> Option<Agent> {
         if let Some(agent) = agent_from_name(exe_name.as_ref()) {
             return Some(agent);
         }
-        // Node-wrapped agents: inspect argv[1] for the JS entry point.
-        if matches!(exe_name.as_ref(), "node" | "bun" | "deno") {
-            if let Some(script) = info.cmdline.get(1)
-                && (script.contains("@anthropic-ai/claude-code") || script.contains("claude-code"))
-            {
-                return Some(Agent::Claude);
-            }
-            // A node process that is not a recognized JS agent.
-            return None;
+        if matches!(
+            exe_name.as_ref(),
+            "node" | "bun" | "deno" | "python" | "python3" | "sh" | "bash" | "zsh" | "fish"
+        ) {
+            return wrapped_agent_from_argv(exe_name.as_ref(), &info.cmdline);
         }
     }
 

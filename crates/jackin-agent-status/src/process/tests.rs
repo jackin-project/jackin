@@ -36,6 +36,123 @@ fn identify_agent_node_wrapped_claude_from_cmdline() {
 }
 
 #[test]
+fn identify_agent_node_wrapped_opencode_from_script_path() {
+    let info = proc_info(
+        110,
+        110,
+        110,
+        Some("/usr/bin/node"),
+        "node",
+        &["node", "/usr/lib/node_modules/opencode/bin/opencode.js"],
+    );
+    assert_eq!(identify_agent(&info), Some(Agent::Opencode));
+}
+
+#[test]
+fn identify_agent_node_wrapped_codex_from_scoped_package_path() {
+    let info = proc_info(
+        120,
+        120,
+        120,
+        Some("/usr/bin/node"),
+        "node",
+        &["node", "/usr/lib/node_modules/@openai/codex/bin/cli.mjs"],
+    );
+    assert_eq!(identify_agent(&info), Some(Agent::Codex));
+}
+
+#[test]
+fn identify_agent_bun_wrapped_amp_from_scoped_package_path() {
+    let info = proc_info(
+        130,
+        130,
+        130,
+        Some("/usr/bin/bun"),
+        "bun",
+        &["bun", "/usr/lib/node_modules/@sourcegraph/amp/dist/amp.cjs"],
+    );
+    assert_eq!(identify_agent(&info), Some(Agent::Amp));
+}
+
+#[test]
+fn identify_agent_node_wrapped_kimi_from_script_path() {
+    let info = proc_info(
+        140,
+        140,
+        140,
+        Some("/usr/bin/node"),
+        "node",
+        &["node", "/usr/lib/node_modules/kimi/bin/kimi.js"],
+    );
+    assert_eq!(identify_agent(&info), Some(Agent::Kimi));
+}
+
+#[test]
+fn identify_agent_node_wrapped_grok_from_script_path() {
+    let info = proc_info(
+        150,
+        150,
+        150,
+        Some("/usr/bin/node"),
+        "node",
+        &["node", "/usr/lib/node_modules/grok/bin/grok.js"],
+    );
+    assert_eq!(identify_agent(&info), Some(Agent::Grok));
+}
+
+#[test]
+fn identify_agent_node_eval_does_not_match_agent_mentions() {
+    let info = proc_info(
+        160,
+        160,
+        160,
+        Some("/usr/bin/node"),
+        "node",
+        &["node", "-e", "console.log('amp')"],
+    );
+    assert_eq!(identify_agent(&info), None);
+}
+
+#[test]
+fn identify_agent_python_module_does_not_match_agent_mentions() {
+    let info = proc_info(
+        170,
+        170,
+        170,
+        Some("/usr/bin/python"),
+        "python",
+        &["python", "-m", "http.server"],
+    );
+    assert_eq!(identify_agent(&info), None);
+}
+
+#[test]
+fn identify_agent_python_script_matches_agent_basename() {
+    let info = proc_info(
+        180,
+        180,
+        180,
+        Some("/usr/bin/python3"),
+        "python3",
+        &["python3", "/opt/agents/kimi.py"],
+    );
+    assert_eq!(identify_agent(&info), Some(Agent::Kimi));
+}
+
+#[test]
+fn identify_agent_shell_inline_command_does_not_match_agent_mentions() {
+    let info = proc_info(
+        190,
+        190,
+        190,
+        Some("/bin/bash"),
+        "bash",
+        &["bash", "-c", "grok --help"],
+    );
+    assert_eq!(identify_agent(&info), None);
+}
+
+#[test]
 fn identify_agent_native_codex_binary() {
     let info = proc_info(
         200,
@@ -46,6 +163,12 @@ fn identify_agent_native_codex_binary() {
         &["codex"],
     );
     assert_eq!(identify_agent(&info), Some(Agent::Codex));
+}
+
+#[test]
+fn identify_agent_native_opencode_comm_fallback() {
+    let info = proc_info(250, 250, 250, None, "opencode", &["opencode"]);
+    assert_eq!(identify_agent(&info), Some(Agent::Opencode));
 }
 
 #[test]
