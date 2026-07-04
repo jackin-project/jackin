@@ -42,7 +42,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 014 | Gate capsule per-frame region scans on the damage signal | perf | P2 | L | MED | — | DONE (p95 882us→701us) |
 | 015 | Split the mega-crates to parallelize rustc | perf/tech-debt | P3 | L | MED | — | BLOCKED (op-picker pre-refactor plan 045) |
 | 016 | Reuse one turso connection per telemetry store path | perf | P3 | S | HIGH | — | DONE |
-| 017 | Cover the `jackin-env` secret-resolution path + widen e2e filter | tests | P1 | M | HIGH | — | TODO |
+| 017 | Cover the `jackin-env` secret-resolution path + widen e2e filter | tests | P1 | M | HIGH | — | DONE |
 | 018 | Commit real PTY render-conformance fixtures + fix harness doc drift | tests | P2 | M | HIGH | — | TODO |
 | 019 | Close the verification-baseline blind spots (doctests, shell) | tests/dx | P2 | S | HIGH | — | TODO |
 | 020 | Characterization tests for `jackin-diagnostics` | tests | P2 | M | HIGH | — | TODO |

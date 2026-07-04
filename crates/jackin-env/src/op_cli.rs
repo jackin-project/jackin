@@ -214,14 +214,13 @@ fn is_text_file_busy(error: &std::io::Error) -> bool {
     error.raw_os_error() == Some(TEXT_FILE_BUSY_OS_ERROR)
 }
 
-fn spawn_op_with_retry<F>(mut build: F) -> std::io::Result<std::process::Child>
+fn retry_text_file_busy_result<T, F>(mut run: F) -> std::io::Result<T>
 where
-    F: FnMut() -> std::process::Command,
+    F: FnMut() -> std::io::Result<T>,
 {
     for attempt in 0..OP_SPAWN_RETRIES {
-        let mut command = build();
-        match command.spawn() {
-            Ok(child) => return Ok(child),
+        match run() {
+            Ok(value) => return Ok(value),
             Err(error) if is_text_file_busy(&error) && attempt + 1 < OP_SPAWN_RETRIES => {
                 #[expect(
                     clippy::disallowed_methods,
@@ -234,6 +233,16 @@ where
     }
 
     unreachable!("OP_SPAWN_RETRIES is nonzero");
+}
+
+fn spawn_op_with_retry<F>(mut build: F) -> std::io::Result<std::process::Child>
+where
+    F: FnMut() -> std::process::Command,
+{
+    retry_text_file_busy_result(|| {
+        let mut command = build();
+        command.spawn()
+    })
 }
 
 fn op_spawn_error(binary: &str, error: &std::io::Error) -> anyhow::Error {
@@ -255,6 +264,13 @@ fn validate_op_source(source: &str) -> anyhow::Result<()> {
         "invalid op:// reference: segment looks like a flag in {source:?}"
     );
     Ok(())
+}
+
+fn op_read_args<'a>(reference: &'a str, account: Option<&'a str>) -> Vec<&'a str> {
+    let mut args = Vec::new();
+    push_account_arg(&mut args, account);
+    args.extend_from_slice(&["read", "--", reference]);
+    args
 }
 
 impl OpRunner for OpCli {
@@ -280,10 +296,7 @@ impl OpRunner for OpCli {
 
         let mut child = spawn_op_with_retry(|| {
             let mut cmd = Command::new(&self.binary);
-            if let Some(account) = self.account.as_deref() {
-                cmd.args(["--account", account]);
-            }
-            cmd.args(["read", "--", reference])
+            cmd.args(op_read_args(reference, self.account.as_deref()))
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());

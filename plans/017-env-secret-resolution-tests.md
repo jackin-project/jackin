@@ -95,14 +95,14 @@ formatting/ordering consistent with the surrounding entries.
 
 ## Done criteria
 
-- [ ] `resolve.rs` declares `#[cfg(test)] mod tests;` and `resolve/tests.rs` exists with op-miss/timeout/
+- [x] `resolve.rs` declares `#[cfg(test)] mod tests;` and `resolve/tests.rs` exists with op-miss/timeout/
       empty/multi-account/role-scope cases
-- [ ] `validate_reserved_names` has a direct unit test
-- [ ] `op_cli/tests.rs` covers arg construction + retry
-- [ ] `.github/workflows/ci.yml` `docker_e2e` filter includes `jackin-env`, `jackin-config`, `jackin-protocol`
-- [ ] `cargo nextest run -p jackin-env` green; `cargo clippy -p jackin-env -- -D warnings` exits 0
-- [ ] No test invokes the real `op` binary (`grep -rn "Command::new" crates/jackin-env/src/*/tests.rs` → none)
-- [ ] `plans/README.md` row updated
+- [x] `validate_reserved_names` has a direct unit test
+- [x] `op_cli/tests.rs` covers arg construction + retry
+- [x] `.github/workflows/ci.yml` `docker_e2e` filter includes `jackin-env`, `jackin-config`, `jackin-protocol`
+- [x] `cargo nextest run -p jackin-env` green; `cargo clippy -p jackin-env -- -D warnings` exits 0
+- [x] No test invokes the real `op` binary (`grep -rn "Command::new" crates/jackin-env/src/*/tests.rs` → none)
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 
