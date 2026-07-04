@@ -370,17 +370,45 @@ impl RulePackRegistry {
 }
 
 fn load_embedded_packs(packs: &mut HashMap<String, RulePack>) -> anyhow::Result<()> {
-    for content in [
-        include_str!("../packs/claude.toml"),
-        include_str!("../packs/codex.toml"),
-        include_str!("../packs/amp.toml"),
-        include_str!("../packs/kimi.toml"),
-        include_str!("../packs/opencode.toml"),
-    ] {
-        let pack = toml::from_str::<RulePack>(content)?.finalize()?;
-        packs.insert(pack.agent.clone(), pack);
-    }
+    let failures = load_pack_sources(
+        packs,
+        [
+            ("claude", include_str!("../packs/claude.toml")),
+            ("codex", include_str!("../packs/codex.toml")),
+            ("amp", include_str!("../packs/amp.toml")),
+            ("kimi", include_str!("../packs/kimi.toml")),
+            ("opencode", include_str!("../packs/opencode.toml")),
+        ],
+    );
+    anyhow::ensure!(
+        !packs.is_empty(),
+        "all embedded agent-status packs failed to load: {}",
+        failures.join("; ")
+    );
     Ok(())
+}
+
+fn load_pack_sources<'a>(
+    packs: &mut HashMap<String, RulePack>,
+    sources: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Vec<String> {
+    let mut failures = Vec::new();
+    for (label, content) in sources {
+        match toml::from_str::<RulePack>(content) {
+            Ok(pack) => match pack.finalize() {
+                Ok(pack) => {
+                    packs.insert(pack.agent.clone(), pack);
+                }
+                Err(error) => {
+                    failures.push(format!("{label}: {error:#}"));
+                }
+            },
+            Err(error) => {
+                failures.push(format!("{label}: {error}"));
+            }
+        }
+    }
+    failures
 }
 
 impl RulePack {

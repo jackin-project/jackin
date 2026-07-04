@@ -113,6 +113,61 @@ fn min_engine_version_defaults_and_gates_future_engines() {
 }
 
 #[test]
+fn embedded_pack_loader_keeps_good_pack_when_peer_is_bad() {
+    let good = r#"
+schema_version = 1
+agent = "test"
+validated_versions = ">=1.0.0, <2"
+
+[[rule]]
+id = "ok"
+state = "working"
+priority = 1
+region = "bottom:1"
+requires_all = ["ok"]
+"#;
+    let bad = "schema_version = 1\nagent = \"broken\"\nvalidated_versions = \"*\"\n";
+    let mut packs = HashMap::new();
+
+    let failures = load_pack_sources(&mut packs, [("good", good), ("bad", bad)]);
+
+    assert!(
+        packs.contains_key("test"),
+        "a malformed embedded pack must not drop valid peers"
+    );
+    assert_eq!(failures.len(), 1);
+    assert!(
+        failures[0].contains("bad"),
+        "failure should name the bad embedded source: {failures:?}"
+    );
+}
+
+#[test]
+fn agent_screen_detector_coverage_is_exhaustive_or_reviewed() {
+    const NO_SCREEN_DETECTOR: &[&str] = &[
+        // TODO(plan-006-grok): replace this opt-out with a real grok pack after
+        // jackin❯ captures grok-originated blocked/working/idle goldens.
+        "grok",
+    ];
+    let registry = RulePackRegistry::bundled().unwrap();
+
+    for agent in jackin_core::Agent::ALL {
+        let slug = agent.slug();
+        if NO_SCREEN_DETECTOR.contains(&slug) {
+            assert!(
+                !registry.packs.contains_key(slug),
+                "{slug} has a detector now; remove it from NO_SCREEN_DETECTOR"
+            );
+        } else {
+            assert!(
+                registry.packs.contains_key(slug),
+                "{slug} must have a screen detector or reviewed opt-out"
+            );
+        }
+    }
+}
+
+#[test]
 fn prompt_caret_regions_isolate_live_prompt() {
     let pack: RulePack = toml::from_str(
         "schema_version = 1\n\
