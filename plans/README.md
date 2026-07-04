@@ -53,7 +53,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 024 | Extract a `ContainerBackend` trait; finish apple-container lifecycle | tech-debt/direction | P2 | L | HIGH | — | DONE (lifecycle dispatch; finalization explicit Phase 0 error) |
 | 025 | Burn down the 66 complexity-lint suppressions | tech-debt | P3 | M | HIGH | — | DONE (run.rs slice; 66→54 non-test suppressions) |
 | 026 | Replace blanket `#[allow(dead_code)]` in `jackin-image` | tech-debt | P2 | S | HIGH | — | DONE (public API allows removed; one cfg-narrow expect remains) |
-| 027 | Finish or rename the "Transitional" console facade | tech-debt | P3 | M | MED | 023 | TODO |
+| 027 | Finish or rename the "Transitional" console facade | tech-debt | P3 | M | MED | 023 | DONE (steady-state adapter shell documented; Transitional removed) |
 | 028 | Adopt `[workspace.dependencies]`; exact-pin `turso` | migration/dx | P2 | M | HIGH | — | TODO |
 | 029 | Migrate `fs2` → `fs4` (unmaintained since 2018) | migration | P2 | S | MED | 028 | TODO |
 | 030 | Fix the `bans.skip` posture (warn-only gate) | migration/dx | P3 | S | HIGH | — | TODO |

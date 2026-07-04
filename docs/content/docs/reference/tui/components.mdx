@@ -11,7 +11,7 @@ description: "The hard reuse rule, the full reusable component catalog, and shar
 
 1. **Every visual pattern that appears in more than one place must use one shared implementation.** A single widget, render function, or helper — not two near-copies. When the existing implementation cannot serve a new call site without modification, extend it (add a parameter, generalize a branch, add an enum variant) rather than forking it.
 
-2. **Components have two canonical homes.** Cross-surface components live in `crates/jackin-tui/src/components/`. Surface-local components live in `crates/<surface-crate>/src/tui/components/`. The remaining root-console op-picker adapter in `src/console/tui/op_picker/` is transitional until migrated; use it when extending current op-picker behavior, but do not add new canonical component patterns there.
+2. **Components have two canonical homes.** Cross-surface components live in `crates/jackin-tui/src/components/`. Surface-local components live in `crates/<surface-crate>/src/tui/components/`. Console service adapters bind component outcomes to root IO, but new canonical component patterns still belong in one of the two component homes.
 
 3. **A genuinely new component is only ever written once.** The first time a new UX pattern appears, it is acceptable to implement it in the most focused way that serves the immediate need. The second time the same pattern is needed somewhere else, the two implementations must be consolidated into one shared widget before the second PR lands — not "as a follow-up."
 
@@ -29,7 +29,7 @@ Before adding any new TUI widget or state type:
 
 1. Search the shared component crate first: `rg 'struct .*State|fn render_|impl Widget|impl StatefulWidget' crates/jackin-tui/src/components crates/jackin-tui/src`.
 2. Search the owning surface's final local component area: `rg 'struct .*State|fn render_|impl Widget|impl StatefulWidget' crates/<surface-crate>/src/tui`.
-3. While the console migration is incomplete, also search root-console TUI adapters before adding or moving anything: `rg 'struct .*State|fn render_' src/console/tui`.
+3. Search the owning surface's adapter shell before moving existing behavior: `rg 'struct .*State|fn render_' crates/jackin/src/console crates/jackin-console/src/tui`.
 4. If a component already owns the pattern, extend it. Add a mode enum, parameter, flag, or semantic variant. Do not create a second module.
 5. If no component owns the pattern and only one surface needs it, add it under `crates/<surface-crate>/src/tui/components/` with a thin `components.rs` export. If more than one surface needs it, add it under `crates/jackin-tui/src/components/` with a lookbook story and visual regression coverage.
 6. When moving an existing component into the final structure, preserve behavior first: identify existing tests/snapshots or add focused coverage, move the code, keep compatibility shims only where needed for the migration, and verify the same keyboard, mouse, focus, footer, error, and render behavior afterward.
@@ -42,7 +42,7 @@ A `token_store_picker` widget once duplicated the Account → Vault → Item nav
 
 ## Reusable Component Catalog
 
-Reusable TUI widgets live first in `crates/jackin-tui/src/components/`. Surface-local widgets should live under the owning surface's `src/tui/components/`. The root console still has the transitional op-picker adapter in `src/console/tui/op_picker/`; it remains the valid current owner until migrated, but that path is not the target structure for new canonical component work. Use this table to identify the right component before writing new code or moving an existing widget.
+Reusable TUI widgets live first in `crates/jackin-tui/src/components/`. Surface-local widgets should live under the owning surface's `src/tui/components/`. Console adapter modules may own runner wiring, cache binding, and service execution, but they are not homes for new canonical component patterns. Use this table to identify the right component before writing new code or moving an existing widget.
 
 | Component | Module | What it provides | When to use |
 |---|---|---|---|
@@ -72,7 +72,7 @@ Root-console tests should seed modals through the same crate-owned helpers as ru
 
 Test-only helpers that need command runners, service calls, or config persistence belong with effect/service adapters, not input handlers. Role-input tests may use fake runners through <RepoFile path="crates/jackin/src/console/effects.rs">crates/jackin/src/console/effects.rs</RepoFile>, but <RepoFile path="crates/jackin-console/src/tui/input/editor.rs">crates/jackin-console/src/tui/input/editor.rs</RepoFile> must stay limited to input-to-outcome routing and modal state transitions.
 
-The transitional root op-picker adapter may own `operator_env` types, runner wiring, cache binding, subscriptions, and crossterm-to-outcome mapping, but user-visible picker copy, load-error state shaping, and blocked-load key policy belong in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile> with the rest of the component. Root adapters pass concrete process errors, subscription-closed facts, or `Esc`/not-`Esc` key facts into component helpers; they do not construct recoverable/fatal picker error states inline or duplicate the loading/fatal key-consumption rule.
+The console op-picker adapter may own `operator_env` types, runner wiring, cache binding, subscriptions, and crossterm-to-outcome mapping, but user-visible picker copy, load-error state shaping, and blocked-load key policy belong in <RepoFile path="crates/jackin-console/src/tui/components/op_picker.rs">crates/jackin-console/src/tui/components/op_picker.rs</RepoFile> with the rest of the component. Root adapters pass concrete process errors, subscription-closed facts, or `Esc`/not-`Esc` key facts into component helpers; they do not construct recoverable/fatal picker error states inline or duplicate the loading/fatal key-consumption rule.
 
 Editor save prompts and save-blocking error text that depend only on visible editor facts live with editor screen view helpers in <RepoFile path="crates/jackin-console/src/tui/screens/editor/view.rs">crates/jackin-console/src/tui/screens/editor/view.rs</RepoFile>. Root save input and the effect executor still own drift detection, preserved-state cleanup, and workspace writes; they pass render-safe facts such as affected container names into the screen helpers.
 

@@ -7,12 +7,17 @@
 
 ## Status
 
+- **Result**: DONE — steady-state adapter shell documented (branch b)
 - **Priority**: P3
 - **Effort**: M
 - **Risk**: MED
 - **Depends on**: plan 023 (the console crate boundary should settle first)
 - **Category**: tech-debt
 - **Planned at**: commit `46511939d`, 2026-07-03
+
+## Decision
+
+The console split is the intended steady state, not an unfinished extraction. The docs evidence is the codebase-map extraction ledger: `jackin-console` owns product state, input planning, view composition, components, and pure business rules; the `jackin` binary retains only the side-effect execution layer, terminal ownership adapter, and CLI-facing entrypoint. The `jackin-console` crate root says the same boundary in crate-level docs: the library owns reusable state/update/input/view/effects-as-data, while the binary owns CLI dispatch, terminal ownership, Docker/runtime/config IO, and effect interpretation. The remaining fix was to retire the "Transitional" framing and describe the root module as an adapter shell.
 
 ## Why this matters
 
@@ -62,12 +67,12 @@ functional core. This removes the "half-migrated" ambiguity without code churn.
 
 ## Done criteria
 
-- [ ] A written decision (finish vs steady-state) with doc evidence in the row note
-- [ ] `grep -rn "Transitional" crates/jackin/src/console` → no matches
-- [ ] Branch a: re-export shims removed, call sites re-pointed; **or** Branch b: module renamed + split documented
-- [ ] `cargo nextest run -p jackin` green
-- [ ] `PROJECT_STRUCTURE.md`/codebase-map reflects the console boundary (docs gate)
-- [ ] `plans/README.md` row updated
+- [x] A written decision (finish vs steady-state) with doc evidence in the row note
+- [x] `grep -rn "Transitional" crates/jackin/src/console` → no matches
+- [x] Branch a: re-export shims removed, call sites re-pointed; **or** Branch b: module renamed + split documented
+- [x] `cargo nextest run -p jackin` green
+- [x] `PROJECT_STRUCTURE.md`/codebase-map reflects the console boundary (docs gate)
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 
