@@ -67,13 +67,13 @@ numbers if newer plans already exist). Each must be a scoped build plan. Defer `
 
 ## Done criteria
 
-- [ ] A design doc / ADR answering lifecycle + install + control-socket + security-posture + redaction, and
+- [x] A design doc / ADR answering lifecycle + install + control-socket + security-posture + redaction, and
       the in-container-vs-host daemon relationship
-- [ ] A feature-flagged prototype of the attention-prompts adapter that compiles and demonstrates the socket
+- [x] A feature-flagged prototype of the attention-prompts adapter that compiles and demonstrates the socket
       shape (not production-wired)
-- [ ] Follow-up build plans written; auth-sync/host-bridge explicitly deferred with rationale
-- [ ] Roadmap items updated (Status/Related Files) per the docs gate
-- [ ] `plans/README.md` row updated
+- [x] Follow-up build plans written; auth-sync/host-bridge explicitly deferred with rationale
+- [x] Roadmap items updated (Status/Related Files) per the docs gate
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 

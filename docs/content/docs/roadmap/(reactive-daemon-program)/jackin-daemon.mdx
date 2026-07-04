@@ -2,7 +2,7 @@
 title: "jackin❯ daemon"
 ---
 
-**Status**: Open — design proposal, no implementation started yet; the reactive features that depend on it ([live auth sync](/roadmap/live-auth-sync/), [host bridge](/roadmap/host-bridge/), [agent attention prompts](/roadmap/agent-attention-prompts/)) are themselves still open design proposals waiting on this item
+**Status**: Spiked — lifecycle, install, control-socket, security, redaction, and host-vs-Capsule boundaries are resolved in the research page; a feature-gated `daemon-spike` prototype exists, but no production daemon command is shipped yet. The reactive features that depend on it ([live auth sync](/roadmap/live-auth-sync/), [host bridge](/roadmap/host-bridge/), [agent attention prompts](/roadmap/agent-attention-prompts/)) still wait on the production lifecycle/socket foundation.
 
 ## Shipped facts
 
@@ -10,16 +10,18 @@ jackin❯ is still a purely short-lived CLI / TUI: every command (`jackin consol
 
 The clearest concrete stand-in for a daemon-owned watcher remains the keep-awake reconciler in <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile>: it still runs at every CLI command boundary, acquiring a lock file and starting/stopping `caffeinate -imsu` based on whether any keep-awake-labelled container is running, exactly as this item's problem statement describes.
 
-Research: [jackin❯ daemon — design proposal](/reference/research/infrastructure/jackin-daemon-design/) has the full design rationale — what the daemon owns/excludes, open lifecycle/install/protocol/security questions, and the proposed phasing.
+Research: [jackin❯ daemon — design proposal](/reference/research/infrastructure/jackin-daemon-design/) has the full design rationale and the Plan 042 spike resolution: selected lifecycle, install, protocol, security posture, redaction rules, host-vs-Capsule relationship, and implementation phasing.
+
+The spike prototype is feature-gated and not user-wired: <RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs" /> defines the newline-delimited JSON control request shape plus the minimal attention adapter proof.
 
 ## Remaining work
 
-1. **Design pass.** Answer the open lifecycle (start trigger, restart policy, stop semantics, version-skew handling), install method (launchd/systemd/fallback), CLI surface, control protocol (Unix socket, JSON Lines, versioning), and security posture (credential lifetime, log redaction, coredump handling) questions in the linked research page.
-2. **Empty daemon.** Ship `jackin daemon serve` / `start` / `stop` / `status` / `logs` with no watchers — lifecycle, install, control socket, log redaction only.
+1. **Production lifecycle foundation.** Ship `jackin daemon serve` / `install` / `uninstall` / `start` / `stop` / `restart` / `status` / `logs` with no watchers — lifecycle, install, control socket, version-skew checks, log redaction, coredump policy, and same-UID socket hardening only. See <RepoFile path="plans/047-daemon-lifecycle-foundation.md" />.
+2. **Attention adapter foundation.** Promote the spike's one-way `attention.snapshot` adapter into a production adapter after the daemon lifecycle lands. See <RepoFile path="plans/048-attention-adapter-foundation.md" />.
 3. **Desktop-ready API.** Add the small versioned endpoints [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) needs first: `daemon/hello`, workspace/session discovery, GitHub PR lookup, account status, event subscription, Ghostty/browser open actions.
 4. **Caffeinate migration.** Move the keep-awake reconciler from per-command into a daemon-owned Docker-events watcher.
-5. **Live auth sync.** Add the per-axis watcher adapters for [live bidirectional auth sync](/roadmap/live-auth-sync/) — first reactive feature to actually require the daemon.
-6. **Further reactive adapters.** Container event watcher, cross-session notifications, [agent attention prompts](/roadmap/agent-attention-prompts/), [host bridge](/roadmap/host-bridge/) — each plugs into the daemon's adapter surface once it exists.
+5. **Live auth sync.** Add the per-axis watcher adapters for [live bidirectional auth sync](/roadmap/live-auth-sync/) only after the daemon foundation has shipped and log/core-dump redaction is proven.
+6. **Further reactive adapters.** Container event watcher, cross-session notifications, and [host bridge](/roadmap/host-bridge/) each plug into the daemon's adapter surface once it exists; host bridge remains blocked until per-request approval and audit are specified.
 
 ## Related work
 
@@ -30,5 +32,8 @@ Research: [jackin❯ daemon — design proposal](/reference/research/infrastruct
 - [jackin❯ Capsule](/roadmap/jackin-capsule/) — the in-container per-container control plane; its Phase 4 (host daemon integration) is designed together with this item.
 - [jackin❯ Desktop Agent Hub](/reference/research/desktop/agent-hub/jackin-desktop-agent-hub/) — native macOS status bar and desktop companion that consumes daemon state for workspaces, sessions, GitHub PRs, account status, notifications, and approved host actions.
 - <RepoFile path="crates/jackin-host/src/caffeinate.rs">crates/jackin-host/src/caffeinate.rs</RepoFile> — today's per-command keep-awake reconciler; first migration target once the daemon exists.
+- <RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs">crates/jackin-runtime/src/reactive_daemon.rs</RepoFile> — feature-gated Plan 042 prototype proving the control socket shape and one-way attention adapter.
+- <RepoFile path="plans/047-daemon-lifecycle-foundation.md">plans/047-daemon-lifecycle-foundation.md</RepoFile> — next build plan for the production daemon foundation.
+- <RepoFile path="plans/048-attention-adapter-foundation.md">plans/048-attention-adapter-foundation.md</RepoFile> — next build plan for the first production adapter.
 - [Reliable Claude authentication strategy](/reference/research/authentication/claude-auth-strategy/) — concurrent-session token-drift concerns the live-auth-sync feature ultimately answers, so the daemon hosts the answer.
 - [Credential source pattern](/roadmap/credential-source-pattern/) — future unified credential resolver; the daemon's per-axis adapter trait should be expressible inside that pattern.

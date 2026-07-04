@@ -5,6 +5,36 @@ description: "Design rationale for a long-running, per-operator-user host daemon
 
 This is the original design-proposal writeup for the [jackin❯ daemon roadmap item](/roadmap/jackin-daemon/), kept for the design-history record. Nothing described below is implemented; the roadmap item tracks current status.
 
+## Spike resolution (2026-07-04)
+
+Plan 042 settled the daemon's foundation enough to split implementation work
+without shipping a production daemon in the spike itself. The selected shape is:
+
+- **Lifecycle:** `jackin daemon serve` is the foreground process. `jackin daemon install` writes a per-user launchd LaunchAgent on macOS or a systemd user unit on Linux; `start`, `stop`, `restart`, `status`, and `logs` are thin lifecycle wrappers. CLI auto-start is fallback-only and must tell the operator when no user-service manager is available. The daemon stops at operator logout and is never a system service.
+- **Version skew:** every socket request carries a protocol version and daemon build id. Mismatches fail closed with a restart hint; no best-effort mixed-version mode.
+- **Install:** Homebrew may suggest `jackin daemon install`, but package post-install must not silently write LaunchAgents/systemd units. Non-interactive CI/container environments leave the daemon disabled.
+- **Control socket:** the daemon listens only on `~/.jackin/run/jackin-daemon.sock` under a `0700` directory. The wire format is newline-delimited JSON with `{ id, protocol_version, type, ... }`, one request and one response per connection for v1. Long-lived event streams can be added as a later explicit request type.
+- **Authentication and security:** same-UID filesystem permissions are necessary but not sufficient for sensitive adapters. Read-only/status adapters may use same-UID socket auth. Any adapter that returns secrets or invokes host actions must add per-request operator approval and an action-specific allowlist. The daemon never listens on TCP and never runs as root.
+- **Secrets and logs:** the daemon must install the same redaction discipline as launch diagnostics before any adapter can carry credentials. Tokens are not persisted in daemon-owned storage; feature stores own their at-rest format. Production daemon startup must disable core dumps where the platform supports it before live-auth-sync or host-bridge land.
+- **Host daemon vs Capsule daemon:** the host daemon is per-operator-user and cross-container. The existing `jackin-capsule` daemon remains the in-container per-instance control plane that owns PTYs, panes, and runtime status. The host daemon consumes Capsule snapshots/events through existing socket/fallback channels; it does not replace Capsule or move PTY authority to the host.
+
+The spike prototype lives behind the `jackin-runtime` `daemon-spike` feature in
+<RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs" />. It proves the
+control message shape with a one-connection Unix listener and the first narrow
+adapter: `attention.snapshot` consumes pane states from the existing runtime
+status authority and emits notifications on `blocked` / `done` transitions only.
+This is intentionally not user-wired and not a daemon lifecycle implementation.
+
+Follow-up build plans:
+
+- <RepoFile path="plans/047-daemon-lifecycle-foundation.md" /> — production daemon lifecycle and socket foundation.
+- <RepoFile path="plans/048-attention-adapter-foundation.md" /> — production attention adapter on top of that daemon foundation.
+
+`live-auth-sync` and `host-bridge` remain deferred until the lifecycle/socket
+foundation is production-grade. They are the first adapters that can expose
+credentials or host actions, so they must not be used to prove the daemon's base
+shape.
+
 ## Problem
 
 jackin❯ has been a short-lived CLI / TUI from day one: every command (`jackin console`, `jackin load`, `jackin workspace …`, `jackin config …`) runs to completion and exits. Reconcilers that need to keep state warm, react to host events, or hold a per-host singleton currently piggy-back on the next command boundary, which is the wrong shape for a growing class of features.
@@ -45,9 +75,10 @@ To keep the surface manageable and the security posture reviewable:
 - It does **not** survive operator logout. Lifecycle is tied to the operator's session (launchd LaunchAgent on macOS, systemd user unit on Linux), not a system-level service.
 - It does **not** hold credentials in persistent storage of its own. Anything the daemon needs at rest lives in the per-feature shared store (e.g. `~/.jackin/auth-shared/<axis>/` for live auth sync), not in a daemon-owned database.
 
-## Open design questions
+## Design questions resolved by the spike
 
-This is a design proposal, not a spec. Each question needs an explicit answer before implementation lands.
+The original open questions are kept below as design history, with the Plan 042
+resolution now recorded above.
 
 ### Lifecycle
 

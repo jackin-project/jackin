@@ -17,6 +17,8 @@
 pub mod apple_container_client;
 pub mod exec_host;
 pub mod isolation;
+#[cfg(all(feature = "daemon-spike", unix))]
+pub mod reactive_daemon;
 pub mod runtime;
 pub mod spin_wait;
 

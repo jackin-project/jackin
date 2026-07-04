@@ -68,10 +68,12 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 039 | Relocate/version the root `PLAN.md` docs-CSS plan | docs | P3 | S | MED | — | DONE (executed; root plan deleted) |
 | 040 | Update `PULL_REQUESTS.md` off the Astro/Starlight workflow | docs | P2 | S | HIGH | — | DONE |
 | 041 | Document `grok` agent + `backend` config across user surfaces | docs | P2 | S | HIGH | — | DONE |
-| 042 | Spike: scope the reactive-daemon program | direction | P3 | L | HIGH | — | TODO |
+| 042 | Spike: scope the reactive-daemon program | direction | P3 | L | HIGH | — | DONE (design + daemon-spike prototype; follow-ups 047/048) |
 | 043 | Track: finish the security-hardening cluster (compat→standard) | direction | P2 | L | HIGH | 003 | TODO |
 | 044 | Store pane zoom state per tab | bug | P3 | M | MED | 009 | TODO |
 | 045 | Prepare op-picker for a safe leaf-crate extraction | perf/tech-debt | P3 | M | MED | 015 | TODO |
+| 047 | Build the host-daemon lifecycle foundation | direction | P2 | M | MED | 042 | TODO |
+| 048 | Build the first production attention adapter | direction | P2 | M | MED | 047 | TODO |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` (+reason) | `REJECTED` (+rationale).
 
@@ -104,7 +106,7 @@ Every raw finding ID emitted by the eight auditors, mapped to its plan. Nothing 
 | DX-04 (e2e presteps) | 031 | DOCS-03 (dual ADR sets) | 037 |
 | DX-05 (CLAUDE.md symlinks) | 034 | DOCS-04 (linkcheck coverage) | 038 |
 | DIRECTION-01 (backend abstraction) | 024 | DOCS-05 (root PLAN.md) | 039 |
-| DIRECTION-02 (reactive daemon) | 042 | DOCS-06 (PULL_REQUESTS Astro) | 040 |
+| DIRECTION-02 (reactive daemon) | 042, 047, 048 | DOCS-06 (PULL_REQUESTS Astro) | 040 |
 | DIRECTION-03 (hardening cluster) | 043 | DOCS-07 (grok/backend docs) | 041 |
 | DIRECTION-04 (grok parity) | 041 | | |
 
