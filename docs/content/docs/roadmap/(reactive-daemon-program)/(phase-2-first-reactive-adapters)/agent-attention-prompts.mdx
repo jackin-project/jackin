@@ -2,15 +2,15 @@
 title: "Agent Attention Prompts"
 ---
 
-**Status**: Spiked — still blocked on the production [jackin❯ daemon](/roadmap/jackin-daemon/) foundation, but the Plan 042 `daemon-spike` prototype proves the first one-way adapter shape. The substrate this item consumes, the [Agent Runtime Status Authority](/roadmap/agent-runtime-status/), is fully implemented; production OS notifications, click-to-focus, `jackin-attention` MCP enrichment, and the console Notifications tab remain unbuilt.
+**Status**: First adapter foundation shipped — the production [jackin❯ daemon](/roadmap/jackin-daemon/) accepts one-way attention snapshots, de-duplicates `blocked` / unseen `done` transitions, and can dispatch macOS/Linux notifications when started with `JACKIN_ATTENTION=1`. Per-container event subscription, click-to-focus, `jackin-attention` MCP enrichment, and the console Notifications tab remain unbuilt.
 
 ## Shipped baseline
 
 The [Agent Runtime Status Authority](/roadmap/agent-runtime-status/) is implemented and already produces the effective `blocked` / derived `done` / `idle` / `working` / `unknown` transitions this feature needs; this item does not have to invent its own waiting-detection heuristic. MCP registration also already has a working pattern to extend: <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> auto-registers the `tirith` / `shellfirm` MCP servers into each agent's config at container launch, and a future `jackin-attention` server would register through the same code path.
 
-The feature-gated spike in <RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs" /> accepts an `attention.snapshot` control request carrying pane states and emits notifications on `blocked` / `done` transitions only. It intentionally uses a notifier trait plus a diagnostics-log prototype path; it is not registered with the CLI, not a launchd/systemd daemon, and not an OS notification implementation.
+The production implementation in <RepoFile path="crates/jackin-runtime/src/host_daemon.rs" /> accepts an `attention_snapshot` control request carrying pane states and emits notifications on `blocked` / `done` transitions only. Notifications are muted unless `JACKIN_ATTENTION=1` is set on the daemon process; muted mode still records the transition state so repeated snapshots do not spam later.
 
-Everything else — the production daemon process, per-container event subscription, OS notification dispatch, click-to-focus, and the console Notifications tab — is unbuilt. The next scoped implementation plan is <RepoFile path="plans/048-attention-adapter-foundation.md" /> and depends on <RepoFile path="plans/047-daemon-lifecycle-foundation.md" />.
+Everything else — per-container event subscription, click-to-focus, and the console Notifications tab — is unbuilt. The completed scoped implementation plan is <RepoFile path="plans/048-attention-adapter-foundation.md" />.
 
 ## Remaining work
 

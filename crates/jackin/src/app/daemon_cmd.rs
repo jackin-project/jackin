@@ -147,7 +147,11 @@ fn status(layout: &DaemonLayout) -> Result<()> {
             println!("build: {}", status.build_id);
             println!("socket: {}", status.socket_path.display());
             println!("log: {}", status.log_path.display());
-            println!("adapters: none");
+            if status.adapters_enabled.is_empty() {
+                println!("adapters: none");
+            } else {
+                println!("adapters: {}", status.adapters_enabled.join(", "));
+            }
             match status.coredump_policy {
                 CoredumpPolicy::Disabled => println!("coredumps: disabled"),
                 CoredumpPolicy::Unsupported { residual_risk } => {

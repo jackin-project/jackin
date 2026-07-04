@@ -2,7 +2,7 @@
 title: "daemon"
 ---
 
-`jackin daemon` manages the per-user host daemon foundation. This first production surface ships lifecycle, install files, a private Unix control socket, protocol/build skew checks, redacted logs, and status reporting only. It does not enable attention notifications, live auth sync, host bridge, keep-awake migration, or Desktop Agent Hub adapters.
+`jackin daemon` manages the per-user host daemon foundation. This production surface ships lifecycle, install files, a private Unix control socket, protocol/build skew checks, redacted logs, status reporting, and the first one-way attention adapter. It does not enable live auth sync, host bridge, keep-awake migration, or Desktop Agent Hub adapters.
 
 ## Commands
 
@@ -12,12 +12,24 @@ title: "daemon"
 | `jackin daemon start` | Start `jackin daemon serve` in the background for the current user. |
 | `jackin daemon stop` | Ask the running daemon to shut down cleanly. |
 | `jackin daemon restart` | Stop, then start the daemon. |
-| `jackin daemon status` | Print daemon PID, protocol version, build id, socket path, log path, adapter list, and coredump policy. |
+| `jackin daemon status` | Print daemon PID, protocol version, build id, socket path, log path, enabled adapter list, and coredump policy. |
 | `jackin daemon logs` | Print the daemon log file with shared secret redaction applied. |
 | `jackin daemon install` | Write the per-user launchd or systemd user unit file. It does not load or enable the service. |
 | `jackin daemon uninstall` | Remove the launchd/systemd user unit files. |
 
 The control socket lives at `~/.jackin/run/jackin-daemon.sock`. The containing directory is created with `0700` permissions and the socket is restricted to the current user. Requests are newline-delimited JSON, capped at 16 KiB, and include both a daemon protocol version and the CLI build id. Mismatches fail closed.
+
+## Attention
+
+The daemon accepts one-way attention snapshots from the Capsule status authority. It notifies only on first `blocked` and first unseen `done` transitions per `(container, session)` and does not re-notify while a pane remains in the same state.
+
+Notifications are muted by default. Start the daemon with `JACKIN_ATTENTION=1` to enable host notifications:
+
+```sh
+JACKIN_ATTENTION=1 jackin daemon serve
+```
+
+macOS uses Notification Center through `osascript`; Linux uses `notify-send`; unsupported hosts fall back to diagnostics-log events only. Notification titles and bodies use scrubbed labels and state names, not command output or secret values.
 
 ## Install
 
@@ -31,4 +43,4 @@ On macOS, the command writes a LaunchAgent under `~/Library/LaunchAgents/` and p
 
 ## Limitations
 
-The daemon currently reports no enabled adapters. Coredump suppression is reported in `status`; if the current build cannot disable coredumps itself, the status output names that residual risk. Reactive features remain tracked by the [jackin❯ daemon roadmap](/roadmap/jackin-daemon/).
+Coredump suppression is reported in `status`; if the current build cannot disable coredumps itself, the status output names that residual risk. Remaining reactive features are tracked by the [jackin❯ daemon roadmap](/roadmap/jackin-daemon/).

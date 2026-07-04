@@ -13,6 +13,9 @@
 - **Depends on**: 047
 - **Category**: direction (DIRECTION-02)
 - **Planned at**: Plan 042 spike, 2026-07-04
+- **Completed**: Plan 048 promoted the spike's one-way snapshot consumer into the production
+  `host_daemon` module. The adapter de-duplicates `blocked` / `done` transitions and is muted by
+  default unless the daemon is started with `JACKIN_ATTENTION=1`.
 
 ## Why this matters
 
@@ -60,12 +63,12 @@ Out of scope:
 
 ## Done criteria
 
-- [ ] adapter runs under the production daemon foundation from Plan 047
-- [ ] notifications fire only on `blocked`/`done` edges and de-duplicate repeated snapshots
-- [ ] macOS, Linux, and fallback notifier paths are covered by tests or command-runner fakes
-- [ ] live-auth-sync and host bridge remain unimplemented and documented as deferred
-- [ ] roadmap/docs describe shipped vs deferred pieces
-- [ ] `plans/README.md` row updated
+- [x] adapter runs under the production daemon foundation from Plan 047
+- [x] notifications fire only on `blocked`/`done` edges and de-duplicate repeated snapshots
+- [x] macOS, Linux, and fallback notifier paths are covered by tests or command-runner fakes
+- [x] live-auth-sync and host bridge remain unimplemented and documented as deferred
+- [x] roadmap/docs describe shipped vs deferred pieces
+- [x] `plans/README.md` row updated
 
 ## Stop conditions
 

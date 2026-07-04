@@ -4,14 +4,18 @@
 //! request/response framing, status, and shutdown. Reactive adapters are added
 //! by later plans.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use jackin_core::JackinPaths;
+use jackin_protocol::InstanceSnapshot;
+use jackin_protocol::control::AgentState;
 use serde::{Deserialize, Serialize};
 
 pub const DAEMON_PROTOCOL_VERSION: u16 = 1;
@@ -34,6 +38,10 @@ pub struct DaemonRequest {
 pub enum DaemonRequestKind {
     Hello,
     Status,
+    AttentionSnapshot {
+        container_name: String,
+        panes: Vec<AttentionPaneStatus>,
+    },
     Shutdown,
 }
 
@@ -53,6 +61,10 @@ pub enum DaemonResponseKind {
         capabilities: Vec<String>,
     },
     Status(DaemonStatus),
+    AttentionAccepted {
+        notifications: usize,
+        muted: bool,
+    },
     Shutdown {
         accepted: bool,
     },
@@ -70,6 +82,186 @@ pub struct DaemonStatus {
     pub log_path: PathBuf,
     pub coredump_policy: CoredumpPolicy,
     pub adapters_enabled: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AttentionPaneStatus {
+    pub session_id: u64,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    pub state: AgentState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttentionNotification {
+    pub container_name: String,
+    pub session_id: u64,
+    pub agent: Option<String>,
+    pub label: String,
+    pub state: AgentState,
+}
+
+pub trait AttentionNotifier {
+    fn notify(&mut self, notification: &AttentionNotification) -> Result<()>;
+    fn muted(&self) -> bool;
+}
+
+pub trait NotificationDispatcher {
+    fn dispatch(&mut self, command: &NotificationCommand) -> Result<()>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotificationCommand {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+pub struct StdNotificationDispatcher;
+
+impl NotificationDispatcher for StdNotificationDispatcher {
+    fn dispatch(&mut self, command: &NotificationCommand) -> Result<()> {
+        let status = Command::new(&command.program)
+            .args(&command.args)
+            .status()
+            .with_context(|| format!("dispatching notification via {}", command.program))?;
+        if status.success() {
+            Ok(())
+        } else {
+            bail!("notification command {} exited {status}", command.program)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct HostAttentionNotifier<D> {
+    dispatcher: D,
+    enabled: bool,
+}
+
+impl<D> HostAttentionNotifier<D> {
+    pub const fn new(dispatcher: D, enabled: bool) -> Self {
+        Self {
+            dispatcher,
+            enabled,
+        }
+    }
+}
+
+impl<D: NotificationDispatcher> AttentionNotifier for HostAttentionNotifier<D> {
+    fn notify(&mut self, notification: &AttentionNotification) -> Result<()> {
+        let title = format!(
+            "{} needs attention",
+            notification.agent.as_deref().unwrap_or("agent")
+        );
+        let body = format!(
+            "{} in {} is {}",
+            notification.label,
+            notification.container_name,
+            notification.state.label()
+        );
+        let title = jackin_diagnostics::scrub_secrets(&title).into_owned();
+        let body = jackin_diagnostics::scrub_secrets(&body).into_owned();
+        jackin_diagnostics::debug_log!(
+            "daemon",
+            "attention state={} container={} session={} muted={}",
+            notification.state.label(),
+            notification.container_name,
+            notification.session_id,
+            !self.enabled
+        );
+        if !self.enabled {
+            return Ok(());
+        }
+        match notification_command_for_host(&title, &body) {
+            Some(command) => self.dispatcher.dispatch(&command),
+            None => Ok(()),
+        }
+    }
+
+    fn muted(&self) -> bool {
+        !self.enabled
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SessionKey {
+    container_name: String,
+    session_id: u64,
+}
+
+#[derive(Debug)]
+pub struct AttentionAdapter<N> {
+    notifier: N,
+    last_seen: HashMap<SessionKey, AgentState>,
+}
+
+impl<N: AttentionNotifier> AttentionAdapter<N> {
+    pub fn new(notifier: N) -> Self {
+        Self {
+            notifier,
+            last_seen: HashMap::new(),
+        }
+    }
+
+    pub fn ingest_snapshot(
+        &mut self,
+        container_name: &str,
+        snapshot: &InstanceSnapshot,
+    ) -> Result<usize> {
+        let panes = snapshot
+            .tabs
+            .iter()
+            .flat_map(|tab| tab.panes.iter())
+            .map(|pane| AttentionPaneStatus {
+                session_id: pane.session_id,
+                label: pane.label.clone(),
+                agent: pane.agent.clone(),
+                state: pane.state,
+            })
+            .collect::<Vec<_>>();
+        self.ingest_panes(container_name, &panes)
+    }
+
+    pub fn ingest_panes(
+        &mut self,
+        container_name: &str,
+        panes: &[AttentionPaneStatus],
+    ) -> Result<usize> {
+        let mut sent = 0;
+        for pane in panes {
+            let key = SessionKey {
+                container_name: container_name.to_owned(),
+                session_id: pane.session_id,
+            };
+            let previous = self.last_seen.insert(key, pane.state);
+            if previous == Some(pane.state) || !is_attention_state(pane.state) {
+                continue;
+            }
+            self.notifier.notify(&AttentionNotification {
+                container_name: container_name.to_owned(),
+                session_id: pane.session_id,
+                agent: pane.agent.clone(),
+                label: pane.label.clone(),
+                state: pane.state,
+            })?;
+            sent += usize::from(!self.notifier.muted());
+        }
+        Ok(sent)
+    }
+
+    pub fn muted(&self) -> bool {
+        self.notifier.muted()
+    }
+
+    pub fn into_notifier(self) -> N {
+        self.notifier
+    }
+}
+
+const fn is_attention_state(state: AgentState) -> bool {
+    matches!(state, AgentState::Blocked | AgentState::Done)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -138,9 +330,20 @@ pub fn serve(layout: &DaemonLayout, build_id: &str) -> Result<ServeOutcome> {
     write_pid(layout)?;
     write_log(layout, "daemon started")?;
     let coredump_policy = disable_coredumps();
+    let attention_enabled = std::env::var_os("JACKIN_ATTENTION").is_some_and(|value| value == "1");
+    let mut attention = AttentionAdapter::new(HostAttentionNotifier::new(
+        StdNotificationDispatcher,
+        attention_enabled,
+    ));
     for stream in listener.incoming() {
         let mut stream = stream.context("accepting daemon client")?;
-        let response = handle_stream(&mut stream, layout, build_id, &coredump_policy)?;
+        let response = handle_stream(
+            &mut stream,
+            layout,
+            build_id,
+            &coredump_policy,
+            &mut attention,
+        )?;
         if matches!(
             response.kind,
             DaemonResponseKind::Shutdown { accepted: true }
@@ -242,6 +445,7 @@ fn handle_stream(
     layout: &DaemonLayout,
     build_id: &str,
     coredump_policy: &CoredumpPolicy,
+    attention: &mut impl AttentionNotifierAdapter,
 ) -> Result<DaemonResponse> {
     let mut line = String::new();
     let read = BufReader::new(stream.try_clone().context("cloning daemon stream")?)
@@ -251,7 +455,13 @@ fn handle_stream(
     let response = if read as u64 > MAX_REQUEST_BYTES {
         error_response("unknown", "daemon request exceeds 16384 byte limit")
     } else {
-        handle_request_line(line.trim_end(), layout, build_id, coredump_policy)
+        handle_request_line(
+            line.trim_end(),
+            layout,
+            build_id,
+            coredump_policy,
+            attention,
+        )
     };
     serde_json::to_writer(&mut *stream, &response).context("writing daemon response")?;
     stream
@@ -265,12 +475,13 @@ pub fn handle_request_line(
     layout: &DaemonLayout,
     build_id: &str,
     coredump_policy: &CoredumpPolicy,
+    attention: &mut impl AttentionNotifierAdapter,
 ) -> DaemonResponse {
     if line.is_empty() {
         return error_response("unknown", "empty daemon request");
     }
     match serde_json::from_str::<DaemonRequest>(line) {
-        Ok(request) => handle_request(request, layout, build_id, coredump_policy),
+        Ok(request) => handle_request(request, layout, build_id, coredump_policy, attention),
         Err(error) => error_response("unknown", format!("invalid daemon request: {error}")),
     }
 }
@@ -280,6 +491,7 @@ fn handle_request(
     layout: &DaemonLayout,
     build_id: &str,
     coredump_policy: &CoredumpPolicy,
+    attention: &mut impl AttentionNotifierAdapter,
 ) -> DaemonResponse {
     if request.protocol_version != DAEMON_PROTOCOL_VERSION {
         return error_response(
@@ -318,13 +530,53 @@ fn handle_request(
                 socket_path: layout.socket_path.clone(),
                 log_path: layout.log_path.clone(),
                 coredump_policy: coredump_policy.clone(),
-                adapters_enabled: Vec::new(),
+                adapters_enabled: if attention.muted() {
+                    Vec::new()
+                } else {
+                    vec!["attention".to_owned()]
+                },
             }),
+        },
+        DaemonRequestKind::AttentionSnapshot {
+            container_name,
+            panes,
+        } => match attention.ingest_panes(&container_name, &panes) {
+            Ok(notifications) => DaemonResponse {
+                id,
+                kind: DaemonResponseKind::AttentionAccepted {
+                    notifications,
+                    muted: attention.muted(),
+                },
+            },
+            Err(error) => error_response(id, error.to_string()),
         },
         DaemonRequestKind::Shutdown => DaemonResponse {
             id,
             kind: DaemonResponseKind::Shutdown { accepted: true },
         },
+    }
+}
+
+pub trait AttentionNotifierAdapter {
+    fn ingest_panes(
+        &mut self,
+        container_name: &str,
+        panes: &[AttentionPaneStatus],
+    ) -> Result<usize>;
+    fn muted(&self) -> bool;
+}
+
+impl<N: AttentionNotifier> AttentionNotifierAdapter for AttentionAdapter<N> {
+    fn ingest_panes(
+        &mut self,
+        container_name: &str,
+        panes: &[AttentionPaneStatus],
+    ) -> Result<usize> {
+        Self::ingest_panes(self, container_name, panes)
+    }
+
+    fn muted(&self) -> bool {
+        Self::muted(self)
     }
 }
 
@@ -384,8 +636,37 @@ fn remove_if_exists(path: &Path) -> Result<()> {
 
 fn disable_coredumps() -> CoredumpPolicy {
     CoredumpPolicy::Unsupported {
-        residual_risk: "core dump suppression is not wired for this build; daemon carries no adapters or secrets yet".to_owned(),
+        residual_risk:
+            "core dump suppression is not wired for this build; attention payloads are scrubbed"
+                .to_owned(),
     }
+}
+
+pub fn notification_command_for_host(title: &str, body: &str) -> Option<NotificationCommand> {
+    if cfg!(target_os = "macos") {
+        Some(NotificationCommand {
+            program: "osascript".to_owned(),
+            args: vec![
+                "-e".to_owned(),
+                format!(
+                    "display notification {} with title {}",
+                    apple_script_string(body),
+                    apple_script_string(title)
+                ),
+            ],
+        })
+    } else if cfg!(target_os = "linux") {
+        Some(NotificationCommand {
+            program: "notify-send".to_owned(),
+            args: vec![title.to_owned(), body.to_owned()],
+        })
+    } else {
+        None
+    }
+}
+
+fn apple_script_string(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 #[cfg(test)]
