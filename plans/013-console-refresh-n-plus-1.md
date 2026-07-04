@@ -13,6 +13,10 @@
 - **Depends on**: none
 - **Category**: perf
 - **Planned at**: commit `46511939d`, 2026-07-03
+- **Implementation note**: Refresh snapshots now report the next cadence. Socket/direct refreshes keep the
+  500ms interval; any snapshot that reaches the `docker exec` fallback moves the next refresh to 2.5s.
+  The single `docker ps` reconciliation result also filters snapshot targets so stopped/non-running
+  instances are not polled.
 
 ## Why this matters
 
@@ -74,12 +78,13 @@ instances rather than all. Confirm the view model to avoid dropping data the UI 
 
 ## Done criteria
 
-- [ ] Exec-fallback refresh cadence is measurably slower than the socket cadence (test asserts the chosen
+- [x] Exec-fallback refresh cadence is measurably slower than the socket cadence (test asserts the chosen
       interval selection)
-- [ ] Non-running instances are not snapshotted (test asserts)
-- [ ] `docker ps` is still issued at most once per refresh (not once per instance)
-- [ ] `cargo nextest run -p jackin -p jackin-console` green
-- [ ] `plans/README.md` row updated
+- [x] Non-running instances are not snapshotted (test asserts)
+- [x] `docker ps` is still issued at most once per refresh (not once per instance)
+- [x] `cargo nextest run -p jackin -p jackin-console` unavailable locally; focused `cargo test`
+      coverage passed
+- [x] `plans/README.md` row updated
 
 ## STOP conditions
 

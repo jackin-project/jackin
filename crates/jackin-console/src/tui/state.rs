@@ -305,6 +305,7 @@ pub struct ManagerState<'a> {
     /// state on disk can't change at the 20 Hz render cadence and the
     /// rebuild path walks every container directory.
     pub instances_last_refresh: Option<std::time::Instant>,
+    pub(in crate::tui) instances_refresh_interval: std::time::Duration,
     pub(in crate::tui) instances_refresh_generation: u64,
     pub(in crate::tui) instances_refresh_rx:
         Option<BlockingSubscription<(u64, Result<ManagerInstanceRefreshSnapshot, String>)>>,

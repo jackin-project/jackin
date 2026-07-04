@@ -325,6 +325,19 @@ pub(super) mod instances {
 
     use anyhow::Context;
     use jackin_console::tui::state::ManagerInstanceRefreshSnapshot;
+    use jackin_console::tui::subscriptions::instance_refresh_interval;
+    use jackin_runtime::runtime::snapshot::SnapshotTransport;
+
+    type SnapshotFetchResult = (
+        String,
+        anyhow::Result<(
+            Option<jackin_runtime::runtime::snapshot::InstanceSnapshot>,
+            SnapshotTransport,
+        )>,
+    );
+
+    #[cfg(test)]
+    mod tests;
 
     pub(crate) fn load_instance_refresh_snapshot(
         paths: &jackin_core::JackinPaths,
@@ -332,18 +345,17 @@ pub(super) mod instances {
         let index = jackin_runtime::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
             .map_err(|error| error.to_string())?;
         let mut instances = index.instances;
-        reconcile_live_running_instances(paths, &mut instances);
+        let running = running_role_containers_for_refresh(paths, &mut instances);
+        let running_filter = running
+            .as_ref()
+            .map(|containers| containers.iter().cloned().collect::<HashSet<String>>());
 
         let mut sessions = HashMap::new();
         let mut session_errors = HashSet::new();
         let mut snapshot_targets: Vec<String> = Vec::new();
 
         for entry in &instances {
-            if matches!(
-                entry.status,
-                jackin_runtime::instance::InstanceStatus::Active
-                    | jackin_runtime::instance::InstanceStatus::Running
-            ) {
+            if is_live_instance_status(entry.status) {
                 let state_dir = paths.data_dir.join(&entry.container_base);
                 match jackin_runtime::instance::InstanceManifest::read(&state_dir) {
                     Ok(manifest) if !manifest.sessions.is_empty() => {
@@ -359,18 +371,24 @@ pub(super) mod instances {
                         session_errors.insert(entry.container_base.clone());
                     }
                 }
+            }
+            if should_snapshot_instance(entry, running_filter.as_ref()) {
                 snapshot_targets.push(entry.container_base.clone());
             }
         }
 
         let mut snapshots = HashMap::new();
+        let mut exec_fallback_seen = false;
         let snapshot_results = fetch_snapshots_parallel(paths, &snapshot_targets);
         for (container, result) in snapshot_results {
             match result {
-                Ok(Some(snapshot)) => {
+                Ok((Some(snapshot), transport)) => {
+                    exec_fallback_seen |= transport == SnapshotTransport::DockerExecFallback;
                     snapshots.insert(container, snapshot);
                 }
-                Ok(None) => {}
+                Ok((None, transport)) => {
+                    exec_fallback_seen |= transport == SnapshotTransport::DockerExecFallback;
+                }
                 Err(e) => {
                     jackin_diagnostics::debug_log!(
                         "console",
@@ -385,6 +403,7 @@ pub(super) mod instances {
             sessions,
             session_errors,
             snapshots,
+            next_interval: instance_refresh_interval(exec_fallback_seen),
         })
     }
 
@@ -419,10 +438,10 @@ pub(super) mod instances {
             .collect())
     }
 
-    fn reconcile_live_running_instances(
+    fn running_role_containers_for_refresh(
         paths: &jackin_core::JackinPaths,
         instances: &mut Vec<jackin_runtime::instance::InstanceIndexEntry>,
-    ) {
+    ) -> Option<Vec<String>> {
         let running = match running_role_containers() {
             Ok(running) => running,
             Err(error) => {
@@ -430,10 +449,27 @@ pub(super) mod instances {
                     "error",
                     &live_instance_reconciliation_error_line(&format!("{error:#}")),
                 );
-                return;
+                return None;
             }
         };
         overlay_running_instances(paths, instances, &running);
+        Some(running)
+    }
+
+    fn is_live_instance_status(status: jackin_runtime::instance::InstanceStatus) -> bool {
+        matches!(
+            status,
+            jackin_runtime::instance::InstanceStatus::Active
+                | jackin_runtime::instance::InstanceStatus::Running
+        )
+    }
+
+    fn should_snapshot_instance(
+        entry: &jackin_runtime::instance::InstanceIndexEntry,
+        running_containers: Option<&HashSet<String>>,
+    ) -> bool {
+        is_live_instance_status(entry.status)
+            && running_containers.is_none_or(|running| running.contains(&entry.container_base))
     }
 
     fn live_instance_reconciliation_error_line(error: &str) -> String {
@@ -489,10 +525,7 @@ pub(super) mod instances {
     fn fetch_snapshots_parallel(
         paths: &jackin_core::JackinPaths,
         targets: &[String],
-    ) -> Vec<(
-        String,
-        anyhow::Result<Option<jackin_runtime::runtime::snapshot::InstanceSnapshot>>,
-    )> {
+    ) -> Vec<SnapshotFetchResult> {
         const SNAPSHOT_FANOUT_CHUNK: usize = 8;
         let mut results = Vec::with_capacity(targets.len());
         for chunk in targets.chunks(SNAPSHOT_FANOUT_CHUNK) {
@@ -503,9 +536,10 @@ pub(super) mod instances {
                     .map(|container| {
                         let container = container.clone();
                         s.spawn(move || {
-                            let result = jackin_runtime::runtime::snapshot::fetch_snapshot(
-                                paths, &container,
-                            );
+                            let result =
+                                jackin_runtime::runtime::snapshot::fetch_snapshot_with_transport(
+                                    paths, &container,
+                                );
                             (container, result)
                         })
                     })
