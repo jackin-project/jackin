@@ -189,6 +189,12 @@ Whether credentials were forwarded from the host or obtained via in-container lo
 
 If you authenticate a tool like `gh` inside the runtime, that credential becomes readable by that runtime as well.
 
+### Host clipboard writes are opt-in
+
+Agent output can contain OSC 52 terminal sequences that ask the outer terminal to write the host clipboard. jackin❯ Capsule denies agent-initiated OSC 52 passthrough by default so a compromised role cannot silently replace your clipboard with a command, token, or URL.
+
+Set `JACKIN_OSC52=allow` before `jackin load` only for roles where agent-to-host clipboard writes are expected. Lower-risk OSC title, notification, and hyperlink passthrough remain enabled by default and can be disabled with `JACKIN_OSC_TITLE=deny`, `JACKIN_OSC_NOTIFY=deny`, and `JACKIN_OSC_HYPERLINK=deny`.
+
 ## Threat model
 
 jackin❯ is designed to reduce the most common operator risks:
@@ -198,6 +204,7 @@ jackin❯ is designed to reduce the most common operator risks:
 | Agent reads unrelated host files | Only mounted paths are visible | Sensitive data inside mounted paths is still readable |
 | Agent edits system files | Runtime filesystem is isolated | Writable host mounts still change immediately |
 | Agent reaches host Docker daemon | Agent uses its own DinD sidecar | DinD sidecar itself is privileged |
+| Agent writes host clipboard | OSC 52 passthrough is denied by default | Operators can opt in with `JACKIN_OSC52=allow`; terminal-native clipboard actions outside jackin❯ policy still depend on the terminal |
 | Agent interferes with another agent | Separate containers, networks, and state | Shared host kernel remains a common lower layer |
 | Agent persists random system changes | Runtime root filesystem is ephemeral | Persisted tool state and mounted files still survive |
 | Typosquatted or malicious role repo | Trust-on-first-use prompt before building | User must review the source; trusted flag persists |
@@ -223,5 +230,6 @@ This is where people often over-claim container isolation. Don't do that. jackin
 5. **Review role repos before loading.** The Dockerfile defines what the runtime contains. jackin❯ prompts for trust confirmation on first use of third-party agents, but you should inspect the repository yourself before confirming.
 6. **Always review the branch diff before loading a role branch.** `--role-branch` always prompts for confirmation, but the prompt is only as useful as your review. Open the pull request, check the Dockerfile and any scripts, and confirm only after you understand what changed.
 7. **Split roles by scope.** Keep frontend, backend, infra, and review workflows in separate environments when appropriate.
-8. **Use `jackin purge` when a runtime no longer needs its persisted state.**
-9. **Keep Docker updated.** Container isolation is only as strong as the Docker runtime underneath it.
+8. **Keep OSC 52 denied unless you need it.** `JACKIN_OSC52=allow` lets agents write the host clipboard through the terminal.
+9. **Use `jackin purge` when a runtime no longer needs its persisted state.**
+10. **Keep Docker updated.** Container isolation is only as strong as the Docker runtime underneath it.

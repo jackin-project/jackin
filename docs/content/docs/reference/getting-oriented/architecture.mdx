@@ -163,7 +163,7 @@ Pane PTYs run with a stable `TERM=xterm-256color` baseline and `COLORTERM=trueco
 
 Terminal-specific enhancements are attached-client state instead. Every foreground attach (`jackin load`, `jackin hardline`, and console attach) runs a short-lived Capsule client through `docker exec`; that client reports its current `TERM`, `TERM_PROGRAM`, and `COLORTERM` in the attach handshake. The PID 1 daemon stores that identity only for the active client and refreshes it on every takeover, so jackin-owned output enhancements follow the terminal the operator is using now.
 
-Ghostty, Kitty, and iTerm get native enhancements through that active-client capability path. Features that are raw terminal protocols, such as extended-key sequences, OSC 52 clipboard writes, OSC 8 hyperlinks, OSC 9 notifications, and focused-pane title updates, continue to travel over the attach stream when allowed. Enhancements that require known outer-terminal support, such as OSC 22 pointer-shape feedback, are enabled only when the active client advertises a compatible identity.
+Ghostty, Kitty, and iTerm get native enhancements through that active-client capability path. Features that are raw terminal protocols, such as extended-key sequences, OSC 8 hyperlinks, OSC 9 notifications, and focused-pane title updates, continue to travel over the attach stream when allowed. OSC 52 clipboard writes from pane output are default-deny and require `JACKIN_OSC52=allow`; jackin❯-owned copy actions still emit OSC 52 with visible feedback. Enhancements that require known outer-terminal support, such as OSC 22 pointer-shape feedback, are enabled only when the active client advertises a compatible identity.
 
 ## Capsule terminal capability model
 
@@ -174,7 +174,7 @@ The container no longer runs tmux for agent sessions. The Capsule owns the PTYs 
 | Modified keys | Client-side input parsing preserves xterm/Kitty/CSI-u key sequences and forwards pane input unmodified unless it is a jackin❯-owned palette or prefix command. |
 | Terminal feature advertisement | Pane PTYs run with `TERM=xterm-256color` and `COLORTERM=truecolor`; outer-terminal identity is reported per attach and used only for client-side enhancements. |
 | Focus events | The attach client enables focus reporting on the outer terminal and forwards focus-in/focus-out only to panes that requested it. |
-| OSC passthrough | Focused-pane OSC 0/1/2 titles, OSC 8 hyperlinks, OSC 9 notifications, and OSC 52 clipboard writes are forwarded with per-family opt-outs. OSC 7 is captured for pane titles and not forwarded to the host. |
+| OSC passthrough | Focused-pane OSC 0/1/2 titles, OSC 8 hyperlinks, and OSC 9 notifications are forwarded with per-family opt-outs. OSC 52 clipboard writes are forwarded only with `JACKIN_OSC52=allow`. OSC 7 is captured for pane titles and not forwarded to the host. |
 | Escape timing | The input parser treats Escape as data for the pane except when a jackin❯ dialog is open; dialogs receive normalized legacy keys even after an embedded TUI enables progressive keyboard reporting. |
 | Mouse | The client keeps the outer terminal in SGR any-event mode. The daemon handles clicks on jackin❯ chrome and forwards pane mouse events only when the pane's program opted into mouse reporting. |
 
