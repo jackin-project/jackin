@@ -244,6 +244,19 @@ fn op_spawn_error(binary: &str, error: &std::io::Error) -> anyhow::Error {
     )
 }
 
+fn validate_op_source(source: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        source.starts_with("op://"),
+        "invalid op:// reference {source:?}: must start with op://"
+    );
+    let path = &source["op://".len()..];
+    anyhow::ensure!(
+        !path.split('/').any(|segment| segment.starts_with('-')),
+        "invalid op:// reference: segment looks like a flag in {source:?}"
+    );
+    Ok(())
+}
+
 impl OpRunner for OpCli {
     fn read_with_account(&self, reference: &str, account: Option<&str>) -> anyhow::Result<String> {
         // A per-ref account overrides the instance default so a workspace
@@ -263,12 +276,14 @@ impl OpRunner for OpCli {
         use std::io::Read;
         use std::process::{Command, Stdio};
 
+        validate_op_source(reference)?;
+
         let mut child = spawn_op_with_retry(|| {
             let mut cmd = Command::new(&self.binary);
             if let Some(account) = self.account.as_deref() {
                 cmd.args(["--account", account]);
             }
-            cmd.args(["read", reference])
+            cmd.args(["read", "--", reference])
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());

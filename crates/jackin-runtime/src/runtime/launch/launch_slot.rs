@@ -206,7 +206,7 @@ pub(crate) fn resolve_github_env_map(
     if declarations.is_empty() {
         return Ok(resolved);
     }
-    let default_runner = jackin_env::OpCli::new();
+    let default_runner = jackin_env::OpCli::new_launch_env();
     let runner: &dyn jackin_env::OpRunner = opts.op_runner.as_deref().unwrap_or(&default_runner);
     let host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
         opts.host_env.as_ref().map_or_else(

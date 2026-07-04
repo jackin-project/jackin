@@ -26,7 +26,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 
 | Plan | Title | Cat | Prio | Effort | Conf | Depends | Status |
 |------|-------|-----|------|--------|------|---------|--------|
-| 001 | op-resolver launch parity (timeout + `--` sentinel + `op://` guard) | security/bug | P1 | S | HIGH | — | TODO |
+| 001 | op-resolver launch parity (timeout + `--` sentinel + `op://` guard) | security/bug | P1 | S | HIGH | — | DONE |
 | 002 | Arm `LoadCleanup` before docker-grant validation | bug | P1 | S | HIGH | — | TODO |
 | 003 | Authenticate callers of the `host.sock` credential resolver | security | P1 | M | HIGH | — | TODO |
 | 004 | Default-deny OSC 52 clipboard-write passthrough | security | P1 | S | HIGH | — | TODO |
