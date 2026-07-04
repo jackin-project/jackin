@@ -110,27 +110,26 @@ pub fn select_host_attach_transport(
 }
 
 pub(super) async fn wait_for_capsule_daemon(
+    paths: &JackinPaths,
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    const MAX_ATTEMPTS: u32 = 60;
-    const INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+    const MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+    const INITIAL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(25);
+    const MAX_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
     jackin_diagnostics::active_timing_started(
         "capsule",
         "wait_capsule_socket",
         Some(container_name),
     );
-    let wait_result = crate::spin_wait::spin_wait(
-        "Waiting for jackin-capsule daemon",
-        MAX_ATTEMPTS,
-        INTERVAL,
-        || async {
-            docker
-                .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
-                .await
-                .map(|_| ())
-        },
+    let wait_result = wait_for_capsule_daemon_ready(
+        paths,
+        container_name,
+        docker,
+        MAX_WAIT,
+        INITIAL_INTERVAL,
+        MAX_INTERVAL,
     )
     .await
     .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"));
@@ -144,6 +143,45 @@ pub(super) async fn wait_for_capsule_daemon(
         },
     );
     wait_result
+}
+
+async fn wait_for_capsule_daemon_ready(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+    max_wait: std::time::Duration,
+    initial_interval: std::time::Duration,
+    max_interval: std::time::Duration,
+) -> anyhow::Result<()> {
+    let started = tokio::time::Instant::now();
+    let mut interval = initial_interval;
+
+    loop {
+        if capsule_daemon_socket_connects(paths, container_name) {
+            return Ok(());
+        }
+
+        let Err(exec_error) = docker
+            .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
+            .await
+        else {
+            return Ok(());
+        };
+
+        if started.elapsed() >= max_wait {
+            return Err(exec_error).with_context(|| {
+                format!("timed out after {max_wait:?} waiting for capsule daemon readiness")
+            });
+        }
+
+        tokio::time::sleep(interval).await;
+        interval = (interval * 2).min(max_interval);
+    }
+}
+
+fn capsule_daemon_socket_connects(paths: &JackinPaths, container_name: &str) -> bool {
+    let socket_path = super::snapshot::socket_path(paths, container_name);
+    socket_path.exists() && std::os::unix::net::UnixStream::connect(socket_path).is_ok()
 }
 
 #[cfg(test)]
@@ -327,7 +365,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
-    wait_for_capsule_daemon(container_name, docker).await?;
+    wait_for_capsule_daemon(paths, container_name, docker).await?;
     if super::host_attach::host_attach_enabled() {
         let outcome = super::host_attach::run_host_attach_session(
             paths,

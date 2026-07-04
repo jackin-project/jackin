@@ -37,7 +37,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 009 | Investigate per-tab vs global pane zoom | bug | P3 | M | LOW | — | BLOCKED (bug; fix plan 044 written) |
 | 010 | Investigate poisoned-lock handling in launch failure-ack | bug | P3 | S | LOW | — | DONE (recover poisoned guard) |
 | 011 | Decide whether `docker_version` preflight needs a floor | bug | P3 | S | LOW | — | DONE (informational reporter; no floor found) |
-| 012 | Probe the bind-mounted socket for daemon readiness (drop 500ms exec poll) | perf | P2 | M | HIGH | 006 | TODO |
+| 012 | Probe the bind-mounted socket for daemon readiness (drop 500ms exec poll) | perf | P2 | M | HIGH | 006 | DONE (socket-first; measurement deferred) |
 | 013 | Coalesce console instance-refresh docker fan-out (N+1) | perf | P2 | M | MED | — | TODO |
 | 014 | Gate capsule per-frame region scans on the damage signal | perf | P2 | L | MED | — | TODO |
 | 015 | Split the mega-crates to parallelize rustc | perf/tech-debt | P3 | L | MED | — | TODO |

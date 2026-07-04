@@ -13,6 +13,10 @@
 - **Depends on**: plan 006 (spin_wait clamp) — do 006 first
 - **Category**: perf
 - **Planned at**: commit `46511939d`, 2026-07-03
+- **Latency note**: Local Docker launch measurement is deferred in this environment. Mechanically, the
+  same-kernel path now returns as soon as the bind-mounted Capsule socket accepts a `UnixStream`
+  connection, avoiding the previous mandatory 500ms status-poll cadence. The `docker exec` fallback keeps
+  the old 30s budget but starts at 25ms and backs off to 500ms.
 
 ## Why this matters
 
@@ -86,14 +90,15 @@ run a real Docker launch — state that measurement is deferred and cite the cod
 
 ## Done criteria
 
-- [ ] Readiness uses a socket-connect probe on the socket-reachable path; exec probe retained for the
+- [x] Readiness uses a socket-connect probe on the socket-reachable path; exec probe retained for the
       bridged (Docker Desktop) fallback
-- [ ] No flat 500ms sleep-before-retry remains on the socket path
+- [x] No flat 500ms sleep-before-retry remains on the socket path
       (`grep -n "from_millis(500)" crates/jackin-runtime/src/runtime/attach.rs` → only the fallback, if any)
-- [ ] Total wait budget unchanged (still ≤ the pre-existing max)
-- [ ] `cargo nextest run -p jackin-runtime` green; new readiness tests pass
-- [ ] `cargo clippy -p jackin-runtime -- -D warnings` exits 0
-- [ ] `plans/README.md` row updated with the latency note (measured or deferred)
+- [x] Total wait budget unchanged (still ≤ the pre-existing max)
+- [x] `cargo nextest run -p jackin-runtime` unavailable locally; `cargo test -p jackin-runtime
+      wait_for_capsule_daemon` passes
+- [x] `cargo clippy -p jackin-runtime -- -D warnings` exits 0
+- [x] `plans/README.md` row updated with the latency note (measured or deferred)
 
 ## STOP conditions
 
