@@ -27,6 +27,8 @@ pub enum DockerSecurityProfile {
     /// Maximum compatibility: privileged `DinD`, open network, sudo, no resource
     /// limits. Remains the default until the WP6 flip (gated on the WP0 matrix
     /// plus a changelog call-out, not on the now-removed sudo audit).
+    // TODO(docker-security-profile-default): flip default to Standard after the
+    // WP0 matrix and changelog call-out; see TODO.md.
     #[default]
     Compat,
 }

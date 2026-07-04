@@ -62,7 +62,7 @@ after checking the `Depends` column: 034, 035, 036, 037, 040, and 041 are indepe
 | 033 | Make `mise install` the single documented bootstrap | dx | P2 | S | HIGH | — | DONE (bootstrap docs use mise) |
 | 034 | Restore `CLAUDE.md` symlinks + enforce with a lint | dx/docs | P1 | S | HIGH | — | DONE |
 | 035 | Restore deleted `BRANCHING.md` / `COMMITS.md` + fix dangling refs | docs | P1 | S | HIGH | — | DONE |
-| 036 | Repair `TODO.md` stale paths, stray note, phantom markers | docs | P1 | S | HIGH | — | TODO |
+| 036 | Repair `TODO.md` stale paths, stray note, phantom markers | docs | P1 | S | HIGH | — | DONE |
 | 037 | Consolidate the two colliding ADR sets | docs | P2 | S | HIGH | — | TODO |
 | 038 | Extend the repo-link checker to `TODO.md`/`PLAN.md` + fix `findings.md` ref | docs/dx | P2 | S | HIGH | 035,036 | TODO |
 | 039 | Relocate/version the root `PLAN.md` docs-CSS plan | docs | P3 | S | MED | — | TODO |

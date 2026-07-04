@@ -7,6 +7,7 @@
 
 ## Status
 
+- **Result**: DONE in PR #713 (`docs/advisor-improvement-plans`)
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
@@ -84,12 +85,20 @@ the checker-coverage fix (038) go together.
 
 ## Done criteria
 
-- [ ] Stray note (lines 1-2) removed
-- [ ] All `docs/src/content`/`astro.config.ts` references rewritten to real Fumadocs paths + `meta.json` procedure
-- [ ] Bare `src/...` code paths repointed to `crates/jackin-*/src/...`
-- [ ] Phantom marker claims resolved (markers added to code, or lines removed)
-- [ ] Every doc path referenced in `TODO.md` resolves (`test -e`)
-- [ ] `plans/README.md` row updated
+- [x] Stray note (lines 1-2) removed
+- [x] All `docs/src/content`/`astro.config.ts` references rewritten to real Fumadocs paths + `meta.json` procedure
+- [x] Bare `src/...` code paths repointed to `crates/jackin-*/src/...`
+- [x] Phantom marker claims resolved (markers added to code, or lines removed)
+- [x] Every doc path referenced in `TODO.md` resolves (`test -e`)
+- [x] `plans/README.md` row updated
+
+## Completion notes
+
+- Removed the stray automation note above the `# TODO` heading.
+- Rewrote stale Astro/Starlight paths to the current Fumadocs `docs/content/docs/...` layout and replaced `docs/astro.config.ts` sidebar guidance with `meta.json` plus `cargo xtask roadmap audit`.
+- Updated stale monolith source paths to current crate paths, including the stale-docs checklist and diff helper.
+- Removed already-completed sudo-audit and rootless-DinD follow-ups; `NOPASSWD:ALL` is gone and rootless DinD already maps to `docker:dind-rootless` with cgroup validation.
+- Kept the still-live `compat` to `standard` default flip follow-up and added the matching `TODO(docker-security-profile-default)` marker at the current enum default.
 
 ## STOP conditions
 
