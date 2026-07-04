@@ -3397,6 +3397,75 @@ plugins = []
 }
 
 #[tokio::test]
+async fn load_agent_cleans_up_sidecar_when_derived_build_fails() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+    runner.fail_with.push((
+        "docker buildx build ".to_owned(),
+        "derived build failed".to_owned(),
+    ));
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    let error = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("derived build failed"),
+        "unexpected error: {error:#}"
+    );
+    let docker_recorded = docker.recorded.borrow();
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call.starts_with("docker rm -f jk-") && call.ends_with("-dind")),
+        "DinD cleanup missing after build failure: {docker_recorded:?}"
+    );
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call.starts_with("docker volume rm jk-")),
+        "cert volume cleanup missing after build failure: {docker_recorded:?}"
+    );
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call.starts_with("docker network rm jk-")),
+        "network cleanup missing after build failure: {docker_recorded:?}"
+    );
+}
+
+#[tokio::test]
 async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
