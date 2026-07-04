@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 
 use anyhow::Context as _;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -311,14 +312,49 @@ pub struct RuleEvaluation {
 #[derive(Debug, Clone)]
 pub struct RulePackRegistry {
     packs: HashMap<String, RulePack>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum PackSource {
+    Embedded,
+    LocalDir(PathBuf),
+    SignedRemoteBundle(SignedPackBundle),
+}
+
+#[derive(Debug, Clone)]
+pub struct SignedPackBundle {
+    pub signer_identity: String,
+    pub signature: String,
+    pub packs: Vec<SignedPackEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SignedPackEntry {
+    pub label: String,
+    pub content: String,
 }
 
 const RUNTIME_PACK_DIR: &str = "/jackin/runtime/agent-status/packs";
+#[cfg(test)]
+const TRUSTED_PACK_BUNDLE_IDENTITY: &str = "jackin-project/agent-status-packs";
+#[cfg(test)]
+const LOCAL_SIGNED_BUNDLE_SIGNATURE_PREFIX: &str = "jackin-agent-status-pack-bundle:v1:";
+#[cfg(test)]
+const MAX_SIGNED_BUNDLE_BYTES: usize = 512 * 1024;
+const MAX_SIGNED_PACK_BYTES: usize = 64 * 1024;
 
 impl RulePackRegistry {
     pub fn bundled() -> anyhow::Result<Self> {
         let override_dir = override_pack_dir();
-        Self::from_pack_dirs(Some(Path::new(RUNTIME_PACK_DIR)), override_dir.as_deref())
+        let mut sources = vec![
+            PackSource::Embedded,
+            PackSource::LocalDir(PathBuf::from(RUNTIME_PACK_DIR)),
+        ];
+        if let Some(dir) = override_dir.as_deref() {
+            sources.push(PackSource::LocalDir(dir.to_path_buf()));
+        }
+        Self::from_sources(sources)
     }
 
     pub fn from_packs(packs: impl IntoIterator<Item = RulePack>) -> Self {
@@ -327,30 +363,46 @@ impl RulePackRegistry {
                 .into_iter()
                 .map(|pack| (pack.agent.clone(), pack))
                 .collect(),
+            notes: Vec::new(),
         }
     }
 
+    pub fn from_sources(sources: impl IntoIterator<Item = PackSource>) -> anyhow::Result<Self> {
+        let mut packs = HashMap::new();
+        let mut notes = Vec::new();
+        for source in sources {
+            match source {
+                PackSource::Embedded => load_embedded_packs(&mut packs)?,
+                PackSource::LocalDir(dir) => {
+                    if !dir.is_dir() {
+                        continue;
+                    }
+                    load_packs_from_dir(&mut packs, &dir).with_context(|| {
+                        format!("load agent-status packs from {}", dir.display())
+                    })?;
+                }
+                PackSource::SignedRemoteBundle(bundle) => {
+                    notes.extend(load_signed_bundle(&mut packs, &bundle));
+                }
+            }
+        }
+        anyhow::ensure!(!packs.is_empty(), "no agent-status rule packs loaded");
+        Ok(Self { packs, notes })
+    }
+
+    #[cfg(test)]
     fn from_pack_dirs(
         runtime_pack_dir: Option<&Path>,
         override_pack_dir: Option<&Path>,
     ) -> anyhow::Result<Self> {
-        let mut packs = HashMap::new();
-        load_embedded_packs(&mut packs)?;
-        if let Some(dir) = runtime_pack_dir
-            && dir.is_dir()
-        {
-            load_packs_from_dir(&mut packs, dir).with_context(|| {
-                format!("load runtime agent-status packs from {}", dir.display())
-            })?;
+        let mut sources = vec![PackSource::Embedded];
+        if let Some(dir) = runtime_pack_dir {
+            sources.push(PackSource::LocalDir(dir.to_path_buf()));
         }
-        if let Some(dir) = override_pack_dir
-            && dir.is_dir()
-        {
-            load_packs_from_dir(&mut packs, dir).with_context(|| {
-                format!("load agent-status override packs from {}", dir.display())
-            })?;
+        if let Some(dir) = override_pack_dir {
+            sources.push(PackSource::LocalDir(dir.to_path_buf()));
         }
-        Ok(Self { packs })
+        Self::from_sources(sources)
     }
 
     pub fn evaluate(&self, agent: Option<&str>, screen_rows: &[String]) -> Option<RuleMatch> {
@@ -366,6 +418,17 @@ impl RulePackRegistry {
         self.packs
             .get(agent?)?
             .evaluate_with_virtuals(screen_rows, virtuals)
+    }
+
+    pub fn notes(&self) -> &[String] {
+        &self.notes
+    }
+}
+
+impl SignedPackBundle {
+    #[cfg(test)]
+    pub fn local_test_signature_for(identity: &str) -> String {
+        format!("{LOCAL_SIGNED_BUNDLE_SIGNATURE_PREFIX}{identity}")
     }
 }
 
@@ -386,6 +449,82 @@ fn load_embedded_packs(packs: &mut HashMap<String, RulePack>) -> anyhow::Result<
         failures.join("; ")
     );
     Ok(())
+}
+
+fn load_signed_bundle(
+    packs: &mut HashMap<String, RulePack>,
+    bundle: &SignedPackBundle,
+) -> Vec<String> {
+    let mut notes = Vec::new();
+    let entries = match verify_signed_bundle(bundle) {
+        Ok(entries) => entries,
+        Err(error) => {
+            notes.push(format!(
+                "remote pack bundle failed verification - using baked packs: {error:#}"
+            ));
+            return notes;
+        }
+    };
+    if entries.is_empty() {
+        notes.push("remote pack bundle was empty - using baked packs".to_owned());
+        return notes;
+    }
+    for entry in entries {
+        if entry.content.len() > MAX_SIGNED_PACK_BYTES {
+            notes.push(format!(
+                "remote pack {} skipped: pack exceeds size limit",
+                entry.label
+            ));
+            continue;
+        }
+        let failures = load_pack_sources(packs, [(entry.label.as_str(), entry.content.as_str())]);
+        if failures.is_empty() {
+            notes.push(format!("remote pack {} applied", entry.label));
+        } else {
+            notes.extend(
+                failures
+                    .into_iter()
+                    .map(|failure| format!("remote pack {failure} skipped")),
+            );
+        }
+    }
+    notes
+}
+
+fn verify_signed_bundle(bundle: &SignedPackBundle) -> anyhow::Result<&[SignedPackEntry]> {
+    #[cfg(not(test))]
+    {
+        let _ = bundle;
+        anyhow::bail!("remote pack bundles require a production signature verifier");
+    }
+    #[cfg(test)]
+    {
+        verify_local_test_signed_bundle(bundle)
+    }
+}
+
+#[cfg(test)]
+fn verify_local_test_signed_bundle(
+    bundle: &SignedPackBundle,
+) -> anyhow::Result<&[SignedPackEntry]> {
+    anyhow::ensure!(
+        bundle.signer_identity == TRUSTED_PACK_BUNDLE_IDENTITY,
+        "remote pack bundle signer identity rejected"
+    );
+    anyhow::ensure!(
+        bundle.signature == SignedPackBundle::local_test_signature_for(&bundle.signer_identity),
+        "remote pack bundle signature rejected"
+    );
+    let bundle_bytes = bundle
+        .packs
+        .iter()
+        .map(|entry| entry.label.len() + entry.content.len())
+        .sum::<usize>();
+    anyhow::ensure!(
+        bundle_bytes <= MAX_SIGNED_BUNDLE_BYTES,
+        "remote pack bundle exceeds size limit"
+    );
+    Ok(&bundle.packs)
 }
 
 fn load_pack_sources<'a>(
@@ -851,12 +990,12 @@ fn load_packs_from_dir(packs: &mut HashMap<String, RulePack>, dir: &Path) -> any
     Ok(())
 }
 
-fn override_pack_dir() -> Option<std::path::PathBuf> {
+fn override_pack_dir() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("JACKIN_STATUS_PACK_DIR") {
         return Some(path.into());
     }
     std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
+        .map(PathBuf::from)
         .map(|home| home.join(".jackin/agent-status/packs"))
 }
 

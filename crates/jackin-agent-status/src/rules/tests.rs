@@ -274,6 +274,38 @@ requires_all = ["{needle}"]
     .unwrap();
 }
 
+fn test_pack_toml(agent: &str, id: &str, state: &str, needle: &str) -> String {
+    format!(
+        r#"
+schema_version = 1
+agent = "{agent}"
+validated_versions = ">=1.0.0, <2.0.0"
+
+[[rule]]
+id = "{id}"
+state = "{state}"
+priority = 100
+region = "bottom:12"
+strength = "strong"
+requires_all = ["{needle}"]
+"#
+    )
+}
+
+fn trusted_signed_bundle(entries: Vec<(&str, String)>) -> SignedPackBundle {
+    SignedPackBundle {
+        signer_identity: TRUSTED_PACK_BUNDLE_IDENTITY.to_owned(),
+        signature: SignedPackBundle::local_test_signature_for(TRUSTED_PACK_BUNDLE_IDENTITY),
+        packs: entries
+            .into_iter()
+            .map(|(label, content)| SignedPackEntry {
+                label: label.to_owned(),
+                content,
+            })
+            .collect(),
+    }
+}
+
 #[test]
 fn packs_load_and_match_fixtures() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -448,6 +480,142 @@ fn runtime_pack_directory_overrides_embedded_pack() {
         .unwrap();
     assert_eq!(matched.rule_id, "runtime-pack");
     assert_eq!(matched.state, Some(RawAgentState::Idle));
+}
+
+#[test]
+fn pack_sources_apply_verified_bundle_over_embedded_floor() {
+    let bundle = trusted_signed_bundle(vec![(
+        "claude-remote",
+        test_pack_toml("claude", "remote-pack", "blocked", "remote marker"),
+    )]);
+
+    let registry = RulePackRegistry::from_sources([
+        PackSource::Embedded,
+        PackSource::SignedRemoteBundle(bundle),
+    ])
+    .unwrap();
+
+    assert!(
+        registry
+            .evaluate(Some("claude"), &["remote marker".to_owned()])
+            .is_some_and(|matched| matched.rule_id == "remote-pack"),
+        "verified bundle pack should replace the embedded pack for the same agent"
+    );
+    assert!(
+        registry
+            .evaluate(Some("codex"), &["›".to_owned()])
+            .is_some(),
+        "verified bundle must not remove unrelated embedded floor packs"
+    );
+    assert!(
+        registry
+            .notes()
+            .iter()
+            .any(|note| note.contains("remote pack claude-remote applied")),
+        "applied remote packs must be reported: {:?}",
+        registry.notes()
+    );
+}
+
+#[test]
+fn pack_sources_reject_unverified_bundle_and_keep_floor() {
+    let mut bundle = trusted_signed_bundle(vec![(
+        "claude-remote",
+        test_pack_toml("claude", "remote-pack", "blocked", "remote marker"),
+    )]);
+    bundle.signature = "not trusted".to_owned();
+
+    let registry = RulePackRegistry::from_sources([
+        PackSource::Embedded,
+        PackSource::SignedRemoteBundle(bundle),
+    ])
+    .unwrap();
+
+    assert!(
+        registry
+            .evaluate(Some("claude"), &["remote marker".to_owned()])
+            .is_none(),
+        "unverified bundle content must not be parsed or applied"
+    );
+    assert!(
+        registry
+            .evaluate(Some("claude"), &["esc to interrupt".to_owned()])
+            .is_some(),
+        "embedded floor must survive rejected remote bundle"
+    );
+    assert!(
+        registry.notes().iter().any(|note| note.contains(
+            "remote pack bundle failed verification - using baked packs"
+        )),
+        "rejected remote bundle must be reported: {:?}",
+        registry.notes()
+    );
+}
+
+#[test]
+fn pack_sources_skip_oversized_and_bad_remote_packs_without_dropping_floor() {
+    let bundle = trusted_signed_bundle(vec![
+        (
+            "too-large",
+            test_pack_toml(
+                "claude",
+                "too-large",
+                "blocked",
+                &"x".repeat(MAX_SIGNED_PACK_BYTES),
+            ),
+        ),
+        (
+            "bad-regex",
+            r#"
+schema_version = 1
+agent = "codex"
+validated_versions = ">=1.0.0, <2.0.0"
+
+[[rule]]
+id = "bad-regex"
+state = "working"
+priority = 100
+region = "bottom:12"
+regex = ["(unclosed"]
+"#
+            .to_owned(),
+        ),
+    ]);
+
+    let registry = RulePackRegistry::from_sources([
+        PackSource::Embedded,
+        PackSource::SignedRemoteBundle(bundle),
+    ])
+    .unwrap();
+
+    assert!(
+        registry
+            .evaluate(Some("claude"), &["esc to interrupt".to_owned()])
+            .is_some(),
+        "oversized remote pack must not drop the embedded floor"
+    );
+    assert!(
+        registry
+            .evaluate(Some("codex"), &["›".to_owned()])
+            .is_some(),
+        "bad remote regex must not abort the registry"
+    );
+    assert!(
+        registry
+            .notes()
+            .iter()
+            .any(|note| note.contains("remote pack too-large skipped")),
+        "oversized remote packs must be reported: {:?}",
+        registry.notes()
+    );
+    assert!(
+        registry
+            .notes()
+            .iter()
+            .any(|note| note.contains("remote pack bad-regex")),
+        "invalid remote packs must be reported: {:?}",
+        registry.notes()
+    );
 }
 
 #[test]

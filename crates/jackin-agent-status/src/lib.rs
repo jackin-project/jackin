@@ -23,6 +23,12 @@
 //! 2. Add fixtures under `src/screen/fixtures/<slug>/`.
 //! 3. Add semantic event mapping in `gating.rs` only when the runtime ships
 //!    hooks or a plugin surface.
+//!
+//! Rule packs are loaded from explicit sources: embedded fallbacks first, local
+//! runtime/override directories next, and only then a signed bundle when a
+//! trusted publishing channel is wired. Signed bundles must verify identity and
+//! signature before any TOML is parsed; rejected or malformed bundles keep the
+//! embedded floor live.
 
 pub mod arbitrate;
 pub mod evidence;

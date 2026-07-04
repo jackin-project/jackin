@@ -10,10 +10,10 @@
 
 ## Status
 
-- **Implementation status**: BLOCKED/PARTIAL in PR #714. Plan 011 has landed, so the detection crate is the
-  right home. The remaining production channel still depends on plan 005's real capture/provenance artifacts
-  and an org-controlled signing/publishing target. Until those exist, implement only fake/local bundle plumbing
-  in a future pass; do not introduce a live fetch path or arbitrary URL source.
+- **Implementation status**: BLOCKED/PARTIAL in PR #714. Plan 011 has landed, and the detection crate now has
+  the `PackSource` model plus local signed-bundle verification/fallback tests. The remaining production channel
+  still depends on plan 005's real capture/provenance artifacts and an org-controlled signing/publishing target.
+  No live fetch path or arbitrary URL source is introduced.
 - **Priority**: P2
 - **Effort**: M–L
 - **Risk**: MED (network + trust boundary in a security-focused product)
@@ -115,13 +115,18 @@ infra / a CI job, a separate deliverable); changing the rule *engine* or pack *c
 
 ## Done criteria
 
-- [ ] Registry builds from `[Embedded, LocalDir, SignedRemoteBundle]`, newest-validated-wins, floor never removed
-- [ ] A remote bundle is signature+identity verified before any pack is parsed; unverified → rejected + loud note
-- [ ] Bundle/pack size bounds + regex compile-validation on the remote path; one bad pack never aborts the registry
-- [ ] Fetch is non-blocking; the daemon loop is provably not stalled by a slow source (test)
-- [ ] Remote channel is operator-visible (launch summary) with a chosen default; applied packs are logged
+- [x] Registry builds from `[Embedded, LocalDir, SignedRemoteBundle]`; later validated sources win and the
+  embedded floor is never removed
+- [x] A local signed bundle is identity+signature verified before any pack is parsed; unverified → rejected +
+  loud registry note
+- [x] Bundle/pack size bounds + regex compile-validation on the signed-bundle path; one bad pack never aborts the
+  registry
+- [ ] Fetch is non-blocking; the daemon loop is provably not stalled by a slow source (test) — BLOCKED until an
+  org-controlled publishing/fetch target exists; no live fetch path is intentionally present
+- [ ] Remote channel is operator-visible (launch summary) with a chosen default; applied packs are logged —
+  BLOCKED until the maintainer chooses the production default and publishing target; local registry notes exist
 - [ ] `cargo nextest run -p jackin-agent-status` green; clippy clean
-- [ ] `plans/agent-status/README.md` row updated
+- [x] `plans/agent-status/README.md` row updated
 
 ## STOP conditions
 

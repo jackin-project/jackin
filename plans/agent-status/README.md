@@ -73,7 +73,7 @@ sync/pure, and moving 003/004/005/007 into a clean crate beats moving them twice
 | 007 | BLOCKED | Rewrite kimi/amp/opencode/claude pack matchers from real chrome | detection | M | MED | 002, 005 |
 | 008 | DONE | Testability seam: injectable `EvidenceSnapshot` + `/proc` double | tests | M | LOW | — |
 | 009 | BLOCKED | Spike: promote Claude Notification hook + Codex app-server to authority | direction | L | MED | 008 |
-| 010 | BLOCKED | Out-of-band signed pack updates (restyle = data push, not a release) | detection infra | M–L | MED | 011, 005 |
+| 010 | BLOCKED | Out-of-band signed pack updates (local signed-bundle plumbing landed; live publishing blocked) | detection infra | M–L | MED | 011, 005 |
 | 011 | DONE | Extract an independent `jackin-agent-status` crate | architecture | L | MED | 008 |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED` | `REJECTED`.
