@@ -14,6 +14,14 @@
 - **Depends on**: none (but coordinate with 022/023 which also reshape jackin-console)
 - **Category**: perf / tech-debt
 - **Planned at**: commit `46511939d`, 2026-07-03
+- **Decision**: Blocked by the plan's dependency-cycle STOP condition. Warm `cargo build --timings`
+  measurements after touching one file: `jackin-console` 6.68s cargo / 6.72s wall,
+  `jackin-capsule` 36.14s cargo / 36.20s wall, `jackin-runtime` 13.47s cargo / 13.53s wall.
+  The compile-cost problem is real, but the recommended `tui/op_picker` carve is not a leaf:
+  `tui/op_picker/{state,input,load}` depends on `crate::tui::components::op_picker`, and that component
+  depends on console-local list helpers/rendering modules. Extracting it directly would either create a
+  cycle or move a much larger component surface than this first-carve plan allows.
+- **Follow-up**: Plan 045 scopes the pre-refactor needed to make the op-picker extraction safe.
 
 ## Why this matters
 
@@ -66,12 +74,12 @@ scoped to one seam, only if Step 2's measured win justifies continuing.
 
 ## Done criteria
 
-- [ ] Baseline + post-split `cargo build --timings` numbers recorded in the row note
+- [x] Baseline + post-split `cargo build --timings` numbers recorded in the row note
 - [ ] One leaf crate extracted; workspace builds, all tests pass, CI clippy gate passes
 - [ ] New crate follows `crates/AGENTS.md` layout (no `mod.rs`; tests in `tests.rs`; `[lints] workspace = true`)
 - [ ] `cargo shear` passes (no unused/misplaced deps introduced) — `cargo shear` if available via mise
-- [ ] Follow-up carve plans written (or a note that the measured win didn't justify them)
-- [ ] `plans/README.md` row updated
+- [x] Follow-up carve plans written (or a note that the measured win didn't justify them)
+- [x] `plans/README.md` row updated
 - [ ] `PROJECT_STRUCTURE.md` + codebase-map doc updated for the new crate (repo's structural-change docs gate)
 
 ## STOP conditions
