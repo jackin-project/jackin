@@ -5,6 +5,6 @@
     "operator-cli-hygiene",
     "clipboard-image-bridge",
     "jackin-join-and-debug-bundle",
-    "../asciinema-session-recording"
+    "asciinema-session-recording"
   ]
 }
