@@ -112,7 +112,7 @@ reuse whatever roll-up the authority already uses; do not invent a second priori
 Assign each state a distinct, low-noise mark:
 - Blocked → `●` **red** (`STATUS_BLOCKED_RED`) — keep the high-salience "needs you" signal.
 - Done → `○` (default fg) — keep.
-- Working → a muted "busy" mark (e.g. a spinner glyph or `◐`/`·`) in a dim/amber tone — **not** attention-red.
+- Working → `▶` in bold amber — clear "active now" mark, still **not** attention-red.
 - Idle → a visible quiet mark distinct from Done and from text separators. PR #714 uses bright green `◆`; the old dim `·` was too easy to miss beside usage/status separator dots.
 - Unknown → blank (` `) — "no evidence" stays visually silent, the intended non-attention state.
 
@@ -146,7 +146,7 @@ Update/extend `status_bar/tests.rs`, `chrome/tests.rs`, `model/tests.rs`:
 - [x] `VisibleAgentState` has `Unknown`; the fold is 1:1 (no `Unknown→Idle`)
 - [x] The state→glyph map is catch-all-free (adding an `AgentState` variant fails the build)
 - [x] Working and Idle each paint a distinct, non-blank, non-red glyph; Unknown is blank
-- [x] Idle uses a full-cell visible glyph (`◆`) instead of a tiny separator dot
+- [x] Working and Idle use full-cell visible glyphs (`▶`, `◆`) instead of tiny/subtle marks
 - [x] `cargo nextest run -p jackin-capsule` green with the new assertions
 - [x] `cargo clippy -p jackin-capsule -- -D warnings` exits 0
 - [x] `plans/agent-status/README.md` row updated

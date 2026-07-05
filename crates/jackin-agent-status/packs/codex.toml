@@ -11,6 +11,14 @@ strength = "strong"
 requires_all = ["press enter to confirm or esc to cancel"]
 
 [[rule]]
+id = "prelaunch-enter"
+state = "blocked"
+priority = 890
+region = "bottom:16"
+strength = "strong"
+requires_all = ["press enter to launch codex"]
+
+[[rule]]
 id = "auth-prompt"
 state = "blocked"
 priority = 850

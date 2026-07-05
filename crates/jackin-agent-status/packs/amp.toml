@@ -11,6 +11,22 @@ strength = "strong"
 requires_all = ["amp wants to execute", "allow"]
 
 [[rule]]
+id = "prelaunch-enter"
+state = "blocked"
+priority = 890
+region = "bottom:32"
+strength = "strong"
+requires_all = ["press enter to launch amp"]
+
+[[rule]]
+id = "onboarding-continue"
+state = "blocked"
+priority = 880
+region = "bottom:40"
+strength = "strong"
+requires_any = ["space to continue", "enter to get started"]
+
+[[rule]]
 id = "running-tool"
 state = "working"
 priority = 700
@@ -33,8 +49,8 @@ state = "working"
 priority = 685
 region = "bottom_nonempty:8"
 strength = "strong"
-requires_any = ["running tools", "exploring", "streaming"]
-line_regex = ["^╰\\s+[≈∼≋]\\s+\\S"]
+requires_any = ["running tools", "exploring", "streaming", "connecting"]
+line_regex = ["╰\\s+[≈∼≋]\\s+\\S"]
 
 [[rule]]
 id = "ready-text"
@@ -58,8 +74,9 @@ state = "idle"
 priority = 493
 region = "bottom_nonempty:8"
 strength = "strong"
-requires_all = ["rush", "users/"]
-line_regex = ["╰.*users/.+holla-project"]
+requires_all = ["rush"]
+forbids_any = ["connecting", "waiting", "streaming", "running tools", "exploring"]
+line_regex = ["╰"]
 
 [[rule]]
 id = "arrow-prompt"

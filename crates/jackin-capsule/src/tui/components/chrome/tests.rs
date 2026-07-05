@@ -139,7 +139,7 @@ fn status_bar_renders_working_idle_done_and_unknown_glyphs() {
 
     assert_eq!(
         glyph_cell(&plan.cells[0]),
-        ("◐".to_owned(), jackin_tui::theme::DEBUG_AMBER)
+        ("▶".to_owned(), jackin_tui::theme::DEBUG_AMBER)
     );
     assert_eq!(
         glyph_cell(&plan.cells[1]),

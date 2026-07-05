@@ -57,7 +57,7 @@ const fn tab_glyph_char(glyph: TabGlyph) -> char {
     match glyph {
         TabGlyph::Blocked => '●',
         TabGlyph::Done => '○',
-        TabGlyph::Working => '◐',
+        TabGlyph::Working => '▶',
         TabGlyph::Idle => '◆',
         TabGlyph::Unknown => ' ',
     }
@@ -71,7 +71,12 @@ fn tab_glyph_style(glyph: TabGlyph, bg: Color) -> Option<Style> {
                 .fg(jackin_tui::theme::STATUS_BLOCKED_RED)
                 .add_modifier(Modifier::BOLD),
         ),
-        TabGlyph::Working => Some(Style::default().bg(bg).fg(jackin_tui::theme::DEBUG_AMBER)),
+        TabGlyph::Working => Some(
+            Style::default()
+                .bg(bg)
+                .fg(jackin_tui::theme::DEBUG_AMBER)
+                .add_modifier(Modifier::BOLD),
+        ),
         TabGlyph::Idle => Some(
             Style::default()
                 .bg(bg)
