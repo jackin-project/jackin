@@ -1501,8 +1501,8 @@ fn palette_close_split_tab_opens_target_picker() {
 fn branch_context_visibility_keeps_content_area_reserved() {
     let mut mux = test_mux(24, 100);
     let now = Instant::now();
-    // 24 rows - STATUS_BAR_ROWS(2) - BRANCH_CONTEXT_BAR_ROWS(1) - CAPSULE_HINT_BAR_ROWS(3) - CAPSULE_HINT_SEPARATOR_ROWS(1) = 17
-    assert_eq!(mux.content_rows, 17);
+    // 24 rows - status(2) - top spacer(1) - hint(1) - bottom spacer(1) - branch(1) = 18
+    assert_eq!(mux.content_rows, 18);
 
     mux.pull_request_context_cache.insert(
         branch("asa/pr-context"),
@@ -1513,7 +1513,7 @@ fn branch_context_visibility_keeps_content_area_reserved() {
         },
     );
     assert!(mux.apply_git_branch_context(Some("asa/pr-context"), now));
-    assert_eq!(mux.content_rows, 17);
+    assert_eq!(mux.content_rows, 18);
     assert_eq!(
         mux.pull_request_context.as_deref().map(|pr| pr.number),
         Some(434)
@@ -1528,11 +1528,11 @@ fn branch_context_visibility_keeps_content_area_reserved() {
         },
     );
     assert!(mux.apply_git_branch_context(Some("feature/no-pr"), now));
-    assert_eq!(mux.content_rows, 17);
+    assert_eq!(mux.content_rows, 18);
     assert!(mux.pull_request_context.is_none());
 
     assert!(mux.apply_git_branch_context(Some("main"), now));
-    assert_eq!(mux.content_rows, 17);
+    assert_eq!(mux.content_rows, 18);
     assert!(mux.pull_request_context.is_none());
 }
 
@@ -1543,8 +1543,8 @@ fn git_branch_context_updates_status_before_github_lookup() {
     mux.pull_request_context_branch = Some(branch("old/pr"));
     mux.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
     mux.reconcile_content_rows();
-    // 24 rows - STATUS_BAR_ROWS(2) - BRANCH_CONTEXT_BAR_ROWS(1) - CAPSULE_HINT_BAR_ROWS(3) - CAPSULE_HINT_SEPARATOR_ROWS(1) = 17
-    assert_eq!(mux.content_rows, 17);
+    // 24 rows - status(2) - top spacer(1) - hint(1) - bottom spacer(1) - branch(1) = 18
+    assert_eq!(mux.content_rows, 18);
 
     mux.pull_request_context_cache.insert(
         branch("new/local-branch"),
@@ -1561,7 +1561,7 @@ fn git_branch_context_updates_status_before_github_lookup() {
         Some("new/local-branch")
     );
     assert!(mux.pull_request_context.is_none());
-    assert_eq!(mux.content_rows, 17);
+    assert_eq!(mux.content_rows, 18);
 }
 
 #[test]
@@ -3787,7 +3787,7 @@ fn bottom_context_click_opens_github_context_dialog() {
         rendered.contains("copy GitHub URL"),
         "dialog hint must render with the dialog chrome: {rendered:?}"
     );
-    let hint_row = mux.term_rows - 4;
+    let hint_row = mux.term_rows - 2;
     let bottom_row = mux.term_rows;
     assert!(
         rendered.contains(&format!("\x1b[{hint_row};")),

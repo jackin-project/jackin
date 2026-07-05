@@ -345,13 +345,19 @@ fn render_branch_bar_row(
         );
 }
 
-/// Centered hint spans in the reserved rows above the separator pad.
-/// Uses the shared hint renderer so capsule styling and wrapping cannot drift
-/// from the console/launch surfaces.
+/// The pane and footer chrome need one spacer each, so hints stay visually
+/// separate from both the agent border and the branch context bar.
 fn render_hint_spans_row(buf: &mut Buffer, area: Rect, spans: &[jackin_tui::HintSpan<'_>]) {
     use crate::tui::components::branch_context_bar::BRANCH_CONTEXT_BAR_ROWS;
-    use crate::tui::layout::{CAPSULE_HINT_BAR_ROWS, CAPSULE_HINT_SEPARATOR_ROWS};
-    if area.height < BRANCH_CONTEXT_BAR_ROWS + CAPSULE_HINT_SEPARATOR_ROWS + CAPSULE_HINT_BAR_ROWS {
+    use crate::tui::layout::{
+        CAPSULE_HINT_BAR_ROWS, CAPSULE_HINT_SEPARATOR_ROWS, CAPSULE_HINT_TOP_SEPARATOR_ROWS,
+    };
+    if area.height
+        < BRANCH_CONTEXT_BAR_ROWS
+            + CAPSULE_HINT_SEPARATOR_ROWS
+            + CAPSULE_HINT_BAR_ROWS
+            + CAPSULE_HINT_TOP_SEPARATOR_ROWS
+    {
         return;
     }
     let available = area.width.saturating_sub(4); // 2 col padding each side

@@ -214,8 +214,12 @@ fn row_text(buf: &Buffer, row: u16) -> String {
         .collect()
 }
 
+fn hint_row(area: Rect) -> u16 {
+    area.height.saturating_sub(3)
+}
+
 #[test]
-fn narrow_hint_wraps_groups_instead_of_dropping_them() {
+fn hint_row_sits_between_one_blank_row_above_and_below() {
     let area = Rect::new(0, 0, 24, 5);
     let mut buf = Buffer::empty(area);
     render_hint_spans_row(
@@ -233,23 +237,20 @@ fn narrow_hint_wraps_groups_instead_of_dropping_them() {
         ],
     );
 
-    let rows = [row_text(&buf, 0), row_text(&buf, 1), row_text(&buf, 2)];
-    let joined = rows.join("\n");
+    let row_above = row_text(&buf, hint_row(area).saturating_sub(1));
+    let row = row_text(&buf, hint_row(area));
+    let row_below = row_text(&buf, hint_row(area).saturating_add(1));
     assert!(
-        joined.contains("A alpha"),
-        "first group missing: {joined:?}"
+        row_above.trim().is_empty(),
+        "top spacer polluted: {row_above:?}"
     );
     assert!(
-        joined.contains("B bravo"),
-        "second group missing: {joined:?}"
+        row.contains("A alpha"),
+        "first visible hint group missing: {row:?}"
     );
     assert!(
-        joined.contains("C charlie"),
-        "third group missing: {joined:?}"
-    );
-    assert!(
-        rows.iter().filter(|row| !row.trim().is_empty()).count() >= 2,
-        "narrow hints should wrap across multiple rows: {joined:?}"
+        row_below.trim().is_empty(),
+        "bottom spacer polluted: {row_below:?}"
     );
 }
 
@@ -266,12 +267,13 @@ fn dynamic_key_hint_uses_key_style() {
         ],
     );
 
+    let y = hint_row(area);
     let key_cell = (0..area.width)
-        .find(|x| buf[(*x, 0)].symbol() == "C")
+        .find(|x| buf[(*x, y)].symbol() == "C")
         .expect("key rendered");
-    assert_eq!(buf[(key_cell, 0)].fg, jackin_tui::theme::WHITE);
+    assert_eq!(buf[(key_cell, y)].fg, jackin_tui::theme::WHITE);
     assert!(
-        buf[(key_cell, 0)]
+        buf[(key_cell, y)]
             .style()
             .add_modifier
             .contains(Modifier::BOLD)
@@ -294,8 +296,9 @@ fn separator_hint_uses_shared_border_gray() {
         ],
     );
 
+    let y = hint_row(area);
     let sep_cell = (0..area.width)
-        .find(|x| buf[(*x, 0)].symbol() == "·")
+        .find(|x| buf[(*x, y)].symbol() == "·")
         .expect("separator rendered");
-    assert_eq!(buf[(sep_cell, 0)].fg, jackin_tui::theme::BORDER_GRAY);
+    assert_eq!(buf[(sep_cell, y)].fg, jackin_tui::theme::BORDER_GRAY);
 }

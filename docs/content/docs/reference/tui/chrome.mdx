@@ -12,7 +12,7 @@ Every full-screen TUI surface must follow this bottom-chrome order (bottom of te
 3. **Row: empty separator** — one blank row between the context bar and the hint bar. This visual gap makes the hint area feel separate from the system chrome below it.
 4. **Row: hint bar** — keyboard shortcuts for the current focus context. This is the first visible row above the chrome group.
 
-The host console matches this order. The capsule must also follow it: `MAIN_VIEW_HINT` renders above an empty separator row above the branch context bar. Any surface that collapses the separator or places hints directly adjacent to the system bar is a violation.
+The host console matches this order. The capsule must also follow it: `MAIN_VIEW_HINT` renders above an empty separator row above the branch context bar. The capsule pane surface also keeps one blank row between pane content and `MAIN_VIEW_HINT`, so the stack reads as pane content, blank row, hint row, blank row, branch context bar. Any surface that collapses the separator or places hints directly adjacent to the system bar is a violation.
 
 **Implementation:** The separator row is a blank `PHOSPHOR_DARK` row, not an empty string — it must use the same background as the surrounding chrome so it reads as intentional spacing, not a rendering gap.
 

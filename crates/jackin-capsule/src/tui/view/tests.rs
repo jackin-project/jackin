@@ -85,10 +85,20 @@ fn bottom_chrome_widget_paints_branch_bar_and_hint_row() {
     let bar = row_text(&buf, 23);
     assert!(bar.contains("Branch · main"), "branch bar missing: {bar:?}");
     assert!(bar.contains("jk-test"), "container chunk missing: {bar:?}");
-    let hint = (19..=21).map(|y| row_text(&buf, y)).collect::<Vec<_>>();
+    let top_spacer = row_text(&buf, 20);
+    let hint = row_text(&buf, 21);
+    let bottom_spacer = row_text(&buf, 22);
     assert!(
-        hint.iter().any(|row| row.contains("focus pane")),
+        top_spacer.trim().is_empty(),
+        "top spacer polluted: {top_spacer:?}"
+    );
+    assert!(
+        hint.contains("focus pane"),
         "main hint row missing: {hint:?}"
+    );
+    assert!(
+        bottom_spacer.trim().is_empty(),
+        "bottom spacer polluted: {bottom_spacer:?}"
     );
 }
 
@@ -213,10 +223,17 @@ fn non_debug_dialog_hides_bottom_status_bar() {
     let buf = terminal.backend().buffer();
     let row0: String = (0..30).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
     assert!(row0.contains("jackin❯"), "status brand missing: {row0:?}");
-    let hint = (19..=21).map(|y| row_text(buf, y)).collect::<Vec<_>>();
+    let top_spacer = row_text(buf, 20);
+    let hint = row_text(buf, 21);
+    let bottom_spacer = row_text(buf, 22);
     assert!(
-        hint.iter().any(|row| row.contains("dismiss")),
-        "dialog hint missing: {hint:?}"
+        top_spacer.trim().is_empty(),
+        "top spacer polluted: {top_spacer:?}"
+    );
+    assert!(hint.contains("dismiss"), "dialog hint missing: {hint:?}");
+    assert!(
+        bottom_spacer.trim().is_empty(),
+        "bottom spacer polluted: {bottom_spacer:?}"
     );
     let footer = row_text(buf, 23);
     assert!(

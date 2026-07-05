@@ -188,6 +188,6 @@ fn local_mouse_position_requires_inner_rect_hit() {
 
 #[test]
 fn content_area_reserves_chrome_rows() {
-    assert_eq!(available_content_rows(24), 17);
-    assert_eq!(content_rect(17, 80), Rect::new(2, 0, 17, 80));
+    assert_eq!(available_content_rows(24), 18);
+    assert_eq!(content_rect(18, 80), Rect::new(2, 0, 18, 80));
 }
