@@ -31,7 +31,7 @@ directories = "6"
 [dev-dependencies]
 jackin-runtime = { version = "0.6.0-dev", path = "../jackin-runtime", features = ["test-support"] }
 tokio = { version = "=1.52.3", features = ["test-util"] }
-tempfile = "3.20"
+tempfile = "=3.27.0"
 
 [features]
 test-support = []
