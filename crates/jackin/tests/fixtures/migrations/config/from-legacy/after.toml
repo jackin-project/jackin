@@ -1,4 +1,4 @@
-version = "v1alpha8"
+version = "v1alpha9"
 # Sample operator config carried through the legacy migration chain.
 
 [roles.agent-smith]

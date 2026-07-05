@@ -24,13 +24,33 @@ The split-workspace layout described in [Configuration File](/reference/runtime/
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha8` | jackin | Automatic on startup |
+| `~/.config/jackin/config.toml` | `v1alpha9` | jackin | Automatic on startup |
 | `~/.config/jackin/workspaces/<name>.toml` | `v1alpha8` | jackin | Automatic on startup |
 | `jackin.role.toml` | `v1alpha6` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-role migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="crates/jackin/tests/migration_fixtures.rs">crates/jackin/tests/migration_fixtures.rs</RepoFile> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### Config `v1alpha9` — 2026-07-06
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha8` | Automatic on startup | <RepoFile path="crates/jackin/tests/fixtures/migrations/config/from-v1alpha8/meta.toml">crates/jackin/tests/fixtures/migrations/config/from-v1alpha8/meta.toml</RepoFile> |
+
+**Summary**: adds optional `[telemetry].level` and `[telemetry].categories` to the global config so telemetry export verbosity and category filtering can be persisted outside one process environment. Environment variables still take precedence for one process. The migration is a no-op restamp because both fields are optional and default to unset.
+
+**Before** (v1alpha8 config):
+
+```toml
+version = "v1alpha8"
+```
+
+**After** (v1alpha9 — no change needed; telemetry defaults to unset):
+
+```toml
+version = "v1alpha9"
+```
 
 ### `v1alpha8` — 2026-06-26
 
@@ -433,12 +453,14 @@ config, jackin migrates this automatically before parsing.
 
 The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/runtime/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha8`
+### `v1alpha9`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha8` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha9` |
 | `dirty_exit_policy` | string | No | `v1alpha8` | `ask`, `keep`, or `discard`; global dirty/unpushed exit policy; omitted means built-in `ask` |
+| `[telemetry].level` | string | No | `v1alpha9` | Persisted telemetry capture/export level: `info`, `debug`, or `trace`; env var override wins for one process |
+| `[telemetry].categories` | string array | No | `v1alpha9` | Persisted telemetry category allowlist such as `docker` or `launch`; empty means no category filter |
 | `[claude].auth_forward` | string | No | `legacy` | `sync`, `api_key`, `oauth_token`, or `ignore` |
 | `[claude].sync_source_dir` | string | No | `v1alpha6` | Host folder override for `sync` auth forwarding; omitted means use the per-agent default |
 | `[codex].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |

@@ -217,8 +217,8 @@ pub(crate) use failure::{
 
 mod launch_plan;
 pub(crate) use launch_plan::{
-    LaunchPlan, emit_image_materialization_plan, emit_launch_plan, emit_prewarm_launch_plan,
-    emit_rejected_launch_plan,
+    LaunchPlan, emit_image_materialization_plan, emit_launch_plan, emit_launch_plan_for_run,
+    emit_prewarm_launch_plan, emit_rejected_launch_plan_for_run,
 };
 
 mod load_cleanup;

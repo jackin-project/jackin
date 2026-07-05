@@ -20,12 +20,13 @@
 //! off, `writer` is `None`. Failures stay visible regardless via the compact
 //! operator-notice channel (`emit_compact_line`), which never depends on the file.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Arguments;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -43,16 +44,34 @@ mod tests;
 const RUN_DIR: &str = "diagnostics/runs";
 pub(crate) const MAX_RUN_ARTIFACTS: usize = 200;
 pub(crate) const MAX_RUN_ARTIFACT_AGE: Duration = Duration::from_hours(720);
+const CRASH_EVIDENCE_EXPORT_CAP: usize = 4096;
+const MAX_HISTOGRAM_SAMPLES: usize = 1024;
 
 static ACTIVE_RUN: OnceLock<Mutex<Option<Arc<RunDiagnostics>>>> = OnceLock::new();
 static RUN_REGISTRY: OnceLock<Mutex<HashMap<String, Weak<RunDiagnostics>>>> = OnceLock::new();
+static HOST_PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
+#[cfg(test)]
+static ACTIVE_RUN_BY_DIR: OnceLock<Mutex<HashMap<PathBuf, Weak<RunDiagnostics>>>> = OnceLock::new();
 
 fn active_slot() -> &'static Mutex<Option<Arc<RunDiagnostics>>> {
     ACTIVE_RUN.get_or_init(|| Mutex::new(None))
 }
 
+#[cfg(test)]
+fn active_run_by_dir() -> &'static Mutex<HashMap<PathBuf, Weak<RunDiagnostics>>> {
+    ACTIVE_RUN_BY_DIR.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn run_registry() -> &'static Mutex<HashMap<String, Weak<RunDiagnostics>>> {
     RUN_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn locked<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn should_flush_immediately(kind: &str, level: &str) -> bool {
+    level.eq_ignore_ascii_case("ERROR") || kind.ends_with("_failed")
 }
 
 #[derive(Debug)]
@@ -74,11 +93,14 @@ pub struct RunDiagnostics {
     /// Accumulated per-stage durations for the end-of-run summary.
     stage_durations_ms: Mutex<Vec<(String, u64)>>,
     metrics: Mutex<DiagnosticsMetrics>,
+    otlp_internal_notified: AtomicBool,
 }
 
 #[derive(Debug)]
 pub struct ActiveRunGuard {
     previous: Option<Arc<RunDiagnostics>>,
+    #[cfg(test)]
+    active_dir: Option<PathBuf>,
 }
 
 impl Drop for ActiveRunGuard {
@@ -86,8 +108,15 @@ impl Drop for ActiveRunGuard {
         let mut guard = active_slot()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(run) = guard.as_ref() {
+            run.flush_writer();
+        }
         *guard = self.previous.take();
         drop(guard);
+        #[cfg(test)]
+        if let Some(active_dir) = self.active_dir.take() {
+            locked(active_run_by_dir()).remove(&active_dir);
+        }
         // Flush OTLP batches here, not at the call sites in `app::run`: the
         // guard is a run-scoped local, so this fires on every exit path —
         // including `?` error early-returns — instead of only the two
@@ -104,6 +133,16 @@ struct JsonEvent<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     span_id: Option<&'a str>,
     kind: &'a str,
+    #[serde(rename = "event.name")]
+    event_name: &'a str,
+    #[serde(rename = "event.outcome")]
+    event_outcome: &'a str,
+    #[serde(rename = "jackin.component")]
+    jackin_component: &'a str,
+    #[serde(rename = "jackin.operation")]
+    jackin_operation: &'a str,
+    #[serde(rename = "jackin.category")]
+    jackin_category: &'a str,
     message: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     stage: Option<&'a str>,
@@ -116,8 +155,56 @@ struct DiagnosticsMetrics {
     event_counts: BTreeMap<String, u64>,
     stage_duration_ms: BTreeMap<String, Vec<u64>>,
     timing_duration_ms: BTreeMap<String, Vec<u64>>,
+    stage_duration_dropped: BTreeMap<String, u64>,
+    timing_duration_dropped: BTreeMap<String, u64>,
     cache_hits: u64,
     cache_misses: u64,
+}
+
+#[cfg(feature = "otlp")]
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DomainMetricsSnapshot {
+    pub event_counts: BTreeMap<String, u64>,
+    pub cache_hits: u64,
+    pub cache_misses: u64,
+}
+
+impl DiagnosticsMetrics {
+    fn push_stage_duration(&mut self, key: String, value: u64) {
+        push_capped_sample(
+            &mut self.stage_duration_ms,
+            &mut self.stage_duration_dropped,
+            key,
+            value,
+        );
+    }
+
+    fn push_timing_duration(&mut self, key: String, value: u64) {
+        push_capped_sample(
+            &mut self.timing_duration_ms,
+            &mut self.timing_duration_dropped,
+            key,
+            value,
+        );
+    }
+}
+
+fn push_capped_sample(
+    histograms: &mut BTreeMap<String, Vec<u64>>,
+    dropped: &mut BTreeMap<String, u64>,
+    key: String,
+    value: u64,
+) {
+    let samples = histograms.entry(key.clone()).or_default();
+    if samples.len() < MAX_HISTOGRAM_SAMPLES {
+        samples.push(value);
+    } else {
+        *dropped.entry(key).or_default() += 1;
+    }
+}
+
+fn display_unclosed_key(key: &str) -> String {
+    key.replace('\0', "/")
 }
 
 impl RunDiagnostics {
@@ -176,6 +263,7 @@ impl RunDiagnostics {
             timing_starts: Mutex::new(HashMap::new()),
             stage_durations_ms: Mutex::new(Vec::new()),
             metrics: Mutex::new(DiagnosticsMetrics::default()),
+            otlp_internal_notified: AtomicBool::new(false),
         });
         run_registry()
             .lock()
@@ -189,10 +277,10 @@ impl RunDiagnostics {
             run.compact("otlp", &line);
             crate::logging::emit_compact_line("otlp", &line);
         }
-        run.record_direct(
+        crate::observability::emit_jsonl_event(
+            &run.run_id,
             "run",
             &format!("command {command} started"),
-            None,
             None,
             None,
         );
@@ -200,11 +288,21 @@ impl RunDiagnostics {
     }
 
     pub fn activate(self: &Arc<Self>) -> ActiveRunGuard {
+        #[cfg(test)]
+        let active_dir = self.path.parent().map(Path::to_path_buf);
+        #[cfg(test)]
+        if let Some(dir) = &active_dir {
+            locked(active_run_by_dir()).insert(dir.clone(), Arc::downgrade(self));
+        }
         let previous = active_slot()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .replace(Arc::clone(self));
-        ActiveRunGuard { previous }
+        ActiveRunGuard {
+            previous,
+            #[cfg(test)]
+            active_dir,
+        }
     }
 
     pub fn run_id(&self) -> &str {
@@ -286,6 +384,17 @@ impl RunDiagnostics {
         crate::observability::emit_jsonl_error(&self.run_id, kind, message, None, None);
     }
 
+    pub fn error_typed(&self, kind: &str, message: &str, error_type: Option<&str>) {
+        crate::observability::emit_jsonl_error_typed(
+            &self.run_id,
+            kind,
+            message,
+            None,
+            None,
+            error_type,
+        );
+    }
+
     pub fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {
         // Track wall-clock stage timings for the end-of-run summary (Defect 47.5).
         // A stage runs on the operator's foreground launch path, so a slow one is a
@@ -295,36 +404,20 @@ impl RunDiagnostics {
         let mut foreground_wait_ms: Option<u64> = None;
         let enriched_detail = match kind {
             "stage_started" => {
-                if let Ok(mut starts) = self.stage_starts.lock() {
-                    starts.insert(stage.to_owned(), Instant::now());
-                }
-                if let Ok(mut spans) = self.stage_spans.lock() {
-                    spans.insert(
-                        stage.to_owned(),
-                        tracing::info_span!("launch_stage", stage = stage),
-                    );
-                }
+                locked(&self.stage_starts).insert(stage.to_owned(), Instant::now());
+                locked(&self.stage_spans).insert(stage.to_owned(), launch_stage_span(stage));
                 detail.map(String::from)
             }
             "stage_done" => {
-                let elapsed_ms =
-                    self.stage_starts.lock().ok().and_then(|starts| {
-                        starts.get(stage).map(|t| t.elapsed().as_millis() as u64)
-                    });
+                let elapsed_ms = locked(&self.stage_starts)
+                    .remove(stage)
+                    .map(|t| t.elapsed().as_millis() as u64);
                 elapsed_ms.map_or_else(
                     || detail.map(String::from),
                     |ms| {
                         foreground_wait_ms = Some(ms);
-                        if let Ok(mut durs) = self.stage_durations_ms.lock() {
-                            durs.push((stage.to_owned(), ms));
-                        }
-                        if let Ok(mut metrics) = self.metrics.lock() {
-                            metrics
-                                .stage_duration_ms
-                                .entry(stage.to_owned())
-                                .or_default()
-                                .push(ms);
-                        }
+                        locked(&self.stage_durations_ms).push((stage.to_owned(), ms));
+                        locked(&self.metrics).push_stage_duration(stage.to_owned(), ms);
                         let base = detail.unwrap_or("");
                         if base.is_empty() {
                             Some(format!("{{\"duration_ms\":{ms}}}"))
@@ -334,17 +427,36 @@ impl RunDiagnostics {
                     },
                 )
             }
+            "stage_failed" | "stage_skipped" => {
+                let _ = locked(&self.stage_starts).remove(stage);
+                detail.map(String::from)
+            }
             _ => detail.map(String::from),
         };
         let span = self.stage_span_for(kind, stage);
+        if kind == "stage_failed" {
+            span.record("otel.status_code", "ERROR");
+            span.record("otel.status_description", message);
+        }
         let _entered = span.enter();
-        crate::observability::emit_jsonl_event(
-            &self.run_id,
-            kind,
-            message,
-            Some(stage),
-            enriched_detail.as_deref(),
-        );
+        if kind.ends_with("_failed") {
+            crate::observability::emit_jsonl_error_typed(
+                &self.run_id,
+                kind,
+                message,
+                Some(stage),
+                enriched_detail.as_deref(),
+                None,
+            );
+        } else {
+            crate::observability::emit_jsonl_event(
+                &self.run_id,
+                kind,
+                message,
+                Some(stage),
+                enriched_detail.as_deref(),
+            );
+        }
         if let Some(ms) = foreground_wait_ms {
             self.explain_foreground_wait(stage, ms);
         }
@@ -378,60 +490,56 @@ impl RunDiagnostics {
 
     pub fn timing_started(&self, stage: &str, name: &str, detail: Option<&str>) {
         let key = timing_key(stage, name);
-        if let Ok(mut starts) = self.timing_starts.lock() {
-            starts.insert(key, Instant::now());
-        }
+        locked(&self.timing_starts).insert(key, Instant::now());
         let event_detail = timing_detail(name, None, detail);
-        self.record_direct(
+        let span = self.current_stage_span(stage);
+        let _entered = span.as_ref().map(tracing::Span::enter);
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
             "timing_started",
             &format!("{name} started"),
             Some(stage),
             Some(&event_detail),
-            None,
         );
     }
 
     pub fn timing_done(&self, stage: &str, name: &str, detail: Option<&str>) {
         let key = timing_key(stage, name);
-        let elapsed_ms = self
-            .timing_starts
-            .lock()
-            .ok()
-            .and_then(|mut starts| starts.remove(&key))
+        let elapsed_ms = locked(&self.timing_starts)
+            .remove(&key)
             .map(|start| start.elapsed().as_millis() as u64);
-        if let (Some(ms), Ok(mut metrics)) = (elapsed_ms, self.metrics.lock()) {
-            metrics
-                .timing_duration_ms
-                .entry(format!("{stage}/{name}"))
-                .or_default()
-                .push(ms);
+        if let Some(ms) = elapsed_ms {
+            locked(&self.metrics).push_timing_duration(format!("{stage}/{name}"), ms);
         }
         let event_detail = timing_detail(name, elapsed_ms, detail);
-        self.record_direct(
+        let span = self.current_stage_span(stage);
+        let _entered = span.as_ref().map(tracing::Span::enter);
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
             "timing_done",
             &format!("{name} done"),
             Some(stage),
             Some(&event_detail),
-            None,
         );
         if let Some(ms) = elapsed_ms {
             self.explain_foreground_wait(&key, ms);
         }
     }
 
+    fn current_stage_span(&self, stage: &str) -> Option<tracing::Span> {
+        locked(&self.stage_spans).get(stage).cloned()
+    }
+
     fn stage_span_for(&self, kind: &str, stage: &str) -> tracing::Span {
-        let mut spans = self
-            .stage_spans
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut spans = locked(&self.stage_spans);
         if matches!(kind, "stage_done" | "stage_failed" | "stage_skipped") {
             spans
                 .remove(stage)
-                .unwrap_or_else(|| tracing::info_span!("launch_stage", stage = stage))
+                .unwrap_or_else(|| launch_stage_span(stage))
         } else {
             spans
                 .entry(stage.to_owned())
-                .or_insert_with(|| tracing::info_span!("launch_stage", stage = stage))
+                .or_insert_with(|| launch_stage_span(stage))
                 .clone()
         }
     }
@@ -439,10 +547,7 @@ impl RunDiagnostics {
     /// Emit a summary event at the end of the run with per-stage wall-clock durations.
     pub fn emit_run_summary(&self) {
         let durations_snapshot: Vec<(String, u64)> = {
-            let durs = self
-                .stage_durations_ms
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let durs = locked(&self.stage_durations_ms);
             durs.clone()
         };
         let stage_durations: serde_json::Value = durations_snapshot
@@ -450,15 +555,14 @@ impl RunDiagnostics {
             .map(|(s, ms)| (s.clone(), serde_json::Value::from(*ms)))
             .collect::<serde_json::Map<_, _>>()
             .into();
-        let metrics = self
-            .metrics
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
+        let metrics = locked(&self.metrics).clone();
+        let unclosed = self.drain_unclosed_keys();
         let summary = serde_json::json!({
             "stage_durations_ms": stage_durations,
             "stage_duration_histograms_ms": metrics.stage_duration_ms,
             "timing_duration_histograms_ms": metrics.timing_duration_ms,
+            "stage_duration_dropped": metrics.stage_duration_dropped,
+            "timing_duration_dropped": metrics.timing_duration_dropped,
             "event_counts": metrics.event_counts,
             "cache_hits": metrics.cache_hits,
             "cache_misses": metrics.cache_misses,
@@ -471,10 +575,60 @@ impl RunDiagnostics {
             None,
             Some(&summary),
         );
+        if !unclosed.is_empty() {
+            crate::observability::emit_jsonl_event(
+                &self.run_id,
+                "diagnostics",
+                &format!("unclosed: {}", unclosed.join(", ")),
+                None,
+                None,
+            );
+        }
+        self.flush_writer();
+    }
+
+    fn drain_unclosed_keys(&self) -> Vec<String> {
+        let mut unclosed = BTreeSet::new();
+        {
+            let mut starts = locked(&self.stage_starts);
+            unclosed.extend(
+                starts
+                    .keys()
+                    .map(|key| format!("stage:{}", display_unclosed_key(key))),
+            );
+            starts.clear();
+        }
+        {
+            let mut spans = locked(&self.stage_spans);
+            unclosed.extend(
+                spans
+                    .keys()
+                    .map(|key| format!("span:{}", display_unclosed_key(key))),
+            );
+            spans.clear();
+        }
+        {
+            let mut starts = locked(&self.timing_starts);
+            unclosed.extend(
+                starts
+                    .keys()
+                    .map(|key| format!("timing:{}", display_unclosed_key(key))),
+            );
+            starts.clear();
+        }
+        unclosed.into_iter().collect()
+    }
+
+    pub(crate) fn flush_writer(&self) {
+        let Some(writer) = &self.writer else {
+            return;
+        };
+        let mut guard = locked(writer);
+        drop(guard.flush());
     }
 
     pub fn debug(&self, category: &str, line: &str) -> bool {
-        if !self.debug {
+        if !crate::logging::debug_capture_enabled(category, self.debug) {
             return false;
         }
         crate::observability::emit_jsonl_event(&self.run_id, "debug", line, None, Some(category));
@@ -493,12 +647,12 @@ impl RunDiagnostics {
             "capsule_log": capsule_log_path,
         })
         .to_string();
-        self.record_direct(
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
             "container_started",
             &format!("container {container_name} started"),
             Some(container_name),
             Some(&detail),
-            None,
         );
     }
 
@@ -538,14 +692,31 @@ impl RunDiagnostics {
         } else {
             format!("container {container_name} exited (exit {exit_code})")
         };
-        self.record_direct(kind, &msg, Some(container_name), Some(&detail), None);
-        if let Some(evidence) = crash_evidence.filter(|s| !s.is_empty()) {
-            self.record_direct(
-                "container_crash_log",
-                evidence,
+        if kind == "container_crash" {
+            crate::observability::emit_jsonl_error(
+                &self.run_id,
+                kind,
+                &msg,
                 Some(container_name),
-                None,
-                None,
+                Some(&detail),
+            );
+        } else {
+            crate::observability::emit_jsonl_event(
+                &self.run_id,
+                kind,
+                &msg,
+                Some(container_name),
+                Some(&detail),
+            );
+        }
+        if let Some(evidence) = crash_evidence.filter(|s| !s.is_empty()) {
+            let capped_evidence = cap_crash_evidence_for_export(evidence);
+            crate::observability::emit_jsonl_error(
+                &self.run_id,
+                "container_crash_log",
+                &format!("container {container_name} crash evidence"),
+                Some(container_name),
+                Some(&capped_evidence),
             );
         }
     }
@@ -564,12 +735,28 @@ impl RunDiagnostics {
             "cached": cached,
         })
         .to_string();
-        self.record_direct(
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
             "docker_build_step",
             &format!("docker build step {step} {label}"),
             Some("derived image"),
             Some(&detail),
-            None,
+        );
+    }
+
+    pub fn subprocess_done(&self, program: &str, elapsed_ms: u64, exit_code: Option<i32>) {
+        let detail = serde_json::json!({
+            "program": program,
+            "elapsed_ms": elapsed_ms,
+            "exit_code": exit_code,
+        })
+        .to_string();
+        crate::observability::emit_jsonl_event(
+            &self.run_id,
+            "subprocess_done",
+            "subprocess exited",
+            Some(program),
+            Some(&detail),
         );
     }
 
@@ -580,8 +767,10 @@ impl RunDiagnostics {
         stage: Option<&str>,
         detail: Option<&str>,
         span_id: Option<&str>,
+        level: &str,
     ) {
-        self.record_direct(kind, message, stage, detail, span_id);
+        self.record_direct(kind, message, stage, detail, span_id, level);
+        self.flush_writer();
     }
 
     /// Record an OpenTelemetry-internal diagnostic (an export failure, dropped
@@ -594,11 +783,8 @@ impl RunDiagnostics {
     /// visible even when the file sink is gated off (the common OTLP-active case).
     /// Only the first is announced; the rest are silent to avoid 5-second spam.
     pub(crate) fn record_otlp_internal(&self, level: &str, message: &str) {
-        let first = self
-            .metrics
-            .lock()
-            .is_ok_and(|metrics| !metrics.event_counts.contains_key("otlp_internal"));
-        self.record_direct("otlp_internal", message, None, Some(level), None);
+        let first = !self.otlp_internal_notified.swap(true, Ordering::Relaxed);
+        self.record_direct("otlp_internal", message, None, Some(level), None, level);
         if first {
             // Terminal-only notice: record_direct already wrote the file, and a
             // tracing emit here would re-enter the subscriber (this runs inside
@@ -609,6 +795,8 @@ impl RunDiagnostics {
         }
     }
 
+    // Sink-only helper. Call directly only from `record_from_layer` and
+    // `record_otlp_internal`; normal diagnostics should emit tracing events.
     fn record_direct(
         &self,
         kind: &str,
@@ -616,6 +804,7 @@ impl RunDiagnostics {
         stage: Option<&str>,
         detail: Option<&str>,
         span_id: Option<&str>,
+        level: &str,
     ) {
         self.record_metrics(kind);
         // Counts above always update (they feed the run summary, which OTLP also
@@ -623,12 +812,19 @@ impl RunDiagnostics {
         let Some(writer) = &self.writer else {
             return;
         };
+        let taxonomy =
+            crate::observability::event_taxonomy(kind, message, stage, detail, None, level);
         let event = JsonEvent {
             ts_ms: now_ms(),
             run_id: &self.run_id,
             trace_id: &self.run_id,
             span_id,
             kind,
+            event_name: &taxonomy.event_name,
+            event_outcome: taxonomy.outcome,
+            jackin_component: taxonomy.component,
+            jackin_operation: &taxonomy.operation,
+            jackin_category: &taxonomy.category,
             message,
             stage,
             detail,
@@ -640,19 +836,32 @@ impl RunDiagnostics {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         drop(writeln!(guard, "{line}"));
-        drop(guard.flush());
+        if should_flush_immediately(kind, level) {
+            // Routine records flush when the run guard drops or the summary is
+            // emitted. Error-tier records force a flush so a crash immediately
+            // after the error still leaves evidence in the local fallback file.
+            drop(guard.flush());
+        }
     }
 
     fn record_metrics(&self, kind: &str) {
-        let Ok(mut metrics) = self.metrics.lock() else {
-            return;
-        };
+        let mut metrics = locked(&self.metrics);
         *metrics.event_counts.entry(kind.to_owned()).or_default() += 1;
         if kind.contains("cache_hit") {
             metrics.cache_hits += 1;
         }
         if kind.contains("cache_miss") {
             metrics.cache_misses += 1;
+        }
+    }
+
+    #[cfg(feature = "otlp")]
+    pub(crate) fn domain_metrics_snapshot(&self) -> DomainMetricsSnapshot {
+        let metrics = locked(&self.metrics);
+        DomainMetricsSnapshot {
+            event_counts: metrics.event_counts.clone(),
+            cache_hits: metrics.cache_hits,
+            cache_misses: metrics.cache_misses,
         }
     }
 }
@@ -673,11 +882,45 @@ pub fn active_timing_done(stage: &str, name: &str, detail: Option<&str>) {
     }
 }
 
+pub fn active_subprocess_done(program: &str, elapsed_ms: u64, exit_code: Option<i32>) {
+    if let Some(run) = active_run() {
+        run.subprocess_done(program, elapsed_ms, exit_code);
+    }
+}
+
 pub fn active_run() -> Option<Arc<RunDiagnostics>> {
     active_slot()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
+}
+
+pub fn active_run_for_paths(paths: &JackinPaths) -> Option<Arc<RunDiagnostics>> {
+    #[cfg(test)]
+    {
+        return locked(active_run_by_dir())
+            .get(&run_dir(paths))
+            .and_then(Weak::upgrade);
+    }
+
+    #[cfg(not(test))]
+    {
+        let run = active_run()?;
+        run.path.starts_with(run_dir(paths)).then_some(run)
+    }
+}
+
+pub fn install_host_panic_hook() {
+    let () = HOST_PANIC_HOOK_INSTALLED.get_or_init(|| {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if let Some(run) = active_run() {
+                run.error_typed("panic", &format!("PANIC: {info}"), Some("panic"));
+            }
+            crate::observability::shutdown_otlp();
+            default_hook(info);
+        }));
+    });
 }
 
 pub(crate) fn run_by_id(run_id: &str) -> Option<Arc<RunDiagnostics>> {
@@ -894,6 +1137,32 @@ fn timing_key(stage: &str, name: &str) -> String {
     format!("{stage}\0{name}")
 }
 
+fn launch_stage_span(stage: &str) -> tracing::Span {
+    let otel_name = format!("launch.{}", normalize_stage_name(stage));
+    tracing::info_span!(
+        "launch_stage",
+        stage = stage,
+        otel.name = otel_name.as_str(),
+        otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
+    )
+}
+
+pub(crate) fn normalize_stage_name(stage: &str) -> String {
+    let mut normalized = String::with_capacity(stage.len());
+    let mut last_was_separator = false;
+    for ch in stage.chars() {
+        if ch.is_ascii_alphanumeric() {
+            normalized.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if (ch.is_whitespace() || ch == '-' || ch == '_') && !last_was_separator {
+            normalized.push('_');
+            last_was_separator = true;
+        }
+    }
+    normalized.trim_matches('_').to_owned()
+}
+
 /// A `slow_foreground_wait` diagnostic ready to emit. Named fields instead of a
 /// `(String, String)` tuple so the operator message and the JSON detail — both
 /// `String` — can't be transposed at the call site.
@@ -933,6 +1202,10 @@ fn timing_detail(name: &str, duration_ms: Option<u64>, detail: Option<&str>) -> 
         value["detail"] = serde_json::Value::from(detail);
     }
     value.to_string()
+}
+
+fn cap_crash_evidence_for_export(evidence: &str) -> String {
+    crate::redact::redact_and_cap(evidence, CRASH_EVIDENCE_EXPORT_CAP)
 }
 
 /// Owner-only mode for new diagnostics files. The JSONL firehose and the
@@ -1122,12 +1395,20 @@ impl jackin_core::launch_progress::LaunchDiagnostics for RunDiagnostics {
         &self.path
     }
 
+    fn persists(&self) -> bool {
+        self.persists()
+    }
+
     fn command_output_path(&self, name: &str) -> PathBuf {
         self.command_output_path(name)
     }
 
     fn compact(&self, kind: &str, message: &str) {
         self.compact(kind, message);
+    }
+
+    fn error(&self, kind: &str, message: &str, error_type: Option<&str>) {
+        self.error_typed(kind, message, error_type);
     }
 
     fn stage(&self, kind: &str, stage: &str, message: &str, detail: Option<&str>) {

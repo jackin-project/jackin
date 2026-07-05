@@ -35,6 +35,7 @@ pub mod error;
 pub(crate) mod preflight;
 pub mod prompt;
 pub mod role_authoring;
+mod role_claude_plugins;
 pub mod warp;
 pub mod workspace;
 

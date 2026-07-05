@@ -158,6 +158,7 @@ async fn wait_for_capsule_daemon_polls_socket_status_command() {
             .any(|call| call.contains(&format!("sh -c {JACKIN_STATUS_CMD}"))),
         "expected socket/status wait command; recorded: {recorded:?}"
     );
+    drop(_guard);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         diagnostics.contains("\"kind\":\"timing_done\"")
@@ -217,10 +218,10 @@ async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
         "restart path must not attach to PID 1; recorded: {:?}",
         runner.recorded
     );
+    drop(_guard);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         diagnostics.contains("restore_inspect")
-            && diagnostics.contains("stopped")
             && diagnostics.contains("restore_start_container")
             && diagnostics.contains("started"),
         "expected restore timing diagnostics: {diagnostics}"

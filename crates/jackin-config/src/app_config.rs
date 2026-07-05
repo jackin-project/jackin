@@ -16,7 +16,8 @@ use jackin_core::AuthForwardMode;
 
 use crate::auth::{AgentAuthConfig, GithubAuthConfig};
 use crate::schema::{
-    DirtyExitPolicy, DockerConfig, GitConfig, RoleSource, RuntimeConfig, WorkspaceConfig,
+    DirtyExitPolicy, DockerConfig, GitConfig, RoleSource, RuntimeConfig, TelemetryConfig,
+    WorkspaceConfig,
 };
 use crate::versions::CURRENT_CONFIG_VERSION;
 
@@ -52,6 +53,8 @@ pub struct AppConfig {
     pub docker: DockerConfig,
     #[serde(default, skip_serializing_if = "RuntimeConfig::is_default")]
     pub runtime: RuntimeConfig,
+    #[serde(default, skip_serializing_if = "TelemetryConfig::is_default")]
+    pub telemetry: TelemetryConfig,
     #[serde(default, skip_serializing_if = "GitConfig::is_default")]
     pub git: GitConfig,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -168,6 +171,7 @@ impl Default for AppConfig {
             roles: BTreeMap::new(),
             docker: DockerConfig::default(),
             runtime: RuntimeConfig::default(),
+            telemetry: TelemetryConfig::default(),
             git: GitConfig::default(),
             workspaces: BTreeMap::new(),
             dirty_exit_policy: None,

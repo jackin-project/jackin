@@ -1,6 +1,13 @@
 //! Tests for `session`.
 use super::*;
 
+use crate::agent_status::evidence::{AuthorityEvidence, AuthorityGrade, RawAgentState};
+use crate::agent_status::process::{
+    ForegroundGroup, ProcessCpuSample, ProcessInfo, ProcessSampler,
+};
+use crate::agent_status::rules::{RulePack, RulePackRegistry};
+use jackin_core::agent::Agent;
+use jackin_protocol::agent_status::{AgentStatusConfidence, AgentStatusSource};
 use portable_pty::{ChildKiller, MasterPty, PtySize};
 
 // ── PTY test doubles ───────────────────────────────────────────────────────
@@ -106,6 +113,249 @@ fn test_session_with_policy(policy: OscPolicy) -> Session {
     );
     session.osc_policy = policy;
     session
+}
+
+fn test_process_info(pid: u32, agent: Agent) -> ProcessInfo {
+    ProcessInfo {
+        pid,
+        pgid: pid,
+        tpgid: i32::try_from(pid).unwrap(),
+        cmdline: vec![agent.slug().to_owned()],
+        exe_path: Some(std::path::PathBuf::from(format!(
+            "/usr/local/bin/{}",
+            agent.slug()
+        ))),
+        comm: agent.slug().to_owned(),
+    }
+}
+
+#[derive(Debug)]
+struct StaticProcessSampler {
+    physics_available: bool,
+    root: Option<ProcessInfo>,
+    foreground: ForegroundGroup,
+    descendants: u32,
+    cpu_delta: u64,
+}
+
+impl StaticProcessSampler {
+    fn foreground_agent(pid: u32, agent: Agent) -> Self {
+        Self {
+            physics_available: true,
+            root: Some(test_process_info(pid, agent)),
+            foreground: ForegroundGroup::Agent { agent, pgid: pid },
+            descendants: 0,
+            cpu_delta: 0,
+        }
+    }
+}
+
+impl ProcessSampler for StaticProcessSampler {
+    fn physics_available(&self) -> bool {
+        self.physics_available
+    }
+
+    fn read_process_info(&self, _pid: u32) -> Option<ProcessInfo> {
+        self.root.clone()
+    }
+
+    fn foreground_group(&self, _root_info: &ProcessInfo) -> ForegroundGroup {
+        self.foreground
+    }
+
+    fn descendant_process_count(&self, _root_pid: u32) -> u32 {
+        self.descendants
+    }
+
+    fn sample_cpu_jiffies_delta(
+        &mut self,
+        _pid: u32,
+        _previous: &mut Option<ProcessCpuSample>,
+        _now: std::time::Instant,
+    ) -> u64 {
+        self.cpu_delta
+    }
+}
+
+fn status_test_registry() -> RulePackRegistry {
+    let pack = toml::from_str::<RulePack>(
+        "schema_version = 1\n\
+         agent = \"codex\"\n\
+         validated_versions = \">=1.0.0, <2.0.0\"\n\
+         [[rule]]\n\
+         id = \"blocked-test\"\n\
+         state = \"blocked\"\n\
+         priority = 100\n\
+         strength = \"strong\"\n\
+         region = \"bottom:24\"\n\
+         requires_any = [\"approve?\"]\n\
+         [[rule]]\n\
+         id = \"idle-test\"\n\
+         state = \"idle\"\n\
+         priority = 90\n\
+         strength = \"strong\"\n\
+         region = \"bottom:24\"\n\
+         requires_any = [\"ready\"]\n",
+    )
+    .unwrap()
+    .finalize()
+    .unwrap();
+    RulePackRegistry::from_packs([pack])
+}
+
+#[test]
+fn advance_status_publishes_screen_blocked_through_full_tick() {
+    let now = std::time::Instant::now();
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    session.feed_pty(b"approve?");
+    let registry = status_test_registry();
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+    let rows = session.visible_screen_rows();
+    assert!(rows.iter().any(|row| row.contains("approve?")));
+    assert!(registry.evaluate(session.agent.as_deref(), &rows).is_some());
+
+    let tick = session.advance_status_with_process_sampler(Some(&registry), &mut sampler, now);
+
+    assert_eq!(session.state, AgentState::Blocked);
+    assert_eq!(
+        tick.transition
+            .as_ref()
+            .map(|transition| transition.effective),
+        Some(AgentState::Blocked)
+    );
+    let report = session.status.report(session.agent.clone());
+    assert_eq!(report.raw_state, RawAgentState::Blocked);
+    assert_eq!(report.source, AgentStatusSource::VisibleScreen);
+    assert!(report.visible_blocker);
+}
+
+#[test]
+fn process_sampler_double_drives_process_evidence_on_any_host() {
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+    sampler.descendants = 2;
+    sampler.cpu_delta = 7;
+
+    let evidence = session.sample_process_evidence_with(&mut sampler, std::time::Instant::now());
+
+    assert!(evidence.physics_sampled);
+    assert!(evidence.child_alive);
+    assert!(evidence.root_is_agent);
+    assert!(evidence.foreground_is_agent);
+    assert_eq!(evidence.foreground_pgid, Some(42));
+    assert_eq!(evidence.child_process_count, 2);
+    assert_eq!(evidence.cpu_jiffies_delta, 7);
+}
+
+#[test]
+fn advance_status_publishes_screen_idle_as_done_when_unseen() {
+    let now = std::time::Instant::now();
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    session.state = AgentState::Working;
+    session.status.effective = AgentState::Working;
+    session.status.raw = RawAgentState::Working;
+    session.status.confidence = AgentStatusConfidence::Strong;
+    session.status.seen = false;
+    session.feed_pty(b"ready");
+    let registry = status_test_registry();
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+    let rows = session.visible_screen_rows();
+    assert!(rows.iter().any(|row| row.contains("ready")));
+    assert!(registry.evaluate(session.agent.as_deref(), &rows).is_some());
+
+    let tick = session.advance_status_with_process_sampler(Some(&registry), &mut sampler, now);
+
+    assert_eq!(session.state, AgentState::Done);
+    assert_eq!(
+        tick.transition
+            .as_ref()
+            .map(|transition| transition.effective),
+        Some(AgentState::Done)
+    );
+    let report = session.status.report(session.agent.clone());
+    assert_eq!(report.raw_state, RawAgentState::Idle);
+    assert_eq!(report.source, AgentStatusSource::VisibleScreen);
+    assert!(report.visible_idle);
+}
+
+#[test]
+fn advance_status_publishes_fresh_authority_with_injected_foreground_identity() {
+    let now = std::time::Instant::now();
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    session.authority = Some(AuthorityEvidence {
+        source_id: "opencode-plugin".to_owned(),
+        grade: AuthorityGrade::Complete,
+        mapped_state: RawAgentState::Working,
+        pending_permission: false,
+        last_event: now,
+        notes: Vec::new(),
+    });
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+
+    let tick = session.advance_status_with_process_sampler(None, &mut sampler, now);
+
+    assert_eq!(session.state, AgentState::Working);
+    assert_eq!(
+        tick.transition
+            .as_ref()
+            .map(|transition| transition.effective),
+        Some(AgentState::Working)
+    );
+    let report = session.status.report(session.agent.clone());
+    assert_eq!(report.raw_state, RawAgentState::Working);
+    assert_eq!(
+        report.source,
+        AgentStatusSource::Reported {
+            source_id: "opencode-plugin".to_owned()
+        }
+    );
+}
+
+#[test]
+fn advance_status_does_not_publish_working_from_helper_physics_alone() {
+    let now = std::time::Instant::now();
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+    sampler.descendants = 1;
+    sampler.cpu_delta = 1;
+
+    let tick = session.advance_status_with_process_sampler(None, &mut sampler, now);
+
+    assert_eq!(session.state, AgentState::Unknown);
+    assert!(tick.transition.is_none());
+    let report = session.status.report(session.agent.clone());
+    assert_eq!(report.raw_state, RawAgentState::Unknown);
+    assert_eq!(report.source, AgentStatusSource::None);
+}
+
+#[test]
+fn advance_status_publishes_unknown_when_no_evidence_matches() {
+    let now = std::time::Instant::now();
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.child_pid = Some(42);
+    session.state = AgentState::Working;
+    session.status.effective = AgentState::Working;
+    session.status.raw = RawAgentState::Working;
+    session.status.confidence = AgentStatusConfidence::Strong;
+    let mut sampler = StaticProcessSampler::foreground_agent(42, Agent::Codex);
+
+    let tick = session.advance_status_with_process_sampler(None, &mut sampler, now);
+
+    assert_eq!(session.state, AgentState::Unknown);
+    assert_eq!(
+        tick.transition
+            .as_ref()
+            .map(|transition| transition.effective),
+        Some(AgentState::Unknown)
+    );
+    let report = session.status.report(session.agent.clone());
+    assert_eq!(report.raw_state, RawAgentState::Unknown);
+    assert_eq!(report.source, AgentStatusSource::None);
 }
 
 #[test]
@@ -610,6 +860,41 @@ fn claude_event_never_sets_authority() {
 }
 
 #[test]
+fn claude_notification_permission_sets_partial_authority() {
+    use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event(
+        "hook-claude-1",
+        "claude",
+        "Notification:permission_prompt",
+        std::time::Instant::now(),
+    );
+    let a = session.authority.as_ref().expect("authority set");
+    assert_eq!(a.source_id, "hook-claude-1");
+    assert_eq!(a.mapped_state, RawAgentState::Blocked);
+    assert!(a.pending_permission);
+    assert_eq!(a.grade, AuthorityGrade::Partial);
+}
+
+#[cfg(feature = "codex-app-server-authority")]
+#[test]
+fn codex_app_server_event_sets_complete_authority() {
+    use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event(
+        "app-server-codex-1",
+        "codex-app-server",
+        "turn/started",
+        std::time::Instant::now(),
+    );
+    let a = session.authority.as_ref().expect("authority set");
+    assert_eq!(a.source_id, "app-server-codex-1");
+    assert_eq!(a.mapped_state, RawAgentState::Working);
+    assert!(!a.pending_permission);
+    assert_eq!(a.grade, AuthorityGrade::Complete);
+}
+
+#[test]
 fn clear_event_drops_authority_for_source() {
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
@@ -694,6 +979,7 @@ fn osc133_marks_set_shell_state() {
         session.osc_evidence().shell_state,
         Some(RawAgentState::Working)
     );
+    assert!(session.osc_evidence().shell_state_marked_at.is_some());
     session.feed_pty(b"\x1b]133;B\x07");
     assert_eq!(
         session.osc_evidence().shell_state,

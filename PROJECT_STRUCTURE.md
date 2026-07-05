@@ -61,6 +61,7 @@ Workspace source under [crates/](crates/); supporting files at repo root:
 | [release.toml](release.toml) | Release configuration |
 | [mise.toml](mise.toml) | Tool versions and construct image task definitions |
 | `crates/jackin-dev/` | Installed developer helper binary (`jackin-dev`) for local PR checkout/sync/isolation workflows |
+| `crates/jackin-agent-status/` | Pure agent runtime status detection, arbitration, process sampling, rule packs, and fixtures |
 | `crates/jackin-xtask/` | Workspace automation binary (`cargo xtask`): construct image tasks + PTY fixture extraction; full command inventory at [Workspace Automation](https://jackin.tailrocks.com/reference/getting-oriented/xtasks/) |
 | [docker-bake.hcl](docker-bake.hcl) | Declarative Docker Bake build graph for construct image |
 | `rust-toolchain.toml` | Pinned Rust toolchain (CI-enforced MSRV) |

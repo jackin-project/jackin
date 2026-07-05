@@ -40,29 +40,50 @@ impl StatusBarWidget<'_> {
         let hovered = self.hovered_tab == Some(idx);
         let style = tab_cell_style(cell.active, hovered);
         let bg = style.bg.unwrap_or(Color::Reset);
-        let glyph_char = match cell.glyph {
-            TabGlyph::None => ' ',
-            TabGlyph::Done => '○',
-            TabGlyph::Blocked => '●',
-        };
+        let glyph_char = tab_glyph_char(cell.glyph);
         // Cell layout: ` <name> <sep> <glyph> ` — matches emit_tab_row0.
         let content = format!(" {} {} ", cell.name, glyph_char);
         let x = area.x.saturating_add(cell.start_col0);
         buf.set_string(x, area.y, &content, style);
-        // Blocked glyph is bright red; overpaint just that cell, same bg.
-        if matches!(cell.glyph, TabGlyph::Blocked) {
+        if let Some(glyph_style) = tab_glyph_style(cell.glyph, bg) {
             let name_cols = u16::try_from(jackin_tui::display_cols(&cell.name)).unwrap_or(u16::MAX);
             let glyph_x = x.saturating_add(name_cols).saturating_add(2);
-            buf.set_string(
-                glyph_x,
-                area.y,
-                "●",
-                Style::default()
-                    .bg(bg)
-                    .fg(jackin_tui::theme::STATUS_BLOCKED_RED)
-                    .add_modifier(Modifier::BOLD),
-            );
+            buf.set_string(glyph_x, area.y, glyph_char.to_string(), glyph_style);
         }
+    }
+}
+
+const fn tab_glyph_char(glyph: TabGlyph) -> char {
+    match glyph {
+        TabGlyph::Blocked => '●',
+        TabGlyph::Done => '○',
+        TabGlyph::Working => '▶',
+        TabGlyph::Idle => '◆',
+        TabGlyph::Unknown => ' ',
+    }
+}
+
+fn tab_glyph_style(glyph: TabGlyph, bg: Color) -> Option<Style> {
+    match glyph {
+        TabGlyph::Blocked => Some(
+            Style::default()
+                .bg(bg)
+                .fg(jackin_tui::theme::STATUS_BLOCKED_RED)
+                .add_modifier(Modifier::BOLD),
+        ),
+        TabGlyph::Working => Some(
+            Style::default()
+                .bg(bg)
+                .fg(jackin_tui::theme::DEBUG_AMBER)
+                .add_modifier(Modifier::BOLD),
+        ),
+        TabGlyph::Idle => Some(
+            Style::default()
+                .bg(bg)
+                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
+        TabGlyph::Done | TabGlyph::Unknown => None,
     }
 }
 

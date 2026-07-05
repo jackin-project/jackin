@@ -54,17 +54,32 @@ pub fn otlp_active() -> bool {
     OTLP_ACTIVE.load(Ordering::Relaxed)
 }
 
-/// Bridge a capsule log line into OTLP logs: compact (`clog!`) lines map to
-/// INFO, debug (`cdebug!`) lines to DEBUG (filtered out of non-debug exports).
-/// No-op unless export is active.
-pub fn bridge_log(debug: bool, message: &str) {
+#[cfg(test)]
+pub(crate) fn set_otlp_active_for_test(active: bool) {
+    OTLP_ACTIVE.store(active, Ordering::Relaxed);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+/// Bridge a capsule log line into OTLP logs at the supplied severity. No-op
+/// unless export is active.
+pub fn bridge_log(level: BridgeLevel, message: &str) {
     if !otlp_active() {
         return;
     }
-    if debug {
-        tracing::debug!(target: "jackin_capsule", "{message}");
-    } else {
-        tracing::info!(target: "jackin_capsule", "{message}");
+    match level {
+        BridgeLevel::Trace => tracing::trace!(target: "jackin_capsule", "{message}"),
+        BridgeLevel::Debug => tracing::debug!(target: "jackin_capsule", "{message}"),
+        BridgeLevel::Info => tracing::info!(target: "jackin_capsule", "{message}"),
+        BridgeLevel::Warn => tracing::warn!(target: "jackin_capsule", "{message}"),
+        BridgeLevel::Error => tracing::error!(target: "jackin_capsule", "{message}"),
     }
 }
 
@@ -75,3 +90,6 @@ pub fn shutdown() {
         jackin_diagnostics::shutdown_capsule_tracing();
     }
 }
+
+#[cfg(test)]
+mod tests;

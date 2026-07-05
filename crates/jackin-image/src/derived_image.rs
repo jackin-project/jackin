@@ -41,23 +41,23 @@ const AGENT_STATUS_ASSETS: &[(&str, &str)] = &[
     ),
     (
         "packs/claude.toml",
-        include_str!("../../../docker/runtime/agent-status/packs/claude.toml"),
+        include_str!("../../jackin-agent-status/packs/claude.toml"),
     ),
     (
         "packs/codex.toml",
-        include_str!("../../../docker/runtime/agent-status/packs/codex.toml"),
+        include_str!("../../jackin-agent-status/packs/codex.toml"),
     ),
     (
         "packs/amp.toml",
-        include_str!("../../../docker/runtime/agent-status/packs/amp.toml"),
+        include_str!("../../jackin-agent-status/packs/amp.toml"),
     ),
     (
         "packs/kimi.toml",
-        include_str!("../../../docker/runtime/agent-status/packs/kimi.toml"),
+        include_str!("../../jackin-agent-status/packs/kimi.toml"),
     ),
     (
         "packs/opencode.toml",
-        include_str!("../../../docker/runtime/agent-status/packs/opencode.toml"),
+        include_str!("../../jackin-agent-status/packs/opencode.toml"),
     ),
 ];
 const ZSHENV_SOURCE_SHIM_PATH: &str = ".jackin-runtime/zshenv-source-shim";

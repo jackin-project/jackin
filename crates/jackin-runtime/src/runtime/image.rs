@@ -72,6 +72,22 @@ pub(super) struct PreparedRuntimeBinaries {
     jackin_capsule_src: String,
 }
 
+fn local_image_buildx_args() -> Vec<&'static str> {
+    // Runtime image builds consume local-only base tags such as
+    // `jk_<role>__base:<sha>` and PR-local construct images. A docker-container
+    // buildx builder cannot see the host Docker image store, so use the
+    // Docker-driver default builder. The global context flag keeps buildx from
+    // rejecting `default` when DOCKER_HOST or another active context is set.
+    vec![
+        "--context",
+        "default",
+        "buildx",
+        "build",
+        "--builder",
+        "default",
+    ]
+}
+
 /// Result status for one explicit role-image prewarm request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImagePrewarmStatus {
@@ -445,7 +461,8 @@ pub(super) fn spawn_sibling_runtime_prewarm(
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     selected_agent: Agent,
     selected_image_reused: bool,
-) {
+) -> Option<tokio::task::JoinHandle<()>> {
+    let active_run = jackin_diagnostics::active_run_for_paths(paths);
     let siblings = validated_repo
         .manifest
         .supported_agents()
@@ -453,7 +470,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
         .filter(|agent| *agent != selected_agent)
         .collect::<Vec<_>>();
     if siblings.is_empty() {
-        if let Some(run) = jackin_diagnostics::active_run() {
+        if let Some(run) = &active_run {
             run.stage(
                 "runtime_prewarm_skipped",
                 "agent binaries",
@@ -461,10 +478,10 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 Some(selected_agent.slug()),
             );
         }
-        return;
+        return None;
     }
     if !selected_image_reused {
-        if let Some(run) = jackin_diagnostics::active_run() {
+        if let Some(run) = &active_run {
             run.stage(
                 "runtime_prewarm_skipped",
                 "agent binaries",
@@ -472,7 +489,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 Some(selected_agent.slug()),
             );
         }
-        return;
+        return None;
     }
 
     let paths = paths.clone();
@@ -481,9 +498,23 @@ pub(super) fn spawn_sibling_runtime_prewarm(
         .map(|agent| agent.slug())
         .collect::<Vec<_>>()
         .join(",");
-    super::launch::emit_prewarm_launch_plan(&format!("sibling_runtime_prewarm:{agents}"));
-    tokio::spawn(async move {
-        if let Some(run) = jackin_diagnostics::active_run() {
+    if let Some(run) = &active_run {
+        let reason = format!("sibling_runtime_prewarm:{agents}");
+        let detail = serde_json::json!({
+            "plan": "PrewarmOnly",
+            "reason": reason,
+            "container": null,
+        })
+        .to_string();
+        run.stage(
+            "launch_plan",
+            "restore",
+            "selected launch plan PrewarmOnly",
+            Some(&detail),
+        );
+    }
+    Some(tokio::spawn(async move {
+        if let Some(run) = &active_run {
             run.stage(
                 "runtime_prewarm_started",
                 "agent binaries",
@@ -491,22 +522,22 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 Some(&agents),
             );
         }
-        jackin_diagnostics::active_timing_started(
-            "agent binaries",
-            "sibling_runtime_prewarm",
-            Some(&agents),
-        );
+        if let Some(run) = &active_run {
+            run.timing_started("agent binaries", "sibling_runtime_prewarm", Some(&agents));
+        }
         let result = prepare_agent_binaries(&paths, &siblings, "runtime prewarm", false).await;
         let timing_detail = match &result {
             Ok(prepared) => agent_binary_prepare_summary(prepared),
             Err(error) => format!("failed: {error:#}"),
         };
-        jackin_diagnostics::active_timing_done(
-            "agent binaries",
-            "sibling_runtime_prewarm",
-            Some(&timing_detail),
-        );
-        if let Some(run) = jackin_diagnostics::active_run() {
+        if let Some(run) = &active_run {
+            run.timing_done(
+                "agent binaries",
+                "sibling_runtime_prewarm",
+                Some(&timing_detail),
+            );
+        }
+        if let Some(run) = active_run {
             match result {
                 Ok(prepared) => run.stage(
                     "runtime_prewarm_done",
@@ -522,7 +553,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 ),
             }
         }
-    });
+    }))
 }
 
 pub(super) fn spawn_sibling_image_prewarm(
@@ -1514,7 +1545,7 @@ async fn ensure_local_role_base(
     let construct_label = format!("{LABEL_IMAGE_CONSTRUCT}={construct}");
     let build_arg_role_git_sha = format!("ROLE_GIT_SHA={}", head_sha.unwrap_or("unknown"));
 
-    let mut args: Vec<&str> = vec!["buildx", "build"];
+    let mut args = local_image_buildx_args();
     // A workspace rebuild refreshes the construct base. A plain workspace base
     // build rides the local layer cache.
     //
@@ -1800,7 +1831,7 @@ pub(super) async fn build_agent_image(
     let recipe_hash = recipe.hash()?;
     let recipe_labels = recipe_labels(&recipe, &recipe_hash);
 
-    let mut build_args: Vec<&str> = vec!["buildx", "build"];
+    let mut build_args = local_image_buildx_args();
 
     // --pull semantics:
     //

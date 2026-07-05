@@ -218,6 +218,22 @@ same rule as `[claude]` / `[codex]` / `[kimi]` / `[opencode]`. Optional GHE-targ
 `GH_HOST` and `GH_ENTERPRISE_TOKEN` may also be set in the
 `[…github.env]` block; they are forwarded to the container as-is.
 
+### Telemetry settings
+
+Global telemetry settings live in `config.toml` under `[telemetry]`:
+
+```toml
+[telemetry]
+level = "debug"              # "info" (default), "debug", or "trace"
+categories = ["docker", "launch"]
+```
+
+`level` controls host/capsule OTLP verbosity and debug-category diagnostics
+capture. `categories` is an optional allowlist for debug-category records before
+they enter JSONL or OTLP; omit it to allow every debug category. Environment
+variables win over config: `JACKIN_TELEMETRY_LEVEL` overrides `level`, and
+`JACKIN_TELEMETRY_CATEGORIES` overrides `categories`.
+
 ### Operator env layers
 
 Four layers contribute env vars to the agent container, merged with later-wins semantics:

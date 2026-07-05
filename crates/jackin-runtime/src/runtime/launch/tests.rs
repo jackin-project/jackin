@@ -2,6 +2,9 @@
 #![allow(clippy::too_many_lines, unused_qualifications)]
 use super::super::test_support::FakeRunner;
 use super::*;
+use crate::runtime::launch::launch_runtime::{
+    debug_runtime_envs_for, run_runtime_envs, run_runtime_envs_for, telemetry_runtime_envs_for,
+};
 use jackin_config::AppConfig;
 use std::collections::HashMap;
 
@@ -715,29 +718,26 @@ plugins = []
         role_key: "agent-smith",
     };
 
-    spawn_sibling_auth_prewarm(
+    let prewarm_handle = spawn_sibling_auth_prewarm(
         &paths,
         "jk-agent-smith",
         &prewarm,
         jackin_core::agent::Agent::Claude,
-    );
+    )
+    .expect("expected sibling auth prewarm task");
 
-    for _ in 0..20 {
-        let jsonl = std::fs::read_to_string(run.path()).unwrap();
-        if jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\"") {
-            assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
-            assert!(jsonl.contains("PrewarmOnly"), "{jsonl}");
-            assert!(jsonl.contains("sibling_auth_prewarm:codex"), "{jsonl}");
-            assert!(jsonl.contains("\"kind\":\"timing_done\""), "{jsonl}");
-            assert!(jsonl.contains("sibling_auth_prewarm"), "{jsonl}");
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-    }
-    panic!(
-        "sibling auth prewarm did not finish: {}",
-        std::fs::read_to_string(run.path()).unwrap()
+    prewarm_handle.await.unwrap();
+    drop(_active);
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\""),
+        "{jsonl}"
     );
+    assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
+    assert!(jsonl.contains("PrewarmOnly"), "{jsonl}");
+    assert!(jsonl.contains("sibling_auth_prewarm:codex"), "{jsonl}");
+    assert!(jsonl.contains("\"kind\":\"timing_done\""), "{jsonl}");
+    assert!(jsonl.contains("sibling_auth_prewarm"), "{jsonl}");
 }
 
 #[tokio::test]
@@ -1886,21 +1886,54 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
 }
 
 #[test]
-fn debug_runtime_envs_include_run_id_and_host_diagnostics_path() {
+fn runtime_envs_split_run_id_from_persisted_diagnostics_path() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
     let _guard = run.activate();
 
-    let envs = debug_runtime_envs(true);
+    let run_envs = run_runtime_envs();
+    let debug_envs = debug_runtime_envs(true);
 
-    assert!(envs.contains(&"JACKIN_DEBUG=1".to_owned()));
-    assert!(envs.contains(&format!("JACKIN_RUN_ID={}", run.run_id())));
-    assert!(envs.contains(&format!(
+    assert_eq!(run_envs, vec![format!("JACKIN_RUN_ID={}", run.run_id())]);
+    assert!(debug_envs.contains(&"JACKIN_DEBUG=1".to_owned()));
+    assert!(
+        !debug_envs
+            .iter()
+            .any(|env| env.starts_with("JACKIN_RUN_ID="))
+    );
+    assert!(debug_envs.contains(&format!(
         "JACKIN_RUN_DIAGNOSTICS_PATH={}",
         run.path().display()
     )));
+}
+
+#[test]
+fn debug_runtime_envs_omit_nonpersisted_diagnostics_path() {
+    let envs = debug_runtime_envs_for(true, None);
+
+    assert_eq!(envs, vec!["JACKIN_DEBUG=1".to_owned()]);
+    assert_eq!(
+        run_runtime_envs_for(Some("jk-run-backend")),
+        vec!["JACKIN_RUN_ID=jk-run-backend".to_owned()]
+    );
+}
+
+#[test]
+fn telemetry_runtime_envs_forward_effective_level_to_capsule() {
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Info),
+        vec!["JACKIN_TELEMETRY_LEVEL=info".to_owned()]
+    );
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Debug),
+        vec!["JACKIN_TELEMETRY_LEVEL=debug".to_owned()]
+    );
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Trace),
+        vec!["JACKIN_TELEMETRY_LEVEL=trace".to_owned()]
+    );
 }
 
 #[tokio::test]
@@ -2028,7 +2061,7 @@ plugins = ["code-review@claude-plugins-official"]
             .any(|call| call.contains("git -C") || call.contains("git clone"))
     );
     assert!(runner.recorded.iter().any(|call| {
-        call.contains("docker buildx build ")
+        call.contains("buildx build ")
             && call.contains("--output type=docker,name=jk_chainargos_the-architect")
     }));
     assert!(
@@ -2341,14 +2374,14 @@ plugins = ["code-review@claude-plugins-official"]
         runner
             .recorded
             .iter()
-            .any(|call| call.contains("docker buildx build ")
+            .any(|call| call.contains("buildx build ")
                 && call.contains("--output type=docker,name=jk_agent-smith"))
     );
     assert!(
         runner
             .run_recorded
             .iter()
-            .any(|call| call.contains("docker buildx build "))
+            .any(|call| call.contains("buildx build "))
     );
     assert!(
         docker
@@ -2438,7 +2471,7 @@ model = "gpt-5"
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker buildx build ") && call.contains("DerivedDockerfile"))
+        .find(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     // No published_image and no --rebuild → workspace mode without --pull
     assert!(!build_cmd.contains("--pull"));
@@ -3087,7 +3120,7 @@ plugins = []
         .recorded
         .iter()
         .find(|call| {
-            call.contains("docker buildx build ")
+            call.contains("buildx build ")
                 && call.contains("DerivedDockerfile")
                 && call.contains("--output type=docker,name=jk_agent-smith")
         })
@@ -3114,9 +3147,7 @@ plugins = []
     let build_run_index = runner
         .run_recorded
         .iter()
-        .position(|call| {
-            call.contains("docker buildx build ") && call.contains("DerivedDockerfile")
-        })
+        .position(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     let build_opts = &runner.run_options[build_run_index];
     assert!(build_opts.capture_stdout);
@@ -3237,7 +3268,7 @@ plugins = []
         !runner
             .recorded
             .iter()
-            .any(|c| c.contains("docker buildx build ") && c.contains("BaseDockerfile")),
+            .any(|c| c.contains("buildx build ") && c.contains("BaseDockerfile")),
         "fresh published images must not be restamped through a Docker build"
     );
     // The overlay derives FROM that local base, not the published image.
@@ -3245,7 +3276,7 @@ plugins = []
         runner
             .recorded
             .iter()
-            .any(|c| c.contains("docker buildx build ") && c.contains("DerivedDockerfile")),
+            .any(|c| c.contains("buildx build ") && c.contains("DerivedDockerfile")),
         "overlay must derive FROM the local base"
     );
 }
@@ -3298,12 +3329,20 @@ plugins = []
     let base_build = runner
         .recorded
         .iter()
-        .find(|c| c.contains("docker buildx build ") && c.contains("BaseDockerfile"))
+        .find(|c| c.contains("buildx build ") && c.contains("BaseDockerfile"))
         .expect("workspace build must first build the role base image");
     assert!(
         base_build.contains("--output type=docker,name=jk_agent-smith__base")
             && base_build.contains("compression=uncompressed"),
         "base build must load uncompressed jk_<role>__base; got: {base_build}"
+    );
+    assert!(
+        base_build.contains("--builder default"),
+        "base build consumes local images and must use the Docker-driver builder; got: {base_build}"
+    );
+    assert!(
+        base_build.contains("docker --context default buildx build"),
+        "base build must select the default Docker context for the default builder; got: {base_build}"
     );
     assert!(
         base_build.contains("--label jackin.construct.image=")
@@ -3319,11 +3358,19 @@ plugins = []
     let derived_build = runner
         .recorded
         .iter()
-        .find(|c| c.contains("docker buildx build ") && c.contains("DerivedDockerfile"))
+        .find(|c| c.contains("buildx build ") && c.contains("DerivedDockerfile"))
         .expect("workspace build must derive the overlay after the base");
     assert!(
         !derived_build.contains("--pull"),
         "derived build is FROM a local base and must never --pull; got: {derived_build}"
+    );
+    assert!(
+        derived_build.contains("--builder default"),
+        "derived build consumes the local role base and must use the Docker-driver builder; got: {derived_build}"
+    );
+    assert!(
+        derived_build.contains("docker --context default buildx build"),
+        "derived build must select the default Docker context for the default builder; got: {derived_build}"
     );
     assert!(
         derived_build.contains("--label jackin.image.recipe.hash="),
@@ -3374,7 +3421,7 @@ plugins = []
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker buildx build ") && call.contains("DerivedDockerfile"))
+        .find(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     assert!(
         !build_cmd.contains("--pull"),
@@ -3405,7 +3452,7 @@ async fn load_agent_cleans_up_sidecar_when_derived_build_fails() {
     let selector = RoleSelector::new(None, "agent-smith");
     let mut runner = FakeRunner::for_load_agent([String::new()]);
     runner.fail_with.push((
-        "docker buildx build ".to_owned(),
+        "buildx build ".to_owned(),
         "derived build failed".to_owned(),
     ));
 
@@ -3508,7 +3555,7 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
         "abc123".to_owned(),
     ]);
     runner.fail_on = vec![
-        "docker buildx build ".to_owned(),
+        "buildx build ".to_owned(),
         "gh auth token".to_owned(),
         "docker run --rm --entrypoint".to_owned(),
         "agent_binary".to_owned(),
@@ -3528,7 +3575,7 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        !recorded.contains("docker buildx build "),
+        !recorded.contains("buildx build "),
         "valid local recipe must skip docker build; recorded:\n{recorded}"
     );
     assert!(
@@ -3601,7 +3648,7 @@ plugins = []
         "abc123".to_owned(),
     ]);
     runner.fail_on = vec![
-        "docker buildx build ".to_owned(),
+        "buildx build ".to_owned(),
         "gh auth token".to_owned(),
         "docker run --rm --entrypoint".to_owned(),
         "agent_binary".to_owned(),
@@ -3621,8 +3668,8 @@ plugins = []
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        !recorded.contains("docker buildx build "),
-        "reuse decision must skip docker build; recorded:\n{recorded}"
+        !recorded.contains("buildx build "),
+        "refresh-background decision must skip docker build; recorded:\n{recorded}"
     );
     assert!(
         !recorded.contains("gh auth token"),
@@ -3808,7 +3855,7 @@ async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker buildx build ") && call.contains("DerivedDockerfile"))
+        .find(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
         .expect("stale role SHA must trigger a derived image rebuild");
     assert!(
         build_cmd.contains("--build-arg JACKIN_CACHE_BUST=stored-bust"),
@@ -4534,7 +4581,7 @@ async fn load_agent_does_not_short_circuit_on_running_instance() {
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        recorded.contains("docker buildx build "),
+        recorded.contains("buildx build "),
         "D13: build must run even when current-role container is running; recorded:\n{recorded}"
     );
     assert!(
@@ -4616,7 +4663,7 @@ async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
     );
     for forbidden in [
         &cached_repo.repo_dir.display().to_string(),
-        "docker buildx build ",
+        "buildx build ",
         "gh auth token",
         "docker inspect image:",
         "docker run --rm --entrypoint",
@@ -4708,7 +4755,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
         "started current-role instance must attach through Capsule; recorded:\n{recorded}"
     );
     for forbidden in [
-        "docker buildx build ",
+        "buildx build ",
         "gh auth token",
         "docker inspect image:",
         "docker run --rm --entrypoint",
@@ -4795,7 +4842,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
         "valid-image recreate path must run the missing role container from the reusable image; recorded:\n{recorded}"
     );
     for forbidden in [
-        "docker buildx build ",
+        "buildx build ",
         "gh auth token",
         "docker run --rm --entrypoint",
     ] {
@@ -4852,7 +4899,7 @@ plugins = []
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker buildx build "))
+        .find(|call| call.contains("buildx build "))
         .unwrap();
     assert!(
         build_cmd.contains("--pull"),
@@ -4941,7 +4988,7 @@ plugins = []
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        recorded.contains("docker buildx build "),
+        recorded.contains("buildx build "),
         "--rebuild must build even when a running current-role container exists \
          (must not take the attach/start fast path); recorded:\n{recorded}"
     );
@@ -5015,7 +5062,7 @@ plugins = []
         runner
             .recorded
             .iter()
-            .any(|call| call.contains("docker buildx build ") && call.contains("DerivedDockerfile")),
+            .any(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile")),
         "derived overlay build must still run"
     );
 }
@@ -5139,7 +5186,7 @@ plugins = []
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker buildx build "))
+        .find(|call| call.contains("buildx build "))
         .unwrap();
     // A stale published image falls back to a workspace role-base build, but it
     // is not an operator-requested rebuild: keep Docker's layer cache and do
@@ -7171,6 +7218,7 @@ fn image_materialization_plan_uses_image_decision() {
     emit_image_materialization_plan(true, "published_image_stale", false, "jk-refresh");
     emit_image_materialization_plan(false, "hooks_hash_changed", true, "jk-recreate");
 
+    drop(_active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("CreateFromValidImage"), "{jsonl}");
     assert!(
@@ -7221,6 +7269,7 @@ async fn current_restore_candidate_lookup_records_timing() {
 
     // D13: launch never reconnects to a live instance → resolve returns None
     assert_eq!(resolution, None);
+    drop(_active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         jsonl.contains("current_restore_candidate")
@@ -7325,6 +7374,7 @@ async fn single_running_current_role_candidate_is_skipped_before_agent_selection
     .unwrap();
 
     assert_eq!(candidate, None);
+    drop(_active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         jsonl.contains("launch_never_reconnects_to_live_instance"),
@@ -7377,6 +7427,7 @@ async fn single_stopped_current_role_candidate_starts_before_agent_selection() {
             container_name.to_owned()
         ))
     );
+    drop(_active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("StartStopped"), "{jsonl}");
     assert!(
@@ -7428,6 +7479,7 @@ async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
         candidate.resolution,
         RestoreResolution::RecreateCurrentRole(container_name.to_owned())
     );
+    drop(_active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         jsonl.contains("single_current_role_agent_container_missing"),

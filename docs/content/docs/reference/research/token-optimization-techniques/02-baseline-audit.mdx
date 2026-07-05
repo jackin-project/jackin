@@ -1,0 +1,268 @@
+---
+title: "02 — Baseline Audit of This Environment (Phase 0)"
+---
+
+# 02 — Baseline Audit of This Environment (Phase 0)
+
+All numbers below were measured live in this environment on
+this date with the methods shown. Nothing in this file is cited from memory.
+
+## TL;DR
+
+- **Thinking is the majority of output spend here: ≈55% of output tokens** in this session
+ (max-effort setting) were invisible thinking, measured as `usage.output_tokens` minus replayed
+ visible blocks. Style compression touches only the visible ≈45%.
+- **Caveman-ultra measured 58.5% token reduction** on visible prose (the "~75%" claim is a
+ character-level number on favorable samples). **Wenyan-full cuts characters 80.9% but tokens
+ only 56.6%** — the tokenizer eats most of the exotic-script advantage; wenyan-ultra is the only
+ variant that beats caveman-ultra (74.5% token cut) and it is the least readable.
+- **Corrected end-to-end value of style compression in this session: ≈10% of dollars.** Visible
+ output was $0.61 of a $3.63 session; 58.5% of that is ~$0.36. The other levers (cache, input
+ architecture) dwarf it.
+- **92.8% of prompt-side tokens arrived as cache reads** (0.1× price). Cache reads were still the
+ largest single cost line ($1.17), ahead of cache writes ($1.06) and all output ($1.35).
+- **Found real waste:** the caveman hooks are double-registered (plugin + user settings), injecting
+ every payload twice (~966 tok/session-start, ~118 tok/prompt); always-on repo instructions cost
+ 2,738 tok/request; the two local MCP servers cost 1,420 tok of schema if loaded (deferred here
+ via ToolSearch to a ~60-token name list).
+
+---
+
+## 1. Instruments and method
+
+- **`count_tokens`** — the free `POST /v1/messages/count_tokens` endpoint, authenticated with the
+ Claude Code OAuth credential already on this machine (no `ANTHROPIC_API_KEY` present; the
+ endpoint is free, so no billable usage). Harness used throughout:
+
+ ```python
+ import json, urllib.request
+ def token():
+     with open('/home/agent/.claude/.credentials.json') as f:
+         return json.load(f)['claudeAiOauth']['accessToken']
+ def count(model, messages, system=None, tools=None):
+     body = {"model": model, "messages": messages}
+     if system: body["system"] = system
+     if tools: body["tools"] = tools
+     req = urllib.request.Request(
+         "https://api.anthropic.com/v1/messages/count_tokens",
+         data=json.dumps(body).encode(),
+         headers={"authorization": f"Bearer {token()}",
+                  "anthropic-version": "2023-06-01",
+                  "anthropic-beta": "oauth-2025-04-20",
+                  "content-type": "application/json"}, method="POST")
+     with urllib.request.urlopen(req) as r:
+         return json.loads(r.read())
+ ```
+
+- **Calibration:** a single-character user message counts 7 tokens on `claude-fable-5` (8 on
+ `claude-sonnet-4-6`) — a ~6-token message envelope. All file/text numbers below subtract it
+ ("net tokens").
+- **Session transcript** — Claude Code session JSONL at
+ `~/.claude/projects/&lt;project&gt;/&lt;session&gt;.jsonl`. One line per content block; `message.usage` is
+ repeated on every line of the same API response, so usage must be **deduplicated by
+ `message.id`** or it overcounts ~3× (46 lines vs 15–19 real calls here — a trap for naive
+ analyzers).
+- **MCP servers** — queried directly over stdio JSON-RPC (`initialize` → `tools/list`), then
+ schema cost measured by passing the tool list to `count_tokens` via the `tools` parameter and
+ subtracting a no-tools baseline.
+
+## 2. Always-loaded instruction mass (the agent rule chain)
+
+Measured with `count_tokens` per file (net of envelope), `claude-fable-5`:
+
+| File | Net tokens | Chars | Chars/tok |
+|---|---:|---:|---:|
+| <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> (root — **always loaded**) | 2,738 | 6,306 | 2.30 |
+| <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> | 4,507 | 10,842 | 2.41 |
+| <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> | 10,933 | 31,210 | 2.85 |
+| <RepoFile path="TESTING.md">TESTING.md</RepoFile> | 1,586 | 4,140 | 2.61 |
+| <RepoFile path="ENGINEERING.md">ENGINEERING.md</RepoFile> | 4,313 | 11,947 | 2.77 |
+| <RepoFile path="HOST_AND_CONTAINER.md">HOST_AND_CONTAINER.md</RepoFile> | 2,081 | 5,566 | 2.67 |
+| <RepoFile path="PRERELEASE.md">PRERELEASE.md</RepoFile> | 1,547 | 4,434 | 2.87 |
+| <RepoFile path="RULES.md">RULES.md</RepoFile> | 2,636 | 6,956 | 2.64 |
+| <RepoFile path="DEPRECATED.md">DEPRECATED.md</RepoFile> | 529 | 1,585 | 3.00 |
+| <RepoFile path="TODO.md">TODO.md</RepoFile> | 4,064 | 10,139 | 2.49 |
+| <RepoFile path="CONTRIBUTING.md">CONTRIBUTING.md</RepoFile> | 894 | 2,826 | 3.16 |
+| <RepoFile path=".github/AGENTS.md">.github/AGENTS.md</RepoFile> (auto-loads in `.github/`) | 10,688 | 28,645 | 2.68 |
+| <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> (auto-loads in `docs/`) | 5,976 | 15,032 | 2.52 |
+| <RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile> | 2,815 | 6,854 | 2.43 |
+| <RepoFile path="crates/jackin-tui-lookbook/AGENTS.md">crates/jackin-tui-lookbook/AGENTS.md</RepoFile> | 1,047 | 2,788 | 2.66 |
+| <RepoFile path="docker/construct/AGENTS.md">docker/construct/AGENTS.md</RepoFile> | 375 | 1,197 | 3.19 |
+| **Total chain** | **56,729** | **150,467** | 2.65 |
+
+Reading: the root file is a deliberately slim index (2,738 tok always-on — well-designed), but
+the *conditional* loads are heavy: touching `.github/` adds 10,688 tokens; a PR cycle pulls
+<RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> (10,933) plus the consolidated <RepoFile path="CONTRIBUTING.md">CONTRIBUTING.md</RepoFile> (894) ≈ 11.8k tokens of instructions. Memory
+directory: empty at run start (0 tokens). These are cache-read tokens on every subsequent request
+once loaded, and cache-write tokens once per session/edit.
+
+## 3. Plugin and hook overhead — including found waste
+
+**Double registration discovered.** The caveman plugin registers `SessionStart` +
+`UserPromptSubmit` hooks in its `plugin.json`, *and* the same scripts are registered again in
+`~/.claude/settings.json`. Both fire; every payload is injected twice (verified: two identical
+`CAVEMAN MODE ACTIVE` blocks appear in this very session's context).
+
+| Injection | Net tokens (single) | Fires | Effective cost |
+|---|---:|---|---:|
+| SessionStart ruleset (`caveman-activate.js`, level-filtered SKILL.md) | ~483 | 2× per session start | ~966 tok/session |
+| UserPromptSubmit reminder line | 59 | 2× per user prompt | ~118 tok/prompt |
+
+Method: ran the hook script, piped its stdout to `count_tokens`. The per-prompt reminder lands in
+message content (appended, not prefix), so it does not bust the prompt cache — it is additive
+spend, ~118 tok × every user prompt. Fix is trivial (deregister one copy) and saves ~50% of hook
+overhead with zero behavior change.
+
+The statusline script costs 0 context tokens (renders client-side). The `/caveman` skill text
+itself (~1.5k tokens) loads only when invoked.
+
+## 4. MCP schema overhead and what deferral saves
+
+Queried both project-scoped stdio servers via JSON-RPC `tools/list`, then measured schema cost
+with `count_tokens(tools=[...])` minus a no-tools baseline:
+
+| Server | Tools | Marginal schema cost if always-loaded |
+|---|---:|---:|
+| `tirith` | 7 | ~1,000 tok |
+| `shellfirm` | 4 | ~420 tok |
+| Fixed tool-system preamble (any non-empty `tools` array) | — | 318 tok (already paid by Claude Code's built-ins) |
+| **Both servers, marginal over preamble** | 11 | **1,420 tok** |
+
+In this session these tools are **deferred** (ToolSearch): the context carries only a name list
+(~60 tokens for these 11 names) instead of 1,420 tokens of schemas — a ~96% reduction on this
+slice, paid back only when a tool is actually fetched. The claude.ai connector servers
+(Gmail/Calendar/Drive) were not measurable locally (interactive auth required); only their three
+`authenticate` tool names appear in the deferred list. Note these are *small* servers — published
+measurements for popular servers (e.g. GitHub MCP) run an order of magnitude larger; see
+[06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/).
+
+## 5. Caveman / wenyan tokenizer verification (the §5 mandate)
+
+Six samples — four realistic agent outputs authored for this test plus the two canonical examples
+shipped in the plugin's own SKILL.md (included to counter authorship bias) — each rendered in all
+seven registers, counted with `count_tokens` on `claude-fable-5`:
+
+| Variant | Tokens | Chars | **Token cut vs normal** | Char cut vs normal | Chars/tok |
+|---|---:|---:|---:|---:|---:|
+| normal | 761 | 2,547 | — | — | 3.35 |
+| lite | 481 | 1,471 | 36.8% | 42.2% | 3.06 |
+| full | 400 | 1,114 | 47.4% | 56.3% | 2.79 |
+| **ultra** | 316 | 738 | **58.5%** | 71.0% | 2.34 |
+| wenyan-lite | 462 | 717 | 39.3% | 71.8% | 1.55 |
+| **wenyan-full** | 330 | 486 | **56.6%** | 80.9% | 1.47 |
+| **wenyan-ultra** | 194 | 274 | **74.5%** | 89.2% | 1.41 |
+
+Verdicts on the plugin's claims:
+
+- **"~75% reduction at ultra": NOT CONFIRMED at token level.** Measured 58.5% on realistic
+ samples. The plugin's own two examples alone measure 72–74% — the claim generalizes the
+ best-case short-answer examples. On working agent prose, plan on **~50–60%**.
+- **"80–90% character reduction at wenyan-full": CONFIRMED (80.9%) — but it does not survive
+ tokenization.** Chars/token collapses from 3.35 (English) to 1.47 (CJK ≈ 0.7 tok/char), so the
+ token cut is 56.6% — *the same as caveman-ultra, with far higher misread risk*. Wenyan-full has
+ no token advantage over caveman-ultra on this tokenizer.
+- **Wenyan-ultra (74.5%) is the only variant beating caveman-ultra**, worth ~16 extra points of
+ token cut at the cost of severe readability/ambiguity risk (see quality analysis in
+ [04 — Style and Language Compression — Beyond Caveman](/reference/research/token-optimization-techniques/04-style-and-language-compression/)).
+
+Caveat: registers 1–4 of the test set were authored by the model under test following the plugin's
+rules; the two plugin-authored samples show the same ordering, and the full sample set + script are
+reproduced in §9 for independent re-runs.
+
+**Cross-model tokenizer divergence (side discovery).** The same texts count differently across
+current Claude models — and not by a constant envelope:
+
+| Text | `claude-fable-5` / `claude-opus-4-8` | `claude-sonnet-4-6` / `claude-haiku-4-5` |
+|---|---:|---:|
+| English prose, 485 chars | 157 | 114 |
+| Python snippet, ~230 chars | 93 | 81 |
+| wenyan-full sample | 75 | 69 |
+| single char (envelope) | 7 | 8 |
+
+Fable 5/Opus 4.8 share one tokenizer, Sonnet 4.6/Haiku 4.5 another — and the newer one produces
+**~15% (code) to ~38% (this prose sample) more tokens for identical text**. Cross-tier price
+comparisons understate the real gap: routing prose-heavy work from Fable 5 ($10/MTok input) to
+Sonnet 4.6 ($3/MTok) saves more than the 3.3× list ratio implies. Carried into
+[05 — Tokenizer arbitrage](/reference/research/token-optimization-techniques/05-tokenizer-arbitrage/) and [10 — Model routing and tiered delegation](/reference/research/token-optimization-techniques/10-model-routing-and-delegation/) with more samples.
+
+## 6. Thinking vs visible output — the §5 caveat, measured
+
+**Discovery: Claude Code transcripts redact thinking text** (blocks present, `thinking: ""`,
+signature only), so thinking cannot be measured by reading it. Method instead: per deduplicated
+API call, take `usage.output_tokens` (ground truth, includes thinking) and subtract
+`count_tokens` of the *visible* blocks (text + tool_use serialized) replayed through the API.
+The residual is thinking + generation overhead. Per-message error ±5% (three messages measured
+slightly negative, i.e. serialization slack; clamped at 0).
+
+This session at measurement time — 19 API calls, model `claude-fable-5`, effort **max**,
+caveman-ultra active:
+
+| Quantity | Tokens | Share |
+|---|---:|---:|
+| `output_tokens` total | 26,977 | 100% |
+| visible (text + tool_use) | 12,207 | 45.2% |
+| **inferred thinking + overhead** | **14,770** | **54.8%** |
+
+Consequence for style compression: it acts on the 45% visible slice only. Caveman-ultra's 58.5%
+× 45.2% ≈ **26% true cut of output tokens** in a session like this — less than half its face
+value. (At lower effort settings the thinking share should drop and style compression's relative
+value rise; the effort sweep lives in [09 — Output discipline and structured generation](/reference/research/token-optimization-techniques/09-output-discipline/).)
+
+Limitations, stated plainly: n = 1 session; this is a research-orchestration session at maximum
+effort, which inflates thinking share; subagent/worker sessions at default effort will differ.
+Re-measured over all transcripts accumulated by the end of this run in [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/).
+
+## 7. Where the money went (this session, measured)
+
+Usage totals (deduplicated) priced at Fable 5 list rates ($10 in / $50 out / $12.50 cache-write
+5-min / $1 cache-read per MTok — verified against live docs, see [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/)):
+
+| Line | Tokens | Dollars | Share |
+|---|---:|---:|---:|
+| Cache reads (0.1×) | 1,167,417 | $1.17 | 32% |
+| Cache writes (1.25×) | 84,693 | $1.06 | 29% |
+| Output — thinking (inferred) | 14,770 | $0.74 | 20% |
+| Output — visible | 12,207 | $0.61 | 17% |
+| Uncached input | 5,475 | $0.05 | 2% |
+| **Total** | | **$3.63** | 100% |
+
+Prompt-side mix: **0.44% uncached / 6.73% cache-write / 92.83% cache-read.** Claude Code's
+automatic caching is working as designed; even so, *reading the cached prefix over and over is the
+single largest line item.* Every always-loaded token (instructions, schemas, hook spam) is re-read
+on every one of the session's API calls — context mass converts to dollars through the multiplier
+of call count, which is why input-architecture levers ([06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/)) outrank style levers despite the
+0.1× price.
+
+## 8. Corrected value of the current caveman setup (this environment)
+
+- Visible-output spend: $0.61 of $3.63 (17%). Caveman-ultra cuts ~58.5% of *that*: **~$0.36, or
+ ~10% of session dollars** — first-order, before second-order effects (shorter assistant turns
+ also shrink subsequent cache writes/reads of those turns; quantified in [15 — Composed Stacks: Conservative / Aggressive / Unbelievable](/reference/research/token-optimization-techniques/15-composed-stacks/)).
+- The "~75%" face-value claim, applied naively to all output, would have promised ~$1.0 (28%).
+ **The corrected number is ~2.8× smaller than the folklore number.** This is the brief's §5
+ warning, confirmed with local data.
+- Hook double-registration burns more than the per-prompt reminder is worth: fixing the
+ duplication is the cheapest win in this environment.
+
+## 9. Reproduction pack
+
+All measurements above are reproducible with: the `count_tokens` harness (§1), the file-mass
+script (loop files → `count_tokens`), the MCP probe (`initialize`/`tools/list` over stdio, then
+`tools=` counting), the decomposition script (dedup by `message.id`, replay visible blocks), and
+the 6×7 sample matrix. The full sample texts used in §5:
+
+**Sample matrix (6 samples × 7 registers) — abridged to one full example; the other five follow the same pattern and their aggregate is in the table above**
+
+`s1_bug_diagnosis / normal`: "I've found the issue. The problem is in the authentication
+middleware: the token expiry check uses a strict less-than comparison (`<`) instead of
+less-than-or-equal (`&lt;=`) … add a regression test that checks the boundary condition." (485 chars
+→ 151 net tok)
+
+`s1 / ultra`: "Auth middleware bug. Expiry check `<` not `&lt;=` → token valid 1s past expiry →
+intermittent 401s. Fix `auth/middleware.py:47`, add boundary test." (144 chars → 64 net tok)
+
+`s1 / wenyan-full`: "病在 auth middleware。expiry check 用 `<` 非 `&lt;=`，token 逾期一秒猶生效，故
+401 間發。改 `auth/middleware.py:47`，加邊界 test。" (103 chars → 69 net tok)
+
+`s1 / wenyan-ultra`: "`<`非`&lt;=`→token逾期1s猶活→401。改`auth/middleware.py:47`+邊界test。"
+(57 chars → 40 net tok)

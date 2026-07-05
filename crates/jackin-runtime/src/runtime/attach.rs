@@ -117,11 +117,10 @@ pub(super) async fn wait_for_capsule_daemon(
     const INITIAL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
     const MAX_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
-    jackin_diagnostics::active_timing_started(
-        "capsule",
-        "wait_capsule_socket",
-        Some(container_name),
-    );
+    let active_run = jackin_diagnostics::active_run();
+    if let Some(run) = &active_run {
+        run.timing_started("capsule", "wait_capsule_socket", Some(container_name));
+    }
     let wait_result = crate::spin_wait::spin_wait_ramped(
         "Waiting for jackin-capsule daemon",
         MAX_ATTEMPTS,
@@ -136,15 +135,17 @@ pub(super) async fn wait_for_capsule_daemon(
     )
     .await
     .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"));
-    jackin_diagnostics::active_timing_done(
-        "capsule",
-        "wait_capsule_socket",
-        if wait_result.is_ok() {
-            Some("ready")
-        } else {
-            Some("error")
-        },
-    );
+    if let Some(run) = &active_run {
+        run.timing_done(
+            "capsule",
+            "wait_capsule_socket",
+            if wait_result.is_ok() {
+                Some("ready")
+            } else {
+                Some("error")
+            },
+        );
+    }
     wait_result
 }
 

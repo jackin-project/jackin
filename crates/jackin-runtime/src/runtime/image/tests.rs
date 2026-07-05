@@ -356,28 +356,22 @@ plugins = []
     .unwrap();
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
 
-    spawn_sibling_runtime_prewarm(&paths, &validated_repo, Agent::Claude, true);
+    let handle = spawn_sibling_runtime_prewarm(&paths, &validated_repo, Agent::Claude, true)
+        .expect("expected sibling runtime prewarm task");
 
-    for _ in 0..20 {
-        let diagnostics = std::fs::read_to_string(run.path()).unwrap();
-        if diagnostics.contains("\"kind\":\"runtime_prewarm_done\"") {
-            assert!(diagnostics.contains("prewarming sibling runtime binaries"));
-            assert!(diagnostics.contains("\"kind\":\"launch_plan\""));
-            assert!(diagnostics.contains("PrewarmOnly"));
-            assert!(diagnostics.contains("sibling_runtime_prewarm:kimi"));
-            assert!(diagnostics.contains("ensure_kimi_binary"));
-            assert!(diagnostics.contains("prefetched=1"));
-            assert!(diagnostics.contains("fallback=0"));
-            assert!(diagnostics.contains("versions=0"));
-            assert!(!diagnostics.contains("ensure_claude_binary"));
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-    }
-    panic!(
-        "sibling runtime prewarm did not finish: {}",
-        std::fs::read_to_string(run.path()).unwrap()
-    );
+    handle.await.unwrap();
+    drop(_active);
+    let diagnostics = std::fs::read_to_string(run.path()).unwrap();
+    assert!(diagnostics.contains("\"kind\":\"runtime_prewarm_done\""));
+    assert!(diagnostics.contains("prewarming sibling runtime binaries"));
+    assert!(diagnostics.contains("\"kind\":\"launch_plan\""));
+    assert!(diagnostics.contains("PrewarmOnly"));
+    assert!(diagnostics.contains("sibling_runtime_prewarm:kimi"));
+    assert!(diagnostics.contains("ensure_kimi_binary"));
+    assert!(diagnostics.contains("prefetched=1"));
+    assert!(diagnostics.contains("fallback=0"));
+    assert!(diagnostics.contains("versions=0"));
+    assert!(!diagnostics.contains("ensure_claude_binary"));
 }
 
 #[tokio::test]
@@ -411,9 +405,13 @@ plugins = []
     .unwrap();
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
 
-    spawn_sibling_runtime_prewarm(&paths, &validated_repo, Agent::Claude, false);
+    let handle = spawn_sibling_runtime_prewarm(&paths, &validated_repo, Agent::Claude, false);
 
-    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    assert!(
+        handle.is_none(),
+        "rebuilt selected image must not spawn prewarm"
+    );
+    drop(_active);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         diagnostics.contains("\"kind\":\"runtime_prewarm_skipped\"")
@@ -795,9 +793,9 @@ fn recorded_buildx_build(runner: &FakeRunner) -> &str {
     runner
         .run_recorded
         .iter()
-        .find(|command| command.starts_with("docker buildx build "))
+        .find(|command| command.contains("buildx build "))
         .map(String::as_str)
-        .expect("expected docker buildx build command")
+        .expect("expected buildx build command")
 }
 
 #[tokio::test]
@@ -1836,7 +1834,7 @@ async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
     assert_eq!(row.image, image);
     let recorded = runner.recorded.join("\n");
     assert!(
-        !recorded.contains("docker buildx build "),
+        !recorded.contains("buildx build "),
         "valid prewarm image should skip expensive build path; recorded:\n{recorded}"
     );
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
@@ -1917,7 +1915,7 @@ plugins = []
     assert_eq!(row.image, image);
     let recorded = runner.recorded.join("\n");
     assert!(
-        !recorded.contains("docker buildx build "),
+        !recorded.contains("buildx build "),
         "valid explicit prewarm image should skip expensive build path; recorded:\n{recorded}"
     );
     let docker_recorded = docker.recorded.borrow();

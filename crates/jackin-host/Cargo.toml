@@ -30,5 +30,5 @@ url = "2"
 workspace = true
 
 [dev-dependencies]
-tempfile = "3"
-tokio = { version = "1", features = ["macros", "rt"] }
+tempfile = "=3.27.0"
+tokio = { version = "=1.52.3", features = ["macros", "rt"] }

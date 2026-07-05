@@ -235,7 +235,7 @@ fn render_launch_frame(
         frame,
         view,
         run_id,
-        run_log_path,
+        Some(run_log_path),
         no_motion,
         rain,
         jackin_diagnostics::is_debug_mode(),
