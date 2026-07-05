@@ -276,6 +276,14 @@ pub(crate) struct ClaudeOAuthUsageResponse {
     #[serde(alias = "seven_day_cowork")]
     #[serde(rename = "seven_day_routines")]
     pub(crate) seven_day_routines: Option<ClaudeOAuthUsageWindow>,
+    // Authoritative shape for Session / "All models" Weekly / per-model Weekly
+    // (Fable, and future model-scoped limits). The API migrated model-specific
+    // windows here: the legacy `seven_day_sonnet`/`seven_day_opus` keys are
+    // still returned but `null` on current accounts — the data lives only in
+    // `limits` as `weekly_scoped` entries. Surfaced generically so a new model
+    // codename (Fable today, others tomorrow) appears without per-model code.
+    #[serde(default)]
+    pub(crate) limits: Vec<ClaudeOAuthLimit>,
     #[serde(rename = "extra_usage")]
     pub(crate) extra_usage: Option<ClaudeOAuthExtraUsage>,
     // The newer, self-describing money object. Preferred over `extra_usage`
@@ -336,6 +344,36 @@ pub(crate) struct ClaudeOAuthUsageWindow {
     pub(crate) used_dollars: Option<f64>,
 }
 
+/// One entry in the `limits` array — the authoritative shape for Session,
+/// "All models" Weekly, and per-model Weekly (Fable, and future model-scoped
+/// limits). `percent` is already-scaled (0..=100); `kind` selects the bucket
+/// (`session` | `weekly_all` | `weekly_scoped`); `scope.model.display_name`
+/// labels a `weekly_scoped` window; `severity` mirrors the web console's meter
+/// color and maps to [`UsageSeverity`]. The API also sends `group`, `is_active`,
+/// `scope.surface`, and `model.id`, but those carry no rendering meaning today,
+/// so they are intentionally not modeled — serde ignores unknown fields, and a
+/// field is added back here only when something reads it (no dead fields).
+#[derive(Debug, Deserialize)]
+pub(crate) struct ClaudeOAuthLimit {
+    pub(crate) kind: Option<String>,
+    pub(crate) percent: Option<serde_json::Value>,
+    pub(crate) severity: Option<String>,
+    #[serde(rename = "resets_at")]
+    pub(crate) resets_at: Option<String>,
+    pub(crate) scope: Option<ClaudeOAuthLimitScope>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ClaudeOAuthLimitScope {
+    pub(crate) model: Option<ClaudeOAuthLimitModel>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ClaudeOAuthLimitModel {
+    #[serde(rename = "display_name")]
+    pub(crate) display_name: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClaudeOAuthExtraUsage {
     #[serde(rename = "is_enabled")]
@@ -360,86 +398,290 @@ pub(crate) struct ClaudeCliUsage {
     pub(crate) session_used: Option<f64>,
     pub(crate) weekly_used: Option<f64>,
     pub(crate) sonnet_used: Option<f64>,
+    /// Per-model weekly windows the CLI prints as `Current week (<model>): …`
+    /// (Fable today; future model codenames). Each entry is `(model label,
+    /// percent used)`. Distinct from `sonnet_used`, which preserves the legacy
+    /// `(Sonnet only)` line and its "Sonnet" bucket label.
+    pub(crate) scoped_weekly: Vec<(String, f64)>,
 }
 
 impl ClaudeCliUsage {
     pub(crate) fn buckets(&self) -> Vec<QuotaBucketView> {
-        let mut buckets = Vec::new();
-        // The impoverished CLI fallback still fills the headline slots — tag them
-        // so the status bar renders even when the OAuth fetch failed (the slot
-        // is a semantic role, independent of which source produced the window).
-        push_claude_cli_bucket(
-            &mut buckets,
-            "Session",
-            Some(StatusSlot::Session),
-            self.session_used,
-        );
-        push_claude_cli_bucket(
-            &mut buckets,
-            "Weekly",
-            Some(StatusSlot::Weekly),
-            self.weekly_used,
-        );
-        push_claude_cli_bucket(&mut buckets, "Sonnet", None, self.sonnet_used);
-        buckets
+        // The CLI fallback reuses the same unified window model + builder as
+        // the OAuth path, so a CLI "Weekly" line and an OAuth `weekly_all`
+        // limit render identically (headline slot, over-cap label). CLI windows
+        // carry no timestamps, so `now` is unused for pace/reset formatting.
+        let mut windows: Vec<ClaudeQuotaWindow> = Vec::new();
+        if let Some(used) = self.session_used {
+            windows.push(ClaudeQuotaWindow::headline(
+                "Session",
+                StatusSlot::Session,
+                used,
+                Some(CLAUDE_SESSION_WINDOW_SECONDS),
+            ));
+        }
+        if let Some(used) = self.weekly_used {
+            windows.push(ClaudeQuotaWindow::headline(
+                "Weekly",
+                StatusSlot::Weekly,
+                used,
+                Some(CLAUDE_WEEKLY_WINDOW_SECONDS),
+            ));
+        }
+        if let Some(used) = self.sonnet_used {
+            windows.push(ClaudeQuotaWindow::scoped("Sonnet", used));
+        }
+        for (label, used) in &self.scoped_weekly {
+            windows.push(ClaudeQuotaWindow::scoped(label, *used));
+        }
+        windows.into_iter().map(|w| w.into_bucket(0)).collect()
     }
 }
 
-pub(crate) fn push_claude_cli_bucket(
-    buckets: &mut Vec<QuotaBucketView>,
-    label: &str,
-    slot: Option<StatusSlot>,
-    used: Option<f64>,
-) {
-    let Some(used) = used else {
-        return;
-    };
-    buckets.push(with_status_slot(
-        bucket(
-            label,
-            used_percent_label(used),
+/// Session (5-hour) window duration, shared by every source that produces one.
+const CLAUDE_SESSION_WINDOW_SECONDS: i64 = 5 * 60 * 60;
+/// Weekly window duration, shared by every source (`weekly_all`,
+/// `weekly_scoped`, legacy `seven_day*`).
+const CLAUDE_WEEKLY_WINDOW_SECONDS: i64 = 7 * 24 * 60 * 60;
+
+/// One normalized Claude quota window — the single intermediate shape every
+/// utilization source feeds before it becomes a [`QuotaBucketView`]. The
+/// authoritative `limits` array, the legacy named windows (`seven_day*`), and
+/// the `claude -p /usage` CLI fallback all produce `ClaudeQuotaWindow`s, so a
+/// Session window, a Fable `weekly_scoped` limit, a legacy Sonnet window, and a
+/// CLI "Weekly" line share one builder instead of three near-identical ones.
+/// Fable is not a special case here — it is just another `weekly_scoped` entry.
+#[derive(Debug, Clone)]
+pub(crate) struct ClaudeQuotaWindow {
+    pub(crate) label: String,
+    pub(crate) slot: Option<StatusSlot>,
+    /// Used fraction on the scale the shared helpers expect: a raw
+    /// `utilization` (fraction-or-percent) for legacy/CLI sources, or
+    /// `f64::from(percent)` for `limits`. `used_percent_label` and
+    /// `remaining_from_fraction` resolve the fraction-vs-percent ambiguity, so
+    /// both source shapes flow through unchanged.
+    pub(crate) used: Option<f64>,
+    pub(crate) reset_at: Option<i64>,
+    pub(crate) window_seconds: Option<i64>,
+    pub(crate) severity: UsageSeverity,
+}
+
+impl ClaudeQuotaWindow {
+    /// A non-headline window with no reset/pace data (the CLI fallback shape).
+    fn scoped(label: &str, used: f64) -> Self {
+        Self {
+            label: label.to_owned(),
+            slot: None,
+            used: Some(used),
+            reset_at: None,
+            window_seconds: None,
+            severity: UsageSeverity::Normal,
+        }
+    }
+
+    /// A headline window with a duration (so pace can be computed when the
+    /// source also carries a reset). Used by the CLI Session/Weekly lines.
+    fn headline(label: &str, slot: StatusSlot, used: f64, window_seconds: Option<i64>) -> Self {
+        Self {
+            label: label.to_owned(),
+            slot: Some(slot),
+            used: Some(used),
+            reset_at: None,
+            window_seconds,
+            severity: UsageSeverity::Normal,
+        }
+    }
+
+    /// The one bucket builder for every Claude utilization source. The used
+    /// label is uncapped (a window over its limit renders `150% used` while
+    /// `remaining` clamps at 0); pace is computed only when both a reset and a
+    /// window duration are known; severity mirrors the API for meter color.
+    pub(crate) fn into_bucket(self, now: i64) -> QuotaBucketView {
+        let remaining = self.used.and_then(remaining_from_fraction);
+        let pace = quota_pace_label(remaining, self.reset_at, self.window_seconds, now);
+        let mut view = timed_bucket(
+            &self.label,
+            self.used.and_then(used_percent_label),
             Some("100%".to_owned()),
-            remaining_from_fraction(used),
-            None,
-            None,
+            remaining,
+            self.reset_at,
+            now,
+            pace.as_deref(),
             UsageSnapshotStatus::Fresh,
-        ),
-        slot,
-    ));
+        );
+        view.status_slot = self.slot;
+        view.severity = self.severity;
+        view
+    }
+}
+
+impl ClaudeOAuthUsageWindow {
+    /// Normalize a legacy named window (`five_hour`, `seven_day*`) into the
+    /// unified quota model. `slot` and `window_seconds` carry the semantic the
+    /// fixed field name can't (Session/Weekly headline + duration for pace), so
+    /// a legacy weekly Sonnet window is paced the same way as a `weekly_scoped`
+    /// Fable limit — uniform handling across API generations.
+    fn into_quota(
+        self,
+        label: &str,
+        slot: Option<StatusSlot>,
+        window_seconds: Option<i64>,
+    ) -> ClaudeQuotaWindow {
+        ClaudeQuotaWindow {
+            label: label.to_owned(),
+            slot,
+            used: self.utilization,
+            reset_at: self.resets_at.as_deref().and_then(parse_iso_epoch),
+            window_seconds,
+            // Legacy named windows carry no severity field; the API meter
+            // color only arrived with `limits`.
+            severity: UsageSeverity::Normal,
+        }
+    }
+}
+
+impl ClaudeOAuthLimit {
+    /// Normalize a `limits`-array entry into the unified quota model. Returns
+    /// `None` for an entry without a usable shape: a missing `percent`, an
+    /// unknown `kind`, or a `weekly_scoped` window whose model has no display
+    /// name (omitted, never fabricated into an empty-label row).
+    fn as_quota(&self) -> Option<ClaudeQuotaWindow> {
+        let percent = json_number(self.percent.as_ref()?)?;
+        let (label, slot, window_seconds) = match self.kind.as_deref()? {
+            "session" => (
+                "Session".to_owned(),
+                Some(StatusSlot::Session),
+                Some(CLAUDE_SESSION_WINDOW_SECONDS),
+            ),
+            "weekly_all" => (
+                "All models".to_owned(),
+                Some(StatusSlot::Weekly),
+                Some(CLAUDE_WEEKLY_WINDOW_SECONDS),
+            ),
+            "weekly_scoped" => (
+                self.scoped_label()?,
+                None,
+                Some(CLAUDE_WEEKLY_WINDOW_SECONDS),
+            ),
+            _ => return None,
+        };
+        Some(ClaudeQuotaWindow {
+            label,
+            slot,
+            used: Some(percent),
+            reset_at: self.resets_at.as_deref().and_then(parse_iso_epoch),
+            window_seconds,
+            severity: severity_from_label(self.severity.as_deref()),
+        })
+    }
+
+    /// The model display name for a `weekly_scoped` limit, trimmed and
+    /// non-empty; `None` when the API supplied no name.
+    fn scoped_label(&self) -> Option<String> {
+        self.scope
+            .as_ref()
+            .and_then(|scope| scope.model.as_ref())
+            .and_then(|model| model.display_name.as_deref())
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+            .map(str::to_owned)
+    }
 }
 
 impl ClaudeOAuthUsageResponse {
     pub(crate) fn into_buckets(self, now: i64) -> Vec<QuotaBucketView> {
-        let mut buckets = Vec::new();
-        push_claude_window(
-            &mut buckets,
-            "Session",
-            Some(StatusSlot::Session),
-            self.five_hour,
-            now,
-        );
-        push_claude_window(
-            &mut buckets,
-            "Weekly",
-            Some(StatusSlot::Weekly),
-            self.seven_day,
-            now,
-        );
-        push_claude_window(&mut buckets, "Sonnet", None, self.seven_day_sonnet, now);
-        push_claude_window(&mut buckets, "Opus", None, self.seven_day_opus, now);
-        push_claude_window(
-            &mut buckets,
-            "Daily Routines",
-            None,
-            self.seven_day_routines,
-            now,
-        );
-        if let Some(spend) = claude_spend_bucket(self.spend, self.extra_usage) {
+        // Destructure so the spend/dollar data is moved out before the
+        // utilization windows consume the rest — one source of truth, one
+        // builder, regardless of whether the windows came from `limits` or the
+        // legacy named keys.
+        let Self {
+            five_hour,
+            seven_day,
+            seven_day_sonnet,
+            seven_day_opus,
+            seven_day_routines,
+            limits,
+            extra_usage,
+            spend,
+            other_windows,
+        } = self;
+        // The `limits` array is preferred on current accounts, but it can be
+        // partial while the legacy named fields still carry usable windows.
+        // Build both into the same model and backfill only semantic gaps so an
+        // unknown or unnamed `limits` entry cannot erase valid legacy quotas.
+        let mut windows: Vec<ClaudeQuotaWindow> = limits
+            .iter()
+            .filter_map(ClaudeOAuthLimit::as_quota)
+            .collect();
+        for window in legacy_claude_quota_windows(
+            five_hour,
+            seven_day,
+            seven_day_sonnet,
+            seven_day_opus,
+            seven_day_routines,
+        ) {
+            if !has_equivalent_claude_window(&windows, &window) {
+                windows.push(window);
+            }
+        }
+        let mut buckets: Vec<QuotaBucketView> =
+            windows.into_iter().map(|w| w.into_bucket(now)).collect();
+        if let Some(spend) = claude_spend_bucket(spend, extra_usage) {
             buckets.push(spend);
         }
-        push_claude_dollar_windows(&mut buckets, self.other_windows, now);
+        push_claude_dollar_windows(&mut buckets, other_windows, now);
         buckets
     }
+}
+
+fn has_equivalent_claude_window(
+    windows: &[ClaudeQuotaWindow],
+    candidate: &ClaudeQuotaWindow,
+) -> bool {
+    match candidate.slot {
+        Some(StatusSlot::Session) => windows
+            .iter()
+            .any(|window| window.slot == Some(StatusSlot::Session)),
+        Some(StatusSlot::Weekly) => windows
+            .iter()
+            .any(|window| window.slot == Some(StatusSlot::Weekly)),
+        _ => windows.iter().any(|window| {
+            window.slot.is_none() && window.label.eq_ignore_ascii_case(&candidate.label)
+        }),
+    }
+}
+
+/// Legacy pre-`limits` named windows normalized to the unified quota model, so
+/// they share one builder with `limits`-sourced windows. Weekly-scoped windows
+/// (Sonnet/Opus/Routines) get the weekly duration so they are paced uniformly
+/// with a `weekly_scoped` Fable limit.
+#[allow(clippy::too_many_arguments)]
+fn legacy_claude_quota_windows(
+    five_hour: Option<ClaudeOAuthUsageWindow>,
+    seven_day: Option<ClaudeOAuthUsageWindow>,
+    seven_day_sonnet: Option<ClaudeOAuthUsageWindow>,
+    seven_day_opus: Option<ClaudeOAuthUsageWindow>,
+    seven_day_routines: Option<ClaudeOAuthUsageWindow>,
+) -> Vec<ClaudeQuotaWindow> {
+    let session = Some(CLAUDE_SESSION_WINDOW_SECONDS);
+    let weekly = Some(CLAUDE_WEEKLY_WINDOW_SECONDS);
+    let mut windows = Vec::new();
+    if let Some(window) = five_hour {
+        windows.push(window.into_quota("Session", Some(StatusSlot::Session), session));
+    }
+    if let Some(window) = seven_day {
+        windows.push(window.into_quota("Weekly", Some(StatusSlot::Weekly), weekly));
+    }
+    if let Some(window) = seven_day_sonnet {
+        windows.push(window.into_quota("Sonnet", None, weekly));
+    }
+    if let Some(window) = seven_day_opus {
+        windows.push(window.into_quota("Opus", None, weekly));
+    }
+    if let Some(window) = seven_day_routines {
+        windows.push(window.into_quota("Daily Routines", None, weekly));
+    }
+    windows
 }
 
 /// Surface rotating-codename dollar-budget windows (`amber_ladder` etc.) that a
@@ -570,43 +812,6 @@ pub(crate) fn normalize_claude_spend(
         disabled_reason: extra.disabled_reason,
         severity: UsageSeverity::Normal,
     })
-}
-
-pub(crate) fn push_claude_window(
-    buckets: &mut Vec<QuotaBucketView>,
-    label: &str,
-    slot: Option<StatusSlot>,
-    window: Option<ClaudeOAuthUsageWindow>,
-    now: i64,
-) {
-    let Some(window) = window else {
-        return;
-    };
-    let reset_at = window.resets_at.as_deref().and_then(parse_iso_epoch);
-    let window_seconds = claude_window_seconds(label);
-    let remaining = window.utilization.and_then(remaining_from_fraction);
-    let pace = quota_pace_label(remaining, reset_at, window_seconds, now);
-    buckets.push(with_status_slot(
-        timed_bucket(
-            label,
-            window.utilization.and_then(used_percent_label),
-            Some("100%".to_owned()),
-            remaining,
-            reset_at,
-            now,
-            pace.as_deref(),
-            UsageSnapshotStatus::Fresh,
-        ),
-        slot,
-    ));
-}
-
-pub(crate) fn claude_window_seconds(label: &str) -> Option<i64> {
-    match label {
-        "Session" => Some(5 * 60 * 60),
-        "Weekly" => Some(7 * 24 * 60 * 60),
-        _ => None,
-    }
 }
 
 pub(crate) fn fetch_claude_oauth_usage(

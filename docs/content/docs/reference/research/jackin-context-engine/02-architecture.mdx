@@ -1,0 +1,67 @@
+---
+title: "02 — Architecture"
+---
+
+# 02 — Architecture
+
+## Crate and process shape
+
+One new workspace library crate, **`crates/jackin-context`**, following the `jackin-<noun>` subsystem convention (`jackin-usage`, `jackin-isolation`). Consumed by `jackin-capsule` (in-container execution — the primary host) and `jackin` (host CLI reporting). Internal module map mirrors the layers:
+
+```text
+crates/jackin-context/src/
+  measure/     L0: ledger, usage ingestion, bust detector, thinking estimator, harness
+  observe/     L2: classifier, filter engine (TOML corpus), crushers, code outline, media
+  retrieve/    L1: fff embed, sem entities, mq sections, query verbs, packer
+  prompt/      L3: register pack compiler, guard lines, codebook, report registers
+  route/       L4: effort/model policy, spawn choreography, lanes, quota model
+  store/       archive (CCR), read-stub index, handles, session state
+  policy/      role config resolution, kill switches, auth-mode policy
+```
+
+No daemon of its own: the engine runs inside the existing `jackin-capsule` process (PID 1 control plane) — the warm-index economics codedb/fff prove (sub-ms queries, index-once) without a new long-lived service, dashboard, or socket surface. Retrieval indexes live in-process behind the existing daemon state tick; heavy index builds run on the existing tokio runtime with rayon under `spawn_blocking`.
+
+## Interception points (all inside the capsule, zero host writes)
+
+| Boundary | Mechanism | Replaces |
+|---|---|---|
+| Shell commands | **PATH shims** at `/jackin/shims/{git,cargo,npm,pytest,go,…}` ahead of `/jackin/runtime` in PATH (image already prepends PATH in <RepoFile path="crates/jackin-image/src/derived_image.rs">crates/jackin-image/src/derived_image.rs</RepoFile>), each exec-ing `jackin-capsule ctx run -- <cmd>` | RTK's PreToolUse hook + 14 per-agent integrations; works identically for every runtime incl. hook-less ones (Codex, Amp) |
+| Native `Read`/`Grep`/`Glob` | Engine-owned MCP tools (`ctx_read`, `ctx_search`, `ctx_doc`, …) registered via the existing `claude mcp add jackin-exec`-style path in <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile>, plus steering text in the role instruction file; optionally a PostToolUse read-dedup hook via the existing merge-safe <RepoFile path="crates/jackin-capsule/src/agent_status/hook_installer.rs">crates/jackin-capsule/src/agent_status/hook_installer.rs</RepoFile> machinery (12 events already wired, drift-repaired every launch) | headroom-MCP / lean-ctx `ctx_read`; the lean-ctx `HookCovered` retreat says steer honestly, never "NEVER use native tools" |
+| Agent configuration | Generated at capsule setup: model/effort flags in `build_agent_command()` (<RepoFile path="crates/jackin-capsule/src/session.rs">crates/jackin-capsule/src/session.rs</RepoFile>), subagent frontmatter pins, guard lines and register pack into the role instruction file, `[context]` manifest table plumbed host→capsule via `CapsuleConfig` (<RepoFile path="crates/jackin-protocol/src/lib.rs">crates/jackin-protocol/src/lib.rs</RepoFile>) | caveman's plugin hooks, lean-ctx's 19 installers, RTK's `rtk init -g` — the entire class |
+| Transcripts / usage | Extends the existing JSONL monitors in <RepoFile path="crates/jackin-usage/src/token_monitor.rs">crates/jackin-usage/src/token_monitor.rs</RepoFile> (Claude/Codex/Kimi/Amp already parsed) with `message.id` dedup, per-tool observation attribution, and cache-class deltas | token-optimizer / ccusage / `rtk gain` |
+
+## Storage
+
+All under `/jackin/state/context/` (container-only, honoring the `/jackin/` layout rule), using **turso** (already in-workspace via <RepoFile path="crates/jackin-usage/src/telemetry_store.rs">crates/jackin-usage/src/telemetry_store.rs</RepoFile>, schema-versioned):
+
+- `archive.db` — CCR store: `ccr_entries(hash TEXT PRIMARY KEY, original BLOB, created_at, ttl_seconds)` + FTS index; blake3 keys, first 24 hex chars; wire marker `<<ccr:HASH>>` kept byte-compatible with headroom so mixed environments interoperate.
+- `ledger.db` — savings events (per-transform, per-tool, per-session), bounce events (negative entries), injection-overhead entries; optional hash-chaining for tamper evidence (lean-ctx pattern) off by default.
+- `stubs.json` — read-stub bookkeeping only (never content), LRU-capped, atomic tmp+rename, purged on compaction events, scoped `session` / `task:<id>` for subagents (lean-ctx #954–#956 semantics).
+- `index/` — fff frecency LMDB, sem-core entity cache, BM25/tantivy segments (if enabled), mq-chunked doc index; all rebuildable, corpus-signature freshness (not TTL).
+
+## Cache-safety invariants
+
+The INV table below is the engine's contract; each is verifiable from session JSONL and enforced by regression tests (headroom's `prefix_cache_benchmark` pattern):
+
+| INV | Invariant | Verify by |
+|---|---|---|
+| INV-1 | The engine never mutates content already sent: all transforms run at first ingestion (shim output, MCP read result), append-only | Diff request bodies with/without engine on fixture sessions; byte-identical prefixes |
+| INV-2 | `cache_read_input_tokens > 0` from call 2 of every session; session cache-read share ≥85% unless the workload explains it | Ledger assertion on live JSONL; alert on regression |
+| INV-3 | Filtered output ≤ raw output in estimated tokens, or raw is emitted (`never_worse`, RTK v0.43 guard) | Property test over the filter corpus |
+| INV-4 | Exit codes preserved bit-exact through shims; a filter failure emits raw output, never an error (`ParseResult::Passthrough` tier) | Shim integration tests; CI-safe guarantee |
+| INV-5 | Every lossy emission carries a recovery handle; `ctx expand <handle>` returns byte-exact originals for entries within retention (all exit codes, not just failures) | Round-trip tests `retrieve(id) == content` |
+| INV-6 | Engine-injected standing context (instructions, tool schemas, codebook) stays under a CI-gated token budget counted with `count_tokens` against the capsule's actual model | `ctx doctor --gate` in CI (lean-ctx pattern) |
+| INV-7 | Never compress error/test-failure signal: policy classifier marks build/lint/test-failure lines verbatim-class before any filter runs | Canary fixtures per filter |
+| INV-8 | Exactly one shell-rewrite path, one output register, one memory store per capsule; engine refuses to activate if a conflicting third-party tool is detected in the role (e.g. RTK hook + engine shims) | Setup-time conflict probe |
+| INV-9 | Mid-session model/effort switches are engine-initiated only at task boundaries; the engine never toggles prompt-resident modes mid-session | Route-policy unit tests; JSONL audit |
+| INV-10 | No network egress from the engine (no telemetry, no update checks, no cloud sync); `count_tokens` is the only permitted API call and runs on the capsule's own credential within its rate pool | Firewall allowlist already enforced by <RepoFile path="crates/jackin-capsule/src/firewall.rs">crates/jackin-capsule/src/firewall.rs</RepoFile> |
+
+## Kill switches and config
+
+Every subsystem carries an env kill switch following the existing `JACKIN_DISABLE_TIRITH`/`JACKIN_DISABLE_SHELLFIRM` convention: `JACKIN_CTX_DISABLE` (master), `JACKIN_CTX_NO_SHIMS`, `JACKIN_CTX_NO_MCP`, `JACKIN_CTX_NO_REGISTER`, `JACKIN_CTX_NO_ROUTING`, `JACKIN_CTX_MEASURE_ONLY`. The last one matters most: **measurement-on, mutation-off is the default posture for new roles** (lean-ctx's "measurement before mutation" doctrine) — a role graduates to active compression only after its own baseline window exists in the ledger.
+
+Role-facing configuration is a new versioned `[context]` table in `jackin.role.toml` (schema change per PRERELEASE rules — one version bump, 5 artifacts): see [10 — Rollout](/reference/research/jackin-context-engine/10-rollout-and-validation/) for the field sketch.
+
+## What the engine does NOT contain
+
+No output-style rewriting of the agent's own settings files beyond jackin's existing merge-safe installers; no browser dashboard (surfaces render in the existing capsule TUI usage dialog and host console); no cross-container daemon (fleet coordination stays in the host orchestrator); no cloud component whatsoever.

@@ -251,6 +251,16 @@ fn runtime_setup_surfaces_agent_setup_failure_after_foreground_work() {
 }
 
 #[test]
+fn reporter_install_failure_message_names_agent_and_error() {
+    let err = anyhow::anyhow!("plugins.json is not valid JSON");
+    let message = reporter_install_failure_message("opencode", &err);
+
+    assert!(message.contains("agent-status: reporter install for opencode failed"));
+    assert!(message.contains("non-fatal"));
+    assert!(message.contains("plugins.json is not valid JSON"));
+}
+
+#[test]
 fn seed_home_dir_empty_dst_seeds_from_src_and_signals_first_seed() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let src = tmp.path().join("src");

@@ -1112,11 +1112,14 @@ fn claude_oauth_response_maps_windows_to_buckets() {
             .find(|bucket| bucket.label == "Sonnet")
             .is_some_and(|bucket| bucket.status_slot.is_none())
     );
+    // Sonnet is a weekly window, so the unified model paces it the same way a
+    // `limits`-sourced Fable window is paced (it has both a reset and a 7-day
+    // duration). Daily Routines carries no `resets_at`, so it still has none.
     assert!(
         buckets
             .iter()
             .find(|bucket| bucket.label == "Sonnet")
-            .is_some_and(|bucket| bucket.pace_label.is_none())
+            .is_some_and(|bucket| bucket.pace_label.is_some())
     );
     assert!(buckets.iter().any(|bucket| bucket.label == "Daily Routines"
         && bucket.remaining_percent == Some(100)
@@ -1195,6 +1198,265 @@ fn claude_spend_object_preferred_and_scaled() {
         spend_headline_label(&buckets).as_deref(),
         Some("$53 of 300")
     );
+}
+
+/// The `limits` array is the authoritative shape on current accounts: it
+/// carries Session, "All models" Weekly, and per-model Weekly (`weekly_scoped`
+/// — Fable today). When present, `into_buckets` builds from it and must NOT
+/// also emit the legacy `seven_day*` windows (the API returns both, so
+/// skipping the legacy path is what prevents double rows). Mirrors the live
+/// 2026-07-03 OAuth response: session 7%, all-models 28%, Fable 35%.
+#[test]
+fn claude_oauth_limits_array_surfaces_fable_and_all_models() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        // Legacy named windows are still present but null on current accounts;
+        // they must contribute nothing because `limits` takes precedence.
+        "five_hour": null,
+        "seven_day": null,
+        "seven_day_sonnet": null,
+        "seven_day_opus": null,
+        "seven_day_cowork": null,
+        "limits": [
+            { "kind": "session", "group": "session", "percent": 7,
+              "severity": "normal", "resets_at": "2026-07-03T03:19:59Z",
+              "scope": null, "is_active": false },
+            { "kind": "weekly_all", "group": "weekly", "percent": 28,
+              "severity": "normal", "resets_at": "2026-07-03T07:00:00Z",
+              "scope": null, "is_active": false },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 35,
+              "severity": "warn", "resets_at": "2026-07-03T06:59:59Z",
+              "scope": { "model": { "id": null, "display_name": "Fable" },
+                         "surface": null },
+              "is_active": true }
+        ]
+    }))
+    .expect("valid Claude OAuth limits-array response");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+
+    let session = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket from limits");
+    assert_eq!(session.label, "Session");
+    assert_eq!(session.remaining_percent, Some(93));
+    assert_eq!(session.used_label.as_deref(), Some("7% used"));
+
+    // "All models" fills the Weekly headline slot (status bar still reads
+    // "Weekly" via the slot), label matches the web console row.
+    let all_models = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Weekly))
+        .expect("weekly slot from limits");
+    assert_eq!(all_models.label, "All models");
+    assert_eq!(all_models.remaining_percent, Some(72));
+
+    // Fable — the model-scoped window the legacy parser dropped. Non-headline
+    // (no status slot), severity mirrored from the API for meter color.
+    let fable = buckets
+        .iter()
+        .find(|b| b.label == "Fable")
+        .expect("Fable model-scoped bucket");
+    assert_eq!(fable.remaining_percent, Some(65));
+    assert_eq!(fable.used_label.as_deref(), Some("35% used"));
+    assert_eq!(fable.status_slot, None);
+    assert_eq!(fable.severity, UsageSeverity::Warn);
+    // Reset epoch is carried (RC2) so the CLI report can emit `resets_at`.
+    assert!(fable.resets_at.is_some());
+
+    // No legacy fabricated rows leaked through: the null `seven_day*` windows
+    // produce nothing once `limits` is authoritative.
+    assert!(buckets.iter().all(|b| b.label != "Weekly"));
+    assert!(buckets.iter().all(|b| b.label != "Sonnet"));
+    assert!(buckets.iter().all(|b| b.label != "Opus"));
+    assert!(buckets.iter().all(|b| b.label != "Daily Routines"));
+}
+
+/// A `weekly_scoped` window with no model display name is skipped rather than
+/// fabricated into an empty-label row — the same "absent window must be
+/// omitted, never fabricated" rule the legacy path follows.
+#[test]
+fn claude_oauth_limits_array_skips_unnamed_scoped_window() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 40,
+              "severity": "normal", "resets_at": "2026-07-03T06:59:59Z",
+              "scope": { "model": { "id": null, "display_name": null } },
+              "is_active": true }
+        ]
+    }))
+    .expect("valid limits response");
+    let buckets = usage.into_buckets(1_781_300_000);
+    assert!(buckets.is_empty(), "unnamed scoped window must be omitted");
+}
+
+/// A non-empty `limits` array must not erase legacy windows that are still the
+/// only usable source for a semantic slot. Current Claude responses can mix the
+/// new carrier with older fields; unknown/partial limits backfill from legacy
+/// windows, while duplicate Session/Weekly windows are not emitted twice.
+#[test]
+fn claude_oauth_limits_array_backfills_missing_legacy_windows() {
+    let reset_at = "2026-07-03T06:59:59Z";
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "five_hour": { "utilization": 22.0, "resets_at": "2026-07-03T03:19:59Z" },
+        "seven_day": { "utilization": 44.0, "resets_at": reset_at },
+        "seven_day_sonnet": { "utilization": 55.0, "resets_at": reset_at },
+        "limits": [
+            { "kind": "session", "group": "session", "percent": 7,
+              "severity": "normal", "resets_at": "2026-07-03T03:19:59Z",
+              "scope": null },
+            { "kind": "future_shape", "group": "weekly", "percent": 99,
+              "severity": "normal", "resets_at": reset_at, "scope": null }
+        ]
+    }))
+    .expect("mixed limits/legacy response");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+
+    let session_buckets = buckets
+        .iter()
+        .filter(|b| b.status_slot == Some(StatusSlot::Session))
+        .count();
+    assert_eq!(session_buckets, 1, "Session duplicate must be skipped");
+    let weekly = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Weekly))
+        .expect("legacy Weekly backfill");
+    assert_eq!(weekly.label, "Weekly");
+    assert_eq!(weekly.remaining_percent, Some(56));
+    let sonnet = buckets
+        .iter()
+        .find(|b| b.label == "Sonnet")
+        .expect("legacy Sonnet backfill");
+    assert_eq!(sonnet.remaining_percent, Some(45));
+}
+
+/// `limits.percent` is an external API boundary: accept string/float/over-cap
+/// values instead of narrowing serde to `u8` before the existing percent helpers
+/// can normalize and render them.
+#[test]
+fn claude_oauth_limits_percent_accepts_string_float_and_over_cap() {
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "session", "group": "session", "percent": "35.4",
+              "severity": "normal", "resets_at": null, "scope": null },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 150.0,
+              "severity": "danger", "resets_at": null,
+              "scope": { "model": { "display_name": "Fable" } } }
+        ]
+    }))
+    .expect("lenient percent response");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+    let session = buckets
+        .iter()
+        .find(|b| b.status_slot == Some(StatusSlot::Session))
+        .expect("session bucket");
+    assert_eq!(session.used_label.as_deref(), Some("35% used"));
+    assert_eq!(session.remaining_percent, Some(65));
+    let fable = buckets
+        .iter()
+        .find(|b| b.label == "Fable")
+        .expect("Fable bucket");
+    assert_eq!(fable.used_label.as_deref(), Some("150% used"));
+    assert_eq!(fable.remaining_percent, Some(0));
+}
+
+/// The unified model: a legacy `seven_day_sonnet` window and a `limits`
+/// `weekly_scoped` window carrying the same usage/resets produce the same
+/// bucket (modulo label). This is the design invariant — Fable is not a
+/// separate code path, it is the same path as a legacy model window, so a
+/// regression that re-introduces parallel builders would fail here.
+#[test]
+fn claude_legacy_and_limits_sources_share_one_builder() {
+    let reset_at = "2026-07-03T06:59:59Z";
+    let now = 1_781_300_000;
+    let legacy: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        // `utilization` is percent-form here (35.0 > 1.0), matching the limits
+        // `percent` field so both resolve to 35% used through the same helpers.
+        "seven_day_sonnet": { "utilization": 35.0, "resets_at": reset_at }
+    }))
+    .expect("legacy response");
+    let limits: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 35,
+              "severity": "normal", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Fable" } }, "is_active": true }
+        ]
+    }))
+    .expect("limits response");
+
+    let sonnet = legacy
+        .into_buckets(now)
+        .into_iter()
+        .find(|b| b.label == "Sonnet")
+        .expect("legacy Sonnet bucket");
+    let fable = limits
+        .into_buckets(now)
+        .into_iter()
+        .find(|b| b.label == "Fable")
+        .expect("limits Fable bucket");
+
+    // Same builder ⇒ identical meter, pace, reset, and severity. Only the label
+    // (the model the window is scoped to) differs.
+    assert_eq!(sonnet.used_label, fable.used_label);
+    assert_eq!(sonnet.remaining_percent, fable.remaining_percent);
+    assert_eq!(sonnet.reset_label, fable.reset_label);
+    assert_eq!(sonnet.resets_at, fable.resets_at);
+    assert_eq!(sonnet.pace_label, fable.pace_label);
+    assert_eq!(sonnet.severity, fable.severity);
+    assert_eq!(sonnet.status_slot, fable.status_slot);
+}
+
+/// A single response can carry several model-scoped weekly windows at once
+/// (Sonnet, Opus, Fable, …). Each `weekly_scoped` entry surfaces as its own
+/// non-headline bucket, so "all models as before plus Fable" renders together
+/// — the whole point of the generic handler (no per-model code).
+#[test]
+fn claude_limits_array_surfaces_every_scoped_model_together() {
+    let reset_at = "2026-07-03T06:59:59Z";
+    let usage: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "session", "group": "session", "percent": 46,
+              "severity": "normal", "resets_at": "2026-07-03T03:20:00Z", "scope": null },
+            { "kind": "weekly_all", "group": "weekly", "percent": 36,
+              "severity": "normal", "resets_at": reset_at, "scope": null },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 12,
+              "severity": "normal", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Sonnet" } } },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 8,
+              "severity": "normal", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Opus" } } },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 43,
+              "severity": "warn", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Fable" } } }
+        ]
+    }))
+    .expect("multi-model limits response");
+
+    let buckets = usage.into_buckets(1_781_300_000);
+    let labels: Vec<&str> = buckets.iter().map(|b| b.label.as_str()).collect();
+
+    // Headline windows bind to their slots; every model-scoped window renders
+    // as its own labelled, non-headline row.
+    assert!(labels.contains(&"Session"));
+    assert!(labels.contains(&"All models"));
+    assert!(labels.contains(&"Sonnet"));
+    assert!(labels.contains(&"Opus"));
+    assert!(labels.contains(&"Fable"));
+    for label in ["Sonnet", "Opus", "Fable"] {
+        let b = buckets
+            .iter()
+            .find(|b| b.label == label)
+            .unwrap_or_else(|| panic!("{label} bucket"));
+        assert_eq!(b.status_slot, None, "{label} must be non-headline");
+        assert!(b.remaining_percent.is_some(), "{label} must carry a meter");
+    }
+    // Fable carries its own (warn) severity for meter color, independent of the
+    // other scoped windows.
+    let fable = buckets.iter().find(|b| b.label == "Fable").expect("Fable");
+    assert_eq!(fable.severity, UsageSeverity::Warn);
+    assert_eq!(fable.remaining_percent, Some(57));
 }
 
 #[test]
@@ -1489,6 +1751,54 @@ fn most_constrained_skips_reset_less_spend_for_windowed_reset_bucket() {
     assert!(
         chosen.resets_at.is_some(),
         "chosen bucket must carry a reset"
+    );
+}
+
+/// The compact Overview/status row names the bottleneck model when a
+/// model-scoped window (Fable) is the most-constrained, but stays bare for a
+/// headline window (Session/Weekly) — the slot already implies those and the
+/// status bar carries them. So an operator watching the compact surface learns
+/// *which* model is the limit, not just the % left.
+#[test]
+fn usage_tab_status_label_names_scoped_model_when_it_is_most_constrained() {
+    let reset_at = "2026-07-03T06:59:59Z";
+    // Fable (10% left) is tighter than Session (50% left) and Weekly (60%).
+    let fable_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "session", "group": "session", "percent": 50,
+              "severity": "normal", "resets_at": "2026-07-03T03:20:00Z", "scope": null },
+            { "kind": "weekly_all", "group": "weekly", "percent": 40,
+              "severity": "normal", "resets_at": reset_at, "scope": null },
+            { "kind": "weekly_scoped", "group": "weekly", "percent": 90,
+              "severity": "danger", "resets_at": reset_at,
+              "scope": { "model": { "display_name": "Fable" } } }
+        ]
+    }))
+    .expect("limits response");
+    let mut view = FocusedUsageView::unavailable("x", 1_781_300_000);
+    view.status = UsageSnapshotStatus::Fresh;
+    view.buckets = fable_wins.into_buckets(1_781_300_000);
+    let label = usage_tab_status_label(&view);
+    assert!(
+        label.starts_with("Fable 10% left"),
+        "scoped bottleneck must be named: got {label:?}"
+    );
+
+    // When a headline window (Session) is tightest, no model name is prepended.
+    let session_wins: ClaudeOAuthUsageResponse = serde_json::from_value(serde_json::json!({
+        "limits": [
+            { "kind": "session", "group": "session", "percent": 95,
+              "severity": "warn", "resets_at": "2026-07-03T03:20:00Z", "scope": null },
+            { "kind": "weekly_all", "group": "weekly", "percent": 10,
+              "severity": "normal", "resets_at": reset_at, "scope": null }
+        ]
+    }))
+    .expect("limits response");
+    view.buckets = session_wins.into_buckets(1_781_300_000);
+    let label = usage_tab_status_label(&view);
+    assert!(
+        label.starts_with("5% left"),
+        "headline bottleneck must stay bare: got {label:?}"
     );
 }
 
@@ -1792,6 +2102,46 @@ fn claude_cli_usage_output_maps_current_windows() {
             &buckets
         ),
         "Session 100% · Weekly 54%"
+    );
+}
+
+/// The CLI prints per-model weekly lines as `Current week (<model>): …` (Fable
+/// today, future codenames tomorrow). The parser captures each generically so
+/// a new model prints without a per-model edit. Mirrors the live 2026-07-03
+/// `claude -p /usage` output, where Sonnet was replaced by Fable.
+#[test]
+fn claude_cli_usage_output_maps_scoped_weekly_fable() {
+    let usage = parse_claude_usage_output(
+        "You are currently using your subscription to power your Claude Code usage\n\
+             \n\
+             Current session: 9% used · resets Jul 3 at 10:19am (Asia/Saigon)\n\
+             Current week (all models): 28% used · resets Jul 3 at 2pm (Asia/Saigon)\n\
+             Current week (Fable): 35% used · resets Jul 3 at 1:59pm (Asia/Saigon)\n",
+    )
+    .expect("usage output");
+
+    // The model-scoped line lands in `scoped_weekly` (not `sonnet_used`).
+    assert_eq!(usage.scoped_weekly.len(), 1);
+    assert_eq!(usage.scoped_weekly[0].0, "Fable");
+    assert_eq!(usage.scoped_weekly[0].1, 35.0);
+
+    let buckets = usage.buckets();
+    let fable = buckets
+        .iter()
+        .find(|b| b.label == "Fable")
+        .expect("Fable CLI bucket");
+    assert_eq!(fable.remaining_percent, Some(65));
+    assert_eq!(fable.status_slot, None);
+
+    // Headline still binds to the slot from the explicit (all models) line.
+    assert_eq!(
+        status_bar_label(
+            UsageSurface::Claude,
+            "",
+            UsageSnapshotStatus::Fresh,
+            &buckets
+        ),
+        "Session 91% · Weekly 72%"
     );
 }
 

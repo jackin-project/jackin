@@ -9,7 +9,6 @@ use crate::image_recipe::IMAGE_RECIPE_VERSION;
 use crate::naming::{LABEL_IMAGE_RECIPE_HASH, LABEL_IMAGE_RECIPE_VERSION};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code, reason = "consumed from runtime/image.rs via pub re-export")]
 pub enum ImageInvalidationReason {
     ExplicitRebuild,
     LocalImageMissing,
@@ -28,7 +27,6 @@ pub enum ImageInvalidationReason {
 }
 
 impl ImageInvalidationReason {
-    #[allow(dead_code, reason = "consumed from runtime/image.rs via pub re-export")]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ExplicitRebuild => "explicit_rebuild",
@@ -49,7 +47,6 @@ impl ImageInvalidationReason {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code, reason = "consumed from runtime/image.rs via pub re-export")]
 pub enum ImageDecision {
     Reuse {
         image: String,
@@ -72,7 +69,6 @@ pub enum ImageDecision {
 impl ImageDecision {
     /// Role-repo commit SHA embedded in this decision — short SHA from the
     /// image tag for Reuse/Refresh, or the value from Build* variants.
-    #[allow(dead_code, reason = "consumed from runtime/image.rs via pub re-export")]
     pub fn role_git_sha(&self) -> Option<String> {
         match self {
             Self::Reuse { image } | Self::RefreshInBackground { image, .. } => {
@@ -84,7 +80,6 @@ impl ImageDecision {
     }
 
     /// Base/construct image reference for this decision; `None` for Reuse/Refresh.
-    #[allow(dead_code, reason = "consumed from runtime/image.rs via pub re-export")]
     pub fn base_image_ref(&self) -> Option<&str> {
         match self {
             Self::BuildFromPublished { base_image, .. } => Some(base_image.as_str()),
@@ -93,7 +88,6 @@ impl ImageDecision {
     }
 }
 
-#[allow(dead_code, reason = "consumed from runtime/image.rs")]
 pub fn build_decision(
     reason: ImageInvalidationReason,
     role_git_sha: Option<String>,
@@ -112,7 +106,6 @@ pub fn build_decision(
     }
 }
 
-#[allow(dead_code, reason = "consumed from runtime/image.rs")]
 pub fn decision_base_image_override<'a>(
     validated_repo: &'a jackin_manifest::repo::ValidatedRoleRepo,
     branch_override: Option<&str>,
@@ -126,10 +119,6 @@ pub fn decision_base_image_override<'a>(
     }
 }
 
-#[allow(
-    dead_code,
-    reason = "consumed from runtime/image.rs and image_decision/tests.rs"
-)]
 pub fn classify_image_labels(
     labels: &HashMap<String, String>,
     expected_recipes: &[crate::image_recipe::ExpectedImageRecipe],
@@ -156,10 +145,6 @@ pub fn classify_image_labels(
         .or(Some(ImageInvalidationReason::RecipeHashChanged))
 }
 
-#[allow(
-    dead_code,
-    reason = "consumed from runtime/image.rs and image_decision/tests.rs"
-)]
 pub fn recipe_label_mismatch(
     labels: &HashMap<String, String>,
     recipe: &crate::image_recipe::ImageRecipe,
@@ -189,7 +174,6 @@ pub fn recipe_label_mismatch(
     None
 }
 
-#[allow(dead_code, reason = "consumed from runtime/image.rs")]
 pub fn emit_image_decision(image: &str, reason: ImageInvalidationReason) {
     jackin_diagnostics::debug_log!(
         "image",
@@ -206,7 +190,6 @@ pub fn emit_image_decision(image: &str, reason: ImageInvalidationReason) {
     }
 }
 
-#[allow(dead_code, reason = "consumed from runtime/image.rs")]
 pub fn emit_image_reuse(image: &str) {
     if let Some(run) = jackin_diagnostics::active_run() {
         let detail = serde_json::json!({
@@ -229,7 +212,6 @@ pub fn emit_image_reuse(image: &str) {
     }
 }
 
-#[allow(dead_code, reason = "consumed from runtime/image.rs")]
 pub fn emit_image_refresh_background(image: &str, reason: ImageInvalidationReason) {
     emit_image_reuse(image);
     if let Some(run) = jackin_diagnostics::active_run() {

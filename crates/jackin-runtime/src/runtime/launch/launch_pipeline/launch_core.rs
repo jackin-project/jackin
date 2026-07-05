@@ -38,7 +38,6 @@ use super::super::launch_slot::{
 // NOTE: skeleton only. Body + precise wiring in extract step.
 // Compile-check-driven: types refined from errors.
 
-#[allow(dead_code)]
 pub(super) struct LaunchCore<'a, D, R>
 where
     D: DockerApi,
@@ -79,11 +78,17 @@ where
 
     // observed additional crossing the seam
     pub rebuild: bool,
+    // Captured across the seam for the deferred R4 launch-split body extraction
+    // (roadmap: split-runtime-launch). `run_launch_core`'s later phases will read
+    // it; until that slice lands the field is intentionally unread.
+    #[expect(
+        dead_code,
+        reason = "deferred R4 launch-split field; read once the body-extraction slice lands"
+    )]
     pub restore_pinned_sha: Option<String>,
     pub operator_env: std::collections::BTreeMap<String, String>,
 }
 
-#[allow(dead_code)]
 #[allow(
     clippy::too_many_lines,
     reason = "Inner launch-pipeline async body that the R4 File 2 refactor \

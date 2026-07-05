@@ -21,6 +21,9 @@ exclude = [
   # The package script remaps them to the Contents API so lychee can validate
   # paths, but broad docs scans regularly trip GitHub's secondary 403 limit.
   "https://api\\.github\\.com/repos/[^/]+/[^/]+/contents/",
+  # Research pages cite GitHub API evidence for external repositories. Those
+  # endpoints can return 403 from Actions even for public repos.
+  "https://api\\.github\\.com/repos/",
   # ACM DOI pages are public in browsers/search but return 403 to lychee in CI.
   "https://dl\\.acm\\.org/doi/10\\.1145/3735636",
   # Milvus pages below loop through redirects infinitely (verified locally:

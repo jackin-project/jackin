@@ -36,3 +36,20 @@ if [[ "${JACKIN_DISABLE_SHELLFIRM:-0}" != "1" ]]; then
 else
     echo "[zshrc] shellfirm shell hook disabled (JACKIN_DISABLE_SHELLFIRM=1)"
 fi
+
+# OSC 133 shell-integration markers for capsule status evidence.
+autoload -Uz add-zsh-hook
+_jackin_osc133() {
+    printf '\e]133;%s\a' "$1"
+}
+_jackin_osc133_precmd() {
+    local status="$?"
+    _jackin_osc133 "D;${status}"
+    _jackin_osc133 "A"
+    _jackin_osc133 "B"
+}
+_jackin_osc133_preexec() {
+    _jackin_osc133 "C"
+}
+add-zsh-hook precmd _jackin_osc133_precmd
+add-zsh-hook preexec _jackin_osc133_preexec
