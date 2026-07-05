@@ -11,6 +11,14 @@ strength = "strong"
 requires_all = ["showing detailed transcript", "ctrl+o to toggle"]
 
 [[rule]]
+id = "osc-title-working"
+state = "working"
+priority = 950
+region = "osc_title"
+strength = "strong"
+regex = ["^[\\u2800-\\u28FF] "]
+
+[[rule]]
 id = "permission-dialog"
 state = "blocked"
 priority = 900
@@ -20,12 +28,28 @@ requires_all = ["enter to select", "esc to cancel"]
 requires_any = ["to navigate", "↑/↓"]
 
 [[rule]]
+id = "choice-dialog"
+state = "blocked"
+priority = 890
+region = "bottom_nonempty:12"
+strength = "strong"
+requires_all = ["what do you want to do?", "enter to confirm", "esc to cancel"]
+
+[[rule]]
 id = "working-interrupt"
 state = "working"
 priority = 700
 region = "bottom:24"
 strength = "strong"
 requires_all = ["esc to interrupt"]
+
+[[rule]]
+id = "working-status-line"
+state = "working"
+priority = 695
+region = "bottom:24"
+strength = "strong"
+line_regex = ["^\\s*[*·•✢✻✶✳✽✺✹]\\s+\\S.*…\\s+\\(([0-9]+m\\s+)?[0-9]+s[^)]*\\)"]
 
 [[rule]]
 id = "working-token-stats"
@@ -42,3 +66,19 @@ priority = 500
 region = "bottom_nonempty:12"
 strength = "strong"
 requires_all = ["╭", "│ >"]
+
+[[rule]]
+id = "osc-title-idle"
+state = "idle"
+priority = 490
+region = "osc_title"
+strength = "strong"
+regex = ["^✳ "]
+
+[[rule]]
+id = "live-prompt"
+state = "idle"
+priority = 480
+region = "bottom_nonempty:8"
+strength = "strong"
+line_regex = ["^\\s*❯\\s*$"]

@@ -9,8 +9,9 @@
 
 - **Implementation status**: IN PROGRESS in PR #714. The operator supplied live jackin❯ screenshots for several
   affected states, and the PR now rewrites the corresponding narrow matchers: Codex stale working after a newer
-  prompt, Kimi live `working...` and prompt-box idle, and OpenCode 1.17 `esc interrupt` footer. Full pack rewrite
-  remains incomplete until real blocked/working/idle captures exist for each affected agent.
+  prompt, Claude blocked spend-limit dialogs, Claude live working/idle prompt states, Kimi live `working...` and
+  prompt-box idle, and OpenCode 1.17 `esc interrupt` footer. Full pack rewrite remains incomplete until real
+  blocked/working/idle captures exist for each affected agent.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED (broaden-to-match can add false positives)
@@ -82,13 +83,13 @@ Every pack must match its plan-005 captured goldens for blocked/working/idle. Un
 ## Done criteria
 
 - [ ] kimi/amp/opencode/claude/codex packs match real captured goldens for blocked, working, and idle — PARTIAL:
-  Codex/Kimi/OpenCode have targeted live-capture-backed fixes; full state coverage remains open
-- [ ] The Claude idle caret uses the real `❯` (U+276F) via an anchored `line_regex` — BLOCKED until the real
-  Claude idle capture exists
+  Claude now has live blocked/working/idle coverage; Codex/Kimi/OpenCode have targeted live-capture-backed fixes;
+  full state coverage remains open
+- [x] The Claude idle caret uses the real `❯` (U+276F) via an anchored `line_regex`
 - [ ] Loose idle rules (`requires_all=[">"]`) are tightened; no false-idle on arbitrary `>` lines — BLOCKED
   until real captures prove the replacement rules
-- [ ] OSC-title working/idle rules added where the agent emits a title spinner — BLOCKED until real captures
-  prove which agents emit title state in-container
+- [ ] OSC-title working/idle rules added where the agent emits a title spinner — PARTIAL: Claude title working/idle
+  rules are present; Codex/Amp remain blocked until real captures prove title state in-container
 - [ ] `packs_load_and_match_fixtures` passes with no `#[ignore]` remaining for these agents — BLOCKED until
   plan 005 real goldens exist
 - [x] `plans/agent-status/README.md` row updated

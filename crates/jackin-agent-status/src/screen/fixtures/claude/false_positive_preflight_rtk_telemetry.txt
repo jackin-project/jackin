@@ -1,0 +1,17 @@
+[entrypoint] running preflight hook...
+[architect-preflight] caveman flag seeded: /home/agent/.claude/.caveman-active → ultra
+[rtk] /!\ No hook installed — run `rtk init -g` for automatic token savings
+
+RTK hook registered (hook-only mode).
+
+  Command: rtk hook claude
+  Note: No RTK.md created. Claude won't know about meta commands (gain, discover, proxy).
+
+  settings.json: hook added
+  Backup: /home/agent/.claude/settings.json.bak
+  Restart Claude Code. Test with: git status
+
+--- Telemetry ---
+RTK collects anonymous usage metrics once per day to improve filters.
+
+Enable anonymous telemetry? [y/N]
