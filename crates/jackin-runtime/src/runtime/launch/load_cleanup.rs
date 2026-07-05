@@ -82,27 +82,56 @@ impl LoadCleanup {
             return;
         }
 
+        jackin_diagnostics::active_timing_started("cleanup", "cancel_cleanup", None);
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.compact("cleanup", "cancel cleanup started");
+        }
+
         if let Err(e) = docker.remove_container(&self.container_name).await {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.compact("cleanup", &format!("cleanup failed (container): {e}"));
+            }
             launch_output().step_fail(&format!("cleanup failed (container): {e}"));
         }
         if let Err(e) = docker.remove_container(&self.dind).await {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.compact("cleanup", &format!("cleanup failed (dind): {e}"));
+            }
             launch_output().step_fail(&format!("cleanup failed (dind): {e}"));
         }
         if let Err(e) = docker.remove_volume(&self.certs_volume).await {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.compact("cleanup", &format!("cleanup failed (certs volume): {e}"));
+            }
             launch_output().step_fail(&format!("cleanup failed (certs volume): {e}"));
         }
         if let Err(e) = docker.remove_network(&self.network).await {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.compact("cleanup", &format!("cleanup failed (network): {e}"));
+            }
             launch_output().step_fail(&format!("cleanup failed (network): {e}"));
         }
         if self.clean_socket_dir {
             match std::fs::remove_dir_all(&self.socket_dir) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => launch_output().step_fail(&format!(
-                    "cleanup failed (socket dir {}): {error}",
-                    self.socket_dir.display()
-                )),
+                Err(error) => {
+                    if let Some(run) = jackin_diagnostics::active_run() {
+                        run.compact(
+                            "cleanup",
+                            &format!(
+                                "cleanup failed (socket dir {}): {error}",
+                                self.socket_dir.display()
+                            ),
+                        );
+                    }
+                    launch_output().step_fail(&format!(
+                        "cleanup failed (socket dir {}): {error}",
+                        self.socket_dir.display()
+                    ));
+                }
             }
         }
+        jackin_diagnostics::active_timing_done("cleanup", "cancel_cleanup", None);
     }
 }

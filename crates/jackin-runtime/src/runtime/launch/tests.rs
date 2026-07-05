@@ -2,6 +2,9 @@
 #![allow(clippy::too_many_lines, unused_qualifications)]
 use super::super::test_support::FakeRunner;
 use super::*;
+use crate::runtime::launch::launch_runtime::{
+    debug_runtime_envs_for, run_runtime_envs, run_runtime_envs_for, telemetry_runtime_envs_for,
+};
 use jackin_config::AppConfig;
 use std::collections::HashMap;
 
@@ -1886,21 +1889,54 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
 }
 
 #[test]
-fn debug_runtime_envs_include_run_id_and_host_diagnostics_path() {
+fn runtime_envs_split_run_id_from_persisted_diagnostics_path() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
     let _guard = run.activate();
 
-    let envs = debug_runtime_envs(true);
+    let run_envs = run_runtime_envs();
+    let debug_envs = debug_runtime_envs(true);
 
-    assert!(envs.contains(&"JACKIN_DEBUG=1".to_owned()));
-    assert!(envs.contains(&format!("JACKIN_RUN_ID={}", run.run_id())));
-    assert!(envs.contains(&format!(
+    assert_eq!(run_envs, vec![format!("JACKIN_RUN_ID={}", run.run_id())]);
+    assert!(debug_envs.contains(&"JACKIN_DEBUG=1".to_owned()));
+    assert!(
+        !debug_envs
+            .iter()
+            .any(|env| env.starts_with("JACKIN_RUN_ID="))
+    );
+    assert!(debug_envs.contains(&format!(
         "JACKIN_RUN_DIAGNOSTICS_PATH={}",
         run.path().display()
     )));
+}
+
+#[test]
+fn debug_runtime_envs_omit_nonpersisted_diagnostics_path() {
+    let envs = debug_runtime_envs_for(true, None);
+
+    assert_eq!(envs, vec!["JACKIN_DEBUG=1".to_owned()]);
+    assert_eq!(
+        run_runtime_envs_for(Some("jk-run-backend")),
+        vec!["JACKIN_RUN_ID=jk-run-backend".to_owned()]
+    );
+}
+
+#[test]
+fn telemetry_runtime_envs_forward_effective_level_to_capsule() {
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Info),
+        vec!["JACKIN_TELEMETRY_LEVEL=info".to_owned()]
+    );
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Debug),
+        vec!["JACKIN_TELEMETRY_LEVEL=debug".to_owned()]
+    );
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Trace),
+        vec!["JACKIN_TELEMETRY_LEVEL=trace".to_owned()]
+    );
 }
 
 #[tokio::test]
