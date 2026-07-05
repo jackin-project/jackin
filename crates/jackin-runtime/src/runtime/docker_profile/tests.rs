@@ -992,11 +992,11 @@ fn sudo_default_off_outside_compat_on_for_compat() {
 fn dind_rootless_uses_rootless_image_without_privileged() {
     assert_eq!(
         dind_image_and_privileged(DindGrant::Rootless),
-        ("docker:dind-rootless", false)
+        ("docker:29-dind-rootless", false)
     );
     assert_eq!(
         dind_image_and_privileged(DindGrant::Privileged),
-        ("docker:dind", true)
+        ("docker:29-dind", true)
     );
 }
 

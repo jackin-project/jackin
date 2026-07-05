@@ -21,6 +21,8 @@ use crate::schema::{
 };
 use crate::versions::CURRENT_CONFIG_VERSION;
 
+pub const DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS: u64 = 60;
+
 /// Top-level operator configuration (`~/.config/jackin/config.toml`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -61,6 +63,10 @@ pub struct AppConfig {
     /// overrides this. Defaults to `ask` when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dirty_exit_policy: Option<DirtyExitPolicy>,
+    /// Freshness window for launch-time role repo fetches. `None` uses the
+    /// built-in default; `Some(0)` preserves always-fetch behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_repo_refresh_ttl_seconds: Option<u64>,
 }
 
 impl AppConfig {
@@ -141,6 +147,13 @@ impl AppConfig {
             .or(self.dirty_exit_policy)
             .unwrap_or_default()
     }
+
+    pub fn role_repo_refresh_ttl(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(
+            self.role_repo_refresh_ttl_seconds
+                .unwrap_or(DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS),
+        )
+    }
 }
 
 impl Default for AppConfig {
@@ -162,6 +175,7 @@ impl Default for AppConfig {
             git: GitConfig::default(),
             workspaces: BTreeMap::new(),
             dirty_exit_policy: None,
+            role_repo_refresh_ttl_seconds: None,
         }
     }
 }

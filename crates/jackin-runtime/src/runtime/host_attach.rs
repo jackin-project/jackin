@@ -77,7 +77,14 @@ fn log_clipboard_image_pasted_path_staged() {
 
 #[must_use]
 pub fn host_attach_enabled() -> bool {
-    std::env::var_os(JACKIN_HOST_ATTACH_ENV).is_some()
+    #[cfg(test)]
+    {
+        false
+    }
+    #[cfg(not(test))]
+    {
+        std::env::var_os(JACKIN_HOST_ATTACH_ENV).is_some()
+    }
 }
 
 pub(super) async fn run_host_attach_session(

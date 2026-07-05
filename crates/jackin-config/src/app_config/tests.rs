@@ -759,6 +759,25 @@ fn reject_codex_oauth_token_field_at_app_config_layer() {
 }
 
 #[test]
+fn app_config_role_repo_refresh_ttl_defaults_when_absent() {
+    let cfg: AppConfig = toml::from_str("").unwrap();
+
+    assert_eq!(cfg.role_repo_refresh_ttl_seconds, None);
+    assert_eq!(
+        cfg.role_repo_refresh_ttl(),
+        std::time::Duration::from_secs(DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS)
+    );
+}
+
+#[test]
+fn app_config_role_repo_refresh_ttl_accepts_zero() {
+    let cfg: AppConfig = toml::from_str("role_repo_refresh_ttl_seconds = 0").unwrap();
+
+    assert_eq!(cfg.role_repo_refresh_ttl_seconds, Some(0));
+    assert_eq!(cfg.role_repo_refresh_ttl(), std::time::Duration::ZERO);
+}
+
+#[test]
 fn agent_auth_config_serializes_without_extraneous_fields() {
     let cfg = AgentAuthConfig {
         auth_forward: AuthForwardMode::Sync,

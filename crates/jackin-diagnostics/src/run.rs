@@ -50,9 +50,16 @@ const MAX_HISTOGRAM_SAMPLES: usize = 1024;
 static ACTIVE_RUN: OnceLock<Mutex<Option<Arc<RunDiagnostics>>>> = OnceLock::new();
 static RUN_REGISTRY: OnceLock<Mutex<HashMap<String, Weak<RunDiagnostics>>>> = OnceLock::new();
 static HOST_PANIC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
+#[cfg(test)]
+static ACTIVE_RUN_BY_DIR: OnceLock<Mutex<HashMap<PathBuf, Weak<RunDiagnostics>>>> = OnceLock::new();
 
 fn active_slot() -> &'static Mutex<Option<Arc<RunDiagnostics>>> {
     ACTIVE_RUN.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(test)]
+fn active_run_by_dir() -> &'static Mutex<HashMap<PathBuf, Weak<RunDiagnostics>>> {
+    ACTIVE_RUN_BY_DIR.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn run_registry() -> &'static Mutex<HashMap<String, Weak<RunDiagnostics>>> {
@@ -92,6 +99,8 @@ pub struct RunDiagnostics {
 #[derive(Debug)]
 pub struct ActiveRunGuard {
     previous: Option<Arc<RunDiagnostics>>,
+    #[cfg(test)]
+    active_dir: Option<PathBuf>,
 }
 
 impl Drop for ActiveRunGuard {
@@ -104,6 +113,10 @@ impl Drop for ActiveRunGuard {
         }
         *guard = self.previous.take();
         drop(guard);
+        #[cfg(test)]
+        if let Some(active_dir) = self.active_dir.take() {
+            locked(active_run_by_dir()).remove(&active_dir);
+        }
         // Flush OTLP batches here, not at the call sites in `app::run`: the
         // guard is a run-scoped local, so this fires on every exit path —
         // including `?` error early-returns — instead of only the two
@@ -275,11 +288,21 @@ impl RunDiagnostics {
     }
 
     pub fn activate(self: &Arc<Self>) -> ActiveRunGuard {
+        #[cfg(test)]
+        let active_dir = self.path.parent().map(Path::to_path_buf);
+        #[cfg(test)]
+        if let Some(dir) = &active_dir {
+            locked(active_run_by_dir()).insert(dir.clone(), Arc::downgrade(self));
+        }
         let previous = active_slot()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .replace(Arc::clone(self));
-        ActiveRunGuard { previous }
+        ActiveRunGuard {
+            previous,
+            #[cfg(test)]
+            active_dir,
+        }
     }
 
     pub fn run_id(&self) -> &str {
@@ -870,6 +893,21 @@ pub fn active_run() -> Option<Arc<RunDiagnostics>> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
+}
+
+pub fn active_run_for_paths(paths: &JackinPaths) -> Option<Arc<RunDiagnostics>> {
+    #[cfg(test)]
+    {
+        return locked(active_run_by_dir())
+            .get(&run_dir(paths))
+            .and_then(Weak::upgrade);
+    }
+
+    #[cfg(not(test))]
+    {
+        let run = active_run()?;
+        run.path.starts_with(run_dir(paths)).then_some(run)
+    }
 }
 
 pub fn install_host_panic_hook() {

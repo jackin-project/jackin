@@ -983,16 +983,20 @@ pub fn dind_privileged(grants: &EffectiveGrants) -> bool {
     grants.dind == DindGrant::Privileged
 }
 
+/// Major-pinned Docker-in-Docker images used by the sidecar.
+pub const DIND_PRIVILEGED_IMAGE: &str = "docker:29-dind";
+pub const DIND_ROOTLESS_IMAGE: &str = "docker:29-dind-rootless";
+
 /// WP4 Part B: the sidecar image and `--privileged` flag for a `DinD` tier.
 ///
-/// `rootless` runs `docker:dind-rootless` in a user namespace with no
-/// `--privileged`; `privileged` runs `docker:dind` with `--privileged`. `none`
-/// never starts a sidecar — it maps to the privileged pair only as an
-/// unreachable default (the caller gates on `dind_enabled`).
+/// `rootless` runs the rootless `DinD` image in a user namespace with no
+/// `--privileged`; `privileged` runs the standard `DinD` image with
+/// `--privileged`. `none` never starts a sidecar — it maps to the privileged
+/// pair only as an unreachable default (the caller gates on `dind_enabled`).
 pub const fn dind_image_and_privileged(grant: DindGrant) -> (&'static str, bool) {
     match grant {
-        DindGrant::Rootless => ("docker:dind-rootless", false),
-        DindGrant::Privileged | DindGrant::None => ("docker:dind", true),
+        DindGrant::Rootless => (DIND_ROOTLESS_IMAGE, false),
+        DindGrant::Privileged | DindGrant::None => (DIND_PRIVILEGED_IMAGE, true),
     }
 }
 
