@@ -30,11 +30,9 @@ production_cap = 1850
 test_cap = 10000
 
 # Grandfathered production files (current line counts; may only decrease).
-# EMPTY — Ledger 2 complete. editor/model.rs was the last over-cap file
-# (2293L); its EditorState impl blocks first moved as a group to a sibling
-# `model/state_impl.rs`, then split by responsibility under
-# `model/state_impl/`, leaving every console production Rust source under
-# 1500L and the repo-wide ledger empty at the tightened 1850L cap.
+[[production]]
+path = "crates/jackin-runtime/src/runtime/image.rs"
+lines = 1938
 
 # Integration test files (no `tests.rs` stem) count as production per the
 # file-budget gate. `dind_e2e.rs` previously sat in the 1500–2000L band

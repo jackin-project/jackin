@@ -2783,7 +2783,6 @@ dependencies = [
  "nix 0.31.3",
  "portable-pty",
  "ratatui",
- "semver",
  "serde",
  "serde_json",
  "sha2 0.11.0",
