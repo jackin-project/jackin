@@ -86,9 +86,18 @@ strength = "strong"
 requires_all = ["╭", "│ >"]
 
 [[rule]]
+id = "completed-live-prompt"
+state = "idle"
+priority = 495
+region = "bottom:24"
+strength = "strong"
+requires_all = ["❯"]
+requires_any = ["worked for", "baked for", "brewed for", "churned for"]
+
+[[rule]]
 id = "osc-title-idle"
 state = "idle"
-priority = 490
+priority = 485
 region = "osc_title"
 strength = "strong"
 regex = ["^✳ "]
@@ -96,7 +105,7 @@ regex = ["^✳ "]
 [[rule]]
 id = "live-prompt"
 state = "idle"
-priority = 480
+priority = 475
 region = "bottom_nonempty:8"
 strength = "strong"
 line_regex = ["^\\s*❯\\s*$"]
