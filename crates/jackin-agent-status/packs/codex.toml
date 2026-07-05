@@ -28,7 +28,7 @@ requires_any = [
 id = "working-block"
 state = "working"
 priority = 700
-region = "bottom:24"
+region = "after_last_prompt_marker"
 strength = "strong"
 requires_all = ["• working ("]
 
