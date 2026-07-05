@@ -1,0 +1,56 @@
+---
+title: "Asciinema Session Recording"
+---
+
+**Status**: Open — design proposal
+
+## Problem
+
+Debugging agent status and tab-state rendering is currently too screenshot-driven. An operator can see the
+whole jackin❯ capsule session, but an assisting agent only sees intermittent copied frames. That makes
+small state transitions hard to verify: startup prompts, onboarding gates, running footers, completed
+prompts, paused workflows, and stale path text all need exact visible terminal context to classify correctly.
+
+jackin❯ needs an opt-in session recording mode that captures the visible capsule session over time in a
+terminal-native format, so status detector fixes can be replayed, inspected, and converted into regression
+fixtures without relying on manual screenshots.
+
+## Why It Matters
+
+Recent agent-status work exposed a repeatable workflow gap: every new runtime screen shape requires the
+operator to paste screenshots while the implementer infers terminal text and state evidence by eye. A
+recording would let contributors inspect the complete tab timeline, replay exact transitions, and extract
+fixtures at the precise frame where a detector or glyph is wrong.
+
+Asciinema is the right ecosystem to evaluate first because its `.cast` format is lightweight, text-based,
+replayable, and designed for terminal sessions. License handling must be explicit: the current asciinema CLI
+crate is GPL-3.0-or-later, so jackin❯ must not embed or link that implementation unless the project accepts
+the GPL obligations. Prefer one of these compatible approaches during design:
+
+- write asciicast-compatible output directly in jackin❯;
+- use permissively licensed asciinema components where suitable, such as Apache-2.0 terminal parsing pieces;
+- optionally shell out to a user-installed `asciinema` binary as a development-only integration, keeping it
+  outside jackin❯ distribution and documenting the license boundary.
+
+## Design
+
+<!-- Filled in by brainstorming. -->
+
+Initial design questions:
+
+- Should recording happen in the host launcher, the capsule daemon, or both?
+- Should the first supported format be raw asciicast, jackin❯-specific NDJSON, or both?
+- How should recordings include detector evidence, tab glyphs, pane IDs, active pane, and terminal size?
+- What redaction/privacy defaults are required before writing visible terminal contents to disk?
+- How should a recording frame become a `jackin-agent-status` fixture?
+
+## Tasks
+
+<!-- Filled in by planning. -->
+
+## Related Files
+
+- `crates/jackin-capsule/`
+- `crates/jackin-agent-status/`
+- `docs/content/docs/reference/tui/`
+- `docs/content/docs/roadmap/(operator-surface)/meta.json`
