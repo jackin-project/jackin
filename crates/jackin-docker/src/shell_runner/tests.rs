@@ -277,7 +277,7 @@ async fn debug_run_scrubs_captured_command_output() {
 
     let contents = std::fs::read_to_string(run.path()).unwrap();
     assert!(!contents.contains("ghp_1234567890abcdef"));
-    assert!(contents.contains("<secret redacted>"));
+    assert!(contents.contains("<redacted>"));
 }
 
 #[test]
