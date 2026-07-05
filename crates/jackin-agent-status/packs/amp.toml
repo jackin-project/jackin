@@ -53,6 +53,15 @@ strength = "strong"
 requires_all = ["welcome to amp", "ctrl+o for commands", "? for shortcuts"]
 
 [[rule]]
+id = "ready-footer"
+state = "idle"
+priority = 493
+region = "bottom_nonempty:8"
+strength = "strong"
+requires_all = ["rush", "users/"]
+line_regex = ["╰.*users/.+holla-project"]
+
+[[rule]]
 id = "arrow-prompt"
 state = "idle"
 priority = 490

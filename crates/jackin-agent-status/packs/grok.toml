@@ -35,3 +35,12 @@ region = "bottom:24"
 strength = "strong"
 requires_all = ["grok build beta", "composer", "always-approve"]
 line_regex = ["^\\s*│\\s*❯\\s*│"]
+
+[[rule]]
+id = "ready-prompt"
+state = "idle"
+priority = 490
+region = "bottom:16"
+strength = "strong"
+requires_all = ["composer", "always-approve"]
+line_regex = ["│\\s*❯"]
