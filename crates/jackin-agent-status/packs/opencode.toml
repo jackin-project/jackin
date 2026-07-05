@@ -19,6 +19,14 @@ strength = "strong"
 requires_all = ["processing...", "ctrl+c to cancel"]
 
 [[rule]]
+id = "interrupt-footer"
+state = "working"
+priority = 690
+region = "bottom_nonempty:8"
+strength = "strong"
+requires_all = ["esc interrupt", "opencode"]
+
+[[rule]]
 id = "ready-text"
 state = "idle"
 priority = 500
