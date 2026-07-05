@@ -442,6 +442,7 @@ fn load_embedded_packs(packs: &mut HashMap<String, RulePack>) -> anyhow::Result<
             ("amp", include_str!("../packs/amp.toml")),
             ("kimi", include_str!("../packs/kimi.toml")),
             ("opencode", include_str!("../packs/opencode.toml")),
+            ("grok", include_str!("../packs/grok.toml")),
         ],
     );
     anyhow::ensure!(

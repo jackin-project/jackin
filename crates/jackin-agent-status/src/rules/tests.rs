@@ -144,11 +144,7 @@ requires_all = ["ok"]
 
 #[test]
 fn agent_screen_detector_coverage_is_exhaustive_or_reviewed() {
-    const NO_SCREEN_DETECTOR: &[&str] = &[
-        // TODO(plan-006-grok): replace this opt-out with a real grok pack after
-        // jackin❯ captures grok-originated blocked/working/idle goldens.
-        "grok",
-    ];
+    const NO_SCREEN_DETECTOR: &[&str] = &[];
     let registry = RulePackRegistry::bundled().unwrap();
 
     for agent in jackin_core::Agent::ALL {

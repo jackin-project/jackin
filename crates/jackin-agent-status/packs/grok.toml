@@ -1,0 +1,28 @@
+schema_version = 1
+agent = "grok"
+validated_versions = ">=0.1.0, <0.2.0"
+
+[[rule]]
+id = "thinking"
+state = "working"
+priority = 700
+region = "bottom:24"
+strength = "strong"
+requires_any = ["thinking…", "thinking..."]
+requires_all = ["[stop]"]
+
+[[rule]]
+id = "waiting-for-response"
+state = "working"
+priority = 690
+region = "bottom:24"
+strength = "strong"
+requires_all = ["waiting for response", "[stop]"]
+
+[[rule]]
+id = "running-tool"
+state = "working"
+priority = 680
+region = "bottom:24"
+strength = "strong"
+requires_all = ["run web search", "[stop]"]

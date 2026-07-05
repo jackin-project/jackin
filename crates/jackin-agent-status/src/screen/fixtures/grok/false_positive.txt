@@ -1,0 +1,11 @@
+# not: working
+
+Previous transcript:
+◆ Thought for 4.0s
+◆ Web Search open https://en.wikipedia.org/wiki/Special:Random (1 site)
+
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Build anything                                                                                                                │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────── Grok Build · always-approve ─╯
+
+Shift+Tab:mode  │  Esc:cancel  │  Ctrl+x:shortcuts
