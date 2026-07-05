@@ -62,10 +62,9 @@ impl FakeRunner {
     }
 
     /// Number of capture calls `load_role` makes before reaching role-
-    /// specific logic: 2 identity lookups (`git config user.name`,
-    /// `git config user.email`).
+    /// specific logic: 1 identity lookup (`git config --get-regexp ...`).
     /// GC now uses `DockerApi`, not `CommandRunner`, so it no longer counts.
-    const LOAD_PREAMBLE_CAPTURES: usize = 2;
+    const LOAD_PREAMBLE_CAPTURES: usize = 1;
 
     pub(super) fn for_load_agent<const N: usize>(outputs: [String; N]) -> Self {
         let mut queue = VecDeque::with_capacity(Self::LOAD_PREAMBLE_CAPTURES + N);
@@ -331,6 +330,11 @@ pub mod fake_docker {
     }
 
     impl DockerApi for FakeDockerClient {
+        async fn ping(&self) -> anyhow::Result<()> {
+            self.record("docker ping");
+            self.check_fail("docker ping")
+        }
+
         async fn inspect_container_state(&self, name: &str) -> ContainerState {
             let op = format!("docker inspect {name}");
             self.record(&op);

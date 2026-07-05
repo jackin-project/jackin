@@ -91,6 +91,22 @@ Trying to set one of these is rejected before the agent launches.
 
 Role identity, workspace workdir, supported agent slugs, and manifest model overrides are handed to Capsule through a generated launch config instead of being duplicated as container-wide environment variables. Runtime metadata that must be visible inside Capsule, such as `JACKIN_RUN_ID`, `JACKIN_RUN_DIAGNOSTICS_PATH`, and `JACKIN_HOST_VERSION`, is injected by jackin❯ at launch time and is not read from operator env scopes. The [Capsule reference](/reference/capsule/#how-state-moves-across-the-boundary) documents the internal handoff.
 
+## Telemetry
+
+These variables affect host run telemetry and diagnostics capture; see [Run Telemetry](/guides/run-telemetry/) for setup examples and [Run Diagnostics](/reference/runtime/diagnostics/) for the full sink model.
+
+| Variable | Effect |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Enables OTLP export for traces, logs, and metrics through one base gRPC endpoint. When this is active, the backend is the sink and the local run JSONL file is not written unless `JACKIN_DIAGNOSTICS_FILE=1` is also set. |
+| `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_ENDPOINT` | Overrides the endpoint per signal. jackin❯ still exports over gRPC only. |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_{TRACES,LOGS,METRICS}_PROTOCOL` | Must be `grpc` or unset when an endpoint is configured; any other value stops startup with [E016](/reference/errors/E016/). |
+| `JACKIN_DEBUG` | Backs `--debug` for verbose diagnostics and capsule debug logging. Raw PTY/frame/input payloads require the trace telemetry level. |
+| `JACKIN_TELEMETRY_LEVEL` | Overrides `[telemetry].level` from `config.toml`: `info` (default), `debug`, or `trace`. `debug`/`trace` enable debug-category diagnostics even when `--debug` is not set; `trace` also enables raw capsule PTY/frame/input payload records. |
+| `JACKIN_TELEMETRY_CATEGORIES` | Overrides `[telemetry].categories` from `config.toml` with a comma-separated debug-category allowlist such as `docker,launch`; `*` allows every debug category. Applies before debug-category events enter JSONL or OTLP. |
+| `JACKIN_DIAGNOSTICS_FILE` | Set to `1`, `true`, `yes`, or `on` to write the local run JSONL file even when OTLP export is active. |
+| `PARALLAX_RUN_ID` | Supplies an external run id for jackin❯ to adopt instead of minting a six-hex id. |
+| `OTEL_RESOURCE_ATTRIBUTES` | If it contains `parallax.run.id=<value>`, jackin❯ adopts that external run id and stamps the same value on exported telemetry. |
+
 ## Host attach validation
 
 `JACKIN_HOST_ATTACH=1` is an opt-in host-side launch flag. Set it on the command that starts or attaches to an instance when testing host affordances:

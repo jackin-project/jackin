@@ -1,6 +1,6 @@
 //! Footer hint rows for capsule dialogs.
 
-use jackin_tui::HintSpan;
+use jackin_tui::{HintSpan, keymap::glyph};
 
 use crate::tui::keymap::{
     CAPSULE_GLOBAL_KEYMAP, FILTER_LIST_KEYMAP, FilterListAction, PREFIX_COMMAND_KEYMAP,
@@ -165,10 +165,10 @@ pub(super) fn info_dialog_hint(
 
 pub(super) fn usage_hint(axes: jackin_tui::components::ScrollAxes) -> Vec<HintSpan<'static>> {
     let mut spans = vec![
-        HintSpan::Key("←→"),
+        HintSpan::Key(glyph::LEFT_RIGHT),
         HintSpan::Text("switch provider"),
         HintSpan::GroupSep,
-        HintSpan::Key("Tab"),
+        HintSpan::Key(glyph::TAB),
         HintSpan::Text("focus content"),
         HintSpan::GroupSep,
         HintSpan::Key("r"),

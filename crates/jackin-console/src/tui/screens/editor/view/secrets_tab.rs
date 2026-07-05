@@ -2,11 +2,10 @@
 //! coordinator. Items re-exported from parent to preserve `super::` call
 //! sites in tests and frame.
 
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::text::Line;
 
 use crate::tui::components::editor_rows::{
-    SecretValueDisplay, action_row_style, disclosure_style, render_secret_key_line,
+    SecretEnvLineFrame, SecretLineRow, SecretValueDisplay, secret_env_lines,
 };
 use crate::tui::components::env_value::secret_display;
 use crate::tui::screens::editor::model::{FieldFocus, SecretsRow, SecretsScopeTag};
@@ -25,76 +24,38 @@ pub(crate) fn secret_lines<'a>(
     role_in_registry: impl Fn(&str) -> bool,
     role_var_count: impl Fn(&str) -> usize,
 ) -> Vec<Line<'static>> {
-    let mut lines = Vec::with_capacity(rows.len());
-    let label_width = 22;
-
-    for (i, row) in rows.iter().enumerate() {
-        let selected = show_cursor && (i == cursor);
-        let cursor_col = if selected { "\u{25b8} " } else { "  " };
-        match row {
-            SecretsRow::WorkspaceKeyRow(key) => {
-                let scope = SecretsScopeTag::Workspace;
-                let value = value_for(&scope, key).unwrap_or(SecretValueDisplay::Plain(""));
-                lines.push(render_secret_key_line(
-                    selected,
-                    cursor_col,
-                    key,
-                    value,
-                    !is_unmasked(&scope, key),
-                    area_width,
-                    label_width,
-                ));
-            }
-            SecretsRow::WorkspaceAddSentinel => {
-                lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}+ Add environment variable"),
-                    action_row_style(selected),
-                )));
-            }
-            SecretsRow::RoleHeader { role, expanded } => {
-                let arrow = if *expanded { "\u{25bc}" } else { "\u{25b6}" };
-                let mut spans = vec![
-                    Span::raw(format!("{cursor_col}     ")),
-                    Span::styled(arrow, disclosure_style()),
-                    Span::styled(
-                        format!(" Role: {role}  ({} vars)", role_var_count(role)),
-                        disclosure_style(),
-                    ),
-                ];
-                if !role_in_registry(role) {
-                    spans.push(Span::styled(
-                        "  (not in registry)",
-                        Style::default()
-                            .fg(jackin_tui::theme::PHOSPHOR_DIM)
-                            .add_modifier(Modifier::ITALIC),
-                    ));
-                }
-                lines.push(Line::from(spans));
-            }
-            SecretsRow::RoleKeyRow { role, key } => {
-                let scope = SecretsScopeTag::Role(role.clone());
-                let value = value_for(&scope, key).unwrap_or(SecretValueDisplay::Plain(""));
-                lines.push(render_secret_key_line(
-                    selected,
-                    cursor_col,
-                    key,
-                    value,
-                    !is_unmasked(&scope, key),
-                    area_width,
-                    label_width,
-                ));
-            }
-            SecretsRow::RoleAddSentinel(role) => {
-                lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}     + Add {role} environment variable"),
-                    action_row_style(selected),
-                )));
-            }
-            SecretsRow::SectionSpacer => lines.push(Line::from("")),
-        }
-    }
-
-    lines
+    let display_rows: Vec<SecretLineRow<SecretsScopeTag>> = rows
+        .iter()
+        .map(|row| match row {
+            SecretsRow::WorkspaceKeyRow(key) => SecretLineRow::Key {
+                scope: SecretsScopeTag::Workspace,
+                key: key.clone(),
+            },
+            SecretsRow::WorkspaceAddSentinel => SecretLineRow::WorkspaceAddSentinel,
+            SecretsRow::RoleHeader { role, expanded } => SecretLineRow::RoleHeader {
+                role: role.clone(),
+                expanded: *expanded,
+            },
+            SecretsRow::RoleKeyRow { role, key } => SecretLineRow::Key {
+                scope: SecretsScopeTag::Role(role.clone()),
+                key: key.clone(),
+            },
+            SecretsRow::RoleAddSentinel(role) => SecretLineRow::RoleAddSentinel(role.clone()),
+            SecretsRow::SectionSpacer => SecretLineRow::SectionSpacer,
+        })
+        .collect();
+    secret_env_lines(
+        &display_rows,
+        SecretEnvLineFrame {
+            cursor,
+            show_cursor,
+            area_width,
+        },
+        |scope, key| value_for(scope, key).or(Some(SecretValueDisplay::Plain(""))),
+        is_unmasked,
+        role_in_registry,
+        role_var_count,
+    )
 }
 
 #[must_use]

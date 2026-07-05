@@ -5,9 +5,9 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind};
 use jackin_tui::components::{
-    ButtonStrip, ButtonStripItem, ConfirmState, SaveDiscardState, SelectList, SelectListState,
-    TabStrip, TextInput, TextInputState, render_confirm_dialog, render_save_discard_dialog,
-    render_scrollable_block,
+    ButtonStrip, ButtonStripItem, ConfirmState, SaveDiscardState, SelectListState, TabStrip,
+    TextInputState, render_confirm_dialog, render_save_discard_dialog, render_scrollable_block,
+    render_select_list, render_text_input,
 };
 use jackin_tui::{
     lay_out_tabs,
@@ -98,10 +98,12 @@ impl TabStripInteractor {
 
 impl StoryInteraction for TabStripInteractor {
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        TabStrip::new(&self.labels)
-            .focused(true)
-            .hovered(self.hovered)
-            .render(frame, area);
+        frame.render_widget(
+            TabStrip::new(&self.labels)
+                .focused(true)
+                .hovered(self.hovered),
+            area,
+        );
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {
@@ -181,10 +183,7 @@ impl SelectListInteractor {
 
 impl StoryInteraction for SelectListInteractor {
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        frame.render_widget(
-            SelectList::new(&self.state, "Choose agent").context(&self.context),
-            area,
-        );
+        render_select_list(frame, area, &self.state, "Choose agent", &self.context);
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {
@@ -401,7 +400,7 @@ impl TextInputInteractor {
 
 impl StoryInteraction for TextInputInteractor {
     fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
-        frame.render_widget(TextInput::new(&self.state), area);
+        render_text_input(frame, area, &self.state);
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {
@@ -449,9 +448,10 @@ impl StoryInteraction for ButtonStripInteractor {
             Constraint::Fill(1),
         ])
         .areas(area);
-        ButtonStrip::new(&self.items)
-            .focused(self.focused)
-            .render(frame, strip_area);
+        frame.render_widget(
+            ButtonStrip::new(&self.items).focused(self.focused),
+            strip_area,
+        );
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {

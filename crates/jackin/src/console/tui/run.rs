@@ -7,7 +7,6 @@
 
 use crate::console::terminal::{
     MAX_EVENTS_PER_TICK, MOUSE_ESCAPE_GRACE_MS, TICK_MS, TerminalSession, host_console_terminal,
-    resume_console_terminal, suspend_console_terminal,
 };
 use crate::console::{ConsoleOutcome, ConsoleStage, ConsoleState, InstanceActionHandler};
 use jackin_console::tui::components::error_popup::{
@@ -845,14 +844,21 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
             None
         };
         if let Some(req) = pending {
-            let mut out = std::io::stdout();
-            suspend_console_terminal(&mut out);
-            println!(
-                "{}",
-                token_generate_status_message(token_generate_scope_label_for_console(&req))
-            );
-            let mint = crate::console::effects::execute_token_generate(paths, &config, &req);
-            drop(resume_console_terminal(&mut out));
+            let mint = if let Some(session) = owned_screen.as_ref().or(options.parent_session) {
+                session.suspend(|| {
+                    println!(
+                        "{}",
+                        token_generate_status_message(token_generate_scope_label_for_console(&req))
+                    );
+                    crate::console::effects::execute_token_generate(paths, &config, &req)
+                })?
+            } else {
+                println!(
+                    "{}",
+                    token_generate_status_message(token_generate_scope_label_for_console(&req))
+                );
+                crate::console::effects::execute_token_generate(paths, &config, &req)
+            };
             // Force a full repaint next frame so leftover child output is
             // overwritten. terminal.resize() resets Ratatui's internal diff
             // buffer (marks every cell dirty) without emitting \x1b[2J — this

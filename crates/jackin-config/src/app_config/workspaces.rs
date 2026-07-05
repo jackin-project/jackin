@@ -168,7 +168,6 @@ impl AppConfig {
     // pub(crate): production callers use ConfigEditor::remove_workspace (which
     // deletes the TOML table directly); this stays for the test in workspaces.rs
     // that validates the error message shape.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn remove_workspace(&mut self, name: &str) -> anyhow::Result<()> {
         self.workspaces
             .remove(name)
@@ -183,7 +182,6 @@ impl AppConfig {
             .collect()
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn insert_workspace_raw(&mut self, name: &str, ws: WorkspaceConfig) {
         self.workspaces.insert(name.into(), ws);
     }

@@ -3,11 +3,18 @@
 use crate::tui::view::{spawn_failure_agent_label, spawn_failure_message};
 
 use super::{
-    AgentRecord, Multiplexer, PickerIntent, Result, Session, SessionLaunch, SpawnRequest, Tab, Utc,
-    build_agent_command, build_shell_command,
+    AgentRecord, Dialog, FullRedrawReason, Multiplexer, PickerIntent, Result, Session,
+    SessionLaunch, SpawnRequest, Tab, Utc, build_agent_command, build_shell_command,
 };
 
 impl Multiplexer {
+    pub(super) fn open_spawn_failure_dialog(&mut self, message: String) {
+        self.dialog_push(Dialog::SpawnFailure(
+            jackin_tui::components::ErrorPopupState::new("Spawn failed", message),
+        ));
+        self.invalidate(FullRedrawReason::DialogChange);
+    }
+
     pub(super) fn active_tab_pane_count(&self) -> usize {
         self.tabs
             .get(self.active_tab)
@@ -333,11 +340,7 @@ impl Multiplexer {
         if let Err(err) = result {
             let agent_label = spawn_failure_agent_label(agent.as_deref());
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
-            // Surface to the attach client too — otherwise the dialog
-            // closes successfully and the operator sees no new pane and
-            // no explanation.
-            self.spawn_failure = Some(spawn_failure_message(agent_label, &err));
-            self.invalidate(super::FullRedrawReason::StatusChange);
+            self.open_spawn_failure_dialog(spawn_failure_message(agent_label, &err));
         }
     }
 
@@ -359,8 +362,7 @@ impl Multiplexer {
         if let Err(err) = result {
             let agent_label = spawn_failure_agent_label(agent.as_deref());
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
-            self.spawn_failure = Some(spawn_failure_message(agent_label, &err));
-            self.invalidate(super::FullRedrawReason::StatusChange);
+            self.open_spawn_failure_dialog(spawn_failure_message(agent_label, &err));
         }
     }
 

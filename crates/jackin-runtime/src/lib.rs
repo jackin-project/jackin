@@ -37,7 +37,8 @@ pub use runtime::{
     prewarm_dind_sidecar_container, prune_all_instances, prune_cache, prune_diagnostics,
     prune_images, prune_instances, prune_jackin_home, prune_roles, purge_class_data,
     purge_container_state, reconcile_keep_awake, resolve_supported_agents_for_console,
-    spawn_agent_session, spawn_shell_session, write_prewarmed_dind_state,
+    spawn_agent_session, spawn_background_sidecar_prewarm, spawn_shell_session,
+    write_prewarmed_dind_state,
 };
 #[cfg(not(test))]
 pub use runtime::{ImagePrewarmStatus, RoleImagePrewarmRow, prewarm_role_images};

@@ -1166,7 +1166,7 @@ impl ManagerState<'_> {
             jackin_diagnostics::debug_log!(
                 "auth",
                 "AUTH005 apply_op_picker_op_ref_committed_for_editor: \
-                 pending_auth_form_return missing — async OpRef commit dropped"
+                 modal parent auth form missing — async OpRef commit dropped"
             );
         }
     }
@@ -1184,7 +1184,7 @@ impl ManagerState<'_> {
         let ManagerStage::Settings(settings) = &mut self.stage else {
             return;
         };
-        let Some(super::SettingsAuthModal::AuthForm {
+        let Some(super::SettingsModal::AuthForm {
             target,
             mut state,
             literal_buffer,
@@ -1199,7 +1199,7 @@ impl ManagerState<'_> {
             return;
         };
         state.set_op_ref(op_ref);
-        settings.auth.set_modal(super::SettingsAuthModal::AuthForm {
+        settings.auth.set_modal(super::SettingsModal::AuthForm {
             target,
             state,
             focus: crate::tui::screens::settings::model::AuthFormFocus::Save,

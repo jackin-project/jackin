@@ -58,9 +58,9 @@ cargo test --doc --workspace --locked
 
 ## Recording capsule render-conformance fixtures
 
-Capsule echo-back harness ([crates/jackin-capsule/src/daemon/tests.rs](crates/jackin-capsule/src/daemon/tests.rs)) replays PTY byte streams through multiplexer, asserts emitted frames reproduce pane model on virtual client terminal. Synthetic streams live in harness; real-agent fixtures recorded from `--debug` run:
+Capsule echo-back harness ([crates/jackin-capsule/src/daemon/tests.rs](crates/jackin-capsule/src/daemon/tests.rs)) replays PTY byte streams through multiplexer, asserts emitted frames reproduce pane model on virtual client terminal. Synthetic streams live in harness; real-agent fixtures are recorded from a trace-level `--debug` run:
 
-1. Run session with `--debug` (e.g. `cargo run --bin jackin -- console --debug`), exercise agent. Note run id CLI prints.
+1. Run session with `JACKIN_TELEMETRY_LEVEL=trace` (e.g. `JACKIN_TELEMETRY_LEVEL=trace cargo run --bin jackin -- console --debug`), exercise agent. Note run id CLI prints.
 2. Extract one session's PTY stream from run log into binary fixture:
 
    ```sh
@@ -68,14 +68,15 @@ Capsule echo-back harness ([crates/jackin-capsule/src/daemon/tests.rs](crates/ja
      crates/jackin-capsule/tests/fixtures/pty/<agent>-<scenario>.bin
    ```
 
-   Session label = pane label in capsule tab (e.g. `Codex`). Extractor also accepts raw in-container `multiplexer.log`.
+   Session label = pane label in capsule tab (e.g. `Codex`). When the run JSONL contains only the `capsule_log` pointer, the extractor follows that path to the raw in-container `multiplexer.log`; passing `multiplexer.log` directly also works.
+   The trace payload lines are written to local files only when OTLP export is inactive. If `OTEL_EXPORTER_OTLP_ENDPOINT` is set in your shell, the backend is the sink and raw payloads are not mirrored to `multiplexer.log`; unset it for local fixture extraction. `JACKIN_DIAGNOSTICS_FILE=1` can force the host JSONL file, but it does not mirror raw capsule payloads while capsule OTLP is active.
 3. Reference fixture from harness scenario with `include_bytes!`.
 
 ## Walking the operator through local validation
 
 Every `jackin <subcommand>` invocation in manual validation MUST include `--debug`. Includes `cargo run --bin jackin -- <subcommand> --debug` from checkout.
 
-`--debug` captures every external command (`docker`, `git`, `id`, etc.) with output plus `[jackin debug ...]` instrumentation into `~/.jackin/data/diagnostics/runs/<run-id>.jsonl`. CLI prints run id. When something misbehaves, ask for run id — agent reads JSONL to localize issue, not a pasted terminal scrollback.
+`--debug` captures every external command (`docker`, `git`, `id`, etc.) with output plus `[jackin debug ...]` instrumentation into `~/.jackin/data/diagnostics/runs/<run-id>.jsonl` only when OTLP export is inactive. If `OTEL_EXPORTER_OTLP_ENDPOINT` is set in the shell, the backend is the sink and no file is written; unset it for JSONL-based triage or set `JACKIN_DIAGNOSTICS_FILE=1` to write both. CLI prints the run id either way: in OTLP-only mode, ask for the run id and query the backend for `parallax.run.id=<run-id>` instead of looking for a file.
 
 Smoke tests: suggest `jackin console` first, prefer `the-architect` role over `agent-smith`. Standard smoke command:
 

@@ -1,0 +1,67 @@
+---
+title: "10 — Rollout and validation"
+---
+
+# 10 — Rollout and validation
+
+Phases are ordered by the research's risk/reach ladder (measure → protect → write-time compress → retrieve → output → route → memory), each gated by the harness before the next activates. Nothing ships to a role's default until its arm clears the acceptance bar on that role's own workload.
+
+## Phases
+
+**P0 — Measure (no mutation).** `jackin-context` crate with L0 only: ledger, JSONL ingestion (`message.id` dedup), observation attribution, cache-bust detector, thinking estimator, `ctx doctor`, CI token-budget linter, TUI panel. Default-on for all roles (`JACKIN_CTX_MEASURE_ONLY`). Deliverable: every capsule knows its own Bash-vs-native-read split, cache health, and thinking share — the three numbers that decide everything downstream. Also: baseline windows recorded per role for later A/Bs.
+
+**P1 — Protect (negative-cost set).** Guard lines + subagent model/effort pins + report-register contracts in generated agent config; `excludeDynamicSections` + spawn stagger/pre-warm in the orchestrator; conflict probe (INV-8); cache-bust alerts live. All items are the dossier's S-tier negative-cost set — no quality risk, no A/B needed beyond screening. The model pins are now load-bearing, not belt-and-braces: since Claude Code 2.1.198 the Explore subagent inherits the session model instead of defaulting to Haiku, so cheap exploration exists only because the engine generates explicit pins.
+
+**P2 — Observation pipeline.** Shims + classifier + TOML filter corpus + crushers + never-worse guard + CCR archive + recovery footers. A/B arms: measure-only vs +shims (vs RTK-binary arm for the subsumption claim). Acceptance: ≥20% tool-result-token cut on shell-visible traffic at success/bounce parity.
+
+**P3 — Retrieval.** fff + sem + mq embedded; `ctx_*` verbs registered; read-stub cache + delta-fills; doctrine section in role instructions. A/B: +read-verbs vs P2 (vs headroom-MCP and lean-ctx faithful-arm external arms). Acceptance: tokens-per-solved-task ≥20% down on read-heavy tasks, native-read share and bounce rate improving, net-of-injection.
+
+**P4 — Output pack.** Register levels (default `terse`), codebook (opt-in), canary gate + online judge + holdout. First harness run doubles as the missing register-vs-agentic-quality benchmark.
+
+**P5 — Routing and lanes.** Effort tiering per task class (harness produces the per-level curve first), advisor wiring, batch lane, quota prober + tasks-per-cap display, budget governors. Highest-multiplier, highest-risk items last, each behind confirmation-grade (n=30) validation per role.
+
+**P6 — Memory.** Knowledge notes + handoff files + net accounting; only after P2–P3 ledgers exist to measure against.
+
+## Role manifest surface (sketch)
+
+New versioned `[context]` table in `jackin.role.toml` (one schema bump, 5 artifacts per PRERELEASE):
+
+```toml
+[context]
+mode = "standard"        # off | measure | standard | aggressive (register+routing active)
+languages = ["rust", "toml", "markdown"]   # grammar/features linked into indexes
+
+[context.output]
+register = "terse"       # off | terse | compact | register
+codebook = false
+
+[context.routing]
+effort_default = "high"
+subagent_model = "haiku"  # exploration-class agents
+advisor = true
+batch_lane = true
+
+[context.filters]
+extra = ["filters/role.toml"]   # role-repo TOML filters, content-hash trusted
+```
+
+Env kill switches override per launch; `jackin load --ctx=off` for instant bisection. Pilot vehicle: the-architect role (already the fff/codedb pilot), whose third-party stack (RTK binary + headroom MCP + fff/codedb MCP servers + caveman guidance) becomes the engine's external comparison arms and, on success, is retired in favor of the native pack. The pxpipe proxy arm runs separately on the pilot's gist-tolerant task slices only — never in the same lane as the headroom arm (both mutate message history; stacking hazard per [tools hub 17](/reference/research/token-optimization-tools/17-pxpipe-design/)).
+
+## Validation program
+
+1. **Per-phase A/Bs** as above ([techniques 16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/) protocol; batch-lane execution; canaries in every round).
+2. **The cross-tool harness** ([tools hub 09 — Gaps, open questions, and the next-research brief](/reference/research/token-optimization-tools/09-gaps-open-questions-and-next-brief/)'s highest-value open deliverable): Native / engine-P2 / engine-P3 / engine-full / RTK / headroom-MCP / lean-ctx(faithful) / caveman+RTK stack / pxpipe proxy arm (gist-tolerant workloads only, allowlisted models, never stacked with headroom on the history region — [tools hub 17](/reference/research/token-optimization-tools/17-pxpipe-design/)) — first controlled multi-arm numbers, published back into the research hub.
+3. **Continuous**: online canaries, bust alerts, bounce-rate regression tripwires, `ctx doctor --gate` in CI, monthly platform-drift re-audit (prefix mass, schema mass — the ±70k/5-days lesson).
+4. **Docs gates per PR**: roadmap item freshness, this spec updated as design decisions land, behavioral spec (INV table) added under developer-reference/specs when implementation starts.
+
+## Risks
+
+| Risk | Mitigation |
+|---|---|
+| Upstream churn (all deps pre-1.0) | Exact pins + Renovate reviewed bumps; vendored corpora are snapshots; port-not-depend for unstable kernels |
+| Engine's own overhead exceeds savings on small workloads | Measure-only default; net-of-injection ledger; per-role activation; size gates on retrieval |
+| Filtered output drops a needed line | never-worse guard, verbatim-class policy, CCR recovery on all exit codes, bounce auto-upgrade, re-run-rate metric |
+| Steering fails (agent ignores verbs) | Honest doctrine + transparent shims/dedup work without steering; adherence metered, not assumed |
+| Conflict with operator-installed tools (RTK hook, headroom proxy, pxpipe proxy, caveman plugin) | Setup-time conflict probe (INV-8); role docs name the one-of-each rule; prompt-mutating middlemen (headroom, pxpipe) additionally exclusive on the history region |
+| Schema change risk (`[context]` table) | Versioned manifest migration per PRERELEASE; `deny_unknown_fields` honored |
+| Quality regression from registers/effort | Canary veto, holdout, online judge auto-demotion, confirmation-grade n=30 for routing |

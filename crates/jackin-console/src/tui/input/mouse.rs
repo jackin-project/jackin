@@ -43,13 +43,12 @@ use crate::tui::screens::workspaces::update::{
 use crate::tui::state::ManagerEffect;
 use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::state::{
-    EditorTab, GlobalMountModal, ManagerListRow, ManagerStage, ManagerState, Modal,
-    MountScrollFocus, SettingsAuthModal, SettingsTab,
+    EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus, SettingsModal,
+    SettingsTab,
 };
 use crate::tui::update::{
-    ConsoleMouseWheelPlan, GlobalMountModalScrollTarget, ListModalScrollTarget,
-    SettingsAuthModalScrollTarget, SettingsEnvModalScrollTarget, SharedModalScrollTarget,
-    console_mouse_wheel_plan,
+    ConsoleMouseWheelPlan, ListModalScrollTarget, SettingsModalScrollTarget,
+    SharedModalScrollTarget, console_mouse_wheel_plan,
 };
 
 pub use hover::{

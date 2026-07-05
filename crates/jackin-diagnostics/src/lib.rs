@@ -17,6 +17,7 @@ pub mod debug_log;
 pub mod logging;
 pub mod observability;
 pub mod operator_notice;
+pub mod redact;
 pub mod run;
 pub mod screen;
 pub mod secret_scrub;
@@ -24,8 +25,9 @@ pub mod summary;
 pub mod terminal;
 
 pub use logging::{
-    begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line, emit_debug_line,
-    end_debug_buffering, format_debug_line, is_debug_mode, set_debug_mode,
+    TelemetryLevel, begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line,
+    emit_debug_line, emit_operator_notice, end_debug_buffering, format_debug_line, is_debug_mode,
+    set_config_telemetry, set_debug_mode, telemetry_level,
 };
 pub use observability::{
     ContainerOtlp, configured_endpoint, configured_endpoint_summary, container_otlp,
@@ -33,8 +35,9 @@ pub use observability::{
     unsupported_otlp_protocol,
 };
 pub use run::{
-    ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_timing_done,
-    active_timing_started, mint_session_id, prune_all_runs, prune_old_runs,
+    ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,
+    active_subprocess_done, active_timing_done, active_timing_started, install_host_panic_hook,
+    mint_session_id, prune_all_runs, prune_old_runs,
 };
 pub use screen::{
     Screen, ScreenGuard, carry_link_forward, current_traceparent, enter_screen, launch_trace,

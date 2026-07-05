@@ -1,0 +1,35 @@
+[package]
+name = "jackin-agent-status"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Pure agent runtime status detection and arbitration for jackin."
+homepage = "https://jackin.tailrocks.com/"
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+default = []
+# Plan 009 spike: allow a flagged Codex app-server authority prototype without
+# changing the default Codex hook reporter path.
+codex-app-server-authority = []
+
+[dependencies]
+anyhow = { workspace = true }
+jackin-core = { workspace = true }
+jackin-protocol = { workspace = true }
+regex = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+toml = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

@@ -304,22 +304,17 @@ fn commit_workspace_name_input_updates_pending_name() {
 }
 
 #[test]
-fn dismiss_active_modal_preserves_modal_stack_and_scratch() {
+fn dismiss_active_modal_preserves_modal_stack() {
     let mut editor =
         TestEditorWithStatusModal::new_edit("alpha".into(), WorkspaceConfig::default());
     editor.modal = Some(TestStatusModal::Status);
     editor.modal_parents.push(TestStatusModal::Other);
-    editor.pending_picker_value = Some(jackin_config::EnvValue::Plain("secret".into()));
 
     editor.dismiss_active_modal();
 
     assert!(editor.modal.is_none());
     assert_eq!(editor.modal_parents.len(), 1);
     assert!(matches!(editor.modal_parents[0], TestStatusModal::Other));
-    assert!(matches!(
-        editor.pending_picker_value,
-        Some(jackin_config::EnvValue::Plain(_))
-    ));
 }
 
 #[test]

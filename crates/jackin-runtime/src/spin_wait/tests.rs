@@ -6,6 +6,18 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
+#[test]
+fn ramped_interval_doubles_until_cap() {
+    let initial = Duration::from_millis(100);
+    let cap = Duration::from_millis(500);
+
+    let intervals: Vec<_> = (0..6)
+        .map(|attempt| ramped_interval(initial, cap, attempt).as_millis())
+        .collect();
+
+    assert_eq!(intervals, vec![100, 200, 400, 500, 500, 500]);
+}
+
 #[tokio::test(start_paused = true)]
 async fn spin_wait_sub_frame_interval_still_throttles_each_attempt() {
     let attempts = Rc::new(Cell::new(0_u32));

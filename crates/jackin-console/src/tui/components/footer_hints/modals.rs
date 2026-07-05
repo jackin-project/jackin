@@ -1,8 +1,8 @@
 //! Modal footer dispatcher + the per-modal-mode hint-span builders
 //! (auth form, confirm save, container info, status popup, op picker).
 
-use jackin_tui::HintSpan;
 use jackin_tui::components::{ScrollAxes, error_popup_hint_spans, save_discard_hint_spans};
+use jackin_tui::{HintSpan, keymap::glyph};
 
 use crate::tui::components::auth_panel;
 use crate::tui::components::confirm_save;
@@ -176,27 +176,11 @@ pub fn modal_footer_items(mode: ModalFooterMode) -> Vec<HintSpan<'static>> {
 
 #[must_use]
 pub fn confirm_save_footer_items(scroll_axes: ScrollAxes) -> Vec<HintSpan<'static>> {
-    let mut items = vec![
-        HintSpan::Key(
-            crate::tui::keymap::EDITOR_GLOBAL_KEYMAP
-                .glyph_for(crate::tui::keymap::EditorGlobalAction::Save),
-        ),
-        HintSpan::Text("save"),
-        HintSpan::GroupSep,
-        // UNREGISTERABLE(multi-key-display-group): combined C/Esc cancel display.
-        HintSpan::Key("C/Esc"),
-        HintSpan::Text("cancel"),
-    ];
-    let scroll_items = jackin_tui::components::scroll_hint_spans(scroll_axes);
-    if !scroll_items.is_empty() {
-        items.push(HintSpan::GroupSep);
-        items.extend(scroll_items);
-    }
-    items
+    confirm_save::confirm_save_hint_spans_for_axes(scroll_axes)
 }
 
 /// Hint spans for inline yes/no confirm modals (`Modal::Confirm`,
-/// `GlobalMountModal::Confirm`, `SettingsEnvModal::Confirm`).
+/// `SettingsModal::MountConfirm`, `SettingsModal::EnvConfirm`).
 ///
 /// Delegates to [`jackin_tui::components::confirm_hint_spans`] so this matches
 #[must_use]
@@ -273,7 +257,7 @@ pub fn auth_form_footer_items(
             HintSpan::Text("browse"),
             HintSpan::Sep,
             // UNREGISTERABLE(multi-key-display-group): combined navigate display.
-            HintSpan::Key("↑/↓"),
+            HintSpan::Key(glyph::UP_DOWN),
             HintSpan::Text("navigate"),
             HintSpan::GroupSep,
             // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.
@@ -295,7 +279,7 @@ pub fn auth_form_footer_items(
         ],
         AuthFormFocus::Save | AuthFormFocus::Cancel | AuthFormFocus::Reset => vec![
             // UNREGISTERABLE(multi-key-display-group): combined left/right display.
-            HintSpan::Key("←/→"),
+            HintSpan::Key(glyph::LEFT_RIGHT),
             HintSpan::Text("move"),
             HintSpan::GroupSep,
             // UNREGISTERABLE(auth-form-no-keymap): Tab moves to button row inline.

@@ -15,6 +15,7 @@ use jackin_core::{CommandRunner, RunOptions};
 use jackin_manifest::repo::{CachedRepo, validate_role_repo};
 #[cfg(test)]
 use std::io::IsTerminal;
+use std::time::{Duration, SystemTime};
 
 use super::identity::try_capture;
 
@@ -93,7 +94,7 @@ fn migrate_legacy_default_cache(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("role");
-    let suffix = std::time::SystemTime::now()
+    let suffix = SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
@@ -338,6 +339,7 @@ pub(super) struct RepoResolveOptions {
     debug: bool,
     branch_override: Option<String>,
     git_interactivity: GitInteractivity,
+    refresh_ttl: Option<Duration>,
 }
 
 impl RepoResolveOptions {
@@ -346,6 +348,7 @@ impl RepoResolveOptions {
             debug,
             branch_override: None,
             git_interactivity: GitInteractivity::Interactive,
+            refresh_ttl: None,
         }
     }
 
@@ -358,6 +361,7 @@ impl RepoResolveOptions {
             debug: false,
             branch_override: None,
             git_interactivity: GitInteractivity::NonInteractive,
+            refresh_ttl: None,
         }
     }
 
@@ -365,6 +369,26 @@ impl RepoResolveOptions {
         self.branch_override = branch.map(str::to_owned);
         self
     }
+
+    pub(super) const fn with_refresh_ttl(mut self, ttl: Duration) -> Self {
+        self.refresh_ttl = Some(ttl);
+        self
+    }
+}
+
+fn fetch_head_age(repo_dir: &std::path::Path) -> Option<Duration> {
+    let modified = std::fs::metadata(repo_dir.join(".git").join("FETCH_HEAD"))
+        .and_then(|metadata| metadata.modified())
+        .ok()?;
+    SystemTime::now().duration_since(modified).ok()
+}
+
+fn fetch_fresh_within_ttl(repo_dir: &std::path::Path, ttl: Duration) -> Option<Duration> {
+    if ttl.is_zero() {
+        return None;
+    }
+    let age = fetch_head_age(repo_dir)?;
+    (age < ttl).then_some(age)
 }
 
 pub(super) async fn resolve_agent_repo_with(
@@ -485,8 +509,7 @@ pub(super) async fn resolve_agent_repo_with(
                     &repo_path,
                     "status",
                     "--porcelain",
-                    "--ignored=matching",
-                    "--untracked-files=all",
+                    "--untracked-files=normal",
                 ],
                 None,
             )
@@ -497,53 +520,76 @@ pub(super) async fn resolve_agent_repo_with(
             cached_repo.repo_dir.display()
         );
 
-        // Fetch + merge instead of pull to avoid "Cannot fast-forward to
-        // multiple branches" errors that occur with `git pull` when the
-        // remote has multiple branches. When a branch is pinned via
-        // `--branch`, use it directly; otherwise derive from HEAD.
-        let branch_val = git_branch(&cached_repo.repo_dir, runner).await;
-        let branch = opts.branch_override.as_deref().map_or_else(
-            || {
-                branch_val.ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "could not determine current branch of cached role repo at {}",
-                        cached_repo.repo_dir.display()
-                    )
-                })
-            },
-            |b| Ok(b.to_owned()),
-        )?;
-        runner
-            .run(
-                "git",
-                &["-C", &repo_path, "fetch", "origin", &branch],
-                None,
-                &git_run_opts,
-            )
-            .await?;
-        let ff_result = runner
-            .run(
-                "git",
-                &["-C", &repo_path, "merge", "--ff-only", "FETCH_HEAD"],
-                None,
-                &git_run_opts,
-            )
-            .await;
-        if ff_result.is_err() {
-            // Route through buffered debug channel so the TUI alt-screen
-            // is not corrupted when this fires under `jackin console`.
+        let fresh_fetch_age = opts.refresh_ttl.and_then(|ttl| {
+            opts.branch_override
+                .is_none()
+                .then(|| fetch_fresh_within_ttl(&cached_repo.repo_dir, ttl))
+                .flatten()
+        });
+        if let Some(age) = fresh_fetch_age {
             jackin_diagnostics::debug_log!(
                 "repo_cache",
-                "cached role branch diverged (remote may have been force-pushed) — resetting to origin/{branch}"
+                "skipping role repo fetch for {}: FETCH_HEAD is {}s old",
+                selector.key(),
+                age.as_secs()
             );
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.compact(
+                    "repo_refresh_skipped",
+                    &format!(
+                        "role repo fetch skipped: FETCH_HEAD is {}s old",
+                        age.as_secs()
+                    ),
+                );
+            }
+        } else {
+            // Fetch + merge instead of pull to avoid "Cannot fast-forward to
+            // multiple branches" errors that occur with `git pull` when the
+            // remote has multiple branches. When a branch is pinned via
+            // `--branch`, use it directly; otherwise derive from HEAD.
+            let branch = match opts.branch_override.as_deref() {
+                Some(branch) => branch.to_owned(),
+                None => git_branch(&cached_repo.repo_dir, runner)
+                    .await
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "could not determine current branch of cached role repo at {}",
+                            cached_repo.repo_dir.display()
+                        )
+                    })?,
+            };
             runner
                 .run(
                     "git",
-                    &["-C", &repo_path, "reset", "--hard", "FETCH_HEAD"],
+                    &["-C", &repo_path, "fetch", "origin", &branch],
                     None,
                     &git_run_opts,
                 )
                 .await?;
+            let ff_result = runner
+                .run(
+                    "git",
+                    &["-C", &repo_path, "merge", "--ff-only", "FETCH_HEAD"],
+                    None,
+                    &git_run_opts,
+                )
+                .await;
+            if ff_result.is_err() {
+                // Route through buffered debug channel so the TUI alt-screen
+                // is not corrupted when this fires under `jackin console`.
+                jackin_diagnostics::debug_log!(
+                    "repo_cache",
+                    "cached role branch diverged (remote may have been force-pushed) — resetting to origin/{branch}"
+                );
+                runner
+                    .run(
+                        "git",
+                        &["-C", &repo_path, "reset", "--hard", "FETCH_HEAD"],
+                        None,
+                        &git_run_opts,
+                    )
+                    .await?;
+            }
         }
     } else {
         let clone_args = clone_args(git_url, &repo_path, opts.branch_override.as_deref());

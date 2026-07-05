@@ -1163,15 +1163,17 @@ pub(super) async fn wait_for_dind(
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     const MAX_ATTEMPTS: u32 = 30;
-    const INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+    const INITIAL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+    const MAX_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
     // Shared spinner helper: it suppresses its own stderr output while the
     // rich launch cockpit owns the screen, so the sidecar stage shows only
     // in the rail rather than streaming "Waiting for ..." over the frame.
-    crate::spin_wait::spin_wait(
+    crate::spin_wait::spin_wait_ramped(
         "Waiting for Docker-in-Docker to be ready",
         MAX_ATTEMPTS,
-        INTERVAL,
+        INITIAL_INTERVAL,
+        MAX_INTERVAL,
         || async {
             docker
                 .exec_capture(dind_name, &["docker", "info"])

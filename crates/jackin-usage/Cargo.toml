@@ -35,6 +35,7 @@ url = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 [lints]
 workspace = true

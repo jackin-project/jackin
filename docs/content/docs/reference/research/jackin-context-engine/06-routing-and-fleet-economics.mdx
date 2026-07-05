@@ -1,0 +1,51 @@
+---
+title: "06 — Routing and fleet economics (L4)"
+---
+
+# 06 — Routing and fleet economics (L4)
+
+The only levers that touch the thinking bucket (20% of dollars) live here, and the biggest multipliers in the dossier's composed stacks are routing multipliers. jackin❯ is the launcher, supervisor, and orchestrator — every technique in this layer is a config-generation or scheduling decision the runtime already has the authority to make.
+
+## Effort policy
+
+- Per-role default effort written into the launch env/flags (`build_agent_command`), per-task-class overrides at session boundaries only (INV-9: mid-session `/effort` busts the cache; ~9-turn break-even).
+- Anchor evidence: Opus 4.5 at `medium` matched Sonnet 4.5's best SWE-bench at **−76% output tokens** (T1 vendor); `max → high` is negative-cost per vendor docs ("prone to overthinking"). Transfer to newer models is **unvalidated — the engine's own harness must produce the per-level effort curve**, which nobody (including the vendor) has published; `usage.output_tokens_details.thinking_tokens` now makes it measurable.
+- Subagent effort pins: exploration/read-only agents get `effort: low` + cheap model frontmatter — jackin generates agent definitions, so the dossier's "subagents are NOT automatically cheap (`model: inherit`)" trap is structurally closed; Claude Code 2.1.198 removed even Explore's default Haiku pin (built-in subagents now inherit the session model, capped at opus), so cheapness is no longer implicit anywhere in the stack and the generated-pin approach is the only route that keeps exploration cheap ([28 — Drift delta](/reference/research/token-optimization-techniques/28-drift-delta/)).
+
+## Model routing
+
+- **Advisor-pattern first** (the only routing with published negative-cost numbers: Sonnet-main + Opus-advisor = +2.7pp SWE-bench Multilingual AND −11.9% cost/task, T1): role-level `advisorModel` wiring where the runtime supports it.
+- **Cheap-fleet pinning**: read-only fan-out to Haiku-tier (5-worker fan-out $2.75 → ~$0.20–0.28 class, −90–93% ESTIMATE); code-writing teammates stay Sonnet-tier (Haiku SWE-bench gap ~6pp — the quality-delta map). The advisor and fan-out evidence is Sonnet-4.5-era; per the spec's own per-model-validation rule, the harness re-produces these curves on the current lineup (Sonnet 5) before pinning fleet defaults.
+- **Tokenizer-aware routing** ([techniques 05 — Tokenizer arbitrage](/reference/research/token-optimization-techniques/05-tokenizer-arbitrage/)/[techniques 10 — Model routing and tiered delegation](/reference/research/token-optimization-techniques/10-model-routing-and-delegation/)): the Fable/Opus-4.8 tokenizer family bills ASCII prose up to +59% vs the legacy Sonnet-4.6/Haiku-4.5 family — effective downtier ratios reach ~13–14.5× on prose/markdown work, exactly 3× Sonnet→Haiku. Scope matters: Sonnet 5 (`claude-sonnet-5`, shipped 2026-06-30, $2/$10 per MTok intro through 2026-08-31 then $3/$15, 1M context) uses the **new** Opus-4.7+ tokenizer family, so the extra ~1.2–1.45× tokenizer discount on downtiering applies only to legacy Sonnet 4.6 / Haiku 4.5 targets; routing to Sonnet 5 is a pure price-ratio play — an unusually cheap one during the intro window — with zero tokenizer bonus ([28 — Drift delta](/reference/research/token-optimization-techniques/28-drift-delta/)). The engine counts routed corpora with `count_tokens` against the *target* model before committing a route; never ports counts across families.
+- Route changes happen at task/session boundaries via new sessions or subagents (cache is model-scoped); the orchestrator, not the operator, owns the boundary.
+
+## Spawn choreography (fleet cache)
+
+- **Stagger or pre-warm**: a cache entry exists only after the first response begins streaming — N simultaneous same-prefix spawns pay N full writes; await-first-then-fan-out cuts the wave's prefix cost ~3.8× at n=5 / ~8.6× at n=25. Pre-warm pattern for cold fleets: one `max_tokens:0`-class request, then fan out (25×30k prefix: ~$9.4 → ~$0.94 ESTIMATE).
+- **`excludeDynamicSections` enforced fleet-wide** with an SDK version floor: six per-container fields (~111 tokens: cwd, git flag, platform, …) placed ahead of the prefix otherwise un-share the entire ~28–34k system prefix across every container in the fleet — the single biggest hosted-fleet lever ([techniques 22 — Fleet, team & multi-tenant cache economics (hosted)](/reference/research/token-optimization-techniques/22-fleet-and-multitenant-cache/)).
+- **Byte-identical prefix discipline**: same workspace, same model/effort/tool set across a fleet lane; any tool-definition change busts the whole fleet's prefix. Subagent-caching behavior is version-dependent (issue #29966 vs measured cavecrew writes) — the ledger audits `cache_read_input_tokens > 0` per subagent class rather than assuming.
+- Depth/fan-out caps: subagents nest 5 deep and agent teams run ≈7× tokens; the orchestrator enforces role-level caps and tears down idle teammates.
+
+## Lane scheduler
+
+Three lanes per capsule, chosen by human-attachment (which jackin❯ knows from the attach state):
+
+| Lane | Pricing | Routed there |
+|---|---|---|
+| Interactive (human attached) | standard; fast mode only by the `v·t·s > Δ$` rule at session start (never mid-session — re-bills context at premium) | operator sessions |
+| Autonomous (no human blocked) | standard | agent-driven work |
+| Offline | **Batch API: 50% off everything, stacks with caching (0.05× batched cache reads)** | nightly sweeps, eval/harness runs, doc regen, subagent fleets that tolerate ≤24h |
+
+## Quota and budget governance
+
+- **Dual cost model per capsule auth mode** (headroom's auth-mode policy, driven by jackin's credential provisioning): API-key capsules optimize dollars; subscription capsules optimize **tasks-per-cap** (cache reads ≈0.1× against the cap, T3; lever order re-sorts — prefix stability and request volume dominate; style compression demoted). The usage dialog surfaces both; for headless/SDK work the engine detects at launch which billing regime is live rather than assuming the off-cap credit pool exists — the announced 2026-06-15 Agent-SDK/headless split was paused before rollout, and `claude -p`/SDK usage still draws the interactive subscription cap ([28 — Drift delta](/reference/research/token-optimization-techniques/28-drift-delta/)). Plan-level model availability is itself drift the route policy reads at launch rather than hardcodes: Fable 5 was suspended from all access 2026-06-12→06-30 (export-control directive), then restored 2026-07-01 with plan inclusion up to 50% of weekly usage limits only through 2026-07-07, moving to usage credits at API rates after.
+- The cap denominator is unpublished: the engine ships the **V2 prober** — regress token-class consumption against `anthropic-ratelimit-unified-*` header utilization (captured pass-through, `cache_control`-preserving) to fit per-account weights, closing the dossier's biggest INCOMPLETE.
+- **Governors that actually govern** ([techniques 25 — Meta layer: the cost of optimizing, budget governance, and online quality guarding](/reference/research/token-optimization-techniques/25-meta-cost-governance-and-online-quality/)): workspace rate limits and monthly credit caps (real stops), gateway-tier budgets where a gateway exists; the vendor "spend limit" is alert-only and treated as such. Degrade-don't-die: budget triggers downgrade model/effort on routine lanes, never on critical lanes, and never truncate via `max_tokens`.
+- Engine self-cost is metered in the same ledger (meta-governance: the meter must cost less than what it measures; `count_tokens` runs against its own separate RPM pool, batched, never inline per-step).
+
+## Round-2 refinements
+
+- **Corrected mutation-gain arithmetic**: any decision to rewrite a deep (already-cached) block uses headroom's *corrected* `net_mutation_gain` — the warm-case re-write penalty applies over the saved tokens *plus* the downstream tail (`S+ΔT`), not `S` alone; the original form was systematically pro-mutation. Property tests ship with the formula.
+- **Learning never destabilizes prefixes**: any adaptive policy (mode selection, register level, effort tier) selects by **deterministic argmax over posterior means by default**; stochastic exploration (Thompson/ε-greedy) is opt-in per role — lean-ctx's #498 doctrine, adopted as an invariant: a learner that randomizes prompt-visible behavior is a cache-buster.
+- **Subscription write-quarantine**: capsules on subscription credentials consume learned recommendations read-only and never write into shared learning pools (headroom's `toin_read_only` pattern) — UX-bound traffic must not mutate policy trained for PAYG economics.
+- **Bandit spec baseline** (if/when adaptive mode selection ships): Beta(2,1) arms over (entropy, jaccard, budget) triples; success ⇔ savings-ratio &gt; 0.3 AND task completed; ×0.98 session-end decay floored at 1 — lean-ctx's ~300-line spec, adopted as the reference design rather than invented fresh.

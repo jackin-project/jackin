@@ -1,5 +1,5 @@
 use jackin_config::{AppConfig, WorkspaceConfig};
-use jackin_tui::HintSpan;
+use jackin_tui::{HintSpan, keymap::glyph};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
 
@@ -9,8 +9,8 @@ use crate::tui::components::footer_hints::editor_footer_items;
 use crate::tui::model::ConsoleManagerStage;
 use crate::tui::screens::settings::view::settings_screen_footer_for_state;
 use crate::tui::state::{
-    CreatePreludeState, FileBrowserTarget, GlobalMountModal, ManagerState, Modal,
-    SettingsAuthModal, SettingsState, SettingsTab,
+    CreatePreludeState, FileBrowserTarget, ManagerState, Modal, SettingsModal, SettingsState,
+    SettingsTab,
 };
 
 fn file_browser_state_at(path: PathBuf) -> FileBrowserState {
@@ -41,7 +41,7 @@ fn assert_file_browser_hints(items: Vec<HintSpan<'static>>) {
     for expected in [
         "\u{2191}\u{2193}/j/k",
         "navigate",
-        "PgUp/PgDn",
+        glyph::PGUP_PGDN,
         "page",
         "S",
         "select",
@@ -116,7 +116,7 @@ fn settings_mounts_file_browser_hints_reach_footer() {
     let config = AppConfig::default();
     let mut settings = SettingsState::from_config(&config);
     settings.active_tab = SettingsTab::Mounts;
-    settings.mounts.modal = Some(GlobalMountModal::FileBrowser {
+    settings.mounts.modal = Some(SettingsModal::MountFileBrowser {
         state: Box::new(file_browser_state()),
     });
 
@@ -132,7 +132,7 @@ fn settings_auth_file_browser_hints_reach_footer() {
     let config = AppConfig::default();
     let mut settings = SettingsState::from_config(&config);
     settings.active_tab = SettingsTab::Auth;
-    settings.auth.modal = Some(SettingsAuthModal::SourceFolderPicker {
+    settings.auth.modal = Some(SettingsModal::AuthSourceFolderPicker {
         state: file_browser_state(),
     });
 

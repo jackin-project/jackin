@@ -148,7 +148,7 @@ plugins = ["code-review@claude-plugins-official"]
 name = "My Agent"
 ```
 
-These plugin IDs are written into the agent's runtime state and installed automatically when the container starts.
+These plugin IDs are baked into the derived image during Docker build. `jackin-role validate` and `jackin role validate` fetch each marketplace manifest first, so CI rejects plugin IDs that do not exist in the named marketplace before the role is published.
 
 If you need plugins from a custom marketplace, declare the marketplace separately and keep plugin IDs fully qualified:
 
@@ -175,7 +175,7 @@ source = "jackin-project/jackin-marketplace"
 name = "My Agent"
 ```
 
-jackin adds each declared marketplace at container startup, then installs each plugin ID exactly as written.
+jackin adds each declared marketplace during the derived image build, then installs each plugin ID exactly as written. Every plugin ID must use `plugin@marketplace` format, and each custom marketplace must publish that plugin name in `.claude-plugin/marketplace.json`.
 
 ## Supporting multiple agents
 

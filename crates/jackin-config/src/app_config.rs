@@ -16,9 +16,12 @@ use jackin_core::AuthForwardMode;
 
 use crate::auth::{AgentAuthConfig, GithubAuthConfig};
 use crate::schema::{
-    DirtyExitPolicy, DockerConfig, GitConfig, RoleSource, RuntimeConfig, WorkspaceConfig,
+    DirtyExitPolicy, DockerConfig, GitConfig, RoleSource, RuntimeConfig, TelemetryConfig,
+    WorkspaceConfig,
 };
 use crate::versions::CURRENT_CONFIG_VERSION;
+
+pub const DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS: u64 = 60;
 
 /// Top-level operator configuration (`~/.config/jackin/config.toml`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +53,8 @@ pub struct AppConfig {
     pub docker: DockerConfig,
     #[serde(default, skip_serializing_if = "RuntimeConfig::is_default")]
     pub runtime: RuntimeConfig,
+    #[serde(default, skip_serializing_if = "TelemetryConfig::is_default")]
+    pub telemetry: TelemetryConfig,
     #[serde(default, skip_serializing_if = "GitConfig::is_default")]
     pub git: GitConfig,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -58,6 +63,10 @@ pub struct AppConfig {
     /// overrides this. Defaults to `ask` when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dirty_exit_policy: Option<DirtyExitPolicy>,
+    /// Freshness window for launch-time role repo fetches. `None` uses the
+    /// built-in default; `Some(0)` preserves always-fetch behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_repo_refresh_ttl_seconds: Option<u64>,
 }
 
 impl AppConfig {
@@ -138,6 +147,13 @@ impl AppConfig {
             .or(self.dirty_exit_policy)
             .unwrap_or_default()
     }
+
+    pub fn role_repo_refresh_ttl(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(
+            self.role_repo_refresh_ttl_seconds
+                .unwrap_or(DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS),
+        )
+    }
 }
 
 impl Default for AppConfig {
@@ -155,9 +171,11 @@ impl Default for AppConfig {
             roles: BTreeMap::new(),
             docker: DockerConfig::default(),
             runtime: RuntimeConfig::default(),
+            telemetry: TelemetryConfig::default(),
             git: GitConfig::default(),
             workspaces: BTreeMap::new(),
             dirty_exit_policy: None,
+            role_repo_refresh_ttl_seconds: None,
         }
     }
 }

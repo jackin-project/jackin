@@ -52,7 +52,7 @@ pub mod wordlist;
 pub mod logging {
     pub use jackin_usage::logging::*;
 }
-pub use jackin_usage::{cdebug, clog};
+pub use jackin_usage::{cdebug, cdebug_local, cerror, clog, ctrace_payload, cwarn};
 pub mod telemetry {
     pub use jackin_usage::telemetry::*;
 }

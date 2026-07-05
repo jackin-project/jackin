@@ -37,11 +37,8 @@ impl ColRange {
 pub(crate) struct BranchContextBarLayout {
     pub(crate) left: String,
     pub(crate) left_region: Option<ColRange>,
-    pub(crate) usage: String,
     pub(crate) usage_region: Option<ColRange>,
-    pub(crate) debug_chip: String,
     pub(crate) debug_chip_region: Option<ColRange>,
-    pub(crate) container: String,
     pub(crate) container_region: Option<ColRange>,
 }
 
@@ -49,14 +46,9 @@ pub(crate) fn visible_branch(branch: Option<&str>, is_default_branch: bool) -> O
     branch.filter(|_| !is_default_branch)
 }
 
-/// Split a placed right-group chunk into its display text and clickable column
-/// range (`("", None)` when the chunk is absent). Shared by every right-group
-/// slot so the unpack happens one way.
-fn chunk_text_and_region(chunk: Option<&StatusRightChunk>) -> (String, Option<ColRange>) {
-    chunk.map_or_else(
-        || (String::new(), None),
-        |chunk| (chunk.text.clone(), ColRange::new(chunk.start, chunk.end)),
-    )
+/// Convert a placed right-group chunk into its clickable column range.
+fn chunk_region(chunk: Option<&StatusRightChunk>) -> Option<ColRange> {
+    chunk.and_then(|chunk| ColRange::new(chunk.start, chunk.end))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -101,17 +93,14 @@ pub(crate) fn branch_context_bar_layout(
     } else {
         None
     };
-    let (usage, usage_region) = chunk_text_and_region(right.usage.as_ref());
-    let (debug_chip, debug_chip_region) = chunk_text_and_region(right.run_id.as_ref());
-    let (container, container_region) = chunk_text_and_region(right.container.as_ref());
+    let usage_region = chunk_region(right.usage.as_ref());
+    let debug_chip_region = chunk_region(right.run_id.as_ref());
+    let container_region = chunk_region(right.container.as_ref());
     Some(BranchContextBarLayout {
         left,
         left_region,
-        usage,
         usage_region,
-        debug_chip,
         debug_chip_region,
-        container,
         container_region,
     })
 }

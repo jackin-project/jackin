@@ -175,7 +175,6 @@ struct Metadata {
 #[derive(serde::Deserialize)]
 struct Package {
     name: String,
-    #[allow(dead_code)]
     id: String,
     #[serde(default)]
     dependencies: Vec<Dep>,

@@ -8,7 +8,10 @@
 ///
 /// Each node is either a Leaf (holds one session) or an HSplit/VSplit
 /// that divides its rectangle between two child subtrees.
-/// One row reserved for the persistent hint bar shown in the main pane view.
+/// One blank row between the pane area and the hint bar.
+pub(crate) const CAPSULE_HINT_TOP_SEPARATOR_ROWS: u16 = 1;
+
+/// One persistent hint row shown in the main pane view.
 pub(crate) const CAPSULE_HINT_BAR_ROWS: u16 = 1;
 
 /// One blank separator row between the hint bar and the branch context bar,
@@ -104,6 +107,7 @@ pub fn available_content_rows(term_rows: u16) -> u16 {
     term_rows
         .saturating_sub(STATUS_BAR_ROWS)
         .saturating_sub(BRANCH_CONTEXT_BAR_ROWS)
+        .saturating_sub(CAPSULE_HINT_TOP_SEPARATOR_ROWS)
         .saturating_sub(CAPSULE_HINT_BAR_ROWS)
         .saturating_sub(CAPSULE_HINT_SEPARATOR_ROWS)
 }

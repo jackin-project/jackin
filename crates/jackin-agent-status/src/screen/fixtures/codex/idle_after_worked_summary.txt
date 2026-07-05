@@ -1,0 +1,26 @@
+Project reality checks
+
+- Climeworks continues to position Mammoth as a 36,000 tCO₂/year class commercial buildout and announced full operations in 2024; site has
+  phased modular rollout claims. Climeworks release
+  (https://climeworks.com/press-release/climeworks-switches-on-worlds-largest-direct-air-capture-plant-mammoth)
+
+- Independent third-party-style verification data are available via Puro registry for Mammoth, including an audit report listing 278.3 tCO₂-eq
+  verified CORCs (as of Dec 1, 2025). Puro registry (https://registry.puro.earth/projects/417791), Puro audit PDF
+  (https://puro.earth/documents/content/eC0_UI4lQuKWivcypRfp6Ao2a37)
+
+Interpretive summary
+
+- The technology stack is moving from pilot rhetoric into policy-backed commercialization, but measured outputs remain far below headline
+  nameplate scale in verified records.
+
+- The EU and U.S. are converging on similar bottlenecks: standardized certification/MRV and infra + offtake integration.
+
+If you want, I can now do a second deep pass on one sub-thread only (e.g., “US tax-credit mechanics,” “CRCF implementation timeline risks,” or
+“company-level audited throughput vs announced capacity”) and keep it strictly evidence-compressed.
+
+─ Worked for 1m 03s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+› Find and fix a bug in @filename
+
+  gpt-5.3-codex-spark low · /Users/donbeave/Projects/tailrocks/holla-project/holla

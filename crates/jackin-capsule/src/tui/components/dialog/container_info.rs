@@ -65,12 +65,12 @@ impl Dialog {
         let debug = debug_enabled && !diagnostics.run_id.is_empty();
         // Pass the absolute path so the `file://` href the model builds is
         // valid; `run_log_href` already carries it (`file://<abs>`).
-        let log_path = debug.then(|| {
+        let log_path = debug.then_some(()).and_then(|()| {
             diagnostics
                 .run_log_href
                 .as_deref()
                 .and_then(|href| href.strip_prefix("file://"))
-                .map_or_else(|| diagnostics.run_log_display.clone(), str::to_owned)
+                .map(str::to_owned)
         });
         let mut state = jackin_tui::components::DebugInfo {
             jackin_version: Some(diagnostics.host_version.clone()),
@@ -91,6 +91,11 @@ impl Dialog {
                 )
                 .hyperlink(href.to_owned()),
             );
+        } else if debug && !diagnostics.run_id.is_empty() {
+            state.push_row(jackin_tui::components::ContainerInfoRow::new(
+                "Telemetry",
+                diagnostics.run_log_display.clone(),
+            ));
         }
         if let Some(row) = *copied_row {
             state.mark_copied(row);

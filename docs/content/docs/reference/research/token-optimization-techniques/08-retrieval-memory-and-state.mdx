@@ -1,0 +1,218 @@
+---
+title: "08 — Retrieval, memory, and state offloading"
+---
+
+# 08 — Retrieval, memory, and state offloading
+
+**TL;DR**
+
+- The only vendor-published token numbers in this space: Anthropic's context editing cut token consumption **84%** in a 100-turn web-search eval and improved task performance **29%** alone, **39%** combined with the memory tool (claude.com/blog/context-management). T1, but a search-heavy self-eval — not coding — and the docs themselves warn each clear invalidates cached prefixes.
+- **Compaction is rented, not free**: the API bills the summarization pass as a separate iteration at full price (docs example: 180k input + 3.5k output ≈ **$1.98** per pass at Fable 5 list, ESTIMATE), and top-level `usage` fields **exclude** compaction iterations — naive cost dashboards undercount compacting sessions.
+- Local measurement (this repo): pointer-architecture instructions keep **41,751 of 44,495 instruction tokens (93.8%) lazy**; loading them eagerly instead would add ESTIMATE ~**$7.64/day (+35%)** on the modeled heavy-day profile. `@imports` do NOT defer — docs confirm they load at launch.
+- Local measurement: a pointer to a decision log is **53 tokens vs 233** for restating it (**77.3% cut/item**, not the ~95% folklore implies); a realistic handoff/progress file is **387 tokens** and replaces transcript replay — the vendor endorses this pattern with zero published measurements.
+- Third-party memory products are QUALITY-TRADE: Mem0's **>90%** token cut is real arithmetic but loses accuracy to do-nothing baselines (Letta files-only **74.0%** vs Mem0 **68.5%** on LoCoMo; ConvoMem: full-context **70–82%** vs Mem0 **30–45%**). Semantic response caching (61.6–68.8% hit rates) is FAQ-workload evidence only — nothing for coding agents.
+
+## Where this layer sits in the spend
+
+On the modeled session profile (local phase-0 measurement: ~6 sessions/day, 19 API calls/session, 5.5k uncached input, 85k cache-write, 1.17M cache-read, 27k output, ~$22/day), retrieval/memory/state techniques act on the input side: cache reads 32% + cache writes 29% + uncached input 2% = **63% of dollars**. The mechanism is always the same: replace re-replay (transcript) and re-derivation (re-exploring the codebase) with recall from a cheap external store — disk files, a memory directory, or a billed summary. Output-side techniques are in [09 — Output discipline and structured generation](/reference/research/token-optimization-techniques/09-output-discipline/); cache mechanics in [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/); the measurement harness in [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/).
+
+## Local measurements (jackin repo, method: `python3 /tmp/ct.py claude-fable-5 < file` → `count_tokens` API)
+
+| Item | Tokens | Note |
+|---|---|---|
+| <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> (always-on index, 75 lines) | 2,744 | phase-0 measured 2,738 on a prior revision |
+| 12 linked topic files, total | 35,769 | loaded only on demand; largest <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> = 10,939 |
+| <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> (subtree-scoped) | 5,982 | observed injected only after reading a file under docs/ this session |
+| Total lazy vs eager | 41,751 vs 2,744 | **93.8% deferred** (92.9% counting root topic files only) |
+| Decision restated in chat (102 words) | 233 | realistic decision record |
+| Pointer to the same decision (path + gist) | 53 | **77.3% cut**; sweep's independent sample: 251→52 = 79.3% |
+| Realistic handoff/progress file (21 lines) | 387 | state for a multi-session feature |
+| Memory-tool auto-injected protocol prompt | 189 | docs-shown text, billed once memory tool is enabled |
+
+## Techniques
+
+### 1. Pointer-architecture instruction files — slim always-on index, on-demand topic files
+One-line pitch: keep a small index loaded every session; defer detail to files the model reads only when relevant. The single highest-confidence win in this file.
+- **Layer:** input (prompt architecture / repo file layout)
+- **Mechanism:** Claude Code loads root CLAUDE.md in full every session; nested CLAUDE.md and `paths:`-scoped rules load only when matching files are read; plain-link topic files load only when the model chooses to read them. Docs: "Splitting into `@path` imports helps organization but does not reduce context, since imported files load at launch" and "target under 200 lines per CLAUDE.md... Longer files consume more context and reduce adherence" (code.claude.com/docs/en/memory). Bonus: block-level HTML comments are stripped before injection — token-free maintainer notes (same page).
+- **Expected savings:** local measurement above: 41,751 tokens kept lazy vs 2,744 eager. Counterfactual all-eager on the modeled profile (ESTIMATE, arithmetic): +41,751 tok cache-write/session ($12.5/MTok = $0.52) + 18 subsequent calls × 41,751 cache-read ($1/MTok = $0.75) ≈ **$1.27/session, $7.64/day (+35%)**. Upper bound — each topic file actually read mid-session claws back its share (typical session reads 1–2 of 12, late-positioned).
+- **Evidence tier:** T1 (documented harness behavior, code.claude.com/docs/en/memory + /context-window) + local measurement (table above; lazy injection of docs/CLAUDE.md observed live this session).
+- **Quality risk:** NEGATIVE-COST — docs assert shorter files improve adherence (their claim, unmeasured). Failure mode: model skips a pointer it should follow; mitigate by making each index line state that a rule exists and where detail lives (this repo's pattern). Degradation manifests as violations of deferred rules.
+- **Availability:** CLAUDE-CODE-TODAY
+- **Effort to adopt:** hours (split CLAUDE.md into index + topic files / `paths:` rules; convert `@imports` to plain references)
+- **Composability:** multiplies with prompt caching (smaller stable prefix, see [07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/)); survives /compact (root index re-injected from disk); topic files compress further with caveman-compress (local phase-0: 58.5% token cut on prose). Anti-synergy: none known.
+- **Validation protocol:** A/B 10 matched tasks: branch A = current index+topic layout, branch B = everything inlined in root CLAUDE.md. Compare per-session input tokens (OTLP/ccusage), task pass rate, and count violations of rules whose detail lives in deferred files. Success = B costs more with no adherence gain for A.
+
+### 2. Compaction-resistant state placement — engineer what survives /compact
+One-line pitch: Claude Code documents an exact survival table; put durable state in surviving locations so aggressive compaction stops losing instructions.
+- **Layer:** turn-structure (harness behavior) + repo file layout
+- **Mechanism:** (code.claude.com/docs/en/context-window#what-survives-compaction): system prompt/output style unchanged; project-root CLAUDE.md, unscoped rules, and auto memory **re-injected from disk**; `paths:` rules and nested CLAUDE.md **lost** until a matching file is read again; invoked skill bodies re-injected but "capped at 5,000 tokens per skill and 25,000 tokens total; oldest dropped first", truncation keeps the start of SKILL.md; hooks unaffected. Bonus detail from the same page's simulation: the startup skill *listing* is NOT re-injected after /compact — only skills actually invoked are preserved.
+- **Expected savings:** loss-prevention, not direct: avoids re-explaining lost instructions (fresh input + output at ~5x input price). Enables compacting earlier/harder. Docs add the cost rationale for /clear: "Old conversation crowds out the files you need next and costs tokens on every message"; `/compact focus on X` steers the summary.
+- **Evidence tier:** T1 (shipped behavior, precisely documented; survival table verified verbatim by live fetch)
+- **Quality risk:** NEGATIVE-COST — pure correctness improvement. Residual: skills >5k tokens silently truncate after compaction (put critical instructions at the top of SKILL.md); nested-file rules vanish until the subtree is touched.
+- **Availability:** CLAUDE-CODE-TODAY
+- **Effort to adopt:** minutes-to-hours (move must-survive rules to project root / unscoped rules; keep task state in files, not chat)
+- **Composability:** foundation for techniques 3, 4, 5; orthogonal to API-side compaction (technique 8).
+- **Validation protocol:** scripted session establishes 10 instructions across locations (conversation-only, nested CLAUDE.md, `paths:` rule, root CLAUDE.md, auto memory), force /compact, probe each instruction with a question; score retention per location, 5 repetitions. Expect retention to match the docs table exactly.
+
+### 3. Claude Code auto memory (MEMORY.md) — model-written notes with a hard load cap
+One-line pitch: Claude writes its own per-repo memory and reloads it every session — recall replaces re-derivation at a bounded, documented cost.
+- **Layer:** input (harness product feature)
+- **Mechanism:** default-on since v2.1.59. `~/.claude/projects/&lt;project&gt;/memory/` holds MEMORY.md ("The first 200 lines of MEMORY.md, or the first 25KB, whichever comes first" load at session start) plus topic files "not loaded at startup — Claude reads them on demand". Re-injected from disk after compaction. Toggles: `/memory`, `autoMemoryEnabled`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Notably: "CLAUDE.md files are loaded in full regardless of length" — the model's memory is budgeted; yours is not. (All quotes code.claude.com/docs/en/memory.)
+- **Expected savings:** none published anywhere. Cost side bounded (ESTIMATE): worst case 25KB ≈ 25,600 chars ÷ 3.35 chars/tok (local phase-0 Fable-5 prose ratio) ≈ **7,642 tok/session start** → write $0.10 + 18 reads $0.14 ≈ $0.23/session, **$1.40/day** (6.4% of the modeled $22 day). At the docs' representative 680-token MEMORY.md: ~$0.02/session, **$0.12/day**. Savings side (avoided re-exploration of build/test/architecture) is real but unmeasured — top local-experiment candidate.
+- **Evidence tier:** T1 for mechanism and caps (live docs); savings claim T4 until measured.
+- **Quality risk:** NEUTRAL→NEGATIVE-COST. Risks: silent context spend whether useful or not; stale/wrong self-written notes steering the model. Everything is auditable plain markdown via `/memory`.
+- **Availability:** CLAUDE-CODE-TODAY
+- **Effort to adopt:** zero (default-on); curation minutes/week (prune MEMORY.md; keep under the 200-line window)
+- **Composability:** survives /compact (technique 2); handoff files (4) can live in the memory dir to auto-load; caveman-compress on MEMORY.md pulls more content under the load cap. Open question: whether the MEMORY.md block sits in the cached prefix (it loads at startup so it should; per-session writes churn the *next* session's prefix — cache-write at 1.25x, see gaps).
+- **Validation protocol:** matched task pairs in fresh sessions with `autoMemoryEnabled` on vs `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`; measure tokens-to-completion and count re-exploration tool calls (re-running discovery greps/reads); diff `/context`. Success = on-condition saves more than its startup tax with equal pass rate.
+
+### 4. File-based handoff/progress state — resume from a small state file, not a transcript
+One-line pitch: end sessions by writing progress/decisions to files; boot the next session from them — Anthropic's published long-running-agent pattern, locally costed at 387 tokens per handoff.
+- **Layer:** turn-structure (workflow / orchestrator pattern)
+- **Mechanism:** Anthropic engineering : initializer session creates init script + claude-progress file + feature checklist; each session boots from those, works one feature, verifies end-to-end, updates the log ("recovers the full state of the project in seconds"; "This approach saves Claude some tokens in every session"). The memory-tool docs codify the same as the "multi-session software development pattern" . Manus generalizes: "the file system as the ultimate context: unlimited in size, persistent by nature" with todo.md recitation across ~50-tool-call tasks (manus.im blog). Production sibling: jackin❯ uses a shared COORDINATION.md claimed via stable agent codenames for parallel-agent state.
+- **Expected savings:** vendor: qualitative only — no published numbers (T1 as practice, quantitatively T4/local). Local proxies (/tmp/ct.py): realistic 21-line handoff file = **387 tokens**; booting from it replaces transcript resumption or re-exploration that costs tens of thousands of input tokens (ESTIMATE: re-reading 5 source files ≈ 10–40k tok; a /resume replays the full prior conversation). Per-item recall is technique 5's 77.3%.
+- **Evidence tier:** T1 as shipped practice (Anthropic harness, Manus, memory-tool docs); no published token measurements anywhere — flagged as the field's most fillable gap.
+- **Quality risk:** NEGATIVE-COST direction per Anthropic (their motivation is reliability; one-feature-at-a-time "keeps the progress log trustworthy"). Failure mode: stale state files mislead the next session — mitigated by verify-before-marking-complete.
+- **Availability:** CLAUDE-CODE-TODAY (plain markdown + git; SessionEnd hooks or an orchestrator automate it)
+- **Effort to adopt:** minutes (manual) / hours (hook-automated)
+- **Composability:** composes with /clear (clear cheaply because state is externalized), auto memory (3), compaction (files survive by definition, technique 2), and subagent fan-out (each agent reads the same state file).
+- **Validation protocol:** same multi-session feature three ways: (a) handoff file + /clear, (b) /resume transcript replay, (c) ride auto-compact. Sum billed tokens per arm (OTLP per-session), grade task completion. No one — including Anthropic — has published this comparison; see [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/).
+
+### 5. Restorable compression — drop the bytes, keep the handle
+One-line pitch: evict bulky content from context but keep the pointer that re-fetches it (URL, path, decision-ID); eviction never destroys information.
+- **Layer:** input / turn-structure (prompt discipline; embodied server-side in context-editing placeholders)
+- **Mechanism:** Manus production rule: "the content of a web page can be dropped from the context as long as the URL is preserved, and a document's contents can be omitted if its path remains available in the sandbox" (manus.im). Anthropic's context editing ships the same shape server-side: cleared tool results become placeholders while tool-call inputs are kept by default (`clear_tool_inputs: false`) — the "how to re-fetch" survives. Applied to decisions: keep a numbered DECISIONS.md; in-context references shrink to "Decision #14 (path)".
+- **Expected savings:** local measurement : restatement 233 tok vs pointer 53 tok = **77.3% per recalled item** (sweep's independent sample: 79.3%). Kills the "a pointer is ~10 tokens" folklore — useful pointers carry path + gist. Scales with restatement frequency (unmeasured; needs transcript mining). Cache side-benefit: pointers are often byte-identical across turns, restatements never are — preserves prefix stability ([07 — Caching exploitation](/reference/research/token-optimization-techniques/07-caching-exploitation/)). Manus frames the payoff via cache economics: cached input 10x cheaper (their $0.30 vs $3.00/MTok matches Anthropic's 0.1x cache-read ratio, cross-checked against reference pricing); "KV-cache hit rate is the single most important metric for a production-stage AI agent"; Manus input:output ≈ 100:1 (vendor figure, no methodology).
+- **Evidence tier:** T1 as production practice (Manus; Anthropic context-editing design), local quantification for the per-item cut; no end-to-end published number.
+- **Quality risk:** NEGATIVE-COST when targets are stable (git paths, numbered log); RISKY when targets drift (renamed files, mutable URLs) — the model recalls a pointer to nothing. Degradation manifests as failed re-fetches; falsify by sampling references and checking resolution.
+- **Availability:** CLAUDE-CODE-TODAY
+- **Effort to adopt:** minutes (DECISIONS.md + a CLAUDE.md line: cite, don't restate)
+- **Composability:** core enabler of context editing (7), handoff files (4), and subagent result summarization; anti-synergy: none, but over-pointering forces re-fetch tool calls (each ~ a tool round-trip).
+- **Validation protocol:** instruct via CLAUDE.md to cite the decision log rather than restate; sample 20 in-transcript references; measure tokens/reference and the re-fetch success rate when the model needs detail. Success = ≥95% resolution with per-item cut near 77%.
+
+### 6. Anthropic API memory tool (memory_20250818, GA) — cross-session file memory
+One-line pitch: the model stores/recalls learnings in a client-side `/memories` directory persisting across conversations — recall instead of re-derive, vendor-evaluated only in combination with context editing.
+- **Layer:** infra (API/SDK tool + client-side handler)
+- **Mechanism:** tool type `memory_20250818` with view/create/str_replace/insert/delete/rename against a directory you host. Enabling it auto-injects a protocol prompt ("ALWAYS VIEW YOUR MEMORY DIRECTORY BEFORE DOING ANYTHING ELSE... ASSUME INTERRUPTION: Your context window might be reset at any moment") — locally measured at **189 tokens** (Fable 5, /tmp/ct.py) of standing cost once enabled. Docs prescribe the multi-session pattern (initializer session → progress log → end-of-session update) and position memory as what "preserves the information that must survive summarization" (Using with compaction section). ZDR-eligible. (platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool.)
+- **Expected savings:** vendor: memory + context editing = **+39% task performance** over baseline on an internal agentic-search eval (claude.com/blog/context-management); token savings never isolated for memory alone — the 84% belongs to context editing. Recall-vs-rederive savings unquantified by anyone. Memory writes bill as output (~5x input).
+- **Evidence tier:** T1 (shipped beta; vendor self-eval; no third-party replication found)
+- **Quality risk:** NEGATIVE-COST per vendor eval (performance up AND enables otherwise-failing long workflows). Risks: stale/cluttered memory degrades behavior (docs ship an anti-clutter prompt); path-traversal security is your handler's burden.
+- **Availability:** SDK (Developer Platform, Bedrock, Vertex); generally available on the Messages API, no beta header required — tool type `memory_20250818`, all Claude 4+ models; SDK helpers remain in beta namespaces despite GA. NOT-USER-ACCESSIBLE inside Claude Code — auto memory (technique 3) is the product analogue.
+- **Effort to adopt:** days (client-side handler via BetaAbstractMemoryTool / betaMemoryTool helpers; storage + security)
+- **Composability:** designed to stack with context editing (7) and compaction (8); memory reads are ordinary tool results, cacheable as prefix.
+- **Validation protocol:** 3-session SDK project run with vs without the memory tool: measure tokens/session, completion rate, and audit the memory directory for clutter after session 3. Vendor numbers are combined-stack only, so isolate memory's contribution.
+
+### 7. Context editing (clear_tool_uses_20250919 / clear_thinking_20251015, beta)
+One-line pitch: server-side eviction of stale tool results/thinking instead of carrying them forever — the 84% headline lives here, with a cache-invalidation tax the docs admit and nobody has priced.
+- **Layer:** input + cache (API request parameter, beta header `context-management-2025-06-27`)
+- **Mechanism:** API strips old tool results (default trigger 100,000 input tokens; default keep: 3 most recent tool uses; optional `clear_at_least`) and/or old thinking blocks before the model sees the prompt, replacing them with placeholders; tool-call inputs kept by default. Client retains full history; response reports `context_management.applied_edits[].cleared_input_tokens`. (platform.claude.com/docs/en/build-with-claude/context-editing.)
+- **Expected savings:** vendor: **84% token reduction** + workflow completion in a 100-turn web-search eval; **+29%** performance from editing alone (claude.com/blog/context-management). Cache trap, quoted: clearing "Invalidates cached prompt prefixes... clear enough tokens to make the cache invalidation worthwhile." Break-even (ESTIMATE, derivation): clearing C tokens ahead of a suffix of S still-kept tokens forces re-writing S at $12.5/MTok instead of reading at $1 → extra S×$11.5/M; each later call then reads C fewer tokens (C×$1/M). Break-even calls **N\* ≈ 11.5 × S / C**. Examples: C=40k, S=15k → 4.3 calls (pays off mid-session); C=5k, S=60k → 138 calls (never pays). With the local cache-hot mix (92.83% of heavy-session input = cache reads, phase-0), small frequent clears are plausibly net-negative — contradicting "context editing is pure savings".
+- **Evidence tier:** T1 (shipped beta, vendor-published measurements); break-even arithmetic is local ESTIMATE; the 84% is search-workload, unreplicated externally.
+- **Quality risk:** NEGATIVE-COST per vendor on search workloads; RISKY for coding sessions where old tool results get re-referenced (cleared content must be re-fetched: extra tool round-trips). `exclude_tools` protects critical tools' results.
+- **Availability:** SDK / GATEWAY-OR-SELF-HOST. Not a Claude Code knob (Claude Code ships its own compaction/microcompaction instead).
+- **Effort to adopt:** minutes on SDK (one request field)
+- **Composability:** pairs with memory tool (6: persist before clearing) and compaction (8); follows technique 5's evict-bytes-keep-handle shape. Anti-synergy: prompt caching — every clear churns the prefix.
+- **Validation protocol:** replay a recorded coding session via SDK with clearing off vs on at several `clear_at_least` values; sum billed input + cache-write tokens (including re-writes) and count re-fetches of cleared content; diff final-answer quality. Derives the empirical break-even to compare with N* above.
+
+### 8. Server-side compaction (compact_20260112, beta) — transcript replaced by a billed summary — QUALITY-TRADE
+One-line pitch: the API summarizes the conversation and drops everything before the compaction block — sessions extend indefinitely, but you pay full price for the summarization pass and the summary is lossy by construction.
+- **Layer:** turn-structure + cache (API, beta header `compact-2026-01-12`)
+- **Mechanism:** default trigger 150,000 input tokens (minimum 50,000); API emits a compaction block and "automatically drops all message blocks prior to the compaction block" on later requests; `pause_after_compaction` keeps recent messages verbatim. Billing: `usage.iterations` shows the compaction pass separately — docs example: compaction iteration **180,000 in / 3,500 out** beside the message iteration's 23,000/1,000 — and "top-level input_tokens and output_tokens do not include compaction iteration usage". Supported: Fable 5, Mythos 5/preview, Opus 4.8/4.7/4.6, Sonnet 4.6, plus Claude Sonnet 5 (`claude-sonnet-5`).
+- **Expected savings:** no vendor savings number. ESTIMATE on the docs example at Fable 5 list: 180k×$10/M + 3.5k×$50/M = **$1.98/pass**; afterwards each turn re-sends a ~3.5k summary instead of ~180k history (~98% smaller prefix going forward, before cache effects). Break-even fast for continuing sessions, negative for sessions that end right after. Open 5.6x question: if the summarized history were billed at cache-read rates the pass would cost ~$0.355 — docs are silent (verified absent).
+- **Evidence tier:** T1 for mechanism/billing semantics (live docs); no vendor quality or savings percentages exist for this feature.
+- **Quality risk:** **QUALITY-TRADE** — the summary is lossy; docs' own mitigation is the memory tool ("nothing critical is lost in the summary"). Cache best practice from docs: `cache_control` on the compaction block + a separate breakpoint at end of system prompt so the system-prompt cache survives compaction.
+- **Availability:** SDK (beta). Claude Code equivalent: /compact and auto-compact (CLAUDE-CODE-TODAY) — likewise a full billed model call, not free.
+- **Effort to adopt:** minutes on SDK (one edit type + append response blocks)
+- **Composability:** explicitly choreographed with memory tool (6) and context editing (7) as a three-primitive stack; compose with prompt caching per docs.
+- **Validation protocol:** long synthetic session: compare summed `usage.iterations` cost for (a) compaction, (b) no compaction with client-side history pruning, (c) plain truncation; probe recall of early-session facts after each. Also tests the cache-read billing question empirically.
+
+### 9. Semantic/RAG index over the repo vs agentic search (grep + file reads)
+One-line pitch: Cursor's index gives +12.5% accuracy on codebase questions — but the claim that indexing *saves tokens* has zero published measurements on either side, and Claude Code/Cline/Letta ship the no-index architecture on purpose.
+- **Layer:** infra (retrieval architecture / harness tooling)
+- **Mechanism:** pro-index: custom embedding model over the codebase; agent gets semantic search + grep (cursor.com/blog/semsearch). Anti-index: Cline — chunking "tears apart" code logic, indexes drift during editing, embedded code copies are a security surface (cline.bot blog, 2025-05); Claude Code ships agentic search only; Letta: plain files + standard tools hit 74.0% on a memory benchmark. Middle path: aider's repo map, graph-ranked, "--map-tokens defaults to 1k" (aider.chat/docs/repomap.html) — structural recall at a fixed ~1k-token standing budget.
+- **Expected savings:** **unknown — this is the area's largest evidence gap.** Cursor's post measures accuracy only: "on average 12.5% higher accuracy (6.5%–23.5% depending on the model)", code retention +0.3% (+2.6% on 1,000+-file codebases), 2.2% more dissatisfied follow-ups without it; full-page fetch confirms **no token or cost comparison anywhere in it**. The hypothesis "index → fewer failed greps → fewer tokens" remains unmeasured; so does its converse. Known token costs of adding RAG via MCP: schema overhead (local phase-0: 11 MCP schemas = 1,420 tok loaded vs ~60 deferred via tool search) + retrieved-chunk injection churning the cache prefix.
+- **Evidence tier:** T1 for Cursor's accuracy delta (self-published A/B + private offline eval, no replication); **T4 for any token claim in either direction**.
+- **Quality risk:** adding RAG is QUALITY-motivated (largest gains on very large repos per Cursor); token impact unknown; index staleness during active editing is Cline's core objection. Staying grep-only is NEUTRAL and free.
+- **Availability:** semantic index: GATEWAY-OR-SELF-HOST via MCP (product feature in Cursor, not Claude Code). Agentic search: CLAUDE-CODE-TODAY. Repo map: shipped in aider.
+- **Effort to adopt:** project (self-hosted embedding MCP server); zero to stay default.
+- **Composability:** a repo-map-style digest can live in CLAUDE.md/auto memory as a bounded standing cost; RAG results injected early compose badly with prompt caching.
+- **Validation protocol:** the would-be first number in existence: 20 fixed codebase questions, grep-only vs MCP embedding server, same model; sum usage tokens per answered question and grade answers. Cheap to run locally; see gaps.
+
+### 10. Dedicated memory layers (Mem0 / Zep / MemGPT-Letta) — QUALITY-TRADE
+One-line pitch: extraction pipelines compress history into a retrieved store — Mem0 claims >90% token savings, but three independent sources show trivial baselines beating these systems on accuracy on the same benchmarks.
+- **Layer:** infra (external memory service)
+- **Mechanism:** MemGPT (arXiv 2310.08560, preprint Oct 2023): OS-style paging between in-context core memory and archival storage. Mem0 (arXiv 2504.19413, vendor preprint): extract salient facts from dialogue into a store (optional graph), retrieve selectively instead of replaying history.
+- **Expected savings:** Mem0 paper (abstract): "26% relative improvements... over OpenAI" (66.9% vs 52.9% LLM-as-Judge on LOCOMO, paper body), "91% lower p95 latency" (1.44s vs 17.12s), "saves more than 90% token cost" (~1.8K vs 26K tokens/conversation = 93.1%). Counter-evidence: Letta — filesystem agent on gpt-4o-mini scores **74.0%** on LoCoMo vs "Mem0's reported 68.5%... top-performing graph variant"; Letta could not reproduce the MemGPT numbers and "Mem0 did not respond to requests for clarification" (letta.com). ConvoMem (arXiv 2511.10523, 75,336 QA pairs): "simple full-context approaches achieve 70-82%" while "Mem0 achieve only 30-45%... under 150 interactions"; long context "excels for the first 30 conversations, remains viable... up to 150".
+- **Evidence tier:** T3 contested — vendor preprints with multiple independent numbered rebuttals (Letta, ConvoMem, Zep's critique "Lies, Damn Lies, Statistics"). No coding-agent benchmark exists; all numbers are conversational-assistant workloads.
+- **Quality risk:** **QUALITY-TRADE** today: the token cut is arithmetically real but buys replicated accuracy regressions vs full-context and vs plain files. Treat all vendor memory-layer numbers as adversarial marketing until third-party.
+- **Availability:** GATEWAY-OR-SELF-HOST (Mem0/Zep/Letta services; MemGPT open source). No native Claude Code hook; auto memory (3) covers the core use case file-first.
+- **Effort to adopt:** days (service + MCP integration)
+- **Composability:** competes with, rather than composes with, auto memory and handoff files. Below ~150-conversation histories, ConvoMem's data says you don't need it at all.
+- **Validation protocol:** before adopting: replicate on your own workload — repo-Q&A recall task, candidate memory layer vs files-only baseline (Letta's setup), measuring both accuracy and total tokens. Adopt only if it beats files on BOTH.
+
+### 11. Semantic response caching (GPTCache / GPT Semantic Cache) — wrong tool for coding agents — QUALITY-TRADE
+One-line pitch: serve repeated queries from an embedding-keyed response cache — real on FAQ traffic, evidence-free for coding agents, and a correctness bug when it false-positive hits.
+- **Layer:** infra (gateway/proxy)
+- **Mechanism:** embed incoming query, vector-search prior queries, serve the stored response on similarity hit. Two distinct papers, routinely conflated: GPTCache (ACL Anthology 2023.nlposs-1.24) claims "2-10x" on-hit speedup; GPT Semantic Cache (arXiv 2411.05276, Nov 2024) reports "reduces API calls by up to 68.8% (hit rates 61.6%–68.8%)" with ">97%" positive-hit accuracy — on 8,000 customer-service QA pairs + 2,000 simulated queries.
+- **Expected savings:** up to 68.8% of calls *on FAQ-shaped traffic only*. For Claude Code-like traffic: ~zero expected — prompts embed file contents, diffs, session state; superficially similar queries ("fix the test") demand different answers. The local phase-0 mix (92.83% of heavy-session input = prefix cache reads) shows coding-agent repetition lives in the PREFIX, which Anthropic prompt caching already prices at 0.1x — the whole-response repetition this technique needs does not exist in the workload.
+- **Evidence tier:** T2 for the FAQ numbers (workshop paper + arXiv preprint with experiments); **T4 for any coding-agent application — no study exists**.
+- **Quality risk:** **RISKY→QUALITY-TRADE**: false-positive hits silently return stale/foreign answers; threshold tuning trades hit rate against wrongness. NEUTRAL only for genuinely identical sub-tasks behind a gateway (e.g., repeated lint-fix prompts across CI), scoped per repo+commit.
+- **Availability:** GATEWAY-OR-SELF-HOST
+- **Effort to adopt:** days (proxy + embedding store)
+- **Composability:** orthogonal layer to prompt caching; composes badly with per-session state. Anti-synergy with everything cache-prefix-based.
+- **Validation protocol:** shadow mode: replay a week of real prompts through the cache without serving hits; measure would-be hit rate and manually audit 50 would-be hits for correctness. Predicted outcome for coding traffic: hit rate near zero, making the audit moot.
+
+## Claims to kill
+
+| Claim | Verdict | Evidence |
+|---|---|---|
+| "Mem0 is SOTA memory (+26%, 90% cheaper)" | KILL | +26% is only vs OpenAI's built-in memory; files-only 74.0% > Mem0 68.5% (Letta); full-context 70–82% vs Mem0 30–45% (ConvoMem); Mem0's own full-context baseline (~73%) beats its best (~68%) |
+| "GPTCache achieves 61–69% hit rates at 97% accuracy" | KILL (misattribution) | those figures are GPT Semantic Cache (arXiv 2411.05276, FAQ workload); GPTCache's paper claims only 2–10x on-hit latency |
+| "Semantic response caching saves money for coding agents" | KILL | T4, zero evidence; local phase-0: repetition is in the prefix (92.83% cache reads), already priced at 0.1x |
+| "Split CLAUDE.md into @imports to save context" | KILL | docs: imports "load and enter the context window at launch"; only `paths:` rules, nested files, skills defer |
+| "Compaction is free context management" | KILL | API bills the pass as a separate full-price iteration (~$1.98 ESTIMATE on the docs' 180k/3.5k example); /compact is likewise a full model call; top-level usage hides it |
+| "/compact preserves everything important" | KILL | documented losses: conversation-only instructions, `paths:` rules, nested CLAUDE.md, skill bodies >5k/25k caps, and the un-invoked skill listing |
+| "Context editing is pure savings" | KILL | docs warn each clear invalidates cached prefixes; local break-even ESTIMATE N* ≈ 11.5×S/C calls; 84% headline was a search workload |
+| "RAG-indexing your repo saves tokens vs agentic search" | KILL as stated | no token measurement exists on either side; Cursor measured accuracy only (absence verified by full fetch) — and "agentic search is strictly cheaper" is equally unproven |
+| "A pointer reference is ~10 tokens" | KILL | local: a workable pointer (path + gist) = 53 tokens; the realistic cut is ~77–79%/item, not ~95% |
+| "MemGPT proved hierarchical memory beats long context" | WEAKEN | preprint, no comparative numbers in abstract; its own successor (Letta) now argues "memory is more about how agents manage context than the exact retrieval mechanism used" |
+
+## Open gaps (ranked by local fillability)
+
+1. RAG vs agentic-search token cost — no number exists anywhere; 20-question local A/B would be the first (technique 9 protocol).
+2. Auto memory net effect — startup tax bounded ($0.12–$1.40/day ESTIMATE), savings unmeasured (technique 3 protocol).
+3. Handoff file vs /resume vs auto-compact — three competing continuation mechanisms, zero comparative data, including from Anthropic (technique 4 protocol).
+4. Context-editing cache-invalidation tax — acknowledged qualitatively in docs, priced nowhere; local break-even formula needs empirical check (technique 7 protocol).
+5. Whether the API compaction pass bills previously-cached history at cache-read rates — a 5.6x cost question, docs silent (technique 8 protocol).
+6. MEMORY.md cache placement — if the auto-memory block churns the prefix per session it costs 1.25–2x writes, changing technique 3's arithmetic.
+7. All memory-layer benchmarks are conversational; no coding-agent memory benchmark exists — every technique-10 number is an out-of-domain transfer.
+
+## Verification ledger
+
+| Number / claim | Source or local method (access/run date) |
+|---|---|
+| 84% token cut, 100-turn web-search eval; +39% memory+editing; +29% editing alone; | https://claude.com/blog/context-management — quotes verified by live fetch |
+| Editing defaults: trigger 100k, keep 3, `clear_at_least`, `clear_tool_inputs: false`, cache-invalidation warning, `cleared_input_tokens` field, header context-management-2025-06-27 | https://platform.claude.com/docs/en/build-with-claude/context-editing — live fetch |
+| Compaction: header compact-2026-01-12, type compact_20260112, trigger 150k default/50k min, iterations example 180k/3.5k + 23k/1k, top-level usage excludes compaction, cache_control practice, model list, no cache-read statement | https://platform.claude.com/docs/en/build-with-claude/compaction — live fetch |
+| $1.98/compaction pass; $0.355 cache-read counterfactual; ~98% smaller prefix | local arithmetic on docs example at Fable 5 list ($10/$50; cache read 0.1x, write 1.25x) — ESTIMATE |
+| MEMORY.md cap "first 200 lines or 25KB"; topic files on demand; v2.1.59 default-on; imports load at launch; &lt;200-line guidance + adherence claim; HTML comments stripped; CLAUDE.md "loaded in full regardless of length"; root survives /compact, nested/conversation-only lost; storage paths and disable switches | https://code.claude.com/docs/en/memory — live fetch |
+| Survival table verbatim; skill caps 5,000/skill, 25,000 total, oldest dropped, truncation keeps start; skill listing not re-injected; "/compact focus"; /clear cost quote; representative 680-tok MEMORY.md and ~120-tok deferred MCP listing (page is an explicit simulation) | https://code.claude.com/docs/en/context-window — live fetch (persisted copy grepped) |
+| memory_20250818 commands, injected protocol prompt text, multi-session pattern, "preserves the information that must survive summarization" quote, GA (no beta header), ZDR, no perf numbers on page | https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool — live fetch |
+| Injected memory protocol prompt = 189 tok; handoff sample = 387 tok; restatement 233 vs pointer 53 (77.3%) | local: `python3 /tmp/ct.py claude-fable-5 < file` on docs-quoted text and constructed samples |
+| <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> 2,744; 12 topic files 35,769 (max <RepoFile path="PULL_REQUESTS.md">PULL_REQUESTS.md</RepoFile> 10,939); <RepoFile path="docs/AGENTS.md">docs/AGENTS.md</RepoFile> 5,982; 93.8%/92.9% deferred | local: /tmp/ct.py per file, totals summed; phase-0 measured 2,738 on a prior revision of <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> |
+| +$1.27/session, +$7.64/day (+35%) all-eager counterfactual; auto-memory tax $0.02–$0.23/session ($0.12–$1.40/day); worst case ≈7,642 tok (25,600 chars ÷ 3.35 chars/tok) | local arithmetic, ESTIMATE, on modeled profile (19 calls, 6 sessions/day, $22/day) and phase-0 Fable-5 prose ratio |
+| Break-even N* ≈ 11.5 × S / C (examples 4.3 and 138 calls) | local arithmetic, ESTIMATE: cache write $12.5/MTok vs read $1/MTok |
+| Heavy-session mix 92.83% cache reads / 0.44% uncached; dollar split 32/29/20/17/2; 11 MCP schemas 1,420 tok vs ~60 deferred; caveman ultra 58.5% | local phase-0 measurements (treated as ground truth) |
+| Cursor: +12.5% avg accuracy (6.5–23.5%), +0.3%/+2.6% retention, 2.2% dissatisfaction, zero token/cost data in post | https://cursor.com/blog/semsearch — live fetch incl. explicit absence check |
+| Cline anti-index arguments, 2025-05 | https://cline.bot/blog/why-cline-doesnt-index-your-codebase-and-why-thats-a-good-thing |
+| aider repo map, --map-tokens default 1k | https://aider.chat/docs/repomap.html |
+| Letta: 74.0% filesystem (gpt-4o-mini), Mem0 reported 68.5%, irreproducibility + no-response quotes, context-management quote | https://www.letta.com/blog/benchmarking-ai-agent-memory/ — live fetch |
+| Mem0: 26% rel. over OpenAI, 91% p95, >90% token cost, preprint (abstract); 66.9/52.9, 1.44s/17.12s, 1.8K/26K (paper body) | https://arxiv.org/abs/2504.19413 — abstract live-fetched; body figures |
+| ConvoMem: 75,336 QA pairs, full-context 70–82%, Mem0 30–45% under 150 interactions, 30/150-conversation thresholds | https://arxiv.org/abs/2511.10523 — live fetch |
+| MemGPT preprint Oct 2023, no numbers in abstract | https://arxiv.org/abs/2310.08560 |
+| Zep critique exists ("Lies, Damn Lies, Statistics") | https://blog.getzep.com/lies-damn-lies-statistics-is-mem0-really-sota-in-agent-memory/ — sweep search result |
+| GPTCache 2–10x on-hit speedup | https://aclanthology.org/2023.nlposs-1.24/ |
+| GPT Semantic Cache: 61.6–68.8% hit rates, >97% positive, FAQ workload, Nov 2024 | https://arxiv.org/abs/2411.05276 |
+| Anthropic harness: initializer artifacts, "recovers the full state... in seconds", "saves Claude some tokens in every session" | https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents; pattern cross-confirmed in memory-tool docs live fetch |
+| Manus: restorable-compression quotes, $0.30/$3.00 10x cache figure, ~100:1 input:output, ~50 tool calls/task | https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus |

@@ -58,11 +58,20 @@ pub async fn reconcile(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) {
+    reconcile_when_configured(paths, docker, runner, true).await;
+}
+
+pub async fn reconcile_when_configured(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    any_keep_awake_enabled: bool,
+) {
     if !is_supported_platform() {
         return;
     }
 
-    if let Err(err) = reconcile_inner(paths, docker, runner).await {
+    if let Err(err) = reconcile_inner(paths, docker, runner, any_keep_awake_enabled).await {
         jackin_diagnostics::emit_compact_line(
             "keep_awake",
             &format!("[jackin] keep_awake reconciler: {err}"),
@@ -78,6 +87,7 @@ async fn reconcile_inner(
     paths: &JackinPaths,
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
+    any_keep_awake_enabled: bool,
 ) -> anyhow::Result<()> {
     std::fs::create_dir_all(&paths.data_dir).with_context(|| {
         format!(
@@ -111,9 +121,12 @@ async fn reconcile_inner(
         }
     }
 
-    let want_running = count_keep_awake_agents(docker).await? > 0;
     let pid_path = paths.data_dir.join(PID_FILENAME);
     let current_pid = read_pid_file(&pid_path)?;
+    if !any_keep_awake_enabled && current_pid.is_none() {
+        return Ok(());
+    }
+    let want_running = any_keep_awake_enabled && count_keep_awake_agents(docker).await? > 0;
     // Offload the synchronous `ps` check to the blocking pool so it never
     // stalls the tokio render thread (Defect 43 — async-first rule).
     let liveness = if let Some(pid) = current_pid {

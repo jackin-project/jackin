@@ -154,6 +154,7 @@ impl Dialog {
             Self::RenameTab { .. } => rename_hint(),
             Self::ExportFile { .. } => export_file_hint(),
             Self::ContainerInfo { .. } => info_dialog_hint("copy value", axes),
+            Self::SpawnFailure(_) => jackin_tui::components::error_popup_hint_spans(),
             Self::GitHubContext { .. } => {
                 if github.and_then(|view| view.status.loaded()).is_some() {
                     let mut spans = info_dialog_hint("copy GitHub URL", axes);

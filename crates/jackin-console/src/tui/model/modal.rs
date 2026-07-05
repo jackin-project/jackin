@@ -79,6 +79,7 @@ pub enum ConsoleModal<
         state: StatusPopupState,
     },
     OpPicker {
+        secrets_target: Option<SecretsPickerTarget<SecretsScopeTag>>,
         state: Box<OpPickerState>,
     },
     RolePicker {
@@ -106,6 +107,12 @@ pub enum ConsoleModal<
         focus: AuthFormFocus,
         literal_buffer: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SecretsPickerTarget<SecretsScopeTag> {
+    Existing { scope: SecretsScopeTag, key: String },
+    NewKey { scope: SecretsScopeTag },
 }
 impl<
     TextInputTarget,

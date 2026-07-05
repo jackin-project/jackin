@@ -10,6 +10,11 @@ use jackin_docker::docker_client::{ContainerRow, ContainerState, NetworkRow};
 use std::collections::{HashMap, VecDeque};
 use tempfile::tempdir;
 
+fn gc_test_paths() -> JackinPaths {
+    let temp = tempdir().unwrap();
+    JackinPaths::for_tests(temp.path())
+}
+
 #[tokio::test]
 async fn eject_all_targets_only_requested_class_family() {
     let selector = RoleSelector::new(None, "agent-smith");
@@ -424,7 +429,7 @@ async fn gc_removes_orphaned_dind_and_network() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
     assert!(
         docker
@@ -477,7 +482,7 @@ async fn gc_skips_dind_when_agent_is_running() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
     assert!(
         !docker
@@ -489,32 +494,88 @@ async fn gc_skips_dind_when_agent_is_running() {
 }
 
 #[tokio::test]
-async fn gc_ignores_prewarm_dind_resources() {
+async fn gc_keeps_state_owned_prewarm_dind_resources() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::launch::write_prewarmed_dind_state(
+        &paths,
+        &crate::runtime::launch::DindSidecarPrewarm {
+            dind: "jk-prewarm-dind-dind".to_owned(),
+            network: "jk-prewarm-dind-net".to_owned(),
+            certs_volume: "jk-prewarm-dind-certs".to_owned(),
+            ready_ms: 1,
+            kept: true,
+        },
+    )
+    .unwrap();
     let mut labels = HashMap::new();
     labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
     labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
     labels.insert(LABEL_ROLE_KEY.to_owned(), "jk-prewarm-dind".to_owned());
     let docker = FakeDockerClient {
-        list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![ContainerRow {
-            name: "jk-prewarm-dind-dind".to_owned(),
-            labels,
-        }]])),
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([
+            vec![],
+            vec![ContainerRow {
+                name: "jk-prewarm-dind-dind".to_owned(),
+                labels,
+            }],
+        ])),
         list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&paths, &docker).await;
 
     let recorded = docker.recorded.borrow();
     assert!(
         recorded
             .iter()
-            .any(|call| call == "docker ps -a --filter jackin.kind=dind"),
-        "GC must keep scanning only role-owned dind sidecars: {recorded:?}"
+            .any(|call| call == "docker ps -a --filter jackin.kind=prewarm-dind"),
+        "GC must scan prewarm sidecars after role GC: {recorded:?}"
     );
     assert!(
         !recorded.iter().any(|call| call.contains("jk-prewarm-dind")),
-        "prewarm-owned sidecars are reserved for daemon/runtime adoption and must not be purged by role GC: {recorded:?}"
+        "state-owned prewarm sidecars are reserved for adoption: {recorded:?}"
+    );
+}
+
+#[tokio::test]
+async fn gc_removes_state_less_prewarm_dind_resources() {
+    let mut labels = HashMap::new();
+    labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
+    labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
+    let docker = FakeDockerClient {
+        list_containers_queue: std::cell::RefCell::new(VecDeque::from([
+            vec![],
+            vec![ContainerRow {
+                name: "jk-prewarm-dind-dind".to_owned(),
+                labels,
+            }],
+        ])),
+        list_networks_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
+        ..Default::default()
+    };
+
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
+
+    let recorded = docker.recorded.borrow();
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == "docker rm -f jk-prewarm-dind-dind"),
+        "state-less prewarm DinD container must be swept: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == "docker volume rm jk-prewarm-dind-certs"),
+        "state-less prewarm cert volume must be swept: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == "docker network rm jk-prewarm-dind-net"),
+        "state-less prewarm network must be swept: {recorded:?}"
     );
 }
 
@@ -526,7 +587,7 @@ async fn gc_does_nothing_when_no_orphans() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
     assert!(
         !docker
@@ -557,7 +618,7 @@ async fn gc_removes_orphaned_network_without_dind() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
     assert!(
         docker
@@ -594,7 +655,7 @@ async fn gc_cleans_multiple_orphans() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await;
+    gc_orphaned_resources(&gc_test_paths(), &docker).await;
 
     assert!(
         docker
@@ -645,7 +706,7 @@ async fn gc_does_not_panic_when_collect_orphaned_dind_fails() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await; // must not panic
+    gc_orphaned_resources(&gc_test_paths(), &docker).await; // must not panic
 }
 
 #[tokio::test]
@@ -661,7 +722,7 @@ async fn gc_does_not_panic_when_network_ls_fails() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await; // must not panic
+    gc_orphaned_resources(&gc_test_paths(), &docker).await; // must not panic
 }
 
 #[tokio::test]
@@ -686,7 +747,7 @@ async fn gc_does_not_panic_when_list_role_names_fails_in_orphaned_networks() {
         ..Default::default()
     };
 
-    gc_orphaned_resources(&docker).await; // must not panic
+    gc_orphaned_resources(&gc_test_paths(), &docker).await; // must not panic
 
     assert!(
         !docker

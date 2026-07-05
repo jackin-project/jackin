@@ -11,6 +11,15 @@ static DEBUG_BUFFER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 const DEBUG_BUFFER_LIMIT: usize = 2048;
 
 static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
+static CONFIG_TELEMETRY_LEVEL: OnceLock<Mutex<Option<TelemetryLevel>>> = OnceLock::new();
+static CONFIG_TELEMETRY_CATEGORIES: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum TelemetryLevel {
+    Info,
+    Debug,
+    Trace,
+}
 
 pub fn set_debug_mode(enabled: bool) {
     DEBUG_MODE.store(enabled, Ordering::Relaxed);
@@ -20,6 +29,111 @@ pub fn set_debug_mode(enabled: bool) {
 #[must_use]
 pub fn is_debug_mode() -> bool {
     DEBUG_MODE.load(Ordering::Relaxed)
+}
+
+pub fn telemetry_level(debug: bool) -> TelemetryLevel {
+    std::env::var("JACKIN_TELEMETRY_LEVEL")
+        .ok()
+        .and_then(|value| parse_telemetry_level(&value))
+        .or_else(config_telemetry_level)
+        .unwrap_or({
+            if debug {
+                TelemetryLevel::Debug
+            } else {
+                TelemetryLevel::Info
+            }
+        })
+}
+
+pub fn set_config_telemetry(level: Option<TelemetryLevel>, categories: &[String]) {
+    *CONFIG_TELEMETRY_LEVEL
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = level;
+    *CONFIG_TELEMETRY_CATEGORIES
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = if categories.is_empty() {
+        None
+    } else {
+        Some(categories.join(","))
+    };
+}
+
+fn config_telemetry_level() -> Option<TelemetryLevel> {
+    *CONFIG_TELEMETRY_LEVEL
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn config_telemetry_categories() -> Option<String> {
+    CONFIG_TELEMETRY_CATEGORIES
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+pub fn parse_telemetry_level(value: &str) -> Option<TelemetryLevel> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "info" => Some(TelemetryLevel::Info),
+        "debug" => Some(TelemetryLevel::Debug),
+        "trace" => Some(TelemetryLevel::Trace),
+        _ => None,
+    }
+}
+
+pub(crate) fn debug_capture_enabled(category: &str, legacy_debug: bool) -> bool {
+    let level = std::env::var("JACKIN_TELEMETRY_LEVEL")
+        .ok()
+        .and_then(|value| parse_telemetry_level(&value))
+        .or_else(config_telemetry_level)
+        .unwrap_or(if legacy_debug {
+            TelemetryLevel::Debug
+        } else {
+            TelemetryLevel::Info
+        });
+    let categories = std::env::var("JACKIN_TELEMETRY_CATEGORIES")
+        .ok()
+        .or_else(config_telemetry_categories);
+    level >= TelemetryLevel::Debug && telemetry_category_enabled(category, categories.as_deref())
+}
+
+#[cfg(test)]
+pub(crate) fn debug_capture_enabled_with_env(
+    level_env: Option<&str>,
+    categories_env: Option<&str>,
+    category: &str,
+    legacy_debug: bool,
+) -> bool {
+    let level = level_env
+        .and_then(parse_telemetry_level)
+        .unwrap_or(if legacy_debug {
+            TelemetryLevel::Debug
+        } else {
+            TelemetryLevel::Info
+        });
+    level >= TelemetryLevel::Debug && telemetry_category_enabled(category, categories_env)
+}
+
+fn telemetry_category_enabled(category: &str, categories_env: Option<&str>) -> bool {
+    categories_env
+        .filter(|raw| !raw.trim().is_empty())
+        .is_none_or(|raw| {
+            raw.split(',')
+                .map(normalize_telemetry_category)
+                .any(|candidate| {
+                    candidate == "*" || candidate == normalize_telemetry_category(category)
+                })
+        })
+}
+
+fn normalize_telemetry_category(category: &str) -> String {
+    category
+        .trim()
+        .to_ascii_lowercase()
+        .replace(['_', ' '], "-")
 }
 
 fn debug_buffer() -> &'static Mutex<Vec<String>> {

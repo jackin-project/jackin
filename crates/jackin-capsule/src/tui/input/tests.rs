@@ -304,7 +304,7 @@ fn kitty_arrow_release_is_suppressed() {
 
 #[test]
 fn kitty_alt_shift_arrow_is_resize_pane() {
-    // Alt+Shift+Arrow stays a multiplexer-level pane-resize gesture
+    // Alt-Shift-Arrow stays a multiplexer-level pane-resize gesture
     // even when the outer terminal is in kitty mode — the event
     // tag is parsed, the press is acted on, the release is
     // suppressed (same shape as the no-modifier case above).

@@ -2,6 +2,7 @@
   "title": "Infrastructure",
   "defaultOpen": false,
   "pages": [
+    "context-engine",
     "instant-launch-architecture",
     "registry-configurations",
     "workspace-registry-cache",

@@ -320,7 +320,7 @@ impl Multiplexer {
     }
 
     /// Adjust the split that contains the focused pane along `dir` by
-    /// 5% of the parent rectangle. Triggered by `Alt+Shift+Arrow`.
+    /// 5% of the parent rectangle. Triggered by `Alt-Shift-Arrow`.
     pub(super) fn resize_focused(&mut self, dir: ArrowDir) {
         let Some(tab_idx) = self.tabs.get(self.active_tab).map(|_| self.active_tab) else {
             return;

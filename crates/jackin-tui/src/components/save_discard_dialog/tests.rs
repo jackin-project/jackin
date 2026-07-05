@@ -1,5 +1,6 @@
 //! Tests for `save_discard_dialog`.
 use super::*;
+use crate::components::ButtonFocus;
 use crossterm::event::{KeyCode, KeyEventKind, KeyEventState, KeyModifiers};
 
 fn key(code: KeyCode) -> KeyEvent {
@@ -50,6 +51,60 @@ fn enter_commits_focused_button() {
         s.handle_key(key(KeyCode::Enter)),
         ModalOutcome::Cancel
     ));
+}
+
+#[test]
+fn save_discard_focus_ring_and_index_match_button_order() {
+    assert_eq!(SaveDiscardFocus::Save.index(), 0);
+    assert_eq!(SaveDiscardFocus::Discard.index(), 1);
+    assert_eq!(SaveDiscardFocus::Cancel.index(), 2);
+    assert_eq!(SaveDiscardFocus::Cancel.next(), SaveDiscardFocus::Save);
+    assert_eq!(SaveDiscardFocus::Save.next(), SaveDiscardFocus::Discard);
+    assert_eq!(SaveDiscardFocus::Discard.next(), SaveDiscardFocus::Cancel);
+    assert_eq!(SaveDiscardFocus::Cancel.prev(), SaveDiscardFocus::Discard);
+    assert_eq!(SaveDiscardFocus::Discard.prev(), SaveDiscardFocus::Save);
+    assert_eq!(SaveDiscardFocus::Save.prev(), SaveDiscardFocus::Cancel);
+}
+
+#[test]
+fn save_discard_focus_keys_keep_existing_next_prev_semantics() {
+    for code in [
+        KeyCode::Tab,
+        KeyCode::Right,
+        KeyCode::Char('l'),
+        KeyCode::Char('L'),
+    ] {
+        let mut state = SaveDiscardState::new("?");
+        assert_eq!(state.focus, SaveDiscardFocus::Cancel);
+        assert!(matches!(
+            state.handle_key(key(code)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(
+            state.focus,
+            SaveDiscardFocus::Save,
+            "{code:?} should advance focus"
+        );
+    }
+
+    for code in [
+        KeyCode::BackTab,
+        KeyCode::Left,
+        KeyCode::Char('h'),
+        KeyCode::Char('H'),
+    ] {
+        let mut state = SaveDiscardState::new("?");
+        assert_eq!(state.focus, SaveDiscardFocus::Cancel);
+        assert!(matches!(
+            state.handle_key(key(code)),
+            ModalOutcome::Continue
+        ));
+        assert_eq!(
+            state.focus,
+            SaveDiscardFocus::Discard,
+            "{code:?} should reverse focus"
+        );
+    }
 }
 
 #[test]

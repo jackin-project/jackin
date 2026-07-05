@@ -42,6 +42,10 @@ const _: fn(&JackinPaths) = install_agent_binary_stubs;
 pub struct NoOpDocker;
 
 impl DockerApi for NoOpDocker {
+    async fn ping(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     async fn inspect_container_state(&self, _name: &str) -> ContainerState {
         ContainerState::NotFound
     }

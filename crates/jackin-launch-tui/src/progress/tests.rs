@@ -13,10 +13,14 @@ impl LaunchDiagnostics for TestDiagnostics {
     fn path(&self) -> &Path {
         Path::new("/tmp")
     }
+    fn persists(&self) -> bool {
+        true
+    }
     fn command_output_path(&self, name: &str) -> PathBuf {
         PathBuf::from("/tmp").join(name)
     }
     fn compact(&self, _kind: &str, _message: &str) {}
+    fn error(&self, _kind: &str, _message: &str, _error_type: Option<&str>) {}
     fn stage(&self, _kind: &str, _stage: &str, _message: &str, _detail: Option<&str>) {}
 }
 

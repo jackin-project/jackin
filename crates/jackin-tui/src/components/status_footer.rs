@@ -2,12 +2,12 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Widget};
 
 use crate::display_cols;
-use crate::theme::{DANGER_RED, DEBUG_AMBER, LINK_BLUE, WHITE, faded};
+use crate::theme::{DANGER_RED, DEBUG_AMBER, INK, LINK_BLUE, WHITE, faded};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[allow(
@@ -30,6 +30,37 @@ pub struct StatusRightGroup<'a> {
     pub usage: Option<&'a str>,
     pub container: &'a str,
     pub run_id: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum FooterLeftKind {
+    #[default]
+    Plain,
+    Link,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FooterLeft<'a> {
+    pub text: &'a str,
+    pub kind: FooterLeftKind,
+}
+
+impl<'a> FooterLeft<'a> {
+    #[must_use]
+    pub const fn plain(text: &'a str) -> Self {
+        Self {
+            text,
+            kind: FooterLeftKind::Plain,
+        }
+    }
+
+    #[must_use]
+    pub const fn link(text: &'a str) -> Self {
+        Self {
+            text,
+            kind: FooterLeftKind::Link,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +100,7 @@ impl StatusRightGroupLayout {
 
 #[derive(Debug, Clone, Copy)]
 pub struct StatusFooter<'a> {
-    left: &'a str,
+    left: FooterLeft<'a>,
     right: StatusRightGroup<'a>,
     alpha: f32,
     hover: StatusFooterHover,
@@ -146,7 +177,7 @@ impl<'a> StatusFooter<'a> {
     #[must_use]
     pub const fn new(left: &'a str) -> Self {
         Self {
-            left,
+            left: FooterLeft::plain(left),
             right: StatusRightGroup {
                 usage: None,
                 container: "",
@@ -160,6 +191,12 @@ impl<'a> StatusFooter<'a> {
                 right_debug: false,
             },
         }
+    }
+
+    #[must_use]
+    pub const fn left(mut self, left: FooterLeft<'a>) -> Self {
+        self.left = left;
+        self
     }
 
     #[must_use]
@@ -214,11 +251,7 @@ impl<'a> StatusFooter<'a> {
 impl Widget for StatusFooter<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         Block::default()
-            .style(
-                Style::default()
-                    .bg(faded(WHITE, self.alpha))
-                    .fg(Color::Black),
-            )
+            .style(Style::default().bg(faded(WHITE, self.alpha)).fg(INK))
             .render(area, buf);
 
         let right_layout = status_right_group_layout(area.width, self.right);
@@ -229,11 +262,7 @@ impl Widget for StatusFooter<'_> {
                 Style::default()
                     .bg(faded(WHITE, self.alpha))
                     .fg(faded(
-                        if self.hover.usage {
-                            DEBUG_AMBER
-                        } else {
-                            Color::Black
-                        },
+                        if self.hover.usage { DEBUG_AMBER } else { INK },
                         self.alpha,
                     ))
                     .add_modifier(Modifier::BOLD),
@@ -285,18 +314,18 @@ impl Widget for StatusFooter<'_> {
             .constraints([Constraint::Min(1), Constraint::Length(right_width)])
             .split(area);
 
-        let activity_fg = if self.hover.left {
-            faded(LINK_BLUE, self.alpha)
-        } else {
-            Color::Black
+        let left_fg = match (self.left.kind, self.hover.left) {
+            (FooterLeftKind::Plain, false) => INK,
+            (FooterLeftKind::Plain, true) | (FooterLeftKind::Link, false) => LINK_BLUE,
+            (FooterLeftKind::Link, true) => DEBUG_AMBER,
         };
         let left_spans = vec![
             Span::raw(" "),
             Span::styled(
-                self.left.to_owned(),
+                self.left.text.to_owned(),
                 Style::default()
                     .bg(faded(WHITE, self.alpha))
-                    .fg(activity_fg)
+                    .fg(faded(left_fg, self.alpha))
                     .add_modifier(Modifier::BOLD),
             ),
         ];

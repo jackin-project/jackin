@@ -5,8 +5,19 @@
 #[path = "image/version.rs"]
 mod version;
 
+#[path = "image/published.rs"]
+mod published;
+
+#[path = "image/prewarm.rs"]
+mod prewarm;
+
+#[cfg(not(test))]
+pub use prewarm::prewarm_role_images;
+pub use prewarm::{ImagePrewarmStatus, RoleImagePrewarmRow};
 #[allow(unused_imports, unreachable_pub)]
 pub use version::*;
+
+use published::{PublishedImageFreshness, published_image_freshness, published_image_is_stale};
 
 // Stages: collect agent binaries → build derived context → `docker build` →
 // tag. Not responsible for container start, session attach, or identity
@@ -58,8 +69,7 @@ use super::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 pub(super) use jackin_image::image_decision::{
     ImageDecision, ImageInvalidationReason, build_decision, classify_image_labels,
-    decision_base_image_override, emit_image_decision, emit_image_refresh_background,
-    emit_image_reuse,
+    decision_base_image_override, emit_image_decision, emit_image_reuse,
 };
 
 pub(super) struct PreparedRuntimeBinaries {
@@ -68,99 +78,20 @@ pub(super) struct PreparedRuntimeBinaries {
     jackin_capsule_src: String,
 }
 
-/// Result status for one explicit role-image prewarm request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ImagePrewarmStatus {
-    /// Existing local image labels already match the current recipe.
-    Reused,
-    /// Local image was missing or invalid, so prewarm rebuilt it.
-    Built,
-}
-
-/// One row from explicit `jackin prewarm --image` role-image preparation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RoleImagePrewarmRow {
-    /// Agent runtime whose image was checked or built.
-    pub agent: Agent,
-    /// Derived image tag checked or built for this agent.
-    pub image: String,
-    /// Whether prewarm reused or built the image.
-    pub status: ImagePrewarmStatus,
-}
-
-/// Resolve a role repo and prewarm derived images for selected agents.
-///
-/// This writes only jackin-owned role cache, binary cache, build-context, and
-/// Docker image state. It does not touch host repos, host git config, shell
-/// config, `gh` config, or agent configs.
-#[cfg(not(test))]
-pub async fn prewarm_role_images(
-    paths: &JackinPaths,
-    selector: &RoleSelector,
-    role_git: &str,
-    branch_override: Option<&str>,
-    agents: &[Agent],
-    debug: bool,
-) -> anyhow::Result<Vec<RoleImagePrewarmRow>> {
-    let mut resolve_runner = ShellRunner { debug };
-    let (_cached_repo, validated_repo, repo_lock) = resolve_agent_repo_with(
-        paths,
-        selector,
-        role_git,
-        &mut resolve_runner,
-        RepoResolveOptions::non_interactive().with_branch(branch_override),
-        || Ok(false),
-    )
-    .await?;
-    let supported = validated_repo.manifest.supported_agents();
-    drop(repo_lock);
-    let requested = if agents.is_empty() {
-        supported
-    } else {
-        for agent in agents {
-            if !supported.contains(agent) {
-                anyhow::bail!(
-                    "role {selector} does not support {}; supported agents: {}",
-                    agent.slug(),
-                    supported
-                        .iter()
-                        .map(|agent| agent.slug())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-            }
-        }
-        agents.to_vec()
-    };
-
-    let mut tasks = tokio::task::JoinSet::new();
-    for (index, agent) in requested.into_iter().enumerate() {
-        let paths = paths.clone();
-        let selector = selector.clone();
-        let role_git = role_git.to_owned();
-        let branch_override = branch_override.map(str::to_owned);
-        tasks.spawn(async move {
-            let row = prewarm_agent_image(
-                &paths,
-                &selector,
-                &role_git,
-                branch_override.as_deref(),
-                agent,
-                debug,
-            )
-            .await;
-            (index, row)
-        });
-    }
-
-    let mut rows = Vec::new();
-    while let Some(result) = tasks.join_next().await {
-        let (index, row) = result?;
-        rows.push((index, row?));
-    }
-    rows.sort_by_key(|(index, _)| *index);
-    let rows = rows.into_iter().map(|(_, row)| row).collect();
-    Ok(rows)
+fn local_image_buildx_args() -> Vec<&'static str> {
+    // Runtime image builds consume local-only base tags such as
+    // `jk_<role>__base:<sha>` and PR-local construct images. A docker-container
+    // buildx builder cannot see the host Docker image store, so use the
+    // Docker-driver default builder. The global context flag keeps buildx from
+    // rejecting `default` when DOCKER_HOST or another active context is set.
+    vec![
+        "--context",
+        "default",
+        "buildx",
+        "build",
+        "--builder",
+        "default",
+    ]
 }
 
 #[allow(
@@ -275,23 +206,6 @@ pub(super) async fn decide_role_image(
         return Ok(build_decision(reason, head_sha, base_image_override));
     }
 
-    let mut refresh_reason = None;
-    if let Some(published) = base_image_override
-        && published_image_is_stale(
-            published,
-            &validated_repo.dockerfile.construct_version,
-            head_sha.as_deref(),
-            docker,
-        )
-        .await
-    {
-        jackin_diagnostics::debug_log!(
-            "image",
-            "published image {published} is out of date; checking workspace-image recipe"
-        );
-        base_image_override = None;
-        refresh_reason = Some(ImageInvalidationReason::PublishedImageStale);
-    }
     jackin_diagnostics::active_timing_started("derived image", "image_recipe", None);
     let local_base_image = role_base_image_name(selector, branch_override, head_sha.as_deref());
     let expected_recipes = expected_image_recipes(
@@ -349,71 +263,29 @@ pub(super) async fn decide_role_image(
 
     match classify_image_labels(&labels, &expected_recipes) {
         None => {
-            // D20: after recipe matches, check whether any baked agent CLI is
-            // outdated. Uses the file-based version cache written at build time;
-            // returns false when either cache entry is absent, so first-build
-            // never triggers a spurious background refresh.
-            let final_reason = if let Some(reason) = refresh_reason {
-                Some(reason)
-            } else {
-                let agents = validated_repo.manifest.supported_agents();
-                // The per-agent checks are independent async cache reads; run them
-                // concurrently rather than serializing one await per agent on the
-                // launch path.
-                let image_ref = &image;
-                let checks = agents.iter().map(|&agent| async move {
-                    (
-                        agent,
-                        version_check::needs_agent_update(paths, image_ref, agent).await,
-                    )
-                });
-                let results = futures_util::future::join_all(checks).await;
-                // Always-on warn for an undetermined check: a persistently
-                // unresolvable latest-version lookup would otherwise let agents
-                // drift behind with no launch-path signal (matches the sibling
-                // tag-lookup/label-inspect warns).
-                for (agent, check) in &results {
-                    if *check == version_check::AgentVersionCheck::Unknown {
-                        tracing::warn!(
-                            "derived image {image}: could not verify {} version; \
-                             staleness undetermined (latest release unresolvable)",
-                            agent.runtime().slug()
-                        );
-                    }
-                }
-                let stale_agent = results.into_iter().find_map(|(agent, check)| {
-                    (check == version_check::AgentVersionCheck::Stale).then_some(agent)
-                });
-                if let Some(agent) = stale_agent {
-                    jackin_diagnostics::debug_log!(
-                        "image",
-                        "derived image {image}: {} baked version is outdated",
-                        agent.runtime().slug()
-                    );
-                    Some(ImageInvalidationReason::AgentVersionChanged)
-                } else {
-                    None
-                }
-            };
-
-            if let Some(reason) = final_reason {
-                jackin_diagnostics::debug_log!(
-                    "image",
-                    "reusing derived image {image}; foreground recipe matches, background refresh needed: {}",
-                    reason.as_str()
-                );
-                emit_image_refresh_background(&image, reason);
-                Ok(ImageDecision::RefreshInBackground { image, reason })
-            } else {
-                jackin_diagnostics::debug_log!(
-                    "image",
-                    "reusing derived image {image}; recipe hash matches one current recipe"
-                );
-                emit_image_reuse(&image);
-                Ok(ImageDecision::Reuse { image })
-            }
+            jackin_diagnostics::debug_log!(
+                "image",
+                "reusing derived image {image}; recipe hash matches one current recipe"
+            );
+            emit_image_reuse(&image);
+            Ok(ImageDecision::Reuse { image })
         }
         Some(reason) => {
+            if let Some(published) = base_image_override
+                && published_image_is_stale(
+                    published,
+                    &validated_repo.dockerfile.construct_version,
+                    head_sha.as_deref(),
+                    docker,
+                )
+                .await
+            {
+                jackin_diagnostics::debug_log!(
+                    "image",
+                    "published image {published} is out of date; building from workspace Dockerfile"
+                );
+                base_image_override = None;
+            }
             jackin_diagnostics::debug_log!(
                 "image",
                 "derived image {image} invalidated ({}); expected one of current recipe hashes",
@@ -498,7 +370,8 @@ pub(super) fn spawn_sibling_runtime_prewarm(
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     selected_agent: Agent,
     selected_image_reused: bool,
-) {
+) -> Option<tokio::task::JoinHandle<()>> {
+    let active_run = jackin_diagnostics::active_run_for_paths(paths);
     let siblings = validated_repo
         .manifest
         .supported_agents()
@@ -506,7 +379,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
         .filter(|agent| *agent != selected_agent)
         .collect::<Vec<_>>();
     if siblings.is_empty() {
-        if let Some(run) = jackin_diagnostics::active_run() {
+        if let Some(run) = &active_run {
             run.stage(
                 "runtime_prewarm_skipped",
                 "agent binaries",
@@ -514,10 +387,10 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 Some(selected_agent.slug()),
             );
         }
-        return;
+        return None;
     }
     if !selected_image_reused {
-        if let Some(run) = jackin_diagnostics::active_run() {
+        if let Some(run) = &active_run {
             run.stage(
                 "runtime_prewarm_skipped",
                 "agent binaries",
@@ -525,7 +398,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 Some(selected_agent.slug()),
             );
         }
-        return;
+        return None;
     }
 
     let paths = paths.clone();
@@ -534,9 +407,23 @@ pub(super) fn spawn_sibling_runtime_prewarm(
         .map(|agent| agent.slug())
         .collect::<Vec<_>>()
         .join(",");
-    super::launch::emit_prewarm_launch_plan(&format!("sibling_runtime_prewarm:{agents}"));
-    tokio::spawn(async move {
-        if let Some(run) = jackin_diagnostics::active_run() {
+    if let Some(run) = &active_run {
+        let reason = format!("sibling_runtime_prewarm:{agents}");
+        let detail = serde_json::json!({
+            "plan": "PrewarmOnly",
+            "reason": reason,
+            "container": null,
+        })
+        .to_string();
+        run.stage(
+            "launch_plan",
+            "restore",
+            "selected launch plan PrewarmOnly",
+            Some(&detail),
+        );
+    }
+    Some(tokio::spawn(async move {
+        if let Some(run) = &active_run {
             run.stage(
                 "runtime_prewarm_started",
                 "agent binaries",
@@ -544,22 +431,22 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 Some(&agents),
             );
         }
-        jackin_diagnostics::active_timing_started(
-            "agent binaries",
-            "sibling_runtime_prewarm",
-            Some(&agents),
-        );
+        if let Some(run) = &active_run {
+            run.timing_started("agent binaries", "sibling_runtime_prewarm", Some(&agents));
+        }
         let result = prepare_agent_binaries(&paths, &siblings, "runtime prewarm", false).await;
         let timing_detail = match &result {
             Ok(prepared) => agent_binary_prepare_summary(prepared),
             Err(error) => format!("failed: {error:#}"),
         };
-        jackin_diagnostics::active_timing_done(
-            "agent binaries",
-            "sibling_runtime_prewarm",
-            Some(&timing_detail),
-        );
-        if let Some(run) = jackin_diagnostics::active_run() {
+        if let Some(run) = &active_run {
+            run.timing_done(
+                "agent binaries",
+                "sibling_runtime_prewarm",
+                Some(&timing_detail),
+            );
+        }
+        if let Some(run) = active_run {
             match result {
                 Ok(prepared) => run.stage(
                     "runtime_prewarm_done",
@@ -575,7 +462,7 @@ pub(super) fn spawn_sibling_runtime_prewarm(
                 ),
             }
         }
-    });
+    }))
 }
 
 pub(super) fn spawn_sibling_image_prewarm(
@@ -821,6 +708,105 @@ pub(super) fn spawn_selected_image_refresh(
     }
 }
 
+pub(super) fn reuse_needs_background_staleness_check(
+    paths: &JackinPaths,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    image: &str,
+) -> bool {
+    validated_repo.manifest.published_image.is_some()
+        || validated_repo
+            .manifest
+            .supported_agents()
+            .into_iter()
+            .any(|agent| version_check::stored_version(paths, agent, image).is_some())
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The background sentinel mirrors selected-image refresh inputs \
+              so it can resolve the same role and rebuild the same selected image."
+)]
+pub(super) fn spawn_reuse_staleness_sentinel(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    role_git: &str,
+    branch_override: Option<&str>,
+    selected_agent: Agent,
+    image: &str,
+    debug: bool,
+) {
+    #[cfg(test)]
+    {
+        let _ = (paths, selector, role_git, branch_override, debug);
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.stage(
+                "reuse_staleness_sentinel_skipped",
+                "derived image",
+                "reuse staleness sentinel disabled in unit tests",
+                Some(&format!("{}:{image}", selected_agent.slug())),
+            );
+        }
+    }
+
+    #[cfg(not(test))]
+    {
+        let paths = paths.clone();
+        let selector = selector.clone();
+        let role_git = role_git.to_owned();
+        let branch_override = branch_override.map(str::to_owned);
+        let image = image.to_owned();
+        tokio::spawn(async move {
+            if let Some(run) = jackin_diagnostics::active_run() {
+                run.stage(
+                    "reuse_staleness_sentinel_started",
+                    "derived image",
+                    "checking reused runtime image staleness in background",
+                    Some(&format!("{}:{image}", selected_agent.slug())),
+                );
+            }
+
+            let result = reuse_staleness_sentinel(
+                &paths,
+                &selector,
+                &role_git,
+                branch_override.as_deref(),
+                selected_agent,
+                &image,
+                debug,
+            )
+            .await;
+
+            if let Some(run) = jackin_diagnostics::active_run() {
+                match result {
+                    Ok(Some(row)) => run.stage(
+                        "reuse_staleness_sentinel_done",
+                        "derived image",
+                        "refreshed reused runtime image in background",
+                        Some(&format!(
+                            "{}:{:?}:{}",
+                            row.agent.slug(),
+                            row.status,
+                            row.image
+                        )),
+                    ),
+                    Ok(None) => run.stage(
+                        "reuse_staleness_sentinel_done",
+                        "derived image",
+                        "reused runtime image is still fresh",
+                        Some(&format!("{}:{image}", selected_agent.slug())),
+                    ),
+                    Err(error) => run.stage(
+                        "reuse_staleness_sentinel_failed",
+                        "derived image",
+                        "reuse staleness sentinel failed",
+                        Some(&format!("{}: {error:#}", selected_agent.slug())),
+                    ),
+                }
+            }
+        });
+    }
+}
+
 fn sibling_agents(
     validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
     selected_agent: Agent,
@@ -855,7 +841,9 @@ async fn prewarm_agent_image(
         selector,
         role_git,
         &mut runner,
-        RepoResolveOptions::non_interactive().with_branch(branch_override),
+        RepoResolveOptions::non_interactive()
+            .with_branch(branch_override)
+            .with_refresh_ttl(std::time::Duration::ZERO),
         || Ok(false),
     )
     .await?;
@@ -872,6 +860,143 @@ async fn prewarm_agent_image(
         debug,
     )
     .await
+}
+
+#[cfg(not(test))]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Sentinel rebuild uses the same role/image inputs as explicit \
+              prewarm plus the reused image tag it is checking."
+)]
+async fn reuse_staleness_sentinel(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    role_git: &str,
+    branch_override: Option<&str>,
+    agent: Agent,
+    image: &str,
+    debug: bool,
+) -> anyhow::Result<Option<RoleImagePrewarmRow>> {
+    let mut runner = ShellRunner { debug };
+    let docker = BollardDockerClient::connect()?;
+    let (cached_repo, validated_repo, repo_lock) = resolve_agent_repo_with(
+        paths,
+        selector,
+        role_git,
+        &mut runner,
+        RepoResolveOptions::non_interactive()
+            .with_branch(branch_override)
+            .with_refresh_ttl(std::time::Duration::ZERO),
+        || Ok(false),
+    )
+    .await?;
+    let role_git_sha = role_git_sha_for_recipe(&cached_repo, None, &mut runner).await;
+    let reason = reuse_staleness_reason(
+        paths,
+        &validated_repo,
+        image,
+        role_git_sha.as_deref(),
+        &docker,
+    )
+    .await;
+
+    let Some(reason) = reason else {
+        drop(repo_lock);
+        return Ok(None);
+    };
+
+    let row = refresh_agent_image_from_validated_repo(
+        paths,
+        selector,
+        &cached_repo,
+        &validated_repo,
+        branch_override,
+        agent,
+        &docker,
+        &mut runner,
+        repo_lock,
+        debug,
+        reason,
+        role_git_sha.as_deref(),
+    )
+    .await?;
+    Ok(Some(row))
+}
+
+#[cfg(not(test))]
+async fn reuse_staleness_reason(
+    paths: &JackinPaths,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    image: &str,
+    role_git_sha: Option<&str>,
+    docker: &impl DockerApi,
+) -> Option<ImageInvalidationReason> {
+    jackin_diagnostics::active_timing_started("derived image", "agent_version_check", Some(image));
+    let agents = validated_repo.manifest.supported_agents();
+    let checks = agents.iter().map(|&agent| async move {
+        (
+            agent,
+            version_check::needs_agent_update(paths, image, agent).await,
+        )
+    });
+    let results = futures_util::future::join_all(checks).await;
+    let timing_detail = if results
+        .iter()
+        .any(|(_, check)| *check == version_check::AgentVersionCheck::Stale)
+    {
+        "stale"
+    } else if results
+        .iter()
+        .any(|(_, check)| *check == version_check::AgentVersionCheck::Unknown)
+    {
+        "unknown"
+    } else {
+        "fresh"
+    };
+    jackin_diagnostics::active_timing_done(
+        "derived image",
+        "agent_version_check",
+        Some(timing_detail),
+    );
+
+    for (agent, check) in &results {
+        if *check == version_check::AgentVersionCheck::Unknown {
+            tracing::warn!(
+                "derived image {image}: could not verify {} version; \
+                 staleness undetermined (latest release unresolvable)",
+                agent.runtime().slug()
+            );
+        }
+    }
+    if let Some((agent, _)) = results
+        .into_iter()
+        .find(|(_, check)| *check == version_check::AgentVersionCheck::Stale)
+    {
+        jackin_diagnostics::debug_log!(
+            "image",
+            "derived image {image}: {} baked version is outdated",
+            agent.runtime().slug()
+        );
+        return Some(ImageInvalidationReason::AgentVersionChanged);
+    }
+
+    if let Some(published) = validated_repo.manifest.published_image.as_deref()
+        && published_image_is_stale(
+            published,
+            &validated_repo.dockerfile.construct_version,
+            role_git_sha,
+            docker,
+        )
+        .await
+    {
+        jackin_diagnostics::debug_log!(
+            "image",
+            "published image {published} is out of date; refreshing reused workspace image"
+        );
+        return Some(ImageInvalidationReason::PublishedImageStale);
+    }
+
+    None
 }
 
 #[allow(
@@ -918,38 +1043,21 @@ async fn prewarm_agent_image_from_validated_repo(
             })
         }
         ImageDecision::RefreshInBackground { reason, .. } => {
-            jackin_diagnostics::debug_log!(
-                "image_prewarm",
-                "refreshing {} image from workspace Dockerfile: {}",
-                agent.slug(),
-                reason.as_str()
-            );
-            let runtime_binaries =
-                prepare_runtime_binaries_for_agents(paths, validated_repo, &[agent], None).await?;
-            let image = build_agent_image(
+            refresh_agent_image_from_validated_repo(
                 paths,
                 selector,
                 cached_repo,
                 validated_repo,
-                agent,
-                runtime_binaries,
-                false,
-                reason,
-                None,
-                debug,
                 branch_override,
+                agent,
                 docker,
                 runner,
                 repo_lock,
-                None,
+                debug,
+                reason,
                 None,
             )
-            .await?;
-            Ok(RoleImagePrewarmRow {
-                agent,
-                image,
-                status: ImagePrewarmStatus::Built,
-            })
+            .await
         }
         ImageDecision::BuildFromPublished {
             reason,
@@ -1029,6 +1137,60 @@ async fn prewarm_agent_image_from_validated_repo(
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Background refresh needs the full build-agent-image context plus \
+              the confirmed staleness reason."
+)]
+async fn refresh_agent_image_from_validated_repo(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    cached_repo: &CachedRepo,
+    validated_repo: &jackin_manifest::repo::ValidatedRoleRepo,
+    branch_override: Option<&str>,
+    agent: Agent,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+    repo_lock: std::fs::File,
+    debug: bool,
+    reason: ImageInvalidationReason,
+    role_git_sha: Option<&str>,
+) -> anyhow::Result<RoleImagePrewarmRow> {
+    super::launch::emit_prewarm_launch_plan(&format!("image_refresh:{}", reason.as_str()));
+    jackin_diagnostics::debug_log!(
+        "image_prewarm",
+        "refreshing {} image from workspace Dockerfile: {}",
+        agent.slug(),
+        reason.as_str()
+    );
+    let runtime_binaries =
+        prepare_runtime_binaries_for_agents(paths, validated_repo, &[agent], None).await?;
+    let image = build_agent_image(
+        paths,
+        selector,
+        cached_repo,
+        validated_repo,
+        agent,
+        runtime_binaries,
+        false,
+        reason,
+        None,
+        debug,
+        branch_override,
+        docker,
+        runner,
+        repo_lock,
+        role_git_sha,
+        None,
+    )
+    .await?;
+    Ok(RoleImagePrewarmRow {
+        agent,
+        image,
+        status: ImagePrewarmStatus::Built,
+    })
+}
+
 fn prewarm_launch_plan_reason(decision: &ImageDecision) -> String {
     match decision {
         ImageDecision::Reuse { .. } => "image_reuse:recipe_hash_match".to_owned(),
@@ -1059,7 +1221,9 @@ async fn prewarm_sibling_image(
         selector,
         role_git,
         &mut runner,
-        RepoResolveOptions::non_interactive().with_branch(branch_override),
+        RepoResolveOptions::non_interactive()
+            .with_branch(branch_override)
+            .with_refresh_ttl(std::time::Duration::ZERO),
         || Ok(false),
     )
     .await?;
@@ -1154,6 +1318,33 @@ fn agent_binary_prepare_summary(
         "{} agents; prefetched={prefetched}; fallback={fallback}; versions={versioned}",
         prepared.len()
     )
+}
+
+fn should_mint_fresh_cache_bust(rebuild: bool, build_reason: ImageInvalidationReason) -> bool {
+    rebuild || build_reason == ImageInvalidationReason::AgentVersionChanged
+}
+
+fn cache_bust_value_for_build(
+    paths: &JackinPaths,
+    image: &str,
+    manifest: &jackin_core::manifest::RoleManifest,
+    mint_fresh_cache_bust: bool,
+) -> anyhow::Result<String> {
+    if !supported_set_uses_cache_bust(manifest) {
+        return Ok("unused".to_owned());
+    }
+
+    if mint_fresh_cache_bust {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| anyhow::anyhow!("system clock is before UNIX epoch: {e}"))?
+            .as_secs()
+            .to_string();
+        version_check::store_cache_bust(paths, image, &ts);
+        return Ok(ts);
+    }
+
+    Ok(version_check::stored_cache_bust(paths, image).unwrap_or_else(|| "0".to_owned()))
 }
 
 /// Resolve the role's **base** image into a local `jk_<role>__base:<sha>` image
@@ -1263,7 +1454,7 @@ async fn ensure_local_role_base(
     let construct_label = format!("{LABEL_IMAGE_CONSTRUCT}={construct}");
     let build_arg_role_git_sha = format!("ROLE_GIT_SHA={}", head_sha.unwrap_or("unknown"));
 
-    let mut args: Vec<&str> = vec!["buildx", "build"];
+    let mut args = local_image_buildx_args();
     // A workspace rebuild refreshes the construct base. A plain workspace base
     // build rides the local layer cache.
     //
@@ -1402,7 +1593,8 @@ pub(super) async fn build_agent_image(
         |b| image_name_for_branch(selector, b, head_sha.as_deref()),
     );
 
-    let rebuild = rebuild || build_reason == ImageInvalidationReason::PublishedImageStale;
+    let force_base_rebuild = rebuild;
+    let mint_fresh_cache_bust = should_mint_fresh_cache_bust(rebuild, build_reason);
 
     // Resolve the role base into a local `jk_<role>__base:<sha>` image — tagged
     // from the pulled, label-verified published image when the decision found it
@@ -1417,7 +1609,7 @@ pub(super) async fn build_agent_image(
         cached_repo,
         validated_repo,
         build_base_image_override,
-        rebuild,
+        force_base_rebuild,
         debug,
         docker,
         runner,
@@ -1518,7 +1710,7 @@ pub(super) async fn build_agent_image(
     // When rebuild is already forced, the mismatch check result cannot change the
     // outcome — skip the round-trip. Treat inspect errors as label-absent (no
     // mismatch) so transient daemon errors never abort an otherwise-proceeding build.
-    let construct_mismatch = if rebuild {
+    let construct_mismatch = if force_base_rebuild {
         false
     } else {
         docker
@@ -1527,25 +1719,14 @@ pub(super) async fn build_agent_image(
             .unwrap_or(None)
             .is_some_and(|cached| cached != current_construct)
     };
-    let rebuild = rebuild || construct_mismatch;
+    let mint_fresh_cache_bust = mint_fresh_cache_bust || construct_mismatch;
 
-    let cache_bust_value = if !supported_set_uses_cache_bust(&validated_repo.manifest) {
-        "unused".to_owned()
-    } else if rebuild {
-        // System clock before UNIX_EPOCH is essentially impossible, but if it
-        // happens we must not silently fall back to 0 — that collapses to the
-        // Dockerfile's `JACKIN_CACHE_BUST=0` default and defeats the operator's
-        // explicit `--rebuild` request.
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| anyhow::anyhow!("system clock is before UNIX epoch: {e}"))?
-            .as_secs()
-            .to_string();
-        version_check::store_cache_bust(paths, &image, &ts);
-        ts
-    } else {
-        version_check::stored_cache_bust(paths, &image).unwrap_or_else(|| "0".to_owned())
-    };
+    let cache_bust_value = cache_bust_value_for_build(
+        paths,
+        &image,
+        &validated_repo.manifest,
+        mint_fresh_cache_bust,
+    )?;
     let dockerfile_path = build.dockerfile_path.display().to_string();
     let context_dir = build.context_dir.display().to_string();
     let recipe = jackin_image::image_recipe::build_image_recipe(
@@ -1559,7 +1740,7 @@ pub(super) async fn build_agent_image(
     let recipe_hash = recipe.hash()?;
     let recipe_labels = recipe_labels(&recipe, &recipe_hash);
 
-    let mut build_args: Vec<&str> = vec!["buildx", "build"];
+    let mut build_args = local_image_buildx_args();
 
     // --pull semantics:
     //
@@ -1752,84 +1933,6 @@ pub(super) use jackin_image::image_build::{
     parse_completed_buildkit_step, parse_docker_build_steps, should_stream_build_output,
     split_buildkit_duration,
 };
-
-/// Returns `true` when the published image is out of date relative to the
-/// current role repo state.
-///
-/// Checks in order:
-/// 1. `jackin.role.git.sha` label: if present and matches `head_sha`, the
-///    image was built from the exact same commit — fresh, no rebuild needed.
-///    If present and different, the image is stale.
-/// 2. Fallback only when the current role SHA is not yet known:
-///    `jackin.construct.version` label must match `dockerfile_version`.
-///    Absent label is treated as fresh (backward compatibility).
-///
-/// If `docker pull` fails the image may not exist locally at all. Treating a
-/// missing image as "not stale" would let the prebuilt path proceed and produce
-/// a confusing late failure inside `docker build`. Return `true` (stale) so
-/// jackin falls back to workspace mode, which gives the operator a clearer
-/// error if the construct base is also unreachable.
-enum PublishedImageFreshness {
-    Fresh,
-    Stale,
-    NeedsRoleSha(String),
-}
-
-async fn published_image_freshness(
-    published: &str,
-    dockerfile_version: &str,
-    head_sha: Option<&str>,
-    docker: &impl DockerApi,
-) -> PublishedImageFreshness {
-    if let Err(e) = docker.pull_image(published).await {
-        emit_compact_image_warning(&format!(
-            "docker pull {published} failed ({e}); treating published image as stale and rebuilding from workspace Dockerfile"
-        ));
-        return PublishedImageFreshness::Stale;
-    }
-
-    let labels = match docker.inspect_image_labels(published).await {
-        Err(e) => {
-            emit_compact_image_warning(&format!(
-                "could not read labels from {published} ({e}); treating published image as stale"
-            ));
-            return PublishedImageFreshness::Stale;
-        }
-        Ok(map) => map,
-    };
-
-    match (head_sha, labels.get(LABEL_IMAGE_ROLE_GIT_SHA)) {
-        (Some(sha), Some(label_sha)) if label_sha == sha => return PublishedImageFreshness::Fresh,
-        (Some(_), Some(_)) => return PublishedImageFreshness::Stale,
-        (None, Some(label_sha)) => {
-            return PublishedImageFreshness::NeedsRoleSha(label_sha.clone());
-        }
-        (Some(_), None) => return PublishedImageFreshness::Stale,
-        _ => {}
-    }
-
-    // Fallback: construct-version check for pre-role-git-sha images.
-    if labels
-        .get(LABEL_IMAGE_CONSTRUCT_VERSION)
-        .is_some_and(|stored| stored != dockerfile_version)
-    {
-        PublishedImageFreshness::Stale
-    } else {
-        PublishedImageFreshness::Fresh
-    }
-}
-
-async fn published_image_is_stale(
-    published: &str,
-    dockerfile_version: &str,
-    head_sha: Option<&str>,
-    docker: &impl DockerApi,
-) -> bool {
-    !matches!(
-        published_image_freshness(published, dockerfile_version, head_sha, docker).await,
-        PublishedImageFreshness::Fresh
-    )
-}
 
 #[cfg(test)]
 mod tests;

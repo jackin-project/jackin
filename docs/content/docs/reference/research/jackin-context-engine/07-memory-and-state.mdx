@@ -1,0 +1,44 @@
+---
+title: "07 — Memory and state (L5)"
+---
+
+# 07 — Memory and state (L5)
+
+Memory is the layer with the worst evidence-to-marketing ratio in the entire research corpus: no memory tool anywhere publishes injection-cost-vs-re-exploration-saved net accounting, files-only baselines beat flagship memory products (Letta 74.0% > Mem0 68.5%; full-context beats both), and lossy stores create the confidently-wrong-recall failure mode. The engine's memory layer is therefore deliberately small, reversible, and net-accounted.
+
+## Exactly one store (INV-8)
+
+The CCR archive (L2) doubles as the memory substrate — one turso database, three views:
+
+1. **Verbatim archive** — every compressed observation's original, blake3-addressed, FTS-searchable, TTL'd (≥30 min hot, archived cold). Recovery without knowing the id: search the archive, expand the match (lean-ctx's FTS-searchable archive semantics).
+2. **Read-stub / attention ledger** — what each session/subagent has already seen, fingerprinted (structural hash for code via sem, content hash otherwise), powering `[unchanged]` stubs and delta-fills (L2). Bookkeeping only, never content.
+3. **Knowledge notes** — operator- or agent-curated durable facts (decisions, gotchas, environment quirks), stored as *files* under the workspace/role (compaction-survival placement below), indexed for retrieval, **never auto-written into always-loaded instruction files without a human gate** (headroom-`learn`'s risk: one wrong auto-rule is a bad commit that outlives months of savings; the engine surfaces *candidate* corrections for review instead).
+
+Running the engine's store alongside cavemem/headroom-memory/lean-ctx-CCP is refused at setup (one memory layer per capsule — the combining page's rule).
+
+## Handoff state, not transcript replay
+
+Session continuity uses the file-based handoff pattern (a ~387-token progress/decisions file beats 10–40k of transcript replay/re-exploration): on session end or task boundary the engine writes a structured handoff file (task state, decisions with handles, files touched, next steps) into the workspace state dir; the next session boots from it. jackin❯'s existing COORDINATION.md convention for parallel agents is the production sibling; the engine formalizes and meters it.
+
+## Compaction-survival placement
+
+The engine places must-survive state only in locations that survive Claude Code compaction (root instruction file, auto-memory, disk files) and treats conversation-resident state as ephemeral — with a PreCompact-event hook purging the read-stub index so post-compaction re-reads are never falsely stubbed (the correctness rule lean-ctx learned).
+
+## Net accounting (the missing number, shipped)
+
+Every injection from memory (recalled note, codebook line, handoff file, `[related:]` hint) is metered as cost in the ledger; every avoided re-exploration (stub hit, delta-fill, archive expand instead of re-run) is metered as saving. Memory features report **net** per role and are auto-demoted when negative — the accounting complaint the dossier makes of every memory product on the market becomes the engine's acceptance mechanism. Aggregate target from the read-stub layer alone: sem measured 98.4% suppression on repeat fills, ~13-token stubs vs full re-reads; on long multi-turn sessions where cache-read volume is 94% of tokens, suppressed re-reads are also the dominant **tasks-per-cap** lever for subscribers.
+
+## The cavemem post-mortem, as requirements
+
+The round-2 [cavemem deep dive](/reference/research/token-optimization-tools/14-caveman-ecosystem/) turned that project's four self-inflicted wounds into hard requirements for this layer:
+
+1. **Index the canonical form** (or transform queries identically to stored text). cavemem indexes compressed text and queries raw — its own lexical retrieval cannot match its own vocabulary. The engine stores/indexes verbatim originals; compression is a *view*, never the stored form.
+2. **Embed the canonical form** (cavemem got this one right; kept as an explicit rule).
+3. **Scope retrieval per project/workspace by default**; cross-workspace recall is an explicit opt-in — cavemem's global-across-projects search is the leakage counterexample.
+4. **Budget and measure injection** — already this layer's net-accounting rule; cavemem's structurally uncapped session-start injection with zero accounting is the proof the rule is not paranoia.
+
+Plus one adoption: the **preserved-segment tokenizer** (byte-exact fences/code/URLs/paths/versions/identifiers through any transform) guards every prose-touching path in this layer — and a prohibition: never strip hedge/modality words from stored facts (cavemem's regex compression deterministically converts "could potentially break" into "break" — systematic overclaiming on recall).
+
+## What stays out
+
+No vector memory by default ([tools hub 20 — Qdrant and vector databases for agent context](/reference/research/token-optimization-tools/20-qdrant-and-vector-databases/)'s ≥20% bar; the bounded docs/decision hybrid index remains an opt-in role experiment); no cross-capsule shared memory in v1 (the Context-OS/event-bus class is real engineering but unproven token economics — revisit with fleet-ledger data); no episodic "cognition" mechanisms (forgetting curves, Hebbian eviction — lean-ctx's 307-file sprawl is the anti-lesson: unproven wins, huge maintenance surface).

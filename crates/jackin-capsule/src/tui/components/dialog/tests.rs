@@ -29,6 +29,20 @@ fn palette() -> Dialog {
 }
 
 #[test]
+fn spawn_failure_popup_uses_error_popup_hints_and_dismiss_keys() {
+    let mut dialog = Dialog::SpawnFailure(jackin_tui::components::ErrorPopupState::new(
+        "Spawn failed",
+        "shell: cap hit",
+    ));
+    assert_eq!(
+        dialog.footer_hint_spans(None, jackin_tui::components::ScrollAxes::none()),
+        jackin_tui::components::error_popup_hint_spans()
+    );
+    assert_eq!(dialog.handle_key(b"x", None), DialogAction::Redraw);
+    assert_eq!(dialog.handle_key(b"\x1b", None), DialogAction::Dismiss);
+}
+
+#[test]
 fn esc_dismisses_palette() {
     let mut d = palette();
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);
@@ -536,6 +550,42 @@ fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
     assert_eq!(
         reveal_row.href(),
         Some("file:///Users/operator/.jackin/data/diagnostics/runs/jk-run-b93735.jsonl")
+    );
+}
+
+#[test]
+fn container_info_state_backend_only_shows_telemetry_without_reveal() {
+    let d = Dialog::ContainerInfo {
+        container_name: "jk-abc123-thearchitect".to_owned(),
+        role: "the-architect".to_owned(),
+        focused_agent: Some("claude".to_owned()),
+        workdir: "/workspace/jackin".to_owned(),
+        diagnostics: ContainerInfoDiagnostics {
+            host_version: "0.6.0-test".to_owned(),
+            run_id: "jk-run-b93735".to_owned(),
+            run_log_display: "(backend only - no local file)".to_owned(),
+            run_log_href: None,
+        },
+        copied_row: None,
+        hovered_row: None,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+    let state = d
+        .container_info_state_with_debug(true)
+        .expect("container info state should be available");
+    let rows = state.rows();
+
+    assert!(
+        rows.iter().any(
+            |row| row.label() == "Telemetry" && row.value() == "(backend only - no local file)"
+        ),
+        "backend-only runs should show a telemetry row"
+    );
+    assert!(
+        rows.iter().all(|row| row.label() != "Diagnostics log"
+            && row.label() != "Reveal diagnostics"
+            && row.href().is_none()),
+        "backend-only runs must not expose a fabricated diagnostics path"
     );
 }
 
@@ -1192,14 +1242,16 @@ fn anthropic_usage_view_fixture() -> jackin_protocol::control::FocusedUsageView 
                 Some("Resets in 2h 12m (Jun 17, 19:19)"),
                 Some("34% in reserve"),
             ),
+            // limits-array shape: weekly_all is labelled "All models", and a
+            // model-scoped window (Fable) renders as its own non-headline row.
             quota_bucket(
-                "Weekly",
+                "All models",
                 55,
                 Some("Resets in 1w 1d (Jun 26, 13:59)"),
                 Some("28% in reserve"),
             ),
+            quota_bucket("Fable", 57, Some("Resets in 1w 1d (Jun 26, 13:59)"), None),
             quota_bucket("Sonnet", 85, Some("Resets in 1w 1d (Jun 26, 13:59)"), None),
-            quota_bucket("Daily Routines", 100, None, None),
         ],
     )
 }

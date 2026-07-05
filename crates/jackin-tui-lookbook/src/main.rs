@@ -31,6 +31,7 @@ use jackin_tui::{
         render_brand_header,
         scrollable_panel::max_offset,
     },
+    keymap::glyph,
     scroll::{self, ScrollSpan},
     theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN, PREVIEW_CARD},
 };
@@ -142,14 +143,14 @@ static PREVIEW_KEYMAP: Keymap<PreviewAction> = Keymap::new(&[
         action: PreviewAction::Forward,
         hint: Some("interact"),
         visibility: Visibility::Shown,
-        glyph: Some("↑↓←→"),
+        glyph: Some(glyph::ALL_ARROWS),
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::PageDown)],
         action: PreviewAction::PageDown,
         hint: Some("page"),
         visibility: Visibility::Shown,
-        glyph: Some("PgUp/PgDn"),
+        glyph: Some(glyph::PGUP_PGDN),
     },
     KeyBinding {
         chords: &[KeyChord::plain(LogicalKey::PageUp)],

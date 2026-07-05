@@ -138,8 +138,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use jackin_tui::components::render_dialog_shell;
 use jackin_tui::components::render_picker_lines;
+use jackin_tui::components::{DialogBorder, render_dialog_shell};
 use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
 
 #[allow(
@@ -149,7 +149,12 @@ use jackin_tui::theme::{PHOSPHOR_DIM, WHITE};
               per-block buffer-fill protocol."
 )]
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &WorkdirPickState) {
-    let inner = render_dialog_shell(frame, area, Some("Working directory"));
+    let inner = render_dialog_shell(
+        frame,
+        area,
+        Some("Working directory"),
+        DialogBorder::Default,
+    );
 
     let rows = Layout::default()
         .direction(Direction::Vertical)

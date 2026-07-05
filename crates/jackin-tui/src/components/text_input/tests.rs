@@ -1,5 +1,5 @@
 use super::*;
-use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
 #[test]
 fn labeled_text_input_dialog_renders_shared_shell_and_cursor() {
@@ -33,6 +33,18 @@ fn labeled_text_input_dialog_renders_shared_shell_and_cursor() {
         cursor_cell.is_some(),
         "cursor cell should use the shared bold inverse style"
     );
+}
+
+#[test]
+fn text_input_entry_points_share_cursor_style() {
+    let state = TextInputState::new("Name", "alpha");
+    let mut direct = Buffer::empty(Rect::new(0, 0, 12, 1));
+    render_input_value(Rect::new(0, 0, 12, 1), &mut direct, &state);
+
+    let mut labeled = Buffer::empty(Rect::new(0, 0, 12, 1));
+    render_input_value_from_parts(Rect::new(0, 0, 12, 1), &mut labeled, "alpha", 5);
+
+    assert_eq!(direct[(5, 0)].style(), labeled[(5, 0)].style());
 }
 
 #[test]
