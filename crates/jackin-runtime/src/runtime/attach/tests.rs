@@ -141,7 +141,7 @@ fn insert_run_as_user_is_noop_when_absent() {
 async fn wait_for_capsule_daemon_polls_socket_status_command() {
     let (_tmp, paths) = test_paths();
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _guard = run.activate();
+    let guard = run.activate();
     let docker = FakeDockerClient {
         exec_capture_queue: std::cell::RefCell::new(VecDeque::from(["Sessions: 1\n".to_owned()])),
         ..Default::default()
@@ -158,7 +158,7 @@ async fn wait_for_capsule_daemon_polls_socket_status_command() {
             .any(|call| call.contains(&format!("sh -c {JACKIN_STATUS_CMD}"))),
         "expected socket/status wait command; recorded: {recorded:?}"
     );
-    drop(_guard);
+    drop(guard);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         diagnostics.contains("\"kind\":\"timing_done\"")
@@ -172,7 +172,7 @@ async fn wait_for_capsule_daemon_polls_socket_status_command() {
 async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
     let (_tmp, paths) = test_paths();
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _guard = run.activate();
+    let guard = run.activate();
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 0,
@@ -218,7 +218,7 @@ async fn start_or_reconnect_uses_capsule_client_not_start_attach() {
         "restart path must not attach to PID 1; recorded: {:?}",
         runner.recorded
     );
-    drop(_guard);
+    drop(guard);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         diagnostics.contains("restore_inspect")

@@ -332,7 +332,7 @@ async fn sibling_runtime_prewarm_runs_in_background() {
     let paths = JackinPaths::for_tests(temp.path());
     jackin_image::agent_binary::install_test_stub(&paths, Agent::Kimi).unwrap();
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
     std::fs::create_dir_all(cached_repo.repo_dir.join(".git")).unwrap();
@@ -360,7 +360,7 @@ plugins = []
         .expect("expected sibling runtime prewarm task");
 
     handle.await.unwrap();
-    drop(_active);
+    drop(active);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(diagnostics.contains("\"kind\":\"runtime_prewarm_done\""));
     assert!(diagnostics.contains("prewarming sibling runtime binaries"));
@@ -381,7 +381,7 @@ async fn sibling_runtime_prewarm_skips_after_selected_image_rebuild() {
     let paths = JackinPaths::for_tests(temp.path());
     jackin_image::agent_binary::install_test_stub(&paths, Agent::Kimi).unwrap();
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
     std::fs::create_dir_all(cached_repo.repo_dir.join(".git")).unwrap();
@@ -411,7 +411,7 @@ plugins = []
         handle.is_none(),
         "rebuilt selected image must not spawn prewarm"
     );
-    drop(_active);
+    drop(active);
     let diagnostics = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         diagnostics.contains("\"kind\":\"runtime_prewarm_skipped\"")

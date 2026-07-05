@@ -689,7 +689,7 @@ async fn sibling_auth_prewarm_records_timing() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -727,7 +727,7 @@ plugins = []
     .expect("expected sibling auth prewarm task");
 
     prewarm_handle.await.unwrap();
-    drop(_active);
+    drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\""),
@@ -7212,13 +7212,13 @@ fn image_materialization_plan_uses_image_decision() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
 
     emit_image_materialization_plan(true, "recipe_hash_match", false, "jk-new");
     emit_image_materialization_plan(true, "published_image_stale", false, "jk-refresh");
     emit_image_materialization_plan(false, "hooks_hash_changed", true, "jk-recreate");
 
-    drop(_active);
+    drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("CreateFromValidImage"), "{jsonl}");
     assert!(
@@ -7249,7 +7249,7 @@ async fn current_restore_candidate_lookup_records_timing() {
     );
     write_indexed_manifest(&paths, &manifest);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -7269,7 +7269,7 @@ async fn current_restore_candidate_lookup_records_timing() {
 
     // D13: launch never reconnects to a live instance → resolve returns None
     assert_eq!(resolution, None);
-    drop(_active);
+    drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         jsonl.contains("current_restore_candidate")
@@ -7356,7 +7356,7 @@ async fn single_running_current_role_candidate_is_skipped_before_agent_selection
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &manifest);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -7374,7 +7374,7 @@ async fn single_running_current_role_candidate_is_skipped_before_agent_selection
     .unwrap();
 
     assert_eq!(candidate, None);
-    drop(_active);
+    drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         jsonl.contains("launch_never_reconnects_to_live_instance"),
@@ -7401,7 +7401,7 @@ async fn single_stopped_current_role_candidate_starts_before_agent_selection() {
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &manifest);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 0,
@@ -7427,7 +7427,7 @@ async fn single_stopped_current_role_candidate_starts_before_agent_selection() {
             container_name.to_owned()
         ))
     );
-    drop(_active);
+    drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("StartStopped"), "{jsonl}");
     assert!(
@@ -7456,7 +7456,7 @@ async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &manifest);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::NotFound])),
         ..Default::default()
@@ -7479,7 +7479,7 @@ async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
         candidate.resolution,
         RestoreResolution::RecreateCurrentRole(container_name.to_owned())
     );
-    drop(_active);
+    drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         jsonl.contains("single_current_role_agent_container_missing"),
