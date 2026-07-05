@@ -344,6 +344,9 @@ fi
 if [ "${{1:-}}" = "plugin" ]; then
   exit 0
 fi
+if [ "${{1:-}}" = "mcp" ]; then
+  exit 0
+fi
 echo "{begin}"
 echo "DOCKER_HOST=$DOCKER_HOST"
 echo "DOCKER_TLS_VERIFY=$DOCKER_TLS_VERIFY"
