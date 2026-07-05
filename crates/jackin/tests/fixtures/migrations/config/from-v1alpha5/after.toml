@@ -1,4 +1,4 @@
-version = "v1alpha8"
+version = "v1alpha9"
 data_dir = "/tmp/jackin"
 
 [claude]

@@ -109,3 +109,11 @@ fn empty_targets_spawn_is_a_noop() {
     // No panic, returns immediately with nothing to do.
     spawn_background_image_prewarm(&paths, Vec::new(), false);
 }
+
+#[test]
+fn sidecar_spawn_is_a_noop_in_unit_tests() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+
+    spawn_background_sidecar_prewarm(&paths, false);
+}

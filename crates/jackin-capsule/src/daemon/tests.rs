@@ -64,6 +64,45 @@ impl MasterPty for NullMasterPty {
 }
 
 #[test]
+fn status_tick_select_arm_stays_above_pty_output() {
+    let source = include_str!("../daemon.rs");
+    let tick_arm = source
+        .find("_ = state_ticker.tick()")
+        .unwrap_or_else(|| panic!("state ticker select arm missing"));
+    let output_arm = source
+        .find("Some(event) = mux.event_rx.recv()")
+        .unwrap_or_else(|| panic!("PTY event select arm missing"));
+    assert!(
+        tick_arm < output_arm,
+        "state ticker must stay above PTY output in the biased select"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn ready_status_tick_wins_over_ready_pty_output() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let mut state_ticker = interval(STATE_TICK_INTERVAL);
+    state_ticker.tick().await;
+    tokio::time::advance(STATE_TICK_INTERVAL).await;
+    tx.send(SessionEvent::Output {
+        session_id: 1,
+        data: b"busy".to_vec(),
+    })
+    .unwrap_or_else(|_| panic!("test receiver must be open"));
+
+    let selected = tokio::select! {
+        biased;
+        _ = state_ticker.tick() => "tick",
+        Some(_) = rx.recv() => "output",
+    };
+
+    assert_eq!(
+        selected, "tick",
+        "ready status tick must beat ready PTY output under biased select"
+    );
+}
+
+#[test]
 fn spawn_failure_popup_stays_open_until_dismissed() {
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
     let mut mux = single_pane_tab_mux();
@@ -93,6 +132,21 @@ fn spawn_failure_popup_stays_open_until_dismissed() {
         InputEvent::Data(b"\x1b".to_vec()),
     ));
     assert!(mux.dialog_top().is_none(), "Esc must dismiss the popup");
+}
+
+#[test]
+fn screen_detection_disabled_message_is_operator_visible() {
+    let err = anyhow::anyhow!("bad embedded pack");
+    let message = screen_detection_disabled_message(&err);
+
+    assert!(
+        message.contains("Agent status screen detection is off"),
+        "message must name the disabled feature: {message}"
+    );
+    assert!(
+        message.contains("bad embedded pack"),
+        "message must carry the load failure: {message}"
+    );
 }
 
 fn test_mux(rows: u16, cols: u16) -> Multiplexer {

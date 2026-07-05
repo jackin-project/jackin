@@ -9,6 +9,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -51,6 +52,14 @@ pub fn http_client(headers: HeaderMap) -> Result<reqwest::Client> {
         .context("building HTTP client")
 }
 
+fn default_http_client() -> Result<&'static reqwest::Client> {
+    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| http_client(HeaderMap::new()).map_err(|error| format!("{error:#}")))
+        .as_ref()
+        .map_err(|error| anyhow::anyhow!("building shared HTTP client: {error}"))
+}
+
 /// GET `url` with `client`, erroring on a non-success status, and return the
 /// body as text.
 pub async fn get_text(client: &reqwest::Client, url: &str) -> Result<String> {
@@ -68,7 +77,7 @@ pub async fn get_text(client: &reqwest::Client, url: &str) -> Result<String> {
 
 /// GET `url` with a default (header-less) client and return the body as text.
 pub async fn fetch_text(url: &str) -> Result<String> {
-    get_text(&http_client(HeaderMap::new())?, url).await
+    get_text(default_http_client()?, url).await
 }
 
 /// Download `url` to `dest` using fast-down parallel chunks.

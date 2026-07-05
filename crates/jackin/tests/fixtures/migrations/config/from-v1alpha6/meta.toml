@@ -1,4 +1,4 @@
 from_version = "v1alpha6"
-target_version = "v1alpha8"
-target_version_shipped = "2026-06-09"
+target_version = "v1alpha9"
+target_version_shipped = "2026-07-06"
 summary = "Restamps config as v1alpha8. Adds optional [runtime].default_backend for selectable container backends and optional Docker profile/grants config; both additive with serde default, no transformation needed."

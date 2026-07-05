@@ -44,6 +44,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rand = "0.10"
 anyhow = "1.0"
+regex = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # Inlined from `jackin_core::ansi_text` (A3) and `jackin_core::prune_output`
@@ -87,6 +88,7 @@ sysinfo = { version = "0.39", optional = true, default-features = false, feature
 tokio = { version = "1", optional = true, default-features = false, features = ["rt", "rt-multi-thread"] }
 
 [dev-dependencies]
+opentelemetry_sdk = { version = "0.32", features = ["testing", "trace", "logs"] }
 tempfile = "=3.27.0"
 
 [lints]

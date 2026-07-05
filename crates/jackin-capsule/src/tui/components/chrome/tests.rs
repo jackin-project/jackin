@@ -2,6 +2,7 @@
 use super::*;
 use crate::tui::components::status_bar::status_bar_plan;
 use crate::tui::layout::Tab;
+use crate::tui::model::VisibleAgentState;
 use ratatui::{Terminal, backend::TestBackend};
 
 #[test]
@@ -93,6 +94,59 @@ fn status_bar_resets_canvas_across_unused_columns() {
     );
     assert_eq!(buf[(filler_x, 1)].symbol(), " ");
     assert_eq!(buf[(filler_x, 1)].bg, Color::Reset);
+}
+
+#[test]
+fn status_bar_renders_working_idle_done_and_unknown_glyphs() {
+    let tabs = [
+        Tab::new_single("Work", 1, "test"),
+        Tab::new_single("Idle", 2, "test"),
+        Tab::new_single("Done", 3, "test"),
+        Tab::new_single("None", 4, "test"),
+    ];
+    let states = [
+        (1, VisibleAgentState::Working),
+        (2, VisibleAgentState::Idle),
+        (3, VisibleAgentState::Done),
+        (4, VisibleAgentState::Unknown),
+    ];
+    let backend = TestBackend::new(100, 2);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let plan = status_bar_plan(100, &tabs, 0, &states, PrefixMode::Idle);
+    terminal
+        .draw(|frame| {
+            frame.render_widget(
+                StatusBarWidget {
+                    plan: &plan,
+                    prefix_mode: PrefixMode::Idle,
+                    hovered_tab: None,
+                    menu_hovered: false,
+                    focused: false,
+                },
+                frame.area(),
+            );
+        })
+        .unwrap();
+
+    let buf = terminal.backend().buffer();
+    let glyph_cell = |cell: &StatusTabCell| {
+        let x = cell
+            .start_col0
+            .saturating_add(u16::try_from(jackin_tui::display_cols(&cell.name)).unwrap())
+            .saturating_add(2);
+        (buf[(x, 0)].symbol().to_owned(), buf[(x, 0)].fg)
+    };
+
+    assert_eq!(
+        glyph_cell(&plan.cells[0]),
+        ("▶".to_owned(), jackin_tui::theme::DEBUG_AMBER)
+    );
+    assert_eq!(
+        glyph_cell(&plan.cells[1]),
+        ("◆".to_owned(), jackin_tui::theme::PHOSPHOR_GREEN)
+    );
+    assert_eq!(glyph_cell(&plan.cells[2]).0, "○");
+    assert_eq!(glyph_cell(&plan.cells[3]).0, " ");
 }
 
 #[test]

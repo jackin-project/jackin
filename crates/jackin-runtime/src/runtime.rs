@@ -55,6 +55,7 @@ pub use self::launch::{
 pub use self::naming::matching_family;
 pub use self::prewarm_trigger::{
     BackgroundPrewarmTarget, background_prewarm_targets, spawn_background_image_prewarm,
+    spawn_background_sidecar_prewarm,
 };
 pub use self::repo_cache::{RepoError, normalize_github_url};
 pub use self::universe::{
@@ -62,6 +63,7 @@ pub use self::universe::{
     release_entry_if_idle,
 };
 pub use ::jackin_host::caffeinate::reconcile as reconcile_keep_awake;
+pub use ::jackin_host::caffeinate::reconcile_when_configured as reconcile_keep_awake_when_configured;
 
 pub use self::launch::resolve_supported_agents_for_console;
 

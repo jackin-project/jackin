@@ -22,9 +22,31 @@ use owo_colors::OwoColorize;
 
 use super::discovery::{list_managed_role_names, list_role_names};
 use super::naming::{
-    LABEL_IMAGE_KEY, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, LABEL_ROLE_KEY,
+    LABEL_IMAGE_KEY, LABEL_KIND_DIND, LABEL_KIND_PREWARM_DIND, LABEL_KIND_ROLE, LABEL_MANAGED,
+    LABEL_ROLE_KEY,
 };
 use crate::instance::naming::{dind_certs_volume, role_network_name};
+
+struct CleanupTiming {
+    name: &'static str,
+}
+
+impl Drop for CleanupTiming {
+    fn drop(&mut self) {
+        jackin_diagnostics::active_timing_done("cleanup", self.name, None);
+    }
+}
+
+fn cleanup_timing(name: &'static str) -> CleanupTiming {
+    jackin_diagnostics::active_timing_started("cleanup", name, None);
+    CleanupTiming { name }
+}
+
+fn cleanup_failure(message: impl AsRef<str>) {
+    if let Some(run) = jackin_diagnostics::active_run() {
+        run.compact("cleanup", message.as_ref());
+    }
+}
 
 pub async fn purge_class_data(
     paths: &JackinPaths,
@@ -32,6 +54,7 @@ pub async fn purge_class_data(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    let _timing = cleanup_timing("class_data");
     if !paths.data_dir.exists() {
         return Ok(());
     }
@@ -53,6 +76,7 @@ pub async fn purge_class_data(
         match purge_container_filesystem(paths, &file_name, docker, runner).await {
             Ok(()) => matched.push(file_name),
             Err(error) => {
+                cleanup_failure(format!("class data purge failed: {error}"));
                 first_error = Some(error);
                 break;
             }
@@ -72,6 +96,7 @@ pub async fn purge_container_state(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    let _timing = cleanup_timing("container_state");
     purge_container_filesystem(paths, container_name, docker, runner).await?;
     InstanceIndex::mark_purged(&paths.data_dir, container_name)
 }
@@ -85,6 +110,7 @@ async fn purge_container_filesystem(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    let _timing = cleanup_timing("container_filesystem");
     let resources = docker_resources_for_state(paths, container_name);
     ensure_role_resources_absent_for_purge(docker, &resources).await?;
     crate::isolation::cleanup::purge_isolated_for_container(
@@ -126,6 +152,7 @@ pub async fn eject_role(
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
+    let _timing = cleanup_timing("eject_role");
     let resources = docker_resources_for_state(paths, container_name);
 
     // Remove containers first so the network has no active endpoints.
@@ -233,10 +260,12 @@ fn filter_orphaned_dind(sidecars: Vec<DindInfo>, running: &[String]) -> Vec<Dind
 /// Remove orphaned `DinD` containers, their associated role containers, cert
 /// volumes, and networks.  Errors are logged but do not abort the launch — GC
 /// is best-effort.
-pub(super) async fn gc_orphaned_resources(docker: &impl DockerApi) {
+pub(super) async fn gc_orphaned_resources(paths: &JackinPaths, docker: &impl DockerApi) {
+    let _timing = cleanup_timing("orphaned_resources");
     let sidecars = match collect_labeled_dind(docker).await {
         Ok(v) => v,
         Err(err) => {
+            cleanup_failure(format!("GC could not list orphaned DinD containers: {err}"));
             eprintln!(
                 "  {} GC: could not list orphaned DinD containers: {err}",
                 "warning:".yellow().bold()
@@ -248,6 +277,7 @@ pub(super) async fn gc_orphaned_resources(docker: &impl DockerApi) {
     if sidecars.is_empty() {
         // No orphaned DinD sidecars — still check for orphaned networks.
         gc_orphaned_networks(docker, None).await;
+        gc_orphaned_prewarm_dind(paths, docker).await;
         return;
     }
 
@@ -302,6 +332,52 @@ pub(super) async fn gc_orphaned_resources(docker: &impl DockerApi) {
     }
 
     gc_orphaned_networks(docker, Some(&running)).await;
+    gc_orphaned_prewarm_dind(paths, docker).await;
+}
+
+async fn gc_orphaned_prewarm_dind(paths: &JackinPaths, docker: &impl DockerApi) {
+    let state_dind = super::launch::prewarmed_dind_state_container_name(paths);
+    let rows = match docker
+        .list_containers(&[LABEL_KIND_PREWARM_DIND], true)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(err) => {
+            eprintln!(
+                "  {} GC: could not list orphaned prewarm DinD containers: {err}",
+                "warning:".yellow().bold()
+            );
+            return;
+        }
+    };
+    for row in rows {
+        if state_dind.as_deref() == Some(row.name.as_str()) {
+            continue;
+        }
+        if row.name != "jk-prewarm-dind-dind" {
+            continue;
+        }
+        let certs_volume = "jk-prewarm-dind-certs";
+        let network = "jk-prewarm-dind-net";
+        let (r1, r2, r3) = tokio::join!(
+            docker.remove_container(&row.name),
+            docker.remove_volume(certs_volume),
+            docker.remove_network(network),
+        );
+        for (result, label) in [&r1, &r2, &r3].iter().zip([
+            "prewarm sidecar",
+            "prewarm certs volume",
+            "prewarm network",
+        ]) {
+            if let Err(err) = result {
+                eprintln!(
+                    "  {} GC of {label} for {}: {err}",
+                    "warning:".yellow().bold(),
+                    row.name
+                );
+            }
+        }
+    }
 }
 
 /// Remove jackin-managed Docker networks whose owning role container no longer
@@ -309,9 +385,11 @@ pub(super) async fn gc_orphaned_resources(docker: &impl DockerApi) {
 /// role names; pass `None` to fetch fresh (used when no `DinD` sidecars were
 /// found and the list was never retrieved).
 async fn gc_orphaned_networks(docker: &impl DockerApi, running: Option<&[String]>) {
+    let _timing = cleanup_timing("orphaned_networks");
     let net_rows = match docker.list_networks(&[LABEL_MANAGED]).await {
         Ok(v) => v,
         Err(err) => {
+            cleanup_failure(format!("GC could not list orphaned networks: {err}"));
             eprintln!(
                 "  {} GC: could not list orphaned networks: {err}",
                 "warning:".yellow().bold()
@@ -366,6 +444,7 @@ async fn gc_orphaned_networks(docker: &impl DockerApi, running: Option<&[String]
 }
 
 pub async fn exile_all(paths: &JackinPaths, docker: &impl DockerApi) -> anyhow::Result<()> {
+    let _timing = cleanup_timing("exile_all");
     let names = prune_output::start("Finding", "managed containers")
         .complete(list_managed_role_names(docker).await, |error| {
             format!("could not list containers: {error}")
@@ -388,6 +467,7 @@ fn prune_dir(
     section_detail: &str,
     target_label: &str,
 ) -> anyhow::Result<()> {
+    let _timing = cleanup_timing("prune_dir");
     prune_output::section(section_label, section_detail);
     let row = prune_output::start("Deleting", target_label);
     let result: anyhow::Result<()> = match std::fs::remove_dir_all(path) {
@@ -399,6 +479,7 @@ fn prune_dir(
         ))),
     };
     row.complete(result, |error| {
+        cleanup_failure(format!("could not remove {target_label}: {error}"));
         format!("could not remove {target_label}: {error}")
     })
 }
@@ -426,10 +507,12 @@ pub fn prune_diagnostics(paths: &JackinPaths) -> anyhow::Result<()> {
 }
 
 pub fn prune_jackin_home(paths: &JackinPaths) {
+    let _timing = cleanup_timing("runtime_home");
     prune_output::section("Runtime Home", "removing remaining runtime state");
     let row = prune_output::start("Deleting", "runtime home");
     match std::fs::remove_dir_all(&paths.jackin_home) {
         Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+            cleanup_failure(format!("could not remove runtime home: {err}"));
             row.failed(format!("could not remove runtime home: {err}"));
         }
         _ => row.ok(),
@@ -441,6 +524,7 @@ pub fn prune_jackin_home(paths: &JackinPaths) {
 /// Per-image `rmi` failures are printed to stderr and counted in the summary but do not
 /// propagate. The initial `docker images` and `docker ps` enumeration calls do propagate.
 pub async fn prune_images(docker: &impl DockerApi) -> anyhow::Result<()> {
+    let _timing = cleanup_timing("images");
     prune_output::section("Images", "scanning jackin-managed Docker images");
     let all_images = prune_output::start("Finding", "jackin-managed Docker images")
         .complete(docker.list_image_tags("jk_*").await, |error| {
@@ -497,6 +581,7 @@ pub async fn prune_images(docker: &impl DockerApi) -> anyhow::Result<()> {
                 skipped += 1;
             }
             Err(error) => {
+                cleanup_failure(format!("could not remove image {image}: {error}"));
                 row.failed(format!("could not remove: {error}"));
                 failed += 1;
             }
@@ -533,6 +618,7 @@ pub async fn prune_instances(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    let _timing = cleanup_timing("instances");
     prune_output::section("Instances", "scanning terminal instance state");
     let index = prune_output::start("Reading", "instance index")
         .complete(InstanceIndex::read_or_rebuild(&paths.data_dir), |error| {

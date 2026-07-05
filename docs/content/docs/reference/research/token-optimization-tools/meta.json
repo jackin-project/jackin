@@ -14,6 +14,19 @@
     "09-gaps-open-questions-and-next-brief",
     "10-first-party-measurements",
     "11-extended-comparison-axes",
-    "12-implementation-comparison"
+    "12-implementation-comparison",
+    "13-reuse-surfaces-and-deltas",
+    "14-caveman-ecosystem",
+    "15-verification-pass-and-extended-matrix",
+    "16-global-comparison",
+    "17-pxpipe-design",
+    "18-latest-versions-refresh",
+    "19-code-intelligence-tools",
+    "20-qdrant-and-vector-databases",
+    "21-headroom-and-context-compression",
+    "22-context-compression-literature-and-market",
+    "23-token-observability-and-visualization",
+    "24-rtk-and-write-time-observation-compression",
+    "25-sem-and-mq-structural-and-markdown-retrieval"
   ]
 }

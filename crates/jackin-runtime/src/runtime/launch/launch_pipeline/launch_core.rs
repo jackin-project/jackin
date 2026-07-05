@@ -19,6 +19,8 @@ use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
 
 use anyhow::Context;
+use std::future::Future;
+use std::pin::Pin;
 
 use super::super::trust::seed_codex_project_trust;
 use crate::instance::{
@@ -87,6 +89,31 @@ where
     )]
     pub restore_pinned_sha: Option<String>,
     pub operator_env: std::collections::BTreeMap<String, String>,
+    pub git_pull_join: Option<super::DeferredGitPull>,
+}
+
+async fn poll_sidecar_while<T, F, S>(
+    work: F,
+    mut sidecar: Pin<&mut S>,
+    early_sidecar_result: &mut Option<anyhow::Result<()>>,
+) -> anyhow::Result<T>
+where
+    F: Future<Output = anyhow::Result<T>>,
+    S: Future<Output = anyhow::Result<()>>,
+{
+    if early_sidecar_result.is_some() {
+        return work.await;
+    }
+
+    let mut work = std::pin::pin!(work);
+    tokio::select! {
+        biased;
+        result = sidecar.as_mut() => {
+            *early_sidecar_result = Some(result);
+            work.await
+        }
+        result = &mut work => result,
+    }
 }
 
 #[allow(
@@ -142,158 +169,13 @@ where
         rebuild,
         restore_pinned_sha: _,
         operator_env,
+        git_pull_join,
         ..
     } = ctx;
     // --- VERBATIM PASTED BODY (supers pre-adjusted) ---
-    // Step 2: Prepare runtime assets and build the derived image when the
-    // earlier image decision proved the local recipe is missing/stale.
-    let (image, selected_image_reused) = match image_decision {
-        decision @ (crate::runtime::image::ImageDecision::Reuse { .. }
-        | crate::runtime::image::ImageDecision::RefreshInBackground { .. }) => {
-            let (image, materialization_reason) = match decision {
-                crate::runtime::image::ImageDecision::Reuse { image } => {
-                    (image, "recipe_hash_match")
-                }
-                crate::runtime::image::ImageDecision::RefreshInBackground { image, reason } => {
-                    (image, reason.as_str())
-                }
-                _ => unreachable!(),
-            };
-            super::super::emit_image_materialization_plan(
-                true,
-                materialization_reason,
-                restoring,
-                &container_name,
-            );
-            drop(repo_lock.take());
-            if let Some(progress) = steps.progress_mut() {
-                progress.stage_skipped(
-                    crate::runtime::progress::LaunchStage::AgentBinaries,
-                    "image reused",
-                );
-                progress.stage_done(
-                    crate::runtime::progress::LaunchStage::DerivedImage,
-                    "reused local image",
-                );
-            }
-            (image, true)
-        }
-        build_decision @ (crate::runtime::image::ImageDecision::BuildFromPublished { .. }
-        | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. }) => {
-            let (reason, role_git_sha, build_source, build_base_image_override) =
-                match build_decision {
-                    crate::runtime::image::ImageDecision::BuildFromPublished {
-                        reason,
-                        role_git_sha,
-                        base_image,
-                    } => (
-                        reason,
-                        role_git_sha,
-                        format!("published image {base_image}"),
-                        Some(base_image),
-                    ),
-                    crate::runtime::image::ImageDecision::BuildFromWorkspace {
-                        reason,
-                        role_git_sha,
-                    } => (
-                        reason,
-                        role_git_sha,
-                        "workspace Dockerfile".to_owned(),
-                        None,
-                    ),
-                    crate::runtime::image::ImageDecision::Reuse { .. }
-                    | crate::runtime::image::ImageDecision::RefreshInBackground { .. } => {
-                        unreachable!()
-                    }
-                };
-            super::super::emit_image_materialization_plan(
-                false,
-                reason.as_str(),
-                restoring,
-                &container_name,
-            );
-            jackin_diagnostics::debug_log!(
-                "image",
-                "derived image build required from {}: {}",
-                build_source,
-                reason.as_str(),
-            );
-            steps.next("Preparing runtime binaries").await?;
-            // Prepare every agent the role supports, not just the selected
-            // one: the running container hosts a multiplexer where the
-            // operator can open a new tab for ANY supported agent, and that
-            // tab execs the agent CLI inside this same container. Baking
-            // only the selected agent makes sibling tabs crash on a missing
-            // binary. The selected agent still drives the version label and
-            // the foreground session; the others must simply be present.
-            let image_agents = supported_agents.clone();
-            let runtime_binaries = if let Some(progress) = steps.progress_mut() {
-                crate::runtime::image::prepare_runtime_binaries_for_agents(
-                    paths,
-                    &validated_repo,
-                    &image_agents,
-                    Some(progress),
-                )
-                .await?
-            } else {
-                crate::runtime::image::prepare_runtime_binaries_for_agents(
-                    paths,
-                    &validated_repo,
-                    &image_agents,
-                    None,
-                )
-                .await?
-            };
-            steps.next("Preparing derived image").await?;
-            let repo_lock = repo_lock
-                .take()
-                .ok_or_else(|| anyhow::anyhow!("repo lock already consumed"))?;
-            let image = if let Some(progress) = steps.progress_mut() {
-                crate::runtime::image::build_agent_image(
-                    paths,
-                    selector,
-                    &cached_repo,
-                    &validated_repo,
-                    agent,
-                    runtime_binaries,
-                    rebuild,
-                    reason,
-                    build_base_image_override.as_deref(),
-                    opts.debug,
-                    opts.role_branch.as_deref(),
-                    docker,
-                    runner,
-                    repo_lock,
-                    role_git_sha.as_deref(),
-                    Some(progress),
-                )
-                .await?
-            } else {
-                crate::runtime::image::build_agent_image(
-                    paths,
-                    selector,
-                    &cached_repo,
-                    &validated_repo,
-                    agent,
-                    runtime_binaries,
-                    rebuild,
-                    reason,
-                    build_base_image_override.as_deref(),
-                    opts.debug,
-                    opts.role_branch.as_deref(),
-                    docker,
-                    runner,
-                    repo_lock,
-                    role_git_sha.as_deref(),
-                    None,
-                )
-                .await?
-            };
-            (image, false)
-        }
-    };
     let container_state = paths.data_dir.join(&container_name);
     let adopted_sidecar = super::super::adopt_prewarmed_dind_sidecar(paths, docker).await;
+    let adopted_sidecar_was_used = adopted_sidecar.is_some();
     let resources = adopted_sidecar.as_ref().map_or_else(
         || DockerResources::from_container_name(&container_name),
         |sidecar| DockerResources {
@@ -385,6 +267,227 @@ where
         network.clone(),
         socket_dir,
     );
+    // Start the sidecar future before image materialization so network/DinD
+    // setup can make progress while runtime binaries and Docker build run.
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_started(
+            crate::runtime::progress::LaunchStage::Network,
+            "wiring private network",
+        );
+    }
+    let sidecar_container = container_name.clone();
+    let sidecar_network = network.clone();
+    let sidecar_dind = dind.clone();
+    let sidecar_certs_volume = certs_volume.clone();
+    let sidecar_dind_grant = effective_grants.dind;
+    let sidecar_network_disabled =
+        crate::runtime::docker_profile::network_disabled(&effective_grants);
+    let role_network_internal =
+        crate::runtime::docker_profile::role_network_internal(resolved_profile.0);
+    let sidecar = async move {
+        if adopted_sidecar.is_some() {
+            Ok(())
+        } else if dind_started {
+            super::super::run_dind_sidecar_headless(
+                &sidecar_container,
+                &sidecar_network,
+                &sidecar_dind,
+                &sidecar_certs_volume,
+                sidecar_dind_grant,
+                docker,
+            )
+            .await
+        } else if sidecar_network_disabled {
+            Ok(())
+        } else {
+            super::super::create_role_network(
+                &sidecar_container,
+                &sidecar_network,
+                role_network_internal,
+                docker,
+            )
+            .await
+        }
+    };
+    let mut sidecar = std::pin::pin!(sidecar);
+    let mut early_sidecar_result: Option<anyhow::Result<()>> = None;
+
+    // Step 2: Prepare runtime assets and build the derived image when the
+    // earlier image decision proved the local recipe is missing/stale.
+    let (image, selected_image_reused) = match image_decision {
+        decision @ (crate::runtime::image::ImageDecision::Reuse { .. }
+        | crate::runtime::image::ImageDecision::RefreshInBackground { .. }) => {
+            let (image, materialization_reason) = match decision {
+                crate::runtime::image::ImageDecision::Reuse { image } => {
+                    (image, "recipe_hash_match")
+                }
+                crate::runtime::image::ImageDecision::RefreshInBackground { image, reason } => {
+                    (image, reason.as_str())
+                }
+                _ => unreachable!(),
+            };
+            super::super::emit_image_materialization_plan(
+                true,
+                materialization_reason,
+                restoring,
+                &container_name,
+            );
+            drop(repo_lock.take());
+            if let Some(progress) = steps.progress_mut() {
+                progress.stage_skipped(
+                    crate::runtime::progress::LaunchStage::AgentBinaries,
+                    "image reused",
+                );
+                progress.stage_done(
+                    crate::runtime::progress::LaunchStage::DerivedImage,
+                    "reused local image",
+                );
+            }
+            (image, true)
+        }
+        build_decision @ (crate::runtime::image::ImageDecision::BuildFromPublished { .. }
+        | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. }) => {
+            let (reason, role_git_sha, build_source, build_base_image_override) =
+                match build_decision {
+                    crate::runtime::image::ImageDecision::BuildFromPublished {
+                        reason,
+                        role_git_sha,
+                        base_image,
+                    } => (
+                        reason,
+                        role_git_sha,
+                        format!("published image {base_image}"),
+                        Some(base_image),
+                    ),
+                    crate::runtime::image::ImageDecision::BuildFromWorkspace {
+                        reason,
+                        role_git_sha,
+                    } => (
+                        reason,
+                        role_git_sha,
+                        "workspace Dockerfile".to_owned(),
+                        None,
+                    ),
+                    crate::runtime::image::ImageDecision::Reuse { .. }
+                    | crate::runtime::image::ImageDecision::RefreshInBackground { .. } => {
+                        unreachable!()
+                    }
+                };
+            super::super::emit_image_materialization_plan(
+                false,
+                reason.as_str(),
+                restoring,
+                &container_name,
+            );
+            jackin_diagnostics::debug_log!(
+                "image",
+                "derived image build required from {}: {}",
+                build_source,
+                reason.as_str(),
+            );
+            steps.next("Preparing runtime binaries").await?;
+            // Prepare every agent the role supports, not just the selected
+            // one: the running container hosts a multiplexer where the
+            // operator can open a new tab for ANY supported agent, and that
+            // tab execs the agent CLI inside this same container. Baking
+            // only the selected agent makes sibling tabs crash on a missing
+            // binary. The selected agent still drives the version label and
+            // the foreground session; the others must simply be present.
+            let image_agents = supported_agents.clone();
+            let runtime_binaries_result = poll_sidecar_while(
+                async {
+                    if let Some(progress) = steps.progress_mut() {
+                        crate::runtime::image::prepare_runtime_binaries_for_agents(
+                            paths,
+                            &validated_repo,
+                            &image_agents,
+                            Some(progress),
+                        )
+                        .await
+                    } else {
+                        crate::runtime::image::prepare_runtime_binaries_for_agents(
+                            paths,
+                            &validated_repo,
+                            &image_agents,
+                            None,
+                        )
+                        .await
+                    }
+                },
+                sidecar.as_mut(),
+                &mut early_sidecar_result,
+            )
+            .await;
+            let runtime_binaries = match runtime_binaries_result {
+                Ok(runtime_binaries) => runtime_binaries,
+                Err(error) => {
+                    cleanup.run(docker).await;
+                    return Err(error);
+                }
+            };
+            steps.next("Preparing derived image").await?;
+            let Some(repo_lock) = repo_lock.take() else {
+                cleanup.run(docker).await;
+                return Err(anyhow::anyhow!("repo lock already consumed"));
+            };
+            let image_result = poll_sidecar_while(
+                async {
+                    if let Some(progress) = steps.progress_mut() {
+                        crate::runtime::image::build_agent_image(
+                            paths,
+                            selector,
+                            &cached_repo,
+                            &validated_repo,
+                            agent,
+                            runtime_binaries,
+                            rebuild,
+                            reason,
+                            build_base_image_override.as_deref(),
+                            opts.debug,
+                            opts.role_branch.as_deref(),
+                            docker,
+                            runner,
+                            repo_lock,
+                            role_git_sha.as_deref(),
+                            Some(progress),
+                        )
+                        .await
+                    } else {
+                        crate::runtime::image::build_agent_image(
+                            paths,
+                            selector,
+                            &cached_repo,
+                            &validated_repo,
+                            agent,
+                            runtime_binaries,
+                            rebuild,
+                            reason,
+                            build_base_image_override.as_deref(),
+                            opts.debug,
+                            opts.role_branch.as_deref(),
+                            docker,
+                            runner,
+                            repo_lock,
+                            role_git_sha.as_deref(),
+                            None,
+                        )
+                        .await
+                    }
+                },
+                sidecar.as_mut(),
+                &mut early_sidecar_result,
+            )
+            .await;
+            let image = match image_result {
+                Ok(image) => image,
+                Err(error) => {
+                    cleanup.run(docker).await;
+                    return Err(error);
+                }
+            };
+            (image, false)
+        }
+    };
     let host_workdir_fingerprint = super::super::manifest_host_workdir_fingerprint(workspace);
     let new_manifest = InstanceManifest::new(NewInstanceManifest {
         container_base: &container_name,
@@ -444,8 +547,9 @@ where
     // Modes that inject a credential require the well-known env
     // var to resolve to a non-empty value; fail fast with an
     // actionable structured error so the operator sees the
-    // problem before we spend time starting the network and DinD
-    // sidecar. Sync / Ignore short-circuit inside the helper.
+    // problem before container startup. The network/DinD sidecar may already
+    // be warming in parallel with image materialization, so these errors route
+    // through cleanup. Sync / Ignore short-circuit inside the helper.
     //
     // Build the per-layer mode-resolution and env-layer traces
     // here (in the caller) so the structured error carries the
@@ -527,7 +631,8 @@ where
     };
 
     // Token-mode pre-flight: GH_TOKEN must resolve to a non-empty
-    // value before we spend time starting DinD.
+    // value before container startup. Sidecar resources may already be warming
+    // in parallel and are cleaned up on failure.
     if let Err(error) = verify_github_token_present(
         github_mode,
         github_ctx.token.as_deref(),
@@ -537,59 +642,6 @@ where
         cleanup.run(docker).await;
         return Err(error);
     }
-
-    // Token/env preflights are complete, so the per-instance sidecar can
-    // start while role-state auth is prepared. This preserves fail-fast
-    // missing-token behavior but removes the old auth-then-DinD serial wait.
-    // DinD startup races role_state_future via tokio::select!; the later
-    // join with workspace materialization further overlaps sidecar readiness
-    // with mount setup.
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_started(
-            crate::runtime::progress::LaunchStage::Network,
-            "wiring private network",
-        );
-    }
-    let sidecar_container = container_name.clone();
-    let sidecar_network = network.clone();
-    let sidecar_dind = dind.clone();
-    let sidecar_certs_volume = certs_volume.clone();
-    // WP4 Part B: the sidecar tier (rootless vs privileged image/flags).
-    let sidecar_dind_grant = effective_grants.dind;
-    let sidecar_network_disabled =
-        crate::runtime::docker_profile::network_disabled(&effective_grants);
-    // WP2: `locked` runs on a Docker-internal network (no off-bridge route)
-    // independent of the in-container iptables allowlist; every other
-    // profile uses a routable network.
-    let role_network_internal =
-        crate::runtime::docker_profile::role_network_internal(resolved_profile.0);
-    let sidecar = async move {
-        if adopted_sidecar.is_some() {
-            Ok(())
-        } else if dind_started {
-            super::super::run_dind_sidecar_headless(
-                &sidecar_container,
-                &sidecar_network,
-                &sidecar_dind,
-                &sidecar_certs_volume,
-                sidecar_dind_grant,
-                docker,
-            )
-            .await
-        } else if sidecar_network_disabled {
-            Ok(())
-        } else {
-            super::super::create_role_network(
-                &sidecar_container,
-                &sidecar_network,
-                role_network_internal,
-                docker,
-            )
-            .await
-        }
-    };
-    let mut sidecar = std::pin::pin!(sidecar);
-    let mut early_sidecar_result: Option<anyhow::Result<()>> = None;
 
     // Per-supported-agent mode resolution — each agent in
     // `manifest.supported_agents()` honors its own configured
@@ -660,12 +712,16 @@ where
     // returns `LaunchCancelled`, which flows into the `Err` arm below and
     // runs `cleanup` — tearing down any already-started sidecar.
     let select_role_state = async {
-        tokio::select! {
-            result = &mut sidecar => {
-                early_sidecar_result = Some(result);
-                (&mut role_state_future).await
+        if early_sidecar_result.is_some() {
+            (&mut role_state_future).await
+        } else {
+            tokio::select! {
+                result = &mut sidecar => {
+                    early_sidecar_result = Some(result);
+                    (&mut role_state_future).await
+                }
+                result = &mut role_state_future => result,
             }
-            result = &mut role_state_future => result,
         }
     };
     let role_state_result = if let Some(progress) = steps.progress_mut() {
@@ -769,6 +825,9 @@ where
         "load_role: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
         force = opts.force,
     );
+    if let Some(git_pull_join) = git_pull_join {
+        super::finish_deferred_git_pull(git_pull_join, steps).await?;
+    }
     if let Some(progress) = steps.progress_mut() {
         progress.stage_started(
             crate::runtime::progress::LaunchStage::Workspace,
@@ -940,6 +999,18 @@ where
         }
     }
 
+    let reuse_staleness_sentinel = (selected_image_reused
+        && crate::runtime::image::reuse_needs_background_staleness_check(
+            paths,
+            &validated_repo,
+            &image,
+        ))
+    .then_some(super::super::launch_runtime::ReuseStalenessSentinel {
+        role_git: &source.git,
+        branch_override: opts.role_branch.as_deref(),
+        image: &image,
+    });
+
     let ctx = super::super::LaunchContext {
         container_name: &container_name,
         image: &image,
@@ -968,6 +1039,12 @@ where
                 reason,
             }
         }),
+        reuse_staleness_sentinel,
+        sidecar_prewarm_replenish: if adopted_sidecar_was_used {
+            super::super::SidecarPrewarmReplenish::AfterAttach
+        } else {
+            super::super::SidecarPrewarmReplenish::None
+        },
         sibling_prewarm: super::super::SiblingPrewarm {
             role_git: &source.git,
             branch_override: opts.role_branch.as_deref(),

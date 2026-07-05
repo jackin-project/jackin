@@ -554,6 +554,42 @@ fn container_info_state_keeps_run_id_bare_and_log_path_separate() {
 }
 
 #[test]
+fn container_info_state_backend_only_shows_telemetry_without_reveal() {
+    let d = Dialog::ContainerInfo {
+        container_name: "jk-abc123-thearchitect".to_owned(),
+        role: "the-architect".to_owned(),
+        focused_agent: Some("claude".to_owned()),
+        workdir: "/workspace/jackin".to_owned(),
+        diagnostics: ContainerInfoDiagnostics {
+            host_version: "0.6.0-test".to_owned(),
+            run_id: "jk-run-b93735".to_owned(),
+            run_log_display: "(backend only - no local file)".to_owned(),
+            run_log_href: None,
+        },
+        copied_row: None,
+        hovered_row: None,
+        scroll: jackin_tui::components::DialogBodyScroll::new(),
+    };
+    let state = d
+        .container_info_state_with_debug(true)
+        .expect("container info state should be available");
+    let rows = state.rows();
+
+    assert!(
+        rows.iter().any(
+            |row| row.label() == "Telemetry" && row.value() == "(backend only - no local file)"
+        ),
+        "backend-only runs should show a telemetry row"
+    );
+    assert!(
+        rows.iter().all(|row| row.label() != "Diagnostics log"
+            && row.label() != "Reveal diagnostics"
+            && row.href().is_none()),
+        "backend-only runs must not expose a fabricated diagnostics path"
+    );
+}
+
+#[test]
 fn container_info_enter_flips_copied_flag_for_render_feedback() {
     let mut d = container_info_fixture();
     drop(d.handle_key(b"\r", None));

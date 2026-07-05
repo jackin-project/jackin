@@ -41,23 +41,23 @@ const AGENT_STATUS_ASSETS: &[(&str, &str)] = &[
     ),
     (
         "packs/claude.toml",
-        include_str!("../../../docker/runtime/agent-status/packs/claude.toml"),
+        include_str!("../../jackin-agent-status/packs/claude.toml"),
     ),
     (
         "packs/codex.toml",
-        include_str!("../../../docker/runtime/agent-status/packs/codex.toml"),
+        include_str!("../../jackin-agent-status/packs/codex.toml"),
     ),
     (
         "packs/amp.toml",
-        include_str!("../../../docker/runtime/agent-status/packs/amp.toml"),
+        include_str!("../../jackin-agent-status/packs/amp.toml"),
     ),
     (
         "packs/kimi.toml",
-        include_str!("../../../docker/runtime/agent-status/packs/kimi.toml"),
+        include_str!("../../jackin-agent-status/packs/kimi.toml"),
     ),
     (
         "packs/opencode.toml",
-        include_str!("../../../docker/runtime/agent-status/packs/opencode.toml"),
+        include_str!("../../jackin-agent-status/packs/opencode.toml"),
     ),
 ];
 const ZSHENV_SOURCE_SHIM_PATH: &str = ".jackin-runtime/zshenv-source-shim";
@@ -436,11 +436,6 @@ USER root
 # ─────────────────────────────────────────────────────────────────────────────
 ARG JACKIN_RUN_UID=1000
 
-# ── jackin runtime payload (entrypoint, multiplexer, shell-title shim) ──
-{hook_copy_section}COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
-COPY --link --chmod=0755 .jackin-runtime/agent-status /jackin/runtime/agent-status
-COPY --link --chown=agent:0 --chmod=0644 {zsh_title_shim_path} /jackin/runtime/zsh-title-shim
-{jackin_capsule_section}
 # ── Agent CLIs (D1: each agent's binary baked from its install_block) ──
 {agent_install_sections}{claude_plugin_section}
 # ── Default-home snapshot (D4): move each baked agent home into the
@@ -449,6 +444,11 @@ COPY --link --chown=agent:0 --chmod=0644 {zsh_title_shim_path} /jackin/runtime/z
 RUN {default_home_commands}
 RUN {default_home_guard}
 
+# ── Volatile launcher runtime payload last: upgrades rebuild only cheap layers. ──
+{hook_copy_section}COPY --link --chmod=0755 .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
+COPY --link --chmod=0755 .jackin-runtime/agent-status /jackin/runtime/agent-status
+COPY --link --chown=agent:0 --chmod=0644 {zsh_title_shim_path} /jackin/runtime/zsh-title-shim
+{jackin_capsule_section}
 # ── Runtime finalization: shell-title shim into .zshrc + jackin runtime dirs ──
 RUN {hook_final_commands}{shell_title_and_runtime_dir_commands}
 

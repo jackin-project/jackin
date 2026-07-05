@@ -36,7 +36,7 @@ fn launch_container_info_keeps_run_id_bare_and_log_path_separate() {
     let state = launch_container_info_state(
         &view,
         "jk-run-b93735",
-        "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl",
+        Some("/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl"),
         true,
         "0.6.0-test",
     );
@@ -81,7 +81,7 @@ fn launch_container_info_omits_run_rows_when_debug_disabled() {
     let state = launch_container_info_state(
         &view,
         "jk-run-b93735",
-        "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl",
+        Some("/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-b93735.jsonl"),
         false,
         "0.6.0-test",
     );
@@ -91,6 +91,25 @@ fn launch_container_info_omits_run_rows_when_debug_disabled() {
             .iter()
             .all(|row| !row.value().contains("jk-run")),
         "launch run diagnostics rows are debug-only"
+    );
+}
+
+#[test]
+fn launch_container_info_backend_only_shows_telemetry_without_reveal() {
+    let view = initial_view();
+    let state = launch_container_info_state(&view, "jk-run-b93735", None, true, "0.6.0-test");
+    let rows = state.rows();
+
+    assert!(
+        rows.iter()
+            .any(|row| row.label() == "Telemetry" && row.value().contains("jk-run-b93735")),
+        "backend-only runs should show a telemetry query hint"
+    );
+    assert!(
+        rows.iter().all(|row| row.label() != "Diagnostics log"
+            && row.label() != "Reveal diagnostics"
+            && row.href().is_none()),
+        "backend-only runs must not expose a fabricated diagnostics path"
     );
 }
 
@@ -108,7 +127,7 @@ fn launch_debug_info_keeps_status_footer_visible() {
                 frame,
                 &view,
                 "jk-run-c46709",
-                "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-c46709.jsonl",
+                Some("/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-c46709.jsonl"),
                 true,
                 None,
                 true,
@@ -140,7 +159,7 @@ fn launch_debug_info_keeps_status_footer_visible() {
     let state = launch_container_info_state(
         &view,
         "jk-run-c46709",
-        "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-c46709.jsonl",
+        Some("/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-c46709.jsonl"),
         true,
         "0.6.0-test",
     );
@@ -169,7 +188,7 @@ fn launch_debug_info_hides_status_footer_when_debug_disabled() {
                 frame,
                 &view,
                 "jk-run-c46709",
-                "/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-c46709.jsonl",
+                Some("/Users/donbeave/.jackin-pr-495/data/diagnostics/runs/jk-run-c46709.jsonl"),
                 true,
                 None,
                 false,

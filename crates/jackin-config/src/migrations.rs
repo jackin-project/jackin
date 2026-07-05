@@ -71,6 +71,13 @@ pub const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     // defaults; no transformation needed.
     MigrationStep {
         from: "v1alpha7",
+        to: "v1alpha8",
+        migrate: noop_migration,
+    },
+    // v1alpha8 -> v1alpha9: add optional `[telemetry]` settings to AppConfig.
+    // Additive with serde defaults; no transformation needed.
+    MigrationStep {
+        from: "v1alpha8",
         to: CURRENT_CONFIG_VERSION,
         migrate: noop_migration,
     },
