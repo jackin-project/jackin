@@ -3,19 +3,18 @@
 //! Two modes: side-by-side (modified files, before │ after) and single-pane
 //! (added / untracked / deleted). Uses `similar::TextDiff` for hunk computation.
 
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 use similar::{ChangeTag, TextDiff};
 
 use crate::components::scrollable_panel::{effective_offset, render_scrollable_block_at};
-use crate::theme::{PHOSPHOR_DARK, PHOSPHOR_GREEN};
-
-/// Background colour for removed lines in side-by-side mode.
-const DIFF_REMOVED_BG: Color = Color::Rgb(60, 20, 20);
-/// Background colour for added lines in side-by-side mode.
-const DIFF_ADDED_BG: Color = Color::Rgb(20, 50, 20);
+use crate::scroll::ScrollAxes;
+use crate::theme::{
+    DIFF_ADDED_BG, DIFF_ADDED_FG, DIFF_REMOVED_BG, DIFF_REMOVED_FG, PHOSPHOR_DARK, PHOSPHOR_GREEN,
+};
 
 /// A single paired row in side-by-side mode.
 /// `None` on either side means the other side had no matching counterpart.
@@ -201,6 +200,29 @@ impl DiffViewState {
         let step = (viewport_height / 2).max(1);
         self.scroll_y = self.scroll_y.saturating_add(step).min(max);
     }
+
+    pub fn handle_key(&mut self, key: KeyEvent) -> crate::ModalOutcome<()> {
+        match key.code {
+            KeyCode::Esc => crate::ModalOutcome::Cancel,
+            KeyCode::Up | KeyCode::Char('k' | 'K') => {
+                self.scroll_up();
+                crate::ModalOutcome::Continue
+            }
+            KeyCode::Down | KeyCode::Char('j' | 'J') => {
+                self.scroll_down();
+                crate::ModalOutcome::Continue
+            }
+            KeyCode::PageUp => {
+                self.page_up(20);
+                crate::ModalOutcome::Continue
+            }
+            KeyCode::PageDown => {
+                self.page_down(20);
+                crate::ModalOutcome::Continue
+            }
+            _ => crate::ModalOutcome::Continue,
+        }
+    }
 }
 
 /// Pair removed/inserted lines into side-by-side rows.
@@ -228,8 +250,8 @@ fn pair_into(rows: &mut Vec<SideBySideRow>, removed: &mut Vec<String>, inserted:
 fn change_style(tag: ChangeTag) -> Style {
     match tag {
         ChangeTag::Equal => Style::default().fg(PHOSPHOR_GREEN),
-        ChangeTag::Delete => Style::default().fg(Color::Red).bg(DIFF_REMOVED_BG),
-        ChangeTag::Insert => Style::default().fg(Color::Green).bg(DIFF_ADDED_BG),
+        ChangeTag::Delete => Style::default().fg(DIFF_REMOVED_FG).bg(DIFF_REMOVED_BG),
+        ChangeTag::Insert => Style::default().fg(DIFF_ADDED_FG).bg(DIFF_ADDED_BG),
     }
 }
 
@@ -341,13 +363,10 @@ pub fn render_diff_view(frame: &mut Frame<'_>, area: Rect, state: &mut DiffViewS
 /// Hint-bar spans for the diff view (scroll keys).
 #[must_use]
 pub fn diff_view_hint_spans() -> Vec<crate::HintSpan<'static>> {
-    vec![
-        crate::HintSpan::Key("↑↓"),
-        crate::HintSpan::Text("scroll"),
-        crate::HintSpan::Sep,
-        crate::HintSpan::Key("PgUp PgDn"),
-        crate::HintSpan::Text("page"),
-    ]
+    crate::keymap::SCROLL_HINT_KEYMAP.hint_spans_for_axes(ScrollAxes {
+        vertical: true,
+        horizontal: false,
+    })
 }
 
 #[cfg(test)]

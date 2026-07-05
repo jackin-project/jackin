@@ -57,14 +57,6 @@ pub mod terminal {
     pub(crate) fn host_console_terminal() -> &'static dyn jackin_console::ConsoleHostTerminal {
         &HOST_CONSOLE_TERMINAL
     }
-
-    pub(crate) fn suspend_console_terminal(stdout: &mut std::io::Stdout) {
-        jackin_console::tui::terminal::suspend_console_terminal(stdout, host_console_terminal());
-    }
-
-    pub(crate) fn resume_console_terminal(stdout: &mut std::io::Stdout) -> anyhow::Result<()> {
-        jackin_console::tui::terminal::resume_console_terminal(stdout, host_console_terminal())
-    }
 }
 pub mod tui;
 

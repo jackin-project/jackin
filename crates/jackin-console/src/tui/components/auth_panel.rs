@@ -15,7 +15,9 @@ use ratatui::{
 use crate::tui::auth::{
     AuthKind, AuthMode, auth_mode_requires_credential, auth_mode_supports_source_folder,
 };
-use crate::tui::components::editor_rows::{AuthSourceFolderDisplay, AuthSourceFolderKind};
+use crate::tui::components::editor_rows::{
+    AuthSourceFolderDisplay, AuthSourceFolderKind, cursor_span,
+};
 use crate::tui::components::op_breadcrumb::push_op_breadcrumb_spans;
 use crate::tui::components::source_picker::SourcePickerState;
 use crate::tui::screens::settings::model::AuthFormFocus;
@@ -367,7 +369,12 @@ pub fn render_form<V: AuthCredential>(
     form: &AuthForm<V>,
     focus: AuthFormFocus,
 ) {
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some("Edit auth"));
+    let inner = jackin_tui::components::render_dialog_shell(
+        frame,
+        area,
+        Some("Edit auth"),
+        jackin_tui::components::DialogBorder::Default,
+    );
 
     for (idx, row) in build_form_lines(form, focus).into_iter().enumerate() {
         let y = inner.y.saturating_add(idx as u16);
@@ -570,14 +577,6 @@ fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
             selected_button_style(focus == AuthFormFocus::Reset, jackin_tui::theme::BOLD_WHITE),
         ),
     ])
-}
-
-fn cursor_span(selected: bool) -> Span<'static> {
-    if selected {
-        Span::styled("▸ ", jackin_tui::theme::BOLD_WHITE)
-    } else {
-        Span::raw("  ")
-    }
 }
 
 fn label_style() -> Style {

@@ -109,21 +109,13 @@ pub fn modal_block<'a>() -> Block<'a> {
 ///
 /// Uses `PHOSPHOR_DARK`. For most cases, prefer `Panel::new().focus(PanelFocus::Unfocused).block()`
 /// which also handles titles. This helper is for untitled containers only.
+///
+/// Also use this for background modals in a dialog stack. Only the topmost
+/// dialog uses `modal_block()` (`PHOSPHOR_GREEN` border); every dialog beneath
+/// uses this helper (`PHOSPHOR_DARK` border), so exactly one `PHOSPHOR_GREEN`
+/// border is visible at a time.
 #[must_use]
 pub fn unfocused_block<'a>() -> Block<'a> {
-    Block::default()
-        .borders(Borders::ALL)
-        .border_style(PanelFocus::Unfocused.border_style())
-}
-
-/// A bordered `Block` for a **background** modal in a dialog stack.
-///
-/// When multiple dialogs are stacked, only the topmost dialog uses `modal_block()`
-/// (`PHOSPHOR_GREEN` border); every dialog beneath uses this helper (`PHOSPHOR_DARK`
-/// border). Exactly one `PHOSPHOR_GREEN` border is visible at a time, which satisfies
-/// the focus-visible one-bright-border rule.
-#[must_use]
-pub fn modal_block_inactive<'a>() -> Block<'a> {
     Block::default()
         .borders(Borders::ALL)
         .border_style(PanelFocus::Unfocused.border_style())

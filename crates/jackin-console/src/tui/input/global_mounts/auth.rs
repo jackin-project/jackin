@@ -3,8 +3,8 @@
 
 use super::{
     AuthForm, AuthFormFocus, AuthFormKeyPlan, AuthFormTarget, GlobalMountConfirm, KeyCode,
-    KeyEvent, ManagerMessage, ManagerStage, ManagerState, SettingsAuthKeyPlan, SettingsAuthModal,
-    SettingsAuthOutcome, auth_credential_input_state, auth_form_key_plan_with_source_folder,
+    KeyEvent, ManagerMessage, ManagerStage, ManagerState, SettingsAuthKeyPlan, SettingsAuthOutcome,
+    SettingsModal, auth_credential_input_state, auth_form_key_plan_with_source_folder,
     auth_source_picker_state, confirm_modal, dispatch_manager, generated_token_op_item_name,
     generated_token_source_picker_state, open_settings_save_preview, settings_update,
 };
@@ -73,7 +73,7 @@ pub(crate) fn open_settings_auth_form(
             Some(crate::tui::auth_config::settings_source_folder_display(row)),
         );
         let literal_buffer = form.literal_buffer();
-        SettingsAuthModal::AuthForm {
+        SettingsModal::AuthForm {
             target: AuthFormTarget::Workspace { kind },
             state: Box::new(form),
             focus: AuthFormFocus::Mode,
@@ -89,7 +89,7 @@ pub(crate) fn open_settings_auth_form(
 pub fn settings_auth_can_generate_token(auth: &crate::tui::state::SettingsAuthState) -> bool {
     matches!(
         auth.modal_ref(),
-        Some(SettingsAuthModal::AuthForm { state, .. })
+        Some(SettingsModal::AuthForm { state, .. })
             if settings_auth_form_can_generate_token(state.kind, state.mode)
     )
 }
@@ -121,7 +121,7 @@ pub fn handle_settings_auth_modal(
         return SettingsAuthOutcome::Continue;
     };
     match &mut modal {
-        SettingsAuthModal::AuthForm {
+        SettingsModal::AuthForm {
             target,
             state,
             focus,
@@ -147,7 +147,7 @@ pub fn handle_settings_auth_modal(
                 // push it directly to preserve the in-progress form state.
                 auth.open_child_modal(
                     modal,
-                    SettingsAuthModal::SourcePicker {
+                    SettingsModal::AuthSourcePicker {
                         state: generated_token_source_picker_state(op_available),
                     },
                 );
@@ -172,7 +172,7 @@ pub fn handle_settings_auth_modal(
                     };
                     auth.open_child_modal(
                         modal,
-                        SettingsAuthModal::SourcePicker {
+                        SettingsModal::AuthSourcePicker {
                             state: auth_source_picker_state(env_var, op_available),
                         },
                     );
@@ -194,11 +194,11 @@ pub fn handle_settings_auth_modal(
             }
             auth.set_modal(modal);
         }
-        SettingsAuthModal::SourcePicker { state } => {
+        SettingsModal::AuthSourcePicker { state } => {
             let outcome = state.handle_key(key);
             // Generate wins over the provide dispatch: the `g`/`G` trigger
             // sets `generating_token` (and stashes the form into
-            // `pending_auth_form_return` for the post-mint re-mount), so
+            // the modal parent stack for the post-mint re-mount), so
             // the generate branch is reachable only on that path and the
             // provide arms below stay untouched.
             if auth.is_generating_token() {
@@ -217,7 +217,7 @@ pub fn handle_settings_auth_modal(
                         // `generating_token` stays set so the Create-mode
                         // OpPicker commit routes through
                         // `handle_settings_token_generate_pick`.
-                        auth.set_modal(SettingsAuthModal::OpPicker {
+                        auth.set_modal(SettingsModal::AuthOpPicker {
                             state: Box::new(
                                 crate::tui::op_picker::OpPickerState::new_create_with_cache(
                                     op_cache,
@@ -247,19 +247,19 @@ pub fn handle_settings_auth_modal(
                         .modal_parents
                         .last()
                         .and_then(|m| {
-                            if let SettingsAuthModal::AuthForm { literal_buffer, .. } = m {
+                            if let SettingsModal::AuthForm { literal_buffer, .. } = m {
                                 Some(literal_buffer.clone())
                             } else {
                                 None
                             }
                         })
                         .unwrap_or_default();
-                    auth.set_modal(SettingsAuthModal::TextInput {
+                    auth.set_modal(SettingsModal::AuthTextInput {
                         state: Box::new(auth_credential_input_state(literal)),
                     });
                 }
                 SourcePickerPlan::Op => {
-                    auth.set_modal(SettingsAuthModal::OpPicker {
+                    auth.set_modal(SettingsModal::AuthOpPicker {
                         state: Box::new(crate::tui::op_picker::OpPickerState::new_with_cache(
                             op_cache,
                         )),
@@ -269,12 +269,12 @@ pub fn handle_settings_auth_modal(
                 SourcePickerPlan::Continue => auth.set_modal(modal),
             }
         }
-        SettingsAuthModal::TextInput { state } => match inline_picker_plan(state.handle_key(key)) {
+        SettingsModal::AuthTextInput { state } => match inline_picker_plan(state.handle_key(key)) {
             InlinePickerPlan::Commit(value) => apply_plain_text_to_settings_auth_form(auth, &value),
             InlinePickerPlan::Dismiss => restore_settings_auth_form(auth),
             InlinePickerPlan::Continue => auth.set_modal(modal),
         },
-        SettingsAuthModal::SourceFolderPicker { state } => {
+        SettingsModal::AuthSourceFolderPicker { state } => {
             let page_rows = page_rows_for_modal(term_size, state);
             let browser_outcome = state.handle_key_with_page_rows(key, Some(page_rows));
             match browser_outcome {
@@ -308,7 +308,7 @@ pub fn handle_settings_auth_modal(
                 }
             }
         }
-        SettingsAuthModal::OpPicker { state } => {
+        SettingsModal::AuthOpPicker { state } => {
             let outcome = state.handle_key(key);
             // Token-generate wins over the browse/provide dispatch:
             // `generating_token` is set exactly when the picker was opened
@@ -336,6 +336,7 @@ pub fn handle_settings_auth_modal(
                 InlinePickerPlan::Continue => auth.set_modal(modal),
             }
         }
+        _ => unreachable!("auth input handler received a non-auth settings modal"),
     }
     SettingsAuthOutcome::Continue
 }
@@ -350,7 +351,7 @@ fn handle_settings_token_generate_pick(
     auth: &mut crate::tui::state::SettingsAuthState,
     pending_token_generate: &mut Option<crate::tui::state::PendingTokenGenerate>,
     outcome: ModalOutcome<crate::tui::op_picker::OpPickerSelection>,
-    modal: SettingsAuthModal<'static>,
+    modal: SettingsModal<'static>,
 ) {
     use crate::tui::op_picker::OpPickerSelection;
     use jackin_env::{EditExistingTarget, TokenSetupArgs};
@@ -430,19 +431,19 @@ pub fn apply_plain_text_to_settings_auth_form(
     auth: &mut crate::tui::state::SettingsAuthState,
     value: &str,
 ) {
-    let Some(SettingsAuthModal::AuthForm {
+    let Some(SettingsModal::AuthForm {
         target, mut state, ..
     }) = auth.pop_parent_modal()
     else {
         jackin_diagnostics::debug_log!(
             "auth",
-            "apply_plain_text_to_settings_auth_form: pending_auth_form_return missing — \
+            "apply_plain_text_to_settings_auth_form: modal parent auth form missing — \
              minted plain token dropped"
         );
         return;
     };
     state.set_literal(value.to_owned());
-    auth.set_modal(SettingsAuthModal::AuthForm {
+    auth.set_modal(SettingsModal::AuthForm {
         target,
         state,
         focus: AuthFormFocus::Save,
@@ -454,7 +455,7 @@ pub(crate) fn apply_source_folder_to_settings_auth_form(
     auth: &mut crate::tui::state::SettingsAuthState,
     path: std::path::PathBuf,
 ) {
-    let Some(SettingsAuthModal::AuthForm {
+    let Some(SettingsModal::AuthForm {
         target,
         mut state,
         literal_buffer,
@@ -468,7 +469,7 @@ pub(crate) fn apply_source_folder_to_settings_auth_form(
         return;
     };
     state.set_source_folder(path);
-    auth.set_modal(SettingsAuthModal::AuthForm {
+    auth.set_modal(SettingsModal::AuthForm {
         target,
         state,
         focus: AuthFormFocus::Save,
@@ -504,7 +505,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
     op_ref: jackin_core::OpRef,
     validate: impl FnOnce(&jackin_core::OpRef) -> anyhow::Result<()>,
 ) {
-    let Some(SettingsAuthModal::AuthForm {
+    let Some(SettingsModal::AuthForm {
         target,
         mut state,
         focus,
@@ -517,7 +518,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
         // stashes), so a hit here means a broken stash invariant.
         jackin_diagnostics::debug_log!(
             "auth",
-            "apply_op_picker_to_settings_auth_form: pending_auth_form_return missing — \
+            "apply_op_picker_to_settings_auth_form: modal parent auth form missing — \
              minted op ref dropped"
         );
         return;
@@ -525,7 +526,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
     match validate(&op_ref) {
         Ok(()) => {
             state.set_op_ref(op_ref);
-            auth.set_modal(SettingsAuthModal::AuthForm {
+            auth.set_modal(SettingsModal::AuthForm {
                 target,
                 state,
                 focus: AuthFormFocus::Save,
@@ -535,7 +536,7 @@ fn apply_op_picker_to_settings_auth_form_with_validator(
         Err(err) => {
             // The form is only mutated after a successful read; re-stash so a
             // later restore lands the operator back on the prior value.
-            auth.push_auth_modal(SettingsAuthModal::AuthForm {
+            auth.push_auth_modal(SettingsModal::AuthForm {
                 target,
                 state,
                 focus,
@@ -559,7 +560,7 @@ pub fn apply_op_picker_to_settings_auth_form_committed(
     auth: &mut crate::tui::state::SettingsAuthState,
     op_ref: jackin_core::OpRef,
 ) {
-    let Some(SettingsAuthModal::AuthForm {
+    let Some(SettingsModal::AuthForm {
         target,
         mut state,
         literal_buffer,
@@ -575,7 +576,7 @@ pub fn apply_op_picker_to_settings_auth_form_committed(
     };
     // The read already succeeded; set the ref directly without re-reading.
     state.set_op_ref(op_ref);
-    auth.set_modal(SettingsAuthModal::AuthForm {
+    auth.set_modal(SettingsModal::AuthForm {
         target,
         state,
         focus: AuthFormFocus::Save,

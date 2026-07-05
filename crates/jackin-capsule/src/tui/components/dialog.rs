@@ -37,7 +37,9 @@ pub use super::container_info_dialog::ContainerInfoDiagnostics;
 pub(super) use super::palette::{PALETTE_ITEMS, palette_filtered_indices};
 pub use super::palette::{PaletteCloseLabel, PaletteCommand};
 
-use jackin_tui::components::{CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction};
+use jackin_tui::components::{
+    CONFIRM_KEYMAP, ConfirmAction as SharedConfirmAction, ModalRectSpec, modal_rect,
+};
 use jackin_tui::keymap::raw_bytes_to_chord;
 
 use crate::tui::keymap::{FILTER_LIST_KEYMAP, FilterListAction, READ_ONLY_DISMISS_KEYMAP};
@@ -199,6 +201,10 @@ pub enum Dialog {
         hovered_tab: Option<usize>,
         scroll: jackin_tui::components::DialogBodyScroll,
     },
+    /// Operator-facing spawn failure surfaced through the shared error popup.
+    /// This is intentionally modal: Enter / Esc / O dismiss, while unrelated
+    /// printable input is consumed so the reason cannot vanish unread.
+    SpawnFailure(jackin_tui::components::ErrorPopupState),
     /// Direction sub-dialog opened when the operator picks "Split pane"
     /// in the main menu. Operator chooses Left / Right / Above / Below;
     /// on confirm, the dialog is replaced with an `AgentPicker` carrying
@@ -451,6 +457,20 @@ impl Dialog {
         {
             return export_file_handle_key(input, *reveal_after_export, *open_after_export, key);
         }
+        if let Self::SpawnFailure(state) = self {
+            return match raw_bytes_to_chord(key)
+                .and_then(|chord| jackin_tui::components::ERROR_POPUP_KEYMAP.dispatch(chord))
+            {
+                Some(jackin_tui::components::ErrorPopupAction::Dismiss) => DialogAction::Dismiss,
+                None => {
+                    // Touch the state so this branch remains explicitly tied to
+                    // `ErrorPopupState`; printable input is consumed and does
+                    // not reach the PTY behind the modal.
+                    let _ = state;
+                    DialogAction::Redraw
+                }
+            };
+        }
         // Read-only info dialogs (ContainerInfo, GitHubContext): Esc /
         // dismiss keys close, Enter copies the dialog's value to the
         // operator's clipboard with the `copied` flag flipped to true
@@ -680,6 +700,7 @@ impl Dialog {
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
+                    | Self::SpawnFailure(_)
                     | Self::ConfirmAction { .. }
                     | Self::ExecPicker(_) => {}
                     Self::ExitDirty { selected, .. } => {
@@ -742,6 +763,7 @@ impl Dialog {
                     | Self::ContainerInfo { .. }
                     | Self::GitHubContext { .. }
                     | Self::Usage { .. }
+                    | Self::SpawnFailure(_)
                     | Self::ConfirmAction { .. }
                     | Self::ExecPicker(_) => {}
                     Self::ExitDirty { selected, .. } => {
@@ -925,6 +947,9 @@ impl Dialog {
         if matches!(self, Self::RenameTab { .. } | Self::ExportFile { .. }) {
             return DialogAction::Consume;
         }
+        if matches!(self, Self::SpawnFailure(_)) {
+            return DialogAction::Consume;
+        }
         // ContainerInfo: any copyable row (Container ID, Run ID, Diagnostics
         // log) copies via the shared hit-test. The clicked row's value goes to
         // the clipboard and that row shows the "Copied!" badge.
@@ -988,35 +1013,33 @@ impl Dialog {
                 None => DialogAction::Consume,
             };
         }
-        // ConfirmAction: only the visible Yes/No button cells confirm
-        // or dismiss; other inside-box clicks (title, explanation,
-        // padding) are swallowed. Mirrors the layout in
-        // `render_confirm_action`.
-        if let Self::ConfirmAction { kind, .. } = self {
-            const YES_LABEL: &str = "  Yes  ";
-            const GAP: &str = "    ";
-            const NO_LABEL: &str = "  No  ";
-            let interior_left = box_col + 1;
-            let interior_cols = width.saturating_sub(2) as usize;
-            let buttons_w =
-                YES_LABEL.chars().count() + GAP.chars().count() + NO_LABEL.chars().count();
-            let button_col = interior_left
-                + u16::try_from(interior_cols.saturating_sub(buttons_w) / 2).unwrap_or(0);
-            let button_row = box_row + height.saturating_sub(2);
-            if row != button_row {
-                return DialogAction::Consume;
+        // ConfirmAction: only the visible Yes/No button cells confirm or
+        // dismiss. The shared confirm widget owns button geometry, including
+        // the taller data-loss exit variant.
+        if let Self::ConfirmAction { kind, selected_yes } = self {
+            let mut state = if matches!(kind, ConfirmKind::Exit) {
+                jackin_tui::components::exit_confirm_state_with_data_loss()
+            } else {
+                jackin_tui::components::ConfirmState::new(format!(
+                    "{}\n\n{}",
+                    kind.title(),
+                    kind.message()
+                ))
+            };
+            if *selected_yes {
+                state = state.with_focus_yes();
             }
-            let yes_start = button_col;
-            let yes_end = yes_start + YES_LABEL.chars().count() as u16;
-            let no_start = yes_end + GAP.chars().count() as u16;
-            let no_end = no_start + NO_LABEL.chars().count() as u16;
-            if col >= yes_start && col < yes_end {
-                return DialogAction::ConfirmedAction(*kind);
-            }
-            if col >= no_start && col < no_end {
-                return DialogAction::Dismiss;
-            }
-            return DialogAction::Consume;
+            let area = ratatui::layout::Rect {
+                x: box_col,
+                y: box_row,
+                width,
+                height,
+            };
+            return match jackin_tui::components::confirm_button_hit(area, &state, col, row) {
+                Some(true) => DialogAction::ConfirmedAction(*kind),
+                Some(false) => DialogAction::Dismiss,
+                None => DialogAction::Consume,
+            };
         }
         // ProviderPicker: flat list, no filter row. Items start at box_row + 1.
         if let Self::ProviderPicker {
@@ -1075,6 +1098,7 @@ impl Dialog {
             | Self::ContainerInfo { .. }
             | Self::GitHubContext { .. }
             | Self::Usage { .. }
+            | Self::SpawnFailure(_)
             | Self::ConfirmAction { .. }
             | Self::ProviderPicker { .. }
             | Self::ExecPicker(_)
@@ -1153,7 +1177,8 @@ impl Dialog {
             | Self::ProviderPicker { .. }
             | Self::ExecPicker(_)
             | Self::ExitDirty { .. }
-            | Self::ExitInspect { .. } => DialogAction::Consume,
+            | Self::ExitInspect { .. }
+            | Self::SpawnFailure(_) => DialogAction::Consume,
         }
     }
 
@@ -1181,7 +1206,10 @@ impl Dialog {
             return false;
         }
         match self {
-            Self::RenameTab { .. } | Self::ExportFile { .. } | Self::ExecPicker(_) => false,
+            Self::RenameTab { .. }
+            | Self::ExportFile { .. }
+            | Self::ExecPicker(_)
+            | Self::SpawnFailure(_) => false,
             Self::ContainerInfo { .. } => {
                 let area = ratatui::layout::Rect {
                     x: box_col,
@@ -1270,23 +1298,6 @@ impl Dialog {
     /// pathologically small; the trade-off is that the host terminal
     /// stays in a recoverable state regardless.
     pub(crate) fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
-        let width = match self {
-            Self::ContainerInfo { .. } | Self::GitHubContext { .. } | Self::Usage { .. } => {
-                CONTAINER_INFO_WIDTH
-                    .min(term_cols.saturating_sub(4))
-                    .max(PALETTE_WIDTH)
-            }
-            // Exit data-loss confirm has two warning notes wider than PALETTE_WIDTH.
-            // Use the shared Details width percentage (70%) so the notes don't truncate.
-            Self::ConfirmAction {
-                kind: ConfirmKind::Exit,
-                ..
-            } => (term_cols.saturating_mul(70) / 100).clamp(
-                PALETTE_WIDTH,
-                term_cols.saturating_sub(4).max(PALETTE_WIDTH),
-            ),
-            _ => PALETTE_WIDTH,
-        };
         // Filterable dialogs reserve 2 extra rows: one for the filter
         // input and one for the separator above the items list. Item
         // count tracks the *filtered* set so the box shrinks as the
@@ -1320,6 +1331,10 @@ impl Dialog {
             Self::Usage { .. } => self.usage_state().map_or(10, |state| {
                 crate::tui::components::dialog_widgets::usage_info_required_height(&state)
             }),
+            Self::SpawnFailure(state) => {
+                let inner_width = PALETTE_WIDTH.saturating_sub(2);
+                jackin_tui::components::required_height(state, inner_width, term_rows)
+            }
             // 9 = border(2) + leading(1) + question(1) + empty(1) + message(1) + spacer(1) + button(1) + trailing(1)
             // Matches the canonical symmetric dialog layout (Defect 5).
             // Exit shows the shared data-loss variant (extra warning notes), so
@@ -1346,13 +1361,48 @@ impl Dialog {
         };
         let height = natural_height.min(max_height);
         let top_row = crate::tui::components::status_bar::STATUS_BAR_ROWS;
-        let row = if matches!(self, Self::Usage { .. }) {
+        let area_y = if matches!(self, Self::Usage { .. }) {
             top_row.saturating_add(1)
         } else {
-            top_row + (content_height.saturating_sub(height)) / 2
+            top_row
         };
-        let col = (term_cols.saturating_sub(width)) / 2;
-        (row, col, height, width)
+        let area_height = if matches!(self, Self::Usage { .. }) {
+            content_height.saturating_sub(1)
+        } else {
+            content_height
+        };
+        let area = ratatui::layout::Rect::new(0, area_y, term_cols, area_height);
+        let spec = match self {
+            Self::ContainerInfo { .. } | Self::GitHubContext { .. } => ModalRectSpec::MaxWidthMin {
+                max_width: CONTAINER_INFO_WIDTH,
+                min_width: PALETTE_WIDTH,
+                side_margin: 4,
+                height,
+            },
+            Self::Usage { .. } => ModalRectSpec::TopAlignedMaxWidthMin {
+                max_width: CONTAINER_INFO_WIDTH,
+                min_width: PALETTE_WIDTH,
+                side_margin: 4,
+                height,
+            },
+            // Exit data-loss confirm has two warning notes wider than PALETTE_WIDTH.
+            // Use the shared Details width percentage (70%) so the notes don't truncate.
+            Self::ConfirmAction {
+                kind: ConfirmKind::Exit,
+                ..
+            } => ModalRectSpec::PercentClamp {
+                width_pct: 70,
+                min_width: PALETTE_WIDTH,
+                side_margin: 4,
+                height,
+            },
+            _ => ModalRectSpec::Exact {
+                width: PALETTE_WIDTH,
+                height,
+            },
+        };
+        let rect = modal_rect(area, spec);
+        (rect.y, rect.x, rect.height, rect.width)
     }
 
     /// Footer hint spans for this dialog. Rendered by the multiplexer

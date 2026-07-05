@@ -33,7 +33,7 @@ use crate::tui::components::modal_rects::{
     ModalAuthFormState, ModalConfirmSavePrepareState, ModalConfirmSaveState, ModalConfirmState,
     ModalOpPickerState, ModalRectMode, ModalRolePickerState,
 };
-use jackin_tui::components::FocusOwner;
+use jackin_tui::components::{FocusOwner, ModalStack};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
@@ -114,7 +114,7 @@ pub trait SettingsModalSlot {
     fn modal_mut(&mut self) -> Option<&mut Self::Modal>;
 }
 
-pub trait SettingsAuthModalSlot {
+pub trait SettingsAuthSlot {
     type Modal;
 
     fn modal_mut(&mut self) -> Option<&mut Self::Modal>;
@@ -331,7 +331,7 @@ impl<Mounts, Env, Auth, Trust, ErrorPopup, PendingToken> crate::tui::model::Cons
 where
     Env: SettingsModalSlot,
     Env::Modal: crate::tui::model::ConsoleAnimationTick,
-    Auth: SettingsAuthModalSlot,
+    Auth: SettingsAuthSlot,
     Auth::Modal: crate::tui::model::ConsoleAnimationTick,
 {
     fn tick_active_animation(&mut self) -> bool {
@@ -590,134 +590,443 @@ pub enum SettingsEnvEnterPlan {
     Noop,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvOpPickerTarget {
+    Existing {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+    NewKey {
+        scope: SettingsEnvScope,
+    },
+}
+
 #[derive(Debug)]
-pub enum SettingsEnvModal<
+pub enum SettingsModal<
+    EnvValue,
     TextInputState,
     SourcePickerState,
     OpPickerState,
+    FileBrowserState,
+    MountDstChoiceState,
     RolePickerState,
     ScopePickerState,
     ConfirmState,
+    ConfirmSaveState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
 > {
-    Text {
-        target: SettingsEnvTextTarget,
+    MountText {
+        target: GlobalMountTextTarget,
         state: Box<TextInputState>,
     },
-    SourcePicker {
-        state: SourcePickerState,
+    MountFileBrowser {
+        state: Box<FileBrowserState>,
     },
-    OpPicker {
-        state: Box<OpPickerState>,
+    MountDstChoice {
+        state: MountDstChoiceState,
     },
-    RolePicker {
-        state: RolePickerState,
-    },
-    ScopePicker {
+    MountScopePicker {
         state: ScopePickerState,
     },
-    Confirm {
+    MountRolePicker {
+        state: RolePickerState,
+    },
+    MountConfirm {
+        action: GlobalMountConfirm,
+        state: ConfirmState,
+    },
+    MountPreviewSave {
+        state: ConfirmSaveState,
+    },
+    EnvText {
+        target: SettingsEnvTextTarget,
+        pending_value: Option<EnvValue>,
+        state: Box<TextInputState>,
+    },
+    EnvSourcePicker {
+        key: (SettingsEnvScope, String),
+        state: SourcePickerState,
+    },
+    EnvOpPicker {
+        target: SettingsEnvOpPickerTarget,
+        state: Box<OpPickerState>,
+    },
+    EnvRolePicker {
+        state: RolePickerState,
+    },
+    EnvScopePicker {
+        state: ScopePickerState,
+    },
+    EnvConfirm {
         action: SettingsEnvConfirm,
         state: ConfirmState,
+    },
+    AuthTextInput {
+        state: Box<TextInputState>,
+    },
+    AuthSourcePicker {
+        state: SourcePickerState,
+    },
+    AuthOpPicker {
+        state: Box<OpPickerState>,
+    },
+    AuthSourceFolderPicker {
+        state: FileBrowserState,
+    },
+    AuthForm {
+        target: AuthFormTarget,
+        state: Box<AuthForm>,
+        focus: AuthFormFocus,
+        literal_buffer: String,
     },
 }
 
 impl<
+    EnvValue,
     TextInputState,
     SourcePickerState,
     OpPickerState,
+    FileBrowserState,
+    MountDstChoiceState,
     RolePickerState,
     ScopePickerState,
     ConfirmState,
+    ConfirmSaveState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
 > crate::tui::model::ConsoleAnimationTick
-    for SettingsEnvModal<
+    for SettingsModal<
+        EnvValue,
         TextInputState,
         SourcePickerState,
         OpPickerState,
+        FileBrowserState,
+        MountDstChoiceState,
         RolePickerState,
         ScopePickerState,
         ConfirmState,
+        ConfirmSaveState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
     >
 where
     OpPickerState: crate::tui::model::ConsoleAnimationTick,
 {
     fn tick_active_animation(&mut self) -> bool {
         match self {
-            Self::OpPicker { state } => state.tick_active_animation(),
-            Self::Text { .. }
-            | Self::SourcePicker { .. }
-            | Self::RolePicker { .. }
-            | Self::ScopePicker { .. }
-            | Self::Confirm { .. } => false,
+            Self::EnvOpPicker { state, .. } | Self::AuthOpPicker { state } => {
+                state.tick_active_animation()
+            }
+            Self::MountText { .. }
+            | Self::MountFileBrowser { .. }
+            | Self::MountDstChoice { .. }
+            | Self::MountScopePicker { .. }
+            | Self::MountRolePicker { .. }
+            | Self::MountConfirm { .. }
+            | Self::MountPreviewSave { .. }
+            | Self::EnvText { .. }
+            | Self::EnvSourcePicker { .. }
+            | Self::EnvRolePicker { .. }
+            | Self::EnvScopePicker { .. }
+            | Self::EnvConfirm { .. }
+            | Self::AuthTextInput { .. }
+            | Self::AuthSourcePicker { .. }
+            | Self::AuthSourceFolderPicker { .. }
+            | Self::AuthForm { .. } => false,
         }
     }
 }
 
 impl<
+    EnvValue,
     TextInputState,
     SourcePickerState,
     OpPickerState,
+    FileBrowserState,
+    MountDstChoiceState,
     RolePickerState,
     ScopePickerState,
     ConfirmState,
+    ConfirmSaveState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
 >
-    SettingsEnvModal<
+    SettingsModal<
+        EnvValue,
         TextInputState,
         SourcePickerState,
         OpPickerState,
+        FileBrowserState,
+        MountDstChoiceState,
         RolePickerState,
         ScopePickerState,
         ConfirmState,
+        ConfirmSaveState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
     >
 where
     OpPickerState: ModalOpPickerState,
     RolePickerState: ModalRolePickerState,
     ConfirmState: ModalConfirmState,
+    ConfirmSaveState: ModalConfirmSaveState,
+    AuthForm: ModalAuthFormState,
 {
+    #[must_use]
+    pub fn debug_kind(&self) -> crate::tui::debug::SettingsMountModalDebugKind {
+        use crate::tui::debug::SettingsMountModalDebugKind;
+        match self {
+            Self::MountText { .. } => SettingsMountModalDebugKind::TextInput,
+            Self::MountFileBrowser { .. } => SettingsMountModalDebugKind::FileBrowser,
+            Self::MountDstChoice { .. } => SettingsMountModalDebugKind::MountDstChoice,
+            Self::MountScopePicker { .. } => SettingsMountModalDebugKind::ScopePicker,
+            Self::MountRolePicker { .. } => SettingsMountModalDebugKind::RolePicker,
+            Self::MountConfirm { action, .. } => match action {
+                GlobalMountConfirm::Remove => SettingsMountModalDebugKind::ConfirmRemove,
+                GlobalMountConfirm::Save => SettingsMountModalDebugKind::ConfirmSave,
+                GlobalMountConfirm::Sensitive => SettingsMountModalDebugKind::ConfirmSensitive,
+                GlobalMountConfirm::Discard => SettingsMountModalDebugKind::ConfirmDiscard,
+            },
+            Self::MountPreviewSave { .. } => SettingsMountModalDebugKind::PreviewSave,
+            _ => unreachable!("mount debug facts were requested for a non-mount settings modal"),
+        }
+    }
+
     #[must_use]
     pub fn rect_mode(&self) -> ModalRectMode {
         match self {
-            Self::Text { .. } => ModalRectMode::TextInput,
-            Self::SourcePicker { .. } => ModalRectMode::SourcePicker,
-            Self::OpPicker { state } if state.has_naming_stage_input() => ModalRectMode::TextInput,
-            Self::OpPicker { .. } => ModalRectMode::OpPicker,
-            Self::RolePicker { state } => ModalRectMode::RolePicker {
-                filtered_len: state.filtered_len(),
+            Self::MountText { .. } | Self::EnvText { .. } | Self::AuthTextInput { .. } => {
+                ModalRectMode::TextInput
+            }
+            Self::MountFileBrowser { .. } | Self::AuthSourceFolderPicker { .. } => {
+                ModalRectMode::FileBrowser
+            }
+            Self::MountDstChoice { .. } => ModalRectMode::MountChoice,
+            Self::MountScopePicker { .. } | Self::EnvScopePicker { .. } => {
+                ModalRectMode::ScopePicker
+            }
+            Self::MountRolePicker { state } | Self::EnvRolePicker { state } => {
+                ModalRectMode::RolePicker {
+                    filtered_len: state.filtered_len(),
+                }
+            }
+            Self::EnvSourcePicker { .. } | Self::AuthSourcePicker { .. } => {
+                ModalRectMode::SourcePicker
+            }
+            Self::EnvOpPicker { state, .. } | Self::AuthOpPicker { state }
+                if state.has_naming_stage_input() =>
+            {
+                ModalRectMode::TextInput
+            }
+            Self::EnvOpPicker { .. } | Self::AuthOpPicker { .. } => ModalRectMode::OpPicker,
+            Self::MountConfirm { state, .. } | Self::EnvConfirm { state, .. } => {
+                ModalRectMode::Confirm {
+                    width_pct: state.width_pct(),
+                    height: state.required_height(),
+                }
+            }
+            Self::MountPreviewSave { state } => ModalRectMode::ConfirmSave {
+                required_height: state.required_height(),
             },
-            Self::ScopePicker { .. } => ModalRectMode::ScopePicker,
-            Self::Confirm { state, .. } => ModalRectMode::Confirm {
-                width_pct: state.width_pct(),
-                height: state.required_height(),
+            Self::AuthForm { state, .. } => ModalRectMode::AuthForm {
+                required_height: state.required_height(),
             },
         }
     }
 
-    #[must_use]
-    pub const fn scroll_target(&self) -> crate::tui::update::SettingsEnvModalScrollTarget {
-        use crate::tui::update::SettingsEnvModalScrollTarget;
-        match self {
-            Self::OpPicker { .. } => SettingsEnvModalScrollTarget::OpPicker,
-            Self::RolePicker { .. } => SettingsEnvModalScrollTarget::RolePicker,
-            _ => SettingsEnvModalScrollTarget::None,
+    pub fn prepare_for_render(&mut self, outer: ratatui::layout::Rect)
+    where
+        ConfirmSaveState: ModalConfirmSavePrepareState,
+    {
+        let modal_area =
+            crate::tui::components::modal_rects::modal_rect_for_mode(outer, self.rect_mode());
+        if let Self::MountPreviewSave { state } = self {
+            state.prepare_for_render(modal_area);
         }
     }
 
     #[must_use]
-    pub fn footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>>
+    pub fn env_footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>>
     where
         OpPickerState: ModalOpPickerFooterState,
     {
         match self {
-            Self::Text { .. } => footer_items_for_mode(ModalFooterMode::ConfirmDismiss),
-            Self::SourcePicker { .. } | Self::ScopePicker { .. } => {
+            Self::EnvText { .. } => footer_items_for_mode(ModalFooterMode::ConfirmDismiss),
+            Self::EnvSourcePicker { .. } | Self::EnvScopePicker { .. } => {
                 footer_items_for_mode(ModalFooterMode::SegmentedChoice)
             }
-            Self::OpPicker { state } => footer_items_for_mode(state.footer_mode(false)),
-            Self::RolePicker { .. } => footer_items_for_mode(ModalFooterMode::FilteredPicker {
+            Self::EnvOpPicker { state, .. } => footer_items_for_mode(state.footer_mode(false)),
+            Self::EnvRolePicker { .. } => footer_items_for_mode(ModalFooterMode::FilteredPicker {
                 include_refresh: false,
                 include_collapse: false,
             }),
-            Self::Confirm { .. } => footer_items_for_mode(ModalFooterMode::YesNo),
+            Self::EnvConfirm { .. } => footer_items_for_mode(ModalFooterMode::YesNo),
+            _ => Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn mounts_footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>>
+    where
+        FileBrowserState: ModalFileBrowserFooterState,
+        ConfirmSaveState: ModalConfirmSaveFooterState,
+    {
+        match self {
+            Self::MountText { .. } => footer_items_for_mode(ModalFooterMode::ConfirmDismiss),
+            Self::MountFileBrowser { state } => state.footer_items(),
+            Self::MountDstChoice { .. } => footer_items_for_mode(ModalFooterMode::MountDestination),
+            Self::MountScopePicker { .. } => {
+                footer_items_for_mode(ModalFooterMode::SegmentedChoice)
+            }
+            Self::MountRolePicker { .. } => {
+                footer_items_for_mode(ModalFooterMode::FilteredPicker {
+                    include_refresh: false,
+                    include_collapse: false,
+                })
+            }
+            Self::MountConfirm { .. } => footer_items_for_mode(ModalFooterMode::YesNo),
+            Self::MountPreviewSave { state } => footer_items_for_mode(state.footer_mode()),
+            _ => Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn auth_footer_items(&self, can_generate_token: bool) -> Vec<jackin_tui::HintSpan<'static>>
+    where
+        FileBrowserState: ModalFileBrowserFooterState,
+        OpPickerState: ModalOpPickerFooterState,
+        AuthForm: ModalAuthFormFooterState<AuthFormFocus>,
+        AuthFormFocus: Copy,
+    {
+        match self {
+            Self::AuthForm { state, focus, .. } => {
+                footer_items_for_mode(state.footer_mode(*focus, can_generate_token))
+            }
+            Self::AuthTextInput { .. } => footer_items_for_mode(ModalFooterMode::ConfirmDismiss),
+            Self::AuthSourcePicker { .. } => {
+                footer_items_for_mode(ModalFooterMode::SegmentedChoice)
+            }
+            Self::AuthSourceFolderPicker { state } => state.footer_items(),
+            Self::AuthOpPicker { state } => footer_items_for_mode(state.footer_mode(false)),
+            _ => Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn letter_input_kind(&self) -> Option<crate::tui::run::LetterInputModalKind> {
+        crate::tui::run::letter_input_modal_kind(
+            matches!(self, Self::MountText { .. }),
+            false,
+            true,
+        )
+    }
+}
+
+impl<
+    EnvValue,
+    TextInputState,
+    SourcePickerState,
+    OpPickerState,
+    FileBrowserState,
+    MountDstChoiceState,
+    RolePickerState,
+    ScopePickerState,
+    ConfirmState,
+    ConfirmSaveState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+>
+    SettingsModal<
+        EnvValue,
+        TextInputState,
+        SourcePickerState,
+        OpPickerState,
+        FileBrowserState,
+        MountDstChoiceState,
+        RolePickerState,
+        ScopePickerState,
+        ConfirmState,
+        ConfirmSaveState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+    >
+{
+    #[must_use]
+    pub const fn mount_scroll_target(&self) -> crate::tui::update::SettingsModalScrollTarget {
+        use crate::tui::update::SettingsModalScrollTarget;
+        match self {
+            Self::MountRolePicker { .. } => SettingsModalScrollTarget::MountRolePicker,
+            _ => SettingsModalScrollTarget::None,
+        }
+    }
+
+    #[must_use]
+    pub const fn env_scroll_target(&self) -> crate::tui::update::SettingsModalScrollTarget {
+        use crate::tui::update::SettingsModalScrollTarget;
+        match self {
+            Self::EnvOpPicker { .. } => SettingsModalScrollTarget::EnvOpPicker,
+            Self::EnvRolePicker { .. } => SettingsModalScrollTarget::EnvRolePicker,
+            _ => SettingsModalScrollTarget::None,
+        }
+    }
+
+    #[must_use]
+    pub const fn auth_scroll_target(&self) -> crate::tui::update::SettingsModalScrollTarget {
+        use crate::tui::update::SettingsModalScrollTarget;
+        match self {
+            Self::AuthOpPicker { .. } => SettingsModalScrollTarget::AuthOpPicker,
+            _ => SettingsModalScrollTarget::None,
+        }
+    }
+}
+
+impl<
+    EnvValue,
+    TextInputState,
+    SourcePickerState,
+    OpPickerState,
+    FileBrowserState,
+    MountDstChoiceState,
+    RolePickerState,
+    ScopePickerState,
+    ConfirmState,
+    ConfirmSaveState,
+    AuthFormTarget,
+    AuthForm,
+    AuthFormFocus,
+> crate::tui::debug::ConsoleSettingsMountModalDebugKind
+    for SettingsModal<
+        EnvValue,
+        TextInputState,
+        SourcePickerState,
+        OpPickerState,
+        FileBrowserState,
+        MountDstChoiceState,
+        RolePickerState,
+        ScopePickerState,
+        ConfirmState,
+        ConfirmSaveState,
+        AuthFormTarget,
+        AuthForm,
+        AuthFormFocus,
+    >
+where
+    OpPickerState: ModalOpPickerState,
+    RolePickerState: ModalRolePickerState,
+    ConfirmState: ModalConfirmState,
+    ConfirmSaveState: ModalConfirmSaveState,
+    AuthForm: ModalAuthFormState,
+{
+    fn settings_mount_modal_debug_kind(&self) -> crate::tui::debug::SettingsMountModalDebugKind {
+        self.debug_kind()
     }
 }
 
@@ -770,176 +1079,6 @@ pub enum GlobalMountTextTarget {
     Destination,
     Scope,
     Rename,
-}
-
-#[derive(Debug)]
-pub enum GlobalMountModal<
-    TextInputState,
-    FileBrowserState,
-    MountDstChoiceState,
-    ScopePickerState,
-    RolePickerState,
-    ConfirmState,
-    ConfirmSaveState,
-> {
-    Text {
-        target: GlobalMountTextTarget,
-        state: Box<TextInputState>,
-    },
-    FileBrowser {
-        state: Box<FileBrowserState>,
-    },
-    MountDstChoice {
-        state: MountDstChoiceState,
-    },
-    ScopePicker {
-        state: ScopePickerState,
-    },
-    RolePicker {
-        state: RolePickerState,
-    },
-    Confirm {
-        action: GlobalMountConfirm,
-        state: ConfirmState,
-    },
-    PreviewSave {
-        state: ConfirmSaveState,
-    },
-}
-
-impl<
-    TextInputState,
-    FileBrowserState,
-    MountDstChoiceState,
-    ScopePickerState,
-    RolePickerState,
-    ConfirmState,
-    ConfirmSaveState,
->
-    GlobalMountModal<
-        TextInputState,
-        FileBrowserState,
-        MountDstChoiceState,
-        ScopePickerState,
-        RolePickerState,
-        ConfirmState,
-        ConfirmSaveState,
-    >
-{
-    #[must_use]
-    pub const fn debug_kind(&self) -> crate::tui::debug::SettingsMountModalDebugKind {
-        use crate::tui::debug::SettingsMountModalDebugKind;
-        match self {
-            Self::Text { .. } => SettingsMountModalDebugKind::TextInput,
-            Self::FileBrowser { .. } => SettingsMountModalDebugKind::FileBrowser,
-            Self::MountDstChoice { .. } => SettingsMountModalDebugKind::MountDstChoice,
-            Self::ScopePicker { .. } => SettingsMountModalDebugKind::ScopePicker,
-            Self::RolePicker { .. } => SettingsMountModalDebugKind::RolePicker,
-            Self::Confirm { action, .. } => match action {
-                GlobalMountConfirm::Remove => SettingsMountModalDebugKind::ConfirmRemove,
-                GlobalMountConfirm::Save => SettingsMountModalDebugKind::ConfirmSave,
-                GlobalMountConfirm::Sensitive => SettingsMountModalDebugKind::ConfirmSensitive,
-                GlobalMountConfirm::Discard => SettingsMountModalDebugKind::ConfirmDiscard,
-            },
-            Self::PreviewSave { .. } => SettingsMountModalDebugKind::PreviewSave,
-        }
-    }
-
-    #[must_use]
-    pub const fn scroll_target(&self) -> crate::tui::update::GlobalMountModalScrollTarget {
-        use crate::tui::update::GlobalMountModalScrollTarget;
-        match self {
-            Self::RolePicker { .. } => GlobalMountModalScrollTarget::RolePicker,
-            _ => GlobalMountModalScrollTarget::None,
-        }
-    }
-
-    #[must_use]
-    pub const fn letter_input_kind(&self) -> Option<crate::tui::run::LetterInputModalKind> {
-        crate::tui::run::letter_input_modal_kind(matches!(self, Self::Text { .. }), false, true)
-    }
-
-    #[must_use]
-    pub fn rect_mode(&self) -> ModalRectMode
-    where
-        RolePickerState: ModalRolePickerState,
-        ConfirmState: ModalConfirmState,
-        ConfirmSaveState: ModalConfirmSaveState,
-    {
-        match self {
-            Self::Text { .. } => ModalRectMode::TextInput,
-            Self::FileBrowser { .. } => ModalRectMode::FileBrowser,
-            Self::MountDstChoice { .. } => ModalRectMode::MountChoice,
-            Self::ScopePicker { .. } => ModalRectMode::ScopePicker,
-            Self::RolePicker { state } => ModalRectMode::RolePicker {
-                filtered_len: state.filtered_len(),
-            },
-            Self::Confirm { state, .. } => ModalRectMode::Confirm {
-                width_pct: state.width_pct(),
-                height: state.required_height(),
-            },
-            Self::PreviewSave { state } => ModalRectMode::ConfirmSave {
-                required_height: state.required_height(),
-            },
-        }
-    }
-
-    pub fn prepare_for_render(&mut self, outer: ratatui::layout::Rect)
-    where
-        RolePickerState: ModalRolePickerState,
-        ConfirmState: ModalConfirmState,
-        ConfirmSaveState: ModalConfirmSaveState + ModalConfirmSavePrepareState,
-    {
-        let modal_area =
-            crate::tui::components::modal_rects::modal_rect_for_mode(outer, self.rect_mode());
-        if let Self::PreviewSave { state } = self {
-            state.prepare_for_render(modal_area);
-        }
-    }
-
-    #[must_use]
-    pub fn footer_items(&self) -> Vec<jackin_tui::HintSpan<'static>>
-    where
-        FileBrowserState: ModalFileBrowserFooterState,
-        ConfirmSaveState: ModalConfirmSaveFooterState,
-    {
-        match self {
-            Self::Text { .. } => footer_items_for_mode(ModalFooterMode::ConfirmDismiss),
-            Self::FileBrowser { state } => state.footer_items(),
-            Self::MountDstChoice { .. } => footer_items_for_mode(ModalFooterMode::MountDestination),
-            Self::ScopePicker { .. } => footer_items_for_mode(ModalFooterMode::SegmentedChoice),
-            Self::RolePicker { .. } => footer_items_for_mode(ModalFooterMode::FilteredPicker {
-                include_refresh: false,
-                include_collapse: false,
-            }),
-            Self::Confirm { .. } => footer_items_for_mode(ModalFooterMode::YesNo),
-            Self::PreviewSave { state } => footer_items_for_mode(state.footer_mode()),
-        }
-    }
-}
-
-impl<
-    TextInputState,
-    FileBrowserState,
-    MountDstChoiceState,
-    ScopePickerState,
-    RolePickerState,
-    ConfirmState,
-    ConfirmSaveState,
-> crate::tui::debug::ConsoleSettingsMountModalDebugKind
-    for GlobalMountModal<
-        TextInputState,
-        FileBrowserState,
-        MountDstChoiceState,
-        ScopePickerState,
-        RolePickerState,
-        ConfirmState,
-        ConfirmSaveState,
-    >
-{
-    fn settings_mount_modal_debug_kind(&self) -> crate::tui::debug::SettingsMountModalDebugKind {
-        self.debug_kind()
-    }
 }
 
 #[derive(Debug)]
@@ -1009,8 +1148,10 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
         self.mount_info_cache.clear();
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.add_draft = None;
-        self.modal = None;
-        self.modal_parents.clear();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
         self.error = None;
     }
 
@@ -1035,15 +1176,18 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
     }
 
     pub fn open_sub_modal(&mut self, child: Modal) {
-        if let Some(parent) = self.modal.take() {
-            self.modal_parents.push(parent);
-        }
-        self.modal = Some(child);
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.open_sub(child);
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn start_add_draft(&mut self) {
         self.add_draft = Some(GlobalMountDraft::default());
-        self.modal_parents.clear();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn remove_row_and_select(&mut self, remove_index: usize, selected: usize) {
@@ -1052,7 +1196,10 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
     }
 
     pub fn pop_modal_chain(&mut self) {
-        self.modal = self.modal_parents.pop();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.pop();
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn pop_modal_chain_and_clear_add_draft_if_closed(&mut self) {
@@ -1063,8 +1210,10 @@ impl<Row, Modal> GlobalMountsState<Row, Modal> {
     }
 
     pub fn clear_modal_chain(&mut self) {
-        self.modal = None;
-        self.modal_parents.clear();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn set_error(&mut self, error: impl Into<String>) {
@@ -1185,133 +1334,6 @@ pub struct GlobalMountDraft {
     pub src: String,
     pub dst: String,
     pub scope: Option<String>,
-}
-
-#[derive(Debug)]
-pub enum SettingsAuthModal<
-    TextInputState,
-    SourcePickerState,
-    OpPickerState,
-    FileBrowserState,
-    AuthFormTarget,
-    AuthForm,
-    AuthFormFocus,
-> {
-    TextInput {
-        state: Box<TextInputState>,
-    },
-    SourcePicker {
-        state: SourcePickerState,
-    },
-    OpPicker {
-        state: Box<OpPickerState>,
-    },
-    SourceFolderPicker {
-        state: FileBrowserState,
-    },
-    AuthForm {
-        target: AuthFormTarget,
-        state: Box<AuthForm>,
-        focus: AuthFormFocus,
-        literal_buffer: String,
-    },
-}
-
-impl<
-    TextInputState,
-    SourcePickerState,
-    OpPickerState,
-    FileBrowserState,
-    AuthFormTarget,
-    AuthForm,
-    AuthFormFocus,
-> crate::tui::model::ConsoleAnimationTick
-    for SettingsAuthModal<
-        TextInputState,
-        SourcePickerState,
-        OpPickerState,
-        FileBrowserState,
-        AuthFormTarget,
-        AuthForm,
-        AuthFormFocus,
-    >
-where
-    OpPickerState: crate::tui::model::ConsoleAnimationTick,
-{
-    fn tick_active_animation(&mut self) -> bool {
-        match self {
-            Self::OpPicker { state } => state.tick_active_animation(),
-            Self::TextInput { .. }
-            | Self::SourcePicker { .. }
-            | Self::SourceFolderPicker { .. }
-            | Self::AuthForm { .. } => false,
-        }
-    }
-}
-
-impl<
-    TextInputState,
-    SourcePickerState,
-    OpPickerState,
-    FileBrowserState,
-    AuthFormTarget,
-    AuthForm,
-    AuthFormFocus,
->
-    SettingsAuthModal<
-        TextInputState,
-        SourcePickerState,
-        OpPickerState,
-        FileBrowserState,
-        AuthFormTarget,
-        AuthForm,
-        AuthFormFocus,
-    >
-where
-    OpPickerState: ModalOpPickerState,
-    AuthForm: ModalAuthFormState,
-{
-    #[must_use]
-    pub fn rect_mode(&self) -> ModalRectMode {
-        match self {
-            Self::TextInput { .. } => ModalRectMode::TextInput,
-            Self::SourcePicker { .. } => ModalRectMode::SourcePicker,
-            Self::OpPicker { state } if state.has_naming_stage_input() => ModalRectMode::TextInput,
-            Self::OpPicker { .. } => ModalRectMode::OpPicker,
-            Self::SourceFolderPicker { .. } => ModalRectMode::FileBrowser,
-            Self::AuthForm { state, .. } => ModalRectMode::AuthForm {
-                required_height: state.required_height(),
-            },
-        }
-    }
-
-    #[must_use]
-    pub const fn scroll_target(&self) -> crate::tui::update::SettingsAuthModalScrollTarget {
-        use crate::tui::update::SettingsAuthModalScrollTarget;
-        match self {
-            Self::OpPicker { .. } => SettingsAuthModalScrollTarget::OpPicker,
-            _ => SettingsAuthModalScrollTarget::None,
-        }
-    }
-
-    #[must_use]
-    pub fn footer_items(&self, can_generate_token: bool) -> Vec<jackin_tui::HintSpan<'static>>
-    where
-        FileBrowserState: ModalFileBrowserFooterState,
-        OpPickerState: ModalOpPickerFooterState,
-        AuthForm: ModalAuthFormFooterState<AuthFormFocus>,
-        AuthFormFocus: Copy,
-    {
-        match self {
-            Self::AuthForm { state, focus, .. } => {
-                footer_items_for_mode(state.footer_mode(*focus, can_generate_token))
-            }
-            Self::TextInput { .. } => footer_items_for_mode(ModalFooterMode::ConfirmDismiss),
-            Self::SourcePicker { .. } => footer_items_for_mode(ModalFooterMode::SegmentedChoice),
-            Self::SourceFolderPicker { state } => state.footer_items(),
-            Self::OpPicker { state } => footer_items_for_mode(state.footer_mode(false)),
-        }
-    }
 }
 
 fn footer_items_for_mode(mode: ModalFooterMode) -> Vec<jackin_tui::HintSpan<'static>> {

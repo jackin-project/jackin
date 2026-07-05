@@ -9,7 +9,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use jackin_config::WorkspaceConfig;
-use jackin_tui::components::FocusOwner;
+use jackin_tui::components::{FocusOwner, ModalStack};
 use std::collections::BTreeSet;
 
 impl<
@@ -428,8 +428,7 @@ impl<
             secrets_expanded: BTreeSet::default(),
             auth_expanded: BTreeSet::default(),
             auth_selected_kind: None,
-            pending_picker_target: None,
-            pending_picker_value: None,
+            _env_value: PhantomData,
             workspace_mounts_scroll_x: 0,
             tab_scroll_x: 0,
             tab_scroll_y: 0,
@@ -701,10 +700,10 @@ impl<
     }
 
     pub fn open_sub_modal(&mut self, child: Modal) {
-        if let Some(parent) = self.modal.take() {
-            self.modal_parents.push(parent);
-        }
-        self.modal = Some(child);
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.open_sub(child);
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn open_save_discard_cancel<SaveDiscardState>(&mut self, state: SaveDiscardState)
@@ -722,16 +721,17 @@ impl<
     }
 
     pub fn pop_modal_chain(&mut self) {
-        self.modal = self.modal_parents.pop();
-        if self.modal.is_none() {
-            self.drop_modal_scratch();
-        }
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.pop();
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn clear_modal_chain(&mut self) {
-        self.modal = None;
-        self.modal_parents.clear();
-        self.drop_modal_scratch();
+        let mut stack =
+            ModalStack::from_parts(self.modal.take(), std::mem::take(&mut self.modal_parents));
+        stack.clear_chain();
+        (self.modal, self.modal_parents) = stack.into_parts();
     }
 
     pub fn dismiss_active_modal(&mut self) {
@@ -764,10 +764,6 @@ impl<
         self.modal
             .as_ref()
             .is_some_and(EditorRoleOverridePickerModal::is_role_override_picker)
-    }
-
-    fn drop_modal_scratch(&mut self) {
-        self.pending_picker_value = None;
     }
 
     #[must_use]

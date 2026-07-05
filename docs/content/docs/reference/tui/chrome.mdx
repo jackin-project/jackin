@@ -12,7 +12,7 @@ Every full-screen TUI surface must follow this bottom-chrome order (bottom of te
 3. **Row: empty separator** — one blank row between the context bar and the hint bar. This visual gap makes the hint area feel separate from the system chrome below it.
 4. **Row: hint bar** — keyboard shortcuts for the current focus context. This is the first visible row above the chrome group.
 
-The host console matches this order. The capsule must also follow it: `MAIN_VIEW_HINT` renders above an empty separator row above the branch context bar. Any surface that collapses the separator or places hints directly adjacent to the system bar is a violation.
+The host console matches this order. The capsule must also follow it: `MAIN_VIEW_HINT` renders above an empty separator row above the branch context bar. The capsule pane surface also keeps one blank row between pane content and `MAIN_VIEW_HINT`, so the stack reads as pane content, blank row, hint row, blank row, branch context bar. Any surface that collapses the separator or places hints directly adjacent to the system bar is a violation.
 
 **Implementation:** The separator row is a blank `PHOSPHOR_DARK` row, not an empty string — it must use the same background as the surrounding chrome so it reads as intentional spacing, not a rendering gap.
 
@@ -93,7 +93,7 @@ This matches `jackin --version` output (which prints `jackin <version>`) and `ja
 
 **The debug run ID is a compact red chip right-aligned on the status bar.** When `--debug` is active, the run ID appears as a `DANGER_RED` background chip on the right side of the status bar. Only the chip itself gets the red background. The rest of the bar stays white. The chip contains only the run ID string (e.g. `740709`), nothing else.
 
-**Implementation:** render via `StatusFooter::new("").right_debug(Some(&run_id))`. This applies to every screen — console manager, editor, settings, launch cockpit, and capsule — so the chip is always present in `--debug` mode regardless of which surface the operator is on. The chip is clickable and opens the shared Debug info dialog.
+**Implementation:** render via `StatusFooter::new("").right_debug(Some(&run_id))`. This applies to every screen — console manager, editor, settings, launch cockpit, and capsule — so the chip is always present in `--debug` mode regardless of which surface the operator is on. The capsule branch/PR context bar uses the same `StatusFooter` renderer for the left context segment, usage headline, container chip, and debug chip; it keeps only hit-region derivation local. The chip is clickable and opens the shared Debug info dialog.
 
 **Debug badge chip layout:**
 ```
@@ -102,6 +102,10 @@ This matches `jackin --version` output (which prints `jackin <version>`) and `ja
 ```
 
 This applies to the host console debug bar and any other surface that surfaces a run ID in debug mode.
+
+### Confirm buttons share paint and hit-testing
+
+Yes/No confirmation dialogs render their button row through the shared `ButtonStrip` component. Mouse hit-testing must use `confirm_button_hit`, which derives button rectangles from the same `ButtonStrip::button_rects` metrics that paint uses. Do not recompute `"  Yes  "` / `"  No  "` columns in a surface-local click handler; that creates silent drift when padding, gaps, or data-loss confirm layout changes.
 
 ### Brand chrome is shared across every top-level screen
 

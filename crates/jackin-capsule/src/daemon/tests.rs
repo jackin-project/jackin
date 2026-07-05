@@ -103,34 +103,35 @@ async fn ready_status_tick_wins_over_ready_pty_output() {
 }
 
 #[test]
-fn spawn_failure_banner_rides_the_frame_until_a_keystroke_clears_it() {
+fn spawn_failure_popup_stays_open_until_dismissed() {
     let contains = |frame: &[u8], needle: &[u8]| frame.windows(needle.len()).any(|w| w == needle);
     let mut mux = single_pane_tab_mux();
     let (session, rx) = test_session(20, 78);
     drop(rx);
     mux.sessions.insert(1, session);
-    mux.spawn_failure = Some("boom: agent slug rejected".to_owned());
-    let frame = compose_after(&mut mux, FullRedrawReason::StatusChange);
+    mux.open_spawn_failure_dialog("boom: agent slug rejected".to_owned());
+    let frame = compose_after(&mut mux, FullRedrawReason::DialogChange);
     assert!(
         contains(&frame, b"boom: agent slug rejected"),
-        "banner must ride the composed frame: {:?}",
+        "spawn failure popup must ride the composed frame: {:?}",
         String::from_utf8_lossy(&frame)
     );
+    assert!(matches!(mux.dialog_top(), Some(Dialog::SpawnFailure(_))));
 
-    // The next operator keystroke dismisses it.
     drop(handle_input_frame(
         &mut mux,
         InputEvent::Data(b"x".to_vec()),
     ));
     assert!(
-        mux.spawn_failure.is_none(),
-        "keystroke must clear the banner"
+        matches!(mux.dialog_top(), Some(Dialog::SpawnFailure(_))),
+        "printable input must not dismiss the failure popup"
     );
-    let after = compose_after(&mut mux, FullRedrawReason::StatusChange);
-    assert!(
-        !contains(&after, b"boom: agent slug rejected"),
-        "cleared banner must not repaint"
-    );
+
+    drop(handle_input_frame(
+        &mut mux,
+        InputEvent::Data(b"\x1b".to_vec()),
+    ));
+    assert!(mux.dialog_top().is_none(), "Esc must dismiss the popup");
 }
 
 #[test]
@@ -1500,8 +1501,8 @@ fn palette_close_split_tab_opens_target_picker() {
 fn branch_context_visibility_keeps_content_area_reserved() {
     let mut mux = test_mux(24, 100);
     let now = Instant::now();
-    // 24 rows − STATUS_BAR_ROWS(2) − BRANCH_CONTEXT_BAR_ROWS(1) − CAPSULE_HINT_BAR_ROWS(1) − CAPSULE_HINT_SEPARATOR_ROWS(1) = 19
-    assert_eq!(mux.content_rows, 19);
+    // 24 rows - status(2) - top spacer(1) - hint(1) - bottom spacer(1) - branch(1) = 18
+    assert_eq!(mux.content_rows, 18);
 
     mux.pull_request_context_cache.insert(
         branch("asa/pr-context"),
@@ -1512,7 +1513,7 @@ fn branch_context_visibility_keeps_content_area_reserved() {
         },
     );
     assert!(mux.apply_git_branch_context(Some("asa/pr-context"), now));
-    assert_eq!(mux.content_rows, 19);
+    assert_eq!(mux.content_rows, 18);
     assert_eq!(
         mux.pull_request_context.as_deref().map(|pr| pr.number),
         Some(434)
@@ -1527,11 +1528,11 @@ fn branch_context_visibility_keeps_content_area_reserved() {
         },
     );
     assert!(mux.apply_git_branch_context(Some("feature/no-pr"), now));
-    assert_eq!(mux.content_rows, 19);
+    assert_eq!(mux.content_rows, 18);
     assert!(mux.pull_request_context.is_none());
 
     assert!(mux.apply_git_branch_context(Some("main"), now));
-    assert_eq!(mux.content_rows, 19);
+    assert_eq!(mux.content_rows, 18);
     assert!(mux.pull_request_context.is_none());
 }
 
@@ -1542,8 +1543,8 @@ fn git_branch_context_updates_status_before_github_lookup() {
     mux.pull_request_context_branch = Some(branch("old/pr"));
     mux.pull_request_context = Some(Arc::new(pull_request_fixture(434)));
     mux.reconcile_content_rows();
-    // 24 rows − STATUS_BAR_ROWS(2) − BRANCH_CONTEXT_BAR_ROWS(1) − CAPSULE_HINT_BAR_ROWS(1) − CAPSULE_HINT_SEPARATOR_ROWS(1) = 19
-    assert_eq!(mux.content_rows, 19);
+    // 24 rows - status(2) - top spacer(1) - hint(1) - bottom spacer(1) - branch(1) = 18
+    assert_eq!(mux.content_rows, 18);
 
     mux.pull_request_context_cache.insert(
         branch("new/local-branch"),
@@ -1560,7 +1561,7 @@ fn git_branch_context_updates_status_before_github_lookup() {
         Some("new/local-branch")
     );
     assert!(mux.pull_request_context.is_none());
-    assert_eq!(mux.content_rows, 19);
+    assert_eq!(mux.content_rows, 18);
 }
 
 #[test]
@@ -3790,7 +3791,7 @@ fn bottom_context_click_opens_github_context_dialog() {
     let bottom_row = mux.term_rows;
     assert!(
         rendered.contains(&format!("\x1b[{hint_row};")),
-        "dialog hint should render one row above the spacer: {rendered:?}"
+        "dialog hint should render in the reserved hint region: {rendered:?}"
     );
     // Outside a debug launch the bottom branch/context bar is hidden under a
     // dialog (commit 5f2076a6); this mux has no debug run id, so the final row

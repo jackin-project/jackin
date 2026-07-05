@@ -12,9 +12,9 @@ use crate::tui::screens::settings::view::global_mount_confirm_state;
 use crate::tui::state::ManagerEffect;
 use crate::tui::state::{
     DEFAULT_SPLIT_PCT, EditorHoverTarget, EditorState, EditorTab, FieldFocus, GlobalMountConfirm,
-    GlobalMountModal, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerHoverTarget, ManagerListRow,
-    ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag, SettingsAuthModal,
-    SettingsHoverTarget, SettingsState, SettingsTab, SettingsTrustRow,
+    MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerHoverTarget, ManagerListRow, ManagerStage, ManagerState,
+    Modal, MountScrollFocus, SecretsScopeTag, SettingsHoverTarget, SettingsModal, SettingsState,
+    SettingsTab, SettingsTrustRow,
 };
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton, MouseEvent,
@@ -317,7 +317,7 @@ fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
     let mut state = list_state();
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.mounts.scroll_y = 4;
-    settings.mounts.modal = Some(GlobalMountModal::RolePicker {
+    settings.mounts.modal = Some(SettingsModal::MountRolePicker {
         state: crate::tui::state::RolePickerState::new(vec![
             jackin_core::RoleSelector::parse("chainargos/agent-brown").unwrap(),
             jackin_core::RoleSelector::parse("scentbird/agent-jones").unwrap(),
@@ -338,7 +338,7 @@ fn settings_role_picker_wheel_scrolls_modal_selection_not_background() {
         settings.mounts.scroll_y, 4,
         "background settings must not scroll"
     );
-    let Some(GlobalMountModal::RolePicker { state: picker }) = &settings.mounts.modal else {
+    let Some(SettingsModal::MountRolePicker { state: picker }) = &settings.mounts.modal else {
         panic!("settings role picker modal expected");
     };
     assert_eq!(picker.list_state.selected, Some(1));
@@ -1510,7 +1510,7 @@ fn editor_file_browser_smoke_hints_pagedown_and_wheel_share_modal_context() {
         )
     );
     assert!(
-        hints.contains("PgUp/PgDn"),
+        hints.contains(jackin_tui::keymap::glyph::PGUP_PGDN),
         "footer hints missing page keys: {hints}"
     );
 
@@ -1578,7 +1578,7 @@ fn settings_mounts_file_browser_wheel_scrolls_modal_selection_not_background() {
     let fb = file_browser_with_dirs(tmp.path(), 8);
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.mounts.scroll_y = 4;
-    settings.mounts.modal = Some(GlobalMountModal::FileBrowser {
+    settings.mounts.modal = Some(SettingsModal::MountFileBrowser {
         state: Box::new(fb),
     });
     state.stage = ManagerStage::Settings(settings);
@@ -1597,7 +1597,7 @@ fn settings_mounts_file_browser_wheel_scrolls_modal_selection_not_background() {
         settings.mounts.scroll_y, 4,
         "background settings must not scroll"
     );
-    let Some(GlobalMountModal::FileBrowser { state: fb }) = &settings.mounts.modal else {
+    let Some(SettingsModal::MountFileBrowser { state: fb }) = &settings.mounts.modal else {
         panic!("file browser modal expected");
     };
     assert_eq!(fb.list_state.selected, Some(1));
@@ -1609,7 +1609,7 @@ fn settings_auth_source_folder_wheel_scrolls_modal_selection() {
     let tmp = tempfile::tempdir().unwrap();
     let fb = file_browser_with_dirs(tmp.path(), 8);
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
-    settings.auth.modal = Some(SettingsAuthModal::SourceFolderPicker { state: fb });
+    settings.auth.modal = Some(SettingsModal::AuthSourceFolderPicker { state: fb });
     state.stage = ManagerStage::Settings(settings);
 
     handle_mouse_with_config(
@@ -1622,7 +1622,7 @@ fn settings_auth_source_folder_wheel_scrolls_modal_selection() {
     let ManagerStage::Settings(settings) = &state.stage else {
         panic!("settings stage expected");
     };
-    let Some(SettingsAuthModal::SourceFolderPicker { state: fb }) = &settings.auth.modal else {
+    let Some(SettingsModal::AuthSourceFolderPicker { state: fb }) = &settings.auth.modal else {
         panic!("source-folder file browser modal expected");
     };
     assert_eq!(fb.list_state.selected, Some(1));
@@ -1703,7 +1703,7 @@ fn settings_vertical_scrollbar_drag_ignores_background_when_modal_open() {
             },
         })
         .collect();
-    settings.mounts.modal = Some(GlobalMountModal::Confirm {
+    settings.mounts.modal = Some(SettingsModal::MountConfirm {
         action: GlobalMountConfirm::Save,
         state: global_mount_confirm_state(GlobalMountConfirm::Save),
     });

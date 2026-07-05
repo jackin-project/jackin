@@ -164,12 +164,15 @@ fn chord_glyph_reproduces_existing_glyphs() {
     );
     assert_eq!(
         chord_glyph(Some(KeyChord::plain(LogicalKey::Enter))),
-        "\u{21b5}"
+        glyph::ENTER
     );
-    assert_eq!(chord_glyph(Some(KeyChord::plain(LogicalKey::Esc))), "Esc");
+    assert_eq!(
+        chord_glyph(Some(KeyChord::plain(LogicalKey::Esc))),
+        glyph::ESC
+    );
     assert_eq!(
         chord_glyph(Some(KeyChord::plain(LogicalKey::Tab))),
-        "\u{21e5}"
+        glyph::TAB
     );
     assert_eq!(
         chord_glyph(Some(KeyChord::plain(LogicalKey::Up))),
@@ -188,6 +191,27 @@ fn chord_glyph_reproduces_existing_glyphs() {
         "Y"
     );
     assert_eq!(chord_glyph(None), "");
+}
+
+#[test]
+fn canonical_glyph_constants_reject_known_drift_spellings() {
+    assert_ne!(glyph::TAB, concat!("T", "ab"));
+    assert_ne!(glyph::UP_DOWN, "\u{2191}/\u{2193}");
+    assert_ne!(glyph::LEFT_RIGHT, "\u{2190}/\u{2192}");
+    assert_ne!(glyph::PGUP_PGDN, concat!("PgUp", " PgDn"));
+    assert!(!glyph::ALL_ARROWS.contains('+'));
+    assert_eq!(
+        chord_glyph(Some(KeyChord::plain(LogicalKey::Tab))),
+        glyph::TAB
+    );
+    assert_eq!(
+        chord_glyph(Some(KeyChord::plain(LogicalKey::Esc))),
+        glyph::ESC
+    );
+    assert_eq!(
+        chord_glyph(Some(KeyChord::plain(LogicalKey::Enter))),
+        glyph::ENTER
+    );
 }
 
 #[test]

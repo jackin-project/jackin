@@ -29,6 +29,20 @@ fn palette() -> Dialog {
 }
 
 #[test]
+fn spawn_failure_popup_uses_error_popup_hints_and_dismiss_keys() {
+    let mut dialog = Dialog::SpawnFailure(jackin_tui::components::ErrorPopupState::new(
+        "Spawn failed",
+        "shell: cap hit",
+    ));
+    assert_eq!(
+        dialog.footer_hint_spans(None, jackin_tui::components::ScrollAxes::none()),
+        jackin_tui::components::error_popup_hint_spans()
+    );
+    assert_eq!(dialog.handle_key(b"x", None), DialogAction::Redraw);
+    assert_eq!(dialog.handle_key(b"\x1b", None), DialogAction::Dismiss);
+}
+
+#[test]
 fn esc_dismisses_palette() {
     let mut d = palette();
     assert_eq!(d.handle_key(b"\x1b", None), DialogAction::Dismiss);

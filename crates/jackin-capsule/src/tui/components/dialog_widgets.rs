@@ -82,6 +82,8 @@ pub(crate) enum DialogRatatuiSnapshot {
         value: String,
         cursor: usize,
     },
+    /// Shared error popup used for capsule-owned modal errors.
+    ErrorPopup(jackin_tui::components::ErrorPopupState),
     /// The "Debug info" dialog, rendered through the shared jackin-tui
     /// `ContainerInfoState` so its rows, copy affordances, focused shell,
     /// spacing, link styling, and hover behaviour are identical to the host
@@ -320,6 +322,7 @@ impl Dialog {
                 value: input.value().to_owned(),
                 cursor: input.cursor(),
             },
+            Dialog::SpawnFailure(state) => DialogRatatuiSnapshot::ErrorPopup(state.clone()),
 
             Dialog::ContainerInfo { .. } => DialogRatatuiSnapshot::DebugInfo(
                 self.container_info_state()
@@ -474,6 +477,9 @@ pub(crate) fn render_dialog_ratatui(
                 *cursor,
             );
         }
+        DialogRatatuiSnapshot::ErrorPopup(state) => {
+            jackin_tui::components::render_error_dialog_in(frame, area, state);
+        }
         DialogRatatuiSnapshot::DebugInfo(state) => {
             jackin_tui::components::render_container_info(frame, area, state);
         }
@@ -522,7 +528,12 @@ fn render_usage_info(
     hovered_tab: Option<usize>,
 ) {
     let title = usage_panel_title(state, area.width);
-    let inner = jackin_tui::components::render_dialog_shell(frame, area, Some(title.as_str()));
+    let inner = jackin_tui::components::render_dialog_shell(
+        frame,
+        area,
+        Some(title.as_str()),
+        jackin_tui::components::DialogBorder::Default,
+    );
     if inner.height == 0 {
         return;
     }
@@ -531,10 +542,12 @@ fn render_usage_info(
         .iter()
         .map(|(label, active)| (label.as_str(), *active))
         .collect::<Vec<_>>();
-    TabStrip::new(&tab_refs)
-        .focused(tab_bar_focused)
-        .hovered(hovered_tab)
-        .render(frame, tab_area);
+    frame.render_widget(
+        TabStrip::new(&tab_refs)
+            .focused(tab_bar_focused)
+            .hovered(hovered_tab),
+        tab_area,
+    );
     // Body geometry comes from the shared `usage_body_rect`, the same source the
     // scroll-bound path uses, so the rendered viewport and the scroll clamp can
     // never disagree (Bug 2). (`usage_tab_strip_area` above gives the strip its

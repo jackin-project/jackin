@@ -135,10 +135,10 @@ fn prompt_context_lines_maps_semantic_styles() {
 
 #[test]
 fn error_prompt_message_acknowledges_enter() {
-    let state = ErrorPopupState::new("Failed", "nope");
+    let mut state = ErrorPopupState::new("Failed", "nope");
 
     let result = update_error_prompt(
-        &state,
+        &mut state,
         ErrorPromptMessage::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
     );
 
@@ -147,10 +147,10 @@ fn error_prompt_message_acknowledges_enter() {
 
 #[test]
 fn error_prompt_message_ignores_navigation() {
-    let state = ErrorPopupState::new("Failed", "nope");
+    let mut state = ErrorPopupState::new("Failed", "nope");
 
     let result = update_error_prompt(
-        &state,
+        &mut state,
         ErrorPromptMessage::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)),
     );
 

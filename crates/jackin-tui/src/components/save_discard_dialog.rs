@@ -9,10 +9,10 @@ use ratatui::{
 };
 
 use crate::keymap::{KeyBinding, KeyChord, Keymap, LogicalKey, Visibility};
-use crate::{HintSpan, ModalOutcome};
+use crate::{HintSpan, ModalOutcome, components::ButtonFocus};
 
 use super::button_strip::{ButtonStrip, ButtonStripItem};
-use super::dialog_layout::{dialog_inner_chunks, render_dialog_shell};
+use super::dialog_layout::{DialogBorder, dialog_inner_chunks, render_dialog_shell};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveDiscardChoice {
@@ -115,6 +115,10 @@ pub enum SaveDiscardFocus {
     Cancel,
 }
 
+impl ButtonFocus for SaveDiscardFocus {
+    const RING: &'static [Self] = &[Self::Save, Self::Discard, Self::Cancel];
+}
+
 #[derive(Debug, Clone)]
 pub struct SaveDiscardState {
     pub prompt: String,
@@ -137,19 +141,11 @@ impl SaveDiscardState {
             Some(SaveDiscardAction::Discard) => ModalOutcome::Commit(SaveDiscardChoice::Discard),
             Some(SaveDiscardAction::Cancel) => ModalOutcome::Cancel,
             Some(SaveDiscardAction::FocusNext) => {
-                self.focus = match self.focus {
-                    SaveDiscardFocus::Save => SaveDiscardFocus::Discard,
-                    SaveDiscardFocus::Discard => SaveDiscardFocus::Cancel,
-                    SaveDiscardFocus::Cancel => SaveDiscardFocus::Save,
-                };
+                self.focus = self.focus.next();
                 ModalOutcome::Continue
             }
             Some(SaveDiscardAction::FocusPrev) => {
-                self.focus = match self.focus {
-                    SaveDiscardFocus::Save => SaveDiscardFocus::Cancel,
-                    SaveDiscardFocus::Discard => SaveDiscardFocus::Save,
-                    SaveDiscardFocus::Cancel => SaveDiscardFocus::Discard,
-                };
+                self.focus = self.focus.prev();
                 ModalOutcome::Continue
             }
             Some(SaveDiscardAction::CommitFocused) => match self.focus {
@@ -163,7 +159,7 @@ impl SaveDiscardState {
 }
 
 pub fn render_save_discard_dialog(frame: &mut Frame<'_>, area: Rect, state: &SaveDiscardState) {
-    let inner = render_dialog_shell(frame, area, Some("Unsaved changes"));
+    let inner = render_dialog_shell(frame, area, Some("Unsaved changes"), DialogBorder::Default);
     let chunks = dialog_inner_chunks(inner, Some(1));
 
     frame.render_widget(
@@ -177,14 +173,10 @@ pub fn render_save_discard_dialog(frame: &mut Frame<'_>, area: Rect, state: &Sav
         ButtonStripItem::new("Discard"),
         ButtonStripItem::new("Cancel"),
     ];
-    let focused = match state.focus {
-        SaveDiscardFocus::Save => 0,
-        SaveDiscardFocus::Discard => 1,
-        SaveDiscardFocus::Cancel => 2,
-    };
-    ButtonStrip::new(&items)
-        .focused(focused)
-        .render(frame, chunks[3]);
+    frame.render_widget(
+        ButtonStrip::new(&items).focused(state.focus.index()),
+        chunks[3],
+    );
 }
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ description: "Modal sizing rules, confirmation layouts, sub-dialog stacking, err
 
 ## Modal Sizing Rules
 
-Modals use `centered_rect_fixed(outer, pct_w, rows)`. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
+Modal sizes come from the `modal_rects` registry in `jackin-tui`. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
 
 | Modal | `pct_w` | `rows` | Reasoning |
 |---|---|---|---|
@@ -19,13 +19,13 @@ Never add excess padding rows to modals. The outer rect must be exactly tight en
 
 Dialog width is a **stable preferred size** derived from `pct_w% of a 160-column reference terminal`, capped at `outer.width - 4` margin. The dialog holds that width whenever the terminal is at least that wide and only shrinks when the terminal is genuinely too narrow.
 
-`centered_rect_fixed(outer, pct_w, rows)` already implements this. Never compute `outer.width * pct_w / 100` directly — that rescales proportionally on every resize.
+`modal_rects::centered_rect_fixed(outer, pct_w, rows)` implements this policy for fixed-reference dialogs, and registry specs cover the launch and capsule variants that intentionally use different width policies. Never compute dialog width ad hoc in surface code — that hides sizing policy outside the registry and makes resize behavior drift.
 
 ### Status bar always reserved — modals never draw over it
 
 The reserved status/hint rows at the bottom of every screen are inviolable: no modal, dialog, or border may draw onto them. All modal rects are computed against the **content area** (full terminal minus footer height), not the full terminal area.
 
-`prepare_visible_modal()` subtracts `footer_height` before centering modals. Every new modal computation must use the content area, not the raw terminal size.
+`prepare_visible_modal()` subtracts `footer_height` before centering modals. Every new modal computation must use the content area, not the raw terminal size, then pass that reserved area through the shared registry.
 
 ### Text input dialogs use shared widgets
 
@@ -168,19 +168,19 @@ Concrete obligations:
 
 - **Open**: push the new modal *on top of* the parent — do not overwrite the slot.
 - **Esc / Cancel**: pop one frame. Operator returns to whichever modal was visible immediately before.
-- **Mouse-click outside the box**: dismisses the dialog (same as Esc). This rule applies to **all** surfaces — host console, launch cockpit, and capsule — not only the capsule's dialog stack. Clicking *inside* the dialog body where there is no interactive element is a no-op (does not dismiss). **Implementation:** use `classify_click(modal_rect, col, row)` from `jackin_tui::components::modal_lifecycle`; result `OutsideDismiss` triggers dismiss, `InsideSwallow` and `InsideHit` are consumed by the modal and do not propagate to underlying chrome.
+- **Mouse-click outside the box**: dismisses the dialog (same as Esc). This rule applies to **all** surfaces — host console, launch cockpit, and capsule — not only the capsule's dialog stack. Clicking *inside* the dialog body where there is no interactive element is a no-op (does not dismiss). **Implementation:** use `classify_click(modal_rect, col, row)` from `jackin_tui::components::modal_lifecycle`; result `OutsideDismiss` triggers dismiss, while `InsideHit` is consumed by the modal and does not propagate to underlying chrome.
 - **Commit / terminal action** (agent picked, role selected, destructive action confirmed, copy fired, env key + value both committed): clear the entire chain so the operator lands on the underlying screen in one step. A terminal action means "the chain achieved its goal" — walking back through every intermediate step would be noise.
 - **Sub-dialog titles** read as a step inside the parent's flow — `Split: ← Left` for the agent picker opened from a `SplitDirectionPicker`, not `Agent picker` again. The title is what surfaces the breadcrumb to the operator.
 
-Three implementation shapes carry this contract today:
+The shared mechanism for this contract is `ModalStack` in <RepoFile path="crates/jackin-tui/src/components/modal_lifecycle.rs">crates/jackin-tui/src/components/modal_lifecycle.rs</RepoFile>. `open_sub` pushes the visible modal as a parent and opens the child, `pop` restores one parent for Esc/cancel, and `clear_chain` closes the whole flow after a terminal commit. Host console editor/settings lifecycle methods route through this primitive even while their public state still exposes `modal` / `modal_parents` compatibility fields.
 
-1. **`Vec<Dialog>` stack** (canonical, used by <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile>). `dialog_top()` is "is a dialog open"; entries land via `dialog_push`; back-nav arms call `dialog_pop_one`; terminal-action arms call `dialog_clear`.
-2. **`modal_parents` stacks on host console state** (used by workspace editor modals, settings global-mount modals, and settings environment modals). `open_sub_modal` stashes the visible modal as a parent, `pop_modal_chain` restores it on Esc, and `clear_modal_chain` closes the whole flow after a terminal commit.
-3. **Per-flow return-path stash** (legacy, used by host console for auth form side trips — `pending_auth_form_return`, `pending_env_key`, `pending_picker_target`). The parent's state is stashed in an `EditorState` / settings-auth field before the child modal mounts, and the child's cancel arm rebuilds the parent from the stash. Works for shallow chains but does not compose past two levels and is easy to forget when adding a new transition.
+Settings uses one `SettingsModal` union for global mounts, environment, and auth dialogs. Tab-specific render and input helpers accept that same modal type and treat a wrong-tab variant as a routing bug, so shared modal behavior has one container shape instead of three parallel enum families.
 
-The bare `Option<Modal>` slot in <RepoFile path="crates/jackin/src/console/tui.rs">crates/jackin/src/console/tui.rs</RepoFile> is *not* a valid shape by itself — it cannot represent a parent under a child, so any new modal→modal transition added to a code path that still uses only `Option<Modal>` regresses this rule by construction. New code MUST use one of the supported shapes above; the eventual direction for the host console is to converge on stack-backed modal state and retire the stash slots.
+The capsule's `Vec<Dialog>` stack in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile> has the same semantics and is compatible with `ModalStack`; migrating that storage shape is optional uniformity work, not required for correctness.
 
-Compliance is covered by focused tests for the container palette stack, editor environment-source and mount-destination chains, settings environment chains, and settings global-mount add chains. Treat new Esc-back regressions on any surface as bugs; fix the immediate flow with stack push/pop unless a legacy auth stash already owns the return path.
+Modal-to-modal flows carry return context in the modal variant or the shared stack frame, not in a side slot. Environment pickers carry their scope/key/value context on modal variants, and auth-form source/picker flows return through the modal parent stack. A bare `Option<Modal>` slot is not a valid shape for any flow that can open a child modal, because it cannot represent the parent under the child.
+
+Compliance is covered by focused tests for the container palette stack, editor environment-source and mount-destination chains, settings environment chains, settings global-mount add chains, and the shared `ModalStack` push/pop/clear semantics. Treat new Esc-back regressions on any surface as bugs; fix the flow with `ModalStack` semantics rather than adding a new stash.
 
 ---
 
@@ -191,6 +191,7 @@ Every keyboard shortcut active on the current screen must appear in the footer. 
 **This includes modals.** A modal is not a special case — when one is open, its keys replace the screen keys in the **same reserved footer rows**. There is no floating hint bar under a dialog; hints always live in the fixed footer. Two rules make this un-forgettable and keep it visible:
 
 - **Exhaustive matcher.** Every modal family maps to its hints through an exhaustive `match` (e.g. `console::tui::components::footer::modal::modal_footer_items` over `ConsoleModal`, and the `settings_*_modal_footer_items` siblings). Adding a modal variant without a hint arm is a compile error — a new dialog cannot ship hint-less. Screen footer selectors (`workspace_footer_items`, `editor_footer_items`, `settings_footer_items`) return the active modal's items when a modal is open.
+- **Keymap-derived modal hints.** Dialogs with an input keymap must derive their visible footer spans from that same `Keymap`, then append dynamic scroll hints from the body's real overflow axes. The console save-confirmation preview follows this rule: Save, Cancel, Enter/select, focus movement, and preview scroll dispatch through `CONFIRM_SAVE_KEYMAP`, and its footer is built from that table plus `SCROLL_HINT_KEYMAP`.
 - **Backdrop never covers the footer.** The modal backdrop is rendered over the screen minus the reserved footer rows, so the modal-aware footer stays visible beneath the dialog. The footer is inviolable; a backdrop that fills the whole area (hiding the keys) is a violation.
 
 The in-container capsule follows the same contract via its own exhaustive `Dialog::footer_hint_spans` rendered in the bottom chrome.
@@ -206,7 +207,7 @@ The hints update dynamically based on which block is focused and which axes over
 
 ## Env / Secrets Sentinel Indentation
 
-`+ Add environment variable` sentinel at workspace level must align with workspace-level content (2-char `cursor_col` indent only). It must **not** pick up the 5-space `marker_col` that role-level rows use.
+`+ Add environment variable` sentinel at workspace level must align with workspace-level content (2-char cursor gutter only). It must **not** pick up the 5-space marker column that role-level rows use.
 
 Role-level sentinels (`RoleAddSentinel`) and role section headers keep their `"     "` (5-space) indentation to visually group them under the role section.
 
@@ -226,6 +227,10 @@ The **settings panel** (`ManagerStage::Settings`, global config) and the **works
 They share the same visual language, the same tab-bar interaction pattern, and the same scrollable-block conventions. Operators move between them constantly and expect consistent behavior.
 
 **Rule: every fix or addition that lands in one panel must immediately be audited against the other panel.** If the same issue exists there, fix it in the same PR. This is not optional polish — inconsistent behavior between the two panels is a bug.
+
+Shared settings/editor row families live in <RepoFile path="crates/jackin-console/src/tui/components/editor_rows.rs">crates/jackin-console/src/tui/components/editor_rows.rs</RepoFile>. Auth rows use one `AuthLineRow` model and renderer, env/secrets rows use one line builder with panel-specific adapters, and simple label/value rows use `labeled_field_line`. Mount table headers route through the shared mount-row helpers. Do not add a settings-only or editor-only renderer for a row kind that already exists in the other panel; extend the shared row model instead.
+
+Parity is test-backed for the common auth rows: equivalent settings and editor rows must render to identical text. Add cases to that parity test whenever a new shared row kind appears in both panels.
 
 ### What to check on every change
 
@@ -249,7 +254,7 @@ Any dialog or info panel that displays a long value (file path, container ID, UR
 
 1. **OSC 8 hyperlink** (preferred for file system paths and URLs). Render the path as a terminal hyperlink via `]8;;file:///full/path\visible text]8;;\`. The operator clicks to open the file. The visible text can be abbreviated; the href carries the full path. The failure popup's "run diagnostics" and "docker output" rows must use this approach, and its `R` key reveal action must use the same row values instead of re-deriving paths.
 
-2. **Word-wrap onto multiple lines**. If the value is a long string (not a path), wrap it within the dialog width. The dialog height adjusts accordingly (the failure popup already computes height from row count).
+2. **Word-wrap onto multiple lines**. If the value is a long string (not a path), wrap it within the dialog width. `ErrorPopup` owns the row wrapping, height estimate, scroll offset, and value-cell rectangles so render, OSC 8 overlays, and copy/reveal hit-testing stay aligned.
 
 3. **Horizontal scroll**. Only use this when neither hyperlink nor wrap is feasible. Use `render_scrollable_block` so the shared scrollbar and clamp math apply.
 
@@ -260,6 +265,8 @@ Never silently truncate: `path.display().to_string().chars().take(N).collect()` 
 All error conditions surfaced to the operator must use the red-border `ErrorPopup` dialog (<RepoFile path="crates/jackin-tui/src/components/error_dialog.rs">crates/jackin-tui/src/components/error_dialog.rs</RepoFile>). Ephemeral overlays (shimmer banners, auto-expiring toasts, single-line status strips) are banned for error display.
 
 **Why:** Auto-expiring errors vanish before the operator reads them, have no scroll support for long messages, and render over content rather than blocking it. `ErrorPopup` is dismissible (Enter / Esc / O), scrollable, and modal — the operator cannot miss it or accidentally dismiss it.
+
+`ErrorPopup` may include structured label/value rows with OSC 8 hyperlink targets for paths and URLs; use this mode for long diagnostic values per the long-values rule above.
 
 **Scope:** Every error path in every stage (list, editor, settings, create-prelude) must route through the stage's designated error slot:
 
