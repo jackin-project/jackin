@@ -44,3 +44,12 @@ region = "bottom:16"
 strength = "strong"
 requires_all = ["composer", "always-approve"]
 line_regex = ["│\\s*❯"]
+
+[[rule]]
+id = "turn-completed-prompt"
+state = "idle"
+priority = 485
+region = "bottom:24"
+strength = "strong"
+requires_all = ["turn completed", "grok build", "always-approve"]
+line_regex = ["│\\s*❯"]

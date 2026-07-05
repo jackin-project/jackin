@@ -1,0 +1,41 @@
+jackin❯   Claude (Kimi) ◐   Codex (OpenAI) ·   Amp     Opencode (Kimi) ◐   Grok ◐                                                          ☰Menu
+                                                       ━━━━━━━━━━━━━━━━━━━
+┌ OC | Random topic deep research request ─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│     - Text analysis: https://www.voynich.nu/analysis.html                                                                                        │
+│     - Why not a fake: https://www.voynich.nu/extra/nofake.html                                           Random topic deep research request      │
+│                                                                                                                                                  │
+│     Wikipedia:                                                                                           Context                                 │
+│                                                                                                          105,668 tokens                          │
+│     - https://en.wikipedia.org/wiki/Voynich_manuscript                                                   0% used                                 │
+│                                                                                                          $0.00 spent                             │
+│     Yale facsimile (2016):                                                                                                                       │
+│                                                                                                          MCP                                     │
+│     - The Voynich Manuscript, ed. Raymond Clemens, Yale University Press.                                • context7 Connected                    │
+│                                                                                                          • headroom Connected                    │
+│     ─────────────────────────────────────────────────────────────────────────────────────────────────                                            │
+│                                                                                                          LSP                                     │
+│     Conclusion                                                                                           LSPs are disabled                       │
+│                                                                                                                                                  │
+│     The Voynich Manuscript remains one of history's most tantalizing puzzles. Modern science has                                                 │
+│     confirmed its authenticity and medieval origin, but its meaning continues to resist all attempts                                             │
+│     at decipherment. Whether it is a lost language, an elaborate cipher, a constructed philosophical                                             │
+│     language, or a sophisticated hoax, it stands as a unique artifact at the intersection of                                                     │
+│     cryptography, linguistics, art history, and medieval science.                                                                                │
+│                                                                                                                                                  │
+│     Research continues, with new conferences, computational analyses, and imaging techniques. But as                                             │
+│     of today, the Voynich Manuscript is still, in the words of its first known owner Georg Baresch,                                              │
+│     a "Sphinx" — a riddle written in unknown characters.                                                                                         │
+│                                                                                                                                                  │
+│     ▣  Build · kimi-for-coding · 4m 23s                                                                                                          │
+│                                                                                                                                                  │
+│  ┃                                                                                                                                               │
+│  ┃                                                                                                       /Users/donbeave/Projects/tailrocks/     │
+│  ┃                                                                                                       holla-project/holla:jackin/scratch/jk-  │
+│  ┃  Build · kimi-for-coding Kimi                                                                         n65xf0bw-holla-thearchitect             │
+│  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀                                            │
+│                                                                               105.7K  ctrl+p commands    • OpenCode 1.17.13                      │
+│                                                                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                     Ctrl-\ menu   Alt+Shift+↑↓←→ resize pane   click focus pane   Ctrl-Q quit
+
+ Branch · jackin/scratch/jk-n65xf0bw-holla-thearchitect                                                  Session 87% · Weekly 96%  n65xf0bw  f92fb0

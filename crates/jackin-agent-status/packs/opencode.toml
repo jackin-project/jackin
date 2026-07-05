@@ -41,3 +41,12 @@ priority = 495
 region = "bottom:24"
 strength = "strong"
 requires_all = ["ask anything...", "build ·", "tab agents", "ctrl+p commands"]
+
+[[rule]]
+id = "completed-footer"
+state = "idle"
+priority = 490
+region = "bottom:16"
+strength = "strong"
+requires_all = ["opencode", "ctrl+p commands"]
+forbids_any = ["esc interrupt"]
