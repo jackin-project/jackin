@@ -45,6 +45,15 @@ requires_all = ["paused", "p resume"]
 requires_any = ["deep-research", "workflow"]
 
 [[rule]]
+id = "workflow-stopped"
+state = "idle"
+priority = 870
+region = "bottom:32"
+strength = "strong"
+requires_all = ["stopped", "esc back", "s save"]
+requires_any = ["deep-research", "workflow"]
+
+[[rule]]
 id = "working-interrupt"
 state = "working"
 priority = 700
