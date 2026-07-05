@@ -9,8 +9,9 @@
 
 - **Implementation status**: IN PROGRESS in PR #714. The operator supplied live jackin❯ screenshots for several
   affected states, and the PR now rewrites the corresponding narrow matchers: Codex stale working after a newer
-  prompt, Claude blocked spend-limit dialogs, Claude live working/idle prompt states, Kimi live `working...` and
-  prompt-box idle, and OpenCode 1.17 `esc interrupt` footer. Full pack rewrite remains incomplete until real
+  prompt plus startup/idle prompt states, Claude blocked spend-limit dialogs, Claude live working/idle prompt
+  states, Amp startup idle and waiting/running-tools working footers, Kimi live `working...` and prompt-box idle,
+  and OpenCode 1.17 startup idle plus `esc interrupt` footer. Full pack rewrite remains incomplete until real
   blocked/working/idle captures exist for each affected agent.
 - **Priority**: P2
 - **Effort**: M
@@ -83,8 +84,8 @@ Every pack must match its plan-005 captured goldens for blocked/working/idle. Un
 ## Done criteria
 
 - [ ] kimi/amp/opencode/claude/codex packs match real captured goldens for blocked, working, and idle — PARTIAL:
-  Claude now has live blocked/working/idle coverage; Codex/Kimi/OpenCode have targeted live-capture-backed fixes;
-  full state coverage remains open
+  Claude now has live blocked/working/idle coverage; Codex/Amp/Kimi/OpenCode have targeted live-capture-backed
+  fixes; full blocked state coverage remains open
 - [x] The Claude idle caret uses the real `❯` (U+276F) via an anchored `line_regex`
 - [ ] Loose idle rules (`requires_all=[">"]`) are tightened; no false-idle on arbitrary `>` lines — BLOCKED
   until real captures prove the replacement rules

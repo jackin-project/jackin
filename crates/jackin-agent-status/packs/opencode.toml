@@ -33,3 +33,11 @@ priority = 500
 region = "bottom:24"
 strength = "strong"
 requires_all = ["opencode ready"]
+
+[[rule]]
+id = "startup-prompt"
+state = "idle"
+priority = 495
+region = "bottom:24"
+strength = "strong"
+requires_all = ["ask anything...", "build ·", "tab agents", "ctrl+p commands"]

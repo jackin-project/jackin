@@ -26,3 +26,12 @@ priority = 680
 region = "bottom:24"
 strength = "strong"
 requires_all = ["run web search", "[stop]"]
+
+[[rule]]
+id = "startup-prompt"
+state = "idle"
+priority = 500
+region = "bottom:24"
+strength = "strong"
+requires_all = ["grok build beta", "composer", "always-approve"]
+line_regex = ["^\\s*│\\s*❯\\s*│"]

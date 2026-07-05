@@ -310,7 +310,7 @@ fn packs_load_and_match_fixtures() {
         .parent()
         .unwrap()
         .to_path_buf();
-    for agent in ["claude", "codex", "amp", "kimi", "opencode"] {
+    for agent in ["claude", "codex", "amp", "kimi", "opencode", "grok"] {
         let pack = RulePack::load(
             &root
                 .join("crates/jackin-agent-status/packs")

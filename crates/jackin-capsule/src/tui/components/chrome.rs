@@ -58,7 +58,7 @@ const fn tab_glyph_char(glyph: TabGlyph) -> char {
         TabGlyph::Blocked => '●',
         TabGlyph::Done => '○',
         TabGlyph::Working => '◐',
-        TabGlyph::Idle => '·',
+        TabGlyph::Idle => '◆',
         TabGlyph::Unknown => ' ',
     }
 }
@@ -72,7 +72,12 @@ fn tab_glyph_style(glyph: TabGlyph, bg: Color) -> Option<Style> {
                 .add_modifier(Modifier::BOLD),
         ),
         TabGlyph::Working => Some(Style::default().bg(bg).fg(jackin_tui::theme::DEBUG_AMBER)),
-        TabGlyph::Idle => Some(Style::default().bg(bg).fg(jackin_tui::theme::PHOSPHOR_DIM)),
+        TabGlyph::Idle => Some(
+            Style::default()
+                .bg(bg)
+                .fg(jackin_tui::theme::PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         TabGlyph::Done | TabGlyph::Unknown => None,
     }
 }

@@ -80,6 +80,7 @@ Every row that begins with `+` is an add/create action and must render through t
 
 - Tab bar has its own focus area (`tab_bar_focused: bool` in state).
 - **Tab chrome is shared with the in-container multiplexer status bar** (`jackin-capsule`): inactive tabs render on a dark-grey background (`TAB_BG_INACTIVE`), the active tab lifts to graphite (`TAB_BG_ACTIVE` — never the brand green, so it stays distinct from the ` jackin❯ ` pill), both with WHITE text and the active tab bold. These backgrounds and the Ratatui renderer live in the shared `jackin-tui` crate (`TAB_BG_*`, `components::TabStrip`) and are consumed by the console tab strips (workspace editor, settings) and the capsule Ratatui status bar.
+- **Capsule agent tabs reserve one status glyph cell** after the tab label: blocked `●` in red, working `◐` in amber, done `○`, idle `◆` in bright phosphor green, and unknown blank. Idle must be a full-cell visible mark, not a tiny separator dot, so it cannot be confused with usage/status text separators.
 - **Tab bar focused**: the active tab shows a `PHOSPHOR_GREEN` `━` underline bar — the keyboard-focus cue. GREEN = "tab bar owns focus."
 - **Content focused** (tab bar NOT focused): the active tab still shows a `━` underline bar, but in `WHITE` — a dim context indicator. This tells the operator which tab is selected without implying the tab bar is the focus owner. The GREEN border on the content block below is the real focus signal.
 - **Neither**: no underline bar rendered (edge case only; one of the two areas always owns focus in normal operation).

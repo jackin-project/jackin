@@ -7,9 +7,9 @@
 ## Status
 
 - **Implementation status**: IN PROGRESS in PR #714. Steps 1, 3, and 4 are landed. Step 2 is partially unblocked:
-  real Grok working captures from the operator's jackin❯ session now back an embedded `grok.toml` working pack.
-  Grok blocked and idle rules remain open until real captures exist; do not fill them from guessed strings or
-  herdr artifacts.
+  real Grok working captures and startup idle from the operator's jackin❯ session now back an embedded `grok.toml`
+  pack. Grok blocked rules remain open until real captures exist; do not fill them from guessed strings or herdr
+  artifacts.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW
@@ -97,8 +97,8 @@ happens to contain the path can't pass verify while opencode fails to parse it.
 ## Done criteria
 
 - [x] An exhaustiveness test asserts every `Agent::ALL` slug has a pack or a reviewed opt-out
-- [ ] `grok.toml` exists, is baked + embedded, and matches real grok goldens — PARTIAL: working states are backed
-  by live captures; blocked and idle states remain open
+- [ ] `grok.toml` exists, is baked + embedded, and matches real grok goldens — PARTIAL: working and startup idle
+  states are backed by live captures; blocked remains open
 - [x] One broken embedded pack no longer zeroes the registry (test proves); an empty registry is operator-visible
 - [x] Reporter-install failure is loud; `verify` parse-validates rather than substring-matches
 - [x] `cargo nextest run -p jackin-capsule` green; clippy clean

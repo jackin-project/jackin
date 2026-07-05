@@ -19,12 +19,38 @@ strength = "strong"
 requires_all = ["running tool:"]
 
 [[rule]]
+id = "waiting-footer"
+state = "working"
+priority = 690
+region = "bottom_nonempty:8"
+strength = "strong"
+requires_all = ["waiting"]
+line_regex = ["^╰\\s+[≈∼≋]\\s+Waiting\\s+─"]
+
+[[rule]]
+id = "running-tools-footer"
+state = "working"
+priority = 685
+region = "bottom_nonempty:8"
+strength = "strong"
+requires_any = ["running tools", "exploring", "streaming"]
+line_regex = ["^╰\\s+[≈∼≋]\\s+\\S"]
+
+[[rule]]
 id = "ready-text"
 state = "idle"
 priority = 500
 region = "bottom:24"
 strength = "strong"
 requires_all = ["ready for your next task"]
+
+[[rule]]
+id = "startup-welcome"
+state = "idle"
+priority = 495
+region = "bottom:32"
+strength = "strong"
+requires_all = ["welcome to amp", "ctrl+o for commands", "? for shortcuts"]
 
 [[rule]]
 id = "arrow-prompt"

@@ -12,7 +12,7 @@
 - **Depends on**: none (blocks 007)
 - **Category**: bug (detection infrastructure)
 - **Planned at**: commit `5d3661cff`, 2026-07-03
-- **Implementation status**: IN PROGRESS in PR 714. Real jackin❯-originated screenshots now backed focused fixtures for Claude preflight false-positive, blocked spend-limit dialogs, working/deep-research workflow states, and idle prompt states; plus Codex stale-working/idle-with-footer, Kimi live working/idle-with-footer, OpenCode 1.17 working footer, and Grok working states. Full golden coverage is still incomplete: blocked and idle captures for every supported agent are not yet available, so the full anti-circularity contract remains open.
+- **Implementation status**: IN PROGRESS in PR 714. Real jackin❯-originated screenshots now backed focused fixtures for Claude preflight false-positive, blocked spend-limit dialogs, working/deep-research workflow states, and idle prompt states; Codex startup/typed-prompt, stale-working false positives, and worked-summary idle; Amp startup idle and waiting/running-tools working footers; OpenCode 1.17 startup idle and working footer; Kimi live working/idle-with-footer; and Grok startup idle plus working states. Full golden coverage is still incomplete: blocked captures for several supported agents are not yet available, so the full anti-circularity contract remains open.
 
 ## Why this matters
 

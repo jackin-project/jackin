@@ -143,7 +143,7 @@ fn status_bar_renders_working_idle_done_and_unknown_glyphs() {
     );
     assert_eq!(
         glyph_cell(&plan.cells[1]),
-        ("·".to_owned(), jackin_tui::theme::PHOSPHOR_DIM)
+        ("◆".to_owned(), jackin_tui::theme::PHOSPHOR_GREEN)
     );
     assert_eq!(glyph_cell(&plan.cells[2]).0, "○");
     assert_eq!(glyph_cell(&plan.cells[3]).0, " ");
