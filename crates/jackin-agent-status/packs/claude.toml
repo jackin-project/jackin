@@ -36,6 +36,15 @@ strength = "strong"
 requires_all = ["what do you want to do?", "enter to confirm", "esc to cancel"]
 
 [[rule]]
+id = "workflow-paused"
+state = "blocked"
+priority = 880
+region = "bottom:32"
+strength = "strong"
+requires_all = ["paused", "p resume"]
+requires_any = ["deep-research", "workflow"]
+
+[[rule]]
 id = "working-interrupt"
 state = "working"
 priority = 700
