@@ -68,6 +68,22 @@ pub(super) struct PreparedRuntimeBinaries {
     jackin_capsule_src: String,
 }
 
+fn local_image_buildx_args() -> Vec<&'static str> {
+    // Runtime image builds consume local-only base tags such as
+    // `jk_<role>__base:<sha>` and PR-local construct images. A docker-container
+    // buildx builder cannot see the host Docker image store, so use the
+    // Docker-driver default builder. The global context flag keeps buildx from
+    // rejecting `default` when DOCKER_HOST or another active context is set.
+    vec![
+        "--context",
+        "default",
+        "buildx",
+        "build",
+        "--builder",
+        "default",
+    ]
+}
+
 /// Result status for one explicit role-image prewarm request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImagePrewarmStatus {
@@ -1263,7 +1279,7 @@ async fn ensure_local_role_base(
     let construct_label = format!("{LABEL_IMAGE_CONSTRUCT}={construct}");
     let build_arg_role_git_sha = format!("ROLE_GIT_SHA={}", head_sha.unwrap_or("unknown"));
 
-    let mut args: Vec<&str> = vec!["buildx", "build"];
+    let mut args = local_image_buildx_args();
     // A workspace rebuild refreshes the construct base. A plain workspace base
     // build rides the local layer cache.
     //
@@ -1559,7 +1575,7 @@ pub(super) async fn build_agent_image(
     let recipe_hash = recipe.hash()?;
     let recipe_labels = recipe_labels(&recipe, &recipe_hash);
 
-    let mut build_args: Vec<&str> = vec!["buildx", "build"];
+    let mut build_args = local_image_buildx_args();
 
     // --pull semantics:
     //

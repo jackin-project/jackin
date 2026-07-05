@@ -2028,7 +2028,7 @@ plugins = ["code-review@claude-plugins-official"]
             .any(|call| call.contains("git -C") || call.contains("git clone"))
     );
     assert!(runner.recorded.iter().any(|call| {
-        call.contains("docker buildx build ")
+        call.contains("buildx build ")
             && call.contains("--output type=docker,name=jk_chainargos_the-architect")
     }));
     assert!(
@@ -2341,14 +2341,14 @@ plugins = ["code-review@claude-plugins-official"]
         runner
             .recorded
             .iter()
-            .any(|call| call.contains("docker buildx build ")
+            .any(|call| call.contains("buildx build ")
                 && call.contains("--output type=docker,name=jk_agent-smith"))
     );
     assert!(
         runner
             .run_recorded
             .iter()
-            .any(|call| call.contains("docker buildx build "))
+            .any(|call| call.contains("buildx build "))
     );
     assert!(
         docker
@@ -2438,7 +2438,7 @@ model = "gpt-5"
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker buildx build ") && call.contains("DerivedDockerfile"))
+        .find(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     // No published_image and no --rebuild → workspace mode without --pull
     assert!(!build_cmd.contains("--pull"));
@@ -3087,7 +3087,7 @@ plugins = []
         .recorded
         .iter()
         .find(|call| {
-            call.contains("docker buildx build ")
+            call.contains("buildx build ")
                 && call.contains("DerivedDockerfile")
                 && call.contains("--output type=docker,name=jk_agent-smith")
         })
@@ -3114,9 +3114,7 @@ plugins = []
     let build_run_index = runner
         .run_recorded
         .iter()
-        .position(|call| {
-            call.contains("docker buildx build ") && call.contains("DerivedDockerfile")
-        })
+        .position(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     let build_opts = &runner.run_options[build_run_index];
     assert!(build_opts.capture_stdout);
@@ -3237,7 +3235,7 @@ plugins = []
         !runner
             .recorded
             .iter()
-            .any(|c| c.contains("docker buildx build ") && c.contains("BaseDockerfile")),
+            .any(|c| c.contains("buildx build ") && c.contains("BaseDockerfile")),
         "fresh published images must not be restamped through a Docker build"
     );
     // The overlay derives FROM that local base, not the published image.
@@ -3245,7 +3243,7 @@ plugins = []
         runner
             .recorded
             .iter()
-            .any(|c| c.contains("docker buildx build ") && c.contains("DerivedDockerfile")),
+            .any(|c| c.contains("buildx build ") && c.contains("DerivedDockerfile")),
         "overlay must derive FROM the local base"
     );
 }
@@ -3298,12 +3296,20 @@ plugins = []
     let base_build = runner
         .recorded
         .iter()
-        .find(|c| c.contains("docker buildx build ") && c.contains("BaseDockerfile"))
+        .find(|c| c.contains("buildx build ") && c.contains("BaseDockerfile"))
         .expect("workspace build must first build the role base image");
     assert!(
         base_build.contains("--output type=docker,name=jk_agent-smith__base")
             && base_build.contains("compression=uncompressed"),
         "base build must load uncompressed jk_<role>__base; got: {base_build}"
+    );
+    assert!(
+        base_build.contains("--builder default"),
+        "base build consumes local images and must use the Docker-driver builder; got: {base_build}"
+    );
+    assert!(
+        base_build.contains("docker --context default buildx build"),
+        "base build must select the default Docker context for the default builder; got: {base_build}"
     );
     assert!(
         base_build.contains("--label jackin.construct.image=")
@@ -3319,11 +3325,19 @@ plugins = []
     let derived_build = runner
         .recorded
         .iter()
-        .find(|c| c.contains("docker buildx build ") && c.contains("DerivedDockerfile"))
+        .find(|c| c.contains("buildx build ") && c.contains("DerivedDockerfile"))
         .expect("workspace build must derive the overlay after the base");
     assert!(
         !derived_build.contains("--pull"),
         "derived build is FROM a local base and must never --pull; got: {derived_build}"
+    );
+    assert!(
+        derived_build.contains("--builder default"),
+        "derived build consumes the local role base and must use the Docker-driver builder; got: {derived_build}"
+    );
+    assert!(
+        derived_build.contains("docker --context default buildx build"),
+        "derived build must select the default Docker context for the default builder; got: {derived_build}"
     );
     assert!(
         derived_build.contains("--label jackin.image.recipe.hash="),
@@ -3374,7 +3388,7 @@ plugins = []
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker buildx build ") && call.contains("DerivedDockerfile"))
+        .find(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
         .unwrap();
     assert!(
         !build_cmd.contains("--pull"),
@@ -3439,7 +3453,7 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
         "abc123".to_owned(),
     ]);
     runner.fail_on = vec![
-        "docker buildx build ".to_owned(),
+        "buildx build ".to_owned(),
         "gh auth token".to_owned(),
         "docker run --rm --entrypoint".to_owned(),
         "agent_binary".to_owned(),
@@ -3459,7 +3473,7 @@ async fn load_agent_reuses_valid_local_image_and_skips_build_work() {
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        !recorded.contains("docker buildx build "),
+        !recorded.contains("buildx build "),
         "valid local recipe must skip docker build; recorded:\n{recorded}"
     );
     assert!(
@@ -3539,7 +3553,7 @@ plugins = []
         "abc123".to_owned(),
     ]);
     runner.fail_on = vec![
-        "docker buildx build ".to_owned(),
+        "buildx build ".to_owned(),
         "gh auth token".to_owned(),
         "docker run --rm --entrypoint".to_owned(),
         "agent_binary".to_owned(),
@@ -3559,7 +3573,7 @@ plugins = []
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        !recorded.contains("docker buildx build "),
+        !recorded.contains("buildx build "),
         "refresh-background decision must skip docker build; recorded:\n{recorded}"
     );
     assert!(
@@ -3746,7 +3760,7 @@ async fn stale_agent_version_cache_does_not_force_foreground_update_probe() {
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker buildx build ") && call.contains("DerivedDockerfile"))
+        .find(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile"))
         .expect("stale role SHA must trigger a derived image rebuild");
     assert!(
         build_cmd.contains("--build-arg JACKIN_CACHE_BUST=stored-bust"),
@@ -4472,7 +4486,7 @@ async fn load_agent_does_not_short_circuit_on_running_instance() {
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        recorded.contains("docker buildx build "),
+        recorded.contains("buildx build "),
         "D13: build must run even when current-role container is running; recorded:\n{recorded}"
     );
     assert!(
@@ -4554,7 +4568,7 @@ async fn load_agent_attaches_explicit_restore_container_before_role_repo() {
     );
     for forbidden in [
         &cached_repo.repo_dir.display().to_string(),
-        "docker buildx build ",
+        "buildx build ",
         "gh auth token",
         "docker inspect image:",
         "docker run --rm --entrypoint",
@@ -4646,7 +4660,7 @@ async fn load_agent_starts_stopped_current_instance_before_credentials_and_build
         "started current-role instance must attach through Capsule; recorded:\n{recorded}"
     );
     for forbidden in [
-        "docker buildx build ",
+        "buildx build ",
         "gh auth token",
         "docker inspect image:",
         "docker run --rm --entrypoint",
@@ -4733,7 +4747,7 @@ async fn load_agent_recreates_missing_current_instance_from_valid_image_without_
         "valid-image recreate path must run the missing role container from the reusable image; recorded:\n{recorded}"
     );
     for forbidden in [
-        "docker buildx build ",
+        "buildx build ",
         "gh auth token",
         "docker run --rm --entrypoint",
     ] {
@@ -4790,7 +4804,7 @@ plugins = []
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker buildx build "))
+        .find(|call| call.contains("buildx build "))
         .unwrap();
     assert!(
         build_cmd.contains("--pull"),
@@ -4879,7 +4893,7 @@ plugins = []
 
     let recorded = runner.recorded.join("\n");
     assert!(
-        recorded.contains("docker buildx build "),
+        recorded.contains("buildx build "),
         "--rebuild must build even when a running current-role container exists \
          (must not take the attach/start fast path); recorded:\n{recorded}"
     );
@@ -4953,7 +4967,7 @@ plugins = []
         runner
             .recorded
             .iter()
-            .any(|call| call.contains("docker buildx build ") && call.contains("DerivedDockerfile")),
+            .any(|call| call.contains("buildx build ") && call.contains("DerivedDockerfile")),
         "derived overlay build must still run"
     );
 }
@@ -5077,7 +5091,7 @@ plugins = []
     let build_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker buildx build "))
+        .find(|call| call.contains("buildx build "))
         .unwrap();
     // Workspace mode with rebuild=true passes --pull and must NOT use the
     // published image as base.
