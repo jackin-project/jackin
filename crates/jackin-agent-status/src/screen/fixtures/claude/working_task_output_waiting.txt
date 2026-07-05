@@ -1,0 +1,21 @@
+● Workflow(dynamic workflow: deep-research)
+  ⎿  Running in background · /workflows to monitor and save
+
+∴ Workflow background. Need wait for notification? We can continue. But user asked deep research; we should wait for result. We can use
+  TaskOutput? The workflow tool says returns immediately; notification when completes.
+
+  Task Output wxf2pli9i
+  Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report.
+     Waiting for task (esc to give additional instructions)
+
+✶ Bunning… (29s · ↓ 2.6k tokens)
+  ⎿  Tip: /loop runs any prompt on a recurring schedule. Great for monitoring deploys, babysitting PRs, or polling status.
+
+                                                                                                                                    37736 tokens
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [CAVEMAN:ULTRA]
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
+
+  ◯ deep-research  Deep research harness — fan-out web searches, fetch sources, adversarially verify claim… 1/6 agents done · 22s · ↓ 97.9k tokens

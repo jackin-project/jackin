@@ -1,0 +1,55 @@
+schema_version = 1
+agent = "grok"
+validated_versions = ">=0.1.0, <0.2.0"
+
+[[rule]]
+id = "thinking"
+state = "working"
+priority = 700
+region = "bottom:24"
+strength = "strong"
+requires_any = ["thinking…", "thinking..."]
+requires_all = ["[stop]"]
+
+[[rule]]
+id = "waiting-for-response"
+state = "working"
+priority = 690
+region = "bottom:24"
+strength = "strong"
+requires_all = ["waiting for response", "[stop]"]
+
+[[rule]]
+id = "running-tool"
+state = "working"
+priority = 680
+region = "bottom:24"
+strength = "strong"
+requires_all = ["run web search", "[stop]"]
+
+[[rule]]
+id = "startup-prompt"
+state = "idle"
+priority = 500
+region = "bottom:24"
+strength = "strong"
+requires_all = ["grok build beta", "composer", "always-approve"]
+line_regex = ["^\\s*│\\s*❯\\s*│"]
+
+[[rule]]
+id = "ready-prompt"
+state = "idle"
+priority = 490
+region = "bottom:16"
+strength = "strong"
+requires_all = ["composer", "always-approve"]
+line_regex = ["│\\s*❯"]
+
+[[rule]]
+id = "turn-completed-prompt"
+state = "idle"
+priority = 485
+region = "bottom:24"
+strength = "strong"
+requires_all = ["turn completed", "grok build", "always-approve"]
+line_regex = ["│\\s*❯"]

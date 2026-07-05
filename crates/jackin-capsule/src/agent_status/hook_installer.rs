@@ -247,7 +247,21 @@ impl HookInstaller for PluginInstaller {
     }
 
     fn verify(&self, agent_home: &Path) -> bool {
-        json_file_contains_string(&self.config_path(agent_home), &self.plugin_path)
+        let path = self.config_path(agent_home);
+        let Ok(content) = fs::read_to_string(path) else {
+            return false;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
+            return false;
+        };
+        value
+            .get("plugins")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|plugins| {
+                plugins
+                    .iter()
+                    .any(|plugin| plugin.as_str() == Some(self.plugin_path.as_str()))
+            })
     }
 }
 

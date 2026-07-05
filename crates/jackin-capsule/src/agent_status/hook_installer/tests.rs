@@ -310,6 +310,48 @@ fn plugin_installer_writes_and_verifies() {
 }
 
 #[test]
+fn plugin_installer_verify_requires_valid_plugins_array_entry() {
+    let installer = PluginInstaller::opencode();
+    let dir = TempDir::new().unwrap();
+    let home = dir.path().to_path_buf();
+    let config_dir = home.join(".config").join("opencode");
+    fs::create_dir_all(&config_dir).unwrap();
+    let path = config_dir.join("plugins.json");
+
+    fs::write(
+        &path,
+        format!(
+            "{{ not json, but contains {} }}",
+            "/jackin/runtime/agent-status/hooks/opencode/plugin.js"
+        ),
+    )
+    .unwrap();
+    assert!(
+        !installer.verify(&home),
+        "substring-only verification must not pass corrupt JSON"
+    );
+
+    fs::write(
+        &path,
+        serde_json::json!({ "plugins": "/jackin/runtime/agent-status/hooks/opencode/plugin.js" })
+            .to_string(),
+    )
+    .unwrap();
+    assert!(
+        !installer.verify(&home),
+        "plugins must be a JSON array, not just a matching string"
+    );
+
+    fs::write(
+        &path,
+        serde_json::json!({ "plugins": ["/jackin/runtime/agent-status/hooks/opencode/plugin.js"] })
+            .to_string(),
+    )
+    .unwrap();
+    assert!(installer.verify(&home));
+}
+
+#[test]
 fn claude_install_bails_on_malformed_settings_and_preserves_it() {
     let dir = TempDir::new().unwrap();
     let home = dir.path().to_path_buf();
