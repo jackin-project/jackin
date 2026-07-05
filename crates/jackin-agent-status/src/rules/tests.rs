@@ -412,6 +412,25 @@ fn structural_regions_extract_prompt_and_rule_areas() {
             "╰────────────╯".to_owned(),
         ]
     );
+
+    let codex_rows = vec![
+        "› older prompt".to_owned(),
+        "• Working (old)".to_owned(),
+        "› current prompt".to_owned(),
+        "  gpt-5.3-codex-spark low · /repo".to_owned(),
+    ];
+    assert_eq!(
+        parse_region("last_prompt_marker")
+            .unwrap()
+            .extract(&codex_rows, VirtualRegions::default()),
+        vec!["› current prompt".to_owned()]
+    );
+    assert_eq!(
+        parse_region("after_last_prompt_marker")
+            .unwrap()
+            .extract(&codex_rows, VirtualRegions::default()),
+        vec!["  gpt-5.3-codex-spark low · /repo".to_owned()]
+    );
 }
 
 #[test]

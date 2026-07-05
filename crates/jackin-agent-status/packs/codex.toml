@@ -36,6 +36,6 @@ requires_all = ["• working ("]
 id = "idle-prompt"
 state = "idle"
 priority = 500
-region = "last_nonempty_line"
+region = "last_prompt_marker"
 strength = "strong"
 requires_all = ["›"]

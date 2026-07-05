@@ -265,6 +265,7 @@ pub enum Region {
     AbovePromptBox,
     AfterLastRule,
     LastNonEmptyLine,
+    LastPromptMarker,
     OscTitle,
     OscProgress,
     /// Lines after the last prompt-caret line (Codex `›`). Isolates text the
@@ -827,6 +828,10 @@ impl Region {
                 .cloned()
                 .into_iter()
                 .collect(),
+            Self::LastPromptMarker => match last_prompt_marker(screen_rows) {
+                Some(index) => screen_rows.get(index).cloned().into_iter().collect(),
+                None => Vec::new(),
+            },
             Self::OscTitle => virtuals.osc_title.map(str::to_owned).into_iter().collect(),
             Self::OscProgress => virtuals
                 .osc_progress
@@ -859,6 +864,7 @@ impl Region {
             Self::AbovePromptBox => "above_prompt_box".to_owned(),
             Self::AfterLastRule => "after_last_rule".to_owned(),
             Self::LastNonEmptyLine => "last_nonempty_line".to_owned(),
+            Self::LastPromptMarker => "last_prompt_marker".to_owned(),
             Self::OscTitle => "osc_title".to_owned(),
             Self::OscProgress => "osc_progress".to_owned(),
             Self::AfterLastPromptMarker => "after_last_prompt_marker".to_owned(),
@@ -903,6 +909,7 @@ fn parse_region(raw: &str) -> anyhow::Result<Region> {
         "above_prompt_box" => Ok(Region::AbovePromptBox),
         "after_last_rule" => Ok(Region::AfterLastRule),
         "last_nonempty_line" => Ok(Region::LastNonEmptyLine),
+        "last_prompt_marker" => Ok(Region::LastPromptMarker),
         "osc_title" => Ok(Region::OscTitle),
         "osc_progress" => Ok(Region::OscProgress),
         "after_last_prompt_marker" => Ok(Region::AfterLastPromptMarker),
