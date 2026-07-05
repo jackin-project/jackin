@@ -7,10 +7,10 @@
 
 ## Status
 
-- **Implementation status**: BLOCKED in PR #714. This plan explicitly depends on plan 005's real captured
-  goldens. Plan 005 hit its STOP condition in this environment, so rewriting these packs now would preserve
-  the original circular-guessed-fixture failure mode. Do not change pack matchers until real jackin❯ captures
-  exist for the affected states.
+- **Implementation status**: IN PROGRESS in PR #714. The operator supplied live jackin❯ screenshots for several
+  affected states, and the PR now rewrites the corresponding narrow matchers: Codex stale working after a newer
+  prompt, Kimi live `working...` and prompt-box idle, and OpenCode 1.17 `esc interrupt` footer. Full pack rewrite
+  remains incomplete until real blocked/working/idle captures exist for each affected agent.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED (broaden-to-match can add false positives)
@@ -81,8 +81,8 @@ Every pack must match its plan-005 captured goldens for blocked/working/idle. Un
 
 ## Done criteria
 
-- [ ] kimi/amp/opencode/claude/codex packs match real captured goldens for blocked, working, and idle — BLOCKED
-  until plan 005 real jackin-captured goldens exist
+- [ ] kimi/amp/opencode/claude/codex packs match real captured goldens for blocked, working, and idle — PARTIAL:
+  Codex/Kimi/OpenCode have targeted live-capture-backed fixes; full state coverage remains open
 - [ ] The Claude idle caret uses the real `❯` (U+276F) via an anchored `line_regex` — BLOCKED until the real
   Claude idle capture exists
 - [ ] Loose idle rules (`requires_all=[">"]`) are tightened; no false-idle on arbitrary `>` lines — BLOCKED

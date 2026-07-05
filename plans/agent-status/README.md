@@ -68,9 +68,9 @@ sync/pure, and moving 003/004/005/007 into a clean crate beats moving them twice
 | 002 | DONE | Generic runtime/shell unwrap in agent identification | identify | M | MED | — |
 | 003 | DONE | Decouple `advance_status` from the biased I/O select | cadence | M | MED | 008 (test first) |
 | 004 | DONE | Uniform evidence freshness + wire the OSC-133 emitter | redundancy | M | MED | 008 |
-| 005 | BLOCKED | Couple packs to reality (real goldens; fix version gating) | detection | M | MED | — |
-| 006 | BLOCKED | Exhaustive agent↔detector coverage; grok pack; no silent-empty | detection | M | LOW | 005 |
-| 007 | BLOCKED | Rewrite kimi/amp/opencode/claude pack matchers from real chrome | detection | M | MED | 002, 005 |
+| 005 | IN PROGRESS | Couple packs to reality (real goldens; fix version gating) | detection | M | MED | — |
+| 006 | IN PROGRESS | Exhaustive agent↔detector coverage; grok pack; no silent-empty | detection | M | LOW | 005 |
+| 007 | IN PROGRESS | Rewrite kimi/amp/opencode/claude pack matchers from real chrome | detection | M | MED | 002, 005 |
 | 008 | DONE | Testability seam: injectable `EvidenceSnapshot` + `/proc` double | tests | M | LOW | — |
 | 009 | BLOCKED | Spike: promote Claude Notification hook + Codex app-server to authority | direction | L | MED | 008 |
 | 010 | BLOCKED | Out-of-band signed pack updates (local signed-bundle plumbing landed; live publishing blocked) | detection infra | M–L | MED | 011, 005 |

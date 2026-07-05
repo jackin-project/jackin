@@ -12,7 +12,7 @@
 - **Depends on**: none (blocks 007)
 - **Category**: bug (detection infrastructure)
 - **Planned at**: commit `5d3661cff`, 2026-07-03
-- **Implementation status**: BLOCKED in PR 714 on real jackin-captured agent screens. Partial progress landed: dead `accepts_cli_version` code and its false image-build promise were removed; `validated_versions` remains bounded provenance metadata and bundled packs stay live at runtime.
+- **Implementation status**: IN PROGRESS in PR 714. Real jackin❯-originated screenshots now backed focused fixtures for Codex stale-working/idle-with-footer, Kimi live working/idle-with-footer, OpenCode 1.17 working footer, and Grok working states. Full golden coverage is still incomplete: blocked and idle captures for every supported agent are not yet available, so the full anti-circularity contract remains open.
 
 ## Why this matters
 
@@ -87,8 +87,8 @@ occurrences (b); `cargo clippy -p jackin-capsule -- -D warnings` → exit 0.
 
 ## Done criteria
 
-- [ ] Pack fixtures are real captured goldens (agent-originated), not glosses of the pack strings — BLOCKED: needs live agent capture; herdr fixtures and hand-written substitutes are forbidden
-- [ ] The match harness would FAIL a fabricated pack (proven by the fixtures the fabricated packs don't match) — BLOCKED with real goldens
+- [ ] Pack fixtures are real captured goldens (agent-originated), not glosses of the pack strings — PARTIAL: live captures now cover several working/idle slices; full per-agent blocked/working/idle coverage remains open
+- [ ] The match harness would FAIL a fabricated pack (proven by the fixtures the fabricated packs don't match) — PARTIAL with the newly captured slices; full proof waits on complete goldens
 - [x] Out-of-window CLI does not make runtime matching dark; bundled packs stay live. A loud runtime drift note remains blocked until a non-invasive runtime CLI-version source exists
 - [x] `accepts_cli_version` is either wired into the image build (fails on drift) or removed with its comments
 - [x] `plans/agent-status/README.md` row updated
