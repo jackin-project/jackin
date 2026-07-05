@@ -16,7 +16,7 @@ state = "working"
 priority = 700
 region = "bottom:24"
 strength = "strong"
-requires_any = ["thinking...", "processing..."]
+requires_any = ["thinking...", "processing...", "working..."]
 
 [[rule]]
 id = "ready-text"
@@ -30,6 +30,6 @@ requires_all = ["kimi ready"]
 id = "arrow-prompt"
 state = "idle"
 priority = 490
-region = "last_nonempty_line"
+region = "prompt_box_body"
 strength = "strong"
-requires_all = [">"]
+line_regex = ["^\\s*>\\s*$"]
