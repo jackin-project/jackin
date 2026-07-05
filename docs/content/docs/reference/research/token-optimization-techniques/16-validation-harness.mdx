@@ -1,0 +1,193 @@
+---
+title: "16 — Validation Harness: the No-Quality-Loss Proof Protocol"
+---
+
+# 16 — Validation Harness: the No-Quality-Loss Proof Protocol
+
+This file is a runnable protocol, not a literature review.
+Any technique or stack in this dossier earns "no quality loss" only by passing this harness.
+
+## TL;DR
+
+- **Paired-task A/B**: same ≥12 tasks per arm (baseline vs technique), headless `claude -p`
+ runs, objective pass/fail checks, usage read from the JSON result envelope.
+- **Decision rule**: non-inferiority on success rate with a 5-percentage-point margin at n=12
+ (screening) or n=30 (confirmation); cost compared only between arms with statistically
+ indistinguishable success.
+- **Six canary classes** target the known compression failure modes: negation, ordering, numeric
+ precision, "don't do X" constraints, multi-step sequences, caveat retention — each with an
+ exact string-level assertion.
+- **Tokens by class** come from `usage` in `claude -p --output-format json` (plus OTel or session
+ JSONL for per-call decomposition); dollars are computed with the live price table in
+ [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/).
+- A technique is **NEGATIVE-COST** only if it wins cost *and* its success rate is ≥ baseline at
+ n≥30 — the bar folklore numbers never clear.
+
+## 1. Design
+
+Two arms, identical except for the technique under test:
+
+- **Arm A (baseline):** default Claude Code settings, no style compression, default context
+ habits, fixed model + effort.
+- **Arm B (technique):** baseline + exactly one technique (or one composed stack — stacks are
+ validated as a unit because savings interact).
+
+Run all tasks in both arms, fresh session per task (no cross-task contamination), same repo
+fixture state per task (reset via git between runs). Order randomized; one run per task per arm
+per round to keep API nondeterminism comparable.
+
+Measured per task: success (objective check), $ per task (usage × live prices), tokens by class
+(uncached input / cache write / cache read / output), turns (assistant API calls), wall time.
+
+## 2. Task suite (n = 12, objective checks)
+
+Tasks are repo-generic; instantiate against any pinned fixture repo (for this repo, pin a commit
+and use a worktree). Each has a deterministic checker — no judge needed for the primary metric.
+
+| # | Task prompt (abridged) | Objective check |
+|---|---|---|
+| 1 | Fix the failing test `&lt;T&gt;` (introduce a known 1-line bug first) | `cargo nextest run &lt;T&gt;` exits 0 |
+| 2 | Add a unit test covering function `&lt;F&gt;`'s error branch | new test exists and fails when branch is broken, passes otherwise |
+| 3 | Rename symbol `&lt;S&gt;` to `&lt;S2&gt;` across the crate | `grep -rw &lt;S&gt; src/` empty AND `cargo check` exits 0 |
+| 4 | Explain what `&lt;module&gt;` does and list its public functions | answer contains all `pub fn` names (scripted set comparison) |
+| 5 | Find where config value `&lt;K&gt;` is parsed; report file:line | reported location matches `grep -n` ground truth |
+| 6 | Apply a provided 20-line spec diff to `&lt;file&gt;` | `git diff` equals expected patch modulo whitespace |
+| 7 | Write a CLI subcommand `&lt;cmd&gt;` per 10-line spec | scripted invocation produces specified stdout |
+| 8 | Summarize the last 5 commits' intent in ≤5 bullets | all 5 commit subjects' key nouns present (set check) |
+| 9 | Identify the bug causing provided failing-test output | names the actual defective function (string match) |
+| 10 | Update a doc page to reflect a changed flag name | old flag absent, new flag present, page builds |
+| 11 | Add input validation rejecting negative `&lt;param&gt;` | property test with negative input now errors; positive path unchanged |
+| 12 | Triage: which of 3 provided diffs introduced the regression | names the correct diff |
+
+Success = checker exit 0. Tasks 4, 8, 9, 12 use scripted string/set assertions (still objective;
+no LLM judge). If a task needs judgment (rare), use the rubric judge in §5 — but never for the
+headline number.
+
+## 3. Canary tasks (compression failure modes)
+
+Run in **both arms**; any Arm-B-only failure is a quality regression regardless of the task
+suite score. Exact assertions:
+
+| Canary | Prompt core | Assertion (scripted) |
+|---|---|---|
+| C1 Negation | "List the steps to deploy. Do NOT include the rollback step." | output lacks "rollback" content step; includes deploy steps |
+| C2 Ordering | "Print migration steps; backup MUST precede schema drop." | index("backup") < index("drop") in the answer |
+| C3 Numeric precision | "The timeout is 4.75 seconds; write the config snippet." | literal `4.75` present (not 4.7, 5, or 4750ms unless converted correctly) |
+| C4 Don't-do-X | "Refactor this function. Do not change its public signature." | signature line byte-identical post-run |
+| C5 Multi-step | 7-step setup where step 5 depends on step 3's output | all 7 steps present, dependency order preserved |
+| C6 Caveat retention | Ask for a command that has a destructive flag; reference answer carries a warning | warning semantics present in answer (keyword set) |
+
+Rationale: these are precisely what register compression (caveman/wenyan), terse-output prompts,
+summarization, and aggressive pruning are most likely to silently drop — short connectives,
+negations, and qualifiers carry disproportionate meaning per token ([04 — Style and Language Compression — Beyond Caveman](/reference/research/token-optimization-techniques/04-style-and-language-compression/)).
+
+## 4. Runner (concrete)
+
+Headless driver; one invocation per task per arm. `claude -p` returns a JSON envelope with the
+result text and cumulative `usage` (the same fields as the API usage object).
+
+```bash
+#!/usr/bin/env bash
+# run_arm.sh &lt;arm-name&gt; &lt;settings-dir&gt; &lt;tasks.tsv&gt; &lt;out.jsonl&gt;
+set -euo pipefail
+ARM=$1; SETTINGS=$2; TASKS=$3; OUT=$4
+while IFS=$'\t' read -r ID PROMPT CHECK; do
+ git -C fixture reset --hard "$FIXTURE_SHA" -q
+ R=$(CLAUDE_CONFIG_DIR="$SETTINGS" claude -p "$PROMPT" \
+ --output-format json --max-turns 40 --cwd fixture 2>/dev/null)
+ PASS=0; (cd fixture && bash -c "$CHECK") && PASS=1
+ jq -nc --arg id "$ID" --arg arm "$ARM" --argjson pass "$PASS" \
+ --argjson r "$R" \
+ '{id:$id, arm:$arm, pass:$pass,
+ usage:$r.usage, cost_usd:$r.total_cost_usd,
+ turns:$r.num_turns, duration_ms:$r.duration_ms}' >> "$OUT"
+done < "$TASKS"
+```
+
+Technique arms are realized as a separate `CLAUDE_CONFIG_DIR` (own settings.json, hooks,
+CLAUDE.md, plugins) so arms cannot leak into each other. For techniques that are session habits
+rather than config (e.g. "/clear between tasks"), encode the habit in the driver, not the prompt.
+
+Dollars: prefer `total_cost_usd` from the envelope; recompute from `usage` × the price table
+([01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) §1) as a cross-check. Per-call class decomposition when needed:
+enable OTel (`claude_code.token.usage` by `type`) or parse the session JSONL **deduplicating by
+`message.id`** (trap documented in [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/) §1).
+
+## 5. Judging
+
+- **Primary: objective checkers only** (above). Tests pass, diff correct, string assertions.
+- **Secondary (only where unavoidable):** LLM judge, fixed rubric, judge model ≠ tested model
+ family where possible; rubric: task satisfied (0/1), constraints respected (0/1), factual
+ errors (count), missing caveats (count). Judge sees both arms' outputs blinded and shuffled;
+ ties broken by a second judge run with order swapped. Judge verdicts never override an
+ objective checker.
+
+## 6. The statistical bar for "no quality loss"
+
+Success rates p_A, p_B over n tasks/arm. Declare **no quality loss** when Arm B is
+*non-inferior* with margin δ = 5 percentage points:
+
+- **Screening (n = 12):** require `successes_B ≥ successes_A − 1` AND zero canary regressions.
+ Power is honestly low at n=12 — this only filters out gross degradation (it will catch drops
+ ≳25pp reliably, not 10pp).
+- **Confirmation (n = 30, required before a technique enters a recommended stack):** one-sided
+ bootstrap (10,000 resamples of paired per-task outcomes) for Δ = p_A − p_B; require the 95th
+ percentile of Δ < 5pp, plus zero canary regressions in 3 repetitions of the canary set.
+- **Cost comparison is only valid between arms passing the bar:** report median and mean $/task
+ with bootstrap 95% CIs, and tokens by class so the saving's *location* is visible (a claimed
+ output saving showing up as cache-read movement means the mechanism is misattributed —
+ investigate before believing).
+
+Paired bootstrap (tasks are paired across arms) in ~15 lines:
+
+```python
+import json, random, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+A = {r['id']: r for r in rows if r['arm']=='A'}
+B = {r['id']: r for r in rows if r['arm']=='B'}
+ids = sorted(set(A) & set(B)); n = len(ids)
+deltas = []
+for _ in range(10_000):
+ s = [random.choice(ids) for _ in range(n)]
+ deltas.append(sum(A[i]['pass'] for i in s)/n - sum(B[i]['pass'] for i in s)/n)
+deltas.sort
+print(f"Δ success (A−B) p95 = {deltas[int(.95*10_000)]:.3f} (non-inferior if < 0.05)")
+print(f"cost/task A median {sorted(A[i]['cost_usd'] for i in ids)[n//2]:.3f} "
+ f"B median {sorted(B[i]['cost_usd'] for i in ids)[n//2]:.3f}")
+```
+
+## 7. Per-technique falsification experiments
+
+Every technique record in files [04 — Style and Language Compression — Beyond Caveman](/reference/research/token-optimization-techniques/04-style-and-language-compression/) through [14 — Frontier — unrealistic but maybe real](/reference/research/token-optimization-techniques/14-frontier-ideas/) names its falsification experiment; they all reduce to an
+instantiation of this harness:
+
+- **Style layers (caveman/wenyan):** arms differ only in the style hook; canaries C1–C6 are the
+ decisive part (register compression's failure mode is dropped qualifiers, not wrong code).
+- **Context pruning/masking:** Arm B evicts stale tool results; add task variants that *require*
+ recalling early-session facts — tests whether eviction drops load-bearing history.
+- **Model routing:** Arm B routes named subtasks to a cheaper model; the task suite must include
+ the routed task class (e.g. tasks 4, 5, 8 for Haiku exploration).
+- **Caching techniques:** quality-neutral by construction (identical tokens, different pricing) —
+ validation is purely arithmetic: verify `cache_read_input_tokens` moved as predicted, success
+ untouched.
+- **Effort/thinking budget cuts:** the highest-risk class (touches reasoning itself). Confirmation
+ n=30 mandatory; include tasks 1, 9, 11, 12 (the reasoning-heavy ones).
+
+## 8. Where to read the numbers (recap)
+
+| Surface | Use |
+|---|---|
+| `claude -p --output-format json` envelope | per-run usage, `total_cost_usd`, turns — the harness's primary source |
+| API `usage` object fields | ground truth class decomposition (01 §4) |
+| `/cost`, `/context` | interactive spot checks |
+| OTel `claude_code.token.usage` / `cost.usage` | fleet dashboards; per-`agent.name` attribution |
+| Session JSONL | post-hoc per-call analysis (dedup by `message.id`; thinking is redacted — infer per 02 §6) |
+
+## Verification ledger
+
+| Item | Basis |
+|---|---|
+| `claude -p --output-format json` envelope fields (usage, total_cost_usd, num_turns) | Claude Code headless mode docs — code.claude.com/docs ; field names cross-checked against local CLI output format |
+| Price table used for $ math | [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/) (live-) |
+| JSONL dedup + thinking-redaction traps | Local measurement, [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/) |
+| δ=5pp, n=12/30, bootstrap procedure | Design choices (stated, not claimed as external standard); power statements are arithmetic over binomial outcomes — ESTIMATE |

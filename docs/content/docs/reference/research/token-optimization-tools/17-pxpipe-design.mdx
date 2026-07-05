@@ -1,0 +1,197 @@
+---
+title: "17 — pxpipe: design teardown"
+---
+
+# 17 — pxpipe: design teardown
+
+pxpipe is the first tool added to the comparison set after the [global comparison](/reference/research/token-optimization-tools/16-global-comparison/) closed — added 2026-07-05 — and it earns a full chapter because it opens a **category none of the previous ten occupy**: an input-side prompt-rewrite proxy that re-encodes stable request regions into a *cheaper modality* — dense PNG images billed at flat pixel-based vision rates — while deliberately engineering prefix-cache stability instead of breaking it. Call the category **cache-aligned prompt re-encoding**, or by its meme name, *optical context compression*. It is neither an output-register prompt (caveman), nor a write-time observation filter (RTK), nor a whole-prompt text compressor (headroom): it shrinks the *cached corpus itself*, which makes it the only surveyed tool that directly attacks the **cache-read bucket (~32% of heavy-session dollars)** — the bucket every output-brevity and observation-compression tool structurally leaves untouched. It is also, independently of the mechanism, the most rigorously self-measured tool in the survey; its savings accounting is worth citing even if the imaging idea is never adopted.
+
+| Field | Value |
+|---|---|
+| Repository | `teamchong/pxpipe` — but the npm package is `pxpipe-proxy`; bare `pxpipe` is unclaimed on npm, a typo-squat risk for installers |
+| Pitch | Local proxy for Claude Code that rewrites bulky request context (system-prompt + tool-docs slab, old history, large tool_results) into dense PNG images, exploiting flat pixel-based vision-token pricing; claims ~59–70% lower end-to-end bill on Fable 5 |
+| Form factor | **Local HTTP proxy** (`npx pxpipe-proxy`, `127.0.0.1:47821`, wired in via `ANTHROPIC_BASE_URL`); also deployable as a Cloudflare Worker or usable as a pure-JS library. TypeScript; sole runtime dependency is `gpt-tokenizer` |
+| Latest seen | `v0.8.0` (npm `pxpipe-proxy@0.8.0`, published 2026-07-04); 10 npm releases in the 10 days 2026-06-25 → 2026-07-04; only 2 GitHub Releases vs 10+ git tags — npm is the authoritative artifact stream |
+| Adoption (2026-07-05) | 1,728★ / 9 watchers / 100 forks in ~6.5 weeks — the thin 0.5% watcher ratio reads as drive-by starring on a trending repo, not fabrication; coverage on trendshift, X, and AI-news aggregators is consistent with a genuine June-2026 virality spike riding the DeepSeek "optical context compression" meme. No hard evidence of inflation, but community depth is unproven — contrast the [PR-inflated caveman/RTK stars](/reference/research/token-optimization-tools/07-evidence-and-claims/) |
+| License | MIT |
+| Bucket hit | Cache write (~29% of heavy-session dollars), **cache read (~32%)**, and uncached input (large tool_results); visible output (~17%) and thinking (~20%) untouched by design — responses stream through unmodified |
+| Cache interaction | **Mutates the cached prefix — normally the disqualifying move — but engineers stability**: no new `cache_control` markers, frozen imaged slab, quantized history boundary. A new class for the framework; see below |
+
+Maintenance posture up front, because it caps everything else: ~6.5 weeks old, 298 commits, effectively single-author (296 by `teamchong`, one drive-by contributor), near-daily pre-1.0 releases, bus factor 1, no API stability promise. The README states most commits — code and docs — were written by Opus/Fable sessions running behind pxpipe itself (author-stated).
+
+## The magic: rent the vision encoder as a decompressor
+
+The arbitrage is a pricing asymmetry. Anthropic bills text input per BPE token, and dense Claude Code traffic runs at roughly **1.91 characters per text token** (pxpipe's own N=391 calibration). Images are billed by pixel count — approximately `px/750` — regardless of how much text the pixels contain. Anthropic resamples anything above a long edge of ~1568 px / ~1.15 MP, so pxpipe clamps its page geometry to exactly that cap: a **1568×728 grayscale page ≈ 1,525 billed tokens** that reaches the vision encoder unresampled (WYSIWYG), holding **28,080 characters at 312 columns × 90 rows — ~3.1 characters per image token** on dense content. Same bytes, ~one third the input price, and the model reads them back through its vision encoder instead of its tokenizer. By pxpipe's own math, plain text would only win above ~19 chars/token, a density real traffic never approaches.
+
+Everything else in the design is scaffolding to make that arbitrage *safe*: a gate so it only fires where the math wins, cache alignment so it does not shred the prefix cache, and a measurement loop so the savings claim is falsifiable per request.
+
+```text
+            PXPIPE INTERCEPTION  (POST /v1/messages only; all else byte-identical)
+
+   Claude Code ──ANTHROPIC_BASE_URL──►  pxpipe proxy (127.0.0.1:47821)
+        │
+        ▼
+   ┌────────────────────────────┐  applicability.ts: method/path/model gate
+   │  applicability gate          │  default allowlist: claude-fable-5, gpt-5.6
+   │                              │  (per-model legibility-gated; Opus 4.8 and
+   └────────────────────────────┘   GPT 5.5 opt-in — they misread the renders)
+        │ eligible
+        ▼
+   ┌────────────────────────────┐  transform.ts rewrites THREE input regions:
+   │  1. static slab              │  system prompt + tool docs → PNG pages,
+   │     (frozen at first render) │  FROZEN; volatile env text relocated behind
+   │  2. collapsed old history    │  all cache breakpoints as text
+   │     (keepTail=4 turns text)  │  closed-tool-sequence prefix → one synthetic
+   │  3. large tool_results       │  user message of PNG pages, provenance-bannered
+   │     (~6k+ dense chars)       │  per-block profitability gate, incl. burn terms
+   └────────────────────────────┘
+        │ relocate caller's EXISTING cache_control marker
+        │ onto the last image block (never add new markers)
+        ▼
+   upstream Anthropic API  ◄──── in parallel: free count_tokens probes on the
+        │                        ORIGINAL uncompressed body (the counterfactual)
+        ▼
+   response streams back UNTOUCHED ── billed usage + counterfactual logged
+                                      to ~/.pxpipe/events.jsonl
+```
+
+The renderer is the part most people assume is exotic and is not: **fully deterministic, no ML**. `render.ts` blits a prebuilt 5×8 bitmap-glyph atlas (Spleen font; Unifont and JetBrains Mono as fallback assets; atlas generated at build time with `@napi-rs/canvas`, runtime pure JS including its own PNG encoder, so it runs on Cloudflare Workers) into a grayscale framebuffer and PNG-encodes in-process. Reflow packs text to ~75–80% glyph fill with visible newline markers, an in-image instruction band, and codepoint-level East-Asian-wide handling; glyphs missing from the atlas are counted as `droppedChars` telemetry rather than silently swallowed. One precision caveat the chapter must carry: the README's "How it works" section still quotes the pre-0.7.0 geometry (1928×1928, ~4,761 tok, ~92k chars) alongside the current 1568×728/1,525/28,080 figures — 0.7.0 shrank the page after discovering API-side resampling was blurring glyphs, i.e. billed pixels were not reaching the encoder. An internal inconsistency in their docs, not in the shipped constants.
+
+## The profitability gate
+
+Imaging is not applied wholesale. A per-request, per-region gate compresses only where the arithmetic wins, and — unusually — it prices **cache burn symmetrically**: flipping a warm text cache to images costs one cold cache write, and the gate charges that against the imaging side, so the decision rule is compress iff `imageTokens + priorWarmTokens×(1.25−0.10) < textTokens + priorWarmImageTokens×(1.25−0.10)`. Sparse prose stays text; dense slabs, logs, and history get imaged. This is why pxpipe's economics do not resemble the naive whole-prompt-rewriter break-even (~5.5–10× per turn documented elsewhere in this hub): the mode-flip burn is a *one-time per-enable* cost, not per-turn churn. Per-block caps bound the blast radius: max 10 images per tool_result, 100 images per request.
+
+## Cache alignment: the actual engineering
+
+Mutating the prompt is normally where prompt-rewrite tools die — the framework's default verdict for whole-prompt rewriters is "cache-hostile, disqualified". pxpipe is the first surveyed tool to mutate the prefix *and* keep it cache-stable, via three invariants:
+
+- **Never add `cache_control` markers — relocate.** The caller's existing marker is moved onto the last image block of the same logical content, so the provider's cache-breakpoint topology is preserved, just re-keyed once.
+- **Freeze the imaged slab at first render.** Volatile content (env block, cwd, skill listings) is relocated behind all cache breakpoints as text, wrapped in system-reminder tags, so turn-2's system sha matches turn-1's.
+- **Quantize the history boundary.** `collapseHistory` (`history.ts`) folds the largest *closed-tool-sequence* prefix of past turns into one synthetic user message of PNG pages bracketed by provenance banners, keeping the last `keepTail=4` turns, open tool sequences, and the latest thinking signature as text (the latest collapsed user turn also rides verbatim up to 4,000 chars since 0.7.2). The text/image boundary advances in quantized steps, so demoting old turns re-keys the cache rarely — a one-time event, not per-turn churn.
+
+The failure mode these invariants exist for is documented in pxpipe's own history: a 2026-05-19 moving-boundary bug (issue #28, pre-npm) re-keyed the prefix every turn and produced **−250% "savings"** — the cache-shredder scenario in its purest form. It is now covered by dedicated regression tests (`anthropic-cache-align.test.ts`, `cache-stability-e2e.test.ts`, `gate-flap.test.ts`). The residual risk does not go away, though: correctness depends on Claude Code's request shape (marker placement, prefix ordering) staying as assumed, and a harness update can silently reintroduce the bug class until the proxy adapts. A prompt-mutating middleman is never "safe by construction" the way RTK's tool-boundary position is — it is safe by vigilance.
+
+## The measurement kernel: the anti-K1 gold standard
+
+This is the subsystem the hub endorses unreservedly, whatever happens to the imaging idea. For every proxied request, pxpipe fires a **free `count_tokens` probe on the original uncompressed body in parallel** (plus a second probe truncated at the last cache marker), reads the *actually billed* usage off the response, and logs both to `~/.pxpipe/events.jsonl` (row schema includes `baseline_tokens`, `baseline_cacheable_tokens`, input/cc/cr splits, `system_sha8`, `ts`, `duration_ms`; stop_reason and safety-flag telemetry since 0.7.0). Two design choices make this the most honest accounting in the survey:
+
+- **Same-observed-cache-state baseline.** The counterfactual is priced under the cache state actually observed on the real request (`cr>0` → both arms warm; `cr==0` → both arms cold), so the provider's cache discount *cancels* instead of being counted as pxpipe's savings — the exact K1 failure (claiming the cache's work as your own) that inflates most tools' numbers.
+- **Unfloored negatives.** Requests where imaging lost money are shown as negative rows, not clipped to zero.
+
+The repo's `FINDINGS.md` is an unusual companion artifact: an adversarial self-audit whose original verdict on the project was "dead — REVERSED", including a 2026-06-23 reframe that compares against `/compact` as the correct baseline, with file:line citations into opencode's `compaction.ts` and codex's `compact.rs`/rollout-trace reducer. The author also *excluded* their best benchmark number (GSM8K 96% imaged) from the headline because GSM8K is in training data and memorized answers survive misreads — methodologically correct, and rarer than it should be.
+
+## The honest part: it is lossy, and the misses are silent
+
+Bytes survive in pixels, but verbatim recall through the vision encoder is unreliable, and pxpipe documents this against interest. Twelve-character hex recall from dense renders: **13/15 on Fable 5, 0/15 on Opus 4.8** — and the misses are **silent confabulations**, not refusals. A blind legibility audit (docs/LEGIBILITY-AUDIT-2026-07-01.md) tops out exact-string reads on dense identifiers at 63%. There is one documented in-the-wild failure: the model confidently produced a wrong person name from imaged history (FINDINGS.md, 2026-06-12). This is why the model allowlist defaults to `claude-fable-5` and `gpt-5.6` only — Opus 4.7/4.8 (~7% render misreads) and GPT 5.5 are opt-in — and why the library API ships a `keepSharp(block)` callback to pin byte-exact blocks as text and an `emitRecoverable` option that returns the original blocks so a stateful harness can restore verbatim content. The guard is caller-opt-in, though: nothing automatically detects that a hash, ID, or secret is about to live only in pixels. The failure shape is the same "confidently-wrong recalled fact" that sank cavemem — the difference is that pxpipe measured it, published it, and gated models on it.
+
+## What pxpipe has, and what it lacks
+
+| Feature | pxpipe |
+|---|---|
+| Attacks the cache-read bucket (~32% of dollars) | **Yes — unique in the survey**; the imaged prefix is what gets re-read every warm turn |
+| Attacks cache writes (~29%) | **Yes** — their worked example: 28,000-token text prefix → 3,000 image tokens; cold write 35,000 → 3,750 effective tokens (author's figures) |
+| Deterministic transform, no ML in the loop | **Yes** — bitmap-atlas blit + in-process PNG encode |
+| Cache-aligned despite mutating the prompt | **Yes, by engineering** (marker relocation, frozen slab, quantized boundary) — not by construction; regression-tested after a real −250% incident |
+| Per-request falsifiable savings accounting | **Yes — the best in the survey** (count_tokens counterfactual, same-cache-state baseline, unfloored negatives) |
+| Per-model legibility gating | **Yes** — allowlist default `claude-fable-5`, `gpt-5.6`; live-flippable via `PXPIPE_MODELS` or dashboard |
+| Works with stock Claude Code today | **Yes** — one env var, no harness modification |
+| Escape hatch for byte-exact content | **Partial** — `keepSharp`/`emitRecoverable` exist but are caller-opt-in; no automatic verbatim-risk detection |
+| Lossless | **No — structurally lossy** with a silent-confabulation failure shape |
+| Robust to provider pricing/vision changes | **No** — the entire economics rest on the undocumented `px/750` billing and resample caps, and per-model vision behavior already varies from 100/100 to 0/15 |
+| Touches visible output or thinking (~37% of dollars) | **No** — responses stream through unmodified, by design |
+| Rust / crates.io surface | **No** — TypeScript/npm only |
+| Independent replication of the headline savings | **No** — author's own traces, sound methodology, unreproduced |
+| Multi-maintainer, post-1.0 stability | **No** — bus factor 1, ~6.5 weeks old, near-daily releases |
+
+## Self-cost and failure modes
+
+**Self-cost.** PNG encoding adds pre-flight latency on large requests, and every proxied request adds `count_tokens` probes upstream (free of token cost; latency-hidden per the author, unverified). Host-write surface is `~/.pxpipe/` only — clean by jackin❯ standards, no agent-config hooks, no dotfile mutation. The dashboard binds loopback by default since 0.8.0 (`HOST` env opts into all interfaces); it formerly sent a CORS wildcard on JSON endpoints. The Worker deployment now requires `PXPIPE_WORKER_SECRET` when it holds API-key overrides — the fact that 0.8.0 had to add this implies earlier Worker deployments proxied on the deployer's key unauthenticated. A local proxy that holds and forwards API traffic is inherently a security surface; core modules were source-read with no third-party telemetry endpoints found, but not every file was audited line-by-line (dashboard vendor JS, eval harness internals, GPT path, Worker auth path unaudited).
+
+**Failure modes**, in descending order of severity:
+
+- **Silent confabulation on verbatim strings.** Hashes, IDs, secrets, names read back from images can be confidently wrong with no error signal. This is the disqualifying risk for correctness-critical workloads; the tool is only defensible for gist-tolerant coding work on allowlisted models with `keepSharp` discipline.
+- **Provider fragility, economics.** The value proposition rests on empirically reverse-engineered, undocumented provider behavior (`px/750` billing, ~1568/~1.15 MP resample cap). A pricing or resampling change can silently flip −60% to net-negative, or blur glyphs below legibility, overnight.
+- **Provider fragility, legibility.** Vision behavior varies wildly across models (Fable 5 100/100 arithmetic vs Opus 4.8 ~7% misreads vs GPT 5.5 degraded); every model release requires re-validation before the allowlist admits it, and a silent model-side vision change could degrade an allowlisted model mid-flight.
+- **Prompt-mutating-middleman side effects.** Already observed and reactively fixed in-window: history imaging teaching the model to skip Read calls (0.8.0), collapsed opening-prompt truncation causing answers from fragments (#7, 0.7.2), env-block mis-attribution as a user message (0.7.1), refusal-classifier trips on compressed context (0.7.0), and the #28 cache shredder. Each was found after shipping.
+- **Stacking hazard.** Two prompt-mutating middlemen (pxpipe + a headroom-class live-zone compressor) can invalidate each other's prefix stability. Treat as either/or on the history region.
+- **CJK "works but conservatively"** per the author; non-Latin-heavy codebases are under-tested.
+
+## How it relates to the rest of the survey
+
+| Tool | Relation |
+|---|---|
+| [caveman](/reference/research/token-optimization-tools/01-caveman-design/) (output register) | Orthogonal, fully complementary — caveman attacks visible output (~17%), pxpipe never touches output. Stacking is safe: different buckets, no interaction |
+| [headroom](/reference/research/token-optimization-tools/02-headroom-design/) (live-zone text compression) | Same buckets, competing mechanisms, **stacking hazard** — both mutate message history; two middlemen risk shredding each other's prefix stability. Either/or on history; pxpipe uniquely covers the system/tool-docs slab |
+| [RTK](/reference/research/token-optimization-tools/03-rtk-design/) (write-time Bash filter) | Complementary with interaction — RTK shrinks tool output at the source, verbatim-safe; pxpipe images whatever large tool_results still land (&gt;~6k dense chars), lossy. RTK-first reduces pxpipe's surface. RTK is the safe default; pxpipe adds the slab/history/cache-read savings RTK structurally cannot reach |
+| [lean-ctx](/reference/research/token-optimization-tools/04-leanctx-design/) (integrated runtime) | Philosophical opposite — lean-ctx controls what enters context at source inside the runtime; pxpipe compresses whatever the unmodified harness emits, in flight. pxpipe works with stock Claude Code today; runtime-integrated control is the cleaner long-term architecture |
+| codedb / sem / fff / mq (retrieval-precision tools) | Orthogonal, complementary — they reduce what enters context; pxpipe compresses what enters anyway. No conflict |
+| cavemem (memory, refuted in [the ecosystem chapter](/reference/research/token-optimization-tools/14-caveman-ecosystem/)) | Instructive contrast — pxpipe's imaged history is effectively a lossy in-context memory substrate, but unlike cavemem it ships adversarial evals, publishes its failure modes, logs per-request counterfactuals, and gates by model. The measurement discipline is exactly what cavemem lacked |
+| caveman-code (full agent) | Different layer — a full agent could adopt pxpipe as its transport-level compressor via the library API (`transformAnthropicMessages`). No mechanism overlap |
+
+## Evidence and claims to kill
+
+pxpipe's evidence profile is unusual: the *methodology* is the strongest in the survey while the *numbers* remain author-only. Tier assignments below; T1 here means shipped code directly source-read at HEAD (runtime behavior not independently exercised unless stated), T4 means author self-report.
+
+- **Identity and mechanism — T1.** Repo, license, versions, contributor profile verified via the GitHub API and npm registry (accessed 2026-07-05); the proxy/gate/renderer/history mechanism verified by reading `src/core/proxy.ts`, `transform.ts`, `render.ts`, `history.ts`, `applicability.ts` at HEAD. The cache-alignment design (marker relocation, same-cache-state baseline) is verified as design + source cross-reference; runtime cache behavior was not independently exercised.
+- **"~59–70% lower end-to-end bill on Fable 5" — T4, methodology verified, numbers unreproduced.** The 13,709-request snapshot ($100 → ~$41 = 59%) and the later 8,904-compressed-request trace (~70%; compressed-only ~72–74% quoted separately) are the author's own workload, logged through the count_tokens-counterfactual pipeline. The method is explicitly anti-K1 and sound; the traces are still one person's traffic. The FAQ itself concedes the headline is an input-side number diluted by output spend sitting in the denominator.
+- **"Reasoning quality preserved" — T4 with receipts.** Novel arithmetic 100/100 both arms at −38% tokens; gist recall 98/98; state tracking 18/18; SWE-bench Lite pilot 10/10 both arms at −65% request size; SWE-bench Pro 14/19 ON vs 15/19 OFF at −60%, 18/19 verdict agreement, the one split re-resolved 3/3 on replication. Receipts (preds, eval_results, logs) are present in the repo's `eval/` tree but were not re-run for this hub. Small n on SWE-bench.
+- **Image economics (`px/750`, 1,525 tok/page, ~3.1 chars/image-token, text wins only above ~19 chars/token, traffic at 1.91 chars/token N=391) — T4, author-measured via a 2026-07-01 count_tokens sweep, consistent with Anthropic's published vision pricing formula.** Mechanism plausible; not re-swept here. Note the README geometry inconsistency (old 1928×1928 figures still quoted in one section).
+- **Lossiness (13/15 / 0/15 hex, 63% blind dense-identifier ceiling, silent confabulation) — T4, self-reported against interest** and consistent across code (allowlist defaults), docs, and evals. Claims made against interest with published receipts are the most credible T4 gets.
+- **"1,728 stars = traction" — assessed, likely organic but shallow.** 9 watchers, press-driven spike, ~6.5 weeks. Not the fabrication pattern seen elsewhere in the hub, but not evidence of a community either.
+- **Dashboard demo figures ($4.51–$6.06 vs $42.21 plain at 96% context) — T4**, from recorded runs with attempt logs in `demo/effective-context/ATTEMPTS.md`; the compressed arm needed one format nudge, and two variants of the number coexist in README/CHANGELOG.
+
+There is no T2 or T3 evidence anywhere in the record: no peer-reviewed measurement of the text-to-image arbitrage on Anthropic pricing, and no community replication of the savings traces. The prior art is DeepSeek's optical context compression work (late 2025); pxpipe is the productionized Claude Code application of that idea, a lineage external commentary confirms.
+
+## jackin❯ verdict
+
+**Real, novel, and the most rigorously self-measured tool in the survey — endorse the measurement methodology unreservedly, endorse the tool itself only conditionally.** The condition set: gist-tolerant coding workloads, allowlisted models only, verbatim caveat front and center, `keepSharp` discipline for anything byte-exact. Two structural risks cap the verdict below its engineering quality: the lossy silent-confabulation failure shape (byte-exact strings must never live only in pixels), and economics/legibility held hostage to undocumented provider behavior that its own cross-model measurements already show flipping from 100/100 to 0/15. Single maintainer, pre-1.0, six weeks old.
+
+### Reuse surface for the Context Engine
+
+Recommendation for the [jackin❯ Context Engine spec](/reference/research/jackin-context-engine/): **PORT selected kernels + treat as design donor; do not DEPEND; do not adopt the imaging mechanism into the engine core yet.**
+
+| Component | Decision | Reason |
+|---|---|---|
+| Any pxpipe artifact as a dependency | **DEPEND: no — nothing dependable** | TypeScript/npm only (`pxpipe-proxy`); no crates.io surface; bus factor 1, pre-1.0 |
+| Honest-savings measurement kernel (`baseline.ts`: parallel count_tokens counterfactual, same-observed-cache-state baseline via `deriveBaselineWarmth`/`computeBaselineInputEff`/`computeActualInputEff`, events.jsonl row schema) | **PORT — highest priority** | This is exactly the accounting the Context Engine needs to prove its *own* savings ([measurement chapter](/reference/research/jackin-context-engine/08-measurement-and-verification/)); provider-API-level logic, trivial to port to Rust, fully specified in `docs/CACHING_AND_SAVINGS.md` |
+| Cache-alignment invariants (never add markers — relocate the caller's; freeze rewritten prefixes at first render; quantize moving boundaries; price mode-flips with symmetric burn terms) | **PORT as engine design rules** | These apply to *any* prompt-mutating feature jackin❯ ever ships, image-based or not; the −250% bug #28 is the canonical cautionary tale |
+| Quantized history-boundary algorithm (`history.ts` `collapseHistory`) and the cache-burn gate formula | **PORT (with the above)** | Small, well-specified, pure logic |
+| Atlas-blit renderer | **PORT only if an optical-compression mode is ever wanted** | Deterministic, no ML; maps to a static glyph table + the Rust `png` crate (`@napi-rs/canvas` is build-time only, no native-dep contagion); a weekend port — but see SKIP below for why not now |
+| Spleen 5×8 bitmap font | **VENDOR (conditional on the above)** | BSD 2-clause (`assets/SPLEEN_LICENSE.txt`), allowlist-compatible |
+| Page-geometry/economics constants (1568×728, 312×90, `px/750`, chars/token calibration) | **VENDOR with a re-measurement obligation** | Small and model-version-pinned; must be re-swept per model generation, never trusted stale |
+| JetBrains Mono font asset | **VENDOR OK if needed** | OFL 1.1 |
+| Unifont asset | **SKIP pending license review** | GPLv2+-with-font-exception / OFL dual license needs checking; likely skip |
+| `keepSharp`/`emitRecoverable` escape-hatch API shape, per-model legibility-gated allowlist pattern, counterfactual telemetry schema | **Design donor** | Adopt the shapes, not the code |
+| Optical compression in the engine core, today | **SKIP for now** | Lossy silent-confabulation failure shape conflicts with jackin❯'s correctness-first posture, and the economics are provider-fragile. Revisit if Anthropic's vision pricing/behavior stabilizes across model generations; any future mode must clear pxpipe's own evidence bar — per-model legibility evals before enabling any model, a byte-exact escape hatch, and a kill switch |
+
+MIT license permits all of the above.
+
+## Validation protocol
+
+What must be independently verified before any adoption decision graduates from this chapter's tiers (all steps runnable against `v0.8.0`):
+
+1. **Replay measurement.** Run the proxy against a recorded, jackin❯-representative Claude Code trace; recompute savings independently from the raw `events.jsonl` usage fields rather than trusting the dashboard aggregate; confirm negative rows appear unfloored. Target: promote the savings claim from T4 to locally reproduced, with our workload mix instead of the author's.
+2. **Re-sweep the pixel economics.** Generate pages at the shipped geometry, run `count_tokens` sweeps per allowlisted model, confirm ~1,525 tokens/page and the ~19 chars/token crossover still hold. This sweep must become a recurring tripwire, re-run on every model release and pricing announcement — the constants are perishable.
+3. **Verbatim-recall battery.** Reproduce the 12-char-hex probe (and extend to file paths, commit shas, API keys-shaped strings) per model; confirm the allowlist boundary and quantify the silent-miss rate on our content mix.
+4. **Cache-stability check.** Multi-turn session through the proxy; assert `system_sha8` stability across turns, `cache_read_input_tokens` non-regression, and exactly one burn on mode flip — the bug-#28 class, verified against the live Claude Code request shape rather than the fixtures.
+5. **Stacking test with RTK.** Measure how much tool_result volume survives RTK filtering above pxpipe's ~6k-char gate, i.e. how much of pxpipe's third region remains once write-time filtering is in place.
+6. **Re-run one benchmark receipt.** The SWE-bench Lite pilot receipts exist in `eval/`; re-executing one arm pair would move the quality claim from "author-reported with receipts" toward replicated.
+
+## Source ledger
+
+All sources accessed 2026-07-05.
+
+| Source | What it evidences |
+|---|---|
+| https://api.github.com/repos/teamchong/pxpipe (+ /releases, /tags, /contributors, /commits) | Identity, stars/watchers/forks, commit count, single-author profile, release-vs-tag gap |
+| https://registry.npmjs.org/pxpipe-proxy | v0.8.0 publish date, 10-release cadence, `gpt-tokenizer` sole runtime dep, bin name |
+| `registry.npmjs.org/pxpipe` (probe; endpoint 404s, deliberately not linked) | Empty — bare name unclaimed; squat risk |
+| https://raw.githubusercontent.com/teamchong/pxpipe/HEAD/README.md | Pitch, headline savings, benchmarks table, "the honest part" lossiness, geometry inconsistency, agent-authorship statement |
+| https://raw.githubusercontent.com/teamchong/pxpipe/HEAD/CHANGELOG.md | 0.7.x–0.8.0 incident fixes, security notes (loopback default, Worker secret) |
+| https://raw.githubusercontent.com/teamchong/pxpipe/HEAD/FINDINGS.md | Adversarial self-audit, /compact baseline reframe, 2026-06-12 in-the-wild confabulation |
+| https://raw.githubusercontent.com/teamchong/pxpipe/HEAD/docs/CACHING_AND_SAVINGS.md and docs/HISTORY_CACHE_MODEL.md | Savings formulas, same-cache-state baseline, history cache model |
+| https://github.com/teamchong/pxpipe/tree/HEAD/src/core — `proxy.ts`, `transform.ts`, `render.ts`, `history.ts`, `applicability.ts`, `atlas.ts` read raw at HEAD | Mechanism verification at source (T1 basis) |
+| https://raw.githubusercontent.com/teamchong/pxpipe/HEAD/package.json | Exports map, library API surface |
+| https://trendshift.io/repositories/71973 (via WebSearch) | Virality-spike evidence |
+| https://x.com/kimmonismus/status/2073315097317871850 (via WebSearch) | DeepSeek optical-compression lineage |
+| https://aiweekly.co/alerts/pxpipe-renders-claude-context-to-pngs-to-cut-bills-59-70 (via WebSearch) | Press coverage of the headline claim |
