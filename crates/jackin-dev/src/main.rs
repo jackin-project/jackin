@@ -35,7 +35,7 @@ const LOCAL_CONSTRUCT_REGISTRY: &str = "jackin-local/construct";
 const CONSTRUCT_STABLE_TAG: &str = "trixie";
 
 #[derive(Parser)]
-#[command(name = "jackin-dev", about = "Developer tooling for jackin")]
+#[command(name = "jackin-dev", about = "Developer tooling for jackin", version)]
 struct Cli {
     #[command(subcommand)]
     command: TopCommand,
