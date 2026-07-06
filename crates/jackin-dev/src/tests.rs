@@ -289,7 +289,7 @@ fn is_diff_too_large_matches_github_406_phrasings() {
     );
     assert!(is_diff_too_large(&live));
 
-    // Each detection phrasing on its own, for resilience to gh rewordings.
+    // Each detection phrasing on its own, in case gh rewords these later.
     assert!(is_diff_too_large(&anyhow::anyhow!("HTTP 406: nope")));
     assert!(is_diff_too_large(&anyhow::anyhow!(
         "PullRequest.diff too_large"
