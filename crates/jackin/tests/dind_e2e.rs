@@ -39,8 +39,8 @@ use fixtures::{
     write_sentinel_config, write_slow_exit_config,
 };
 use pty_runner::{
-    PtyFileSentinel, PtyQuickExit, run_in_pty_until_agent_report, run_in_pty_until_file,
-    run_in_pty_until_quick_exit_after_input, scripted_sentinel_launch_input,
+    PtyFileSentinel, PtyQuickExit, run_in_pty_until_file, run_in_pty_until_quick_exit_after_input,
+    scripted_sentinel_launch_input,
 };
 use util::{
     REPORT_BEGIN, REPORT_END, assert_sentinel_build_output_routed_to_log, assert_sentinel_report,
@@ -53,10 +53,6 @@ const SENTINEL_ROLE_KEY: &str = "jackin-e2e/sentinel";
 const SENTINEL_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__sentinel";
 const SLOW_EXIT_ROLE_KEY: &str = "jackin-e2e/slow-exit";
 const SLOW_EXIT_CONTAINER_PREFIX: &str = "jackin-jackin-e2e__slow-exit";
-const CAPSULE_DETACH_KEYS: &str = "\u{2}d";
-const BUILD_FAILED_MODAL_TEXT: &str = "Building the Docker container failed";
-const FAILURE_DIAGNOSTICS_LABEL: &str = "run diagnostics";
-const FAILURE_DISMISS_HINT: &str = "dismiss";
 const TESTCONTAINERS_SMOKE_OK: &str = "TESTCONTAINERS_SMOKE=ok";
 
 /// RAII cleanup so the test's Docker resources are removed even if an
@@ -112,19 +108,36 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     // pinned for validation purposes.
     let construct_image = e2e_construct_image();
     let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
-    let output = run_in_pty_until_agent_report(&jackin, &args, &home, &workspace_dir, &extra_env);
+    let report_path = workspace_dir.join("jackin-e2e-report.txt");
+    let output = run_in_pty_until_file(
+        &jackin,
+        &args,
+        &home,
+        &workspace_dir,
+        &extra_env,
+        &[],
+        PtyFileSentinel {
+            path: &report_path,
+            text: TESTCONTAINERS_SMOKE_OK,
+            timeout: Duration::from_mins(6),
+        },
+    );
 
-    // Agent prints its env + `docker ps` snapshot after a sentinel marker on
-    // its stdout, which the PTY captures into `output.stdout`. Reading from
-    // stdout instead of a `/workspace` bind-mount file keeps the test agnostic
-    // to whether the Docker daemon shares the test process's filesystem (DinD
-    // and remote daemons resolve bind-mount sources on the daemon side, where
-    // the test cannot read them). The capture is a rendered terminal
-    // transcript, so marker order and the closing marker's visibility can vary.
+    // The capsule multiplexer is a full-screen renderer, so agent stdout is a
+    // terminal transcript, not a stable report channel. The fake agent writes
+    // the same report into the bound workspace; the PTY remains only the launch
+    // driver.
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let report = std::fs::read_to_string(&report_path).unwrap_or_else(|error| {
+        panic!(
+            "agent report file missing at {}: {error}\n{}",
+            report_path.display(),
+            e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
+        )
+    });
     assert!(
-        stdout.contains(REPORT_BEGIN),
+        report.contains(REPORT_BEGIN),
         "agent did not emit {REPORT_BEGIN} marker\n{}",
         e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
     );
@@ -133,13 +146,12 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     // still satisfy the contains-substring asserts below on whatever
     // happened to land before the cut.
     assert!(
-        stdout.contains(REPORT_END),
+        report.contains(REPORT_END),
         "agent did not emit {REPORT_END} marker — report is truncated\n{}",
         e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
     );
-    let report = stdout.as_ref();
 
-    let dind_hostname = find_report_value(report, "JACKIN_DIND_HOSTNAME=")
+    let dind_hostname = find_report_value(&report, "JACKIN_DIND_HOSTNAME=")
         .unwrap_or_else(|| panic!("report must include JACKIN_DIND_HOSTNAME\n{report}"));
     assert!(is_dns_label(dind_hostname), "{dind_hostname}");
     assert!(!dind_hostname.contains("__"));
