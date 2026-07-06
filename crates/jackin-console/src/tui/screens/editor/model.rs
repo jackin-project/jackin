@@ -245,7 +245,6 @@ pub trait EditorErrorPopupModal<ErrorPopupState> {
 
 #[derive(Debug)]
 pub struct EditorState<
-    WorkspaceConfig,
     MountInfoCache,
     Modal,
     SaveFlow,
@@ -305,7 +304,6 @@ impl<
     PendingOpCommit,
 >
     EditorState<
-        WorkspaceConfig,
         crate::mount_info_cache::MountInfoCache,
         Modal,
         SaveFlow,

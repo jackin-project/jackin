@@ -16,12 +16,16 @@
 //! declarative build graph stays in `docker-bake.hcl`, which this binary
 //! invokes rather than reimplementing in flag assembly.
 
+mod agent_files;
 mod arch;
+mod ci;
 mod construct;
 mod docs;
 mod lint;
 mod pr;
+mod profile_matrix;
 mod pty_fixture;
+mod release_verify;
 mod schema;
 mod test_layout;
 
@@ -38,6 +42,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Run the local CI merge-readiness gate.
+    ///
+    /// Use as `cargo xtask ci --fast` for the non-e2e gate, or add `--e2e`
+    /// to include Docker-backed smoke tests.
+    Ci(ci::CiArgs),
     /// Construct base-image build and publish tasks.
     ///
     /// Use as `cargo xtask construct <subcommand>`.
@@ -78,13 +87,15 @@ enum Command {
     /// Codebase-health lint gates (codebase-health-enforcement W3 + W4).
     ///
     /// `cargo xtask lint` (no subcommand) runs **every** gate — the file-size
-    /// ratchet, the test-file-layout rule, and the dependency-direction check.
-    /// This is the CI entry point. Add `--strict` to fail on architecture
-    /// violations instead of just reporting them.
+    /// ratchet, the test-file-layout rule, the AGENTS/CLAUDE symlink rule, and
+    /// the dependency-direction check. This is the CI entry point. Add
+    /// `--strict` to fail on architecture violations instead of just reporting
+    /// them.
     ///
     /// Subcommands run a single gate: `cargo xtask lint files`
     /// (`--print-budget` refreshes the budget file), `cargo xtask lint tests`,
-    /// `cargo xtask lint arch` (`--dump` / `--strict`).
+    /// `cargo xtask lint agents`, `cargo xtask lint arch` (`--dump` /
+    /// `--strict`).
     Lint {
         #[command(subcommand)]
         command: Option<LintCommand>,
@@ -94,6 +105,18 @@ enum Command {
         #[arg(long)]
         strict: bool,
     },
+    /// Run Docker security-profile compatibility probes.
+    ///
+    /// Use as `cargo xtask profile-matrix standard`. The command runs the
+    /// cheap local probes directly and reports heavyweight/host-specific cells
+    /// as gated evidence with their required host prerequisites.
+    #[command(name = "profile-matrix")]
+    ProfileMatrix(profile_matrix::ProfileMatrixArgs),
+    /// Verify a signed release archive and its published sidecars.
+    ///
+    /// Use as `cargo xtask release-verify <archive>.tar.gz`.
+    #[command(name = "release-verify")]
+    ReleaseVerify(release_verify::ReleaseVerifyArgs),
 }
 
 #[derive(Subcommand)]
@@ -104,6 +127,9 @@ enum LintCommand {
     /// `tests.rs`, never inline `#[cfg(test)] mod tests` or split across
     /// `tests/` sub-modules).
     Tests(test_layout::LintTestsArgs),
+    /// Enforce that first-party `CLAUDE.md` files are symlinks to sibling
+    /// `AGENTS.md` files.
+    Agents(agent_files::LintAgentFilesArgs),
     /// Dependency-direction gate (Workstream 4).
     Arch(arch::LintArchArgs),
 }
@@ -116,6 +142,7 @@ enum LintCommand {
 fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     lint::enforce()?;
     test_layout::enforce()?;
+    agent_files::enforce()?;
     arch::check(strict)
 }
 
@@ -123,6 +150,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let result = match cli.command {
         Command::Construct(cmd) => construct::run(cmd),
+        Command::Ci(args) => ci::run(args),
         Command::Pr(cmd) => pr::run(cmd),
         Command::PtyFixture(args) => pty_fixture::run(args),
         Command::Change(cmd) => docs::run_change(cmd),
@@ -130,9 +158,12 @@ fn main() -> ExitCode {
         Command::Research(cmd) => docs::run_research(cmd),
         Command::Roadmap(cmd) => docs::run_roadmap(cmd),
         Command::SchemaCheck(args) => schema::run(args),
+        Command::ProfileMatrix(args) => profile_matrix::run(args),
+        Command::ReleaseVerify(args) => release_verify::run(args),
         Command::Lint { command, strict } => match command {
             Some(LintCommand::Files(args)) => lint::run(args),
             Some(LintCommand::Tests(args)) => test_layout::run(args),
+            Some(LintCommand::Agents(args)) => agent_files::run(args),
             Some(LintCommand::Arch(args)) => arch::run(args),
             None => run_all_lints(strict),
         },

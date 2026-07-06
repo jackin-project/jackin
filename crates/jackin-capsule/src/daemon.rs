@@ -201,7 +201,6 @@ pub struct Multiplexer {
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
-    zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,
     /// The only writer to the attach socket: composed frames are
@@ -260,6 +259,10 @@ pub struct Multiplexer {
     /// per-frame reconciliation emits only transitions against this. `None`
     /// (fresh attach) asserts everything explicitly.
     last_asserted_client_state: Option<compositor::AssertedClientState>,
+    /// Per-pane cache for SGR and hyperlink overlay regions. The full
+    /// Ratatui frame is still rebuilt every compose; this only avoids
+    /// rescanning unchanged pane cells for backend-side overlay metadata.
+    pane_region_cache: HashMap<u64, compositor::PaneRegionCache>,
     /// Last pointer shape emitted through OSC 22. Stored so passive
     /// mouse motion does not spam the outer terminal with duplicate
     /// pointer-shape updates.
@@ -522,7 +525,6 @@ impl Multiplexer {
             env_passthrough,
             event_tx,
             event_rx,
-            zoomed: None,
             input_parser,
             detach_requested: false,
             client: crate::client_writer::ClientWriter::default(),
@@ -543,6 +545,7 @@ impl Multiplexer {
             wipe_pending: None,
             last_invalidate_reason: None,
             last_asserted_client_state: None,
+            pane_region_cache: HashMap::new(),
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),

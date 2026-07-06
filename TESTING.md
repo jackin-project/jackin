@@ -5,8 +5,13 @@ Use [cargo-nextest](https://nexte.st) as test runner.
 Install:
 
 ```sh
-cargo install cargo-nextest --locked
+mise install
 ```
+
+This installs the pinned Rust toolchain and dev tools (`cargo-nextest`,
+`cargo-deny`, `cargo-audit`, and the rest of [mise.toml](mise.toml)) at the
+same versions CI uses. Do not install these tools with ad hoc `cargo install`
+commands.
 
 Run all tests:
 
@@ -43,11 +48,17 @@ In PR checkouts, run `jackin-dev pr sync <PR_NUMBER>` and source
 `eval "$(cargo run --bin build-jackin-capsule -- --export)"` before the
 Docker-backed smoke command.
 
-Never `cargo test` — always `cargo nextest run`.
+Never `cargo test` for normal Rust tests — always `cargo nextest run`.
+The one sanctioned `cargo test` invocation is doctests, which nextest does
+not run:
+
+```sh
+cargo test --doc --workspace --locked
+```
 
 ## Recording capsule render-conformance fixtures
 
-Capsule echo-back harness (`crates/jackin-capsule/src/daemon/render_conformance_tests.rs`) replays PTY byte streams through multiplexer, asserts emitted frames reproduce pane model on virtual client terminal. Synthetic streams live in harness; real-agent fixtures are recorded from a trace-level run:
+Capsule echo-back harness ([crates/jackin-capsule/src/daemon/tests.rs](crates/jackin-capsule/src/daemon/tests.rs)) replays PTY byte streams through multiplexer, asserts emitted frames reproduce pane model on virtual client terminal. Synthetic streams live in harness; real-agent fixtures are recorded from a trace-level `--debug` run:
 
 1. Run session with `JACKIN_TELEMETRY_LEVEL=trace` (e.g. `JACKIN_TELEMETRY_LEVEL=trace cargo run --bin jackin -- console --debug`), exercise agent. Note run id CLI prints.
 2. Extract one session's PTY stream from run log into binary fixture:

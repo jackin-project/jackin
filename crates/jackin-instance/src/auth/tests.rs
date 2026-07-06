@@ -203,6 +203,62 @@ fn sync_mode_copies_host_auth_on_first_run() {
 }
 
 #[test]
+fn copy_host_claude_json_copies_present_file() {
+    let temp = tempdir().unwrap();
+    let host = temp.path().join(".claude.json");
+    let dest_dir = temp.path().join("state");
+    let dest = dest_dir.join(".claude.json");
+    std::fs::create_dir_all(&dest_dir).unwrap();
+    std::fs::write(
+        &host,
+        r#"{"oauthAccount":{"emailAddress":"test@example.com"}}"#,
+    )
+    .unwrap();
+
+    super::copy_host_claude_json(&host, &dest).unwrap();
+
+    assert!(
+        std::fs::read_to_string(dest)
+            .unwrap()
+            .contains("test@example.com")
+    );
+}
+
+#[test]
+fn copy_host_claude_json_writes_empty_object_when_absent() {
+    let temp = tempdir().unwrap();
+    let host = temp.path().join("missing.claude.json");
+    let dest_dir = temp.path().join("state");
+    let dest = dest_dir.join(".claude.json");
+    std::fs::create_dir_all(&dest_dir).unwrap();
+
+    super::copy_host_claude_json(&host, &dest).unwrap();
+
+    assert_eq!(std::fs::read_to_string(dest).unwrap(), "{}");
+}
+
+#[test]
+fn copy_host_claude_json_propagates_read_errors_without_writing_empty_object() {
+    let temp = tempdir().unwrap();
+    let host = temp.path().join(".claude.json");
+    let dest_dir = temp.path().join("state");
+    let dest = dest_dir.join(".claude.json");
+    std::fs::create_dir_all(&host).unwrap();
+    std::fs::create_dir_all(&dest_dir).unwrap();
+
+    let err = super::copy_host_claude_json(&host, &dest).unwrap_err();
+
+    assert!(
+        err.to_string().contains("reading Claude account metadata"),
+        "error should preserve context: {err}"
+    );
+    assert!(
+        !dest.exists(),
+        "read errors must not write a synthetic empty account file"
+    );
+}
+
+#[test]
 fn sync_source_dir_copies_claude_config_dir_without_nested_home_layout() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -2195,20 +2251,26 @@ fn round_trip_ignore_sync_token_ignore_state_clean() {
 /// guard; a regression that drops the content-equal check would
 /// fire `write_private_file` (atomic rename) on every launch.
 #[test]
-fn sync_skips_write_when_content_unchanged() {
+fn sync_idempotent_skips_write_when_content_unchanged() {
     let temp = tempdir().unwrap();
     let host_home = stage_host_hosts_yml(&temp, "ghp_unchanged");
     let hosts_yml = temp.path().join("role-state-hosts.yml");
 
     RoleState::provision_github_auth(&hosts_yml, &ctx(GithubAuthMode::Sync, None), &host_home)
         .unwrap();
-    let mtime_first = std::fs::metadata(&hosts_yml).unwrap().modified().unwrap();
-
+    let forced_mtime = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
     #[expect(
         clippy::disallowed_methods,
-        reason = "mtime idempotency test needs a wall-clock boundary before checking no rewrite"
+        reason = "test fixture forces mtime on an already-created hosts.yml file"
     )]
-    std::thread::sleep(std::time::Duration::from_millis(1100));
+    std::fs::File::options()
+        .write(true)
+        .open(&hosts_yml)
+        .unwrap()
+        .set_modified(forced_mtime)
+        .unwrap();
+    let mtime_first = std::fs::metadata(&hosts_yml).unwrap().modified().unwrap();
+
     RoleState::provision_github_auth(&hosts_yml, &ctx(GithubAuthMode::Sync, None), &host_home)
         .unwrap();
     let mtime_second = std::fs::metadata(&hosts_yml).unwrap().modified().unwrap();

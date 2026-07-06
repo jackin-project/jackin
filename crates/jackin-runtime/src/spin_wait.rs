@@ -98,9 +98,8 @@ where
             }
             Err(e) => last_err = Some(e),
         }
-        let interval = interval_for_attempt(attempt);
-        let spins = (interval.as_millis() as u64 / SPIN_MS).max(1);
-        for _ in 0..spins {
+        let mut remaining = interval_for_attempt(attempt);
+        while !remaining.is_zero() {
             if !suppressed {
                 let frame = FRAMES[frame_idx % FRAMES.len()];
                 eprint!(
@@ -110,7 +109,9 @@ where
                 );
                 drop(io::stderr().flush());
             }
-            tokio::time::sleep(std::time::Duration::from_millis(SPIN_MS)).await;
+            let sleep_for = remaining.min(std::time::Duration::from_millis(SPIN_MS));
+            tokio::time::sleep(sleep_for).await;
+            remaining = remaining.saturating_sub(sleep_for);
             frame_idx += 1;
         }
     }

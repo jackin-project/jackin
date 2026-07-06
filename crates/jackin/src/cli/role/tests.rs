@@ -272,6 +272,18 @@ fn load_help_shows_mount_format() {
     );
 }
 
+#[test]
+fn load_help_lists_every_agent_slug() {
+    let help = help_text(&["jackin", "load", "--help"]);
+    for agent in jackin_core::Agent::ALL {
+        assert!(
+            help.contains(agent.slug()),
+            "load help should list `{}` from Agent::ALL: {help}",
+            agent.slug()
+        );
+    }
+}
+
 // ── Hardline help ───────────────────────────────────────────────────
 
 #[test]
@@ -283,6 +295,18 @@ fn hardline_help_shows_examples() {
         help.contains("jackin hardline ") && help.contains("auto-detect workspace"),
         "missing no-arg usage in hardline help: {help}"
     );
+}
+
+#[test]
+fn hardline_help_lists_every_agent_slug() {
+    let help = help_text(&["jackin", "hardline", "--help"]);
+    for agent in jackin_core::Agent::ALL {
+        assert!(
+            help.contains(agent.slug()),
+            "hardline help should list `{}` from Agent::ALL: {help}",
+            agent.slug()
+        );
+    }
 }
 
 #[test]

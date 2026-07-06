@@ -1863,6 +1863,13 @@ fn dind_env_from_run_cmd(run_cmd: &str) -> String {
         .to_owned()
 }
 
+fn compat_dind_load_options() -> LoadOptions {
+    LoadOptions {
+        docker_profile: Some(crate::runtime::docker_profile::DockerSecurityProfile::Compat),
+        ..LoadOptions::default()
+    }
+}
+
 #[test]
 fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
     let passthrough = host_runtime_passthrough_env([
@@ -2043,7 +2050,7 @@ plugins = ["code-review@claude-plugins-official"]
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
         auto_trust,
         |_, _, _| Ok(()),
     )
@@ -3910,7 +3917,7 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
         &repo_workspace(&cached_repo.repo_dir),
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap_err();
@@ -4508,6 +4515,130 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
             .iter()
             .any(|call| call == &format!("docker network rm {prewarm_net}")),
         "adopted prewarm network must be torn down; recorded: {recorded:?}"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_grant_validation_failure_tears_down_adopted_dind() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.docker.grants = Some(jackin_core::DockerGrants {
+        user: Some("root".to_owned()),
+        sudo: Some(true),
+        ..Default::default()
+    });
+
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, None);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+
+    let prewarm_dind = "jk-prewarm-grants-dind";
+    let prewarm_net = "jk-prewarm-grants-net";
+    let prewarm_certs = "jk-prewarm-grants-certs";
+    write_prewarmed_dind_state(
+        &paths,
+        &DindSidecarPrewarm {
+            dind: prewarm_dind.to_owned(),
+            network: prewarm_net.to_owned(),
+            certs_volume: prewarm_certs.to_owned(),
+            ready_ms: 12,
+            kept: true,
+        },
+    )
+    .unwrap();
+
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert(prewarm_dind.to_owned(), ContainerState::Running);
+    let mut network_labels = HashMap::new();
+    network_labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
+    network_labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
+    docker.inspect_network_queue.borrow_mut().push_back(Some(
+        jackin_docker::docker_client::NetworkRow {
+            name: prewarm_net.to_owned(),
+            labels: network_labels,
+        },
+    ));
+    docker
+        .exec_capture_queue
+        .borrow_mut()
+        .push_back(String::new());
+    docker
+        .exec_capture_queue
+        .borrow_mut()
+        .push_back(String::new());
+
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        ..LoadOptions::default()
+    };
+
+    let result = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await;
+
+    let error = result.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("docker grants validation failed"),
+        "unexpected error: {error:#}"
+    );
+    let recorded = docker.recorded.borrow();
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker rm -f {prewarm_dind}")),
+        "adopted prewarm DinD must be torn down after grant validation failure; recorded: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker volume rm {prewarm_certs}")),
+        "adopted prewarm cert volume must be torn down after grant validation failure; recorded: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker network rm {prewarm_net}")),
+        "adopted prewarm network must be torn down after grant validation failure; recorded: {recorded:?}"
     );
 }
 
@@ -5453,7 +5584,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -5538,7 +5669,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -5659,7 +5790,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -5777,7 +5908,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -6030,7 +6161,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -6092,7 +6223,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -6857,11 +6988,11 @@ async fn load_agent_injects_op_cli_resolved_value() {
     std::fs::create_dir_all(&bin_dir).unwrap();
     let bin_path = bin_dir.join("op");
     // The resolver first runs `op --version` as a reachability probe
-    // when any value carries an OpRef, then calls `op read op://...`
+    // when any value carries an OpRef, then calls `op read -- op://...`
     // with the canonical UUID URI. The fake must handle both.
     std::fs::write(
             &bin_path,
-            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"op://abc-vault/abc-item/api-token\" ]; then printf '%s' 'resolved-op-token'; exit 0; fi\nexit 99\n",
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ]; then\n  for arg in \"$@\"; do\n    if [ \"$arg\" = \"op://abc-vault/abc-item/api-token\" ]; then printf '%s' 'resolved-op-token'; exit 0; fi\n  done\nfi\nexit 99\n",
         )
         .unwrap();
     let mut perms = std::fs::metadata(&bin_path).unwrap().permissions();

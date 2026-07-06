@@ -68,7 +68,7 @@ Canonical body shape, intent-split block list, mandatory isolation env-var rule 
 `ensure_available` in `src/capsule_binary.rs` resolves binary in this priority order:
 
 1. **`JACKIN_CAPSULE_BIN=/path` env override.** Used directly, no cache, no download. Set when iterating on `crates/jackin-capsule/` source — path should point at a Linux build produced by `cargo run --bin build-jackin-capsule`.
-2. **Cache hit** at `~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/jackin-capsule`. Cache key is `JACKIN_VERSION` (commit SHA suffix included), so any `cargo build` of jackin invalidates it.
+2. **Cache hit** at `~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/jackin-capsule`. Cache key is `JACKIN_VERSION`. Local non-CI builds use the package version to keep this cache stable across commits; CI, preview, construct, and release builds run with `CI` set and keep the SHA suffix.
 3. **Download** from `preview` rolling GitHub Release tag (for `-dev` / `-preview.` versions) or `v<version>` tag (for tagged releases). Cached after first successful download.
 
 Host does **not** auto-rebuild `crates/jackin-capsule/` on source edits outside the PR sync flow. To pick up local capsule-affecting changes, operator must re-run `jackin-dev pr sync <PR_NUMBER>` — why Checkout block's sync step is mandatory.

@@ -897,7 +897,7 @@ async fn prune_instances_reconciles_stale_active_to_crashed() {
 
 #[tokio::test]
 async fn prune_instances_reaps_only_unheld_name_locks() {
-    use fs2::FileExt as _;
+    use fs4::FileExt;
     // D9: an orphaned `<name>.lock` (no live holder) is removed; one still held
     // by a live process is left untouched.
     let temp = tempdir().unwrap();
@@ -914,7 +914,7 @@ async fn prune_instances_reaps_only_unheld_name_locks() {
         reason = "test holds a real flock to verify the reaper skips a held lock"
     )]
     let held_file = std::fs::File::open(&held).unwrap();
-    held_file.try_lock_exclusive().unwrap();
+    FileExt::try_lock(&held_file).unwrap();
 
     let docker = FakeDockerClient::default();
     let mut runner = FakeRunner::default();
@@ -922,7 +922,7 @@ async fn prune_instances_reaps_only_unheld_name_locks() {
 
     assert!(held.exists(), "a held name-lock must not be reaped");
     assert!(!orphan.exists(), "an unheld name-lock must be reaped");
-    held_file.unlock().unwrap();
+    FileExt::unlock(&held_file).unwrap();
 }
 
 // ── prune_images ─────────────────────────────────────────────────────────

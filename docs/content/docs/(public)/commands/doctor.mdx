@@ -27,7 +27,7 @@ Run a fixed set of health checks and print a one-line status per check with reme
 | Check | What it verifies | Hint on failure |
 |---|---|---|
 | `docker_daemon` | Docker daemon is reachable and responding | Start Docker Desktop, OrbStack, or run `colima start` |
-| `docker_version` | `docker version` succeeds | Upgrade Docker |
+| `docker_version` | Reports the Docker server version when `docker version` succeeds | Start Docker and ensure the CLI can reach the daemon |
 | `disk_space` | ≥ 1 GiB free on the jackin data partition | `jackin prune` or `docker system prune` |
 | `config_dir` | `~/.config/jackin/` exists and is writable | `mkdir -p ~/.config/jackin` |
 | `jackin_dir` | `~/.jackin/` exists | `mkdir -p ~/.jackin` |

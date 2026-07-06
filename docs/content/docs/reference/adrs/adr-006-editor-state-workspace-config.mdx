@@ -1,0 +1,42 @@
+---
+title: "ADR-006: EditorState owns concrete workspace config"
+---
+
+**Status**: Accepted  
+**Current state**: `EditorState` stores concrete `jackin_config::WorkspaceConfig` values for `original`
+and `pending`; the remaining editor type parameters stay generic for modal, save-flow, auth, and pending
+worker test seams.  
+**Date**: 2026-07-04  
+**Deciders**: Operator + agent
+
+## Context
+
+Plan 022 measured the cost of `jackin-console`'s generic host-console core. The editor state had eleven
+type parameters, but production always bound the first one to `jackin_config::WorkspaceConfig` through
+`crate::tui::state::EditorState<'a>`. That parameter leaked into impl blocks and type aliases without
+preserving a real production substitution.
+
+The other editor parameters are different. Unit tests use lightweight modal, cache, auth-target, and
+pending-worker placeholders to characterize model and view behavior without constructing the whole console
+surface. Removing those parameters would trade useful test seams for less syntax and needs separate
+measurement.
+
+## Decision
+
+`EditorState` owns the workspace-config type concretely:
+
+- `original` and `pending` are `jackin_config::WorkspaceConfig`.
+- `WorkspaceConfig` is no longer an `EditorState` generic parameter.
+- `WorkspaceEditorState` and the root `crate::tui::state::EditorState<'a>` aliases forward one fewer type
+  argument.
+- Modal, save-flow, auth-target, env-value, and pending-worker slots remain generic.
+
+This is a narrow collapse, not a rejection of the functional-core shape.
+
+## Consequences
+
+- Direct `EditorState<...>` spell-outs shrink by one argument.
+- The editor model and state impl blocks no longer carry an unconstrained concrete type as ceremony.
+- Existing lightweight tests still instantiate compact editor states with `()` or small test modal types.
+- Further generic collapse must be measured separately before Plan 023 decomposes `jackin-console` by
+  responsibility.

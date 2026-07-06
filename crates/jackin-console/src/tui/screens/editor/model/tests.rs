@@ -12,8 +12,7 @@ use super::{
     EditorTabActionKeyPlan, FieldFocus, RoleHeaderExpansionPlan, SecretsRow, editor_save_mode_plan,
 };
 
-type TestEditor =
-    EditorState<WorkspaceConfig, (), (), (), jackin_config::EnvValue, (), (), (), (), (), ()>;
+type TestEditor = EditorState<(), (), (), jackin_config::EnvValue, (), (), (), (), (), ()>;
 #[derive(Debug)]
 enum TestStatusModal {
     Status,
@@ -52,19 +51,8 @@ impl super::EditorErrorPopupModal<u8> for TestStatusModal {
     }
 }
 
-type TestEditorWithStatusModal = EditorState<
-    WorkspaceConfig,
-    (),
-    TestStatusModal,
-    (),
-    jackin_config::EnvValue,
-    (),
-    (),
-    (),
-    (),
-    (),
-    (),
->;
+type TestEditorWithStatusModal =
+    EditorState<(), TestStatusModal, (), jackin_config::EnvValue, (), (), (), (), (), ()>;
 #[derive(Debug)]
 enum TestAuthModal {
     Auth {
@@ -94,21 +82,9 @@ impl crate::tui::auth_config::ModalAuthFormParentInspect for TestAuthModal {
     }
 }
 
-type TestEditorWithAuthModal = EditorState<
-    WorkspaceConfig,
-    (),
-    TestAuthModal,
-    (),
-    jackin_config::EnvValue,
-    u8,
-    (),
-    (),
-    (),
-    (),
-    (),
->;
+type TestEditorWithAuthModal =
+    EditorState<(), TestAuthModal, (), jackin_config::EnvValue, u8, (), (), (), (), ()>;
 type TestEditorWithMountCache = EditorState<
-    WorkspaceConfig,
     crate::mount_info_cache::MountInfoCache,
     (),
     (),

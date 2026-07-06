@@ -6,6 +6,7 @@ members = [
     "crates/jackin-capsule",
     "crates/jackin-config",
     "crates/jackin-console",
+    "crates/jackin-console-oppicker",
     "crates/jackin-core",
     "crates/jackin-dev",
     "crates/jackin-diagnostics",
@@ -31,9 +32,88 @@ resolver = "3"
 [workspace.package]
 version = "0.6.0-dev"
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.95"
 license = "Apache-2.0"
 repository = "https://github.com/jackin-project/jackin"
+
+[workspace.dependencies]
+anstyle-parse = "1.0"
+anyhow = "1.0"
+assert_cmd = "=2.2.2"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false }
+clap = "4.5"
+clap_mangen = "0.3"
+compact_str = "0.9"
+criterion = "=0.8.2"
+crossterm = "0.29"
+dhat = "=0.3.3"
+dialoguer = "0.12"
+directories = "6.0"
+dockerfile-parser-rs = "3.3.0"
+fast-down = "5.0"
+filetime = "=0.2.29"
+flate2 = "1.1"
+fs4 = "1.1.0"
+futures-util = "0.3"
+hex = "0.4"
+insta = "=1.48.0"
+jackin-build-meta = { version = "0.6.0-dev", path = "crates/jackin-build-meta" }
+jackin-agent-status = { version = "0.6.0-dev", path = "crates/jackin-agent-status" }
+jackin-config = { version = "0.6.0-dev", path = "crates/jackin-config" }
+jackin-console = { version = "0.6.0-dev", path = "crates/jackin-console" }
+jackin-console-oppicker = { version = "0.6.0-dev", path = "crates/jackin-console-oppicker" }
+jackin-core = { version = "0.6.0-dev", path = "crates/jackin-core" }
+jackin-diagnostics = { version = "0.6.0-dev", path = "crates/jackin-diagnostics" }
+jackin-docker = { version = "0.6.0-dev", path = "crates/jackin-docker" }
+jackin-env = { version = "0.6.0-dev", path = "crates/jackin-env" }
+jackin-host = { version = "0.6.0-dev", path = "crates/jackin-host" }
+jackin-image = { version = "0.6.0-dev", path = "crates/jackin-image" }
+jackin-instance = { version = "0.6.0-dev", path = "crates/jackin-instance" }
+jackin-isolation = { version = "0.6.0-dev", path = "crates/jackin-isolation" }
+jackin-launch-tui = { version = "0.6.0-dev", path = "crates/jackin-launch-tui" }
+jackin-manifest = { version = "0.6.0-dev", path = "crates/jackin-manifest" }
+jackin-protocol = { version = "0.6.0-dev", path = "crates/jackin-protocol" }
+jackin-runtime = { version = "0.6.0-dev", path = "crates/jackin-runtime" }
+jackin-term = { version = "0.6.0-dev", path = "crates/jackin-term" }
+jackin-tui = { version = "0.6.0-dev", path = "crates/jackin-tui" }
+jackin-usage = { version = "0.6.0-dev", path = "crates/jackin-usage" }
+nix = "0.31"
+opentelemetry_sdk = "0.32"
+owo-colors = "4"
+portable-pty = "0.9"
+predicates = "=3.1.4"
+procfs = "0.18"
+rand = "0.10"
+ratatui = "0.30"
+ratatui-core = "=0.1.2"
+regex = "1"
+reqwest = { version = "0.13", default-features = false }
+rustls = { version = "0.23", default-features = false }
+secrecy = "0.10"
+semver = "1"
+serde = "1.0"
+serde_json = "=1.0.150"
+serde_yaml_ng = "0.10.0"
+sha2 = "0.11"
+similar = "3"
+smallvec = "1.15"
+tabled = "0.21.0"
+tempfile = "=3.27.0"
+thiserror = "2.0"
+tokio = { version = "=1.52.3", default-features = false }
+tokio-util = "0.7"
+toml = "=1.1.2"
+toml_edit = "0.25"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tui-scrollbar = "0.2.4"
+tui-widget-list = "0.15"
+turso = { version = "=0.7.0-pre.17", default-features = false }
+unicode-width = "0.2"
+url = "2"
+vte = "0.15"
+x509-cert = { version = "0.2", default-features = false }
 
 [workspace.lints.rust]
 rust_2024_compatibility = { level = "deny", priority = -1 }

@@ -13,13 +13,14 @@
 
 use super::prune_output;
 use crate::instance::{DockerResources, InstanceIndex, InstanceManifest, InstanceStatus};
-use fs2::FileExt;
+use fs4::FileExt;
 use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::{ContainerState, DockerApi, RemoveImageOutcome};
 use owo_colors::OwoColorize;
 
+use super::backend::{ContainerBackend as _, InstanceBackend};
 use super::discovery::{list_managed_role_names, list_role_names};
 use super::naming::{
     LABEL_IMAGE_KEY, LABEL_KIND_DIND, LABEL_KIND_PREWARM_DIND, LABEL_KIND_ROLE, LABEL_MANAGED,
@@ -111,8 +112,7 @@ async fn purge_container_filesystem(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let _timing = cleanup_timing("container_filesystem");
-    let resources = docker_resources_for_state(paths, container_name);
-    ensure_role_resources_absent_for_purge(docker, &resources).await?;
+    ensure_backend_absent_for_purge(paths, container_name, docker).await?;
     crate::isolation::cleanup::purge_isolated_for_container(
         &paths.data_dir.join(container_name),
         runner,
@@ -153,6 +153,25 @@ pub async fn eject_role(
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
     let _timing = cleanup_timing("eject_role");
+    match super::backend::backend_for_state(paths, container_name) {
+        InstanceBackend::Docker => {
+            super::backend::DockerBackend::new(docker)
+                .eject(paths, container_name)
+                .await
+        }
+        InstanceBackend::AppleContainer => {
+            super::backend::AppleContainerBackend::production()
+                .eject(paths, container_name)
+                .await
+        }
+    }
+}
+
+pub(crate) async fn eject_docker_role(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
     let resources = docker_resources_for_state(paths, container_name);
 
     // Remove containers first so the network has no active endpoints.
@@ -178,7 +197,10 @@ pub async fn eject_role(
     Ok(())
 }
 
-fn docker_resources_for_state(paths: &JackinPaths, container_name: &str) -> DockerResources {
+pub(crate) fn docker_resources_for_state(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> DockerResources {
     let state_dir = paths.data_dir.join(container_name);
     let manifest = InstanceManifest::read_optional(&state_dir).unwrap_or_else(|err| {
         // A corrupt manifest falls back to name-derived resources, which can miss
@@ -195,6 +217,25 @@ fn docker_resources_for_state(paths: &JackinPaths, container_name: &str) -> Dock
         || DockerResources::from_container_name(container_name),
         |manifest| manifest.docker,
     )
+}
+
+async fn ensure_backend_absent_for_purge(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+) -> anyhow::Result<()> {
+    match super::backend::backend_for_state(paths, container_name) {
+        InstanceBackend::Docker => {
+            super::backend::DockerBackend::new(docker)
+                .ensure_absent_for_purge(paths, container_name)
+                .await
+        }
+        InstanceBackend::AppleContainer => {
+            super::backend::AppleContainerBackend::production()
+                .ensure_absent_for_purge(paths, container_name)
+                .await
+        }
+    }
 }
 
 /// Remove the host-side bind-mount directory used to expose the daemon
@@ -445,10 +486,15 @@ async fn gc_orphaned_networks(docker: &impl DockerApi, running: Option<&[String]
 
 pub async fn exile_all(paths: &JackinPaths, docker: &impl DockerApi) -> anyhow::Result<()> {
     let _timing = cleanup_timing("exile_all");
-    let names = prune_output::start("Finding", "managed containers")
+    let mut names = prune_output::start("Finding", "managed containers")
         .complete(list_managed_role_names(docker).await, |error| {
             format!("could not list containers: {error}")
         })?;
+    for name in apple_container_instance_names(paths)? {
+        if !names.iter().any(|existing| existing == &name) {
+            names.push(name);
+        }
+    }
 
     for name in &names {
         prune_output::start("Stopping", name)
@@ -457,6 +503,32 @@ pub async fn exile_all(paths: &JackinPaths, docker: &impl DockerApi) -> anyhow::
             })?;
     }
     Ok(())
+}
+
+fn apple_container_instance_names(paths: &JackinPaths) -> anyhow::Result<Vec<String>> {
+    if !paths.data_dir.exists() {
+        return Ok(vec![]);
+    }
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(&paths.data_dir)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let Some(manifest) =
+            InstanceManifest::read_or_log(&entry.path(), "apple_container_instance_names")
+        else {
+            continue;
+        };
+        if matches!(
+            super::backend::backend_for_manifest(Some(&manifest)),
+            InstanceBackend::AppleContainer
+        ) {
+            names.push(name);
+        }
+    }
+    Ok(names)
 }
 
 // ── Prune ────────────────────────────────────────────────────────────────────
@@ -756,12 +828,12 @@ fn reap_orphaned_name_locks(paths: &JackinPaths) {
         let lock_path = paths.data_dir.join(name.as_ref());
         #[expect(
             clippy::disallowed_methods,
-            reason = "lock-holder check requires opening the file to call try_lock_exclusive"
+            reason = "lock-holder check requires opening the file to call try_lock"
         )]
         let Ok(file) = std::fs::File::open(&lock_path) else {
             continue;
         };
-        if file.try_lock_exclusive().is_ok() {
+        if FileExt::try_lock(&file).is_ok() {
             // Lock acquired → no live holder → orphaned.
             drop(file); // Release before removing
             match std::fs::remove_file(&lock_path) {
@@ -846,7 +918,7 @@ pub async fn prune_all_instances(
     Ok(())
 }
 
-async fn ensure_role_resources_absent_for_purge(
+pub(crate) async fn ensure_role_resources_absent_for_purge(
     docker: &impl DockerApi,
     resources: &DockerResources,
 ) -> anyhow::Result<()> {

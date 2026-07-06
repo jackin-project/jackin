@@ -259,6 +259,27 @@ async fn debug_run_captures_noncapturing_command_into_diagnostics() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn debug_run_scrubs_captured_command_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let token_file = dir.path().join("token.txt");
+    std::fs::write(&token_file, "token=ghp_1234567890abcdef\n").unwrap();
+    let script = format!("cat '{}'", token_file.display());
+    let paths = jackin_core::JackinPaths::for_tests(dir.path());
+    let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "test").unwrap();
+    let _active = run.activate();
+    let mut runner = ShellRunner { debug: true };
+    runner
+        .run("sh", &["-c", &script], None, &RunOptions::default())
+        .await
+        .unwrap();
+
+    let contents = std::fs::read_to_string(run.path()).unwrap();
+    assert!(!contents.contains("ghp_1234567890abcdef"));
+    assert!(contents.contains("<redacted>"));
+}
+
 #[test]
 fn rich_surface_closes_stdin_for_noninteractive_commands() {
     jackin_diagnostics::set_rich_surface_active(false);

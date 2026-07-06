@@ -1,6 +1,9 @@
-# Cleanup requires explicit operator approval
+---
+title: "ADR-010: Cleanup requires explicit operator approval"
+description: "Why dirty or unpushed isolated work is preserved unless the operator explicitly deletes or discards it."
+---
 
-Status: accepted
+**Status**: Accepted
 
 An instance carrying dirty or unpushed isolated work is removed only by an explicit operator decision — an intentional delete, or an explicit `discard` outcome. Any interruption, crash, or abort — including one that happens while the operator is partway through inspecting the changes — leaves every instance preserved as resumable dirty state, treated exactly like a crashed instance. There is no implicit cleanup path for at-risk work. (A clean, fully-pushed session still auto-cleans, because it has nothing to lose.)
 

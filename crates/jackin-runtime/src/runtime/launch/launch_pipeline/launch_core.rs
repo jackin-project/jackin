@@ -8,8 +8,7 @@
 
 #[allow(unused_imports)]
 use super::{
-    bail_on_grant_errors, emit_auth_provision_launch_plan, purge_or_mark_clean_exited, tag_errors,
-    tagged_grant_errors,
+    emit_auth_provision_launch_plan, purge_or_mark_clean_exited, tag_errors, tagged_grant_errors,
 };
 
 use jackin_config::AppConfig;
@@ -194,7 +193,28 @@ where
         .dind_container
         .clone()
         .unwrap_or_else(|| crate::instance::naming::dind_container_name(&container_name));
-    let certs_volume = crate::instance::naming::dind_certs_volume(&container_name);
+    let certs_volume = resources
+        .certs_volume
+        .clone()
+        .unwrap_or_else(|| crate::instance::naming::dind_certs_volume(&container_name));
+    // Arm cleanup immediately after adoption, before grant validation.
+    // When a prewarmed DinD sidecar was adopted, its container, network,
+    // and certs volume are already *running* and the on-disk prewarm state
+    // was deleted (`adopt_prewarmed_dind_sidecar` calls
+    // `remove_prewarmed_dind_state`), so nothing re-adopts them. Any early
+    // `?`/`return Err` between here and the start of the launch proper
+    // would otherwise orphan a live privileged container with no record.
+    // `LoadCleanup::run` is best-effort: removing the not-yet-created role
+    // container is a no-op. For a fresh launch the sidecar is not started
+    // until later, so there is nothing to leak in the gap.
+    let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
+    let mut cleanup = super::super::LoadCleanup::new(
+        container_name.clone(),
+        dind.clone(),
+        certs_volume.clone(),
+        network.clone(),
+        socket_dir,
+    );
     let workspace_docker_for_grants = config
         .workspaces
         .get(&workspace.label)
@@ -211,7 +231,10 @@ where
     if let Some(grants) = workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()) {
         grant_errors.extend(tagged_grant_errors("workspace", grants));
     }
-    bail_on_grant_errors(grant_errors)?;
+    if let Err(error) = super::bail_on_grant_errors(grant_errors) {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
     let mut effective_grants = crate::runtime::docker_profile::resolve_effective_grants(
         resolved_profile.0,
         config.docker.grants.as_ref(),
@@ -224,12 +247,13 @@ where
         .and_then(|d| d.min_profile)
         && !crate::runtime::docker_profile::profile_meets_floor(resolved_profile.0, min)
     {
-        anyhow::bail!(
+        cleanup.run(docker).await;
+        return Err(anyhow::anyhow!(
             "role `{}` requires Docker profile `{min}` or more capable; resolved `{}` from {}",
             selector.key(),
             resolved_profile.0,
             resolved_profile.1,
-        );
+        ));
     }
     if let Some(docker_cfg) = validated_repo.manifest.docker.as_ref() {
         let role_grants = crate::runtime::docker_profile::DockerGrants {
@@ -238,35 +262,21 @@ where
             capabilities_add: docker_cfg.capabilities_add.clone(),
             ..Default::default()
         };
-        bail_on_grant_errors(tagged_grant_errors("role", &role_grants))?;
+        if let Err(error) = super::bail_on_grant_errors(tagged_grant_errors("role", &role_grants)) {
+            cleanup.run(docker).await;
+            return Err(error);
+        }
         effective_grants =
             crate::runtime::docker_profile::fold_role_grants(effective_grants, &role_grants);
     }
-    bail_on_grant_errors(tag_errors(
+    if let Err(error) = super::bail_on_grant_errors(tag_errors(
         "merged",
         crate::runtime::docker_profile::validate_effective_grants(&effective_grants),
-    ))?;
+    )) {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
     let dind_started = crate::runtime::docker_profile::dind_enabled(&effective_grants);
-    // Arm cleanup immediately after adoption, before any fallible step.
-    // When a prewarmed DinD sidecar was adopted, its container, network,
-    // and certs volume are already *running* and the on-disk prewarm state
-    // was deleted (`adopt_prewarmed_dind_sidecar` calls
-    // `remove_prewarmed_dind_state`), so nothing re-adopts them. Any early
-    // `?`/`return Err` between here and the start of the launch proper
-    // (status write, credential preflights, GitHub-token preflight — a
-    // missing token is a routine operator error) would otherwise orphan a
-    // live privileged container with no record. `LoadCleanup::run` is
-    // best-effort: removing the not-yet-created role container is a no-op.
-    // For a fresh (non-adopted) launch the sidecar is not started until
-    // after this point, so there is nothing to leak in the gap.
-    let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
-    let mut cleanup = super::super::LoadCleanup::new(
-        container_name.clone(),
-        dind.clone(),
-        certs_volume.clone(),
-        network.clone(),
-        socket_dir,
-    );
     // Start the sidecar future before image materialization so network/DinD
     // setup can make progress while runtime binaries and Docker build run.
     if let Some(progress) = steps.progress_mut() {

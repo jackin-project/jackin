@@ -363,14 +363,18 @@ impl RunDiagnostics {
         drop(writeln!(file));
         drop(writeln!(file, "----- stdout -----"));
         let stdout = strip_bytes(stdout);
-        drop(file.write_all(&stdout));
-        if !stdout.ends_with(b"\n") {
+        let stdout = String::from_utf8_lossy(&stdout);
+        let stdout = crate::secret_scrub::scrub_secrets(&stdout);
+        drop(file.write_all(stdout.as_bytes()));
+        if !stdout.ends_with('\n') {
             drop(writeln!(file));
         }
         drop(writeln!(file, "----- stderr -----"));
         let stderr = strip_bytes(stderr);
-        drop(file.write_all(&stderr));
-        if !stderr.ends_with(b"\n") {
+        let stderr = String::from_utf8_lossy(&stderr);
+        let stderr = crate::secret_scrub::scrub_secrets(&stderr);
+        drop(file.write_all(stderr.as_bytes()));
+        if !stderr.ends_with('\n') {
             drop(writeln!(file));
         }
         Some(path)

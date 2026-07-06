@@ -147,7 +147,7 @@ async fn wait_for_capsule_daemon_polls_socket_status_command() {
         ..Default::default()
     };
 
-    wait_for_capsule_daemon("jk-agent-smith", &docker)
+    wait_for_capsule_daemon(&paths, "jk-agent-smith", &docker)
         .await
         .unwrap();
 
@@ -165,6 +165,26 @@ async fn wait_for_capsule_daemon_polls_socket_status_command() {
             && diagnostics.contains("wait_capsule_socket")
             && diagnostics.contains("ready"),
         "expected wait_capsule_socket timing in diagnostics: {diagnostics}"
+    );
+}
+
+#[tokio::test]
+async fn wait_for_capsule_daemon_uses_direct_socket_without_exec() {
+    let (_tmp, paths) = short_test_paths();
+    let socket_path = ensure_socket_parent(&paths, "jk-agent-smith");
+    let _listener = std::os::unix::net::UnixListener::bind(&socket_path).unwrap();
+    let docker = FakeDockerClient {
+        fail_with: vec![("docker exec".to_owned(), "unexpected exec".to_owned())],
+        ..Default::default()
+    };
+
+    wait_for_capsule_daemon(&paths, "jk-agent-smith", &docker)
+        .await
+        .unwrap();
+
+    assert!(
+        docker.recorded.borrow().is_empty(),
+        "direct socket readiness must not spawn docker exec"
     );
 }
 

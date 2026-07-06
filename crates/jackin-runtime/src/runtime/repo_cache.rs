@@ -8,7 +8,7 @@
 
 use crate::instance::runtime_slug;
 use anyhow::Context;
-use fs2::FileExt;
+use fs4::FileExt;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_core::{CommandRunner, RunOptions};
@@ -259,8 +259,7 @@ pub async fn register_agent_repo(
         .data_dir
         .join(format!("{}.repo.lock", runtime_slug(selector)));
     let lock_file = std::fs::File::create(&lock_path)?;
-    lock_file
-        .lock_exclusive()
+    FileExt::lock(&lock_file)
         .map_err(|e| anyhow::anyhow!("failed to acquire repo lock for {}: {e}", selector.key()))?;
 
     let temp_dir = tempfile::Builder::new()
@@ -448,8 +447,7 @@ pub(super) async fn resolve_agent_repo_with(
     };
     std::fs::create_dir_all(lock_path.parent().unwrap_or(&paths.data_dir))?;
     let lock_file = std::fs::File::create(&lock_path)?;
-    lock_file
-        .lock_exclusive()
+    FileExt::lock(&lock_file)
         .map_err(|e| anyhow::anyhow!("failed to acquire repo lock for {}: {e}", selector.key()))?;
 
     let non_interactive = matches!(opts.git_interactivity, GitInteractivity::NonInteractive)

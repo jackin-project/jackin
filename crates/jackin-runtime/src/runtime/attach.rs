@@ -110,43 +110,78 @@ pub fn select_host_attach_transport(
 }
 
 pub(super) async fn wait_for_capsule_daemon(
+    paths: &JackinPaths,
     container_name: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    const MAX_ATTEMPTS: u32 = 60;
-    const INITIAL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+    const MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+    const INITIAL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(25);
     const MAX_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
-    let active_run = jackin_diagnostics::active_run();
-    if let Some(run) = &active_run {
-        run.timing_started("capsule", "wait_capsule_socket", Some(container_name));
-    }
-    let wait_result = crate::spin_wait::spin_wait_ramped(
-        "Waiting for jackin-capsule daemon",
-        MAX_ATTEMPTS,
+    jackin_diagnostics::active_timing_started(
+        "capsule",
+        "wait_capsule_socket",
+        Some(container_name),
+    );
+    let wait_result = wait_for_capsule_daemon_ready(
+        paths,
+        container_name,
+        docker,
+        MAX_WAIT,
         INITIAL_INTERVAL,
         MAX_INTERVAL,
-        || async {
-            docker
-                .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
-                .await
-                .map(|_| ())
-        },
     )
     .await
     .with_context(|| format!("waiting for jackin-capsule daemon in {container_name}"));
-    if let Some(run) = &active_run {
-        run.timing_done(
-            "capsule",
-            "wait_capsule_socket",
-            if wait_result.is_ok() {
-                Some("ready")
-            } else {
-                Some("error")
-            },
-        );
-    }
+    jackin_diagnostics::active_timing_done(
+        "capsule",
+        "wait_capsule_socket",
+        if wait_result.is_ok() {
+            Some("ready")
+        } else {
+            Some("error")
+        },
+    );
     wait_result
+}
+
+async fn wait_for_capsule_daemon_ready(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl DockerApi,
+    max_wait: std::time::Duration,
+    initial_interval: std::time::Duration,
+    max_interval: std::time::Duration,
+) -> anyhow::Result<()> {
+    let started = tokio::time::Instant::now();
+    let mut interval = initial_interval;
+
+    loop {
+        if capsule_daemon_socket_connects(paths, container_name) {
+            return Ok(());
+        }
+
+        let Err(exec_error) = docker
+            .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
+            .await
+        else {
+            return Ok(());
+        };
+
+        if started.elapsed() >= max_wait {
+            return Err(exec_error).with_context(|| {
+                format!("timed out after {max_wait:?} waiting for capsule daemon readiness")
+            });
+        }
+
+        tokio::time::sleep(interval).await;
+        interval = (interval * 2).min(max_interval);
+    }
+}
+
+fn capsule_daemon_socket_connects(paths: &JackinPaths, container_name: &str) -> bool {
+    let socket_path = super::snapshot::socket_path(paths, container_name);
+    socket_path.exists() && std::os::unix::net::UnixStream::connect(socket_path).is_ok()
 }
 
 #[cfg(test)]
@@ -330,7 +365,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
-    wait_for_capsule_daemon(container_name, docker).await?;
+    wait_for_capsule_daemon(paths, container_name, docker).await?;
     if super::host_attach::host_attach_enabled() {
         let outcome = super::host_attach::run_host_attach_session(
             paths,
@@ -452,8 +487,24 @@ pub(super) async fn start_or_hardline_agent(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    start_or_reconnect_capsule_client(paths, container_name, docker, runner).await?;
-    finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
+    use crate::runtime::backend::ContainerBackend as _;
+
+    match crate::runtime::backend::backend_for_state(paths, container_name) {
+        crate::runtime::backend::InstanceBackend::Docker => {
+            let backend = crate::runtime::backend::DockerBackend::new(docker);
+            backend
+                .reconnect(paths, container_name, None, runner)
+                .await?;
+            backend.finalize(paths, container_name, runner).await
+        }
+        crate::runtime::backend::InstanceBackend::AppleContainer => {
+            let backend = crate::runtime::backend::AppleContainerBackend::production();
+            backend
+                .reconnect(paths, container_name, None, runner)
+                .await?;
+            backend.finalize(paths, container_name, runner).await
+        }
+    }
 }
 
 /// Verify the container is reachable (running/paused/restarting).
@@ -706,6 +757,29 @@ pub async fn hardline_agent_with_focus(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    use crate::runtime::backend::ContainerBackend as _;
+
+    match crate::runtime::backend::backend_for_state(paths, container_name) {
+        crate::runtime::backend::InstanceBackend::Docker => {
+            crate::runtime::backend::DockerBackend::new(docker)
+                .hardline(paths, container_name, focus_session, runner)
+                .await
+        }
+        crate::runtime::backend::InstanceBackend::AppleContainer => {
+            crate::runtime::backend::AppleContainerBackend::production()
+                .hardline(paths, container_name, focus_session, runner)
+                .await
+        }
+    }
+}
+
+pub(crate) async fn hardline_docker_agent_with_focus(
+    paths: &JackinPaths,
+    container_name: &str,
+    focus_session: Option<u64>,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
     // Reconcile keep_awake right before each `reconnect_or_create_session_with_focus`
     // call. The attach blocks on the jackin-capsule exec until the session ends,
     // so the post-hardline reconcile in `app::Command::Hardline` would fire
@@ -792,7 +866,7 @@ pub async fn hardline_agent_with_focus(
     finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
 
-async fn finalize_reconnected_foreground_session(
+pub(crate) async fn finalize_reconnected_foreground_session(
     paths: &JackinPaths,
     container_name: &str,
     docker: &impl DockerApi,

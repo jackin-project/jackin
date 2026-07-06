@@ -5,6 +5,7 @@
 
 pub mod apple_container;
 pub mod attach;
+pub mod backend;
 pub mod cleanup;
 pub mod discovery;
 pub mod docker_profile;

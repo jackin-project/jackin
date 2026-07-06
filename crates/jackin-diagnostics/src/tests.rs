@@ -1,7 +1,6 @@
 //! Tests for `jackin-diagnostics`.
 
 use std::fs;
-use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use jackin_core::JackinPaths;
@@ -20,11 +19,9 @@ use crate::terminal::{
     host_screen_owned, rich_surface_active, set_host_screen_owned, set_rich_surface_active,
 };
 use crate::{
-    begin_debug_buffering, emit_compact_line, emit_debug_line, end_debug_buffering,
-    format_debug_line, init_tracing, is_debug_mode,
+    DIAGNOSTICS_TEST_LOCK, begin_debug_buffering, emit_compact_line, emit_debug_line,
+    end_debug_buffering, format_debug_line, init_tracing, is_debug_mode,
 };
-
-static DEBUG_BUFFER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn init_test_tracing() {
     drop(init_tracing(false, "jk-run-test00"));
@@ -441,6 +438,32 @@ fn command_output_sidecar_strips_ansi_sequences() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn command_output_sidecar_scrubs_secret_shapes() {
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::ExitStatus;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, false, "load").unwrap();
+    let path = run
+        .write_command_output(
+            "docker-build",
+            "docker build .",
+            None,
+            ExitStatus::from_raw(1),
+            b"token=ghp_1234567890abcdef\n",
+            b"OPENAI_API_KEY=sk-test-1234567890abcdef\n",
+        )
+        .unwrap();
+
+    let contents = fs::read_to_string(path).unwrap();
+    assert!(!contents.contains("ghp_1234567890abcdef"));
+    assert!(!contents.contains("sk-test-1234567890abcdef"));
+    assert!(contents.contains("<secret redacted>"));
+}
+
 #[test]
 fn prune_all_runs_except_preserves_active_run_file() {
     let tmp = tempfile::tempdir().unwrap();
@@ -571,7 +594,7 @@ fn debug_mode_default_is_off() {
 #[test]
 fn debug_lines_buffer_while_tui_is_active() {
     use std::sync::atomic::Ordering;
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
@@ -589,7 +612,7 @@ fn debug_lines_buffer_while_tui_is_active() {
 #[test]
 fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
     use std::sync::atomic::Ordering;
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
@@ -613,7 +636,7 @@ fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
 
 #[test]
 fn otlp_internal_notice_emits_once() {
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -638,7 +661,7 @@ fn otlp_internal_notice_emits_once() {
 #[test]
 fn debug_lines_tee_only_before_rich_terminal_ownership() {
     use std::sync::atomic::Ordering;
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
@@ -664,7 +687,7 @@ fn debug_lines_tee_only_before_rich_terminal_ownership() {
 #[test]
 fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
     init_test_tracing();
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     set_rich_surface_active(false);
@@ -689,7 +712,7 @@ fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
 #[test]
 fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
     init_test_tracing();
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     set_rich_surface_active(false);

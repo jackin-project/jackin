@@ -958,6 +958,64 @@ fn split_metadata_inherits_focused_provider() {
     assert_eq!(env, expected_env);
 }
 
+#[test]
+fn zoom_state_is_independent_per_tab() {
+    let mut mux = split_tab_mux();
+    mux.toggle_zoom();
+    assert_eq!(mux.active_zoomed_id(), Some(1));
+
+    let mut tab_b = Tab::new_single("Shell", 3, "test-b");
+    assert!(tab_b.tree.split_h(3, 4, SplitPosition::After));
+    tab_b.focused_id = 4;
+    mux.tabs.push(tab_b);
+    mux.active_tab = 1;
+    mux.toggle_zoom();
+
+    assert_eq!(mux.active_zoomed_id(), Some(4));
+    assert_eq!(mux.tabs[0].zoomed, Some(1));
+    assert_eq!(mux.tabs[1].zoomed, Some(4));
+
+    mux.active_tab = 0;
+    assert_eq!(mux.active_zoomed_id(), Some(1));
+}
+
+#[test]
+fn unzooming_active_tab_does_not_clear_other_tab_zoom() {
+    let mut mux = split_tab_mux();
+    mux.toggle_zoom();
+    let mut tab_b = Tab::new_single("Shell", 3, "test-b");
+    assert!(tab_b.tree.split_h(3, 4, SplitPosition::After));
+    mux.tabs.push(tab_b);
+    mux.active_tab = 1;
+    mux.toggle_zoom();
+
+    mux.toggle_zoom();
+
+    assert_eq!(mux.tabs[1].zoomed, None);
+    assert_eq!(mux.tabs[0].zoomed, Some(1));
+    mux.active_tab = 0;
+    assert_eq!(mux.active_zoomed_id(), Some(1));
+}
+
+#[test]
+fn killing_zoomed_pane_clears_only_owning_tab_zoom() {
+    let mut mux = split_tab_mux();
+    mux.toggle_zoom();
+    let mut tab_b = Tab::new_single("Shell", 3, "test-b");
+    assert!(tab_b.tree.split_h(3, 4, SplitPosition::After));
+    mux.tabs.push(tab_b);
+    mux.active_tab = 1;
+    mux.toggle_zoom();
+
+    mux.close_focused_pane();
+
+    assert_eq!(mux.tabs[0].zoomed, Some(1));
+    assert_eq!(mux.tabs[1].zoomed, None);
+    assert_eq!(mux.tabs[1].focused_id, 4);
+    mux.active_tab = 0;
+    assert_eq!(mux.active_zoomed_id(), Some(1));
+}
+
 pub(super) fn split_tab_mux() -> Multiplexer {
     let mut mux = test_mux(24, 80);
     let mut tab = Tab::new_single("Shell", 1, "test");
@@ -6675,10 +6733,9 @@ fn reattach_updates_capabilities_without_resetting_model_palette() {
 // direct `compose_pending_frame` / `compose_full_redraw` calls, no ticker,
 // no sleeps.
 //
-// Scenarios that still fail after PR 1 of the capsule rendering plan are the
-// executable spec for PR 3 / PR 4 and carry `#[ignore]` tags naming the
-// fixing PR. Recorded fixtures land in `tests/fixtures/pty/` once a Stage-0
-// operator run id exists; until then the byte streams below are synthetic.
+// Synthetic streams below cover focused regressions; recorded PTY fixtures
+// under `tests/fixtures/pty/` keep the same harness exercised against real
+// CLI/TUI output captured outside the unit test process.
 
 use crate::tui::model::{CursorVisibilityState, cursor_visible_for_state};
 use jackin_term::{Cell, DamageGrid};
@@ -7033,6 +7090,24 @@ fn alt_screen_session_enter_exit_keeps_screen_equal_to_model() {
 
     feed_and_compose(&mut mux, &mut client, sid, b"\x1b[?1049l");
     assert_frame_conformance(&mut mux, &client, "after alt-screen exit");
+}
+
+#[test]
+fn recorded_pty_fixtures_keep_screen_equal_to_model() {
+    for (label, bytes) in [
+        (
+            "codex version fixture",
+            include_bytes!("../../tests/fixtures/pty/codex-version.bin").as_slice(),
+        ),
+        (
+            "vim alt-screen fixture",
+            include_bytes!("../../tests/fixtures/pty/vim-tiny-open-edit-quit.bin").as_slice(),
+        ),
+    ] {
+        let (mut mux, mut client, sid) = attached_single_pane();
+        feed_and_compose(&mut mux, &mut client, sid, bytes);
+        assert_frame_conformance(&mut mux, &client, label);
+    }
 }
 
 #[test]

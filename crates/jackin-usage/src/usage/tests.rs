@@ -750,13 +750,45 @@ fn usage_refresh_targets_are_focused_first_and_deduplicated() {
 }
 
 #[test]
-#[expect(
-    clippy::disallowed_methods,
-    reason = "test worker sleeps on owned scoped threads to prove overlapping probes"
-)]
-fn usage_refresh_probes_are_spawned_before_any_join() {
-    use std::sync::Arc;
+fn usage_refresh_max_active_probes_are_spawned_before_any_join() {
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+    use std::sync::{Arc, Condvar, Mutex};
+
+    struct Rendezvous {
+        state: Mutex<RendezvousState>,
+        changed: Condvar,
+    }
+
+    struct RendezvousState {
+        entered: usize,
+        released: bool,
+    }
+
+    impl Rendezvous {
+        fn wait_for_two(&self) {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            state.entered += 1;
+            if state.entered == 2 {
+                state.released = true;
+                self.changed.notify_all();
+                return;
+            }
+            while !state.released {
+                let (next_state, wait) = self
+                    .changed
+                    .wait_timeout(state, Duration::from_secs(1))
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                state = next_state;
+                assert!(
+                    !wait.timed_out() || state.released,
+                    "second refresh probe never overlapped with the first"
+                );
+            }
+        }
+    }
 
     let targets = vec![
         UsageRefreshTarget {
@@ -770,23 +802,35 @@ fn usage_refresh_probes_are_spawned_before_any_join() {
     ];
     let active = Arc::new(AtomicUsize::new(0));
     let max_active = Arc::new(AtomicUsize::new(0));
-
-    let results = collect_usage_refresh_results(targets, {
-        let active = Arc::clone(&active);
-        let max_active = Arc::clone(&max_active);
-        move |target| {
-            let now_active = active.fetch_add(1, AtomicOrdering::SeqCst) + 1;
-            max_active.fetch_max(now_active, AtomicOrdering::SeqCst);
-            thread::sleep(Duration::from_millis(75));
-            active.fetch_sub(1, AtomicOrdering::SeqCst);
-            UsageRefreshResult {
-                target,
-                view: FocusedUsageView::unavailable("test", now_epoch()),
-                codex_rpc_gate: ManagedCliLaunchGate::default(),
-                grok_rpc_gate: ManagedCliLaunchGate::default(),
-            }
-        }
+    let rendezvous = Arc::new(Rendezvous {
+        state: Mutex::new(RendezvousState {
+            entered: 0,
+            released: false,
+        }),
+        changed: Condvar::new(),
     });
+
+    let results = collect_usage_refresh_results_with_timeout(
+        targets,
+        {
+            let active = Arc::clone(&active);
+            let max_active = Arc::clone(&max_active);
+            let rendezvous = Arc::clone(&rendezvous);
+            move |target| {
+                let now_active = active.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                max_active.fetch_max(now_active, AtomicOrdering::SeqCst);
+                rendezvous.wait_for_two();
+                active.fetch_sub(1, AtomicOrdering::SeqCst);
+                UsageRefreshResult {
+                    target,
+                    view: FocusedUsageView::unavailable("test", now_epoch()),
+                    codex_rpc_gate: ManagedCliLaunchGate::default(),
+                    grok_rpc_gate: ManagedCliLaunchGate::default(),
+                }
+            }
+        },
+        Duration::from_secs(2),
+    );
 
     assert_eq!(results.len(), 2);
     assert!(

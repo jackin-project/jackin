@@ -133,6 +133,14 @@ fn cell_text(grid: &DamageGrid, row: u16, col: u16) -> String {
         .unwrap_or_default()
 }
 
+fn first_col_text(grid: &DamageGrid, rows: u16) -> Vec<String> {
+    (0..rows).map(|row| cell_text(grid, row, 0)).collect()
+}
+
+fn seed_first_col(grid: &mut DamageGrid) {
+    grid.process(b"\x1b[1;1HA\x1b[2;1HB\x1b[3;1HC\x1b[4;1HD\x1b[5;1HE");
+}
+
 #[test]
 fn unknown_csi_is_default_denied_and_carried_as_dropped() {
     let mut grid = DamageGrid::new(5, 20, 10);
@@ -794,6 +802,49 @@ fn scroll_ops_record_insert_delete_line_and_reverse_index() {
                 rows: 1
             },
         ]
+    );
+}
+
+#[test]
+fn insert_delete_line_noop_when_cursor_above_scroll_region() {
+    let mut g = DamageGrid::new(5, 10, 100);
+    seed_first_col(&mut g);
+    g.process(b"\x1b[3;5r");
+    let before = first_col_text(&g, 5);
+
+    g.process(b"\x1b[L\x1b[M");
+
+    assert_eq!(first_col_text(&g, 5), before);
+    assert!(g.drain_scroll_ops().is_empty());
+}
+
+#[test]
+fn insert_delete_line_noop_when_cursor_below_scroll_region() {
+    let mut g = DamageGrid::new(5, 10, 100);
+    seed_first_col(&mut g);
+    g.process(b"\x1b[1;3r\x1b[5;1H");
+    let before = first_col_text(&g, 5);
+
+    g.process(b"\x1b[L\x1b[M");
+
+    assert_eq!(first_col_text(&g, 5), before);
+    assert!(g.drain_scroll_ops().is_empty());
+}
+
+#[test]
+fn insert_line_inside_scroll_region_inserts_blank_and_drops_region_bottom() {
+    let mut g = DamageGrid::new(5, 10, 100);
+    seed_first_col(&mut g);
+    g.process(b"\x1b[2;4r\x1b[3;1H\x1b[L");
+
+    assert_eq!(first_col_text(&g, 5), vec!["A", "B", "", "C", "E"]);
+    assert_eq!(
+        g.drain_scroll_ops(),
+        vec![ScrollOp::Down {
+            top: 2,
+            bottom: 3,
+            rows: 1
+        }]
     );
 }
 

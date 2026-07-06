@@ -1,14 +1,22 @@
 //! Tests for `session`.
-use super::*;
+use super::{
+    AgentState, OscPolicy, Session, agent_model_args, build_agent_command, build_shell_command,
+    child_exit_reason, inject_status_env, osc8_uri_is_safe, validate_agent_slug,
+};
+
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use crate::agent_status::evidence::{AuthorityEvidence, AuthorityGrade, RawAgentState};
 use crate::agent_status::process::{
     ForegroundGroup, ProcessCpuSample, ProcessInfo, ProcessSampler,
 };
 use crate::agent_status::rules::{RulePack, RulePackRegistry};
+use anyhow::Result;
 use jackin_core::agent::Agent;
 use jackin_protocol::agent_status::{AgentStatusConfidence, AgentStatusSource};
-use portable_pty::{ChildKiller, MasterPty, PtySize};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize};
+use tokio::sync::mpsc;
 
 // ── PTY test doubles ───────────────────────────────────────────────────────
 // Sessions need a master PTY and a child killer; these no-op doubles let a
@@ -452,8 +460,8 @@ fn drained_with_policy(bytes: &[u8], policy: OscPolicy) -> Vec<Vec<u8>> {
 // session applies `OscPolicy` and re-encodes the forwardable bytes.
 
 #[test]
-fn osc_52_clipboard_write_is_re_emitted() {
-    let drained = drained(b"\x1b]52;c;SGVsbG8=\x07");
+fn osc_52_clipboard_write_is_re_emitted_when_policy_allows() {
+    let drained = drained_with_policy(b"\x1b]52;c;SGVsbG8=\x07", OscPolicy::for_test_allow_all());
     assert_eq!(drained.len(), 1);
     let s = &drained[0];
     assert!(s.starts_with(b"\x1b]52;"));
@@ -677,7 +685,7 @@ fn osc_8_unsafe_scheme_dropped_even_when_policy_allows() {
 
 #[test]
 fn drain_clears_pending_between_calls() {
-    let mut session = test_session_with_policy(OscPolicy::default());
+    let mut session = test_session_with_policy(OscPolicy::for_test_allow_all());
     session.feed_pty(b"\x1b]52;c;AAAA\x07");
     let first = session.drain_passthrough();
     assert_eq!(first.len(), 1);

@@ -98,7 +98,6 @@ impl Multiplexer {
         if self.active_tab >= self.tabs.len() {
             self.active_tab = self.tabs.len().saturating_sub(1);
         }
-        self.zoomed = None;
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }
@@ -115,7 +114,6 @@ impl Multiplexer {
         }
         self.tabs.clear();
         self.active_tab = 0;
-        self.zoomed = None;
         self.dialog_copy_feedback_deadline = None;
         self.hover_target = None;
     }
@@ -197,7 +195,11 @@ impl Multiplexer {
         }
         self.sessions.remove(&session_id);
         self.mark_agent_session_exited(session_id);
-        self.zoomed = self.zoomed.filter(|&id| id != session_id);
+        if let Some(tab_idx) = owning_tab
+            && let Some(tab) = self.tabs.get_mut(tab_idx)
+        {
+            tab.zoomed = tab.zoomed.filter(|&id| id != session_id);
+        }
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }
@@ -464,21 +466,18 @@ impl Multiplexer {
     }
 
     pub(super) fn toggle_zoom(&mut self) {
-        // Zoom is a single global field but scoped per-tab via
-        // `active_zoomed_id`. Toggling has to consult the *active*
-        // tab's zoom state — checking the raw `self.zoomed.is_some()`
-        // would let a toggle on Tab B unzoom whatever Tab A had
-        // pinned, surprising the operator on their next switch back
-        // to Tab A. Use `active_zoomed_id` so unzoom only fires when
-        // the active tab actually owns the zoom; otherwise zoom the
-        // active tab's focused pane.
-        let focused = self.tabs.get(self.active_tab).map(|t| t.focused_id);
-        let was_zoomed = self.active_zoomed_id().is_some();
-        self.zoomed = if was_zoomed { None } else { focused };
+        let Some(tab) = self.tabs.get_mut(self.active_tab) else {
+            return;
+        };
+        let focused = tab.focused_id;
+        let was_zoomed = tab
+            .zoomed
+            .is_some_and(|zoom_id| tab.tree.all_ids().contains(&zoom_id));
+        tab.zoomed = if was_zoomed { None } else { Some(focused) };
         self.resize_panes();
         crate::clog!(
             "action: toggle_zoom from={was_zoomed} to={} focused={focused:?}",
-            self.zoomed.is_some()
+            self.active_zoomed_id().is_some()
         );
     }
 }

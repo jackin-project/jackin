@@ -46,7 +46,7 @@ crates/jackin-foo/src/bar/tests/a.rs          ← test split-out (do not create)
 crates/jackin-foo/src/bar/tests/b.rs          ← test split-out (do not create)
 ```
 
-Splitting tests into sub-modules adds navigation friction and breaks the "one file = one test surface" contract. If a `tests.rs` is getting large, that is a signal the module under test is doing too many things — not a signal to split the test file. Existing violations are tracked in `findings.md` (section "Test Module Layout Violations") and must be fixed before adding new submodule splits.
+Splitting tests into sub-modules adds navigation friction and breaks the "one file = one test surface" contract. If a `tests.rs` is getting large, that is a signal the module under test is doing too many things — not a signal to split the test file. Temporary exceptions must be recorded in root [`test-layout-allowlist.toml`](../test-layout-allowlist.toml); the preferred fix is to remove exceptions rather than add new splits.
 
 ### Rationale
 

@@ -56,7 +56,7 @@ Before the rewrite, <RepoFile path="docker/runtime/entrypoint.sh" /> carried fiv
 |---|---|---|
 | `extended-keys always` | Agent TUIs don't emit the per-app activation escape that `on` waits for | The attach channel forwards raw bytes both directions, so there is nothing to negotiate — kitty keyboard and CSI-u sequences round-trip unchanged |
 | `focus-events on` | Claude Code / Codex pause animations and polling on focus-out | The daemon tracks a per-pane "outer-terminal-focused" flag and synthesises focus events only for the focused pane in the active tab |
-| `allow-passthrough on` | Desktop notifications, progress, clipboard, and titles were silently dropped without it | OSC sequences forward from the focused pane only, with per-family operator opt-outs (`JACKIN_OSC52`, `JACKIN_OSC_NOTIFY`, etc.) |
+| `allow-passthrough on` | Desktop notifications, progress, clipboard, and titles were silently dropped without it | OSC sequences forward from the focused pane only. OSC 52 clipboard writes are default-deny and require `JACKIN_OSC52=allow`; other families have per-family operator opt-outs (`JACKIN_OSC_NOTIFY`, etc.) |
 | `escape-time 0` | tmux's default `ESC` disambiguation delay misfired vi-mode navigation in agent TUIs | A configurable `JACKIN_ESCAPE_TIME` deadline for a bare `ESC`, while preserving complete sequences split across chunk boundaries |
 | `mouse on` | Mouse clicks/drags/scroll needed to reach agent TUIs that opt into reporting | Any-event SGR mouse tracking on the outer terminal, re-encoded per pane's negotiated protocol/encoding |
 

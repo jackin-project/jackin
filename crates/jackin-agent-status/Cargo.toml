@@ -17,19 +17,19 @@ default = []
 codex-app-server-authority = []
 
 [dependencies]
-anyhow = "1.0"
-jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
-jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
-regex = "1"
-semver = "1"
-serde = { version = "1.0", features = ["derive"] }
-toml = "1.1"
+anyhow = { workspace = true }
+jackin-core = { workspace = true }
+jackin-protocol = { workspace = true }
+regex = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+toml = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-procfs = "0.18"
+procfs = { workspace = true }
 
 [dev-dependencies]
-tempfile = "=3.27.0"
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

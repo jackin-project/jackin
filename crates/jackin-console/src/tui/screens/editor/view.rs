@@ -48,7 +48,6 @@ pub type WorkspaceEditorState<
     PendingIsolationCleanup,
     PendingOpCommit,
 > = EditorState<
-    jackin_config::WorkspaceConfig,
     crate::mount_info_cache::MountInfoCache,
     Modal,
     SaveFlow,

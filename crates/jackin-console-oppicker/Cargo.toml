@@ -1,0 +1,20 @@
+[package]
+name = "jackin-console-oppicker"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+crossterm = { workspace = true }
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-tui = { workspace = true }
+tui-widget-list = { workspace = true }
+
+[lints]
+workspace = true

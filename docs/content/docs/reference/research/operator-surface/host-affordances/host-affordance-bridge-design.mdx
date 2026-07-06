@@ -67,7 +67,7 @@ This confirmed the jackin❯ design should not assume "image paste" is one termi
 
 jackin-capsule already had clipboard behavior that had to remain intact:
 
-- Pane programs can write text to the host clipboard through OSC 52 passthrough when the operator has not disabled it.
+- Pane programs can write text to the host clipboard through OSC 52 passthrough only when the operator opted in with `JACKIN_OSC52=allow`.
 - jackin-owned actions such as text selection, double-click word copy, Debug info copyable values, and launch-failure copy targets emit OSC 52 from the multiplexer.
 - Those copy actions render visible feedback, such as the `Selection copied` toast, because terminals may accept, deny, or silently ignore clipboard writes.
 - Bracketed paste from the host terminal is mirrored from the focused pane and forwarded as ordinary input bytes.
@@ -76,7 +76,8 @@ The screenshot-driven lesson is that image paste had to join this surface delibe
 
 | Direction | Mechanism | Boundary owner |
 |---|---|---|
-| Pane or jackin❯ UI writes text to host clipboard | OSC 52, with visible copy feedback | Capsule output path and host terminal policy. |
+| Pane writes text to host clipboard | OSC 52 when `JACKIN_OSC52=allow` | Capsule output policy and host terminal policy. |
+| jackin❯ UI writes text to host clipboard | OSC 52, with visible copy feedback | Capsule-owned output path and host terminal policy. |
 | Host text paste enters focused pane | Terminal byte stream, bracketed-paste-aware | Host terminal plus attach client. |
 | Host image paste enters focused pane | Host clipboard reader, typed `ClipboardImage` frame, container staging, pasted container path | Host attach client plus Capsule staging. |
 | Agent reads host clipboard directly | Not allowed | No implementation path. |
@@ -213,7 +214,7 @@ This host client:
 - Uses a stdio relay fallback through `docker exec -i` when direct host connection to the Unix socket is impossible, especially Docker Desktop and OrbStack on macOS.
 - Forwards normal input bytes unchanged.
 - Intercepts only explicit image-paste triggers and converts them into typed clipboard-image frames.
-- Preserves existing copy-out behavior by forwarding focused-pane OSC 52 writes and jackin-owned OSC 52 copy actions to the host terminal with the same visible feedback behavior operators already see.
+- Preserves copy-out behavior by forwarding focused-pane OSC 52 writes only when `JACKIN_OSC52=allow`, and by continuing to send jackin-owned OSC 52 copy actions to the host terminal with the same visible feedback behavior operators already see.
 - Preserves host-terminal selection behavior. If the operator selects text directly in Ghostty's viewport and copies it, jackin❯ does not interfere; if the operator uses jackin-owned pane selection, jackin❯ continues to emit OSC 52 and render its own copy feedback.
 - Provides the correct home for future host-only operator actions such as "open link under cursor", because a process inside the Linux role container cannot reliably open the operator's macOS or Linux desktop browser.
 
@@ -369,7 +370,7 @@ Threats and mitigations:
 - Normal text paste behavior remains byte-for-byte compatible unless the host clipboard reader positively detects an image on an explicit image-paste trigger.
 - Plain text paths remain ordinary terminal text unless the operator invokes the explicit image-path staging action.
 - Same-kernel Docker, Docker Desktop, and OrbStack use the same attach protocol; only transport differs.
-- Existing copy-out behavior remains intact: pane OSC 52, jackin-owned selection copy, double-click word copy, and copyable dialog rows still reach the host terminal and still render visible feedback.
+- Existing copy-out behavior remains intact: pane OSC 52 still reaches the host terminal when explicitly allowed, while jackin-owned selection copy, double-click word copy, and copyable dialog rows still render visible feedback.
 - Image-stage feedback follows the same overlay constraints as `Selection copied`: it must not cover the prompt cursor, pane input line, status bar, footer hint, or branch/run bar.
 - A host browser open happens only after an explicit operator gesture and only from the host attach client or a future daemon/Desktop surface with the same approval semantics.
 - Links emitted by an agent are inert until the operator clicks or invokes an open command.

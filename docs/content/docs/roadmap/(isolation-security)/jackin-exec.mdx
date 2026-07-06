@@ -2,7 +2,7 @@
 title: "jackin-exec: Secure Execution Wrapper"
 ---
 
-**Status**: Partially implemented — the full mechanism is wired and shipped end to end (config schema, dispatch, picker, host.sock resolution, MCP tool); a security-hardening gap on `host.sock` and one credential-materialization gap remain, and the flow has not had a live smoke pass through `jackin load`.
+**Status**: Partially implemented — the full mechanism is wired and shipped end to end (config schema, dispatch, picker, host.sock resolution, MCP tool). Linux `host.sock` callers are now authenticated with peer credentials so direct agent-side socket calls cannot bypass the picker; non-Linux/Docker Desktop coverage remains with the future daemon track. One credential-materialization gap remains, and the flow has not had a live smoke pass through `jackin load`.
 
 ## Shipped facts
 
@@ -10,12 +10,12 @@ title: "jackin-exec: Secure Execution Wrapper"
 
 `Dialog::ExecPicker` is wired end to end in the daemon: an `ExecCommand` control message opens the picker (built from the workspace's on-demand bindings), the reply is deferred while the operator toggles credentials (Space) and confirms (Enter) or cancels (Esc). On confirm, the daemon resolves the selected credentials through `host.sock`, runs the command with them injected on the `CommandBuilder`, redacts the output, and replies `ExecResult`; on cancel or any resolver/spawn error it replies `ExecDenied` and runs nothing — fail-closed at the daemon dispatch path. The picker state machine and selection/confirm dispatch are unit-tested (<RepoFile path="crates/jackin-capsule/src/exec/tests.rs">crates/jackin-capsule/src/exec/tests.rs</RepoFile>, <RepoFile path="crates/jackin-capsule/src/daemon/tests.rs">crates/jackin-capsule/src/daemon/tests.rs</RepoFile>).
 
-`host.sock` (started by the launch path, bind-mounted to `/jackin/run/host.sock`) enforces an allow-list — it resolves only the operator-*configured* on-demand bindings, never arbitrary refs — but does not yet enforce per-use *approval*: any in-container process that can reach the socket can resolve the configured set directly, bypassing the picker. See [jackin-exec design record](/reference/research/security/credential-exposure/jackin-exec-design/) for the full protocol, type changes, and phased implementation history.
+`host.sock` (started by the launch path, bind-mounted to `/jackin/run/host.sock`) enforces an allow-list — it resolves only the operator-*configured* on-demand bindings, never arbitrary refs. On Linux it also authenticates the caller with `UnixStream::peer_cred` and accepts only the capsule daemon container-init peer, so a direct in-container process cannot resolve configured credentials without going through the picker. Non-Linux hosts and Docker Desktop socket-bridging remain residual until the daemon-based host bridge replaces this ad-hoc listener. See [jackin-exec design record](/reference/research/security/credential-exposure/jackin-exec-design/) for the full protocol, type changes, and phased implementation history.
 
 ## Remaining work
 
 1. Live smoke of the picker/render/keystroke path through `jackin load` — no integration or e2e coverage exists yet, only unit tests of the state machine.
-2. Harden `host.sock` so a direct in-container caller cannot bypass the picker approval (bind the socket to the daemon via `SO_PEERCRED` or a one-time per-confirm token); superseded once the future jackin❯ daemon replaces this ad-hoc listener.
+2. Extend caller authentication beyond Linux same-kernel `SO_PEERCRED`, or retire the gap by moving resolution into the future jackin❯ daemon / host bridge.
 3. Temp-file materialization for key-type credentials — write an SSH private key to `/jackin/run/secrets/<uuid>` and set `SSH_KEY_FILE`, deleting after exit. Today an SSH key resolves as a raw `SSH_KEY=<pem>` env var, which `ssh` cannot consume directly.
 
 ## Related work

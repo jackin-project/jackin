@@ -198,6 +198,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "aristo"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcdeefa800110050103e2459a2f8dbdbd560ad046e30f1f87e24ce19c2cb8bde"
+dependencies = [
+ "aristo-macros",
+]
+
+[[package]]
+name = "aristo-macros"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d64a66d21a80182b35b1741997a6d2456911f54b7eb1918aa4e2382fc205268d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -611,9 +631,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.65"
+version = "1.2.66"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e228eec9be7c17ccb640b59b36a5cd805ea2a564a4c5e162c2f659fea30d3b96"
+checksum = "f5d6cac793997bd970000024b2934968efe83b382de4fdcf4fcb46b6ee4ad996"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1781,13 +1801,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "fs2"
-version = "0.4.3"
+name = "fs4"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+checksum = "7e72ed92b67c146290f88e9c89d60ca163ea417a446f61ffd7b72df3e7f1dfd5"
 dependencies = [
- "libc",
- "winapi",
+ "rustix 1.1.4",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2692,7 +2712,7 @@ dependencies = [
  "crossterm",
  "dialoguer",
  "directories",
- "fs2",
+ "fs4",
  "futures-util",
  "jackin-build-meta",
  "jackin-config",
@@ -2796,6 +2816,7 @@ dependencies = [
  "directories",
  "insta",
  "jackin-config",
+ "jackin-console-oppicker",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-env",
@@ -2806,6 +2827,18 @@ dependencies = [
  "ratatui",
  "tempfile",
  "toml",
+ "tui-widget-list",
+]
+
+[[package]]
+name = "jackin-console-oppicker"
+version = "0.6.0-dev"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "jackin-core",
+ "jackin-diagnostics",
+ "jackin-tui",
  "tui-widget-list",
 ]
 
@@ -2828,7 +2861,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-dev"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "anyhow",
  "clap",
@@ -2904,7 +2937,7 @@ name = "jackin-host"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
- "fs2",
+ "fs4",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-docker",
@@ -2948,7 +2981,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "directories",
- "fs2",
+ "fs4",
  "hex",
  "jackin-config",
  "jackin-core",
@@ -3040,7 +3073,7 @@ dependencies = [
  "crossterm",
  "dialoguer",
  "directories",
- "fs2",
+ "fs4",
  "futures-util",
  "hex",
  "jackin-build-meta",
@@ -3119,7 +3152,7 @@ version = "0.6.0-dev"
 dependencies = [
  "base64 0.22.1",
  "chrono",
- "fs2",
+ "fs4",
  "jackin-core",
  "jackin-diagnostics",
  "jackin-protocol",
@@ -3141,8 +3174,10 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "clap",
+ "hex",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
  "toml",
 ]
@@ -6743,9 +6778,9 @@ dependencies = [
 
 [[package]]
 name = "turso_core"
-version = "0.7.0-pre.17"
+version = "0.7.0-pre.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2833cab0ea866efec1ea02e26203efbd53c6a7c485c73b6dc2cafe002e22045d"
+checksum = "37a242a717a859aa1a044af59365a0044d768fafd693986247e62fecc70ae8db"
 dependencies = [
  "aegis",
  "aes",
@@ -6753,6 +6788,7 @@ dependencies = [
  "allocator-api2 0.4.0",
  "antithesis_sdk",
  "arc-swap",
+ "aristo",
  "bigdecimal",
  "bitflags 2.13.0",
  "branches",
@@ -6812,9 +6848,9 @@ dependencies = [
 
 [[package]]
 name = "turso_ext"
-version = "0.7.0-pre.17"
+version = "0.7.0-pre.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c0ec8083de813d3630ba549c0b09117f04e9779d0739e7c2075f3efa9adb1c2"
+checksum = "61af2557f635730584ed5227a365bac89a2e48b876374b953b0617f0c8ef86c6"
 dependencies = [
  "chrono",
  "getrandom 0.4.3",
@@ -6823,9 +6859,9 @@ dependencies = [
 
 [[package]]
 name = "turso_macros"
-version = "0.7.0-pre.17"
+version = "0.7.0-pre.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5baf85c7a8d37ac4b4640517de1770356500405ebbaf1702545ecb2da45789b"
+checksum = "6f7fbaf634096751abd2a689315ae75b9704498de23a1a1566c8b4440dd388e7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6834,9 +6870,9 @@ dependencies = [
 
 [[package]]
 name = "turso_parser"
-version = "0.7.0-pre.17"
+version = "0.7.0-pre.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab8d16ed7c1d7e983e0c7ce0c94d475a2e71aa9e16ca280777292b2e96e01062"
+checksum = "92e91e768f2c3a1df02ee8c27fe19217a1f03689d8ef8c3001a088e7466fe2db"
 dependencies = [
  "bitflags 2.13.0",
  "memchr",
@@ -6849,9 +6885,9 @@ dependencies = [
 
 [[package]]
 name = "turso_sdk_kit"
-version = "0.7.0-pre.17"
+version = "0.7.0-pre.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ecb12e8bfb7d14b1636537d0d5b266cbf06e51b38eb51fc13a8fc2575e61e31"
+checksum = "ebb7f13561dadb97fb576e3a05f8cc072b81f8cbb5336103d49ebda38089e273"
 dependencies = [
  "bindgen 0.69.5",
  "env_logger",
@@ -6866,9 +6902,9 @@ dependencies = [
 
 [[package]]
 name = "turso_sdk_kit_macros"
-version = "0.7.0-pre.17"
+version = "0.7.0-pre.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cf97ad2566dc6003c050c42f152ac16bb1cd4c2eb39080b41be3ab838baac21"
+checksum = "59d4612a0c7d516efdd9b68a9687fe7eff2507eaa8cfe56724ce0ba377e437f6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6877,9 +6913,9 @@ dependencies = [
 
 [[package]]
 name = "turso_sync_engine"
-version = "0.7.0-pre.17"
+version = "0.7.0-pre.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fecd94cac87afde8966ebadd83cd0d4b90d888206e25a7894fe1b51251985f7"
+checksum = "ecbc491080af86a273f520c5ff0595366e8324c2b3d0620eabfccf35c039ded5"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -6899,9 +6935,9 @@ dependencies = [
 
 [[package]]
 name = "turso_sync_sdk_kit"
-version = "0.7.0-pre.17"
+version = "0.7.0-pre.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75465ffd4cbad0b27d348a521876d7ba4555a943866e3c6b82366669b05673a0"
+checksum = "722ecf45be0c3a988fe31c9a8c5832b7eeda05b531a838b77fd1d3c70633b8f1"
 dependencies = [
  "bindgen 0.69.5",
  "env_logger",

@@ -22,10 +22,10 @@ fn ord_ascending_capability() {
 }
 
 #[test]
-fn default_is_compat() {
+fn default_is_standard() {
     assert_eq!(
         DockerSecurityProfile::default(),
-        DockerSecurityProfile::Compat
+        DockerSecurityProfile::Standard
     );
 }
 
@@ -572,6 +572,33 @@ fn network_enforcement_label_all_cases() {
     assert_eq!(
         network_enforcement_label(&partial_dind),
         "partial (DinD inner containers bypass host iptables)"
+    );
+}
+
+#[test]
+fn session_contract_reports_dind_inner_egress_partial_enforcement() {
+    let grants = EffectiveGrants {
+        network: NetworkGrant::Allowlist,
+        dind: DindGrant::Rootless,
+        ..profile_base_grants(DockerSecurityProfile::Standard)
+    };
+    let contract = format_session_contract(
+        DockerSecurityProfile::Standard,
+        "config",
+        &grants,
+        true,
+        "docker-default",
+        "v2",
+        "provisioned",
+        true,
+    );
+    assert!(
+        contract.contains("enforcement: partial (DinD inner containers bypass host iptables)"),
+        "{contract}"
+    );
+    assert!(
+        contract.contains("DinD sidecar has kernel access"),
+        "{contract}"
     );
 }
 

@@ -43,7 +43,7 @@ Every capability the base image supports must reach the agent inside the pane.
 
 ### Clipboard and OSC 52
 
-- Pass OSC 52 sequences from the focused pane to the host terminal unmodified unless the operator disabled `JACKIN_OSC52`. This enables agent-initiated clipboard writes to reach the operator's clipboard.
+- Deny OSC 52 sequences from the focused pane by default. Pass them to the host terminal unmodified only when the operator set `JACKIN_OSC52=allow` before launch. This keeps agent-initiated clipboard writes from mutating the operator's host clipboard unless the role explicitly needs that behavior.
 - jackin❯-owned copy actions such as Debug info copyable values (Run ID, Container ID, Diagnostics log) and mouse-selection copy emit OSC 52 directly from the multiplexer to the attached client. They must render visible feedback because terminals may silently drop clipboard writes when policy blocks them.
 - Never intercept or log clipboard content.
 
@@ -55,7 +55,7 @@ Every capability the base image supports must reach the agent inside the pane.
 
 ### OSC and desktop notifications
 
-- Pass safe OSC families from the focused pane to the host terminal. OSC 0/1/2 titles, OSC 9 notifications, OSC 52 clipboard writes, and OSC 8 hyperlinks each have an operator opt-out env var.
+- Pass safe OSC families from the focused pane to the host terminal. OSC 0/1/2 titles, OSC 9 notifications, and OSC 8 hyperlinks each have an operator opt-out env var. OSC 52 clipboard writes are default-deny and require `JACKIN_OSC52=allow`.
 - OSC 7 is captured for pane titles and never forwarded to the host terminal, because a container cwd is not a valid host cwd hint. OSC 8 hyperlinks are forwarded only for empty terminators, `http`, `https`, and `mailto`.
 - OSC 10/11 default-color queries (`\x1b]10;?` / `\x1b]11;?`) are answered by the pane's grid with the attach client's reported palette — captured from the host terminal before the attach Hello — and never forwarded. Agents gate their theming on this answer (codex paints no backgrounds at all while OSC 11 goes unanswered), so the query must never go silent; without a client report the grid answers with its dark-theme defaults. Set forms (a color payload instead of `?`) are dropped.
 - `allow-passthrough` semantics: everything in an OSC that the multiplexer does not explicitly handle is forwarded only when it comes from the focused pane.

@@ -39,7 +39,7 @@ The construct is built on **Debian Trixie** and includes:
 | `curl` | HTTP client |
 | `jq` + `yq` | JSON and YAML processors |
 | `openssh-client` | SSH for git operations |
-| `sudo` | Privilege escalation (passwordless for agent user) |
+| `sudo` | Privilege escalation package. Passwordless access is provisioned only when the active Docker profile or grant enables sudo. |
 | `tree` | Directory visualization |
 
 ### Search tools
@@ -64,7 +64,7 @@ The construct is built on **Debian Trixie** and includes:
 The construct creates an `agent` user with:
 - Home directory at `/home/agent`
 - Zsh as the default shell, with fish available as an opt-in alternative (`fish` from zsh, or `sudo chsh -s /usr/bin/fish agent` to change the login shell)
-- Passwordless sudo access
+- Profile-gated sudo access: `compat` enables it by default, stricter profiles require an explicit sudo grant
 - Oh My Zsh sourced with `ZSH_THEME=""` so the git plugin, autosuggestions plugin, and OSC 0/2 + OSC 7 title hooks are active without competing with Starship for the prompt
 - Starship prompt configured for both zsh and fish so the prompt surface stays the same when switching shells
 - Pane border title (`user@host:cwd`) emitted via OSC 0/2 on every prompt — the jackin-capsule multiplexer reads it and renders it as the pane title (the same mechanism zellij uses)

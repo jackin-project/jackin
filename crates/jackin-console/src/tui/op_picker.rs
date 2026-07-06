@@ -3,6 +3,7 @@
 
 pub mod input;
 pub mod load;
+pub mod model;
 pub mod state;
 
 pub use load::{execute_load_request, start_load};
@@ -24,7 +25,7 @@ pub fn start_ref_validation(
 
 /// Concrete selection type for the picker: all five type parameters are bound
 /// to `jackin-core` types already available in this crate.
-pub type OpPickerSelection = crate::tui::components::op_picker::OpPickerSelection<
+pub type OpPickerSelection = model::OpPickerSelection<
     jackin_core::OpRef,
     jackin_core::op_types::OpAccount,
     jackin_core::op_types::OpVault,
@@ -54,7 +55,7 @@ pub(crate) fn new_picker_with_runner(
 #[cfg(test)]
 pub(crate) fn new_picker_with_runner_and_cache(
     runner: std::sync::Arc<dyn jackin_env::OpStructRunner + Send + Sync>,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::tui::components::op_picker::OpPickerCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<model::OpPickerCache>>,
 ) -> OpPickerState {
     TEST_RUNNER.with(|r| *r.borrow_mut() = Some(runner));
     OpPickerState::new_with_cache(op_cache)
@@ -63,7 +64,7 @@ pub(crate) fn new_picker_with_runner_and_cache(
 #[cfg(test)]
 pub(crate) fn new_create_picker_with_runner_and_cache(
     runner: std::sync::Arc<dyn jackin_env::OpStructRunner + Send + Sync>,
-    op_cache: std::rc::Rc<std::cell::RefCell<crate::tui::components::op_picker::OpPickerCache>>,
+    op_cache: std::rc::Rc<std::cell::RefCell<model::OpPickerCache>>,
     item_name_default: impl Into<String>,
     field_label_default: impl Into<String>,
 ) -> OpPickerState {
@@ -136,7 +137,7 @@ fn execute_op_picker_pending_load(state: &mut OpPickerState) -> bool {
 
 // Re-exported into test scope via `use super::*` from tests.rs.
 #[cfg(test)]
-use crate::tui::components::op_picker::{
+use model::{
     FieldDisplayRow, FieldLabelOrigin, OpLoadState, OpPickerError, OpPickerFatalState,
     OpPickerStage,
 };

@@ -1,14 +1,14 @@
 //! Extract a recorded PTY byte stream from a trace-level run log.
 //!
-//! `jackin-xtask pty-fixture <run.jsonl> <session-label> <out.bin>` extracts
-//! the capsule's `session feed_pty bytes:` trace lines, filters them to one
-//! session label, decodes the hex byte dumps, and concatenates them in order
-//! into a binary fixture for the echo-back conformance harness
-//! (`crates/jackin-capsule/src/daemon/tests/render_conformance.rs`). The input
-//! may be a raw `multiplexer.log` or a host diagnostics run JSONL. For JSONL,
-//! inline feed lines are scanned first; if the run file only contains the
-//! `capsule_log` pointer, the extractor follows that path and reads the raw
-//! `multiplexer.log` instead.
+//! `jackin-xtask pty-fixture <run.jsonl> <session-label> <out.bin>` scans the
+//! log for the capsule's `session feed_pty bytes:` debug lines, filters them
+//! to one session label, decodes the hex byte dumps, and concatenates them in
+//! order into a binary fixture for the echo-back conformance harness
+//! (`crates/jackin-capsule/src/daemon/tests.rs`). The input may be a raw
+//! `multiplexer.log` or a host diagnostics run JSONL. For JSONL, inline feed
+//! lines are scanned first; if the run file only contains the `capsule_log`
+//! pointer, the extractor follows that path and reads the raw `multiplexer.log`
+//! instead.
 
 use std::collections::BTreeSet;
 use std::fs;
