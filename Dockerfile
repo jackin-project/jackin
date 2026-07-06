@@ -3,7 +3,7 @@ FROM projectjackin/construct:0.25-trixie@sha256:ad853971892ae36eb8b43201f2191924
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # CAVEMAN_VERSION: tagged release.
-ARG RUST_VERSION=1.96.0
+ARG RUST_VERSION=1.96.1
 ARG NODE_VERSION=24.18.0
 ARG JAVA_VERSION=oracle-graalvm-25.0.1
 ARG PROTOC_VERSION=34.1
