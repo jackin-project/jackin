@@ -138,7 +138,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     });
     assert!(
         report.contains(REPORT_BEGIN),
-        "agent did not emit {REPORT_BEGIN} marker\n{}",
+        "agent did not emit {REPORT_BEGIN} marker\nreport:\n{report}\n{}",
         e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
     );
     // REPORT_END proves the report block completed. Without this check a
@@ -147,7 +147,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     // happened to land before the cut.
     assert!(
         report.contains(REPORT_END),
-        "agent did not emit {REPORT_END} marker — report is truncated\n{}",
+        "agent did not emit {REPORT_END} marker — report is truncated\nreport:\n{report}\n{}",
         e2e_failure_context(&home, stdout.as_ref(), stderr.as_ref())
     );
 

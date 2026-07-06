@@ -19,12 +19,15 @@ pub(super) fn seed_agent_smith_role_repo(path: &Path) {
     std::fs::write(path.join("Dockerfile"), role_dockerfile()).unwrap();
     std::fs::write(
         path.join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha6"
 dockerfile = "Dockerfile"
 agents = ["claude"]
 
 [identity]
 name = "Agent Smith"
+
+[docker]
+dind = "privileged"
 
 [claude]
 plugins = ["caveman@jackin-e2e", "rtk@jackin-e2e"]
@@ -354,11 +357,11 @@ emit_report() {{
   printf '%s\n' "$*" >> "$report_path"
 }}
 emit_report "{begin}"
-emit_report "DOCKER_HOST=$DOCKER_HOST"
-emit_report "DOCKER_TLS_VERIFY=$DOCKER_TLS_VERIFY"
-emit_report "DOCKER_CERT_PATH=$DOCKER_CERT_PATH"
-emit_report "JACKIN_DIND_HOSTNAME=$JACKIN_DIND_HOSTNAME"
-emit_report "TESTCONTAINERS_HOST_OVERRIDE=$TESTCONTAINERS_HOST_OVERRIDE"
+emit_report "DOCKER_HOST=${{DOCKER_HOST:-}}"
+emit_report "DOCKER_TLS_VERIFY=${{DOCKER_TLS_VERIFY:-}}"
+emit_report "DOCKER_CERT_PATH=${{DOCKER_CERT_PATH:-}}"
+emit_report "JACKIN_DIND_HOSTNAME=${{JACKIN_DIND_HOSTNAME:-}}"
+emit_report "TESTCONTAINERS_HOST_OVERRIDE=${{TESTCONTAINERS_HOST_OVERRIDE:-}}"
 emit_report "NO_PROXY=${{NO_PROXY:-}}"
 emit_report "no_proxy=${{no_proxy:-}}"
 smoke_image="jackin-dind-e2e-smoke:local"
