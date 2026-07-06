@@ -10,7 +10,7 @@ The [Agent Runtime Status Authority](/roadmap/agent-runtime-status/) is implemen
 
 The production implementation in <RepoFile path="crates/jackin-runtime/src/host_daemon.rs" /> accepts an `attention_snapshot` control request carrying pane states and emits notifications on `blocked` / `done` transitions only. Notifications are muted unless `JACKIN_ATTENTION=1` is set on the daemon process; muted mode still records the transition state so repeated snapshots do not spam later.
 
-Everything else — per-container event subscription, click-to-focus, and the console Notifications tab — is unbuilt. The completed scoped implementation plan is <RepoFile path="plans/048-attention-adapter-foundation.md" />.
+Everything else — per-container event subscription, click-to-focus, and the console Notifications tab — is unbuilt.
 
 ## Remaining work
 
@@ -36,4 +36,3 @@ Everything else — per-container event subscription, click-to-focus, and the co
 - [Agent runtime status authority](/roadmap/agent-runtime-status/) — canonical state source this item consumes.
 - Research: [Agent attention prompts: design exploration](/reference/research/agent-orchestration/agent-attention-prompts-design/) — full UX narrative, MCP contract alternatives, and open design questions behind this item.
 - <RepoFile path="crates/jackin-runtime/src/reactive_daemon.rs">crates/jackin-runtime/src/reactive_daemon.rs</RepoFile> — feature-gated spike adapter.
-- <RepoFile path="plans/048-attention-adapter-foundation.md">plans/048-attention-adapter-foundation.md</RepoFile> — next production build plan.

@@ -25,11 +25,6 @@ adapter: `attention.snapshot` consumes pane states from the existing runtime
 status authority and emits notifications on `blocked` / `done` transitions only.
 This is intentionally not user-wired and not a daemon lifecycle implementation.
 
-Follow-up build plans:
-
-- <RepoFile path="plans/047-daemon-lifecycle-foundation.md" /> — production daemon lifecycle and socket foundation.
-- <RepoFile path="plans/048-attention-adapter-foundation.md" /> — production attention adapter on top of that daemon foundation.
-
 `live-auth-sync` and `host-bridge` remain deferred until the lifecycle/socket
 foundation is production-grade. They are the first adapters that can expose
 credentials or host actions, so they must not be used to prove the daemon's base
