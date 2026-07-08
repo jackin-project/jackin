@@ -1,79 +1,143 @@
 ---
-title: "Codebase health: structure & reviewability"
+title: "Codebase health: Rust strictness, structure, and AI reviewability"
 ---
 
-**Status**: Partially implemented — the original exception-ledger burn-down is complete, and the PR #664 merge-readiness audit blockers have been addressed with regression tests (prewarm clap invariants restored, launch failures kept visible/actionable, the codebase-health gates wired into required CI, and the ratchets made shrink-only). This page tracks the durable follow-up work that remains after the structure-only refactor.
+**Status**: Open — the structure/readability foundation shipped, and this page is now the single active code-health roadmap item. It replaces the old phase leaves for setup docs, file splits, behavioral-spec chores, module-contract chores, visibility cleanup, split-runtime/split-editor tracking, settings/editor unification, test-infrastructure tracking, and the stale complexity-debt plan folder.
 
-## Merge-Readiness Audit
+## Goal
 
-PR #664 is a structure-only refactor. The audit checklist restored or proved every pre-refactor behavior that was weakened during extraction:
+Make jackin❯ exceptionally safe to refactor by humans and AI agents: strict compiler/tooling gates catch predictable bugs before review, crate and module boundaries make the right edit location obvious, critical behavior has executable characterization coverage, performance hot paths are measured instead of guessed, and every surviving exception is justified rather than inherited.
 
-- Restored the `jackin prewarm` `clap` constraints that were dropped when flags moved into nested structs.
-- Made launch failure dialogs visible above lower-priority overlays, dismissible through the shared modal path, and safe for long diagnostics.
-- Wired the file-size, schema, and strict codebase-health gates into required CI aggregation and path filters.
-- Made the file-size and test-layout ratchets fail stale or no-longer-needed exception rows (shrink-only).
-- Kept roadmap and PR text honest alongside the required gates and regression tests.
+The project is pre-release, so large restructures are acceptable. The priority is not minimizing migration cost; the priority is lowering future defect rate and making the codebase easy for agents to understand, modify, verify, and review.
 
-The detailed executor checklist was closed with PR #664 and is intentionally not kept here as a long-term task board.
+## Shipped foundation
 
-Non-blocking audit context:
+- The workspace uses Rust 2024, resolver v3, explicit MSRV, a strict workspace lint table, `unsafe_code = "forbid"`, `unreachable_pub = "deny"`, `clippy::all = deny`, `pedantic`/`cargo` warnings promoted by CI, and hard denials for `unwrap`, `expect`, `panic`, stdout/stderr printing, `todo`, `unimplemented`, `mod_module_files`, and selected blocking methods.
+- The codebase is split into workspace crates with Rust 2024 self-named module files, no `mod.rs`, no inline test modules, and a shrink-only test-layout allowlist.
+- CI already runs fmt, clippy across all targets/features, schema checks, file-size/test-layout/agent-file gates, `cargo shear`, `cargo audit`, `cargo deny` policy checks, nextest shards, fuzz smoke, benchmark build checks, MSRV checks, and optional Docker-backed E2E.
+- The file-size and test-layout ledgers were burned down to zero grandfathered entries, and the old PR-specific merge-readiness audit is closed.
+- Contributor orientation exists in the [Codebase Map](/reference/getting-oriented/codebase-map/), TUI rules in [TUI Design Decisions](/reference/tui/), and behavioral specs for runtime launch and op-picker under [Behavioral Specs](/reference/developer-reference/specs/).
 
-- Roadmap and PR truthfulness were refreshed during the audit: the overview no longer marks this item as implemented, the launch split leaf now matches the current file layout, and the PR verification section uses the strict lint command.
-- The PR branch was synced with `main` after the audit; the <RepoFile path="Cargo.lock">Cargo.lock</RepoFile> conflict around `rand` was resolved in the merge commit, and GitHub no longer reports the branch as dirty.
-- Test-placement audit found and fixed the remaining stricter-layout gap: the lookbook keymap smoke tests moved into a sibling `tests.rs`, the test-layout gate now rejects direct unit-test attributes in non-test files, and a repo-wide grep for unit-test attributes outside `tests.rs` / `tests/` files returns no real test functions.
-- Local audit verification passed for `cargo fmt --check`, workspace `cargo check`, workspace `clippy -D warnings`, `cargo run -p jackin-xtask --locked -- lint`, the broad non-Docker `nextest` command, and the docs gate. These results are useful evidence, but they do not close the merge blockers because the plan still requires source changes and regression tests.
-- Workflow comments that still describe dependency-direction checks as informational should be cleaned up when the CI wiring blocker is implemented; the comment cleanup itself is not a standalone merge blocker.
+## Principles for the remaining work
 
-## Remaining Work
+- **Ratchet, do not posture.** Add a strict gate only after a measured dry run proves the signal is actionable; otherwise start as an advisory artifact or scheduled hygiene lane.
+- **Prefer source-of-truth boundaries over wrappers.** If host and capsule need the same auth/path/process rule, extract one shared contract below both rather than copying policy.
+- **Refactor with characterization first.** Launch, capsule daemon, isolation materialization, auth, and TUI input changes need fast tests around observable behavior before body extraction.
+- **Make exceptions auditable.** Every surviving `allow`/`expect` should have a narrow scope and a reason; unreasoned broad suppressions are debt even when CI is green.
+- **Optimize for AI navigation.** A future agent should know which crate owns a concept from the codebase map, should see one canonical API to copy, and should have a focused verification command for the touched surface.
 
-### Root `jackin` Integration Decomposition
+## Phase 0 — Reconcile and measure before changing code
 
-The root binary still has command-dispatch and console-entry functions carrying codebase-health `#[allow(clippy::too_many_lines)]` justifications. Split these without changing CLI behavior:
+1. Replace stale complexity counts with a fresh generated inventory of `allow`/`expect` suppressions grouped by lint, crate, file, and whether `reason =` is present. Do not trust the old `66`, `54`, or `25` counts from the retired plan files.
+2. Generate a current crate graph from `cargo metadata`, compare it to the [Codebase Map](/reference/getting-oriented/codebase-map/), and update the map where the documented tiering differs from actual dependencies.
+3. Add a small report-only code-health dashboard command under `cargo xtask lint` or a sibling xtask namespace that prints: largest production files, largest `tests.rs` files, modules over a size threshold with no sibling tests, unreasoned lint suppressions, broad `pub mod` surfaces, duplicate helper families, and advisory tool output.
+4. Add a contributor-facing verification matrix to <RepoFile path="TESTING.md">TESTING.md</RepoFile>: targeted module tests, crate nextest, `cargo xtask ci --fast`, full non-Docker CI, Docker E2E, docs/roadmap checks, snapshot checks, and when each is appropriate for an agent.
 
-- <RepoFile path="crates/jackin/src/app/load_cmd.rs">crates/jackin/src/app/load_cmd.rs</RepoFile> — `handle_console` still owns cwd/config/terminal setup plus the console run loop.
-- <RepoFile path="crates/jackin/src/app/token_cmd.rs">crates/jackin/src/app/token_cmd.rs</RepoFile> — `handle_claude_token` still carries the setup/rotate/revoke/doctor dispatcher body.
-- <RepoFile path="crates/jackin/src/app/workspace_cmd.rs">crates/jackin/src/app/workspace_cmd.rs</RepoFile> — `handle` still carries the workspace subcommand dispatcher and its largest arms.
-- <RepoFile path="crates/jackin/src/app.rs">crates/jackin/src/app.rs</RepoFile> — the bare-`jackin` routing comment still calls out the TTY-capability fallback and `launch` deprecation warning as follow-up behavior around the root command entry path.
+## Phase 1 — Tighten Rust and CI strictness
 
-### Launch And Build Orchestrator Body Extraction
+### PR-time gates to promote after dry run
 
-The ledger cap is closed, but several large orchestrators still carry explicit deferred body-extraction notes. Extract cohesive phases only when the surrounding behavioral specs can stay unchanged:
+1. **Feature powerset gate**: move at least a scoped `cargo hack check --workspace --feature-powerset --all-targets --locked` lane from scheduled-only hygiene into PR CI, starting with crates that actually expose optional behavior.
+2. **Rustdoc doctests**: add `cargo test --doc --workspace --locked` to PR CI if the current scheduled job is green enough to promote.
+3. **Deny advisories parity**: run `cargo deny check advisories` in PR dependency policy so `deny.toml`, `.cargo/audit.toml`, yanked policy, and advisory ignores cannot drift until scheduled hygiene.
+4. **Snapshot hygiene**: pin `cargo-insta` or add a cheap pending-snapshot/diff gate so TUI snapshot changes cannot leave `*.pending-snap` files or unreviewed `.snap` diffs behind.
 
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs">crates/jackin-runtime/src/runtime/launch/launch_runtime.rs</RepoFile> — split `launch_role_runtime` into named launch-profile validation, AppArmor probing, Docker-run sequencing, and session-finalization phases.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile> — split `load_role_with` into launch-input preparation, image materialization, env resolution, `run_launch_core` invocation, and post-launch cleanup phases.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline/launch_core.rs</RepoFile> — split `run_launch_core` along its preflight, Docker-run, wait-for-state, and teardown phases.
-- <RepoFile path="crates/jackin-runtime/src/runtime/image.rs">crates/jackin-runtime/src/runtime/image.rs</RepoFile> and its child modules — replace the remaining large image decision/build parameter trains with named context structs only when doing so does not disturb the hot path.
-- <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> and <RepoFile path="crates/jackin-capsule/src/main.rs">crates/jackin-capsule/src/main.rs</RepoFile> — finish the deferred parallel-pass extraction notes around daemon/control-plane entry bodies.
+### Advisory or scheduled lanes first
 
-The [Split runtime/launch.rs](/roadmap/split-runtime-launch/) leaf owns the most detailed launch-specific split plan. Keep the two pages consistent when any launch slice lands.
+1. **Coverage**: add `cargo-llvm-cov` as an artifact/report, not a global PR fail threshold. Start with crate-group trends for parser/protocol/config/terminal crates and only later ratchet specific critical surfaces.
+2. **Miri**: run a narrow scheduled/manual lane for pure crates and deterministic parser/protocol/config tests. Do not attempt full-workspace Miri across Docker, PTY, process, or OS-heavy code.
+3. **Sanitizers**: keep PR fuzz fast, but add scheduled sanitizer runs where fuzz targets already exist, especially terminal/parser paths.
+4. **Mutation testing**: evaluate `cargo-mutants` only on pure crates with fast deterministic tests, such as protocol/config/manifest/terminal parsing. Do not run it across Docker/TUI integration code.
+5. **Public API drift**: add `cargo-public-api` or `cargo-semver-checks` as an informational report for selected API-bearing crates. Because jackin❯ is pre-release, the gate should make breakage intentional rather than forbid it.
+6. **Transitive unsafe and workspace-hack experiments**: use `cargo geiger` and `cargo hakari` only as advisory investigations. First-party unsafe is already forbidden; workspace-hack value should be proven with cargo timing artifacts before adding generated maintenance surface.
 
-### Shared TUI Runtime Dispatch Follow-Through
+### Lint ratchets and suppression hygiene
 
-The shared TEA runtime traits exist, and thin wrappers satisfy the type-level contract, but the actual call sites still bypass those wrappers in several surfaces:
+1. Convert broad `#[allow(...)]` suppressions to narrow `#[expect(..., reason = "...")]` where the expectation is stable across targets. Keep `allow` only where `expect` would be flaky under cfg/test/target differences.
+2. Add an xtask or grep gate that blocks new `allow`/`expect` attributes without `reason =`, except for documented allowlist patterns such as generated code or cross-target imports.
+3. Revisit globally allowed maintainability lints one at a time: `needless_pass_by_value`, `large_futures`, `unused_async`, `assigning_clones`, `match_same_arms`, `drop_non_drop`, `unused_self`, and other explicitly allowed pedantic lints. Promote only low-noise lints; keep noisy ones documented.
+4. Expand `clippy::disallowed_methods` after a discovery pass to cover more blocking process/filesystem APIs where they can hit render/runtime paths, with local expectations for startup/build/test-owned boundaries.
+5. Ratchet `too_many_lines`, `cognitive_complexity`, `excessive_nesting`, and `too_many_arguments` thresholds only after the fresh inventory identifies the next safe lower bucket.
+6. Require every non-Apache/MIT license exception in `deny.toml` to carry a rationale or grouped policy note so the current strict supply-chain posture stays reviewable.
 
-- <RepoFile path="crates/jackin-launch-tui/src/tui/model.rs">crates/jackin-launch-tui/src/tui/model.rs</RepoFile> — `RichRenderer::render` still calls the concrete render path directly.
-- <RepoFile path="crates/jackin-capsule/src/tui/runtime.rs">crates/jackin-capsule/src/tui/runtime.rs</RepoFile> — `daemon/compositor.rs` and `tui/run.rs` still need to dispatch through the shared runtime traits.
-- <RepoFile path="crates/jackin-console/src/tui/runtime.rs">crates/jackin-console/src/tui/runtime.rs</RepoFile> — the root console loop still calls the concrete view directly; the runtime-trait dispatch migration is still a later phase.
-- <RepoFile path="crates/jackin-console/src/tui/input/mouse/modal_scroll.rs">crates/jackin-console/src/tui/input/mouse/modal_scroll.rs</RepoFile> — modal wheel routing still matches `MouseEventKind` directly in one console path; route it through the shared scroll classifier when the runtime dispatch follow-through resumes.
+## Phase 2 — Restructure crate and module ownership
 
-### Editor Model Cleanup
+### Runtime and launch architecture
 
-<RepoFile path="crates/jackin-console/src/tui/screens/editor/model/state_impl.rs">crates/jackin-console/src/tui/screens/editor/model/state_impl.rs</RepoFile> still uses a wildcard import with a local `#[allow(clippy::wildcard_imports)]`. Replace it with an explicit import list once the extracted `EditorState` impl block settles enough that the name list is maintainable.
+1. Split `jackin-runtime` from a broad orchestrator into clearer acyclic ownership: a thin facade over launch, attach, cleanup, image/build, backend, and instance-lifecycle leaves, or equivalent internal modules with explicit ports.
+2. Move shared test fakes and lower-level ports out of `jackin-runtime` when lower crates currently need dev-dependencies back upward.
+3. Finish launch/body extraction around `launch_role_runtime`, `load_role_with`, and `run_launch_core`, but do it by phase contracts rather than line-count churn: launch-profile validation, workspace/role materialization, trust/source checks, image materialization, env/auth resolution, Docker run, wait-for-state, teardown, foreground attach, and cleanup classification.
+4. Split the image/build pipeline into named context structs and decision phases where parameter trains obscure intent.
+5. Keep the [runtime/launch.rs Behavioral Spec](/reference/developer-reference/specs/runtime-launch/) as the oracle for any launch extraction.
 
-### Existing Leaf Roadmap Items
+### Capsule daemon and terminal control plane
 
-Do not duplicate the detailed work already owned by these leaves; keep this umbrella page as the cross-reference and update it when a leaf closes:
+1. Reduce <RepoFile path="crates/jackin-capsule/src/daemon.rs">crates/jackin-capsule/src/daemon.rs</RepoFile> into an actor/event-loop shell plus owned subsystems: client registry, session supervisor, active-client policy, status model, clipboard transfers, git/PR watch, token totals, and control-protocol routing.
+2. Move daemon tests with the subsystem under test. Do not split `tests.rs` just to reduce line count; split production responsibility first, then let each new module own its sibling `tests.rs`.
+3. Add characterization tests for attach/displace, session lifecycle, mouse/input routing, PTY failure recovery, status publication, persistence/reattach, and cleanup outcomes before extracting.
+4. Bound full scrollback snapshot allocation by adding range-based snapshot APIs for copy/selection paths and benchmarks for large scrollback plus narrow selection.
 
-- [Split runtime/launch.rs](/roadmap/split-runtime-launch/) — remaining launch-function decomposition.
-- [Split input/editor.rs](/roadmap/split-input-editor/) — final editor input mount-tab split.
-- [Unify the settings and workspace-editor surfaces](/roadmap/unify-settings-editor-surfaces/) — config-surface unification after the structural splits.
+### Shared contracts to extract
 
-## Closed Ledger Scope
+1. **Process execution boundary**: consolidate command-output wrappers for `op`, `gh`, xtask, capsule probes, and runtime shell commands into one capture/timeout/retry/status/redaction model.
+2. **Agent auth/path contract**: define one declarative per-agent path and credential contract consumed by host provisioning and in-container setup, rather than duplicating agent config-dir rules across `jackin-instance` and `jackin-capsule`.
+3. **GitHub URL normalization**: move duplicated URL normalization and credential stripping into a lower-level shared utility with table tests.
+4. **Public API facades**: narrow broad `pub mod` surfaces in foundational crates. Prefer intentional root re-exports and `pub(crate)` implementation modules so agents copy canonical APIs rather than internals.
+5. **Architecture tests**: make dependency-direction rules strict and explicit in CI, with separate production and dev-dependency exceptions.
 
-The following are finished and intentionally no longer tracked as remaining work:
+### Console and TUI structure
 
-- Test-layout allowlist burn-down: 0 violations.
-- File-size budget burn-down: no grandfathered production or test files.
-- Dependency-direction gate: strict mode exists and passes locally; the full codebase-health gate set (file-size, test-layout, schema) is wired into required CI as part of the PR #664 refactor, so this item closes once dependency-direction itself is promoted from informational to strict.
-- Clippy threshold burn-down: function length, complexity, nesting, and argument thresholds are at target.
-- Historical per-slice split maps from PR #664.
+1. Finish or remove the shared TUI runtime half-layer. The preferred path is to dispatch console, launch, and capsule loops through the shared `jackin_tui::runtime` traits so the abstraction is operational, not just type-level.
+2. Fold the old `split-input-editor` and settings/editor unification leaves into one config-surface cleanup: extract the remaining editor mounts input handling, then converge settings and workspace editor around shared per-domain edit models, validation, render rows, input/mouse handling, persistence handoff, and parity tests.
+3. Replace repeated type-complexity suppressions in settings/editor view builders with named row/view model structs and shared form-section builders.
+4. Continue the successful `jackin-console-oppicker` extraction pattern until picker model/planning lives in the pure crate and console/root own only side-effect adapters.
+
+## Phase 3 — Strengthen tests, specs, and fixtures
+
+1. Add a shared `jackin-test-support` crate only after inventorying duplicated builders/fakes. It should own deterministic config/workspace builders, mock runners, role seeding, snapshot normalization, fixed terminal dimensions/theme/clock, and redaction helpers.
+2. Write behavioral specs for the capsule daemon and operator console state machine. Each spec section should link to existing tests or explicitly mark missing coverage.
+3. Add property tests and fuzz targets for parser and schema surfaces: manifest validation, env resolution, config/manifest migrations, terminal parser edge cases, and protocol decoding. Invariants should include “invalid input never panics,” migrations are idempotent, migrated config validates, unknown fields follow schema policy, and reserved env keys are preserved or rejected consistently.
+4. Add a report-only coverage-map gate for large modules without sibling tests. Later, fail only for new high-risk modules above a size threshold unless they carry an explicit exemption.
+5. Break up mega-test files by extracting the modules under test first. Large `tests.rs` files are evidence that production modules still own too many responsibilities, not permission to create test submodules.
+6. Standardize visual/snapshot testing for TUI and terminal output using shared SVG/golden helpers, then add a pending-snapshot gate.
+
+## Phase 4 — Measure and protect performance
+
+1. Convert benchmark build-only coverage into measured, non-flaky performance reporting for terminal pane rendering, launch/attach, grid resize, scrollback snapshotting, materialization, and diagnostics parsing. Start scheduled/advisory; require only once thresholds are stable.
+2. Avoid cloning full usage views during account materialization by serializing from borrowed views or iterators.
+3. Add terminal resize fast paths that reuse row storage for height-only or same-width changes and benchmark resize storms.
+4. Parallelize isolated mount materialization only after partitioning by dependency/order group and host repository to avoid `.git` lock contention.
+5. Stream diagnostics JSONL into typed borrowed records and parse nested detail only for event kinds that need it.
+6. Split local CI orchestration into AI-friendly aliases that mirror CI partitions: lint, policy, tests, snapshots, docs, MSRV, E2E. Preserve full `cargo xtask ci` semantics, but make the smallest correct command discoverable.
+
+## Phase 5 — Keep docs and maps authoritative
+
+1. Keep the [Codebase Map](/reference/getting-oriented/codebase-map/) generated or audited against `cargo metadata` so crate tiers and “where to start” entries match reality.
+2. Keep route-level roadmap docs focused on active work. Resolved setup records should live in this page’s closed ledger or in git history, not as sidebar leaves.
+3. Keep behavioral specs in `/reference/developer-reference/specs/`; use this roadmap page to track missing specs or missing tests, not duplicate the spec content.
+4. Keep user-facing docs free of internal refactor admissions; code-health details belong under roadmap/reference only.
+
+## Closed and superseded roadmap leaves
+
+The following old code-health leaves are intentionally retired into this page:
+
+- `agent-workflow-cc-sdd` moved to Documentation tooling because it is a workflow/documentation program, not Rust code-health debt.
+- `behavioral-spec-runtime-launch` and `behavioral-spec-op-picker` are resolved into the published specs under [Behavioral Specs](/reference/developer-reference/specs/); remaining linkage chores are small maintenance tasks, not roadmap items.
+- `ci-project-structure-gate`, `developer-reference-setup`, `module-contracts`, `per-directory-readme`, and `pub-crate-visibility` are folded into Phase 0/Phase 5 and suppression/API hygiene work above.
+- `split-runtime-launch`, `split-input-editor`, and `unify-settings-editor-surfaces` are folded into Phase 2.
+- `test-infra-behavioral-specs` is folded into Phase 1/Phase 3.
+- `rustdoc-json-fumadocs` moved to Documentation tooling.
+- `pr-verification` moved to Operator surface.
+- `plans/complexity-debt` is retired because its counts drifted; future work must start from a fresh inventory.
+
+## Verification commands for roadmap edits
+
+When this page or roadmap sidebar structure changes, run:
+
+```sh
+cargo xtask roadmap audit
+cargo xtask docs repo-links
+cargo xtask research check
+```
+
+When code-health implementation work lands, choose the narrowest relevant Rust verification from <RepoFile path="TESTING.md">TESTING.md</RepoFile>, then run `cargo xtask ci --fast` before marking a broad refactor ready for review.

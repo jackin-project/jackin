@@ -2,7 +2,7 @@
 title: "rustdoc JSON → Fumadocs API pipeline"
 ---
 
-**Status**: Deferred — Phase 3; not started, no `gen-rust-api.ts`, no CI nightly step, no generated API pages exist yet; blocked on [module contracts](/roadmap/module-contracts/) reaching sufficient `//!` coverage first
+**Status**: Deferred — not started; no `gen-rust-api.ts`, no CI nightly step, no generated API pages exist yet. This is documentation tooling, not code-health debt; start it only after module-level `//!` coverage is high enough to make generated API pages useful.
 
 ## Shipped facts
 
@@ -17,7 +17,7 @@ cargo +nightly rustdoc --output-format json -p jackin --document-private-items
 → docs/content/docs/reference/developer-reference/api/<module>/<Item>.mdx  (gitignored)
 ```
 
-Deliberately deferred behind [module contracts](/roadmap/module-contracts/): the pipeline's value scales with `//!` coverage, and that item's own 2026-07-01 audit still finds production crate files without leading `//!` docs.
+Deliberately deferred behind module-contract coverage: the pipeline's value scales with `//!` coverage, and the code-health roadmap now tracks the fresh inventory needed before this starts.
 
 ## Remaining work
 
@@ -30,5 +30,5 @@ Deliberately deferred behind [module contracts](/roadmap/module-contracts/): the
 
 ## Related work
 
-- [Module contracts (//! docs)](/roadmap/module-contracts/) — prerequisite; this item should not start before that one reaches solid coverage.
+- [Codebase health: Rust strictness, structure, and AI reviewability](/roadmap/codebase-health-enforcement/) — owns the fresh module-contract inventory prerequisite.
 - [Developer Reference](/reference/developer-reference/) — the contributor reference tree the generated API pages would live under.
