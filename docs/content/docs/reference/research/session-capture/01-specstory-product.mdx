@@ -1,0 +1,56 @@
+---
+title: "01 — SpecStory: Product, Business, Reception"
+---
+
+# 01 — SpecStory: Product, Business, Reception
+
+**Research conducted:** 2026-07-03. Evidence tiers (A/B/C/D) per the [brief](/reference/research/session-capture/prompt/). Mechanism internals live in [02 — SpecStory CLI internals](/reference/research/session-capture/02-specstory-cli-internals/); this chapter covers what SpecStory *is* as a product and business.
+
+## What SpecStory is
+
+SpecStory is the best-known "session capture" product: it auto-saves AI coding-assistant conversations to local markdown under `.specstory/history/` in the project, then layers search, sharing, cloud sync, and skill-mining on top. Tagline: **"Intent is the new source code"** ([README](https://github.com/specstoryai/getspecstory)); site headline "Turn your AI development conversations into searchable, shareable knowledge" ([specstory.com](https://specstory.com/)). Company thesis: the prompt/response history — the *intent* — is a durable asset worth versioning alongside code.
+
+## Product surface (as of 2026-07-03)
+
+| Product | What it does | Source | Version / status |
+|---|---|---|---|
+| **IDE extension** (`SpecStory.specstory-vscode`, one extension for Cursor + VS Code) | Auto-saves Cursor chat/composer and VS Code Copilot Chat to `.specstory/history/`; share links; derived rules; cloud sync | **Closed** | v1.1.2 (2026-05-29); 22,401 installs, 5.0★/9 ratings on the [VS Marketplace](https://marketplace.visualstudio.com/items?itemName=SpecStory.specstory-vscode) (tier B) |
+| **SpecStory CLI** | Wraps or watches terminal agents (Claude Code, Codex, Cursor CLI, Droid, Gemini, DeepSeek TUI), converts native session stores to markdown; v2.0.0 adds indexed full-text `specstory search` and cross-project, **cross-agent** `specstory resume` | **Open** (Apache-2.0, Go, in [getspecstory](https://github.com/specstoryai/getspecstory/tree/main/specstory-cli)) | v2.0.0 (2026-06-29); 38 releases since 2025-06-26, ~1–4/month; macOS/Linux binaries only, Windows still an open PR ([#191](https://github.com/specstoryai/getspecstory/pull/191)) (tier A) |
+| **Lore** | Mines `.specstory/history/*.md` into `~/.specstory/lore.db`, surfaces recurring workflows with evidence, forges approved ones into installable agent skills (`~/.agents/skills/<name>/SKILL.md`) | **Open** (Apache-2.0, in-repo `lore/`) | v3.9.0 (2026-06-11); ships as an Agent Skill (`npx skills add specstoryai/getspecstory --skill lore`) and a Claude Code plugin (tier A) |
+| **SpecStory Cloud** | Opt-in sync of markdown + raw session JSON to cloud.specstory.com; cross-project keyword + semantic search; share links; REST + GraphQL API | Closed (SaaS) | Free, single-user; team workspaces "on the roadmap" ([cloud quickstart](https://docs.specstory.com/cloud/quickstart)) (tier B) |
+| **BearClaude** | macOS spec-editor + embedded Claude Code terminal | Closed | **Retired** — bearclaude.specstory.com now redirects to [withstoa.com/bearclaude](https://withstoa.com/bearclaude) (tier B) |
+| **Stoa** | Successor bet: "multiplayer meeting room" with live video, in-room AI agent, Claude Code, decision capture; $5/hour usage pricing | Closed (SaaS) | Live at [withstoa.com](https://withstoa.com/) (tier B) |
+
+Adjacent: [SpecFlow](https://github.com/specstoryai/specflow) (open methodology site, 141★), `intent-releases` ("system of record for human decisions"), and unreleased git-provenance research inside the CLI repo (covered in [02](/reference/research/session-capture/02-specstory-cli-internals/)).
+
+## The open/closed split (load-bearing fact)
+
+The **capture engine for terminal agents is fully open source** — the entire `specstory-cli` Go tree, including every provider parser, ships under Apache-2.0 in [getspecstory](https://github.com/specstoryai/getspecstory). The **IDE extensions are closed**: the repo's own installation table marks the Cursor and VS Code Copilot extensions "Source: Closed"; the GitHub repo hosts only their issues and releases. On open-sourcing the extension, the FAQ says "we have not made a decision" ([docs.specstory.com/faqs](https://docs.specstory.com/faqs)). Practical consequence: the CLI's extraction machinery is directly reusable prior art (license-compatible with jackin❯'s Apache-2.0), while the editor-side extraction (Cursor `state.vscdb`, Copilot `chatSessions` JSON) is only documented via FAQ statements and community reverse engineering (tier B/C).
+
+## Pricing and business model
+
+Everything capture-side is free as of 2026-07-03: extension ("free as in beer" — FAQ), CLI (open source), Cloud (free, single-user). Monetization has visibly moved to **Stoa** ($5/hour, no seats, $50 free credit — [pricing](https://withstoa.com/pricing)). Company: SpecStory, Inc., Boston, founded 2024; founders Jake Levirne (CEO, ex-DigitalOcean/Docker), Sean Johnson (CTO), Greg Ceccarelli (CPO, ex-GitHub/Pluralsight); seed investors NP-Hard Ventures, Mango Capital, Tola Capital, amount undisclosed ([specstory.com/company](https://specstory.com/company), [Specter monitor](https://insights.tryspecter.com/specter-monitor-181/); tier B/C).
+
+Read for jackin❯: the capture layer itself has been commoditized to $0 by its own vendor — value accrues in what sits *on top* (search, resume, skills-mining, team surfaces). That matches the [Déjà Vu](/reference/research/agent-orchestration/conversation-capture/deja-vu/) framing of capture as infrastructure, not product.
+
+## Reception
+
+- **Traction signals** (2026-07-03): 1,268★ / 78 forks on getspecstory; 22.4k marketplace installs; badge endpoints exist for installs/active-users/sessions-saved but publish no public totals (tier B).
+- **Positive**: Cursor forum launch thread called it a "godsend" ([forum thread](https://forum.cursor.com/t/built-a-cursor-extension-to-save-and-share-chat-and-composer-history/35314)); recurring HN endorsement pattern — commit `.specstory/history` to the repo so AI conversations ride along in PRs ([HN 44976568](https://news.ycombinator.com/item?id=44976568)); their "Why Git is no 'good' for AI-generated code" essay reached 35 points ([HN 43557698](https://news.ycombinator.com/item?id=43557698)).
+- **No breakout moment**: no large Show HN; effectively no Reddit footprint found (tier D — absence).
+
+## Complaint themes (GitHub issues, tier B)
+
+These are the field-tested failure modes any capture feature must design against — the fragility *mechanics* are analyzed in [02](/reference/research/session-capture/02-specstory-cli-internals/):
+
+1. **Editor updates break closed-source extraction.** Pinned issue [#53](https://github.com/specstoryai/getspecstory/issues/53): "Cursor 0.49.x introduced breaking changes" — official advice was to downgrade Cursor. [#186](https://github.com/specstoryai/getspecstory/issues/186): Cursor 2.5.26 added new message types → 110+ errors/sec. [#138](https://github.com/specstoryai/getspecstory/issues/138): a Copilot update broke saving.
+2. **Polling costs CPU.** Battery/CPU drain from DB polling ([#28](https://github.com/specstoryai/getspecstory/issues/28), [#47](https://github.com/specstoryai/getspecstory/issues/47), [#208](https://github.com/specstoryai/getspecstory/issues/208), [#220](https://github.com/specstoryai/getspecstory/issues/220)); `specstory run claude` busy-waiting 20–50% CPU while idle (open [#207](https://github.com/specstoryai/getspecstory/issues/207)).
+3. **Silent incompleteness.** Lost chats ([#164](https://github.com/specstoryai/getspecstory/issues/164)), partial saves ([#82](https://github.com/specstoryai/getspecstory/issues/82), [#112](https://github.com/specstoryai/getspecstory/issues/112), [#174](https://github.com/specstoryai/getspecstory/issues/174)), duplicate files with differing completeness ([#196](https://github.com/specstoryai/getspecstory/issues/196)).
+4. **Privacy defaults.** PostHog telemetry on by default ([#100](https://github.com/specstoryai/getspecstory/issues/100)); derived-rules calls logged via Helicone ([privacy doc](https://docs.specstory.com/privacy)); open [#224](https://github.com/specstoryai/getspecstory/issues/224): histories are not gitignored by default, so transcripts (and any secrets inside) can land in public repos — getspecstory's own committed history demonstrates the pattern.
+5. **Known capture gaps**: Cursor Cmd-K inline edits ([#27](https://github.com/specstoryai/getspecstory/issues/27)), Cursor Agents Window ([#212](https://github.com/specstoryai/getspecstory/issues/212)), images ([#64](https://github.com/specstoryai/getspecstory/issues/64)); Windsurf declared **impossible** — "encrypted protobufs… locked that data away and thrown away the key" (maintainer, [#26](https://github.com/specstoryai/getspecstory/issues/26)).
+
+## What jackin❯ should take from the product story
+
+- Local-first markdown in the repo is the adoption hook; cloud is optional and single-user even after ~1.5 years.
+- The open CLI + closed extension split maps exactly to extraction difficulty: file-store parsing is commodity, editor-DB scraping is a maintenance treadmill they keep private.
+- SpecStory's newest moves (cross-agent resume, session portability, Lore skill-mining) all monetize the *archive*, validating Déjà Vu's premise that the normalized cross-agent store is the strategic asset.
