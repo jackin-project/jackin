@@ -24,7 +24,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Priority | Effort | Category | Status |
 |------|-------|----------|--------|----------|--------|
-| [003](003-materialize-accounts-borrow.md) | Stop deep-cloning usage views on every refresh | P1 | S | perf | IN PROGRESS |
+| [003](003-materialize-accounts-borrow.md) | Stop deep-cloning usage views on every refresh | P1 | S | perf | DONE (reviewed; `exec-plan-003` @ `c6914499f`, unmerged) |
 | [004](004-resize-coalesce-drops-frames.md) | Stop dropping the frame queued behind a coalesced resize | P1 | S | bug | DONE (reviewed; `exec-plan-004` @ `4d47ea343`, unmerged) |
 | [007](007-osc8-hyperlink-map-bound.md) | Bound OSC 8 hyperlink maps; clear on reset | P2 | S-M | bug | DONE (reviewed; `exec-plan-007` @ `2cf80a363`, unmerged) |
 | [008](008-launch-finalization-cleanup-guard.md) | Tear down DinD when a post-success finalization step fails | P2 | M | bug | TODO |
