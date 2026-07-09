@@ -68,8 +68,8 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
-| [028](028-dependency-hygiene-sweep.md) | Dependency hygiene: turso store boundary, ring exception, pin rationale | 1 | P3 | M | TODO |
-| [029](029-docs-drift-reconciliation.md) | Docs drift: README links, Apple status, reserved envs, capsule README, codebase map | 5 | P3 | M | IN PROGRESS |
+| [028](028-dependency-hygiene-sweep.md) | Dependency hygiene: turso store boundary, ring exception, pin rationale | 1 | P3 | M | IN PROGRESS |
+| [029](029-docs-drift-reconciliation.md) | Docs drift: README links, Apple status, reserved envs, capsule README, codebase map | 5 | P3 | M | DONE (reviewed; `exec-plan-029` @ `f5122448e`, unmerged; reserved list is 19 names — plan's 20 overcounted `JACKIN_OPEN_LINKS`, which is deliberately settable) |
 | [030](030-console-view-model-structs.md) | Console editor/settings view-model structs (kills the 42-site type_complexity cluster) | 2 | P2 | M-L | TODO |
 | [031](031-op-probe-typed-error.md) | Typed `op` probe errors (`OpProbeError` in jackin-core; downcast classification) | 2 | P2 | M | IN PROGRESS |
 | [032](032-daemon-console-behavioral-specs.md) | Behavioral specs: capsule daemon + operator console (cite-or-MISSING) | 3 | P2 | M-L | TODO |
