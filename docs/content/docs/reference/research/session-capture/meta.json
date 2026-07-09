@@ -1,0 +1,16 @@
+{
+  "title": "Session Capture Research",
+  "defaultOpen": false,
+  "pages": [
+    "index",
+    "prompt",
+    "00-executive-summary",
+    "01-specstory-product",
+    "02-specstory-cli-internals",
+    "10-agent-session-stores",
+    "11-open-source-exporters",
+    "12-platforms-and-observability",
+    "20-comparison-matrix",
+    "30-jackin-fit"
+  ]
+}
