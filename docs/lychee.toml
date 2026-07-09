@@ -52,6 +52,9 @@ exclude = [
   # xtermjs.org is browser-visible but CI lychee fails to connect to it.
   # Cited from reference/roadmap/clipboard-image-bridge.
   "https://xtermjs\\.org/",
+  # Reddit returns 403 to automated clients for this curated Clippy lint list.
+  # Cited from roadmap/codebase-health-enforcement.
+  "https://www\\.reddit\\.com/r/rust/comments/1rxbygj/curated_list_of_clippy_lints_worth_adding_to_the/",
 ]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]

@@ -24,7 +24,11 @@ on:
         options: [github, velnor, both]
 
 concurrency:
-  group: jackin-dev-publish
+  # PRs are validation-only, not part of the publish stream. Scope them by
+  # source branch so cross-branch runs do not cancel each other. Main pushes
+  # and dispatches share the jackin-dev-publish stream so only the latest
+  # source commit publishes.
+  group: jackin-dev-${{ github.head_ref || 'publish' }}
   cancel-in-progress: true
 
 jobs:
@@ -67,8 +71,16 @@ jobs:
           while IFS= read -r path; do
             [ -z "$path" ] && continue
             case "$path" in
-              Cargo.toml|crates/jackin-dev/**)
+              Cargo.toml)
                 artifact_changed=true
+                ;;
+              crates/jackin-dev/*)
+                # README, AGENTS.md, and CLAUDE.md are orientation docs/symlinks;
+                # they do not change the released artifact.
+                case "$path" in
+                  *.md) ;;
+                  *) artifact_changed=true ;;
+                esac
                 ;;
               Cargo.lock)
                 lock_changed=true
