@@ -59,7 +59,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
-| [024](024-clock-seam-clipboard-expiry.md) | `Clock` seam in jackin-core; first consumer: clipboard expiry | 3/6 | P1 | M | IN PROGRESS |
+| [024](024-clock-seam-clipboard-expiry.md) | `Clock` seam in jackin-core; first consumer: clipboard expiry | 3/6 | P1 | M | DONE (reviewed; `exec-plan-024` @ `66da5aef9`, unmerged; capsule PR — smoke block mandatory at PR time) |
 | [025](025-test-support-crate-break-dev-cycle.md) | Extract `jackin-test-support`; break isolation⇄runtime dev cycle | 2/3 | P2 | M | IN PROGRESS |
 | [026](026-scrollback-range-snapshot.md) | Range-scoped scrollback snapshots (per-mouse-event full-scrollback alloc) | 2/4 | P2 | M | TODO |
 | [027](027-diagnostics-jsonl-typed-streaming.md) | Typed borrowed JSONL streaming; stop double-parsing detail | 4 | P2 | M | TODO |
