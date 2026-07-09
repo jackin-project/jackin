@@ -55,7 +55,7 @@ Pattern across the whole category: **every serious OSS tool reads the agents' na
 | [claude-conversation-extractor](https://github.com/ZeroSumQuant/claude-conversation-extractor) | bulk extract + search UI | reads JSONL | MD/text/JSON | 628★, pushed 2026-01-02 |
 | [claude-history](https://github.com/raine/claude-history) | Rust fuzzy-search TUI over history | indexes JSONL incl. tool output | TUI | 364★, pushed 2026-06-29 |
 | [cctrace](https://github.com/jimmc414/cctrace) | export to Markdown + LLM-ingestible XML | reads JSONL | MD/XML | 199★, pushed 2026-01-06 |
-| [claude-trace](https://www.npmjs.com/package/@mariozechner/claude-trace) (Mario Zechner) | records **all API traffic** incl. system prompts | fetch-patch wrapper around `claude` (vector D — the only non-file-reader here) | JSONL traffic + HTML views | npm v1.0.9 2026-04-16; low activity |
+| [claude-trace](https://github.com/badlogic/lemmy/tree/main/apps/claude-trace) (Mario Zechner) | records **all API traffic** incl. system prompts | fetch-patch wrapper around `claude` (vector D — the only non-file-reader here) | JSONL traffic + HTML views | npm v1.0.9 2026-04-16; low activity |
 | [cclogviewer](https://github.com/Brads3290/cclogviewer) | JSONL → HTML review UI | file read | HTML | 84★, pushed 2025-08-08 — **dormant** |
 | claude-code-exporter (developerisnow) | MD export/aggregation + MCP | — | — | npm alive, **GitHub repo deleted** — abandoned |
 
@@ -75,7 +75,7 @@ The graveyard rate here is the Cursor-schema-churn story from [01](/reference/re
 ## Copilot- and Codex-specific
 
 - **Copilot cluster** (native export is JSON-only, so small tools fill the gap): [fengzehan's Copilot Chat Exporter](https://marketplace.visualstudio.com/items?itemName=fengzehan.vscode-copilot-exporter) and [Copilot Chat to Markdown](https://marketplace.visualstudio.com/items?itemName=imperium-dev.copilot-chat-to-markdown) (VS Marketplace), [github-copilot-chat-exporter](https://github.com/ZacharyLuz/github-copilot-chat-exporter) (PowerShell, 5★, 2026-04-26), [copilot-chat-export-formatter](https://github.com/Marijn-Bergman/copilot-chat-export-formatter) (dead, 2023). All read `workspaceStorage/**/chatSessions/*.json` or drive the built-in export command.
-- **Codex cluster** (no dominant viewer exists): [@nogataka/codex-viewer](https://www.npmjs.com/package/@nogataka/codex-viewer) (npm v0.0.11, 2026-02-05, 35★), [codex-session-viewer](https://github.com/eric-gitta-moore/codex-session-viewer) (2★), [codex-history-list](https://github.com/shinshin86/codex-history-list) (10★), plus ~5 more ≤2★ repos. All parse `~/.codex/sessions/**/rollout-*.jsonl`. The niche is unconsolidated — nobody owns Codex history tooling.
+- **Codex cluster** (no dominant viewer exists): [@nogataka/codex-viewer](https://github.com/nogataka/codex-viewer) (npm v0.0.11, 2026-02-05, 35★), [codex-session-viewer](https://github.com/eric-gitta-moore/codex-session-viewer) (2★), [codex-history-list](https://github.com/shinshin86/codex-history-list) (10★), plus ~5 more ≤2★ repos. All parse `~/.codex/sessions/**/rollout-*.jsonl`. The niche is unconsolidated — nobody owns Codex history tooling.
 
 ## Category read-out
 
