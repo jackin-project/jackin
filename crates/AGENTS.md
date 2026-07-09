@@ -126,31 +126,42 @@ See [../AGENTS.md](../AGENTS.md) for workspace-wide Rust rules and [../../AGENTS
 
 Right-size the README to the crate. A leaf crate (e.g. `jackin-protocol`) needs only the short form above. A complex infrastructure crate (e.g. `jackin-term`) may carry a richer engineering record — problem solved, what was tried, why we built it, invariants, correctness guarantees — like the existing `jackin-term/README.md`. Never pad a small crate to match a big one.
 
-### `AGENTS.md` — the rules an agent must follow in this crate
+### `AGENTS.md` — only the rules an agent cannot derive from the code
 
-The shared rules (this file, root `AGENTS.md`) apply everywhere. The per-crate `AGENTS.md` adds **only what is specific to this crate**: its tier and dependency boundary, the conventions it enforces, what is allowed and what is forbidden, and what lives here vs elsewhere. An agent opening the crate folder reads this first and stays within the crate's scope.
+The per-crate `AGENTS.md` is the **smallest** file in the crate. It holds only non-derivable, actionable rules — the conventions, invariants, traps, and boundary decisions that are not already encoded in the code, the `README.md`, the workspace lint table, or the `cargo xtask lint arch` dependency gate. Agents read `AGENTS.md` *and* `README.md` *and* the source; duplicating any of them in `AGENTS.md` wastes context tokens for no gain. Research on the [AGENTS.md](https://agents.md/) convention is unambiguous: files that duplicate README/code-derivable content measurably *reduce* agent task success (see Atlan/MorphLLM surveys), and the ceiling is ~150 lines — keep a per-crate file well under that, ideally a handful of rules.
+
+**Never put in a per-crate `AGENTS.md`:**
+
+- **Tier or allowed-dependency lists.** They are in the crate's `//!` Architecture Invariant header (`src/lib.rs`), in `Cargo.toml`, and enforced by `cargo xtask lint arch`. Copying them here is triple duplication.
+- **`src/` module structure or public-API summaries.** That is the `README.md`'s job (and rustdoc's).
+- **Build/test/verify commands.** Standard (`cargo nextest run -p <crate>`, clippy) or in `TESTING.md`.
+- **The "keep README current" rule.** Stated once, here; do not repeat per crate.
+- **Prose architecture overviews with no actionable instruction.**
+
+**Do put in a per-crate `AGENTS.md`:**
+
+- A one-line purpose (so the agent knows the crate's scope without opening the README).
+- Non-derivable rules: conventions, invariants, and traps the compiler, lints, and arch gate do not enforce — e.g. "damage is recorded at mutation, never recomputed by re-read", "reach runtime through effects-as-data, not direct calls", "use only `jackin-tui` public API".
+- A non-obvious ownership boundary **only when it is a decision**, not a derivable dependency.
+
+If a file grows past ~30 lines, most of it is probably derivable and belongs elsewhere.
 
 #### `AGENTS.md` template
 
 ```markdown
 # AGENTS.md — <crate-name>
 
-<One sentence: what this crate is for.>
+<One line: what this crate is for.>
 
-## Hard rules (this crate)
-- **Tier & dependencies:** <tier>. Allowed workspace deps: <list>. Do not add a dependency outside this list without raising the architecture gate.
-- **Keep `README.md` current:** update it when structure, public API, module layout, tier, or responsibilities change (see `crates/AGENTS.md`).
-- <crate-specific rule — e.g. "no blocking I/O on the render path", "all host effects go through …", "no `tokio` in this leaf crate">
-- <crate-specific rule>
+## Rules (this crate)
+- <non-derivable rule — convention / invariant / trap the compiler, lints, and arch gate do not enforce>
+- <non-derivable rule>
 
-## What lives here vs elsewhere
-- This crate owns: <X>.
-- <Y> lives in `<other-crate>`, not here.
+## Boundaries
+- <non-obvious ownership split, only if it is a decision and not a derivable dependency>
 
 Workspace rules: [../AGENTS.md](../AGENTS.md). Repo rules: [../../AGENTS.md](../../AGENTS.md).
 ```
-
-Derive the tier and allowed-dependency line from the crate's `//!` **Architecture Invariant** header in `src/lib.rs` (or `src/main.rs`); every crate carries one. If a crate's invariant header is missing or stale, fix it in the same PR that adds its `AGENTS.md`.
 
 ## Workspace lint baseline (hard rule)
 

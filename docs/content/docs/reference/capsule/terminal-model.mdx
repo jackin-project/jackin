@@ -109,7 +109,21 @@ The key measurement evidence recorded during the PR:
 
 ## Why Not Adopt A Different Emulator
 
-The evaluated alternatives each helped clarify the design, but none replaced the need for `jackin-term`:
+The evaluated alternatives each helped clarify the design, but none replaced the need for `jackin-term`. The full survey from the pre-build audit:
+
+| Candidate | Parser | Damage | Packed cells | Passthrough | Diff-to-escape | Verdict |
+|---|---|---|---|---|---|---|
+| `vt100` (fork) | own SM | none | `String`/cell | `Callbacks` (forked) | yes (unused by us) | retired — wrong shape |
+| `vte` alone | yes | n/a | n/a | n/a | n/a | parser only — always depend |
+| `alacritty_terminal` | `vte` | yes, line-level | yes, packed | GPU-shaped | none | grid + damage fit; no multiplexer API |
+| `termwiz` / `wezterm-term` | own | yes (`Change`) | partial | yes | yes (unused for us) | too broad; unstable public API |
+| Rio / `copa` | own | unknown | unknown | unknown | n/a | low adoption; not evaluated |
+| `avt` | own | none | n/a | none | none | snapshot-only; not a grid |
+| libvterm | C library | yes | yes | yes | yes | ruled out — non-Rust |
+| Ghostty / Alacritty (full) | `vte` / own | yes | yes, packed | partial | GPU only | GPU-first; wrong output stage |
+| Zellij `grid` | own | yes, per-row | yes | partial | own | closest design; not published |
+
+**Key finding:** the "fast engines have no diff-to-escape" argument that originally dismissed `alacritty_terminal` is a strawman for jackin❯ — the Capsule owns its emit. What the model needs from a grid is **damage + packed cells**, where `alacritty_terminal` is strong and `vt100` was the weakest option.
 
 - `alacritty_terminal` has a fast grid and damage ideas, but it is built for GPU terminal rendering and does not provide jackin❯ re-emitting multiplexer API.
 - `termwiz` has useful surface/diff API ideas, but brings a heavier WezTerm-shaped model and still does not own Capsule-specific passthrough and control semantics.
@@ -117,6 +131,20 @@ The evaluated alternatives each helped clarify the design, but none replaced the
 - libvterm and Ghostty are valuable references, but non-Rust libraries are not acceptable dependencies for this project. Their ideas can be reimplemented in Rust with attribution; their binaries are not linked.
 
 The result is intentionally hybrid: depend on `vte` for the parser, borrow proven grid/damage ideas from mature terminals and multiplexers, and keep jackin❯ capsule-specific model in a small Rust crate that the workspace controls.
+
+## Borrow and re-implement ledger
+
+`jackin-term` depends on one parser (`vte`) and re-implements grid/damage ideas from mature terminals with attribution. Every borrow site carries an inline attribution comment in source naming the project and license.
+
+| Source | What jackin-term takes | How | License | Attribution |
+|---|---|---|---|---|
+| `vte` | VT/ANSI parser state machine | depend — never rebuild | MIT | `vte` crate (doy) |
+| Alacritty ring-`Storage` | ring-backed row storage for primary, alternate, and scrollback rows | re-implement / reference | Apache-2.0/MIT | Alacritty project |
+| Zellij `OutputBuffer` / `changed_lines` | damage discipline — track dirty rows, emit only changed | re-implement / reference | MIT | Zellij project |
+| Ghostty `PageList` | arena-page memory model — candidate for a future cell-grid rewrite only if profiling proves the current model is the bottleneck | reference / future re-implementation candidate | MIT | Ghostty project (Mitchell Hashimoto) |
+| libvterm coverage checklist / vttest / esctest | conformance coverage references | reference only | MIT/X11 / public test suites | upstream projects |
+
+Non-Rust emulators (libvterm, Ghostty) inform the design only; their code is re-implemented in Rust with attribution, never linked. This keeps `jackin-term` pure-Rust with no `unsafe`, FFI, or non-Rust build dependency.
 
 ## The emit side: one frame model, one writer
 
