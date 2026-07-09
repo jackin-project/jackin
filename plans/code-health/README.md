@@ -28,8 +28,8 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [003](003-materialize-accounts-borrow.md) | Stop deep-cloning usage views on every refresh | P1 | S | perf | DONE (reviewed; `exec-plan-003` @ `c6914499f`, unmerged) |
 | [004](004-resize-coalesce-drops-frames.md) | Stop dropping the frame queued behind a coalesced resize | P1 | S | bug | DONE (reviewed; `exec-plan-004` @ `4d47ea343`, unmerged) |
 | [007](007-osc8-hyperlink-map-bound.md) | Bound OSC 8 hyperlink maps; clear on reset | P2 | S-M | bug | DONE (reviewed; `exec-plan-007` @ `2cf80a363`, unmerged) |
-| [008](008-launch-finalization-cleanup-guard.md) | Tear down DinD when a post-success finalization step fails | P2 | M | bug | IN PROGRESS |
-| [009](009-protocol-decoder-fuzz-and-truncation-tests.md) | Fuzz + truncation tests for protocol wire decoders | P2 | M | tests | IN PROGRESS |
+| [008](008-launch-finalization-cleanup-guard.md) | Tear down DinD when a post-success finalization step fails | P2 | M | bug | DONE (reviewed; `exec-plan-008` @ `fde52d14a`, unmerged) |
+| [009](009-protocol-decoder-fuzz-and-truncation-tests.md) | Fuzz + truncation tests for protocol wire decoders | P2 | M | tests | DONE (reviewed; `exec-plan-009` @ `5816e42fe`, unmerged; fuzzed 6.4M execs clean on stable — ASan needs nightly, still unexercised) |
 
 ### Second wave — program infrastructure (respect the dependency notes)
 
@@ -69,7 +69,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
 | [028](028-dependency-hygiene-sweep.md) | Dependency hygiene: turso store boundary, ring exception, pin rationale | 1 | P3 | M | TODO |
-| [029](029-docs-drift-reconciliation.md) | Docs drift: README links, Apple status, reserved envs, capsule README, codebase map | 5 | P3 | M | TODO |
+| [029](029-docs-drift-reconciliation.md) | Docs drift: README links, Apple status, reserved envs, capsule README, codebase map | 5 | P3 | M | IN PROGRESS |
 | [030](030-console-view-model-structs.md) | Console editor/settings view-model structs (kills the 42-site type_complexity cluster) | 2 | P2 | M-L | TODO |
 | [031](031-op-probe-typed-error.md) | Typed `op` probe errors (`OpProbeError` in jackin-core; downcast classification) | 2 | P2 | M | IN PROGRESS |
 | [032](032-daemon-console-behavioral-specs.md) | Behavioral specs: capsule daemon + operator console (cite-or-MISSING) | 3 | P2 | M-L | TODO |
@@ -99,7 +99,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [046](046-dind-chaos-lane.md) | Scheduled dind-E2E chaos variant (seeded faults; survival invariants) | 3 | P2 | M | TODO |
 | [047](047-maintainability-lint-census.md) | Census the 7 allowed maintainability lints; deny quiet ones, document noisy ones | 1 | P2 | S-M | TODO |
 | [048](048-advisory-lanes-wave-2.md) | Advisory lanes wave 2: hyperfine cold-start, rust-analyzer clean, build-time measurement | 4/6 | P3 | S-M | TODO |
-| [049](049-crate-readme-fumadocs-pipeline.md) | Crate-README → Fumadocs generated section; slim PROJECT_STRUCTURE.md | 5 | P2 | M | TODO |
+| [049](049-crate-readme-fumadocs-pipeline.md) | Crate-README → Fumadocs generated section; slim PROJECT_STRUCTURE.md | 5 | P2 | M | IN PROGRESS |
 | [050](050-readme-freshness-gate.md) | README-freshness gate (structural src change ⇒ README touched same PR) | 5 | P2 | S-M | TODO |
 | [051](051-xtask-gate-reporter-core.md) | Machine-readable gate output core (human\|json\|github reporter; 2 exemplar gates) | 6 | P2 | S-M | TODO |
 | [052](052-dylint-scaffold-render-purity.md) | dylint scaffold: `crates/jackin-lints` + render-thread-purity lint, advisory nightly lane | 1 | P3 | M | TODO |
