@@ -733,3 +733,6 @@ fn classify_str(s: &str) -> String {
         "literal".to_owned()
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -19,3 +19,6 @@ impl DebugLogSink for DiagnosticsDebugLog {
 pub fn install_debug_log_sink() {
     jackin_core::debug_log::set_global_sink(Box::new(DiagnosticsDebugLog));
 }
+
+#[cfg(test)]
+mod tests;

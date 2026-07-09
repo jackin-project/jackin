@@ -1,0 +1,84 @@
+---
+title: "10 — Agent Session Stores"
+---
+
+# 10 — Agent Session Stores
+
+**Research conducted:** 2026-07-03. Method: official docs + upstream source + live-disk inspection on macOS (versions inspected: Claude Code 2.1.199, codex-cli 0.142.5, opencode 1.17.10, amp 0.0.1783038096, grok 0.2.67, kimi 0.21.1; Gemini via docs/source). Facts observed only on disk are marked **[observed]**; documented vs reverse-engineered status is called out per agent — that distinction *is* the maintenance-risk rating for any capture feature. jackin❯'s roster (Claude, Codex, Amp, Kimi, OpenCode, Grok) gets full records; other agents get summaries at the end.
+
+## Claude Code (Anthropic)
+
+- **Store**: `~/.claude/projects/<project-slug>/<session-uuid>.jsonl`; subagents under `<session>/subagents/`; oversized tool outputs under `<session>/tool-results/` — paths **officially documented** ([claude-directory](https://code.claude.com/docs/en/claude-directory)). Slug = cwd with `/` and `.` → `-` **[observed]**, undocumented. XDG variant `~/.config/claude/projects/**` exists on some installs — jackin❯'s usage monitor already watches both (<RepoFile path="crates/jackin-usage/src/token_monitor/claude.rs">crates/jackin-usage/src/token_monitor/claude.rs</RepoFile>). Also: `~/.claude/history.jsonl` (prompt history), `file-history/<session>/` (pre-edit snapshots), `stats-cache.json` (cost aggregates).
+- **Format**: append-only JSONL, one file per session, plaintext incl. tool I/O.
+- **Schema**: records carry `type`, `uuid`/`parentUuid` (thread tree), `sessionId`, `timestamp`, `cwd`, `gitBranch`, `version`, `isSidechain`; assistant records embed the API-shaped `message` with `model`, content blocks (`text`/`tool_use`/`tool_result`/`thinking`), `usage` incl. cache-creation/cache-read tokens **[observed]**. Record schema itself **undocumented and evolving** (each record self-stamps CLI `version`).
+- **Native features**: `--continue`, `--resume <id|name>`, `--fork-session`, `/export` (plain text), `/rewind`, `/rename`. **Retention hazard: `cleanupPeriodDays` default 30 auto-deletes transcripts**; `--no-session-persistence` exists.
+- **Observer access**: best-in-class — hooks deliver `transcript_path` push-style on every event ([hooks](https://code.claude.com/docs/en/hooks)); `-p --output-format stream-json`; OTel with opt-in content up to raw API bodies ([monitoring](https://code.claude.com/docs/en/monitoring-usage)).
+- **Stability**: paths documented, schema not; the healthiest capture target of the six regardless — largest ecosystem parses it daily.
+
+## Codex CLI (OpenAI)
+
+- **Store**: `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl` (default `~/.codex`), archived sessions to `archived_sessions/`; source-defined ([recorder.rs](https://github.com/openai/codex/blob/main/codex-rs/rollout/src/recorder.rs)). Plus `history.jsonl` (0600) and a rebuildable SQLite metadata index `state_5.sqlite` **[observed]** — index name implies 5 schema iterations already.
+- **Format**: JSONL `RolloutLine {timestamp, type, payload}`; first line `session_meta` (id, cwd, cli_version, git info); then `response_item` (messages, function calls/outputs, reasoning), `turn_context`, `event_msg` (token counts), `compacted`; 2026 additions `InterAgentCommunication`, `WorldState`.
+- **Native features**: `codex resume [id|--last]`, `codex exec resume`; `--ephemeral` skips persistence. No export command — the rollout *is* the export.
+- **Observer access**: `codex exec --json` event stream; `notify` hook; `[otel]` config (log events; only user prompts opt-in, no assistant bodies).
+- **Stability**: vendor explicitly treats the format as internal; Apache-2.0 source is the documentation. Déjà Vu's "pair with a vendor-blessed hedge" stance is right.
+
+## Amp (Sourcegraph)
+
+- **Store**: threads are **server-authoritative** (Postgres on GCP — [security](https://ampcode.com/security)) — but, new finding: a **full local materialization exists**: `~/.local/share/amp/threads/T-<uuid>.json`, one pretty-printed JSON per thread with a `v` revision counter, plus `history.jsonl` and `session.json` **[observed, undocumented]**. Same XDG path family on macOS as Linux.
+- **Schema** **[observed]**: `messages[]` with role, content blocks (`text`, `thinking` incl. provider/signature, `tool_use`, tool results), per-message `usage` (model, input/output/cache tokens, credits), `usageLedger`.
+- **Native features**: the richest thread CLI of any agent — `amp threads list|continue|fork|share|rename|archive|compact` and **native exports: `amp threads markdown|export|raw`** ([manual](https://ampcode.com/manual)). Visibility tiers workspace/unlisted/private; public sharing retired 2026-06.
+- **Observer access**: `amp -x --stream-json` (**"Claude Code-compatible stream JSON"** — [announcement](https://ampcode.com/news/streaming-json)), `--stream-json-thinking`; plugin event hooks (`session.start`, `tool.call`, `tool.result`); SDK. No OTel.
+- **Stability**: cloud store durable; local `threads/*.json` is an undocumented sync surface on near-daily releases. Capture options are better than Déjà Vu assumed (local JSON + native markdown export exist), but all unblessed except stream-json.
+
+## Kimi Code (Moonshot)
+
+- **Store**: `~/.kimi-code/sessions/<workDirKey>/<sessionId>/` where `workDirKey = wd_<slug>_<sha256(cwd)[:12]>` — **officially documented** ([data-locations](https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/data-locations.html)), algorithm in MIT source (`workdir-key.ts`). Per-session: `state.json` + **`agents/main/wire.jsonl`** (+ per-subagent `agents/<id>/wire.jsonl`); global `session_index.jsonl` (append-only `{sessionId, sessionDir, workDir}`). Legacy Python-era `~/.kimi/sessions/<md5>/<uuid>/` still read by jackin❯'s monitor (<RepoFile path="crates/jackin-usage/src/token_monitor/kimi.rs">crates/jackin-usage/src/token_monitor/kimi.rs</RepoFile>) — the layouts differ; capture must handle the new one.
+- **Format**: `wire.jsonl` = **versioned append-only event log** (first line `{"type":"metadata","protocol_version":"1.4",…}` **[observed]**) that the agent itself replays on resume — "use records, not state.json, when correctness depends on order" (source comment). Event vocabulary (complete, from `records/types.ts`): `turn.prompt/steer/cancel`, `context.append_message/append_loop_event/clear/apply_compaction/undo`, `usage.record {model, usage}` (per-turn tokens incl. cache read/creation), `permission.*`, `plan_mode.*`, `full_compaction.*`, `goal.*`, `forked`. Thinking persists as plaintext `think` parts. Migration machinery ships in-tree (`records/migration/`).
+- **Native features**: `--continue`, `--session [id]`, `/fork`, `/rename`, **`kimi export [sessionId]` (ZIP)**, `/export-md`, `kimi vis` (browser visualizer).
+- **Observer access**: `--print --output-format stream-json`; **ACP server** (`kimi acp`, ACP 0.23, `session/update` notifications); `kimi server` (REST/WS + OpenAPI); hooks (13 events, Beta, `[[hooks]]` in config.toml — no `transcript_path`, so the store must be located by recomputing `workDirKey`). No OTel (vendor analytics only, opt-out).
+- **Stability**: **strongest of the six** — documented layout, MIT source, self-versioned protocol with in-tree migrations. Churn risk = the Python→TS transition itself (three doc hosts, layouts coexisting).
+
+## OpenCode (sst)
+
+- **Store**: **single SQLite DB** `~/.local/share/opencode/opencode.db` since v1.2.0 (2026-02-14, auto-migrated from the earlier per-file JSON `storage/` tree) — [release notes](https://github.com/sst/opencode/releases/tag/v1.2.0); Drizzle schema in source; `OPENCODE_DB` override; `opencode db path` prints it **[observed on 1.17.10]**.
+- **Schema**: `session` rows carry `parent_id` (forks/subagents), `directory`, `title`, `share_url`, **`cost` (USD!) and token columns** (input/output/reasoning/cache read/write), `model`; `message.data`/`part.data` JSON blobs; part kinds text/reasoning/tool/file/patch/snapshot/compaction. The only store of the six with native dollar cost.
+- **Native features**: `--continue`, `--session <id>`, `--fork`; **`opencode export [sessionID]`** (JSON, `--sanitize`), `opencode import <file|share URL>`, `opencode stats`; `/share` public links, `share: manual|auto|disabled`.
+- **Observer access**: `opencode serve` — HTTP + OpenAPI + **SSE `GET /event`** bus (message/part deltas live); plugin events (`message.part.updated`, `tool.execute.before/after`, `session.*`); `opencode db [query]` SQL shell; typed SDK. Undocumented OTLP trace wiring in source (Effect spans, no transcripts).
+- **Stability**: CLI/server/plugins documented; DB schema source-only, 38 migrations Jan–Jun 2026. One mutable DB means no per-session file to archive — capture should prefer the server API/plugin events or export command, exactly the "E-ish" path Déjà Vu named.
+
+## Grok (xAI "Grok Build")
+
+The blank spot in prior research, now mapped. Official CLI (`grok`, beta since 2026-05-14, closed source); the npm/GitHub "grok-cli" projects are unaffiliated community wrappers that *also* write `~/.grok/` — a collision capture must not trip over.
+
+- **Store**: officially only "`~/.grok/sessions`" is documented ([headless docs](https://docs.x.ai/build/cli/headless-scripting), [enterprise](https://docs.x.ai/build/enterprise)). Fine layout **[observed 0.2.67]** + bundled `~/.grok/README.md`: `~/.grok/sessions/<url-encoded-cwd>/<uuidv7-session-id>/` containing `chat_history.jsonl` (typed records; assistant lines carry `model_id`, `tool_calls`; **thinking stored encrypted** — `reasoning.encrypted_content` with readable summary only), **`updates.jsonl`** (ACP `session/update` stream — `agent_thought_chunk` here carries *readable* thinking, `tool_call`/`tool_call_update`, message chunks), `summary.json` (incl. **`chat_format_version`**, git root/branch/commit, counts), `signals.json` (token/latency metrics), `rewind_points.jsonl`, `events.jsonl` (undocumented telemetry-grade log), `subagents/`; per-cwd `prompt_history.jsonl`; FTS index `sessions/session_search.sqlite` **[observed]**.
+- **Native features**: `-c/--continue`, `-r/--resume [id]`, `-s/--session-id`, `/fork`, `/rewind`, `/share` (remote URL); `grok sessions list|search|delete`; **`grok export <SESSION_ID>` — Markdown transcript export, present in 0.2.67 help though absent from docs**; `grok trace <id>` (tarball; **uploads remotely by default**, `--local` to keep on disk).
+- **Observer access**: `--output-format streaming-json` (NDJSON of the same ACP vocabulary); **ACP server** `grok agent stdio`; hooks with `GROK_SESSION_ID`/`GROK_WORKSPACE_ROOT` env (Claude-compatible config shape; Grok even auto-reads Claude Code hooks/CLAUDE.md per [llms.txt](https://docs.x.ai/llms.txt)); no OTel.
+- **Stability**: weakest guarantees — beta, closed source, rapid churn (0.2.59→0.2.73 in June 2026), layout undocumented beyond the top dir; but the format self-declares `chat_format_version`, and `updates.jsonl`+ACP give a vendor-shaped event vocabulary. Déjà Vu's open question "verify in a live container" stands, now with a concrete checklist.
+
+## Cross-cutting: what a capture layer can watch (host side)
+
+| Agent | Watch target | Kind |
+|---|---|---|
+| Claude Code | `~/.claude/projects/**/*.jsonl` | append-only JSONL; hooks push `transcript_path` |
+| Codex | `~/.codex/sessions/**/rollout-*.jsonl` | append-only JSONL |
+| Amp | `~/.local/share/amp/threads/T-*.json` | rewritten JSON (`v` counter), cloud-authoritative; stream-json is the blessed live path |
+| Kimi | `~/.kimi-code/sessions/wd_*/<id>/agents/*/wire.jsonl` | append-only JSONL, versioned protocol |
+| OpenCode | `~/.local/share/opencode/opencode.db` (WAL) | SQLite; prefer SSE `/event` / plugins / `export` |
+| Grok | `~/.grok/sessions/<enc-cwd>/<uuidv7>/{chat_history,updates}.jsonl` | append-only JSONL, undocumented, `chat_format_version` stamped |
+
+**Retention hazards** any archive must beat: Claude auto-deletes after 30 days by default; Gemini (if ever added) keeps 30 days/50 sessions; Amp's local files are a cloud sync surface; OpenCode is one mutable DB; Grok is beta-churning. jackin❯'s own `eject`/`prune` is currently the *biggest* hazard of all — it deletes the restored homes wholesale ([30](/reference/research/session-capture/30-jackin-fit/)).
+
+**OTel reality check** (full table in the source survey): only Claude Code, Codex, and Gemini export OTel at all, and only Gemini (prompts on by default, `gen_ai.input/output.messages` in traces, direct `telemetry.outfile` sink) plus fully-opted-in Claude carry reconstructable content. For Amp, OpenCode, Kimi, Grok — two-thirds of jackin❯'s roster — OTel does not exist as a capture channel. File/API surfaces are the only fleet-wide answer, confirming Déjà Vu's vector ranking empirically.
+
+## Other agents (context, summary records)
+
+| Agent | Store | Status |
+|---|---|---|
+| Gemini CLI | `~/.gemini/tmp/<sha256(project)>/chats/session-*.jsonl` — `ConversationRecord` + `MessageRecord` lines with per-message tokens, thoughts, tool calls; `/chat share file.md` native export; richest OTel of any agent (prompts default-on, `telemetry.outfile` file sink) | docs + source ([session-management](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/session-management.md), [telemetry](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/telemetry.md)); 30-day/50-session retention |
+| Cursor IDE | `state.vscdb` SQLite (`cursorDiskKV`: `composerData:*`, `bubbleId:*`) in globalStorage | reverse-engineered only; churns with releases ([01](/reference/research/session-capture/01-specstory-product/)) |
+| Cursor CLI | `~/.cursor/chats/<md5(cwd)>/<uuid>/store.db` SQLite blob DAG | reverse-engineered; SpecStory reads it via topological sort ([02](/reference/research/session-capture/02-specstory-cli-internals/)) |
+| Copilot (VS Code) | `workspaceStorage/<hash>/chatSessions/*.json`; native `Chat: Export Chat...` JSON | semi-documented |
+| aider | `.aider.chat.history.md` — native markdown in-repo | documented; oldest native archive |
+| Cline | VS Code globalStorage tasks + per-task markdown export | community-documented |
+| Windsurf | encrypted protobufs | **closed** — SpecStory maintainer: "thrown away the key" ([#26](https://github.com/specstoryai/getspecstory/issues/26)) |

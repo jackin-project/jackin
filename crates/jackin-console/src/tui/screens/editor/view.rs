@@ -10,11 +10,10 @@ pub use crate::tui::components::editor_rows::{
     AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, SecretValueDisplay,
 };
 
-use ratatui::{
-    layout::Rect,
-    style::{Modifier, Style},
-    text::{Line, Span},
-};
+#[allow(unused_imports)]
+pub(crate) use crate::tui::components::editor_rows::auth_lines;
+
+use ratatui::{layout::Rect, text::Line};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EditorScrollGeometry {
@@ -49,7 +48,6 @@ pub type WorkspaceEditorState<
     PendingIsolationCleanup,
     PendingOpCommit,
 > = EditorState<
-    jackin_config::WorkspaceConfig,
     crate::mount_info_cache::MountInfoCache,
     Modal,
     SaveFlow,
@@ -89,7 +87,7 @@ pub(crate) use secrets_tab::{
 mod auth_tab;
 #[allow(unused_imports)]
 pub(crate) use auth_tab::{
-    EditorAuthLineRow, auth_lines, auth_state_geometry, auth_state_lines, editor_auth_line_width,
+    EditorAuthLineRow, auth_state_geometry, auth_state_lines, editor_auth_line_width,
 };
 
 mod modals;
@@ -168,25 +166,14 @@ pub(crate) fn render_editor_row(
     show_cursor: bool,
 ) -> Line<'static> {
     let selected = show_cursor && (row == cursor);
-    let prefix = if selected { "\u{25b8} " } else { "  " };
-    let label_style = if selected {
-        Style::default()
-            .fg(jackin_tui::theme::WHITE)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(jackin_tui::theme::WHITE)
-    };
-    let value_style = if selected {
-        Style::default()
-            .fg(jackin_tui::theme::PHOSPHOR_GREEN)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(jackin_tui::theme::PHOSPHOR_GREEN)
-    };
-    Line::from(vec![
-        Span::styled(format!("{prefix}{label:15}"), label_style),
-        Span::styled(value.to_owned(), value_style),
-    ])
+    crate::tui::components::editor_rows::labeled_field_line(
+        selected,
+        "",
+        label,
+        15,
+        value,
+        crate::tui::components::editor_rows::FieldEmphasis::SelectedValue,
+    )
 }
 
 pub fn padded_width(text: &str) -> usize {

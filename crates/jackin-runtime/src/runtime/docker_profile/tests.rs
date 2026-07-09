@@ -22,10 +22,10 @@ fn ord_ascending_capability() {
 }
 
 #[test]
-fn default_is_compat() {
+fn default_is_standard() {
     assert_eq!(
         DockerSecurityProfile::default(),
-        DockerSecurityProfile::Compat
+        DockerSecurityProfile::Standard
     );
 }
 
@@ -575,6 +575,33 @@ fn network_enforcement_label_all_cases() {
     );
 }
 
+#[test]
+fn session_contract_reports_dind_inner_egress_partial_enforcement() {
+    let grants = EffectiveGrants {
+        network: NetworkGrant::Allowlist,
+        dind: DindGrant::Rootless,
+        ..profile_base_grants(DockerSecurityProfile::Standard)
+    };
+    let contract = format_session_contract(
+        DockerSecurityProfile::Standard,
+        "config",
+        &grants,
+        true,
+        "docker-default",
+        "v2",
+        "provisioned",
+        true,
+    );
+    assert!(
+        contract.contains("enforcement: partial (DinD inner containers bypass host iptables)"),
+        "{contract}"
+    );
+    assert!(
+        contract.contains("DinD sidecar has kernel access"),
+        "{contract}"
+    );
+}
+
 /// Implicit caps are also present when hardened profile (Allowlist) has config grants.
 /// `apply_implicit_grants` must fire even when `apply_grants` already ran.
 #[test]
@@ -992,11 +1019,11 @@ fn sudo_default_off_outside_compat_on_for_compat() {
 fn dind_rootless_uses_rootless_image_without_privileged() {
     assert_eq!(
         dind_image_and_privileged(DindGrant::Rootless),
-        ("docker:dind-rootless", false)
+        ("docker:29-dind-rootless", false)
     );
     assert_eq!(
         dind_image_and_privileged(DindGrant::Privileged),
-        ("docker:dind", true)
+        ("docker:29-dind", true)
     );
 }
 

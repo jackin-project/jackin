@@ -9,6 +9,42 @@
 
 use crate::components::panel::PanelFocus;
 
+/// Focus behavior shared by every button-row dialog: a closed ring of
+/// semantic focus states with a stable [`ButtonStrip`](super::button_strip::ButtonStrip)
+/// index.
+pub trait ButtonFocus: Copy + Eq + 'static {
+    const RING: &'static [Self];
+
+    /// Index into the dialog's button strip items.
+    #[must_use]
+    fn index(self) -> usize {
+        Self::RING
+            .iter()
+            .position(|focus| focus == &self)
+            .unwrap_or(0)
+    }
+
+    #[must_use]
+    fn next(self) -> Self {
+        let ring = Self::RING;
+        if ring.is_empty() {
+            return self;
+        }
+        let idx = self.index();
+        ring[(idx + 1) % ring.len()]
+    }
+
+    #[must_use]
+    fn prev(self) -> Self {
+        let ring = Self::RING;
+        if ring.is_empty() {
+            return self;
+        }
+        let idx = self.index();
+        ring[(idx + ring.len() - 1) % ring.len()]
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FocusOwner<Tab> {
     #[default]

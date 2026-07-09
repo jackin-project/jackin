@@ -2,7 +2,7 @@
 title: "Apple Container Backend"
 ---
 
-**Status**: Partially implemented — launch-path backend selection, manifest schema, and session-contract/telemetry output are wired and compile; command-path lifecycle dispatch (reconnect/eject/purge) and hardware validation remain open.
+**Status**: Partially implemented — launch-path backend selection, manifest schema, session-contract/telemetry output, and persisted-instance lifecycle dispatch are wired and compile; Phase 0 hardware validation and real Apple Container finalization remain open.
 
 ## Shipped facts
 
@@ -12,7 +12,9 @@ The backend code has landed and compiles: the `container` CLI client (<RepoFile 
 
 **Session contract and telemetry are also wired, not just planned:** `apple_container::launch` calls `print_session_contract` (kernel boundary, mounts, DinD state, residual risks) and `check_dns` on attach, and emits `debug_log!("apple-container", …)` lines for version probe, container run, capsule-ready, and DNS check.
 
-**Still to prove/wire end-to-end:** `apple_container::reconnect`/`stop`/`remove`/`ensure_absent_for_purge` exist and compile, but nothing in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> or <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> calls them — the user-facing `reconnect`/`eject`/`purge` command paths still dispatch only to the Docker backend.
+**Persisted lifecycle dispatch is wired:** <RepoFile path="crates/jackin-runtime/src/runtime/backend.rs" /> defines `ContainerBackend` with required `finalize`, Docker and Apple Container implementations, and manifest-based backend resolution. <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> routes purge guards, `eject`, and `exile_all` through it; <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> routes `hardline` through it. Legacy manifests with no backend field still resolve to Docker.
+
+**Still to prove end-to-end:** Apple Container `finalize` intentionally returns an explicit Phase 0 error from the backend trait. The real post-attach dirty-exit/finalization behavior needs macOS 26 ARM hardware validation before it can claim parity with the Docker path.
 
 **The VM path itself is empirical, not code:** launch/attach runs the `container` CLI and rootless DinD inside an apple/container VM, which **cannot be exercised without macOS 26 ARM hardware** — the Phase 0 gate. Run <RepoFile path="scripts/phase0-apple-container.sh" /> there to validate it; nothing in this branch claims Phase 0 has passed, and the launch dispatch currently starts then reclaims the Docker sidecar pending the Phase-0 reorder.
 
@@ -21,7 +23,7 @@ Full architecture (runtime stack, CLI shell-out surface, manifest/schema detail,
 ## Remaining work
 
 1. **Phase 0 empirical validation** — requires macOS 26 ARM hardware with `apple/container` v0.11.0+. Run <RepoFile path="scripts/phase0-apple-container.sh" />; result decides whether rootless DinD works inside apple/container VMs and whether the Docker-sidecar-then-reclaim ordering in the launch pipeline can be reordered to skip starting the sidecar at all.
-2. **Wire command-path dispatch for reconnect/eject/purge** — `apple_container::reconnect`/`stop`/`remove`/`ensure_absent_for_purge` need callers in <RepoFile path="crates/jackin-runtime/src/runtime/attach.rs" /> and <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> that branch on the manifest's recorded `BackendResources` variant, mirroring the Docker path.
+2. **Implement real Apple Container finalization** — `ContainerBackend::finalize` currently returns an explicit Phase 0 error for Apple Container; after hardware validation, wire the post-attach dirty-exit/finalization behavior to match the Docker lifecycle semantics where possible.
 3. **Rootless DinD validation** — blocked on the [Docker runtime hardening contract](/roadmap/docker-runtime-hardening-contract/) confirming `--cap-add CAP_SYS_ADMIN` works inside an apple/container VM.
 
 ## Out of scope

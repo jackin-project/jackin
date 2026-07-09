@@ -76,7 +76,6 @@ pub fn workspace_save_preview<
     PendingOpCommit,
 >(
     editor: &EditorState<
-        jackin_config::WorkspaceConfig,
         crate::mount_info_cache::MountInfoCache,
         Modal,
         SaveFlow,
@@ -150,7 +149,6 @@ pub fn build_workspace_save_lines<
     PendingOpCommit,
 >(
     editor: &EditorState<
-        jackin_config::WorkspaceConfig,
         crate::mount_info_cache::MountInfoCache,
         Modal,
         SaveFlow,
@@ -179,7 +177,6 @@ fn workspace_mount_diffs_preview<
     PendingOpCommit,
 >(
     editor: &EditorState<
-        jackin_config::WorkspaceConfig,
         crate::mount_info_cache::MountInfoCache,
         Modal,
         SaveFlow,

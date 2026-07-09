@@ -218,7 +218,7 @@ pub enum InputEvent {
     /// warns that exiting force-stops the container before it does so.
     RequestExit,
     /// Resize the focused pane in `dir` by one step. Emitted by
-    /// `Alt+Shift+Arrow` so the operator can drag a split without
+    /// `Alt-Shift-Arrow` so the operator can drag a split without
     /// reaching for the mouse. Steps are ratio-based (~5%) so the
     /// gesture is independent of terminal size.
     ResizePane(ArrowDir),
@@ -726,11 +726,11 @@ fn classify_csi(seq: &[u8], palette_key: Option<u8>) -> Option<Option<InputEvent
     // forwarding them surfaces as visible garbage at agent prompts).
     // Modified arrows keep the legacy `ESC [ 1 ; <mod> <final>` form
     // so agents that consume Alt+Arrow / Shift+Arrow / Ctrl+Arrow
-    // still see them; Alt+Shift+Arrow (mod 4) is intercepted as
+    // still see them; Alt-Shift-Arrow (mod 4) is intercepted as
     // `ResizePane` regardless of encoding to keep the multiplexer's
     // tmux-style drag-resize shortcut working.
     //
-    // `Alt+Shift+Arrow` is reserved for multiplexer pane resize so it
+    // `Alt-Shift-Arrow` is reserved for multiplexer pane resize so it
     // does not collide with agents that consume `Alt+Arrow` (word
     // navigation) or `Shift+Arrow` (selection extend).
     if let Some(rest) = seq.strip_prefix(b"\x1b[1;")

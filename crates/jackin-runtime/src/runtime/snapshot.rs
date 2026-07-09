@@ -39,6 +39,12 @@ use jackin_core::paths::JackinPaths;
 // without depending on `jackin-runtime`.
 pub use jackin_protocol::InstanceSnapshot;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapshotTransport {
+    DirectSocket,
+    DockerExecFallback,
+}
+
 /// Cap on the JSON reply read from the daemon. Must be ≥ the daemon's
 /// frame cap so legitimate Status / Snapshot replies fit; oversized
 /// replies are rejected to bound host memory.
@@ -79,17 +85,24 @@ pub fn fetch_snapshot(
     paths: &JackinPaths,
     container_name: &str,
 ) -> Result<Option<InstanceSnapshot>> {
+    fetch_snapshot_with_transport(paths, container_name).map(|(snapshot, _transport)| snapshot)
+}
+
+pub fn fetch_snapshot_with_transport(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> Result<(Option<InstanceSnapshot>, SnapshotTransport)> {
     let path = socket_path(paths, container_name);
     let mut direct_error = None;
     if path.exists() {
         match request_control_inner(&path, &ClientMsg::Snapshot).and_then(snapshot_from_msg) {
-            Ok(snapshot) => return Ok(Some(snapshot)),
+            Ok(snapshot) => return Ok((Some(snapshot), SnapshotTransport::DirectSocket)),
             Err(error) => direct_error = Some(error),
         }
     }
 
     match fetch_snapshot_via_docker_exec(container_name) {
-        Ok(snapshot) => Ok(snapshot),
+        Ok(snapshot) => Ok((snapshot, SnapshotTransport::DockerExecFallback)),
         Err(exec_error) => match direct_error {
             Some(error) => Err(exec_error.context(format!(
                 "direct socket snapshot failed for {} ({error:#})",

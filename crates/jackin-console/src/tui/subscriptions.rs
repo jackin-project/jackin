@@ -2,7 +2,20 @@
 
 use jackin_tui::runtime::BlockingSubscription;
 
-pub const INSTANCE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+pub const INSTANCE_REFRESH_SOCKET_INTERVAL: std::time::Duration =
+    std::time::Duration::from_millis(500);
+pub const INSTANCE_REFRESH_EXEC_FALLBACK_INTERVAL: std::time::Duration =
+    std::time::Duration::from_millis(2_500);
+pub const INSTANCE_REFRESH_INTERVAL: std::time::Duration = INSTANCE_REFRESH_SOCKET_INTERVAL;
+
+#[must_use]
+pub const fn instance_refresh_interval(exec_fallback_seen: bool) -> std::time::Duration {
+    if exec_fallback_seen {
+        INSTANCE_REFRESH_EXEC_FALLBACK_INTERVAL
+    } else {
+        INSTANCE_REFRESH_SOCKET_INTERVAL
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Subscription {
@@ -43,6 +56,7 @@ pub fn config_save_worker_disconnected_message() -> &'static str {
 pub struct InstanceRefreshThrottleState {
     pub in_flight: bool,
     pub last_refresh: Option<std::time::Instant>,
+    pub interval: std::time::Duration,
     pub generation: u64,
 }
 
@@ -66,7 +80,7 @@ pub fn instance_refresh_throttle_plan(
         };
     }
     if let Some(last) = state.last_refresh
-        && now.duration_since(last) < INSTANCE_REFRESH_INTERVAL
+        && now.duration_since(last) < state.interval
     {
         return InstanceRefreshThrottlePlan {
             last_refresh: state.last_refresh,
@@ -93,6 +107,7 @@ pub struct InstanceRefreshSnapshot<Instance, Session, Snapshot> {
     pub sessions: std::collections::HashMap<String, Vec<Session>>,
     pub session_errors: std::collections::HashSet<String>,
     pub snapshots: std::collections::HashMap<String, Snapshot>,
+    pub next_interval: std::time::Duration,
 }
 
 #[derive(Debug)]

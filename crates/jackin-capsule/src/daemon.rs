@@ -201,7 +201,6 @@ pub struct Multiplexer {
     env_passthrough: Vec<(String, String)>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
-    zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,
     /// The only writer to the attach socket: composed frames are
@@ -260,6 +259,10 @@ pub struct Multiplexer {
     /// per-frame reconciliation emits only transitions against this. `None`
     /// (fresh attach) asserts everything explicitly.
     last_asserted_client_state: Option<compositor::AssertedClientState>,
+    /// Per-pane cache for SGR and hyperlink overlay regions. The full
+    /// Ratatui frame is still rebuilt every compose; this only avoids
+    /// rescanning unchanged pane cells for backend-side overlay metadata.
+    pane_region_cache: HashMap<u64, compositor::PaneRegionCache>,
     /// Last pointer shape emitted through OSC 22. Stored so passive
     /// mouse motion does not spam the outer terminal with duplicate
     /// pointer-shape updates.
@@ -283,9 +286,6 @@ pub struct Multiplexer {
     /// tab list on every redraw. Reset to `None` when a child pane
     /// updates its own title so the next full frame re-asserts.
     last_outer_terminal_title: Option<String>,
-    /// Spawn-failure notice rendered as a top-row banner widget until the
-    /// next operator keystroke clears it.
-    spawn_failure: Option<String>,
     hover_target: Option<HoverTarget>,
     /// Link target under an Alt/Ctrl hover in a mouse-disabled pane. Rendered
     /// as a compositor-owned notice so no hover bytes are written into the PTY.
@@ -525,7 +525,6 @@ impl Multiplexer {
             env_passthrough,
             event_tx,
             event_rx,
-            zoomed: None,
             input_parser,
             detach_requested: false,
             client: crate::client_writer::ClientWriter::default(),
@@ -546,12 +545,12 @@ impl Multiplexer {
             wipe_pending: None,
             last_invalidate_reason: None,
             last_asserted_client_state: None,
+            pane_region_cache: HashMap::new(),
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: false,
             attached_terminal: ClientTerminal::default(),
             attached_capabilities: AttachCapabilities::default(),
             last_outer_terminal_title: None,
-            spawn_failure: None,
             hover_target: None,
             link_hover_url: None,
             tab_bar_focused: false,
@@ -954,14 +953,13 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         .unwrap_or(DEFAULT_COLS);
     let (rows, cols) = normalize_size(rows, cols);
 
-    // Initialise the file logger before anything else can emit a
-    // diagnostic. Failures fall back to stderr-only, so this is safe
-    // to call unconditionally.
-    crate::logging::init();
     // OTLP export for this session — no-op unless the host injected an
     // endpoint. Installs the tracing subscriber the clog!/cdebug! bridge and
     // the session-anchor span feed into; the guard flushes on daemon exit.
     let _otlp_flush = crate::telemetry::init();
+    // Initialise the capsule log after OTLP so the logger can use a single
+    // durable sink: OTLP when active, `multiplexer.log` otherwise.
+    crate::logging::init();
     let _live_dhat_profiler = crate::alloc_telemetry::init_from_env();
     crate::debug_panic::panic_if_requested_from_env();
     crate::clog!(
@@ -987,7 +985,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
         Ok(registry) => Some(registry),
         Err(e) => {
             crate::clog!("agent-status: rule packs failed to load, screen detection off: {e:#}");
-            mux.spawn_failure = Some(screen_detection_disabled_message(&e));
+            mux.open_spawn_failure_dialog(screen_detection_disabled_message(&e));
             None
         }
     };
@@ -1181,12 +1179,12 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // sees the reason in their terminal — silently
                 // landing on an empty multiplexer would otherwise be
                 // indistinguishable from "no spawn requested".
-                let mut spawn_failure: Option<String> = None;
+                let mut pending_spawn_failure = None;
                 if let Some(request) = spawn {
                     let label = spawn_request_label(&request);
                     if let Err(err) = mux.spawn_request(request, &env) {
                         crate::clog!("attach: spawn {label} failed: {err:#}");
-                        spawn_failure = Some(spawn_request_failure_message(&label, &err));
+                        pending_spawn_failure = Some(spawn_request_failure_message(&label, &err));
                     }
                 }
                 // Take over from any existing attach client. The shared
@@ -1240,7 +1238,9 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                 // A fresh client has no asserted cursor/mode state; the
                 // first frame's reconciliation asserts everything explicitly.
                 mux.last_asserted_client_state = None;
-                mux.spawn_failure = spawn_failure;
+                if let Some(message) = pending_spawn_failure {
+                    mux.open_spawn_failure_dialog(message);
+                }
                 mux.invalidate(first_attach_redraw_reason());
                 let mut initial = crate::tui::terminal::RESET_CLEAR_HOME.to_vec();
                 initial.extend(mux.compose_pending_frame());

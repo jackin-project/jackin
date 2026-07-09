@@ -2,11 +2,11 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
-use crate::theme::{BRAND_BLOCK, PHOSPHOR_DARK, WHITE};
+use crate::theme::{BRAND_BLOCK, INK, PHOSPHOR_DARK, WHITE};
 
 #[derive(Debug, Clone, Copy)]
 pub struct BrandHeader<'a> {
@@ -35,7 +35,7 @@ pub fn brand_header_line(label: &str) -> Line<'static> {
         .bg(BRAND_BLOCK)
         .add_modifier(Modifier::BOLD);
     Line::from(vec![
-        Span::styled(" jackin", block.fg(Color::Black)),
+        Span::styled(" jackin", block.fg(INK)),
         Span::styled("❯", block.fg(WHITE)),
         Span::styled(" ", block),
         Span::styled(" · ", Style::default().fg(PHOSPHOR_DARK)),

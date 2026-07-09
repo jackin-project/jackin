@@ -23,10 +23,10 @@ use crate::naming::{
     LABEL_IMAGE_ROLE_GIT_SHA,
 };
 
-// Bumped v7 -> v8: derived images now bake the host UID into `/home/agent`
-// ownership. Group-0 write is not enough for tools that call owner-only
-// syscalls such as chmod(2) while running under `--user UID:GID`.
-pub const IMAGE_RECIPE_VERSION: &str = "v8";
+// Bumped v8 -> v9: volatile launcher-owned runtime payload COPYs now come
+// after heavy agent/default-home layers, forcing one rebuild into the
+// capsule-last layout so future upgrades preserve the expensive layer cache.
+pub const IMAGE_RECIPE_VERSION: &str = "v9";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImageRecipe {

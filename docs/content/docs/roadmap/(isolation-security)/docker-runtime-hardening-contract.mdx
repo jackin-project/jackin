@@ -2,7 +2,7 @@
 title: "Docker Runtime Hardening Contract"
 ---
 
-**Status**: Partially implemented — Docker profile enforcement is wired; Tier-2 workload matrix, `compat` → `standard` default flip, credential env-only posture, and rootless-default research remain
+**Status**: Partially implemented — Docker profile enforcement is wired, `standard` is the compiled default, and rootless DinD is a recommended explicit grant; credential env-only posture remains
 
 ## Shipped evidence
 
@@ -15,20 +15,37 @@ Shipped pieces:
 - cgroup/AppArmor probes run before launch; cgroup v1 fails closed for `hardened`/`locked` where the promised resource enforcement cannot be delivered.
 - Egress allowlist enforcement is wired through `firewall-apply` and fails closed under `hardened`/`locked` if the firewall cannot install the policy.
 - `locked` uses a Docker-internal role network.
-- DinD is tier-aware: `none`, `rootless`, and `privileged` are selectable; rootless uses `docker:dind-rootless` and fails closed where cgroup v2 is required.
+- DinD is tier-aware: `none`, `rootless`, and `privileged` are selectable; rootless uses `docker:dind-rootless`, fails closed where cgroup v2 is required, and is the recommended explicit grant for Docker workflows on cgroup v2. When DinD and allowlist networking are both active, the launch contract reports partial enforcement because inner containers bypass the role-container firewall.
 - The session contract and compact/debug telemetry report the effective profile decisions before launch.
+- `cargo xtask profile-matrix standard` records the default-flip compatibility matrix; the local cgroup-v2 run passed with expected rejects for runtime package installation without sudo and Docker workflows without DinD.
+- `standard` is the compiled-in default. `compat` remains available through CLI/config/workspace/role selection for legacy privileged DinD, standing sudo, or resource-unlimited workflows.
 - Host Docker socket exclusion has a regression test.
 - Schema, guide, and runtime reference docs for the shipped fields exist in [Docker Security Profiles](/guides/docker-profiles/), [Role manifest](/developing/role-manifest/), [Configuration](/reference/runtime/configuration/), and [Schema Versions](/reference/runtime/schema-versions/).
 
+## Plan 043 sequencing
+
+Plan 043 was written before WP-SUDO and WP4 landed. The keystone audit result is now complete:
+
+| Audit question | Current answer | Evidence |
+|---|---|---|
+| Is `NOPASSWD:ALL` baked into the construct image? | No. The construct installs the `sudo` package, but no sudoers entry is baked into the image. | <RepoFile path="docker/construct/Dockerfile" /> |
+| Does jackin❯ runtime code call `sudo` for its own privileged setup? | No. Runtime setup that needs root uses Docker `exec --user root`, including sudo provisioning. | <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" />, <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> |
+| How is passwordless sudo granted? | Only when the resolved profile/grants set `JACKIN_SUDO=1`; the capsule helper writes `/etc/sudoers.d/agent`. When the grant is absent, the helper removes the file. | <RepoFile path="crates/jackin-capsule/src/sudo_provision.rs" /> |
+| Does `no-new-privileges` compose with sudo? | Yes. It is enabled when sudo is off and disabled when sudo is explicitly granted, avoiding silent setuid failure. | <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> |
+| Does built-in runtime behavior require full sudo? | No built-in jackin❯ runtime path currently requires in-container `sudo`. Runtime package installs remain a role/operator capability decision and should declare `min_profile = "compat"` or an explicit sudo grant. | <RepoFile path="docs/content/docs/(public)/guides/docker-profiles.mdx" /> |
+
+The remaining dependency order is:
+
+1. Keep the `standard` matrix green as new built-in roles and agent workflows are added.
+2. Continue the independent credential env-only posture work for `hardened`/`locked`.
+
+Parallel hardening tracks remain independent: host.sock auth is already implemented for Linux peer credentials, DinD-inner egress residual risk is documented and tested as partial enforcement, signed releases still need end-to-end local verification, and credential env-only posture remains coordinated with the credential-exposure research.
+
 ## Remaining work
 
-1. **Tier-2 workload matrix.** Run and keep green the real-workload matrix for supported agents/profiles: build workloads, package installs, GitHub flows, DinD build/Compose/Testcontainers where allowed, and named-error assertions where a profile intentionally rejects a workflow. This is Docker-daemon work and belongs in CI/nightly, not unit tests.
+1. **Credential env-only posture.** Under `hardened`/`locked`, prefer env-only or otherwise reduced credential exposure and emit a `credential_posture` decision per agent auth type. Coordinate with [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).
 
-2. **`compat` → `standard` default flip.** Flip the compiled-in default only after the matrix is green and release notes call out the behavior change. Until then `compat` stays default so existing workflows are not changed silently.
-
-3. **Credential env-only posture.** Under `hardened`/`locked`, prefer env-only or otherwise reduced credential exposure and emit a `credential_posture` decision per agent auth type. Coordinate with [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/).
-
-4. **Rootless default research.** Rootless DinD is selectable, but making it the standard default remains research until the workload matrix proves it across supported hosts. Sysbox is dropped unless rootless proves insufficient.
+Rootless DinD default research is closed for this track: keep `standard` default DinD as `none`, recommend `dind = "rootless"` as the explicit Docker-workflow grant on cgroup v2, and reserve `compat`/privileged DinD for workflows that cannot run rootless.
 
 ## Constraints that stay true
 
@@ -40,7 +57,8 @@ Shipped pieces:
 ## Related files
 
 - <RepoFile path="crates/jackin-runtime/src/runtime/docker_profile.rs" /> — profile/grant model, flag emission, session contract.
-- <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> — role container, DinD, network, launch orchestration.
+- <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_runtime.rs" /> — role container, DinD, network, launch orchestration.
+- <RepoFile path="crates/jackin-capsule/src/sudo_provision.rs" /> — runtime sudoers provisioning and revocation helper.
 - <RepoFile path="crates/jackin-capsule/src/firewall.rs" /> — in-container firewall apply primitive.
 - <RepoFile path="crates/jackin-docker/src/docker_client.rs" /> — typed Docker API boundary.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — runtime startup and agent bypass flags.

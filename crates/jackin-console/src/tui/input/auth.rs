@@ -230,7 +230,7 @@ pub fn open_auth_source_folder_browser_from_form_with_state(
     }
 }
 
-/// Detach the open `Modal::AuthForm` into `pending_auth_form_return`
+/// Push the open `Modal::AuthForm` onto the modal parent stack
 /// and mount a `Modal::AuthSourcePicker` for the form's required env
 /// var. Returns `true` when the swap happened (the picker took over).
 ///
@@ -248,7 +248,7 @@ fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available:
 }
 
 /// Stash-miss debug-log codes. Emitted when a side modal commits or
-/// cancels and the auth form's `pending_auth_form_return` slot is
+/// cancels and the auth form parent is
 /// unexpectedly empty — the side handler fired without a paired
 /// open. Codes are stable so grepping `--debug` output stays cheap.
 const AUTH_MISSING_PLAIN_SOURCE: &str = "AUTH001";
@@ -261,7 +261,7 @@ const AUTH_MISSING_FOLDER_COMMIT: &str = "AUTH006";
 fn log_missing_return_path(code: &'static str, fn_name: &'static str, suffix: &str) {
     jackin_diagnostics::debug_log!(
         "auth",
-        "{} {}: pending_auth_form_return missing{}",
+        "{} {}: modal parent auth form missing{}",
         code,
         fn_name,
         suffix
@@ -347,12 +347,12 @@ pub fn open_op_picker_from_auth_source(
 
 /// Re-mount the auth-form modal with a freshly-picked `OpRef` applied
 /// against the production `OpCli` runner. Called from the `OpPicker`'s
-/// commit handler in `editor.rs` when `pending_auth_form_return` was
+/// commit handler in `editor.rs` when the auth form is the modal parent
 /// set (i.e. the picker was opened from the auth form, not from the
 /// Secrets tab).
 ///
-/// On vault read error, the form is re-stashed into
-/// `pending_auth_form_return` and `Modal::ErrorPopup` is mounted;
+/// On vault read error, the form stays on the modal parent stack and
+/// `Modal::ErrorPopup` is mounted;
 /// dismissing the popup invokes `restore_auth_form_after_op_picker_cancel`
 /// so the operator lands back on the form with the prior credential
 /// unchanged. Root input validates with `op read` before mutating the

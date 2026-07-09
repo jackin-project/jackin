@@ -9,6 +9,7 @@ use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 
 use crate::LaunchView;
+use crate::tui::components::cells::coalesce_cells;
 
 /// Top header: the ` jackin❯ ` brand pill and separator (from the shared
 /// `brand_header_line` component), then the loading line (`Loading <role> in <path>`).
@@ -84,27 +85,4 @@ fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
         }
         (ch, style)
     }))
-}
-
-/// Coalesce per-cell `(char, Style)` pairs into the fewest spans: consecutive
-/// cells sharing a style merge into one span. Render paths that compute a style
-/// per glyph would otherwise allocate one `Span` plus one `String` per
-/// character every frame.
-fn coalesce_cells(cells: impl IntoIterator<Item = (char, Style)>) -> Vec<Span<'static>> {
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut buf = String::new();
-    let mut cur: Option<Style> = None;
-    for (ch, style) in cells {
-        if cur != Some(style) {
-            if let Some(prev) = cur.take() {
-                spans.push(Span::styled(std::mem::take(&mut buf), prev));
-            }
-            cur = Some(style);
-        }
-        buf.push(ch);
-    }
-    if let Some(prev) = cur {
-        spans.push(Span::styled(buf, prev));
-    }
-    spans
 }

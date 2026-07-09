@@ -38,7 +38,10 @@ fn usage_hint_names_provider_switch_focus_refresh_and_close() {
     }));
 
     assert!(hint.contains("←→ switch provider"), "hint: {hint}");
-    assert!(hint.contains("Tab focus content"), "hint: {hint}");
+    assert!(
+        hint.contains(&format!("{} focus content", glyph::TAB)),
+        "hint: {hint}"
+    );
     assert!(hint.contains("r refresh"), "hint: {hint}");
     assert!(hint.contains("↑↓/j/k scroll"), "hint: {hint}");
     assert!(hint.contains("Esc close"), "hint: {hint}");
@@ -115,7 +118,7 @@ fn main_view_hint_includes_resize_pane_group() {
         false,
     ));
     assert!(
-        hint.contains("Alt+Shift+↑↓←→ resize pane"),
+        hint.contains("Alt-Shift-↑↓←→ resize pane"),
         "live main view must advertise pane resize gesture: {hint}"
     );
 }

@@ -66,7 +66,7 @@ impl<S> Layer<S> for JackinDiagnosticsLayer
 where
     S: Subscriber + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
 {
-    fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
+    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let metadata = event.metadata();
         if metadata.target() != JSONL_TARGET {
             // The OpenTelemetry SDK reports its own failures (export errors,
@@ -88,77 +88,6 @@ where
                     run.record_otlp_internal(metadata.level().as_str(), &visitor.into_message());
                 }
             }
-            return;
-        }
-        let mut visitor = DiagnosticsEventVisitor::default();
-        event.record(&mut visitor);
-        if !visitor.jackin_jsonl {
-            return;
-        }
-        let Some(kind) = visitor.kind.as_deref() else {
-            return;
-        };
-        let Some(message) = visitor.message.as_deref() else {
-            return;
-        };
-        let span_id = ctx.event_scope(event).and_then(|scope| {
-            scope
-                .from_root()
-                .last()
-                .map(|span| span.id().into_u64().to_string())
-        });
-        let run = visitor
-            .run_id
-            .as_deref()
-            .and_then(crate::run::run_by_id)
-            .or_else(crate::active_run);
-        if let Some(run) = run {
-            run.record_from_layer(
-                kind,
-                message,
-                visitor.stage.as_deref(),
-                visitor.detail.as_deref(),
-                span_id.as_deref(),
-            );
-        }
-    }
-}
-
-#[derive(Default)]
-struct DiagnosticsEventVisitor {
-    jackin_jsonl: bool,
-    run_id: Option<String>,
-    kind: Option<String>,
-    message: Option<String>,
-    stage: Option<String>,
-    detail: Option<String>,
-}
-
-impl Visit for DiagnosticsEventVisitor {
-    fn record_bool(&mut self, field: &Field, value: bool) {
-        if field.name() == "jackin_jsonl" {
-            self.jackin_jsonl = value;
-        }
-    }
-
-    fn record_str(&mut self, field: &Field, value: &str) {
-        self.record_owned(field, value.to_owned());
-    }
-
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        self.record_owned(field, format!("{value:?}"));
-    }
-}
-
-impl DiagnosticsEventVisitor {
-    fn record_owned(&mut self, field: &Field, value: String) {
-        match field.name() {
-            "run_id" => self.run_id = Some(value),
-            "kind" => self.kind = Some(value),
-            "diagnostics_message" | "message" => self.message = Some(value),
-            "stage" if value != "<none>" => self.stage = Some(value),
-            "detail" if value != "<none>" => self.detail = Some(value),
-            _ => {}
         }
     }
 }
@@ -789,15 +718,10 @@ mod otlp {
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
-        let level = if debug { "debug" } else { "info" };
-        // Scope the export to jackin❯'s own telemetry. Silencing the OTLP
-        // transport stack stops the log bridge from re-exporting the exporter's
-        // own request logs (a feedback loop under `--debug`) and keeps the
-        // backend free of dependency-internal spans the operator never asked for.
-        let directive = format!(
-            "{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
-             opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
-        );
+        // Scope the export to jackin❯'s own telemetry. Dependency-internal
+        // spans/logs stay out of OTLP unless the operator asks for them with
+        // `JACKIN_OTEL_INTERNAL=1`.
+        let directive = export_filter_directive(export_level(debug));
         let installed = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
             .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
@@ -878,11 +802,7 @@ mod otlp {
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
-        let level = if capsule_debug() { "debug" } else { "info" };
-        let directive = format!(
-            "{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
-             opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
-        );
+        let directive = export_filter_directive(export_level(capsule_debug()));
         // Surface OTLP exporter/SDK diagnostics (export failures, refused
         // endpoint, gRPC errors) to the capsule's stderr — captured by
         // `docker logs` and mirrored into `multiplexer.log`. The OTLP span/log
@@ -923,6 +843,112 @@ mod otlp {
                 "1" | "true" | "yes" | "on"
             )
         })
+    }
+
+    /// Tracing targets exported over OTLP. Global default is `off`: a
+    /// dependency that starts emitting `tracing` data must be added here
+    /// deliberately instead of leaking into the backend.
+    const EXPORT_TARGETS: &[&str] = &[
+        "jackin",
+        "jackin_build_meta",
+        "jackin_capsule",
+        "jackin_config",
+        "jackin_console",
+        "jackin_core",
+        "jackin_dev",
+        "jackin_diagnostics",
+        "jackin_diagnostics::jsonl",
+        "jackin_diagnostics::session",
+        "jackin_docker",
+        "jackin_env",
+        "jackin_host",
+        "jackin_image",
+        "jackin_instance",
+        "jackin_isolation",
+        "jackin_launch_tui",
+        "jackin_manifest",
+        "jackin_pr_trailers",
+        "jackin_protocol",
+        "jackin_runtime",
+        "jackin_term",
+        "jackin_tui",
+        "jackin_tui_lookbook",
+        "jackin_usage",
+    ];
+
+    fn export_filter_directive(level: &str) -> String {
+        export_filter_directive_with_internal(
+            level,
+            std::env::var("JACKIN_OTEL_INTERNAL")
+                .is_ok_and(|value| crate::run::flag_is_truthy(&value)),
+        )
+    }
+
+    fn export_level(debug: bool) -> &'static str {
+        match crate::telemetry_level(debug) {
+            crate::TelemetryLevel::Info => "info",
+            crate::TelemetryLevel::Debug => "debug",
+            crate::TelemetryLevel::Trace => "trace",
+        }
+    }
+
+    fn export_filter_directive_with_internal(level: &str, internal: bool) -> String {
+        let mut directive = String::from("off");
+        for target in EXPORT_TARGETS {
+            directive.push_str(&format!(",{target}={level}"));
+        }
+        if internal {
+            // Operator explicitly asked for dependency internals: restore the
+            // global default level while still blocking exporter feedback loops.
+            directive.push_str(&format!(
+                ",{level},hyper=off,h2=off,tower=off,tonic=off,reqwest=off,\
+                 opentelemetry=off,opentelemetry_sdk=off,opentelemetry_otlp=off"
+            ));
+        }
+        directive
+    }
+
+    #[cfg(test)]
+    pub(super) struct TestExport {
+        pub(super) spans: opentelemetry_sdk::trace::InMemorySpanExporter,
+        pub(super) logs: opentelemetry_sdk::logs::InMemoryLogExporter,
+        pub(super) tracer_provider: SdkTracerProvider,
+        pub(super) logger_provider: SdkLoggerProvider,
+    }
+
+    #[cfg(test)]
+    pub(super) fn test_layers(debug: bool, run_id: &str) -> (TestExport, impl tracing::Subscriber) {
+        use opentelemetry::trace::TracerProvider as _;
+
+        let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
+        let logs = opentelemetry_sdk::logs::InMemoryLogExporter::default();
+        let resource = resource(run_id);
+        let tracer_provider = SdkTracerProvider::builder()
+            .with_simple_exporter(spans.clone())
+            .with_resource(resource.clone())
+            .build();
+        let logger_provider = SdkLoggerProvider::builder()
+            .with_simple_exporter(logs.clone())
+            .with_resource(resource)
+            .build();
+        let tracer = tracer_provider.tracer("jackin");
+        let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+        let directive = export_filter_directive(export_level(debug));
+        let subscriber = tracing_subscriber::registry()
+            .with(JackinDiagnosticsLayer)
+            .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
+            .with(log_layer.with_filter(EnvFilter::new(directive)));
+
+        (
+            TestExport {
+                spans,
+                logs,
+                tracer_provider,
+                logger_provider,
+            },
+            subscriber,
+        )
     }
 
     /// Emit the session-start marker: a short span in its own trace, linked to
@@ -1019,6 +1045,7 @@ mod otlp {
         metrics_endpoint: &str,
         app_handle: Option<tokio::runtime::Handle>,
     ) -> anyhow::Result<SdkMeterProvider> {
+        use opentelemetry::KeyValue;
         use opentelemetry::metrics::MeterProvider as _;
         use std::sync::Mutex;
 
@@ -1114,6 +1141,44 @@ mod otlp {
             );
         }
 
+        drop(
+            meter
+                .u64_observable_counter("jackin.diagnostics.events")
+                .with_description("Diagnostics events recorded during the active jackin run")
+                .with_callback(|observer| {
+                    let Some(run) = crate::active_run() else {
+                        return;
+                    };
+                    let snapshot = run.domain_metrics_snapshot();
+                    for (kind, count) in snapshot.event_counts {
+                        observer.observe(count, &[KeyValue::new("kind", kind)]);
+                    }
+                })
+                .build(),
+        );
+        drop(
+            meter
+                .u64_observable_counter("jackin.cache.hits")
+                .with_description("Cache-hit diagnostics recorded during the active jackin run")
+                .with_callback(|observer| {
+                    if let Some(run) = crate::active_run() {
+                        observer.observe(run.domain_metrics_snapshot().cache_hits, &[]);
+                    }
+                })
+                .build(),
+        );
+        drop(
+            meter
+                .u64_observable_counter("jackin.cache.misses")
+                .with_description("Cache-miss diagnostics recorded during the active jackin run")
+                .with_callback(|observer| {
+                    if let Some(run) = crate::active_run() {
+                        observer.observe(run.domain_metrics_snapshot().cache_misses, &[]);
+                    }
+                })
+                .build(),
+        );
+
         Ok(provider)
     }
 
@@ -1134,7 +1199,15 @@ pub(crate) fn emit_jsonl_event(
     stage: Option<&str>,
     detail: Option<&str>,
 ) {
-    emit_jsonl_event_with_level(run_id, kind, message, stage, detail, JsonlEventLevel::Info);
+    emit_jsonl_event_with_level(
+        run_id,
+        kind,
+        message,
+        stage,
+        detail,
+        None,
+        JsonlEventLevel::Info,
+    );
 }
 
 pub(crate) fn emit_jsonl_error(
@@ -1144,12 +1217,138 @@ pub(crate) fn emit_jsonl_error(
     stage: Option<&str>,
     detail: Option<&str>,
 ) {
-    emit_jsonl_event_with_level(run_id, kind, message, stage, detail, JsonlEventLevel::Error);
+    emit_jsonl_error_typed(run_id, kind, message, stage, detail, None);
+}
+
+pub(crate) fn emit_jsonl_error_typed(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    error_type: Option<&str>,
+) {
+    emit_jsonl_event_with_level(
+        run_id,
+        kind,
+        message,
+        stage,
+        detail,
+        error_type,
+        JsonlEventLevel::Error,
+    );
 }
 
 enum JsonlEventLevel {
     Info,
     Error,
+}
+
+pub(crate) struct EventTaxonomy {
+    pub event_name: String,
+    pub outcome: &'static str,
+    pub component: &'static str,
+    pub operation: String,
+    pub category: String,
+}
+
+pub(crate) fn event_taxonomy(
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    error_type: Option<&str>,
+    level: &str,
+) -> EventTaxonomy {
+    let event_name = kind.replace('_', ".");
+    EventTaxonomy {
+        operation: operation_for(kind, stage, &event_name),
+        category: category_for(kind, stage, detail),
+        outcome: outcome_for(kind, error_type, level),
+        component: component_for(kind, message),
+        event_name,
+    }
+}
+
+fn operation_for(kind: &str, stage: Option<&str>, event_name: &str) -> String {
+    match kind {
+        "stage_started" | "stage_done" | "stage_failed" | "stage_skipped" => stage.map_or_else(
+            || "stage".to_owned(),
+            |stage| format!("stage.{}", normalize_taxonomy_value(stage)),
+        ),
+        "timing_started" | "timing_done" => stage.map_or_else(
+            || "timing".to_owned(),
+            |stage| format!("timing.{}", normalize_taxonomy_value(stage)),
+        ),
+        "debug" => "debug".to_owned(),
+        _ => event_name.to_owned(),
+    }
+}
+
+fn category_for(kind: &str, stage: Option<&str>, detail: Option<&str>) -> String {
+    match kind {
+        "debug" => detail.map_or_else(|| "debug".to_owned(), normalize_taxonomy_value),
+        kind if kind.starts_with("docker_") || kind.starts_with("container_") => {
+            "docker".to_owned()
+        }
+        kind if kind.starts_with("stage_") => "launch".to_owned(),
+        kind if kind.starts_with("timing_") => stage.map_or_else(
+            || "timing".to_owned(),
+            |stage| format!("timing.{}", normalize_taxonomy_value(stage)),
+        ),
+        "subprocess_done" => "process".to_owned(),
+        "otlp_internal" => "telemetry".to_owned(),
+        "run_summary" => "summary".to_owned(),
+        "slow_foreground_wait" => "performance".to_owned(),
+        other => other.split_once('_').map_or_else(
+            || normalize_taxonomy_value(other),
+            |(prefix, _)| normalize_taxonomy_value(prefix),
+        ),
+    }
+}
+
+fn outcome_for(kind: &str, error_type: Option<&str>, level: &str) -> &'static str {
+    if error_type.is_some()
+        || level.eq_ignore_ascii_case("ERROR")
+        || kind.contains("failed")
+        || kind.contains("failure")
+        || kind.contains("crash")
+    {
+        "failure"
+    } else if kind.contains("skipped") {
+        "skipped"
+    } else if kind.contains("started") {
+        "started"
+    } else if kind.contains("cache_miss") {
+        "cache_miss"
+    } else {
+        "success"
+    }
+}
+
+fn component_for(kind: &str, message: &str) -> &'static str {
+    if message.starts_with("[jackin-capsule") || kind.starts_with("capsule_") {
+        "capsule"
+    } else {
+        "host"
+    }
+}
+
+fn normalize_taxonomy_value(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '.'
+            }
+        })
+        .collect::<String>()
+        .split('.')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 fn emit_jsonl_event_with_level(
@@ -1158,46 +1357,227 @@ fn emit_jsonl_event_with_level(
     message: &str,
     stage: Option<&str>,
     detail: Option<&str>,
+    error_type: Option<&str>,
     level: JsonlEventLevel,
 ) {
-    let stage = stage.unwrap_or("<none>");
-    let detail = detail.unwrap_or("<none>");
+    let message = crate::redact::redact_text(message);
+    let detail = detail.map(crate::redact::redact_text);
+    let detail = detail.as_ref().map(AsRef::as_ref);
+    let taxonomy = event_taxonomy(
+        kind,
+        message.as_ref(),
+        stage,
+        detail,
+        error_type,
+        match level {
+            JsonlEventLevel::Info => "INFO",
+            JsonlEventLevel::Error => "ERROR",
+        },
+    );
+    let span_id = tracing::Span::current()
+        .id()
+        .map(|id| id.into_u64().to_string());
+    let run = crate::run::run_by_id(run_id).or_else(crate::active_run);
+    if let Some(run) = run {
+        run.record_from_layer(
+            kind,
+            message.as_ref(),
+            stage,
+            detail,
+            span_id.as_deref(),
+            if kind == "debug" && !matches!(level, JsonlEventLevel::Error) {
+                "DEBUG"
+            } else {
+                match level {
+                    JsonlEventLevel::Info => "INFO",
+                    JsonlEventLevel::Error => "ERROR",
+                }
+            },
+        );
+    }
+
     // The `--debug` firehose is DEBUG-severity so external exporters filter
     // it by level; the JSONL layer ignores levels and records everything.
     // The trailing format message becomes the OTLP log body — without it,
     // exported records carry attributes but an empty body.
-    if matches!(level, JsonlEventLevel::Error) {
-        tracing::error!(
-            target: JSONL_TARGET,
-            jackin_jsonl = true,
-            run_id = run_id,
-            kind = kind,
-            diagnostics_message = message,
-            stage = stage,
-            detail = detail,
-            "{message}"
+    if kind == "debug" && !matches!(level, JsonlEventLevel::Error) {
+        emit_debug_jsonl_event(
+            run_id,
+            kind,
+            message.as_ref(),
+            stage,
+            detail,
+            error_type,
+            &taxonomy,
         );
-    } else if kind == "debug" {
-        tracing::debug!(
-            target: JSONL_TARGET,
-            jackin_jsonl = true,
-            run_id = run_id,
-            kind = kind,
-            diagnostics_message = message,
-            stage = stage,
-            detail = detail,
-            "{message}"
+    } else if matches!(level, JsonlEventLevel::Error) {
+        emit_error_jsonl_event(
+            run_id,
+            kind,
+            message.as_ref(),
+            stage,
+            detail,
+            error_type,
+            &taxonomy,
         );
     } else {
-        tracing::info!(
-            target: JSONL_TARGET,
-            jackin_jsonl = true,
-            run_id = run_id,
-            kind = kind,
-            diagnostics_message = message,
-            stage = stage,
-            detail = detail,
-            "{message}"
+        emit_info_jsonl_event(
+            run_id,
+            kind,
+            message.as_ref(),
+            stage,
+            detail,
+            error_type,
+            &taxonomy,
         );
     }
+}
+
+macro_rules! emit_jsonl_event_fields {
+    ($emit:ident, $run_id:expr, $kind:expr, $message:expr, $stage:expr, $detail:expr, $error_type:expr, $taxonomy:expr) => {
+        match ($stage, $detail, $error_type) {
+            (Some(stage), Some(detail), Some(error_type)) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
+                stage = stage,
+                detail = detail,
+                error_type = error_type,
+                "{}", $message
+            ),
+            (Some(stage), Some(detail), None) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
+                stage = stage,
+                detail = detail,
+                "{}", $message
+            ),
+            (Some(stage), None, Some(error_type)) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
+                stage = stage,
+                error_type = error_type,
+                "{}", $message
+            ),
+            (Some(stage), None, None) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
+                stage = stage,
+                "{}", $message
+            ),
+            (None, Some(detail), Some(error_type)) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
+                detail = detail,
+                error_type = error_type,
+                "{}", $message
+            ),
+            (None, Some(detail), None) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
+                detail = detail,
+                "{}", $message
+            ),
+            (None, None, Some(error_type)) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
+                error_type = error_type,
+                "{}", $message
+            ),
+            (None, None, None) => tracing::$emit!(
+                target: JSONL_TARGET,
+                run_id = $run_id,
+                kind = $kind,
+                event.name = $taxonomy.event_name.as_str(),
+                event.outcome = $taxonomy.outcome,
+                jackin.component = $taxonomy.component,
+                jackin.operation = $taxonomy.operation.as_str(),
+                jackin.category = $taxonomy.category.as_str(),
+                "{}", $message
+            ),
+        }
+    }
+}
+
+fn emit_info_jsonl_event(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    error_type: Option<&str>,
+    taxonomy: &EventTaxonomy,
+) {
+    emit_jsonl_event_fields!(
+        info, run_id, kind, message, stage, detail, error_type, taxonomy
+    );
+}
+
+fn emit_debug_jsonl_event(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    error_type: Option<&str>,
+    taxonomy: &EventTaxonomy,
+) {
+    emit_jsonl_event_fields!(
+        debug, run_id, kind, message, stage, detail, error_type, taxonomy
+    );
+}
+
+fn emit_error_jsonl_event(
+    run_id: &str,
+    kind: &str,
+    message: &str,
+    stage: Option<&str>,
+    detail: Option<&str>,
+    error_type: Option<&str>,
+    taxonomy: &EventTaxonomy,
+) {
+    emit_jsonl_event_fields!(
+        error, run_id, kind, message, stage, detail, error_type, taxonomy
+    );
 }

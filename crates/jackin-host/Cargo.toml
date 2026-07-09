@@ -16,19 +16,19 @@ name = "jackin_host"
 path = "src/lib.rs"
 
 [dependencies]
-jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
-jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
-jackin-docker = { version = "0.6.0-dev", path = "../jackin-docker" }
-jackin-protocol = { version = "0.6.0-dev", path = "../jackin-protocol" }
-jackin-tui = { version = "0.6.0-dev", path = "../jackin-tui" }
-anyhow = "1.0"
-fs2 = "0.4"
-tokio = { version = "1", features = ["rt", "macros", "fs", "io-util", "sync"] }
-url = "2"
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
+jackin-docker = { workspace = true }
+jackin-protocol = { workspace = true }
+jackin-tui = { workspace = true }
+anyhow = { workspace = true }
+fs4 = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "fs", "io-util", "sync"] }
+url = { workspace = true }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-tempfile = "=3.27.0"
-tokio = { version = "=1.52.3", features = ["macros", "rt"] }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }

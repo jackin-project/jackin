@@ -14,7 +14,7 @@ use super::restore::{
     matching_current_role_manifests, matching_instance_manifests, present_restore_choice,
     related_restore_candidates,
 };
-use super::{LaunchPlan, emit_launch_plan, emit_rejected_launch_plan};
+use super::{LaunchPlan, emit_launch_plan_for_run, emit_rejected_launch_plan_for_run};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RestoreResolution {
@@ -54,11 +54,10 @@ pub(crate) async fn resolve_restore_candidate(
         return Ok(current);
     }
 
-    jackin_diagnostics::active_timing_started(
-        "restore",
-        "related_restore_candidates",
-        Some(role_key),
-    );
+    let active_run = jackin_diagnostics::active_run_for_paths(paths);
+    if let Some(run) = &active_run {
+        run.timing_started("restore", "related_restore_candidates", Some(role_key));
+    }
     let related_result = related_restore_candidates(
         paths,
         workspace_name,
@@ -71,37 +70,40 @@ pub(crate) async fn resolve_restore_candidate(
     .await;
     let related = match related_result {
         Ok(related) => {
-            jackin_diagnostics::active_timing_done(
-                "restore",
-                "related_restore_candidates",
-                Some(&format!("{} candidates", related.len())),
-            );
+            if let Some(run) = &active_run {
+                run.timing_done(
+                    "restore",
+                    "related_restore_candidates",
+                    Some(&format!("{} candidates", related.len())),
+                );
+            }
             related
         }
         Err(error) => {
-            jackin_diagnostics::active_timing_done(
-                "restore",
-                "related_restore_candidates",
-                Some("error"),
-            );
+            if let Some(run) = &active_run {
+                run.timing_done("restore", "related_restore_candidates", Some("error"));
+            }
             return Err(error);
         }
     };
 
     if related.is_empty() {
-        emit_rejected_launch_plan(
+        emit_rejected_launch_plan_scoped(
+            active_run.as_deref(),
             LaunchPlan::AttachExisting,
             "no_current_role_candidate",
             None,
             None,
         );
-        emit_rejected_launch_plan(
+        emit_rejected_launch_plan_scoped(
+            active_run.as_deref(),
             LaunchPlan::StartStopped,
             "no_current_role_candidate",
             None,
             None,
         );
-        emit_rejected_launch_plan(
+        emit_rejected_launch_plan_scoped(
+            active_run.as_deref(),
             LaunchPlan::CreateFromValidImage,
             "no_current_role_candidate",
             None,
@@ -132,11 +134,10 @@ pub(crate) async fn resolve_current_restore_candidate_timed(
     agent: jackin_core::agent::Agent,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<RestoreResolution>> {
-    jackin_diagnostics::active_timing_started(
-        "restore",
-        "current_restore_candidate",
-        Some(role_key),
-    );
+    let active_run = jackin_diagnostics::active_run_for_paths(paths);
+    if let Some(run) = &active_run {
+        run.timing_started("restore", "current_restore_candidate", Some(role_key));
+    }
     let result = resolve_current_restore_candidate(
         paths,
         workspace_name,
@@ -152,19 +153,15 @@ pub(crate) async fn resolve_current_restore_candidate_timed(
             let detail = current
                 .as_ref()
                 .map_or("none", current_restore_timing_detail);
-            jackin_diagnostics::active_timing_done(
-                "restore",
-                "current_restore_candidate",
-                Some(detail),
-            );
+            if let Some(run) = &active_run {
+                run.timing_done("restore", "current_restore_candidate", Some(detail));
+            }
             Ok(current)
         }
         Err(error) => {
-            jackin_diagnostics::active_timing_done(
-                "restore",
-                "current_restore_candidate",
-                Some("error"),
-            );
+            if let Some(run) = &active_run {
+                run.timing_done("restore", "current_restore_candidate", Some("error"));
+            }
             Err(error)
         }
     }
@@ -209,11 +206,14 @@ pub(crate) async fn resolve_unselected_current_restore_candidate_with_agent_time
     role_key: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<UnselectedCurrentRestoreResolution>> {
-    jackin_diagnostics::active_timing_started(
-        "restore",
-        "current_restore_candidate_unselected_agent",
-        Some(role_key),
-    );
+    let active_run = jackin_diagnostics::active_run_for_paths(paths);
+    if let Some(run) = &active_run {
+        run.timing_started(
+            "restore",
+            "current_restore_candidate_unselected_agent",
+            Some(role_key),
+        );
+    }
     let result = resolve_unselected_current_restore_candidate_with_agent(
         paths,
         workspace_name,
@@ -228,19 +228,23 @@ pub(crate) async fn resolve_unselected_current_restore_candidate_with_agent_time
             let detail = current.as_ref().map_or("none", |candidate| {
                 current_restore_timing_detail(&candidate.resolution)
             });
-            jackin_diagnostics::active_timing_done(
-                "restore",
-                "current_restore_candidate_unselected_agent",
-                Some(detail),
-            );
+            if let Some(run) = &active_run {
+                run.timing_done(
+                    "restore",
+                    "current_restore_candidate_unselected_agent",
+                    Some(detail),
+                );
+            }
             Ok(current)
         }
         Err(error) => {
-            jackin_diagnostics::active_timing_done(
-                "restore",
-                "current_restore_candidate_unselected_agent",
-                Some("error"),
-            );
+            if let Some(run) = &active_run {
+                run.timing_done(
+                    "restore",
+                    "current_restore_candidate_unselected_agent",
+                    Some("error"),
+                );
+            }
             Err(error)
         }
     }
@@ -254,6 +258,29 @@ fn current_restore_timing_detail(resolution: &RestoreResolution) -> &'static str
     }
 }
 
+fn emit_rejected_launch_plan_scoped(
+    run: Option<&jackin_diagnostics::RunDiagnostics>,
+    plan: LaunchPlan,
+    reason: &str,
+    container: Option<&str>,
+    state: Option<&str>,
+) {
+    if let Some(run) = run {
+        emit_rejected_launch_plan_for_run(run, plan, reason, container, state);
+    }
+}
+
+fn emit_launch_plan_scoped(
+    run: Option<&jackin_diagnostics::RunDiagnostics>,
+    plan: LaunchPlan,
+    reason: &str,
+    container: Option<&str>,
+) {
+    if let Some(run) = run {
+        emit_launch_plan_for_run(run, plan, reason, container);
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn resolve_unselected_current_restore_candidate_with_agent(
     paths: &JackinPaths,
@@ -263,6 +290,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
     role_key: &str,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<UnselectedCurrentRestoreResolution>> {
+    let active_run = jackin_diagnostics::active_run_for_paths(paths);
     // D10: launch dialog shows only un-cleanly-terminated instances; live
     // containers (Active/Running) are excluded because D13 means the launch
     // path never re-attaches to a live instance.
@@ -281,19 +309,23 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
     let mut recreatable = Vec::new();
     for manifest in candidates {
         let agent = manifest.agent()?;
-        jackin_diagnostics::active_timing_started(
-            "restore",
-            "inspect_current_container",
-            Some(&manifest.container_base),
-        );
+        if let Some(run) = &active_run {
+            run.timing_started(
+                "restore",
+                "inspect_current_container",
+                Some(&manifest.container_base),
+            );
+        }
         let docker_state = docker
             .inspect_container_state(&manifest.container_base)
             .await;
-        jackin_diagnostics::active_timing_done(
-            "restore",
-            "inspect_current_container",
-            Some(docker_state.short_label().as_str()),
-        );
+        if let Some(run) = &active_run {
+            run.timing_done(
+                "restore",
+                "inspect_current_container",
+                Some(docker_state.short_label().as_str()),
+            );
+        }
         if let ContainerState::InspectUnavailable(reason) = docker_state {
             anyhow::bail!(
                 "{}",
@@ -312,7 +344,8 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
                 // Running instances are reachable from the console via explicit
                 // instance selection (hardline); the launch path always creates
                 // a new container or restores an un-cleanly-terminated one.
-                emit_rejected_launch_plan(
+                emit_rejected_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::AttachExisting,
                     "launch_never_reconnects_to_live_instance",
                     Some(&manifest.container_base),
@@ -326,7 +359,8 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
                 });
             }
             ContainerState::NotFound => {
-                emit_rejected_launch_plan(
+                emit_rejected_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::AttachExisting,
                     if multiple_candidates {
                         "current_role_agent_container_missing"
@@ -336,7 +370,8 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
                     Some(&manifest.container_base),
                     Some(docker_state.short_label().as_str()),
                 );
-                emit_rejected_launch_plan(
+                emit_rejected_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::StartStopped,
                     if multiple_candidates {
                         "current_role_agent_container_missing"
@@ -354,7 +389,8 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
             ContainerState::Removing
             | ContainerState::Dead
             | ContainerState::InspectUnavailable(_) => {
-                emit_rejected_launch_plan(
+                emit_rejected_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::AttachExisting,
                     if multiple_candidates {
                         "current_role_agent_container_not_attachable"
@@ -364,7 +400,8 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
                     Some(&manifest.container_base),
                     Some(docker_state.short_label().as_str()),
                 );
-                emit_rejected_launch_plan(
+                emit_rejected_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::StartStopped,
                     if multiple_candidates {
                         "current_role_agent_container_not_startable"
@@ -385,7 +422,8 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
                 agent,
             },
         ] => {
-            emit_launch_plan(
+            emit_launch_plan_scoped(
+                active_run.as_deref(),
                 LaunchPlan::StartStopped,
                 if multiple_candidates {
                     "only_viable_current_role_agent_container_startable"
@@ -403,7 +441,8 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
             [candidate] => Ok(Some(candidate.clone())),
             [] => Ok(None),
             _ => {
-                emit_rejected_launch_plan(
+                emit_rejected_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::CreateFromValidImage,
                     "multiple_current_role_agents_need_selection",
                     None,
@@ -413,13 +452,15 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
             }
         },
         _ => {
-            emit_rejected_launch_plan(
+            emit_rejected_launch_plan_scoped(
+                active_run.as_deref(),
                 LaunchPlan::AttachExisting,
                 "multiple_current_role_agents_need_selection",
                 None,
                 None,
             );
-            emit_rejected_launch_plan(
+            emit_rejected_launch_plan_scoped(
+                active_run.as_deref(),
                 LaunchPlan::StartStopped,
                 "multiple_current_role_agents_need_selection",
                 None,
@@ -440,6 +481,7 @@ pub(crate) async fn resolve_current_restore_candidate(
     agent: jackin_core::agent::Agent,
     docker: &impl DockerApi,
 ) -> anyhow::Result<Option<RestoreResolution>> {
+    let active_run = jackin_diagnostics::active_run_for_paths(paths);
     for manifest in matching_instance_manifests(
         paths,
         workspace_name,
@@ -451,19 +493,23 @@ pub(crate) async fn resolve_current_restore_candidate(
         if !manifest.is_restore_candidate() {
             continue;
         }
-        jackin_diagnostics::active_timing_started(
-            "restore",
-            "inspect_current_container",
-            Some(&manifest.container_base),
-        );
+        if let Some(run) = &active_run {
+            run.timing_started(
+                "restore",
+                "inspect_current_container",
+                Some(&manifest.container_base),
+            );
+        }
         let docker_state = docker
             .inspect_container_state(&manifest.container_base)
             .await;
-        jackin_diagnostics::active_timing_done(
-            "restore",
-            "inspect_current_container",
-            Some(docker_state.short_label().as_str()),
-        );
+        if let Some(run) = &active_run {
+            run.timing_done(
+                "restore",
+                "inspect_current_container",
+                Some(docker_state.short_label().as_str()),
+            );
+        }
         if let ContainerState::InspectUnavailable(reason) = docker_state {
             anyhow::bail!(
                 "{}",
@@ -479,7 +525,8 @@ pub(crate) async fn resolve_current_restore_candidate(
         match docker_state {
             ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
                 // D13: launch never reconnects to a live instance (ADR 0001).
-                emit_rejected_launch_plan(
+                emit_rejected_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::AttachExisting,
                     "launch_never_reconnects_to_live_instance",
                     Some(&manifest.container_base),
@@ -487,7 +534,8 @@ pub(crate) async fn resolve_current_restore_candidate(
                 );
             }
             ContainerState::Stopped { .. } | ContainerState::Created => {
-                emit_launch_plan(
+                emit_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::StartStopped,
                     "current_role_container_startable",
                     Some(&manifest.container_base),
@@ -497,13 +545,15 @@ pub(crate) async fn resolve_current_restore_candidate(
                 )));
             }
             ContainerState::NotFound => {
-                emit_rejected_launch_plan(
+                emit_rejected_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::AttachExisting,
                     "current_role_container_missing",
                     Some(&manifest.container_base),
                     Some(docker_state.short_label().as_str()),
                 );
-                emit_rejected_launch_plan(
+                emit_rejected_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::StartStopped,
                     "current_role_container_missing",
                     Some(&manifest.container_base),
@@ -516,13 +566,15 @@ pub(crate) async fn resolve_current_restore_candidate(
             ContainerState::Removing
             | ContainerState::Dead
             | ContainerState::InspectUnavailable(_) => {
-                emit_rejected_launch_plan(
+                emit_rejected_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::AttachExisting,
                     "current_role_container_not_attachable",
                     Some(&manifest.container_base),
                     Some(docker_state.short_label().as_str()),
                 );
-                emit_rejected_launch_plan(
+                emit_rejected_launch_plan_scoped(
+                    active_run.as_deref(),
                     LaunchPlan::StartStopped,
                     "current_role_container_not_startable",
                     Some(&manifest.container_base),

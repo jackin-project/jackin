@@ -118,7 +118,7 @@ impl KeyChord {
         }
     }
 
-    /// Chord with Alt+Shift held (used for pane-resize CSI sequences).
+    /// Chord with Alt-Shift held (used for pane-resize CSI sequences).
     #[must_use]
     pub const fn alt_shift(key: LogicalKey) -> Self {
         Self {
@@ -377,7 +377,7 @@ impl<A: Copy + PartialEq + 'static> Keymap<A> {
 /// printable ASCII, the common control bytes (`Ctrl+C`, `Ctrl+Q`, `Ctrl+\`,
 /// `Ctrl+L`, `Ctrl+H`), Enter, Esc, Tab, and CSI / SS3 cursor-key sequences in
 /// both legacy form (`\x1b[A-D`, `\x1bOA-D`) and kitty-extended form for
-/// arrow modifiers (Alt+Shift+Arrow for resize). Returns `None` for sequences
+/// arrow modifiers (Alt-Shift-Arrow for resize). Returns `None` for sequences
 /// outside the covered set so callers can fall back to legacy `match` arms
 /// during migration.
 #[must_use]
@@ -419,7 +419,7 @@ pub fn raw_bytes_to_chord(bytes: &[u8]) -> Option<KeyChord> {
         // Page Up / Down
         b"\x1b[5~" => Some(KeyChord::plain(LogicalKey::PageUp)),
         b"\x1b[6~" => Some(KeyChord::plain(LogicalKey::PageDown)),
-        // CSI with modifier 4 = Alt+Shift — resize pane arrows
+        // CSI with modifier 4 = Alt-Shift — resize pane arrows
         b"\x1b[1;4A" => Some(KeyChord::alt_shift(LogicalKey::Up)),
         b"\x1b[1;4B" => Some(KeyChord::alt_shift(LogicalKey::Down)),
         b"\x1b[1;4C" => Some(KeyChord::alt_shift(LogicalKey::Right)),
@@ -429,6 +429,21 @@ pub fn raw_bytes_to_chord(bytes: &[u8]) -> Option<KeyChord> {
 }
 
 // ── Glyph derivation ─────────────────────────────────────────────────────────
+
+/// Canonical display spellings for keys that appear in hints.
+///
+/// Every `KeyBinding.glyph` override and `HintSpan::Key` literal for these keys
+/// must use these constants: one spelling per key, everywhere.
+pub mod glyph {
+    pub const TAB: &str = "\u{21e5}";
+    pub const UP_DOWN: &str = "\u{2191}\u{2193}";
+    pub const LEFT_RIGHT: &str = "\u{2190}\u{2192}";
+    pub const ALL_ARROWS: &str = "\u{2191}\u{2193}\u{2190}\u{2192}";
+    pub const ALT_SHIFT_ALL_ARROWS: &str = "Alt-Shift-\u{2191}\u{2193}\u{2190}\u{2192}";
+    pub const PGUP_PGDN: &str = "PgUp/PgDn";
+    pub const ESC: &str = "Esc";
+    pub const ENTER: &str = "\u{21b5}";
+}
 
 /// Derive the hint-bar key glyph from a chord.
 ///
@@ -486,9 +501,9 @@ pub fn chord_glyph(chord: Option<KeyChord>) -> &'static str {
                 _ => "?",
             }
         }
-        LogicalKey::Enter => "\u{21b5}", // ↵
-        LogicalKey::Esc => "Esc",
-        LogicalKey::Tab => "\u{21e5}",     // ⇥
+        LogicalKey::Enter => glyph::ENTER,
+        LogicalKey::Esc => glyph::ESC,
+        LogicalKey::Tab => glyph::TAB,
         LogicalKey::BackTab => "\u{21e4}", // ⇤
         LogicalKey::Up => "\u{2191}",      // ↑
         LogicalKey::Down => "\u{2193}",    // ↓
@@ -500,7 +515,7 @@ pub fn chord_glyph(chord: Option<KeyChord>) -> &'static str {
         LogicalKey::PageDown => "PgDn",
         LogicalKey::Backspace => "⌫",
         LogicalKey::Delete => "Del",
-        // Other modifier combos on Char (e.g. Alt+Shift+Arrow converted as Char)
+        // Other modifier combos on Char (e.g. Alt-Shift-Arrow converted as Char)
         // are not in the common-shortcut set — callers must supply an explicit glyph.
         LogicalKey::Char(_) => "?",
     }

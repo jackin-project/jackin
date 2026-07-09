@@ -17,6 +17,14 @@ jackin❯ TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed i
 
 **PageUp / PageDown** are page-scrolling keys for long list-like modals that expose them, currently the File Browser. They move the selected row by the visible listing height, use the same selection-follow math as rendering, and saturate at the first or last row instead of wrapping. A modal that accepts PageUp/PageDown must advertise them in the footer hints.
 
+### Focus layers
+
+Focus state has three layers, and new components must use the narrowest layer that matches the interaction:
+
+1. `FocusOwner<Tab>` is the screen-level owner for tabbed screens. It answers which region owns input: the tab bar, or one named content block. Borders, tab underlines, cursors, and footer scope derive from that one owner value.
+2. A per-dialog semantic enum implementing `ButtonFocus` is element-level focus inside a button dialog. Use named states such as `Yes` / `No` or `Save` / `Discard` / `Cancel`; do not store a parallel raw index or bool.
+3. `PanelFocus` is border styling only. It is computed from screen-level or dialog-level focus state when rendering; do not store it as independent state.
+
 ### W3C Tabs pattern (required for all tabbed interfaces)
 
 All tabbed surfaces (workspace editor, settings) must implement the W3C tablist/tabpanel pattern:
@@ -56,8 +64,10 @@ The `h`/`l` bindings remain horizontal-scroll aliases; they do not expand or col
 
 **Every keyboard shortcut that is active on the current screen must appear in the footer hint bar. No key may be silently available — users must never have to guess.** The hint bar updates whenever the focused area or row context changes.
 
+Shared keys use `jackin_tui::keymap::glyph` constants. A hint PR introducing `Tab`, `↑/↓`, `←/→`, `PgUp PgDn`, or `+`-joined modifiers is a design violation.
+
 Rules:
-- `↑/↓ navigate` must appear whenever a list, table, or form with multiple rows is active. It is a global footer item, not a conditional one.
+- `↑↓ navigate` must appear whenever a list, table, or form with multiple rows is active. It is a global footer item, not a conditional one.
 - Every action key (`Enter`, `Space`, `D`, `A`, `R`, `N`, `1`, `2`, `3`, `O`, `P`, `M`, etc.) that is live on the current row must be shown alongside its one-word description.
 - When a key applies only under certain conditions (e.g. `O open in GitHub` only for GitHub-origin mounts), show it only when the condition holds — but never suppress a key that is unconditionally active.
 - `Tab switch tab`, `S save`, and `Esc back/discard` are always shown in the global footer.
@@ -191,7 +201,7 @@ Enforcement:
 
 ### Hints use one shared span vocabulary and one renderer per surface
 
-Hint rows are not hand-built. The vocabulary is the shared `HintSpan` enum in `jackin-tui` (`Key`, `Text`, `Sep`, `GroupSep`), and the styling rule is identical everywhere: `Key` is white + bold, `Text` is phosphor green (rendered with a leading space), `Sep` is a gray `" · "`, `GroupSep` is three spaces, and the row is centered. Ratatui surfaces render this through the shared `HintBar` component in <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs">crates/jackin-tui/src/components/hint_bar.rs</RepoFile>; the in-container multiplexer renders dialog hints in <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile>. Define a screen's hint as a `&[HintSpan]` constant and pass it to the renderer; do not assemble styled `Span`s, raw separator strings, or per-surface colour choices inline. A new hand-rolled hint row (its own `Span::styled` key/label pairs, its own `" · "` literal, or its own dim/green choice) is a design-decision violation: route it through the shared span list + renderer instead. This is what lets the cockpit picker, the build-log overlay, and every capsule dialog footer read identically.
+Hint rows are not hand-built. The vocabulary is the shared `HintSpan` enum in `jackin-tui` (`Key`, `Text`, `Sep`, `GroupSep`), and the styling rule is identical everywhere: `Key` is white + bold, `Text` is phosphor green (rendered with a leading space), `Sep` is a gray `" · "`, `GroupSep` is three spaces, and the row is centered. Ratatui surfaces render this through the shared `HintBar` component in <RepoFile path="crates/jackin-tui/src/components/hint_bar.rs">crates/jackin-tui/src/components/hint_bar.rs</RepoFile>; the in-container multiplexer also consumes the shared hint renderer in its bottom chrome and wraps long hint sets inside its reserved footer rows instead of dropping active key groups. Dialog hint vocabulary remains owned by <RepoFile path="crates/jackin-capsule/src/tui/components/dialog.rs">crates/jackin-capsule/src/tui/components/dialog.rs</RepoFile>. Define a screen's hint as a `&[HintSpan]` constant and pass it to the renderer; do not assemble styled `Span`s, raw separator strings, or per-surface colour choices inline. A new hand-rolled hint row (its own `Span::styled` key/label pairs, its own `" · "` literal, or its own dim/green choice) is a design-decision violation: route it through the shared span list + renderer instead. This is what lets the cockpit picker, the build-log overlay, and every capsule dialog footer read identically.
 
 #### Hint spans derive from the keymap that owns dispatch
 

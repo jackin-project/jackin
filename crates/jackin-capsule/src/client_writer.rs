@@ -144,7 +144,7 @@ impl ClientWriter {
         // Verbatim dump of only the smallest emissions (chrome / out-of-band
         // only). Capped tight so a steady-state run can't balloon the log.
         if bytes.len() <= 1200 {
-            crate::cdebug!("send-bytes: {}", escape_for_log(bytes));
+            crate::ctrace_payload!("send-bytes: {}", escape_for_log(bytes));
         }
     }
 }

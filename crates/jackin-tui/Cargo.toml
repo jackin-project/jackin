@@ -15,19 +15,19 @@ name = "jackin_tui"
 path = "src/lib.rs"
 
 [dependencies]
-anstyle-parse = "1.0"
-base64 = "0.22"
-crossterm = "0.29"
-jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
-owo-colors = { version = "4", features = ["supports-colors"] }
-ratatui = "0.30"
-similar = "3"
-tokio = { version = "1", features = ["io-util", "rt", "sync", "time"] }
-tui-scrollbar = "0.2.4"
-unicode-width = "0.2"
+anstyle-parse = { workspace = true }
+base64 = { workspace = true }
+crossterm = { workspace = true }
+jackin-core = { workspace = true }
+owo-colors = { workspace = true, features = ["supports-colors"] }
+ratatui = { workspace = true }
+similar = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "rt", "sync", "time"] }
+tui-scrollbar = { workspace = true }
+unicode-width = { workspace = true }
 
 [dev-dependencies]
-tokio = { version = "=1.52.3", features = ["macros", "rt", "test-util"] }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 
 [lints]
 workspace = true

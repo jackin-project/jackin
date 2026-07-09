@@ -577,7 +577,8 @@ pub fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOu
                 return InputOutcome::Continue;
             }
             let outcome = if let Some(rect) = container_info_rect {
-                info.handle_key_in_rect(key, rect)
+                info.set_viewport(rect);
+                info.handle_key(key)
             } else {
                 info.handle_key(key)
             };

@@ -2,7 +2,7 @@ use crate::tui::auth::AuthKind;
 use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::state::{
     AuthForm, AuthFormFocus, AuthFormTarget, CreatePreludeState, DragState, EditorState, EditorTab,
-    FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsAuthModal, SettingsState,
+    FieldFocus, ManagerStage, ManagerState, MountScrollFocus, SettingsModal, SettingsState,
     SettingsTab,
 };
 use jackin_tui::components::{ErrorPopupState, FocusOwner};
@@ -473,17 +473,14 @@ fn dismiss_settings_error_popup_restores_pending_auth_form() {
     let mut state = state_with_saved_count(0);
     let mut settings = SettingsState::from_config(&jackin_config::AppConfig::default());
     settings.error_popup = Some(ErrorPopupState::new("Token mint failed", "op item missing"));
-    settings
-        .auth
-        .modal_parents
-        .push(SettingsAuthModal::AuthForm {
-            target: AuthFormTarget::Workspace {
-                kind: AuthKind::Claude,
-            },
-            state: Box::new(AuthForm::new(AuthKind::Claude)),
-            focus: AuthFormFocus::Save,
-            literal_buffer: "token".into(),
-        });
+    settings.auth.modal_parents.push(SettingsModal::AuthForm {
+        target: AuthFormTarget::Workspace {
+            kind: AuthKind::Claude,
+        },
+        state: Box::new(AuthForm::new(AuthKind::Claude)),
+        focus: AuthFormFocus::Save,
+        literal_buffer: "token".into(),
+    });
     state.stage = ManagerStage::Settings(settings);
 
     assert!(update_manager(&mut state, ManagerMessage::DismissSettingsErrorPopup).is_dirty());
@@ -493,7 +490,7 @@ fn dismiss_settings_error_popup_restores_pending_auth_form() {
     };
     assert!(settings.error_popup.is_none());
     assert!(settings.auth.modal_parents.is_empty());
-    let Some(SettingsAuthModal::AuthForm {
+    let Some(SettingsModal::AuthForm {
         target,
         focus,
         literal_buffer,

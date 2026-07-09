@@ -927,7 +927,7 @@ fn settings_env_text_commit_plan_routes_keys_and_values() {
     );
     assert_eq!(
         settings_env_text_commit_plan(&target, " TOKEN ", true),
-        SettingsEnvTextCommitPlan::SetPendingPickerValue {
+        SettingsEnvTextCommitPlan::SetCarriedPickerValue {
             scope: role_scope.clone(),
             key: "TOKEN".to_owned(),
         }
@@ -957,59 +957,20 @@ fn settings_env_text_commit_plan_routes_keys_and_values() {
 }
 
 #[test]
-fn settings_env_source_picker_commit_plan_requires_pending_key() {
-    assert_eq!(
-        settings_env_source_picker_commit_plan(SettingsEnvSourcePickerSelection::Plain, None),
-        SettingsEnvSourcePickerCommitPlan::MissingPendingKey
-    );
-
+fn settings_env_source_picker_commit_plan_routes_key_context() {
     let pending = (SettingsEnvScope::Role("ops".to_owned()), "TOKEN".to_owned());
     assert_eq!(
-        settings_env_source_picker_commit_plan(
-            SettingsEnvSourcePickerSelection::Plain,
-            Some(&pending),
-        ),
+        settings_env_source_picker_commit_plan(SettingsEnvSourcePickerSelection::Plain, &pending,),
         SettingsEnvSourcePickerCommitPlan::OpenPlainText {
             scope: SettingsEnvScope::Role("ops".to_owned()),
             key: "TOKEN".to_owned(),
         }
     );
     assert_eq!(
-        settings_env_source_picker_commit_plan(
-            SettingsEnvSourcePickerSelection::Op,
-            Some(&pending)
-        ),
+        settings_env_source_picker_commit_plan(SettingsEnvSourcePickerSelection::Op, &pending),
         SettingsEnvSourcePickerCommitPlan::OpenOpPicker {
             scope: SettingsEnvScope::Role("ops".to_owned()),
             key: "TOKEN".to_owned(),
-        }
-    );
-}
-
-#[test]
-fn settings_env_op_picker_commit_plan_routes_targets() {
-    assert_eq!(
-        settings_env_op_picker_commit_plan(None),
-        SettingsEnvOpPickerCommitPlan::MissingTarget
-    );
-
-    let existing = (
-        SettingsEnvScope::Role("ops".to_owned()),
-        Some("TOKEN".to_owned()),
-    );
-    assert_eq!(
-        settings_env_op_picker_commit_plan(Some(&existing)),
-        SettingsEnvOpPickerCommitPlan::SetExisting {
-            scope: SettingsEnvScope::Role("ops".to_owned()),
-            key: "TOKEN".to_owned(),
-        }
-    );
-
-    let new_key = (SettingsEnvScope::Global, None);
-    assert_eq!(
-        settings_env_op_picker_commit_plan(Some(&new_key)),
-        SettingsEnvOpPickerCommitPlan::StashForNewKey {
-            scope: SettingsEnvScope::Global,
         }
     );
 }

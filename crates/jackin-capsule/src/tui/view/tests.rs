@@ -16,7 +16,6 @@ use ratatui::{Terminal, backend::TestBackend};
 fn chrome_frame(
     hover: Option<HoverTarget>,
     debug_run_id: Option<&str>,
-    spawn_failure: Option<&str>,
     clipboard_image_notice: Option<&str>,
     link_hover_notice: Option<&str>,
 ) -> ratatui::buffer::Buffer {
@@ -57,7 +56,6 @@ fn chrome_frame(
                     main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
                     debug_run_id,
                     dialog_hint_spans: None,
-                    spawn_failure,
                     palette_key: 0x1C,
                     clipboard_image_notice,
                     link_hover_notice,
@@ -83,20 +81,30 @@ fn row_text(buf: &ratatui::buffer::Buffer, y: u16) -> String {
 
 #[test]
 fn bottom_chrome_widget_paints_branch_bar_and_hint_row() {
-    let buf = chrome_frame(None, None, None, None, None);
+    let buf = chrome_frame(None, None, None, None);
     let bar = row_text(&buf, 23);
     assert!(bar.contains("Branch · main"), "branch bar missing: {bar:?}");
     assert!(bar.contains("jk-test"), "container chunk missing: {bar:?}");
-    let hint = row_text(&buf, 24 - 3);
+    let top_spacer = row_text(&buf, 20);
+    let hint = row_text(&buf, 21);
+    let bottom_spacer = row_text(&buf, 22);
+    assert!(
+        top_spacer.trim().is_empty(),
+        "top spacer polluted: {top_spacer:?}"
+    );
     assert!(
         hint.contains("focus pane"),
         "main hint row missing: {hint:?}"
+    );
+    assert!(
+        bottom_spacer.trim().is_empty(),
+        "bottom spacer polluted: {bottom_spacer:?}"
     );
 }
 
 #[test]
 fn debug_run_id_chip_renders_danger_red_on_the_bar_row() {
-    let buf = chrome_frame(None, Some("jk-run-test"), None, None, None);
+    let buf = chrome_frame(None, Some("jk-run-test"), None, None);
     let bar = row_text(&buf, 23);
     assert!(bar.contains("jk-run-test"), "chip missing: {bar:?}");
     let chip_x = chip_start_col(&bar);
@@ -110,7 +118,6 @@ fn debug_run_id_chip_renders_danger_red_on_the_bar_row() {
         Some("jk-run-test"),
         None,
         None,
-        None,
     );
     let chip_x = chip_start_col(&row_text(&hovered, 23));
     assert_eq!(
@@ -121,19 +128,8 @@ fn debug_run_id_chip_renders_danger_red_on_the_bar_row() {
 }
 
 #[test]
-fn spawn_failure_banner_widget_paints_top_row_notice() {
-    let buf = chrome_frame(None, None, Some("shell: cap hit"), None, None);
-    let row0 = row_text(&buf, 0);
-    assert!(
-        row0.contains("jackin: shell: cap hit"),
-        "banner missing: {row0:?}"
-    );
-}
-
-#[test]
 fn clipboard_image_notice_keeps_status_and_bottom_chrome_rows_free() {
     let buf = chrome_frame(
-        None,
         None,
         None,
         Some("Image staged: /jackin/run/clipboard/clipboard-test.png"),
@@ -216,7 +212,6 @@ fn non_debug_dialog_hides_bottom_status_bar() {
                     main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
                     debug_run_id: None,
                     dialog_hint_spans: Some(&hints),
-                    spawn_failure: None,
                     palette_key: 0x1C,
                     clipboard_image_notice: None,
                     link_hover_notice: None,
@@ -228,8 +223,18 @@ fn non_debug_dialog_hides_bottom_status_bar() {
     let buf = terminal.backend().buffer();
     let row0: String = (0..30).map(|x| buf[(x, 0)].symbol().to_owned()).collect();
     assert!(row0.contains("jackin❯"), "status brand missing: {row0:?}");
+    let top_spacer = row_text(buf, 20);
     let hint = row_text(buf, 21);
+    let bottom_spacer = row_text(buf, 22);
+    assert!(
+        top_spacer.trim().is_empty(),
+        "top spacer polluted: {top_spacer:?}"
+    );
     assert!(hint.contains("dismiss"), "dialog hint missing: {hint:?}");
+    assert!(
+        bottom_spacer.trim().is_empty(),
+        "bottom spacer polluted: {bottom_spacer:?}"
+    );
     let footer = row_text(buf, 23);
     assert!(
         !footer.contains("Session 99%")
@@ -242,7 +247,6 @@ fn non_debug_dialog_hides_bottom_status_bar() {
 #[test]
 fn link_hover_notice_keeps_status_and_bottom_chrome_rows_free() {
     let buf = chrome_frame(
-        None,
         None,
         None,
         None,
@@ -274,7 +278,6 @@ fn link_hover_notice_keeps_status_and_bottom_chrome_rows_free() {
 #[test]
 fn clipboard_image_notice_takes_priority_over_link_hover_notice() {
     let buf = chrome_frame(
-        None,
         None,
         None,
         Some("Image staged: /jackin/run/clipboard/clipboard-test.png"),
@@ -333,7 +336,6 @@ fn clipboard_image_notice_takes_priority_over_selection_copy_toast() {
                     main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
                     debug_run_id: None,
                     dialog_hint_spans: None,
-                    spawn_failure: None,
                     palette_key: 0x1C,
                     clipboard_image_notice: Some("Image staged: /jackin/run/clipboard/test.png"),
                     link_hover_notice: None,
@@ -410,7 +412,6 @@ fn debug_dialog_keeps_status_bar_visible() {
                     main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
                     debug_run_id: Some("jk-run-test"),
                     dialog_hint_spans: None,
-                    spawn_failure: None,
                     palette_key: 0x1C,
                     clipboard_image_notice: None,
                     link_hover_notice: None,
@@ -489,7 +490,6 @@ fn selection_copy_toast_keeps_status_and_bottom_chrome_rows_free() {
                     main_scroll_axes: jackin_tui::components::ScrollAxes::default(),
                     debug_run_id: None,
                     dialog_hint_spans: None,
-                    spawn_failure: None,
                     palette_key: 0x1C,
                     clipboard_image_notice: None,
                     link_hover_notice: None,

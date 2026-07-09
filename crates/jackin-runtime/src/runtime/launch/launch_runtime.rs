@@ -23,7 +23,6 @@ use super::auth_error::{
 };
 use super::build_workspace_mount_strings;
 use super::diagnose_with_state;
-use super::emit_prewarm_launch_plan;
 use super::exit_diagnosis::{ExitPhase, diagnose_premature_exit};
 use super::restore::capsule_multiplexer_log_path;
 use crate::runtime::progress::launch_output;
@@ -62,6 +61,8 @@ pub(crate) struct LaunchContext<'a> {
     /// `keep_awake` count is back to zero.
     pub(crate) paths: &'a JackinPaths,
     pub(crate) selected_image_refresh: Option<SelectedImageRefresh<'a>>,
+    pub(crate) reuse_staleness_sentinel: Option<ReuseStalenessSentinel<'a>>,
+    pub(crate) sidecar_prewarm_replenish: SidecarPrewarmReplenish,
     pub(crate) sibling_prewarm: SiblingPrewarm<'a>,
     pub(crate) sibling_auth_prewarm: SiblingAuthPrewarm<'a>,
 }
@@ -70,6 +71,17 @@ pub(crate) struct SelectedImageRefresh<'a> {
     pub(crate) role_git: &'a str,
     pub(crate) branch_override: Option<&'a str>,
     pub(crate) reason: crate::runtime::image::ImageInvalidationReason,
+}
+
+pub(crate) struct ReuseStalenessSentinel<'a> {
+    pub(crate) role_git: &'a str,
+    pub(crate) branch_override: Option<&'a str>,
+    pub(crate) image: &'a str,
+}
+
+pub(crate) enum SidecarPrewarmReplenish {
+    None,
+    AfterAttach,
 }
 
 pub(crate) struct SiblingPrewarm<'a> {
@@ -91,7 +103,8 @@ pub(crate) fn spawn_sibling_auth_prewarm(
     container_name: &str,
     prewarm: &SiblingAuthPrewarm<'_>,
     selected_agent: jackin_core::agent::Agent,
-) {
+) -> Option<tokio::task::JoinHandle<()>> {
+    let active_run = jackin_diagnostics::active_run_for_paths(paths);
     let sibling_agents = prewarm
         .manifest
         .supported_agents()
@@ -99,13 +112,13 @@ pub(crate) fn spawn_sibling_auth_prewarm(
         .filter(|agent| *agent != selected_agent)
         .collect::<Vec<_>>();
     if sibling_agents.is_empty() {
-        if let Some(run) = jackin_diagnostics::active_run() {
+        if let Some(run) = &active_run {
             run.compact(
                 "sibling_auth_prewarm_skipped",
                 &format!("no sibling agents for selected agent {selected_agent}"),
             );
         }
-        return;
+        return None;
     }
 
     let paths_owned = paths.clone();
@@ -119,7 +132,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
         .iter()
         .map(ToString::to_string)
         .collect::<Vec<_>>();
-    if let Some(run) = jackin_diagnostics::active_run() {
+    if let Some(run) = &active_run {
         run.compact(
             "sibling_auth_prewarm_started",
             &format!(
@@ -130,14 +143,24 @@ pub(crate) fn spawn_sibling_auth_prewarm(
         );
     }
     let timing_detail = agents.join(",");
-    emit_prewarm_launch_plan(&format!("sibling_auth_prewarm:{timing_detail}"));
-    jackin_diagnostics::active_timing_started(
-        "credentials",
-        "sibling_auth_prewarm",
-        Some(&timing_detail),
-    );
+    if let Some(run) = &active_run {
+        let reason = format!("sibling_auth_prewarm:{timing_detail}");
+        let detail = serde_json::json!({
+            "plan": "PrewarmOnly",
+            "reason": reason,
+            "container": null,
+        })
+        .to_string();
+        run.stage(
+            "launch_plan",
+            "restore",
+            "selected launch plan PrewarmOnly",
+            Some(&detail),
+        );
+        run.timing_started("credentials", "sibling_auth_prewarm", Some(&timing_detail));
+    }
 
-    tokio::task::spawn_blocking(move || {
+    Some(tokio::task::spawn_blocking(move || {
         let resolve_mode = |a: jackin_core::agent::Agent| {
             jackin_config::resolve_mode(&config, a, &workspace_name, &role_key)
         };
@@ -159,13 +182,11 @@ pub(crate) fn spawn_sibling_auth_prewarm(
             Ok(count) => format!("{count} slots"),
             Err(error) => format!("failed: {error}"),
         };
-        jackin_diagnostics::active_timing_done(
-            "credentials",
-            "sibling_auth_prewarm",
-            Some(&timing_done),
-        );
+        if let Some(run) = &active_run {
+            run.timing_done("credentials", "sibling_auth_prewarm", Some(&timing_done));
+        }
 
-        if let Some(run) = jackin_diagnostics::active_run() {
+        if let Some(run) = active_run {
             match result {
                 Ok(count) => run.compact(
                     "sibling_auth_prewarm_done",
@@ -181,7 +202,7 @@ pub(crate) fn spawn_sibling_auth_prewarm(
                 ),
             }
         }
-    });
+    }))
 }
 
 /// Launch the role container after the caller has prepared the private network
@@ -233,6 +254,8 @@ pub(crate) async fn launch_role_runtime(
         github_env,
         paths,
         selected_image_refresh,
+        reuse_staleness_sentinel,
+        sidecar_prewarm_replenish,
         sibling_prewarm,
         sibling_auth_prewarm,
     } = ctx;
@@ -502,8 +525,16 @@ pub(crate) async fn launch_role_runtime(
             &dind_hostname,
         ]);
     }
+    let run_envs = run_runtime_envs();
+    for env in &run_envs {
+        run_args.extend_from_slice(&["-e", env.as_str()]);
+    }
     let debug_envs = debug_runtime_envs(*debug);
     for env in &debug_envs {
+        run_args.extend_from_slice(&["-e", env.as_str()]);
+    }
+    let telemetry_envs = telemetry_runtime_envs(*debug);
+    for env in &telemetry_envs {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
     // Always pass the host jackin version so the capsule ContainerInfo dialog
@@ -723,15 +754,6 @@ pub(crate) async fn launch_role_runtime(
         otlp_propagation.push(format!("OTEL_EXPORTER_OTLP_ENDPOINT={}", otlp.endpoint));
         if let Some(traceparent) = jackin_diagnostics::current_traceparent() {
             otlp_propagation.push(format!("TRACEPARENT={traceparent}"));
-        }
-        // Share parallax.run.id so capsule telemetry groups with the host run.
-        // In debug runs JACKIN_RUN_ID is already injected above; avoid a dupe.
-        if !debug_envs
-            .iter()
-            .any(|env| env.starts_with("JACKIN_RUN_ID="))
-            && let Some(run) = jackin_diagnostics::active_run()
-        {
-            otlp_propagation.push(format!("JACKIN_RUN_ID={}", run.run_id()));
         }
     }
     for env_str in &otlp_propagation {
@@ -997,7 +1019,13 @@ pub(crate) async fn launch_role_runtime(
     // Reconcile keep_awake AFTER the role container is running but
     // BEFORE the foreground session blocks. This is the only window in
     // which an interactive `jackin load` can spawn caffeinate.
-    jackin_host::caffeinate::reconcile(paths, docker, runner).await;
+    jackin_host::caffeinate::reconcile_when_configured(
+        paths,
+        docker,
+        runner,
+        workspace.keep_awake_enabled,
+    )
+    .await;
 
     // Emit a structured container_started event so the run JSONL points at
     // the capsule log regardless of whether the session succeeds (Defect 41).
@@ -1053,7 +1081,18 @@ pub(crate) async fn launch_role_runtime(
             *debug,
         );
     }
-    crate::runtime::image::spawn_sibling_runtime_prewarm(
+    if let Some(sentinel) = reuse_staleness_sentinel {
+        crate::runtime::image::spawn_reuse_staleness_sentinel(
+            paths,
+            selector,
+            sentinel.role_git,
+            sentinel.branch_override,
+            *agent,
+            sentinel.image,
+            *debug,
+        );
+    }
+    let _sibling_runtime_prewarm = crate::runtime::image::spawn_sibling_runtime_prewarm(
         paths,
         sibling_prewarm.validated_repo,
         *agent,
@@ -1068,7 +1107,8 @@ pub(crate) async fn launch_role_runtime(
         *agent,
         sibling_prewarm.selected_image_reused,
     );
-    spawn_sibling_auth_prewarm(paths, container_name, sibling_auth_prewarm, *agent);
+    let _sibling_auth_prewarm =
+        spawn_sibling_auth_prewarm(paths, container_name, sibling_auth_prewarm, *agent);
     let session_result = crate::runtime::attach::reconnect_or_create_session_with_focus(
         paths,
         container_name,
@@ -1116,6 +1156,12 @@ pub(crate) async fn launch_role_runtime(
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(crate::runtime::progress::LaunchStage::Hardline, "open");
     }
+    if matches!(
+        sidecar_prewarm_replenish,
+        SidecarPrewarmReplenish::AfterAttach
+    ) {
+        crate::runtime::prewarm_trigger::spawn_background_sidecar_prewarm(paths, *debug);
+    }
 
     Ok(())
 }
@@ -1139,17 +1185,46 @@ pub(crate) fn host_runtime_passthrough_env(
         .collect()
 }
 
-pub(crate) fn debug_runtime_envs(debug: bool) -> Vec<String> {
+pub(crate) fn debug_runtime_envs_for(
+    debug: bool,
+    diagnostics_path: Option<&std::path::Path>,
+) -> Vec<String> {
     if !debug {
         return Vec::new();
     }
     let mut envs = vec!["JACKIN_DEBUG=1".to_owned()];
-    if let Some(run) = jackin_diagnostics::active_run() {
-        envs.push(format!("JACKIN_RUN_ID={}", run.run_id()));
-        envs.push(format!(
-            "JACKIN_RUN_DIAGNOSTICS_PATH={}",
-            run.path().display()
-        ));
+    if let Some(path) = diagnostics_path {
+        envs.push(format!("JACKIN_RUN_DIAGNOSTICS_PATH={}", path.display()));
     }
     envs
+}
+
+pub(crate) fn debug_runtime_envs(debug: bool) -> Vec<String> {
+    let diagnostics_path = jackin_diagnostics::active_run()
+        .and_then(|run| run.persists().then(|| run.path().to_path_buf()));
+    debug_runtime_envs_for(debug, diagnostics_path.as_deref())
+}
+
+pub(crate) fn telemetry_runtime_envs_for(level: jackin_diagnostics::TelemetryLevel) -> Vec<String> {
+    let level = match level {
+        jackin_diagnostics::TelemetryLevel::Info => "info",
+        jackin_diagnostics::TelemetryLevel::Debug => "debug",
+        jackin_diagnostics::TelemetryLevel::Trace => "trace",
+    };
+    vec![format!("JACKIN_TELEMETRY_LEVEL={level}")]
+}
+
+pub(crate) fn telemetry_runtime_envs(debug: bool) -> Vec<String> {
+    telemetry_runtime_envs_for(jackin_diagnostics::telemetry_level(debug))
+}
+
+#[cfg(test)]
+pub(crate) fn run_runtime_envs_for(run_id: Option<&str>) -> Vec<String> {
+    run_id.map_or_else(Vec::new, |run_id| vec![format!("JACKIN_RUN_ID={run_id}")])
+}
+
+pub(crate) fn run_runtime_envs() -> Vec<String> {
+    jackin_diagnostics::active_run().map_or_else(Vec::new, |run| {
+        vec![format!("JACKIN_RUN_ID={}", run.run_id())]
+    })
 }

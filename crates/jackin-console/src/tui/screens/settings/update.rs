@@ -579,7 +579,7 @@ pub enum SettingsEnvTextCommitPlan {
     EmptyKey {
         scope: SettingsEnvScope,
     },
-    SetPendingPickerValue {
+    SetCarriedPickerValue {
         scope: SettingsEnvScope,
         key: String,
     },
@@ -602,7 +602,6 @@ pub enum SettingsEnvSourcePickerSelection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsEnvSourcePickerCommitPlan {
-    MissingPendingKey,
     OpenPlainText {
         scope: SettingsEnvScope,
         key: String,
@@ -610,18 +609,6 @@ pub enum SettingsEnvSourcePickerCommitPlan {
     OpenOpPicker {
         scope: SettingsEnvScope,
         key: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SettingsEnvOpPickerCommitPlan {
-    MissingTarget,
-    SetExisting {
-        scope: SettingsEnvScope,
-        key: String,
-    },
-    StashForNewKey {
-        scope: SettingsEnvScope,
     },
 }
 
@@ -952,7 +939,7 @@ pub fn global_mount_github_open_plan(
 pub fn settings_env_text_commit_plan(
     target: &SettingsEnvTextTarget,
     value: &str,
-    has_pending_picker_value: bool,
+    has_carried_picker_value: bool,
 ) -> SettingsEnvTextCommitPlan {
     match target {
         SettingsEnvTextTarget::EnvKey { scope } => {
@@ -962,8 +949,8 @@ pub fn settings_env_text_commit_plan(
                     scope: scope.clone(),
                 };
             }
-            if has_pending_picker_value {
-                SettingsEnvTextCommitPlan::SetPendingPickerValue {
+            if has_carried_picker_value {
+                SettingsEnvTextCommitPlan::SetCarriedPickerValue {
                     scope: scope.clone(),
                     key: key.to_owned(),
                 }
@@ -987,11 +974,9 @@ pub fn settings_env_text_commit_plan(
 #[must_use]
 pub fn settings_env_source_picker_commit_plan(
     selection: SettingsEnvSourcePickerSelection,
-    pending_env_key: Option<&(SettingsEnvScope, String)>,
+    source_key: &(SettingsEnvScope, String),
 ) -> SettingsEnvSourcePickerCommitPlan {
-    let Some((scope, key)) = pending_env_key else {
-        return SettingsEnvSourcePickerCommitPlan::MissingPendingKey;
-    };
+    let (scope, key) = source_key;
     match selection {
         SettingsEnvSourcePickerSelection::Plain => {
             SettingsEnvSourcePickerCommitPlan::OpenPlainText {
@@ -1003,22 +988,6 @@ pub fn settings_env_source_picker_commit_plan(
             scope: scope.clone(),
             key: key.clone(),
         },
-    }
-}
-
-#[must_use]
-pub fn settings_env_op_picker_commit_plan(
-    pending_picker_target: Option<&(SettingsEnvScope, Option<String>)>,
-) -> SettingsEnvOpPickerCommitPlan {
-    match pending_picker_target {
-        Some((scope, Some(key))) => SettingsEnvOpPickerCommitPlan::SetExisting {
-            scope: scope.clone(),
-            key: key.clone(),
-        },
-        Some((scope, None)) => SettingsEnvOpPickerCommitPlan::StashForNewKey {
-            scope: scope.clone(),
-        },
-        None => SettingsEnvOpPickerCommitPlan::MissingTarget,
     }
 }
 

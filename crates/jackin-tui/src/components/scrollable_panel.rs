@@ -344,11 +344,13 @@ pub fn render_selected_lines_in_area(
     let total = lines.len();
     let offset = cursor_follow_offset(selected.unwrap_or(0), total, viewport, 0);
     let items = lines.into_iter().map(ListItem::new).collect();
-    ScrollableList::new(items)
-        .highlight_spacing(HighlightSpacing::Always)
-        .offset(offset)
-        .selected(selected)
-        .render(frame.buffer_mut(), area);
+    frame.render_widget(
+        ScrollableList::new(items)
+            .highlight_spacing(HighlightSpacing::Always)
+            .offset(offset)
+            .selected(selected),
+        area,
+    );
 }
 
 /// Shared vertical list renderer for selectable rows.
@@ -437,7 +439,7 @@ impl<'a> ScrollableList<'a> {
         self
     }
 
-    pub fn render(self, buf: &mut Buffer, area: Rect) {
+    fn render_inner(self, area: Rect, buf: &mut Buffer) {
         let total = self.items.len();
         let viewport = usize::from(area.height);
         let offset = effective_offset(total, viewport, self.offset);
@@ -473,7 +475,7 @@ impl<'a> ScrollableList<'a> {
         }
     }
 
-    pub fn render_with_block(self, buf: &mut Buffer, area: Rect, block: Block<'a>) {
+    pub fn render_with_block(self, area: Rect, buf: &mut Buffer, block: Block<'a>) {
         let total = self.items.len();
         let inner = block.inner(area);
         let viewport = usize::from(inner.height);
@@ -501,6 +503,12 @@ impl<'a> ScrollableList<'a> {
             }
             .render(vertical_scrollbar_area(area), buf);
         }
+    }
+}
+
+impl Widget for ScrollableList<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        self.render_inner(area, buf);
     }
 }
 

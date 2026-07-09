@@ -1,0 +1,77 @@
+---
+title: "20 — Comparison Matrix and Tier List"
+---
+
+# 20 — Comparison Matrix and Tier List
+
+**Research conducted:** 2026-07-03. Tools from [01](/reference/research/session-capture/01-specstory-product/)/[02](/reference/research/session-capture/02-specstory-cli-internals/) (SpecStory), [11](/reference/research/session-capture/11-open-source-exporters/) (OSS), [12](/reference/research/session-capture/12-platforms-and-observability/) (platforms). Tier value = *usefulness to a jackin❯ session-capture effort* — coverage of jackin❯'s six-agent roster × mechanism robustness × output/search/share quality × maintenance health × license reusability. That is deliberately not "best product for an individual developer".
+
+## Capability matrix (the contenders)
+
+Capture = how conversation content is acquired. Live = captures during the session vs post-hoc. Content = full conversation (incl. tool calls) vs metrics only.
+
+| Tool | Capture | Live | Content | Output | Search | Share | Turn↔code link | License | Health (2026-07-03) |
+|---|---|---|---|---|---|---|---|---|---|
+| **SpecStory CLI v2** | native stores, fsnotify | ✅ (watch) + post-hoc | full incl. thinking, tools, usage | markdown in-repo | FTS5, cross-project | cloud links (opt-in) | prototype (provenance engine, hidden flag) | **Apache-2.0** | active, v2.0.0 4 days old |
+| SpecStory IDE ext | Cursor `state.vscdb` / Copilot `chatSessions` polling | ✅ | full (known gaps: Cmd-K, images) | markdown | via cloud | anon + cloud links | ❌ | **closed** | active; breakage history |
+| Mantra | native stores | ✅ | full + per-turn git snapshots | desktop timeline replay | ✅ FTS | web publish | ✅ **shipped** (diff/restore) | **closed** freeware | active (rel. 2026-07-01) |
+| claude-replay | native stores (5 agents) | post-hoc | full | self-contained HTML replay | ❌ | file = artifact | ❌ | MIT | active |
+| coding_agent_session_search | native stores (11+ providers) | post-hoc | full (indexed) | TUI/CLI results | ✅ best-in-class breadth | ❌ | ❌ | nonstandard | very active |
+| claude-code-log | Claude JSONL | post-hoc | full | HTML/MD | project browse | ❌ | ❌ | OSS | very active |
+| claude-code-transcripts | Claude JSONL | post-hoc | full | multi-page HTML | ❌ | gist / SSO sites | ❌ | OSS | slowing |
+| aichat search (claude-code-tools) | native stores (Claude, Codex…) | post-hoc | full (Tantivy index) | CLI/TUI | ✅ | ❌ | ❌ | MIT | active |
+| claude-trace | **fetch-patch wire tap** | ✅ | full + system prompt + raw API | JSONL + HTML | ❌ | file | ❌ | OSS | low activity |
+| Langfuse (hook route) | Claude hooks → traces | ✅ | full conversations (this route only) | web platform | ✅ | team platform | ❌ | OSS core + SaaS | active |
+| Happy | wraps CLI, E2E relay | ✅ | live session state | mobile/web viewer | ❌ | device sync, not links | ❌ | MIT | very active |
+| vibe-kanban | owns launched sessions | ✅ | per-attempt logs | web kanban | ❌ | ❌ | per-task diffs | Apache-2.0 | active |
+| Amp threads (native) | server-side by design | ✅ | full | web threads | ✅ | workspace/unlisted URLs | ❌ | closed SaaS | active |
+| opencode `/share` (native) | server publish | ✅ | full | web page | ❌ | public links | ❌ | OSS agent, closed share svc | active |
+| ccusage (for contrast) | Claude JSONL | post-hoc | **metrics only** | CLI reports | ❌ | leaderboards | ❌ | MIT | 16.8k★, very active |
+
+## Coverage vs jackin❯'s roster
+
+jackin❯ runs Claude Code, Codex, Amp, Kimi, OpenCode, Grok ([30](/reference/research/session-capture/30-jackin-fit/)). Coverage of that roster by the cross-agent tools:
+
+| Tool | Claude | Codex | Amp | Kimi | OpenCode | Grok | Roster score |
+|---|---|---|---|---|---|---|---|
+| SpecStory CLI | ✅ | ✅ | ❌ | ❌ | ❌ (open request [#146](https://github.com/specstoryai/getspecstory/issues/146)) | ❌ | **2/6** |
+| Mantra | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | 1/6 |
+| claude-replay | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | 3/6 |
+| coding_agent_session_search | ✅ | ✅ | ❌ `[UNVERIFIED — provider list not fully published]` | ❌ | ✅ likely | ❌ | ~3/6 |
+| vibe-kanban (captive) | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | 4/6, not exportable |
+| **Nobody** | — | — | — | — | — | — | **0 tools cover Kimi or Grok** |
+
+Two consequences: (a) no off-the-shelf tool solves jackin❯'s roster — best case 3/6; (b) Kimi and Grok providers would be first-in-market, and both turn out to have *good* native surfaces (Kimi versioned `wire.jsonl` + ACP; Grok documented session dirs + ACP `updates.jsonl` — [10](/reference/research/session-capture/10-agent-session-stores/)).
+
+## Mechanism scorecard (matches Déjà Vu's vector taxonomy)
+
+| Mechanism | Used by | Verdict from field evidence |
+|---|---|---|
+| **A. Native-store read** | SpecStory CLI, Mantra, all OSS exporters | Wins everywhere it exists: lossless, passive, post-hoc capable. Risk = format churn; mitigated by fingerprinted disposable indexes and vendor-blessed hedges |
+| B. Hooks | Langfuse route, disler's observability, claude_telemetry | Good liveness signal; only Claude hands back `transcript_path`; nobody uses hooks as sole capture |
+| C. OTel | Grafana official, claude-code-otel, Logfire | Metrics/cost only; content redacted by design; never a transcript source |
+| D. Wire tap | claude-trace, LeanMCP proxy | Only source of system prompts + guaranteed thinking; operationally invasive; niche |
+| E. Vendor stream/API | Amp `--stream-json`, OpenCode `serve`, Codex `--json` | The correct answer where no file exists (Amp) and the hedge where formats are declared unstable (Codex) |
+| F. Screen scrape | **nobody in the entire market** | Confirms Déjà Vu's last-resort ranking — no shipping product relies on it |
+
+## Tier list
+
+| Tier | Tool | Rationale (one line each) |
+|---|---|---|
+| **S** | SpecStory CLI | Only production-grade cross-agent capture pipeline with reusable Apache-2.0 source; 2/6 roster coverage but the *mechanism blueprint* (SPI, schema, index, reconstruct) transfers wholesale |
+| **A** | Mantra | Proves the turn↔git-state layer users want next; closed source caps it at "study the UX, not the code" |
+| **A** | claude-replay | Best output artifact in the market (portable HTML replay), 3/6 roster, MIT |
+| **A** | coding_agent_session_search | Best retrieval breadth (11+ providers), same-day maintenance; pairs with any capture layer |
+| **A** | claude-code-log | The Claude Code archival workhorse; parse rules worth mirroring |
+| **B** | claude-code-transcripts | Best publishing/sharing workflow (gist, SSO sites); single-agent, slowing |
+| **B** | aichat search / claude-history / claude-code-history-viewer | Healthy single-purpose retrieval/browsing tools; validate index-over-store design |
+| **B** | Amp threads · opencode `/share` | Native benchmarks any cross-agent surface must match (and interop with, since jackin❯ runs both agents) |
+| **B** | Langfuse hook route | Only observability platform that lands full coding-agent conversations; team features for free; Claude-only ingestion today |
+| **C** | claude-trace · LeanMCP | Wire-depth when system prompts/thinking must be exact; too invasive as default |
+| **C** | ccusage / usage monitors / viberank / vibe-log | Different job (metrics); proves multi-product value of native stores |
+| **C** | Happy · vibe-kanban · Crystal · Conductor | Orchestrator-captive history; category evidence, not reusable components |
+| **F** | cursor-chat-export, cclogviewer, sniffly, claude-code-otel, opcode, omnara, cui, claude-code-exporter | Stale, archived, or upstream-deleted — the graveyard that shows maintenance is the hard part |
+
+## What the matrix says in one paragraph
+
+The market has one production cross-agent capture pipeline (SpecStory, open, 2/6 roster fit), one closed product pointing at the next layer (Mantra's git time-travel), a healthy single-agent Claude ecosystem, thin-to-nonexistent everything else, and zero coverage of Kimi and Grok. Capture mechanism is a solved question (native stores + vendor-stream hedges); differentiation now lives in normalization quality, retrieval, sharing surfaces, and turn↔code attribution. For jackin❯ that reads: nothing to buy, one blueprint to port, two first-mover providers to write, and a defensible position from container ownership that no market player shares ([30](/reference/research/session-capture/30-jackin-fit/)).

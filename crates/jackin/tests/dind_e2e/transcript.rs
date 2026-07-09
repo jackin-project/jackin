@@ -57,14 +57,6 @@ pub(super) fn transcript_contains(buffer: &Arc<Mutex<Vec<u8>>>, needle: &str) ->
     .contains(needle)
 }
 
-pub(super) fn transcript_contains_all(buffer: &Arc<Mutex<Vec<u8>>>, needles: &[&str]) -> bool {
-    let guard = buffer
-        .lock()
-        .expect("pty output buffer mutex must not be poisoned");
-    let contents = String::from_utf8_lossy(&guard);
-    needles.iter().all(|needle| contents.contains(needle))
-}
-
 pub(super) fn buffer_bytes(buffer: &Arc<Mutex<Vec<u8>>>) -> Vec<u8> {
     buffer
         .lock()

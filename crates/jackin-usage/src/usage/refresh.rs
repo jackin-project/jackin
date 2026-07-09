@@ -204,7 +204,7 @@ pub(crate) fn acquire_account_refresh_lock(account_key: &str) -> RefreshLockOutc
 }
 
 pub(crate) fn acquire_account_refresh_lock_in(dir: &Path, account_key: &str) -> RefreshLockOutcome {
-    use fs2::FileExt as _;
+    use fs4::FileExt;
     if fs::create_dir_all(dir).is_err() {
         return RefreshLockOutcome::Unavailable;
     }
@@ -220,7 +220,7 @@ pub(crate) fn acquire_account_refresh_lock_in(dir: &Path, account_key: &str) -> 
         .truncate(false)
         .open(&path);
     match file {
-        Ok(file) => match file.try_lock_exclusive() {
+        Ok(file) => match FileExt::try_lock(&file) {
             Ok(()) => RefreshLockOutcome::Acquired(file),
             Err(_) => RefreshLockOutcome::Held,
         },

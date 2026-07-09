@@ -94,6 +94,7 @@ impl From<&str> for EnvValue {
 pub struct OpRef {
     /// Canonical `op://` URI.
     /// `op://<vault_id>/<item_id>/[<section_id>/]<field_id>[?attribute=<name>]`
+    #[serde(deserialize_with = "deserialize_op_uri")]
     pub op: String,
 
     /// Snapshot breadcrumb: `<Vault>/<Item>/[<Section>/]<Field>`.
@@ -112,6 +113,23 @@ pub struct OpRef {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub on_demand: bool,
 }
+
+fn deserialize_op_uri<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = <String as serde::Deserialize>::deserialize(deserializer)?;
+    if value.starts_with("op://") {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(format!(
+            "op reference must start with op://: {value:?}"
+        )))
+    }
+}
+
+#[cfg(test)]
+mod tests;
 
 /// A literal/`$VAR` env value carrying optional on-demand metadata.
 ///

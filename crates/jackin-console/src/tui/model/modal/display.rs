@@ -107,7 +107,9 @@ impl<
                 required_height: state.required_height(),
             },
             Self::StatusPopup { .. } => ModalRectMode::StatusPopup,
-            Self::OpPicker { state } if state.has_naming_stage_input() => ModalRectMode::TextInput,
+            Self::OpPicker { state, .. } if state.has_naming_stage_input() => {
+                ModalRectMode::TextInput
+            }
             Self::OpPicker { .. } => ModalRectMode::OpPicker,
             Self::RolePicker { state }
             | Self::RoleOverridePicker { state }
@@ -210,7 +212,7 @@ impl<
             Self::ErrorPopup { .. } => footer_items_for_mode(ModalFooterMode::ErrorPopup),
             Self::ContainerInfo { .. } => footer_items_for_mode(ModalFooterMode::ContainerInfo),
             Self::StatusPopup { .. } => footer_items_for_mode(ModalFooterMode::StatusPopup),
-            Self::OpPicker { state } => footer_items_for_mode(state.footer_mode(true)),
+            Self::OpPicker { state, .. } => footer_items_for_mode(state.footer_mode(true)),
             Self::RolePicker { .. }
             | Self::RoleOverridePicker { .. }
             | Self::AuthRolePicker { .. } => {

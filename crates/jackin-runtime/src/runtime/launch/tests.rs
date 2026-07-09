@@ -2,6 +2,9 @@
 #![allow(clippy::too_many_lines, unused_qualifications)]
 use super::super::test_support::FakeRunner;
 use super::*;
+use crate::runtime::launch::launch_runtime::{
+    debug_runtime_envs_for, run_runtime_envs, run_runtime_envs_for, telemetry_runtime_envs_for,
+};
 use jackin_config::AppConfig;
 use std::collections::HashMap;
 
@@ -686,7 +689,7 @@ async fn sibling_auth_prewarm_records_timing() {
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let manifest_temp = tempdir().unwrap();
     std::fs::write(
         manifest_temp.path().join("jackin.role.toml"),
@@ -715,29 +718,26 @@ plugins = []
         role_key: "agent-smith",
     };
 
-    spawn_sibling_auth_prewarm(
+    let prewarm_handle = spawn_sibling_auth_prewarm(
         &paths,
         "jk-agent-smith",
         &prewarm,
         jackin_core::agent::Agent::Claude,
-    );
+    )
+    .expect("expected sibling auth prewarm task");
 
-    for _ in 0..20 {
-        let jsonl = std::fs::read_to_string(run.path()).unwrap();
-        if jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\"") {
-            assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
-            assert!(jsonl.contains("PrewarmOnly"), "{jsonl}");
-            assert!(jsonl.contains("sibling_auth_prewarm:codex"), "{jsonl}");
-            assert!(jsonl.contains("\"kind\":\"timing_done\""), "{jsonl}");
-            assert!(jsonl.contains("sibling_auth_prewarm"), "{jsonl}");
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-    }
-    panic!(
-        "sibling auth prewarm did not finish: {}",
-        std::fs::read_to_string(run.path()).unwrap()
+    prewarm_handle.await.unwrap();
+    drop(active);
+    let jsonl = std::fs::read_to_string(run.path()).unwrap();
+    assert!(
+        jsonl.contains("\"kind\":\"sibling_auth_prewarm_done\""),
+        "{jsonl}"
     );
+    assert!(jsonl.contains("\"kind\":\"launch_plan\""), "{jsonl}");
+    assert!(jsonl.contains("PrewarmOnly"), "{jsonl}");
+    assert!(jsonl.contains("sibling_auth_prewarm:codex"), "{jsonl}");
+    assert!(jsonl.contains("\"kind\":\"timing_done\""), "{jsonl}");
+    assert!(jsonl.contains("sibling_auth_prewarm"), "{jsonl}");
 }
 
 #[tokio::test]
@@ -1863,6 +1863,13 @@ fn dind_env_from_run_cmd(run_cmd: &str) -> String {
         .to_owned()
 }
 
+fn compat_dind_load_options() -> LoadOptions {
+    LoadOptions {
+        docker_profile: Some(crate::runtime::docker_profile::DockerSecurityProfile::Compat),
+        ..LoadOptions::default()
+    }
+}
+
 #[test]
 fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
     let passthrough = host_runtime_passthrough_env([
@@ -1886,21 +1893,54 @@ fn host_runtime_passthrough_env_keeps_only_explicit_runtime_knobs() {
 }
 
 #[test]
-fn debug_runtime_envs_include_run_id_and_host_diagnostics_path() {
+fn runtime_envs_split_run_id_from_persisted_diagnostics_path() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, true, "load").unwrap();
     let _guard = run.activate();
 
-    let envs = debug_runtime_envs(true);
+    let run_envs = run_runtime_envs();
+    let debug_envs = debug_runtime_envs(true);
 
-    assert!(envs.contains(&"JACKIN_DEBUG=1".to_owned()));
-    assert!(envs.contains(&format!("JACKIN_RUN_ID={}", run.run_id())));
-    assert!(envs.contains(&format!(
+    assert_eq!(run_envs, vec![format!("JACKIN_RUN_ID={}", run.run_id())]);
+    assert!(debug_envs.contains(&"JACKIN_DEBUG=1".to_owned()));
+    assert!(
+        !debug_envs
+            .iter()
+            .any(|env| env.starts_with("JACKIN_RUN_ID="))
+    );
+    assert!(debug_envs.contains(&format!(
         "JACKIN_RUN_DIAGNOSTICS_PATH={}",
         run.path().display()
     )));
+}
+
+#[test]
+fn debug_runtime_envs_omit_nonpersisted_diagnostics_path() {
+    let envs = debug_runtime_envs_for(true, None);
+
+    assert_eq!(envs, vec!["JACKIN_DEBUG=1".to_owned()]);
+    assert_eq!(
+        run_runtime_envs_for(Some("jk-run-backend")),
+        vec!["JACKIN_RUN_ID=jk-run-backend".to_owned()]
+    );
+}
+
+#[test]
+fn telemetry_runtime_envs_forward_effective_level_to_capsule() {
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Info),
+        vec!["JACKIN_TELEMETRY_LEVEL=info".to_owned()]
+    );
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Debug),
+        vec!["JACKIN_TELEMETRY_LEVEL=debug".to_owned()]
+    );
+    assert_eq!(
+        telemetry_runtime_envs_for(jackin_diagnostics::TelemetryLevel::Trace),
+        vec!["JACKIN_TELEMETRY_LEVEL=trace".to_owned()]
+    );
 }
 
 #[tokio::test]
@@ -2010,7 +2050,7 @@ plugins = ["code-review@claude-plugins-official"]
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
         auto_trust,
         |_, _, _| Ok(()),
     )
@@ -3395,7 +3435,7 @@ plugins = []
         "workspace mode without --rebuild must not pass --pull"
     );
     assert!(
-        build_cmd.contains("--label jackin.image.recipe.version=v8"),
+        build_cmd.contains("--label jackin.image.recipe.version=v9"),
         "workspace build must stamp recipe version label; got: {build_cmd}"
     );
     assert!(
@@ -3407,6 +3447,75 @@ plugins = []
     assert!(
         build_cmd.contains("--label jackin.manifest.version="),
         "workspace build must stamp the manifest version label; got: {build_cmd}"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_cleans_up_sidecar_when_derived_build_fails() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let selector = RoleSelector::new(None, "agent-smith");
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+    runner.fail_with.push((
+        "buildx build ".to_owned(),
+        "derived build failed".to_owned(),
+    ));
+
+    let repo_dir = jackin_manifest::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:0.1-trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    )
+    .unwrap();
+
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    let error = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&repo_dir),
+        &docker,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("derived build failed"),
+        "unexpected error: {error:#}"
+    );
+    let docker_recorded = docker.recorded.borrow();
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call.starts_with("docker rm -f jk-") && call.ends_with("-dind")),
+        "DinD cleanup missing after build failure: {docker_recorded:?}"
+    );
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call.starts_with("docker volume rm jk-")),
+        "cert volume cleanup missing after build failure: {docker_recorded:?}"
+    );
+    assert!(
+        docker_recorded
+            .iter()
+            .any(|call| call.starts_with("docker network rm jk-")),
+        "network cleanup missing after build failure: {docker_recorded:?}"
     );
 }
 
@@ -3538,13 +3647,6 @@ plugins = []
     docker
         .inspect_image_labels_queue
         .borrow_mut()
-        .push_back(HashMap::from([(
-            crate::runtime::naming::LABEL_IMAGE_ROLE_GIT_SHA.to_owned(),
-            "old-sha".to_owned(),
-        )]));
-    docker
-        .inspect_image_labels_queue
-        .borrow_mut()
         .push_back(labels);
     let mut runner = FakeRunner::for_load_agent([
         "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
@@ -3578,29 +3680,29 @@ plugins = []
     );
     assert!(
         !recorded.contains("gh auth token"),
-        "refresh-background decision must skip GitHub token lookup; recorded:\n{recorded}"
+        "reuse decision must skip GitHub token lookup; recorded:\n{recorded}"
     );
     assert!(
         !recorded.contains("docker run --rm --entrypoint"),
-        "refresh-background decision must skip foreground version probe; recorded:\n{recorded}"
+        "reuse decision must skip foreground version probe; recorded:\n{recorded}"
     );
     assert!(
         !recorded.contains("agent_binary_resolve_started"),
-        "refresh-background decision must skip runtime binary preparation; recorded:\n{recorded}"
+        "reuse decision must skip runtime binary preparation; recorded:\n{recorded}"
     );
 
     let docker_recorded = docker.recorded.borrow();
     assert!(
-        docker_recorded
+        !docker_recorded
             .iter()
             .any(|call| call == "docker pull docker.io/myorg/my-role:latest"),
-        "refresh-background decision must check published image freshness: {docker_recorded:?}"
+        "reuse decision must not check published image freshness in the foreground: {docker_recorded:?}"
     );
     assert!(
         docker_recorded
             .iter()
             .any(|call| call == &format!("docker inspect image:{image}")),
-        "refresh-background decision must inspect valid local recipe labels: {docker_recorded:?}"
+        "reuse decision must inspect valid local recipe labels: {docker_recorded:?}"
     );
 }
 
@@ -3815,7 +3917,7 @@ async fn load_agent_cleans_up_when_parallel_sidecar_start_fails() {
         &repo_workspace(&cached_repo.repo_dir),
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap_err();
@@ -4413,6 +4515,130 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
             .iter()
             .any(|call| call == &format!("docker network rm {prewarm_net}")),
         "adopted prewarm network must be torn down; recorded: {recorded:?}"
+    );
+}
+
+#[tokio::test]
+async fn load_agent_grant_validation_failure_tears_down_adopted_dind() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    config.docker.grants = Some(jackin_core::DockerGrants {
+        user: Some("root".to_owned()),
+        sudo: Some(true),
+        ..Default::default()
+    });
+
+    let selector = RoleSelector::new(None, "agent-smith");
+    let agent = jackin_core::agent::Agent::Claude;
+    let cached_repo = jackin_manifest::repo::CachedRepo::new(&paths, &selector);
+    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
+    let image = crate::runtime::naming::image_name(&selector, None);
+    let labels = crate::runtime::image::image_recipe_label_map_for_test(
+        &cached_repo,
+        &validated_repo,
+        agent,
+        Some("abc123"),
+        None,
+        None,
+        "0",
+    );
+
+    let prewarm_dind = "jk-prewarm-grants-dind";
+    let prewarm_net = "jk-prewarm-grants-net";
+    let prewarm_certs = "jk-prewarm-grants-certs";
+    write_prewarmed_dind_state(
+        &paths,
+        &DindSidecarPrewarm {
+            dind: prewarm_dind.to_owned(),
+            network: prewarm_net.to_owned(),
+            certs_volume: prewarm_certs.to_owned(),
+            ready_ms: 12,
+            kept: true,
+        },
+    )
+    .unwrap();
+
+    let docker = crate::runtime::test_support::FakeDockerClient::default();
+    docker
+        .list_image_tags_queue
+        .borrow_mut()
+        .push_back(vec![image.clone()]);
+    docker
+        .inspect_image_labels_queue
+        .borrow_mut()
+        .push_back(labels);
+    docker
+        .inspect_state_by_name
+        .borrow_mut()
+        .insert(prewarm_dind.to_owned(), ContainerState::Running);
+    let mut network_labels = HashMap::new();
+    network_labels.insert("jackin.kind".to_owned(), "prewarm-dind".to_owned());
+    network_labels.insert("jackin.prewarm".to_owned(), "true".to_owned());
+    docker.inspect_network_queue.borrow_mut().push_back(Some(
+        jackin_docker::docker_client::NetworkRow {
+            name: prewarm_net.to_owned(),
+            labels: network_labels,
+        },
+    ));
+    docker
+        .exec_capture_queue
+        .borrow_mut()
+        .push_back(String::new());
+    docker
+        .exec_capture_queue
+        .borrow_mut()
+        .push_back(String::new());
+
+    let mut runner = FakeRunner::for_load_agent([
+        "https://github.com/jackin-project/jackin-agent-smith.git".to_owned(),
+        String::new(),
+        "main".to_owned(),
+        "abc123".to_owned(),
+    ]);
+    let opts = LoadOptions {
+        agent: Some(agent),
+        ..LoadOptions::default()
+    };
+
+    let result = load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &repo_workspace(&cached_repo.repo_dir),
+        &docker,
+        &mut runner,
+        &opts,
+    )
+    .await;
+
+    let error = result.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("docker grants validation failed"),
+        "unexpected error: {error:#}"
+    );
+    let recorded = docker.recorded.borrow();
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker rm -f {prewarm_dind}")),
+        "adopted prewarm DinD must be torn down after grant validation failure; recorded: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker volume rm {prewarm_certs}")),
+        "adopted prewarm cert volume must be torn down after grant validation failure; recorded: {recorded:?}"
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|call| call == &format!("docker network rm {prewarm_net}")),
+        "adopted prewarm network must be torn down after grant validation failure; recorded: {recorded:?}"
     );
 }
 
@@ -5093,11 +5319,12 @@ plugins = []
         .iter()
         .find(|call| call.contains("buildx build "))
         .unwrap();
-    // Workspace mode with rebuild=true passes --pull and must NOT use the
-    // published image as base.
+    // A stale published image falls back to a workspace role-base build, but it
+    // is not an operator-requested rebuild: keep Docker's layer cache and do
+    // not use the stale published image as base.
     assert!(
-        build_cmd.contains("--pull"),
-        "workspace rebuild must pass --pull; got: {build_cmd}"
+        !build_cmd.contains("--pull"),
+        "published-stale fallback should preserve layer cache; got: {build_cmd}"
     );
     assert!(
         !build_cmd.contains("docker.io/myorg/my-role:latest"),
@@ -5357,7 +5584,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -5442,7 +5669,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -5483,7 +5710,7 @@ plugins = []
     assert!(dind_spec.privileged, "DinD must run privileged");
     let expected_network = dind.strip_suffix("-dind").unwrap().to_owned() + "-net";
     assert_eq!(dind_spec.network, expected_network);
-    assert_eq!(dind_spec.image, "docker:dind");
+    assert_eq!(dind_spec.image, "docker:29-dind");
 
     // Role container: TLS client config
     let run_cmd = runner
@@ -5563,7 +5790,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -5681,7 +5908,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -5934,7 +6161,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -5996,7 +6223,7 @@ plugins = []
         &workspace,
         &docker,
         &mut runner,
-        &LoadOptions::default(),
+        &compat_dind_load_options(),
     )
     .await
     .unwrap();
@@ -6761,11 +6988,11 @@ async fn load_agent_injects_op_cli_resolved_value() {
     std::fs::create_dir_all(&bin_dir).unwrap();
     let bin_path = bin_dir.join("op");
     // The resolver first runs `op --version` as a reachability probe
-    // when any value carries an OpRef, then calls `op read op://...`
+    // when any value carries an OpRef, then calls `op read -- op://...`
     // with the canonical UUID URI. The fake must handle both.
     std::fs::write(
             &bin_path,
-            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"op://abc-vault/abc-item/api-token\" ]; then printf '%s' 'resolved-op-token'; exit 0; fi\nexit 99\n",
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo '2.30.0'; exit 0; fi\nif [ \"$1\" = \"read\" ]; then\n  for arg in \"$@\"; do\n    if [ \"$arg\" = \"op://abc-vault/abc-item/api-token\" ]; then printf '%s' 'resolved-op-token'; exit 0; fi\n  done\nfi\nexit 99\n",
         )
         .unwrap();
     let mut perms = std::fs::metadata(&bin_path).unwrap().permissions();
@@ -7116,12 +7343,13 @@ fn image_materialization_plan_uses_image_decision() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
 
     emit_image_materialization_plan(true, "recipe_hash_match", false, "jk-new");
     emit_image_materialization_plan(true, "published_image_stale", false, "jk-refresh");
     emit_image_materialization_plan(false, "hooks_hash_changed", true, "jk-recreate");
 
+    drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("CreateFromValidImage"), "{jsonl}");
     assert!(
@@ -7152,7 +7380,7 @@ async fn current_restore_candidate_lookup_records_timing() {
     );
     write_indexed_manifest(&paths, &manifest);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -7172,6 +7400,7 @@ async fn current_restore_candidate_lookup_records_timing() {
 
     // D13: launch never reconnects to a live instance → resolve returns None
     assert_eq!(resolution, None);
+    drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         jsonl.contains("current_restore_candidate")
@@ -7258,7 +7487,7 @@ async fn single_running_current_role_candidate_is_skipped_before_agent_selection
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &manifest);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -7276,6 +7505,7 @@ async fn single_running_current_role_candidate_is_skipped_before_agent_selection
     .unwrap();
 
     assert_eq!(candidate, None);
+    drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         jsonl.contains("launch_never_reconnects_to_live_instance"),
@@ -7302,7 +7532,7 @@ async fn single_stopped_current_role_candidate_starts_before_agent_selection() {
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &manifest);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 0,
@@ -7328,6 +7558,7 @@ async fn single_stopped_current_role_candidate_starts_before_agent_selection() {
             container_name.to_owned()
         ))
     );
+    drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("StartStopped"), "{jsonl}");
     assert!(
@@ -7356,7 +7587,7 @@ async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
     manifest.mark_status(InstanceStatus::RestoreAvailable);
     write_indexed_manifest(&paths, &manifest);
     let run = jackin_diagnostics::RunDiagnostics::start(&paths, false, "load").unwrap();
-    let _active = run.activate();
+    let active = run.activate();
     let docker = crate::runtime::test_support::FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::NotFound])),
         ..Default::default()
@@ -7379,6 +7610,7 @@ async fn single_missing_current_role_candidate_recreates_with_recorded_agent() {
         candidate.resolution,
         RestoreResolution::RecreateCurrentRole(container_name.to_owned())
     );
+    drop(active);
     let jsonl = std::fs::read_to_string(run.path()).unwrap();
     assert!(
         jsonl.contains("single_current_role_agent_container_missing"),
