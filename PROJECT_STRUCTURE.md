@@ -2,6 +2,8 @@
 
 Quick nav for AI agents and human contributors. **Canonical detailed module map lives in docs** ([`reference/getting-oriented/codebase-map`](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/), served from [docs/content/docs/reference/getting-oriented/codebase-map.mdx](docs/content/docs/reference/getting-oriented/codebase-map.mdx)). This file is the short pointer agents land on first; covers **multi-repo ecosystem** and per-PR **code ↔ docs contract**, sends you to docs for rest.
 
+**For what a specific crate is for, its tier/allowed dependencies, its `src/` structure, and its public API, read that crate's `README.md` and `AGENTS.md` directly** — they are the authoritative, always-current per-crate record (every `crates/*/` member carries both, plus a `CLAUDE.md` symlink, enforced by `cargo xtask lint agents`). The Codebase Map is the ecosystem/tier overview; the per-crate detail lives in the crate that owns it.
+
 ## What this file is for
 
 - **Ecosystem table** below — which repo owns what.
@@ -12,7 +14,7 @@ Deeper questions — module layout, what each `src/` subdir owns, where to start
 
 | Question | Page |
 |---|---|
-| "Where does the code for X live?" | [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/) (mirrored at [docs/content/docs/reference/getting-oriented/codebase-map.mdx](docs/content/docs/reference/getting-oriented/codebase-map.mdx)) |
+| "Where does the code for X live? / what does crate Y do?" | That crate's `crates/<crate>/README.md` + `AGENTS.md` (authoritative, always-current); [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/) for the ecosystem/tier overview |
 | "How does jackin❯ orchestrate containers?" | [Architecture](https://jackin.tailrocks.com/reference/getting-oriented/architecture/) |
 | "How do instance identity, restore, and parallel sessions work?" | [Runtime Instance Model](https://jackin.tailrocks.com/reference/runtime/runtime-instance-model/) |
 | "What does `~/.config/jackin/config.toml` look like?" | [Configuration File](https://jackin.tailrocks.com/reference/runtime/configuration/) |
@@ -129,8 +131,8 @@ Changing behaviour: update both sides in same PR. This table = **per-PR contract
 | [crates/jackin-image/src/image_recipe.rs](crates/jackin-image/src/image_recipe.rs) (Dockerfile gen) | `docs/.../developing/construct-image.mdx` |
 | [crates/jackin-manifest/src/repo.rs](crates/jackin-manifest/src/repo.rs) / role repo validation paths | `docs/.../guides/role-repos.mdx` |
 | [docker/construct/Dockerfile](docker/construct/Dockerfile) | `docs/.../developing/construct-image.mdx` |
-| Module structure in [crates/](crates/) (added/split/renamed module) | `docs/.../reference/getting-oriented/codebase-map.mdx` |
+| Module structure in [crates/](crates/) (added/split/renamed module) | The affected `crates/<crate>/README.md` (see [`crates/AGENTS.md`](crates/AGENTS.md) "Per-crate README + AGENTS.md" rule) and `docs/.../reference/getting-oriented/codebase-map.mdx` |
 
 ## Keeping the docs fresh
 
-Codebase Map and cross-reference table above = two places structural changes show up first. If your PR adds new module directory, splits file into subdir, introduces new cross-cutting helper, or renames public surface — **update `docs/.../reference/getting-oriented/codebase-map.mdx` and (if relevant) cross-reference table above in same PR**. See [`TODO.md`](TODO.md) for stale-docs check every structural PR runs.
+Per-crate `README.md`, the Codebase Map, and the cross-reference table above = the places structural changes show up first. If your PR adds a new module directory, splits a file into a subdir, introduces a new cross-cutting helper, or renames a public surface — **update the affected `crates/<crate>/README.md` (always-current per-crate record), `docs/.../reference/getting-oriented/codebase-map.mdx`, and (if relevant) the cross-reference table above in the same PR**. See [`crates/AGENTS.md`](crates/AGENTS.md) for the README-update rule and [`TODO.md`](TODO.md) for the stale-docs check every structural PR runs.
