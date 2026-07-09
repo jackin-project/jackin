@@ -38,7 +38,7 @@ The project is pre-release, so large restructures are acceptable. The priority i
 ### PR-time gates to promote after dry run
 
 1. **Feature powerset gate**: move at least a scoped `cargo hack check --workspace --feature-powerset --all-targets --locked` lane from scheduled-only hygiene into PR CI, starting with crates that actually expose optional behavior.
-2. **Rustdoc doctests**: add `cargo test --doc --workspace --locked` to PR CI if the current scheduled job is green enough to promote.
+2. **Rustdoc documentation tests**: add `cargo test --doc --workspace --locked` to PR CI if the current scheduled job is green enough to promote.
 3. **Deny advisories parity**: run `cargo deny check advisories` in PR dependency policy so `deny.toml`, `.cargo/audit.toml`, yanked policy, and advisory ignores cannot drift until scheduled hygiene.
 4. **Snapshot hygiene**: pin `cargo-insta` or add a cheap pending-snapshot/diff gate so TUI snapshot changes cannot leave `*.pending-snap` files or unreviewed `.snap` diffs behind.
 
