@@ -112,7 +112,7 @@ Same treatment: `test-layout-allowlist.toml` → presence family `test-layout`; 
 
 ### Step 4: New report-only family: agent-doc tokens
 
-Add family `agent-doc-bytes` (provider from plan 010's agent-doc measurement; entries = the byte counts of root AGENTS.md, crates/AGENTS.md, and each per-crate AGENTS.md, seeded from `code-health-baseline.toml`). Mark it `mode = "report"` in the schema (new field: `enforce` default true; `report` families print deltas but never fail) — the roadmap says budgets start advisory. This proves the engine handles a third metric kind and gives Phase 6's context-economy budget its first data.
+Add family `agent-doc-bytes` (provider from plan 010's agent-doc measurement; entries = the byte counts of root AGENTS.md, crates/AGENTS.md, each per-crate AGENTS.md, each `crates/*/README.md`, and each crate's `lib.rs`/`main.rs` leading `//!` block — all three surfaces roadmap Phase 6 item 7 names, and all already measured by 010's Step 1.5 provider — seeded from `code-health-baseline.toml`). Mark it `mode = "report"` in the schema (new field: `enforce` default true; `report` families print deltas but never fail) — the roadmap says budgets start advisory. This proves the engine handles a third metric kind and gives Phase 6's context-economy budget its first data.
 
 **Verify**: `cargo run -p jackin-xtask -- lint ratchet` output includes an `agent-doc-bytes (report-only)` section; gate still exits 0.
 

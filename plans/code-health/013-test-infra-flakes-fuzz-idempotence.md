@@ -114,6 +114,8 @@ In `.github/workflows/rust-nextest.yml`:
               | sed -E 's/<testcase name="([^"]*)".*time="([0-9.]*)"/\2 \1/' \
               | sort -rn | head -10 | awk '{printf "- %ss `%s`\n", $1, $2}' >> "$GITHUB_STEP_SUMMARY"
           fi
+
+Also append per-shard TOTAL wall time to the same summary (sum the junit `time` attributes, or the workflow step duration). Then, once this PR's CI has run, seed the Phase 0 baseline: if `code-health-baseline.toml` exists (plan 010), replace its commented `suite-wall-time` pointer row with the measured per-shard totals from this PR's run (a hand-seeded dated entry — the roadmap's fifth baseline family; the Phase 7 engine later automates the recompute). If 010 has not landed, record the totals in the PR body and this plan's README row instead.
 ```
 
 3. Add a flake gate to the run step: nextest marks flaky tests in the junit as `flaky="true"` retries; after the run, fail if any flaky test is not listed in `flaky-tests.toml`:
