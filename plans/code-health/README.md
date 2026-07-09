@@ -71,7 +71,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [028](028-dependency-hygiene-sweep.md) | Dependency hygiene: turso store boundary, ring exception, pin rationale | 1 | P3 | M | IN PROGRESS |
 | [029](029-docs-drift-reconciliation.md) | Docs drift: README links, Apple status, reserved envs, capsule README, codebase map | 5 | P3 | M | DONE (reviewed; `exec-plan-029` @ `f5122448e`, unmerged; reserved list is 19 names — plan's 20 overcounted `JACKIN_OPEN_LINKS`, which is deliberately settable) |
 | [030](030-console-view-model-structs.md) | Console editor/settings view-model structs (kills the 42-site type_complexity cluster) | 2 | P2 | M-L | TODO |
-| [031](031-op-probe-typed-error.md) | Typed `op` probe errors (`OpProbeError` in jackin-core; downcast classification) | 2 | P2 | M | IN PROGRESS |
+| [031](031-op-probe-typed-error.md) | Typed `op` probe errors (`OpProbeError` in jackin-core; downcast classification) | 2 | P2 | M | DONE (reviewed; `exec-plan-031` @ `8c0c41827`, unmerged; transport needed zero console changes — the load-result channel already carried `anyhow::Result`) |
 | [032](032-daemon-console-behavioral-specs.md) | Behavioral specs: capsule daemon + operator console (cite-or-MISSING) | 3 | P2 | M-L | TODO |
 
 ### Sixth wave — roadmap-coverage gap closure
@@ -103,7 +103,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [050](050-readme-freshness-gate.md) | README-freshness gate (structural src change ⇒ README touched same PR) | 5 | P2 | S-M | TODO |
 | [051](051-xtask-gate-reporter-core.md) | Machine-readable gate output core (human\|json\|github reporter; 2 exemplar gates) | 6 | P2 | S-M | TODO |
 | [052](052-dylint-scaffold-render-purity.md) | dylint scaffold: `crates/jackin-lints` + render-thread-purity lint, advisory nightly lane | 1 | P3 | M | TODO |
-| [053](053-tui-half-layer-spike.md) | TUI half-layer spike: prototype shared View dispatcher, finish-or-drop verdict | 2 | P3 | S-M | TODO |
+| [053](053-tui-half-layer-spike.md) | TUI half-layer spike: prototype shared View dispatcher, finish-or-drop verdict | 2 | P3 | S-M | IN PROGRESS |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 
