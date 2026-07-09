@@ -132,7 +132,7 @@ The deny-wall gets stricter every phase, which raises the cost of surprises arri
 1. **Beta-toolchain clippy canary.** A scheduled lane runs `cargo clippy --all-targets --all-features` (and optionally the test suite) on the next Rust beta, so new lints, lint renames, and behavior changes surface weeks before the pinned toolchain moves. Fixes or `#[expect]`s land ahead of the upgrade instead of blocking it; on a deny-by-default workspace, a toolchain bump should be a planned chore, never a surprise red main.
 2. **Workflow security lint.** Add [zizmor](https://github.com/zizmorcore/zizmor) beside the existing `actionlint` gate: template injection, credential persistence, mutable `uses:` references, and excessive `permissions:` across `.github/workflows/`. The workflows are code an agent edits; lint them like code.
 3. **Secret scanning.** Run [gitleaks](https://github.com/gitleaks/gitleaks) over the tree and each PR's commits. jackin❯ forwards real credentials (`op`, `gh`, agent auth) through env and config surfaces, and agent-authored fixtures are the likeliest leak vector; a committed token is a revocation incident even when review catches it. This is the commit-side half of the risk; the Phase 3 telemetry-redaction policy tests cover the runtime side.
-4. **Dependency review beyond advisories.** `cargo deny`/`cargo audit` catch *known-bad*; they say nothing about unreviewed code. Trial [cargo-vet](https://mozilla.github.io/cargo-vet/) as an advisory lane in exemptions-heavy mode, importing shared audits (Mozilla, Google, kernel) so the marginal cost of an explicit audit record per new/updated dependency stays near zero. Promote to a gate only if audit-import coverage proves the burden negligible.
+4. **Dependency review beyond advisories.** `cargo deny`/`cargo audit` catch *known-bad*; they say nothing about unreviewed code. <RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile> records a deliberate cargo-vet/cargo-crev no-adopt while jackin❯ is solo-maintainer; this item is that decision's named revisit trigger. Trial [cargo-vet](https://mozilla.github.io/cargo-vet/) as an advisory lane in exemptions-heavy mode, importing shared audits (Mozilla, Google, kernel) so the marginal cost of an explicit audit record per new/updated dependency stays near zero. Promote to a gate only if audit-import coverage proves the burden negligible, and update the AGENTS entry when the trial starts.
 5. **Auditable binaries.** Build releases with [cargo-auditable](https://github.com/rust-secure-code/cargo-auditable) so the exact dependency graph is embedded in the shipped binary and `cargo audit bin` works on artifacts in the wild — the binary-side complement of the syft SBOM the release pipeline already produces.
 
 ## Phase 2 — Restructure crate and module ownership
@@ -281,7 +281,7 @@ jackin❯ already streams every run to an OpenTelemetry backend keyed by a run i
 
 The substrate is real and stays: OTLP/gRPC export is a default feature of the binary (spans, a tracing→logs bridge, and a periodic metrics reader with process CPU/memory, tokio runtime gauges, and cache counters), launch stages export as spans carrying `otel.name = launch.<stage>` with `ERROR` status on failure, every console screen opens a root trace span-linked to the previous screen, `traceparent` propagates host→capsule, the JSONL event schema already carries `event.name`/`event.outcome`/`jackin.component`/`jackin.operation`/`jackin.category`, `JACKIN_OTEL_INTERNAL` gates dependency-internal export, `JACKIN_TELEMETRY_LEVEL`/`JACKIN_TELEMETRY_CATEGORIES` exist beside `JACKIN_DEBUG`, both host and capsule install panic hooks that bridge an `ERROR` record and flush on exit, and a wrong OTLP protocol is a fatal `E016` instead of silent non-delivery. The remaining program is convergence and discipline, not a green field:
 
-1. **One telemetry facade over the two macro stacks.** The capsule logs through `clog!`/`cdebug!` into a plain-text `multiplexer.log` (`jackin-usage`) while the host logs through `debug_log!` into the JSONL run (`jackin-diagnostics`) — different macros, prefixes, sinks, and files, joined only by a path pointer in the `container_started` event. Unify behind the dossier's typed operation API (`operation_span` / `operation_log` / `operation_error` / `operation_metric`) with per-sink renderers, adopted at the shared choke points first — `ShellRunner`, the HTTP/download helpers, Docker lifecycle calls, the launch stage/timing API, and the capsule attach/session state machine — so every long or failure-prone operation gets a stably named span, a typed outcome (`success`, `failure`, `timeout`, `cancelled`, `cache_hit`, `expected_close`), a duration, and low-cardinality attributes on both sides of the container boundary. Console keeps its bracket prefixes at the rendering boundary; exported bodies are concise text over structured fields. The two-tier rule in <RepoFile path="ENGINEERING.md">ENGINEERING.md</RepoFile> is rewritten to the layered model in the same PR that lands this.
+1. **One telemetry facade over the two macro stacks.** The capsule logs through `clog!`/`cdebug!` into a plain-text `multiplexer.log` (`jackin-usage`) while the host logs through `debug_log!` into the JSONL run (`jackin-diagnostics`) — different macros, prefixes, sinks, and files, joined only by a path pointer in the `container_started` event. Unify behind the dossier's typed operation API (`operation_span` / `operation_log` / `operation_error` / `operation_metric`) with per-sink renderers, adopted at the shared choke points first — `ShellRunner`, the HTTP/download helpers, Docker lifecycle calls, the launch stage/timing API, and the capsule attach/session state machine — so every long or failure-prone operation gets a stably named span, a typed outcome (`success`, `failure`, `timeout`, `cancelled`, `cache_hit`, `expected_close`), a duration, and low-cardinality attributes on both sides of the container boundary. Console keeps its bracket prefixes at the rendering boundary; exported bodies are concise text over structured fields. The two-tier rule in <RepoFile path="ENGINEERING.md">ENGINEERING.md</RepoFile> — and the per-crate AGENTS rules that pin the current macro contract — are rewritten to the layered model in the same PR that lands this.
 2. **Layered verbosity with per-sink filters.** Finish retiring the binary `--debug`/`JACKIN_DEBUG` as a telemetry control in favor of `JACKIN_TELEMETRY_LEVEL=info|debug|trace` plus `JACKIN_TELEMETRY_CATEGORIES` (the level/category plumbing exists; the launch path still injects `JACKIN_DEBUG=1` into containers), and give each sink — console, diagnostics file, OTLP logs, OTLP spans — its own filter so console compactness and backend richness stop being one knob. `TRACE` owns the byte/frame/keypress firehose; `DEBUG` answers "why did it choose this path" (cache decisions, plan selection, retry summaries, config-source resolution); `INFO` alone must reconstruct a normal launch on the backend's run page.
 3. **Correlation must survive without a backend.** Cross-screen links, session ids, and `traceparent` propagation are compiled and active only on the OTLP path today, the JSONL `trace_id` is just the run id, and `multiplexer.log` lines carry no run/session context — so the default file-mode story cannot be stitched. Weave run/session/trace context into the file sinks, make the JSONL carry real trace/span ids, and collapse the duplicated host-vs-capsule OTLP layer construction (the code itself warns the two init paths must be edited in tandem) into one shared builder so they cannot drift.
 4. **Trace shape: inherited context and linked subtraces everywhere.** Logs emitted inside a stage must inherit the active span context — a launch trace showing `Logs: 0` is the defect — and the shipped screen/launch/capsule link model extends to the remaining big subsystems: launch ↔ BuildKit/buildx build, capsule session ↔ agent sessions, usage refresh ↔ provider probes, all via standard OTel span links (backends may derive parent-trace navigation fields from them). Dependency-internal spans (`emit_insn`, storage-engine loops) stay out of default export now that `JACKIN_OTEL_INTERNAL` is the opt-in.
@@ -292,18 +292,132 @@ The substrate is real and stays: OTLP/gRPC export is a default feature of the bi
 9. **Semconv registry and a telemetry conformance suite as the gate.** A workspace semconv-style constants module becomes the single source for attribute/event/metric names so they cannot drift per crate, and a conformance lane runs a standard launch against an in-process OTLP capture exporter asserting the dossier's acceptance checks as tests: no `[jackin debug` bodies, no token-shaped values, bounded span-name cardinality, `ERROR` on forced failure, logs correlated to their spans, default-mode `DEBUG` volume within budget. That per-run export-volume budget joins the Phase 7 ratchet engine so the firehose cannot creep back, and the Phase 1 dylint telemetry lint enforces the typed API + registry at exporting call sites.
 10. **Run-id and sink contract stays honest.** `parallax.run.id` rides every signal; a wrapper-injected id wins over a self-minted one; the JSONL diagnostics file is the fallback sink only; no surface shows a "reveal diagnostics" path for a file that was never written in OTLP mode; every failure surface prints the backend query (`parallax run <id>`, `parallax logs --run <id>`, or the backend-neutral equivalent). The env-var contract is shipped in the [Run Telemetry](/guides/run-telemetry/) guide; the remaining work is the UI-surface honesty items in the dossier's sink-contract section (the capsule container-context fallback still synthesizes a diagnostics path the host never wrote). Agent-session GenAI telemetry (LLM/MCP spans from the agents themselves) stays tracked in the [platform ideas backlog](/reference/research/backlog/platform-ideas/), not here.
 
-## Closed and superseded roadmap leaves
+### Reference instrumentation shapes
 
-The following old code-health leaves are intentionally retired into this page:
+The canonical shapes every Phase 8 implementation PR copies. They compose the idioms already proven in-tree (the screen-trace link model, `otel.name` on stage spans, the OTel meter API with semconv units) with the Parallax conventions and the playground's bootstrap library. Attribute and event names come from the semconv registry module (item 9); the snippets inline string literals only for readability. Everything here follows one rule: **names are stable and low-cardinality; dynamic values are attributes; big payloads are artifacts.**
 
-- `agent-workflow-cc-sdd` moved to Documentation tooling because it is a workflow/documentation program, not Rust code-health debt.
-- `behavioral-spec-runtime-launch` and `behavioral-spec-op-picker` are resolved into the published specs under [Behavioral Specs](/reference/developer-reference/specs/); remaining linkage chores are small maintenance tasks, not roadmap items.
-- `ci-project-structure-gate`, `developer-reference-setup`, `module-contracts`, `per-directory-readme`, and `pub-crate-visibility` are folded into Phase 0/Phase 5 and suppression/API hygiene work above.
-- `split-runtime-launch`, `split-input-editor`, and `unify-settings-editor-surfaces` are folded into Phase 2.
-- `test-infra-behavioral-specs` is folded into Phase 1/Phase 3.
-- `rustdoc-json-fumadocs` moved to Documentation tooling.
-- `pr-verification` moved to Operator surface.
-- `plans/complexity-debt` is retired because its counts drifted; future work must start from a fresh inventory.
+**An operation span** — one span per long or failure-prone operation, fields declared up front and recorded at completion, error status set through the span (never only body text):
+
+```rust
+use tracing::field::Empty;
+use tracing_opentelemetry::OpenTelemetrySpanExt as _; // set_status / set_attribute
+
+let span = tracing::info_span!(
+    "process.exec",                    // stable name: waterfall-scannable, never interpolated
+    otel.kind = "client",
+    "jackin.component" = "host",
+    "jackin.operation" = "process.exec",
+    "process.command" = %program,      // "docker", "gh" — the program, not the argv
+    "process.args_redacted" = Empty,   // recorded after redaction
+    "process.exit_code" = Empty,
+    "event.outcome" = Empty,           // success | failure | timeout | cancelled | expected_close
+    "error.type" = Empty,              // stable machine key — this drives issue fingerprints
+);
+
+async move {
+    let result = spawn_and_wait(command).await;
+    let span = tracing::Span::current();
+    span.record("process.args_redacted", redact_argv(&argv).as_str());
+    match &result {
+        Ok(output) => {
+            span.record("process.exit_code", output.exit_code);
+            span.record("event.outcome", "success");
+        }
+        Err(err) => {
+            span.record("event.outcome", "failure");
+            span.record("error.type", err.stable_kind()); // "spawn_failed", not err.to_string()
+            span.set_status(opentelemetry::trace::Status::error(err.stable_kind()));
+        }
+    }
+    result
+}
+.instrument(span)
+.await
+```
+
+**A log record** — fields carry the structure, the body stays a short human phrase, and the console renderer (not the exporter) adds bracket prefixes:
+
+```rust
+// Wrong — the current shape: category and facts baked into the exported body,
+// so a backend can only text-search it:
+//   body = "[jackin debug docker] inspect container jk-abc -> running"
+
+// Right — the export carries dimensions; the console layer may still render
+// the bracketed line for humans:
+tracing::debug!(
+    target: "jackin::docker",          // tracing target = per-crate/module filtering for free
+    "event.name" = "docker.container.inspect",
+    "event.outcome" = "success",
+    "jackin.component" = "host",
+    "log.category" = "docker",
+    "container.name" = %name,
+    "container.state" = %state,
+    "container inspected"              // body: concise, prefix-free
+);
+```
+
+**An error that groups** — severity, span status, and a stable `error.type` say "failure"; dynamic identifiers stay attributes so one recurring failure is one issue:
+
+```rust
+tracing::error!(
+    "event.name" = "capsule.attach.failed",
+    "jackin.operation" = "capsule.attach",
+    "jackin.stage" = "attach",
+    "error.type" = "attach_socket_eof", // fingerprint input: stable across runs
+    "container.name" = %container,      // evidence only — never part of the fingerprint
+    "capsule attach failed"
+);
+// …and the active attach span gets Status::error("attach_socket_eof"), so the
+// trace, the log, and the derived issue all agree on the same typed failure.
+```
+
+**A linked subtrace** — the shipped screen→screen pattern generalized: an independent subsystem gets its own trace root, navigably linked to the workflow that caused it:
+
+```rust
+let span = tracing::info_span!("image.build", otel.name = "launch.build_derived_image");
+drop(span.set_parent(opentelemetry::Context::new()));  // detach: this is its own trace root
+span.add_link(parent_span.context().span().span_context().clone()); // parent↔child across traces
+span.set_attribute("build.reason", "capsule_version_changed"); // why the build ran — the question
+                                                               // the trace exists to answer
+```
+
+**Metrics for the hot path** — high-frequency internals are counters/histograms with semconv units, never per-event log rows (the shipped process/tokio gauges already use this meter):
+
+```rust
+let bytes_sent = meter
+    .u64_counter("jackin.terminal.bytes_sent")
+    .with_unit("By")
+    .build();
+let render = meter
+    .f64_histogram("jackin.render.duration")
+    .with_unit("ms")
+    .build();
+
+bytes_sent.add(chunk.len() as u64, &[KeyValue::new("jackin.component", "capsule")]);
+render.record(elapsed_ms, &[KeyValue::new("app.screen.name", screen.as_str())]);
+```
+
+**A feature-flag decision** — config toggles emit an evaluation event so "what was enabled" is a filter, not archaeology (verify field names against the current OTel feature-flag semconv when implementing):
+
+```rust
+tracing::info!(
+    "event.name" = "feature_flag.evaluation",
+    "feature_flag.key" = "isolation.profile",
+    "feature_flag.provider.name" = "jackin-config",
+    "feature_flag.result.variant" = %profile,   // "standard" | "rootless-dind" | …
+    "flag evaluated"
+);
+```
+
+**The conformance assertion** — the item-9 suite runs a launch against an in-process OTLP capture exporter and pins these shapes as tests, so the reference above is enforced, not aspirational:
+
+```rust
+let telemetry = capture.finish();
+assert!(telemetry.log_bodies().all(|b| !b.contains("[jackin debug")));
+assert!(telemetry.all_strings().all(|s| !s.contains(CANARY_TOKEN)));
+assert!(telemetry.span_names().all(|n| semconv::REGISTERED_SPANS.contains(&n)));
+assert_eq!(telemetry.error_logs("attach_socket_eof").count(), 1);
+```
 
 ## Research and prior art
 
