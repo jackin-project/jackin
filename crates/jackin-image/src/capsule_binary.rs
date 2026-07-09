@@ -827,7 +827,7 @@ fn extract_cert_san_url(cert_pem: &str) -> Result<String> {
 
     let cert = Certificate::from_pem(cert_pem.as_bytes()).context("parsing PEM certificate")?;
 
-    for result in cert.tbs_certificate.filter::<SubjectAltName>() {
+    for result in cert.tbs_certificate().filter_extensions::<SubjectAltName>() {
         let (_, san) = result.context("parsing SubjectAltName extension")?;
         for name in &san.0 {
             if let GeneralName::UniformResourceIdentifier(uri) = name {
