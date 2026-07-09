@@ -4,7 +4,7 @@
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
 > report — do not improvise. When done, update the status row for this plan
-> in `plans/security/README.md`.
+> in `security-review/README.md`.
 >
 > **Drift check (run first)**: `git diff --stat a4761957d..HEAD -- Cargo.lock deny.toml .cargo/audit.toml`
 > If `Cargo.lock` already lists `crossbeam-epoch` at `0.9.20` or higher, this
@@ -128,7 +128,7 @@ Machine-checkable. ALL must hold:
 - [ ] `cargo deny check bans licenses sources` → all `ok`
 - [ ] `cargo check --workspace --locked` exits 0
 - [ ] Only `Cargo.lock` is modified (`git status` shows no other file)
-- [ ] `plans/security/README.md` status row updated
+- [ ] `security-review/README.md` status row updated
 
 ## STOP conditions
 
@@ -151,5 +151,5 @@ Stop and report back (do not improvise) if:
   added to an ignore list as a shortcut.
 - Related deps-hygiene follow-ups (stale `ring@0.17.14` license exception,
   duplicated advisory-ignore lists) are tracked separately in
-  `plans/security/README.md` under "considered / deferred" — not part of this
+  `security-review/README.md` under "considered / deferred" — not part of this
   plan.

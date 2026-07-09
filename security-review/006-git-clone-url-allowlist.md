@@ -3,7 +3,7 @@
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving on. If
 > anything in "STOP conditions" occurs, stop and report — do not improvise. When
-> done, update the status row in `plans/security/README.md`.
+> done, update the status row in `security-review/README.md`.
 >
 > **Drift check (run first)**: `git diff --stat a4761957d..HEAD -- crates/jackin-runtime/src/runtime/repo_cache.rs`
 > If it changed, compare the "Current state" excerpts against the live code
@@ -247,7 +247,7 @@ fn clone_args_place_double_dash_before_url() {
 - [ ] Every `runner.run("git", …"clone"…)` site is preceded by a `validate_git_url` call
 - [ ] `cargo nextest run -p jackin-runtime` exits 0; new tests pass
 - [ ] clippy clean; only `repo_cache.rs` (+ its tests.rs) modified
-- [ ] `plans/security/README.md` status row updated
+- [ ] `security-review/README.md` status row updated
 
 ## STOP conditions
 

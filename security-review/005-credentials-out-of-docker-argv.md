@@ -4,7 +4,7 @@
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
 > report — do not improvise. When done, update the status row for this plan
-> in `plans/security/README.md`.
+> in `security-review/README.md`.
 >
 > **Drift check (run first)**: `git diff --stat a4761957d..HEAD -- crates/jackin-runtime/src/runtime/launch/launch_runtime.rs crates/jackin-core/src/env_model.rs`
 > If either changed, compare the "Current state" excerpts against the live code
@@ -303,7 +303,7 @@ Machine-checkable. ALL must hold:
 - [ ] `cargo nextest run -p jackin-core -p jackin-runtime` exits 0; the new tests pass
 - [ ] `cargo clippy -p jackin-core -p jackin-runtime --all-targets --locked -- -D warnings` exits 0
 - [ ] No files outside the in-scope list modified (`git status`)
-- [ ] `plans/security/README.md` status row updated
+- [ ] `security-review/README.md` status row updated
 
 ## STOP conditions
 
@@ -325,7 +325,7 @@ Stop and report back (do not improvise) if:
 ## Maintenance notes
 
 - `is_credential_env_key` is now the canonical secret-key predicate. A strong
-  follow-up (recorded in `plans/security/README.md`) is to unify the three
+  follow-up (recorded in `security-review/README.md`) is to unify the three
   existing predicates (`redact`, `secret_scrub`, `is_sensitive_arg_key`) onto
   this one so they can never disagree — but that is a separate plan; this one
   only introduces the predicate and uses it for argv routing.

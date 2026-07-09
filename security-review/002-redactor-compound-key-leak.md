@@ -4,7 +4,7 @@
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
 > report — do not improvise. When done, update the status row for this plan
-> in `plans/security/README.md`.
+> in `security-review/README.md`.
 >
 > **Drift check (run first)**: `git diff --stat a4761957d..HEAD -- crates/jackin-diagnostics/src/redact.rs crates/jackin-diagnostics/src/redact/tests.rs`
 > If `redact.rs` changed since this plan was written, compare the "Current
@@ -199,7 +199,7 @@ Machine-checkable. ALL must hold:
 - [ ] `cargo nextest run -p jackin-diagnostics` exits 0; the two new tests exist and pass
 - [ ] `cargo clippy -p jackin-diagnostics --all-targets --locked -- -D warnings` exits 0
 - [ ] No files outside the in-scope list modified (`git status`)
-- [ ] `plans/security/README.md` status row updated
+- [ ] `security-review/README.md` status row updated
 
 ## STOP conditions
 
@@ -217,7 +217,7 @@ Stop and report back (do not improvise) if:
 - **Deferred follow-up (not this plan):** fully unify `redact_text` and
   `secret_scrub` onto one implementation so the diagnostics/OTLP sink and the
   key/value scrubber can never disagree again, and add value-shape patterns for
-  provider-specific token prefixes. Tracked in `plans/security/README.md`.
+  provider-specific token prefixes. Tracked in `security-review/README.md`.
 - **Deferred follow-up:** the Phase-3 "telemetry redaction" policy test that
   pushes canary credentials through the real launch/auth code paths (not just
   the redactor unit) belongs with the credential-flow work in plan 006, not
