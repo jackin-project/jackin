@@ -1,10 +1,10 @@
 //! Launch container-info dialog helpers.
 
 use jackin_tui::HintSpan;
-use jackin_tui::centered_rect;
+use jackin_tui::components::ModalRectSpec;
 use jackin_tui::components::{
     ContainerInfoRow, ContainerInfoState, DebugInfo, ModalBackdrop, container_info_required_height,
-    debug_info_hint_spans, dialog_scroll_axes, render_container_info, render_hint_bar,
+    debug_info_hint_spans, dialog_scroll_axes, modal_rect, render_container_info, render_hint_bar,
 };
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -17,7 +17,7 @@ use crate::tui::components::footer::{launch_overlay_chrome_areas, render_footer}
 pub fn launch_container_info_state(
     view: &LaunchView,
     run_id: &str,
-    run_log_path: &str,
+    run_log_path: Option<&str>,
     debug_mode: bool,
     jackin_version: &'static str,
 ) -> ContainerInfoState {
@@ -37,13 +37,23 @@ pub fn launch_container_info_state(
         agent: identity.map(|identity| identity.agent.clone()),
         target: identity.map(|identity| identity.target_label.clone()),
         run_id: debug_mode.then(|| run_id.to_owned()),
-        diagnostics_log_path: debug_mode.then(|| run_log_path.to_owned()),
+        diagnostics_log_path: debug_mode
+            .then_some(run_log_path)
+            .flatten()
+            .map(str::to_owned),
         capsule_version: None,
     };
     let mut state = info.into_state();
-    if debug_mode {
+    if debug_mode && let Some(run_log_path) = run_log_path {
         let href = format!("file://{run_log_path}");
         state.push_row(ContainerInfoRow::new("Reveal diagnostics", run_log_path).hyperlink(href));
+    } else if debug_mode {
+        let endpoint = jackin_diagnostics::configured_endpoint_summary()
+            .unwrap_or_else(|| "OpenTelemetry backend".to_owned());
+        state.push_row(ContainerInfoRow::new(
+            "Telemetry",
+            format!("run {run_id} -> {endpoint}"),
+        ));
     }
     if let Some(row) = view.container_info_copied {
         state.mark_copied(row);
@@ -58,7 +68,7 @@ pub fn render_launch_container_info(
     area: Rect,
     view: &LaunchView,
     run_id: &str,
-    run_log_path: &str,
+    run_log_path: Option<&str>,
     debug_mode: bool,
     jackin_version: &'static str,
 ) {
@@ -87,11 +97,18 @@ pub fn launch_container_info_rect(
     state: &ContainerInfoState,
     debug_mode: bool,
 ) -> Rect {
-    // Structural exception: launch supplies surface width while shared Debug info owns row height and rendering.
     let body = launch_overlay_chrome_areas(area, debug_mode).body;
-    let width = (body.width.saturating_mul(3) / 5).clamp(40, body.width.max(40));
     let height = container_info_required_height(state);
-    centered_rect(width, height.min(body.height), body)
+    modal_rect(
+        body,
+        ModalRectSpec::PercentClampWithMargin {
+            width_pct: 60,
+            min_width: 40,
+            width_margin: 2,
+            height_margin: 2,
+            height,
+        },
+    )
 }
 
 #[cfg(test)]

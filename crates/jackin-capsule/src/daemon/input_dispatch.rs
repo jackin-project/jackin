@@ -284,10 +284,6 @@ impl Multiplexer {
     }
 
     pub(super) fn send_bytes_to_focused_pane(&mut self, bytes: &[u8]) -> bool {
-        // Any operator keystroke dismisses the spawn-failure banner.
-        if self.spawn_failure.take().is_some() {
-            self.invalidate(FullRedrawReason::StatusChange);
-        }
         if self.clear_clipboard_image_notice() {
             self.invalidate(FullRedrawReason::StatusChange);
         }

@@ -68,10 +68,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
 };
 
-use jackin_tui::components::render_dialog_shell;
+use jackin_tui::components::{DialogBorder, render_dialog_shell};
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
-    let inner = render_dialog_shell(frame, area, Some(state.title));
+    let inner = render_dialog_shell(frame, area, Some(state.title), DialogBorder::Default);
 
     // inner area is 3 rows (5 outer − 2 border): blank, button, blank.
     let chunks = Layout::default()
@@ -90,9 +90,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, state: &ScopePickerState) {
         ScopeChoice::AllAgents => 0,
         ScopeChoice::SpecificAgent => 1,
     };
-    jackin_tui::components::ButtonStrip::new(&items)
-        .focused(focused)
-        .render(frame, chunks[1]);
+    frame.render_widget(
+        jackin_tui::components::ButtonStrip::new(&items).focused(focused),
+        chunks[1],
+    );
 }
 
 #[cfg(test)]

@@ -74,6 +74,30 @@ readonly = true
 }
 
 #[test]
+fn deserializes_global_telemetry_config() {
+    let toml_str = r#"
+[telemetry]
+level = "trace"
+categories = ["docker", "launch"]
+"#;
+    let config: AppConfig = toml::from_str(toml_str).unwrap();
+
+    assert_eq!(
+        config.telemetry.level,
+        Some(crate::TelemetryLevelConfig::Trace)
+    );
+    assert_eq!(config.telemetry.categories, vec!["docker", "launch"]);
+}
+
+#[test]
+fn default_telemetry_config_is_not_serialized() {
+    let config = AppConfig::default();
+    let toml = toml::to_string_pretty(&config).unwrap();
+
+    assert!(!toml.contains("[telemetry]"), "{toml}");
+}
+
+#[test]
 fn rejects_workspace_with_workdir_outside_mounts() {
     let temp = tempdir().unwrap();
 
@@ -732,6 +756,25 @@ fn reject_codex_oauth_token_field_at_app_config_layer() {
         msg.contains("unknown field"),
         "expected unknown-field rejection at AppConfig layer, got: {msg}"
     );
+}
+
+#[test]
+fn app_config_role_repo_refresh_ttl_defaults_when_absent() {
+    let cfg: AppConfig = toml::from_str("").unwrap();
+
+    assert_eq!(cfg.role_repo_refresh_ttl_seconds, None);
+    assert_eq!(
+        cfg.role_repo_refresh_ttl(),
+        std::time::Duration::from_secs(DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS)
+    );
+}
+
+#[test]
+fn app_config_role_repo_refresh_ttl_accepts_zero() {
+    let cfg: AppConfig = toml::from_str("role_repo_refresh_ttl_seconds = 0").unwrap();
+
+    assert_eq!(cfg.role_repo_refresh_ttl_seconds, Some(0));
+    assert_eq!(cfg.role_repo_refresh_ttl(), std::time::Duration::ZERO);
 }
 
 #[test]

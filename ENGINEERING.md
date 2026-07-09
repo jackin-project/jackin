@@ -76,6 +76,8 @@ Adding "TEMPORARY logging to triage regression" — stop, convert to `cdebug!` �
 
 When current logs insufficient to explain complex or inconsistent behaviour, do not guess. First add durable `cdebug!` telemetry capturing missing state, ask operator to rerun repro with `--debug`, then fix from that evidence. Only exception: missing state obtainable safely from live process or container without code change — inspect directly and keep going.
 
+Structured run telemetry lives beside the console/file tiers: use `RunDiagnostics` stage, timing, error, and summary APIs for operations with durations, outcomes, or failures, because those events also export through OTLP. New instrumentation for workflow behaviour should use that structured path instead of bare prose log lines; see [Run Diagnostics](docs/content/docs/reference/runtime/diagnostics.mdx).
+
 Reason: operators rarely reproduce on demand. They need to paste log that already has answer — no rebuild, no extra instrumentation forgotten at ship, no "now run again with this added line". Host's `--debug` single switch; everything downstream honours it.
 
 ## Code comments — explain only what is not obvious

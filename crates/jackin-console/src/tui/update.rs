@@ -214,21 +214,11 @@ pub enum SharedModalScrollTarget {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsEnvModalScrollTarget {
-    OpPicker,
-    RolePicker,
-    None,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsAuthModalScrollTarget {
-    OpPicker,
-    None,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GlobalMountModalScrollTarget {
-    RolePicker,
+pub enum SettingsModalScrollTarget {
+    MountRolePicker,
+    EnvOpPicker,
+    EnvRolePicker,
+    AuthOpPicker,
     None,
 }
 
@@ -409,31 +399,31 @@ pub const fn shared_modal_scroll_target(
 pub const fn settings_env_modal_scroll_target(
     op_picker: bool,
     role_picker: bool,
-) -> SettingsEnvModalScrollTarget {
+) -> SettingsModalScrollTarget {
     if op_picker {
-        SettingsEnvModalScrollTarget::OpPicker
+        SettingsModalScrollTarget::EnvOpPicker
     } else if role_picker {
-        SettingsEnvModalScrollTarget::RolePicker
+        SettingsModalScrollTarget::EnvRolePicker
     } else {
-        SettingsEnvModalScrollTarget::None
+        SettingsModalScrollTarget::None
     }
 }
 
 #[must_use]
-pub const fn settings_auth_modal_scroll_target(op_picker: bool) -> SettingsAuthModalScrollTarget {
+pub const fn settings_auth_modal_scroll_target(op_picker: bool) -> SettingsModalScrollTarget {
     if op_picker {
-        SettingsAuthModalScrollTarget::OpPicker
+        SettingsModalScrollTarget::AuthOpPicker
     } else {
-        SettingsAuthModalScrollTarget::None
+        SettingsModalScrollTarget::None
     }
 }
 
 #[must_use]
-pub const fn global_mount_modal_scroll_target(role_picker: bool) -> GlobalMountModalScrollTarget {
+pub const fn global_mount_modal_scroll_target(role_picker: bool) -> SettingsModalScrollTarget {
     if role_picker {
-        GlobalMountModalScrollTarget::RolePicker
+        SettingsModalScrollTarget::MountRolePicker
     } else {
-        GlobalMountModalScrollTarget::None
+        SettingsModalScrollTarget::None
     }
 }
 

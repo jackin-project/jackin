@@ -445,7 +445,18 @@ pub async fn reconnect(
 /// directing the operator to eject first; an already-removed container is the
 /// success case (so purging a torn instance whose VM is gone is not blocked).
 pub async fn ensure_absent_for_purge(container_name: &str) -> Result<()> {
-    let exists = crate::apple_container_client::AppleContainerClient::new()
+    ensure_absent_for_purge_with(
+        &crate::apple_container_client::AppleContainerClient::new(),
+        container_name,
+    )
+    .await
+}
+
+pub async fn ensure_absent_for_purge_with(
+    client: &impl crate::apple_container_client::AppleContainerApi,
+    container_name: &str,
+) -> Result<()> {
+    let exists = client
         .list_containers(container_name)
         .await?
         .iter()
@@ -461,18 +472,36 @@ pub async fn ensure_absent_for_purge(container_name: &str) -> Result<()> {
 
 /// Stop the container (eject — preserves manifest).
 pub async fn stop(container_name: &str) -> Result<()> {
-    crate::apple_container_client::AppleContainerClient::new()
-        .stop_container(container_name)
-        .await
+    stop_with(
+        &crate::apple_container_client::AppleContainerClient::new(),
+        container_name,
+    )
+    .await
+}
+
+pub async fn stop_with(
+    client: &impl crate::apple_container_client::AppleContainerApi,
+    container_name: &str,
+) -> Result<()> {
+    client.stop_container(container_name).await
 }
 
 /// Remove the container (purge).
 pub async fn remove(container_name: &str) -> Result<()> {
+    remove_with(
+        &crate::apple_container_client::AppleContainerClient::new(),
+        container_name,
+    )
+    .await
+}
+
+pub async fn remove_with(
+    client: &impl crate::apple_container_client::AppleContainerApi,
+    container_name: &str,
+) -> Result<()> {
     // Stop first (ignore errors — may already be stopped).
-    drop(stop(container_name).await);
-    crate::apple_container_client::AppleContainerClient::new()
-        .remove_container(container_name)
-        .await
+    drop(client.stop_container(container_name).await);
+    client.remove_container(container_name).await
 }
 
 /// Probe the `container` CLI version. Returns `None` if not installed.

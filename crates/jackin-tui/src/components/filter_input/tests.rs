@@ -24,10 +24,6 @@ fn populated_filter_shows_cursor() {
         .map(|span| span.content.as_ref())
         .collect();
     assert_eq!(joined, "Filter: abc█");
-    assert!(
-        line.spans[2]
-            .style
-            .add_modifier
-            .contains(Modifier::SLOW_BLINK)
-    );
+    assert!(line.spans[2].style.add_modifier.contains(Modifier::BOLD));
+    assert_eq!(line.spans[2].style.bg, Some(PHOSPHOR_GREEN));
 }

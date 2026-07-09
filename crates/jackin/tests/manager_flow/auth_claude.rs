@@ -251,7 +251,7 @@ fn auth_credential_source_enter_opens_source_picker() -> Result<()> {
 
 /// Cancelling the credential `Modal::TextInput` (the literal-text leg
 /// of the source-picker round trip) must restore `Modal::AuthForm` and
-/// drain `pending_auth_form_return` — not silently leave the operator
+/// drain the modal parent auth form — not silently leave the operator
 /// on a blank Auth tab.
 #[test]
 fn auth_credential_text_input_cancel_restores_form() -> Result<()> {

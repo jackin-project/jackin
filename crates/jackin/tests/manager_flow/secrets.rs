@@ -1,5 +1,5 @@
 use super::*;
-use jackin::console::tui::state::TextInputTarget;
+use jackin::console::tui::state::{SecretsPickerTarget, TextInputTarget};
 
 // ── Secrets tab integration tests ─────────────────────────────────
 
@@ -409,7 +409,7 @@ fn secrets_add_new_key_flow() -> Result<()> {
 
 /// Picker may load or fall into a fatal state depending on `op` on
 /// `$PATH`; either way the modal variant must be `OpPicker` and
-/// `pending_picker_target` must record (scope, key).
+/// the modal must carry the selected secrets key target.
 #[test]
 fn op_picker_opens_on_p_from_secrets_key_row() -> Result<()> {
     let temp = tempdir()?;
@@ -435,15 +435,16 @@ fn op_picker_opens_on_p_from_secrets_key_row() -> Result<()> {
         matches!(editor(&state).modal, Some(Modal::OpPicker { .. })),
         "P on a key row must open the OpPicker modal directly"
     );
-    // `pending_picker_target` records the focused key so the commit
-    // handler can write straight into pending.env.
-    match &editor(&state).pending_picker_target {
-        Some((_, Some(key))) => {
+    // The active modal carries the focused key so the commit handler
+    // can write straight into pending.env.
+    match &editor(&state).modal {
+        Some(Modal::OpPicker {
+            secrets_target: Some(SecretsPickerTarget::Existing { key, .. }),
+            ..
+        }) => {
             assert_eq!(key, "DB_URL", "key-row P must stash the focused key");
         }
-        other => panic!(
-            "expected pending_picker_target = Some((scope, Some(\"DB_URL\"))), got {other:?}"
-        ),
+        other => panic!("expected OpPicker target for DB_URL; got {other:?}"),
     }
     Ok(())
 }
@@ -472,20 +473,12 @@ fn op_picker_cancel_closes_modal() -> Result<()> {
     )?;
     assert!(matches!(editor(&state).modal, Some(Modal::OpPicker { .. })));
 
-    // Esc on the OpPicker closes the modal and clears the picker target.
+    // Esc on the OpPicker closes the modal and drops its target context.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(
         editor(&state).modal.is_none(),
         "Esc-cancel must close the picker entirely; got {:?}",
         editor(&state).modal
-    );
-    assert!(
-        editor(&state).pending_picker_target.is_none(),
-        "Esc-cancel must clear pending_picker_target"
-    );
-    assert!(
-        editor(&state).pending_picker_value.is_none(),
-        "Esc-cancel must clear pending_picker_value"
     );
     // Cancel is a pure UI action — the on-pending env value is unchanged.
     assert_eq!(
@@ -532,7 +525,7 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
     {
         let editor_state = editor_mut(&mut state);
         match &mut editor_state.modal {
-            Some(Modal::OpPicker { state: picker }) => {
+            Some(Modal::OpPicker { state: picker, .. }) => {
                 picker.vaults = vec![OpVault {
                     id: "v1".into(),
                     name: "Personal".into(),
@@ -591,15 +584,12 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
         "modal must close after key-row picker commit; got {:?}",
         editor(&state).modal
     );
-    assert!(editor(&state).pending_picker_target.is_none());
-    assert!(editor(&state).pending_picker_value.is_none());
     Ok(())
 }
 
 /// `P` on the `+ Add environment variable` sentinel: the picker commits
-/// a path before the operator has named the key. The `EnvKey` modal opens
-/// next, the path is held on `pending_picker_value`, and committing the
-/// key name writes both into pending.env at once.
+/// a path before the operator has named the key. The `EnvKeyWithValue` modal
+/// opens next, and committing the key name writes both into pending.env at once.
 #[test]
 fn op_picker_sentinel_p_flow() -> Result<()> {
     use jackin_console::tui::components::op_picker::{OpLoadState, OpPickerStage};
@@ -617,8 +607,7 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
     // Cursor opens on row 0 (WorkspaceAddSentinel).
     assert!(matches!(editor(&state).active_field, FieldFocus::Row(0)));
 
-    // P on the sentinel opens the picker with `pending_picker_target =
-    // Some((Workspace, None))`.
+    // P on the sentinel opens the picker with a NewKey target.
     handle_key(
         &mut state,
         &mut config,
@@ -627,16 +616,19 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
         key(KeyCode::Char('p')),
     )?;
     assert!(matches!(editor(&state).modal, Some(Modal::OpPicker { .. })));
-    match &editor(&state).pending_picker_target {
-        Some((_, None)) => {}
-        other => panic!("sentinel P must stash (scope, None); got pending_picker_target={other:?}"),
+    match &editor(&state).modal {
+        Some(Modal::OpPicker {
+            secrets_target: Some(SecretsPickerTarget::NewKey { .. }),
+            ..
+        }) => {}
+        other => panic!("sentinel P must open OpPicker with NewKey target; got {other:?}"),
     }
 
     // Drive the picker to a Field commit.
     {
         let editor_state = editor_mut(&mut state);
         match &mut editor_state.modal {
-            Some(Modal::OpPicker { state: picker }) => {
+            Some(Modal::OpPicker { state: picker, .. }) => {
                 picker.vaults = vec![OpVault {
                     id: "v1".into(),
                     name: "Personal".into(),
@@ -676,28 +668,27 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
     }
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
-    // After the picker commits: EnvKey modal is open and the OpRef is
-    // stashed on pending_picker_value.
+    // After the picker commits: EnvKeyWithValue modal is open and carries the OpRef.
     match &editor(&state).modal {
         Some(Modal::TextInput {
-            target: TextInputTarget::EnvKey { .. },
+            target:
+                TextInputTarget::EnvKeyWithValue {
+                    value: carried_value,
+                    ..
+                },
             ..
-        }) => {}
+        }) => {
+            assert_eq!(
+                carried_value.as_persisted_str(),
+                "op://v1/i1/credential",
+                "picker commit must carry the UUID-form op:// reference for the EnvKey commit"
+            );
+        }
         other => panic!("expected TextInput(EnvKey) modal; got {other:?}"),
     }
-    // pending_picker_value holds an EnvValue::OpRef; check the `op` field
-    // via as_persisted_str(). UUID form: vault=v1, item=i1, field=credential.
-    assert_eq!(
-        editor(&state)
-            .pending_picker_value
-            .as_ref()
-            .map(jackin_core::EnvValue::as_persisted_str),
-        Some("op://v1/i1/credential"),
-        "picker commit must stash the UUID-form op:// reference for the EnvKey commit"
-    );
 
     // Type the new key name and Enter — the EnvKey commit handler must
-    // consume `pending_picker_value` and write the pair into pending.env.
+    // consume the carried value and write the pair into pending.env.
     for ch in "API_KEY".chars() {
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
     }
@@ -711,10 +702,6 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
             .map(jackin_core::EnvValue::as_persisted_str),
         Some("op://v1/i1/credential"),
         "EnvKey commit must write the stashed UUID-form OpRef into pending.env"
-    );
-    assert!(
-        editor(&state).pending_picker_value.is_none(),
-        "EnvKey commit must clear pending_picker_value"
     );
     assert!(
         editor(&state).modal.is_none(),
@@ -855,7 +842,7 @@ fn env_value_modal_allows_empty_commit() -> Result<()> {
 
 /// `SourcePicker` → 1Password branch: when op is available and the
 /// operator picks the Op choice, the `OpPicker` modal opens with
-/// `pending_picker_target = (scope, Some(key))` so its commit handler
+/// a secrets target for the typed key so its commit handler
 /// can write the `op://...` reference straight into the named key.
 #[test]
 fn enter_on_sentinel_path_to_op_picker() -> Result<()> {
@@ -894,13 +881,14 @@ fn enter_on_sentinel_path_to_op_picker() -> Result<()> {
         "Op branch on SourcePicker must open the OpPicker; got {:?}",
         editor(&state).modal
     );
-    match &editor(&state).pending_picker_target {
-        Some((_, Some(name))) => {
+    match &editor(&state).modal {
+        Some(Modal::OpPicker {
+            secrets_target: Some(SecretsPickerTarget::Existing { key: name, .. }),
+            ..
+        }) => {
             assert_eq!(name, "API_KEY", "OpPicker target must carry the typed key");
         }
-        other => {
-            panic!("expected pending_picker_target = (scope, Some(\"API_KEY\")); got {other:?}")
-        }
+        other => panic!("expected OpPicker target for API_KEY; got {other:?}"),
     }
     Ok(())
 }
@@ -1002,10 +990,6 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
         editor(&state).modal
     );
     assert!(
-        editor(&state).pending_picker_value.is_none(),
-        "Esc on SourcePicker must clear pending_picker_value"
-    );
-    assert!(
         !editor(&state).pending.env.contains_key("API_KEY"),
         "Esc on SourcePicker must not write any env entry; got {:?}",
         editor(&state).pending.env
@@ -1043,7 +1027,7 @@ fn op_picker_multi_account_flow() -> Result<()> {
     {
         let editor_state = editor_mut(&mut state);
         match &mut editor_state.modal {
-            Some(Modal::OpPicker { state: picker }) => {
+            Some(Modal::OpPicker { state: picker, .. }) => {
                 picker.accounts = vec![
                     OpAccount {
                         id: "ACCT_A".into(),
@@ -1073,7 +1057,7 @@ fn op_picker_multi_account_flow() -> Result<()> {
     // Enter on the Account pane — selects Bob, advances to Vault.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     match &editor(&state).modal {
-        Some(Modal::OpPicker { state: picker }) => {
+        Some(Modal::OpPicker { state: picker, .. }) => {
             assert_eq!(picker.stage, OpPickerStage::Vault);
             assert_eq!(
                 picker.selected_account.as_ref().map(|a| a.id.as_str()),
@@ -1088,7 +1072,7 @@ fn op_picker_multi_account_flow() -> Result<()> {
     {
         let editor_state = editor_mut(&mut state);
         match &mut editor_state.modal {
-            Some(Modal::OpPicker { state: picker }) => {
+            Some(Modal::OpPicker { state: picker, .. }) => {
                 picker.vaults = vec![OpVault {
                     id: "v1".into(),
                     name: "Shared".into(),

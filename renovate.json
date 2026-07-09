@@ -50,6 +50,28 @@
       "depNameTemplate": "rust-lang/rust",
       "datasourceTemplate": "github-tags",
       "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^crates\\/jackin-runtime\\/src\\/runtime\\/docker_profile\\.rs$/"
+      ],
+      "matchStrings": [
+        "DIND_PRIVILEGED_IMAGE: &str = \"docker:(?<currentValue>\\d+-dind)\""
+      ],
+      "depNameTemplate": "docker",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^crates\\/jackin-runtime\\/src\\/runtime\\/docker_profile\\.rs$/"
+      ],
+      "matchStrings": [
+        "DIND_ROOTLESS_IMAGE: &str = \"docker:(?<currentValue>\\d+-dind-rootless)\""
+      ],
+      "depNameTemplate": "docker",
+      "datasourceTemplate": "docker"
     }
   ],
   "prHourlyLimit": 0,

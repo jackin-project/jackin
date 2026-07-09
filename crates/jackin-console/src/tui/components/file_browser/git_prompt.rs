@@ -265,8 +265,12 @@ pub(super) fn render_git_prompt(frame: &mut Frame<'_>, parent: Rect, state: &Fil
         return;
     };
 
-    let inner =
-        jackin_tui::components::render_dialog_shell(frame, area, Some("Git repository detected"));
+    let inner = jackin_tui::components::render_dialog_shell(
+        frame,
+        area,
+        Some("Git repository detected"),
+        jackin_tui::components::DialogBorder::Default,
+    );
 
     let content_rows = if has_url { 2 } else { 1 };
     let chunks = jackin_tui::components::dialog_inner_chunks(inner, Some(content_rows));

@@ -1,9 +1,35 @@
 use jackin_tui::components::{KeyChord, LogicalKey};
+use jackin_tui::keymap::glyph;
 
 use super::{
     BUILD_LOG_KEYMAP, BuildLogAction, COCKPIT_KEYMAP, CONTAINER_INFO_KEYMAP, CockpitAction,
     ContainerInfoAction, FAILURE_KEYMAP, FailureAction,
 };
+
+fn assert_shown_glyphs_are_normalized<A: Copy + 'static>(
+    keymap: &jackin_tui::components::Keymap<A>,
+) {
+    for span in keymap.hint_spans() {
+        let jackin_tui::HintSpan::Key(key) = span else {
+            continue;
+        };
+        assert_ne!(key, concat!("T", "ab"));
+        assert!(!key.contains("\u{2191}/"));
+        assert!(!key.contains("\u{2190}/"));
+        assert!(!key.contains(concat!("PgUp", " PgDn")));
+        assert!(!key.contains(concat!("Alt", "+")));
+        assert!(!key.contains(concat!("Shift", "+")));
+        assert!(!key.contains(concat!("Ctrl", "+")));
+    }
+}
+
+#[test]
+fn shown_keymap_glyphs_use_canonical_spellings() {
+    assert_shown_glyphs_are_normalized(&COCKPIT_KEYMAP);
+    assert_shown_glyphs_are_normalized(&BUILD_LOG_KEYMAP);
+    assert_shown_glyphs_are_normalized(&FAILURE_KEYMAP);
+    assert_shown_glyphs_are_normalized(&CONTAINER_INFO_KEYMAP);
+}
 
 // ── COCKPIT ──────────────────────────────────────────────────────────────────
 
@@ -103,7 +129,10 @@ fn build_log_hints_advertise_esc_and_scroll() {
         .join(" ");
     assert!(text.contains("Esc"), "must advertise Esc close: {text}");
     assert!(text.contains("↑↓"), "must advertise scroll: {text}");
-    assert!(text.contains("PgUp/PgDn"), "must advertise page: {text}");
+    assert!(
+        text.contains(glyph::PGUP_PGDN),
+        "must advertise page: {text}"
+    );
 }
 
 // ── FAILURE ───────────────────────────────────────────────────────────────────

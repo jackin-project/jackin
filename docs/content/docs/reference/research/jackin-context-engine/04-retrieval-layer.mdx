@@ -1,0 +1,51 @@
+---
+title: "04 — Retrieval layer (L1)"
+---
+
+# 04 — Retrieval layer (L1)
+
+Prevention beats compression: tokens never loaded cost nothing and improve quality (context-rot literature; the dossier's negative-cost set is dominated by input-architecture levers). L1 gives the agent bounded, task-shaped retrieval so it stops reading whole files — the lever measured locally at −91% (outline vs read) and −98% (symbol search vs read), and 12–53× for markdown sections.
+
+## The four retrieval modalities and their engines
+
+| Modality | Engine | Form | Question it owns |
+|---|---|---|---|
+| Lexical (files, content, literals) | **fff** — `fff-search` + `fff-query-parser` crates, one `SharedFilePicker` per workspace mount, frecency LMDB under `/jackin/state/context/index/` | crates.io dependency (`=0.9.6`, MIT; nushell-proven) | "find the file / the string" — typo-tolerant, frecency+git ranked, warm sub-10 ms |
+| Structural (entities, diffs, impact) | **sem-core** crate — entity graph (33 grammars available, feature-gated per role), structural-hash diff, budgeted context packer, orient ranking | crates.io dependency (`sem-core = "0.16"`, MIT/Apache-2.0) | "what is this function / what changed / what breaks / entity-level blame" |
+| Markdown/docs (sections, TOC, code blocks) | **mq** — `mq-lang` (+`sync`, no `http-import`) compiled canned programs + `mq-markdown` for chunking | crates.io dependencies (`=0.6.4`, MIT) | "which section of this 15 KB doc answers the question" — TOC ≈50–100 tok + section ≈100–500 tok replaces a 4–8k read |
+| Semantic (fuzzy concept recall) | **none by default** | — | Deliberately absent: embeddings for code navigation never met the ≥20% bar ([tools hub 20 — Qdrant and vector databases for agent context](/reference/research/token-optimization-tools/20-qdrant-and-vector-databases/)); optional docs-corpus hybrid index stays a role-level experiment |
+
+Compiler-grade truth stays with the existing role stack: `rust-analyzer` (LSP) and `ast-grep` (CLI) remain the routing targets for definitions/references and structural rewrites — the engine's verbs complement, never replace, them (the architect role's routing decision, inherited).
+
+## Query-verb surface (codedb-shaped, MCP + CLI)
+
+A small lazy-advertised set (lean-ctx's 5-tool lesson: default-advertise few, keep the rest callable through one invoker; schema rent is CI-gated by INV-6):
+
+- `ctx_search` — lexical content/path search (fff underneath): `paths_only`, `compact`, offset pagination with a `more results … offset=N` tail line, weak-match flagging, import-line de-noise.
+- `ctx_read` — mode-gated read (L2 §native-read): `signatures` default for code, `section:` for markdown, `unchanged:HASH` short-circuit via `if_hash`.
+- `ctx_doc` — markdown verbs: `--outline` (TOC), `--section <pattern>`, `--code [lang]`, `--links`, `--skeleton` (headings+code); size-gated (files under ~2 KB return whole — two-step retrieval only pays above that).
+- `ctx_impact` — entity-level blast radius (sem): deps/dependents/transitive + affected-test folding ("covered by N tests" one-liners).
+- `ctx_context` — the task-shaped composer: NL task → identifier extraction → one budget-packed block (symbols + ranked files + callers + snippets) with value-ordered packing under a token budget and one-line markers for omitted sections (codedb's `handleContext` two-step pack — the best single design in that codebase).
+- `ctx_expand` — dereference any handle (CCR hash, read-stub, section handle, omitted-tail marker).
+
+Output-shaping idioms applied uniformly (the grammar of "spend tokens only when forced"): bounded result counts, `file:line` + enclosing-symbol tags, disclosed omissions (`OmittedTail`, `+N more`), escalation footers naming the exact next verb, frecency rendered as words (`hot`/`warm`), compact per-line trees instead of JSON (sem measured 3.7× fewer tokens than pretty JSON; [techniques 11 — Multi-agent protocols and subagent compression](/reference/research/token-optimization-techniques/11-multi-agent-protocols/): labeled compact lines beat JSON by 35%).
+
+## Ranking
+
+Deterministic, additive-never-filter, every signal kill-switchable (codedb's eval-tuned stack): BM25 core + eponymy/stem boost + path-class priors (tests/vendored down-weighted) + tanh size prior + lexical-saturation penalty + graph-distance boost + git co-change boost (via `gix`, no shell-out) + fff frecency fusion. No learned ranker.
+
+## The doctrine file
+
+Retrieval only saves tokens if the agent uses it correctly, so the role instruction file carries a compiled routing section (one source, per-runtime paths — the architect role's consolidation pattern): fff for files/literals, `ctx_impact`/`rust-analyzer` for relationships, `ast-grep` for syntax shapes, `rg` for plain text ("the common case — do not force a structural tool on it"), `ctx_doc` before reading any markdown file over the size gate, "after two searches, read", "never dump trees/snapshots unbounded". The engine's ledger measures adherence (native-read share, search-then-read chains, bounce rate) so doctrine failures are visible, not vibes.
+
+## Round-2 additions (verified source mechanisms)
+
+- **Config-fingerprinted cache keys**: every ranking kill-switch and mode default is hashed into result-cache keys, so a config toggle can never serve stale-config results (codedb) — a structural fix for a whole bug class.
+- **ConvergenceGovernor**: an 8-slot ring of recent call-signature hashes per session; three identical calls inside the window inject a one-line nudge naming a better verb — ~20 lines that break agent retry-loops at the tool layer (codedb).
+- **Warmup replay through the exact handler path**: top-N repeated queries from a bounded log tail replayed through the same code path with the same defaults at index start, so cache keys match live traffic (codedb; motivated by its measured "62% of calls are exact repeats").
+- **Mode-default table with a no-lossy-override guard**: markdown/docs/config are **never compressed by default**; learned/auto modes may pick a *more* faithful mode than the static default but never a lossier one (lean-ctx — encodes the instructions-must-survive-verbatim failure mode).
+- **Typed mode enum** with byte-stable `Display` round-trip and legacy-predicate-pinned tests — removes the stringly-mode bug class (lean-ctx #528 pattern).
+
+## Index lifecycle
+
+Index once at capsule launch (parallel build over the workspace mounts), then incremental: `notify`-based watcher patches fff and sem indexes; corpus-signature freshness (content hash over the file set) rather than TTLs decides rebuilds; snapshot to `/jackin/state/context/index/` (rkyv/postcard + zstd) for instant warm restarts of the capsule daemon. Memory budget per capsule enforced via content-cache budgets (fff `ContentCacheBudget`; mmap + CLOCK-cache borrowing rather than whole-content RAM residency — codedb's 1.7 GB steady-state is the anti-lesson).

@@ -44,7 +44,7 @@ Contributors can force the boundary rituals for local visual QA with env vars in
 | `--dry-run` | Resolve and print the launch plan (workspace, role, agent, mounts) then exit without spawning any containers. Nothing is changed. Combine with `--format json` for scriptable plan inspection. |
 | `--format <human\|json>` | Output format for `--dry-run`. `human` (default) prints a readable plan summary. `json` emits a structured plan envelope. Has no effect without `--dry-run`. |
 | `--debug` | Write detailed command, Docker, resolver, auth, and build traces to the run diagnostics artifact. The launch surface stays clean and does not stream raw logs. |
-| `--agent <NAME>` | Override the launch agent (`claude`, `codex`, `amp`, `kimi`, or `opencode`). When omitted, a workspace `default_agent` wins first, a single-agent role uses its only runtime, and a multi-agent role prompts in the rich launch surface. |
+| `--agent <NAME>` | Override the launch agent (`claude`, `codex`, `amp`, `kimi`, `opencode`, or `grok`). When omitted, a workspace `default_agent` wins first, a single-agent role uses its only runtime, and a multi-agent role prompts in the rich launch surface. |
 
 ## Examples
 

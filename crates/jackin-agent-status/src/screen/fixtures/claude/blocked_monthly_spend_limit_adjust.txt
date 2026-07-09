@@ -1,0 +1,11 @@
+  ⎿  You've hit your monthly spend limit.
+
+✻ Brewed for 1s
+
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   What do you want to do?                                                                                        Usage credit balance: S$55.49
+
+   ❯ Adjust monthly spend limit: S$269.47                                                                ← or → to adjust · Del to remove limit
+     Wait for limit to reset                                                                                               Resets 12:40am (UTC)
+
+   Enter to confirm · Esc to cancel

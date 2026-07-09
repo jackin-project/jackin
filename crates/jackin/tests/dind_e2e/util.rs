@@ -76,7 +76,8 @@ pub(super) fn assert_sentinel_build_output_routed_to_log(home: &Path, stdout: &s
         )
     });
     assert!(
-        build_log_contents.contains("command: docker build")
+        build_log_contents.contains("command: docker ")
+            && build_log_contents.contains("buildx build")
             && build_log_contents.contains(raw_build_marker)
             && build_log_contents.contains("DerivedDockerfile"),
         "Docker build output should be captured in the build log artifact {}\n{}",

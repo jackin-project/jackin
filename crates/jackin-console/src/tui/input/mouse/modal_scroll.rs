@@ -3,10 +3,9 @@
 //! tabs).
 
 use super::{
-    FileBrowserState, GlobalMountModal, GlobalMountModalScrollTarget, ListModalScrollTarget,
-    MOUSE_VERTICAL_SCROLL_STEP, ManagerStage, ManagerState, Modal, ModalRectMode, MouseEvent,
-    MouseEventKind, Rect, SettingsAuthModal, SettingsAuthModalScrollTarget,
-    SettingsEnvModalScrollTarget, SharedModalScrollTarget, modal_rects, point_in_rect,
+    FileBrowserState, ListModalScrollTarget, MOUSE_VERTICAL_SCROLL_STEP, ManagerStage,
+    ManagerState, Modal, ModalRectMode, MouseEvent, MouseEventKind, Rect, SettingsModal,
+    SettingsModalScrollTarget, SharedModalScrollTarget, modal_rects, point_in_rect,
     scroll_selection_at_position,
 };
 
@@ -43,10 +42,11 @@ pub fn try_scroll_file_browser_modal(
         }
         ManagerStage::Settings(settings) => {
             let area = modal_rects::modal_rect_for_mode(term_size, ModalRectMode::FileBrowser);
-            if let Some(GlobalMountModal::FileBrowser { state }) = settings.mounts.modal.as_mut() {
+            if let Some(SettingsModal::MountFileBrowser { state }) = settings.mounts.modal.as_mut()
+            {
                 return scroll_file_browser_state_at(state, area, mouse, delta);
             }
-            if let Some(SettingsAuthModal::SourceFolderPicker { state }) = settings.auth.modal_mut()
+            if let Some(SettingsModal::AuthSourceFolderPicker { state }) = settings.auth.modal_mut()
             {
                 return scroll_file_browser_state_at(state, area, mouse, delta);
             }
@@ -138,7 +138,7 @@ pub fn scroll_list_modal_selection(state: &mut ManagerState<'_>, delta: i16) -> 
             let _changed = state.scroll_selection(delta);
             true
         }
-        (ListModalScrollTarget::OpPicker, Modal::OpPicker { state }) => {
+        (ListModalScrollTarget::OpPicker, Modal::OpPicker { state, .. }) => {
             let _changed = state.scroll_selection(delta);
             true
         }
@@ -169,7 +169,7 @@ pub fn scroll_modal_selection(modal: Option<&mut Modal<'_>>, delta: i16) -> bool
             let _changed = state.scroll_selection(delta);
             true
         }
-        (SharedModalScrollTarget::OpPicker, Modal::OpPicker { state }) => {
+        (SharedModalScrollTarget::OpPicker, Modal::OpPicker { state, .. }) => {
             let _changed = state.scroll_selection(delta);
             true
         }
@@ -179,70 +179,64 @@ pub fn scroll_modal_selection(modal: Option<&mut Modal<'_>>, delta: i16) -> bool
 }
 
 pub fn scroll_global_mount_modal_selection(
-    modal: &mut GlobalMountModal<'_>,
+    modal: &mut SettingsModal<'_>,
     mouse: MouseEvent,
     term_size: Rect,
     delta: i16,
 ) -> bool {
-    let target = modal.scroll_target();
+    let target = modal.mount_scroll_target();
     match (target, modal) {
-        (GlobalMountModalScrollTarget::RolePicker, GlobalMountModal::RolePicker { state }) => {
+        (SettingsModalScrollTarget::MountRolePicker, SettingsModal::MountRolePicker { state }) => {
             let area = modal_rects::role_picker_rect_for_count(term_size, state.filtered.len());
             scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
                 state.scroll_selection(delta)
             })
         }
-        (GlobalMountModalScrollTarget::None, _) => false,
+        (SettingsModalScrollTarget::None, _) => false,
         _ => false,
     }
 }
 
 pub fn scroll_settings_env_modal_selection(
-    modal: &mut crate::tui::state::SettingsEnvModal<'_>,
+    modal: &mut SettingsModal<'_>,
     mouse: MouseEvent,
     term_size: Rect,
     delta: i16,
 ) -> bool {
-    let target = modal.scroll_target();
+    let target = modal.env_scroll_target();
     match (target, modal) {
-        (
-            SettingsEnvModalScrollTarget::OpPicker,
-            crate::tui::state::SettingsEnvModal::OpPicker { state },
-        ) => {
+        (SettingsModalScrollTarget::EnvOpPicker, SettingsModal::EnvOpPicker { state, .. }) => {
             let area = modal_rects::op_picker_rect(term_size);
             scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
                 state.scroll_selection(delta)
             })
         }
-        (
-            SettingsEnvModalScrollTarget::RolePicker,
-            crate::tui::state::SettingsEnvModal::RolePicker { state },
-        ) => {
+        (SettingsModalScrollTarget::EnvRolePicker, SettingsModal::EnvRolePicker { state }) => {
             let area = modal_rects::role_picker_rect_for_count(term_size, state.filtered.len());
             scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
                 state.scroll_selection(delta)
             })
         }
-        (SettingsEnvModalScrollTarget::None, _) => false,
+        (SettingsModalScrollTarget::None, _) => false,
         _ => false,
     }
 }
 
 pub fn scroll_settings_auth_modal_selection(
-    modal: &mut SettingsAuthModal<'_>,
+    modal: &mut SettingsModal<'_>,
     mouse: MouseEvent,
     term_size: Rect,
     delta: i16,
 ) -> bool {
-    let target = modal.scroll_target();
+    let target = modal.auth_scroll_target();
     match (target, modal) {
-        (SettingsAuthModalScrollTarget::OpPicker, SettingsAuthModal::OpPicker { state }) => {
+        (SettingsModalScrollTarget::AuthOpPicker, SettingsModal::AuthOpPicker { state }) => {
             let area = modal_rects::op_picker_rect(term_size);
             scroll_selection_at_position(area, mouse.column, mouse.row, delta, |delta| {
                 state.scroll_selection(delta)
             })
         }
-        (SettingsAuthModalScrollTarget::None, _) => false,
+        (SettingsModalScrollTarget::None, _) => false,
         _ => false,
     }
 }

@@ -18,7 +18,7 @@ Four profiles are available, ordered from least to most capable:
 | `standard` | Open | None (opt-in via grant) | Opt-in | Writable | 16 GiB hard |
 | `compat` | Open | Privileged | Yes | Writable | None |
 
-**`compat`** is the current default — it matches today's behavior exactly. `standard` becomes the default once the compatibility matrix for standard-profile workloads is green.
+**`standard`** is the current default. It keeps everyday development usable while removing legacy standing sudo and privileged DinD. Use `compat` explicitly when a workflow still needs the old maximum-compatibility behavior.
 
 ### `locked` — minimal grant
 
@@ -50,11 +50,12 @@ profile = "hardened"
 
 ### `standard` — everyday dev work
 
-Full development capability with resource protection. `apt install`, Docker Compose, Testcontainers, `gh pr create` all work. Equivalent to working in a well-configured dev container.
+Everyday development capability with resource protection. `gh pr create`, normal build/test commands, and tools already present in the role image work by default. Runtime `apt install`, Docker Compose, and Testcontainers need explicit grants because `standard` does not grant sudo or DinD automatically.
 
 Use when:
 - Working with trusted role repos built by your team
-- Roles that install packages at runtime
+- Roles that install their tools at image-build time
+- You want the default jackin❯ profile without privileged DinD or standing sudo
 
 ```toml
 [docker]
@@ -69,6 +70,7 @@ Use when:
 - Docker Compose workflows inside the agent
 - Java Testcontainers with `--privileged` requirements
 - Exact backward compatibility needed
+- Runtime package installation needs passwordless sudo and the role has not been updated to request a narrower sudo grant
 
 ## CLI override
 
@@ -127,17 +129,28 @@ The active enforcement quality is reported in the launch summary and in `--debug
 dind = "none"        # "none" | "rootless" | "privileged"
 ```
 
-`rootless` runs DinD without `--privileged`. Most Compose/build workflows work. It requires cgroup v2 on the host and fails closed on cgroup v1. Rootless DinD is experimental and is not yet a default for any profile — opt in via a grant or role declaration.
+`rootless` runs DinD without `--privileged`. It is the recommended explicit grant for Compose, BuildKit, and Testcontainers workflows on cgroup v2 hosts:
+
+```toml
+[docker.grants]
+dind = "rootless"
+```
+
+It remains opt-in. The `standard` profile keeps `dind = "none"` by default because many launches do not need an inner Docker daemon, and enabling one automatically would weaken the default network/isolation posture. Rootless DinD requires cgroup v2 on the host and fails closed on cgroup v1 instead of silently falling back to privileged DinD.
 
 ### User and privilege grants
 
 ```toml
 [docker.grants]
 user = "agent"    # "agent" (default) | "root" | any image username
-sudo = false      # NOPASSWD:ALL sudo
+sudo = false      # passwordless sudo, provisioned only when granted
 
 # Validation error: user = "root" and sudo = true are mutually exclusive.
 ```
+
+When sudo is granted, jackin❯ provisions `/etc/sudoers.d/agent` after the
+container starts by executing the capsule helper as Docker root. The construct
+image does not bake a standing passwordless sudoers entry into the base layer.
 
 ### Filesystem grant
 
@@ -238,7 +251,7 @@ jackin load the-architect . --docker-profile hardened --debug
 
 - **Shared host kernel.** Containers share the host kernel. A kernel exploit can escape the container regardless of profile. microVM-based backends (tracked in the roadmap) are the path to stronger isolation.
 - **Writable workspace mounts.** Even under `locked` with read-only root, the workspace bind mounts are writable if the mount was configured as writable. The profile does not retroactively make mounts read-only.
-- **DinD with `standard`/`compat`.** When DinD is active, inner containers can bypass network allowlists (they have their own network path). Enforcement quality is `partial` and is reported in the launch summary and `--debug` output.
+- **DinD with allowlist networking.** When DinD is active, inner containers can bypass network allowlists because they have their own network path. Enforcement quality is `partial (DinD inner containers bypass host iptables)` and is reported in the launch summary, `--debug` session contract, and `JACKIN_NETWORK_ENFORCEMENT` inside the role container.
 - **Credential files inside the container.** Auth tokens copied into the container via `sync` mode are readable by the agent. A future release will add a telemetry note for `hardened`/`locked` profiles recommending `api_key` or `oauth_token` mode over `sync`; enforcement is not planned.
 
 For the full design rationale and phased implementation plan, see the [Docker Runtime Hardening Contract](/roadmap/docker-runtime-hardening-contract/) roadmap item.
@@ -258,33 +271,51 @@ The profile model and most controls are live; a few items remain deferred. This 
 - DinD off by default in `standard`/`hardened`/`locked`, on in `compat` — the per-profile default and skip-when-disabled behavior
 - The `allowlist` network tier — the outbound allowlist firewall is applied at launch, fails closed if it cannot be installed, and always includes the model API and telemetry endpoints
 - The `locked` Docker-internal network
-- Rootless DinD tier (`dind = "rootless"`) — experimental, requires cgroup v2, fails closed on v1, and is not yet a profile default
+- Rootless DinD tier (`dind = "rootless"`) — recommended explicit grant for Docker workflows on cgroup v2, fails closed on v1, and is not a profile default
 - cgroup v2 required for `hardened`/`locked` — launches fail-closed on v1 hosts with a clear error; `standard` warns
 - The launch session contract and per-decision `--debug` telemetry
 - All validation errors at launch time (bad cap names, user+sudo conflict, memory sizing, profile conflicts)
 
 **Deferred (described above as the target, not yet shipped):**
-- `standard` becoming the compiled-in default — waiting on the workload compatibility matrix
 - Credential env-only posture under `hardened`/`locked` — preferring `api_key`/`oauth_token` over `sync` mode
 - The non-HTTP network proxy sidecar (protocol-level egress allowlist beyond HTTP)
 
 See the [Docker Runtime Hardening Contract](/roadmap/docker-runtime-hardening-contract/) roadmap item for the remaining work and status.
 
-### Current default: `compat`
+### Current default: `standard`
 
-Every launch uses `compat` by default — this is the same behavior as before profiles existed. Nothing breaks for anyone who doesn't opt in.
+Every launch uses `standard` by default unless CLI, config, workspace config, or role metadata selects another profile. The Plan 049 compatibility matrix passed on the supported cgroup-v2 path with expected rejects for runtime package installation without sudo and Docker workflows without DinD.
 
-To use a stricter profile today: pass `--docker-profile <profile>` or set `[docker] profile = "…"` in config.
+To use the legacy maximum-compatibility profile:
 
-### What will change in a future release
+```sh
+jackin load fullstack . --docker-profile compat
+```
 
-**`standard` will become the default** once the compatibility matrix for standard-profile workloads (Testcontainers, Compose, BuildKit, common runtimes on cgroup v2 hosts) is green. Until then, the default stays `compat` and no existing user is affected.
+or:
 
-After the flip, `compat` remains available as an explicit opt-down for workflows needing privileged DinD or any other capability that `standard` doesn't grant.
+```toml
+[docker]
+profile = "compat"
+```
+
+### Compatibility matrix
+
+Run the default-flip gate locally with:
+
+```sh
+cargo xtask profile-matrix standard
+```
+
+The matrix asserts the cheap Docker posture probe directly and records the heavier host-specific cells with their prerequisites. On cgroup v2 hosts, rootless DinD remains an explicit grant and passes the default-flip gate. On cgroup v1 hosts, rootless DinD fails closed with guidance to use privileged DinD or move to cgroup v2.
+
+### Rootless DinD decision
+
+Rootless DinD is **recommended opt-in**, not a `standard` default. Use `dind = "rootless"` for Docker workflows on cgroup v2 hosts. Keep `standard` without DinD for ordinary build/test/edit agents so launches avoid an unnecessary daemon, avoid partial network-enforcement residuals, and preserve the smallest everyday capability set. Use `compat` or `dind = "privileged"` only for workflows that cannot run on rootless DinD.
 
 ### The `compat` profile stays permanently
 
-`compat` is not a temporary workaround — it is a valid named profile for roles that need privileged DinD, `apt install` at runtime, or any other capability that `standard` doesn't grant. After `standard` becomes the default, `compat` requires explicit opt-in:
+`compat` is not a temporary workaround — it is a valid named profile for roles that need privileged DinD, `apt install` at runtime, or any other capability that `standard` doesn't grant. Because `standard` is the default, `compat` requires explicit opt-in:
 ```sh
 jackin load fullstack . --docker-profile compat
 ```
@@ -304,6 +335,6 @@ min_profile = "compat"   # role needs full sudo + apt install at runtime
 
 | Item | Status |
 |---|---|
-| `standard` as compiled-in default | Deferred — waiting on workload compatibility matrix (cgroup v2 hosts) |
+| `standard` as compiled-in default | Shipped — gated by `cargo xtask profile-matrix standard` |
 | Credential posture: prefer `api_key`/`oauth_token` under `hardened`/`locked`; emit telemetry note on `sync` mode | Deferred — owned by [Container credential exposure](/reference/research/security/credential-exposure/container-credential-exposure/) |
 | Network proxy sidecar (non-HTTP protocol allowlist) | Deferred — separate research; see [Network egress policy](/roadmap/network-egress-policy/) |

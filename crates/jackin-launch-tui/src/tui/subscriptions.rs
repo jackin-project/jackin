@@ -91,7 +91,7 @@ fn cockpit_outcome_for_quit_confirm(outcome: QuitConfirmOutcome) -> CockpitOutco
 struct CockpitContext<'a> {
     area: Rect,
     run_id: &'a str,
-    run_log_path: &'a str,
+    run_log_path: Option<&'a str>,
     terminal: &'a dyn LaunchHostTerminal,
     jackin_version: &'static str,
 }
@@ -475,18 +475,36 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
 
 fn emit_dialog_mouse_debug_telemetry(
     terminal: &dyn LaunchHostTerminal,
-    v: &LaunchView,
+    container_info_open: bool,
+    build_log_open: bool,
+    last_dialog_mouse_cell: &mut Option<(u16, u16)>,
     m: event::MouseEvent,
 ) {
-    if terminal.is_debug_mode() && (v.container_info_open || v.build_log_open) {
+    if !terminal.is_debug_mode() || !(container_info_open || build_log_open) {
+        *last_dialog_mouse_cell = None;
+        return;
+    }
+    let cell = (m.column, m.row);
+    if should_emit_dialog_mouse(m.kind, *last_dialog_mouse_cell, cell) {
+        if matches!(m.kind, MouseEventKind::Moved) {
+            *last_dialog_mouse_cell = Some(cell);
+        }
         terminal.emit_debug_line(
             "cockpit-dialog-mouse",
             &format!(
                 "kind={:?} modifiers={:?} col={} row={} container_info_open={} build_log_open={}",
-                m.kind, m.modifiers, m.column, m.row, v.container_info_open, v.build_log_open
+                m.kind, m.modifiers, m.column, m.row, container_info_open, build_log_open
             ),
         );
     }
+}
+
+fn should_emit_dialog_mouse(
+    kind: MouseEventKind,
+    previous_cell: Option<(u16, u16)>,
+    cell: (u16, u16),
+) -> bool {
+    !matches!(kind, MouseEventKind::Moved) || previous_cell != Some(cell)
 }
 
 /// Drain queued terminal input and fold it into the build-log overlay / failure
@@ -498,7 +516,7 @@ fn emit_dialog_mouse_debug_telemetry(
 pub fn handle_cockpit_input(
     view: &SharedView,
     run_id: &str,
-    run_log_path: &str,
+    run_log_path: Option<&str>,
     terminal: &dyn LaunchHostTerminal,
     jackin_version: &'static str,
     _cancel_token: &CancellationToken,
@@ -557,7 +575,15 @@ pub fn handle_cockpit_input(
                 // for a dialog mouse event so a `--debug` run reveals whether a
                 // horizontal-scroll gesture even reaches the cockpit (and as what
                 // kind/modifiers), instead of guessing at the mapping.
-                emit_dialog_mouse_debug_telemetry(terminal, &v, m);
+                let container_info_open = v.container_info_open;
+                let build_log_open = v.build_log_open;
+                emit_dialog_mouse_debug_telemetry(
+                    terminal,
+                    container_info_open,
+                    build_log_open,
+                    &mut v.last_dialog_mouse_cell,
+                    m,
+                );
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
                         handle_cockpit_mouse_down(&mut v, ctx, m.column, m.row);

@@ -61,11 +61,13 @@ Workspace source under [crates/](crates/); supporting files at repo root:
 | [release.toml](release.toml) | Release configuration |
 | [mise.toml](mise.toml) | Tool versions and construct image task definitions |
 | `crates/jackin-dev/` | Installed developer helper binary (`jackin-dev`) for local PR checkout/sync/isolation workflows |
+| `crates/jackin-console-oppicker/` | Extracted 1Password picker model/state/input crate used by the console TUI facade; console keeps only render adapters and external `op` runner execution |
+| `crates/jackin-agent-status/` | Pure agent runtime status detection, arbitration, process sampling, rule packs, and fixtures |
 | `crates/jackin-xtask/` | Workspace automation binary (`cargo xtask`): construct image tasks + PTY fixture extraction; full command inventory at [Workspace Automation](https://jackin.tailrocks.com/reference/getting-oriented/xtasks/) |
 | [docker-bake.hcl](docker-bake.hcl) | Declarative Docker Bake build graph for construct image |
 | `rust-toolchain.toml` | Pinned Rust toolchain (CI-enforced MSRV) |
 
-For **Rust source tree** — [crates/jackin/src/app/](crates/jackin/src/app/), [crates/jackin/src/cli/](crates/jackin/src/cli/), [crates/jackin-runtime/src/runtime/](crates/jackin-runtime/src/runtime/), [crates/jackin/src/workspace/](crates/jackin/src/workspace/), [crates/jackin/src/console/](crates/jackin/src/console/), and extracted subsystem crates under [crates/](crates/) — see [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/). That page (and this) updated in same PR as any module-level structural change (R1 added core/ansi_tokens.rs + launch-tui/launch_output.rs; R2 flipped arch gate + CI to --strict), so never falls behind.
+For **Rust source tree** — [crates/jackin/src/app/](crates/jackin/src/app/), [crates/jackin/src/cli/](crates/jackin/src/cli/), [crates/jackin-runtime/src/runtime/](crates/jackin-runtime/src/runtime/), [crates/jackin/src/workspace/](crates/jackin/src/workspace/), [crates/jackin/src/console/](crates/jackin/src/console/), and extracted subsystem crates under [crates/](crates/) — see [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/). That page (and this) updated in same PR as any module-level structural change (R1 added core/ansi_tokens.rs + launch-tui/launch_output.rs; R2 flipped arch gate + CI to --strict; R3 split console editor state impls by responsibility; R4 carved the op-picker pure model into `jackin-console-oppicker`; R5 moved op-picker state/input/load-result polling into the same leaf crate), so never falls behind.
 
 ## Documentation site (`docs/`)
 
@@ -131,4 +133,4 @@ Changing behaviour: update both sides in same PR. This table = **per-PR contract
 
 ## Keeping the docs fresh
 
-Codebase Map and cross-reference table above = two places structural changes show up first. If your PR adds new module directory, splits file into subdir, introduces new cross-cutting helper, or renames public surface — **update `docs/.../reference/getting-oriented/codebase-map.mdx` and (if relevant) cross-reference table above in same PR**. See `TODO.md` for stale-docs check every structural PR runs.
+Codebase Map and cross-reference table above = two places structural changes show up first. If your PR adds new module directory, splits file into subdir, introduces new cross-cutting helper, or renames public surface — **update `docs/.../reference/getting-oriented/codebase-map.mdx` and (if relevant) cross-reference table above in same PR**. See [`TODO.md`](TODO.md) for stale-docs check every structural PR runs.

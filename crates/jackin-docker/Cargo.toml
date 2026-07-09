@@ -15,22 +15,22 @@ name = "jackin_docker"
 path = "src/lib.rs"
 
 [dependencies]
-jackin-core = { version = "0.6.0-dev", path = "../jackin-core" }
-jackin-diagnostics = { version = "0.6.0-dev", path = "../jackin-diagnostics" }
+jackin-core = { workspace = true }
+jackin-diagnostics = { workspace = true }
 bollard = { version = "0.21", features = ["aws-lc-rs"] }
-tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
-futures-util = "0.3"
-reqwest = { version = "0.13", default-features = false }
-fast-down = { version = "5.0", features = ["fast-puller", "file", "reqwest-tls"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-anyhow = "1.0"
+tokio = { workspace = true, features = ["rt", "process", "io-util", "sync", "macros", "time", "fs"] }
+futures-util = { workspace = true }
+reqwest = { workspace = true }
+fast-down = { workspace = true, features = ["fast-puller", "file", "reqwest-tls"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
 
 [build-dependencies]
-jackin-build-meta = { version = "0.6.0-dev", path = "../jackin-build-meta" }
+jackin-build-meta = { workspace = true }
 
 [dev-dependencies]
-tempfile = "=3.27.0"
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

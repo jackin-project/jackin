@@ -74,11 +74,11 @@ Every `jackin ...` invocation mints a run diagnostics ID before command-specific
 
 1. **Resolve role** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
 2. **Validate the repo contract** — require `jackin.role.toml` and a valid Dockerfile path, validate manifest strictly
-3. **Resolve environment variables** — prompt the user for interactive env vars declared in the manifest
-4. **Generate a derived build context** — copy the repo, inject agent assets (entrypoint + runtime hooks), and render a derived Dockerfile
-5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
-6. **Create a per-agent Docker network**
-7. **Start a privileged `docker:dind` sidecar** with TLS enabled and a shared certificate volume
+3. **Start independent background work** — launch non-interactive operator-env resolution, optional workspace git-pull-on-entry, and per-instance sidecar/network setup as soon as their inputs are available
+4. **Resolve foreground environment variables** — await operator-env values, then prompt the user for interactive env vars declared in the manifest
+5. **Generate a derived build context** — copy the repo, inject agent assets (entrypoint + runtime hooks), and render a derived Dockerfile
+6. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible while sidecar/network setup continues
+7. **Prepare workspace state** — join the deferred git pull before workspace materialization, then write per-instance manifest/index records, runtime directories, and mount lists
 8. **Write Capsule launch config** — serialize the role key, workspace workdir, ordered supported-agent list, and manifest model overrides to `~/.jackin/sockets/<container>/agent.toml`, which is bind-mounted at `/jackin/run/agent.toml`.
 9. **Start the agent container detached** (`docker run -d ... <image> <agent>`) with `jackin-capsule` as PID 1. The trailing `<agent>` argv selects only the initial tab; it is not a container-level environment variable.
 10. **Attach the operator terminal** via `docker exec -it <container> /jackin/runtime/jackin-capsule`. The client connects to the PID 1 daemon over `/jackin/run/jackin.sock` and renders the in-container multiplexer.
@@ -88,14 +88,14 @@ Launch progress is emitted through <RepoFile path="crates/jackin-runtime/src/run
 | Stage label | Technical work behind the label |
 |---|---|
 | `identity` | Resolve the launch target, workspace/path label, role selector, requested agent, instance name, image tag, run diagnostics handle, and operator-visible loading title. |
-| `role` | Resolve the role source from config or command flags, acquire/update the role-repo cache, check out the requested ref/branch, and load the role manifest. |
-| `credentials` | Inspect host-side agent/GitHub/1Password credential availability read-only, materialize per-instance auth state under jackin-owned state, and prepare the credential mounts/env that the container receives. |
+| `role` | Resolve the role source from config or command flags, acquire/update the role-repo cache, check out the requested ref/branch, and load the role manifest. Default-branch launch refreshes can reuse a fresh `.git/FETCH_HEAD` within `role_repo_refresh_ttl_seconds` (default `60`; `0` always fetches), while rebuilds, branch overrides, and background image refreshes still fetch. |
+| `credentials` | Inspect host-side agent/GitHub/1Password credential availability read-only, materialize per-instance auth state under jackin-owned state, and prepare the credential mounts/env that the container receives. Non-interactive operator-env reads start before image decision and are awaited before manifest prompts. |
 | `construct` | Verify or pull the shared construct base image (`projectjackin/construct:trixie`) that the derived role image builds from. |
-| `agent binaries` | Resolve and cache the declared agent runtime binaries plus the matching `jackin-capsule` binary under jackin-owned host cache state. If release metadata lookup fails after the metadata TTL expires, jackin❯ falls back to the newest executable cached agent binary and records a diagnostics warning; a cold cache still fails the launch. |
-| `derived image` | Generate the role-specific `DerivedDockerfile`, assemble the temporary Docker build context, copy cached runtime assets into it, run `docker build`, and capture Docker stdout/stderr to a plain run sidecar log on failure. |
-| `workspace` | Prepare the mounted workspace/directory, optional workspace git-pull-on-entry work, per-instance manifest/index records, runtime directories, mount list, and Capsule launch config. |
-| `network` | Create or reconcile the per-instance Docker network and related host-side runtime names. |
-| `sidecar` | Start or recover the DinD sidecar container and its certs volume for the role container. |
+| `agent binaries` | Resolve and cache the declared agent runtime binaries plus the matching `jackin-capsule` binary under jackin-owned host cache state. A stale metadata cache no longer blocks a warm launch when an executable binary is already cached: jackin❯ uses that binary immediately, refreshes release metadata in the background, and records labels for the binary actually installed. A cold cache still resolves/downloads normally, with Dockerfile fallback installers available for agents that support them. |
+| `derived image` | Decide reuse from local image tags and recipe labels; on a miss, generate the role-specific `DerivedDockerfile`, assemble the temporary Docker build context, copy cached runtime assets into it, run `docker build`, and capture Docker stdout/stderr to a plain run sidecar log on failure. Reuse launches do not block on published-image pulls or agent release lookups; those staleness checks run after attach in a background sentinel, and a stale result rebuilds the image for the next launch. |
+| `workspace` | Prepare the mounted workspace/directory, optional workspace git-pull-on-entry work, per-instance manifest/index records, runtime directories, mount list, and Capsule launch config. Git-pull-on-entry starts before image work and is joined before materialization so mounted sources reflect the pulled state. |
+| `network` | Create or reconcile the per-instance Docker network and related host-side runtime names. This can run while runtime binaries and the derived image are prepared. |
+| `sidecar` | Start, recover, or adopt the DinD sidecar container and its certs volume for the role container. Console entry may pre-create one kept sidecar in the background; a later launch adopts it when compatible, then replenishes another kept sidecar after the interactive attach returns. Sidecar readiness is polled during image work, role-state preparation, and workspace materialization. |
 | `capsule` | Start the detached role container with `jackin-capsule` as PID 1, the selected agent argv, resolved mounts, runtime config, labels, and environment. |
 | `hardline` | Attach the foreground terminal to the running Capsule client with `docker exec -it`, then classify the post-session container state for cleanup, preservation, or recovery. |
 
@@ -163,7 +163,7 @@ Pane PTYs run with a stable `TERM=xterm-256color` baseline and `COLORTERM=trueco
 
 Terminal-specific enhancements are attached-client state instead. Every foreground attach (`jackin load`, `jackin hardline`, and console attach) runs a short-lived Capsule client through `docker exec`; that client reports its current `TERM`, `TERM_PROGRAM`, and `COLORTERM` in the attach handshake. The PID 1 daemon stores that identity only for the active client and refreshes it on every takeover, so jackin-owned output enhancements follow the terminal the operator is using now.
 
-Ghostty, Kitty, and iTerm get native enhancements through that active-client capability path. Features that are raw terminal protocols, such as extended-key sequences, OSC 52 clipboard writes, OSC 8 hyperlinks, OSC 9 notifications, and focused-pane title updates, continue to travel over the attach stream when allowed. Enhancements that require known outer-terminal support, such as OSC 22 pointer-shape feedback, are enabled only when the active client advertises a compatible identity.
+Ghostty, Kitty, and iTerm get native enhancements through that active-client capability path. Features that are raw terminal protocols, such as extended-key sequences, OSC 8 hyperlinks, OSC 9 notifications, and focused-pane title updates, continue to travel over the attach stream when allowed. OSC 52 clipboard writes from pane output are default-deny and require `JACKIN_OSC52=allow`; jackin❯-owned copy actions still emit OSC 52 with visible feedback. Enhancements that require known outer-terminal support, such as OSC 22 pointer-shape feedback, are enabled only when the active client advertises a compatible identity.
 
 ## Capsule terminal capability model
 
@@ -174,7 +174,7 @@ The container no longer runs tmux for agent sessions. The Capsule owns the PTYs 
 | Modified keys | Client-side input parsing preserves xterm/Kitty/CSI-u key sequences and forwards pane input unmodified unless it is a jackin❯-owned palette or prefix command. |
 | Terminal feature advertisement | Pane PTYs run with `TERM=xterm-256color` and `COLORTERM=truecolor`; outer-terminal identity is reported per attach and used only for client-side enhancements. |
 | Focus events | The attach client enables focus reporting on the outer terminal and forwards focus-in/focus-out only to panes that requested it. |
-| OSC passthrough | Focused-pane OSC 0/1/2 titles, OSC 8 hyperlinks, OSC 9 notifications, and OSC 52 clipboard writes are forwarded with per-family opt-outs. OSC 7 is captured for pane titles and not forwarded to the host. |
+| OSC passthrough | Focused-pane OSC 0/1/2 titles, OSC 8 hyperlinks, and OSC 9 notifications are forwarded with per-family opt-outs. OSC 52 clipboard writes are forwarded only with `JACKIN_OSC52=allow`. OSC 7 is captured for pane titles and not forwarded to the host. |
 | Escape timing | The input parser treats Escape as data for the pane except when a jackin❯ dialog is open; dialogs receive normalized legacy keys even after an embedded TUI enables progressive keyboard reporting. |
 | Mouse | The client keeps the outer terminal in SGR any-event mode. The daemon handles clicks on jackin❯ chrome and forwards pane mouse events only when the pane's program opted into mouse reporting. |
 
@@ -363,7 +363,7 @@ Both the host CLI (<RepoFile path="crates/jackin/src/main.rs">crates/jackin/src/
 
 **Known open sites (Defect 43).** A small number of blocking calls remain in the provisioning path. The highest-priority one is `RoleState::prepare` in <RepoFile path="crates/jackin-instance/src/lib.rs">crates/jackin-instance/src/lib.rs</RepoFile>, which runs `gh` CLI, macOS keychain (`security`), and filesystem copies directly on the async provisioning task — and is therefore the most likely rain-freeze cause when git auth or 1Password are involved. Wrap it in `spawn_blocking` and clone the necessary inputs for the closure. Subsequent conversions: `op_cli.rs` poll loops, and any remaining `std::process::Command` in async-reachable paths.
 
-**Parallelism: `try_join!` for independent stages.** The launch pipeline in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile> already uses `tokio::join!` for some independent steps. The pattern is `try_join!(stage_a, stage_b)` for stages with no data dependency, so they run concurrently while the render task keeps ticking. Each stage emits its own `stage_started` / `stage_done` events to the progress channel; the shared-state mutex in `SharedView` handles out-of-order updates already. Extending this to more stage groups is incremental and safe.
+**Parallelism: poll independent stages early, join at the first consumer.** The launch pipeline in <RepoFile path="crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs">crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs</RepoFile> starts work as soon as its inputs are ready, then joins it where the result is first needed. Operator-env reads overlap image decision and build, workspace git pulls overlap image work and join before materialization, and sidecar/network readiness is polled while runtime binaries and the derived image are prepared. Each stage emits its own `stage_started` / `stage_done` events to the progress channel; the shared-state mutex in `SharedView` handles out-of-order updates already.
 
 ## AgentRuntime and Provider registry
 

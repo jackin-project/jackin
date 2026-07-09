@@ -172,6 +172,44 @@ impl RuntimeConfig {
     }
 }
 
+// ─── Telemetry selection ─────────────────────────────────────────────────────
+
+/// Host-wide telemetry verbosity (`config.toml` `[telemetry].level`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TelemetryLevelConfig {
+    Info,
+    Debug,
+    Trace,
+}
+
+impl TelemetryLevelConfig {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Debug => "debug",
+            Self::Trace => "trace",
+        }
+    }
+}
+
+/// Host-wide telemetry filtering (`config.toml` `[telemetry]`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct TelemetryConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<TelemetryLevelConfig>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<String>,
+}
+
+impl TelemetryConfig {
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        self.level.is_none() && self.categories.is_empty()
+    }
+}
+
 /// Per-workspace container backend override (`workspaces/<name>.toml`
 /// `[runtime]`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -479,7 +517,7 @@ pub struct ResolvedWorkspace {
 
 // AppConfig stays in the binary crate — it has many inherent impl blocks
 // (load_or_init, edit_workspace, sync_builtin_agents, etc.) that depend on
-// binary-only types (ConfigEditor, fs2, JackinPaths). Moving AppConfig would
+// binary-only types (ConfigEditor, fs4, JackinPaths). Moving AppConfig would
 // require all those impls to also move, creating a very large extraction.
 // This note documents the deliberate deferral.
 
@@ -570,7 +608,7 @@ impl GitConfig {
 }
 
 // AppConfig stays in the binary crate for now — it has impl blocks that
-// depend on JackinPaths and fs2 (binary-crate types). Migration to
+// depend on JackinPaths and fs4 (binary-crate types). Migration to
 // jackin-config happens in Phase 2 after JackinPaths is extractable.
 // This note documents the deliberate deferral so the next agent doesn't
 // redo the analysis.

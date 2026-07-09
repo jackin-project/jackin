@@ -24,7 +24,7 @@ pub fn render_launch_frame(
     frame: &mut Frame<'_>,
     view: &LaunchView,
     run_id: &str,
-    run_log_path: &str,
+    run_log_path: Option<&str>,
     no_motion: bool,
     rain: Option<&RainState>,
     debug_mode: bool,
@@ -127,7 +127,7 @@ pub fn launch_hyperlink_overlays(
     area: Rect,
     view: &LaunchView,
     run_id: &str,
-    run_log_path: &str,
+    run_log_path: Option<&str>,
     debug_mode: bool,
     jackin_version: &'static str,
 ) -> Vec<u8> {
@@ -147,7 +147,7 @@ fn launch_container_info_hyperlink_overlay_bytes(
     area: Rect,
     view: &LaunchView,
     run_id: &str,
-    run_log_path: &str,
+    run_log_path: Option<&str>,
     debug_mode: bool,
     jackin_version: &'static str,
 ) -> Vec<u8> {

@@ -1,12 +1,7 @@
-//! Named color palette for the capsule TUI: phosphor-green brand colors and
-//! semantic aliases used across capsule components.
+//! Ctrl+J command-palette command set.
 //!
-//! Not responsible for: terminal capability detection or color downgrading —
-//! all values are unconditional 24-bit RGB ANSI sequences.
-//!
-//! Key invariant: capsule components must source colors from `jackin_tui`
-//! palette constants (shared with the host console TUI) so the two surfaces
-//! cannot drift; no ad-hoc inline RGB literals in component render code.
+//! Defines the available `PaletteCommand` values, their visible `PALETTE_ITEMS`
+//! rows, and filter helpers used by the capsule command palette.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteCloseLabel {

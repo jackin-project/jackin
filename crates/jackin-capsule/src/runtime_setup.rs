@@ -296,10 +296,16 @@ fn run_agent_setup() -> Result<()> {
     // Install/repair the agent-status reporter on every launch (drift repair).
     // Observability must never break the agent: a failure is logged, not fatal.
     if let Err(e) = install_agent_status_reporter(&agent) {
-        crate::clog!("agent-status: reporter install for {agent} failed (non-fatal): {e:#}");
+        let message = reporter_install_failure_message(&agent, &e);
+        crate::clog!("{message}");
+        crate::output::stderr_line(format_args!("[entrypoint] {message}"));
     }
 
     Ok(())
+}
+
+fn reporter_install_failure_message(agent: &str, error: &anyhow::Error) -> String {
+    format!("agent-status: reporter install for {agent} failed (non-fatal): {error:#}")
 }
 
 /// Install the container-local agent-status reporter for `agent` into the agent

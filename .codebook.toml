@@ -59,6 +59,7 @@ words = [
   "groupmod",
   "hostgid",
   "hostuid",
+  "launchctl",
   "libnss",
   "linuxserver",
   "nsswitch",

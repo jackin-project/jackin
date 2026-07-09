@@ -1,4 +1,7 @@
-//! Transitional root-console TUI facades.
+//! Root-console TUI adapter shell.
+//!
+//! The `jackin` binary owns terminal/runtime/config IO and binds those side
+//! effects to the product state, input, and view code in `jackin-console`.
 
 pub(crate) mod input {
     //! Key dispatch for the workspace manager. Modal-first precedence:

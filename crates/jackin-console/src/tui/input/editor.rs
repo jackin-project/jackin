@@ -36,8 +36,8 @@ use crate::tui::state::ManagerEffect;
 use crate::tui::state::update::{ManagerMessage, update_manager};
 use crate::tui::state::{
     ConfirmTarget, EditorSaveFlow, EditorState, ExitIntent, FileBrowserTarget, ManagerStage,
-    ManagerState, Modal, SecretsScopeTag, TextInputTarget, open_editor_action_error,
-    open_role_input_error,
+    ManagerState, Modal, SecretsPickerTarget, SecretsScopeTag, TextInputTarget,
+    open_editor_action_error, open_role_input_error,
 };
 use crate::tui::update::{
     BoolConfirmModalPlan, ConfirmSaveModalPlan, DismissibleModalPlan, FileBrowserModalPlan,
@@ -584,10 +584,6 @@ pub fn handle_editor_modal(
                 }
                 InlinePickerPlan::Dismiss => {
                     let target = target.clone();
-                    let was_env_textinput = matches!(
-                        &target,
-                        TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. }
-                    );
                     if matches!(target, TextInputTarget::AuthCredential) {
                         // Plain-text leg of the source-picker round trip
                         // recovers identically to the OpPicker leg.
@@ -596,14 +592,6 @@ pub fn handle_editor_modal(
                         return EditorModalOutcome::Continue;
                     }
                     editor.pop_modal_chain();
-                    // Scratch slots only get dropped when the pop
-                    // unwinds the whole chain — a parent modal (e.g.
-                    // SourcePicker) still reading `pending_env_key`
-                    // must see it intact.
-                    if was_env_textinput && editor.modal.is_none() {
-                        // env_key context now in Modal::SourcePicker
-                        editor.pending_picker_value = None;
-                    }
                 }
                 InlinePickerPlan::Continue => {}
             }
@@ -779,7 +767,7 @@ pub fn handle_editor_modal(
                     editor.save_flow = EditorSaveFlow::Idle;
                     // If the popup was raised by a failed OpPicker commit
                     // for the auth form, the form's state was re-stashed
-                    // into `pending_auth_form_return` instead of being
+                    // into the modal parent stack instead of being
                     // re-mounted directly — restore it now so the operator
                     // lands back on the form with the prior credential
                     // unchanged, ready to retry through the source picker.
@@ -839,11 +827,8 @@ pub fn handle_editor_modal(
                         editor.clear_modal_chain();
                         return EditorModalOutcome::Continue;
                     };
-                    editor.pending_picker_target = Some((scope, Some(key)));
-                    // The env_key context now lives in the modal; no separate
-                    // pending_env_key field to clear.
-                    // env_key context now in Modal::SourcePicker
                     editor.open_sub_modal(Modal::OpPicker {
+                        secrets_target: Some(SecretsPickerTarget::Existing { scope, key }),
                         state: Box::new(OpPickerState::new_with_cache(op_cache)),
                     });
                 }
@@ -852,8 +837,6 @@ pub fn handle_editor_modal(
                     // the modal. Operator returns to the Secrets tab
                     // with no env entry added.
                     editor.pop_modal_chain();
-                    // env_key context now in Modal::SourcePicker
-                    editor.pending_picker_value = None;
                 }
                 SourcePickerPlan::Continue => {}
             }
@@ -862,7 +845,7 @@ pub fn handle_editor_modal(
             let outcome = source.handle_key(key);
             // Generate wins over the provide dispatch: the `g`/`G` trigger
             // sets `generating_token_target` (and stashes the form into
-            // `pending_auth_form_return` for the post-mint re-mount), so
+            // the modal parent stack for the post-mint re-mount), so
             // the generate branch is reachable only on that path and the
             // provide arms below stay untouched.
             if editor.generating_token_target.is_some() {
@@ -930,8 +913,12 @@ pub fn handle_editor_modal(
             }
             InlinePickerPlan::Continue => {}
         },
-        Modal::OpPicker { state: picker } => {
+        Modal::OpPicker {
+            secrets_target,
+            state: picker,
+        } => {
             let outcome = picker.handle_key(key);
+            let secrets_target = secrets_target.clone();
             // Token-generate wins over both browse and provide dispatch:
             // `generating_token_target` is set exactly when the picker was
             // opened by the auth-form `g`/`G` trigger (Create mode), so the
@@ -951,7 +938,7 @@ pub fn handle_editor_modal(
                 )) => {
                     // Auth-form round trip wins over the Secrets-tab
                     // dispatch: the auth form sets
-                    // `pending_auth_form_return` exactly when it's the
+                    // the modal parent stack exactly when it's the
                     // caller, so the two paths can never collide.
                     if editor.has_modal_parent() {
                         // Close the OpPicker — the auth form stays stashed on
@@ -963,19 +950,19 @@ pub fn handle_editor_modal(
                     // dispatch depends on whether `P` was pressed on a
                     // key row (write directly) or on an `+ Add` sentinel
                     // (stash the OpRef, ask for the key name first).
-                    let target = editor.pending_picker_target.take();
-                    match target {
-                        Some((scope, Some(key))) => {
+                    match secrets_target {
+                        Some(SecretsPickerTarget::Existing { scope, key }) => {
                             set_pending_env_op_ref(editor, &scope, &key, op_ref);
                             editor.clear_modal_chain();
                         }
-                        Some((scope, None)) => {
-                            editor.pending_picker_value =
-                                Some(jackin_core::EnvValue::OpRef(op_ref));
+                        Some(SecretsPickerTarget::NewKey { scope }) => {
                             let label = secret_new_key_after_picker_label(&scope);
                             let state = env_key_input_state(editor, &scope, label, "");
                             editor.open_sub_modal(Modal::TextInput {
-                                target: TextInputTarget::EnvKey { scope },
+                                target: TextInputTarget::EnvKeyWithValue {
+                                    scope: scope.clone(),
+                                    value: jackin_core::EnvValue::OpRef(op_ref),
+                                },
                                 state,
                             });
                         }
@@ -988,16 +975,12 @@ pub fn handle_editor_modal(
                     // Auth-form round trip: re-mount the form
                     // unchanged. Mirrors the Commit branch — the two
                     // callers (Secrets-tab `P`, auth-form Enter) are
-                    // disambiguated by `pending_auth_form_return`.
+                    // disambiguated by the modal parent stack.
                     if editor.has_modal_parent() {
                         super::auth::restore_auth_form_after_op_picker_cancel(editor);
                         return EditorModalOutcome::Continue;
                     }
-                    // Clear both scratch fields so a stale path/target
-                    // can't carry into a later interaction.
                     editor.pop_modal_chain();
-                    editor.pending_picker_target = None;
-                    editor.pending_picker_value = None;
                 }
                 InlinePickerPlan::Continue => {}
             }

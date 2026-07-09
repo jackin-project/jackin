@@ -8,8 +8,7 @@
 
 #[allow(unused_imports)]
 use super::{
-    bail_on_grant_errors, emit_auth_provision_launch_plan, purge_or_mark_clean_exited, tag_errors,
-    tagged_grant_errors,
+    emit_auth_provision_launch_plan, purge_or_mark_clean_exited, tag_errors, tagged_grant_errors,
 };
 
 use jackin_config::AppConfig;
@@ -19,6 +18,8 @@ use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
 
 use anyhow::Context;
+use std::future::Future;
+use std::pin::Pin;
 
 use super::super::trust::seed_codex_project_trust;
 use crate::instance::{
@@ -87,6 +88,31 @@ where
     )]
     pub restore_pinned_sha: Option<String>,
     pub operator_env: std::collections::BTreeMap<String, String>,
+    pub git_pull_join: Option<super::DeferredGitPull>,
+}
+
+async fn poll_sidecar_while<T, F, S>(
+    work: F,
+    mut sidecar: Pin<&mut S>,
+    early_sidecar_result: &mut Option<anyhow::Result<()>>,
+) -> anyhow::Result<T>
+where
+    F: Future<Output = anyhow::Result<T>>,
+    S: Future<Output = anyhow::Result<()>>,
+{
+    if early_sidecar_result.is_some() {
+        return work.await;
+    }
+
+    let mut work = std::pin::pin!(work);
+    tokio::select! {
+        biased;
+        result = sidecar.as_mut() => {
+            *early_sidecar_result = Some(result);
+            work.await
+        }
+        result = &mut work => result,
+    }
 }
 
 #[allow(
@@ -142,9 +168,160 @@ where
         rebuild,
         restore_pinned_sha: _,
         operator_env,
+        git_pull_join,
         ..
     } = ctx;
     // --- VERBATIM PASTED BODY (supers pre-adjusted) ---
+    let container_state = paths.data_dir.join(&container_name);
+    let adopted_sidecar = super::super::adopt_prewarmed_dind_sidecar(paths, docker).await;
+    let adopted_sidecar_was_used = adopted_sidecar.is_some();
+    let resources = adopted_sidecar.as_ref().map_or_else(
+        || DockerResources::from_container_name(&container_name),
+        |sidecar| DockerResources {
+            role_container: container_name.clone(),
+            dind_container: Some(sidecar.sidecar.dind.clone()),
+            network: sidecar.sidecar.network.clone(),
+            certs_volume: Some(sidecar.sidecar.certs_volume.clone()),
+        },
+    );
+    let network = resources.network.clone();
+    // Adoption-aware: when a prewarmed sidecar was adopted, the role connects
+    // to (and teardown must remove) the adopted DinD container, not the
+    // role-default name. `resources.dind_container` is always `Some` — set
+    // from the adopted sidecar or `from_container_name`.
+    let dind = resources
+        .dind_container
+        .clone()
+        .unwrap_or_else(|| crate::instance::naming::dind_container_name(&container_name));
+    let certs_volume = resources
+        .certs_volume
+        .clone()
+        .unwrap_or_else(|| crate::instance::naming::dind_certs_volume(&container_name));
+    // Arm cleanup immediately after adoption, before grant validation.
+    // When a prewarmed DinD sidecar was adopted, its container, network,
+    // and certs volume are already *running* and the on-disk prewarm state
+    // was deleted (`adopt_prewarmed_dind_sidecar` calls
+    // `remove_prewarmed_dind_state`), so nothing re-adopts them. Any early
+    // `?`/`return Err` between here and the start of the launch proper
+    // would otherwise orphan a live privileged container with no record.
+    // `LoadCleanup::run` is best-effort: removing the not-yet-created role
+    // container is a no-op. For a fresh launch the sidecar is not started
+    // until later, so there is nothing to leak in the gap.
+    let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
+    let mut cleanup = super::super::LoadCleanup::new(
+        container_name.clone(),
+        dind.clone(),
+        certs_volume.clone(),
+        network.clone(),
+        socket_dir,
+    );
+    let workspace_docker_for_grants = config
+        .workspaces
+        .get(&workspace.label)
+        .and_then(|wc| wc.docker.as_ref());
+    let resolved_profile = crate::runtime::docker_profile::resolve_profile(
+        opts.docker_profile,
+        workspace_docker_for_grants.and_then(|wd| wd.profile),
+        config.docker.profile,
+    );
+    let mut grant_errors = Vec::new();
+    if let Some(grants) = config.docker.grants.as_ref() {
+        grant_errors.extend(tagged_grant_errors("config", grants));
+    }
+    if let Some(grants) = workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()) {
+        grant_errors.extend(tagged_grant_errors("workspace", grants));
+    }
+    if let Err(error) = super::bail_on_grant_errors(grant_errors) {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
+    let mut effective_grants = crate::runtime::docker_profile::resolve_effective_grants(
+        resolved_profile.0,
+        config.docker.grants.as_ref(),
+        workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()),
+    );
+    if let Some(min) = validated_repo
+        .manifest
+        .docker
+        .as_ref()
+        .and_then(|d| d.min_profile)
+        && !crate::runtime::docker_profile::profile_meets_floor(resolved_profile.0, min)
+    {
+        cleanup.run(docker).await;
+        return Err(anyhow::anyhow!(
+            "role `{}` requires Docker profile `{min}` or more capable; resolved `{}` from {}",
+            selector.key(),
+            resolved_profile.0,
+            resolved_profile.1,
+        ));
+    }
+    if let Some(docker_cfg) = validated_repo.manifest.docker.as_ref() {
+        let role_grants = crate::runtime::docker_profile::DockerGrants {
+            dind: docker_cfg.dind,
+            allowed_hosts: docker_cfg.allowed_hosts.clone(),
+            capabilities_add: docker_cfg.capabilities_add.clone(),
+            ..Default::default()
+        };
+        if let Err(error) = super::bail_on_grant_errors(tagged_grant_errors("role", &role_grants)) {
+            cleanup.run(docker).await;
+            return Err(error);
+        }
+        effective_grants =
+            crate::runtime::docker_profile::fold_role_grants(effective_grants, &role_grants);
+    }
+    if let Err(error) = super::bail_on_grant_errors(tag_errors(
+        "merged",
+        crate::runtime::docker_profile::validate_effective_grants(&effective_grants),
+    )) {
+        cleanup.run(docker).await;
+        return Err(error);
+    }
+    let dind_started = crate::runtime::docker_profile::dind_enabled(&effective_grants);
+    // Start the sidecar future before image materialization so network/DinD
+    // setup can make progress while runtime binaries and Docker build run.
+    if let Some(progress) = steps.progress_mut() {
+        progress.stage_started(
+            crate::runtime::progress::LaunchStage::Network,
+            "wiring private network",
+        );
+    }
+    let sidecar_container = container_name.clone();
+    let sidecar_network = network.clone();
+    let sidecar_dind = dind.clone();
+    let sidecar_certs_volume = certs_volume.clone();
+    let sidecar_dind_grant = effective_grants.dind;
+    let sidecar_network_disabled =
+        crate::runtime::docker_profile::network_disabled(&effective_grants);
+    let role_network_internal =
+        crate::runtime::docker_profile::role_network_internal(resolved_profile.0);
+    let sidecar = async move {
+        if adopted_sidecar.is_some() {
+            Ok(())
+        } else if dind_started {
+            super::super::run_dind_sidecar_headless(
+                &sidecar_container,
+                &sidecar_network,
+                &sidecar_dind,
+                &sidecar_certs_volume,
+                sidecar_dind_grant,
+                docker,
+            )
+            .await
+        } else if sidecar_network_disabled {
+            Ok(())
+        } else {
+            super::super::create_role_network(
+                &sidecar_container,
+                &sidecar_network,
+                role_network_internal,
+                docker,
+            )
+            .await
+        }
+    };
+    let mut sidecar = std::pin::pin!(sidecar);
+    let mut early_sidecar_result: Option<anyhow::Result<()>> = None;
+
     // Step 2: Prepare runtime assets and build the derived image when the
     // earlier image decision proved the local recipe is missing/stale.
     let (image, selected_image_reused) = match image_decision {
@@ -227,164 +404,100 @@ where
             // binary. The selected agent still drives the version label and
             // the foreground session; the others must simply be present.
             let image_agents = supported_agents.clone();
-            let runtime_binaries = if let Some(progress) = steps.progress_mut() {
-                crate::runtime::image::prepare_runtime_binaries_for_agents(
-                    paths,
-                    &validated_repo,
-                    &image_agents,
-                    Some(progress),
-                )
-                .await?
-            } else {
-                crate::runtime::image::prepare_runtime_binaries_for_agents(
-                    paths,
-                    &validated_repo,
-                    &image_agents,
-                    None,
-                )
-                .await?
+            let runtime_binaries_result = poll_sidecar_while(
+                async {
+                    if let Some(progress) = steps.progress_mut() {
+                        crate::runtime::image::prepare_runtime_binaries_for_agents(
+                            paths,
+                            &validated_repo,
+                            &image_agents,
+                            Some(progress),
+                        )
+                        .await
+                    } else {
+                        crate::runtime::image::prepare_runtime_binaries_for_agents(
+                            paths,
+                            &validated_repo,
+                            &image_agents,
+                            None,
+                        )
+                        .await
+                    }
+                },
+                sidecar.as_mut(),
+                &mut early_sidecar_result,
+            )
+            .await;
+            let runtime_binaries = match runtime_binaries_result {
+                Ok(runtime_binaries) => runtime_binaries,
+                Err(error) => {
+                    cleanup.run(docker).await;
+                    return Err(error);
+                }
             };
             steps.next("Preparing derived image").await?;
-            let repo_lock = repo_lock
-                .take()
-                .ok_or_else(|| anyhow::anyhow!("repo lock already consumed"))?;
-            let image = if let Some(progress) = steps.progress_mut() {
-                crate::runtime::image::build_agent_image(
-                    paths,
-                    selector,
-                    &cached_repo,
-                    &validated_repo,
-                    agent,
-                    runtime_binaries,
-                    rebuild,
-                    reason,
-                    build_base_image_override.as_deref(),
-                    opts.debug,
-                    opts.role_branch.as_deref(),
-                    docker,
-                    runner,
-                    repo_lock,
-                    role_git_sha.as_deref(),
-                    Some(progress),
-                )
-                .await?
-            } else {
-                crate::runtime::image::build_agent_image(
-                    paths,
-                    selector,
-                    &cached_repo,
-                    &validated_repo,
-                    agent,
-                    runtime_binaries,
-                    rebuild,
-                    reason,
-                    build_base_image_override.as_deref(),
-                    opts.debug,
-                    opts.role_branch.as_deref(),
-                    docker,
-                    runner,
-                    repo_lock,
-                    role_git_sha.as_deref(),
-                    None,
-                )
-                .await?
+            let Some(repo_lock) = repo_lock.take() else {
+                cleanup.run(docker).await;
+                return Err(anyhow::anyhow!("repo lock already consumed"));
+            };
+            let image_result = poll_sidecar_while(
+                async {
+                    if let Some(progress) = steps.progress_mut() {
+                        crate::runtime::image::build_agent_image(
+                            paths,
+                            selector,
+                            &cached_repo,
+                            &validated_repo,
+                            agent,
+                            runtime_binaries,
+                            rebuild,
+                            reason,
+                            build_base_image_override.as_deref(),
+                            opts.debug,
+                            opts.role_branch.as_deref(),
+                            docker,
+                            runner,
+                            repo_lock,
+                            role_git_sha.as_deref(),
+                            Some(progress),
+                        )
+                        .await
+                    } else {
+                        crate::runtime::image::build_agent_image(
+                            paths,
+                            selector,
+                            &cached_repo,
+                            &validated_repo,
+                            agent,
+                            runtime_binaries,
+                            rebuild,
+                            reason,
+                            build_base_image_override.as_deref(),
+                            opts.debug,
+                            opts.role_branch.as_deref(),
+                            docker,
+                            runner,
+                            repo_lock,
+                            role_git_sha.as_deref(),
+                            None,
+                        )
+                        .await
+                    }
+                },
+                sidecar.as_mut(),
+                &mut early_sidecar_result,
+            )
+            .await;
+            let image = match image_result {
+                Ok(image) => image,
+                Err(error) => {
+                    cleanup.run(docker).await;
+                    return Err(error);
+                }
             };
             (image, false)
         }
     };
-    let container_state = paths.data_dir.join(&container_name);
-    let adopted_sidecar = super::super::adopt_prewarmed_dind_sidecar(paths, docker).await;
-    let resources = adopted_sidecar.as_ref().map_or_else(
-        || DockerResources::from_container_name(&container_name),
-        |sidecar| DockerResources {
-            role_container: container_name.clone(),
-            dind_container: Some(sidecar.sidecar.dind.clone()),
-            network: sidecar.sidecar.network.clone(),
-            certs_volume: Some(sidecar.sidecar.certs_volume.clone()),
-        },
-    );
-    let network = resources.network.clone();
-    // Adoption-aware: when a prewarmed sidecar was adopted, the role connects
-    // to (and teardown must remove) the adopted DinD container, not the
-    // role-default name. `resources.dind_container` is always `Some` — set
-    // from the adopted sidecar or `from_container_name`.
-    let dind = resources
-        .dind_container
-        .clone()
-        .unwrap_or_else(|| crate::instance::naming::dind_container_name(&container_name));
-    let certs_volume = crate::instance::naming::dind_certs_volume(&container_name);
-    let workspace_docker_for_grants = config
-        .workspaces
-        .get(&workspace.label)
-        .and_then(|wc| wc.docker.as_ref());
-    let resolved_profile = crate::runtime::docker_profile::resolve_profile(
-        opts.docker_profile,
-        workspace_docker_for_grants.and_then(|wd| wd.profile),
-        config.docker.profile,
-    );
-    let mut grant_errors = Vec::new();
-    if let Some(grants) = config.docker.grants.as_ref() {
-        grant_errors.extend(tagged_grant_errors("config", grants));
-    }
-    if let Some(grants) = workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()) {
-        grant_errors.extend(tagged_grant_errors("workspace", grants));
-    }
-    bail_on_grant_errors(grant_errors)?;
-    let mut effective_grants = crate::runtime::docker_profile::resolve_effective_grants(
-        resolved_profile.0,
-        config.docker.grants.as_ref(),
-        workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()),
-    );
-    if let Some(min) = validated_repo
-        .manifest
-        .docker
-        .as_ref()
-        .and_then(|d| d.min_profile)
-        && !crate::runtime::docker_profile::profile_meets_floor(resolved_profile.0, min)
-    {
-        anyhow::bail!(
-            "role `{}` requires Docker profile `{min}` or more capable; resolved `{}` from {}",
-            selector.key(),
-            resolved_profile.0,
-            resolved_profile.1,
-        );
-    }
-    if let Some(docker_cfg) = validated_repo.manifest.docker.as_ref() {
-        let role_grants = crate::runtime::docker_profile::DockerGrants {
-            dind: docker_cfg.dind,
-            allowed_hosts: docker_cfg.allowed_hosts.clone(),
-            capabilities_add: docker_cfg.capabilities_add.clone(),
-            ..Default::default()
-        };
-        bail_on_grant_errors(tagged_grant_errors("role", &role_grants))?;
-        effective_grants =
-            crate::runtime::docker_profile::fold_role_grants(effective_grants, &role_grants);
-    }
-    bail_on_grant_errors(tag_errors(
-        "merged",
-        crate::runtime::docker_profile::validate_effective_grants(&effective_grants),
-    ))?;
-    let dind_started = crate::runtime::docker_profile::dind_enabled(&effective_grants);
-    // Arm cleanup immediately after adoption, before any fallible step.
-    // When a prewarmed DinD sidecar was adopted, its container, network,
-    // and certs volume are already *running* and the on-disk prewarm state
-    // was deleted (`adopt_prewarmed_dind_sidecar` calls
-    // `remove_prewarmed_dind_state`), so nothing re-adopts them. Any early
-    // `?`/`return Err` between here and the start of the launch proper
-    // (status write, credential preflights, GitHub-token preflight — a
-    // missing token is a routine operator error) would otherwise orphan a
-    // live privileged container with no record. `LoadCleanup::run` is
-    // best-effort: removing the not-yet-created role container is a no-op.
-    // For a fresh (non-adopted) launch the sidecar is not started until
-    // after this point, so there is nothing to leak in the gap.
-    let socket_dir = paths.jackin_home.join("sockets").join(&container_name);
-    let mut cleanup = super::super::LoadCleanup::new(
-        container_name.clone(),
-        dind.clone(),
-        certs_volume.clone(),
-        network.clone(),
-        socket_dir,
-    );
     let host_workdir_fingerprint = super::super::manifest_host_workdir_fingerprint(workspace);
     let new_manifest = InstanceManifest::new(NewInstanceManifest {
         container_base: &container_name,
@@ -444,8 +557,9 @@ where
     // Modes that inject a credential require the well-known env
     // var to resolve to a non-empty value; fail fast with an
     // actionable structured error so the operator sees the
-    // problem before we spend time starting the network and DinD
-    // sidecar. Sync / Ignore short-circuit inside the helper.
+    // problem before container startup. The network/DinD sidecar may already
+    // be warming in parallel with image materialization, so these errors route
+    // through cleanup. Sync / Ignore short-circuit inside the helper.
     //
     // Build the per-layer mode-resolution and env-layer traces
     // here (in the caller) so the structured error carries the
@@ -527,7 +641,8 @@ where
     };
 
     // Token-mode pre-flight: GH_TOKEN must resolve to a non-empty
-    // value before we spend time starting DinD.
+    // value before container startup. Sidecar resources may already be warming
+    // in parallel and are cleaned up on failure.
     if let Err(error) = verify_github_token_present(
         github_mode,
         github_ctx.token.as_deref(),
@@ -537,59 +652,6 @@ where
         cleanup.run(docker).await;
         return Err(error);
     }
-
-    // Token/env preflights are complete, so the per-instance sidecar can
-    // start while role-state auth is prepared. This preserves fail-fast
-    // missing-token behavior but removes the old auth-then-DinD serial wait.
-    // DinD startup races role_state_future via tokio::select!; the later
-    // join with workspace materialization further overlaps sidecar readiness
-    // with mount setup.
-    if let Some(progress) = steps.progress_mut() {
-        progress.stage_started(
-            crate::runtime::progress::LaunchStage::Network,
-            "wiring private network",
-        );
-    }
-    let sidecar_container = container_name.clone();
-    let sidecar_network = network.clone();
-    let sidecar_dind = dind.clone();
-    let sidecar_certs_volume = certs_volume.clone();
-    // WP4 Part B: the sidecar tier (rootless vs privileged image/flags).
-    let sidecar_dind_grant = effective_grants.dind;
-    let sidecar_network_disabled =
-        crate::runtime::docker_profile::network_disabled(&effective_grants);
-    // WP2: `locked` runs on a Docker-internal network (no off-bridge route)
-    // independent of the in-container iptables allowlist; every other
-    // profile uses a routable network.
-    let role_network_internal =
-        crate::runtime::docker_profile::role_network_internal(resolved_profile.0);
-    let sidecar = async move {
-        if adopted_sidecar.is_some() {
-            Ok(())
-        } else if dind_started {
-            super::super::run_dind_sidecar_headless(
-                &sidecar_container,
-                &sidecar_network,
-                &sidecar_dind,
-                &sidecar_certs_volume,
-                sidecar_dind_grant,
-                docker,
-            )
-            .await
-        } else if sidecar_network_disabled {
-            Ok(())
-        } else {
-            super::super::create_role_network(
-                &sidecar_container,
-                &sidecar_network,
-                role_network_internal,
-                docker,
-            )
-            .await
-        }
-    };
-    let mut sidecar = std::pin::pin!(sidecar);
-    let mut early_sidecar_result: Option<anyhow::Result<()>> = None;
 
     // Per-supported-agent mode resolution — each agent in
     // `manifest.supported_agents()` honors its own configured
@@ -660,12 +722,16 @@ where
     // returns `LaunchCancelled`, which flows into the `Err` arm below and
     // runs `cleanup` — tearing down any already-started sidecar.
     let select_role_state = async {
-        tokio::select! {
-            result = &mut sidecar => {
-                early_sidecar_result = Some(result);
-                (&mut role_state_future).await
+        if early_sidecar_result.is_some() {
+            (&mut role_state_future).await
+        } else {
+            tokio::select! {
+                result = &mut sidecar => {
+                    early_sidecar_result = Some(result);
+                    (&mut role_state_future).await
+                }
+                result = &mut role_state_future => result,
             }
-            result = &mut role_state_future => result,
         }
     };
     let role_state_result = if let Some(progress) = steps.progress_mut() {
@@ -769,6 +835,9 @@ where
         "load_role: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
         force = opts.force,
     );
+    if let Some(git_pull_join) = git_pull_join {
+        super::finish_deferred_git_pull(git_pull_join, steps).await?;
+    }
     if let Some(progress) = steps.progress_mut() {
         progress.stage_started(
             crate::runtime::progress::LaunchStage::Workspace,
@@ -940,6 +1009,18 @@ where
         }
     }
 
+    let reuse_staleness_sentinel = (selected_image_reused
+        && crate::runtime::image::reuse_needs_background_staleness_check(
+            paths,
+            &validated_repo,
+            &image,
+        ))
+    .then_some(super::super::launch_runtime::ReuseStalenessSentinel {
+        role_git: &source.git,
+        branch_override: opts.role_branch.as_deref(),
+        image: &image,
+    });
+
     let ctx = super::super::LaunchContext {
         container_name: &container_name,
         image: &image,
@@ -968,6 +1049,12 @@ where
                 reason,
             }
         }),
+        reuse_staleness_sentinel,
+        sidecar_prewarm_replenish: if adopted_sidecar_was_used {
+            super::super::SidecarPrewarmReplenish::AfterAttach
+        } else {
+            super::super::SidecarPrewarmReplenish::None
+        },
         sibling_prewarm: super::super::SiblingPrewarm {
             role_git: &source.git,
             branch_override: opts.role_branch.as_deref(),

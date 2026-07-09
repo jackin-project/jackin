@@ -1,0 +1,269 @@
+---
+title: "04 — Style and Language Compression — Beyond Caveman"
+---
+
+# 04 — Style and Language Compression — Beyond Caveman
+
+**TL;DR**
+
+- Register compression of the model's visible replies is the only style lever worth real money: locally measured **−54% to −67%** tokens on instruction/reply ladders (Fable tokenizer, method below), consistent with phase-0's session-level **caveman-ultra = 58.5%** (its "~75%" marketing claim is character-level folklore). On the modeled session profile that is **~10% of session dollars, hard-capped at 17%** even at total muteness.
+- The cap exists because **thinking = 54.8% of output tokens** (local, n=1), billed in full even when displayed summarized ("You're charged for the full thinking tokens... not the summary tokens" — live docs), and no style instruction reaches it. The documented lever past the cap is the **effort parameter** — and, correcting folklore, **NOT `MAX_THINKING_TOKENS`, which live docs say has no effect on Fable 5**.
+- The reasoning-compression literature converges on the same band for visible CoT: CCoT **−48.70%** (FLLM 2024), TALE **−67%** with &lt;3pp accuracy loss, Chain of Draft to **7.6–21% of CoT tokens**, Sketch-of-Thought **up to −84%** (EMNLP 2025) — all measured on QA benchmarks, none on agentic coding, none on adaptive thinking.
+- Glyph/symbol prompt DSLs are **anti-recommended on Claude**: telegraphic ASCII English beat a SynthLang-style prompt by ~26% in two independent local samples; exotic glyphs cost **3.9–4.9 tokens each**; the one comprehension study found Claude Haiku 4.5 parses symbolic instructions at 100% but obeys operators at **26% fidelity** (silent disobedience).
+- Because one visible-output token costs as much as **50 cache-read tokens** ($50 vs $1/MTok on Fable 5), compressing the always-cached instruction side is ~50x less valuable per token: a 60% cut of this repo's 2,738-token <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> saves **≈$0.05/session (~1.4%)** — and carries rule-misread risk disproportionate to that.
+
+Cross-references: dollar split and pricing in [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/); always-on token inventory in [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/); instruction-side architecture in [06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/); the output-side sibling levers in [09 — Output discipline and structured generation](/reference/research/token-optimization-techniques/09-output-discipline/); experiment harness in [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/).
+
+## Why output register is the only style slice worth real money
+
+Per heavy modeled session (local phase-0 measurement, scaled): ~19 API calls, 5.5k uncached input, 85k cache-write, 1.17M cache-read, 27k output (55% thinking at max effort); ~$3.67/session, ~$22/heavy day at Fable 5 list prices. Dollar split: cache reads 32% / cache writes 29% / thinking 20% / visible output 17% / uncached input 2%.
+
+| Token class | Price (Fable 5) | Dollar share | Reachable by style? |
+|---|---|---|---|
+| Visible output | $50/MTok | 17% | YES — register ladder, this file |
+| Thinking output | $50/MTok | 20% | NO style control documented; effort only (frequency guidance via prompt is documented, see technique 9) |
+| Cache reads | $1/MTok | 32% | Marginally — instruction compression at 1/50th the per-token value |
+| Cache writes | $12.50/MTok | 29% | Same 50:1-ish discount (12.5:50 = 1:4 vs output) |
+| Uncached input | $10/MTok | 2% | Yes but tiny base |
+
+One visible-output token = 50 cache-read tokens in dollars. Every instinct to "optimize the CLAUDE.md" is pointed at the cheap slice; the model's own prose is the expensive one. (Pricing per reference sheet verified for this dossier set.)
+
+## Local measurement battery 
+
+Method: free `count_tokens` API via `/tmp/ct.py` (script `/tmp/measure_style.py`); per-text tokens = raw − 7-token message overhead (calibrated: "hello" = 8 raw, "hello world" = 9 raw, same overhead on `claude-sonnet-4-6`); per-symbol/word costs = (count of 10 space-prefixed repeats − overhead)/10. Absolute counts ±1 token; relative percentages robust.
+
+**Register ladder — instruction side** (same content, four registers):
+
+| Register | Text (abridged) | Tokens | vs full |
+|---|---|---|---|
+| Polite/full | "Could you please take a look at the authentication module and refactor it so that it uses..." (286 chars) | 72 | — |
+| Plain | "Refactor the authentication module to use the new session management API, then run..." | 33 | −54.2% |
+| Telegraphic | "Refactor auth module to new session management API. Run full test suite. Confirm nothing broke." | 29 | −59.7% |
+| Caveman | "Refactor auth module. Use new session API. Run tests. Nothing break." | 24 | −66.7% |
+
+**Register ladder — assistant-reply side**: verbose default reply 80 tok → telegraphic 32 (−60.0%) → caveman 32 (−60.0%). Notable: on this sample **caveman grammar bought zero tokens over telegraphic English** — the savings come from deleting words, not from breaking grammar.
+
+**Abbreviations** (per word, leading space, x10/10): function=1.0 vs fn=2.0 **NEGATIVE**; without=1.0 vs w/o=3.0 **NEGATIVE**; because=1.0 vs bc=2.0 **NEGATIVE**; config=1.0 vs cfg=3.0 **NEGATIVE**; db/repo/dir/exc/perf = zero gain; asynchronous=5.0 vs async=1.0, initialize=3.0 vs init=1.0, parameters=3.0 vs params=1.0, kubernetes=5.0 vs k8s=3.0, implementation=3.0 vs impl=2.0 **SAVE**. Replicates the phase-0 kill: abbreviation only pays on genuinely multi-token words.
+
+**Glyph per-symbol costs**: ↹ 3.9; ⊕ 4.9; ⇒ 4.9; ∀ ∃ ∈ ∧ ∨ ≥ ≠ ✓ ∴ ¬ all 3.9; Δ Σ 3.0; → **1.0**; `->` 2.0; `=>` 1.1. (The common arrow → is the lone cheap Unicode symbol — cheaper than ASCII `->`.)
+
+**Notation shootout** (same content): glyph DSL "↹ logs.csv ⊕ filter(level≥ERROR) ⇒ Σ summary ∴ top3 causes" = **42 tok**; plain English = **35 tok**; telegraphic ASCII "Read logs.csv. Filter level>=ERROR. Summarize. Top 3 causes." = **31 tok**. The DSL loses to plain prose by +20% and to telegraphic by +35%. (Sweep sample same day, different content: DSL 36 / prose 40 / telegraphic 26 — DSL narrowly beat prose there but lost to telegraphic by +38%. Both samples: telegraphic wins by ~26–28% over the DSL.)
+
+**Math notation**: prose 37 tok; ASCII operators ("for all req in queue: if retries >= 3 and status != success -> mark failed") **24 tok (−35.1%)**; Unicode operators ("∀ req ∈ queue: retries ≥ 3 ∧ status ≠ success ⇒ mark failed") **38 tok (+2.7% vs prose)**. Unicode math costs MORE than full prose on this sample; ASCII is the only winning math notation.
+
+**Wenyan / classical Chinese**: "凡測試皆過則提交" = **9 tok** vs "if all tests pass then commit" = **8 tok** (net negative, replicating the sweep's spot check exactly). Longer rule: wenyan 32 tok vs plain English 30 vs telegraphic English 25. Classical CJK ran **0.89–0.91 chars/token** here (≥1 token per character) — FLAG: phase-0 reported "CJK ~1.47 chars/tok"; that figure evidently included the ASCII/code mix of real session output, because pure classical characters are at or above 1 tok/char on the Fable tokenizer. Either way both measurements agree characters ≠ tokens, and wenyan's measured savings are registral (extreme word-dropping), not tokenizer magic.
+
+**Identifier aliasing**: `crates/jackin-capsule/src/tui/render_conformance_fixtures.rs` = 29 tok vs alias "RCF" = 3 tok (**−89.7% per mention**); a 16-word descriptive phrase 18 tok → "RCF harness" 5 tok (−72.2%). Legend line "RCF = crates/.../render_conformance_fixtures.rs" = **32 tok one-time** → break-even on the **2nd mention** (32 < 2×26).
+
+**Cross-tokenizer transfer** (same texts on `claude-sonnet-4-6`): polite-full 72 tok Fable vs 59 Sonnet (**Fable +22.0%**); telegraphic 29 vs 21 (**+38.1%**) — corroborates phase-0's +15–38%. The relative ladder cut transfers: −59.7% (Fable) vs −64.4% (Sonnet 4.6). Any published per-token claim measured on another tokenizer does not transfer in absolute terms.
+
+**Cost of the compression instructions themselves**: exact CoD prompt sentence = 48 tok; "Be concise." = 4 tok; "Use fewer than 80 tokens of reasoning." = 17 tok; one alias legend line = 32 tok. All bill at cache-read rates once resident, i.e. ~$0.00005/turn each — negligible.
+
+## Techniques
+
+### 1. Register-ladder output compression (filler strip → telegraphic → caveman) — COMPLETE RECORD
+
+One markdown file makes Claude drop politeness, preamble, and function words from visible replies; the safe rungs cut half the visible-output tokens.
+
+- **Layer:** output (visible assistant prose).
+- **Mechanism:** BPE token count tracks word count, not character count, so deleting words is what saves. Delivery vehicle: Claude Code output styles "directly modify Claude Code's system prompt", "All output styles trigger reminders for Claude to adhere to the output style instructions", and "For custom styles, output token usage depends on what your instructions tell Claude to produce" (code.claude.com/docs/en/output-styles). Custom styles silently drop the built-in software-engineering instructions unless frontmatter sets `keep-coding-instructions: true` (documented default `false`). Styles load once per session; changes take effect after `/clear` and invalidate the cached system-prompt prefix — do not toggle mid-session.
+- **Expected savings:** 50–67% of visible-output tokens (local ladder, table above; phase-0 session-level caveman-ultra 58.5%). Modeled profile: 0.60 × 17% visible-output dollar share ≈ **10.2% of session dollars** ≈ $0.37/session, $2.2/heavy day (ESTIMATE, arithmetic shown).
+- **Evidence tier:** T1 (method above) + phase-0 session measurement + live product docs for the mechanism.
+- **Quality risk:** NEGATIVE-COST to NEUTRAL at filler-strip/telegraphic rungs (CCoT, technique 3, found concision "negligible" outside weak-model math); **RISKY at caveman-ultra** — no benchmark anywhere measures register-compressed agent output against task success. Degradation would look like: dropped caveats, skipped rationale the operator needed, or changed tool-call behavior (effort docs show terseness and tool-call count co-vary, so a style that says "be terse" may also alter actions). Failure to set `keep-coding-instructions` degrades coding behavior invisibly. Local reply-ladder data says stop at telegraphic: caveman grammar added zero token savings on the reply sample.
+- **Availability:** CLAUDE-CODE-TODAY (`~/.claude/output-styles/*.md` or the caveman plugin).
+- **Effort to adopt:** minutes.
+- **Composability:** stacks with effort (different slices: style→visible, effort→thinking+tool calls) and with subagent delegation (caveman's cavecrew pattern compresses tool-result injection back into the main context). Anti-synergy: mid-session style switches break the prompt cache; no meaningful interaction with cache-read savings.
+- **Validation protocol:** fixed suite of 20 repo tasks (10 bugfix, 10 refactor) run twice — default style vs telegraphic style, same effort, fresh sessions. Record per task: `usage.output_tokens`, visible-block tokens via count_tokens (to split thinking vs visible), tool-call count, tests-pass rate, and a blinded operator rating of whether the reply omitted needed information. Pass = visible tokens −45% or better, tests-pass delta within noise, tool-call count unchanged ±10%. Run the same suite once at caveman-ultra to price the extra rung before trusting it.
+
+### 2. Chain of Draft (CoD) — 5-word reasoning steps
+
+One prompt sentence compresses visible chain-of-thought to 7.6–21% of CoT tokens, occasionally with accuracy gains.
+
+- **Layer:** output (visible reasoning in non-extended-thinking flows).
+- **Mechanism:** replaces verbose CoT prose with ≤5-word per-step drafts; the paper's exact prompt measures 48 tok locally (one-time, cacheable). Paper numbers (arXiv 2502.18600, abstract: "matches or surpasses CoT in accuracy while using as little as only 7.6% of the tokens"; per-task table from html v2 same day): GSM8K Claude 3.5 Sonnet 95.8% @ 190.0 tok → 91.4% @ 39.8 tok (20.9% of tokens, −4.4pp); sports understanding 93.2% @ 189.4 → 97.3% @ 14.3 tok (the 7.6% best case); coin flip both 100%, 135.3 → 18.9 tok. Paper's own limits: zero-shot CoD on Claude gained only ~3.6% over direct answering; &lt;3B models lose accuracy (Qwen2.5-1.5B 24.2% CoD vs 32.5% CoT).
+- **Expected savings:** 79–92% of visible CoT tokens on few-shot benchmark tasks. In Claude Code on Fable 5: largely INAPPLICABLE — reasoning lives in adaptive thinking, which CoD is not documented to compress; honest expected saving there ≈ unknown, plausibly small (see technique 9).
+- **Evidence tier:** T3 (arXiv preprint, heavily community-replicated with numbers; not peer-reviewed).
+- **Quality risk:** **QUALITY-TRADE on math** (−4.4pp GSM8K), NEGATIVE-COST on some commonsense tasks (+4.1pp sports); fails zero-shot and on small models per the paper itself. Verdict: QUALITY-TRADE, task-dependent.
+- **Availability:** CLAUDE-CODE-TODAY / SDK (prompt pattern); real measured wins are on non-thinking API flows.
+- **Effort to adopt:** trivial (one sentence + few-shot examples; few-shot matters).
+- **Composability:** pairs with TALE budgets; subsumed by register ladder for non-reasoning prose; does not touch thinking.
+- **Validation protocol:** A/B on your actual non-thinking workload (e.g. Haiku 4.5 classification/extraction side-calls): 100 items, CoT vs CoD prompts, compare accuracy and `usage.output_tokens`. On Fable 5, additionally diff `usage.output_tokens` with/without CoD phrasing on 20 fixed prompts to test for thinking leakage — the cheap experiment nobody has published.
+
+### 3. Concise-CoT instruction (CCoT) — the evidence that "be concise" is nearly free
+
+The foundational citation: a concision directive cut response length 48.70% with negligible quality impact outside weak-model math.
+
+- **Layer:** output (visible reasoning/answer).
+- **Mechanism:** adds "be concise" style directive to CoT prompting; MCQA benchmark. Exact figures (arXiv 2401.05618): "CCoT reduced average response length by 48.70% for both GPT-3.5 and GPT-4"; "on math problems, GPT-3.5 with CCoT incurs a performance penalty of 27.69%"; "average per-token cost reduction of 22.67%". Venue verified live: FLLM 2024, pp. 476–483.
+- **Expected savings:** ~49% of visible response tokens; on the modeled profile the same ≈8% of session dollars band as the register ladder's telegraphic rung (0.49 × 17%).
+- **Evidence tier:** T2 (peer-reviewed venue FLLM 2024, verified on the arXiv page) — upgraded from the sweep's "venue unverified". Staleness caveat: Jan-2024 GPT-3.5/4 era, pre-reasoning models.
+- **Quality risk:** NEUTRAL on most tasks; **QUALITY-TRADE on math for weaker models** (−27.69pp GPT-3.5). Route math-heavy work away from concision directives until re-tested on current models.
+- **Availability:** CLAUDE-CODE-TODAY / SDK ("Be concise." = 4 tok, local measurement).
+- **Effort to adopt:** trivial.
+- **Composability:** the quality evidence underwriting technique 1's lower rungs, not a distinct lever; stacks with everything.
+- **Validation protocol:** replicate the math penalty on Haiku 4.5 / Sonnet 4.6: 200 GSM8K items, with/without concision directive, accuracy + output tokens. If the 2024 penalty has vanished on 2026 models, concision directives are unconditionally safe; publish the delta.
+
+### 4. Token-budget prompts (TALE) — and the token-elasticity trap
+
+Stating a numeric per-problem token budget cuts reasoning tokens ~67% with &lt;3pp accuracy loss — but under-budgeting BACKFIRES and nearly doubles output.
+
+- **Layer:** output (visible reasoning; budget phrasing in prompt).
+- **Mechanism:** TALE-EP pre-estimates a per-problem budget with a cheap zero-shot estimator call, then injects it ("use fewer than N tokens" ≈ 17 tok locally). Exact figures (arXiv 2412.18547, v5 of): ~67% token reduction with &lt;3% accuracy decrease (avg 81.03% vs 83.75%); GSM8K accuracy RISES 81.35% → 84.46% while output falls 318.10 → 77.26 tok (−75.7%). Token elasticity: a 10-token budget produced 157 actual tokens vs 86 at a 50-token budget — under-budgeting nearly doubles real cost.
+- **Expected savings:** ~67% of CoT output on QA tasks; same Fable-5 caveat as CoD — documented effect is on visible CoT, and thinking depth is officially controlled by effort, not prompts.
+- **Evidence tier:** T3 (arXiv v5, code public at github.com/GeniusHTX/TALE; venue unverified).
+- **Quality risk:** NEUTRAL to mild QUALITY-TRADE (−2.72pp avg, GSM8K positive); **RISKY if you set aggressive fixed budgets and ignore elasticity**. Degradation manifests as the model blowing through the budget verbosely, not as silence.
+- **Availability:** CLAUDE-CODE-TODAY / SDK (prompt-only for TALE-EP; use Haiku 4.5 at $1/$5 as the estimator).
+- **Effort to adopt:** low (phrasing) to hours (estimator pre-call plumbing).
+- **Composability:** combines with CoD (budget + draft style); the estimator call is a natural Haiku-routing case; anti-synergy with fixed global budgets across heterogeneous tasks.
+- **Validation protocol:** sweep budgets {25, 50, 100, 200, none} over 100 fixed problems; plot actual `usage.output_tokens` and accuracy per budget to locate your elasticity knee before deploying any budget phrasing; re-run quarterly (model updates move the knee).
+
+### 5. Sketch-of-Thought (SoT) — routed compression paradigms
+
+Peer-reviewed evidence that cognitively-motivated terse styles (conceptual chaining, chunked symbolism, expert lexicons) cut up to 84% of reasoning tokens.
+
+- **Layer:** output (visible reasoning).
+- **Mechanism:** a lightweight router picks one of three paradigms per query. Abstract (arXiv 2503.05179, v4, EMNLP 2025): "token reductions of up to 84% with minimal accuracy loss" across "18 reasoning datasets spanning multiple domains, languages, and modalities"; math/multi-hop sometimes improve while shortening.
+- **Expected savings:** up to 84% of reasoning tokens (headline; per-dataset distribution not extracted — incomplete). Claude Code caveat as in techniques 2/4.
+- **Evidence tier:** T2 (EMNLP 2025).
+- **Quality risk:** NEUTRAL per paper; untested on agentic coding. The expert-lexicon paradigm is the academically-validated cousin of technique 7's codebooks.
+- **Availability:** SDK (paradigm prompts are public); GATEWAY-OR-SELF-HOST for the router. Pragmatic Claude Code adaptation: statically pick one paradigm per task type, skip the router.
+- **Effort to adopt:** medium (prompts copyable in hours; faithful router reproduction is a project).
+- **Composability:** alternative to CoD, not additive with it; chunked symbolism should use ASCII operators on Claude (local math table: ASCII −35% vs prose, Unicode +3%).
+- **Validation protocol:** take the three public paradigm prompts, run each + control on 50 mixed repo Q&A tasks, measure output tokens + answer-grading; adopt the per-task winner only where its accuracy delta ≥0.
+
+### 6. Constructed symbolic notations (SynthLang-style glyph DSLs) — NEGATIVE RESULT, COMPLETE RECORD
+
+The viral "~70% savings" glyph languages fail on Claude twice: the glyphs are token-expensive and Claude silently disobeys the operators.
+
+- **Layer:** input (instruction encoding), and output if the model replies in notation.
+- **Mechanism:** SynthLang claims "Reduce AI costs by up to 70%" and "up to 233% faster processing" with no methodology published (github.com/ruvnet/SynthLang). Local measurements (tables above): exotic glyphs cost 3.9–4.9 tok each on the Fable tokenizer; the glyph DSL lost to telegraphic ASCII by ~26–28% in two independent same-day samples and lost even to plain prose in one. Comprehension: MetaGlyph (arXiv 2601.07354, single-author preprint) claims "62–81% token reduction" but measured "Claude Haiku 4.5 achieves 100% parse success with 26% membership fidelity"; constraint composition (∩) shows "near-zero equivalence" across all 8 models tested; mid-size open models (7B–12B) are worst (Gemma 12B 0% membership fidelity).
+- **Expected savings:** NEGATIVE vs telegraphic English on Claude (−26 to −38% worse, local); ~−10% to +20% vs plain prose depending on sample. Do not adopt.
+- **Evidence tier:** T1 (local token measurements, method shown) for the cost side; T4 for the comprehension side (one unreplicated preprint, no Fable/Opus-class data).
+- **Quality risk:** **RISKY — silent low-fidelity execution**: Claude parsed 100% and obeyed 26%, which is worse than visible failure. Verdict: anti-recommended; the salvageable kernel is ASCII-operator chunked symbolism for math content only.
+- **Availability:** CLAUDE-CODE-TODAY but anti-recommended.
+- **Effort to adopt:** high (learn + maintain a notation) for negative return — the effort/payoff sign is inverted.
+- **Composability:** dominated by technique 1 on the cost axis and by plain English on the fidelity axis; "→" (1.0 tok) is the only glyph cheaper than its ASCII equivalent.
+- **Validation protocol:** falsification already run for the token side: the local notation shootout above IS the experiment — same content in DSL/prose/telegraphic through `/tmp/ct.py`; anyone can re-run in 2 minutes. To also falsify the comprehension half on current Claude: 30 instructions in glyph notation vs English, score execution fidelity blind; expect English ≥ notation. MetaGlyph's 26%-fidelity result wants replication on Fable 5 before being quoted as more than T4.
+
+### 7. In-context codebook / session dialect — only pays for long recurring identifiers
+
+A one-time abbreviation legend is dominated by plain telegraphic style for common words; the real win is aliasing long multi-token identifiers at −90% per mention.
+
+- **Layer:** bidirectional (instruction + output dialect).
+- **Mechanism:** BPE already compressed common words (abbreviation table above: fn, w/o, bc, cfg all cost MORE than the full words). Where codebooks pay: long proper nouns/paths — local: 29-tok path → 3-tok alias (−89.7%/mention), 18-tok phrase → 5 (−72.2%); legend line 32 tok one-time, break-even at the 2nd mention. The leveraged case is aliases the MODEL uses in its own replies: each output mention saved ≈ 26 tok × $50/MTok = $0.0013, vs $0.000026 for the same tokens at cache-read rates — keep the legend in CLAUDE.md (cached), harvest the savings in output.
+- **Expected savings:** −78 to −90% per mention for aliased long identifiers; generic-word codebooks ≈ −29% (sweep, local) and strictly dominated by telegraphic register at −51 to −60% with no legend. Session-dollar impact is workload-dependent and small unless paths recur heavily (ESTIMATE: 50 output mentions/day of a 29-tok path → ~$0.065/day).
+- **Evidence tier:** T1 (local token arithmetic) for costs; T2 for comprehension bounds — MTOB (arXiv 2309.16575): in-context acquisition of an unseen language works but below human (Kalamang→Eng 44.7 chrF vs human 51.6); NEO-BENCH (ACL 2024, aclanthology.org/2024.acl-long.749): "model performance is nearly halved in machine translation when a single [undefined] neologism is introduced". T4 for long-horizon dialect comprehension (untested). Trained-neologism alternative (arXiv 2512.18551) is NOT-USER-ACCESSIBLE.
+- **Quality risk:** NEUTRAL for a handful of defined identifier aliases; **RISKY for full dialects** — if the legend lives only in conversation and compaction drops it, NEO-BENCH-style undefined-neologism degradation is the predicted failure mode. CLAUDE.md-resident legends re-inject and should survive; conversation-defined ones do not.
+- **Availability:** CLAUDE-CODE-TODAY (legend lines in CLAUDE.md).
+- **Effort to adopt:** low for 5–10 identifier aliases; ongoing discipline cost for anything more.
+- **Composability:** stacks inside technique 1 (aliases within telegraphic prose); legend bills at cache-read rates; anti-synergy with compaction for conversation-resident legends.
+- **Validation protocol:** define 5 aliases in CLAUDE.md; run 10 tasks referencing them at turn-depths 5 and 50+ (post-compaction); score whether the model resolves aliases correctly and uses them in replies; count output-token delta on path-heavy tasks vs no-legend control.
+
+### 8. Wenyan / classical-Chinese register — the measured ceiling, and the character illusion
+
+The most aggressive register measured (wenyan-ultra −74.5% tokens, phase-0) marks the practical ceiling — bought with maximal unmeasured comprehension risk, and short phrases can cost MORE than English.
+
+- **Layer:** output (extreme register rung).
+- **Mechanism:** phase-0 local: wenyan-full = 80.9% character cut but only **56.6% token cut**; wenyan-ultra = **74.5% token cut**. This dossier's spot checks: 9 vs 8 tok against plain English on a short phrase (net NEGATIVE), 32 vs 25 against telegraphic English on a longer rule, and classical chars at 0.89–0.91 chars/token — the compression is extreme word-dropping in wenyan grammar, not cheap characters.
+- **Expected savings:** 56.6–74.5% of visible-prose tokens (phase-0); ceiling arithmetic: 0.745 × 17% ≈ **12.7% of session dollars**, i.e. +2.8pp over caveman-ultra's 9.9% — the entire wenyan increment over caveman is worth ~$0.62/heavy day (ESTIMATE).
+- **Evidence tier:** T1 (local measurements) for tokens; nothing at any tier for quality.
+- **Quality risk:** **RISKY / QUALITY-TRADE — prominently**: zero published quality evidence; classical-Chinese reasoning competence of English-trained coding models untested; operator review-ability of agent output collapses (a misread "never commit to main"-class rule costs more than every token saved). Per-phrase inversions (9 vs 8 tok) mean savings are content-dependent even before quality.
+- **Availability:** CLAUDE-CODE-TODAY (caveman plugin wenyan registers).
+- **Effort to adopt:** trivial to enable; high standing human cost to read.
+- **Composability:** mutually exclusive with English registers; same 17%-of-dollars cap; stacks with nothing that needs operator legibility.
+- **Validation protocol:** the unrun experiment: 20 identical agentic tasks, wenyan-ultra vs telegraphic English, blind-graded task success + operator comprehension quiz on the transcripts; adopt only if success parity holds AND the operator actually reads wenyan. Prior expectation: fails the second condition for most operators.
+
+### 9. The thinking-token cap — effort is the lever past it (MAX_THINKING_TOKENS is not, on Fable 5) — COMPLETE RECORD
+
+Thinking is 54.8% of output tokens, billed in full though displayed summarized, and styleable by nothing above — the honest ceiling for all output-register tricks is ~10% of session dollars; effort reaches the rest.
+
+- **Layer:** output (thinking slice) — the boundary condition for this whole file.
+- **Mechanism:** local n=1 max-effort session: thinking = 54.8% of output tokens (consistent with the 20%-thinking/17%-visible dollar split: 54.8/45.2 ≈ 20/17). Live platform docs (extended-thinking page): "You're charged for the full thinking tokens generated by the original request, not the summary tokens"; on Fable 5 "extended thinking is always enabled and cannot be disabled... `thinking: {type: "disabled"}` returns an error"; `budget_tokens` deprecated in favor of effort. Live effort page : "Effort is the primary control for trading off intelligence, latency, and cost on Claude Fable 5"; effort "affects **all tokens** in the response", including "Extended thinking"; lower effort documentedly performs register compression as a side effect — "Proceed directly to action without preamble", "Use terse confirmation messages after completion", "Combine multiple operations into fewer tool calls". **Correction to community folklore (live model-config page):** "Thinking cannot be turned off on Fable 5. The session toggle, `alwaysThinkingEnabled`, and `MAX_THINKING_TOKENS=0` have no effect there"; non-zero values apply only in the legacy fixed-budget mode on Opus 4.6/Sonnet 4.6; `ultrathink` merely "adds an in-context instruction. The effort level sent to the API is unchanged". **Softening of "no prompt control" (same page):** "If you want Claude to think more or less often than the current level produces, you can say so directly in your prompt or in CLAUDE.md; the model responds to that guidance within its effort setting" — documented prompt-level control of thinking FREQUENCY (not per-block verbosity), within effort.
+- **Expected savings:** defines the cap — visible-style compression ≤17% of session dollars, ~10% realized at measured registers. Effort reduction targets the additional 20% thinking slice plus tool-call volume; **no published per-level percentages exist** (effort page is entirely qualitative, confirmed) — any specific number would be invented.
+- **Evidence tier:** T1 (live Anthropic docs, quotes above + local measurement). The 54.8% share is n=1 and inferred (usage.output_tokens minus count_tokens of visible blocks; transcripts redact thinking) — replicate before leaning on it.
+- **Quality risk:** **QUALITY-TRADE by design** ("Significant token savings with some capability reduction" at low), but vendor-tuned: "Lower effort settings on Claude Fable 5 still perform well and often exceed `xhigh` performance on prior models" (live docs). For Opus 4.7+ docs say raise effort rather than prompting around shallow reasoning. Degradation manifests as scoped-to-the-letter work and skipped verification.
+- **Availability:** CLAUDE-CODE-TODAY — `/effort` slider (low/medium/high/xhigh/max + ultracode = xhigh + workflow orchestration permission), `CLAUDE_CODE_EFFORT_LEVEL` env, `effortLevel` setting, and per-skill/per-subagent `effort` frontmatter (live model-config page) — that last one enables effort-routing inside one session. SDK: `output_config.effort`.
+- **Effort to adopt:** trivial (one setting).
+- **Composability:** the complement to everything here — style handles visible 17%, effort handles thinking 20% + tool calls, context hygiene handles the 61% cache side (see [06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/)). Subagent frontmatter effort + terse style is the natural stack for delegated work.
+- **Validation protocol:** fixed 20-task suite at effort = &#123;low, medium, high&#125; × &#123;default, telegraphic&#125; style: record output tokens, thinking share (output_tokens − visible count_tokens), tool calls, tests-pass. This produces the missing public number (effort-level token deltas) AND tests whether style and effort interact; also A/B a CLAUDE.md line "think less often on routine steps" to quantify the newly documented frequency guidance.
+
+### 10. Instruction-side compression (caveman-compress on CLAUDE.md/memory files) — real but cache-discounted ~50:1
+
+Compressing always-on instructions saves every turn, but at cache-read rates: a 60% cut of this repo's 2,738-token <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> is worth about a nickel per session.
+
+- **Layer:** input (system prompt / CLAUDE.md / memory files).
+- **Mechanism:** prompt side of a heavy session is 92.83% cache-read (phase-0); always-on text bills at $1/MTok after the first write. Live docs concur: "Adding instructions to the system prompt increases input tokens, though prompt caching reduces this cost after the first request in a session" (output-styles page). The `/caveman-compress` skill automates the rewrite (keeps `.original.md` backup).
+- **Expected savings:** ESTIMATE, arithmetic: 60% × 2,738 tok = 1,643 tok/call. Per modeled session (19 calls: 1 write + 18 reads): write saving 1,643 × $12.50/MTok = $0.021; read savings 18 × 1,643 × $1/MTok = $0.030; total ≈ **$0.05/session ≈ 1.4% of session dollars** (~$0.30/heavy day). The identical 1,643 tokens as output would cost $0.082 per occurrence — the 50:1 ratio. Secondary un-dollared benefit: smaller always-on text defers context-window exhaustion and compaction.
+- **Evidence tier:** T1 (local arithmetic from measured quantities, method shown).
+- **Quality risk:** **RISKY disproportionately to the tiny savings**: compressed RULES are re-interpreted every turn and no one has benchmarked instruction-following fidelity of caveman-register rule files; one misread hard rule (this repo's never-commit-to-`main`) outweighs a year of nickels. Verdict: RISKY; prefer deleting stale rules over compressing live ones.
+- **Availability:** CLAUDE-CODE-TODAY (`/caveman-compress FILE`).
+- **Effort to adopt:** minutes per file.
+- **Composability:** orthogonal to output-side techniques; **dominated by deferred tool loading on the same surface** (phase-0: 11 MCP schemas = 1,420 tok loaded vs ~60 tok as deferred names — a bigger instruction-side win with zero comprehension risk; see [06 — Context architecture — what enters the window at all](/reference/research/token-optimization-techniques/06-context-architecture/)).
+- **Validation protocol:** instruction-following A/B — 30 prompts that each tempt violation of one CLAUDE.md rule, original vs compressed file, score violations; plus measure turns-to-compaction on a long session with each file to quantify the deferral benefit.
+
+### 11. System-2-to-System-1 distillation — verbosity baked out at training time
+
+Meta distilled System-2 pipelines into direct answers: 147 → 56 output tokens (−62%) on TriviaQA with comparable-or-better accuracy — the training-side endgame, not user-accessible.
+
+- **Layer:** model/training (infra).
+- **Mechanism:** run expensive System-2 prompting (CoT, S2A, Branch-Solve-Merge), filter self-consistent outputs, fine-tune the model to emit final answers directly. Exact figures (arXiv 2407.06023v2): S2A TriviaQA 147 tok → 56 tok distilled with "improved results compared to the original System 1". Hard limit, quoted: "not all tasks can be distilled into System 1, particularly complex math reasoning tasks requiring chain-of-thought."
+- **Expected savings:** −62% output tokens on distillable task classes (paper example); $0 for Claude Code users directly.
+- **Evidence tier:** T3 (Meta FAIR arXiv preprint, widely cited; peer-review venue unverified).
+- **Quality risk:** QUALITY-TRADE bounded by task type — math/CoT-dependent tasks provably resist distillation, which is exactly where every prompt-level technique above also shows its penalty. Coherent picture: verbosity is load-bearing for math, decorative elsewhere.
+- **Availability:** NOT-USER-ACCESSIBLE (requires fine-tuning the serving model); relevant to self-hosted OSS agents only. Plausibly part of why effort=low stays competent on current Claude models (vendor-side tuning) — which argues for trusting the vendor knob (technique 9) over DIY reasoning-style hacks.
+- **Effort to adopt:** N/A (project-scale for self-hosters).
+- **Composability:** conceptual justification for technique 9; no user-side stacking.
+- **Validation protocol:** for self-hosters only: distill on your task distribution, hold out math-class tasks, compare accuracy/token curves to the paper's; for Claude users the proxy experiment is technique 9's effort sweep.
+
+## Claims to kill (folklore ledger)
+
+| Claim | Verdict, with evidence |
+|---|---|
+| "Caveman mode cuts ~75% of tokens" | KILLED. Phase-0: ultra = 58.5% token cut on visible prose; "~75%" is character-level. Use 55–63%, ≈10% of session dollars. |
+| "Glyph DSLs (SynthLang) cut ~70%" | KILLED. Live README has no methodology ; locally the DSL loses to telegraphic ASCII by ~26–28% (two samples) and glyphs cost 3.9–4.9 tok each; Claude Haiku 4.5 obeys the operators at 26% fidelity (MetaGlyph). "233% faster" has no published method at all. |
+| "Abbreviating common words saves tokens" | KILLED. Local table: fn=2.0 vs function=1.0; w/o=3.0 vs without=1.0; bc=2.0 vs because=1.0; cfg=3.0 vs config=1.0; five more pairs zero-gain. Only multi-token words pay (async, init, params, k8s, impl). Delete words; don't shorten them. |
+| "Write output in (classical) Chinese for 75–80% savings" | KILLED (nuance). 80.9% character cut = 56.6% token cut (phase-0); this dossier measured classical chars at ~0.9 chars/token and two samples where wenyan LOSES to plain/telegraphic English (9 vs 8; 32 vs 25 tok). |
+| "Set a tiny token budget to force short reasoning" | KILLED. TALE elasticity (verified live): 10-token budget → 157 actual tokens vs 50-token budget → 86. Under-budgeting nearly doubles cost. |
+| "A terse style cuts your Claude Code bill proportionally" | KILLED. Visible output is 17% of session dollars; thinking (20%) is billed in full though summarized (live docs quote). Caveman-ultra ≈ 9.9% of dollars, hard cap 17%. |
+| "Chain of Draft gives 92% savings everywhere" | KILLED (scope). 7.6% is the single best case; GSM8K is 20.9% of tokens with −4.4pp; near-zero benefit zero-shot; accuracy losses &lt;3B; does not touch Fable 5 adaptive thinking. |
+| "Unicode math/logic notation is token-compact" | KILLED. Local: Unicode statement 38 tok vs ASCII 24 vs prose 37 — Unicode can exceed prose. ASCII operators are the only compact math notation. ('→' at 1.0 tok is the lone exception.) |
+| "MAX_THINKING_TOKENS=0 kills thinking spend on Fable 5" | KILLED (new this file). Live model-config docs: "The session toggle, `alwaysThinkingEnabled`, and `MAX_THINKING_TOKENS=0` have no effect there [Fable 5]." Effort is the only thinking lever on Fable 5. |
+
+## Gaps — what nobody has measured
+
+1. **No agentic-task benchmark of register-compressed output** (caveman/telegraphic/wenyan vs SWE-bench-style success). Every quality datapoint here is QA/MCQA on 2024-era models; the headline local technique is quality-unmeasured. Protocol in technique 1 would close it.
+2. **Long-horizon codebook comprehension**: does a turn-1 legend still bind at turn 400 / after compaction? NEO-BENCH and MTOB only bound the endpoints.
+3. **Thinking-register interaction**: whether CoD/TALE/concision phrasing leaks into Fable 5 adaptive-thinking length is checkable via `usage.output_tokens` deltas but unpublished. The docs' new "think more or less often" guidance line makes this newly plausible and newly testable.
+4. **No published effort-level token percentages** — the single most important comparison (effort=medium vs caveman-ultra, same task) has no public numbers; technique 9's protocol generates them.
+5. **MetaGlyph is a single-author, unreplicated preprint** with no Fable/Opus-class Claude data; the 26%-fidelity figure needs replication before it graduates past T4.
+6. **Cross-tokenizer transfer** of relative register savings held in two local pairs (−59.7% Fable vs −64.4% Sonnet 4.6; sweep: 51.4% vs 52.8%) but absolute counts differ +22–38%; no systematic study. The research field optimizes prompt-side compression while cached agent workloads make output-side register the 50x-leveraged target.
+7. The phase-0 figures leaned on throughout (thinking 54.8%, caveman-ultra 58.5%, dollar split) are **n=1 session-level measurements** pending replication (see [16 — Validation Harness: the No-Quality-Loss Proof Protocol](/reference/research/token-optimization-techniques/16-validation-harness/)).
+
+## Verification ledger
+
+| Number | Source / method (all accessed or) |
+|---|---|
+| Ladder −54.2 / −59.7 / −66.7%; reply ladder −60.0% | Local, `/tmp/measure_style.py` via `/tmp/ct.py` count_tokens, overhead-7 subtracted (method in file) |
+| Abbreviation costs (fn 2.0 vs function 1.0, etc.) | Local, same script, 10-repeat protocol |
+| Glyph costs 3.9/4.9/3.0; → 1.0; -> 2.0; => 1.1 | Local, same script |
+| DSL 42 vs prose 35 vs telegraphic 31 tok | Local, same script (sweep's independent sample 36/40/26, same day) |
+| Math: prose 37 / ASCII 24 / Unicode 38 tok | Local, same script |
+| Wenyan 9 vs 8 tok; 32/30/25; 0.89–0.91 chars/tok | Local, same script |
+| Alias 29→3 (−89.7%), 18→5; legend 32 tok; CoD prompt 48; "Be concise." 4; budget line 17 | Local, same script + follow-up run |
+| Fable vs Sonnet 4.6 +22.0% / +38.1%; relative cut −59.7 vs −64.4% | Local, same script, both model ids |
+| Caveman-ultra 58.5%; wenyan-full 56.6% (80.9% char); wenyan-ultra 74.5%; thinking 54.8% of output; prompt mix 0.44/6.73/92.83%; dollar split 32/29/20/17/2; <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> 2,738 tok; MCP 1,420 vs ~60 tok | Local phase-0 measurements (see [01 — Token Economics and Measurement](/reference/research/token-optimization-techniques/01-economics-and-measurement/), [02 — Baseline Audit of This Environment (Phase 0)](/reference/research/token-optimization-techniques/02-baseline-audit/)) |
+| ≈$0.05/session for 60% <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> cut; 50:1 output:cache-read value; 10.2% / 12.7% session-dollar arithmetic | ESTIMATE, arithmetic shown inline, on modeled session profile + reference pricing ($10/$50, cache read 0.1x, write 1.25x) |
+| Output-styles mechanism quotes; keep-coding-instructions default false; style-change cache note | https://code.claude.com/docs/en/output-styles |
+| "charged for the full thinking tokens... not the summary tokens"; Fable 5 thinking cannot be disabled; budget_tokens deprecated | https://platform.claude.com/docs/en/build-with-claude/extended-thinking |
+| Effort quotes ("primary control...", "affects all tokens", low-effort terse behaviors, "often exceed xhigh on prior models", ultracode = xhigh + orchestration); no numeric per-level savings | https://platform.claude.com/docs/en/build-with-claude/effort |
+| MAX_THINKING_TOKENS=0 no effect on Fable 5; ultrathink = in-context instruction; "say so directly in your prompt or in CLAUDE.md"; per-skill/subagent effort frontmatter | https://code.claude.com/docs/en/model-config |
+| CoD "as little as only 7.6% of the tokens" (v2) | https://arxiv.org/abs/2502.18600 ; per-task table (190.0→39.8 etc.) from https://arxiv.org/html/2502.18600v2 (sweep fetch, same day) |
+| CCoT 48.70% / 27.69% / 22.67%; venue FLLM 2024 pp. 476–483 | https://arxiv.org/abs/2401.05618 |
+| TALE 67% / &lt;3%; GSM8K 318.10→77.26, 81.35→84.46%; elasticity 157 vs 86 tok (v5) | https://arxiv.org/html/2412.18547v5 ; variants per https://github.com/GeniusHTX/TALE (sweep fetch, same day) |
+| SoT "up to 84%", 3 paradigms, 18 datasets, EMNLP 2025 (v4) | https://arxiv.org/abs/2503.05179 |
+| SynthLang "up to 70%" / "up to 233%", no methodology | https://github.com/ruvnet/SynthLang |
+| MetaGlyph 62–81%; Claude Haiku 4.5 100% parse / 26% membership fidelity; ∩ near-zero; U-curve; 8 models; van Gassen | https://arxiv.org/html/2601.07354 |
+| MTOB 44.7/45.8 chrF vs human 51.6/57.0 | https://arxiv.org/abs/2309.16575 (sweep fetch) |
+| NEO-BENCH "nearly halved... single neologism" | https://aclanthology.org/2024.acl-long.749/ (sweep fetch) |
+| Distillation 147→56 tok; math non-distillability quote | https://arxiv.org/html/2407.06023v2 (sweep fetch) |
+| Neologism learning = trained embeddings (not in-context) | https://arxiv.org/pdf/2512.18551 (sweep fetch) |

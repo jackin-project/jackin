@@ -150,10 +150,9 @@ impl Multiplexer {
         if let Some(session) = self.sessions.remove(&id) {
             session.terminate();
         }
-        // Drop the zoomed reference when the killed pane was the zoom
-        // target so the next `compose_frame` does not paint a stale
-        // zoom area until the operator manually unzooms.
-        self.zoomed = self.zoomed.filter(|&zid| zid != id);
+        // Drop the tab's zoom reference when the killed pane was the
+        // target so the next compose does not paint a stale zoom area.
+        tab.zoomed = tab.zoomed.filter(|&zid| zid != id);
         if let Some(nf) = next_focus {
             tab.focused_id = nf;
         } else {
@@ -240,19 +239,13 @@ impl Multiplexer {
         self.tabs.get(self.active_tab).map(|t| t.focused_id)
     }
 
-    /// `self.zoomed` narrowed to "only when the zoomed session belongs
-    /// to the active tab." The zoom field is global (one value across
-    /// all tabs), but render / input / scroll / mouse paths must
-    /// behave as if zoom is per-tab — switching tabs has to surface
-    /// the new tab's panes normally even when a different tab still
-    /// has a zoomed session pinned, otherwise opening a new tab paints
-    /// the previously-zoomed pane full-screen. Returning `None` from
-    /// the active-tab check routes every consumer of zoom state
-    /// through the normal multi-pane path for tabs that don't hold
-    /// the zoom.
+    /// Active tab's zoomed pane, if the stored id still belongs to
+    /// that tab. Render / input / scroll / mouse paths keep consuming
+    /// this helper so inactive tabs can retain their own zoom state
+    /// without leaking it into the visible tab.
     pub(super) fn active_zoomed_id(&self) -> Option<u64> {
-        let zoom_id = self.zoomed?;
         let tab = self.tabs.get(self.active_tab)?;
+        let zoom_id = tab.zoomed?;
         if tab.tree.all_ids().contains(&zoom_id) {
             Some(zoom_id)
         } else {
@@ -327,7 +320,7 @@ impl Multiplexer {
     }
 
     /// Adjust the split that contains the focused pane along `dir` by
-    /// 5% of the parent rectangle. Triggered by `Alt+Shift+Arrow`.
+    /// 5% of the parent rectangle. Triggered by `Alt-Shift-Arrow`.
     pub(super) fn resize_focused(&mut self, dir: ArrowDir) {
         let Some(tab_idx) = self.tabs.get(self.active_tab).map(|_| self.active_tab) else {
             return;

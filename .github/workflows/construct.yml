@@ -111,7 +111,7 @@ jobs:
       - name: Classify changed paths
         id: filter
         if: github.event_name != 'workflow_dispatch'
-        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         with:
           token: ${{ github.token }}
           filters: |
@@ -227,13 +227,13 @@ jobs:
           key: shellfirm-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.shellfirm-version }}-${{ hashFiles('rust-toolchain.toml') }}
       - name: Log in to Docker Hub
         if: matrix.config.lane == 'GitHub' && env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
 
       - name: Install Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
         with:
           name: ${{ env.BUILDX_BUILDER }}
           driver: docker-container
@@ -340,7 +340,7 @@ jobs:
           set -euo pipefail
           cargo fetch --locked --offline
       - name: Log in to Docker Hub
-        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}

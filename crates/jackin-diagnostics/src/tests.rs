@@ -1,30 +1,35 @@
 //! Tests for `jackin-diagnostics`.
 
 use std::fs;
-use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use jackin_core::JackinPaths;
 
-use crate::logging::{DEBUG_BUFFER_ACTIVE, drain_debug_buffer, should_tee_debug_to_stderr};
+use crate::logging::{
+    DEBUG_BUFFER_ACTIVE, TelemetryLevel, debug_capture_enabled_with_env, drain_debug_buffer,
+    parse_telemetry_level, should_tee_debug_to_stderr,
+};
 use crate::run::{
     MAX_RUN_ARTIFACT_AGE, MAX_RUN_ARTIFACTS, RunDiagnostics,
-    external_run_id_from_resource_attributes, flag_is_truthy, mint_run_id, prune_old_runs_in_dir,
-    prune_runs_preserving, run_dir,
+    external_run_id_from_resource_attributes, flag_is_truthy, mint_run_id, normalize_stage_name,
+    prune_old_runs_in_dir, prune_runs_preserving, run_dir,
 };
 use crate::summary::summarize_reader;
 use crate::terminal::{
     host_screen_owned, rich_surface_active, set_host_screen_owned, set_rich_surface_active,
 };
 use crate::{
-    begin_debug_buffering, emit_compact_line, emit_debug_line, end_debug_buffering,
-    format_debug_line, init_tracing, is_debug_mode,
+    DIAGNOSTICS_TEST_LOCK, begin_debug_buffering, emit_compact_line, emit_debug_line,
+    end_debug_buffering, format_debug_line, init_tracing, is_debug_mode,
 };
-
-static DEBUG_BUFFER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn init_test_tracing() {
     drop(init_tracing(false, "jk-run-test00"));
+}
+
+fn event_detail_json(line: &str) -> serde_json::Value {
+    let event: serde_json::Value = serde_json::from_str(line).unwrap();
+    serde_json::from_str(event["detail"].as_str().unwrap()).unwrap()
 }
 
 // ── run.rs tests ─────────────────────────────────────────────────────────────
@@ -95,6 +100,16 @@ fn flag_is_truthy_vocabulary() {
 }
 
 #[test]
+fn normalize_stage_name_is_export_safe() {
+    assert_eq!(normalize_stage_name("derived image"), "derived_image");
+    assert_eq!(normalize_stage_name("Sidecar"), "sidecar");
+    assert_eq!(
+        normalize_stage_name("role-state prepare"),
+        "role_state_prepare"
+    );
+}
+
+#[test]
 fn writes_jsonl_events() {
     init_test_tracing();
     let tmp = tempfile::tempdir().unwrap();
@@ -102,15 +117,83 @@ fn writes_jsonl_events() {
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
     run.compact("breadcrumb", "hello");
     assert!(run.debug("cmd", "docker ps"));
+    run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     assert!(contents.contains("\"run_id\""));
     assert!(contents.contains("\"hello\""));
     assert!(contents.contains("\"debug\""));
+    let event: serde_json::Value = contents
+        .lines()
+        .find(|line| line.contains("\"kind\":\"breadcrumb\""))
+        .map(serde_json::from_str)
+        .transpose()
+        .unwrap()
+        .unwrap();
+    assert_eq!(event["event.name"], "breadcrumb");
+    assert_eq!(event["event.outcome"], "success");
+    assert_eq!(event["jackin.component"], "host");
+    assert_eq!(event["jackin.operation"], "breadcrumb");
+    assert_eq!(event["jackin.category"], "breadcrumb");
 }
 
 #[test]
-fn writes_error_jsonl_events() {
+fn telemetry_level_env_parses_supported_values() {
+    assert_eq!(parse_telemetry_level("info"), Some(TelemetryLevel::Info));
+    assert_eq!(parse_telemetry_level("DEBUG"), Some(TelemetryLevel::Debug));
+    assert_eq!(
+        parse_telemetry_level(" trace "),
+        Some(TelemetryLevel::Trace)
+    );
+    assert_eq!(parse_telemetry_level("verbose"), None);
+}
+
+#[test]
+fn telemetry_level_env_enables_debug_capture_without_legacy_debug() {
+    assert!(debug_capture_enabled_with_env(
+        Some("debug"),
+        None,
+        "docker",
+        false
+    ));
+    assert!(debug_capture_enabled_with_env(
+        Some("trace"),
+        None,
+        "docker",
+        false
+    ));
+    assert!(!debug_capture_enabled_with_env(
+        Some("info"),
+        None,
+        "docker",
+        false
+    ));
+}
+
+#[test]
+fn telemetry_categories_filter_debug_capture() {
+    assert!(debug_capture_enabled_with_env(
+        Some("debug"),
+        Some("docker,launch"),
+        "docker",
+        false
+    ));
+    assert!(!debug_capture_enabled_with_env(
+        Some("debug"),
+        Some("docker,launch"),
+        "role",
+        false
+    ));
+    assert!(debug_capture_enabled_with_env(
+        Some("debug"),
+        Some("*"),
+        "role",
+        false
+    ));
+}
+
+#[test]
+fn error_events_flush_immediately() {
     init_test_tracing();
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
@@ -133,6 +216,7 @@ fn jsonl_events_include_current_span_id() {
     let span = tracing::info_span!("load_stage", stage = "build");
     let _entered = span.enter();
     run.compact("breadcrumb", "inside span");
+    run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     let event = contents
@@ -203,6 +287,58 @@ fn timing_events_include_nested_duration_summary() {
 }
 
 #[test]
+fn run_summary_reports_and_clears_unclosed_timing_keys() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    run.timing_started("credentials", "operator_env", None);
+    run.emit_run_summary();
+    run.emit_run_summary();
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    let diagnostics = contents
+        .lines()
+        .filter(|line| line.contains("\"kind\":\"diagnostics\""))
+        .collect::<Vec<_>>();
+    assert_eq!(diagnostics.len(), 1, "{contents}");
+    assert!(
+        diagnostics[0].contains("unclosed: timing:credentials/operator_env"),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn duration_histograms_cap_samples_and_count_drops() {
+    init_test_tracing();
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, true, "load").unwrap();
+
+    for _ in 0..2000 {
+        run.timing_started("credentials", "operator_env", None);
+        run.timing_done("credentials", "operator_env", None);
+    }
+    run.emit_run_summary();
+
+    let contents = fs::read_to_string(run.path()).unwrap();
+    let summary = contents
+        .lines()
+        .find(|line| line.contains("\"kind\":\"run_summary\""))
+        .unwrap();
+    let detail = event_detail_json(summary);
+    let samples = detail["timing_duration_histograms_ms"]["credentials/operator_env"]
+        .as_array()
+        .unwrap();
+    assert_eq!(samples.len(), 1024);
+    assert_eq!(
+        detail["timing_duration_dropped"]["credentials/operator_env"],
+        serde_json::Value::from(976)
+    );
+}
+
+#[test]
 fn docker_build_step_event_records_structured_detail() {
     init_test_tracing();
     let tmp = tempfile::tempdir().unwrap();
@@ -210,6 +346,7 @@ fn docker_build_step_event_records_structured_detail() {
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
 
     run.docker_build_step("12", "DONE", Some(76_500), false);
+    run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     let event = contents
@@ -233,6 +370,7 @@ fn stage_events_reuse_one_stage_span_id() {
     run.stage("stage_started", "derived image", "building", None);
     run.stage("stage_progress", "derived image", "still building", None);
     run.stage("stage_done", "derived image", "built", None);
+    run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     let span_ids = contents
@@ -261,6 +399,7 @@ fn debug_is_not_consumed_when_capture_is_disabled() {
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, false, "load").unwrap();
     assert!(!run.debug("cmd", "docker ps"));
+    run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     assert!(
@@ -275,6 +414,7 @@ fn command_output_sidecar_strips_ansi_sequences() {
     use std::os::unix::process::ExitStatusExt;
     use std::process::ExitStatus;
 
+    init_test_tracing();
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, false, "load").unwrap();
@@ -296,6 +436,32 @@ fn command_output_sidecar_strips_ansi_sequences() {
         !contents.contains('\x1b'),
         "plain sidecar log should not contain terminal escapes: {contents:?}"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn command_output_sidecar_scrubs_secret_shapes() {
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::ExitStatus;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, false, "load").unwrap();
+    let path = run
+        .write_command_output(
+            "docker-build",
+            "docker build .",
+            None,
+            ExitStatus::from_raw(1),
+            b"token=ghp_1234567890abcdef\n",
+            b"OPENAI_API_KEY=sk-test-1234567890abcdef\n",
+        )
+        .unwrap();
+
+    let contents = fs::read_to_string(path).unwrap();
+    assert!(!contents.contains("ghp_1234567890abcdef"));
+    assert!(!contents.contains("sk-test-1234567890abcdef"));
+    assert!(contents.contains("<secret redacted>"));
 }
 
 #[test]
@@ -428,7 +594,7 @@ fn debug_mode_default_is_off() {
 #[test]
 fn debug_lines_buffer_while_tui_is_active() {
     use std::sync::atomic::Ordering;
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
@@ -446,7 +612,7 @@ fn debug_lines_buffer_while_tui_is_active() {
 #[test]
 fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
     use std::sync::atomic::Ordering;
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
@@ -469,9 +635,33 @@ fn debug_lines_drop_while_a_noncapturing_run_owns_output() {
 }
 
 #[test]
+fn otlp_internal_notice_emits_once() {
+    let _lock = DIAGNOSTICS_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    DEBUG_BUFFER_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
+    drop(drain_debug_buffer());
+    set_rich_surface_active(true);
+
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let run = RunDiagnostics::start(&paths, false, "load").unwrap();
+    run.record_otlp_internal("WARN", "first export failure");
+    run.record_otlp_internal("WARN", "second export failure");
+
+    let notices = drain_debug_buffer();
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(
+        notices[0].contains("first export failure"),
+        "first OTLP issue should be the announced one: {notices:?}"
+    );
+    set_rich_surface_active(false);
+}
+
+#[test]
 fn debug_lines_tee_only_before_rich_terminal_ownership() {
     use std::sync::atomic::Ordering;
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
@@ -497,7 +687,7 @@ fn debug_lines_tee_only_before_rich_terminal_ownership() {
 #[test]
 fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
     init_test_tracing();
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     set_rich_surface_active(false);
@@ -510,6 +700,7 @@ fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
     set_rich_surface_active(true);
     emit_compact_line("warning", "jackin: warning: hidden by cockpit");
     set_rich_surface_active(false);
+    run.flush_writer();
 
     let jsonl = fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("\"kind\":\"warning\""), "{jsonl}");
@@ -521,7 +712,7 @@ fn compact_lines_write_run_file_while_rich_surface_owns_terminal() {
 #[test]
 fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
     init_test_tracing();
-    let _lock = DEBUG_BUFFER_TEST_LOCK
+    let _lock = DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     set_rich_surface_active(false);
@@ -534,6 +725,7 @@ fn compact_lines_write_run_file_while_host_screen_owns_terminal() {
     set_host_screen_owned(true);
     emit_compact_line("operator_env", "jackin: hidden while host owns raw screen");
     set_host_screen_owned(false);
+    run.flush_writer();
 
     let jsonl = fs::read_to_string(run.path()).unwrap();
     assert!(jsonl.contains("\"kind\":\"operator_env\""), "{jsonl}");
