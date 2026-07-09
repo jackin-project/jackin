@@ -10,9 +10,12 @@ Make jackin❯ exceptionally safe to refactor by humans and AI agents: strict co
 
 The project is pre-release, so large restructures are acceptable. The priority is not minimizing migration cost; the priority is lowering future defect rate and making the codebase easy for agents to understand, modify, verify, and review.
 
+The operating assumption for this program is that the most frequent contributor is an autonomous agent, not a human at a keyboard. That flips the usual lint calibration. A `warn` is a human grace period — a hint that something *could* be fixed later. An agent does not need a grace period: it can read the lint message, write the fix, and re-run the gate in the same turn. So the target ruleset is **deny by default, with `reason =`-justified `#[expect]` as the only escape hatch**, even for lints that conventional projects leave at `warn` because their fix is "tedious." The 2026 Rust discourse on stricter Clippy for coding agents makes the same point from the opposite direction: panics that kill a Tokio worker, dropped futures, swallowed errors, and lossy numeric casts are exactly the defects the compiler cannot catch but Clippy can, and they are exactly the defects an agent is likeliest to introduce. This program adopts that stricter posture as the destination, not the starting point.
+
 ## Shipped foundation
 
 - The workspace uses Rust 2024, resolver v3, explicit MSRV, a strict workspace lint table, `unsafe_code = "forbid"`, `unreachable_pub = "deny"`, `clippy::all = deny`, `pedantic`/`cargo` warnings promoted by CI, and hard denials for `unwrap`, `expect`, `panic`, stdout/stderr printing, `todo`, `unimplemented`, `mod_module_files`, and selected blocking methods.
+- The current ratchet headroom is explicit and bounded. `clippy.toml` complexity thresholds sit at the measured pre-Workstream-A maxima (`too-many-lines = 150`, `cognitive-complexity = 60`, `excessive-nesting = 5`, `too-many-arguments = 7`) and the four `disallowed-methods` entries are the only blocked-API list. A deliberate set of pedantic/restriction lints is still `allow` (`needless_pass_by_value`, `large_futures`, `unused_async`, `assigning_clones`, `match_same_arms`, `drop_non_drop`, `unused_self`, `format_push_string`, `option_option`, `float_cmp`, `struct_field_names`, and more), and the panic-coverage / silent-failure / async-safety restriction families are not yet adopted at all. There is **no `[workspace.lints.rustdoc]` table**, no `missing_docs` on API-bearing crates, no `disallowed_types`/`disallowed_macros`, no committed public-API snapshot, and no layered-architecture gate. Phase 1 and Phase 2 close exactly these gaps.
 - The codebase is split into workspace crates with Rust 2024 self-named module files, no `mod.rs`, no inline test modules, and a shrink-only test-layout allowlist.
 - CI already runs fmt, clippy across all targets/features, schema checks, file-size/test-layout/agent-file gates, `cargo shear`, `cargo audit`, `cargo deny` policy checks, nextest shards, fuzz smoke, benchmark build checks, MSRV checks, and optional Docker-backed E2E.
 - The file-size and test-layout ledgers were burned down to zero grandfathered entries, and the old PR-specific merge-readiness audit is closed.
@@ -25,6 +28,8 @@ The project is pre-release, so large restructures are acceptable. The priority i
 - **Refactor with characterization first.** Launch, capsule daemon, isolation materialization, auth, and TUI input changes need fast tests around observable behavior before body extraction.
 - **Make exceptions auditable.** Every surviving `allow`/`expect` should have a narrow scope and a reason; unreasoned broad suppressions are debt even when CI is green.
 - **Optimize for AI navigation.** A future agent should know which crate owns a concept from the codebase map, should see one canonical API to copy, and should have a focused verification command for the touched surface.
+- **Deny by default; optimize the ruleset for autonomous enforcement.** Because the primary contributor is an agent, calibrate every gate toward `deny` + reasoned `#[expect]`, not `warn`. A lint that "only an agent would violate" is the strongest argument *for* denying it, not against. Prefer allowlist-style adoption (turn a category on, then justify each suppression) over denylist-style cherry-picking once the Phase 0 inventory is in hand; a missed lint is a missed defect, and an allowlist makes a missed lint impossible.
+- **Make the compiler and the lints the oracle.** Maximize the share of "is this correct?" that an answerable machine check decides before a human or agent guesses. Every invariant that can be a type, a trait bound, a lint, or an architecture rule should be; invariants that live only in prose are invariants an agent will quietly violate.
 
 ## Phase 0 — Reconcile and measure before changing code
 
@@ -60,6 +65,59 @@ The project is pre-release, so large restructures are acceptable. The priority i
 5. Ratchet `too_many_lines`, `cognitive_complexity`, `excessive_nesting`, and `too_many_arguments` thresholds only after the fresh inventory identifies the next safe lower bucket.
 6. Require every non-Apache/MIT license exception in `deny.toml` to carry a rationale or grouped policy note so the current strict supply-chain posture stays reviewable.
 
+### Panic-coverage and silent-failure restriction lints — the agent defect surface
+
+The workspace already denies `unwrap_used`, `expect_used`, `panic`, `todo`, and `unimplemented`, but that misses the panic families a coding agent introduces most often: byte-boundary string/array slicing, swallowed results, dropped futures, and lossy numeric casts. The motivating class is the same one behind the 2025 "unwrap that broke the internet" incident and the UTF-8-slicing Tokio-worker kills described in the 2026 stricter-Clippy writing — defects the compiler cannot see but Clippy can. Adopt these as the long-term `deny` target, each behind a Phase 0 dry run:
+
+- **Don't panic (slice/index coverage):** `string_slice`, `indexing_slicing`, `get_unwrap`, `unwrap_in_result`, `unchecked_time_subtraction`, `panic_in_result_fn`. These complement the existing unwrap/expect/panic denials by catching `&s[a..b]`, `arr[i]`, and panics inside `Result`-returning functions. `string_slice` and `indexing_slicing` will fire widely on day one; route every hit through `.get()`/`.split_at_checked()`/iterator APIs. Treat the wide blast radius as a feature — each site is a latent panic an agent would otherwise ship.
+- **Don't fail silently:** `let_underscore_future`, `let_underscore_must_use` (jackin❯ already denies `let_underscore_drop`; close the family), `unused_result_ok`, `map_err_ignore`, `assertions_on_result_states`. These catch `let _ = future`, `r.ok();`, and `.map_err(|_| …)` — silent error loss that is invisible to tests.
+- **Don't do bad async:** `await_holding_lock`, `await_holding_refcell_ref`. jackin❯ runs the capsule daemon and runtime on Tokio with non-`Send` guards held across `.await` in places; these are the deadlock lint pair and are high-value against the capsule control plane. (`if_let_mutex` is edition-2024-resolved and can stay off.)
+- **Don't do incorrect things with numbers:** `float_cmp_const`, `lossy_float_literal`, `cast_sign_loss`, `invalid_upcast_comparisons`, and re-evaluate the current `float_cmp = "allow"`. Treat `cast_possible_truncation`/`cast_precision_loss`/`cast_possible_wrap` as the optional "force a documented invariant on every lossy cast" tier once the loud set is clean.
+- **Easy to avoid:** `rc_mutex`, `debug_assert_with_mut_call`, `expl_impl_clone_on_copy`, `infallible_try_from`, `iter_not_returning_iterator`.
+
+Add the matching `clippy.toml` escape valves (`allow-indexing-slicing-in-tests`, `allow-panic-in-tests`, `allow-unwrap-in-tests`, `allow-expect-in-tests`, `allow-dbg-in-tests` are already present for `unwrap`/`expect`/`panic`; extend the set as each lint lands) so the denials apply to production and tests stay ergonomic.
+
+### Meta-suppression discipline — make every `allow` a reasoned `expect`
+
+The single highest-leverage, lowest-noise addition for an agent-authored codebase:
+
+1. **`allow_attributes = "deny"`** — every `#[allow(...)]` must become `#[expect(...)]`. An `expect` is self-documenting and fails the build if the underlying lint ever stops firing, so suppressions cannot outlive their reason. This directly enforces the "no silent host writes / no silent suppressions" posture as a gate.
+2. **`allow_attributes_without_reason = "deny"`** — every `#[expect(...)]` (and any surviving `#[allow]`) must carry `reason = "…"`. An agent that disables a lint must state why; the build rejects a bare suppression.
+3. The existing xtask grep that blocks `allow`/`expect` without `reason =` becomes redundant once these two lints deny; keep it only for the generated-code / cross-target allowlist carve-outs the lints cannot express.
+
+### Rustdoc and missing-docs gates
+
+jackin❯ has **no `[workspace.lints.rustdoc]` table** and only `missing_debug_implementations = "warn"` from the `rust` group. Close the documentation-as-navigation gap:
+
+1. Add `[workspace.lints.rustdoc]` with `broken_intra_doc_links = "deny"`, `private_intra_doc_links = "warn"`, `redundant_explicit_links = "warn"`, and `unescaped_quotes_in_doc_comment = "warn"` so rustdoc is a real check, not decoration.
+2. Promote `missing_debug_implementations` to `deny` once the remaining gaps are filled (it is already CI-promoted via `-D warnings`, so the delta is making it local-fail too).
+3. Turn on `missing_docs` (the `rust` lint) for the foundational, API-bearing crates — `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-protocol`, `jackin-env`, `jackin-term` — not for binaries or `jackin-xtask`. An undocumented public item is a navigation hole for an agent copying a canonical API; `missing_docs` makes the hole a build failure. Gate crate-by-crate behind the dry run rather than workspace-wide, because the first adoption sweep is large.
+4. Keep `cargo test --doc --workspace` (Phase 1 PR-time gate) as the executable half of the rustdoc gate.
+
+### Disallowed types, macros, and the blocked-surface list
+
+`disallowed_methods` already blocks four blocking process/filesystem APIs. Extend the same mechanism, configured in `clippy.toml`:
+
+1. **`disallowed-types`** — block footgun types in favor of workspace-canonical alternatives: `std::sync::Mutex`/`std::sync::RwLock` → `parking_lot` (already a dependency), `Rc<RefCell<_>>` in async code, `Cell`/`RefCell` on `Send` types, `VecDeque` where a ring-buffer abstraction exists, bare `String`/`Vec<u8>` in protocol frames where `compact_str`/`bytes` is the contract. Each entry carries a `reason` naming the replacement.
+2. **`disallowed_macros`** — block `println!`/`eprintln!`/`dbg!`/`todo!`/`unimplemented!`/`print!` everywhere production code can reach (tests exempt), and any crate-local macro that has been superseded. This makes the existing `print_stdout`/`print_stderr`/`dbg_macro` denials structural instead of per-call.
+3. Keep the blocked-surface list versioned in `clippy.toml` with a one-line `reason` per entry so the gate doubles as documentation for agents.
+
+### Custom project lints via dylint
+
+When a jackin❯-specific invariant cannot be expressed by any shipped lint, encode it as a workspace-owned [dylint](https://github.com/trailofbits/dylint) library run from CI, not as a prose rule an agent will drift from. Candidate first-party lints, each justified by a real footgun:
+
+- **Process-execution boundary:** no direct `tokio::process::Command` / `std::process::Command` use outside the designated execution-boundary crate (the Phase 2 "Shared contracts" extraction); every call site must go through the shared capture/timeout/retry/redaction model.
+- **Render-thread purity:** no blocking I/O, allocation storms, or `std::sync` locks reachable from the terminal/console draw path; the lint enforces what `disallowed_methods` cannot express structurally.
+- **Foundational-crate surface:** every `pub` type in a foundational crate implements `Debug`, and extension traits are sealed.
+- **Config/manifest field consistency:** new `jackin.role.toml` / `config.toml` fields carry a `#[serde]` + a doc + a migration entry together; the lint flags a field added to a struct without the matching schema-version bump.
+- **Telemetry discipline:** `cdebug!`/`clog!` macros used (not `log::`/`tracing::` directly) so the two-tier gate stays consistent.
+
+Author the lint library under `crates/jackin-lints/`, gate it advisory first (warn in a scheduled lane), and promote to PR-blocking once the false-positive rate is measured. dylint lints compile against a nightly-internal `rustc` API, so isolate them in their own crate and run them in the scheduled lane or a pinned-toolchain CI job rather than the default PR toolchain.
+
+### Whole-category "Stricter-er" as an adoption track
+
+Two defensible philosophies exist for adopting restriction lints: cherry-pick (Schwartz) or turn whole categories on and justify each suppression (the "Stricter-er" allowlist argument). For jackin❯, run the Phase 0 inventory, then pilot the **allowlist track** on one low-risk pure crate: set `restriction = { level = "warn", priority = -1 }` for that crate only, fix or `#[expect(…, reason)]` every hit, and measure the ongoing maintenance cost. If the maintenance cost is low and the defect catch rate high — the expected outcome for an agent-authored codebase where the friction is the point — roll the allowlist posture workspace-wide and invert the existing allow-set: most current `allow`s become either justified `#[expect]`s or accepted warns. Track the decision and its snapshot date in this page's research notes so the posture is auditable, not inherited.
+
 ## Phase 2 — Restructure crate and module ownership
 
 ### Runtime and launch architecture
@@ -85,6 +143,16 @@ The project is pre-release, so large restructures are acceptable. The priority i
 4. **Public API facades**: narrow broad `pub mod` surfaces in foundational crates. Prefer intentional root re-exports and `pub(crate)` implementation modules so agents copy canonical APIs rather than internals.
 5. **Architecture tests**: make dependency-direction rules strict and explicit in CI, with separate production and dev-dependency exceptions.
 
+### Public API surface and dependency-direction gates
+
+The current structure relies on `unreachable_pub = "deny"` and reviewer memory to keep the public surface small and the dependency graph acyclic. Promote both to machine-checked gates so an agent cannot accidentally widen the API or reverse a dependency:
+
+1. **Sealed traits as the extension-point boundary.** Any trait that downstream crates or role authors are not meant to implement must be sealed (private supertrait). Sealing is what makes a trait "internal" real to `cargo-semver-checks`, so unsealed `pub trait`s are a semver liability and an agent footgun. Audit the foundational and protocol crates, seal everything that is not an intended extension point, and add a first-party dylint lint (Phase 1) that flags `pub trait` without a seal in API-bearing crates.
+2. **Committed public-API snapshot.** Run `cargo public-api` over the workspace and commit the generated API surface as a checked-in artifact (per API-bearing crate). A PR that changes the public API must update the snapshot; the diff in the PR review is then the API change, made intentional and visible. Because jackin❯ is pre-release, breaking changes are allowed — the snapshot's job is to force awareness and review, not to forbid breakage. Promote `cargo-public-api` and `cargo-semver-checks` from the Phase 1 "informational report" tier to a real PR gate once the baseline snapshot is committed.
+3. **Barrel-file re-export discipline.** Each foundational crate exposes one canonical surface from its `lib.rs` — intentional root re-exports of the supported API, with `pub(crate)` implementation modules behind them — so an agent copying an API copies the canonical path, not an internal one. Pair this with the Phase 1 `missing_docs` gate so every re-exported item is documented. Deprecate accidental `pub mod` surfaces by narrowing them to `pub(crate)` or re-exporting the intended subset.
+4. **Strict layered-architecture gate.** Encode the crate tiers from the [Codebase Map](/reference/getting-oriented/codebase-map/) as an explicit, versioned layer graph and enforce it in CI: a lower tier may never depend on a higher tier, production crates may only take `dev-dependencies` on test-support crates, and no crate may form a cycle. Implement it from `cargo metadata` + a small petgraph-based xtask (under `cargo xtask lint layers`), or adopt `arch-lint` / `layered-crate` if their rule model fits. Separate production and dev-dependency edge rules so test-support crates can depend up without polluting the production graph. This supersedes the "Architecture tests" line above with a concrete, named tool and a tier source of truth.
+5. **`pub`-surface ratchet report.** The Phase 0 code-health dashboard (see Phase 0) reports each crate's public-item count and flags foundational crates whose surface grew without a corresponding snapshot update. Growth is information, not failure, but unreviewed growth is the debt to catch.
+
 ### Console and TUI structure
 
 1. Finish or remove the shared TUI runtime half-layer. The preferred path is to dispatch console, launch, and capsule loops through the shared `jackin_tui::runtime` traits so the abstraction is operational, not just type-level.
@@ -104,11 +172,13 @@ The project is pre-release, so large restructures are acceptable. The priority i
 ## Phase 4 — Measure and protect performance
 
 1. Convert benchmark build-only coverage into measured, non-flaky performance reporting for terminal pane rendering, launch/attach, grid resize, scrollback snapshotting, materialization, and diagnostics parsing. Start scheduled/advisory; require only once thresholds are stable.
-2. Avoid cloning full usage views during account materialization by serializing from borrowed views or iterators.
-3. Add terminal resize fast paths that reuse row storage for height-only or same-width changes and benchmark resize storms.
-4. Parallelize isolated mount materialization only after partitioning by dependency/order group and host repository to avoid `.git` lock contention.
-5. Stream diagnostics JSONL into typed borrowed records and parse nested detail only for event kinds that need it.
-6. Split local CI orchestration into AI-friendly aliases that mirror CI partitions: lint, policy, tests, snapshots, docs, MSRV, E2E. Preserve full `cargo xtask ci` semantics, but make the smallest correct command discoverable.
+2. Use deterministic, measurement-noise-free regression gates for CI, not wall-clock criterion. Criterion stays the local statistical harness; for PR gates adopt [iai-callgrind](https://docs.rs/iai-callgrind) (Valgrind/Cachegrind instruction+cache counts, identical across noisy cloud runners) for the pure hot paths — terminal parser, grid render, scrollback snapshot, diagnostics JSONL, env/manifest resolution — and reserve criterion for the integration paths where determinism is impossible. iai-callgrind supports per-event regression limits, which become the perf budget: a PR that regresses instruction count past the limit fails. Track the two-tier shape explicitly so agents know which harness a given path is gated by.
+3. Commit per-hot-path perf budgets alongside the file-size budget, as a shrink-only ratchet mirroring `file-size-budget.toml`. A budget entry records the accepted instruction-count/regression limit; exceeding it is a failure, and a measured improvement must shrink the entry. This makes "performance is measured, not guessed" a CI gate, not an aspiration.
+4. Avoid cloning full usage views during account materialization by serializing from borrowed views or iterators.
+5. Add terminal resize fast paths that reuse row storage for height-only or same-width changes and benchmark resize storms.
+6. Parallelize isolated mount materialization only after partitioning by dependency/order group and host repository to avoid `.git` lock contention.
+7. Stream diagnostics JSONL into typed borrowed records and parse nested detail only for event kinds that need it.
+8. Split local CI orchestration into AI-friendly aliases that mirror CI partitions: lint, policy, tests, snapshots, docs, MSRV, E2E. Preserve full `cargo xtask ci` semantics, but make the smallest correct command discoverable.
 
 ## Phase 5 — Keep docs and maps authoritative
 
@@ -116,6 +186,16 @@ The project is pre-release, so large restructures are acceptable. The priority i
 2. Keep route-level roadmap docs focused on active work. Resolved setup records should live in this page’s closed ledger or in git history, not as sidebar leaves.
 3. Keep behavioral specs in `/reference/developer-reference/specs/`; use this roadmap page to track missing specs or missing tests, not duplicate the spec content.
 4. Keep user-facing docs free of internal refactor admissions; code-health details belong under roadmap/reference only.
+
+## Phase 6 — Optimize for autonomous navigation and feedback speed
+
+The other phases make the code correct and structured; this phase makes an agent *fast* at moving through it. An agent's quality is bounded by its edit→compile→lint→test loop time and by how little of the codebase it must read to find the right edit location. Treat both as first-class engineering targets, not side effects.
+
+1. **Crate ownership headers (hard rule).** Every `lib.rs` (and `main.rs`) opens with a `//!` block stating, in three lines: *what this crate owns*, *its tier in the dependency graph*, and *the one entry point an agent should copy*. This is the in-repo, always-current complement to the Codebase Map; an agent opening any crate root learns its boundary without reading the map. Enforce presence with a Phase 1 dylint lint or a `cargo xtask lint headers` check.
+2. **Narrowest-verification map, generated.** Generate (or audit) a machine-checkable map from each crate/module to its narrowest passing verification command — targeted `cargo nextest run -p <crate>`, `cargo clippy -p <crate>`, the snapshot lane, etc. Surface it in <RepoFile path="TESTING.md">TESTING.md</RepoFile> as a table an agent can grep, so the smallest correct command for a touched surface is discoverable in one lookup instead of reconstructed by trial. Phase 4 item 8 (CI aliases) is the operator-facing half of the same idea.
+3. **Feedback-loop budget.** Measure and protect the clean-build and incremental-build times for the crates an agent touches most (runtime, capsule, console, term, config). Keep the agent-facing inner loop under a stated budget; regressions trip the same kind of gate as the file-size budget. Levers: keep crates small and dependency-narrow so incremental recompilation is localized (this is also why Phase 2 crate splitting matters for *speed*, not just structure); enable `sccache` and a fast linker (`mold`/`lld`) in CI and document the local setup; keep `codegen-units` and `profile.dev` tuned for compile speed over micro-opt in dev; prefer `cargo nextest` (already adopted) for parallel test discovery. Compile time is agent throughput — budget it like any other resource.
+4. **Make the type system decide.** Where a runtime invariant can instead be a type, a sealed trait, a `#[non_exhaustive]` enum, a newtype, or a state-machine type, do that. The goal is to maximize the fraction of "is this change safe?" that `cargo check` answers before any agent or human reasons about it — the strongest agent-velocity lever in Rust, and the through-line of the 2026 "AI writes Rust" consensus.
+5. **Determinism over cleverness.** Prefer code that behaves identically across machines and toolchain patches: no wall-clock-dependent tests (use an injected clock, as Phase 3's test-support crate already plans), no filesystem-order-dependent iteration (sorted/globbed), no floating-point in equality assertions. Deterministic tests are tests an agent can trust to mean what they say.
 
 ## Closed and superseded roadmap leaves
 
@@ -129,6 +209,21 @@ The following old code-health leaves are intentionally retired into this page:
 - `rustdoc-json-fumadocs` moved to Documentation tooling.
 - `pr-verification` moved to Operator surface.
 - `plans/complexity-debt` is retired because its counts drifted; future work must start from a fresh inventory.
+
+## Research and prior art
+
+External references that shaped the stricter-Clippy, public-API-surface, and agent-loop direction of this page. Snapshot: 2026-07. Re-verify each before borrowing an implementation detail; blog posts are context, not the only evidence.
+
+- [Your Clippy Config Should Be Stricter](https://emschwartz.me/your-clippy-config-should-be-stricter/) (Evan Schwartz, 2026-04-30) — the motivating taxonomy of panic-coverage, silent-failure, async-safety, and numeric-correctness restriction lints, framed explicitly as guardrails for coding agents. The Phase 1 "Panic-coverage and silent-failure restriction lints" subsection adopts its groupings.
+- [Your Clippy Config Should Be Stricter-er](https://billylevin.dev/posts/clippy-config/) (Billy Levin, 2026-04-30) — the counter-argument for allowlist adoption: enable whole `pedantic`/`restriction` categories and justify each suppression, so a useful lint can never be overlooked. The Phase 1 "Stricter-er adoption track" pilots this posture.
+- [egui workspace lint configuration](https://github.com/emilk/egui/blob/main/Cargo.toml) — a widely-referenced, production-grade curated lint table; used as a cross-check for which restriction/nursery lints are worth the noise in a real workspace.
+- [epage `_rust` template](https://github.com/epage/_rust) — a maintained lint baseline used as the merge base across many Rust projects.
+- [dylint](https://github.com/trailofbits/dylint) and the [Trail of Bits introduction](https://blog.trailofbits.com/2021/11/09/write-rust-lints-without-forking-clippy/) — the mechanism behind the Phase 1 "Custom project lints" plan: enforce jackin❯-specific invariants without forking Clippy.
+- [cargo-semver-checks](https://github.com/obi1kenobi/cargo-semver-checks) and Predrag Gruevski's notes on [sealed traits](https://predr.ag/blog/four-challenges-cargo-semver-checks-has-yet-to-tackle/) and [`doc(hidden)` API surface](https://predr.ag/blog/checking-semver-for-doc-hidden-items/) — why sealing and an explicit public-API snapshot (Phase 2) make the surface machine-checkable.
+- [cargo-public-api](https://github.com/Enselic/cargo-public-api) — the committed-snapshot mechanism for the Phase 2 public-API gate.
+- [iai-callgrind](https://docs.rs/iai-callgrind) — deterministic, Valgrind-based regression counts for the Phase 4 perf budget; chosen over wall-clock criterion for CI gates.
+- [arch-lint](https://crates.io/crates/arch-lint), [layered-crate](https://crates.io/crates/layered-crate), and [boundary-rust](https://lib.rs/crates/boundary-rust) — candidate tools for the Phase 2 layered-architecture gate, evaluated against a `cargo metadata` + petgraph xtask.
+- r/rust [curated lint list (2026-03)](https://www.reddit.com/r/rust/comments/1rxbygj/curated_list_of_clippy_lints_worth_adding_to_the/) — community consensus on the high-impact baseline (`unreachable_pub`, `unused_qualifications`, `missing_docs`, rustdoc `broken_intra_doc_links`), several of which close jackin❯ gaps.
 
 ## Verification commands for roadmap edits
 
