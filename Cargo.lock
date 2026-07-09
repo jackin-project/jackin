@@ -2861,7 +2861,7 @@ dependencies = [
 
 [[package]]
 name = "jackin-dev"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "anyhow",
  "clap",
@@ -6764,9 +6764,9 @@ dependencies = [
 
 [[package]]
 name = "turso"
-version = "0.7.0-pre.17"
+version = "0.7.0-pre.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc8e938f54b9f25d016e51a8e2743265ca86c2e288a453edf43707855990f62b"
+checksum = "740a6b03372b4a1fba197fb75bdd68c47a8607016b75b15ffa0625a31f38757e"
 dependencies = [
  "thiserror 2.0.18",
  "tracing",
