@@ -113,7 +113,7 @@ turso = { version = "=0.7.0-pre.18", default-features = false }
 unicode-width = "0.2"
 url = "2"
 vte = "0.15"
-x509-cert = { version = "0.2", default-features = false }
+x509-cert = { version = "0.3", default-features = false }
 
 [workspace.lints.rust]
 rust_2024_compatibility = { level = "deny", priority = -1 }
