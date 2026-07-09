@@ -30,4 +30,4 @@ cargo nextest run -p jackin-tui-lookbook
 cargo run -p jackin-tui-lookbook -- --check docs/public/tui-lookbook
 ```
 
-See [../AGENTS.md](../AGENTS.md) for workspace-wide Rust rules and [../../AGENTS.md](../../AGENTS.md) for repo rules. The hard rule — *use only jackin-tui public API* — is in [`AGENTS.md`](AGENTS.md).
+The hard rule — *use only `jackin-tui` public API* — applies to every story and interactor.

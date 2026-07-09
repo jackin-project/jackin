@@ -31,4 +31,3 @@ cargo clippy -p jackin-xtask --all-targets -- -D warnings
 cargo xtask ci --fast
 ```
 
-See [../AGENTS.md](../AGENTS.md) for workspace-wide Rust rules and [../../AGENTS.md](../../AGENTS.md) for repo rules.

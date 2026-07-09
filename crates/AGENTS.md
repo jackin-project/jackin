@@ -78,7 +78,16 @@ PR touching code: misplaced tests → relocate same PR. No exception.
 
 ## Per-crate README + AGENTS.md (hard rule)
 
-**Every crate directory under `crates/` carries three files:** `README.md`, `AGENTS.md`, and `CLAUDE.md` (a symlink to `AGENTS.md`, matching the repo convention: every dir with `AGENTS.md` has `CLAUDE.md` beside it). Enforced by the `cargo xtask agent-files` gate, which scans every `crates/*/` member.
+**Every crate directory under `crates/` carries three files:** `README.md`, `AGENTS.md`, and `CLAUDE.md` (a symlink to `AGENTS.md`, matching the repo convention: every dir with `AGENTS.md` has `CLAUDE.md` beside it). Enforced by the `cargo xtask lint agents` gate, which scans every `crates/*/` member.
+
+### No cross-links between AGENTS.md files (hard rule)
+
+An `AGENTS.md` is per-folder and **self-contained** — the [agents.md](https://agents.md/) nearest-file-wins rule means an agent editing a file reads the closest `AGENTS.md`, so that file must stand alone. Therefore:
+
+- A `README.md` never links to any `AGENTS.md`.
+- An `AGENTS.md` never links to another `AGENTS.md` (no "see `../AGENTS.md` for the real rules").
+
+Either file may still link to any other markdown or source file (a design doc, a spec) as a reference. Enforced by `cargo xtask lint agent-links`, which fails on any markdown link — inline `[t](path)` or reference `[id]: path` — whose target is an `AGENTS.md` (code-fence template examples are skipped).
 
 ### `README.md` — the always-current map of this crate
 
@@ -93,6 +102,8 @@ A cold reader (human or agent) who opens a crate must finish its `README.md` und
 - how the crate is verified.
 
 Line-count churn inside an existing module does not require a README edit. When unsure whether a change is "structural," update — a too-fresh README costs nothing; a stale one misleads every later agent.
+
+**Structure is a clickable table, not a bare list.** Every module path is a link so a reader can click straight to the file or folder, with a Tests column pointing at the sibling `tests.rs`. A top-level module `<mod>.rs` has tests at `<mod>/tests.rs` exactly when a `<mod>/` directory exists; modules without a subdir have no Tests link.
 
 #### `README.md` template
 
@@ -110,9 +121,12 @@ Line-count churn inside an existing module does not require a README edit. When 
 Allowed workspace dependencies: <list>. Must NOT depend on: <list, if any>.
 
 ## Structure
-- `src/<mod>.rs` — <one-line>
-- `src/<mod>/` — <one-line>
-<…one line per top-level module/subdir, grouped if many>
+
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`<mod>.rs`](src/<mod>.rs) · [`<mod>/`](src/<mod>) | <one-line> | [`tests.rs`](src/<mod>/tests.rs) |
+| [`<mod>.rs`](src/<mod>.rs) | <one-line; no subdir = no sibling tests> | — |
 
 ## Public API
 <The entry points an agent should copy: root re-exports, key types/traits/fns.
@@ -120,47 +134,37 @@ If the crate is internal-only, say so and point at the crate that re-exports it.
 
 ## How to verify
 `cargo nextest run -p <crate>` (plus any specific gate: snapshots, fuzz, doc tests).
-
-See [../AGENTS.md](../AGENTS.md) for workspace-wide Rust rules and [../../AGENTS.md](../../AGENTS.md) for repo rules.
 ```
 
-Right-size the README to the crate. A leaf crate (e.g. `jackin-protocol`) needs only the short form above. A complex infrastructure crate (e.g. `jackin-term`) may carry a richer engineering record — problem solved, what was tried, why we built it, invariants, correctness guarantees — like the existing `jackin-term/README.md`. Never pad a small crate to match a big one.
+Right-size the README to the crate. A leaf crate (e.g. `jackin-protocol`) needs only the short form above. A complex infrastructure crate (e.g. `jackin-term`) keeps its design rationale in the internal docs page it links, not inline. Never pad a small crate to match a big one.
 
 ### `AGENTS.md` — only the rules an agent cannot derive from the code
 
-The per-crate `AGENTS.md` is the **smallest** file in the crate. It holds only non-derivable, actionable rules — the conventions, invariants, traps, and boundary decisions that are not already encoded in the code, the `README.md`, the workspace lint table, or the `cargo xtask lint arch` dependency gate. Agents read `AGENTS.md` *and* `README.md` *and* the source; duplicating any of them in `AGENTS.md` wastes context tokens for no gain. Research on the [AGENTS.md](https://agents.md/) convention is unambiguous: files that duplicate README/code-derivable content measurably *reduce* agent task success (see Atlan/MorphLLM surveys), and the ceiling is ~150 lines — keep a per-crate file well under that, ideally a handful of rules.
+The per-crate `AGENTS.md` is the **smallest** file in the crate — a few rules, no title, no boilerplate. It holds only non-derivable, actionable rules: the conventions, invariants, traps, and boundary decisions that are not already encoded in the code, the `README.md`, the workspace lint table, or the `cargo xtask lint arch` dependency gate. Agents read `AGENTS.md` *and* `README.md` *and* the source; duplicating any of them wastes context tokens for no gain. Research on the [AGENTS.md](https://agents.md/) convention is unambiguous: files that duplicate README/code-derivable content measurably *reduce* agent task success (Atlan/MorphLLM surveys).
 
 **Never put in a per-crate `AGENTS.md`:**
 
-- **Tier or allowed-dependency lists.** They are in the crate's `//!` Architecture Invariant header (`src/lib.rs`), in `Cargo.toml`, and enforced by `cargo xtask lint arch`. Copying them here is triple duplication.
+- **A title or the crate/folder name.** The file's location is its scope (nearest-file-wins); an `# AGENTS.md — <crate>` heading is pure overhead.
+- **A one-line purpose.** It duplicates the crate's `//!` header in `src/lib.rs`.
+- **Tier or allowed-dependency lists.** They are in the `//!` Architecture Invariant header, in `Cargo.toml`, and enforced by `cargo xtask lint arch`.
 - **`src/` module structure or public-API summaries.** That is the `README.md`'s job (and rustdoc's).
 - **Build/test/verify commands.** Standard (`cargo nextest run -p <crate>`, clippy) or in `TESTING.md`.
 - **The "keep README current" rule.** Stated once, here; do not repeat per crate.
+- **A footer linking to another `AGENTS.md`.** Forbidden (no-cross-links rule above).
 - **Prose architecture overviews with no actionable instruction.**
 
-**Do put in a per-crate `AGENTS.md`:**
-
-- A one-line purpose (so the agent knows the crate's scope without opening the README).
-- Non-derivable rules: conventions, invariants, and traps the compiler, lints, and arch gate do not enforce — e.g. "damage is recorded at mutation, never recomputed by re-read", "reach runtime through effects-as-data, not direct calls", "use only `jackin-tui` public API".
-- A non-obvious ownership boundary **only when it is a decision**, not a derivable dependency.
+**Do put in a per-crate `AGENTS.md`:** non-derivable rules only — conventions, invariants, and traps the compiler, lints, and arch gate do not enforce (e.g. "damage is recorded at mutation, never recomputed by re-read", "reach runtime through effects-as-data, not direct calls", "use only `jackin-tui` public API"). Add a `## Boundaries` section only for a non-obvious ownership split that is a decision, not a derivable dependency.
 
 If a file grows past ~30 lines, most of it is probably derivable and belongs elsewhere.
 
 #### `AGENTS.md` template
 
 ```markdown
-# AGENTS.md — <crate-name>
-
-<One line: what this crate is for.>
-
-## Rules (this crate)
 - <non-derivable rule — convention / invariant / trap the compiler, lints, and arch gate do not enforce>
 - <non-derivable rule>
 
 ## Boundaries
 - <non-obvious ownership split, only if it is a decision and not a derivable dependency>
-
-Workspace rules: [../AGENTS.md](../AGENTS.md). Repo rules: [../../AGENTS.md](../../AGENTS.md).
 ```
 
 ## Workspace lint baseline (hard rule)

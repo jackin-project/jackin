@@ -31,4 +31,3 @@ cargo nextest run -p jackin
 cargo clippy -p jackin --all-targets -- -D warnings
 ```
 
-See [../AGENTS.md](../AGENTS.md) for workspace-wide Rust rules and [../../AGENTS.md](../../AGENTS.md) for repo rules.

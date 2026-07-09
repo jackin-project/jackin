@@ -35,4 +35,4 @@ cargo nextest run -p jackin-term
 cargo clippy -p jackin-term --all-targets -- -D warnings
 ```
 
-See [../AGENTS.md](../AGENTS.md) for workspace-wide Rust rules and [../../AGENTS.md](../../AGENTS.md) for repo rules. Design rationale and prior art: [Capsule Terminal Model](../../docs/content/docs/reference/capsule/terminal-model.mdx).
+Design rationale and prior art: [Capsule Terminal Model](../../docs/content/docs/reference/capsule/terminal-model.mdx).

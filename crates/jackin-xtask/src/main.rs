@@ -17,6 +17,7 @@
 //! invokes rather than reimplementing in flag assembly.
 
 mod agent_files;
+mod agent_links;
 mod arch;
 mod ci;
 mod construct;
@@ -130,6 +131,9 @@ enum LintCommand {
     /// Enforce that first-party `CLAUDE.md` files are symlinks to sibling
     /// `AGENTS.md` files.
     Agents(agent_files::LintAgentFilesArgs),
+    /// Enforce that no `README.md` or `AGENTS.md` links to an `AGENTS.md`
+    /// (both files are self-contained; nearest-`AGENTS.md`-wins).
+    AgentLinks(agent_links::LintAgentLinksArgs),
     /// Dependency-direction gate (Workstream 4).
     Arch(arch::LintArchArgs),
 }
@@ -143,6 +147,7 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     lint::enforce()?;
     test_layout::enforce()?;
     agent_files::enforce()?;
+    agent_links::enforce()?;
     arch::check(strict)
 }
 
@@ -164,6 +169,7 @@ fn main() -> ExitCode {
             Some(LintCommand::Files(args)) => lint::run(args),
             Some(LintCommand::Tests(args)) => test_layout::run(args),
             Some(LintCommand::Agents(args)) => agent_files::run(args),
+            Some(LintCommand::AgentLinks(args)) => agent_links::run(args),
             Some(LintCommand::Arch(args)) => arch::run(args),
             None => run_all_lints(strict),
         },

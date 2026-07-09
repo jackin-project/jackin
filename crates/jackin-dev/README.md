@@ -18,7 +18,7 @@ The `jackin-dev` PR-verification and contributor tooling binary — installed lo
 
 ## Public API
 
-The `jackin-dev` binary surface (`pr sync <N>`, `pr path <N>`, etc.) documented in `.github/AGENTS.md` and the PR-verification workflow. Not a library.
+The `jackin-dev` binary surface (`pr sync <N>`, `pr path <N>`, etc.) is documented in the PR-verification workflow under `.github/`. Not a library.
 
 ## How to verify
 
@@ -28,4 +28,3 @@ cargo clippy -p jackin-dev --all-targets -- -D warnings
 jackin-dev --version
 ```
 
-See [../AGENTS.md](../AGENTS.md) for workspace-wide Rust rules and [../../AGENTS.md](../../AGENTS.md) for repo rules.
