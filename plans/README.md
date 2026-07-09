@@ -5,6 +5,7 @@ plans are removed when they ship.
 
 ## Active folders
 
+- **code-health/** — first wave from the 2026-07-09 deep `improve` audit (against `a4761957d`): 9 vetted plans (deps/security/perf/correctness/tests) plus a full deferred-findings ledger and direction options. Source of truth for open code-health work under the [codebase-health roadmap item](../docs/content/docs/roadmap/(codebase-health)/codebase-health-enforcement.mdx).
 - **launch-speed/** — deferred launch-pipeline performance items from PR #718.
 - **tui-review/** — review follow-ups from PR #721.
 - **agent-status/** — agent runtime status authority program.
