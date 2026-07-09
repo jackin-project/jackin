@@ -28,8 +28,8 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [003](003-materialize-accounts-borrow.md) | Stop deep-cloning usage views on every refresh | P1 | S | perf | DONE (reviewed; `exec-plan-003` @ `c6914499f`, unmerged) |
 | [004](004-resize-coalesce-drops-frames.md) | Stop dropping the frame queued behind a coalesced resize | P1 | S | bug | DONE (reviewed; `exec-plan-004` @ `4d47ea343`, unmerged) |
 | [007](007-osc8-hyperlink-map-bound.md) | Bound OSC 8 hyperlink maps; clear on reset | P2 | S-M | bug | DONE (reviewed; `exec-plan-007` @ `2cf80a363`, unmerged) |
-| [008](008-launch-finalization-cleanup-guard.md) | Tear down DinD when a post-success finalization step fails | P2 | M | bug | TODO |
-| [009](009-protocol-decoder-fuzz-and-truncation-tests.md) | Fuzz + truncation tests for protocol wire decoders | P2 | M | tests | TODO |
+| [008](008-launch-finalization-cleanup-guard.md) | Tear down DinD when a post-success finalization step fails | P2 | M | bug | IN PROGRESS |
+| [009](009-protocol-decoder-fuzz-and-truncation-tests.md) | Fuzz + truncation tests for protocol wire decoders | P2 | M | tests | IN PROGRESS |
 
 ### Second wave — program infrastructure (respect the dependency notes)
 
@@ -59,7 +59,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
-| [024](024-clock-seam-clipboard-expiry.md) | `Clock` seam in jackin-core; first consumer: clipboard expiry | 3/6 | P1 | M | TODO |
+| [024](024-clock-seam-clipboard-expiry.md) | `Clock` seam in jackin-core; first consumer: clipboard expiry | 3/6 | P1 | M | IN PROGRESS |
 | [025](025-test-support-crate-break-dev-cycle.md) | Extract `jackin-test-support`; break isolation⇄runtime dev cycle | 2/3 | P2 | M | TODO |
 | [026](026-scrollback-range-snapshot.md) | Range-scoped scrollback snapshots (per-mouse-event full-scrollback alloc) | 2/4 | P2 | M | TODO |
 | [027](027-diagnostics-jsonl-typed-streaming.md) | Typed borrowed JSONL streaming; stop double-parsing detail | 4 | P2 | M | TODO |
@@ -71,7 +71,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [028](028-dependency-hygiene-sweep.md) | Dependency hygiene: turso store boundary, ring exception, pin rationale | 1 | P3 | M | TODO |
 | [029](029-docs-drift-reconciliation.md) | Docs drift: README links, Apple status, reserved envs, capsule README, codebase map | 5 | P3 | M | TODO |
 | [030](030-console-view-model-structs.md) | Console editor/settings view-model structs (kills the 42-site type_complexity cluster) | 2 | P2 | M-L | TODO |
-| [031](031-op-probe-typed-error.md) | Typed `op` probe errors (`OpProbeError` in jackin-core; downcast classification) | 2 | P2 | M | TODO |
+| [031](031-op-probe-typed-error.md) | Typed `op` probe errors (`OpProbeError` in jackin-core; downcast classification) | 2 | P2 | M | IN PROGRESS |
 | [032](032-daemon-console-behavioral-specs.md) | Behavioral specs: capsule daemon + operator console (cite-or-MISSING) | 3 | P2 | M-L | TODO |
 
 ### Sixth wave — roadmap-coverage gap closure
