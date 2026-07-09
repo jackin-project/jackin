@@ -4,7 +4,7 @@ Execution plans for in-flight workstreams. Each subfolder holds its own plans + 
 
 ## Active folders
 
-- **code-health/** — routine code-health first wave from the 2026-07-09 deep `improve` audit (against `a4761957d`): perf/correctness/tests plans plus routine deferred findings. Source of truth for open routine code-health work under the [codebase-health roadmap item](../docs/content/docs/roadmap/(codebase-health)/codebase-health-enforcement.mdx).
+- **code-health/** — routine code-health plans from the 2026-07-09 deep `improve` audits: first wave (against `a4761957d`) = concrete perf/correctness/tests instances; second wave (against `47dd5fca0`) = the roadmap program itself, one plan per phase 0-8 (dashboard, lint strictness, tier-graph gate, test infra, benches, docs gates, ownership headers, ratchet engine, telemetry), plus the deferred-findings ledger. Source of truth for open routine code-health work under the [codebase-health roadmap item](../docs/content/docs/roadmap/(codebase-health)/codebase-health-enforcement.mdx).
 - **launch-speed/** — deferred launch-pipeline performance items from PR #718.
 - **tui-review/** — review follow-ups from PR #721.
 - **agent-status/** — agent runtime status authority program.
