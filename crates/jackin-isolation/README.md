@@ -14,10 +14,15 @@ Mount isolation subsystem. Materializes per-workspace isolated git worktree moun
 
 ## Structure
 
-- `src/materialize.rs` / `src/materialize/` — mount materialization
-- `src/branch.rs`, `src/state.rs` — branch + isolation-state tracking
-- `src/git_inspect.rs` / `src/git_inspect/` — git/worktree inspection
-- `src/finalize.rs`, `src/cleanup.rs` — finalize + teardown
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`materialize.rs`](src/materialize.rs) · [`materialize/`](src/materialize) | mount materialization | [`tests.rs`](src/materialize/tests.rs) |
+| [`branch.rs`](src/branch.rs) · [`branch/`](src/branch) | branch tracking | [`tests.rs`](src/branch/tests.rs) |
+| [`state.rs`](src/state.rs) · [`state/`](src/state) | isolation-state tracking | [`tests.rs`](src/state/tests.rs) |
+| [`git_inspect.rs`](src/git_inspect.rs) · [`git_inspect/`](src/git_inspect) | git/worktree inspection | [`tests.rs`](src/git_inspect/tests.rs) |
+| [`finalize.rs`](src/finalize.rs) · [`finalize/`](src/finalize) | finalize | [`tests.rs`](src/finalize/tests.rs) |
+| [`cleanup.rs`](src/cleanup.rs) · [`cleanup/`](src/cleanup) | teardown/cleanup | [`tests.rs`](src/cleanup/tests.rs) |
 
 ## Public API
 

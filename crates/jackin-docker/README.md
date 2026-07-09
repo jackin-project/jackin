@@ -14,9 +14,12 @@ Concrete Docker daemon client and subprocess shell runner for jackin❯. The wor
 
 ## Structure
 
-- `src/docker_client.rs` / `src/docker_client/` — Docker daemon client
-- `src/shell_runner.rs` / `src/shell_runner/` — captured shell-command runner
-- `src/net.rs` / `src/net/` — Docker networking helpers
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`docker_client.rs`](src/docker_client.rs) · [`docker_client/`](src/docker_client) | Docker daemon client | [`tests.rs`](src/docker_client/tests.rs) |
+| [`shell_runner.rs`](src/shell_runner.rs) · [`shell_runner/`](src/shell_runner) | captured shell-command runner | [`tests.rs`](src/shell_runner/tests.rs) |
+| [`net.rs`](src/net.rs) · [`net/`](src/net) | Docker networking helpers | [`tests.rs`](src/net/tests.rs) |
 
 ## Public API
 

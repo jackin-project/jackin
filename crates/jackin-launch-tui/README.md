@@ -13,10 +13,14 @@ Launch cockpit TUI — the presentation surface for `jackin load`. Renders build
 
 ## Structure
 
-- `src/progress.rs` / `src/progress/` — build/launch progress rendering
-- `src/launch_output.rs`, `src/build_log.rs` — output streaming
-- `src/standalone_dialog_sink.rs` / `src/standalone_dialog_sink/` — standalone dialog sink
-- `src/tui.rs` / `src/tui/` — launch TUI shell
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`progress.rs`](src/progress.rs) · [`progress/`](src/progress) | build/launch progress rendering | [`tests.rs`](src/progress/tests.rs) |
+| [`launch_output.rs`](src/launch_output.rs) | launch output streaming | — |
+| [`build_log.rs`](src/build_log.rs) | build-log streaming | — |
+| [`standalone_dialog_sink.rs`](src/standalone_dialog_sink.rs) · [`standalone_dialog_sink/`](src/standalone_dialog_sink) | standalone dialog sink | [`tests.rs`](src/standalone_dialog_sink/tests.rs) |
+| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | launch TUI shell | — |
 
 ## Public API
 

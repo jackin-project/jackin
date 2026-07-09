@@ -16,11 +16,21 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 
 ## Structure
 
-- `src/run.rs`, `src/summary.rs`, `src/observability.rs` — structured run diagnostics + OTLP tier
-- `src/debug_log.rs`, `src/logging.rs` — `debug_log!`/`clog!`/`cdebug!` two-tier substrate
-- `src/secret_scrub.rs`, `src/redact.rs` — redaction
-- `src/build_log.rs`, `src/operator_notice.rs`, `src/screen.rs`, `src/terminal.rs` — reporting
-- subdirs (`build_log/`, `debug_log/`, `secret_scrub/`, `observability/`, `redact/`, `operator_notice/`, `screen/`, `run/`, `summary/`) — module bodies + tests
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`run.rs`](src/run.rs) · [`run/`](src/run) | structured run diagnostics | [`tests.rs`](src/run/tests.rs) |
+| [`summary.rs`](src/summary.rs) · [`summary/`](src/summary) | run summary | [`tests.rs`](src/summary/tests.rs) |
+| [`observability.rs`](src/observability.rs) · [`observability/`](src/observability) | OTLP tier | [`tests.rs`](src/observability/tests.rs) |
+| [`debug_log.rs`](src/debug_log.rs) · [`debug_log/`](src/debug_log) | `debug_log!`/`clog!`/`cdebug!` substrate | [`tests.rs`](src/debug_log/tests.rs) |
+| [`logging.rs`](src/logging.rs) | logging init | — |
+| [`secret_scrub.rs`](src/secret_scrub.rs) · [`secret_scrub/`](src/secret_scrub) | secret scrubbing | [`tests.rs`](src/secret_scrub/tests.rs) |
+| [`redact.rs`](src/redact.rs) · [`redact/`](src/redact) | redaction | [`tests.rs`](src/redact/tests.rs) |
+| [`build_log.rs`](src/build_log.rs) · [`build_log/`](src/build_log) | build-log capture | [`tests.rs`](src/build_log/tests.rs) |
+| [`operator_notice.rs`](src/operator_notice.rs) · [`operator_notice/`](src/operator_notice) | operator notices | [`tests.rs`](src/operator_notice/tests.rs) |
+| [`screen.rs`](src/screen.rs) · [`screen/`](src/screen) | screen reporting | [`tests.rs`](src/screen/tests.rs) |
+| [`terminal.rs`](src/terminal.rs) | terminal reporting | — |
+| [`tests.rs`](src/tests.rs) | integration tests | — |
 
 ## Public API
 

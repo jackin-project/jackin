@@ -17,11 +17,23 @@ Merges the former `config/` and `workspace/` concerns into one crate to dissolve
 
 ## Structure
 
-- `src/schema.rs`, `src/app_config.rs`, `src/mounts.rs`, `src/auth.rs`, `src/sensitive.rs` — schema + sensitive values
-- `src/resolve.rs`, `src/planner.rs`, `src/persist.rs`, `src/paths.rs` — resolution, planning, persistence
-- `src/migrations.rs`, `src/versions.rs`, `src/validation.rs` — versioning + validation
-- `src/test_support.rs` — deterministic config builders for tests
-- subdirs (`migrations/`, `mounts/`, `resolve/`, `app_config/`, `paths/`, `fixtures/`, `editor/`) — module bodies + tests
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`schema.rs`](src/schema.rs) | config + workspace schema | — |
+| [`app_config.rs`](src/app_config.rs) · [`app_config/`](src/app_config) | app-config model | [`tests.rs`](src/app_config/tests.rs) |
+| [`mounts.rs`](src/mounts.rs) · [`mounts/`](src/mounts) | mounts schema | [`tests.rs`](src/mounts/tests.rs) |
+| [`auth.rs`](src/auth.rs) | auth model | — |
+| [`sensitive.rs`](src/sensitive.rs) | sensitive-value handling | — |
+| [`resolve.rs`](src/resolve.rs) · [`resolve/`](src/resolve) | resolution | [`tests.rs`](src/resolve/tests.rs) |
+| [`planner.rs`](src/planner.rs) | planning | — |
+| [`persist.rs`](src/persist.rs) | persistence | — |
+| [`paths.rs`](src/paths.rs) · [`paths/`](src/paths) | config paths | [`tests.rs`](src/paths/tests.rs) |
+| [`migrations.rs`](src/migrations.rs) · [`migrations/`](src/migrations) | versioned migrations | [`tests.rs`](src/migrations/tests.rs) |
+| [`versions.rs`](src/versions.rs) | version constants | — |
+| [`validation.rs`](src/validation.rs) | validation | — |
+| [`editor.rs`](src/editor.rs) · [`editor/`](src/editor) | editor config | [`tests.rs`](src/editor/tests.rs) |
+| [`test_support.rs`](src/test_support.rs) | deterministic config builders | — |
 
 ## Public API
 

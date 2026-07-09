@@ -14,10 +14,18 @@ Image generation and binary-artifact management for jackin❯. Builds the derive
 
 ## Structure
 
-- `src/derived_image.rs`, `src/image_recipe.rs`, `src/image_build.rs` — Dockerfile generation + build
-- `src/agent_binary.rs`, `src/capsule_binary.rs`, `src/binary_artifact.rs` — binary acquisition/caching
-- `src/image_decision.rs`, `src/version_check.rs`, `src/naming.rs` — decision, version check, naming
-- subdirs (`image_recipe/`, `image_decision/`, `derived_image/`, `binary_artifact/`, `image_build/`, `version_check/`, `capsule_binary/`, `agent_binary/`) — module bodies + tests
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`derived_image.rs`](src/derived_image.rs) · [`derived_image/`](src/derived_image) | derived-image Dockerfile generation | [`tests.rs`](src/derived_image/tests.rs) |
+| [`image_recipe.rs`](src/image_recipe.rs) · [`image_recipe/`](src/image_recipe) | Dockerfile recipe | [`tests.rs`](src/image_recipe/tests.rs) |
+| [`image_build.rs`](src/image_build.rs) · [`image_build/`](src/image_build) | build pipeline | [`tests.rs`](src/image_build/tests.rs) |
+| [`agent_binary.rs`](src/agent_binary.rs) · [`agent_binary/`](src/agent_binary) | agent binary acquisition + cache | [`tests.rs`](src/agent_binary/tests.rs) |
+| [`capsule_binary.rs`](src/capsule_binary.rs) · [`capsule_binary/`](src/capsule_binary) | capsule binary acquisition + cache | [`tests.rs`](src/capsule_binary/tests.rs) |
+| [`binary_artifact.rs`](src/binary_artifact.rs) · [`binary_artifact/`](src/binary_artifact) | shared artifact helpers | [`tests.rs`](src/binary_artifact/tests.rs) |
+| [`image_decision.rs`](src/image_decision.rs) · [`image_decision/`](src/image_decision) | build-vs-reuse decision | [`tests.rs`](src/image_decision/tests.rs) |
+| [`version_check.rs`](src/version_check.rs) · [`version_check/`](src/version_check) | version check | [`tests.rs`](src/version_check/tests.rs) |
+| [`naming.rs`](src/naming.rs) | image naming | — |
 
 ## Public API
 

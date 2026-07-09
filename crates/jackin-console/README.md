@@ -14,10 +14,16 @@ Canonical host-console product surface. Owns reusable console state, update/inpu
 
 ## Structure
 
-- `src/workspace.rs` / `src/workspace/` — console workspace state
-- `src/services.rs` / `src/services/`, `src/github_mounts.rs` / `src/github_mounts/` — services + GitHub mounts
-- `src/mount_info.rs` / `src/mount_info/`, `src/mount_info_cache.rs`, `src/mount_diff.rs` — mount info/diff/cache
-- `src/tui.rs` / `src/tui/` — view composition + input
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`workspace.rs`](src/workspace.rs) · [`workspace/`](src/workspace) | console workspace state | [`tests.rs`](src/workspace/tests.rs) |
+| [`services.rs`](src/services.rs) · [`services/`](src/services) | services | — |
+| [`github_mounts.rs`](src/github_mounts.rs) · [`github_mounts/`](src/github_mounts) | GitHub mounts | [`tests.rs`](src/github_mounts/tests.rs) |
+| [`mount_info.rs`](src/mount_info.rs) · [`mount_info/`](src/mount_info) | mount info | [`tests.rs`](src/mount_info/tests.rs) |
+| [`mount_info_cache.rs`](src/mount_info_cache.rs) | mount-info cache | — |
+| [`mount_diff.rs`](src/mount_diff.rs) | mount diff | — |
+| [`tui.rs`](src/tui.rs) · [`tui/`](src/tui) | view composition + input | — |
 
 ## Public API
 

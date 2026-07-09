@@ -16,16 +16,20 @@ This crate is broad by design; the code-health program tracks decomposing it int
 
 ## Structure
 
-- `src/runtime.rs` / `src/runtime/` — launch pipeline + phases
-- `src/apple_container_client.rs`, `src/host_daemon.rs` — backend clients
-- `src/exec_host.rs` — host-side command exec
-- `src/isolation.rs` / `src/isolation/` — mount isolation integration
-- `src/reactive_daemon.rs` — reactive daemon
-- `src/spin_wait.rs` / `src/spin_wait/` — wait-for-state
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`runtime.rs`](src/runtime.rs) · [`runtime/`](src/runtime) | launch pipeline + phases | — |
+| [`apple_container_client.rs`](src/apple_container_client.rs) · [`apple_container_client/`](src/apple_container_client) | Apple container backend | [`tests.rs`](src/apple_container_client/tests.rs) |
+| [`host_daemon.rs`](src/host_daemon.rs) · [`host_daemon/`](src/host_daemon) | host daemon backend | [`tests.rs`](src/host_daemon/tests.rs) |
+| [`exec_host.rs`](src/exec_host.rs) · [`exec_host/`](src/exec_host) | host-side command exec | [`tests.rs`](src/exec_host/tests.rs) |
+| [`isolation.rs`](src/isolation.rs) · [`isolation/`](src/isolation) | mount isolation integration | [`tests.rs`](src/isolation/tests.rs) |
+| [`reactive_daemon.rs`](src/reactive_daemon.rs) · [`reactive_daemon/`](src/reactive_daemon) | reactive daemon | [`tests.rs`](src/reactive_daemon/tests.rs) |
+| [`spin_wait.rs`](src/spin_wait.rs) · [`spin_wait/`](src/spin_wait) | wait-for-state | [`tests.rs`](src/spin_wait/tests.rs) |
 
 ## Public API
 
-The launch entry points (`launch_role_runtime`, `load_role_with`, `run_launch_core`) consumed by the `jackin` CLI. The [runtime/launch behavioral spec](../../docs/content/docs/reference/developer-reference/specs/runtime-launch/) is the oracle for any extraction.
+The launch entry points (`launch_role_runtime`, `load_role_with`, `run_launch_core`) consumed by the `jackin` CLI. The [runtime/launch behavioral spec](../../docs/content/docs/reference/developer-reference/specs/runtime-launch.mdx) is the oracle for any extraction.
 
 ## How to verify
 

@@ -13,10 +13,13 @@ Role instance lifecycle: the instance index, the per-role state directory, auth 
 
 ## Structure
 
-- `src/auth.rs` / `src/auth/` — auth provisioning
-- `src/manifest.rs` / `src/manifest/` — instance manifest view
-- `src/naming.rs` / `src/naming/` — container/instance naming
-- `src/lib.rs`, `src/tests.rs` — index + lifecycle + tests
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | instance index + lifecycle | — |
+| [`auth.rs`](src/auth.rs) · [`auth/`](src/auth) | auth provisioning | [`tests.rs`](src/auth/tests.rs) |
+| [`manifest.rs`](src/manifest.rs) · [`manifest/`](src/manifest) | instance manifest view | [`tests.rs`](src/manifest/tests.rs) |
+| [`naming.rs`](src/naming.rs) · [`naming/`](src/naming) | container/instance naming | [`tests.rs`](src/naming/tests.rs) |
+| [`tests.rs`](src/tests.rs) | integration tests | — |
 
 ## Public API
 

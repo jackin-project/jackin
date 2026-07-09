@@ -15,10 +15,12 @@ Split out of the console so the picker's decision logic is unit-testable without
 
 ## Structure
 
-- `src/state.rs` — picker state machine
-- `src/input.rs` — input handling
-- `src/load.rs` — load/planning helpers
-- `src/lib.rs` — re-exports
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | re-exports | — |
+| [`state.rs`](src/state.rs) | picker state machine | — |
+| [`input.rs`](src/input.rs) | input handling | — |
+| [`load.rs`](src/load.rs) | load/planning helpers | — |
 
 ## Public API
 

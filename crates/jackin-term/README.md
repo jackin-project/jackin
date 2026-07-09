@@ -16,13 +16,17 @@ L2 infrastructure crate. Allowed workspace dependencies: `jackin-core`, `jackin-
 
 ## Structure
 
-- `src/grid.rs` / `src/grid/` — `DamageGrid` cell model, scrollback, damage
-- `src/damage.rs` / `src/damage/` — dirty-row tracking
-- `src/cell.rs` — packed cell (`CompactString` grapheme storage)
-- `src/passthrough.rs` — typed `PassthroughEvent` stream
-- `src/snapshot.rs` / `src/snapshot/`, `src/width.rs` / `src/width/` — snapshot/observation + width helpers
-- `tests/conformance.rs`, `tests/fixtures/` — conformance replay harness + corpus
-- `fuzz/`, `benches/`, `examples/` — fuzz target, criterion benches, examples
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`grid.rs`](src/grid.rs) · [`grid/`](src/grid) | `DamageGrid` cell model, scrollback, damage | [`tests.rs`](src/grid/tests.rs) |
+| [`damage.rs`](src/damage.rs) · [`damage/`](src/damage) | dirty-row tracking | [`tests.rs`](src/damage/tests.rs) |
+| [`cell.rs`](src/cell.rs) | packed cell (`CompactString` grapheme storage) | — |
+| [`passthrough.rs`](src/passthrough.rs) | typed `PassthroughEvent` stream | — |
+| [`snapshot.rs`](src/snapshot.rs) · [`snapshot/`](src/snapshot) | snapshot/observation APIs | [`tests.rs`](src/snapshot/tests.rs) |
+| [`width.rs`](src/width.rs) · [`width/`](src/width) | width helpers | [`tests.rs`](src/width/tests.rs) |
+
+Out-of-tree: [`tests/conformance.rs`](tests/conformance.rs) + [`tests/fixtures/`](tests/fixtures) (conformance replay harness + corpus), [`fuzz/`](fuzz), [`benches/`](benches), [`examples/`](examples).
 
 ## Public API
 

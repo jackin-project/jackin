@@ -14,10 +14,14 @@ Host OS integration for jackin❯: desktop notifications, clipboard, and caffein
 
 ## Structure
 
-- `src/caffeinate.rs` / `src/caffeinate/` — keep-awake
-- `src/host_clipboard.rs` / `src/host_clipboard/` — clipboard
-- `src/host_desktop.rs` / `src/host_desktop/` — desktop notifications
-- `src/naming.rs`, `src/universe.rs` — host naming + aggregate
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`caffeinate.rs`](src/caffeinate.rs) · [`caffeinate/`](src/caffeinate) | keep-awake | [`tests.rs`](src/caffeinate/tests.rs) |
+| [`host_clipboard.rs`](src/host_clipboard.rs) · [`host_clipboard/`](src/host_clipboard) | clipboard | [`tests.rs`](src/host_clipboard/tests.rs) |
+| [`host_desktop.rs`](src/host_desktop.rs) · [`host_desktop/`](src/host_desktop) | desktop notifications | [`tests.rs`](src/host_desktop/tests.rs) |
+| [`naming.rs`](src/naming.rs) | host naming | — |
+| [`universe.rs`](src/universe.rs) | host universe aggregate | — |
 
 ## Public API
 

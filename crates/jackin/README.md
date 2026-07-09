@@ -14,11 +14,21 @@ The jackin❯ CLI — the operator-facing binary that loads roles into isolated 
 
 ## Structure
 
-- `src/cli.rs` / `src/cli/`, `src/app.rs` / `src/app/` — CLI + app wiring
-- `src/console.rs` / `src/console/` — console entry
-- `src/prompt.rs` / `src/prompt/`, `src/preflight.rs` / `src/preflight/` — prompt flow + preflight
-- `src/workspace.rs` / `src/workspace/`, `src/role_authoring.rs` / `src/role_authoring/`, `src/role_claude_plugins.rs` / `src/role_claude_plugins/` — workspace + role-authoring commands
-- `src/warp.rs` / `src/warp/`, `src/error.rs`, `src/lib.rs`, `src/main.rs`, `src/bin/` — Warp integration, errors, crate roots, extra binaries
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | library re-exports | — |
+| [`main.rs`](src/main.rs) | binary entry | — |
+| [`cli.rs`](src/cli.rs) · [`cli/`](src/cli) | CLI parsing | [`tests.rs`](src/cli/tests.rs) |
+| [`app.rs`](src/app.rs) · [`app/`](src/app) | app wiring | [`tests.rs`](src/app/tests.rs) |
+| [`console.rs`](src/console.rs) | console entry | — |
+| [`prompt.rs`](src/prompt.rs) · [`prompt/`](src/prompt) | prompt flow | [`tests.rs`](src/prompt/tests.rs) |
+| [`preflight.rs`](src/preflight.rs) · [`preflight/`](src/preflight) | preflight checks | [`tests.rs`](src/preflight/tests.rs) |
+| [`workspace.rs`](src/workspace.rs) · [`workspace/`](src/workspace) | workspace commands | [`tests.rs`](src/workspace/tests.rs) |
+| [`role_authoring.rs`](src/role_authoring.rs) · [`role_authoring/`](src/role_authoring) | role-authoring commands | [`tests.rs`](src/role_authoring/tests.rs) |
+| [`role_claude_plugins.rs`](src/role_claude_plugins.rs) · [`role_claude_plugins/`](src/role_claude_plugins) | role Claude-plugins commands | [`tests.rs`](src/role_claude_plugins/tests.rs) |
+| [`warp.rs`](src/warp.rs) | Warp integration | — |
+| [`error.rs`](src/error.rs) | top-level error type | — |
+| [`bin/`](src/bin) | extra binaries | — |
 
 ## Public API
 

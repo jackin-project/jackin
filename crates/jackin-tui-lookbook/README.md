@@ -14,10 +14,13 @@ Interactive component lookbook for `jackin-tui` — the reference rendering of e
 
 ## Structure
 
-- `src/stories.rs` / `src/stories/` — one story per component variant
-- `src/interactors.rs` — interactive state drivers
-- `src/svg.rs` — SVG preview rendering for the docs
-- `src/main.rs` — lookbook runner + `--check` drift gate
+| Module | Owns | Tests |
+|---|---|---|
+| [`main.rs`](src/main.rs) | lookbook runner + `--check` drift gate | — |
+| [`stories.rs`](src/stories.rs) · [`stories/`](src/stories) | one story per component variant | [`tests.rs`](src/stories/tests.rs) |
+| [`interactors.rs`](src/interactors.rs) | interactive state drivers | — |
+| [`svg.rs`](src/svg.rs) | SVG preview rendering for the docs | — |
+| [`tests.rs`](src/tests.rs) | tests | — |
 
 ## Public API
 

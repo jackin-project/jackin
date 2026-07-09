@@ -16,16 +16,40 @@ Because everything depends on `jackin-core`, it must stay dependency-free, side-
 
 ## Structure
 
-Grouped by concern (top-level modules under `src/`):
-
-- Identity & model — `agent`, `instance`, `manifest`, `status`, `operator_notice`, `auth`, `account_key`
-- Environment — `env_model`, `env_value`, `paths`
-- Isolation & git — `isolation`, `isolation_record`, `worktree_dirty`
-- Runtime ports & progress — `runner`, `launch_progress`, `prompt_result`, `selector`
-- Docker surface — `docker`, `docker_security`
-- Observability (stubs re-exported from `jackin-diagnostics`/`jackin-tui`) — `debug_log`, `build_log_sink`
-- Presentation tokens (re-exported by `jackin-tui`) — `host_colors`, `ansi_tokens`, `tui_widgets`, `standalone_dialog`, `url_text`, `path_text`
-- Shared op/CLI vocabulary — `op_cache`, `op_reference`, `op_types`, `constants`
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`agent.rs`](src/agent.rs) · [`agent/`](src/agent) | agent identity | [`tests.rs`](src/agent/tests.rs) |
+| [`instance.rs`](src/instance.rs) | instance type | — |
+| [`manifest.rs`](src/manifest.rs) | manifest fragment | — |
+| [`status.rs`](src/status.rs) · [`status/`](src/status) | status type | [`tests.rs`](src/status/tests.rs) |
+| [`operator_notice.rs`](src/operator_notice.rs) | operator notice | — |
+| [`auth.rs`](src/auth.rs) | auth model | — |
+| [`account_key.rs`](src/account_key.rs) · [`account_key/`](src/account_key) | account key | [`tests.rs`](src/account_key/tests.rs) |
+| [`env_model.rs`](src/env_model.rs) · [`env_model/`](src/env_model) | env model | [`tests.rs`](src/env_model/tests.rs) |
+| [`env_value.rs`](src/env_value.rs) · [`env_value/`](src/env_value) | env value | [`tests.rs`](src/env_value/tests.rs) |
+| [`paths.rs`](src/paths.rs) · [`paths/`](src/paths) | paths | [`tests.rs`](src/paths/tests.rs) |
+| [`isolation.rs`](src/isolation.rs) | isolation type | — |
+| [`isolation_record.rs`](src/isolation_record.rs) | isolation record | — |
+| [`worktree_dirty.rs`](src/worktree_dirty.rs) · [`worktree_dirty/`](src/worktree_dirty) | worktree-dirty check | [`tests.rs`](src/worktree_dirty/tests.rs) |
+| [`runner.rs`](src/runner.rs) | `CommandRunner` port | — |
+| [`launch_progress.rs`](src/launch_progress.rs) | launch progress | — |
+| [`prompt_result.rs`](src/prompt_result.rs) | prompt result | — |
+| [`selector.rs`](src/selector.rs) | selector | — |
+| [`docker.rs`](src/docker.rs) | docker types | — |
+| [`docker_security.rs`](src/docker_security.rs) · [`docker_security/`](src/docker_security) | docker security | [`tests.rs`](src/docker_security/tests.rs) |
+| [`debug_log.rs`](src/debug_log.rs) | `debug_log` stub | — |
+| [`build_log_sink.rs`](src/build_log_sink.rs) | build-log sink stub | — |
+| [`host_colors.rs`](src/host_colors.rs) | host color tokens | — |
+| [`ansi_tokens.rs`](src/ansi_tokens.rs) | ansi tokens | — |
+| [`tui_widgets.rs`](src/tui_widgets.rs) | tui widget stubs | — |
+| [`standalone_dialog.rs`](src/standalone_dialog.rs) · [`standalone_dialog/`](src/standalone_dialog) | standalone dialog | [`tests.rs`](src/standalone_dialog/tests.rs) |
+| [`url_text.rs`](src/url_text.rs) | url text | — |
+| [`path_text.rs`](src/path_text.rs) · [`path_text/`](src/path_text) | path text | [`tests.rs`](src/path_text/tests.rs) |
+| [`op_cache.rs`](src/op_cache.rs) · [`op_cache/`](src/op_cache) | op cache | [`tests.rs`](src/op_cache/tests.rs) |
+| [`op_reference.rs`](src/op_reference.rs) · [`op_reference/`](src/op_reference) | op reference | [`tests.rs`](src/op_reference/tests.rs) |
+| [`op_types.rs`](src/op_types.rs) | op types | — |
+| [`constants.rs`](src/constants.rs) | shared constants | — |
 
 ## Public API
 

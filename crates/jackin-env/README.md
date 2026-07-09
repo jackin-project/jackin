@@ -14,12 +14,21 @@ Operator-environment resolution and 1Password (`op`) CLI integration. Turns decl
 
 ## Structure
 
-- `src/env_resolver.rs`, `src/env_layer.rs`, `src/resolve.rs` — resolution stack
-- `src/op_cli.rs`, `src/op_runner.rs`, `src/op_struct.rs`, `src/token_setup.rs` — 1Password `op` bridge
-- `src/picker.rs` — secret picker model (the pure planning half lives in `jackin-console-oppicker`)
-- `src/host_claude.rs` — host-side Claude env wiring
-- `src/output.rs`, `src/parse_helpers.rs`, `src/test_support.rs` — helpers + fixtures
-- subdirs (`env_resolver/`, `op_cli/`, `resolve/`, `token_setup/`, `host_claude/`) — module bodies + tests
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`env_resolver.rs`](src/env_resolver.rs) · [`env_resolver/`](src/env_resolver) | env resolution | [`tests.rs`](src/env_resolver/tests.rs) |
+| [`env_layer.rs`](src/env_layer.rs) | env layer | — |
+| [`resolve.rs`](src/resolve.rs) · [`resolve/`](src/resolve) | resolution entry | [`tests.rs`](src/resolve/tests.rs) |
+| [`op_cli.rs`](src/op_cli.rs) · [`op_cli/`](src/op_cli) | `op` CLI bridge | [`tests.rs`](src/op_cli/tests.rs) |
+| [`op_runner.rs`](src/op_runner.rs) | `op` runner | — |
+| [`op_struct.rs`](src/op_struct.rs) | `op` struct types | — |
+| [`token_setup.rs`](src/token_setup.rs) · [`token_setup/`](src/token_setup) | `op` token setup | [`tests.rs`](src/token_setup/tests.rs) |
+| [`picker.rs`](src/picker.rs) | secret picker model (pure half in `jackin-console-oppicker`) | — |
+| [`host_claude.rs`](src/host_claude.rs) · [`host_claude/`](src/host_claude) | host-side Claude env wiring | [`tests.rs`](src/host_claude/tests.rs) |
+| [`output.rs`](src/output.rs) | output helpers | — |
+| [`parse_helpers.rs`](src/parse_helpers.rs) | parse helpers | — |
+| [`test_support.rs`](src/test_support.rs) | test fixtures | — |
 
 ## Public API
 

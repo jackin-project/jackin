@@ -14,11 +14,14 @@ Role manifest (`jackin.role.toml`) loading, validation, and migration. Owns the 
 
 ## Structure
 
-- `src/manifest.rs` — manifest types and loading
-- `src/repo.rs`, `src/repo_contract.rs` — role-repo contract and access
-- `src/validate.rs` — schema validation
-- `src/migrations.rs` — versioned migrations
-- subdirs (`migrations/`, `validate/`, `manifest/`, `repo/`, `repo_contract/`) — module bodies + tests
+| Module | Owns | Tests |
+|---|---|---|
+| [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
+| [`manifest.rs`](src/manifest.rs) · [`manifest/`](src/manifest) | manifest types + loading | [`tests.rs`](src/manifest/tests.rs) |
+| [`repo.rs`](src/repo.rs) · [`repo/`](src/repo) | role-repo contract + access | [`tests.rs`](src/repo/tests.rs) |
+| [`repo_contract.rs`](src/repo_contract.rs) · [`repo_contract/`](src/repo_contract) | repo contract | [`tests.rs`](src/repo_contract/tests.rs) |
+| [`validate.rs`](src/validate.rs) · [`validate/`](src/validate) | schema validation | [`tests.rs`](src/validate/tests.rs) |
+| [`migrations.rs`](src/migrations.rs) · [`migrations/`](src/migrations) | versioned migrations | [`tests.rs`](src/migrations/tests.rs) |
 
 ## Public API
 

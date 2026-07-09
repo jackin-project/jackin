@@ -14,10 +14,22 @@ The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, 
 
 ## Structure
 
-- `src/main.rs` — the `cargo xtask` dispatcher
-- `src/ci.rs` / `src/ci/`, `src/lint.rs` / `src/lint/` — CI orchestration + lint gates
-- `src/docs.rs`, `src/schema.rs`, `src/test_layout.rs` / `src/test_layout/`, `src/agent_files.rs` — docs/schema/layout/agent-file gates
-- `src/arch.rs`, `src/profile_matrix.rs`, `src/pty_fixture.rs` / `src/pty_fixture/`, `src/construct.rs`, `src/release_verify.rs`, `src/pr.rs` — architecture, profiling, fixtures, construct, release, PR tooling
+| Module | Owns | Tests |
+|---|---|---|
+| [`main.rs`](src/main.rs) | `cargo xtask` dispatcher | — |
+| [`ci.rs`](src/ci.rs) · [`ci/`](src/ci) | CI orchestration | [`tests.rs`](src/ci/tests.rs) |
+| [`lint.rs`](src/lint.rs) · [`lint/`](src/lint) | file-size lint gate | [`tests.rs`](src/lint/tests.rs) |
+| [`agent_files.rs`](src/agent_files.rs) · [`agent_files/`](src/agent_files) | agent-file symlink gate | [`tests.rs`](src/agent_files/tests.rs) |
+| [`agent_links.rs`](src/agent_links.rs) · [`agent_links/`](src/agent_links) | no-cross-ref gate (README/AGENTS) | [`tests.rs`](src/agent_links/tests.rs) |
+| [`arch.rs`](src/arch.rs) · [`arch/`](src/arch) | dependency-direction gate | [`tests.rs`](src/arch/tests.rs) |
+| [`test_layout.rs`](src/test_layout.rs) · [`test_layout/`](src/test_layout) | test-layout gate | [`tests.rs`](src/test_layout/tests.rs) |
+| [`schema.rs`](src/schema.rs) · [`schema/`](src/schema) | schema check | [`tests.rs`](src/schema/tests.rs) |
+| [`docs.rs`](src/docs.rs) | docs repo-links/roadmap/research | — |
+| [`pr.rs`](src/pr.rs) · [`pr/`](src/pr) | PR tooling | [`tests.rs`](src/pr/tests.rs) |
+| [`profile_matrix.rs`](src/profile_matrix.rs) | feature-profile matrix | — |
+| [`pty_fixture.rs`](src/pty_fixture.rs) · [`pty_fixture/`](src/pty_fixture) | PTY fixture extraction | [`tests.rs`](src/pty_fixture/tests.rs) |
+| [`construct.rs`](src/construct.rs) · [`construct/`](src/construct) | construct image helpers | [`tests.rs`](src/construct/tests.rs) |
+| [`release_verify.rs`](src/release_verify.rs) · [`release_verify/`](src/release_verify) | release verification | [`tests.rs`](src/release_verify/tests.rs) |
 
 ## Public API
 
