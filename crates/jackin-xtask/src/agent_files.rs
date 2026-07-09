@@ -1,3 +1,17 @@
+//! Per-directory agent-file gate.
+//!
+//! Every directory that owns contributor rules must carry `AGENTS.md` plus a
+//! `CLAUDE.md` symlink pointing at it (the repo convention: every dir with
+//! `AGENTS.md` has `CLAUDE.md` beside it). This gate enforces both halves:
+//! presence of `AGENTS.md`, and that `CLAUDE.md` is a symlink (not a regular
+//! file) whose target is exactly `AGENTS.md`.
+//!
+//! Checked dirs are the explicit top-level surfaces (repo root, `.github`,
+//! `crates`, `docs`, `docker/construct`) plus **every workspace member crate**
+//! under `crates/*/` that owns a `Cargo.toml`. The per-crate scan is what makes
+//! each crate's `AGENTS.md`/`README.md` discipline enforceable rather than
+//! aspirational: a new crate with a missing or malformed `CLAUDE.md` fails CI.
+
 use std::fs;
 use std::path::Path;
 
@@ -6,14 +20,7 @@ use clap::Args;
 
 use crate::docs::repo_root;
 
-const AGENT_FILE_DIRS: &[&str] = &[
-    ".",
-    ".github",
-    "crates",
-    "docs",
-    "docker/construct",
-    "crates/jackin-tui-lookbook",
-];
+const AGENT_FILE_DIRS: &[&str] = &[".", ".github", "crates", "docs", "docker/construct"];
 
 #[derive(Args, Debug)]
 pub(crate) struct LintAgentFilesArgs {}
@@ -32,7 +39,33 @@ pub(crate) fn enforce() -> Result<()> {
 
 pub(crate) fn run(_args: LintAgentFilesArgs) -> Result<()> {
     let root = repo_root()?;
-    check(&root, AGENT_FILE_DIRS)
+    let mut dirs: Vec<String> = AGENT_FILE_DIRS.iter().map(|&s| s.to_owned()).collect();
+    dirs.extend(crate_member_dirs(&root)?);
+    let dir_refs: Vec<&str> = dirs.iter().map(String::as_str).collect();
+    check(&root, &dir_refs)
+}
+
+/// Repo-relative paths of every workspace member crate under `crates/` that
+/// owns a `Cargo.toml`. Each is required to carry `AGENTS.md` + a `CLAUDE.md`
+/// symlink, so per-crate rules are enforced, not just the shared
+/// `crates/AGENTS.md`.
+fn crate_member_dirs(root: &Path) -> Result<Vec<String>> {
+    let crates_root = root.join("crates");
+    let entries =
+        fs::read_dir(&crates_root).with_context(|| format!("reading {}", crates_root.display()))?;
+    let mut dirs = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        if path.is_dir() && path.join("Cargo.toml").is_file() {
+            let rel = path.strip_prefix(root).map_or_else(
+                |_| path.to_string_lossy().into_owned(),
+                |p| p.to_string_lossy().replace('\\', "/"),
+            );
+            dirs.push(rel);
+        }
+    }
+    dirs.sort();
+    Ok(dirs)
 }
 
 fn check(root: &Path, dirs: &[&str]) -> Result<()> {

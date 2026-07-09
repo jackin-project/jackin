@@ -76,6 +76,82 @@ crates/jackin-console/src/workspace/tests.rs  ← tests
 
 PR touching code: misplaced tests → relocate same PR. No exception.
 
+## Per-crate README + AGENTS.md (hard rule)
+
+**Every crate directory under `crates/` carries three files:** `README.md`, `AGENTS.md`, and `CLAUDE.md` (a symlink to `AGENTS.md`, matching the repo convention: every dir with `AGENTS.md` has `CLAUDE.md` beside it). Enforced by the `cargo xtask agent-files` gate, which scans every `crates/*/` member.
+
+### `README.md` — the always-current map of this crate
+
+A cold reader (human or agent) who opens a crate must finish its `README.md` understanding: **what this crate is for, why it exists, what it owns, its architecture tier and allowed dependencies, its `src/` structure, the public API to copy, and how to verify it.** The root `PROJECT_STRUCTURE.md` and the docs Codebase Map are indexes that point *into* these READMEs; they are not a substitute for them. A stale crate README is a bug.
+
+**Update the README in the same PR** whenever you change any of:
+
+- what the crate is responsible for (add/remove a responsibility),
+- the public API surface (new/removed/renamed public items, entry points, re-exports),
+- the `src/` module layout (add/rename/split/remove a module or subdirectory),
+- the architecture tier or allowed workspace dependencies,
+- how the crate is verified.
+
+Line-count churn inside an existing module does not require a README edit. When unsure whether a change is "structural," update — a too-fresh README costs nothing; a stale one misleads every later agent.
+
+#### `README.md` template
+
+```markdown
+# <crate-name>
+
+<One sentence: what this crate is for and why it exists. Answer "why is this a separate crate?">
+
+## What this crate owns
+- <responsibility>
+- <responsibility>
+
+## Architecture tier and allowed dependencies
+<tier: L0 leaf / L1 domain / L2 infrastructure / presentation / binary / xtask>.
+Allowed workspace dependencies: <list>. Must NOT depend on: <list, if any>.
+
+## Structure
+- `src/<mod>.rs` — <one-line>
+- `src/<mod>/` — <one-line>
+<…one line per top-level module/subdir, grouped if many>
+
+## Public API
+<The entry points an agent should copy: root re-exports, key types/traits/fns.
+If the crate is internal-only, say so and point at the crate that re-exports it.>
+
+## How to verify
+`cargo nextest run -p <crate>` (plus any specific gate: snapshots, fuzz, doc tests).
+
+See [../AGENTS.md](../AGENTS.md) for workspace-wide Rust rules and [../../AGENTS.md](../../AGENTS.md) for repo rules.
+```
+
+Right-size the README to the crate. A leaf crate (e.g. `jackin-protocol`) needs only the short form above. A complex infrastructure crate (e.g. `jackin-term`) may carry a richer engineering record — problem solved, what was tried, why we built it, invariants, correctness guarantees — like the existing `jackin-term/README.md`. Never pad a small crate to match a big one.
+
+### `AGENTS.md` — the rules an agent must follow in this crate
+
+The shared rules (this file, root `AGENTS.md`) apply everywhere. The per-crate `AGENTS.md` adds **only what is specific to this crate**: its tier and dependency boundary, the conventions it enforces, what is allowed and what is forbidden, and what lives here vs elsewhere. An agent opening the crate folder reads this first and stays within the crate's scope.
+
+#### `AGENTS.md` template
+
+```markdown
+# AGENTS.md — <crate-name>
+
+<One sentence: what this crate is for.>
+
+## Hard rules (this crate)
+- **Tier & dependencies:** <tier>. Allowed workspace deps: <list>. Do not add a dependency outside this list without raising the architecture gate.
+- **Keep `README.md` current:** update it when structure, public API, module layout, tier, or responsibilities change (see `crates/AGENTS.md`).
+- <crate-specific rule — e.g. "no blocking I/O on the render path", "all host effects go through …", "no `tokio` in this leaf crate">
+- <crate-specific rule>
+
+## What lives here vs elsewhere
+- This crate owns: <X>.
+- <Y> lives in `<other-crate>`, not here.
+
+Workspace rules: [../AGENTS.md](../AGENTS.md). Repo rules: [../../AGENTS.md](../../AGENTS.md).
+```
+
+Derive the tier and allowed-dependency line from the crate's `//!` **Architecture Invariant** header in `src/lib.rs` (or `src/main.rs`); every crate carries one. If a crate's invariant header is missing or stale, fix it in the same PR that adds its `AGENTS.md`.
+
 ## Workspace lint baseline (hard rule)
 
 All crates inherit root workspace metadata + lints:
