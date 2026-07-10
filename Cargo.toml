@@ -26,6 +26,7 @@ members = [
     "crates/jackin-usage",
     "crates/jackin-isolation",
     "crates/jackin-instance",
+    "crates/jackin-test-support",
 ]
 resolver = "3"
 
@@ -76,6 +77,7 @@ jackin-manifest = { version = "0.6.0-dev", path = "crates/jackin-manifest" }
 jackin-protocol = { version = "0.6.0-dev", path = "crates/jackin-protocol" }
 jackin-runtime = { version = "0.6.0-dev", path = "crates/jackin-runtime" }
 jackin-term = { version = "0.6.0-dev", path = "crates/jackin-term" }
+jackin-test-support = { version = "0.6.0-dev", path = "crates/jackin-test-support" }
 jackin-tui = { version = "0.6.0-dev", path = "crates/jackin-tui" }
 jackin-usage = { version = "0.6.0-dev", path = "crates/jackin-usage" }
 nix = "0.31"

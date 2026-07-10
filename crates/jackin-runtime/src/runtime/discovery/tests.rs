@@ -1,8 +1,8 @@
 //! Tests for `discovery`.
 
 use super::*;
-use crate::runtime::test_support::FakeDockerClient;
 use jackin_docker::docker_client::ContainerRow;
+use jackin_test_support::FakeDockerClient;
 use std::collections::HashMap;
 
 #[tokio::test]

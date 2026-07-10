@@ -186,7 +186,7 @@ async fn write_git_overrides_is_idempotent() {
     assert_eq!(first, second);
 }
 
-use jackin_runtime::runtime::test_support::FakeRunner;
+use jackin_test_support::FakeRunner;
 use std::collections::VecDeque;
 
 fn fake_with_outputs(outputs: &[&str]) -> FakeRunner {

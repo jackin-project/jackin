@@ -23,6 +23,7 @@ The operating assumption for this program is that the most frequent contributor 
 - The file-size and test-layout ledgers were burned down to zero grandfathered entries, and the old PR-specific merge-readiness audit is closed.
 - Contributor orientation exists in the [Codebase Map](/reference/getting-oriented/codebase-map/), TUI rules in [TUI Design Decisions](/reference/tui/), and behavioral specs for runtime launch and op-picker under [Behavioral Specs](/reference/developer-reference/specs/).
 - **Per-crate orientation is authoritative.** Every workspace crate carries a README (purpose, what it owns, architecture tier + allowed dependencies, `src/` structure, public API, how to verify) and a per-crate AGENTS file holding **only the non-derivable rules** an agent cannot read from the code, the README, the workspace lint table, or the `cargo xtask lint arch` dependency gate — never a duplicate of tier/dependency/structure/API info, because duplicating it measurably reduces agent task success and wastes context tokens. `CLAUDE.md` is symlinked to it. The convention, templates, the "update the README on any structural change" rule, and the non-derivable-only AGENTS rule live in <RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile>, and the `cargo xtask lint agents` gate enforces the AGENTS + `CLAUDE.md` symlink pair in every `crates/*/` member.
+- A shared <RepoFile path="crates/jackin-test-support/README.md">`jackin-test-support`</RepoFile> crate now owns the canonical `FakeRunner`/`FakeDockerClient` fakes and role-repo seed fixtures, dev-depended-on by `jackin-isolation`, `jackin-runtime`, and `jackin` — this closed the workspace's only prod+dev dependency cycle (`jackin-isolation` no longer dev-depends back up on `jackin-runtime`).
 
 ## Principles for the remaining work
 
@@ -118,7 +119,7 @@ Two defensible philosophies exist for adopting restriction lints: cherry-pick or
 ### Runtime and launch architecture
 
 1. Split `jackin-runtime` from a broad orchestrator into clearer acyclic ownership: a thin facade over launch, attach, cleanup, image/build, backend, and instance-lifecycle leaves, or equivalent internal modules with explicit ports.
-2. Move shared test fakes and lower-level ports out of `jackin-runtime` when lower crates currently need dev-dependencies back upward.
+2. ~~Move shared test fakes and lower-level ports out of `jackin-runtime` when lower crates currently need dev-dependencies back upward.~~ Shipped: the `FakeRunner`/`FakeDockerClient` fakes and role-repo seed fixtures moved to `jackin-test-support` (see Shipped foundation); `jackin-runtime`'s `install_all_test_stubs` stayed behind since it needs `jackin-image` and has no external consumer.
 3. Finish launch/body extraction around `launch_role_runtime`, `load_role_with`, and `run_launch_core`, but do it by phase contracts rather than line-count churn: launch-profile validation, workspace/role materialization, trust/source checks, image materialization, env resolution, Docker run, wait-for-state, teardown, foreground attach, and cleanup classification.
 4. Split the image/build pipeline into named context structs and decision phases where parameter trains obscure intent.
 5. Keep the [runtime/launch.rs Behavioral Spec](/reference/developer-reference/specs/runtime-launch/) as the oracle for any launch extraction.
