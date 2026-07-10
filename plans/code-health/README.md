@@ -83,7 +83,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [034](034-numeric-and-easy-lint-families.md) | Numeric + easy-to-avoid lint families (census: near-zero candidates; sign-loss fix wave) | 1 | P1 | S-M | TODO |
 | [035](035-advisory-verification-lanes.md) | Scheduled advisory lanes: llvm-cov, Miri, ASan fuzz, cargo-mutants, hakari timing | 1 | P2 | M | TODO |
 | [036](036-process-boundary-xtask-cmd-and-timeout.md) | Process boundary: one xtask cmd module; `RunOptions.timeout` honored by ShellRunner | 2 | P2 | M | TODO |
-| [037](037-thiserror-foundational-core-env.md) | thiserror for jackin-core concrete errors + jackin-env resolution taxonomy | 2 | P2 | M | TODO |
+| [037](037-thiserror-foundational-core-env.md) | thiserror for jackin-core concrete errors + jackin-env resolution taxonomy | 2 | P2 | M | IN PROGRESS (operator-run external agent) |
 | [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | TODO |
 | [039](039-jackin-env-pub-surface-pilot.md) | Pub-surface pilot: jackin-env sealed behind curated root re-exports | 2 | P2 | M | TODO |
 | [040](040-grid-resize-in-place.md) | In-place grid resize; same-size/height-only fast paths + resize_storm bench | 4 | P2 | M | IN PROGRESS |
@@ -99,7 +99,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [045](045-protocol-env-corpus-closure.md) | Corpus closure: protocol goldens + capability-skew, term fuzz seeds, env fuzz, unknown-field assert | 3 | P2 | M | TODO |
 | [046](046-dind-chaos-lane.md) | Scheduled dind-E2E chaos variant (seeded faults; survival invariants) | 3 | P2 | M | TODO |
 | [047](047-maintainability-lint-census.md) | Census the 7 allowed maintainability lints; deny quiet ones, document noisy ones | 1 | P2 | S-M | TODO |
-| [048](048-advisory-lanes-wave-2.md) | Advisory lanes wave 2: hyperfine cold-start, rust-analyzer clean, build-time measurement | 4/6 | P3 | S-M | TODO |
+| [048](048-advisory-lanes-wave-2.md) | Advisory lanes wave 2: hyperfine cold-start, rust-analyzer clean, build-time measurement | 4/6 | P3 | S-M | IN PROGRESS (operator-run external agent) |
 | [049](049-crate-readme-fumadocs-pipeline.md) | Crate-README → Fumadocs generated section; slim PROJECT_STRUCTURE.md | 5 | P2 | M | DONE (reviewed; `exec-plan-049` @ `c51da1280`, unmerged; found pre-existing CI gap: `repo-link-check` job runs without `bun run build`, so it never sees generated pages — small follow-up: add the generator step to that job) |
 | [050](050-readme-freshness-gate.md) | README-freshness gate (structural src change ⇒ README touched same PR) | 5 | P2 | S-M | TODO |
 | [051](051-xtask-gate-reporter-core.md) | Machine-readable gate output core (human\|json\|github reporter; 2 exemplar gates) | 6 | P2 | S-M | TODO |
