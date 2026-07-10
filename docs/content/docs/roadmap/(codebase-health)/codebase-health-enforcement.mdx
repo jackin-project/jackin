@@ -155,7 +155,7 @@ Two defensible philosophies exist for adopting restriction lints: cherry-pick or
 
 ### TUI and console structure
 
-1. Finish or remove the shared TUI runtime half-layer. The preferred path is to dispatch console, launch, and capsule loops through the shared `jackin_tui::runtime` traits so the abstraction is operational, not just type-level.
+1. **Resolved — finish (plan-053 spike).** The shared TUI runtime half-layer stays and is now operational: `jackin_tui::runtime::drive_frame` dispatches a `View<Model>` render plus a frame-scoped overlay closure through one `Terminal::draw`, and the host console loop renders through it with byte-identical snapshots (~16 net LOC of glue, no trait redesign, no HRTB contortions). Remaining mechanical follow-up: convert the capsule and launch loops through the same helper, reusing the console pattern verbatim.
 2. Fold the old `split-input-editor` and settings/editor unification leaves into one config-surface cleanup: extract the remaining editor mounts input handling, then converge settings and workspace editor around shared per-domain edit models, validation, render rows, input/mouse handling, persistence handoff, and parity tests.
 3. Replace repeated type-complexity suppressions in settings/editor view builders with named row/view model structs and shared form-section builders.
 4. Continue the successful `jackin-console-oppicker` extraction pattern until picker model/planning lives in the pure crate and console/root own only side-effect adapters.
