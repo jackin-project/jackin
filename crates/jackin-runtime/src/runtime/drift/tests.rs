@@ -1,10 +1,10 @@
 #[cfg(test)]
 use super::detect_workspace_edit_drift;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, write_records};
-use crate::runtime::test_support::FakeDockerClient;
 use jackin_core::JackinPaths;
 use jackin_core::MountIsolation;
 use jackin_docker::docker_client::ContainerRow;
+use jackin_test_support::FakeDockerClient;
 use tempfile::TempDir;
 
 fn record_for(workspace: &str, container: &str, dst: &str, src: &str) -> IsolationRecord {

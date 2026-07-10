@@ -65,7 +65,7 @@ jackin-build-meta = { workspace = true }
 assert_cmd = { workspace = true }
 jackin-config = { workspace = true, features = ["test-support"] }
 jackin-env = { workspace = true, features = ["test-support"] }
-jackin-runtime = { workspace = true, features = ["test-support"] }
+jackin-test-support = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 predicates = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
@@ -89,7 +89,7 @@ e2e = []
 otlp = ["jackin-diagnostics/otlp"]
 # Enables `crate::operator_env::test_support::*` (the shared FakeOpWriter
 # fake used by rotate-cleanup tests). Mirrors the test-support features
-# in jackin-config, jackin-env, and jackin-runtime.
+# in jackin-config and jackin-env.
 test-support = ["jackin-env/test-support"]
 
 [lints]

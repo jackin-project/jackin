@@ -1,7 +1,7 @@
 use super::*;
 use crate::apple_container_client::{AppleContainerInfo, FakeAppleContainerClient};
 use crate::instance::{AppleContainerResources, DockerResources, NewInstanceManifest};
-use crate::runtime::test_support::FakeRunner;
+use jackin_test_support::FakeRunner;
 use tempfile::tempdir;
 
 fn test_manifest(container: &str, backend: Option<BackendResources>) -> InstanceManifest {

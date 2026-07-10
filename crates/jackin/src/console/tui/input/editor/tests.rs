@@ -20,9 +20,7 @@ use jackin_console::tui::auth::AuthKind;
 use jackin_core::JackinPaths;
 use jackin_env::OpCache;
 use jackin_manifest::repo::CachedRepo;
-use jackin_runtime::runtime::test_support::{
-    FakeRunner, first_temp_role_repo, seed_valid_role_repo,
-};
+use jackin_test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo};
 use ratatui::layout::Rect;
 use tempfile::TempDir;
 

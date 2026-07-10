@@ -1,8 +1,8 @@
 //! Tests for `repo_cache`.
-use super::super::test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo};
 use super::*;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
+use jackin_test_support::{FakeRunner, first_temp_role_repo, seed_valid_role_repo};
 use std::time::Duration;
 use tempfile::tempdir;
 
