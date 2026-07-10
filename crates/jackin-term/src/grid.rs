@@ -313,6 +313,46 @@ impl RowStore {
             self.arena.recycle(row);
         }
     }
+
+    /// Resizes in place instead of rebuilding the grid: same dims is a no-op
+    /// (nothing allocated, nothing touched); a width change truncates/extends
+    /// each retained row's `Vec<Cell>`; a height shrink pops rows off the back
+    /// through the arena (mirroring `Drop`/`clear`); a height grow pulls blank
+    /// rows from the arena — the arena is hit only for genuinely new rows.
+    /// Every row is assumed to be exactly the current column count wide (the
+    /// grid's own invariant), so the front row's length stands in for "current
+    /// cols" without `RowStore` needing to track it separately.
+    pub(crate) fn resize(&mut self, rows: u16, cols: u16) {
+        let target_rows = rows as usize;
+        let target_cols = cols as usize;
+
+        let width_changed = self
+            .rows
+            .front()
+            .is_some_and(|row| row.len() != target_cols);
+
+        if self.rows.len() == target_rows && !width_changed {
+            return;
+        }
+
+        if width_changed {
+            for row in &mut self.rows {
+                row.resize(target_cols, Cell::default());
+            }
+        }
+
+        while self.rows.len() > target_rows {
+            if let Some(row) = self.rows.pop_back() {
+                self.arena.recycle(row);
+            }
+            self.wraps.pop_back();
+        }
+
+        while self.rows.len() < target_rows {
+            self.rows.push_back(self.arena.blank_row(cols));
+            self.wraps.push_back(RowWrap::default());
+        }
+    }
 }
 
 impl Drop for RowStore {
@@ -747,8 +787,8 @@ impl DamageGrid {
         let cols = cols.max(1);
         self.rows = rows;
         self.cols = cols;
-        self.primary = resize_grid(&self.primary, rows, cols);
-        self.alternate = resize_grid(&self.alternate, rows, cols);
+        self.primary.resize(rows, cols);
+        self.alternate.resize(rows, cols);
         self.cursor_row = self.cursor_row.min(rows.saturating_sub(1));
         self.cursor_col = self.cursor_col.min(cols.saturating_sub(1));
         // Resize is a cursor-moving path: cancel any deferred (DECAWM) wrap so a

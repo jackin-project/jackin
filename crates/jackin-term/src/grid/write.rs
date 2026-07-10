@@ -42,22 +42,6 @@ pub fn make_blank_grid(rows: u16, cols: u16, arena: RowArena) -> RowStore {
     RowStore::blank(rows, cols, arena)
 }
 
-pub fn resize_grid(grid: &RowStore, rows: u16, cols: u16) -> RowStore {
-    let mut new = make_blank_grid(rows, cols, grid.arena.clone());
-    for (r, row) in grid.iter().enumerate() {
-        if r >= rows as usize {
-            break;
-        }
-        new.wraps[r] = grid.wrap(r).unwrap_or_default();
-        for (c, cell) in row.iter().enumerate() {
-            if c < cols as usize {
-                new[r][c] = cell.clone();
-            }
-        }
-    }
-    new
-}
-
 pub fn incomplete_utf8_suffix_len(bytes: &[u8]) -> usize {
     let Some(last) = bytes.last() else {
         return 0;
