@@ -1064,3 +1064,27 @@ fn resize_equivalence_against_naive_reference() {
     }
 }
 
+#[test]
+fn resize_same_size_and_width_only_do_not_grow_arena_pool() {
+    // A dedicated (non-shared) arena, so parallel test-suite activity on the
+    // process-wide `RowArena::shared()` can't make this assertion flaky.
+    let arena = RowArena::default();
+    let mut g = DamageGrid::with_row_arena(10, 40, 10, arena.clone());
+    g.process(&fill_bytes(10, 40));
+
+    let before = arena.recycled_rows();
+
+    g.set_size(10, 40); // same dims: fast path returns before touching storage
+    assert_eq!(
+        arena.recycled_rows(),
+        before,
+        "same-size resize touched the arena pool"
+    );
+
+    g.set_size(10, 20); // width-only: rows mutate in place, none leave/enter the pool
+    assert_eq!(
+        arena.recycled_rows(),
+        before,
+        "width-only resize touched the arena pool"
+    );
+}
