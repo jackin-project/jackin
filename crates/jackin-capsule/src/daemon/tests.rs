@@ -6298,8 +6298,7 @@ async fn chunked_image_start_reports_visible_receiving_notice() {
             format: jackin_protocol::attach::ClipboardImageFormat::Png,
             size: 16 * 1024 * 1024,
         }),
-    )
-    .await;
+    );
 
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
@@ -6323,8 +6322,7 @@ async fn chunked_stage_image_start_reports_staging_receiving_notice() {
             format: jackin_protocol::attach::ClipboardImageFormat::Png,
             size: 4 * 1024 * 1024,
         }),
-    )
-    .await;
+    );
 
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
