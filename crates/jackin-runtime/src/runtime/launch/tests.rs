@@ -1,5 +1,6 @@
 //! Tests for `runtime/launch.rs`: load pipeline behavioral verification.
 #![allow(clippy::too_many_lines, unused_qualifications)]
+use jackin_core::WorkspaceName;
 use super::*;
 use crate::runtime::launch::launch_runtime::{
     debug_runtime_envs_for, run_runtime_envs, run_runtime_envs_for, telemetry_runtime_envs_for,
@@ -7245,7 +7246,7 @@ async fn claim_container_name_saved_workspace_includes_workspace_component() {
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     let docker = jackin_test_support::FakeDockerClient::default();
-    let (name, _lock) = claim_container_name(&paths, Some("my-workspace"), &selector, &docker)
+    let (name, _lock) = claim_container_name(&paths, Some(&WorkspaceName::parse("my-workspace").unwrap()), &selector, &docker)
         .await
         .unwrap();
 
@@ -8060,8 +8061,7 @@ async fn verify_credential_sync_returns_ok_regardless() {
         AuthForwardMode::Sync,
         &merged,
         &[],
-        &layers,
-        "proj",
+        &layers, &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     r.unwrap();
@@ -8078,8 +8078,7 @@ async fn verify_credential_ignore_returns_ok_regardless() {
         AuthForwardMode::Ignore,
         &merged,
         &[],
-        &layers,
-        "proj",
+        &layers, &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     r.unwrap();
@@ -8100,8 +8099,7 @@ async fn verify_credential_api_key_present_ok() {
         AuthForwardMode::ApiKey,
         &merged,
         &[],
-        &layers,
-        "proj",
+        &layers, &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     r.unwrap();
@@ -8135,8 +8133,7 @@ async fn verify_credential_api_key_missing_returns_structured_error() {
         AuthForwardMode::ApiKey,
         &merged,
         &mode_resolution,
-        &layers,
-        "proj",
+        &layers, &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     let err = r.unwrap_err();
@@ -8176,8 +8173,7 @@ async fn verify_credential_api_key_unset_returns_structured_error() {
         AuthForwardMode::ApiKey,
         &merged,
         &[],
-        &layers,
-        "proj",
+        &layers, &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     assert!(matches!(r, Err(LaunchError::AuthCredentialMissing { .. })));
@@ -8194,8 +8190,7 @@ async fn verify_credential_oauth_token_missing_for_claude() {
         AuthForwardMode::OAuthToken,
         &merged,
         &[],
-        &layers,
-        "proj",
+        &layers, &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     let err = r.unwrap_err();
@@ -8217,8 +8212,7 @@ async fn verify_credential_codex_api_key_missing() {
         AuthForwardMode::ApiKey,
         &merged,
         &[],
-        &layers,
-        "proj",
+        &layers, &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     let err = r.unwrap_err();
@@ -8241,8 +8235,7 @@ async fn verify_credential_amp_api_key_missing() {
         AuthForwardMode::ApiKey,
         &merged,
         &[],
-        &layers,
-        "proj",
+        &layers, &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     let err = r.unwrap_err();
@@ -8659,8 +8652,7 @@ async fn auth_credential_missing_amp_api_key_renders() {
 async fn verify_github_token_present_ok_when_token_resolves() {
     let r = verify_github_token_present(
         jackin_config::GithubAuthMode::Token,
-        Some("ghp_real"),
-        "proj",
+        Some("ghp_real"), &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     r.unwrap();
@@ -8670,10 +8662,10 @@ async fn verify_github_token_present_ok_when_token_resolves() {
 async fn verify_github_token_present_ok_for_sync_and_ignore_regardless_of_token() {
     // Sync / Ignore have no pre-flight invariant on GH_TOKEN —
     // Sync sources its token from the host, Ignore exports nothing.
-    let r = verify_github_token_present(jackin_config::GithubAuthMode::Sync, None, "proj", "smith");
+    let r = verify_github_token_present(jackin_config::GithubAuthMode::Sync, None, &WorkspaceName::parse("proj").unwrap(), "smith");
     r.unwrap();
     let r =
-        verify_github_token_present(jackin_config::GithubAuthMode::Ignore, None, "proj", "smith");
+        verify_github_token_present(jackin_config::GithubAuthMode::Ignore, None, &WorkspaceName::parse("proj").unwrap(), "smith");
     r.unwrap();
 }
 
@@ -8681,8 +8673,7 @@ async fn verify_github_token_present_ok_for_sync_and_ignore_regardless_of_token(
 async fn verify_github_token_present_errors_when_token_missing() {
     let err = verify_github_token_present(
         jackin_config::GithubAuthMode::Token,
-        None,
-        "customer-acme",
+        None, &WorkspaceName::parse("customer-acme").unwrap(),
         "release-bot",
     )
     .unwrap_err();
@@ -8712,8 +8703,7 @@ async fn verify_github_token_present_errors_when_token_empty_string() {
     // launch DinD just for the agent to fail at first push.
     let err = verify_github_token_present(
         jackin_config::GithubAuthMode::Token,
-        Some(""),
-        "proj",
+        Some(""), &WorkspaceName::parse("proj").unwrap(),
         "smith",
     )
     .unwrap_err();

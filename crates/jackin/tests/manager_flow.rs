@@ -3,12 +3,12 @@
 //! terminal.
 
 #![expect(
-use jackin_core::WorkspaceName;
     clippy::panic,
     clippy::expect_used,
     reason = "manager flow tests should fail immediately when expected UI state is absent"
 )]
 
+use jackin_core::WorkspaceName;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin::{

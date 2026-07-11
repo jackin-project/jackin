@@ -34,6 +34,7 @@ pub(super) mod config {
         WorkspaceSaveDiffOp, build_workspace_edit, workspace_save_diff_plan,
     };
     use jackin_core::JackinPaths;
+    use jackin_core::WorkspaceName;
 
     pub(crate) use jackin_console::services::config_save::{SettingsSaveInput, save_settings};
 
@@ -163,7 +164,10 @@ pub(super) mod config {
                 if let Some(new_name) = pending_name
                     && new_name != current_name
                 {
-                    editor_doc.rename_workspace(&current_name, &new_name)?;
+                    editor_doc.rename_workspace(
+                        &WorkspaceName::parse(&current_name).map_err(anyhow::Error::from)?,
+                        &WorkspaceName::parse(&new_name).map_err(anyhow::Error::from)?,
+                    )?;
                     current_name.clone_from(&new_name);
                     rename_to = Some(new_name);
                 }
@@ -174,7 +178,10 @@ pub(super) mod config {
                 (rename_to, current_name)
             }
             WorkspaceSaveMode::Create { name } => {
-                editor_doc.create_workspace(&name, input.pending.clone())?;
+                editor_doc.create_workspace(
+                    &WorkspaceName::parse(&name).map_err(anyhow::Error::from)?,
+                    input.pending.clone(),
+                )?;
                 (None, name)
             }
         };

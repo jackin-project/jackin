@@ -1,4 +1,5 @@
 //! Tests for `editor`.
+use jackin_core::WorkspaceName;
 use super::*;
 use crate::RoleSource;
 use tempfile::tempdir;
@@ -1013,7 +1014,7 @@ fn create_workspace_adds_table() {
     };
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.create_workspace("new-ws", ws).unwrap();
+    editor.create_workspace(&WorkspaceName::parse("new-ws").unwrap(), ws).unwrap();
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "new-ws");
@@ -1049,7 +1050,7 @@ fn create_workspace_rejects_invalid_workdir_mount_combo() {
     };
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    let err = editor.create_workspace("bad-ws", ws).unwrap_err();
+    let err = editor.create_workspace(&WorkspaceName::parse("bad-ws").unwrap(), ws).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("workspace") || msg.contains("mount") || msg.contains("workdir"),
@@ -1069,7 +1070,7 @@ default_role = "agent-smith"
     std::fs::write(&paths.config_file, original).unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_last_agent("prod", "agent-smith");
+    editor.set_last_agent(&WorkspaceName::parse("prod").unwrap(), "agent-smith");
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "prod");
@@ -1151,7 +1152,7 @@ dst = "/a"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.rename_workspace("old-name", "new-name").unwrap();
+    editor.rename_workspace(&WorkspaceName::parse("old-name").unwrap(), &WorkspaceName::parse("new-name").unwrap()).unwrap();
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "new-name");
@@ -1179,7 +1180,7 @@ fn rename_workspace_write_failure_preserves_old_file() {
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.rename_workspace("old-name", "new-name").unwrap();
+    editor.rename_workspace(&WorkspaceName::parse("old-name").unwrap(), &WorkspaceName::parse("new-name").unwrap()).unwrap();
     std::fs::create_dir(paths.workspaces_dir.join("new-name.toml")).unwrap();
 
     let err = editor.save().unwrap_err();
@@ -1212,19 +1213,14 @@ workdir = "/b"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    let err = editor.rename_workspace("a", "b").unwrap_err();
+    let err = editor.rename_workspace(&WorkspaceName::parse("a").unwrap(), &WorkspaceName::parse("b").unwrap()).unwrap_err();
     assert!(err.to_string().contains("already exists"), "{err}");
 }
 
 #[test]
 fn rename_workspace_rejects_empty_new_name() {
-    let temp = tempdir().unwrap();
-    let paths = JackinPaths::for_tests(temp.path());
-    paths.ensure_base_dirs().unwrap();
-    std::fs::write(&paths.config_file, "[workspaces.a]\nworkdir = \"/a\"\n").unwrap();
-    let mut editor = ConfigEditor::open(&paths).unwrap();
-    let err = editor.rename_workspace("a", "").unwrap_err();
-    assert!(err.to_string().contains("empty"), "{err}");
+    let err = WorkspaceName::parse("").unwrap_err();
+    assert!(err.to_string().contains("empty"));
 }
 
 #[test]

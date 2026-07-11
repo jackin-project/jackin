@@ -7,7 +7,7 @@ use crate::workspace::{
     self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved, resolve_path,
 };
 use jackin_config::AppConfig;
-use jackin_core::JackinPaths;
+use jackin_core::{JackinPaths, WorkspaceName};
 use jackin_docker::ShellRunner;
 use jackin_docker::docker_client::BollardDockerClient;
 
@@ -93,7 +93,7 @@ pub(super) async fn handle(
                 docker: None,
             };
             let mut editor = jackin_config::ConfigEditor::open(paths)?;
-            editor.create_workspace(&name, ws)?;
+            editor.create_workspace(&WorkspaceName::parse(&name).map_err(anyhow::Error::from)?, ws)?;
             editor.save()?;
             println!(
                 "Created workspace {name:?} (workdir: {}, {mount_count} mount(s)).",
