@@ -73,7 +73,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [028](028-dependency-hygiene-sweep.md) | Dependency hygiene: turso store boundary, ring exception, pin rationale | 1 | P3 | M | DONE (reviewed; `exec-plan-028` @ `38dfa4c2f`, unmerged; residual: `crates/jackin/src/cli/usage/store.rs` also imports turso directly — host-crate boundary is a small follow-up) |
 | [029](029-docs-drift-reconciliation.md) | Docs drift: README links, Apple status, reserved envs, capsule README, codebase map | 5 | P3 | M | DONE (reviewed; `exec-plan-029` @ `f5122448e`, unmerged; reserved list is 19 names — plan's 20 overcounted `JACKIN_OPEN_LINKS`, which is deliberately settable) |
 | [030](030-console-view-model-structs.md) | Console editor/settings view-model structs (kills the 42-site type_complexity cluster) | 2 | P2 | M-L | TODO |
-| [031](031-op-probe-typed-error.md) | Typed `op` probe errors (`OpProbeError` in jackin-core; downcast classification) | 2 | P2 | M | DONE (reviewed; `exec-plan-031` @ `8c0c41827`, unmerged; transport needed zero console changes — the load-result channel already carried `anyhow::Result`) |
+| [031](031-op-probe-typed-error.md) | Typed `op` probe errors (`OpProbeError` in jackin-core; downcast classification) | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; enum in jackin-core; env constructs typed sources; oppicker downcasts first, substring fallback retained) |
 | [032](032-daemon-console-behavioral-specs.md) | Behavioral specs: capsule daemon + operator console (cite-or-MISSING) | 3 | P2 | M-L | TODO |
 
 ### Sixth wave — roadmap-coverage gap closure
@@ -228,7 +228,7 @@ High-value findings that are real but were not turned into first-wave plans (lar
 
 ### Tech debt / architecture
 
-- ~~DEBT-op-typed-error~~ → **planned as [031](031-op-probe-typed-error.md)**. Ownership question resolved from the dependency graph: the enum lives in `jackin-core` (only shared ancestor of jackin-env and jackin-console-oppicker; already hosts the port vocabulary). The ~40 other `.contains()` classification sites remain a recorded residue.
+- ~~DEBT-op-typed-error~~ → **shipped as [031](031-op-probe-typed-error.md)** (in-tree). Ownership: `OpProbeError` lives in `jackin-core` (shared ancestor of jackin-env + jackin-console-oppicker; beside the port vocabulary). Residue: ~40 other `.contains()` classification sites in different subsystems.
 - **DEBT-anyhow-in-libs** — first tranche **planned as [037](037-thiserror-foundational-core-env.md)** (core's four concrete surfaces + env's resolution taxonomy; port traits stay anyhow by recorded decision — seams whose errors are reported, not handled). Remaining tranches deferred: config 14 files, isolation 5, docker 3, image 7, instance 3, then the runtime 39 / console 35 / capsule 22 long tail. L total, phased behind 037's pattern.
 - ~~DEBT-devdep-cycle~~ → **planned as [025](025-test-support-crate-break-dev-cycle.md)** (isolation⇄runtime cycle). The `jackin-term` dev-dep on `jackin-diagnostics` is upward-but-acyclic and allowed under the tier gate's dev-edge rule (plan 012); no action.
 - ~~DEBT-type-complexity~~ → **planned as [030](030-console-view-model-structs.md)** (verified current: frame.rs 19, settings/view.rs 14, four tabs 2 each; ~13 sites outside console stay as recorded residue).

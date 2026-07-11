@@ -31,6 +31,7 @@ pub mod isolation_record;
 pub mod launch_progress;
 pub mod manifest;
 pub mod op_cache;
+pub mod op_probe_error;
 pub mod op_reference;
 pub mod op_types;
 pub mod operator_notice;
@@ -70,6 +71,7 @@ pub use launch_progress::{
     LaunchStage, LaunchTargetKind, PromptContextLine, StageLabelTransition, StageStatus, StageView,
     WorktreeInspect,
 };
+pub use op_probe_error::OpProbeError;
 pub use operator_notice::{OperatorNoticeSink, emit_compact_line};
 pub use path_text::shorten_home;
 pub use paths::JackinPaths;

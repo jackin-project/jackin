@@ -47,6 +47,7 @@ Because everything depends on `jackin-core`, it must stay dependency-free, side-
 | [`url_text.rs`](src/url_text.rs) | url text | — |
 | [`path_text.rs`](src/path_text.rs) · [`path_text/`](src/path_text) | path text | [`tests.rs`](src/path_text/tests.rs) |
 | [`op_cache.rs`](src/op_cache.rs) · [`op_cache/`](src/op_cache) | op cache | [`tests.rs`](src/op_cache/tests.rs) |
+| [`op_probe_error.rs`](src/op_probe_error.rs) · [`op_probe_error/`](src/op_probe_error) | typed `op` probe errors | [`tests.rs`](src/op_probe_error/tests.rs) |
 | [`op_reference.rs`](src/op_reference.rs) · [`op_reference/`](src/op_reference) | op reference | [`tests.rs`](src/op_reference/tests.rs) |
 | [`op_types.rs`](src/op_types.rs) | op types | — |
 | [`constants.rs`](src/constants.rs) | shared constants | — |

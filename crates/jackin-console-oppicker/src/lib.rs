@@ -129,6 +129,12 @@ pub fn probe_load_error_state(message: impl Into<String>) -> OpLoadState {
     OpLoadState::Error(classify_probe_error_message(message))
 }
 
+/// Classify a process/probe failure carried as `anyhow::Error`, preferring a
+/// typed [`jackin_core::OpProbeError`] source when present.
+pub fn probe_load_error_from_anyhow(error: &anyhow::Error) -> OpLoadState {
+    OpLoadState::Error(classify_probe_error(error))
+}
+
 pub fn recoverable_load_error_state(message: impl Into<String>) -> OpLoadState {
     OpLoadState::Error(OpPickerError::Recoverable {
         message: message.into(),
@@ -983,8 +989,34 @@ pub fn breadcrumb_title(
     }
 }
 
-/// Classifies by stderr substring because the root picker receives
-/// process errors through `anyhow::Error` rather than typed variants.
+/// Classify a probe `anyhow::Error` via typed [`jackin_core::OpProbeError`]
+/// when attached as a source; falls back to substring matching for
+/// stringified transports.
+pub fn classify_probe_error(error: &anyhow::Error) -> OpPickerError {
+    if let Some(probe) = error.downcast_ref::<jackin_core::OpProbeError>() {
+        return match probe {
+            jackin_core::OpProbeError::NotInstalled { .. } => {
+                OpPickerError::Fatal(OpPickerFatalState::NotInstalled)
+            }
+            jackin_core::OpProbeError::NotSignedIn { .. } => {
+                OpPickerError::Fatal(OpPickerFatalState::NotSignedIn)
+            }
+            // Timeout has no dedicated picker fatal state; same GenericFatal
+            // path the substring classifier used for timeout wording.
+            jackin_core::OpProbeError::Timeout { .. }
+            | jackin_core::OpProbeError::Other { .. } => {
+                OpPickerError::Fatal(OpPickerFatalState::GenericFatal {
+                    message: error.to_string(),
+                })
+            }
+        };
+    }
+    classify_probe_error_message(error.to_string())
+}
+
+/// Fallback classifier for string-only transports (and unit tests). Prefer
+/// [`classify_probe_error`] when an `anyhow::Error` is available so typed
+/// sources win over message wording.
 pub fn classify_probe_error_message(message: impl Into<String>) -> OpPickerError {
     let message = message.into();
     if message.contains("failed to spawn") {

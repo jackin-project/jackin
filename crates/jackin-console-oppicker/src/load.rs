@@ -10,7 +10,7 @@ use crate::{
     OpPickerError, OpPickerFatalState, OpPickerLoadRequest, OpPickerMode, OpPickerPendingLoad,
     OpPickerStage, VaultsLoadedPlan, accounts_loaded_plan, disconnected_worker_error_state,
     field_label_input_state, fields_loaded_plan, item_name_input_state, items_loaded_plan,
-    probe_load_error_state, recoverable_load_error_state, section_name_input_state,
+    probe_load_error_from_anyhow, recoverable_load_error_state, section_name_input_state,
     sort_fields_by_concealed_first, vaults_loaded_plan,
 };
 
@@ -255,7 +255,7 @@ impl OpPickerState {
                 LoadResult::Accounts(Err(err)) | LoadResult::Vaults(Err(err)),
             ) => {
                 self.rx = None;
-                self.load_state = probe_load_error_state(err.to_string());
+                self.load_state = probe_load_error_from_anyhow(&err);
                 true
             }
             SubscriptionPoll::Ready(LoadResult::Items(Ok(items))) => {
