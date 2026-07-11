@@ -53,6 +53,7 @@ impl ShellRunner {
             interactive: _,
             tee_to_build_log: _,
             build_log_sink: _,
+            timeout: _,
         } = opts;
         if should_null_stdin(opts) {
             cmd.stdin(std::process::Stdio::null());
@@ -219,6 +220,28 @@ enum CaptureMode {
     Secret,
 }
 
+
+async fn await_child_with_timeout(
+    child: &mut tokio::process::Child,
+    program: &str,
+    timeout: Option<std::time::Duration>,
+) -> anyhow::Result<std::process::ExitStatus> {
+    match timeout {
+        None => Ok(child.wait().await?),
+        Some(dur) => match tokio::time::timeout(dur, child.wait()).await {
+            Ok(status) => Ok(status?),
+            Err(_elapsed) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                anyhow::bail!(
+                    "command timed out after {}s: {program}",
+                    dur.as_secs_f64()
+                );
+            }
+        },
+    }
+}
+
 impl CommandRunner for ShellRunner {
     async fn run(
         &mut self,
@@ -246,7 +269,8 @@ impl CommandRunner for ShellRunner {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
             let started = Instant::now();
-            let status = cmd.status().await?;
+            let mut child = cmd.spawn()?;
+            let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
             anyhow::ensure!(
                 status.success(),
@@ -258,11 +282,10 @@ impl CommandRunner for ShellRunner {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
             let started = Instant::now();
-            let status = cmd
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .await?;
+            cmd.stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            let mut child = cmd.spawn()?;
+            let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
             anyhow::ensure!(
                 status.success(),
@@ -288,7 +311,8 @@ impl CommandRunner for ShellRunner {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
             let started = Instant::now();
-            let status = cmd.status().await?;
+            let mut child = cmd.spawn()?;
+            let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
             anyhow::ensure!(
                 status.success(),
@@ -374,8 +398,25 @@ impl ShellRunner {
             )
             .await
         };
-        let (status, stdout_result, stderr_result) =
-            tokio::join!(child.wait(), read_stdout, read_stderr);
+        let (status, stdout_result, stderr_result) = if let Some(dur) = opts.timeout {
+            match tokio::time::timeout(dur, async {
+                tokio::join!(child.wait(), read_stdout, read_stderr)
+            })
+            .await
+            {
+                Ok(triple) => triple,
+                Err(_elapsed) => {
+                    let _ = child.kill().await;
+                    let _ = child.wait().await;
+                    anyhow::bail!(
+                        "command timed out after {}s: {program}",
+                        dur.as_secs_f64()
+                    );
+                }
+            }
+        } else {
+            tokio::join!(child.wait(), read_stdout, read_stderr)
+        };
         let stdout_buf = stdout_result?;
         let stderr_buf = stderr_result?;
         let status = status?;

@@ -74,7 +74,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [029](029-docs-drift-reconciliation.md) | Docs drift: README links, Apple status, reserved envs, capsule README, codebase map | 5 | P3 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; reserved list is 19 names — plan's 20 overcounted `JACKIN_OPEN_LINKS`, which is deliberately settable) |
 | [030](030-console-view-model-structs.md) | Console editor/settings view-model structs (kills the 42-site type_complexity cluster) | 2 | P2 | M-L | TODO |
 | [031](031-op-probe-typed-error.md) | Typed `op` probe errors (`OpProbeError` in jackin-core; downcast classification) | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; enum in jackin-core; env constructs typed sources; oppicker downcasts first, substring fallback retained) |
-| [032](032-daemon-console-behavioral-specs.md) | Behavioral specs: capsule daemon + operator console (cite-or-MISSING) | 3 | P2 | M-L | TODO |
+| [032](032-daemon-console-behavioral-specs.md) | Behavioral specs: capsule daemon + operator console (cite-or-MISSING) | 3 | P2 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; capsule-daemon + operator-console specs) |
 
 ### Sixth wave — roadmap-coverage gap closure
 
@@ -83,9 +83,9 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [033](033-characterization-launch-displace-pty.md) | Characterization: launch-core teardown, client displace seams, PTY fault recovery | 2/3 | P1 | M-L | TODO |
 | [034](034-numeric-and-easy-lint-families.md) | Numeric + easy-to-avoid lint families (census: near-zero candidates; sign-loss fix wave) | 1 | P1 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; truncation/precision/wrap remain allow) |
 | [035](035-advisory-verification-lanes.md) | Scheduled advisory lanes: llvm-cov, Miri, ASan fuzz, cargo-mutants, hakari timing | 1 | P2 | M | TODO |
-| [036](036-process-boundary-xtask-cmd-and-timeout.md) | Process boundary: one xtask cmd module; `RunOptions.timeout` honored by ShellRunner | 2 | P2 | M | TODO |
+| [036](036-process-boundary-xtask-cmd-and-timeout.md) | Process boundary: one xtask cmd module; `RunOptions.timeout` honored by ShellRunner | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 | [037](037-thiserror-foundational-core-env.md) | thiserror for jackin-core concrete errors + jackin-env resolution taxonomy | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; ParseProfileError/EnvCycleError/PathsError + OperatorEnvError/ResolveEnvError; port traits keep anyhow) |
-| [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; WorkspaceName type+persist via 020 scoop; adoption at config mint/editor/instance naming/launch_slot; frontier residual env/console) |
+| [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; WorkspaceName type+persist (scooped in 020 commit); adoption at config mint/editor/instance naming/launch_slot; resolve_mode uses Option; env/console long-tail residual) |
 | [039](039-jackin-env-pub-surface-pilot.md) | Pub-surface pilot: jackin-env sealed behind curated root re-exports | 2 | P2 | M | TODO |
 | [040](040-grid-resize-in-place.md) | In-place grid resize; same-size/height-only fast paths + resize_storm bench | 4 | P2 | M | DONE (cherry-picked onto `chore/rust-code-health-roadmap`) |
 

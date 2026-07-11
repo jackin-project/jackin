@@ -2,9 +2,16 @@
 //! `docker`, `git`, and other external commands.
 //!
 //! `CommandRunner` is dependency-injected into the runtime pipeline so tests
-//! can replace it with `FakeRunner` without spawning real processes. The
-//! concrete `ShellRunner` implementation lives in `src/docker/mod.rs` until
-//! it migrates to `jackin-runtime`.
+//! can replace it with `FakeRunner` without spawning real processes.
+//!
+//! Canonical engines:
+//! - **async host** — `jackin_docker::shell_runner::ShellRunner` (honors
+//!   [`RunOptions::timeout`]).
+//! - **sync capsule** — `jackin_capsule`'s `wait_child_with_timeout` /
+//!   `WaitOutcome` engine for PID-1-aware waits.
+//!
+//! New wrappers must route through one of these rather than hand-rolling
+//! spawn/status/capture/timeout.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -34,6 +41,10 @@ pub struct RunOptions {
     /// true. Injected by the runtime entry point (`jackin-runtime`) before
     /// docker-build invocations; `None` suppresses teeing.
     pub build_log_sink: Option<Arc<dyn BuildLogSink>>,
+    /// Deadline for the child process. `None` = no deadline.
+    /// Enforced by implementors that own real processes (`ShellRunner`);
+    /// fakes may ignore it.
+    pub timeout: Option<std::time::Duration>,
 }
 
 impl Default for RunOptions {
@@ -48,6 +59,7 @@ impl Default for RunOptions {
             interactive: false,
             tee_to_build_log: false,
             build_log_sink: None,
+            timeout: None,
         }
     }
 }

@@ -48,7 +48,7 @@ The operating assumption for this program is that the most frequent contributor 
 
 ### PR-time gates to promote after dry run
 
-1. **Feature powerset gate**: move at least a scoped `cargo hack check --workspace --feature-powerset --all-targets --locked` lane from scheduled-only hygiene into PR CI, starting with crates that actually expose optional behavior.
+1. **Feature powerset gate**: ~~move at least a scoped `cargo hack check --workspace --feature-powerset --all-targets --locked` lane from scheduled-only hygiene into PR CI, starting with crates that actually expose optional behavior.~~ **Shipped (2026-07-11):** PR job `feature-powerset-scoped` covers the six real-optional-behavior crates (`jackin`, `jackin-diagnostics`, `jackin-capsule`, `jackin-agent-status`, `jackin-term`, `jackin-runtime`); full workspace powerset stays on the scheduled hygiene lane.
 2. **Rustdoc documentation tests**: add `cargo test --doc --workspace --locked` to PR CI if the current scheduled job is green enough to promote.
 3. **Snapshot hygiene**: pin `cargo-insta` or add a cheap pending-snapshot/diff gate so TUI snapshot changes cannot leave `*.pending-snap` files or unreviewed `.snap` diffs behind.
 
@@ -111,7 +111,7 @@ Two defensible philosophies exist for adopting restriction lints: cherry-pick or
 
 ### Toolchain canaries
 
-1. **Beta-toolchain clippy canary.** A scheduled lane runs `cargo clippy --all-targets --all-features` (and optionally the test suite) on the next Rust beta, so new lints, lint renames, and behavior changes surface weeks before the pinned toolchain moves. Fixes or `#[expect]`s land ahead of the upgrade instead of blocking it; on a deny-by-default workspace, a toolchain bump should be a planned chore, never a surprise red main.
+1. **Beta-toolchain clippy canary.** ~~A scheduled lane runs `cargo clippy --all-targets --all-features` (and optionally the test suite) on the next Rust beta, so new lints, lint renames, and behavior changes surface weeks before the pinned toolchain moves.~~ **Shipped (2026-07-11):** advisory `beta-clippy-canary` job on the Hygiene workflow (`continue-on-error: true`, artifact + step summary). Fixes or `#[expect]`s land ahead of the upgrade instead of blocking it; on a deny-by-default workspace, a toolchain bump should be a planned chore, never a surprise red main.
 2. **Auditable dependency timing.** Continue using cargo timing artifacts to justify dependency or workspace-shape changes instead of adding generated maintenance surface on taste alone.
 
 ## Phase 2 — Restructure crate and module ownership
@@ -164,7 +164,7 @@ Two defensible philosophies exist for adopting restriction lints: cherry-pick or
 ## Phase 3 — Strengthen tests, specs, and fixtures
 
 1. Add a shared `jackin-test-support` crate only after inventorying duplicated builders/fakes. It should own deterministic config/workspace builders, mock runners, role seeding, snapshot normalization, fixed terminal dimensions/theme/clock, and fixture helpers.
-2. Write behavioral specs for the capsule daemon and operator console state machine. Each spec section should link to existing tests or explicitly mark missing coverage.
+2. **Shipped (plan 032)** — behavioral specs for the capsule daemon and operator console state machine live under [Behavioral Specs](/reference/developer-reference/specs/) (`capsule-daemon`, `operator-console`). Each INV cites production code and a Tests cell (`crate::…::fn` or `MISSING`); MISSING rows are the characterization worklist for Phase 2 daemon decomposition / console manager tests.
 3. Add property tests and fuzz targets for parser and schema surfaces: manifest validation, env resolution, config/manifest migrations, terminal parser edge cases, and protocol decoding. Invariants should include “invalid input never panics,” migrations are idempotent, migrated config validates, unknown fields follow schema policy, and reserved env keys are preserved or rejected consistently.
 4. Add a report-only coverage-map gate for large modules without sibling tests. Later, fail only for new high-risk modules above a size threshold unless they carry an explicit exemption.
 5. Break up mega-test files by extracting the modules under test first. Large `tests.rs` files are evidence that production modules still own too many responsibilities, not permission to create test submodules.
@@ -207,7 +207,7 @@ A hard rule without a failing test is a request; these make each one a fact.
 5. Add terminal resize fast paths that reuse row storage for height-only or same-width changes and benchmark resize storms.
 6. Parallelize isolated mount materialization only after partitioning by dependency/order group and host repository to avoid `.git` lock contention.
 7. **Shipped (2026-07-11, plan-027)** — `summarize_reader` parses each JSONL line once into a borrowed `EventLine`; nested `detail` JSON is parsed only inside kind arms that read it. Residual: reused `read_line` buffer only if measured after this win.
-8. Split local CI orchestration into AI-friendly aliases that mirror CI partitions: lint, policy, tests, snapshots, docs, MSRV, E2E. Preserve full `cargo xtask ci` semantics, but make the smallest correct command discoverable.
+8. ~~Split local CI orchestration into AI-friendly aliases that mirror CI partitions: lint, policy, tests, snapshots, docs, MSRV, E2E.~~ **Shipped (2026-07-11):** `cargo xtask ci --only <partition>` (repeatable) selects among `lint`, `policy`, `tests`, `msrv`, `powerset`, `docs`, `snapshots`; full `ci`/`ci --fast`/`ci --e2e` semantics preserved. Docs gates (`roadmap audit`, `docs repo-links`, `research check`) are now part of the full local gate.
 9. **Allocation budgets on the existing dhat harnesses.** `dhat` is already wired into `jackin-capsule` and `jackin-term`; turn its output into per-hot-path allocation-count/peak-bytes budgets in the Phase 7 ratchet engine, beside the iai-callgrind instruction budgets.
 10. **Operator-perceived latency budgets.** Track CLI cold-start (`jackin --help`, console first frame) with [hyperfine](https://github.com/sharkdp/hyperfine) in a scheduled lane, and input-to-frame latency in a headless TUI harness. These are the numbers an operator feels; budget them like instruction counts, scheduled/advisory first.
 

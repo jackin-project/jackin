@@ -339,3 +339,35 @@ async fn capture_secret_suppresses_stdout_debug_echo() {
         );
     }
 }
+
+
+#[cfg(unix)]
+#[tokio::test]
+async fn run_times_out_and_kills_sleep() {
+    let mut runner = ShellRunner::default();
+    let opts = RunOptions {
+        timeout: Some(std::time::Duration::from_millis(200)),
+        ..RunOptions::default()
+    };
+    let started = std::time::Instant::now();
+    let err = runner
+        .run("sleep", &["5"], None, &opts)
+        .await
+        .expect_err("sleep should time out");
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    assert!(err.to_string().contains("timed out"), "{}", err);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn run_completes_before_timeout() {
+    let mut runner = ShellRunner::default();
+    let opts = RunOptions {
+        timeout: Some(std::time::Duration::from_millis(200)),
+        ..RunOptions::default()
+    };
+    runner
+        .run("sleep", &["0"], None, &opts)
+        .await
+        .expect("sleep 0 should succeed within timeout");
+}

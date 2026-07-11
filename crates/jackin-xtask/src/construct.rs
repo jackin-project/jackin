@@ -506,35 +506,16 @@ fn docker<const N: usize>(args: [&str; N]) -> Command {
 }
 
 fn builder_exists(builder: &str) -> bool {
-    docker(["buildx", "inspect", builder])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
+    let mut cmd = docker(["buildx", "inspect", builder]);
+    cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    crate::cmd::run(&mut cmd).is_ok()
 }
+
 
 fn run_checked(mut cmd: Command) -> Result<()> {
-    let status = cmd
-        .status()
-        .with_context(|| format!("failed to spawn `{}`", command_label(&cmd)))?;
-    if !status.success() {
-        bail!("`{}` failed with {status}", command_label(&cmd));
-    }
-    Ok(())
+    crate::cmd::run(&mut cmd)
 }
 
-fn command_label(cmd: &Command) -> String {
-    let program = cmd.get_program().to_string_lossy();
-    let args: Vec<String> = cmd
-        .get_args()
-        .map(|arg| arg.to_string_lossy().into_owned())
-        .collect();
-    if args.is_empty() {
-        program.into_owned()
-    } else {
-        format!("{program} {}", args.join(" "))
-    }
-}
 
 /// Env value if the variable is set, else the computed default. A set-but-empty
 /// variable returns empty so explicit overrides are honored verbatim.
@@ -550,20 +531,13 @@ fn env_present(key: &str) -> Option<String> {
 }
 
 fn git_sha() -> Option<String> {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "build helper: synchronous git probe, not a render/runtime thread"
-    )]
-    let output = Command::new("git")
-        .args(["rev-parse", "--short=12", "HEAD"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let sha = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    let mut cmd = Command::new("git");
+    cmd.args(["rev-parse", "--short=12", "HEAD"]);
+    let stdout = crate::cmd::output_string(&mut cmd).ok()?;
+    let sha = stdout.trim().to_owned();
     (!sha.is_empty()).then_some(sha)
 }
+
 
 fn read_version_file() -> Option<String> {
     let raw = fs::read_to_string(VERSION_FILE).ok()?;

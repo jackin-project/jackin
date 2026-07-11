@@ -1,4 +1,5 @@
 use super::*;
+use crate::cmd::shell_quote;
 
 #[test]
 fn shell_quote_leaves_plain_paths_bare() {

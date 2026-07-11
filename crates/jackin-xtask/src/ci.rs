@@ -260,35 +260,18 @@ fn parse_capsule_export(output: &str) -> Result<PathBuf> {
 
 fn run_step(root: &Path, step: &Step) -> Result<()> {
     emit(&format!("==> {}", display_step(step)));
-    let status = Command::new(&step.program)
-        .args(&step.args)
-        .current_dir(root)
-        .envs(&step.env)
-        .status()
-        .with_context(|| format!("starting {}", step.name))?;
-    if status.success() {
-        return Ok(());
-    }
-    bail!("exited with {status}")
+    let mut cmd = Command::new(&step.program);
+    cmd.args(&step.args).current_dir(root).envs(&step.env);
+    crate::cmd::run(&mut cmd).with_context(|| format!("step {}", step.name))
 }
 
 fn output_step(root: &Path, step: &Step) -> Result<String> {
     emit(&format!("==> {}", display_step(step)));
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "xtask automation captures build-jackin-capsule --export output"
-    )]
-    let output = Command::new(&step.program)
-        .args(&step.args)
-        .current_dir(root)
-        .envs(&step.env)
-        .output()
-        .with_context(|| format!("starting {}", step.name))?;
-    if !output.status.success() {
-        bail!("{} exited with {}", step.name, output.status);
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    let mut cmd = Command::new(&step.program);
+    cmd.args(&step.args).current_dir(root).envs(&step.env);
+    crate::cmd::output_string(&mut cmd).with_context(|| format!("step {}", step.name))
 }
+
 
 fn display_step(step: &Step) -> String {
     let mut parts = vec![step.program.to_string_lossy().into_owned()];

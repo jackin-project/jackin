@@ -153,7 +153,7 @@ fn changed_files(root: &Path, base: &str) -> Result<Vec<String>> {
     cmd.arg("-C")
         .arg(root)
         .args(["diff", "--name-only", &format!("{base}...HEAD")]);
-    let stdout = run_output(&mut cmd)?;
+    let stdout = crate::cmd::output(&mut cmd)?;
     Ok(String::from_utf8_lossy(&stdout)
         .lines()
         .filter(|l| !l.is_empty())
@@ -185,7 +185,7 @@ fn emit_body(skeleton: &str) {
     print!("{skeleton}");
 }
 
-fn run_output(cmd: &mut Command) -> Result<Vec<u8>> {
+fn crate::cmd::output(cmd: &mut Command) -> Result<Vec<u8>> {
     let display = display_command(cmd);
     #[expect(
         clippy::disallowed_methods,

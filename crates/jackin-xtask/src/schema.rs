@@ -206,17 +206,11 @@ fn git_show_version(
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<std::process::Output> {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "xtask automation shells out to git"
-    )]
-    Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()
-        .context("running git")
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(root).args(args);
+    crate::cmd::output_raw(&mut cmd)
 }
+
 
 #[cfg(test)]
 mod tests;

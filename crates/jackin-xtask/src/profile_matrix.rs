@@ -204,16 +204,11 @@ impl CommandResult {
 }
 
 fn command_output(program: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
-        .with_context(|| format!("spawning {program}"))?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-    } else {
-        bail!("{}", String::from_utf8_lossy(&output.stderr).trim())
-    }
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+    crate::cmd::output_string(&mut cmd)
 }
+
 
 fn docker_rm(name: &str) {
     drop(

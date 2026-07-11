@@ -172,20 +172,10 @@ fn path_arg(path: &Path) -> Result<&str> {
         .with_context(|| format!("path is not valid UTF-8: {}", path.display()))
 }
 
-fn run_checked(cmd: &mut Command, label: &str) -> Result<()> {
-    let output = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .with_context(|| format!("spawning {label}"))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        bail!("{label} failed\nstdout:\n{stdout}\nstderr:\n{stderr}")
-    }
+fn run_checked(cmd: &mut Command, _label: &str) -> Result<()> {
+    crate::cmd::run(cmd)
 }
+
 
 #[cfg(test)]
 mod tests;
