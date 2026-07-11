@@ -5,7 +5,7 @@ Universal vocabulary types shared across **every** jackin❯ crate. This is the 
 ## What this crate owns
 
 - Domain nouns every other crate speaks in: agent identity, instance, isolation, manifest fragments, env model, status, launch progress, operator notices.
-- Port traits and shared abstractions higher crates implement (e.g. `CommandRunner`), plus the constants, paths, and selector/url/path text helpers reused everywhere.
+- Port traits and shared abstractions higher crates implement (e.g. `CommandRunner`, `Clock`), plus the constants, paths, and selector/url/path text helpers reused everywhere.
 - Small self-contained widgets/ansi/host-color tokens re-exported by presentation crates.
 
 Because everything depends on `jackin-core`, it must stay dependency-free, side-effect-free, and cheap to compile. Anything that needs `tokio`, the filesystem, a subprocess, or a real adapter belongs in a higher crate.
@@ -33,6 +33,7 @@ Because everything depends on `jackin-core`, it must stay dependency-free, side-
 | [`isolation_record.rs`](src/isolation_record.rs) | isolation record | — |
 | [`worktree_dirty.rs`](src/worktree_dirty.rs) · [`worktree_dirty/`](src/worktree_dirty) | worktree-dirty check | [`tests.rs`](src/worktree_dirty/tests.rs) |
 | [`runner.rs`](src/runner.rs) | `CommandRunner` port | — |
+| [`clock.rs`](src/clock.rs) · [`clock/`](src/clock) | `Clock` port + `ManualClock` | [`tests.rs`](src/clock/tests.rs) |
 | [`launch_progress.rs`](src/launch_progress.rs) | launch progress | — |
 | [`prompt_result.rs`](src/prompt_result.rs) | prompt result | — |
 | [`selector.rs`](src/selector.rs) | selector | — |

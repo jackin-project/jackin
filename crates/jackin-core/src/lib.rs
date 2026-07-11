@@ -6,7 +6,7 @@
 //!
 //! **Architecture Invariant:** L0 domain crate. Allowed dependencies: none
 //! inside the workspace. Owns the universal types plus the port traits
-//! (`BuildLogSink`, `DebugLogSink`, `OperatorNoticeSink`) and shared widget
+//! (`BuildLogSink`, `Clock`, `DebugLogSink`, `OperatorNoticeSink`) and shared widget
 //! stubs (`TailScroll`, `DialogBodyScroll`, etc.) that let higher layers
 //! talk upward without depending on a presentation crate.
 //!
@@ -18,6 +18,7 @@ pub mod agent;
 pub mod ansi_tokens;
 pub mod auth;
 pub mod build_log_sink;
+pub mod clock;
 pub mod constants;
 pub mod debug_log;
 pub mod docker;
@@ -54,6 +55,7 @@ pub use agent::{
 pub use ansi_tokens::{POINTER_DEFAULT, POINTER_HAND, encode_osc52_clipboard_write};
 pub use auth::AuthForwardMode;
 pub use build_log_sink::BuildLogSink;
+pub use clock::{Clock, ManualClock, SystemClock};
 pub use debug_log::{DebugLogSink, emit_debug_line, is_debug_mode, set_global_sink};
 pub use docker::{
     ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,

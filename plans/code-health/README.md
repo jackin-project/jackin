@@ -61,7 +61,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
-| [024](024-clock-seam-clipboard-expiry.md) | `Clock` seam in jackin-core; first consumer: clipboard expiry | 3/6 | P1 | M | DONE (reviewed; `exec-plan-024` @ `66da5aef9`, unmerged; capsule PR — smoke block mandatory at PR time) |
+| [024](024-clock-seam-clipboard-expiry.md) | `Clock` seam in jackin-core; first consumer: clipboard expiry | 3/6 | P1 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; capsule-touching — smoke block mandatory at PR time) |
 | [025](025-test-support-crate-break-dev-cycle.md) | Extract `jackin-test-support`; break isolation⇄runtime dev cycle | 2/3 | P2 | M | DONE (cherry-picked `ead83e524` onto `chore/rust-code-health-roadmap`) |
 | [026](026-scrollback-range-snapshot.md) | Range-scoped scrollback snapshots (per-mouse-event full-scrollback alloc) | 2/4 | P2 | M | IN PROGRESS (operator-run external agent) |
 | [027](027-diagnostics-jsonl-typed-streaming.md) | Typed borrowed JSONL streaming; stop double-parsing detail | 4 | P2 | M | IN PROGRESS (operator-run external agent) |
@@ -219,12 +219,12 @@ High-value findings that are real but were not turned into first-wave plans (lar
 
 ### Tests
 
-- ~~TEST-clock~~ → **planned as [024](024-clock-seam-clipboard-expiry.md)** (seam + first consumer; fresh census 242 raw now() sites — the rest convert one consumer per PR behind the seam; next candidates in 024's maintenance note).
+- ~~TEST-clock~~ → **shipped as [024](024-clock-seam-clipboard-expiry.md)** (seam + clipboard consumer in-tree; remaining raw `now()` sites convert one consumer per PR; next: git/PR-watch throttle).
 - ~~TEST-launch-core~~ → **planned as [033](033-characterization-launch-displace-pty.md)** suite A (failure-path-first: grant-failure teardown ordering + mid-pipeline FailedSetup; `run_launch_core` is `pub(super)` so tests live in `launch_pipeline/tests.rs`).
 - ~~TEST-displace-policy~~ → **planned as [033](033-characterization-launch-displace-pty.md)** suite B (the reachable seams: detach helper, ClientWriter latch, post-takeover input routing; the select-loop drain + initial-burst order stay MISSING → 032's worklist; the proptest-state-machine remains the deferred sim-track home).
 - ~~TEST-pty-recovery~~ → **planned as [033](033-characterization-launch-displace-pty.md)** suite C (new `FaultMasterPty` scriptable double; census confirmed `NullMasterPty` cannot fail, so all four recovery branches are currently unreachable).
 - ~~TEST-support-crate~~ → **planned as [025](025-test-support-crate-break-dev-cycle.md)** (moves the runtime test_support surface, breaks the dev cycle; the remaining duplicate fakes — jackin/tests/common.rs FakeRunner, host/caffeinate pair, console StubRunners — stay a recorded dedupe follow-up).
-- **TEST-clipboard** — expiry half **planned in [024](024-clock-seam-clipboard-expiry.md)**; image-chunk-assembly tests remain deferred (S). **TEST-git-watch** (S-M) — git/PR-watch throttle; next Clock-seam consumer after 024.
+- **TEST-clipboard** — expiry half **shipped in [024](024-clock-seam-clipboard-expiry.md)**; image-chunk-assembly tests remain deferred (S). **TEST-git-watch** (S-M) — git/PR-watch throttle; next Clock-seam consumer after 024.
 
 ### Tech debt / architecture
 
