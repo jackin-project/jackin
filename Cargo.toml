@@ -28,6 +28,7 @@ members = [
     "crates/jackin-instance",
     "crates/jackin-test-support",
 ]
+exclude = ["crates/jackin-lints"]
 resolver = "3"
 
 [workspace.package]
@@ -258,3 +259,8 @@ strip = "symbols"
 inherits = "release"
 strip = false
 debug = "line-tables-only"
+
+[workspace.metadata.dylint]
+libraries = [
+    { path = "crates/jackin-lints" },
+]
