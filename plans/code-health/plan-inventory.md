@@ -1,6 +1,6 @@
 # Plan inventory (reverify) — second pass after wave 8
 
-Tip: `e9c3a8260` on `chore/rust-code-health-roadmap`.
+Tip: `032728d20` on `chore/rust-code-health-roadmap`.
 Lint strict green. `ci --fast` red only for documented waivers (4 docker manager_flow + RUSTSEC-2026-0204).
 
 | id | title | ledger_status | in_tree | evidence |
