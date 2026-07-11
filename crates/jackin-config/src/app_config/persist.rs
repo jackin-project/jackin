@@ -151,7 +151,7 @@ fn migrate_legacy_workspaces(
                 let mut doc: DocumentMut = contents
                     .parse()
                     .with_context(|| format!("re-parsing serialized workspace {name:?}"))?;
-                doc["op_account"] = toml_edit::value(acct.as_str());
+                doc.insert("op_account", toml_edit::value(acct.as_str()));
                 migrations::migrate_workspace_op_account_to_refs(&mut doc).with_context(|| {
                     format!("stamping legacy op_account onto refs for workspace {name:?}")
                 })?;

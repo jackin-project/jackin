@@ -828,8 +828,10 @@ fn set_sync_source_dir_field(doc: &mut DocumentMut, kind_path: &[String], source
 fn prune_empty_trailing_tables(doc: &mut DocumentMut, path: &[String], max_prune: usize) {
     let stop_at = path.len().saturating_sub(max_prune);
     for i in (stop_at..path.len()).rev() {
-        let segment = &path[i];
-        let parent_path = &path[..i];
+        let Some(segment) = path.get(i) else {
+            return;
+        };
+        let parent_path = path.get(..i).unwrap_or(&[]);
         let mut walker: &mut Item = doc.as_item_mut();
         for parent_segment in parent_path {
             match walker
@@ -861,11 +863,11 @@ fn table_path_mut<'a>(doc: &'a mut DocumentMut, path: &[String]) -> &'a mut Tabl
     )]
     fn walk<'a>(item: &'a mut Item, path: &[String]) -> &'a mut Table {
         let table = item.as_table_mut().expect("path segment is not a table");
-        if path.is_empty() {
+        let Some((first, rest)) = path.split_first() else {
             return table;
-        }
-        let entry = table.entry(&path[0]).or_insert(Item::Table(Table::new()));
-        walk(entry, &path[1..])
+        };
+        let entry = table.entry(first).or_insert(Item::Table(Table::new()));
+        walk(entry, rest)
     }
     walk(doc.as_item_mut(), path)
 }

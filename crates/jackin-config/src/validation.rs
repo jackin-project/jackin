@@ -18,7 +18,10 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
         .collect();
 
     for (i, (_, ma, a)) in isolated.iter().enumerate() {
-        for (_, mb, b) in &isolated[i + 1..] {
+        let Some(rest) = isolated.get(i + 1..) else {
+            break;
+        };
+        for (_, mb, b) in rest {
             if is_strict_ancestor(a, b) || is_strict_ancestor(b, a) {
                 anyhow::bail!(
                     "isolated mount `{b}` cannot be nested inside isolated mount `{a}`; \
