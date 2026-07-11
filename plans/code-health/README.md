@@ -27,9 +27,9 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Priority | Effort | Category | Status |
 |------|-------|----------|--------|----------|--------|
-| [003](003-materialize-accounts-borrow.md) | Stop deep-cloning usage views on every refresh | P1 | S | perf | DONE (reviewed; `exec-plan-003` @ `c6914499f`, unmerged) |
-| [004](004-resize-coalesce-drops-frames.md) | Stop dropping the frame queued behind a coalesced resize | P1 | S | bug | DONE (reviewed; `exec-plan-004` @ `4d47ea343`, unmerged) |
-| [007](007-osc8-hyperlink-map-bound.md) | Bound OSC 8 hyperlink maps; clear on reset | P2 | S-M | bug | DONE (reviewed; `exec-plan-007` @ `2cf80a363`, unmerged) |
+| [003](003-materialize-accounts-borrow.md) | Stop deep-cloning usage views on every refresh | P1 | S | perf | DONE (in-tree on `chore/rust-code-health-roadmap`) |
+| [004](004-resize-coalesce-drops-frames.md) | Stop dropping the frame queued behind a coalesced resize | P1 | S | bug | DONE (in-tree on `chore/rust-code-health-roadmap`) |
+| [007](007-osc8-hyperlink-map-bound.md) | Bound OSC 8 hyperlink maps; clear on reset | P2 | S-M | bug | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 | [008](008-launch-finalization-cleanup-guard.md) | Tear down DinD when a post-success finalization step fails | P2 | M | bug | DONE (reviewed; `exec-plan-008` @ `fde52d14a`, unmerged) |
 | [009](009-protocol-decoder-fuzz-and-truncation-tests.md) | Fuzz + truncation tests for protocol wire decoders | P2 | M | tests | DONE (reviewed; `exec-plan-009` @ `5816e42fe`, unmerged; fuzzed 6.4M execs clean on stable — ASan needs nightly, still unexercised) |
 
@@ -62,7 +62,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
 | [024](024-clock-seam-clipboard-expiry.md) | `Clock` seam in jackin-core; first consumer: clipboard expiry | 3/6 | P1 | M | DONE (reviewed; `exec-plan-024` @ `66da5aef9`, unmerged; capsule PR — smoke block mandatory at PR time) |
-| [025](025-test-support-crate-break-dev-cycle.md) | Extract `jackin-test-support`; break isolation⇄runtime dev cycle | 2/3 | P2 | M | IN PROGRESS (executor COMPLETE @ `exec-plan-025` `ead83e524`, pushed; review pending — halted 2026-07-10) |
+| [025](025-test-support-crate-break-dev-cycle.md) | Extract `jackin-test-support`; break isolation⇄runtime dev cycle | 2/3 | P2 | M | DONE (cherry-picked `ead83e524` onto `chore/rust-code-health-roadmap`) |
 | [026](026-scrollback-range-snapshot.md) | Range-scoped scrollback snapshots (per-mouse-event full-scrollback alloc) | 2/4 | P2 | M | IN PROGRESS (operator-run external agent) |
 | [027](027-diagnostics-jsonl-typed-streaming.md) | Typed borrowed JSONL streaming; stop double-parsing detail | 4 | P2 | M | IN PROGRESS (operator-run external agent) |
 
@@ -87,7 +87,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [037](037-thiserror-foundational-core-env.md) | thiserror for jackin-core concrete errors + jackin-env resolution taxonomy | 2 | P2 | M | IN PROGRESS (operator-run external agent) |
 | [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | TODO |
 | [039](039-jackin-env-pub-surface-pilot.md) | Pub-surface pilot: jackin-env sealed behind curated root re-exports | 2 | P2 | M | TODO |
-| [040](040-grid-resize-in-place.md) | In-place grid resize; same-size/height-only fast paths + resize_storm bench | 4 | P2 | M | IN PROGRESS (halted 2026-07-10 @ `exec-plan-040` `0f4c5c051`, pushed; review pending) |
+| [040](040-grid-resize-in-place.md) | In-place grid resize; same-size/height-only fast paths + resize_storm bench | 4 | P2 | M | DONE (cherry-picked onto `chore/rust-code-health-roadmap`) |
 
 ### Seventh wave — telemetry facade program + verified-gap closure
 
@@ -105,7 +105,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [050](050-readme-freshness-gate.md) | README-freshness gate (structural src change ⇒ README touched same PR) | 5 | P2 | S-M | TODO |
 | [051](051-xtask-gate-reporter-core.md) | Machine-readable gate output core (human\|json\|github reporter; 2 exemplar gates) | 6 | P2 | S-M | TODO |
 | [052](052-dylint-scaffold-render-purity.md) | dylint scaffold: `crates/jackin-lints` + render-thread-purity lint, advisory nightly lane | 1 | P3 | M | TODO |
-| [053](053-tui-half-layer-spike.md) | TUI half-layer spike: prototype shared View dispatcher, finish-or-drop verdict | 2 | P3 | S-M | IN PROGRESS (halted 2026-07-10 @ `exec-plan-053` `f5015c9bc`, pushed; review pending) |
+| [053](053-tui-half-layer-spike.md) | TUI half-layer spike: prototype shared View dispatcher, finish-or-drop verdict | 2 | P3 | S-M | DONE (cherry-picked `f5015c9bc` onto `chore/rust-code-health-roadmap`) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 

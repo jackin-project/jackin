@@ -1088,3 +1088,24 @@ fn resize_same_size_and_width_only_do_not_grow_arena_pool() {
         "width-only resize touched the arena pool"
     );
 }
+
+#[test]
+fn hyperlink_id_map_stays_bounded() {
+    let mut grid = DamageGrid::new(4, 20, 100);
+    for i in 0..(OSC8_HYPERLINK_CAP * 2) {
+        let _ = grid.alloc_hyperlink_token(&format!("id-{i}"));
+    }
+    assert!(grid.osc8_id_to_token.len() <= OSC8_HYPERLINK_CAP);
+}
+
+#[test]
+fn reset_modes_clears_hyperlink_maps() {
+    let mut grid = DamageGrid::new(4, 20, 100);
+    let _ = grid.alloc_hyperlink_token("some-id");
+    // also seed a target entry the way OSC 8 does
+    grid.hyperlink_targets.insert(1, "https://example.test".to_owned());
+    assert!(!grid.osc8_id_to_token.is_empty());
+    grid.reset_modes();
+    assert!(grid.osc8_id_to_token.is_empty());
+    assert!(grid.hyperlink_targets.is_empty());
+}

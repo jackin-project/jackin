@@ -201,6 +201,12 @@ impl std::fmt::Debug for DamageGrid {
 /// 64 is well past any real terminal program's nested keymap-mode depth.
 const KITTY_KB_STACK_CAP: usize = 64;
 
+/// Upper bound on retained OSC 8 hyperlink mappings. OSC content is untrusted
+/// model output; an agent emitting many distinct `id=` hyperlinks would
+/// otherwise grow these maps without bound. On overflow both maps are cleared
+/// together (stale off-screen link hover is lost; memory stays bounded).
+const OSC8_HYPERLINK_CAP: usize = 8192;
+
 /// Ring-backed row storage.
 ///
 /// This borrows the core idea from Alacritty's `Storage` grid
@@ -904,6 +910,7 @@ impl DamageGrid {
         self.mode_flags &= !FOCUS_EVENTS;
         self.scrollback_offset = 0;
         self.clear_active_hyperlink_state();
+        self.clear_hyperlink_maps();
     }
 
     /// Top of the kitty-keyboard stack (`0` when empty). The capsule
@@ -932,6 +939,9 @@ impl DamageGrid {
     fn alloc_hyperlink_token(&mut self, id: &str) -> u32 {
         if let Some(&token) = self.osc8_id_to_token.get(id) {
             return token;
+        }
+        if self.osc8_id_to_token.len() >= OSC8_HYPERLINK_CAP {
+            self.clear_hyperlink_maps();
         }
         let token = self.next_hyperlink_token;
         self.next_hyperlink_token = self.next_hyperlink_token.saturating_add(1);
@@ -987,6 +997,11 @@ impl DamageGrid {
 
     fn clear_active_hyperlink_state(&mut self) {
         self.active_hyperlink_token = 0;
+    }
+
+    fn clear_hyperlink_maps(&mut self) {
+        self.osc8_id_to_token.clear();
+        self.hyperlink_targets.clear();
     }
 
     /// Write a character at the current cursor position, advance cursor.
@@ -1546,6 +1561,9 @@ impl DamageGrid {
                 } else {
                     let token = self.alloc_hyperlink_token(&id);
                     self.active_hyperlink_token = token;
+                    if self.hyperlink_targets.len() >= OSC8_HYPERLINK_CAP {
+                        self.clear_hyperlink_maps();
+                    }
                     self.hyperlink_targets.insert(token, uri.clone());
                 }
                 // OSC 8 is modeled as cell metadata (both the interned token for
