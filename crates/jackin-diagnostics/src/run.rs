@@ -1161,13 +1161,26 @@ fn timing_key(stage: &str, name: &str) -> String {
 
 fn launch_stage_span(stage: &str) -> tracing::Span {
     let otel_name = format!("launch.{}", normalize_stage_name(stage));
-    tracing::info_span!(
+    let span = tracing::info_span!(
         "launch_stage",
         stage = stage,
         otel.name = otel_name.as_str(),
         otel.status_code = tracing::field::Empty,
         otel.status_description = tracing::field::Empty,
-    )
+    );
+    // Derived-image build is a peer subsystem of launch: link it to the active
+    // launch span so the BuildKit subtrace is not an unparented peer (plan 044).
+    #[cfg(feature = "otlp")]
+    if stage == "derived image" {
+        use opentelemetry::trace::TraceContextExt as _;
+        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+        let parent_ctx = tracing::Span::current().context();
+        let span_ctx = parent_ctx.span().span_context().clone();
+        if span_ctx.is_valid() {
+            span.add_link(span_ctx);
+        }
+    }
+    span
 }
 
 pub(crate) fn normalize_stage_name(stage: &str) -> String {

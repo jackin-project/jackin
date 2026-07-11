@@ -22,6 +22,7 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 | [`run.rs`](src/run.rs) · [`run/`](src/run) | structured run diagnostics | [`tests.rs`](src/run/tests.rs) |
 | [`summary.rs`](src/summary.rs) · [`summary/`](src/summary) | run summary | [`tests.rs`](src/summary/tests.rs) |
 | [`operation.rs`](src/operation.rs) · [`operation/`](src/operation) | typed operation facade | [`tests.rs`](src/operation/tests.rs) |
+| [`conformance.rs`](src/conformance.rs) · [`conformance/`](src/conformance) | telemetry acceptance scenario | [`tests.rs`](src/conformance/tests.rs) |
 | [`metrics.rs`](src/metrics.rs) · [`metrics/`](src/metrics) | hot-path metric instruments | [`tests.rs`](src/metrics/tests.rs) |
 | [`observability.rs`](src/observability.rs) · [`observability/`](src/observability) | OTLP tier | [`tests.rs`](src/observability/tests.rs) |
 | [`debug_log.rs`](src/debug_log.rs) · [`debug_log/`](src/debug_log) | `debug_log!`/`clog!`/`cdebug!` substrate | [`tests.rs`](src/debug_log/tests.rs) |
