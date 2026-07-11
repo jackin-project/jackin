@@ -438,7 +438,7 @@ count = 1
 [[expect]]
 lint = "dead_code"
 crate = "jackin-xtask"
-count = 1
+count = 3
 
 [[expect]]
 lint = "gh"
