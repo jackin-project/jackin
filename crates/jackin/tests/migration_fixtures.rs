@@ -120,6 +120,20 @@ fn walk_fixtures(file_kind: &str, migrate: MigrateFn) {
             "fixture {name}: after.toml has version {expected_version}, expected {target}",
             target = meta.target_version
         );
+
+        // Golden: the migration must produce exactly the committed after.toml.
+        assert_eq!(
+            actual_after, expected_after,
+            "fixture {name}: migrated output differs from after.toml golden"
+        );
+
+        // Idempotence: migrating an already-current file must be a no-op.
+        migrate(&target).unwrap_or_else(|e| panic!("re-migrating {name}: {e:#}"));
+        let after_second = fs::read_to_string(&target).unwrap();
+        assert_eq!(
+            after_second, actual_after,
+            "fixture {name}: migration is not idempotent (second run changed the file)"
+        );
     }
 }
 
