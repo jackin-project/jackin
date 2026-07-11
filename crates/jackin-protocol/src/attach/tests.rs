@@ -1029,3 +1029,34 @@ fn truncated_valid_frame_fails_closed() {
         "truncated welcome body must decode as Err"
     );
 }
+
+#[test]
+fn resize_rejects_short_payload_without_panic() {
+    let err = decode_client(TAG_RESIZE, vec![0x00, 0x01])
+        .expect_err("resize needs 4 bytes");
+    assert!(
+        err.to_string().contains("resize payload too short"),
+        "unexpected error: {err:#}"
+    );
+}
+
+#[test]
+fn welcome_rejects_short_payload_without_panic() {
+    let err = decode_server(TAG_WELCOME, vec![0x00, 0x01, 0x02])
+        .expect_err("welcome needs 4 bytes");
+    assert!(
+        err.to_string().contains("welcome payload too short"),
+        "unexpected error: {err:#}"
+    );
+}
+
+#[test]
+fn clipboard_image_rejects_empty_payload_without_panic() {
+    let err = decode_client(TAG_CLIPBOARD_IMAGE, Vec::new())
+        .expect_err("clipboard image needs format byte");
+    assert!(
+        err.to_string().contains("clipboard image payload too short"),
+        "unexpected error: {err:#}"
+    );
+}
+

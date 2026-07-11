@@ -99,7 +99,7 @@ pub(crate) fn run(args: CiArgs) -> Result<()> {
 
     for step in build_steps(&root, &args)? {
         if let Err(err) = run_step(&root, &step) {
-            failures.push(format!("{}: {err:#}", step.name));
+            failures.push(format!("{} [{}]: {err:#}", step.name, step.partition));
         }
     }
 
@@ -108,7 +108,7 @@ pub(crate) fn run(args: CiArgs) -> Result<()> {
         match build_e2e_step(&root) {
             Ok(step) => {
                 if let Err(err) = run_step(&root, &step) {
-                    failures.push(format!("{}: {err:#}", step.name));
+                    failures.push(format!("{} [{}]: {err:#}", step.name, step.partition));
                 }
             }
             Err(err) => failures.push(format!("docker e2e: {err:#}")),
