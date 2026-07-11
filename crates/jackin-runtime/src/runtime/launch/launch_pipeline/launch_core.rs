@@ -15,6 +15,7 @@ use jackin_config::AppConfig;
 use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
+use jackin_core::WorkspaceName;
 use jackin_docker::docker_client::DockerApi;
 
 use anyhow::Context;
@@ -567,6 +568,11 @@ where
     // `jackin_config::resolve_mode` and
     // `operator_env::build_attributed_layers` respectively.
     let workspace_name_str = workspace_name.as_deref().unwrap_or("");
+    let workspace_for_verify = if workspace_name_str.is_empty() {
+        WorkspaceName::parse("adhoc").map_err(anyhow::Error::from)?
+    } else {
+        WorkspaceName::parse(workspace_name_str).map_err(anyhow::Error::from)?
+    };
     let mode_resolution =
         super::super::build_mode_resolution(config, agent, workspace_name_str, &role_key);
     let env_layers = agent
@@ -580,7 +586,7 @@ where
         &operator_env,
         &mode_resolution,
         &env_layers,
-        workspace_name_str,
+        &workspace_for_verify,
         &role_key,
     ) {
         cleanup.run(docker).await;
@@ -646,7 +652,7 @@ where
     if let Err(error) = verify_github_token_present(
         github_mode,
         github_ctx.token.as_deref(),
-        workspace_name_str,
+        &workspace_for_verify,
         role_key.as_str(),
     ) {
         cleanup.run(docker).await;

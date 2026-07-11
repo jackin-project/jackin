@@ -3,7 +3,7 @@
 use crate::instance::{InstanceManifest, InstanceStatus, RoleState};
 use jackin_config::AppConfig;
 use jackin_config::app_config::DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS;
-use jackin_core::CommandRunner;
+use jackin_core::{CommandRunner, WorkspaceName};
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
@@ -897,7 +897,14 @@ pub(crate) async fn load_role_with(
     let (container_name, _name_lock) = if let Some(container_name) = restore_container {
         claim_known_container_name(paths, &container_name, docker).await?
     } else {
-        claim_container_name(paths, workspace_name.as_deref(), selector, docker).await?
+        {
+            let workspace_typed = workspace_name
+                .as_deref()
+                .map(WorkspaceName::parse)
+                .transpose()
+                .map_err(anyhow::Error::from)?;
+            claim_container_name(paths, workspace_typed.as_ref(), selector, docker).await?
+        }
     };
 
     // Preliminary panel name only. The authoritative, commit-tagged image name

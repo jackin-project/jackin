@@ -1,5 +1,7 @@
 //! `AppConfig` workspace CRUD impl blocks.
 
+use jackin_core::WorkspaceName;
+
 use super::AppConfig;
 use crate::planner::plan_collapse;
 use crate::schema::{WorkspaceConfig, WorkspaceEdit};
@@ -21,10 +23,10 @@ impl AppConfig {
     // external callers must go through ConfigEditor to ensure TOML preservation.
     pub fn create_workspace(
         &mut self,
-        name: &str,
+        name: &WorkspaceName,
         workspace: WorkspaceConfig,
     ) -> anyhow::Result<()> {
-        if self.workspaces.contains_key(name) {
+        if self.workspaces.contains_key(name.as_str()) {
             anyhow::bail!("workspace {name:?} already exists; use `workspace edit`");
         }
         validate_workspace_config(name, &workspace)?;
@@ -48,7 +50,7 @@ impl AppConfig {
             Err(e) => return Err(anyhow::anyhow!("{e}")),
         }
 
-        self.workspaces.insert(name.to_owned(), workspace);
+        self.workspaces.insert(name.as_str().to_owned(), workspace);
         Ok(())
     }
 
@@ -160,7 +162,8 @@ impl AppConfig {
             Err(e) => return Err(anyhow::anyhow!("{e}")),
         }
 
-        validate_workspace_config(name, &workspace)?;
+        let name_typed = WorkspaceName::parse(name).map_err(anyhow::Error::from)?;
+        validate_workspace_config(&name_typed, &workspace)?;
         self.workspaces.insert(name.to_owned(), workspace);
         Ok(())
     }
@@ -188,7 +191,8 @@ impl AppConfig {
 
     pub fn validate_workspaces(&self) -> anyhow::Result<()> {
         for (name, workspace) in &self.workspaces {
-            validate_workspace_config(name, workspace)?;
+            let name = WorkspaceName::parse(name).map_err(anyhow::Error::from)?;
+            validate_workspace_config(&name, workspace)?;
         }
         Ok(())
     }

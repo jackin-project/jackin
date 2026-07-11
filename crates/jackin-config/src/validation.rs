@@ -1,6 +1,7 @@
 //! Pure workspace validation helpers: isolation layout and workspace config.
 
 use jackin_core::MountIsolation;
+use jackin_core::WorkspaceName;
 
 use crate::schema::{MountConfig, WorkspaceConfig, validate_mount_specs};
 
@@ -48,7 +49,7 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn validate_workspace_config(name: &str, workspace: &WorkspaceConfig) -> anyhow::Result<()> {
+pub fn validate_workspace_config(name: &WorkspaceName, workspace: &WorkspaceConfig) -> anyhow::Result<()> {
     if workspace.workdir.is_empty() {
         anyhow::bail!("workspace {name:?} must define workdir");
     }

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use jackin_core::JackinPaths;
+use jackin_core::{JackinPaths, WorkspaceName};
 use toml_edit::DocumentMut;
 
 use super::AppConfig;
@@ -78,14 +78,15 @@ pub fn load_workspace_files(
             .file_stem()
             .and_then(|s| s.to_str())
             .ok_or_else(|| anyhow::anyhow!("invalid workspace filename {}", path.display()))?;
-        validate_workspace_file_stem(stem)
-            .with_context(|| format!("invalid workspace filename {}", path.display()))?;
+        let name = WorkspaceName::parse(stem).with_context(|| {
+            format!("invalid workspace filename {}", path.display())
+        })?;
         migrations::migrate_workspace_file_if_needed(&path)?;
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading workspace config {}", path.display()))?;
         let workspace = toml::from_str(&raw)
             .with_context(|| format!("parsing workspace config {}", path.display()))?;
-        workspaces.insert(stem.to_owned(), workspace);
+        workspaces.insert(name.into_inner(), workspace);
     }
     Ok(workspaces)
 }

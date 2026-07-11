@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use jackin_core::{Agent, AuthForwardMode, EnvValue, JackinPaths};
+use jackin_core::{Agent, AuthForwardMode, EnvValue, JackinPaths, WorkspaceName};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::app_config::AppConfig;
@@ -503,8 +503,8 @@ impl ConfigEditor {
         removed
     }
 
-    pub fn set_last_agent(&mut self, workspace: &str, agent_key: &str) {
-        let doc = self.workspace_doc_mut(workspace);
+    pub fn set_last_agent(&mut self, workspace: &WorkspaceName, agent_key: &str) {
+        let doc = self.workspace_doc_mut(workspace.as_str());
         let table = table_path_mut(doc, &[]);
         table.insert("last_role", toml_edit::value(agent_key));
     }
@@ -516,26 +516,26 @@ impl ConfigEditor {
     ///   - new name is empty
     ///   - old name does not exist
     ///   - new name already exists
-    pub fn rename_workspace(&mut self, old: &str, new: &str) -> anyhow::Result<()> {
-        if new.is_empty() {
-            anyhow::bail!("workspace name cannot be empty");
-        }
+    pub fn rename_workspace(
+        &mut self,
+        old: &WorkspaceName,
+        new: &WorkspaceName,
+    ) -> anyhow::Result<()> {
         if old == new {
             return Ok(());
         }
-        if !self.workspace_docs.contains_key(old) {
+        if !self.workspace_docs.contains_key(old.as_str()) {
             anyhow::bail!("workspace {old:?} not found");
         }
-        if self.workspace_docs.contains_key(new) {
+        if self.workspace_docs.contains_key(new.as_str()) {
             anyhow::bail!("workspace {new:?} already exists");
         }
 
-        validate_workspace_file_stem(new)?;
-        let Some(value) = self.workspace_docs.remove(old) else {
+        let Some(value) = self.workspace_docs.remove(old.as_str()) else {
             anyhow::bail!("workspace {old:?} not found");
         };
-        self.workspace_docs.insert(new.to_owned(), value);
-        self.removed_workspaces.insert(old.to_owned());
+        self.workspace_docs.insert(new.as_str().to_owned(), value);
+        self.removed_workspaces.insert(old.as_str().to_owned());
         Ok(())
     }
 
@@ -547,7 +547,11 @@ impl ConfigEditor {
         Ok(())
     }
 
-    pub fn create_workspace(&mut self, name: &str, ws: WorkspaceConfig) -> anyhow::Result<()> {
+    pub fn create_workspace(
+        &mut self,
+        name: &WorkspaceName,
+        ws: WorkspaceConfig,
+    ) -> anyhow::Result<()> {
         // Delegate to AppConfig::create_workspace's validated logic
         // (collision check, workdir / mount-destination relationship,
         // plan-collapse sanity) so the editor path behaves identically
@@ -557,7 +561,7 @@ impl ConfigEditor {
         in_memory.create_workspace(name, ws)?;
         let inserted = in_memory
             .workspaces
-            .get(name)
+            .get(name.as_str())
             .ok_or_else(|| anyhow::anyhow!("workspace {name:?} disappeared after create"))?;
 
         let rendered =
@@ -566,8 +570,8 @@ impl ConfigEditor {
             .parse()
             .with_context(|| format!("re-parsing serialized workspace {name:?}"))?;
 
-        self.workspace_docs.insert(name.to_owned(), parsed);
-        self.removed_workspaces.remove(name);
+        self.workspace_docs.insert(name.as_str().to_owned(), parsed);
+        self.removed_workspaces.remove(name.as_str());
 
         Ok(())
     }
