@@ -57,3 +57,18 @@ Rules:
 - **CLOSED**: done on this branch; no follow-up required for program completion.
 - **CLOSED-as-pinned**: intentional product/safety choice, not unfinished work.
 - **DEFER**: deliberately not executed in this program; measured blocker recorded.
+
+## Parallel execution of DEFER rows
+
+Do not drain this ledger serially. Group executable DEFERs into waves and fan out
+per [DISPATCH.md](DISPATCH.md):
+
+| Wave | Contents | Parallelism |
+|------|----------|-------------|
+| **R1** | R-014-materialize-bench, R-038 env∥console slices, R-snapshot-helpers, R-map-metadata-gate, R-export-volume-ratchet, R-complexity-threshold | Full fan-out when write sets disjoint |
+| **R2** | R-thiserror-mid-tranches (config∥isolation∥docker∥image∥instance) | One worker per crate, all parallel |
+| **R3** | launch typestate, daemon decomp/char, suite A, sim, perf/iai/dhat budgets | Design-first; then slice parallel |
+| **R4** | R-023-*, R-045 pinned, golden agent spend | Wait for product/ops trigger |
+
+New numbered plans for residual slices start at **057+** and must update this
+ledger disposition when CLOSED.

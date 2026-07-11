@@ -95,3 +95,9 @@ cargo xtask ci --fast   # only documented executor-env waivers red
 ```
 
 Full `cargo xtask ci --fast` may still hit the documented executor-env waiver class (no Docker; capsule-exported `JACKIN_*`; RUSTSEC via turso). See plans README reconcile log and scratch `waivers.md`.
+
+## Parallel dispatch (post-program residual work)
+
+Future residual execution uses [DISPATCH.md](DISPATCH.md): T0 package verify per
+worker, T1 `lint --strict` + T2 `ci --fast` once per merge wave, residual waves
+R1–R4 from the residual ledger. Do not re-serialize independent crate work.
