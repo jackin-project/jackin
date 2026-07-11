@@ -54,12 +54,12 @@ The operating assumption for this program is that the most frequent contributor 
 
 ### Advisory or scheduled lanes first
 
-1. **Coverage**: add `cargo-llvm-cov` as an artifact/report, not a global PR fail threshold. Start with crate-group trends for parser/protocol/config/terminal crates and only later ratchet specific critical surfaces.
-2. **Miri**: run a narrow scheduled/manual lane for pure crates and deterministic parser/protocol/config tests. Do not attempt full-workspace Miri across Docker, PTY, process, or OS-heavy code.
-3. **Sanitizers**: keep PR fuzz fast, but add scheduled sanitizer runs where fuzz targets already exist, especially terminal/parser paths.
-4. **Mutation testing**: evaluate `cargo-mutants` only on pure crates with fast deterministic tests, such as protocol/config/manifest/terminal parsing. Do not run it across Docker/TUI integration code.
+1. **Coverage**: ~~add `cargo-llvm-cov` as an artifact/report~~ **Shipped (2026-07-11, plan 035):** hygiene `coverage` job uploads `coverage.lcov` for term/core/config/manifest/protocol/env; no PR threshold.
+2. **Miri**: ~~run a narrow scheduled/manual lane~~ **Shipped (2026-07-11, plan 035):** hygiene `miri` job on pure crates (core/config/manifest/term); not full-workspace.
+3. **Sanitizers**: ~~add scheduled sanitizer runs~~ **Shipped (2026-07-11, plan 035):** scheduled ASan step on `damage_grid_process` in hygiene; PR fuzz stays `--sanitizer none`.
+4. **Mutation testing**: ~~evaluate `cargo-mutants`~~ **Shipped (2026-07-11, plan 035):** hygiene `mutants` job on jackin-manifest + jackin-config (advisory, never fails).
 5. **Public API drift — DECIDED Skip (operator 2026-07-09; plan 011 records):** dossier Skip wins (`docs/content/docs/reference/research/ci/rust-tooling/rust-ci-tooling.mdx`: a CLI workspace with no published library crate has nothing meaningful to diff). No `cargo-public-api` / `cargo-semver-checks` work; internal API discipline = tier gate + pub-surface ratchet + curated re-exports.
-6. **Workspace-hack experiment**: use `cargo hakari` only as an advisory investigation. Workspace-hack value should be proven with cargo timing artifacts before adding generated maintenance surface.
+6. **Workspace-hack experiment**: ~~use `cargo hakari` only as an advisory investigation~~ **Shipped investigation (2026-07-11, plan 035):** hygiene `hakari-timing` dry-run + timings artifact; no workspace-hack crate created.
 
 ### Lint ratchets and suppression hygiene
 
@@ -103,7 +103,7 @@ When a jackin❯-specific invariant cannot be expressed by any shipped lint, enc
 - **Config/manifest field consistency:** new `jackin.role.toml` / `config.toml` fields carry a `#[serde]` + a doc + a migration entry together; the lint flags a field added to a struct without the matching schema-version bump.
 - **Telemetry discipline:** exporting call sites go through the typed operation API and the semconv name registry (Phase 8), not ad-hoc `log::`/`tracing::` free-form strings; `clog!`/`cdebug!` stay legal as console/file renderers only.
 
-Author the lint library under `crates/jackin-lints/`, gate it advisory first (warn in a scheduled lane), and promote to PR-blocking once the false-positive rate is measured. dylint lints compile against a nightly-internal `rustc` API, so isolate them in their own crate and run them in the scheduled lane or a pinned-toolchain CI job rather than the default PR toolchain.
+Author the lint library under `crates/jackin-lints/`, gate it advisory first (warn in a scheduled lane), and promote to PR-blocking once the false-positive rate is measured. **Shipped scaffold (2026-07-11, plan 052):** workspace-excluded `crates/jackin-lints` with `render_thread_purity` + hygiene `dylint-advisory` (`continue-on-error`); three follow-up candidates remain. dylint lints compile against a nightly-internal `rustc` API, so isolate them in their own crate and run them in the scheduled lane or a pinned-toolchain CI job rather than the default PR toolchain.
 
 ### Whole-category “Stricter-er” as an adoption track
 
@@ -220,7 +220,8 @@ A hard rule without a failing test is a request; these make each one a fact.
 5. **Per-crate authority; the Codebase Map becomes an index.** The per-crate README is now the authoritative source for each crate's purpose, tier, allowed dependencies, structure, and public API. Evolve the single large `codebase-map.mdx` from a hand-maintained module map into a slim index that links into per-crate pages, instead of duplicating per-module structure prose that drifts from the code.
 6. **Shipped** — crate READMEs auto-extract into Fumadocs at docs-build time (<RepoFile path="docs/scripts/gen-crate-pages.ts">docs/scripts/gen-crate-pages.ts</RepoFile> → `/reference/crates/`; README is the single source of truth; generated pages are gitignored).
 7. **Shipped** — <RepoFile path="PROJECT_STRUCTURE.md">PROJECT_STRUCTURE.md</RepoFile> is slim: multi-repo ecosystem table + code↔docs contract; per-crate questions route to crate READMEs and the generated crates section.
-8. **README-freshness gate.** Once the auto-extraction pipeline exists, add a cheap heuristic check that a crate whose `src/` module layout changed in a PR also touched its README, so the “update README on structural change” rule in <RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile> is enforced, not just documented. **Partial (2026-07-11):** `cargo xtask lint agents` now asserts every workspace crate carries a README (presence); freshness-vs-diff still open (plan 050).
+8. **Shipped (2026-07-11, plan-050)** — `cargo xtask lint readme-freshness --base origin/main` gates structural `crates/*/src` A/D/R without a same-range README touch (advisory CI `continue-on-error`; promote after FP rate known). Pipeline-based content checks remain future work.
+
 9. **Brand and prose gates.** The `jackin❯` brand rule in <RepoFile path="RULES.md">RULES.md</RepoFile> is mechanically checkable: an xtask docs lint that rejects misspellings across prose surfaces (MDX, README, AGENTS files), with an allowlist for code identifiers, paths, and the documented plaintext fallback. Extend to other RULES.md prose rules as they prove greppable. **Shipped (2026-07-11):** `cargo xtask docs brand` strips fences/inline code/URLs then rejects `jackin'` / `Jackin` / `Jackin'`; existing research prose rewritten to `jackin❯`.
 10. **Spec↔test linkage gate.** Behavioral specs cite the tests covering each section; add an xtask check that every cited test id still exists, so specs cannot silently rot into fiction. **Shipped (2026-07-11):** INV tables carry a `Tests` column (`crate::module::tests::fn` or `MISSING`); `cargo xtask docs specs` verifies citations and warns on `MISSING`.
 11. **Documented-command and config-key drift gates.** Extract `jackin …` invocations from docs code fences and `try_parse` them against the real clap command tree in a test, so a renamed flag fails docs CI instead of an operator. Where docs tables describe config keys, generate or check them against the schema artifacts the `schema-check` gate already versions. **Command half shipped** (<RepoFile path="crates/jackin/tests/docs_commands.rs">crates/jackin/tests/docs_commands.rs</RepoFile>; research subtree excluded); config-key half still open.

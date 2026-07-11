@@ -64,6 +64,8 @@ cargo test --doc --workspace --locked
 | One crate | `cargo nextest run -p <crate>` + `cargo clippy -p <crate> --all-targets -- -D warnings` | before commit |
 | Cross-crate Rust | `cargo xtask ci --fast` | before PR |
 | Full non-Docker gate | `cargo xtask ci` | merge readiness |
+| One CI partition | `cargo xtask ci --only <lint\|policy\|tests\|snapshots\|docs\|msrv\|powerset>` | inner loop mirroring a CI lane |
+| Scoped feature powerset | `cargo hack check -p jackin -p jackin-diagnostics -p jackin-capsule -p jackin-agent-status -p jackin-term -p jackin-runtime --feature-powerset --all-targets --locked` | optional-feature crates (PR gate) |
 | Container/runtime behavior | `cargo xtask ci --e2e` (Docker running) | capsule/runtime PRs |
 | Docs/roadmap | `cargo xtask roadmap audit && cargo xtask docs repo-links && cargo xtask research check` | any docs edit |
 | File-size gate | `cargo xtask lint files` (`--format json\|github`) | structure / split PRs |
@@ -118,9 +120,18 @@ Does not apply to:
 
 ## Advisory measurement lanes (hygiene schedule)
 
+Trigger manually: `gh workflow run Hygiene` (or wait for the daily cron).
+
 | Lane | Job | Artifact | Gate? |
 |---|---|---|---|
+| Beta clippy canary | `beta-clippy-canary` | `beta-clippy-log` | advisory — `continue-on-error` |
+| Coverage (llvm-cov) | `coverage` | `coverage.lcov` | advisory — artifact only |
+| Miri pure crates | `miri` | step summary | advisory |
+| ASan fuzz (scheduled) | `scheduled-hygiene` step | step log | advisory (PR fuzz stays `--sanitizer none`) |
+| cargo-mutants | `mutants` | `mutants-out` | advisory — never fails job |
+| hakari timing | `hakari-timing` | `cargo-timings-hygiene-baseline` | advisory investigation only |
 | Cold-start hyperfine | `cold-start-bench` | `cold-start.json` (`jackin --help`, `jackin console --help`) | advisory — no PR gate |
 | rust-analyzer clean | `rust-analyzer-clean` | `ra-stats.txt` | advisory — `continue-on-error` on error grep |
 | Per-crate build times | `build-time-measure` | `build-times.json` (5 crates × clean/incremental) | advisory — no PR gate |
+| dylint render purity | `dylint-advisory` | `dylint-findings` | advisory — `continue-on-error`; nightly pin in `crates/jackin-lints` |
 
