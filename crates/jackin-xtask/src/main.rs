@@ -18,6 +18,7 @@ mod pr;
 mod profile_matrix;
 mod pty_fixture;
 mod release_verify;
+mod readme_freshness;
 mod report;
 mod schema;
 mod suppressions;
@@ -142,6 +143,8 @@ enum LintCommand {
     ContainerPaths(container_paths_gate::LintContainerPathsArgs),
     /// Ownership-header contract for lib.rs/main.rs roots.
     Headers(headers::LintHeadersArgs),
+    /// README freshness vs structural src layout changes.
+    ReadmeFreshness(readme_freshness::LintReadmeFreshnessArgs),
     /// Bare-allow / per-lint expect suppression shrink-only reason-gate.
     Suppressions(suppressions::LintSuppressionsArgs),
 }
@@ -185,6 +188,7 @@ fn main() -> ExitCode {
             Some(LintCommand::Arch(args)) => arch::run(args),
             Some(LintCommand::ContainerPaths(args)) => container_paths_gate::run(args),
             Some(LintCommand::Headers(args)) => headers::run(args),
+            Some(LintCommand::ReadmeFreshness(args)) => readme_freshness::run(args),
             Some(LintCommand::Suppressions(args)) => suppressions::run(args),
             None => run_all_lints(strict),
         },

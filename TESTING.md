@@ -67,6 +67,7 @@ cargo test --doc --workspace --locked
 | Container/runtime behavior | `cargo xtask ci --e2e` (Docker running) | capsule/runtime PRs |
 | Docs/roadmap | `cargo xtask roadmap audit && cargo xtask docs repo-links && cargo xtask research check` | any docs edit |
 | File-size gate | `cargo xtask lint files` (`--format json\|github`) | structure / split PRs |
+| README freshness (advisory) | `cargo xtask lint readme-freshness --base origin/main` | structural `crates/*/src` A/D/R without README touch |
 | Agents gate | `cargo xtask lint agents` (`--format json\|github`) | new crate / AGENTS files |
 | TUI snapshots | `cargo nextest run -p jackin-capsule -p jackin-console` (insta snapshots live only in these two crates today) | TUI render changes |
 

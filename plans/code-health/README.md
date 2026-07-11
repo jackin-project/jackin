@@ -102,7 +102,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [047](047-maintainability-lint-census.md) | Census the 7 allowed maintainability lints; deny quiet ones, document noisy ones | 1 | P2 | S-M | TODO |
 | [048](048-advisory-lanes-wave-2.md) | Advisory lanes wave 2: hyperfine cold-start, rust-analyzer clean, build-time measurement | 4/6 | P3 | S-M | IN PROGRESS (operator-run external agent) |
 | [049](049-crate-readme-fumadocs-pipeline.md) | Crate-README → Fumadocs generated section; slim PROJECT_STRUCTURE.md | 5 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; residual: `repo-link-check` CI job runs without `bun run build`, so it never sees generated pages — add the generator step to that job) |
-| [050](050-readme-freshness-gate.md) | README-freshness gate (structural src change ⇒ README touched same PR) | 5 | P2 | S-M | TODO |
+| [050](050-readme-freshness-gate.md) | README-freshness gate (structural src change ⇒ README touched same PR) | 5 | P2 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; advisory CI first) |
 | [051](051-xtask-gate-reporter-core.md) | Machine-readable gate output core (human\|json\|github reporter; 2 exemplar gates) | 6 | P2 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; remaining gates = mechanical rollout) |
 | [052](052-dylint-scaffold-render-purity.md) | dylint scaffold: `crates/jackin-lints` + render-thread-purity lint, advisory nightly lane | 1 | P3 | M | TODO |
 | [053](053-tui-half-layer-spike.md) | TUI half-layer spike: prototype shared View dispatcher, finish-or-drop verdict | 2 | P3 | S-M | DONE (cherry-picked `f5015c9bc` onto `chore/rust-code-health-roadmap`) |
