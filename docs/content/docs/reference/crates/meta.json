@@ -1,0 +1,32 @@
+{
+  "title": "Behind jackin❯ — crates",
+  "pages": [
+    "jackin",
+    "jackin-agent-status",
+    "jackin-build-meta",
+    "jackin-capsule",
+    "jackin-config",
+    "jackin-console",
+    "jackin-console-oppicker",
+    "jackin-core",
+    "jackin-dev",
+    "jackin-diagnostics",
+    "jackin-docker",
+    "jackin-env",
+    "jackin-host",
+    "jackin-image",
+    "jackin-instance",
+    "jackin-isolation",
+    "jackin-launch-tui",
+    "jackin-manifest",
+    "jackin-pr-trailers",
+    "jackin-protocol",
+    "jackin-runtime",
+    "jackin-term",
+    "jackin-test-support",
+    "jackin-tui",
+    "jackin-tui-lookbook",
+    "jackin-usage",
+    "jackin-xtask"
+  ]
+}

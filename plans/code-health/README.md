@@ -101,7 +101,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [046](046-dind-chaos-lane.md) | Scheduled dind-E2E chaos variant (seeded faults; survival invariants) | 3 | P2 | M | TODO |
 | [047](047-maintainability-lint-census.md) | Census the 7 allowed maintainability lints; deny quiet ones, document noisy ones | 1 | P2 | S-M | TODO |
 | [048](048-advisory-lanes-wave-2.md) | Advisory lanes wave 2: hyperfine cold-start, rust-analyzer clean, build-time measurement | 4/6 | P3 | S-M | IN PROGRESS (operator-run external agent) |
-| [049](049-crate-readme-fumadocs-pipeline.md) | Crate-README → Fumadocs generated section; slim PROJECT_STRUCTURE.md | 5 | P2 | M | DONE (reviewed; `exec-plan-049` @ `c51da1280`, unmerged; found pre-existing CI gap: `repo-link-check` job runs without `bun run build`, so it never sees generated pages — small follow-up: add the generator step to that job) |
+| [049](049-crate-readme-fumadocs-pipeline.md) | Crate-README → Fumadocs generated section; slim PROJECT_STRUCTURE.md | 5 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; residual: `repo-link-check` CI job runs without `bun run build`, so it never sees generated pages — add the generator step to that job) |
 | [050](050-readme-freshness-gate.md) | README-freshness gate (structural src change ⇒ README touched same PR) | 5 | P2 | S-M | TODO |
 | [051](051-xtask-gate-reporter-core.md) | Machine-readable gate output core (human\|json\|github reporter; 2 exemplar gates) | 6 | P2 | S-M | TODO |
 | [052](052-dylint-scaffold-render-purity.md) | dylint scaffold: `crates/jackin-lints` + render-thread-purity lint, advisory nightly lane | 1 | P3 | M | TODO |
@@ -292,7 +292,7 @@ Real gaps measured by the phase audit, deliberately not planned this wave (large
 ### Phase 5/6 (docs/navigation)
 
 - ~~Documented-command drift gate~~ → **planned as [023](023-docs-command-drift-gate.md)**. The config-key half of roadmap item 11 (docs tables ↔ schema artifacts) remains deferred.
-- ~~Crate-README→Fumadocs extraction pipeline + PROJECT_STRUCTURE slim~~ → **planned as [049](049-crate-readme-fumadocs-pipeline.md)**; full Codebase-Map slimming follows once the generated section exists. ~~README freshness-vs-diff CI check~~ → **planned as [050](050-readme-freshness-gate.md)** (presence gate stays in 015). ~~rust-analyzer cleanliness lane~~ → **planned as [048](048-advisory-lanes-wave-2.md)**. ~~Machine-readable gate output~~ → core reporter + 2 exemplar gates **planned as [051](051-xtask-gate-reporter-core.md)**; per-gate rollout = mechanical follow-ups.
+- ~~Crate-README→Fumadocs extraction pipeline + PROJECT_STRUCTURE slim~~ → **shipped as [049](049-crate-readme-fumadocs-pipeline.md)**; full Codebase-Map slimming follows as a later pass. ~~README freshness-vs-diff CI check~~ → **planned as [050](050-readme-freshness-gate.md)** (presence gate stays in 015). ~~rust-analyzer cleanliness lane~~ → **planned as [048](048-advisory-lanes-wave-2.md)**. ~~Machine-readable gate output~~ → core reporter + 2 exemplar gates **planned as [051](051-xtask-gate-reporter-core.md)**; per-gate rollout = mechanical follow-ups.
 
 ### Phase 7/8 (loop/telemetry)
 
