@@ -31,7 +31,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [004](004-resize-coalesce-drops-frames.md) | Stop dropping the frame queued behind a coalesced resize | P1 | S | bug | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 | [007](007-osc8-hyperlink-map-bound.md) | Bound OSC 8 hyperlink maps; clear on reset | P2 | S-M | bug | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 | [008](008-launch-finalization-cleanup-guard.md) | Tear down DinD when a post-success finalization step fails | P2 | M | bug | DONE (in-tree on `chore/rust-code-health-roadmap`) |
-| [009](009-protocol-decoder-fuzz-and-truncation-tests.md) | Fuzz + truncation tests for protocol wire decoders | P2 | M | tests | DONE (reviewed; `exec-plan-009` @ `5816e42fe`, unmerged; fuzzed 6.4M execs clean on stable — ASan needs nightly, still unexercised) |
+| [009](009-protocol-decoder-fuzz-and-truncation-tests.md) | Fuzz + truncation tests for protocol wire decoders | P2 | M | tests | DONE (in-tree on `chore/rust-code-health-roadmap`; fuzz smoke ~9.9M execs clean with `--sanitizer none`) |
 
 ### Second wave — program infrastructure (respect the dependency notes)
 
@@ -70,7 +70,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
-| [028](028-dependency-hygiene-sweep.md) | Dependency hygiene: turso store boundary, ring exception, pin rationale | 1 | P3 | M | DONE (reviewed; `exec-plan-028` @ `38dfa4c2f`, unmerged; residual: `crates/jackin/src/cli/usage/store.rs` also imports turso directly — host-crate boundary is a small follow-up) |
+| [028](028-dependency-hygiene-sweep.md) | Dependency hygiene: turso store boundary, ring exception, pin rationale | 1 | P3 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; turso chokepoint in jackin-usage `store_backend`; ring@0.17.14 exception dropped; five runtime pins annotated. Residual: `crates/jackin/src/cli/usage/store.rs` still imports turso directly — host-crate follow-up) |
 | [029](029-docs-drift-reconciliation.md) | Docs drift: README links, Apple status, reserved envs, capsule README, codebase map | 5 | P3 | M | DONE (reviewed; `exec-plan-029` @ `f5122448e`, unmerged; reserved list is 19 names — plan's 20 overcounted `JACKIN_OPEN_LINKS`, which is deliberately settable) |
 | [030](030-console-view-model-structs.md) | Console editor/settings view-model structs (kills the 42-site type_complexity cluster) | 2 | P2 | M-L | TODO |
 | [031](031-op-probe-typed-error.md) | Typed `op` probe errors (`OpProbeError` in jackin-core; downcast classification) | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; enum in jackin-core; env constructs typed sources; oppicker downcasts first, substring fallback retained) |
@@ -238,7 +238,7 @@ High-value findings that are real but were not turned into first-wave plans (lar
 
 ### Dependencies
 
-- ~~DEP-turso-wrap, DEP-ring-license, DEP-pin-rationale~~ → **planned as [028](028-dependency-hygiene-sweep.md)** (turso usage re-verified: grown to 3 files; pin relaxations recorded as comments, not applied — a relaxation needs its own lockfile-refresh PR).
+- ~~DEP-turso-wrap, DEP-ring-license, DEP-pin-rationale~~ → **shipped as [028](028-dependency-hygiene-sweep.md)** (in-tree). Turso chokepoint is `jackin-usage::store_backend`; ring@0.17.14 exception deleted (unencountered); five runtime `=` pins annotated with archaeology-derived rationale. Pin relaxations recorded as comments only. Residual: host crate `crates/jackin/src/cli/usage/store.rs` still imports turso.
 
 ### DX / tooling (agent-contributor leverage)
 

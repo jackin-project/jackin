@@ -979,3 +979,53 @@ fn hello_rejects_unknown_color_presence_byte() {
         "unexpected error: {err:#}"
     );
 }
+
+#[test]
+fn decode_client_rejects_truncated_payloads_without_panic() {
+    // For every known client tag, a deliberately-too-short payload must not panic.
+    for tag in 0u8..=40 {
+        // 0-byte and 1-byte payloads exercise the length-prefix / field readers.
+        drop(decode_client(tag, Vec::new()));
+        drop(decode_client(tag, vec![0x00]));
+        drop(decode_client(tag, vec![0xFF, 0xFF, 0xFF, 0xFF]));
+    }
+    // The point is no panic; reaching here is the assertion.
+}
+
+#[test]
+fn decode_server_rejects_truncated_payloads_without_panic() {
+    for tag in 0u8..=40 {
+        drop(decode_server(tag, Vec::new()));
+        drop(decode_server(tag, vec![0x00]));
+        drop(decode_server(tag, vec![0xFF, 0xFF, 0xFF, 0xFF]));
+    }
+    // Server tags live in the 0x80+ range; cover those too.
+    for tag in 0x80u8..=0x8f {
+        drop(decode_server(tag, Vec::new()));
+        drop(decode_server(tag, vec![0x00]));
+        drop(decode_server(tag, vec![0xFF, 0xFF, 0xFF, 0xFF]));
+    }
+}
+
+#[test]
+fn decode_rejects_unknown_tags() {
+    // 0xFE is not a defined client or server frame tag.
+    assert!(decode_client(0xFE, Vec::new()).is_err());
+    assert!(decode_server(0xFE, Vec::new()).is_err());
+}
+
+#[test]
+fn truncated_valid_frame_fails_closed() {
+    // Welcome requires a 4-byte body; lopping a byte off a valid encoding
+    // must fail closed (Err), never panic. TAG_OUTPUT would tolerate a
+    // shorter body by design, so Welcome is the load-bearing case.
+    let frame = encode_server(ServerFrame::Welcome { session_count: 7 });
+    // frame = [tag, len(4 bytes BE), body…]
+    let tag = frame[0];
+    assert!(frame.len() > 5, "encoded welcome must carry a body");
+    let body = &frame[5..frame.len() - 1];
+    assert!(
+        decode_server(tag, body.to_vec()).is_err(),
+        "truncated welcome body must decode as Err"
+    );
+}
