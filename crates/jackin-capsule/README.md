@@ -57,6 +57,8 @@ Not responsible for: protocol encoding (`jackin-protocol`), host-side launch orc
 
 ## Public API
 
+`tui::pane_snapshot` exposes `pane_content_from_damagegrid` and range-scoped `pane_content_range_from_damagegrid` for content-coordinate row materialization (bench + selection/link paths).
+
 Library surface for integration tests and the binary: `daemon`, `client`, `config`, `session`, `tui`, `protocol`, `runtime_setup`, plus `logging`/`telemetry`/`usage` re-exports from `jackin-usage`. Most modules are `pub` so `tests/` and the binary can call them without spawning a PTY; production consumers outside this crate should not depend on capsule internals.
 
 ## How to verify

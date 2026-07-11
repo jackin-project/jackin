@@ -736,6 +736,20 @@ impl Session {
         crate::tui::pane_snapshot::pane_content_from_damagegrid(&self.shadow_grid, viewport_cols)
     }
 
+    /// Content-coordinate snapshot of `content_rows` only (half-open).
+    /// Element `i` is absolute content row `content_rows.start + i` (after clamp).
+    pub(crate) fn render_content_snapshot_range(
+        &self,
+        viewport_cols: u16,
+        content_rows: std::ops::Range<usize>,
+    ) -> Vec<RowSnapshot> {
+        crate::tui::pane_snapshot::pane_content_range_from_damagegrid(
+            &self.shadow_grid,
+            viewport_cols,
+            content_rows,
+        )
+    }
+
     pub(crate) fn diagnostic_tail(&self, max_rows: usize) -> Option<String> {
         if max_rows == 0 {
             return None;
