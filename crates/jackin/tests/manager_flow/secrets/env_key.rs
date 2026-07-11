@@ -1,3 +1,4 @@
+use jackin_core::WorkspaceName;
 use super::*;
 
 #[test]
@@ -103,7 +104,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(&paths)?;
-    ce.create_workspace("big-monorepo", ws)?;
+    ce.create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), ws)?;
     let mut config = ce.save()?;
 
     let cwd = temp.path();

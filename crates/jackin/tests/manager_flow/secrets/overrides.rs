@@ -1,3 +1,4 @@
+use jackin_core::WorkspaceName;
 use super::*;
 
 fn seed_override_picker_workspace(
@@ -57,7 +58,7 @@ fn seed_override_picker_workspace(
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(paths)?;
-    ce.create_workspace("big-monorepo", ws)?;
+    ce.create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), ws)?;
     ce.save()
 }
 

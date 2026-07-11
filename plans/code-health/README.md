@@ -80,7 +80,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
-| [033](033-characterization-launch-displace-pty.md) | Characterization: launch-core teardown, client displace seams, PTY fault recovery | 2/3 | P1 | M-L | TODO |
+| [033](033-characterization-launch-displace-pty.md) | Characterization: launch-core teardown, client displace seams, PTY fault recovery | 2/3 | P1 | M-L | DONE (suites B+C in-tree; suite A residual: full LaunchCore fixture deferred — grant helper floor exists) |
 | [034](034-numeric-and-easy-lint-families.md) | Numeric + easy-to-avoid lint families (census: near-zero candidates; sign-loss fix wave) | 1 | P1 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; truncation/precision/wrap remain allow) |
 | [035](035-advisory-verification-lanes.md) | Scheduled advisory lanes: llvm-cov, Miri, ASan fuzz, cargo-mutants, hakari timing | 1 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; hygiene coverage/miri/ASan/mutants/hakari jobs + mise pins) |
 | [036](036-process-boundary-xtask-cmd-and-timeout.md) | Process boundary: one xtask cmd module; `RunOptions.timeout` honored by ShellRunner | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`) |

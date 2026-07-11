@@ -1,7 +1,7 @@
 //! Tests for `session`.
 use super::{
-    AgentState, OscPolicy, Session, agent_model_args, build_agent_command, build_shell_command,
-    child_exit_reason, inject_status_env, osc8_uri_is_safe, validate_agent_slug,
+    AgentState, OscPolicy, Session, SessionEvent, agent_model_args, build_agent_command,
+    build_shell_command, child_exit_reason, inject_status_env, osc8_uri_is_safe, validate_agent_slug,
 };
 
 use std::path::Path;
@@ -1159,4 +1159,267 @@ fn diagnostic_tail_returns_last_nonblank_rows_oldest_first() {
         .diagnostic_tail(2)
         .expect("rendered rows must yield a tail");
     assert_eq!(tail, "bravo\ncharlie");
+}
+
+// --- plan 033 suite C: PTY fault recovery (FaultMasterPty) ---
+// Poisoned-mutex arms are MISSING (require a panicked holder thread).
+
+struct FaultMasterPty {
+    take_writer_err: Option<std::io::ErrorKind>,
+    clone_reader_err: Option<std::io::ErrorKind>,
+    writer_fails_after: Option<usize>,
+    reader_yields: Vec<Result<Vec<u8>, std::io::ErrorKind>>,
+    write_count: Arc<std::sync::atomic::AtomicUsize>,
+    reader_idx: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Default for FaultMasterPty {
+    fn default() -> Self {
+        Self {
+            take_writer_err: None,
+            clone_reader_err: None,
+            writer_fails_after: None,
+            reader_yields: Vec::new(),
+            write_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            reader_idx: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
+}
+
+struct FaultWriter {
+    fails_after: Option<usize>,
+    count: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl std::io::Write for FaultWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        use std::sync::atomic::Ordering;
+        let n = self.count.fetch_add(1, Ordering::SeqCst);
+        if self.fails_after.is_some_and(|after| n >= after) {
+            return Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+        }
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+struct FaultReader {
+    yields: Vec<Result<Vec<u8>, std::io::ErrorKind>>,
+    idx: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl std::io::Read for FaultReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use std::sync::atomic::Ordering;
+        let i = self.idx.fetch_add(1, Ordering::SeqCst);
+        if i >= self.yields.len() {
+            return Ok(0);
+        }
+        match &self.yields[i] {
+            Ok(data) => {
+                let n = data.len().min(buf.len());
+                buf[..n].copy_from_slice(&data[..n]);
+                Ok(n)
+            }
+            Err(kind) => Err(std::io::Error::from(*kind)),
+        }
+    }
+}
+
+impl MasterPty for FaultMasterPty {
+    fn resize(&self, _size: PtySize) -> Result<()> {
+        Ok(())
+    }
+    fn get_size(&self) -> Result<PtySize> {
+        Ok(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+    }
+    fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>> {
+        if let Some(kind) = self.clone_reader_err {
+            return Err(anyhow::anyhow!(std::io::Error::from(kind)));
+        }
+        Ok(Box::new(FaultReader {
+            yields: self.reader_yields.clone(),
+            idx: Arc::clone(&self.reader_idx),
+        }))
+    }
+    fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>> {
+        if let Some(kind) = self.take_writer_err {
+            return Err(anyhow::anyhow!(std::io::Error::from(kind)));
+        }
+        Ok(Box::new(FaultWriter {
+            fails_after: self.writer_fails_after,
+            count: Arc::clone(&self.write_count),
+        }))
+    }
+    #[cfg(unix)]
+    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+        None
+    }
+    #[cfg(unix)]
+    fn as_raw_fd(&self) -> Option<portable_pty::unix::RawFd> {
+        None
+    }
+    #[cfg(unix)]
+    fn tty_name(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+}
+
+/// Start the same writer/reader spawn_blocking tasks `Session::spawn` uses,
+/// against a scripted FaultMasterPty, so recovery branches are reachable.
+fn start_fault_pty_tasks(
+    fault: FaultMasterPty,
+) -> (
+    mpsc::UnboundedSender<Vec<u8>>,
+    mpsc::UnboundedReceiver<SessionEvent>,
+) {
+    let master: Arc<Mutex<Box<dyn MasterPty + Send>>> =
+        Arc::new(Mutex::new(Box::new(fault)));
+    let master_for_write = Arc::clone(&master);
+    let master_for_read = Arc::clone(&master);
+    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (event_tx, event_rx) = mpsc::unbounded_channel::<SessionEvent>();
+    let sid = 1u64;
+    let event_tx_writer_err = event_tx.clone();
+    tokio::task::spawn_blocking(move || {
+        let writer = match master_for_write.lock() {
+            Err(_) => None,
+            Ok(guard) => match guard.take_writer() {
+                Ok(w) => Some(w),
+                Err(_) => None,
+            },
+        };
+        let Some(mut writer) = writer else {
+            drop(event_tx_writer_err.send(SessionEvent::Exited {
+                session_id: sid,
+                reason: Some("session PTY writer failed to initialize".to_owned()),
+            }));
+            return;
+        };
+        while let Some(data) = input_rx.blocking_recv() {
+            if let Err(e) = std::io::Write::write_all(&mut writer, &data) {
+                drop(event_tx_writer_err.send(SessionEvent::Exited {
+                    session_id: sid,
+                    reason: Some(format!("session PTY write failed: {e}")),
+                }));
+                return;
+            }
+        }
+    });
+    let event_tx_reader_err = event_tx.clone();
+    tokio::task::spawn_blocking(move || {
+        let reader = match master_for_read.lock() {
+            Err(_) => None,
+            Ok(guard) => match guard.try_clone_reader() {
+                Ok(r) => Some(r),
+                Err(_) => None,
+            },
+        };
+        let Some(mut reader) = reader else {
+            drop(event_tx_reader_err.send(SessionEvent::Exited {
+                session_id: sid,
+                reason: Some("session PTY reader failed to initialize".to_owned()),
+            }));
+            return;
+        };
+        let mut buf = [0u8; 4096];
+        loop {
+            match std::io::Read::read(&mut reader, &mut buf) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(_) => break, // read error: no Exited (reaper is authoritative)
+            }
+        }
+    });
+    (input_tx, event_rx)
+}
+
+#[tokio::test]
+async fn writer_init_failure_emits_exited_with_reason() {
+    let fault = FaultMasterPty {
+        take_writer_err: Some(std::io::ErrorKind::PermissionDenied),
+        ..Default::default()
+    };
+    let (_input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    let ev = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+        .await
+        .expect("timeout")
+        .expect("channel closed");
+    match ev {
+        SessionEvent::Exited { reason, .. } => {
+            assert_eq!(
+                reason.as_deref(),
+                Some("session PTY writer failed to initialize")
+            );
+        }
+        other => panic!("expected Exited, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn reader_init_failure_emits_exited_with_reason() {
+    let fault = FaultMasterPty {
+        clone_reader_err: Some(std::io::ErrorKind::PermissionDenied),
+        ..Default::default()
+    };
+    let (_input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    let ev = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+        .await
+        .expect("timeout")
+        .expect("channel closed");
+    match ev {
+        SessionEvent::Exited { reason, .. } => {
+            assert_eq!(
+                reason.as_deref(),
+                Some("session PTY reader failed to initialize")
+            );
+        }
+        other => panic!("expected Exited, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn mid_stream_write_failure_emits_exited() {
+    let fault = FaultMasterPty {
+        writer_fails_after: Some(0),
+        ..Default::default()
+    };
+    let (input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    assert!(input_tx.send(b"x".to_vec()).is_ok());
+    let ev = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+        .await
+        .expect("timeout")
+        .expect("channel closed");
+    match ev {
+        SessionEvent::Exited { reason, .. } => {
+            let r = reason.expect("reason");
+            assert!(
+                r.starts_with("session PTY write failed:"),
+                "unexpected reason: {r}"
+            );
+        }
+        other => panic!("expected Exited, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn read_error_breaks_without_exited_event() {
+    let fault = FaultMasterPty {
+        reader_yields: vec![Err(std::io::ErrorKind::BrokenPipe)],
+        ..Default::default()
+    };
+    let (_input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    // Reader should break without Exited; give tasks a moment then try_recv.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(
+        event_rx.try_recv().is_err(),
+        "read error must not emit Exited (reaper is authoritative)"
+    );
 }

@@ -3,6 +3,7 @@
 //! terminal.
 
 #![expect(
+use jackin_core::WorkspaceName;
     clippy::panic,
     clippy::expect_used,
     reason = "manager flow tests should fail immediately when expected UI state is absent"
@@ -105,7 +106,7 @@ fn seed_config_with_env(
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(paths)?;
-    ce.create_workspace("big-monorepo", ws)?;
+    ce.create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), ws)?;
     ce.save()
 }
 
@@ -270,7 +271,7 @@ fn seed_config_with_agents(
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(paths)?;
-    ce.create_workspace("multi-role-ws", ws)?;
+    ce.create_workspace(&WorkspaceName::parse("multi-role-ws").unwrap(), ws)?;
     ce.save()
 }
 
@@ -305,7 +306,7 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
     };
     {
         let mut ce = ConfigEditor::open(&paths)?;
-        ce.create_workspace("freshly-created", new_ws)?;
+        ce.create_workspace(&WorkspaceName::parse("freshly-created").unwrap(), new_ws)?;
         config = ce.save()?;
     }
 
@@ -350,7 +351,7 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
     // Rename "multi-role-ws" → "renamed-ws" via ConfigEditor.
     {
         let mut ce = ConfigEditor::open(&paths)?;
-        ce.rename_workspace("multi-role-ws", "renamed-ws")?;
+        ce.rename_workspace(&WorkspaceName::parse("multi-role-ws").unwrap(), &WorkspaceName::parse("renamed-ws").unwrap())?;
         config = ce.save()?;
     }
 
@@ -480,7 +481,7 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     };
     let mut config = {
         let mut ce = ConfigEditor::open(&paths)?;
-        ce.create_workspace("survivor-ws", second)?;
+        ce.create_workspace(&WorkspaceName::parse("survivor-ws").unwrap(), second)?;
         ce.save()?
     };
     let cwd = temp.path();

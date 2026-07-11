@@ -1,3 +1,4 @@
+use jackin_core::WorkspaceName;
 use super::*;
 use jackin::console::tui::state::{SecretsPickerTarget, TextInputTarget};
 
@@ -258,7 +259,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(&paths)?;
-    ce.create_workspace("big-monorepo", ws)?;
+    ce.create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), ws)?;
     let mut config = ce.save()?;
 
     let cwd = temp.path();

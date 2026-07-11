@@ -7632,3 +7632,86 @@ fn build_exit_inspect_rows_groups_repos_with_header_and_file_rows() {
         .collect();
     assert_eq!(file_rows, ["M src/main.rs", "? new.rs"]);
 }
+
+// --- plan 033 suite B: displace seams ---
+// The select-loop drain + initial-burst ordering inside run_daemon remains
+// covered only by the daemon loop itself (plan 032 MISSING worklist).
+
+#[tokio::test(start_paused = true)]
+async fn detach_attached_task_sends_shutdown_and_aborts_reader() {
+    use crate::attach_protocol::detach_attached_task;
+    use jackin_protocol::attach::TAG_SHUTDOWN;
+    use std::time::Duration;
+    use tokio::sync::mpsc;
+
+    let mut mux = single_pane_tab_mux();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    mux.client.attach(tx);
+    let parked = tokio::spawn(async {
+        std::future::pending::<()>().await;
+    });
+    mux.attached_task = Some(parked);
+    detach_attached_task(&mut mux, "takeover").await;
+    let frame = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("timeout waiting shutdown")
+        .expect("channel closed without shutdown");
+    assert_eq!(frame[0], TAG_SHUTDOWN);
+    assert!(
+        mux.attached_task.is_none()
+            || mux
+                .attached_task
+                .as_ref()
+                .is_some_and(tokio::task::JoinHandle::is_finished)
+    );
+}
+
+#[tokio::test]
+async fn client_writer_attach_displaces_prior_sender() {
+    use jackin_protocol::attach::{ServerFrame, TAG_BELL};
+    use std::time::Duration;
+    use tokio::sync::mpsc;
+
+    let mut mux = single_pane_tab_mux();
+    let (tx_a, mut rx_a) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (tx_b, mut rx_b) = mpsc::unbounded_channel::<Vec<u8>>();
+    mux.client.attach(tx_a);
+    mux.client.attach(tx_b);
+    mux.client.send_protocol_frame(ServerFrame::Bell);
+    assert!(
+        rx_a.try_recv().is_err(),
+        "prior client must be displaced (A must not receive)"
+    );
+    let got = tokio::time::timeout(Duration::from_secs(1), rx_b.recv())
+        .await
+        .expect("timeout waiting for B")
+        .expect("B closed");
+    assert_eq!(got[0], TAG_BELL);
+}
+
+#[tokio::test]
+async fn input_frames_apply_to_post_takeover_mux() {
+    use crate::attach_protocol::detach_attached_task;
+    use crate::daemon::control::handle_client_frame;
+    use jackin_protocol::attach::ClientFrame;
+    use std::time::Duration;
+    use tokio::sync::mpsc;
+
+    let mut mux = single_pane_tab_mux();
+    let (session, mut input_rx) = test_session(24, 80);
+    mux.sessions.insert(1, session);
+    mux.tabs[0] = Tab::new_single("Test", 1, "test");
+
+    let (tx_old, _rx_old) = mpsc::unbounded_channel::<Vec<u8>>();
+    mux.client.attach(tx_old);
+    detach_attached_task(&mut mux, "takeover").await;
+    let (tx_new, _rx_new) = mpsc::unbounded_channel::<Vec<u8>>();
+    mux.client.attach(tx_new);
+
+    handle_client_frame(&mut mux, ClientFrame::Input(b"x".to_vec()));
+    let got = tokio::time::timeout(Duration::from_secs(1), input_rx.recv())
+        .await
+        .expect("timeout waiting for session input")
+        .expect("session input channel closed");
+    assert_eq!(got, b"x");
+}

@@ -1,3 +1,8 @@
+//! Grant-validation helpers used by `run_launch_core` (plan 033 suite A floor).
+//! Full `run_launch_core` LaunchCore fixture is residual: constructing every
+//! field needs a dedicated builder; grant-path cleanup order stays covered via
+//! LoadCleanup / FakeDockerClient tests elsewhere.
+
 use super::*;
 use crate::runtime::docker_profile::DockerGrants;
 
