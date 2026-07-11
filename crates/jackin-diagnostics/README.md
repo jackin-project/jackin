@@ -6,7 +6,7 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 
 ## What this crate owns
 
-- Structured run diagnostics (`run`, `summary`, `observability`) and the debug-mode substrate (`debug_log`, `logging`).
+- Structured run diagnostics (`run`, `summary`, `observability`) and the debug-mode substrate (`debug_log_adapter` installing the `jackin-core` `debug_log!` sink, plus `logging`).
 - Secret scrubbing (`secret_scrub`, `redact`) so logs/telemetry never leak credentials.
 - Build-log capture (`build_log`), operator notices (`operator_notice`), and screen/terminal reporting (`screen`, `terminal`).
 
@@ -25,7 +25,7 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 | [`conformance.rs`](src/conformance.rs) · [`conformance/`](src/conformance) | telemetry acceptance scenario | [`tests.rs`](src/conformance/tests.rs) |
 | [`metrics.rs`](src/metrics.rs) · [`metrics/`](src/metrics) | hot-path metric instruments | [`tests.rs`](src/metrics/tests.rs) |
 | [`observability.rs`](src/observability.rs) · [`observability/`](src/observability) | OTLP tier | [`tests.rs`](src/observability/tests.rs) |
-| [`debug_log.rs`](src/debug_log.rs) · [`debug_log/`](src/debug_log) | `debug_log!`/`clog!`/`cdebug!` substrate | [`tests.rs`](src/debug_log/tests.rs) |
+| [`debug_log_adapter.rs`](src/debug_log_adapter.rs) | host sink install for `jackin-core::debug_log!` | — |
 | [`logging.rs`](src/logging.rs) | logging init | — |
 | [`secret_scrub.rs`](src/secret_scrub.rs) · [`secret_scrub/`](src/secret_scrub) | secret scrubbing | [`tests.rs`](src/secret_scrub/tests.rs) |
 | [`redact.rs`](src/redact.rs) · [`redact/`](src/redact) | redaction | [`tests.rs`](src/redact/tests.rs) |
