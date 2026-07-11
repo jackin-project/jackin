@@ -592,7 +592,9 @@ impl ClipboardImageError {
         match self {
             Self::Empty => "clipboard image transfer is empty",
             Self::TooLarge => "clipboard image transfer exceeds cap",
-            Self::UnsupportedFormat => "clipboard image magic bytes do not match a supported format",
+            Self::UnsupportedFormat => {
+                "clipboard image magic bytes do not match a supported format"
+            }
             Self::DigestMismatch => "clipboard image transfer SHA-256 mismatch",
             Self::ChunkSequence => "clipboard image transfer chunk offset did not match expected",
             Self::MissingTransfer => "clipboard image transfer has no active start",

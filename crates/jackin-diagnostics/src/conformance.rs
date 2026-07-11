@@ -6,10 +6,10 @@
 
 #![cfg(all(test, feature = "otlp"))]
 
+use crate::RunDiagnostics;
 use crate::observability::{TestExport, test_layers};
 use crate::operation::{OperationLevel, operation_log, operation_span};
 use crate::screen::{Screen, enter_screen};
-use crate::RunDiagnostics;
 use jackin_core::JackinPaths;
 
 /// In-source export-volume budgets (measured seeds + ~20% slack).

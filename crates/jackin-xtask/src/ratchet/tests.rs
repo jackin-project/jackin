@@ -37,12 +37,18 @@ fn numeric_stale_under_cap_fails() {
 
 #[test]
 fn numeric_missing_stale_fails() {
-    assert_eq!(check_numeric_entry(None, 1938, 1850), NumericVerdict::StaleMissing);
+    assert_eq!(
+        check_numeric_entry(None, 1938, 1850),
+        NumericVerdict::StaleMissing
+    );
 }
 
 #[test]
 fn numeric_steady_state_ok() {
-    assert_eq!(check_numeric_entry(Some(1938), 1938, 1850), NumericVerdict::Ok);
+    assert_eq!(
+        check_numeric_entry(Some(1938), 1938, 1850),
+        NumericVerdict::Ok
+    );
 }
 
 #[test]
@@ -63,7 +69,10 @@ fn presence_stale_and_new() {
     let mut allowed = BTreeMap::new();
     allowed.insert("b.rs".into(), ());
     let v = check_presence(&violations, &allowed);
-    assert!(v.iter().any(|(k, ver)| k == "b.rs" && *ver == PresenceVerdict::Stale));
+    assert!(
+        v.iter()
+            .any(|(k, ver)| k == "b.rs" && *ver == PresenceVerdict::Stale)
+    );
     assert!(v.iter().any(|(k, ver)| {
         k == "a.rs" && matches!(ver, PresenceVerdict::New { reason } if reason == "bad")
     }));

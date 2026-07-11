@@ -8,7 +8,6 @@
     reason = "manager flow tests should fail immediately when expected UI state is absent"
 )]
 
-use jackin_core::WorkspaceName;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin::{
@@ -27,6 +26,7 @@ use jackin::{
 };
 use jackin_config::{AppConfig, ConfigEditor};
 use jackin_core::JackinPaths;
+use jackin_core::WorkspaceName;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use tempfile::tempdir;
@@ -351,7 +351,10 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
     // Rename "multi-role-ws" → "renamed-ws" via ConfigEditor.
     {
         let mut ce = ConfigEditor::open(&paths)?;
-        ce.rename_workspace(&WorkspaceName::parse("multi-role-ws").unwrap(), &WorkspaceName::parse("renamed-ws").unwrap())?;
+        ce.rename_workspace(
+            &WorkspaceName::parse("multi-role-ws").unwrap(),
+            &WorkspaceName::parse("renamed-ws").unwrap(),
+        )?;
         config = ce.save()?;
     }
 

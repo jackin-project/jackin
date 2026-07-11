@@ -170,7 +170,9 @@ fn operation_log_console_mirror_carries_prefix() {
 
     let lines = drain_debug_buffer_for_test();
     assert!(
-        lines.iter().any(|line| line.contains("[jackin debug docker]")),
+        lines
+            .iter()
+            .any(|line| line.contains("[jackin debug docker]")),
         "console mirror must carry the render-boundary prefix: {lines:?}"
     );
     assert!(

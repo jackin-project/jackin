@@ -352,7 +352,9 @@ fn clipboard_image_transfer_client_frames_roundtrip() {
 
 #[test]
 fn clipboard_image_error_client_frame_roundtrips() {
-    let frame = ClientFrame::ClipboardImageError(ClipboardImageError::from_message("host path is not an image".to_owned()));
+    let frame = ClientFrame::ClipboardImageError(ClipboardImageError::from_message(
+        "host path is not an image".to_owned(),
+    ));
     let bytes = encode_client(frame.clone()).unwrap();
     assert_eq!(bytes[0], TAG_CLIPBOARD_IMAGE_ERROR);
 
@@ -1026,8 +1028,7 @@ fn truncated_valid_frame_fails_closed() {
 
 #[test]
 fn resize_rejects_short_payload_without_panic() {
-    let err = decode_client(TAG_RESIZE, vec![0x00, 0x01])
-        .expect_err("resize needs 4 bytes");
+    let err = decode_client(TAG_RESIZE, vec![0x00, 0x01]).expect_err("resize needs 4 bytes");
     assert!(
         err.to_string().contains("resize payload too short"),
         "unexpected error: {err:#}"
@@ -1036,8 +1037,8 @@ fn resize_rejects_short_payload_without_panic() {
 
 #[test]
 fn welcome_rejects_short_payload_without_panic() {
-    let err = decode_server(TAG_WELCOME, vec![0x00, 0x01, 0x02])
-        .expect_err("welcome needs 4 bytes");
+    let err =
+        decode_server(TAG_WELCOME, vec![0x00, 0x01, 0x02]).expect_err("welcome needs 4 bytes");
     assert!(
         err.to_string().contains("welcome payload too short"),
         "unexpected error: {err:#}"
@@ -1049,7 +1050,8 @@ fn clipboard_image_rejects_empty_payload_without_panic() {
     let err = decode_client(TAG_CLIPBOARD_IMAGE, Vec::new())
         .expect_err("clipboard image needs format byte");
     assert!(
-        err.to_string().contains("clipboard image payload too short"),
+        err.to_string()
+            .contains("clipboard image payload too short"),
         "unexpected error: {err:#}"
     );
 }
@@ -1112,4 +1114,3 @@ fn clipboard_image_error_from_message_classifies_known_shapes() {
         "offset-mismatch"
     );
 }
-

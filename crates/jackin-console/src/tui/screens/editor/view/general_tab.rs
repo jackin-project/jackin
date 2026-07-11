@@ -126,7 +126,15 @@ pub(crate) fn general_lines(
         .rows
         .iter()
         .enumerate()
-        .map(|(i, row)| render_editor_row(i, section.cursor, &row.label, &row.value, section.show_cursor))
+        .map(|(i, row)| {
+            render_editor_row(
+                i,
+                section.cursor,
+                &row.label,
+                &row.value,
+                section.show_cursor,
+            )
+        })
         .collect()
 }
 

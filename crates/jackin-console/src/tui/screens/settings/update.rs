@@ -1262,7 +1262,9 @@ pub fn settings_global_mounts_selection_plan(
     let selected = if delta.is_negative() {
         selected.saturating_sub(delta.unsigned_abs())
     } else {
-        selected.saturating_add(delta.unsigned_abs()).min(mount_count)
+        selected
+            .saturating_add(delta.unsigned_abs())
+            .min(mount_count)
     };
     SettingsSelectionScrollPlan {
         selected,

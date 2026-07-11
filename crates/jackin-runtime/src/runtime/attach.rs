@@ -381,12 +381,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     }
     let focus_arg = focus_session.map(|id| id.to_string());
     let run_as_user = crate::runtime::identity::host_run_as_user();
-    let mut args: Vec<&str> = vec![
-        "exec",
-        "-it",
-        container_name,
-        container_paths::CAPSULE_BIN,
-    ];
+    let mut args: Vec<&str> = vec!["exec", "-it", container_name, container_paths::CAPSULE_BIN];
     if let Some(flag) = host_alt_screen_exec_flag() {
         args.insert(1, flag);
     }

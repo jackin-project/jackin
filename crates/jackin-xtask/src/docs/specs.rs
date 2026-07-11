@@ -229,10 +229,7 @@ fn has_fn(text: &str, fn_name: &str) -> bool {
 }
 
 fn is_fn_name_boundary(after: &str) -> bool {
-    after.is_empty()
-        || after.starts_with('(')
-        || after.starts_with('<')
-        || after.starts_with("::")
+    after.is_empty() || after.starts_with('(') || after.starts_with('<') || after.starts_with("::")
 }
 
 fn relative(root: &Path, path: &Path) -> String {

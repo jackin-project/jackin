@@ -66,7 +66,9 @@ pub(crate) fn run(args: LintContainerPathsArgs) -> Result<()> {
 
     if args.print_allowlist {
         emit("# Regenerated residual `/jackin` literal ledger. Review, then write to");
-        emit(&format!("# {ALLOWLIST_PATH}. Shrink-only — never grow a row."));
+        emit(&format!(
+            "# {ALLOWLIST_PATH}. Shrink-only — never grow a row."
+        ));
         emit("");
         for (path, n) in &measured {
             emit("[[file]]");
@@ -154,8 +156,8 @@ fn measure_literals(root: &Path) -> Result<BTreeMap<String, usize>> {
         if entry.components().any(|c| c.as_os_str() == "tests") {
             continue;
         }
-        let text = fs::read_to_string(&entry)
-            .with_context(|| format!("reading {}", entry.display()))?;
+        let text =
+            fs::read_to_string(&entry).with_context(|| format!("reading {}", entry.display()))?;
         let n = text.matches("\"/jackin").count();
         if n > 0 {
             counts.insert(rel, n);

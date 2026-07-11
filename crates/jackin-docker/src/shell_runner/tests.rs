@@ -341,7 +341,6 @@ async fn capture_secret_suppresses_stdout_debug_echo() {
     }
 }
 
-
 #[cfg(unix)]
 #[tokio::test]
 async fn run_times_out_and_kills_sleep() {
@@ -372,7 +371,6 @@ async fn run_completes_before_timeout() {
         .await
         .expect("sleep 0 should succeed within timeout");
 }
-
 
 #[cfg(unix)]
 #[tokio::test]

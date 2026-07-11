@@ -142,12 +142,7 @@ pub async fn wait_for_capsule(container_name: &str) -> Result<()> {
 /// can record an attach outcome — a non-zero exit distinguishes a crash from a
 /// clean detach.
 pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<Option<i32>> {
-    let mut args: Vec<&str> = vec![
-        "exec",
-        "-it",
-        container_name,
-        container_paths::CAPSULE_BIN,
-    ];
+    let mut args: Vec<&str> = vec!["exec", "-it", container_name, container_paths::CAPSULE_BIN];
 
     let focus_str;
     if let Some(id) = focus_session {

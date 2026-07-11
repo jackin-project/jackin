@@ -362,11 +362,12 @@ fn bounded_reader_maps_empty_and_failed_commands_to_none() {
 fn bounded_reader_propagates_spawn_failure_as_error() {
     // A missing program is a real error, not an empty-clipboard `None`.
     read_command_stdout_bounded(
-            Path::new("/nonexistent/jackin-no-such-binary"),
-            Vec::<&OsStr>::new(),
-            10,
-            "text",
-        ).unwrap_err();
+        Path::new("/nonexistent/jackin-no-such-binary"),
+        Vec::<&OsStr>::new(),
+        10,
+        "text",
+    )
+    .unwrap_err();
 }
 
 #[test]

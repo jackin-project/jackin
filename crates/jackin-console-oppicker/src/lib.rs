@@ -1006,8 +1006,7 @@ pub fn classify_probe_error(error: &anyhow::Error) -> OpPickerError {
             }
             // Timeout has no dedicated picker fatal state; same GenericFatal
             // path the substring classifier used for timeout wording.
-            jackin_core::OpProbeError::Timeout { .. }
-            | jackin_core::OpProbeError::Other { .. } => {
+            jackin_core::OpProbeError::Timeout { .. } | jackin_core::OpProbeError::Other { .. } => {
                 OpPickerError::Fatal(OpPickerFatalState::GenericFatal {
                     message: error.to_string(),
                 })

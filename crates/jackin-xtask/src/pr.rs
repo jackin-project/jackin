@@ -184,6 +184,5 @@ fn emit_body(skeleton: &str) {
     print!("{skeleton}");
 }
 
-
 #[cfg(test)]
 mod tests;

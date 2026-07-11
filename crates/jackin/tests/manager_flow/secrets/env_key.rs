@@ -1,5 +1,5 @@
-use jackin_core::WorkspaceName;
 use super::*;
+use jackin_core::WorkspaceName;
 
 #[test]
 fn env_key_modal_blocks_duplicate_workspace_key() -> Result<()> {

@@ -276,7 +276,9 @@ impl FocusedUsageView {
         let mut view = Self::unavailable("refreshing", now_epoch);
         view.focused_provider = provider.map(str::to_owned);
         view.account.provider_label.clear();
-        view.account.provider_label.push_str(provider.unwrap_or("Usage"));
+        view.account
+            .provider_label
+            .push_str(provider.unwrap_or("Usage"));
         view.account.account_label = String::new();
         view.status_bar_label.clear();
         view.status_bar_label.push_str("refreshing");

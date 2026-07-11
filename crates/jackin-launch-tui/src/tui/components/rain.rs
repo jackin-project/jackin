@@ -152,10 +152,7 @@ pub fn tick_rain(state: &mut RainState) {
 
         let head = column.head;
         if head >= 0 {
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "head checked non-negative above"
-            )]
+            #[expect(clippy::cast_sign_loss, reason = "head checked non-negative above")]
             let head_u = head as usize;
             if head_u < *rows {
                 grid[head_u][col] = Some(RainCell {

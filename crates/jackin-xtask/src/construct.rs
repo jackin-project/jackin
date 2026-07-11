@@ -507,11 +507,9 @@ fn builder_exists(builder: &str) -> bool {
     crate::cmd::run(&mut cmd).is_ok()
 }
 
-
 fn run_checked(mut cmd: Command) -> Result<()> {
     crate::cmd::run(&mut cmd)
 }
-
 
 /// Env value if the variable is set, else the computed default. A set-but-empty
 /// variable returns empty so explicit overrides are honored verbatim.
@@ -533,7 +531,6 @@ fn git_sha() -> Option<String> {
     let sha = stdout.trim().to_owned();
     (!sha.is_empty()).then_some(sha)
 }
-
 
 fn read_version_file() -> Option<String> {
     let raw = fs::read_to_string(VERSION_FILE).ok()?;

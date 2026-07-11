@@ -917,7 +917,7 @@ where
     let msg = encode_client(ClientFrame::ClipboardImageError(
         jackin_protocol::attach::ClipboardImageError::from_message(message.to_owned()),
     ))
-        .context("encoding ClipboardImageError frame")?;
+    .context("encoding ClipboardImageError frame")?;
     writer
         .write_all(&msg)
         .await

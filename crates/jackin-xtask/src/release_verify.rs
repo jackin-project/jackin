@@ -172,6 +172,5 @@ fn run_checked(cmd: &mut Command, _label: &str) -> Result<()> {
     crate::cmd::run(cmd)
 }
 
-
 #[cfg(test)]
 mod tests;

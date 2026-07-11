@@ -369,10 +369,7 @@ impl CodexWindowSnapshot {
     pub(crate) fn from_rpc(window: CodexRpcRateLimitWindow) -> Self {
         Self {
             used_percent: {
-                #[expect(
-                    clippy::cast_sign_loss,
-                    reason = "clamped to 0.0..=100.0 above"
-                )]
+                #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0 above")]
                 {
                     Some(window.used_percent.round().clamp(0.0, 100.0) as u8)
                 }

@@ -133,7 +133,10 @@ impl FakeDockerClient {
     }
 
     fn pop_inspect_network(&self) -> Option<NetworkRow> {
-        self.inspect_network_queue.borrow_mut().pop_front().flatten()
+        self.inspect_network_queue
+            .borrow_mut()
+            .pop_front()
+            .flatten()
     }
 }
 

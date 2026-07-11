@@ -100,7 +100,11 @@ pub(super) fn assert_no_stale_state_dirs(state_root: &Path, live_names: &[String
         return;
     }
     let live: std::collections::HashSet<&str> = live_names.iter().map(String::as_str).collect();
-    for entry in std::fs::read_dir(state_root).into_iter().flatten().flatten() {
+    for entry in std::fs::read_dir(state_root)
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
         let name = entry.file_name();
         let name = name.to_string_lossy();
         if name.starts_with("jk-") || name.starts_with("jackin-") {

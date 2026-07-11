@@ -26,9 +26,9 @@ use ratatui::{
 use std::collections::BTreeMap;
 
 use crate::tui::components::editor_rows::{
-    AuthLineRow, AuthSourceDisplay, AuthSourceValue, SecretEnvLineFrame,
-    SecretLineRow, SecretValueDisplay, action_row_style, auth_lines as shared_auth_lines,
-    auth_source_display, render_tab_strip, secret_env_lines,
+    AuthLineRow, AuthSourceDisplay, AuthSourceValue, SecretEnvLineFrame, SecretLineRow,
+    SecretValueDisplay, action_row_style, auth_lines as shared_auth_lines, auth_source_display,
+    render_tab_strip, secret_env_lines,
 };
 use crate::tui::components::footer_hints::{
     SettingsContextFooterMode, SettingsScreenFooterFacts, content_footer_items,
@@ -720,7 +720,11 @@ pub fn general_lines(
         vec![
             FieldRow::new(
                 "Co-author trailer",
-                if pending_coauthor_trailer { "enabled" } else { "disabled" },
+                if pending_coauthor_trailer {
+                    "enabled"
+                } else {
+                    "disabled"
+                },
             ),
             FieldRow::new(
                 "DCO sign-off",
@@ -732,7 +736,6 @@ pub fn general_lines(
         26,
     )
     .lines()
-
 }
 
 #[must_use]

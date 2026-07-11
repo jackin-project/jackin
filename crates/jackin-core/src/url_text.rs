@@ -20,13 +20,11 @@ pub fn has_url_scheme(token: &str) -> bool {
     if !first.is_ascii_alphabetic() {
         return false;
     }
-    token
-        .get(..colon)
-        .is_some_and(|scheme| {
-            scheme
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
-        })
+    token.get(..colon).is_some_and(|scheme| {
+        scheme
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
+    })
 }
 
 /// Redact query or fragment text before writing a URL to logs.

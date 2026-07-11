@@ -93,7 +93,10 @@ pub(super) async fn handle(
                 docker: None,
             };
             let mut editor = jackin_config::ConfigEditor::open(paths)?;
-            editor.create_workspace(&WorkspaceName::parse(&name).map_err(anyhow::Error::from)?, ws)?;
+            editor.create_workspace(
+                &WorkspaceName::parse(&name).map_err(anyhow::Error::from)?,
+                ws,
+            )?;
             editor.save()?;
             println!(
                 "Created workspace {name:?} (workdir: {}, {mount_count} mount(s)).",

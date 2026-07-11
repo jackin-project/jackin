@@ -99,7 +99,9 @@ fn min_engine_version_defaults_and_gates_future_engines() {
     ))
     .unwrap();
     assert_eq!(future.min_engine_version, RULE_ENGINE_VERSION + 1);
-    future.validate().expect_err("a pack requiring a newer engine must be rejected");
+    future
+        .validate()
+        .expect_err("a pack requiring a newer engine must be rejected");
 
     // The current engine version is accepted.
     let current: RulePack = toml::from_str(&format!(
@@ -951,14 +953,16 @@ all = [ { regex = "esc to interrupt" }, { line_regex = '^\s*[*]\s' } ]
 #[test]
 fn gate_rejects_empty_all_any() {
     for empty in ["{ any = [] }", "{ all = [] }"] {
-        validate_gate(empty).expect_err(&format!("vacuous gate `{empty}` must be rejected at load"));
+        validate_gate(empty)
+            .expect_err(&format!("vacuous gate `{empty}` must be rejected at load"));
     }
 }
 
 #[test]
 fn gate_rejects_overlong_leaf() {
     let long = "x".repeat(513);
-    validate_gate(&format!("{{ contains = \"{long}\" }}")).expect_err("a >512-char gate leaf must be rejected");
+    validate_gate(&format!("{{ contains = \"{long}\" }}"))
+        .expect_err("a >512-char gate leaf must be rejected");
 }
 
 #[test]

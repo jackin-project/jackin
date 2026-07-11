@@ -102,8 +102,6 @@ fn warning_run_summary_counts_warning_cache_and_skipped_timing_events() {
     );
 }
 
-
-
 #[test]
 fn mixed_corpus_characterization_pins_complete_summary() {
     // include_str keeps the corpus in the crate even if the tests/fixtures path is

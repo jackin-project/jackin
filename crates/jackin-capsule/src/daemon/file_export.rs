@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
+use jackin_core::container_paths;
 use jackin_protocol::attach::{
     FileExportChunk, FileExportEnd, FileExportStart, MAX_FILE_EXPORT_CHUNK_BYTES,
     MAX_FILE_EXPORT_NAME_BYTES, MAX_FILE_EXPORT_PATH_BYTES, ServerFrame,
 };
-use jackin_core::container_paths;
 use sha2::{Digest, Sha256};
 
 use super::Multiplexer;

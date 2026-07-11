@@ -1150,7 +1150,11 @@ fn seed_agent_home(
 /// outcome; the caller copies auth only on [`SeedOutcome::FirstSeed`].
 fn seed_agent_home_from_enum(agent: jackin_core::Agent) -> Result<SeedOutcome> {
     let paths = agent.runtime().state_paths();
-    let data_default = format!("{}/{}", container_paths::DEFAULT_HOME_DIR, paths.credential_dir);
+    let data_default = format!(
+        "{}/{}",
+        container_paths::DEFAULT_HOME_DIR,
+        paths.credential_dir
+    );
     let data_dst = format!("/home/agent/{}", paths.credential_dir);
     match paths.config_dir {
         Some(config_dir) => {

@@ -1,13 +1,17 @@
 //! Tests for `naming`.
-use jackin_core::WorkspaceName;
 use super::*;
+use jackin_core::WorkspaceName;
 use jackin_core::selector::RoleSelector;
 
 #[test]
 fn new_workspace_container_name_is_compact_dns_safe() {
     let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
 
-    let name = container_name_with_id(Some(&WorkspaceName::parse("chainargos-project").unwrap()), &selector, "k7p9m2xq");
+    let name = container_name_with_id(
+        Some(&WorkspaceName::parse("chainargos-project").unwrap()),
+        &selector,
+        "k7p9m2xq",
+    );
 
     assert_eq!(name, "jk-k7p9m2xq-chainargosproject-agentbrown");
     assert!(is_dns_label(&name));
@@ -29,7 +33,9 @@ fn long_container_name_fits_dind_dns_budget() {
     let selector = RoleSelector::new(None, "role-name-with-a-very-long-human-friendly-label");
 
     let name = container_name_with_id(
-        Some(&WorkspaceName::parse("workspace-name-with-a-very-long-human-friendly-label").unwrap()),
+        Some(
+            &WorkspaceName::parse("workspace-name-with-a-very-long-human-friendly-label").unwrap(),
+        ),
         &selector,
         "k7p9m2xq",
     );

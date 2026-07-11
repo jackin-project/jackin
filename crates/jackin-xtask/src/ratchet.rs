@@ -289,12 +289,7 @@ fn measure_file_lines(root: &Path, tests_only: bool) -> Result<BTreeMap<String, 
 
 fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
     let mut out = BTreeMap::new();
-    let candidates = [
-        "AGENTS.md",
-        "crates/AGENTS.md",
-        "Claude.md",
-        "CLAUDE.md",
-    ];
+    let candidates = ["AGENTS.md", "crates/AGENTS.md", "Claude.md", "CLAUDE.md"];
     for rel in candidates {
         let path = root.join(rel);
         if path.is_file() {

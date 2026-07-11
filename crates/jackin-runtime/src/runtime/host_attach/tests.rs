@@ -158,8 +158,16 @@ async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
         panic!("expected ClipboardImageError");
     };
 
-    assert!(error.message().contains("host clipboard image probe failed"));
-    assert!(error.message().contains("WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip"));
+    assert!(
+        error
+            .message()
+            .contains("host clipboard image probe failed")
+    );
+    assert!(
+        error
+            .message()
+            .contains("WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip")
+    );
     assert_eq!(server.read(&mut tag).await.unwrap(), 0);
 }
 
@@ -187,7 +195,8 @@ async fn explicit_clipboard_path_request_mentions_file_url_support() {
         panic!("expected ClipboardImageError");
     };
 
-    assert_eq!(error.message(),
+    assert_eq!(
+        error.message(),
         "host clipboard text is not an absolute readable image path or file:// image URL"
     );
     assert_eq!(server.read(&mut tag).await.unwrap(), 0);
@@ -1276,6 +1285,10 @@ async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
         .unwrap();
     assert_eq!(
         frame,
-        ClientFrame::ClipboardImageError(jackin_protocol::attach::ClipboardImageError::from_message("Host action failed".to_owned()))
+        ClientFrame::ClipboardImageError(
+            jackin_protocol::attach::ClipboardImageError::from_message(
+                "Host action failed".to_owned()
+            )
+        )
     );
 }

@@ -1,6 +1,6 @@
 //! Tests for `workspace`.
-use jackin_core::WorkspaceName;
 use super::*;
+use jackin_core::WorkspaceName;
 
 fn ws_with_allowed(allowed: Vec<String>) -> WorkspaceConfig {
     WorkspaceConfig {
@@ -502,7 +502,8 @@ fn validate_workspace_config_surfaces_isolation_layout_errors() {
         dirty_exit_policy: None,
         docker: None,
     };
-    let err = validate_workspace_config(&WorkspaceName::parse("ws").unwrap(), &workspace).unwrap_err();
+    let err =
+        validate_workspace_config(&WorkspaceName::parse("ws").unwrap(), &workspace).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("nested inside"),

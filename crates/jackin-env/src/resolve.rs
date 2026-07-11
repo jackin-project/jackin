@@ -10,7 +10,6 @@ use jackin_core::op_reference::parse_op_reference;
 use jackin_core::op_types::OpItem;
 use jackin_core::{EnvValue, OpRef};
 
-
 /// Typed failures for operator-env validation and `op://` URI resolution.
 ///
 /// Constructed at the resolve boundary and either returned directly (pure

@@ -123,9 +123,19 @@ pub mod otel_events {
     /// Host subprocess span name (`ShellRunner` choke point, plan 041).
     pub const PROCESS_EXECUTE: &str = "process.execute";
     pub const ALL: &[&str] = &[
-        STAGE_STARTED, STAGE_DONE, STAGE_FAILED, STAGE_SKIPPED,
-        TIMING_STARTED, TIMING_DONE, DEBUG, SUBPROCESS_DONE, OTLP_INTERNAL,
-        RUN_SUMMARY, SLOW_FOREGROUND_WAIT, SESSION_DETACH, CLEAN_SHUTDOWN,
+        STAGE_STARTED,
+        STAGE_DONE,
+        STAGE_FAILED,
+        STAGE_SKIPPED,
+        TIMING_STARTED,
+        TIMING_DONE,
+        DEBUG,
+        SUBPROCESS_DONE,
+        OTLP_INTERNAL,
+        RUN_SUMMARY,
+        SLOW_FOREGROUND_WAIT,
+        SESSION_DETACH,
+        CLEAN_SHUTDOWN,
         PROCESS_EXECUTE,
     ];
 }
@@ -835,14 +845,10 @@ mod otlp {
         // Scope the export to jackin❯'s own telemetry. Dependency-internal
         // spans/logs stay out of OTLP unless the operator asks for them with
         // `JACKIN_OTEL_INTERNAL=1`.
-        let span_directive = export_filter_directive(export_level_for(
-            crate::TelemetrySink::OtlpSpans,
-            debug,
-        ));
-        let log_directive = export_filter_directive(export_level_for(
-            crate::TelemetrySink::OtlpLogs,
-            debug,
-        ));
+        let span_directive =
+            export_filter_directive(export_level_for(crate::TelemetrySink::OtlpSpans, debug));
+        let log_directive =
+            export_filter_directive(export_level_for(crate::TelemetrySink::OtlpLogs, debug));
         let installed = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
             .with(span_layer.with_filter(EnvFilter::new(span_directive)))
@@ -1034,14 +1040,10 @@ mod otlp {
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
-        let span_directive = export_filter_directive(export_level_for(
-            crate::TelemetrySink::OtlpSpans,
-            debug,
-        ));
-        let log_directive = export_filter_directive(export_level_for(
-            crate::TelemetrySink::OtlpLogs,
-            debug,
-        ));
+        let span_directive =
+            export_filter_directive(export_level_for(crate::TelemetrySink::OtlpSpans, debug));
+        let log_directive =
+            export_filter_directive(export_level_for(crate::TelemetrySink::OtlpLogs, debug));
         let subscriber = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
             .with(span_layer.with_filter(EnvFilter::new(span_directive)))
@@ -1181,94 +1183,94 @@ mod otlp {
             }));
             let cpu_sampler = std::sync::Arc::clone(&sampler);
             let _ = meter
-                    // semconv: process.cpu.utilization, unit "1", 0..1 fraction
-                    // of the CPUs available to the process.
-                    .f64_observable_gauge(super::otel_metrics::PROCESS_CPU_UTILIZATION)
-                    .with_unit("1")
-                    .with_description("Fraction of total host CPU used by the jackin process")
-                    .with_callback(move |observer| {
-                        if let Some((cpu_percent, _)) =
-                            cpu_sampler.lock().ok().and_then(|mut s| s.sample())
-                        {
-                            // `sysinfo` reports percent of one core; semconv
-                            // utilization is a 0..1 fraction of all cores.
-                            observer.observe(f64::from(cpu_percent) / 100.0 / cpu_count, &[]);
-                        }
-                    })
-                    .build();
+                // semconv: process.cpu.utilization, unit "1", 0..1 fraction
+                // of the CPUs available to the process.
+                .f64_observable_gauge(super::otel_metrics::PROCESS_CPU_UTILIZATION)
+                .with_unit("1")
+                .with_description("Fraction of total host CPU used by the jackin process")
+                .with_callback(move |observer| {
+                    if let Some((cpu_percent, _)) =
+                        cpu_sampler.lock().ok().and_then(|mut s| s.sample())
+                    {
+                        // `sysinfo` reports percent of one core; semconv
+                        // utilization is a 0..1 fraction of all cores.
+                        observer.observe(f64::from(cpu_percent) / 100.0 / cpu_count, &[]);
+                    }
+                })
+                .build();
             let _ = meter
-                    // semconv: process.memory.usage is an UpDownCounter (rises
-                    // and falls), not a gauge.
-                    .i64_observable_up_down_counter(super::otel_metrics::PROCESS_MEMORY_USAGE)
-                    .with_unit("By")
-                    .with_description("Resident set size of the jackin process")
-                    .with_callback(move |observer| {
-                        if let Some((_, memory_bytes)) =
-                            sampler.lock().ok().and_then(|mut s| s.sample())
-                        {
-                            observer.observe(i64::try_from(memory_bytes).unwrap_or(i64::MAX), &[]);
-                        }
-                    })
-                    .build();
+                // semconv: process.memory.usage is an UpDownCounter (rises
+                // and falls), not a gauge.
+                .i64_observable_up_down_counter(super::otel_metrics::PROCESS_MEMORY_USAGE)
+                .with_unit("By")
+                .with_description("Resident set size of the jackin process")
+                .with_callback(move |observer| {
+                    if let Some((_, memory_bytes)) =
+                        sampler.lock().ok().and_then(|mut s| s.sample())
+                    {
+                        observer.observe(i64::try_from(memory_bytes).unwrap_or(i64::MAX), &[]);
+                    }
+                })
+                .build();
         }
 
         if let Some(handle) = app_handle {
             let workers = handle.clone();
             let _ = meter
-                    .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_WORKERS)
-                    .with_description("Worker threads driving the tokio runtime")
-                    .with_callback(move |observer| {
-                        observer.observe(workers.metrics().num_workers() as u64, &[]);
-                    })
-                    .build();
+                .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_WORKERS)
+                .with_description("Worker threads driving the tokio runtime")
+                .with_callback(move |observer| {
+                    observer.observe(workers.metrics().num_workers() as u64, &[]);
+                })
+                .build();
             let alive = handle.clone();
             let _ = meter
-                    .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_ALIVE_TASKS)
-                    .with_description("Tasks currently alive in the tokio runtime")
-                    .with_callback(move |observer| {
-                        observer.observe(alive.metrics().num_alive_tasks() as u64, &[]);
-                    })
-                    .build();
+                .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_ALIVE_TASKS)
+                .with_description("Tasks currently alive in the tokio runtime")
+                .with_callback(move |observer| {
+                    observer.observe(alive.metrics().num_alive_tasks() as u64, &[]);
+                })
+                .build();
             let _ = meter
-                    .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH)
-                    .with_description("Tasks waiting in the tokio runtime's global queue")
-                    .with_callback(move |observer| {
-                        observer.observe(handle.metrics().global_queue_depth() as u64, &[]);
-                    })
-                    .build();
+                .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH)
+                .with_description("Tasks waiting in the tokio runtime's global queue")
+                .with_callback(move |observer| {
+                    observer.observe(handle.metrics().global_queue_depth() as u64, &[]);
+                })
+                .build();
         }
 
         let _ = meter
-                .u64_observable_counter(super::otel_metrics::JACKIN_DIAGNOSTICS_EVENTS)
-                .with_description("Diagnostics events recorded during the active jackin run")
-                .with_callback(|observer| {
-                    let Some(run) = crate::active_run() else {
-                        return;
-                    };
-                    let snapshot = run.domain_metrics_snapshot();
-                    for (kind, count) in snapshot.event_counts {
-                        observer.observe(count, &[KeyValue::new("kind", kind)]);
-                    }
-                })
-                .build();
+            .u64_observable_counter(super::otel_metrics::JACKIN_DIAGNOSTICS_EVENTS)
+            .with_description("Diagnostics events recorded during the active jackin run")
+            .with_callback(|observer| {
+                let Some(run) = crate::active_run() else {
+                    return;
+                };
+                let snapshot = run.domain_metrics_snapshot();
+                for (kind, count) in snapshot.event_counts {
+                    observer.observe(count, &[KeyValue::new("kind", kind)]);
+                }
+            })
+            .build();
         let _ = meter
-                .u64_observable_counter(super::otel_metrics::JACKIN_CACHE_HITS)
-                .with_description("Cache-hit diagnostics recorded during the active jackin run")
-                .with_callback(|observer| {
-                    if let Some(run) = crate::active_run() {
-                        observer.observe(run.domain_metrics_snapshot().cache_hits, &[]);
-                    }
-                })
-                .build();
+            .u64_observable_counter(super::otel_metrics::JACKIN_CACHE_HITS)
+            .with_description("Cache-hit diagnostics recorded during the active jackin run")
+            .with_callback(|observer| {
+                if let Some(run) = crate::active_run() {
+                    observer.observe(run.domain_metrics_snapshot().cache_hits, &[]);
+                }
+            })
+            .build();
         let _ = meter
-                .u64_observable_counter(super::otel_metrics::JACKIN_CACHE_MISSES)
-                .with_description("Cache-miss diagnostics recorded during the active jackin run")
-                .with_callback(|observer| {
-                    if let Some(run) = crate::active_run() {
-                        observer.observe(run.domain_metrics_snapshot().cache_misses, &[]);
-                    }
-                })
-                .build();
+            .u64_observable_counter(super::otel_metrics::JACKIN_CACHE_MISSES)
+            .with_description("Cache-miss diagnostics recorded during the active jackin run")
+            .with_callback(|observer| {
+                if let Some(run) = crate::active_run() {
+                    observer.observe(run.domain_metrics_snapshot().cache_misses, &[]);
+                }
+            })
+            .build();
 
         crate::metrics::install_hot_path(&meter);
 
@@ -1517,10 +1519,7 @@ pub(crate) fn correlation_ids(
             );
         }
     }
-    (
-        run_id.to_owned(),
-        fallback_span_id.map(str::to_owned),
-    )
+    (run_id.to_owned(), fallback_span_id.map(str::to_owned))
 }
 
 fn emit_jsonl_event_with_level(

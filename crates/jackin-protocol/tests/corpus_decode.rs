@@ -4,7 +4,11 @@
 //! `regenerate_corpus` test. Exhaustive matches on `ClientFrame` /
 //! `ServerFrame` force a fixture when a new variant is added.
 
-#![expect(clippy::unwrap_used, clippy::panic, reason = "integration corpus tests")]
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "integration corpus tests"
+)]
 
 use std::path::Path;
 
@@ -40,10 +44,16 @@ fn client_samples() -> Vec<(&'static str, ClientFrame)> {
         ),
         (
             "client_resize",
-            ClientFrame::Resize { rows: 40, cols: 120 },
+            ClientFrame::Resize {
+                rows: 40,
+                cols: 120,
+            },
         ),
         ("client_input", ClientFrame::Input(b"hi".to_vec())),
-        ("client_command", ClientFrame::Command(b"{\"k\":1}".to_vec())),
+        (
+            "client_command",
+            ClientFrame::Command(b"{\"k\":1}".to_vec()),
+        ),
         ("client_detach", ClientFrame::Detach),
         ("client_focus_in", ClientFrame::FocusIn),
         ("client_focus_out", ClientFrame::FocusOut),
@@ -72,7 +82,10 @@ fn client_samples() -> Vec<(&'static str, ClientFrame)> {
         ),
         (
             "client_clipboard_image_end",
-            ClientFrame::ClipboardImageEnd(ClipboardImageEnd { transfer_id: 1, sha256: [0u8; 32] }),
+            ClientFrame::ClipboardImageEnd(ClipboardImageEnd {
+                transfer_id: 1,
+                sha256: [0u8; 32],
+            }),
         ),
         (
             "client_clipboard_image_error",
@@ -84,12 +97,12 @@ fn client_samples() -> Vec<(&'static str, ClientFrame)> {
 
 fn server_samples() -> Vec<(&'static str, ServerFrame)> {
     vec![
-        (
-            "server_welcome",
-            ServerFrame::Welcome { session_count: 3 },
-        ),
+        ("server_welcome", ServerFrame::Welcome { session_count: 3 }),
         ("server_output", ServerFrame::Output(b"out".to_vec())),
-        ("server_session_list", ServerFrame::SessionList(b"[]".to_vec())),
+        (
+            "server_session_list",
+            ServerFrame::SessionList(b"[]".to_vec()),
+        ),
         (
             "server_shutdown",
             ServerFrame::Shutdown {
@@ -122,7 +135,10 @@ fn server_samples() -> Vec<(&'static str, ServerFrame)> {
         ),
         (
             "server_file_export_end",
-            ServerFrame::FileExportEnd(FileExportEnd { transfer_id: 2, sha256: [0u8; 32] }),
+            ServerFrame::FileExportEnd(FileExportEnd {
+                transfer_id: 2,
+                sha256: [0u8; 32],
+            }),
         ),
         (
             "server_host_reveal_path",
@@ -200,9 +216,8 @@ fn golden_client_frames_round_trip_decode() {
         assert!(!bytes.is_empty(), "{name}");
         let tag = bytes[0];
         let payload = bytes[5..].to_vec();
-        let decoded = attach::decode_client(tag, payload).unwrap_or_else(|e| {
-            panic!("{name}: decode failed: {e:#}")
-        });
+        let decoded = attach::decode_client(tag, payload)
+            .unwrap_or_else(|e| panic!("{name}: decode failed: {e:#}"));
         // Detach/Focus are unit-like; compare via re-encode equality where PartialEq holds.
         assert_eq!(decoded, frame, "{name}");
         // truncations must fail closed
@@ -233,9 +248,8 @@ fn golden_server_frames_round_trip_decode() {
         assert!(!bytes.is_empty(), "{name}");
         let tag = bytes[0];
         let payload = bytes[5..].to_vec();
-        let decoded = attach::decode_server(tag, payload).unwrap_or_else(|e| {
-            panic!("{name}: decode failed: {e:#}")
-        });
+        let decoded = attach::decode_server(tag, payload)
+            .unwrap_or_else(|e| panic!("{name}: decode failed: {e:#}"));
         assert_eq!(decoded, frame, "{name}");
         for cut in [1usize, 3, bytes.len().saturating_sub(1).max(1)] {
             if cut >= bytes.len() {

@@ -28,18 +28,19 @@ pub fn install_debug_log_sink() {
 }
 
 pub use logging::{
-    TelemetryLevel, TelemetrySink, begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line,
-    emit_debug_line, emit_operator_notice, end_debug_buffering, format_debug_line, is_debug_mode,
-    set_config_telemetry, set_debug_mode, sink_level, telemetry_level, telemetry_level_name,
+    TelemetryLevel, TelemetrySink, begin_debug_buffering, drain_debug_buffer_for_test,
+    emit_compact_line, emit_debug_line, emit_operator_notice, end_debug_buffering,
+    format_debug_line, is_debug_mode, set_config_telemetry, set_debug_mode, sink_level,
+    telemetry_level, telemetry_level_name,
+};
+pub use metrics::{
+    incr_accounts_refreshed, incr_errors, incr_mouse_events, incr_terminal_bytes_received,
+    record_frame, record_render,
 };
 pub use observability::{
     ContainerOtlp, backend_query_hint, configured_endpoint, configured_endpoint_summary,
     container_otlp, init_capsule_tracing, init_tracing, otel_events, otel_keys, otel_metrics,
     shutdown_capsule_tracing, unsupported_otlp_protocol,
-};
-pub use metrics::{
-    incr_accounts_refreshed, incr_errors, incr_mouse_events,
-    incr_terminal_bytes_received, record_frame, record_render,
 };
 pub use operation::{
     OperationGuard, OperationLevel, enter_operation, operation_error, operation_log,
@@ -68,7 +69,6 @@ pub use terminal::{
 
 #[cfg(test)]
 pub(crate) static DIAGNOSTICS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 
 #[cfg(test)]
 mod tests;

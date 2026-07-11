@@ -133,7 +133,8 @@ pub(crate) fn run(args: HealthArgs) -> Result<()> {
     match args.format {
         OutputFormat::Human => print_human(&report),
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&report).context("serializing health report")?;
+            let json =
+                serde_json::to_string_pretty(&report).context("serializing health report")?;
             emit(&json);
         }
     }
@@ -196,8 +197,8 @@ pub(crate) fn walk_rs_paths(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
-        for entry in fs::read_dir(&current)
-            .with_context(|| format!("reading {}", current.display()))?
+        for entry in
+            fs::read_dir(&current).with_context(|| format!("reading {}", current.display()))?
         {
             let path = entry?.path();
             if path.is_dir() {
@@ -382,13 +383,10 @@ fn parse_lint_list(body: &str) -> Vec<String> {
 
 pub(crate) fn crate_name_from_path(root: &Path, path: &Path) -> String {
     let rel_path = path.strip_prefix(root.join(CRATES_GLOB)).unwrap_or(path);
-    rel_path
-        .components()
-        .next()
-        .map_or_else(
-            || String::from("unknown"),
-            |c| c.as_os_str().to_string_lossy().into_owned(),
-        )
+    rel_path.components().next().map_or_else(
+        || String::from("unknown"),
+        |c| c.as_os_str().to_string_lossy().into_owned(),
+    )
 }
 
 fn record_suppression(
@@ -686,10 +684,7 @@ fn print_human(report: &Report) {
     emit(&format!(
         "## Untested large modules >{LARGE_MODULE_LINES} lines (Phase 3 coverage-map report)"
     ));
-    emit(&format!(
-        "  count: {}",
-        report.untested_large_modules.len()
-    ));
+    emit(&format!("  count: {}", report.untested_large_modules.len()));
     for f in report.untested_large_modules.iter().take(25) {
         emit(&format!("  {:>5}  {}", f.lines, f.path));
     }
@@ -782,7 +777,10 @@ fn write_baseline(root: &Path, report: &Report) -> Result<()> {
     );
 
     out.push_str("[suppressions]\n");
-    out.push_str(&format!("allow_attrs = {}\n", report.suppressions.allow_attrs));
+    out.push_str(&format!(
+        "allow_attrs = {}\n",
+        report.suppressions.allow_attrs
+    ));
     out.push_str(&format!(
         "expect_attrs = {}\n",
         report.suppressions.expect_attrs
@@ -828,8 +826,7 @@ fn write_baseline(root: &Path, report: &Report) -> Result<()> {
         out.push_str(&format!("\"{key}\" = {}\n", f.lines));
     }
 
-    fs::write(root.join(BASELINE_PATH), out)
-        .with_context(|| format!("writing {BASELINE_PATH}"))?;
+    fs::write(root.join(BASELINE_PATH), out).with_context(|| format!("writing {BASELINE_PATH}"))?;
     Ok(())
 }
 

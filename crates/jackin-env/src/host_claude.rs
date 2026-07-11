@@ -178,7 +178,9 @@ pub(crate) fn capture_setup_token() -> anyhow::Result<secrecy::SecretString> {
     capture_setup_token_with_binary(CLAUDE_DEFAULT_BIN)
 }
 
-pub(crate) fn capture_setup_token_with_binary(binary: &str) -> anyhow::Result<secrecy::SecretString> {
+pub(crate) fn capture_setup_token_with_binary(
+    binary: &str,
+) -> anyhow::Result<secrecy::SecretString> {
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
     use secrecy::SecretString;
     use std::io::{Read, Write};

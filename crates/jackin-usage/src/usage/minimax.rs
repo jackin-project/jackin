@@ -246,10 +246,7 @@ pub(crate) fn minimax_bucket(
         return None;
     }
     let remaining_percent = if let Some(remaining_percent) = remaining_percent {
-        #[expect(
-            clippy::cast_sign_loss,
-            reason = "clamped to 0.0..=100.0 above"
-        )]
+        #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0 above")]
         {
             Some(remaining_percent.round().clamp(0.0, 100.0) as u8)
         }

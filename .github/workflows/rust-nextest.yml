@@ -148,32 +148,25 @@ jobs:
         shell: bash
         run: |
           [ -f target/nextest/ci/junit.xml ] || exit 0
-          if grep -q 'flaky="true"' target/nextest/ci/junit.xml; then
-            mapfile -t flaky_names < <(
-              python3 -c '
-import re
-from pathlib import Path
-text = Path("target/nextest/ci/junit.xml").read_text()
-for m in re.finditer(r"<testcase\b([^>]*)>", text):
-    attrs = m.group(1)
-    if "flaky=\"true\"" in attrs:
-        nm = re.search(r"name=\"([^\"]*)\"", attrs)
-        if nm:
-            print(nm.group(1))
-'
-            )
-            unquarantined=()
-            for name in "${flaky_names[@]}"; do
-              [ -n "$name" ] || continue
-              if ! grep -Fq "name = \"$name\"" flaky-tests.toml 2>/dev/null; then
-                unquarantined+=("$name")
-              fi
-            done
-            if [ "${#unquarantined[@]}" -gt 0 ]; then
-              echo "::error::flaky test(s) detected and not quarantined in flaky-tests.toml"
-              printf "%s\n" "${unquarantined[@]}"
-              exit 1
+          if ! grep -q 'flaky="true"' target/nextest/ci/junit.xml; then
+            exit 0
+          fi
+          # Extract testcase names from lines that also carry flaky="true".
+          mapfile -t flaky_names < <(
+            grep 'flaky="true"' target/nextest/ci/junit.xml \
+              | sed -n 's/.*name="\([^"]*\)".*/\1/p'
+          )
+          unquarantined=()
+          for name in "${flaky_names[@]}"; do
+            [ -n "$name" ] || continue
+            if ! grep -Fq "name = \"$name\"" flaky-tests.toml 2>/dev/null; then
+              unquarantined+=("$name")
             fi
+          done
+          if [ "${#unquarantined[@]}" -gt 0 ]; then
+            echo "::error::flaky test(s) detected and not quarantined in flaky-tests.toml"
+            printf "%s\n" "${unquarantined[@]}"
+            exit 1
           fi
 
       - name: Capture sccache stats

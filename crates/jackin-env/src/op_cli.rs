@@ -450,12 +450,10 @@ fn run_op_with_timeout(
         Ok(Ok(status)) => status,
         Ok(Err(e)) => {
             let message = format!("1Password CLI wait failed for `{cmd_label}`: {e}");
-            return Err(
-                anyhow::Error::new(jackin_core::OpProbeError::Other {
-                    message: message.clone(),
-                })
-                .context(message),
-            );
+            return Err(anyhow::Error::new(jackin_core::OpProbeError::Other {
+                message: message.clone(),
+            })
+            .context(message));
         }
         Err(_) => {
             let killed = child
@@ -467,11 +465,9 @@ fn run_op_with_timeout(
                 drop(c.wait());
             }
             let seconds = timeout.as_secs();
-            let message =
-                format!("1Password CLI timed out after {seconds}s running `{cmd_label}`");
+            let message = format!("1Password CLI timed out after {seconds}s running `{cmd_label}`");
             return Err(
-                anyhow::Error::new(jackin_core::OpProbeError::Timeout { seconds })
-                    .context(message),
+                anyhow::Error::new(jackin_core::OpProbeError::Timeout { seconds }).context(message),
             );
         }
     };
@@ -493,22 +489,18 @@ fn run_op_with_timeout(
     // Single place that inspects op's stderr wording for the not-signed-in
     // class; consumers classify via downcast, not substring re-parse.
     if message.contains("not currently signed") || message.contains("no accounts") {
-        return Err(
-            anyhow::Error::new(jackin_core::OpProbeError::NotSignedIn {
-                detail: message.clone(),
-            })
-            .context(format!(
-                "1Password CLI is not signed in (running `{cmd_label}` returned: {message}). \
-                 Run `op signin` in your shell, then retry."
-            )),
-        );
-    }
-    Err(
-        anyhow::Error::new(jackin_core::OpProbeError::Other {
-            message: message.clone(),
+        return Err(anyhow::Error::new(jackin_core::OpProbeError::NotSignedIn {
+            detail: message.clone(),
         })
-        .context(message),
-    )
+        .context(format!(
+            "1Password CLI is not signed in (running `{cmd_label}` returned: {message}). \
+                 Run `op signin` in your shell, then retry."
+        )));
+    }
+    Err(anyhow::Error::new(jackin_core::OpProbeError::Other {
+        message: message.clone(),
+    })
+    .context(message))
 }
 
 /// Wraps [`run_op_with_timeout`]. Not-signed-in classification is applied

@@ -154,8 +154,8 @@ fn collect_prose_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     }
     let crates_dir = root.join("crates");
     if crates_dir.is_dir() {
-        for entry in
-            fs::read_dir(&crates_dir).with_context(|| format!("reading {}", crates_dir.display()))?
+        for entry in fs::read_dir(&crates_dir)
+            .with_context(|| format!("reading {}", crates_dir.display()))?
         {
             let path = entry?.path();
             if !path.is_dir() {

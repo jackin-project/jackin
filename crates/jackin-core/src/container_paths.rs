@@ -86,14 +86,16 @@ pub const GROK_AUTH: &str = "/jackin/grok/auth.json";
 /// Git prepare-commit-msg hook path.
 pub const GIT_HOOK_PREPARE_COMMIT_MSG: &str = "/jackin/state/git-hooks/prepare-commit-msg";
 /// Git prepare-commit-msg install marker.
-pub const GIT_HOOK_PREPARE_COMMIT_MSG_MARKER: &str = "/jackin/state/git-hooks/prepare-commit-msg.v3.done";
+pub const GIT_HOOK_PREPARE_COMMIT_MSG_MARKER: &str =
+    "/jackin/state/git-hooks/prepare-commit-msg.v3.done";
 /// Claude agent-status report hook.
-pub const AGENT_STATUS_CLAUDE_HOOK: &str = "/jackin/runtime/agent-status/hooks/claude/report-hook.sh";
+pub const AGENT_STATUS_CLAUDE_HOOK: &str =
+    "/jackin/runtime/agent-status/hooks/claude/report-hook.sh";
 /// Codex agent-status report hook.
 pub const AGENT_STATUS_CODEX_HOOK: &str = "/jackin/runtime/agent-status/hooks/codex/report-hook.sh";
 /// `OpenCode` agent-status plugin.
-pub const AGENT_STATUS_OPENCODE_PLUGIN: &str = "/jackin/runtime/agent-status/hooks/opencode/plugin.js";
-
+pub const AGENT_STATUS_OPENCODE_PLUGIN: &str =
+    "/jackin/runtime/agent-status/hooks/opencode/plugin.js";
 
 /// Compose a container path under a jackin-owned base.
 ///

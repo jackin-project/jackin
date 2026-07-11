@@ -175,11 +175,7 @@ fn collect_violations(root: &Path, dirs: &[&str]) -> Result<Vec<Violation>> {
     Ok(violations)
 }
 
-fn check_symlink_target(
-    root: &Path,
-    claude: &Path,
-    violations: &mut Vec<Violation>,
-) -> Result<()> {
+fn check_symlink_target(root: &Path, claude: &Path, violations: &mut Vec<Violation>) -> Result<()> {
     let target = fs::read_link(claude).with_context(|| format!("reading {}", claude.display()))?;
     if target == Path::new("AGENTS.md") {
         return Ok(());

@@ -18,20 +18,14 @@ fn rename(status: &str, old: &str, new: &str) -> NameStatusEntry {
 
 #[test]
 fn structural_add_triggers() {
-    let report = evaluate(
-        &[entry("A", "crates/jackin-foo/src/new_mod.rs")],
-        &[],
-    );
+    let report = evaluate(&[entry("A", "crates/jackin-foo/src/new_mod.rs")], &[]);
     assert_eq!(report.violations.len(), 1);
     assert_eq!(report.violations[0].crate_name, "jackin-foo");
 }
 
 #[test]
 fn content_modify_does_not_trigger() {
-    let report = evaluate(
-        &[entry("M", "crates/jackin-foo/src/existing.rs")],
-        &[],
-    );
+    let report = evaluate(&[entry("M", "crates/jackin-foo/src/existing.rs")], &[]);
     assert!(report.violations.is_empty());
     assert!(report.structural_crates.is_empty());
 }
@@ -51,10 +45,7 @@ fn rename_triggers() {
 
 #[test]
 fn delete_triggers() {
-    let report = evaluate(
-        &[entry("D", "crates/jackin-foo/src/gone.rs")],
-        &[],
-    );
+    let report = evaluate(&[entry("D", "crates/jackin-foo/src/gone.rs")], &[]);
     assert_eq!(report.violations.len(), 1);
 }
 
@@ -74,10 +65,7 @@ fn readme_touch_clears() {
 
 #[test]
 fn tests_dir_outside_src_does_not_trigger() {
-    let report = evaluate(
-        &[entry("A", "crates/jackin-foo/tests/integration.rs")],
-        &[],
-    );
+    let report = evaluate(&[entry("A", "crates/jackin-foo/tests/integration.rs")], &[]);
     assert!(report.violations.is_empty());
 }
 

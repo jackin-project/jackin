@@ -175,20 +175,14 @@ impl ZaiLimitRaw {
             } else {
                 self.current_value?
             };
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "clamped to 0.0..=100.0 above"
-            )]
+            #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0 above")]
             let percent = ((used.clamp(0, limit) as f64 / limit as f64) * 100.0)
                 .round()
                 .clamp(0.0, 100.0) as u8;
             return Some(percent);
         }
         self.percentage.map(|percent| {
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "clamped to 0.0..=100.0 above"
-            )]
+            #[expect(clippy::cast_sign_loss, reason = "clamped to 0.0..=100.0 above")]
             {
                 percent.round().clamp(0.0, 100.0) as u8
             }
@@ -224,7 +218,9 @@ pub(crate) fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBuc
         limit
             .current_value
             .map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
-        limit.usage.map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
+        limit
+            .usage
+            .map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
         remaining,
         reset_at,
         now,

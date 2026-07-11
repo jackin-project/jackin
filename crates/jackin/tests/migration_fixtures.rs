@@ -54,7 +54,6 @@ fn manifest_fixtures_round_trip_to_current() {
     });
 }
 
-
 #[test]
 fn config_unknown_field_policy_is_preserve() {
     // AppConfig deliberately does NOT use deny_unknown_fields (forward-compat).

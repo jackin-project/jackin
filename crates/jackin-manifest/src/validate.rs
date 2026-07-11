@@ -15,10 +15,7 @@ use jackin_core::manifest::{EnvVarDecl, ManifestWarning, RoleManifest};
 pub fn is_valid_env_var_name(name: &str) -> bool {
     !name.is_empty()
         && name.is_ascii()
-        && name
-            .as_bytes()
-            .first()
-            .is_some_and(|b| !b.is_ascii_digit())
+        && name.as_bytes().first().is_some_and(|b| !b.is_ascii_digit())
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 

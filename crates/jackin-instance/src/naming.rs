@@ -5,11 +5,11 @@
 //! responsible for Docker label writes or image naming — only string
 //! derivation.
 
+use jackin_core::WorkspaceName;
 pub use jackin_core::constants::{
     CONTAINER_PREFIX, CONTAINER_PREFIX_DASH, instance_id_from_container_base,
 };
 use jackin_core::selector::RoleSelector;
-use jackin_core::WorkspaceName;
 use sha2::{Digest, Sha256};
 
 const INSTANCE_ID_LEN: usize = 8;
@@ -17,7 +17,10 @@ const ROLE_BASE_DNS_BUDGET: usize = 58;
 
 pub use jackin_core::runtime_slug;
 
-pub fn new_container_name(workspace_name: Option<&WorkspaceName>, selector: &RoleSelector) -> String {
+pub fn new_container_name(
+    workspace_name: Option<&WorkspaceName>,
+    selector: &RoleSelector,
+) -> String {
     container_name_with_id(workspace_name, selector, &random_instance_id())
 }
 

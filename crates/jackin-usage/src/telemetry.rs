@@ -26,9 +26,13 @@ struct SessionContext {
 /// (e.g. the multiplexer log banner).
 #[must_use]
 pub fn session_context() -> Option<(String, Option<String>, Option<String>)> {
-    SESSION_CONTEXT
-        .get()
-        .map(|ctx| (ctx.session_id.clone(), ctx.run_id.clone(), ctx.traceparent.clone()))
+    SESSION_CONTEXT.get().map(|ctx| {
+        (
+            ctx.session_id.clone(),
+            ctx.run_id.clone(),
+            ctx.traceparent.clone(),
+        )
+    })
 }
 
 /// Initialise capsule OTLP export. Reads the session/run identity and launch

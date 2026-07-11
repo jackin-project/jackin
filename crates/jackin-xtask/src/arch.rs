@@ -389,7 +389,8 @@ struct Dep {
 
 fn read_metadata(root: &std::path::Path) -> Result<Metadata> {
     let mut meta = Command::new("cargo");
-    meta.args(["metadata", "--format-version=1"]).current_dir(root);
+    meta.args(["metadata", "--format-version=1"])
+        .current_dir(root);
     let output = crate::cmd::output_raw(&mut meta).context("running cargo metadata")?;
     if !output.status.success() {
         bail!(

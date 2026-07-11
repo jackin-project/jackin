@@ -80,7 +80,9 @@ fn emit(line: &str) {
 }
 
 pub(crate) fn enforce() -> Result<()> {
-    run(LintSuppressionsArgs { print_budget: false })
+    run(LintSuppressionsArgs {
+        print_budget: false,
+    })
 }
 
 pub(crate) fn run(args: LintSuppressionsArgs) -> Result<()> {
@@ -109,7 +111,10 @@ pub(crate) fn measure(root: &Path) -> Result<Measured> {
         for (is_allow, lints, has_reason) in parse_suppression_attrs(&text) {
             if is_allow {
                 if !has_reason {
-                    *measured.bare_by_crate.entry(crate_name.clone()).or_default() += 1;
+                    *measured
+                        .bare_by_crate
+                        .entry(crate_name.clone())
+                        .or_default() += 1;
                 }
             } else {
                 for lint in lints {
@@ -169,7 +174,11 @@ fn check(budget: &Budget, measured: &Measured) -> Result<()> {
     }
     for (&(lint, crate_name), &budgeted) in &budgeted_expects {
         let key = (lint.to_owned(), crate_name.to_owned());
-        let measured_n = measured.expect_by_lint_crate.get(&key).copied().unwrap_or(0);
+        let measured_n = measured
+            .expect_by_lint_crate
+            .get(&key)
+            .copied()
+            .unwrap_or(0);
         if measured_n > budgeted {
             problems.push(format!(
                 "expect {lint} in {crate_name}: grew from {budgeted} to {measured_n} (delta +{}) — remove the new `#[expect]` or justify and raise only via intentional budget update; regenerate: {RERUN} --print-budget",
@@ -186,9 +195,7 @@ fn check(budget: &Budget, measured: &Measured) -> Result<()> {
         }
     }
     for ((lint, crate_name), &measured_n) in &measured.expect_by_lint_crate {
-        if measured_n > 0
-            && !budgeted_expects.contains_key(&(lint.as_str(), crate_name.as_str()))
-        {
+        if measured_n > 0 && !budgeted_expects.contains_key(&(lint.as_str(), crate_name.as_str())) {
             problems.push(format!(
                 "expect {lint} in {crate_name}: {measured_n} unbudgeted `#[expect]` — add a shrink-only row or remove the suppression; regenerate: {RERUN} --print-budget"
             ));

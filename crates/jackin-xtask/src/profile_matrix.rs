@@ -204,7 +204,6 @@ fn command_output(program: &str, args: &[&str]) -> Result<String> {
     crate::cmd::output_string(&mut cmd)
 }
 
-
 fn docker_rm(name: &str) {
     let mut cmd = Command::new("docker");
     cmd.args(["rm", "-f", name])

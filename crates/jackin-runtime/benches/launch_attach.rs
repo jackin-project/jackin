@@ -69,7 +69,13 @@ fn new_manifest_input() -> NewInstanceManifest<'static> {
 fn bench_container_name(c: &mut Criterion) {
     let selector = make_selector();
     c.bench_function("naming/container_name_with_id", |b| {
-        b.iter(|| container_name_with_id(Some(&WorkspaceName::parse(WORKSPACE).unwrap()), &selector, INSTANCE_ID));
+        b.iter(|| {
+            container_name_with_id(
+                Some(&WorkspaceName::parse(WORKSPACE).unwrap()),
+                &selector,
+                INSTANCE_ID,
+            )
+        });
     });
 }
 

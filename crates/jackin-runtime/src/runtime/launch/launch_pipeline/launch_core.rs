@@ -13,9 +13,9 @@ use super::{
 
 use jackin_config::AppConfig;
 use jackin_core::CommandRunner;
+use jackin_core::WorkspaceName;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
-use jackin_core::WorkspaceName;
 use jackin_docker::docker_client::DockerApi;
 
 use anyhow::Context;

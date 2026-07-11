@@ -1,11 +1,11 @@
 //! Tests for `config`.
-use jackin_core::WorkspaceName;
 use super::*;
 use crate::{
     GithubAuthMode, MountConfig, MountEntry, resolve_github_mode, resolve_mode,
     validate_workspace_config,
 };
 use jackin_core::JackinPaths;
+use jackin_core::WorkspaceName;
 use tempfile::tempdir;
 
 #[test]
@@ -113,7 +113,9 @@ fn rejects_workspace_with_workdir_outside_mounts() {
         ..Default::default()
     };
 
-    let error = validate_workspace_config(&WorkspaceName::parse("big-monorepo").unwrap(), &workspace).unwrap_err();
+    let error =
+        validate_workspace_config(&WorkspaceName::parse("big-monorepo").unwrap(), &workspace)
+            .unwrap_err();
 
     assert!(error.to_string().contains(
         "must be equal to, inside, or a parent of one of the workspace mount destinations"
@@ -128,7 +130,8 @@ fn edit_workspace_does_not_persist_invalid_mutation() {
     let src = temp.path().display().to_string();
 
     config
-        .create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(),
+        .create_workspace(
+            &WorkspaceName::parse("big-monorepo").unwrap(),
             WorkspaceConfig {
                 workdir: "/workspace/project".to_owned(),
                 mounts: vec![MountConfig {
@@ -358,7 +361,8 @@ fn edit_workspace_rejects_upsert_that_introduces_child_under_existing_parent() {
 
     let mut config = AppConfig::default();
     config
-        .create_workspace(&WorkspaceName::parse("test").unwrap(),
+        .create_workspace(
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a".into(),
                 mounts: vec![MountConfig {
@@ -400,7 +404,8 @@ fn edit_workspace_rejects_upsert_with_readonly_mismatch_vs_existing_child() {
 
     let mut config = AppConfig::default();
     config
-        .create_workspace(&WorkspaceName::parse("test").unwrap(),
+        .create_workspace(
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a/b".into(),
                 mounts: vec![MountConfig {
@@ -442,7 +447,8 @@ fn edit_workspace_accepts_pre_collapsed_upsert_that_replaces_children() {
 
     let mut config = AppConfig::default();
     config
-        .create_workspace(&WorkspaceName::parse("test").unwrap(),
+        .create_workspace(
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a/b".into(),
                 mounts: vec![
@@ -542,7 +548,8 @@ fn create_workspace_errors_on_child_under_parent_in_initial_mounts() {
 
     let mut config = AppConfig::default();
     let err = config
-        .create_workspace(&WorkspaceName::parse("test").unwrap(),
+        .create_workspace(
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a".into(),
                 mounts: vec![
@@ -577,7 +584,8 @@ fn create_workspace_errors_on_readonly_mismatch_in_initial_mounts() {
 
     let mut config = AppConfig::default();
     let err = config
-        .create_workspace(&WorkspaceName::parse("test").unwrap(),
+        .create_workspace(
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a".into(),
                 mounts: vec![
@@ -608,7 +616,8 @@ fn create_workspace_accepts_already_collapsed_mount_set() {
 
     let mut config = AppConfig::default();
     config
-        .create_workspace(&WorkspaceName::parse("test").unwrap(),
+        .create_workspace(
+            &WorkspaceName::parse("test").unwrap(),
             WorkspaceConfig {
                 workdir: "/a".into(),
                 mounts: vec![MountConfig {

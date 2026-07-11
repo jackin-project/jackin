@@ -58,10 +58,7 @@ pub(crate) fn run(args: LintReadmeFreshnessArgs) -> Result<()> {
             lines.push(format!("    trigger: {path}"));
         }
         if v.trigger_paths.len() > 5 {
-            lines.push(format!(
-                "    … +{} more path(s)",
-                v.trigger_paths.len() - 5
-            ));
+            lines.push(format!("    … +{} more path(s)", v.trigger_paths.len() - 5));
         }
         lines.push(format!(
             "    fix: update crates/{}/README.md — structure table and/or public API section — in this PR",

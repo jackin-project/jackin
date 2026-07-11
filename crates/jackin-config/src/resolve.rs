@@ -12,8 +12,8 @@ use jackin_core::{MountIsolation, RoleSelector};
 use crate::app_config::AppConfig;
 use crate::paths::expand_tilde;
 use crate::schema::{MountConfig, ResolvedWorkspace, WorkspaceConfig, validate_mount_paths};
-use jackin_core::WorkspaceName;
 use crate::validation::validate_workspace_config;
+use jackin_core::WorkspaceName;
 
 pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
     let cwd = cwd.canonicalize()?;
@@ -156,7 +156,10 @@ pub fn resolve_load_workspace(
         workspace.mounts.push(ad_hoc.clone());
     }
 
-    validate_workspace_config(&WorkspaceName::parse("runtime").map_err(anyhow::Error::from)?, &workspace)?;
+    validate_workspace_config(
+        &WorkspaceName::parse("runtime").map_err(anyhow::Error::from)?,
+        &workspace,
+    )?;
     validate_mount_paths(&workspace.mounts)?;
 
     let mut mounts = workspace.mounts.clone();

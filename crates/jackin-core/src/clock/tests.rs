@@ -32,8 +32,5 @@ fn manual_clock_shared_refs_observe_the_same_advance() {
     assert_eq!(b.now().duration_since(t0), Duration::from_millis(500));
     // Trait-object view still observes the same advance.
     let as_dyn: Arc<dyn Clock> = clock;
-    assert_eq!(
-        as_dyn.now().duration_since(t0),
-        Duration::from_millis(500)
-    );
+    assert_eq!(as_dyn.now().duration_since(t0), Duration::from_millis(500));
 }

@@ -82,7 +82,11 @@ fn collect_roots(root: &Path) -> Result<Vec<(String, PathBuf)>> {
             continue;
         }
         let dir = entry.path();
-        let name = dir.file_name().and_then(|s| s.to_str()).unwrap_or("").to_owned();
+        let name = dir
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_owned();
         if name.is_empty() {
             continue;
         }

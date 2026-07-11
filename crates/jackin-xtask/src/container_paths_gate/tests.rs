@@ -14,10 +14,8 @@ fn measure_pattern_counts_quoted_jackin() {
 
 #[test]
 fn shrink_only_logic_growth_and_stale() {
-    let measured: BTreeMap<String, usize> = BTreeMap::from([
-        ("crates/a.rs".into(), 3),
-        ("crates/b.rs".into(), 1),
-    ]);
+    let measured: BTreeMap<String, usize> =
+        BTreeMap::from([("crates/a.rs".into(), 3), ("crates/b.rs".into(), 1)]);
     let recorded: BTreeMap<String, usize> = BTreeMap::from([
         ("crates/a.rs".into(), 2), // growth
         ("crates/c.rs".into(), 5), // stale

@@ -15,8 +15,8 @@ use crate::branch::branch_name;
 use crate::state::{CleanupStatus, IsolationRecord, read_record, upsert_record};
 use anyhow::Context;
 use jackin_config::ResolvedWorkspace;
-use jackin_core::container_paths;
 use jackin_core::CommandRunner;
+use jackin_core::container_paths;
 use jackin_diagnostics::debug_log;
 use std::path::{Path, PathBuf};
 

@@ -78,9 +78,8 @@ pub fn load_workspace_files(
             .file_stem()
             .and_then(|s| s.to_str())
             .ok_or_else(|| anyhow::anyhow!("invalid workspace filename {}", path.display()))?;
-        let name = WorkspaceName::parse(stem).with_context(|| {
-            format!("invalid workspace filename {}", path.display())
-        })?;
+        let name = WorkspaceName::parse(stem)
+            .with_context(|| format!("invalid workspace filename {}", path.display()))?;
         migrations::migrate_workspace_file_if_needed(&path)?;
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading workspace config {}", path.display()))?;

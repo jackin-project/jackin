@@ -79,7 +79,11 @@ pub fn enter_operation(name: &'static str, attrs: &[(&'static str, String)]) -> 
 /// Record `process.exit_code` on the current span when present.
 pub fn operation_record_exit_code(code: Option<i32>) {
     if let Some(code) = code {
-        operation_set_i64_attr(&Span::current(), otel_keys::PROCESS_EXIT_CODE, i64::from(code));
+        operation_set_i64_attr(
+            &Span::current(),
+            otel_keys::PROCESS_EXIT_CODE,
+            i64::from(code),
+        );
     }
 }
 
@@ -138,11 +142,7 @@ pub fn operation_log(
 
 /// ERROR-severity structured event with `error.type`, marks the current span
 /// Error, and mirrors a compact console line.
-pub fn operation_error(
-    error_type: &'static str,
-    body: &str,
-    attrs: &[(&'static str, String)],
-) {
+pub fn operation_error(error_type: &'static str, body: &str, attrs: &[(&'static str, String)]) {
     let body = redact_text(body);
     let body = body.as_ref();
     let _ = attrs;

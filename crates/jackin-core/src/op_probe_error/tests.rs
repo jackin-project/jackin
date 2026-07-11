@@ -40,11 +40,7 @@ fn variants_are_eq_comparable() {
         OpProbeError::Timeout { seconds: 6 }
     );
     assert_eq!(
-        OpProbeError::NotInstalled {
-            detail: "x".into()
-        },
-        OpProbeError::NotInstalled {
-            detail: "x".into()
-        }
+        OpProbeError::NotInstalled { detail: "x".into() },
+        OpProbeError::NotInstalled { detail: "x".into() }
     );
 }

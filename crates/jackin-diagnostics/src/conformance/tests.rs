@@ -76,9 +76,9 @@ fn forced_failure_groups() {
     assert!(typed.is_some(), "ERROR log must carry error.type");
 
     // Detach is not failure-shaped: taxonomy for session_detach is expected_shutdown.
-    let detach = logs.iter().find(|log| {
-        log_attr(&log.record, "kind").as_deref() == Some("session_detach")
-    });
+    let detach = logs
+        .iter()
+        .find(|log| log_attr(&log.record, "kind").as_deref() == Some("session_detach"));
     assert!(detach.is_some(), "session_detach should be exported");
 }
 
@@ -106,7 +106,10 @@ fn logs_correlate_to_traces() {
     let logs = export.logs.get_emitted_logs().unwrap();
     assert!(!spans.is_empty(), "scenario must export spans");
     // At least one log carries a span context matching an exported span.
-    let correlated = logs.iter().filter_map(|log| log.record.trace_context()).count();
+    let correlated = logs
+        .iter()
+        .filter_map(|log| log.record.trace_context())
+        .count();
     assert!(
         correlated > 0,
         "expected some logs to carry span context while spans were active"

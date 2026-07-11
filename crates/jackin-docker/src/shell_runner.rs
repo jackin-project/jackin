@@ -221,7 +221,6 @@ enum CaptureMode {
     Secret,
 }
 
-
 async fn await_child_with_timeout(
     child: &mut tokio::process::Child,
     program: &str,
@@ -234,15 +233,11 @@ async fn await_child_with_timeout(
             Err(_elapsed) => {
                 drop(child.kill().await);
                 drop(child.wait().await);
-                anyhow::bail!(
-                    "command timed out after {}s: {program}",
-                    dur.as_secs_f64()
-                );
+                anyhow::bail!("command timed out after {}s: {program}", dur.as_secs_f64());
             }
         },
     }
 }
-
 
 fn enter_process_execute(program: &str, args: &[&str]) -> jackin_diagnostics::OperationGuard {
     let redacted = redact_env_args(args).join(" ");
@@ -443,10 +438,7 @@ impl ShellRunner {
                 Err(_elapsed) => {
                     drop(child.kill().await);
                     drop(child.wait().await);
-                    anyhow::bail!(
-                        "command timed out after {}s: {program}",
-                        dur.as_secs_f64()
-                    );
+                    anyhow::bail!("command timed out after {}s: {program}", dur.as_secs_f64());
                 }
             }
         } else {

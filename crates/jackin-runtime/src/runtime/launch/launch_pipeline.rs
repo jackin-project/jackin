@@ -3,9 +3,9 @@
 use crate::instance::{InstanceManifest, InstanceStatus, RoleState};
 use jackin_config::AppConfig;
 use jackin_config::app_config::DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS;
-use jackin_core::{CommandRunner, WorkspaceName};
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
+use jackin_core::{CommandRunner, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 
 use super::launch_slot::{claim_container_name, claim_known_container_name};

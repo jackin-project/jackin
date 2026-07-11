@@ -431,10 +431,7 @@ fn warp(accelerating: bool, host_screen_owned: bool) {
                 if x < 0.0 || y < 0.0 {
                     continue;
                 }
-                #[expect(
-                    clippy::cast_sign_loss,
-                    reason = "x/y rejected when negative above"
-                )]
+                #[expect(clippy::cast_sign_loss, reason = "x/y rejected when negative above")]
                 let (xu, yu) = (x as usize, y as usize);
                 if xu >= cols || yu >= rows {
                     continue;

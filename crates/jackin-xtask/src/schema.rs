@@ -211,6 +211,5 @@ fn git(root: &Path, args: &[&str]) -> Result<std::process::Output> {
     crate::cmd::output_raw(&mut cmd)
 }
 
-
 #[cfg(test)]
 mod tests;

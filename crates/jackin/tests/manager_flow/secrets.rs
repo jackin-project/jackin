@@ -1,6 +1,6 @@
-use jackin_core::WorkspaceName;
 use super::*;
 use jackin::console::tui::state::{SecretsPickerTarget, TextInputTarget};
+use jackin_core::WorkspaceName;
 
 // ── Secrets tab integration tests ─────────────────────────────────
 

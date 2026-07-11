@@ -62,7 +62,6 @@ pub(crate) fn install_hot_path(meter: &opentelemetry::metrics::Meter) {
     drop(HOT_PATH.set(metrics));
 }
 
-
 #[cfg(feature = "otlp")]
 struct HotPathMetrics {
     terminal_bytes_sent: opentelemetry::metrics::Counter<u64>,

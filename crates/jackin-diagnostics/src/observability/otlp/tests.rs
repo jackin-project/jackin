@@ -643,7 +643,10 @@ fn jsonl_trace_id_matches_in_memory_exporter() {
     let mut jsonl_span = String::new();
     tracing::subscriber::with_default(subscriber, || {
         let run = crate::RunDiagnostics::start(&paths, true, "load").unwrap();
-        assert!(run.persists(), "file sink must be on for the JSONL assertion");
+        assert!(
+            run.persists(),
+            "file sink must be on for the JSONL assertion"
+        );
         let span = tracing::info_span!("correlation_probe");
         {
             let _entered = span.enter();
@@ -683,4 +686,3 @@ fn jsonl_trace_id_matches_in_memory_exporter() {
         "trace_id must be hex: {jsonl_trace}"
     );
 }
-

@@ -1,8 +1,8 @@
 //! Tests for `workspaces`.
-use jackin_core::WorkspaceName;
 use super::*;
 use crate::MountConfig;
 use crate::{CURRENT_WORKSPACE_VERSION, KeepAwakeConfig};
+use jackin_core::WorkspaceName;
 use tempfile::tempdir;
 
 #[test]
@@ -38,7 +38,10 @@ fn edit_workspace_leaves_original_value_when_validation_fails() {
         docker: None,
     };
     config
-        .create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), original.clone())
+        .create_workspace(
+            &WorkspaceName::parse("big-monorepo").unwrap(),
+            original.clone(),
+        )
         .unwrap();
 
     let err = config
@@ -65,7 +68,8 @@ fn edit_workspace_toggles_keep_awake_when_set() {
     let temp = tempdir().unwrap();
     let mut config = AppConfig::default();
     config
-        .create_workspace(&WorkspaceName::parse("my-app").unwrap(),
+        .create_workspace(
+            &WorkspaceName::parse("my-app").unwrap(),
             WorkspaceConfig {
                 version: CURRENT_WORKSPACE_VERSION.to_owned(),
                 workdir: "/workspace/proj".to_owned(),
@@ -126,7 +130,8 @@ fn edit_workspace_sets_and_clears_agent() {
     let temp = tempdir().unwrap();
     let mut config = AppConfig::default();
     config
-        .create_workspace(&WorkspaceName::parse("my-app").unwrap(),
+        .create_workspace(
+            &WorkspaceName::parse("my-app").unwrap(),
             WorkspaceConfig {
                 version: CURRENT_WORKSPACE_VERSION.to_owned(),
                 workdir: "/workspace/proj".to_owned(),
@@ -198,11 +203,15 @@ fn create_workspace_rejects_duplicate_name_and_preserves_existing_value() {
         ..Default::default()
     };
     config
-        .create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), original.clone())
+        .create_workspace(
+            &WorkspaceName::parse("big-monorepo").unwrap(),
+            original.clone(),
+        )
         .unwrap();
 
     let err = config
-        .create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(),
+        .create_workspace(
+            &WorkspaceName::parse("big-monorepo").unwrap(),
             WorkspaceConfig {
                 version: CURRENT_WORKSPACE_VERSION.to_owned(),
                 workdir: "/workspace/other".to_owned(),
@@ -246,7 +255,10 @@ fn edit_workspace_rejects_duplicate_upsert_destinations() {
         ..Default::default()
     };
     config
-        .create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), original.clone())
+        .create_workspace(
+            &WorkspaceName::parse("big-monorepo").unwrap(),
+            original.clone(),
+        )
         .unwrap();
 
     let err = config
@@ -298,7 +310,10 @@ fn edit_workspace_rejects_missing_remove_destination() {
         ..Default::default()
     };
     config
-        .create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), original.clone())
+        .create_workspace(
+            &WorkspaceName::parse("big-monorepo").unwrap(),
+            original.clone(),
+        )
         .unwrap();
 
     let err = config

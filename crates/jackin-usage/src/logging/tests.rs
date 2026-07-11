@@ -32,4 +32,3 @@ fn context_banner_line_format_is_joinable() {
     assert!(line.contains("session_id=sess-9"));
     assert!(line.contains("traceparent=00-"));
 }
-

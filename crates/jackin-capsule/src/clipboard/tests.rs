@@ -2,9 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{Clock, ManualClock};
-use jackin_protocol::attach::{
-    ClipboardImageChunk, ClipboardImageFormat, ClipboardImageStart,
-};
+use jackin_protocol::attach::{ClipboardImageChunk, ClipboardImageFormat, ClipboardImageStart};
 
 use super::{CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT, ClipboardImageTransfers};
 

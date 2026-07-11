@@ -1,7 +1,8 @@
 //! Tests for `session`.
 use super::{
     AgentState, OscPolicy, Session, SessionEvent, agent_model_args, build_agent_command,
-    build_shell_command, child_exit_reason, inject_status_env, osc8_uri_is_safe, validate_agent_slug,
+    build_shell_command, child_exit_reason, inject_status_env, osc8_uri_is_safe,
+    validate_agent_slug,
 };
 
 use std::path::Path;
@@ -1280,8 +1281,7 @@ fn start_fault_pty_tasks(
     mpsc::UnboundedSender<Vec<u8>>,
     mpsc::UnboundedReceiver<SessionEvent>,
 ) {
-    let master: Arc<Mutex<Box<dyn MasterPty + Send>>> =
-        Arc::new(Mutex::new(Box::new(fault)));
+    let master: Arc<Mutex<Box<dyn MasterPty + Send>>> = Arc::new(Mutex::new(Box::new(fault)));
     let master_for_write = Arc::clone(&master);
     let master_for_read = Arc::clone(&master);
     let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();

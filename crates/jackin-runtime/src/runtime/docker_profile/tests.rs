@@ -1029,7 +1029,8 @@ fn dind_rootless_uses_rootless_image_without_privileged() {
 
 #[test]
 fn rootless_dind_fails_closed_on_cgroup_v1() {
-    validate_dind_grant_for_cgroup(DindGrant::Rootless, "v1").expect_err("rootless DinD must fail closed on cgroup v1, never fall back to privileged");
+    validate_dind_grant_for_cgroup(DindGrant::Rootless, "v1")
+        .expect_err("rootless DinD must fail closed on cgroup v1, never fall back to privileged");
     validate_dind_grant_for_cgroup(DindGrant::Rootless, "v2").unwrap();
     // privileged / none impose no cgroup requirement here.
     validate_dind_grant_for_cgroup(DindGrant::Privileged, "v1").unwrap();

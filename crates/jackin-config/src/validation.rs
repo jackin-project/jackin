@@ -49,7 +49,10 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn validate_workspace_config(name: &WorkspaceName, workspace: &WorkspaceConfig) -> anyhow::Result<()> {
+pub fn validate_workspace_config(
+    name: &WorkspaceName,
+    workspace: &WorkspaceConfig,
+) -> anyhow::Result<()> {
     if workspace.workdir.is_empty() {
         anyhow::bail!("workspace {name:?} must define workdir");
     }

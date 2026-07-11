@@ -1103,7 +1103,8 @@ fn reset_modes_clears_hyperlink_maps() {
     let mut grid = DamageGrid::new(4, 20, 100);
     let _ = grid.alloc_hyperlink_token("some-id");
     // also seed a target entry the way OSC 8 does
-    grid.hyperlink_targets.insert(1, "https://example.test".to_owned());
+    grid.hyperlink_targets
+        .insert(1, "https://example.test".to_owned());
     assert!(!grid.osc8_id_to_token.is_empty());
     grid.reset_modes();
     assert!(grid.osc8_id_to_token.is_empty());

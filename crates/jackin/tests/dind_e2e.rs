@@ -18,6 +18,8 @@ use std::time::Duration;
 use jackin_runtime::instance::naming::is_dns_label;
 use tempfile::tempdir;
 
+#[path = "dind_e2e/chaos.rs"]
+mod chaos;
 #[path = "dind_e2e/common.rs"]
 mod common;
 #[path = "dind_e2e/diagnostics.rs"]
@@ -30,8 +32,6 @@ mod pty_runner;
 mod transcript;
 #[path = "dind_e2e/util.rs"]
 mod util;
-#[path = "dind_e2e/chaos.rs"]
-mod chaos;
 
 use common::{e2e_construct_image, e2e_serial_lock, require_e2e_prereqs};
 use diagnostics::e2e_failure_context;
@@ -394,7 +394,6 @@ fn jackin_load_double_ctrl_c_exits_launch_prompt_quickly() {
         "double Ctrl+C should hard-exit successfully from the launch prompt\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 }
-
 
 fn chaos_launch_until_report(
     home: &std::path::Path,

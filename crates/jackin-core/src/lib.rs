@@ -81,7 +81,6 @@ pub use paths::{JackinPaths, PathsError};
 pub use prompt_result::PromptResult;
 pub use runner::{CommandRunner, RunOptions};
 pub use selector::{RoleSelector, Selector, SelectorError, runtime_slug};
-pub use workspace_name::{WorkspaceName, WorkspaceNameError};
 pub use standalone_dialog::{
     StandaloneDialogSink, error_popup, exit_dialog_with_inspect, set_global_dialog_sink,
 };
@@ -91,3 +90,4 @@ pub use tui_widgets::{
     bottom_chrome_areas, is_scrollable, max_line_width, max_offset,
 };
 pub use url_text::{has_url_scheme, is_host_open_url, redact_url_for_log};
+pub use workspace_name::{WorkspaceName, WorkspaceNameError};

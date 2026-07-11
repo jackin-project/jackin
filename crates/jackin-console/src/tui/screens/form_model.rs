@@ -77,7 +77,12 @@ impl FormSection {
         self.rows
             .iter()
             .map(|row| {
-                let s = format!("  {:width$}{}", row.label, row.value, width = self.label_width);
+                let s = format!(
+                    "  {:width$}{}",
+                    row.label,
+                    row.value,
+                    width = self.label_width
+                );
                 jackin_tui::display_cols(&s)
             })
             .max()

@@ -245,11 +245,7 @@ fn build_steps(root: &Path, args: &CiArgs) -> Result<Vec<Step>> {
     }
 
     if partition_selected(args, "docs") {
-        steps.push(cargo_xtask(
-            "roadmap audit",
-            &["roadmap", "audit"],
-            "docs",
-        ));
+        steps.push(cargo_xtask("roadmap audit", &["roadmap", "audit"], "docs"));
         steps.push(cargo_xtask(
             "docs repo-links",
             &["docs", "repo-links"],
@@ -407,7 +403,10 @@ fn display_step(step: &Step) -> String {
 
 /// Expose step names for tests without running them.
 #[cfg(test)]
-#[expect(dead_code, reason = "test helper reserved for partition/--only coverage")]
+#[expect(
+    dead_code,
+    reason = "test helper reserved for partition/--only coverage"
+)]
 fn step_names(args: &CiArgs) -> Result<Vec<String>> {
     let root = repo_root()?;
     Ok(build_steps(&root, args)?
@@ -418,7 +417,10 @@ fn step_names(args: &CiArgs) -> Result<Vec<String>> {
 
 /// Expose partitions for tests.
 #[cfg(test)]
-#[expect(dead_code, reason = "test helper reserved for partition/--only coverage")]
+#[expect(
+    dead_code,
+    reason = "test helper reserved for partition/--only coverage"
+)]
 fn step_partitions(args: &CiArgs) -> Result<Vec<&'static str>> {
     let root = repo_root()?;
     Ok(build_steps(&root, args)?

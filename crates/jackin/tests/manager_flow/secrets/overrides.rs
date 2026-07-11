@@ -1,5 +1,5 @@
-use jackin_core::WorkspaceName;
 use super::*;
+use jackin_core::WorkspaceName;
 
 fn seed_override_picker_workspace(
     paths: &JackinPaths,

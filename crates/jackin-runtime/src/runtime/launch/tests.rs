@@ -1,11 +1,11 @@
 //! Tests for `runtime/launch.rs`: load pipeline behavioral verification.
 #![allow(clippy::too_many_lines, unused_qualifications)]
-use jackin_core::WorkspaceName;
 use super::*;
 use crate::runtime::launch::launch_runtime::{
     debug_runtime_envs_for, run_runtime_envs, run_runtime_envs_for, telemetry_runtime_envs_for,
 };
 use jackin_config::AppConfig;
+use jackin_core::WorkspaceName;
 use jackin_test_support::FakeRunner;
 use std::collections::HashMap;
 
@@ -195,8 +195,8 @@ model = "zai/glm"
 }
 #[tokio::test]
 async fn diagnose_premature_exit_returns_none_when_container_running() {
-    use jackin_test_support::FakeDockerClient;
     use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Running])),
         ..Default::default()
@@ -218,8 +218,8 @@ async fn diagnose_premature_exit_returns_none_when_container_running() {
 
 #[tokio::test]
 async fn diagnose_premature_exit_includes_logs_when_container_already_stopped() {
-    use jackin_test_support::FakeDockerClient;
     use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 127,
@@ -260,8 +260,8 @@ async fn diagnose_premature_exit_includes_logs_when_container_already_stopped() 
 
 #[tokio::test]
 async fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
-    use jackin_test_support::FakeDockerClient;
     use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,
@@ -301,8 +301,8 @@ async fn diagnose_premature_exit_swallows_post_attach_clean_exit() {
     // the last live session → container shut itself down with
     // exit 0. The container-lifecycle policy treats this as the
     // happy path; the host CLI must not surface it as an error.
-    use jackin_test_support::FakeDockerClient;
     use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 0,
@@ -334,8 +334,8 @@ async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
     // Post-attach exit with a non-zero code still indicates a
     // problem inside the multiplexer / agent — operator wants the
     // logs surfaced even though the container is gone now.
-    use jackin_test_support::FakeDockerClient;
     use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 137,
@@ -371,8 +371,8 @@ async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
     // without doing anything, most likely a bad image or missing
     // entrypoint. Operator wants the heads-up even though the
     // exit code looks clean.
-    use jackin_test_support::FakeDockerClient;
     use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
     let docker = FakeDockerClient {
         inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::Stopped {
             exit_code: 0,
@@ -404,8 +404,8 @@ async fn diagnose_premature_exit_falls_back_to_multiplexer_log_when_docker_logs_
     // rather than stderr, so a pre-attach PID-1 crash leaves `docker logs`
     // empty. The diagnostic must fall back to the capsule log tail instead of
     // reporting an opaque "no log output".
-    use jackin_test_support::FakeDockerClient;
     use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
 
     let temp = tempdir().unwrap();
     let mux_log = temp.path().join("multiplexer.log");
@@ -7246,9 +7246,14 @@ async fn claim_container_name_saved_workspace_includes_workspace_component() {
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     let docker = jackin_test_support::FakeDockerClient::default();
-    let (name, _lock) = claim_container_name(&paths, Some(&WorkspaceName::parse("my-workspace").unwrap()), &selector, &docker)
-        .await
-        .unwrap();
+    let (name, _lock) = claim_container_name(
+        &paths,
+        Some(&WorkspaceName::parse("my-workspace").unwrap()),
+        &selector,
+        &docker,
+    )
+    .await
+    .unwrap();
 
     assert!(name.starts_with("jk-"), "{name}");
     assert!(
@@ -8061,7 +8066,8 @@ async fn verify_credential_sync_returns_ok_regardless() {
         AuthForwardMode::Sync,
         &merged,
         &[],
-        &layers, &WorkspaceName::parse("proj").unwrap(),
+        &layers,
+        &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     r.unwrap();
@@ -8078,7 +8084,8 @@ async fn verify_credential_ignore_returns_ok_regardless() {
         AuthForwardMode::Ignore,
         &merged,
         &[],
-        &layers, &WorkspaceName::parse("proj").unwrap(),
+        &layers,
+        &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     r.unwrap();
@@ -8099,7 +8106,8 @@ async fn verify_credential_api_key_present_ok() {
         AuthForwardMode::ApiKey,
         &merged,
         &[],
-        &layers, &WorkspaceName::parse("proj").unwrap(),
+        &layers,
+        &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     r.unwrap();
@@ -8133,7 +8141,8 @@ async fn verify_credential_api_key_missing_returns_structured_error() {
         AuthForwardMode::ApiKey,
         &merged,
         &mode_resolution,
-        &layers, &WorkspaceName::parse("proj").unwrap(),
+        &layers,
+        &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     let err = r.unwrap_err();
@@ -8173,7 +8182,8 @@ async fn verify_credential_api_key_unset_returns_structured_error() {
         AuthForwardMode::ApiKey,
         &merged,
         &[],
-        &layers, &WorkspaceName::parse("proj").unwrap(),
+        &layers,
+        &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     assert!(matches!(r, Err(LaunchError::AuthCredentialMissing { .. })));
@@ -8190,7 +8200,8 @@ async fn verify_credential_oauth_token_missing_for_claude() {
         AuthForwardMode::OAuthToken,
         &merged,
         &[],
-        &layers, &WorkspaceName::parse("proj").unwrap(),
+        &layers,
+        &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     let err = r.unwrap_err();
@@ -8212,7 +8223,8 @@ async fn verify_credential_codex_api_key_missing() {
         AuthForwardMode::ApiKey,
         &merged,
         &[],
-        &layers, &WorkspaceName::parse("proj").unwrap(),
+        &layers,
+        &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     let err = r.unwrap_err();
@@ -8235,7 +8247,8 @@ async fn verify_credential_amp_api_key_missing() {
         AuthForwardMode::ApiKey,
         &merged,
         &[],
-        &layers, &WorkspaceName::parse("proj").unwrap(),
+        &layers,
+        &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     let err = r.unwrap_err();
@@ -8652,7 +8665,8 @@ async fn auth_credential_missing_amp_api_key_renders() {
 async fn verify_github_token_present_ok_when_token_resolves() {
     let r = verify_github_token_present(
         jackin_config::GithubAuthMode::Token,
-        Some("ghp_real"), &WorkspaceName::parse("proj").unwrap(),
+        Some("ghp_real"),
+        &WorkspaceName::parse("proj").unwrap(),
         "smith",
     );
     r.unwrap();
@@ -8662,10 +8676,19 @@ async fn verify_github_token_present_ok_when_token_resolves() {
 async fn verify_github_token_present_ok_for_sync_and_ignore_regardless_of_token() {
     // Sync / Ignore have no pre-flight invariant on GH_TOKEN —
     // Sync sources its token from the host, Ignore exports nothing.
-    let r = verify_github_token_present(jackin_config::GithubAuthMode::Sync, None, &WorkspaceName::parse("proj").unwrap(), "smith");
+    let r = verify_github_token_present(
+        jackin_config::GithubAuthMode::Sync,
+        None,
+        &WorkspaceName::parse("proj").unwrap(),
+        "smith",
+    );
     r.unwrap();
-    let r =
-        verify_github_token_present(jackin_config::GithubAuthMode::Ignore, None, &WorkspaceName::parse("proj").unwrap(), "smith");
+    let r = verify_github_token_present(
+        jackin_config::GithubAuthMode::Ignore,
+        None,
+        &WorkspaceName::parse("proj").unwrap(),
+        "smith",
+    );
     r.unwrap();
 }
 
@@ -8673,7 +8696,8 @@ async fn verify_github_token_present_ok_for_sync_and_ignore_regardless_of_token(
 async fn verify_github_token_present_errors_when_token_missing() {
     let err = verify_github_token_present(
         jackin_config::GithubAuthMode::Token,
-        None, &WorkspaceName::parse("customer-acme").unwrap(),
+        None,
+        &WorkspaceName::parse("customer-acme").unwrap(),
         "release-bot",
     )
     .unwrap_err();
@@ -8703,7 +8727,8 @@ async fn verify_github_token_present_errors_when_token_empty_string() {
     // launch DinD just for the agent to fail at first push.
     let err = verify_github_token_present(
         jackin_config::GithubAuthMode::Token,
-        Some(""), &WorkspaceName::parse("proj").unwrap(),
+        Some(""),
+        &WorkspaceName::parse("proj").unwrap(),
         "smith",
     )
     .unwrap_err();

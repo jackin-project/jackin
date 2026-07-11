@@ -2876,6 +2876,7 @@ version = "0.6.0-dev"
 dependencies = [
  "anstyle-parse",
  "anyhow",
+ "criterion",
  "jackin-core",
  "jackin-tui",
  "opentelemetry",

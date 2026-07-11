@@ -3,8 +3,8 @@
 use fs4::FileExt;
 
 use super::super::attach::{ContainerState, docker_unavailable_msg};
-use jackin_core::paths::JackinPaths;
 use jackin_core::WorkspaceName;
+use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::DockerApi;
 

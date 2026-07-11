@@ -16,7 +16,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub fn validate_workspace_file_stem(name: &str) -> anyhow::Result<()> {
-    jackin_core::WorkspaceName::parse(name).map(drop).map_err(Into::into)
+    jackin_core::WorkspaceName::parse(name)
+        .map(drop)
+        .map_err(Into::into)
 }
 
 pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {

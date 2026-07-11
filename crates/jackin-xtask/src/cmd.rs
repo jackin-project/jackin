@@ -16,9 +16,7 @@ pub(crate) fn run(cmd: &mut Command) -> Result<()> {
         clippy::disallowed_methods,
         reason = "xtask automation shells out to git, gh, cargo, and mise; centralized here"
     )]
-    let status = cmd
-        .status()
-        .with_context(|| format!("running {display}"))?;
+    let status = cmd.status().with_context(|| format!("running {display}"))?;
     if status.success() {
         Ok(())
     } else {

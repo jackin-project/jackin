@@ -220,14 +220,16 @@ fn console_rejects_removed_flags() {
     // The console is always the full experience; the old --no-rain /
     // --no-tui / --intro / --outro toggles no longer exist.
     for flag in ["--no-rain", "--no-tui", "--intro", "--outro"] {
-        Cli::try_parse_from(["jackin", "console", flag]).expect_err(&format!("console should reject {flag}"));
+        Cli::try_parse_from(["jackin", "console", flag])
+            .expect_err(&format!("console should reject {flag}"));
     }
 }
 
 #[test]
 fn load_rejects_removed_surface_flags() {
     for flag in ["--no-rain", "--no-tui", "--no-intro"] {
-        Cli::try_parse_from(["jackin", "load", flag]).expect_err(&format!("load should reject {flag}"));
+        Cli::try_parse_from(["jackin", "load", flag])
+            .expect_err(&format!("load should reject {flag}"));
     }
 }
 

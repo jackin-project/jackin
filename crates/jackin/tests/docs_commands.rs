@@ -114,9 +114,7 @@ fn match_jackin_line(line: &str) -> Option<String> {
         if let Some(eq) = s.find('=') {
             let name = &s[..eq];
             if !name.is_empty()
-                && name
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                 && name
                     .chars()
                     .next()
@@ -354,7 +352,8 @@ fn extractor_shapes() {
     assert_eq!(v[0].1, "jackin console --debug");
 
     // continuation
-    let mdx = "```\njackin config mount add gradle-cache \\\n  --src ~/x \\\n  --dst /jackin/x\n```\n";
+    let mdx =
+        "```\njackin config mount add gradle-cache \\\n  --src ~/x \\\n  --dst /jackin/x\n```\n";
     let v = extract_invocations(mdx);
     assert_eq!(v.len(), 1);
     assert!(v[0].1.contains("jackin config mount add gradle-cache"));
@@ -429,7 +428,9 @@ fn docs_command_invocations_parse_against_clap() {
         for (line_no, raw) in invocations {
             // Compound count: extract already skipped; track via re-check of
             // nothing. We only have the kept set.
-            if let Some(idx) = SKIP.iter().position(|(f, l, _)| *f == rel && *l == line_no as u32)
+            if let Some(idx) = SKIP
+                .iter()
+                .position(|(f, l, _)| *f == rel && *l == line_no as u32)
             {
                 skip_hits[idx] = true;
                 continue;
@@ -538,9 +539,7 @@ fn count_compound_skips(mdx: &str) -> usize {
             // strip env prefixes loosely
             while let Some(eq) = s.find('=') {
                 let name = &s[..eq];
-                if name
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                     && !name.is_empty()
                     && !name.contains(' ')
                     && name

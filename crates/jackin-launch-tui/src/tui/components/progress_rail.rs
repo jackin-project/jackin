@@ -107,10 +107,7 @@ pub fn labels_line(view: &LaunchView, frozen: bool, width: usize) -> Line<'stati
     let cells = (0..width).map(|x| {
         let index = start + x as isize;
         let cell = if index >= 0 {
-            #[expect(
-                clippy::cast_sign_loss,
-                reason = "index checked non-negative above"
-            )]
+            #[expect(clippy::cast_sign_loss, reason = "index checked non-negative above")]
             let idx = index as usize;
             strip.get(idx).copied().unwrap_or_else(blank_label_cell)
         } else {

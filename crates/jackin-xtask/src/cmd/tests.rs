@@ -6,10 +6,7 @@ use super::{display_command, output, output_string, run, shell_quote};
 #[test]
 fn shell_quote_leaves_plain_paths_bare() {
     assert_eq!(shell_quote(OsStr::new("cargo")), "cargo");
-    assert_eq!(
-        shell_quote(OsStr::new("/tmp/a_b-c:d+e")),
-        "/tmp/a_b-c:d+e"
-    );
+    assert_eq!(shell_quote(OsStr::new("/tmp/a_b-c:d+e")), "/tmp/a_b-c:d+e");
 }
 
 #[test]
