@@ -15,7 +15,7 @@ Rules:
 |----|--------|-------------|----------------------------|--------------|
 | R-028-host-turso | plan 028 residual | **CLOSED** | Host `crates/jackin/src/cli/usage/store.rs` uses `jackin_usage::store_backend::{Connection,Row,connect_local,params}`; host crate has no `turso` dep (`rg 'use turso::' crates/jackin` → empty). Commit `e1eacdf44`. | n/a |
 | R-049-repo-links-gen | plan 049 residual | **CLOSED** | `.github/workflows/docs.yml` `repo-link-check` runs `bun install` + `bun run scripts/gen-crate-pages.ts` before `cargo xtask docs repo-links`. Commit `e1eacdf44`. | n/a |
-| R-014-materialize-bench | PERF-benches-missing / plan 014 | **DEFER** | `UsageCache::materialize_accounts` is `pub(crate)` and writes fixed path `MATERIALIZED_USAGE_ACCOUNTS_PATH` (`/jackin/run/usage/accounts.json`). External bench hits E0624; container path is non-hermetic on host. Shipped benches: `resize_storm`, `summarize_jsonl`, `scrollback_snapshot`, launch micro-ops. | Small `#[doc(hidden)]` seam + temp-path inject (S) after usage path chokepoint |
+| R-014-materialize-bench | PERF-benches-missing / plan 014 | **CLOSED** | `set_accounts_materialize_path` + `materialize_accounts_for_bench` seams; criterion bench `materialize_accounts` (plan 057). | n/a |
 | R-014-launch-pipeline-bench | PERF-benches-missing / plan 014 | **DEFER** | Full FakeDockerClient launch pipeline is integration-sized (LaunchCore field set ~20 deps); existing `launch_attach` is micro-ops only. Multi-crate harness. | After launch-core extract (was SEQ, now DEFER R-launch-typestate) |
 | R-023-usage-scope | plan 023 operator flag | **DEFER** | Docs corrected to `usage accounts/verify`; intentional product surface (accounts not workspace/session). Re-confirm only if product reintroduces workspace-scoped usage CLI. | Product decision to restore workspace usage commands |
 | R-023-apple-container | plan 023 operator flag | **DEFER** | `--backend apple-container` docs dropped; backend not shipped. Fence drift gate would fail if re-documented without clap surface. | When apple-container backend lands |
@@ -38,12 +38,12 @@ Rules:
 | R-iai-callgrind | matrix Phase 4 | **DEFER** | Needs stable bench set + iai toolchain in CI image; 014 compile-check lane is the floor. | After R-014 benches closed |
 | R-perf-budgets | matrix Phase 4 | **DEFER** | 017 engine exists; perf family not wired (wave-7: 017 reserves only). | Wire `[[perf]]` after 014 stable lane |
 | R-dhat-budgets-ratchet | matrix Phase 4 | **DEFER** | dhat literals still in-source; migrate to ratchet when 017 perf/dhat family lands. | Same PR as R-perf-budgets |
-| R-map-metadata-gate | matrix Phase 5 | **DEFER** | One-time reconcile [029] done; recurring map↔metadata gate natural oracle is TIERS [012] + generated crates [049]. | `docs map-check` PR folding into 049 section |
+| R-map-metadata-gate | matrix Phase 5 | **CLOSED** | `cargo xtask docs map-check` — every workspace package name must appear in Codebase Map MDX (plan 057). | n/a |
 | R-build-time-budget | matrix Phase 6 | **DEFER** | Measurement lane [048] ships; budget half needs 017 numeric family. | After 048 baselines exist for N weeks |
 | R-self-tightening | matrix Phase 7 | **DEFER** | Engine [017] shipped; self-tightening bot is automation (PR bot / scheduled floor shrink). | Operator bot design + GH app/token policy |
 | R-health-history-jsonl | matrix Phase 7 | **DEFER** | `health --format json` [010] is the schema prerequisite; history append is ops storage not gate. | Ops decision for history sink path |
 | R-agent-hygiene | matrix Phase 7 | **DEFER** | Machine-readable gates [051] + ratchet [017] are prerequisites; agent loop is productization. | After 051 remaining-gate rollout |
-| R-export-volume-ratchet | matrix Phase 8 | **DEFER** | 044 in-source budgets; family move into 017 is mechanical. | When 017 absorbs volume columns |
+| R-export-volume-ratchet | matrix Phase 8 | **CLOSED** | `ratchet.toml` family `export-volume` + provider `export_volume_constants` reads 044 `MAX_*` (plan 057). | n/a |
 
 ## Closed this wave (tree)
 
@@ -51,6 +51,9 @@ Rules:
 |----------|-------------------|
 | R-028-host-turso | `e1eacdf44` + `store_backend` public + host dep on `jackin-usage` |
 | R-049-repo-links-gen | `e1eacdf44` + docs.yml generator steps |
+| R-014-materialize-bench | plan 057 + `jackin-usage` bench `materialize_accounts` |
+| R-export-volume-ratchet | plan 057 + `ratchet.toml` `export-volume` |
+| R-map-metadata-gate | plan 057 + `cargo xtask docs map-check` |
 
 ## Legend
 
@@ -65,7 +68,7 @@ per [DISPATCH.md](DISPATCH.md):
 
 | Wave | Contents | Parallelism |
 |------|----------|-------------|
-| **R1** | R-014-materialize-bench, R-038 env∥console slices, R-snapshot-helpers, R-map-metadata-gate, R-export-volume-ratchet, R-complexity-threshold | Full fan-out when write sets disjoint |
+| **R1** | R-038 env∥console, R-snapshot-helpers, R-complexity-threshold (R-014-materialize / R-map / R-export-volume **CLOSED** in 057) | Full fan-out when write sets disjoint |
 | **R2** | R-thiserror-mid-tranches (config∥isolation∥docker∥image∥instance) | One worker per crate, all parallel |
 | **R3** | launch typestate, daemon decomp/char, suite A, sim, perf/iai/dhat budgets | Design-first; then slice parallel |
 | **R4** | R-023-*, R-045 pinned, golden agent spend | Wait for product/ops trigger |

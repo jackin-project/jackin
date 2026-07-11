@@ -74,12 +74,12 @@ Only **DEFER** rows with a concrete next trigger. Group by parallel safety.
 
 | Residual | Scope | Write allowlist (typical) | Narrow verify |
 |----------|-------|---------------------------|---------------|
-| R-014-materialize-bench | `#[doc(hidden)]` seam + temp path + bench | `crates/jackin-usage/**`, optional `benches/` | `cargo check -p jackin-usage --benches`; bench compile |
+| R-014-materialize-bench | **CLOSED** plan 057 | — | — |
 | R-038-env-console-tail (env slice) | WorkspaceName at env sites | `crates/jackin-env/**`, maybe `jackin-core` | `cargo nextest -p jackin-env` |
 | R-038-env-console-tail (console slice) | WorkspaceName at console sites | `crates/jackin-console/**` | `cargo nextest -p jackin-console` |
 | R-snapshot-helpers | helpers into test-support | `crates/jackin-test-support/**`, consumer test paths | `cargo nextest -p jackin-test-support -p <consumer>` |
-| R-map-metadata-gate | `docs map-check` / TIERS oracle | `crates/jackin-xtask/**`, docs map | `cargo xtask docs …` / unit tests for gate |
-| R-export-volume-ratchet | 044 budgets → 017 family | `ratchet.toml`, diagnostics budgets | `cargo xtask lint ratchet` |
+| R-map-metadata-gate | **CLOSED** plan 057 (`docs map-check`) | — | — |
+| R-export-volume-ratchet | **CLOSED** plan 057 (`export-volume` family) | — | — |
 | R-complexity-threshold | lower one clippy floor after census | `clippy.toml` / baseline / budget (orchestrator if conflict) | `cargo clippy -p <hot crates>` then lint strict |
 
 **Dispatch:** spawn all ready R1 rows in one turn with disjoint allowlists.

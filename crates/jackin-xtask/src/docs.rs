@@ -10,6 +10,7 @@
 //! cargo xtask docs repo-links                     # validate repo-file links
 //! cargo xtask docs brand                          # brand-prose lint (RULES.md)
 //! cargo xtask docs specs                          # spec↔test citation gate
+//! cargo xtask docs map-check                      # workspace crates named in Codebase Map
 //! cargo xtask research scaffold <slug>            # scaffold a research dossier
 //! cargo xtask research check                      # validate research meta.json
 //! cargo xtask roadmap audit                       # validate roadmap meta.json
@@ -81,6 +82,8 @@ pub(crate) enum DocsCommand {
     Brand,
     /// Verify every behavioral-spec INV row cites an existing test (or MISSING).
     Specs,
+    /// Every workspace member crate name appears in the Codebase Map MDX.
+    MapCheck,
 }
 
 #[derive(Args)]
@@ -154,7 +157,89 @@ pub(crate) fn run_docs(command: DocsCommand) -> Result<()> {
         DocsCommand::RepoLinks => check_repo_links(&repo_root()?),
         DocsCommand::Brand => brand::check_brand(&repo_root()?),
         DocsCommand::Specs => specs::check_specs(&repo_root()?),
+        DocsCommand::MapCheck => check_codebase_map(&repo_root()?),
     }
+}
+
+/// Recurring map↔workspace gate (R-map-metadata-gate): every `cargo metadata`
+/// workspace member package name must appear as a token in the Codebase Map.
+fn check_codebase_map(root: &Path) -> Result<()> {
+    let map_rel = "docs/content/docs/reference/getting-oriented/codebase-map.mdx";
+    let map_path = root.join(map_rel);
+    let map = fs::read_to_string(&map_path)
+        .with_context(|| format!("reading codebase map at {}", map_path.display()))?;
+
+    let members = workspace_package_names(root)?;
+    let mut missing: Vec<String> = Vec::new();
+    for name in &members {
+        // Require a whole-token hit so short names don't false-positive.
+        let needle = name.as_str();
+        let present = map.split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+            .any(|tok| tok == needle);
+        if !present {
+            missing.push(name.clone());
+        }
+    }
+    if missing.is_empty() {
+        emit(&format!(
+            "docs map-check OK — {} workspace crate(s) named in {map_rel}",
+            members.len()
+        ));
+        return Ok(());
+    }
+    missing.sort();
+    bail!(
+        "{} workspace crate(s) missing from {map_rel}:\n  {}\n\nAdd each name to the Workspace crate structure section (or the map prose) so map↔metadata stays honest.\nre-run: cargo xtask docs map-check",
+        missing.len(),
+        missing.join("\n  ")
+    );
+}
+
+fn workspace_package_names(root: &Path) -> Result<Vec<String>> {
+    let output = std::process::Command::new("cargo")
+        .args([
+            "metadata",
+            "--format-version",
+            "1",
+            "--no-deps",
+            "--manifest-path",
+        ])
+        .arg(root.join("Cargo.toml"))
+        .output()
+        .context("running cargo metadata for docs map-check")?;
+    if !output.status.success() {
+        bail!(
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let v: Value =
+        serde_json::from_slice(&output.stdout).context("parsing cargo metadata JSON")?;
+    let workspace_root = v
+        .get("workspace_root")
+        .and_then(|x| x.as_str())
+        .unwrap_or_default();
+    let packages = v
+        .get("packages")
+        .and_then(|x| x.as_array())
+        .context("cargo metadata missing packages")?;
+    let mut names = Vec::new();
+    for pkg in packages {
+        let manifest = pkg
+            .get("manifest_path")
+            .and_then(|x| x.as_str())
+            .unwrap_or("");
+        // Workspace members only (manifest under workspace root).
+        if !manifest.starts_with(workspace_root) {
+            continue;
+        }
+        if let Some(name) = pkg.get("name").and_then(|x| x.as_str()) {
+            names.push(name.to_owned());
+        }
+    }
+    names.sort();
+    names.dedup();
+    Ok(names)
 }
 
 pub(crate) fn run_research(command: ResearchCommand) -> Result<()> {

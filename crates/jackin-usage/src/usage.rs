@@ -161,6 +161,10 @@ pub struct UsageCache {
     grok_rpc_gate: ManagedCliLaunchGate,
     refresh_schedule: UsageRefreshSchedule,
     telemetry_store_path: PathBuf,
+    /// Destination for accounts.json materialization. Production uses
+    /// [`MATERIALIZED_USAGE_ACCOUNTS_PATH`]; benches/tests inject a temp path
+    /// via [`UsageCache::set_accounts_materialize_path`].
+    accounts_materialize_path: PathBuf,
     /// Latched on persistence failure so a persistent fault (e.g. read-only
     /// `/jackin/state`, disk-full, DB corruption) logs once on transition via
     /// always-on `clog!` rather than every 5-minute refresh — and is never
@@ -309,6 +313,23 @@ impl UsageCache {
             canonical_usage_cache_key(agent, focused_provider),
             CachedUsage { view },
         );
+    }
+
+    /// Bench/test helper: write materialized accounts to `path` instead of the
+    /// container path. Cross-crate like `insert_snapshot_for_test`.
+    #[doc(hidden)]
+    pub fn set_accounts_materialize_path(&mut self, path: PathBuf) {
+        self.accounts_materialize_path = path;
+    }
+
+    /// Bench/test entry: materialize the cache to the configured path.
+    /// Production refresh calls the same body via [`Self::materialize_accounts`].
+    #[doc(hidden)]
+    pub fn materialize_accounts_for_bench(
+        &self,
+        generated_at_epoch: i64,
+    ) -> Result<(), String> {
+        self.materialize_accounts(generated_at_epoch)
     }
 
     pub fn focused_status_bar_label(
@@ -530,7 +551,7 @@ impl UsageCache {
         let snapshots: Vec<&FocusedUsageView> =
             self.snapshots.values().map(|cached| &cached.view).collect();
         write_materialized_usage_accounts(
-            Path::new(MATERIALIZED_USAGE_ACCOUNTS_PATH),
+            &self.accounts_materialize_path,
             generated_at_epoch,
             &snapshots,
         )
@@ -545,6 +566,7 @@ impl Default for UsageCache {
             grok_rpc_gate: ManagedCliLaunchGate::default(),
             refresh_schedule: UsageRefreshSchedule::default(),
             telemetry_store_path: PathBuf::from(TELEMETRY_STORE_PATH),
+            accounts_materialize_path: PathBuf::from(MATERIALIZED_USAGE_ACCOUNTS_PATH),
             telemetry_persist_failed: false,
             accounts_materialize_failed: false,
         }

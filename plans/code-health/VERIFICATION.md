@@ -10,12 +10,13 @@ Captured by the long-running goal executor. Scratch copies also under the implem
 
 ## Plan ledger
 
-Every `plans/code-health/*.md` plan **003–056** is **DONE** in `plans/code-health/README.md` with implementation present on this branch (not vanished exec SHAs).
+Every `plans/code-health/*.md` plan **003–057** is **DONE** in `plans/code-health/README.md` with implementation present on this branch (not vanished exec SHAs).
 
-- Plan **014** residual benches → [055](055-residual-footnote-closure.md) / RESIDUAL_LEDGER R-014-*.
+- Plan **014** materialize bench CLOSED by [057](057-residual-wave-r1-bench-ratchet-map.md); launch-pipeline still R-014-launch-pipeline-bench DEFER.
 - Plan **054** closed the plan-011 residual `assertions_on_result_states` adoption.
-- Plan **055** closed named residual footnotes (028/049 in tree; 014/023/033/038 DEFER measured).
+- Plan **055** closed named residual footnotes (028/049 in tree; 023/033/038 DEFER measured).
 - Plan **056** converted every coverage-matrix **SEQ** to **DEFER** + residual-ledger rows (zero open SEQ).
+- Plan **057** closed R-014-materialize-bench, R-export-volume-ratchet, R-map-metadata-gate.
 
 ## Residual ledger
 
@@ -86,7 +87,8 @@ Phases are covered by DONE plans 003–056. Former **SEQ** matrix rows are **DEF
 git branch --show-current   # chore/rust-code-health-roadmap
 rg 'SEQ\(' plans/code-health/README.md   # expect 0
 rg 'use turso::' crates/jackin           # expect 0
-cargo check -p jackin -p jackin-usage
+cargo check -p jackin -p jackin-usage --benches
+cargo run -p jackin-xtask -- docs map-check
 cargo run -p jackin-xtask -- lint --strict
 cargo run -p jackin-xtask -- lint suppressions
 cargo run -p jackin-xtask -- lint ratchet

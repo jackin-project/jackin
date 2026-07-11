@@ -129,3 +129,19 @@ kind = "numeric"
 provider = "agent_doc_bytes"
 mode = "report"
 # Report-only Phase 6 context-economy seed; never fails.
+
+# Plan 044 export-volume budgets (R-export-volume-ratchet): constants live in
+# crates/jackin-diagnostics/src/conformance.rs; shrink-only via this family.
+[[family]]
+id = "export-volume"
+kind = "numeric"
+provider = "export_volume_constants"
+mode = "enforce"
+# Cap 0 → every measured key must be listed (no unlisted firehose constants).
+cap = 0
+[[family.entry]]
+key = "max_debug_logs"
+bound = 64
+[[family.entry]]
+key = "max_spans"
+bound = 48

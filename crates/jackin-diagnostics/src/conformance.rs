@@ -18,8 +18,9 @@ use crate::operation::{OperationLevel, operation_log, operation_span};
 use crate::screen::{Screen, enter_screen};
 use jackin_core::JackinPaths;
 
-/// In-source export-volume budgets (measured seeds + ~20% slack).
-/// Migrate into plan 017's ratchet engine when that lands.
+/// Export-volume budgets (measured seeds + ~20% slack).
+/// Shrink-only bounds also live in `ratchet.toml` family `export-volume`
+/// (provider `export_volume_constants`); keep constants and budget rows in sync.
 pub(crate) const MAX_DEBUG_LOGS: usize = 64;
 pub(crate) const MAX_SPANS: usize = 48;
 
