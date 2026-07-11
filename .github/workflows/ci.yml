@@ -471,6 +471,14 @@ jobs:
       SCCACHE_BASEDIRS: ${{ github.workspace }}
       SCCACHE_GHA_ENABLED: "off"
     steps:
+
+      - name: README freshness (advisory)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}" || true
+          cargo run -p jackin-xtask --locked -- lint readme-freshness --base "origin/${{ github.base_ref }}"
+
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Cache Rust toolchain
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

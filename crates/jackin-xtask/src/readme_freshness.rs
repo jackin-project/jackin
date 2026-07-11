@@ -33,12 +33,6 @@ fn emit(line: &str) {
     println!("{line}");
 }
 
-pub(crate) fn check(base: &str) -> Result<()> {
-    run(LintReadmeFreshnessArgs {
-        base: base.to_owned(),
-    })
-}
-
 pub(crate) fn run(args: LintReadmeFreshnessArgs) -> Result<()> {
     let root = repo_root()?;
     let entries = git_name_status(&root, &args.base)?;
