@@ -1,11 +1,10 @@
 //! Pull-request body helpers.
 
-use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 
 #[derive(Subcommand)]
@@ -185,50 +184,6 @@ fn emit_body(skeleton: &str) {
     print!("{skeleton}");
 }
 
-fn crate::cmd::output(cmd: &mut Command) -> Result<Vec<u8>> {
-    let display = display_command(cmd);
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "xtask automation shells out to git, gh, cargo, and mise"
-    )]
-    let output = cmd.output().with_context(|| format!("running {display}"))?;
-    if output.status.success() {
-        Ok(output.stdout)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(anyhow!(
-            "{display} failed with {}\n{}",
-            output.status,
-            stderr.trim()
-        ))
-    }
-}
-
-fn display_command(cmd: &Command) -> String {
-    let program = cmd.get_program().to_string_lossy();
-    let args = cmd
-        .get_args()
-        .map(shell_quote)
-        .collect::<Vec<_>>()
-        .join(" ");
-    if args.is_empty() {
-        program.into_owned()
-    } else {
-        format!("{program} {args}")
-    }
-}
-
-fn shell_quote(value: &OsStr) -> String {
-    let value = value.to_string_lossy();
-    if value
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '_' | '-' | ':' | '+'))
-    {
-        value.into_owned()
-    } else {
-        format!("'{}'", value.replace('\'', "'\"'\"'"))
-    }
-}
 
 #[cfg(test)]
 mod tests;
