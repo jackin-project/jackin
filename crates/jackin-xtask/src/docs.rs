@@ -8,6 +8,8 @@
 //! ```sh
 //! cargo xtask change new <slug> --group <group>   # scaffold a roadmap item
 //! cargo xtask docs repo-links                     # validate repo-file links
+//! cargo xtask docs brand                          # brand-prose lint (RULES.md)
+//! cargo xtask docs specs                          # spec↔test citation gate
 //! cargo xtask research scaffold <slug>            # scaffold a research dossier
 //! cargo xtask research check                      # validate research meta.json
 //! cargo xtask roadmap audit                       # validate roadmap meta.json
@@ -20,6 +22,9 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
 use serde_json::{Value, json};
+
+mod brand;
+mod specs;
 
 const DOCS_ROOT: &str = "docs/content/docs";
 const DOCS_MARKDOWN_ROOT: &str = "docs";
@@ -72,6 +77,10 @@ pub(crate) enum ChangeCommand {
 pub(crate) enum DocsCommand {
     /// Validate that repository file references use checked link components.
     RepoLinks,
+    /// Reject forbidden brand spellings (`jackin'`, `Jackin`, `Jackin'`) in prose.
+    Brand,
+    /// Verify every behavioral-spec INV row cites an existing test (or MISSING).
+    Specs,
 }
 
 #[derive(Args)]
@@ -143,6 +152,8 @@ pub(crate) fn run_change(command: ChangeCommand) -> Result<()> {
 pub(crate) fn run_docs(command: DocsCommand) -> Result<()> {
     match command {
         DocsCommand::RepoLinks => check_repo_links(&repo_root()?),
+        DocsCommand::Brand => brand::check_brand(&repo_root()?),
+        DocsCommand::Specs => specs::check_specs(&repo_root()?),
     }
 }
 

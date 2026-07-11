@@ -5,7 +5,7 @@ The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, 
 ## What this crate owns
 
 - CI orchestration (`ci`) and the lint gates (`lint` — file-size budget, and the lanes planned under it).
-- Docs checks (`docs` — repo-links), schema checks (`schema`), profile/feature matrix (`profile_matrix`), and the agent-file symlink gate (`agent_files`).
+- Docs checks (`docs` — repo-links, brand prose, spec↔test citations), schema checks (`schema`), profile/feature matrix (`profile_matrix`), and the agent-file symlink gate (`agent_files`, including per-crate README presence).
 - Architecture/structure tooling (`arch`), test-layout gate (`test_layout`), PTY fixture extraction (`pty_fixture`), construct helpers (`construct`), release verification (`release_verify`), and PR tooling (`pr`).
 
 ## Architecture tier and allowed dependencies
@@ -24,7 +24,7 @@ The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, 
 | [`arch.rs`](src/arch.rs) · [`arch/`](src/arch) | dependency-direction gate | [`tests.rs`](src/arch/tests.rs) |
 | [`test_layout.rs`](src/test_layout.rs) · [`test_layout/`](src/test_layout) | test-layout gate | [`tests.rs`](src/test_layout/tests.rs) |
 | [`schema.rs`](src/schema.rs) · [`schema/`](src/schema) | schema check | [`tests.rs`](src/schema/tests.rs) |
-| [`docs.rs`](src/docs.rs) | docs repo-links/roadmap/research | — |
+| [`docs.rs`](src/docs.rs) · [`docs/`](src/docs) | docs repo-links / brand / specs / roadmap / research | [`tests.rs`](src/docs/tests.rs), brand/specs unit tests |
 | [`pr.rs`](src/pr.rs) · [`pr/`](src/pr) | PR tooling | [`tests.rs`](src/pr/tests.rs) |
 | [`profile_matrix.rs`](src/profile_matrix.rs) | feature-profile matrix | — |
 | [`pty_fixture.rs`](src/pty_fixture.rs) · [`pty_fixture/`](src/pty_fixture) | PTY fixture extraction | [`tests.rs`](src/pty_fixture/tests.rs) |
@@ -41,6 +41,9 @@ The `cargo xtask <lane>` CLI. Merge-readiness is `cargo xtask ci` (or `--fast` /
 ```sh
 cargo nextest run -p jackin-xtask
 cargo clippy -p jackin-xtask --all-targets -- -D warnings
+cargo xtask docs brand
+cargo xtask docs specs
+cargo xtask lint agents
 cargo xtask ci --fast
 ```
 

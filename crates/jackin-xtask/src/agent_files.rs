@@ -78,6 +78,17 @@ fn check(root: &Path, dirs: &[&str]) -> Result<()> {
             problems.push(format!("{}: missing AGENTS.md", display(root, &agents)));
             continue;
         }
+        // Per-crate members must also carry README.md (crates/AGENTS.md hard
+        // rule). Top-level agent dirs (repo root, docs, …) are not crate members.
+        if dir.starts_with("crates/") && *dir != "crates" {
+            let readme = base.join("README.md");
+            if !readme.is_file() {
+                problems.push(format!(
+                    "{}: missing README.md (crates/AGENTS.md hard rule: every crate carries README.md + AGENTS.md + CLAUDE.md)",
+                    display(root, &readme)
+                ));
+            }
+        }
         match fs::symlink_metadata(&claude) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
                 check_symlink_target(root, &claude, &mut problems)?;

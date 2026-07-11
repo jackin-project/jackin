@@ -55,6 +55,27 @@ fn crate_member_dirs_discovers_member_crates() {
     );
 }
 
+/// Member crates missing `README.md` fail the agents gate (presence half of
+/// the crates/AGENTS.md hard rule). Freshness-vs-diff is a separate gate.
+#[test]
+#[cfg(unix)]
+fn check_flags_crate_missing_readme() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let crate_dir = root.join("crates/jackin-core");
+    fs::create_dir_all(&crate_dir).unwrap();
+    fs::write(crate_dir.join("Cargo.toml"), "").unwrap();
+    fs::write(crate_dir.join("AGENTS.md"), "# Rules\n").unwrap();
+    unix_fs::symlink("AGENTS.md", crate_dir.join("CLAUDE.md")).unwrap();
+    // No README.md.
+
+    let dirs = crate_member_dirs(root).unwrap();
+    let dir_refs: Vec<&str> = dirs.iter().map(String::as_str).collect();
+    let err = check(root, &dir_refs).unwrap_err().to_string();
+
+    assert!(err.contains("missing README.md"), "{err}");
+}
+
 /// The per-crate scan means a member crate missing its `CLAUDE.md` symlink is a
 /// real violation, not a no-op.
 #[test]

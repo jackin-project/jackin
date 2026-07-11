@@ -90,6 +90,12 @@ jobs:
       - name: Check source repository links
         run: cargo xtask docs repo-links
 
+      - name: Check brand prose
+        run: cargo xtask docs brand
+
+      - name: Check behavioral-spec test citations
+        run: cargo xtask docs specs
+
       - name: Check roadmap sidebar completeness
         run: cargo xtask roadmap audit
 
