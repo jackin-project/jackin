@@ -929,7 +929,10 @@ where
     let mut chunk = [0u8; 16 * 1024];
     while remaining > 0 {
         let n = chunk.len().min(remaining);
-        match tokio::time::timeout(FRAME_READ_TIMEOUT, stream.read_exact(&mut chunk[..n])).await {
+        let Some(dest) = chunk.get_mut(..n) else {
+            bail!("attach frame: chunk slice out of range");
+        };
+        match tokio::time::timeout(FRAME_READ_TIMEOUT, stream.read_exact(dest)).await {
             Ok(Ok(_)) => {}
             Ok(Err(e)) => {
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -939,7 +942,10 @@ where
             }
             Err(_) => bail!("attach frame: timed out reading payload"),
         }
-        payload.extend_from_slice(&chunk[..n]);
+        let Some(filled) = chunk.get(..n) else {
+            bail!("attach frame: chunk slice out of range");
+        };
+        payload.extend_from_slice(filled);
         remaining -= n;
     }
     Ok(Some((first_byte, payload)))
@@ -1077,12 +1083,17 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
             }
         }
         TAG_RESIZE => {
-            if payload.len() < 4 {
-                bail!("resize payload too short");
-            }
+            let rows: [u8; 2] = payload
+                .get(..2)
+                .and_then(|b| b.try_into().ok())
+                .ok_or_else(|| anyhow::anyhow!("resize payload too short"))?;
+            let cols: [u8; 2] = payload
+                .get(2..4)
+                .and_then(|b| b.try_into().ok())
+                .ok_or_else(|| anyhow::anyhow!("resize payload too short"))?;
             ClientFrame::Resize {
-                rows: u16::from_be_bytes([payload[0], payload[1]]),
-                cols: u16::from_be_bytes([payload[2], payload[3]]),
+                rows: u16::from_be_bytes(rows),
+                cols: u16::from_be_bytes(cols),
             }
         }
         TAG_INPUT => ClientFrame::Input(payload),
@@ -1091,11 +1102,10 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
         TAG_FOCUS_IN => ClientFrame::FocusIn,
         TAG_FOCUS_OUT => ClientFrame::FocusOut,
         TAG_CLIPBOARD_IMAGE => {
-            if payload.len() < 2 {
+            let Some((&format_tag, bytes)) = payload.split_first() else {
                 bail!("clipboard image payload too short");
-            }
-            let format = ClipboardImageFormat::from_tag(payload[0])?;
-            let bytes = payload[1..].to_vec();
+            };
+            let format = ClipboardImageFormat::from_tag(format_tag)?;
             if bytes.is_empty() {
                 bail!("clipboard image payload is empty");
             }
@@ -1105,7 +1115,10 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                     bytes.len()
                 );
             }
-            ClientFrame::ClipboardImage(ClipboardImage { format, bytes })
+            ClientFrame::ClipboardImage(ClipboardImage {
+                format,
+                bytes: bytes.to_vec(),
+            })
         }
         TAG_CLIPBOARD_IMAGE_START => {
             let mut cursor = PayloadCursor::new(&payload);
@@ -1201,11 +1214,12 @@ pub fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
 pub fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
     Ok(match tag {
         TAG_WELCOME => {
-            if payload.len() < 4 {
-                bail!("welcome payload too short");
-            }
+            let count: [u8; 4] = payload
+                .get(..4)
+                .and_then(|b| b.try_into().ok())
+                .ok_or_else(|| anyhow::anyhow!("welcome payload too short"))?;
             ServerFrame::Welcome {
-                session_count: u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]),
+                session_count: u32::from_be_bytes(count),
             }
         }
         TAG_OUTPUT => ServerFrame::Output(payload),
@@ -1356,22 +1370,27 @@ impl<'a> PayloadCursor<'a> {
     }
 
     fn read_u8(&mut self, field: &str) -> Result<u8> {
-        if self.pos >= self.payload.len() {
+        let Some(value) = self.payload.get(self.pos).copied() else {
             bail!("hello payload ended before {field}");
-        }
-        let value = self.payload[self.pos];
+        };
         self.pos += 1;
         Ok(value)
     }
 
     fn read_u16(&mut self, field: &str) -> Result<u16> {
         let bytes = self.read_bytes(2, field)?;
-        Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+        let arr: [u8; 2] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("hello {field}: short slice"))?;
+        Ok(u16::from_be_bytes(arr))
     }
 
     fn read_u32(&mut self, field: &str) -> Result<u32> {
         let bytes = self.read_bytes(4, field)?;
-        Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+        let arr: [u8; 4] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("hello {field}: short slice"))?;
+        Ok(u32::from_be_bytes(arr))
     }
 
     fn read_u64(&mut self, field: &str) -> Result<u64> {
@@ -1390,10 +1409,9 @@ impl<'a> PayloadCursor<'a> {
     }
 
     fn read_remaining(&mut self, field: &str) -> Result<&'a [u8]> {
-        if self.pos > self.payload.len() {
+        let Some(bytes) = self.payload.get(self.pos..) else {
             bail!("hello payload ended before {field}");
-        }
-        let bytes = &self.payload[self.pos..];
+        };
         self.pos = self.payload.len();
         Ok(bytes)
     }
@@ -1403,13 +1421,12 @@ impl<'a> PayloadCursor<'a> {
             .pos
             .checked_add(len)
             .ok_or_else(|| anyhow::anyhow!("hello {field} length overflow"))?;
-        if end > self.payload.len() {
+        let Some(bytes) = self.payload.get(self.pos..end) else {
             bail!(
                 "hello {field} length {len} exceeds remaining payload {}",
                 self.payload.len().saturating_sub(self.pos)
             );
-        }
-        let bytes = &self.payload[self.pos..end];
+        };
         self.pos = end;
         Ok(bytes)
     }

@@ -109,13 +109,20 @@ pub fn extract_interpolation_refs(s: &str) -> Vec<&str> {
     let mut refs = Vec::new();
     let mut rest = s;
     while let Some(start) = rest.find("${") {
-        let after_open = &rest[start + 2..];
+        let Some(after_open) = rest.get(start + 2..) else {
+            break;
+        };
         if let Some(end) = after_open.find('}') {
-            let ref_expr = &after_open[..end];
+            let Some(ref_expr) = after_open.get(..end) else {
+                break;
+            };
             if let Some(var_name) = ref_expr.strip_prefix("env.") {
                 refs.push(var_name);
             }
-            rest = &after_open[end + 1..];
+            let Some(next) = after_open.get(end + 1..) else {
+                break;
+            };
+            rest = next;
         } else {
             break;
         }

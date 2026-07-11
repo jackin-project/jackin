@@ -1,6 +1,6 @@
 //! Container-side path chokepoint — single source for paths under `/jackin`.
 //!
-//! Hard rule (AGENTS.md / HOST_AND_CONTAINER.md): every container path any
+//! Hard rule (`AGENTS.md` / `HOST_AND_CONTAINER.md`): every container path any
 //! builder emits must live under `/jackin/`. No FHS roots (`/run`, `/var`,
 //! `/opt`, `/etc`, `/tmp/jackin*`). Callers construct paths via these
 //! constants or [`join`]; the policy suite and the `cargo xtask lint
@@ -32,7 +32,7 @@ pub const CLAUDE_DIR: &str = "/jackin/claude";
 pub const CODEX_DIR: &str = "/jackin/codex";
 /// Grok handoff directory.
 pub const GROK_DIR: &str = "/jackin/grok";
-/// OpenCode handoff directory.
+/// `OpenCode` handoff directory.
 pub const OPENCODE_DIR: &str = "/jackin/opencode";
 /// Kimi Code handoff home.
 pub const KIMI_CODE_DIR: &str = "/jackin/kimi-code";
@@ -79,7 +79,7 @@ pub const CLAUDE_ACCOUNT: &str = "/jackin/claude/account.json";
 pub const CODEX_AUTH: &str = "/jackin/codex/auth.json";
 /// Amp secrets handoff file.
 pub const AMP_SECRETS: &str = "/jackin/amp/secrets.json";
-/// OpenCode auth handoff file.
+/// `OpenCode` auth handoff file.
 pub const OPENCODE_AUTH: &str = "/jackin/opencode/auth.json";
 /// Grok auth handoff file.
 pub const GROK_AUTH: &str = "/jackin/grok/auth.json";
@@ -91,7 +91,7 @@ pub const GIT_HOOK_PREPARE_COMMIT_MSG_MARKER: &str = "/jackin/state/git-hooks/pr
 pub const AGENT_STATUS_CLAUDE_HOOK: &str = "/jackin/runtime/agent-status/hooks/claude/report-hook.sh";
 /// Codex agent-status report hook.
 pub const AGENT_STATUS_CODEX_HOOK: &str = "/jackin/runtime/agent-status/hooks/codex/report-hook.sh";
-/// OpenCode agent-status plugin.
+/// `OpenCode` agent-status plugin.
 pub const AGENT_STATUS_OPENCODE_PLUGIN: &str = "/jackin/runtime/agent-status/hooks/opencode/plugin.js";
 
 

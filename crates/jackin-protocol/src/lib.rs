@@ -3,6 +3,15 @@
 //! **Architecture Invariant:** T1.
 //! Entry point: [`ClientFrame`] — attach-protocol client frame.
 
+#![deny(
+    clippy::string_slice,
+    clippy::indexing_slicing,
+    clippy::get_unwrap,
+    clippy::unwrap_in_result,
+    clippy::panic_in_result_fn,
+    clippy::unchecked_time_subtraction
+)]
+
 use jackin_core::container_paths;
 
 pub mod agent_status;

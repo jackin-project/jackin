@@ -3,6 +3,15 @@
 //! **Architecture Invariant:** T0.
 //! Entry point: [`Agent`] — primary domain noun re-exported to every crate.
 
+#![deny(
+    clippy::string_slice,
+    clippy::indexing_slicing,
+    clippy::get_unwrap,
+    clippy::unwrap_in_result,
+    clippy::panic_in_result_fn,
+    clippy::unchecked_time_subtraction
+)]
+
 pub mod account_key;
 pub mod agent;
 pub mod ansi_tokens;

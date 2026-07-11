@@ -3,6 +3,17 @@
 //! **Architecture Invariant:** T1.
 //! Entry point: [`AppConfig`] — loaded operator configuration.
 
+#![deny(
+    clippy::string_slice,
+    clippy::indexing_slicing,
+    clippy::get_unwrap,
+    clippy::unwrap_in_result,
+    clippy::panic_in_result_fn,
+    clippy::unchecked_time_subtraction
+)]
+// get_unwrap has no clippy.toml allow-in-tests valve; keep production denied.
+#![cfg_attr(test, allow(clippy::get_unwrap))]
+
 pub mod app_config;
 pub mod auth;
 pub mod editor;

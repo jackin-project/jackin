@@ -49,7 +49,7 @@ pub fn published_image_repository(published_image: &str) -> &str {
         .map_or(published_image, |(base, _)| base);
     let last_slash = without_digest.rfind('/').unwrap_or(0);
     match without_digest.rfind(':') {
-        Some(colon) if colon > last_slash => &without_digest[..colon],
+        Some(colon) if colon > last_slash => without_digest.get(..colon).unwrap_or(without_digest),
         _ => without_digest,
     }
 }

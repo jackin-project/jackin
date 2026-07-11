@@ -73,8 +73,10 @@ pub fn plan_edit(
     let mut new_indexes: Vec<usize> = Vec::new();
     for upsert in upserts {
         if let Some(pos) = post_upsert.iter().position(|m| m.dst == upsert.dst) {
-            post_upsert[pos] = upsert.clone();
-            new_indexes.push(pos);
+            if let Some(slot) = post_upsert.get_mut(pos) {
+                *slot = upsert.clone();
+                new_indexes.push(pos);
+            }
         } else {
             post_upsert.push(upsert.clone());
             new_indexes.push(post_upsert.len() - 1);
