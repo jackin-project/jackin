@@ -66,6 +66,8 @@ cargo test --doc --workspace --locked
 | Full non-Docker gate | `cargo xtask ci` | merge readiness |
 | Container/runtime behavior | `cargo xtask ci --e2e` (Docker running) | capsule/runtime PRs |
 | Docs/roadmap | `cargo xtask roadmap audit && cargo xtask docs repo-links && cargo xtask research check` | any docs edit |
+| File-size gate | `cargo xtask lint files` (`--format json\|github`) | structure / split PRs |
+| Agents gate | `cargo xtask lint agents` (`--format json\|github`) | new crate / AGENTS files |
 | TUI snapshots | `cargo nextest run -p jackin-capsule -p jackin-console` (insta snapshots live only in these two crates today) | TUI render changes |
 
 Every crate is verified by `cargo nextest run -p <crate>`. Exceptions worth naming: `jackin` E2E tests need `--features e2e --profile docker-e2e`; doctests need `cargo test --doc --workspace --locked`. The machine-checkable per-member map is also emitted by `cargo xtask health --format json` under `verification_map`.

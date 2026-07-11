@@ -18,8 +18,9 @@ The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, 
 |---|---|---|
 | [`main.rs`](src/main.rs) | `cargo xtask` dispatcher | — |
 | [`ci.rs`](src/ci.rs) · [`ci/`](src/ci) | CI orchestration | [`tests.rs`](src/ci/tests.rs) |
-| [`lint.rs`](src/lint.rs) · [`lint/`](src/lint) | file-size lint gate | [`tests.rs`](src/lint/tests.rs) |
-| [`agent_files.rs`](src/agent_files.rs) · [`agent_files/`](src/agent_files) | agent-file symlink gate | [`tests.rs`](src/agent_files/tests.rs) |
+| [`lint.rs`](src/lint.rs) · [`lint/`](src/lint) | file-size lint gate (`--format human\|json\|github`) | [`tests.rs`](src/lint/tests.rs) |
+| [`agent_files.rs`](src/agent_files.rs) · [`agent_files/`](src/agent_files) | agent-file symlink gate (`--format human\|json\|github`) | [`tests.rs`](src/agent_files/tests.rs) |
+| [`report.rs`](src/report.rs) · [`report/`](src/report) | shared gate reporter (human/json/github) | [`tests.rs`](src/report/tests.rs) |
 | [`agent_links.rs`](src/agent_links.rs) · [`agent_links/`](src/agent_links) | no-cross-ref gate (README/AGENTS) | [`tests.rs`](src/agent_links/tests.rs) |
 | [`arch.rs`](src/arch.rs) · [`arch/`](src/arch) | dependency-direction gate | [`tests.rs`](src/arch/tests.rs) |
 | [`test_layout.rs`](src/test_layout.rs) · [`test_layout/`](src/test_layout) | test-layout gate | [`tests.rs`](src/test_layout/tests.rs) |
@@ -44,6 +45,8 @@ cargo clippy -p jackin-xtask --all-targets -- -D warnings
 cargo xtask docs brand
 cargo xtask docs specs
 cargo xtask lint agents
+cargo xtask lint agents --format json
+cargo xtask lint files --format json
 cargo xtask ci --fast
 ```
 

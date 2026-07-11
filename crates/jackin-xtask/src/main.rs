@@ -28,6 +28,7 @@ mod pr;
 mod profile_matrix;
 mod pty_fixture;
 mod release_verify;
+mod report;
 mod schema;
 mod test_layout;
 
