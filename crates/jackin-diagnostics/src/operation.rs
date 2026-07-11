@@ -17,6 +17,8 @@ use crate::logging::{emit_compact_line, emit_debug_line};
 use crate::observability::otel_keys;
 use crate::redact::redact_text;
 
+const OPERATION_TARGET: &str = "jackin_diagnostics";
+
 /// Severity for [`operation_log`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OperationLevel {
@@ -45,7 +47,6 @@ pub fn operation_span(name: &'static str, attrs: &[(&'static str, String)]) -> S
 
     span
 }
-
 
 /// RAII guard that keeps an operation span entered until drop.
 #[derive(Debug)]
@@ -96,27 +97,33 @@ pub fn operation_log(
     match level {
         OperationLevel::Info => {
             tracing::info!(
-                event.name = event_name,
-                jackin.category = category,
-                event.outcome = "success",
+                target: OPERATION_TARGET,
+                kind = "operation",
+                "event.name" = event_name,
+                "jackin.category" = category,
+                "event.outcome" = "success",
                 "{body}"
             );
             emit_compact_line(category, body);
         }
         OperationLevel::Debug => {
             tracing::debug!(
-                event.name = event_name,
-                jackin.category = category,
-                event.outcome = "success",
+                target: OPERATION_TARGET,
+                kind = "operation",
+                "event.name" = event_name,
+                "jackin.category" = category,
+                "event.outcome" = "success",
                 "{body}"
             );
             emit_debug_line(category, body);
         }
         OperationLevel::Warn => {
             tracing::warn!(
-                event.name = event_name,
-                jackin.category = category,
-                event.outcome = "success",
+                target: OPERATION_TARGET,
+                kind = "operation",
+                "event.name" = event_name,
+                "jackin.category" = category,
+                "event.outcome" = "success",
                 "{body}"
             );
             emit_compact_line(category, body);
@@ -139,9 +146,11 @@ pub fn operation_error(
     let _ = attrs;
 
     tracing::error!(
-        event.name = "error",
-        jackin.category = "error",
-        event.outcome = "failure",
+        target: OPERATION_TARGET,
+        kind = "operation_error",
+        "event.name" = "error",
+        "jackin.category" = "error",
+        "event.outcome" = "failure",
         error_type = error_type,
         "{body}"
     );

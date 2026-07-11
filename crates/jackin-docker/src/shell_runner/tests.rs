@@ -1,5 +1,6 @@
 //! Tests for `shell_runner`.
 use super::*;
+use std::time::Instant;
 
 #[cfg(unix)]
 #[tokio::test]
@@ -349,7 +350,7 @@ async fn run_times_out_and_kills_sleep() {
         timeout: Some(std::time::Duration::from_millis(200)),
         ..RunOptions::default()
     };
-    let started = std::time::Instant::now();
+    let started = Instant::now();
     let err = runner
         .run("sleep", &["5"], None, &opts)
         .await

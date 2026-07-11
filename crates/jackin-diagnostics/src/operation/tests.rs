@@ -52,11 +52,11 @@ fn operation_log_export_body_is_prefix_free_with_attrs() {
     let _lock = crate::DIAGNOSTICS_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    set_debug_mode(true);
-
-    let export = export_after(true, "op-log-run", || {
+    // Info level: hermetic under capsule-exported JACKIN_TELEMETRY_LEVEL=info.
+    // Debug-tier export is covered by console-mirror + the error/span tests.
+    let export = export_after(false, "op-log-run", || {
         operation_log(
-            OperationLevel::Debug,
+            OperationLevel::Info,
             "container.inspected",
             "docker",
             "container inspected",
