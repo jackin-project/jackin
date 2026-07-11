@@ -10,6 +10,7 @@
 
 pub mod logging;
 pub mod output;
+pub(crate) mod store_backend;
 pub mod telemetry;
 pub mod telemetry_store;
 pub mod token_monitor;

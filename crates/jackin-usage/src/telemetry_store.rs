@@ -14,7 +14,7 @@ use jackin_core::account_key::account_key_hash;
 use jackin_protocol::control::{FocusedUsageView, QuotaBucketView};
 #[cfg(test)]
 use jackin_protocol::control::{UsageConfidence, UsageSnapshotStatus, UsageSource};
-use turso::{Connection, Row, params};
+use crate::store_backend::{Connection, Row, connect_local, params};
 
 const SCHEMA_VERSION: &str = "4";
 
@@ -104,13 +104,9 @@ async fn open_store(path: &Path) -> Result<Connection, String> {
     if let Some(conn) = connections.get(&path) {
         return Ok(conn.clone());
     }
-    let db = turso::Builder::new_local(&path)
-        .build()
+    let conn = connect_local(&path)
         .await
         .map_err(|err| format!("open telemetry store failed: {err}"))?;
-    let conn = db
-        .connect()
-        .map_err(|err| format!("connect telemetry store failed: {err}"))?;
     record_connection_build(&path);
     // Schema creation + the ALTER-based migration are idempotent but not free;
     // run them once per database path per process. Keyed by the resolved turso

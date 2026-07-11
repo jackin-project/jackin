@@ -88,6 +88,8 @@ predicates = "=3.1.4"
 procfs = "0.18"
 rand = "0.10"
 ratatui = "0.30"
+# Must stay lockstep-compatible with ratatui 0.30; pinned when workspace was
+# virtualized (#532/#713). Candidate: relax to "0.1" — needs lockfile-refresh PR.
 ratatui-core = "=0.1.2"
 regex = "1"
 reqwest = { version = "0.13", default-features = false }
@@ -95,6 +97,8 @@ rustls = { version = "0.23", default-features = false }
 secrecy = "0.10"
 semver = "1"
 serde = "1.0"
+# Exact pin from workspace virtualization (#713); no recovered bug citation.
+# Candidate for caret "1" in a dedicated lockfile-refresh PR.
 serde_json = "=1.0.150"
 serde_yaml_ng = "0.10.0"
 sha2 = "0.11"
@@ -103,14 +107,20 @@ smallvec = "1.15"
 tabled = "0.21.0"
 tempfile = "=3.27.0"
 thiserror = "2.0"
+# Renovate exact pin (#394 → workspace #713). Candidate: relax to ~1.52 —
+# needs a lockfile-refresh PR; do not float minors without a full test run.
 tokio = { version = "=1.52.3", default-features = false }
 tokio-util = "0.7"
+# Exact pin from workspace virtualization (#713); no recovered bug citation.
+# Candidate for caret "1" in a dedicated lockfile-refresh PR.
 toml = "=1.1.2"
 toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 tui-scrollbar = "0.2.4"
 tui-widget-list = "0.15"
+# Pre-release API churn; revisit at first stable 0.7 (or next pre.N after
+# re-running the usage-store suite against the boundary module only).
 turso = { version = "=0.7.0-pre.17", default-features = false }
 unicode-width = "0.2"
 url = "2"

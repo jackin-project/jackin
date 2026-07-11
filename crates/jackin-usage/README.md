@@ -21,6 +21,7 @@ Usage, pricing, telemetry, and token monitors for the `jackin-capsule` daemon. O
 | [`usage.rs`](src/usage.rs) · [`usage/`](src/usage) | usage/pricing accounting | [`tests.rs`](src/usage/tests.rs) |
 | [`telemetry.rs`](src/telemetry.rs) | telemetry emission | — |
 | [`telemetry_store.rs`](src/telemetry_store.rs) · [`telemetry_store/`](src/telemetry_store) | persistent telemetry store | [`tests.rs`](src/telemetry_store/tests.rs) |
+| [`store_backend.rs`](src/store_backend.rs) | turso SQLite import chokepoint | — |
 | [`logging.rs`](src/logging.rs) · [`logging/`](src/logging) | shared logging tier (`clog!`/`cdebug!`) | [`tests.rs`](src/logging/tests.rs) |
 | [`output.rs`](src/output.rs) | usage output shaping | — |
 

@@ -56,7 +56,6 @@ exceptions = [
     { crate = "potential_utf@0.1.5", allow = ["Unicode-3.0"] },
     { crate = "r-efi@5.3.0", allow = ["MIT", "Apache-2.0"] },
     { crate = "r-efi@6.0.0", allow = ["MIT", "Apache-2.0"] },
-    { crate = "ring@0.17.14", allow = ["Apache-2.0", "ISC"] },
     { crate = "rustix@1.1.4", allow = ["Apache-2.0 WITH LLVM-exception", "Apache-2.0", "MIT"] },
     { crate = "rustls", allow = ["Apache-2.0", "ISC", "MIT"] },
     { crate = "rustls-native-certs@0.8.4", allow = ["Apache-2.0", "ISC", "MIT"] },
