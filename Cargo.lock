@@ -2728,6 +2728,7 @@ dependencies = [
  "jackin-runtime",
  "jackin-test-support",
  "jackin-tui",
+ "jackin-usage",
  "owo-colors 4.3.0",
  "predicates",
  "ratatui",
@@ -2740,7 +2741,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "toml",
- "turso",
 ]
 
 [[package]]

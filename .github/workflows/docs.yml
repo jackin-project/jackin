@@ -87,9 +87,21 @@ jobs:
           install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
+      # Plan 049 residual: generate crate README → Fumadocs pages so repo-link
+      # checks see the same generated MDX the docs build ships (gitignored).
+      - name: Setup bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version: "1.2.21"
+
+      - name: Install docs deps and generate crate pages
+        working-directory: docs
+        run: |
+          bun install --frozen-lockfile
+          bun run scripts/gen-crate-pages.ts
+
       - name: Check source repository links
         run: cargo xtask docs repo-links
-
       - name: Check brand prose
         run: cargo xtask docs brand
 

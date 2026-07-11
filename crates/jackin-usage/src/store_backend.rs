@@ -1,12 +1,13 @@
 //! Single import chokepoint for the workspace `turso` `SQLite` client.
 //!
-//! All production and test code in this crate reaches turso through this
-//! module so a version bump or backend swap is one-file work.
+//! All production and test code in this crate — and the host CLI usage
+//! cache under `crates/jackin` — reaches turso through this module so a
+//! version bump or backend swap is one-file work.
 
-pub(crate) use turso::{Connection, Row, params};
+pub use turso::{Connection, Row, params};
 
 /// Open a local `SQLite` database at `path` and return a connection.
-pub(crate) async fn connect_local(path: &str) -> Result<Connection, String> {
+pub async fn connect_local(path: &str) -> Result<Connection, String> {
     let db = turso::Builder::new_local(path)
         .build()
         .await
