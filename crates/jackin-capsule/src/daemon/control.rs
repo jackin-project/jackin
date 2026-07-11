@@ -5,7 +5,7 @@
 use jackin_core::container_paths;
 use super::{
     ClientFrame, ClientMsg, ClipboardImageInsertMode, Instant, Multiplexer, PathBuf, Result,
-    ServerMsg, Session, TokenTotals, clipboard_image_host_error_reason, explicit_redraw_reason,
+    ServerMsg, Session, TokenTotals, explicit_redraw_reason,
     log_clipboard_image_rejection, prefix_mode_for_mux_mode,
 };
 
@@ -174,12 +174,12 @@ pub async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 mux.set_clipboard_image_notice(format!("Image paste rejected: {err:#}"));
             }
         },
-        ClientFrame::ClipboardImageError(message) => {
-            let reason = clipboard_image_host_error_reason(&message);
+        ClientFrame::ClipboardImageError(error) => {
+            let reason = error.reason_code();
             crate::clog!("clipboard-image: host request failed reason={reason}");
-            crate::cdebug!("clipboard-image: host request failed detail={message}");
+            crate::cdebug!("clipboard-image: host request failed detail={error}");
             mux.clipboard_image_insert_mode = ClipboardImageInsertMode::PastePath;
-            mux.set_clipboard_image_notice(format!("Image paste rejected: {message}"));
+            mux.set_clipboard_image_notice(format!("Image paste rejected: {error}"));
         }
         ClientFrame::HostNotice(message) => {
             crate::clog!("host-affordance: {message}");

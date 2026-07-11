@@ -91,7 +91,7 @@ Add the matching `clippy.toml` escape valves (`allow-unwrap-in-tests`, `allow-ex
 
 1. **Shipped (plan 011)** — `[workspace.lints.rustdoc]` with `broken_intra_doc_links = "deny"`, `private_intra_doc_links = "warn"`, `redundant_explicit_links = "warn"`, `unescaped_backticks = "warn"` (roadmap named `unescaped_quotes_in_doc_comment`; substituted for the lint name accepted on the pinned toolchain).
 2. **Shipped (plan 011)** — `missing_debug_implementations = "deny"` (existing `#[expect]` sites keep compiling; local builds now fail like CI).
-3. Turn on `missing_docs` (the `rust` lint) for the foundational, API-bearing crates — `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-protocol`, `jackin-env`, `jackin-term` — not for binaries or `jackin-xtask`. Gate crate-by-crate behind the dry run rather than workspace-wide, because the first adoption sweep is large.
+3. Turn on `missing_docs` (the `rust` lint) for the foundational, API-bearing crates — `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-protocol`, `jackin-env`, `jackin-term` — not for binaries or `jackin-xtask`. Gate crate-by-crate behind the dry run rather than workspace-wide, because the first adoption sweep is large. **First crate adopted (plan 021, 2026-07-11):** `jackin-protocol` carries `#![deny(missing_docs)]` plus a typed `ClipboardImageError` wire surface; remaining five: manifest → env → term → config → core.
 4. Keep `cargo test --doc --workspace` (Phase 1 PR-time gate) as the executable half of the rustdoc gate.
 
 ### Custom project lints via dylint

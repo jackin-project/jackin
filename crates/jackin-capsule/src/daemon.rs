@@ -685,9 +685,6 @@ fn clipboard_image_error_reason(err: &anyhow::Error) -> &'static str {
     classify_clipboard_image_error(&format!("{err:#}"))
 }
 
-fn clipboard_image_host_error_reason(message: &str) -> &'static str {
-    classify_clipboard_image_error(message)
-}
 
 fn classify_clipboard_image_error(message: &str) -> &'static str {
     let lower = message.to_ascii_lowercase();

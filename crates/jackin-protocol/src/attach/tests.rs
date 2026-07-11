@@ -352,7 +352,7 @@ fn clipboard_image_transfer_client_frames_roundtrip() {
 
 #[test]
 fn clipboard_image_error_client_frame_roundtrips() {
-    let frame = ClientFrame::ClipboardImageError("host path is not an image".to_owned());
+    let frame = ClientFrame::ClipboardImageError(ClipboardImageError::from_message("host path is not an image".to_owned()));
     let bytes = encode_client(frame.clone()).unwrap();
     assert_eq!(bytes[0], TAG_CLIPBOARD_IMAGE_ERROR);
 
@@ -1057,6 +1057,65 @@ fn clipboard_image_rejects_empty_payload_without_panic() {
     assert!(
         err.to_string().contains("clipboard image payload too short"),
         "unexpected error: {err:#}"
+    );
+}
+
+#[test]
+fn clipboard_image_error_variants_roundtrip() {
+    let variants = [
+        ClipboardImageError::Empty,
+        ClipboardImageError::TooLarge,
+        ClipboardImageError::UnsupportedFormat,
+        ClipboardImageError::DigestMismatch,
+        ClipboardImageError::ChunkSequence,
+        ClipboardImageError::MissingTransfer,
+        ClipboardImageError::DuplicateTransfer,
+        ClipboardImageError::BackendUnavailable,
+        ClipboardImageError::Io,
+        ClipboardImageError::Other("host clipboard image probe failed: boom".to_owned()),
+    ];
+    for original in variants {
+        let bytes = encode_client(ClientFrame::ClipboardImageError(original.clone())).unwrap();
+        let tag = bytes[0];
+        let payload = bytes[5..].to_vec();
+        let decoded = decode_client(tag, payload).unwrap();
+        match decoded {
+            ClientFrame::ClipboardImageError(got) => {
+                assert_eq!(got.reason_code(), original.reason_code());
+                // Other preserves the free-form message; static kinds use canonical text.
+                if matches!(original, ClipboardImageError::Other(_)) {
+                    assert_eq!(got, original);
+                } else {
+                    assert_eq!(got.reason_code(), original.reason_code());
+                    assert!(!got.message().is_empty());
+                }
+            }
+            other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn clipboard_image_error_from_message_classifies_known_shapes() {
+    assert_eq!(
+        ClipboardImageError::from_message("clipboard image transfer is empty".into()).reason_code(),
+        "empty"
+    );
+    assert_eq!(
+        ClipboardImageError::from_message("transfer 9 exceeds cap 8".into()).reason_code(),
+        "oversize"
+    );
+    assert_eq!(
+        ClipboardImageError::from_message("host path is not an image".into()).reason_code(),
+        "signature-mismatch"
+    );
+    assert_eq!(
+        ClipboardImageError::from_message("SHA-256 mismatch".into()).reason_code(),
+        "digest-mismatch"
+    );
+    assert_eq!(
+        ClipboardImageError::from_message("offset 4 did not match expected 8".into()).reason_code(),
+        "offset-mismatch"
     );
 }
 

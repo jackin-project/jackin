@@ -154,12 +154,12 @@ async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
         .await
         .unwrap()
         .unwrap();
-    let ClientFrame::ClipboardImageError(message) = frame else {
+    let ClientFrame::ClipboardImageError(error) = frame else {
         panic!("expected ClipboardImageError");
     };
 
-    assert!(message.contains("host clipboard image probe failed"));
-    assert!(message.contains("WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip"));
+    assert!(error.message().contains("host clipboard image probe failed"));
+    assert!(error.message().contains("WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip"));
     assert_eq!(server.read(&mut tag).await.unwrap(), 0);
 }
 
@@ -183,12 +183,11 @@ async fn explicit_clipboard_path_request_mentions_file_url_support() {
         .await
         .unwrap()
         .unwrap();
-    let ClientFrame::ClipboardImageError(message) = frame else {
+    let ClientFrame::ClipboardImageError(error) = frame else {
         panic!("expected ClipboardImageError");
     };
 
-    assert_eq!(
-        message,
+    assert_eq!(error.message(),
         "host clipboard text is not an absolute readable image path or file:// image URL"
     );
     assert_eq!(server.read(&mut tag).await.unwrap(), 0);
@@ -1264,11 +1263,11 @@ async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
         .await
         .unwrap()
         .unwrap();
-    let ClientFrame::ClipboardImageError(message) = frame else {
+    let ClientFrame::ClipboardImageError(error) = frame else {
         panic!("expected ClipboardImageError");
     };
-    assert_eq!(message.len(), MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
-    assert!(message.ends_with("..."));
+    assert_eq!(error.message().len(), MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
+    assert!(error.message().ends_with("..."));
 
     server.read_exact(&mut tag).await.unwrap();
     let frame = read_client_frame(&mut server, tag[0])
@@ -1277,6 +1276,6 @@ async fn clipboard_image_error_writer_bounds_empty_and_overlong_message() {
         .unwrap();
     assert_eq!(
         frame,
-        ClientFrame::ClipboardImageError("Host action failed".to_owned())
+        ClientFrame::ClipboardImageError(jackin_protocol::attach::ClipboardImageError::from_message("Host action failed".to_owned()))
     );
 }

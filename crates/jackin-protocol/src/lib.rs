@@ -11,6 +11,7 @@
     clippy::panic_in_result_fn,
     clippy::unchecked_time_subtraction
 )]
+#![deny(missing_docs)]
 
 use jackin_core::container_paths;
 
@@ -46,8 +47,11 @@ pub enum ExecKind {
 /// allow-list of (name, kind, source) triples it will resolve.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecBinding {
+    /// `name` field.
     pub name: String,
+    /// `kind` field.
     pub kind: ExecKind,
+    /// `source` field.
     pub source: String,
 }
 
@@ -56,6 +60,7 @@ pub struct ExecBinding {
 /// [`control::frame`], same as the control socket.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CredRequest {
+    /// `refs` field.
     pub refs: Vec<ExecBinding>,
 }
 
@@ -65,9 +70,15 @@ pub struct CredRequest {
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum CredReply {
     /// Every requested credential resolved: `name -> value`.
-    Ok { values: BTreeMap<String, String> },
+    Ok {
+        /// Map of binding name to resolved secret value.
+        values: BTreeMap<String, String>,
+    },
     /// Resolution failed; `error` is operator-facing (no secret material).
-    Error { error: String },
+    Error {
+        /// Operator-facing failure text (never secret material).
+        error: String,
+    },
 }
 
 /// Filename written under `/jackin/run/` by the host launcher.
@@ -108,11 +119,15 @@ pub enum ExitAction {
 /// Host-validated role/session facts Capsule needs to spawn panes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CapsuleConfig {
+    /// `role` field.
     pub role: String,
+    /// `workdir` field.
     pub workdir: String,
     #[serde(default)]
+    /// `agents` field.
     pub agents: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    /// `models` field.
     pub models: BTreeMap<String, String>,
     /// Per-(agent, provider) model overrides from the role manifest. Outer key
     /// is the agent slug, inner key the provider's lowercase slug
@@ -160,8 +175,10 @@ pub struct CapsuleConfig {
 /// `[[claude.marketplaces]]` without `jackin-protocol` depending on `jackin-core`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClaudeMarketplace {
+    /// `source` field.
     pub source: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// `sparse` field.
     pub sparse: Vec<String>,
 }
 
@@ -171,6 +188,7 @@ pub struct ClaudeMarketplace {
 /// source of truth for the provider's overrides.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InitialProvider {
+    /// `label` field.
     pub label: String,
 }
 
@@ -350,10 +368,12 @@ impl Provider {
 }
 
 impl CapsuleConfig {
+    /// `supported_agents` method.
     pub fn supported_agents(&self) -> Vec<String> {
         self.agents.clone()
     }
 
+    /// `model_for_agent` method.
     pub fn model_for_agent(&self, agent: &str) -> Option<&str> {
         self.models.get(agent).map(String::as_str)
     }

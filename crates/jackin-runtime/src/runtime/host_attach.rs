@@ -914,7 +914,9 @@ where
     W: AsyncWrite + Unpin,
 {
     let message = bounded_attach_message(message, MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
-    let msg = encode_client(ClientFrame::ClipboardImageError(message))
+    let msg = encode_client(ClientFrame::ClipboardImageError(
+        jackin_protocol::attach::ClipboardImageError::from_message(message.to_owned()),
+    ))
         .context("encoding ClipboardImageError frame")?;
     writer
         .write_all(&msg)
