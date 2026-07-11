@@ -55,7 +55,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [020](020-container-path-chokepoint-policy.md) | Container-path chokepoint + executable `/jackin/`-only policy | 3 | P1 | M-L | TODO |
 | [021](021-protocol-missing-docs-typed-errors.md) | `missing_docs` on jackin-protocol + typed clipboard wire error | 1/2 | P2 | M | TODO |
 | [022](022-ci-lanes-powerset-canary-partitions.md) | Scoped powerset PR gate, beta clippy canary, `xtask ci --only` partitions | 1/4 | P2 | M | TODO |
-| [023](023-docs-command-drift-gate.md) | Documented-command drift gate (docs fences ↔ clap tree) | 5 | P2 | M | DONE (reviewed; `exec-plan-023` @ `8f017de60`, unmerged; 306 invocations gated, research subtree excluded by ruling. TWO OPERATOR FLAGS: (1) docs documented `jackin usage <INSTANCE> workspace/session` but `UsageScope` has only Accounts/Verify — confirm regression vs intentional removal, docs corrected to code either way; (2) `installation.mdx` showed unbuilt `--backend apple-container` flag — removed as research leak, revisit when the backend ships) |
+| [023](023-docs-command-drift-gate.md) | Documented-command drift gate (docs fences ↔ clap tree) | 5 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; research subtree excluded; docs corrected: `usage` workspace/session → accounts/verify, dropped unbuilt `--backend apple-container`, workspace create requires `--mount`. OPERATOR FLAGS retained: confirm usage scope regression vs intentional removal; revisit apple-container when backend ships) |
 
 ### Fourth wave — clock seam, test-support extraction, top perf fixes
 
