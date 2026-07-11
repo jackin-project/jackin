@@ -76,7 +76,7 @@ fn check_passes_when_allowlist_exactly_matches_violations() {
     let v = violation("crates/a/src/foo.rs");
     let violations = BTreeMap::from([v]);
     let allowed = BTreeSet::from(["crates/a/src/foo.rs".to_owned()]);
-    assert!(check(&violations, &allowed).is_ok());
+    check(&violations, &allowed).unwrap();
 }
 
 #[test]

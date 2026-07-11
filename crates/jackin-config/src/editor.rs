@@ -613,7 +613,8 @@ impl ConfigEditor {
     }
 
     fn workspace_doc_mut(&mut self, workspace: &str) -> &mut DocumentMut {
-        debug_assert!(validate_workspace_file_stem(workspace).is_ok());
+        // `.ok().is_some()` avoids assertions_on_result_states vs redundant_pattern_matching.
+        debug_assert!(validate_workspace_file_stem(workspace).ok().is_some());
         self.removed_workspaces.remove(workspace);
         self.workspace_docs.entry(workspace.to_owned()).or_default()
     }

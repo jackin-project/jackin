@@ -650,7 +650,7 @@ fn auth_forward_mode_from_str_accepts_sync_and_ignore() {
 #[test]
 fn auth_forward_mode_from_str_rejects_unknown_values() {
     use std::str::FromStr;
-    assert!(AuthForwardMode::from_str("bogus").is_err());
+    AuthForwardMode::from_str("bogus").unwrap_err();
 }
 
 #[test]
@@ -911,9 +911,9 @@ fn github_auth_mode_from_str_round_trips() {
         GithubAuthMode::from_str("ignore").unwrap(),
         GithubAuthMode::Ignore
     );
-    assert!(GithubAuthMode::from_str("api_key").is_err());
-    assert!(GithubAuthMode::from_str("oauth_token").is_err());
-    assert!(GithubAuthMode::from_str("nope").is_err());
+    GithubAuthMode::from_str("api_key").unwrap_err();
+    GithubAuthMode::from_str("oauth_token").unwrap_err();
+    GithubAuthMode::from_str("nope").unwrap_err();
 }
 
 #[test]

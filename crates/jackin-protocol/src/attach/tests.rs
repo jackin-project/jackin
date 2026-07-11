@@ -147,7 +147,7 @@ fn hello_rejects_empty_provider_label_at_decode() {
     let mut payload = vec![0, 24, 0, 80, 3, 0, 6];
     payload.extend(b"claude");
     payload.extend_from_slice(&0u16.to_be_bytes()); // provider_label_len = 0
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
@@ -157,14 +157,14 @@ fn hello_rejects_oversized_agent_len() {
     // decode must bail rather than slice past the buffer.
     let mut payload = vec![0, 42, 0, 100, 2, 0, 99];
     payload.extend(b"only-7-bytes");
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
 fn hello_rejects_non_utf8_agent_bytes() {
     let mut payload = vec![0, 42, 0, 100, 2, 0, 3];
     payload.extend(&[0xFF, 0xFE, 0xFD]);
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
@@ -172,13 +172,13 @@ fn hello_rejects_truncated_env_value() {
     let mut payload = vec![0, 42, 0, 100, 0, 0, 0, 0, 1, 0, 3, 0, 0, 0, 99];
     payload.extend(b"KEY");
     payload.extend(b"short");
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
 fn hello_rejects_truncated_4_byte_payload() {
     let payload = vec![0, 24, 0, 80];
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn hello_shell_with_non_empty_agent_slug_rejected() {
     payload.extend(b"claud");
     payload.extend(&[0, 0]);
     payload.push(0);
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn hello_with_trailing_bytes_rejected() {
     .expect("encode_client for a valid Hello must succeed");
     bytes.push(0xFF);
     let payload = bytes[5..].to_vec();
-    assert!(decode_client(TAG_HELLO, payload).is_err());
+    decode_client(TAG_HELLO, payload).unwrap_err();
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn welcome_decodes_session_count() {
 
 #[test]
 fn welcome_rejects_truncated_payload() {
-    assert!(decode_server(TAG_WELCOME, vec![0, 0]).is_err());
+    decode_server(TAG_WELCOME, vec![0, 0]).unwrap_err();
 }
 
 #[test]
@@ -300,9 +300,9 @@ fn file_export_server_frames_roundtrip() {
 
 #[test]
 fn file_export_decode_rejects_malformed_payloads() {
-    assert!(decode_server(TAG_FILE_EXPORT_START, Vec::new()).is_err());
-    assert!(decode_server(TAG_FILE_EXPORT_CHUNK, vec![0; 16]).is_err());
-    assert!(decode_server(TAG_FILE_EXPORT_END, vec![0; 8]).is_err());
+    decode_server(TAG_FILE_EXPORT_START, Vec::new()).unwrap_err();
+    decode_server(TAG_FILE_EXPORT_CHUNK, vec![0; 16]).unwrap_err();
+    decode_server(TAG_FILE_EXPORT_END, vec![0; 8]).unwrap_err();
 
     let mut bad_reveal_flag = Vec::new();
     bad_reveal_flag.extend_from_slice(&1u64.to_be_bytes());
@@ -312,7 +312,7 @@ fn file_export_decode_rejects_malformed_payloads() {
     bad_reveal_flag.push(2);
     bad_reveal_flag.extend_from_slice(b"s");
     bad_reveal_flag.extend_from_slice(b"n");
-    assert!(decode_server(TAG_FILE_EXPORT_START, bad_reveal_flag).is_err());
+    decode_server(TAG_FILE_EXPORT_START, bad_reveal_flag).unwrap_err();
 
     let mut bad_open_flag = Vec::new();
     bad_open_flag.extend_from_slice(&1u64.to_be_bytes());
@@ -323,7 +323,7 @@ fn file_export_decode_rejects_malformed_payloads() {
     bad_open_flag.push(2);
     bad_open_flag.extend_from_slice(b"s");
     bad_open_flag.extend_from_slice(b"n");
-    assert!(decode_server(TAG_FILE_EXPORT_START, bad_open_flag).is_err());
+    decode_server(TAG_FILE_EXPORT_START, bad_open_flag).unwrap_err();
 }
 
 #[test]
@@ -372,26 +372,26 @@ fn host_notice_client_frame_roundtrips() {
 
 #[test]
 fn clipboard_image_transfer_decode_rejects_malformed_payloads() {
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE_START, Vec::new()).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE_START, Vec::new()).unwrap_err();
 
     let mut empty_size = Vec::new();
     empty_size.extend_from_slice(&1u64.to_be_bytes());
     empty_size.push(ClipboardImageFormat::Png.tag());
     empty_size.extend_from_slice(&0u64.to_be_bytes());
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE_START, empty_size).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE_START, empty_size).unwrap_err();
 
     let mut empty_chunk = Vec::new();
     empty_chunk.extend_from_slice(&1u64.to_be_bytes());
     empty_chunk.extend_from_slice(&0u64.to_be_bytes());
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE_CHUNK, empty_chunk).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE_CHUNK, empty_chunk).unwrap_err();
 
     let mut short_end = Vec::new();
     short_end.extend_from_slice(&1u64.to_be_bytes());
     short_end.extend_from_slice(&[0; 3]);
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE_END, short_end).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE_END, short_end).unwrap_err();
 
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE_ERROR, Vec::new()).is_err());
-    assert!(decode_client(TAG_HOST_NOTICE, Vec::new()).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE_ERROR, Vec::new()).unwrap_err();
+    decode_client(TAG_HOST_NOTICE, Vec::new()).unwrap_err();
 }
 
 #[test]
@@ -418,12 +418,12 @@ fn clipboard_image_rejects_empty_payload() {
     .expect_err("empty image payload must be rejected");
     assert!(format!("{err:#}").contains("empty"));
 
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE, vec![1]).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE, vec![1]).unwrap_err();
 }
 
 #[test]
 fn clipboard_image_rejects_unknown_format() {
-    assert!(decode_client(TAG_CLIPBOARD_IMAGE, vec![99, 0x42]).is_err());
+    decode_client(TAG_CLIPBOARD_IMAGE, vec![99, 0x42]).unwrap_err();
 }
 
 #[test]
@@ -458,13 +458,13 @@ fn clipboard_image_rejects_over_cap_payload_at_decode() {
 
 #[test]
 fn host_open_url_rejects_disallowed_schemes() {
-    assert!(decode_server(TAG_HOST_OPEN_URL, b"file:///tmp/report.html".to_vec()).is_err());
-    assert!(decode_server(TAG_HOST_OPEN_URL, b"javascript:alert(1)".to_vec()).is_err());
+    decode_server(TAG_HOST_OPEN_URL, b"file:///tmp/report.html".to_vec()).unwrap_err();
+    decode_server(TAG_HOST_OPEN_URL, b"javascript:alert(1)".to_vec()).unwrap_err();
 }
 
 #[test]
 fn unknown_server_tag_rejected() {
-    assert!(decode_server(0xFE, Vec::new()).is_err());
+    decode_server(0xFE, Vec::new()).unwrap_err();
 }
 
 #[test]
@@ -481,10 +481,7 @@ fn read_client_frame_rejects_oversize() {
         a.write_all(&oversize_len.to_be_bytes()).await.unwrap();
         a.shutdown().await.unwrap();
         let result = read_client_frame(&mut b, TAG_INPUT).await;
-        assert!(
-            result.is_err(),
-            "expected oversize rejection, got {result:?}"
-        );
+        result.expect_err("expected oversize rejection, got");
     });
 }
 
@@ -1010,8 +1007,8 @@ fn decode_server_rejects_truncated_payloads_without_panic() {
 #[test]
 fn decode_rejects_unknown_tags() {
     // 0xFE is not a defined client or server frame tag.
-    assert!(decode_client(0xFE, Vec::new()).is_err());
-    assert!(decode_server(0xFE, Vec::new()).is_err());
+    decode_client(0xFE, Vec::new()).unwrap_err();
+    decode_server(0xFE, Vec::new()).unwrap_err();
 }
 
 #[test]
@@ -1024,10 +1021,7 @@ fn truncated_valid_frame_fails_closed() {
     let tag = frame[0];
     assert!(frame.len() > 5, "encoded welcome must carry a body");
     let body = &frame[5..frame.len() - 1];
-    assert!(
-        decode_server(tag, body.to_vec()).is_err(),
-        "truncated welcome body must decode as Err"
-    );
+    decode_server(tag, body.to_vec()).expect_err("truncated welcome body must decode as Err");
 }
 
 #[test]

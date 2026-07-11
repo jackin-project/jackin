@@ -9,7 +9,7 @@ fn parse_auth_forward_mode_from_cli_accepts_sync() {
 
 #[test]
 fn parse_auth_forward_mode_from_cli_rejects_bogus() {
-    assert!(parse_auth_forward_mode_from_cli("bogus").is_err());
+    parse_auth_forward_mode_from_cli("bogus").unwrap_err();
 }
 
 #[test]

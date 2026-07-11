@@ -53,7 +53,7 @@ fn passes_when_budget_matches_measured() {
         &[("jackin-console", 10), ("jackin-runtime", 5)],
         &[("clippy::too_many_lines", "jackin-runtime", 3)],
     );
-    assert!(check(&budget, &measured).is_ok());
+    check(&budget, &measured).unwrap();
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn print_budget_round_trips_through_toml() {
     let parsed: Budget = toml::from_str(&text).expect("budget TOML parses");
     assert_eq!(parsed.crates.len(), 2);
     assert_eq!(parsed.expects.len(), 2);
-    assert!(check(&parsed, &measured).is_ok());
+    check(&parsed, &measured).unwrap();
 }
 
 #[test]

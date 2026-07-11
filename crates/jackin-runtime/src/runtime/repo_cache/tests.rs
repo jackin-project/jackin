@@ -209,7 +209,7 @@ plugins = []
     )
     .await;
 
-    assert!(result.is_ok(), "expected recovery to succeed: {result:?}");
+    result.expect("expected recovery to succeed");
     assert!(
         runner.recorded.iter().any(|c| c.contains("clone")),
         "expected a git clone after removal"
@@ -360,7 +360,7 @@ plugins = []
     )
     .await;
 
-    assert!(result.is_ok(), "expected recovery to succeed: {result:?}");
+    result.expect("expected recovery to succeed");
     assert!(runner.run_recorded.iter().any(|call| {
         call.contains("git clone https://github.com/jackin-project/jackin-agent-smith.git")
     }));
@@ -405,10 +405,7 @@ plugins = []
     )
     .await;
 
-    assert!(
-        result.is_ok(),
-        "expected clean repo update to succeed: {result:?}"
-    );
+    result.expect("expected clean repo update to succeed");
     assert!(
         runner
             .run_recorded
@@ -451,10 +448,7 @@ async fn resolve_agent_repo_skips_fetch_when_fetch_head_is_fresh() {
     )
     .await;
 
-    assert!(
-        result.is_ok(),
-        "expected fresh cached repo to validate: {result:?}"
-    );
+    result.expect("expected fresh cached repo to validate");
     assert!(
         !runner
             .run_recorded
@@ -497,10 +491,7 @@ async fn resolve_agent_repo_fetches_when_fetch_head_is_missing() {
     )
     .await;
 
-    assert!(
-        result.is_ok(),
-        "expected missing FETCH_HEAD path to fetch: {result:?}"
-    );
+    result.expect("expected missing FETCH_HEAD path to fetch");
     assert!(
         runner
             .run_recorded
@@ -536,10 +527,7 @@ async fn resolve_agent_repo_fetches_when_refresh_ttl_is_zero() {
     )
     .await;
 
-    assert!(
-        result.is_ok(),
-        "expected zero TTL path to fetch: {result:?}"
-    );
+    result.expect("expected zero TTL path to fetch");
     assert!(
         runner
             .run_recorded
@@ -576,10 +564,7 @@ async fn resolve_agent_repo_fetches_when_fetch_head_is_expired() {
     )
     .await;
 
-    assert!(
-        result.is_ok(),
-        "expected expired FETCH_HEAD path to fetch: {result:?}"
-    );
+    result.expect("expected expired FETCH_HEAD path to fetch");
     assert!(
         runner
             .run_recorded
@@ -616,10 +601,7 @@ async fn resolve_agent_repo_fetches_branch_override_without_branch_lookup() {
     )
     .await;
 
-    assert!(
-        result.is_ok(),
-        "expected branch override path to fetch: {result:?}"
-    );
+    result.expect("expected branch override path to fetch");
     assert!(
         runner
             .run_recorded

@@ -38,7 +38,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
 | [010](010-health-dashboard-and-baselines.md) | Code-health dashboard, suppression inventory, verification matrix | 0 | P1 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; `cargo xtask health` + `code-health-baseline.toml` + TESTING matrix) |
-| [011](011-lint-strictness-silent-failures.md) | Silent-failure lints, rustdoc gates, doc tests in PR CI, reason-gate | 1 | P1 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; `assertions_on_result_states` deferred to plan 054 — ~127 test hits) |
+| [011](011-lint-strictness-silent-failures.md) | Silent-failure lints, rustdoc gates, doc tests in PR CI, reason-gate | 1 | P1 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; `assertions_on_result_states` closed by [054](054-assertions-on-result-states.md)) |
 | [012](012-tier-graph-arch-gate.md) | Tier-graph arch gate (replaces empty forbidden-edge list) | 2 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; 27 crates in `TIERS`; DEV_CYCLE_ALLOWLIST empty post-025) |
 | [013](013-test-infra-flakes-fuzz-idempotence.md) | Flake detection, timing artifacts, migration idempotence, parser fuzz | 3 | P2 | M-L | TODO |
 | [014](014-hot-path-bench-coverage.md) | Compile-check all benches; cover 4 unbenchmarked hot paths; measured lane | 4 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; partial — residuals in PERF-benches-missing) |
@@ -111,7 +111,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
-| [054](054-assertions-on-result-states.md) | Adopt `assertions_on_result_states` after mass test conversion | 1 | P2 | M | TODO |
+| [054](054-assertions-on-result-states.md) | Adopt `assertions_on_result_states` after mass test conversion | 1 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; ~200 test sites → unwrap/expect_err; lint denied) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 

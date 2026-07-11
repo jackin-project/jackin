@@ -48,29 +48,31 @@ pub fn operation_span(name: &'static str, attrs: &[(&'static str, String)]) -> S
     span
 }
 
-/// RAII guard that keeps an operation span entered until drop.
+/// RAII handle for an operation span.
+///
+/// Holds only a [`Span`] so the guard is `Send` and can cross `.await` points
+/// on multi-thread runtimes. Callers that need events under the span across
+/// awaits must attach via [`tracing::Instrument`] (see ShellRunner); do not
+/// store `EnteredSpan` here — it is `!Send`.
 #[derive(Debug)]
 pub struct OperationGuard {
     span: Span,
-    _enter: tracing::span::EnteredSpan,
 }
 
 impl OperationGuard {
-    /// The underlying span (for attribute stamping after start).
+    /// The underlying span (for attribute stamping after start / Instrument).
     #[must_use]
     pub fn span(&self) -> &Span {
         &self.span
     }
 }
 
-/// Build and enter an operation span for the lifetime of the returned guard.
+/// Build an operation span handle. Prefer `.instrument(guard.span().clone())`
+/// on async work so the span stays current across yields without `!Send` enters.
 #[must_use]
 pub fn enter_operation(name: &'static str, attrs: &[(&'static str, String)]) -> OperationGuard {
-    let span = operation_span(name, attrs);
-    let entered = span.clone().entered();
     OperationGuard {
-        span,
-        _enter: entered,
+        span: operation_span(name, attrs),
     }
 }
 

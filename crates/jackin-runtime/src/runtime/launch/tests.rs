@@ -1209,7 +1209,7 @@ fn resolve_backend_defaults_docker_and_workspace_overrides_config() {
     );
     // An unrecognised backend fails closed instead of silently launching Docker.
     config.runtime.default_backend = Some("aple-container".to_owned());
-    assert!(resolve_backend(&config, None).is_err());
+    resolve_backend(&config, None).unwrap_err();
 }
 
 /// Build the docker mounts for a single agent in Ignore mode (no auth handoff),
@@ -4499,10 +4499,7 @@ async fn load_agent_rebuild_token_preflight_failure_tears_down_adopted_dind() {
     )
     .await;
 
-    assert!(
-        result.is_err(),
-        "missing Token-mode GitHub token must fail the launch"
-    );
+    result.expect_err("missing Token-mode GitHub token must fail the launch");
     let recorded = docker.recorded.borrow();
     assert!(
         recorded
@@ -8067,7 +8064,7 @@ async fn verify_credential_sync_returns_ok_regardless() {
         "proj",
         "smith",
     );
-    assert!(r.is_ok());
+    r.unwrap();
 }
 
 #[tokio::test]
@@ -8085,7 +8082,7 @@ async fn verify_credential_ignore_returns_ok_regardless() {
         "proj",
         "smith",
     );
-    assert!(r.is_ok());
+    r.unwrap();
 }
 
 #[tokio::test]
@@ -8107,7 +8104,7 @@ async fn verify_credential_api_key_present_ok() {
         "proj",
         "smith",
     );
-    assert!(r.is_ok());
+    r.unwrap();
 }
 
 #[tokio::test]
@@ -8666,7 +8663,7 @@ async fn verify_github_token_present_ok_when_token_resolves() {
         "proj",
         "smith",
     );
-    assert!(r.is_ok());
+    r.unwrap();
 }
 
 #[tokio::test]
@@ -8674,10 +8671,10 @@ async fn verify_github_token_present_ok_for_sync_and_ignore_regardless_of_token(
     // Sync / Ignore have no pre-flight invariant on GH_TOKEN —
     // Sync sources its token from the host, Ignore exports nothing.
     let r = verify_github_token_present(jackin_config::GithubAuthMode::Sync, None, "proj", "smith");
-    assert!(r.is_ok());
+    r.unwrap();
     let r =
         verify_github_token_present(jackin_config::GithubAuthMode::Ignore, None, "proj", "smith");
-    assert!(r.is_ok());
+    r.unwrap();
 }
 
 #[tokio::test]

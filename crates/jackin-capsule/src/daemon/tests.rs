@@ -881,10 +881,7 @@ fn assert_wheel_cursor_fallback_sent(
             .expect("wheel fallback should reach PTY"),
         expected_bytes,
     );
-    assert!(
-        input_rx.try_recv().is_err(),
-        "wheel should not produce extra PTY input"
-    );
+    input_rx.try_recv().expect_err("wheel should not produce extra PTY input");
 }
 
 fn feed_top_anchored_inline_history(session: &mut Session, region_bottom: u16, lines: usize) {
@@ -2725,10 +2722,7 @@ fn wheel_forwards_to_mouse_enabled_tui() {
         input_rx.try_recv().expect("wheel should reach PTY"),
         b"\x1b[<64;1;1M"
     );
-    assert!(
-        input_rx.try_recv().is_err(),
-        "wheel should not produce extra PTY input"
-    );
+    input_rx.try_recv().expect_err("wheel should not produce extra PTY input");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
 }
 
@@ -2756,10 +2750,7 @@ fn wheel_scrolls_jackin_scrollback_when_mouse_is_disabled() {
             redraw.is_some(),
             "{pane_kind} pane scrollback should redraw jackin❯"
         );
-        assert!(
-            input_rx.try_recv().is_err(),
-            "mouse-disabled {pane_kind} panes must not receive raw wheel bytes"
-        );
+        input_rx.try_recv().expect_err(&format!("mouse-disabled {pane_kind} panes must not receive raw wheel bytes"));
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
     }
 }
@@ -3127,10 +3118,7 @@ fn wheel_noops_for_focused_normal_screen_pane_without_scrollback() {
             redraw.is_none(),
             "{pane_kind} normal-screen pane without scrollback should not redraw jackin❯"
         );
-        assert!(
-            input_rx.try_recv().is_err(),
-            "normal-screen {pane_kind} pane without scrollback must not receive cursor-key wheel fallback"
-        );
+        input_rx.try_recv().expect_err(&format!("normal-screen {pane_kind} pane without scrollback must not receive cursor-key wheel fallback"));
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 0);
     }
 }
@@ -3158,10 +3146,7 @@ fn wheel_scrolls_top_anchored_inline_history_for_all_panes() {
         );
 
         let frame = redraw.expect("inline history wheel should redraw");
-        assert!(
-            input_rx.try_recv().is_err(),
-            "{pane_kind} pane must not receive cursor-key wheel fallback"
-        );
+        input_rx.try_recv().expect_err(&format!("{pane_kind} pane must not receive cursor-key wheel fallback"));
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
         assert_focused_scroll_chrome(
             &frame,
@@ -3195,10 +3180,7 @@ fn scrolled_inline_history_preserves_color_and_selection_highlight() {
     )
     .expect("inline history wheel should redraw");
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "Codex-style inline history scroll must not forward wheel bytes"
-    );
+    input_rx.try_recv().expect_err("Codex-style inline history scroll must not forward wheel bytes");
     let rendered = String::from_utf8_lossy(&frame);
     assert!(
         rendered.contains("\x1b[38;5;1mred history"),
@@ -3257,10 +3239,7 @@ fn wheel_scrolls_normal_screen_history_preserved_before_clear_for_all_panes() {
         );
 
         let frame = redraw.expect("clear-preserved history wheel should redraw");
-        assert!(
-            input_rx.try_recv().is_err(),
-            "{pane_kind} pane must not receive cursor-key wheel fallback"
-        );
+        input_rx.try_recv().expect_err(&format!("{pane_kind} pane must not receive cursor-key wheel fallback"));
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
         assert_focused_scroll_chrome(
             &frame,
@@ -3296,10 +3275,7 @@ fn wheel_scrolls_csi_scroll_up_inline_history_for_all_panes() {
         );
 
         let frame = redraw.expect("CSI S inline history wheel should redraw");
-        assert!(
-            input_rx.try_recv().is_err(),
-            "{pane_kind} pane must not receive cursor-key wheel fallback"
-        );
+        input_rx.try_recv().expect_err(&format!("{pane_kind} pane must not receive cursor-key wheel fallback"));
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 2);
         assert_focused_scroll_chrome(
             &frame,
@@ -3511,7 +3487,7 @@ fn pointer_shape_updates_only_when_shape_changes() {
 
     mux.update_pointer_shape_for_mouse(23, hit.start, SGR_NO_BUTTON_MOTION);
     mux.client.flush_out_of_band();
-    assert!(rx.try_recv().is_err(), "unchanged shape should not re-emit");
+    rx.try_recv().expect_err("unchanged shape should not re-emit");
 }
 
 #[tokio::test]
@@ -4718,10 +4694,7 @@ fn apply_action_wheel_scrolls_scrollback() {
     )
     .expect("wheel over retained scrollback should redraw");
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "mouse-disabled pane must not receive raw wheel bytes"
-    );
+    input_rx.try_recv().expect_err("mouse-disabled pane must not receive raw wheel bytes");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), 3);
     assert!(
         !frame.is_empty(),
@@ -4776,10 +4749,7 @@ fn image_path_paste_uses_plain_bytes_when_bracketed_paste_is_off() {
         input_rx.try_recv().unwrap(),
         b"/jackin/run/clipboard/clipboard-test.png"
     );
-    assert!(
-        input_rx.try_recv().is_err(),
-        "plain paste should not produce extra PTY input"
-    );
+    input_rx.try_recv().expect_err("plain paste should not produce extra PTY input");
 }
 
 #[test]
@@ -4799,10 +4769,7 @@ fn image_path_paste_uses_bracketed_paste_when_enabled() {
         input_rx.try_recv().unwrap(),
         b"\x1b[200~/jackin/run/clipboard/clipboard-test.png\x1b[201~"
     );
-    assert!(
-        input_rx.try_recv().is_err(),
-        "bracketed paste should be one PTY input chunk"
-    );
+    input_rx.try_recv().expect_err("bracketed paste should be one PTY input chunk");
 }
 
 #[test]
@@ -4838,10 +4805,7 @@ fn apply_action_wheel_noops_at_scrollback_boundary() {
         }
     }
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "mouse-disabled pane must not receive raw wheel bytes"
-    );
+    input_rx.try_recv().expect_err("mouse-disabled pane must not receive raw wheel bytes");
     assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset(), filled);
     assert!(
         last.is_none(),
@@ -4933,10 +4897,7 @@ fn apply_action_pane_primary_press_only_arms_selection_for_shell() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "mouse-disabled pane should arm selection instead of receiving raw mouse"
-    );
+    input_rx.try_recv().expect_err("mouse-disabled pane should arm selection instead of receiving raw mouse");
     assert!(mux.selection.is_none(), "plain press should not select yet");
     assert!(
         mux.pending_selection.is_some(),
@@ -5459,10 +5420,7 @@ fn double_click_selects_word_and_copies_once() {
         "word selection stays highlighted after release"
     );
     mux.client.flush_out_of_band();
-    assert!(
-        rx.try_recv().is_err(),
-        "release after a word click must not write the clipboard twice"
-    );
+    rx.try_recv().expect_err("release after a word click must not write the clipboard twice");
 }
 
 #[test]
@@ -5574,10 +5532,7 @@ fn open_host_url_dialog_action_honors_operator_opt_out() {
         false,
     );
 
-    assert!(
-        rx.try_recv().is_err(),
-        "disabled host URL opening must not emit a host-open frame"
-    );
+    rx.try_recv().expect_err("disabled host URL opening must not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Host link opening disabled by JACKIN_OPEN_LINKS")
@@ -5592,10 +5547,7 @@ fn open_host_url_dialog_action_rejects_unsupported_scheme() {
 
     mux.open_host_url_from_dialog("file:///Users/operator/private.txt".to_owned(), true);
 
-    assert!(
-        rx.try_recv().is_err(),
-        "unsupported host URL schemes must not emit a host-open frame"
-    );
+    rx.try_recv().expect_err("unsupported host URL schemes must not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Host link rejected: unsupported URL scheme")
@@ -5635,10 +5587,7 @@ async fn modified_click_visible_url_sends_typed_protocol_frame() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "host-open URL gesture should not forward mouse bytes to a mouse-disabled pane"
-    );
+    input_rx.try_recv().expect_err("host-open URL gesture should not forward mouse bytes to a mouse-disabled pane");
     let bytes = rx.try_recv().expect("host-open-url frame");
     let tag = bytes[0];
     let mut payload = &bytes[1..];
@@ -5680,10 +5629,7 @@ async fn modified_click_in_mouse_enabled_pane_forwards_to_pty() {
         forwarded.starts_with(b"\x1b[<8;"),
         "unexpected forwarded mouse bytes: {forwarded:02x?}"
     );
-    assert!(
-        rx.try_recv().is_err(),
-        "mouse-enabled pane should not emit a host-open-url frame"
-    );
+    rx.try_recv().expect_err("mouse-enabled pane should not emit a host-open-url frame");
 }
 
 #[tokio::test]
@@ -5716,10 +5662,7 @@ async fn modified_click_visible_file_path_sends_file_export_frames() {
     );
     mux.client.flush_out_of_band();
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "modified file export must not forward mouse bytes to the pane"
-    );
+    input_rx.try_recv().expect_err("modified file export must not forward mouse bytes to the pane");
     let bytes = rx.try_recv().expect("file-export-start frame");
     let tag = bytes[0];
     let mut payload = &bytes[1..];
@@ -5766,10 +5709,7 @@ fn modified_click_plain_word_without_file_falls_through_quietly() {
     );
     mux.client.flush_out_of_band();
 
-    assert!(
-        rx.try_recv().is_err(),
-        "plain modified-click must not emit host frames"
-    );
+    rx.try_recv().expect_err("plain modified-click must not emit host frames");
     assert_eq!(mux.clipboard_image_notice.as_deref(), None);
 }
 
@@ -5796,10 +5736,7 @@ async fn modified_click_prefers_osc8_target_over_visible_text() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "modified-click should stay host-open path"
-    );
+    input_rx.try_recv().expect_err("modified-click should stay host-open path");
     let bytes = rx
         .try_recv()
         .expect("host-open-url frame should prefer OSC 8 target");
@@ -5838,10 +5775,7 @@ async fn modified_click_accepts_mailto_osc8_target() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "modified-click should stay host-open path"
-    );
+    input_rx.try_recv().expect_err("modified-click should stay host-open path");
     let bytes = rx
         .try_recv()
         .expect("host-open-url frame should allow mailto OSC 8 target");
@@ -5878,10 +5812,7 @@ async fn modified_click_accepts_visible_mailto_token() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "modified-click should stay host-open path"
-    );
+    input_rx.try_recv().expect_err("modified-click should stay host-open path");
     let bytes = rx
         .try_recv()
         .expect("host-open-url frame should allow visible mailto target");
@@ -5918,14 +5849,8 @@ async fn modified_click_rejects_unsafe_visible_url_without_forwarding() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "unsafe host-open gesture should not forward mouse bytes"
-    );
-    assert!(
-        rx.try_recv().is_err(),
-        "unsafe host-open gesture should not emit a host-open frame"
-    );
+    input_rx.try_recv().expect_err("unsafe host-open gesture should not forward mouse bytes");
+    rx.try_recv().expect_err("unsafe host-open gesture should not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Host link rejected: unsupported URL scheme")
@@ -5955,14 +5880,8 @@ async fn modified_click_rejects_unsafe_osc8_url_without_forwarding() {
         },
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "unsafe OSC8 host-open gesture should not forward mouse bytes"
-    );
-    assert!(
-        rx.try_recv().is_err(),
-        "unsafe OSC8 host-open gesture should not emit a host-open frame"
-    );
+    input_rx.try_recv().expect_err("unsafe OSC8 host-open gesture should not forward mouse bytes");
+    rx.try_recv().expect_err("unsafe OSC8 host-open gesture should not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Host link rejected: unsupported URL scheme")
@@ -5982,10 +5901,7 @@ async fn open_link_under_cursor_palette_action_sends_typed_protocol_frame() {
 
     mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "open-link command must not forward bytes to the pane"
-    );
+    input_rx.try_recv().expect_err("open-link command must not forward bytes to the pane");
     let bytes = rx.try_recv().expect("host-open-url frame");
     let tag = bytes[0];
     let mut payload = &bytes[1..];
@@ -6020,10 +5936,7 @@ fn modified_url_hover_renders_visible_target_without_forwarding_to_pty() {
     )
     .expect("hovering a link should repaint the notice");
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "modified hover must not write bytes into a mouse-disabled pane"
-    );
+    input_rx.try_recv().expect_err("modified hover must not write bytes into a mouse-disabled pane");
     assert_eq!(
         mux.link_hover_url.as_deref(),
         Some("https://example.com/visible")
@@ -6098,10 +6011,7 @@ async fn open_link_under_cursor_palette_prefers_osc8_target_over_visible_text() 
 
     mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "open-link must stay attach path"
-    );
+    input_rx.try_recv().expect_err("open-link must stay attach path");
     let bytes = rx
         .try_recv()
         .expect("host-open-url frame should prefer OSC 8 target");
@@ -6130,14 +6040,8 @@ async fn open_link_under_cursor_palette_rejects_unsafe_visible_url() {
 
     mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "unsafe open-link command must not forward bytes to the pane"
-    );
-    assert!(
-        rx.try_recv().is_err(),
-        "unsafe open-link command must not emit a host-open frame"
-    );
+    input_rx.try_recv().expect_err("unsafe open-link command must not forward bytes to the pane");
+    rx.try_recv().expect_err("unsafe open-link command must not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Host link rejected: unsupported URL scheme")
@@ -6157,10 +6061,7 @@ async fn open_link_under_cursor_palette_action_reports_missing_url() {
 
     mux.handle_palette_command(PaletteCommand::OpenLinkUnderCursor);
 
-    assert!(
-        rx.try_recv().is_err(),
-        "missing URL must not emit a host-open frame"
-    );
+    rx.try_recv().expect_err("missing URL must not emit a host-open frame");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("No host-open link under focused cursor")
@@ -6189,10 +6090,7 @@ async fn export_file_under_cursor_palette_action_sends_file_export_frames() {
     mux.handle_palette_command(PaletteCommand::ExportFileUnderCursorAndReveal);
     mux.client.flush_out_of_band();
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "export-under-cursor command must not forward bytes to the pane"
-    );
+    input_rx.try_recv().expect_err("export-under-cursor command must not forward bytes to the pane");
     let bytes = rx.try_recv().expect("file-export-start frame");
     let tag = bytes[0];
     let mut payload = &bytes[1..];
@@ -6254,10 +6152,7 @@ async fn export_selected_file_palette_action_sends_file_export_frames() {
     mux.handle_palette_command(PaletteCommand::ExportSelectedFileAndOpen);
     mux.client.flush_out_of_band();
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "export-selected command must not forward bytes to the pane"
-    );
+    input_rx.try_recv().expect_err("export-selected command must not forward bytes to the pane");
     let bytes = rx.try_recv().expect("file-export-start frame");
     let tag = bytes[0];
     let mut payload = &bytes[1..];
@@ -6301,10 +6196,7 @@ fn export_file_under_cursor_palette_action_reports_missing_path_token() {
     mux.handle_palette_command(PaletteCommand::ExportFileUnderCursor);
     mux.client.flush_out_of_band();
 
-    assert!(
-        rx.try_recv().is_err(),
-        "missing path token must not emit file-export frames"
-    );
+    rx.try_recv().expect_err("missing path token must not emit file-export frames");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("No exportable file path under focused cursor")
@@ -6320,10 +6212,7 @@ fn export_selected_file_palette_action_reports_missing_selection() {
     mux.handle_palette_command(PaletteCommand::ExportSelectedFile);
     mux.client.flush_out_of_band();
 
-    assert!(
-        rx.try_recv().is_err(),
-        "missing selection must not emit file-export frames"
-    );
+    rx.try_recv().expect_err("missing selection must not emit file-export frames");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("No selected file path to export")
@@ -6462,10 +6351,7 @@ fn stage_only_clipboard_image_response_does_not_paste_path() {
         |_| Ok(PathBuf::from("/jackin/run/clipboard/clipboard-test.png")),
     );
 
-    assert!(
-        input_rx.try_recv().is_err(),
-        "stage-only response must not paste into the focused pane"
-    );
+    input_rx.try_recv().expect_err("stage-only response must not paste into the focused pane");
     assert_eq!(
         mux.clipboard_image_notice.as_deref(),
         Some("Image staged: /jackin/run/clipboard/clipboard-test.png (8 bytes)")

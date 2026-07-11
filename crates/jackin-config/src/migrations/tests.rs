@@ -229,7 +229,7 @@ fn parse_registry_version_handles_legacy_sentinel() {
         SchemaVersion::Legacy
     );
     // Non-sentinel strings delegate to parse_version.
-    assert!(parse_registry_version("legacyfoo").is_err());
+    parse_registry_version("legacyfoo").unwrap_err();
     assert_eq!(
         parse_registry_version("v1alpha1").unwrap(),
         parse_version("v1alpha1").unwrap()

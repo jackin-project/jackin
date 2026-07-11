@@ -2,7 +2,6 @@
 //! (+ host passthrough + debug env helpers) extracted from launch coordinator (File1).
 //! All items `pub(crate)` re-exported from the coordinator to preserve `super::` / `use super::*` .
 
-use jackin_core::WorkspaceName;
 #![allow(private_interfaces)]
 
 use anyhow::Context;

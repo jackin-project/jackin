@@ -172,7 +172,7 @@ dbg_macro = "deny"
 let_underscore_future = "deny"
 let_underscore_must_use = "deny"
 unused_result_ok = "deny"
-# assertions_on_result_states deferred: ~127 assert!(Result::is_ok/err) test sites (plan 054)
+assertions_on_result_states = "deny"
 await_holding_lock = "deny"
 await_holding_refcell_ref = "deny"
 mod_module_files = "deny"

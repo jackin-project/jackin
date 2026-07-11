@@ -422,11 +422,11 @@ const fn hardline_action_options() -> [(&'static str, HardlineAction); 4] {
 /// runtime in the no-context output until/unless an `--agent` flag is added.
 fn render_auth_show(config: &AppConfig) -> String {
     use std::fmt::Write as _;
-    let claude_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Claude, None, "");
-    let codex_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Codex, None, "");
-    let amp_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Amp, None, "");
-    let kimi_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Kimi, None, "");
-    let opencode_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Opencode, None, "");
+    let claude_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Claude, "", "");
+    let codex_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Codex, "", "");
+    let amp_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Amp, "", "");
+    let kimi_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Kimi, "", "");
+    let opencode_mode = jackin_config::resolve_mode(config, jackin_core::Agent::Opencode, "", "");
     let mut out = String::new();
     let _unused = writeln!(out, "claude: {claude_mode}");
     let _unused = writeln!(out, "codex:  {codex_mode}");

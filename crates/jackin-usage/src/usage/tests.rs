@@ -2059,7 +2059,7 @@ fn codex_rpc_response_maps_account_windows_and_credits() {
 #[test]
 fn managed_cli_launch_gate_cools_down_after_launch_failure() {
     let mut gate = ManagedCliLaunchGate::default();
-    assert!(gate.can_launch("probe", Instant::now()).is_ok());
+    gate.can_launch("probe", Instant::now()).unwrap();
 
     gate.record_launch_failure("blocked".to_owned());
 
@@ -2070,7 +2070,7 @@ fn managed_cli_launch_gate_cools_down_after_launch_failure() {
     assert!(error.contains("blocked"));
 
     gate.record_success();
-    assert!(gate.can_launch("probe", Instant::now()).is_ok());
+    gate.can_launch("probe", Instant::now()).unwrap();
 }
 
 #[test]

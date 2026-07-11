@@ -1,6 +1,5 @@
 //! Role load pipeline: public entry points and the full launch-to-attach sequence.
 
-use jackin_core::WorkspaceName;
 use crate::instance::{InstanceManifest, InstanceStatus, RoleState};
 use jackin_config::AppConfig;
 use jackin_config::app_config::DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS;

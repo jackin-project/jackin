@@ -78,12 +78,12 @@ fn validate_gate(gate: &str) -> anyhow::Result<()> {
 #[test]
 fn validated_versions_must_be_bounded() {
     // Bounded ranges are accepted.
-    assert!(pack_with_versions(">=2.1.0, <2.3.0").is_ok());
-    assert!(pack_with_versions("=0.14.0").is_ok());
+    pack_with_versions(">=2.1.0, <2.3.0").unwrap();
+    pack_with_versions("=0.14.0").unwrap();
     // Wildcard and lower-only ranges are rejected — they could never gate a
     // future CLI whose TUI changed under the pack.
-    assert!(pack_with_versions("*").is_err());
-    assert!(pack_with_versions(">=2.1.0").is_err());
+    pack_with_versions("*").unwrap_err();
+    pack_with_versions(">=2.1.0").unwrap_err();
 }
 
 #[test]
@@ -99,17 +99,14 @@ fn min_engine_version_defaults_and_gates_future_engines() {
     ))
     .unwrap();
     assert_eq!(future.min_engine_version, RULE_ENGINE_VERSION + 1);
-    assert!(
-        future.validate().is_err(),
-        "a pack requiring a newer engine must be rejected"
-    );
+    future.validate().expect_err("a pack requiring a newer engine must be rejected");
 
     // The current engine version is accepted.
     let current: RulePack = toml::from_str(&format!(
         "schema_version = 1\nagent = \"test\"\nvalidated_versions = \">=1.0.0, <2\"\nmin_engine_version = {RULE_ENGINE_VERSION}\n"
     ))
     .unwrap();
-    assert!(current.validate().is_ok());
+    current.validate().unwrap();
 }
 
 #[test]
@@ -839,7 +836,7 @@ any = [ { regex = "(unclosed" } ]
     .unwrap();
     // The broken regex inside the gate must fail loudly at load, not silently
     // never match at runtime.
-    assert!(pack.validate().is_err());
+    pack.validate().unwrap_err();
 }
 
 #[test]
@@ -861,7 +858,7 @@ fn gate_leaf_count_counts_toward_matcher_cap() {
     ))
     .unwrap();
     // 33 gate leaves exceed the 32-matcher pathological-pack cap.
-    assert!(pack.validate().is_err());
+    pack.validate().unwrap_err();
 }
 
 #[test]
@@ -954,20 +951,14 @@ all = [ { regex = "esc to interrupt" }, { line_regex = '^\s*[*]\s' } ]
 #[test]
 fn gate_rejects_empty_all_any() {
     for empty in ["{ any = [] }", "{ all = [] }"] {
-        assert!(
-            validate_gate(empty).is_err(),
-            "vacuous gate `{empty}` must be rejected at load"
-        );
+        validate_gate(empty).expect_err(&format!("vacuous gate `{empty}` must be rejected at load"));
     }
 }
 
 #[test]
 fn gate_rejects_overlong_leaf() {
     let long = "x".repeat(513);
-    assert!(
-        validate_gate(&format!("{{ contains = \"{long}\" }}")).is_err(),
-        "a >512-char gate leaf must be rejected"
-    );
+    validate_gate(&format!("{{ contains = \"{long}\" }}")).expect_err("a >512-char gate leaf must be rejected");
 }
 
 #[test]
@@ -977,8 +968,5 @@ fn gate_rejects_excessive_nesting_depth() {
     for _ in 0..20 {
         gate = format!("{{ not = {gate} }}");
     }
-    assert!(
-        validate_gate(&gate).is_err(),
-        "over-nested gate must fail at load"
-    );
+    validate_gate(&gate).expect_err("over-nested gate must fail at load");
 }

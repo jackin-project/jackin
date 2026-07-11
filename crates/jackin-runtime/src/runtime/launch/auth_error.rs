@@ -1,4 +1,3 @@
-use jackin_core::WorkspaceName;
 use jackin_config::AppConfig;
 
 /// What we found in a single env layer when looking up the credential

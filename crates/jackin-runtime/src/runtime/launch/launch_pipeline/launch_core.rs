@@ -6,7 +6,6 @@
 //! (or `crate::...` paths). Helpers promoted to pub(super) in coordinator
 //! are reached via `super::`.
 
-use jackin_core::WorkspaceName;
 #[allow(unused_imports)]
 use super::{
     emit_auth_provision_launch_plan, purge_or_mark_clean_exited, tag_errors, tagged_grant_errors,

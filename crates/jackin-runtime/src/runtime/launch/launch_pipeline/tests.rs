@@ -20,7 +20,7 @@ fn tag_errors_empty_input_yields_empty() {
 
 #[test]
 fn bail_on_grant_errors_ok_when_empty() {
-    assert!(bail_on_grant_errors(Vec::new()).is_ok());
+    bail_on_grant_errors(Vec::new()).unwrap();
 }
 
 #[test]

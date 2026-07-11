@@ -31,7 +31,7 @@ fn default_is_standard() {
 
 #[test]
 fn unknown_profile_is_error() {
-    assert!("ultra".parse::<DockerSecurityProfile>().is_err());
+    "ultra".parse::<DockerSecurityProfile>().unwrap_err();
 }
 
 #[test]
@@ -850,7 +850,7 @@ fn parse_apparmor_empty_string() {
 #[test]
 fn validate_cgroup_compat_accepts_v1() {
     let result = validate_cgroup_for_profile(DockerSecurityProfile::Compat, "v1");
-    assert!(result.is_ok(), "compat must accept cgroup v1");
+    result.expect("compat must accept cgroup v1");
 }
 
 #[test]
@@ -865,19 +865,19 @@ fn validate_cgroup_standard_warns_on_v1() {
 #[test]
 fn validate_cgroup_hardened_fails_on_v1() {
     let result = validate_cgroup_for_profile(DockerSecurityProfile::Hardened, "v1");
-    assert!(result.is_err(), "hardened must fail-closed on cgroup v1");
+    result.expect_err("hardened must fail-closed on cgroup v1");
 }
 
 #[test]
 fn validate_cgroup_locked_fails_on_v1() {
     let result = validate_cgroup_for_profile(DockerSecurityProfile::Locked, "v1");
-    assert!(result.is_err(), "locked must fail-closed on cgroup v1");
+    result.expect_err("locked must fail-closed on cgroup v1");
 }
 
 #[test]
 fn validate_cgroup_hardened_accepts_v2() {
     let result = validate_cgroup_for_profile(DockerSecurityProfile::Hardened, "v2");
-    assert!(result.is_ok(), "hardened must accept cgroup v2");
+    result.expect("hardened must accept cgroup v2");
 }
 
 // ── WP1: egress allowlist assembly ────────────────────────────────────────
@@ -1029,14 +1029,11 @@ fn dind_rootless_uses_rootless_image_without_privileged() {
 
 #[test]
 fn rootless_dind_fails_closed_on_cgroup_v1() {
-    assert!(
-        validate_dind_grant_for_cgroup(DindGrant::Rootless, "v1").is_err(),
-        "rootless DinD must fail closed on cgroup v1, never fall back to privileged"
-    );
-    assert!(validate_dind_grant_for_cgroup(DindGrant::Rootless, "v2").is_ok());
+    validate_dind_grant_for_cgroup(DindGrant::Rootless, "v1").expect_err("rootless DinD must fail closed on cgroup v1, never fall back to privileged");
+    validate_dind_grant_for_cgroup(DindGrant::Rootless, "v2").unwrap();
     // privileged / none impose no cgroup requirement here.
-    assert!(validate_dind_grant_for_cgroup(DindGrant::Privileged, "v1").is_ok());
-    assert!(validate_dind_grant_for_cgroup(DindGrant::None, "v1").is_ok());
+    validate_dind_grant_for_cgroup(DindGrant::Privileged, "v1").unwrap();
+    validate_dind_grant_for_cgroup(DindGrant::None, "v1").unwrap();
 }
 
 // ── WP2: locked uses a Docker-internal network ────────────────────────────

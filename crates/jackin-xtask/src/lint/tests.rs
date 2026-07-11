@@ -30,7 +30,7 @@ fn passes_when_budgeted_file_matches_recorded_over_cap_count() {
     );
     let counts = measure(dir.path()).unwrap();
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
-    assert!(check(dir.path(), &budget, &counts).is_ok());
+    check(dir.path(), &budget, &counts).unwrap();
 }
 
 #[test]

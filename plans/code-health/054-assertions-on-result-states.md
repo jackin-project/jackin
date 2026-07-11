@@ -10,6 +10,7 @@
 - **Depends on**: plans/code-health/011-lint-strictness-silent-failures.md
 - **Category**: tech-debt
 - **Planned at**: 2026-07-11 on `chore/rust-code-health-roadmap`
+- **Status**: DONE (in-tree on `chore/rust-code-health-roadmap`)
 
 ## Steps
 
@@ -22,6 +23,6 @@
 
 ## Done criteria
 
-- [ ] Lint denied workspace-wide
-- [ ] Zero bare `assert!(….is_ok())` / `is_err()` that fire the lint in production+tests
-- [ ] README status DONE
+- [x] Lint denied workspace-wide
+- [x] Zero bare `assert!(….is_ok())` / `is_err()` that fire the lint in production+tests
+- [x] README status DONE

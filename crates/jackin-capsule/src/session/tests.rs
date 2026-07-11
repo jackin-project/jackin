@@ -1075,24 +1075,24 @@ fn osc8_uri_unsafe_schemes_rejected() {
 #[test]
 fn validate_agent_slug_rejects_typical_attacks() {
     let supported = Vec::new();
-    assert!(validate_agent_slug("", &supported).is_err());
-    assert!(validate_agent_slug("--debug", &supported).is_err());
-    assert!(validate_agent_slug("claude\n; rm -rf /", &supported).is_err());
-    assert!(validate_agent_slug("claude codex", &supported).is_err());
-    assert!(validate_agent_slug("claude\0", &supported).is_err());
+    validate_agent_slug("", &supported).unwrap_err();
+    validate_agent_slug("--debug", &supported).unwrap_err();
+    validate_agent_slug("claude\n; rm -rf /", &supported).unwrap_err();
+    validate_agent_slug("claude codex", &supported).unwrap_err();
+    validate_agent_slug("claude\0", &supported).unwrap_err();
 }
 
 #[test]
 fn validate_agent_slug_accepts_well_formed_slug_when_no_allowlist() {
     let supported = Vec::new();
-    assert!(validate_agent_slug("claude", &supported).is_ok());
-    assert!(validate_agent_slug("codex", &supported).is_ok());
+    validate_agent_slug("claude", &supported).unwrap();
+    validate_agent_slug("codex", &supported).unwrap();
 }
 
 #[test]
 fn validate_agent_slug_rejects_slug_outside_launch_config_allowlist() {
     let supported = vec!["claude".to_owned()];
-    assert!(validate_agent_slug("claude", &supported).is_ok());
+    validate_agent_slug("claude", &supported).unwrap();
     assert_eq!(
         validate_agent_slug("codex", &supported).unwrap_err(),
         "not in launch config allowlist"

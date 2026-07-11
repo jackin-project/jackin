@@ -99,7 +99,6 @@ fn resolve_target_name_neither_errors() {
     let config = AppConfig::default();
     let cwd = std::env::temp_dir();
     let result = resolve_target_name("nonexistent-thing", &config, &cwd);
-    assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
     assert!(msg.contains("neither a saved workspace nor a directory"));
 }
