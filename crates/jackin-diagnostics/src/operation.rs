@@ -52,7 +52,7 @@ pub fn operation_span(name: &'static str, attrs: &[(&'static str, String)]) -> S
 ///
 /// Holds only a [`Span`] so the guard is `Send` and can cross `.await` points
 /// on multi-thread runtimes. Callers that need events under the span across
-/// awaits must attach via [`tracing::Instrument`] (see ShellRunner); do not
+/// awaits must attach via [`tracing::Instrument`] (see `ShellRunner`); do not
 /// store `EnteredSpan` here — it is `!Send`.
 #[derive(Debug)]
 pub struct OperationGuard {

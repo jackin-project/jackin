@@ -86,7 +86,7 @@ pub fn sink_level(sink: TelemetrySink, debug: bool) -> TelemetryLevel {
         .unwrap_or_else(|| telemetry_level(debug))
 }
 
-/// Level name string for EnvFilter directives.
+/// Level name string for `EnvFilter` directives.
 #[must_use]
 pub fn telemetry_level_name(level: TelemetryLevel) -> &'static str {
     match level {

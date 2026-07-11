@@ -120,7 +120,7 @@ pub mod otel_events {
     pub const SLOW_FOREGROUND_WAIT: &str = "slow_foreground_wait";
     pub const SESSION_DETACH: &str = "session_detach";
     pub const CLEAN_SHUTDOWN: &str = "clean_shutdown";
-    /// Host subprocess span name (ShellRunner choke point, plan 041).
+    /// Host subprocess span name (`ShellRunner` choke point, plan 041).
     pub const PROCESS_EXECUTE: &str = "process.execute";
     pub const ALL: &[&str] = &[
         STAGE_STARTED, STAGE_DONE, STAGE_FAILED, STAGE_SKIPPED,

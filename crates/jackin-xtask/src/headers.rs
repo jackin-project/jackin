@@ -41,6 +41,10 @@ pub(crate) fn run(_args: LintHeadersArgs) -> Result<()> {
     let mut problems = Vec::new();
 
     for (crate_name, path) in &roots {
+        // Workspace-excluded crates (e.g. jackin-lints) are not in TIERS.
+        if !tier_map.contains_key(crate_name.as_str()) {
+            continue;
+        }
         let rel = path
             .strip_prefix(&root)
             .unwrap_or(path)
