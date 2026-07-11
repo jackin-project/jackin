@@ -70,7 +70,7 @@ per [DISPATCH.md](DISPATCH.md):
 
 | Wave | Contents | Parallelism |
 |------|----------|-------------|
-| **R1** | R-038 env∥console, R-snapshot-helpers, R-complexity-threshold (R-014-materialize / R-map / R-export-volume **CLOSED** in 057) | Full fan-out when write sets disjoint |
+| **R1** | R-038 env∥console remainder only (other R1 rows CLOSED in 057/058) | Fan-out env resolve + console services |
 | **R2** | R-thiserror-mid-tranches (config∥isolation∥docker∥image∥instance) | One worker per crate, all parallel |
 | **R3** | launch typestate, daemon decomp/char, suite A, sim, perf/iai/dhat budgets | Design-first; then slice parallel |
 | **R4** | R-023-*, R-045 pinned, golden agent spend | Wait for product/ops trigger |
