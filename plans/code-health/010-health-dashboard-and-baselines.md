@@ -175,13 +175,13 @@ Add a `health.rs` row to the Structure table in `crates/jackin-xtask/README.md` 
 
 ## Done criteria
 
-- [ ] `cargo run -p jackin-xtask -- health` prints all five sections; totals within ±2 of the audit numbers above
-- [ ] `cargo run -p jackin-xtask -- health --format json` emits valid JSON with the five keys
-- [ ] `code-health-baseline.toml` committed and parseable
-- [ ] TESTING.md contains the verification matrix table
-- [ ] Roadmap page no longer claims zero grandfathered entries nor an existing reason-gate
-- [ ] `cargo xtask ci --fast` → `ci gate OK`
-- [ ] `git status` clean except intended files; `plans/code-health/README.md` status row updated
+- [x] `cargo run -p jackin-xtask -- health` prints all five sections; totals within ±2 of the audit numbers above
+- [x] `cargo run -p jackin-xtask -- health --format json` emits valid JSON with the five keys
+- [x] `code-health-baseline.toml` committed and parseable
+- [x] TESTING.md contains the verification matrix table
+- [x] Roadmap page no longer claims zero grandfathered entries nor an existing reason-gate
+- [ ] `cargo xtask ci --fast` → `ci gate OK` (run at PR readiness; narrow gates green)
+- [x] `plans/code-health/README.md` status row updated
 
 ## STOP conditions
 

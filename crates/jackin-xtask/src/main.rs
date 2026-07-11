@@ -22,6 +22,7 @@ mod arch;
 mod ci;
 mod construct;
 mod docs;
+mod health;
 mod lint;
 mod pr;
 mod profile_matrix;
@@ -118,6 +119,11 @@ enum Command {
     /// Use as `cargo xtask release-verify <archive>.tar.gz`.
     #[command(name = "release-verify")]
     ReleaseVerify(release_verify::ReleaseVerifyArgs),
+    /// Report-only code-health dashboard (codebase-health-enforcement Phase 0).
+    ///
+    /// Use as `cargo xtask health`, `cargo xtask health --format json`, or
+    /// `cargo xtask health --write-baseline`.
+    Health(health::HealthArgs),
 }
 
 #[derive(Subcommand)]
@@ -165,6 +171,7 @@ fn main() -> ExitCode {
         Command::SchemaCheck(args) => schema::run(args),
         Command::ProfileMatrix(args) => profile_matrix::run(args),
         Command::ReleaseVerify(args) => release_verify::run(args),
+        Command::Health(args) => health::run(args),
         Command::Lint { command, strict } => match command {
             Some(LintCommand::Files(args)) => lint::run(args),
             Some(LintCommand::Tests(args)) => test_layout::run(args),

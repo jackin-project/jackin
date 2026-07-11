@@ -37,7 +37,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
-| [010](010-health-dashboard-and-baselines.md) | Code-health dashboard, suppression inventory, verification matrix | 0 | P1 | M | DONE (reviewed; `exec-plan-010` @ `e70d6f5d3`, unmerged — 011/017 consume its `code-health-baseline.toml`, so merge 010 before dispatching 011) |
+| [010](010-health-dashboard-and-baselines.md) | Code-health dashboard, suppression inventory, verification matrix | 0 | P1 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; `cargo xtask health` + `code-health-baseline.toml` + TESTING matrix) |
 | [011](011-lint-strictness-silent-failures.md) | Silent-failure lints, rustdoc gates, doc tests in PR CI, reason-gate | 1 | P1 | M | TODO |
 | [012](012-tier-graph-arch-gate.md) | Tier-graph arch gate (replaces empty forbidden-edge list) | 2 | P1 | M-L | TODO |
 | [013](013-test-infra-flakes-fuzz-idempotence.md) | Flake detection, timing artifacts, migration idempotence, parser fuzz | 3 | P2 | M-L | TODO |

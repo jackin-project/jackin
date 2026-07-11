@@ -30,6 +30,7 @@ The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, 
 | [`pty_fixture.rs`](src/pty_fixture.rs) · [`pty_fixture/`](src/pty_fixture) | PTY fixture extraction | [`tests.rs`](src/pty_fixture/tests.rs) |
 | [`construct.rs`](src/construct.rs) · [`construct/`](src/construct) | construct image helpers | [`tests.rs`](src/construct/tests.rs) |
 | [`release_verify.rs`](src/release_verify.rs) · [`release_verify/`](src/release_verify) | release verification | [`tests.rs`](src/release_verify/tests.rs) |
+| [`health.rs`](src/health.rs) · [`health/`](src/health) | report-only code-health dashboard (Phase 0) | [`tests.rs`](src/health/tests.rs) |
 
 ## Public API
 

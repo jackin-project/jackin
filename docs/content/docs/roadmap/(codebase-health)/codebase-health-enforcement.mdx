@@ -20,7 +20,7 @@ The operating assumption for this program is that the most frequent contributor 
 - CI already runs fmt, clippy across all targets/features, schema checks, file-size/test-layout/agent-file gates, a dependency-direction (`arch`) gate, `cargo shear`, nextest shards, fuzz smoke, benchmark build checks, MSRV checks, and optional Docker-backed E2E.
 - The workflow layer is already partially instrumented: the clippy/check lanes upload `cargo --timings` and sccache-stats artifacts, a layered `cargo-depgraph` SVG artifact is rendered per run, the scheduled hygiene lane runs the feature powerset, doc tests, and a long fuzz pass, and a native macOS smoke lane builds and tests off-Linux. Later phases build on these facts instead of re-introducing them.
 - A layered-architecture gate already exists: <RepoFile path="crates/jackin-xtask/src/arch.rs">`cargo xtask lint arch`</RepoFile> (Workstream 4) walks the `cargo metadata` graph and runs strict in CI. Its forbidden-edge list is currently empty because every known inversion was already resolved by lifting port traits (`CommandRunner`, `BuildLogSink`, `OperatorNoticeSink`, `DebugLogSink`) into `jackin-core`. The remaining routine work is to evolve its model, not to build the gate — see Phase 2.
-- The file-size and test-layout ledgers were burned down to zero grandfathered entries, and the old PR-specific merge-readiness audit is closed.
+- The test-layout ledger was burned down to zero grandfathered entries, and the file-size ledger is down to one (`runtime/image.rs`, re-exposed when the cap tightened from 2000 to 1850); the old PR-specific merge-readiness audit is closed.
 - Contributor orientation exists in the [Codebase Map](/reference/getting-oriented/codebase-map/), TUI rules in [TUI Design Decisions](/reference/tui/), and behavioral specs for runtime launch and op-picker under [Behavioral Specs](/reference/developer-reference/specs/).
 - **Per-crate orientation is authoritative.** Every workspace crate carries a README (purpose, what it owns, architecture tier + allowed dependencies, `src/` structure, public API, how to verify) and a per-crate AGENTS file holding **only the non-derivable rules** an agent cannot read from the code, the README, the workspace lint table, or the `cargo xtask lint arch` dependency gate — never a duplicate of tier/dependency/structure/API info, because duplicating it measurably reduces agent task success and wastes context tokens. `CLAUDE.md` is symlinked to it. The convention, templates, the "update the README on any structural change" rule, and the non-derivable-only AGENTS rule live in <RepoFile path="crates/AGENTS.md">crates/AGENTS.md</RepoFile>, and the `cargo xtask lint agents` gate enforces the AGENTS + `CLAUDE.md` symlink pair in every `crates/*/` member.
 
@@ -37,11 +37,11 @@ The operating assumption for this program is that the most frequent contributor 
 
 ## Phase 0 — Reconcile and measure before changing code
 
-1. Replace stale complexity counts with a fresh generated inventory of `allow`/`expect` suppressions grouped by lint, crate, file, and whether `reason =` is present. Do not trust the old `66`, `54`, or `25` counts from the retired plan files.
-2. Generate a current crate graph from `cargo metadata`, compare it to the [Codebase Map](/reference/getting-oriented/codebase-map/), and update the map where the documented tiering differs from actual dependencies.
-3. Add a small report-only code-health dashboard command under `cargo xtask lint` or a sibling xtask namespace that prints: largest production files, largest `tests.rs` files, modules over a size threshold with no sibling tests, unreasoned lint suppressions, broad `pub mod` surfaces, duplicate helper families, and advisory tool output.
-4. Add a contributor-facing verification matrix to <RepoFile path="TESTING.md">TESTING.md</RepoFile>: targeted module tests, crate nextest, `cargo xtask ci --fast`, full non-Docker CI, Docker E2E, docs/roadmap checks, snapshot checks, and when each is appropriate for an agent.
-5. While measuring, baseline every budget family the later phases introduce — per-lint suppression counts, agent-doc token counts (AGENTS files, crate README files, `lib.rs` headers), suite wall time, public-item counts — so the Phase 7 ratchet engine starts from measured floors, not guesses.
+1. **Shipped** — `cargo xtask health` generates a fresh inventory of `allow`/`expect` suppressions grouped by lint, crate, and whether `reason =` is present (also `--format json` / `--write-baseline`). Do not trust the old `66`, `54`, or `25` counts from the retired plan files.
+2. Generate a current crate graph from `cargo metadata`, compare it to the [Codebase Map](/reference/getting-oriented/codebase-map/), and update the map where the documented tiering differs from actual dependencies. Still open (one-time reconcile tracked as DOCS-codebase-map / plan 029).
+3. **Shipped** — report-only code-health dashboard: `cargo xtask health` prints largest production files, largest `tests.rs` files, modules over a size threshold with no sibling tests, unreasoned lint suppressions, broad `pub mod` surfaces, duplicate helper families, and advisory notes.
+4. **Shipped** — contributor-facing verification matrix in <RepoFile path="TESTING.md">TESTING.md</RepoFile>: targeted module tests, crate nextest, `cargo xtask ci --fast`, full non-Docker CI, Docker E2E, docs/roadmap checks, snapshot checks, and when each is appropriate for an agent. Machine-checkable `verification_map` also ships from `cargo xtask health --format json`.
+5. **Shipped** — `code-health-baseline.toml` records floors for per-lint suppression counts, agent-doc token counts (AGENTS files, crate README files, `lib.rs` headers), and public-item counts; suite wall time is a commented pointer seeded by plan 013 from CI junit artifacts.
 
 ## Phase 1 — Tighten Rust and CI strictness
 
@@ -84,7 +84,7 @@ Add the matching `clippy.toml` escape valves (`allow-unwrap-in-tests`, `allow-ex
 
 1. **`allow_attributes = "deny"`** — every `#[allow(...)]` must become `#[expect(...)]`. An `expect` is self-documenting and fails the build if the underlying lint ever stops firing, so suppressions cannot outlive their reason.
 2. **`allow_attributes_without_reason = "deny"`** — every `#[expect(...)]` (and any surviving `#[allow]`) must carry `reason = "…"`. An agent that disables a lint must state why; the build rejects a bare suppression.
-3. The existing xtask grep that blocks `allow`/`expect` without `reason =` becomes redundant once these two lints deny; keep it only for the generated-code / cross-target allowlist carve-outs the lints cannot express.
+3. A reason-gate xtask lane (Plan 011) becomes redundant once these two lints deny; keep it only for the generated-code / cross-target allowlist carve-outs the lints cannot express.
 
 ### Rustdoc and missing-docs gates
 

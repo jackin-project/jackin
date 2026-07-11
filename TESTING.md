@@ -56,6 +56,20 @@ not run:
 cargo test --doc --workspace --locked
 ```
 
+## Verification matrix
+
+| Change surface | Command | When |
+|---|---|---|
+| One module | `cargo nextest run -E 'test(/module::tests/)'` | inner loop |
+| One crate | `cargo nextest run -p <crate>` + `cargo clippy -p <crate> --all-targets -- -D warnings` | before commit |
+| Cross-crate Rust | `cargo xtask ci --fast` | before PR |
+| Full non-Docker gate | `cargo xtask ci` | merge readiness |
+| Container/runtime behavior | `cargo xtask ci --e2e` (Docker running) | capsule/runtime PRs |
+| Docs/roadmap | `cargo xtask roadmap audit && cargo xtask docs repo-links && cargo xtask research check` | any docs edit |
+| TUI snapshots | `cargo nextest run -p jackin-capsule -p jackin-console` (insta snapshots live only in these two crates today) | TUI render changes |
+
+Every crate is verified by `cargo nextest run -p <crate>`. Exceptions worth naming: `jackin` E2E tests need `--features e2e --profile docker-e2e`; doctests need `cargo test --doc --workspace --locked`. The machine-checkable per-member map is also emitted by `cargo xtask health --format json` under `verification_map`.
+
 ## Recording capsule render-conformance fixtures
 
 Capsule echo-back harness ([crates/jackin-capsule/src/daemon/tests.rs](crates/jackin-capsule/src/daemon/tests.rs)) replays PTY byte streams through multiplexer, asserts emitted frames reproduce pane model on virtual client terminal. Synthetic streams live in harness; real-agent fixtures are recorded from a trace-level `--debug` run:
