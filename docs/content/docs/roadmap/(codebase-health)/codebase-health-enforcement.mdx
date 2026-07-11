@@ -184,7 +184,7 @@ The injected-time port ships as `jackin_core::clock::{Clock, SystemClock, Manual
 
 The repo-level hard rules in <RepoFile path="AGENTS.md">AGENTS.md</RepoFile> are currently prose backed by review. Prose binds an agent only while it stays in context; tests bind forever. Convert hard rules into named policy-test suites that CI runs like any other test:
 
-1. **Container paths under `/jackin/` only.** Assert every container-side path any builder emits is under `/jackin/`; a new FHS-root path fails the suite, not review.
+1. **Shipped (plan 020) — container paths under `/jackin/` only.** `jackin_core::container_paths` is the chokepoint (constants + `join` + `is_jackin_owned`); emitters rebind through it; a shrink-only residual-literal ledger (`container-path-allowlist.toml`) is enforced by `cargo xtask lint container-paths`. A new FHS-root or unallowlisted `"/jackin` production literal fails the gate, not review.
 2. **Role/config schema invariants.** Every schema-changing PR updates the five required artifacts from <RepoFile path="PRERELEASE.md">PRERELEASE.md</RepoFile> and proves migration idempotence.
 3. **Behavioral spec coverage.** Behavioral specs cite tests for each section, and the spec↔test linkage gate in Phase 5 keeps those links alive.
 
@@ -206,7 +206,7 @@ A hard rule without a failing test is a request; these make each one a fact.
 4. Avoid cloning full usage views during account materialization by serializing from borrowed views or iterators.
 5. Add terminal resize fast paths that reuse row storage for height-only or same-width changes and benchmark resize storms.
 6. Parallelize isolated mount materialization only after partitioning by dependency/order group and host repository to avoid `.git` lock contention.
-7. Stream diagnostics JSONL into typed borrowed records and parse nested detail only for event kinds that need it.
+7. **Shipped (2026-07-11, plan-027)** — `summarize_reader` parses each JSONL line once into a borrowed `EventLine`; nested `detail` JSON is parsed only inside kind arms that read it. Residual: reused `read_line` buffer only if measured after this win.
 8. Split local CI orchestration into AI-friendly aliases that mirror CI partitions: lint, policy, tests, snapshots, docs, MSRV, E2E. Preserve full `cargo xtask ci` semantics, but make the smallest correct command discoverable.
 9. **Allocation budgets on the existing dhat harnesses.** `dhat` is already wired into `jackin-capsule` and `jackin-term`; turn its output into per-hot-path allocation-count/peak-bytes budgets in the Phase 7 ratchet engine, beside the iai-callgrind instruction budgets.
 10. **Operator-perceived latency budgets.** Track CLI cold-start (`jackin --help`, console first frame) with [hyperfine](https://github.com/sharkdp/hyperfine) in a scheduled lane, and input-to-frame latency in a headless TUI harness. These are the numbers an operator feels; budget them like instruction counts, scheduled/advisory first.

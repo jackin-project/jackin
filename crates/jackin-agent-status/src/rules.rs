@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use jackin_core::container_paths;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -336,7 +337,7 @@ pub struct SignedPackEntry {
     pub content: String,
 }
 
-const RUNTIME_PACK_DIR: &str = "/jackin/runtime/agent-status/packs";
+const RUNTIME_PACK_DIR: &str = container_paths::AGENT_STATUS_PACKS_DIR;
 #[cfg(test)]
 const TRUSTED_PACK_BUNDLE_IDENTITY: &str = "jackin-project/agent-status-packs";
 #[cfg(test)]

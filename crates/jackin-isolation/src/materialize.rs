@@ -15,6 +15,7 @@ use crate::branch::branch_name;
 use crate::state::{CleanupStatus, IsolationRecord, read_record, upsert_record};
 use anyhow::Context;
 use jackin_config::ResolvedWorkspace;
+use jackin_core::container_paths;
 use jackin_core::CommandRunner;
 use jackin_diagnostics::debug_log;
 use std::path::{Path, PathBuf};
@@ -155,7 +156,7 @@ pub fn clone_path_for(container_state_dir: &Path, dst: &str, container_name: &st
 /// `worktree_path_for` already uses for the worktree itself.
 fn container_host_git_path(mount_dst: &str) -> String {
     let rel = mount_dst.trim_matches('/');
-    format!("/jackin/host/{rel}/.git")
+    format!("{}/{rel}/.git", container_paths::HOST_DIR)
 }
 
 /// Mirror of `jackin_runtime::runtime::repo_cache::normalize_github_url`.

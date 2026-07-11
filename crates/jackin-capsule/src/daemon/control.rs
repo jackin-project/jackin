@@ -2,6 +2,7 @@
 //! coordinator: `write_status_capture`, `control_reply_for_request`, and the
 //! related reply builders.
 
+use jackin_core::container_paths;
 use super::{
     ClientFrame, ClientMsg, ClipboardImageInsertMode, Instant, Multiplexer, PathBuf, Result,
     ServerMsg, Session, TokenTotals, clipboard_image_host_error_reason, explicit_redraw_reason,
@@ -17,7 +18,7 @@ pub fn write_status_capture(session_id: u64, session: &Session) -> Result<()> {
     static CAPTURE_SEQ: AtomicU64 = AtomicU64::new(0);
     let seq = CAPTURE_SEQ.fetch_add(1, Ordering::Relaxed);
     let dir =
-        PathBuf::from("/jackin/state/agent-status/captures").join(format!("{session_id}-{seq}"));
+        PathBuf::from(container_paths::AGENT_STATUS_CAPTURES_DIR).join(format!("{session_id}-{seq}"));
     std::fs::create_dir_all(&dir)?;
     std::fs::write(
         dir.join("visible.txt"),

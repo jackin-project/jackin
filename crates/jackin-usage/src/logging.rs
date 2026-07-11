@@ -17,6 +17,7 @@
 //!   - If the file cannot be opened for append, the logger silently
 //!     falls back to stderr-only. Logging must never block startup.
 
+use jackin_core::container_paths;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -47,7 +48,7 @@ pub fn trace_enabled() -> bool {
 
 /// Default in-container path. The host's state-dir mount makes this
 /// readable from outside the container.
-const DEFAULT_LOG_PATH: &str = "/jackin/state/multiplexer.log";
+const DEFAULT_LOG_PATH: &str = container_paths::MULTIPLEXER_LOG;
 const MAX_LOG_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Resolve the log path. Honours `JACKIN_CAPSULE_LOG_PATH` first,

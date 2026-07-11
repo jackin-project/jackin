@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
+use jackin_core::container_paths;
 use jackin_core::{Clock, SystemClock};
 use jackin_protocol::attach::{
     ClipboardImage, ClipboardImageChunk, ClipboardImageEnd, ClipboardImageFormat,
@@ -22,7 +23,7 @@ use jackin_protocol::attach::{
 };
 use sha2::{Digest, Sha256};
 
-pub(crate) const CLIPBOARD_RUN_DIR: &str = "/jackin/run/clipboard";
+pub(crate) const CLIPBOARD_RUN_DIR: &str = container_paths::CLIPBOARD_DIR;
 pub(crate) const CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
 
 pub(crate) fn stage_clipboard_image(image: &ClipboardImage) -> Result<PathBuf> {

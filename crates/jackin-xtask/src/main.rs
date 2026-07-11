@@ -21,6 +21,7 @@ mod agent_links;
 mod arch;
 mod ci;
 mod construct;
+mod container_paths_gate;
 mod docs;
 mod health;
 mod lint;
@@ -143,6 +144,8 @@ enum LintCommand {
     AgentLinks(agent_links::LintAgentLinksArgs),
     /// Dependency-direction gate (Workstream 4).
     Arch(arch::LintArchArgs),
+    /// Residual `/jackin` production-literal shrink-only gate.
+    ContainerPaths(container_paths_gate::LintContainerPathsArgs),
 }
 
 /// Run every codebase-health lint gate in sequence — the `cargo xtask lint`
@@ -155,6 +158,7 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     test_layout::enforce()?;
     agent_files::enforce()?;
     agent_links::enforce()?;
+    container_paths_gate::enforce()?;
     arch::check(strict)
 }
 
@@ -179,6 +183,7 @@ fn main() -> ExitCode {
             Some(LintCommand::Agents(args)) => agent_files::run(args),
             Some(LintCommand::AgentLinks(args)) => agent_links::run(args),
             Some(LintCommand::Arch(args)) => arch::run(args),
+            Some(LintCommand::ContainerPaths(args)) => container_paths_gate::run(args),
             None => run_all_lints(strict),
         },
     };

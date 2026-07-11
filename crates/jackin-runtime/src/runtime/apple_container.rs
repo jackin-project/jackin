@@ -23,6 +23,7 @@ use crate::instance::{
     AppleContainerResources, BackendResources, DockerResources, InstanceManifest,
     NewInstanceManifest,
 };
+use jackin_core::container_paths;
 use jackin_core::paths::JackinPaths;
 
 const ATTACH_MAX_WAIT_MS: u64 = 60_000;
@@ -145,7 +146,7 @@ pub async fn attach(container_name: &str, focus_session: Option<u64>) -> Result<
         "exec",
         "-it",
         container_name,
-        "/jackin/runtime/jackin-capsule",
+        container_paths::CAPSULE_BIN,
     ];
 
     let focus_str;
@@ -294,7 +295,7 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         .context("serializing Capsule launch config for /jackin/run/agent.toml")?;
     super::launch::prepare_socket_dir(&socket_dir, &capsule_config_contents)?;
     let mut mounts: Vec<(PathBuf, PathBuf)> = mount_pairs.to_vec();
-    mounts.push((socket_dir, PathBuf::from("/jackin/run")));
+    mounts.push((socket_dir, PathBuf::from(container_paths::RUN_DIR)));
 
     let spec = crate::apple_container_client::AppleContainerSpec {
         image: image.to_owned(),

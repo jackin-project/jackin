@@ -33,6 +33,7 @@ pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
 /// switches (`\x1b[>{n}u`), synchronised output markers (`\x1b[?2026h/l`),
 /// and every other terminal extension the operator's outer terminal
 /// understands would vanish at the multiplexer boundary.
+use jackin_core::container_paths;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -1605,7 +1606,7 @@ pub fn build_agent_command(
     cwd: &Path,
     codename: &str,
 ) -> CommandBuilder {
-    let mut cmd = CommandBuilder::new("/jackin/runtime/entrypoint.sh");
+    let mut cmd = CommandBuilder::new(container_paths::ENTRYPOINT);
     for arg in agent_model_args(agent, model) {
         cmd.arg(arg);
     }

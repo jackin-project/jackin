@@ -20,6 +20,7 @@ pub mod auth;
 pub mod build_log_sink;
 pub mod clock;
 pub mod constants;
+pub mod container_paths;
 pub mod debug_log;
 pub mod docker;
 pub mod docker_security;
@@ -45,6 +46,7 @@ pub mod standalone_dialog;
 pub mod status;
 pub mod tui_widgets;
 pub mod url_text;
+pub mod workspace_name;
 pub mod worktree_dirty;
 
 pub use agent::{
@@ -80,6 +82,7 @@ pub use paths::{JackinPaths, PathsError};
 pub use prompt_result::PromptResult;
 pub use runner::{CommandRunner, RunOptions};
 pub use selector::{RoleSelector, Selector, SelectorError, runtime_slug};
+pub use workspace_name::{WorkspaceName, WorkspaceNameError};
 pub use standalone_dialog::{
     StandaloneDialogSink, error_popup, exit_dialog_with_inspect, set_global_dialog_sink,
 };

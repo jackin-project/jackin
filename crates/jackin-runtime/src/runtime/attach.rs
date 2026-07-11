@@ -15,6 +15,7 @@
 
 use crate::instance::{InstanceManifest, InstanceStatus};
 use anyhow::Context as _;
+use jackin_core::container_paths;
 use jackin_core::{CommandRunner, JACKIN_STATUS_CMD, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 use jackin_protocol::attach::SpawnRequest;
@@ -35,7 +36,7 @@ use std::path::PathBuf;
 /// propagates loudly because `||` short-circuits at the first failure
 /// only — there is no `|| true` suppression of the second command's
 /// errors.
-pub const JACKIN_CAPSULE_PATH: &str = "/jackin/runtime/jackin-capsule";
+pub const JACKIN_CAPSULE_PATH: &str = container_paths::CAPSULE_BIN;
 pub const ATTACH_PROXY_SUBCOMMAND: &str = "attach-proxy";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -384,7 +385,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
         "exec",
         "-it",
         container_name,
-        "/jackin/runtime/jackin-capsule",
+        container_paths::CAPSULE_BIN,
     ];
     if let Some(flag) = host_alt_screen_exec_flag() {
         args.insert(1, flag);
@@ -588,7 +589,7 @@ pub async fn spawn_shell_session(
         "exec",
         "-it",
         container_name,
-        "/jackin/runtime/jackin-capsule",
+        container_paths::CAPSULE_BIN,
         "new",
     ];
     insert_run_as_user(&mut args, run_as_user.as_deref());
@@ -715,7 +716,7 @@ pub async fn spawn_agent_session(
         exec_args.push(flag.as_str());
     }
     exec_args.push(container_name);
-    exec_args.extend_from_slice(&["/jackin/runtime/jackin-capsule", "new", agent.slug()]);
+    exec_args.extend_from_slice(&[container_paths::CAPSULE_BIN, "new", agent.slug()]);
     // When a provider was selected in the console, pass it as a flag so the
     // daemon receives SpawnRequest::AgentWithProvider and labels the tab correctly.
     let provider_flag = provider_label.map(|label| format!("--provider={label}"));

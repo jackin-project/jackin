@@ -3,6 +3,7 @@
 //! Shared serde schema types live in `jackin-core`; this module owns runtime
 //! behavior such as grant validation, effective grants, and launch flags.
 
+use jackin_core::container_paths;
 pub use jackin_core::docker_security::{
     DindGrant, DockerGrants, DockerSecurityProfile, NetworkGrant, ParseProfileError,
 };
@@ -1022,7 +1023,7 @@ pub fn validate_dind_grant_for_cgroup(
 }
 
 /// In-container path of the capsule binary, used for post-run `docker exec`.
-pub const CAPSULE_BIN_PATH: &str = "/jackin/runtime/jackin-capsule";
+pub const CAPSULE_BIN_PATH: &str = container_paths::CAPSULE_BIN;
 
 /// `docker exec --user root <container> <capsule> <subcommand>` argv.
 ///

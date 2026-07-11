@@ -12,6 +12,8 @@
 //! and infrastructure concerns; DTOs and their conversions live at the
 //! edges, never here.
 
+use jackin_core::container_paths;
+
 pub mod agent_status;
 pub mod attach;
 pub mod control;
@@ -72,14 +74,14 @@ pub enum CredReply {
 pub const CAPSULE_CONFIG_FILENAME: &str = "agent.toml";
 
 /// Normalized runtime config path read by Capsule PID 1.
-pub const CAPSULE_CONFIG_PATH: &str = "/jackin/run/agent.toml";
+pub const CAPSULE_CONFIG_PATH: &str = container_paths::CAPSULE_CONFIG;
 
 /// Path inside the role container of the `jackin-exec` host credential
 /// resolver socket. The host creates it under the bind-mounted `/jackin/run`
 /// dir; the in-container capsule connects here to resolve on-demand
 /// credentials. Single source of truth so the mount side and the connect side
 /// cannot drift.
-pub const HOST_SOCK_CONTAINER_PATH: &str = "/jackin/run/host.sock";
+pub const HOST_SOCK_CONTAINER_PATH: &str = container_paths::HOST_SOCK;
 
 /// Filename the capsule writes the operator's dirty-exit choice to, under the
 /// per-instance state dir, for the host to read and execute on cleanup.
@@ -88,7 +90,7 @@ pub const EXIT_ACTION_FILENAME: &str = "exit-action.json";
 /// In-container path the capsule writes [`ExitAction`] to. The host's state-dir
 /// mount makes this readable from outside the container at
 /// `<data_dir>/<container>/state/exit-action.json`.
-pub const EXIT_ACTION_PATH: &str = "/jackin/state/exit-action.json";
+pub const EXIT_ACTION_PATH: &str = container_paths::EXIT_ACTION;
 
 /// The operator's choice for dirty isolated work at in-capsule exit. Decided
 /// inside the capsule (the dirty-exit modal); the host only **executes** it,

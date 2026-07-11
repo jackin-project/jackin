@@ -52,7 +52,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
 | [019](019-slice-index-lints-pure-crates.md) | Slice/index panic-coverage lints on the 4 pure crates (wave 1) | 1 | P1 | M-L | TODO |
-| [020](020-container-path-chokepoint-policy.md) | Container-path chokepoint + executable `/jackin/`-only policy | 3 | P1 | M-L | TODO |
+| [020](020-container-path-chokepoint-policy.md) | Container-path chokepoint + executable `/jackin/`-only policy | 3 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; chokepoint + gate + shrink-only allowlist) |
 | [021](021-protocol-missing-docs-typed-errors.md) | `missing_docs` on jackin-protocol + typed clipboard wire error | 1/2 | P2 | M | TODO |
 | [022](022-ci-lanes-powerset-canary-partitions.md) | Scoped powerset PR gate, beta clippy canary, `xtask ci --only` partitions | 1/4 | P2 | M | TODO |
 | [023](023-docs-command-drift-gate.md) | Documented-command drift gate (docs fences ↔ clap tree) | 5 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; research subtree excluded; docs corrected: `usage` workspace/session → accounts/verify, dropped unbuilt `--backend apple-container`, workspace create requires `--mount`. OPERATOR FLAGS retained: confirm usage scope regression vs intentional removal; revisit apple-container when backend ships) |
@@ -64,7 +64,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [024](024-clock-seam-clipboard-expiry.md) | `Clock` seam in jackin-core; first consumer: clipboard expiry | 3/6 | P1 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; capsule-touching — smoke block mandatory at PR time) |
 | [025](025-test-support-crate-break-dev-cycle.md) | Extract `jackin-test-support`; break isolation⇄runtime dev cycle | 2/3 | P2 | M | DONE (cherry-picked `ead83e524` onto `chore/rust-code-health-roadmap`) |
 | [026](026-scrollback-range-snapshot.md) | Range-scoped scrollback snapshots (per-mouse-event full-scrollback alloc) | 2/4 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; borrowed zero-copy row accessor residual) |
-| [027](027-diagnostics-jsonl-typed-streaming.md) | Typed borrowed JSONL streaming; stop double-parsing detail | 4 | P2 | M | IN PROGRESS (operator-run external agent) |
+| [027](027-diagnostics-jsonl-typed-streaming.md) | Typed borrowed JSONL streaming; stop double-parsing detail | 4 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 
 ### Fifth wave — remaining concrete ledger items
 
@@ -213,7 +213,7 @@ High-value findings that are real but were not turned into first-wave plans (lar
 
 - ~~PERF-scrollback-snapshot~~ → **shipped as [026](026-scrollback-range-snapshot.md)** (range-scoped API; the borrowed zero-copy row accessor remains a recorded follow-up).
 - ~~PERF-resize-clone~~ → **planned as [040](040-grid-resize-in-place.md)** (in-place `RowStore::resize`, same-size/height-only fast paths, equivalence oracle, `resize_storm` bench per 014's spec with its scrollback-fixture note corrected).
-- ~~PERF-diag-double-parse~~ → **planned as [027](027-diagnostics-jsonl-typed-streaming.md)** (typed borrowed record + kind-gated detail parse; reused line buffer only if measured).
+- ~~PERF-diag-double-parse~~ → **shipped as [027](027-diagnostics-jsonl-typed-streaming.md)** (typed borrowed record + kind-gated detail parse; reused line buffer only if measured).
 - **PERF-benches-missing** — 014 delivered in-tree (2026-07-11): `resize_storm` (jackin-term; also from [040](040-grid-resize-in-place.md)) + `summarize_jsonl` (jackin-diagnostics) benches, the `--benches --workspace` CI compile gate, and the advisory hygiene bench-run lane. Remaining residuals: scrollback-snapshot bench shipped with [026](026-scrollback-range-snapshot.md) (full vs narrow range). `materialize_accounts` bench blocked — `pub(crate)` (E0624) plus hardcoded `/jackin/run/usage/accounts.json` write; needs a small `#[doc(hidden)]` seam per the crate's `insert_snapshot_for_test` precedent (S follow-up). Launch full-pipeline bench stays open (existing bench is micro-ops only).
 - Low-leverage (recorded, likely not worth doing soon): usage-monitor whole-file re-read per poll (documented tradeoff), usage upsert without a cached prepared statement (verify turso caching first), `preserve_visible_rows_to_scrollback` double-clone.
 

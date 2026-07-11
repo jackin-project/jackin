@@ -4,6 +4,7 @@
 //! details stay here so status chrome and dialogs render strings, not API
 //! branches.
 
+use jackin_core::container_paths;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -145,13 +146,13 @@ pub(crate) const CLAUDE_VERSION_TIMEOUT: Duration = Duration::from_secs(2);
 pub(crate) const CLAUDE_CODE_USER_AGENT_FALLBACK: &str = "claude-code/2.1.0";
 pub(crate) const GROK_RPC_INIT_TIMEOUT: Duration = Duration::from_secs(8);
 pub(crate) const GROK_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
-pub(crate) const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = "/jackin/run/usage/accounts.json";
-pub(crate) const CODEX_HANDOFF_AUTH_PATH: &str = "/jackin/codex/auth.json";
-pub(crate) const AMP_HANDOFF_SECRETS_PATH: &str = "/jackin/amp/secrets.json";
-pub(crate) const KIMI_HANDOFF_HOME: &str = "/jackin/kimi-code";
-pub(crate) const GROK_HANDOFF_AUTH_PATH: &str = "/jackin/grok/auth.json";
-pub(crate) const CLAUDE_HANDOFF_CREDENTIALS_PATH: &str = "/jackin/claude/credentials.json";
-pub const TELEMETRY_STORE_PATH: &str = "/jackin/state/usage/telemetry.db";
+pub(crate) const MATERIALIZED_USAGE_ACCOUNTS_PATH: &str = container_paths::USAGE_ACCOUNTS;
+pub(crate) const CODEX_HANDOFF_AUTH_PATH: &str = container_paths::CODEX_AUTH;
+pub(crate) const AMP_HANDOFF_SECRETS_PATH: &str = container_paths::AMP_SECRETS;
+pub(crate) const KIMI_HANDOFF_HOME: &str = container_paths::KIMI_CODE_DIR;
+pub(crate) const GROK_HANDOFF_AUTH_PATH: &str = container_paths::GROK_AUTH;
+pub(crate) const CLAUDE_HANDOFF_CREDENTIALS_PATH: &str = container_paths::CLAUDE_CREDENTIALS;
+pub const TELEMETRY_STORE_PATH: &str = container_paths::TELEMETRY_STORE;
 
 #[derive(Debug, Clone)]
 pub struct UsageCache {
