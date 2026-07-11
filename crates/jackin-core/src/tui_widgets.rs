@@ -41,7 +41,7 @@ impl TailScroll {
         self.offset = if delta.is_negative() {
             current.saturating_sub(delta.unsigned_abs())
         } else {
-            current.saturating_add(delta as usize).min(filled)
+            current.saturating_add(delta.unsigned_abs()).min(filled)
         };
         self.offset
     }

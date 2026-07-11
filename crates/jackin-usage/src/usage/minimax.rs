@@ -246,19 +246,31 @@ pub(crate) fn minimax_bucket(
         return None;
     }
     let remaining_percent = if let Some(remaining_percent) = remaining_percent {
-        Some(remaining_percent.round().clamp(0.0, 100.0) as u8)
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "clamped to 0.0..=100.0 above"
+        )]
+        {
+            Some(remaining_percent.round().clamp(0.0, 100.0) as u8)
+        }
     } else {
         let total = total?;
         if total <= 0 {
             None
         } else {
             let usage = usage?;
-            Some(100u8.saturating_sub(
-                ((usage.clamp(0, total) as f64 / total as f64) * 100.0).round() as u8,
-            ))
+            #[expect(
+                clippy::cast_sign_loss,
+                reason = "usage/total clamped non-negative; percent is rounded f64→u8"
+            )]
+            {
+                Some(100u8.saturating_sub(
+                    ((usage.clamp(0, total) as f64 / total as f64) * 100.0).round() as u8,
+                ))
+            }
         }
     };
-    let used_label = usage.map(|usage| compact_count(usage.max(0) as u64));
+    let used_label = usage.map(|usage| compact_count(u64::try_from(usage.max(0)).unwrap_or(0)));
     let reset_epoch = minimax_reset_epoch(end, remains_time, now);
     let detail = minimax_usage_count_line(usage, total, remaining_percent);
     // Only the general model fills the status-bar slots; per-model windows are
@@ -273,7 +285,7 @@ pub(crate) fn minimax_bucket(
         used_label,
         total
             .filter(|value| *value > 0)
-            .map(|value| compact_count(value.max(0) as u64)),
+            .map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
         remaining_percent,
         reset_epoch,
         now,
@@ -303,10 +315,10 @@ pub(crate) fn minimax_usage_count_line(
     total: Option<i64>,
     remaining_percent: Option<u8>,
 ) -> Option<String> {
-    let usage = usage?.max(0) as u64;
+    let usage = u64::try_from(usage?.max(0)).unwrap_or(0);
     let total = total.filter(|value| *value > 0).map_or_else(
         || remaining_percent.map(|_| 100),
-        |value| Some(value.max(0) as u64),
+        |value| Some(u64::try_from(value.max(0)).unwrap_or(0)),
     )?;
     Some(format!(
         "Usage: {} / {}",

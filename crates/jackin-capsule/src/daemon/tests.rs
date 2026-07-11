@@ -7469,7 +7469,15 @@ fn render_perf_probe() {
     }
     durations_us.sort_unstable();
     bytes.sort_unstable();
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "percentile q is 0.0..=1.0; index stays within v.len()"
+    )]
     let pick = |v: &[u128], q: f64| v[((v.len() - 1) as f64 * q) as usize];
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "percentile q is 0.0..=1.0; index stays within v.len()"
+    )]
     let pick_b = |v: &[usize], q: f64| v[((v.len() - 1) as f64 * q) as usize];
     {
         println!(

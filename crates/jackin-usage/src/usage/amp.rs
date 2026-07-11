@@ -174,7 +174,13 @@ impl AmpApiUsage {
         if let (Some(remaining), Some(limit)) = (self.free_remaining, self.free_limit) {
             let used = (limit - remaining).max(0.0);
             let remaining_percent = if limit > 0.0 {
-                Some(((remaining / limit) * 100.0).round().clamp(0.0, 100.0) as u8)
+                #[expect(
+                    clippy::cast_sign_loss,
+                    reason = "clamped to 0.0..=100.0 above"
+                )]
+                {
+                    Some(((remaining / limit) * 100.0).round().clamp(0.0, 100.0) as u8)
+                }
             } else {
                 None
             };
@@ -265,7 +271,13 @@ impl AmpCliUsage {
         if let (Some(remaining), Some(limit)) = (self.free_remaining, self.free_limit) {
             let used = (limit - remaining).max(0.0);
             let remaining_percent = if limit > 0.0 {
-                Some(((remaining / limit) * 100.0).round().clamp(0.0, 100.0) as u8)
+                #[expect(
+                    clippy::cast_sign_loss,
+                    reason = "clamped to 0.0..=100.0 above"
+                )]
+                {
+                    Some(((remaining / limit) * 100.0).round().clamp(0.0, 100.0) as u8)
+                }
             } else {
                 None
             };

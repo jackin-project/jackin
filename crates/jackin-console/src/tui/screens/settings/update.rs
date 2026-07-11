@@ -1228,7 +1228,7 @@ pub fn settings_env_selection_plan(
     let candidate = if delta.is_negative() {
         selected.saturating_sub(delta.unsigned_abs())
     } else {
-        selected.saturating_add(delta as usize).min(max)
+        selected.saturating_add(delta.unsigned_abs()).min(max)
     };
     let selected = if delta.is_negative() {
         step_cursor_up_by(candidate, |idx| {
@@ -1262,7 +1262,7 @@ pub fn settings_global_mounts_selection_plan(
     let selected = if delta.is_negative() {
         selected.saturating_sub(delta.unsigned_abs())
     } else {
-        selected.saturating_add(delta as usize).min(mount_count)
+        selected.saturating_add(delta.unsigned_abs()).min(mount_count)
     };
     SettingsSelectionScrollPlan {
         selected,

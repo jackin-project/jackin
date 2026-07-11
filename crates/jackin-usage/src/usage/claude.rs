@@ -706,6 +706,10 @@ pub(crate) fn push_claude_dollar_windows(
         let used_money = Money::new((used * 100.0).round() as i64, "USD", 2);
         let limit_money = Money::new((limit * 100.0).round() as i64, "USD", 2);
         // `limit > 0.0` holds (filtered above), so the fraction is well-defined.
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "fraction clamped to 0.0..=1.0; percent is rounded f64→u8"
+        )]
         let remaining_percent =
             Some(((1.0 - (used / limit).clamp(0.0, 1.0)) * 100.0).round() as u8);
         let reset_at = window.resets_at.as_deref().and_then(parse_iso_epoch);

@@ -59,7 +59,13 @@ pub(super) fn used_percent_uncapped(value: f64) -> Option<u16> {
         return None;
     }
     let used = if value <= 1.0 { value * 100.0 } else { value };
-    Some(used.round().clamp(0.0, f64::from(u16::MAX)) as u16)
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "value filtered non-negative above; clamp bounds the f64→u16 cast"
+    )]
+    {
+        Some(used.round().clamp(0.0, f64::from(u16::MAX)) as u16)
+    }
 }
 
 pub(super) fn parse_iso_epoch(value: &str) -> Option<i64> {

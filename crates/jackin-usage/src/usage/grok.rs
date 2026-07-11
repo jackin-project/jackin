@@ -196,7 +196,15 @@ impl GrokWebBillingSnapshot {
             label,
             None,
             None,
-            Some(100u8.saturating_sub(self.used_percent.round() as u8)),
+            {
+                #[expect(
+                    clippy::cast_sign_loss,
+                    reason = "provider used_percent rounded; saturating_sub bounds u8"
+                )]
+                {
+                    Some(100u8.saturating_sub(self.used_percent.round() as u8))
+                }
+            },
             self.reset_at_epoch,
             now,
             None,
@@ -232,7 +240,15 @@ impl GrokBillingResponse {
                     label,
                     Some(format_cents(total_used)),
                     Some(format_cents(limit)),
-                    used_percent.map(|used| 100u8.saturating_sub(used.round() as u8)),
+                    used_percent.map(|used| {
+                        #[expect(
+                            clippy::cast_sign_loss,
+                            reason = "used_percent clamped 0.0..=100.0 above"
+                        )]
+                        {
+                            100u8.saturating_sub(used.round() as u8)
+                        }
+                    }),
                     reset_at,
                     now,
                     None,

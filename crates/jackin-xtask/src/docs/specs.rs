@@ -217,10 +217,11 @@ fn has_fn(text: &str, fn_name: &str) -> bool {
             "pub async fn ",
             "pub(crate) async fn ",
         ] {
-            if let Some(rest) = t.strip_prefix(prefix) {
-                if rest.starts_with(fn_name) && is_fn_name_boundary(&rest[fn_name.len()..]) {
-                    return true;
-                }
+            if let Some(rest) = t.strip_prefix(prefix)
+                && rest.starts_with(fn_name)
+                && is_fn_name_boundary(&rest[fn_name.len()..])
+            {
+                return true;
             }
         }
     }

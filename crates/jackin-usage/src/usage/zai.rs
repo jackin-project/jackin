@@ -175,13 +175,24 @@ impl ZaiLimitRaw {
             } else {
                 self.current_value?
             };
+            #[expect(
+                clippy::cast_sign_loss,
+                reason = "clamped to 0.0..=100.0 above"
+            )]
             let percent = ((used.clamp(0, limit) as f64 / limit as f64) * 100.0)
                 .round()
                 .clamp(0.0, 100.0) as u8;
             return Some(percent);
         }
-        self.percentage
-            .map(|percent| percent.round().clamp(0.0, 100.0) as u8)
+        self.percentage.map(|percent| {
+            #[expect(
+                clippy::cast_sign_loss,
+                reason = "clamped to 0.0..=100.0 above"
+            )]
+            {
+                percent.round().clamp(0.0, 100.0) as u8
+            }
+        })
     }
 
     pub(crate) fn window_minutes(&self) -> Option<i64> {
@@ -212,8 +223,8 @@ pub(crate) fn zai_bucket(label: &str, limit: &ZaiLimitRaw, now: i64) -> QuotaBuc
         label,
         limit
             .current_value
-            .map(|value| compact_count(value.max(0) as u64)),
-        limit.usage.map(|value| compact_count(value.max(0) as u64)),
+            .map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
+        limit.usage.map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
         remaining,
         reset_at,
         now,
@@ -236,9 +247,9 @@ pub(crate) fn zai_count_line(limit: &ZaiLimitRaw) -> Option<String> {
     let remaining = total.saturating_sub(used);
     Some(format!(
         "{} / {} ({} remaining)",
-        compact_count(used as u64),
-        compact_count(total as u64),
-        compact_count(remaining as u64)
+        compact_count(u64::try_from(used).unwrap_or(0)),
+        compact_count(u64::try_from(total).unwrap_or(0)),
+        compact_count(u64::try_from(remaining).unwrap_or(0))
     ))
 }
 

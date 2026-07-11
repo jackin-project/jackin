@@ -120,7 +120,13 @@ fn overflow_indicator_appears_when_tabs_exceed_width() {
     // Tabs of label "AAAAA" plus separator. With cols=30 only a handful
     // fit, so we should see the overflow `›` rendered.
     let tabs: Vec<Tab> = (0..10)
-        .map(|i| Tab::new_single(format!("Tab{i:02}"), i as u64, "test"))
+        .map(|i| {
+            Tab::new_single(
+                format!("Tab{i:02}"),
+                u64::try_from(i).unwrap_or(0),
+                "test",
+            )
+        })
         .collect();
     let (_, buf) = draw(30, &tabs, 0, &[], None, PrefixMode::Idle);
     let row = row_text(&buf, 0, 30);

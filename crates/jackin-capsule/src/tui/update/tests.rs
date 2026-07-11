@@ -139,18 +139,21 @@ fn direct_actions_map_to_visible_frame_plans() {
 
 #[test]
 fn drag_resize_ratio_clamps_to_visible_resize_bounds() {
+    let approx = |got: f32, want: f32| {
+        assert!(
+            (got - want).abs() < f32::EPSILON,
+            "got {got} want {want}"
+        );
+    };
     let rect = Rect::new(2, 4, 20, 100);
-    assert_eq!(drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 0), 0.05);
-    assert_eq!(
-        drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 200),
-        0.95
-    );
-    assert_eq!(drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 54), 0.5);
+    approx(drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 0), 0.05);
+    approx(drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 200), 0.95);
+    approx(drag_resize_ratio(SplitOrient::Horizontal, rect, 2, 54), 0.5);
 
     let rect = Rect::new(2, 4, 20, 100);
-    assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 0, 4), 0.05);
-    assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 40, 4), 0.95);
-    assert_eq!(drag_resize_ratio(SplitOrient::Vertical, rect, 12, 4), 0.5);
+    approx(drag_resize_ratio(SplitOrient::Vertical, rect, 0, 4), 0.05);
+    approx(drag_resize_ratio(SplitOrient::Vertical, rect, 40, 4), 0.95);
+    approx(drag_resize_ratio(SplitOrient::Vertical, rect, 12, 4), 0.5);
 }
 
 #[test]

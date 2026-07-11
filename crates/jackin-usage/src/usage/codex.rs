@@ -368,7 +368,15 @@ pub(crate) struct CodexWindowSnapshot {
 impl CodexWindowSnapshot {
     pub(crate) fn from_rpc(window: CodexRpcRateLimitWindow) -> Self {
         Self {
-            used_percent: Some(window.used_percent.round().clamp(0.0, 100.0) as u8),
+            used_percent: {
+                #[expect(
+                    clippy::cast_sign_loss,
+                    reason = "clamped to 0.0..=100.0 above"
+                )]
+                {
+                    Some(window.used_percent.round().clamp(0.0, 100.0) as u8)
+                }
+            },
             reset_at: window.resets_at,
             limit_window_seconds: None,
             window_duration_mins: window.window_duration_mins,

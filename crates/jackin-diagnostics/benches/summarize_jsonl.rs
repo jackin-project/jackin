@@ -59,7 +59,9 @@ fn bench_summarize(c: &mut Criterion) {
         b.iter_batched(
             || fixture.clone(),
             |buf| {
-                let summary = summarize_reader(Cursor::new(buf)).expect("summarize");
+                let summary = summarize_reader(Cursor::new(buf)).unwrap_or_else(|err| {
+                    panic!("summarize fixture should parse: {err}");
+                });
                 black_box(summary.event_count);
             },
             BatchSize::LargeInput,

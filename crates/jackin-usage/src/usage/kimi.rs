@@ -181,7 +181,13 @@ impl KimiUsageDetail {
             self.remaining_value()
                 .map(|remaining| limit.saturating_sub(remaining))
         })?;
-        Some(((used.clamp(0, limit) as f64 / limit as f64) * 100.0).round() as u8)
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "used/limit clamped non-negative; percent is rounded f64→u8"
+        )]
+        {
+            Some(((used.clamp(0, limit) as f64 / limit as f64) * 100.0).round() as u8)
+        }
     }
 }
 
@@ -228,8 +234,8 @@ pub(crate) fn kimi_bucket(
     let pace = quota_pace_label(remaining, reset_at, window_seconds, now);
     timed_bucket(
         label,
-        used.map(|value| compact_count(value.max(0) as u64)),
-        limit.map(|value| compact_count(value.max(0) as u64)),
+        used.map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
+        limit.map(|value| compact_count(u64::try_from(value.max(0)).unwrap_or(0))),
         remaining,
         reset_at,
         now,
