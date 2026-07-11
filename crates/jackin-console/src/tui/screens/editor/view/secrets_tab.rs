@@ -59,7 +59,6 @@ pub(crate) fn secret_lines<'a>(
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn secret_state_lines<
     Modal,
     SaveFlow,
@@ -119,7 +118,6 @@ pub(crate) fn secret_state_lines<
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn secret_state_geometry<
     Modal,
     SaveFlow,

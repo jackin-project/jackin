@@ -18,7 +18,7 @@ bare_allow = 4
 
 [[crate]]
 name = "jackin-console"
-bare_allow = 120
+bare_allow = 77
 
 [[crate]]
 name = "jackin-console-oppicker"
@@ -55,6 +55,10 @@ bare_allow = 2
 [[crate]]
 name = "jackin-launch-tui"
 bare_allow = 6
+
+[[crate]]
+name = "jackin-lints"
+bare_allow = 1
 
 [[crate]]
 name = "jackin-protocol"
@@ -271,6 +275,16 @@ crate = "jackin-term"
 count = 1
 
 [[expect]]
+lint = "clippy::large_futures"
+crate = "jackin-docker"
+count = 1
+
+[[expect]]
+lint = "clippy::large_futures"
+crate = "jackin-protocol"
+count = 2
+
+[[expect]]
 lint = "clippy::let_underscore_must_use"
 crate = "jackin-console"
 count = 1
@@ -293,6 +307,11 @@ count = 1
 [[expect]]
 lint = "clippy::panic"
 crate = "jackin-config"
+count = 1
+
+[[expect]]
+lint = "clippy::panic"
+crate = "jackin-protocol"
 count = 1
 
 [[expect]]
@@ -394,6 +413,11 @@ count = 10
 lint = "clippy::unwrap_used"
 crate = "jackin-capsule"
 count = 2
+
+[[expect]]
+lint = "clippy::unwrap_used"
+crate = "jackin-protocol"
+count = 1
 
 [[expect]]
 lint = "clippy::unwrap_used"

@@ -26,9 +26,9 @@ use ratatui::{
 use std::collections::BTreeMap;
 
 use crate::tui::components::editor_rows::{
-    AuthLineRow, AuthSourceDisplay, AuthSourceValue, FieldEmphasis, SecretEnvLineFrame,
+    AuthLineRow, AuthSourceDisplay, AuthSourceValue, SecretEnvLineFrame,
     SecretLineRow, SecretValueDisplay, action_row_style, auth_lines as shared_auth_lines,
-    auth_source_display, labeled_field_line, render_tab_strip, secret_env_lines,
+    auth_source_display, render_tab_strip, secret_env_lines,
 };
 use crate::tui::components::footer_hints::{
     SettingsContextFooterMode, SettingsScreenFooterFacts, content_footer_items,
@@ -126,7 +126,6 @@ pub const fn settings_modal_render_plan(
     SettingsModalRenderPlan::None
 }
 
-#[allow(clippy::type_complexity)]
 pub fn render_settings_screen<
     MountModal,
     EnvModal,
@@ -192,7 +191,6 @@ pub fn render_settings_screen<
     render_footer(frame, areas.footer, &footer);
 }
 
-#[allow(clippy::type_complexity)]
 pub fn render_general_tab<
     MountModal,
     EnvModal,
@@ -219,7 +217,6 @@ pub fn render_general_tab<
     );
 }
 
-#[allow(clippy::type_complexity)]
 pub fn render_mounts_tab<
     MountModal,
     EnvModal,
@@ -257,7 +254,6 @@ pub fn render_mounts_tab<
     );
 }
 
-#[allow(clippy::type_complexity)]
 pub fn render_env_tab<
     MountModal,
     EnvModal,
@@ -290,7 +286,6 @@ pub fn render_env_tab<
     );
 }
 
-#[allow(clippy::type_complexity)]
 pub fn render_auth_tab<
     MountModal,
     EnvModal,
@@ -327,7 +322,6 @@ pub fn render_auth_tab<
     );
 }
 
-#[allow(clippy::type_complexity)]
 pub fn render_trust_tab<
     MountModal,
     EnvModal,
@@ -360,7 +354,6 @@ pub fn render_trust_tab<
     );
 }
 
-#[allow(clippy::type_complexity)]
 pub fn settings_footer_items<
     MountModal,
     EnvModal,
@@ -399,7 +392,6 @@ pub fn settings_footer_items<
     )
 }
 
-#[allow(clippy::type_complexity)]
 fn settings_context_footer_mode<
     MountModal,
     EnvModal,
@@ -471,7 +463,6 @@ fn settings_context_footer_mode<
     }
 }
 
-#[allow(clippy::type_complexity)]
 fn trust_scroll_axes<MountModal, EnvModal, AuthModal, ErrorPopup, PendingToken, PendingOpCommit>(
     state: &ConsoleSettingsState<
         MountModal,
@@ -491,7 +482,6 @@ fn trust_scroll_axes<MountModal, EnvModal, AuthModal, ErrorPopup, PendingToken, 
     )
 }
 
-#[allow(clippy::type_complexity)]
 fn global_mount_scroll_axes<
     MountModal,
     EnvModal,
@@ -522,7 +512,6 @@ fn global_mount_scroll_axes<
     )
 }
 
-#[allow(clippy::type_complexity)]
 fn settings_env_value_is_op_ref<
     MountModal,
     EnvModal,
@@ -626,7 +615,6 @@ pub fn render_settings_auth_modal(frame: &mut Frame<'_>, modal: &SettingsModal<'
     }
 }
 
-#[allow(clippy::type_complexity)]
 pub fn settings_env_lines_for_state<
     MountModal,
     EnvModal,
@@ -649,7 +637,6 @@ pub fn settings_env_lines_for_state<
     env_state_lines(&state.env, show_cursor, area_width)
 }
 
-#[allow(clippy::type_complexity)]
 pub fn settings_trust_lines_for_state<
     MountModal,
     EnvModal,
@@ -674,7 +661,6 @@ pub fn settings_trust_lines_for_state<
     )
 }
 
-#[allow(clippy::type_complexity)]
 fn settings_trust_focused<
     MountModal,
     EnvModal,
@@ -729,18 +715,24 @@ pub fn general_lines(
     pending_dco: bool,
     show_cursor: bool,
 ) -> Vec<Line<'static>> {
-    let rows: [(usize, &str, bool); 2] = [
-        (0, "Co-author trailer", pending_coauthor_trailer),
-        (1, "DCO sign-off", pending_dco),
-    ];
+    use crate::tui::screens::form_model::{FieldRow, FormSection};
+    FormSection::new(
+        vec![
+            FieldRow::new(
+                "Co-author trailer",
+                if pending_coauthor_trailer { "enabled" } else { "disabled" },
+            ),
+            FieldRow::new(
+                "DCO sign-off",
+                if pending_dco { "enabled" } else { "disabled" },
+            ),
+        ],
+        selected_row,
+        show_cursor,
+        26,
+    )
+    .lines()
 
-    rows.iter()
-        .map(|(i, label, pending)| {
-            let selected = show_cursor && (selected_row == *i);
-            let value = if *pending { "enabled" } else { "disabled" };
-            labeled_field_line(selected, "", label, 26, value, FieldEmphasis::SelectedValue)
-        })
-        .collect()
 }
 
 #[must_use]
