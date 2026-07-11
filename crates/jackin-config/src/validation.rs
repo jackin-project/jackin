@@ -53,6 +53,9 @@ pub fn validate_workspace_config(
     name: &WorkspaceName,
     workspace: &WorkspaceConfig,
 ) -> anyhow::Result<()> {
+    // Use Debug of the stem string (not Debug of the newtype) so operator
+    // messages stay `workspace "foo"` rather than `WorkspaceName("foo")`.
+    let name = name.as_str();
     if workspace.workdir.is_empty() {
         anyhow::bail!("workspace {name:?} must define workdir");
     }

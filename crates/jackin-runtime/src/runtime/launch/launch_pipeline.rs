@@ -998,10 +998,13 @@ pub(crate) async fn load_role_with(
     // (tests only), `resolve_operator_env_with` is called with the
     // supplied seams, so tests never need to mutate `std::env` and the
     // crate-level `unsafe_code = "forbid"` lint stays intact.
+    let auth_workspace = workspace_name
+        .as_deref()
+        .and_then(|n| WorkspaceName::parse(n).ok());
     let auth_mode = jackin_config::resolve_mode(
         config,
         agent,
-        workspace_name.as_deref().unwrap_or(""),
+        auth_workspace.as_ref(),
         &role_key,
     );
     let operator_env = await_operator_env(operator_env).await?;

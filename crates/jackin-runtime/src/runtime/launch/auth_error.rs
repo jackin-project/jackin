@@ -206,7 +206,8 @@ pub(super) fn build_mode_resolution(
     workspace: &str,
     role: &str,
 ) -> Vec<(String, Option<jackin_config::AuthForwardMode>)> {
-    jackin_config::resolve_mode_with_trace(cfg, agent, workspace, role).1
+    let ws = jackin_core::WorkspaceName::parse(workspace).ok();
+    jackin_config::resolve_mode_with_trace(cfg, agent, ws.as_ref(), role).1
 }
 
 /// Build the 4-layer env-layer trace (lowest precedence first) for the

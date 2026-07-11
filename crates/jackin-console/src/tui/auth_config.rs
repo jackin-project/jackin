@@ -1097,11 +1097,13 @@ pub fn resolve_panel_mode(
             let Some(agent) = auth_kind_agent(kind) else {
                 return AuthMode::Ignore;
             };
-            let mode = resolve_mode(cfg, agent, workspace, role);
+            let ws = jackin_core::WorkspaceName::parse(workspace).ok();
+            let mode = resolve_mode(cfg, agent, ws.as_ref(), role);
             auth_mode_from_auth_forward(mode)
         }
         AuthKind::Github => {
-            let mode = resolve_github_mode(cfg, workspace, role);
+            let ws = jackin_core::WorkspaceName::parse(workspace).ok();
+            let mode = resolve_github_mode(cfg, ws.as_ref(), role);
             auth_mode_from_github(mode)
         }
         AuthKind::Zai | AuthKind::Minimax => {

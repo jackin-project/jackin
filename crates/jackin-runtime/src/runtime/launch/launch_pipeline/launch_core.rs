@@ -596,9 +596,11 @@ where
     // Resolve the GitHub-auth axis. Layered like the per-agent
     // resolver but with no agent dimension — `.config/gh/` is
     // shared by every agent in the container.
-    let github_mode = jackin_config::resolve_github_mode(config, workspace_name_str, &role_key);
+    let github_workspace = WorkspaceName::parse(workspace_name_str).ok();
+    let github_mode =
+        jackin_config::resolve_github_mode(config, github_workspace.as_ref(), &role_key);
     let github_env_decls =
-        jackin_config::build_github_env_layers(config, workspace_name_str, &role_key);
+        jackin_config::build_github_env_layers(config, github_workspace.as_ref(), &role_key);
     let github_required_env_decls =
         github_env_declarations_for_mode(&github_env_decls, github_mode);
     // Resolve `[…github.env]` only under modes that consume it.
@@ -679,20 +681,17 @@ where
     let role_state_future = async move {
         tokio::task::spawn_blocking(move || {
             let resolve_mode = |a: jackin_core::agent::Agent| {
-                jackin_config::resolve_mode(
-                    &config_owned,
-                    a,
-                    &workspace_name_owned,
-                    &role_key_owned,
-                )
+                let ws = WorkspaceName::parse(&workspace_name_owned).ok();
+                jackin_config::resolve_mode(&config_owned, a, ws.as_ref(), &role_key_owned)
             };
             // Each agent may have an operator-configured sync-source-dir override
             // that replaces host_home for auth sync.
             let resolve_sync_src = |a: jackin_core::agent::Agent| {
+                let ws = WorkspaceName::parse(&workspace_name_owned).ok();
                 jackin_config::resolve_sync_source_dir(
                     &config_owned,
                     a,
-                    &workspace_name_owned,
+                    ws.as_ref(),
                     &role_key_owned,
                 )
             };

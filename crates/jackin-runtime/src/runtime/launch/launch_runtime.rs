@@ -162,10 +162,12 @@ pub(crate) fn spawn_sibling_auth_prewarm(
 
     Some(tokio::task::spawn_blocking(move || {
         let resolve_mode = |a: jackin_core::agent::Agent| {
-            jackin_config::resolve_mode(&config, a, &workspace_name, &role_key)
+            let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
+            jackin_config::resolve_mode(&config, a, ws.as_ref(), &role_key)
         };
         let resolve_sync_src = |a: jackin_core::agent::Agent| {
-            jackin_config::resolve_sync_source_dir(&config, a, &workspace_name, &role_key)
+            let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
+            jackin_config::resolve_sync_source_dir(&config, a, ws.as_ref(), &role_key)
         };
         let result = RoleState::prewarm_auth_for_agents(
             &paths_owned,

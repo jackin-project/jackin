@@ -8,6 +8,10 @@ use jackin_core::JackinPaths;
 use jackin_core::WorkspaceName;
 use tempfile::tempdir;
 
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
+
 #[test]
 fn deserializes_scoped_docker_mounts() {
     let toml_str = r#"
@@ -234,7 +238,7 @@ trusted = true
         "absent [claude] block must deserialize to None"
     );
     assert_eq!(
-        resolve_mode(&config, Agent::Claude, "", "agent-smith",),
+        resolve_mode(&config, Agent::Claude, None, "agent-smith",),
         AuthForwardMode::Sync
     );
 }
@@ -946,7 +950,7 @@ fn resolve_github_mode_layered_precedence() {
     let mut cfg = AppConfig::default();
     // Default — Sync
     assert_eq!(
-        resolve_github_mode(&cfg, "proj", "smith"),
+        resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Sync
     );
     // Global only
@@ -955,7 +959,7 @@ fn resolve_github_mode_layered_precedence() {
         env: BTreeMap::new(),
     });
     assert_eq!(
-        resolve_github_mode(&cfg, "proj", "smith"),
+        resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Ignore
     );
     // Workspace overrides global
@@ -969,7 +973,7 @@ fn resolve_github_mode_layered_precedence() {
     };
     cfg.workspaces.insert("proj".into(), ws);
     assert_eq!(
-        resolve_github_mode(&cfg, "proj", "smith"),
+        resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Token
     );
     // Role override wins
@@ -986,7 +990,7 @@ fn resolve_github_mode_layered_precedence() {
         .roles
         .insert("smith".into(), ov);
     assert_eq!(
-        resolve_github_mode(&cfg, "proj", "smith"),
+        resolve_github_mode(&cfg, Some(&wn("proj")), "smith"),
         GithubAuthMode::Sync
     );
 }

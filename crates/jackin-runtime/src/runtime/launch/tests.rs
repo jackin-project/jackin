@@ -8368,10 +8368,11 @@ async fn sync_source_resolution_uses_workspace_role_scope_per_agent() {
     );
     cfg.workspaces.insert("proj".to_owned(), workspace);
 
+    let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
     let architect_source =
-        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, "proj", "architect");
+        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, Some(&proj), "architect");
     let builder_source =
-        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, "proj", "builder");
+        |agent| jackin_config::resolve_sync_source_dir(&cfg, agent, Some(&proj), "builder");
 
     assert_eq!(
         architect_source(Agent::Codex),
