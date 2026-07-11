@@ -2167,7 +2167,7 @@ fn claude_cli_usage_output_maps_scoped_weekly_fable() {
     // The model-scoped line lands in `scoped_weekly` (not `sonnet_used`).
     assert_eq!(usage.scoped_weekly.len(), 1);
     assert_eq!(usage.scoped_weekly[0].0, "Fable");
-    assert_eq!(usage.scoped_weekly[0].1, 35.0);
+    assert!((usage.scoped_weekly[0].1 - 35.0).abs() < f64::EPSILON);
 
     let buckets = usage.buckets();
     let fable = buckets

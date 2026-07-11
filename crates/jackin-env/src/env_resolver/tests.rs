@@ -485,7 +485,7 @@ fn required_prompt_skip_is_typed_source() {
         .expect("ResolveEnvError source");
     match typed {
         ResolveEnvError::PromptRequired { name } => assert_eq!(name, "NEED"),
-        other => panic!("expected PromptRequired, got {other}"),
+        ResolveEnvError::Cycle(_) => panic!("expected PromptRequired, got Cycle"),
     }
 }
 

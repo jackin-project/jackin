@@ -915,7 +915,7 @@ where
 {
     let message = bounded_attach_message(message, MAX_CLIPBOARD_IMAGE_ERROR_BYTES);
     let msg = encode_client(ClientFrame::ClipboardImageError(
-        jackin_protocol::attach::ClipboardImageError::from_message(message.to_owned()),
+        jackin_protocol::attach::ClipboardImageError::from_message(message),
     ))
     .context("encoding ClipboardImageError frame")?;
     writer

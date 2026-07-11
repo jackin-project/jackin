@@ -4,7 +4,7 @@
 //! budget family. Numeric families use high-water-mark shrink-only checks;
 //! presence families use stale/new allowlist checks. CLI: `cargo xtask lint ratchet`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -109,16 +109,16 @@ pub(crate) fn check_numeric_unlisted(measured: usize, cap: usize) -> NumericVerd
 #[must_use]
 pub(crate) fn check_presence(
     violations: &BTreeMap<String, String>,
-    allowed: &BTreeMap<String, ()>,
+    allowed: &BTreeSet<String>,
 ) -> Vec<(String, PresenceVerdict)> {
     let mut out = Vec::new();
-    for key in allowed.keys() {
+    for key in allowed {
         if !violations.contains_key(key) {
             out.push((key.clone(), PresenceVerdict::Stale));
         }
     }
     for (key, reason) in violations {
-        if !allowed.contains_key(key) {
+        if !allowed.contains(key) {
             out.push((
                 key.clone(),
                 PresenceVerdict::New {
@@ -199,8 +199,8 @@ pub(crate) fn run(args: LintRatchetArgs) -> Result<()> {
                 }
             }
             "presence" => {
-                let allowed: BTreeMap<String, ()> =
-                    family.entry.iter().map(|e| (e.key.clone(), ())).collect();
+                let allowed: BTreeSet<String> =
+                    family.entry.iter().map(|e| e.key.clone()).collect();
                 let measured = invoke_provider_presence(&root, &family.provider)?;
                 for (key, verdict) in check_presence(&measured, &allowed) {
                     match verdict {
@@ -293,7 +293,7 @@ fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
     for rel in candidates {
         let path = root.join(rel);
         if path.is_file() {
-            let n = fs::metadata(&path).map(|m| m.len() as usize).unwrap_or(0);
+            let n = fs::metadata(&path).map_or(0, |m| m.len() as usize);
             out.insert(rel.to_owned(), n);
         }
     }
@@ -309,7 +309,7 @@ fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
                     .unwrap_or(&readme)
                     .to_string_lossy()
                     .replace('\\', "/");
-                let n = fs::metadata(&readme).map(|m| m.len() as usize).unwrap_or(0);
+                let n = fs::metadata(&readme).map_or(0, |m| m.len() as usize);
                 out.insert(rel, n);
             }
         }

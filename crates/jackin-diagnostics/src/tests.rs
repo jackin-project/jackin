@@ -588,7 +588,9 @@ fn debug_mode_default_is_off() {
     // Process-wide flag — touching it would race other tests, so just
     // assert the snapshot is a bool. Toggle/observe is exercised in
     // the binary-level integration test.
-    let _: bool = is_debug_mode();
+    let mode = is_debug_mode();
+    // Snapshot is a process-wide bool; value is not meaningful across threads.
+    assert!(matches!(mode, true | false));
 }
 
 #[test]

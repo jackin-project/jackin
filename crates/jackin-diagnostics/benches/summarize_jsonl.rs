@@ -59,9 +59,12 @@ fn bench_summarize(c: &mut Criterion) {
         b.iter_batched(
             || fixture.clone(),
             |buf| {
-                let summary = summarize_reader(Cursor::new(buf)).unwrap_or_else(|err| {
-                    panic!("summarize fixture should parse: {err}");
-                });
+                #[expect(
+                    clippy::expect_used,
+                    reason = "bench fixture corpus is fixed and must parse"
+                )]
+                let summary =
+                    summarize_reader(Cursor::new(buf)).expect("summarize fixture should parse");
                 black_box(summary.event_count);
             },
             BatchSize::LargeInput,

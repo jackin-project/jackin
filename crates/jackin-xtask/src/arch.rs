@@ -154,8 +154,7 @@ pub(crate) fn run(args: LintArchArgs) -> Result<()> {
             list.sort_unstable();
             let tier = tier_map
                 .get(name.as_str())
-                .map(|t| format!("T{t}"))
-                .unwrap_or_else(|| "T?".into());
+                .map_or_else(|| "T?".into(), |t| format!("T{t}"));
             emit(&format!("{name} ({tier}) → {}", list.join(", ")));
         }
         return Ok(());
@@ -293,6 +292,17 @@ fn find_prod_cycle(prod_edges: &BTreeMap<String, BTreeSet<String>>) -> Option<Ve
 
     let mut path: Vec<String> = Vec::new();
 
+    fn on_back_edge(path: &[String], v: &str) -> Option<Vec<String>> {
+        let i = path.iter().position(|n| n == v)?;
+        let mut cyc = path[i..].to_vec();
+        cyc.push(v.to_owned());
+        Some(cyc)
+    }
+
+    #[expect(
+        clippy::excessive_nesting,
+        reason = "cycle DFS over the production graph is naturally nested; extract would obscure the algorithm"
+    )]
     fn dfs<'a>(
         u: &'a str,
         color: &mut BTreeMap<&'a str, Color>,
@@ -305,9 +315,7 @@ fn find_prod_cycle(prod_edges: &BTreeMap<String, BTreeSet<String>>) -> Option<Ve
             for v in tos {
                 match color.get(v.as_str()).copied().unwrap_or(Color::White) {
                     Color::Gray => {
-                        if let Some(i) = path.iter().position(|n| n == v) {
-                            let mut cyc = path[i..].to_vec();
-                            cyc.push(v.clone());
+                        if let Some(cyc) = on_back_edge(path, v) {
                             return Some(cyc);
                         }
                     }

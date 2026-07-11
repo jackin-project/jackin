@@ -1,6 +1,15 @@
-#![expect(
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
-    reason = "integration test stub prompter must fail immediately if unexpectedly called"
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
 
 mod common;

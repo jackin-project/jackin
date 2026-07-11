@@ -146,7 +146,11 @@ fn crate_from_src_rs_path(path: &str) -> Option<&str> {
     // crates/<name>/src/**/*.rs
     let rest = path.strip_prefix("crates/")?;
     let (crate_name, after) = rest.split_once('/')?;
-    if after.starts_with("src/") && after.ends_with(".rs") {
+    if after.starts_with("src/")
+        && Path::new(after)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
+    {
         Some(crate_name)
     } else {
         None

@@ -265,11 +265,11 @@ mod unit_tests {
 
     #[test]
     fn parse_requires_tests_column() {
-        let text = r#"
+        let text = r"
 | INV | Description | Verify by |
 |---|---|---|
 | INV-1 | Trust first | `foo` |
-"#;
+";
         let rows = parse_inv_rows(text);
         assert_eq!(rows.len(), 1);
         assert!(rows[0].tests.is_none());
@@ -277,12 +277,12 @@ mod unit_tests {
 
     #[test]
     fn parse_reads_tests_cell() {
-        let text = r#"
+        let text = r"
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
 | INV-1 | Trust first | `foo` | `jackin_runtime::runtime::launch::tests::load_namespaced_agent_registers_source_and_trusts_on_accept` |
 | INV-2 | Missing | `bar` | MISSING |
-"#;
+";
         let rows = parse_inv_rows(text);
         assert_eq!(rows.len(), 2);
         assert!(rows[0].tests.as_ref().unwrap().contains("load_namespaced"));

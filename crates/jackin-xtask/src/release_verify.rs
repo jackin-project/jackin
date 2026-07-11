@@ -104,6 +104,10 @@ fn read_expected_sha256(path: &Path) -> Result<String> {
 }
 
 fn archive_sha256(path: &Path) -> Result<String> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "xtask release-verify is host CLI tooling, not a render/runtime thread"
+    )]
     let mut file = fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; 64 * 1024];

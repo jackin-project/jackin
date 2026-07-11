@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! Documented-command drift gate: every fenced `jackin …` invocation in the
 //! docs tree must parse against the real clap command tree.
 //!
@@ -7,12 +21,7 @@
 //! (operator ruling from the first reviewed implementation): those documents
 //! intentionally describe unbuilt surface.
 
-#![expect(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    reason = "integration test binary: fail-fast with full diagnostic report"
-)]
+// Tests allow unwrap/expect/panic via clippy.toml valves; no module-level expect.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -122,12 +131,12 @@ fn match_jackin_line(line: &str) -> Option<String> {
                 && !name.contains(' ')
             {
                 let rest = &s[eq + 1..];
-                let after_value = if rest.starts_with('"') {
-                    let end = rest[1..].find('"').map(|i| i + 2)?;
-                    &rest[end..]
-                } else if rest.starts_with('\'') {
-                    let end = rest[1..].find('\'').map(|i| i + 2)?;
-                    &rest[end..]
+                let after_value = if let Some(stripped) = rest.strip_prefix('"') {
+                    let end = stripped.find('"').map(|i| i + 1)?;
+                    &stripped[end..]
+                } else if let Some(stripped) = rest.strip_prefix('\'') {
+                    let end = stripped.find('\'').map(|i| i + 1)?;
+                    &stripped[end..]
                 } else {
                     let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
                     &rest[end..]
@@ -269,10 +278,10 @@ fn normalize_to_tokens(cmd: &str) -> Vec<String> {
 fn shell_split(input: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut cur = String::new();
-    let mut chars = input.chars().peekable();
+    let chars = input.chars().peekable();
     let mut in_single = false;
     let mut in_double = false;
-    while let Some(c) = chars.next() {
+    for c in chars {
         match c {
             '\'' if !in_double => {
                 in_single = !in_single;
@@ -307,9 +316,10 @@ fn is_research_path(path: &Path) -> bool {
 
 fn rel_docs_path(path: &Path) -> String {
     let root = docs_root();
-    path.strip_prefix(&root)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| path.to_string_lossy().into_owned())
+    path.strip_prefix(&root).map_or_else(
+        |_| path.to_string_lossy().into_owned(),
+        |p| p.to_string_lossy().into_owned(),
+    )
 }
 
 fn walk_mdx_files(root: &Path) -> Vec<PathBuf> {
@@ -319,7 +329,7 @@ fn walk_mdx_files(root: &Path) -> Vec<PathBuf> {
             return;
         };
         let mut entries: Vec<_> = entries.filter_map(Result::ok).collect();
-        entries.sort_by_key(|e| e.file_name());
+        entries.sort_by_key(fs::DirEntry::file_name);
         for entry in entries {
             let path = entry.path();
             if path.is_dir() {
@@ -485,13 +495,12 @@ fn docs_command_invocations_parse_against_clap() {
         SKIP.len()
     );
 
-    if !failures.is_empty() {
-        panic!(
-            "{} documented command(s) failed clap parse:\n\n{}\n",
-            failures.len(),
-            failures.join("\n\n")
-        );
-    }
+    assert!(
+        failures.is_empty(),
+        "{} documented command(s) failed clap parse:\n\n{}\n",
+        failures.len(),
+        failures.join("\n\n")
+    );
 }
 
 /// Count fenced `jackin` lines skipped as compound shell (for diagnostics).

@@ -71,11 +71,12 @@ fn validate_single_file_agents() {
         // Empty file is rejected.
         std::fs::write(dir.join(name), "").unwrap();
         validate_sync_source_dir(agent, &dir, temp.path())
-            .expect_err(&format!("empty {name} must be rejected"));
+            .expect_err("empty credential file must be rejected");
         // Non-empty credential file is accepted.
         std::fs::write(dir.join(name), "{\"token\":\"x\"}").unwrap();
-        validate_sync_source_dir(agent, &dir, temp.path())
-            .expect(&format!("valid {name} must be accepted"));
+        validate_sync_source_dir(agent, &dir, temp.path()).unwrap_or_else(|_| {
+            panic!("valid {name} must be accepted");
+        });
         // Wrong folder (no credential file) is rejected.
         let bad = temp.path().join(format!("{agent:?}-bad"));
         std::fs::create_dir_all(&bad).unwrap();

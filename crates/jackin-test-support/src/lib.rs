@@ -1,7 +1,7 @@
 //! jackin-test-support: shared test fakes and role-repo seed fixtures.
 //!
 //! **Architecture Invariant:** T3.
-//! Entry point: [`FakeRunner`] — canonical CommandRunner test fake.
+//! Entry point: [`FakeRunner`] — canonical `CommandRunner` test fake.
 
 pub mod docker;
 pub mod runner;

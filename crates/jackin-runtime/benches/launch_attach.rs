@@ -71,7 +71,9 @@ fn bench_container_name(c: &mut Criterion) {
     c.bench_function("naming/container_name_with_id", |b| {
         b.iter(|| {
             container_name_with_id(
-                Some(&WorkspaceName::parse(WORKSPACE).unwrap()),
+                Some(&WorkspaceName::parse(WORKSPACE).unwrap_or_else(|_| {
+                    unreachable!("bench workspace name is a fixed valid fixture")
+                })),
                 &selector,
                 INSTANCE_ID,
             )

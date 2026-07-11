@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! Claude-kind auth-form integration tests for the manager TUI.
 //!
 //! Extracted from `manager_flow.rs` to keep each test binary under the

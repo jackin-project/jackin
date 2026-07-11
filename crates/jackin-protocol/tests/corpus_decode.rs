@@ -4,7 +4,7 @@
 //! `regenerate_corpus` test. Exhaustive matches on `ClientFrame` /
 //! `ServerFrame` force a fixture when a new variant is added.
 
-#![expect(
+#![allow(
     clippy::unwrap_used,
     clippy::panic,
     reason = "integration corpus tests"
@@ -159,7 +159,7 @@ fn server_samples() -> Vec<(&'static str, ServerFrame)> {
     ]
 }
 
-/// Exhaustive coverage: every ClientFrame / ServerFrame arm appears in samples.
+/// Exhaustive coverage: every `ClientFrame` / `ServerFrame` arm appears in samples.
 fn assert_client_sample_covers(frame: &ClientFrame) {
     match frame {
         ClientFrame::Hello { .. }

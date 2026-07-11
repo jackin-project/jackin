@@ -12,10 +12,8 @@ use anyhow::{Context, Result, anyhow};
 /// Run `cmd` for status only. Errors name the command display string.
 pub(crate) fn run(cmd: &mut Command) -> Result<()> {
     let display = display_command(cmd);
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "xtask automation shells out to git, gh, cargo, and mise; centralized here"
-    )]
+    // `Command::status` is not in the disallowed set; keep the spawn surface
+    // centralized here with `output`/`spawn` below.
     let status = cmd.status().with_context(|| format!("running {display}"))?;
     if status.success() {
         Ok(())

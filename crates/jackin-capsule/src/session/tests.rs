@@ -1273,8 +1273,8 @@ impl MasterPty for FaultMasterPty {
     }
 }
 
-/// Start the same writer/reader spawn_blocking tasks `Session::spawn` uses,
-/// against a scripted FaultMasterPty, so recovery branches are reachable.
+/// Start the same writer/reader `spawn_blocking` tasks [`Session::spawn`] uses,
+/// against a scripted `FaultMasterPty`, so recovery branches are reachable.
 fn start_fault_pty_tasks(
     fault: FaultMasterPty,
 ) -> (
@@ -1289,13 +1289,10 @@ fn start_fault_pty_tasks(
     let sid = 1u64;
     let event_tx_writer_err = event_tx.clone();
     tokio::task::spawn_blocking(move || {
-        let writer = match master_for_write.lock() {
-            Err(_) => None,
-            Ok(guard) => match guard.take_writer() {
-                Ok(w) => Some(w),
-                Err(_) => None,
-            },
-        };
+        let writer = master_for_write
+            .lock()
+            .ok()
+            .and_then(|guard| guard.take_writer().ok());
         let Some(mut writer) = writer else {
             drop(event_tx_writer_err.send(SessionEvent::Exited {
                 session_id: sid,
@@ -1315,13 +1312,10 @@ fn start_fault_pty_tasks(
     });
     let event_tx_reader_err = event_tx.clone();
     tokio::task::spawn_blocking(move || {
-        let reader = match master_for_read.lock() {
-            Err(_) => None,
-            Ok(guard) => match guard.try_clone_reader() {
-                Ok(r) => Some(r),
-                Err(_) => None,
-            },
-        };
+        let reader = master_for_read
+            .lock()
+            .ok()
+            .and_then(|guard| guard.try_clone_reader().ok());
         let Some(mut reader) = reader else {
             drop(event_tx_reader_err.send(SessionEvent::Exited {
                 session_id: sid,
@@ -1392,7 +1386,7 @@ async fn mid_stream_write_failure_emits_exited() {
         ..Default::default()
     };
     let (input_tx, mut event_rx) = start_fault_pty_tasks(fault);
-    assert!(input_tx.send(b"x".to_vec()).is_ok());
+    input_tx.send(b"x".to_vec()).expect("input channel open");
     let ev = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
         .await
         .expect("timeout")

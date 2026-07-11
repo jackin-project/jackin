@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! WP0 — Acceptance test matrix harness: Tier 1 mechanism probes.
 //!
 //! For each Docker security profile (`locked`, `hardened`, `standard`, `compat`),
@@ -17,9 +31,6 @@
 //! Tier 1 is always-on within the `e2e` feature gate.
 
 #![cfg(feature = "e2e")]
-#![allow(clippy::disallowed_methods)]
-#![allow(clippy::panic, clippy::unwrap_used, clippy::expect_used)]
-
 use std::process::Command;
 
 // ── image ─────────────────────────────────────────────────────────────────────

@@ -1028,8 +1028,8 @@ fn resize_equivalence_against_naive_reference() {
         let mut targets: Vec<(u16, u16)> = Vec::new();
         for &dr in row_deltas {
             for &dc in col_deltas {
-                let rows = (i32::from(start_rows) + dr).max(1) as u16;
-                let cols = (i32::from(start_cols) + dc).max(1) as u16;
+                let rows = u16::try_from((i32::from(start_rows) + dr).max(1)).unwrap_or(1);
+                let cols = u16::try_from((i32::from(start_cols) + dc).max(1)).unwrap_or(1);
                 targets.push((rows, cols));
             }
         }

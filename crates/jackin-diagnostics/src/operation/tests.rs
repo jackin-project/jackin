@@ -1,3 +1,10 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::used_underscore_binding,
+    reason = "operation conformance tests force-flush OTel providers"
+)]
+
 //! Export-shape tests for the typed operation facade.
 
 use opentelemetry::logs::{AnyValue, Severity};
@@ -93,7 +100,7 @@ fn operation_error_exports_error_severity_and_type() {
 
     let export = export_after(false, "op-err-run", || {
         let span = operation_span(otel_events::PROCESS_EXECUTE, &[]);
-        let _g = span.enter();
+        let _entered = span.enter();
         operation_error("process_spawn_error", "failed to spawn", &[]);
     });
 
@@ -133,8 +140,8 @@ fn operation_span_exports_otel_name_and_attrs() {
                 (otel_keys::PROCESS_ARGS_REDACTED, "hello".into()),
             ],
         );
-        let _guard = span.enter();
-        drop(_guard);
+        let guard = span.enter();
+        drop(guard);
     });
 
     let spans = export.spans.get_finished_spans().unwrap();

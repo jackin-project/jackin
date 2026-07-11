@@ -112,11 +112,8 @@ fn leading_doc_lines(text: &str) -> Vec<String> {
                 break;
             }
         } else if line.trim().is_empty() {
-            if docs.is_empty() {
-                continue;
-            }
-            // blank after docs started: keep scanning only if more //! follow later
-            continue;
+            // blank before docs: skip; blank after docs started: keep scanning
+            // only if more `//!` follow later.
         } else {
             break;
         }
@@ -145,12 +142,12 @@ pub(crate) fn check_header(
     }
     let mut found_tier: Option<u8> = None;
     for line in header {
-        if let Some(rest) = line.split("**Architecture Invariant:**").nth(1) {
-            if let Some(cap) = rest.trim().strip_prefix('T') {
-                let digits: String = cap.chars().take_while(|c| c.is_ascii_digit()).collect();
-                if let Ok(n) = digits.parse::<u8>() {
-                    found_tier = Some(n);
-                }
+        if let Some(rest) = line.split("**Architecture Invariant:**").nth(1)
+            && let Some(cap) = rest.trim().strip_prefix('T')
+        {
+            let digits: String = cap.chars().take_while(char::is_ascii_digit).collect();
+            if let Ok(n) = digits.parse::<u8>() {
+                found_tier = Some(n);
             }
         }
     }
@@ -158,9 +155,7 @@ pub(crate) fn check_header(
         (None, _) => problems.push(format!(
             "missing `//! **Architecture Invariant:** T<n> …` line (expected T{} from arch::TIERS)",
             tiers
-                .get(crate_name)
-                .map(|t| t.to_string())
-                .unwrap_or_else(|| "?".into())
+                .get(crate_name).map_or_else(|| "?".into(), ToString::to_string)
         )),
         (Some(got), Some(want)) if got != want => problems.push(format!(
             "header tier T{got} does not match arch::TIERS T{want} — update the header (or re-tier in arch.rs with justification)"

@@ -63,7 +63,12 @@ fn ranged_out_of_bounds_clamps() {
     assert!(pane_content_range_from_damagegrid(&grid, 12, total..total + 10).is_empty());
     // Inverted / empty range → empty.
     assert!(pane_content_range_from_damagegrid(&grid, 12, 5..5).is_empty());
-    assert!(pane_content_range_from_damagegrid(&grid, 12, 8..3).is_empty());
+    #[expect(
+        clippy::reversed_empty_ranges,
+        reason = "intentionally inverted range exercises empty-window path"
+    )]
+    let inverted = 8..3;
+    assert!(pane_content_range_from_damagegrid(&grid, 12, inverted).is_empty());
     // Start in range, end past total → truncated to full[start..].
     let start = total.saturating_sub(2);
     let ranged = pane_content_range_from_damagegrid(&grid, 12, start..total + 50);

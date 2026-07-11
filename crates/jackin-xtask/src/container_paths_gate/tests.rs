@@ -29,7 +29,7 @@ fn shrink_only_logic_growth_and_stale() {
             Some(_) => {}
         }
     }
-    for (path, _) in &measured {
+    for path in measured.keys() {
         if !recorded.contains_key(path) {
             problems.push(format!("{path}: unallowlisted"));
         }

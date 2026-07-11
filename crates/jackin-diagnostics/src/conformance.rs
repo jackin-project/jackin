@@ -5,6 +5,12 @@
 //! dossier acceptance checks permanently.
 
 #![cfg(all(test, feature = "otlp"))]
+// Clippy's allow-*-in-tests valves miss this dual-cfg module; fail-fast is fine.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::used_underscore_binding
+)]
 
 use crate::RunDiagnostics;
 use crate::observability::{TestExport, test_layers};
@@ -51,7 +57,7 @@ pub(crate) fn drive_standard_scenario() -> TestExport {
                 crate::otel_events::PROCESS_EXECUTE,
                 &[(crate::otel_keys::PROCESS_COMMAND, "true".into())],
             );
-            let _g = span.enter();
+            let guard = span.enter();
             operation_log(
                 OperationLevel::Info,
                 "conformance.op",
@@ -59,7 +65,7 @@ pub(crate) fn drive_standard_scenario() -> TestExport {
                 "process executed",
                 &[],
             );
-            drop(_g);
+            drop(guard);
 
             run.error_typed(
                 "E_CONFORM",

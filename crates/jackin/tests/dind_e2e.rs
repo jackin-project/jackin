@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! End-to-end smoke that drives `jackin load` against a real Docker daemon
 //! with proxy env declared in role config, then asserts the launched agent
 //! container's environment carries the `DinD` hostname in both `NO_PROXY`
@@ -5,14 +19,6 @@
 //! bug fixed in `src/runtime/launch.rs`.
 
 #![cfg(feature = "e2e")]
-#![allow(clippy::disallowed_methods)]
-#![expect(
-    clippy::panic,
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "Docker integration fixtures should fail immediately with source location and command context"
-)]
-
 use std::time::Duration;
 
 use jackin_runtime::instance::naming::is_dns_label;
@@ -460,9 +466,10 @@ fn chaos_kill_container_mid_session() {
         if let Some(name) = chaos::primary_running_container(ROLE_KEY) {
             break name;
         }
-        if start.elapsed() > Duration::from_mins(6) {
-            panic!("chaos_kill: no container appeared for {ROLE_KEY}");
-        }
+        assert!(
+            start.elapsed() <= Duration::from_mins(6),
+            "chaos_kill: no container appeared for {ROLE_KEY}"
+        );
         std::thread::sleep(Duration::from_millis(500));
     };
     std::thread::sleep(planned.delay);
@@ -507,9 +514,10 @@ fn chaos_sigkill_capsule() {
         if let Some(name) = chaos::primary_running_container(ROLE_KEY) {
             break name;
         }
-        if start.elapsed() > Duration::from_mins(6) {
-            panic!("chaos_sigkill: no container appeared");
-        }
+        assert!(
+            start.elapsed() <= Duration::from_mins(6),
+            "chaos_sigkill: no container appeared"
+        );
         std::thread::sleep(Duration::from_millis(500));
     };
     std::thread::sleep(planned.delay);
@@ -553,9 +561,10 @@ fn chaos_drop_control_socket() {
         if let Some(name) = chaos::primary_running_container(ROLE_KEY) {
             break name;
         }
-        if start.elapsed() > Duration::from_mins(6) {
-            panic!("chaos_drop_socket: no container appeared");
-        }
+        assert!(
+            start.elapsed() <= Duration::from_mins(6),
+            "chaos_drop_socket: no container appeared"
+        );
         std::thread::sleep(Duration::from_millis(500));
     };
     std::thread::sleep(planned.delay);

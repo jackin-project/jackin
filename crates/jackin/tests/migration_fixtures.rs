@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! Walk every migration fixture in `tests/fixtures/migrations/` and prove the
 //! current binary still upgrades each historical input to a file that parses
 //! successfully against the current serde schema. The `after.toml` in each
@@ -9,12 +23,6 @@
 //! several `CURRENT_*_VERSION` bumps — exercise exactly the same chain this
 //! test covers, so a parse failure is the regression that would break their
 //! upgrade.
-
-#![expect(
-    clippy::panic,
-    clippy::unwrap_used,
-    reason = "migration fixture tests include fixture names in fail-fast panic messages"
-)]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -79,7 +87,7 @@ fn manifest_unknown_field_policy_is_deny() {
 
 #[derive(Clone, Copy)]
 enum UnknownFieldPolicy {
-    /// Unknown keys may survive migration and still parse (AppConfig).
+    /// Unknown keys may survive migration and still parse (`AppConfig`).
     Preserve,
     /// Unknown keys must be rejected by parse if they survive migration.
     Deny,

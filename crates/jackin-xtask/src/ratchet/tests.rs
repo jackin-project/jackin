@@ -3,7 +3,7 @@
 use super::{
     NumericVerdict, PresenceVerdict, check_numeric_entry, check_numeric_unlisted, check_presence,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn numeric_growth_fails() {
@@ -66,8 +66,8 @@ fn numeric_unlisted_over_cap_fails() {
 fn presence_stale_and_new() {
     let mut violations = BTreeMap::new();
     violations.insert("a.rs".into(), "bad".into());
-    let mut allowed = BTreeMap::new();
-    allowed.insert("b.rs".into(), ());
+    let mut allowed = BTreeSet::new();
+    allowed.insert("b.rs".into());
     let v = check_presence(&violations, &allowed);
     assert!(
         v.iter()

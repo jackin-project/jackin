@@ -556,11 +556,7 @@ impl RoleState {
         let host_claude_json = source_dir.join(".claude.json");
 
         let outcome = match mode {
-            AuthForwardMode::Ignore => {
-                wipe_claude_state(account_json, credentials_json)?;
-                AuthProvisionOutcome::Skipped
-            }
-            AuthForwardMode::ApiKey => {
+            AuthForwardMode::Ignore | AuthForwardMode::ApiKey => {
                 wipe_claude_state(account_json, credentials_json)?;
                 AuthProvisionOutcome::Skipped
             }

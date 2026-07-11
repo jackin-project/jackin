@@ -23,7 +23,7 @@ const SCREEN_COLS: u16 = 120;
 /// Near the 10k retained-scrollback bound used by the capsule.
 const SCROLLBACK_ROWS: usize = 8_000;
 const VIEWPORT_COLS: u16 = SCREEN_COLS;
-/// Hover/click window: single content row (see mouse_input resolver).
+/// Hover/click window: single content row (see `mouse_input` resolver).
 const NARROW_WINDOW: usize = 1;
 
 fn make_deep_scrollback_grid() -> DamageGrid {

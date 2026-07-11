@@ -114,6 +114,10 @@ pub fn validate_reserved_names(config: &AppConfig) -> Result<(), OperatorEnvErro
 /// `None` when the call has no account context (e.g. ambient
 /// `op://...` resolution where the operator has not pinned an
 /// account).
+#[expect(
+    clippy::too_many_lines,
+    reason = "URI parsing + multi-protocol op:// resolution; split would obscure the single algorithm"
+)]
 pub fn resolve_op_uri_to_ref(
     input: &str,
     op: &dyn OpStructRunner,

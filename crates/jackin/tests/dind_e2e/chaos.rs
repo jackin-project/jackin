@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! Seeded chaos helpers for the Docker-backed E2E lane (plan 046).
 //!
 //! Deterministic xorshift64 schedule; seed from `JACKIN_CHAOS_SEED` or a
@@ -167,9 +181,10 @@ pub(super) fn wait_until_no_running(role_key: &str, timeout: Duration) {
         if running.is_empty() {
             return;
         }
-        if start.elapsed() > timeout {
-            panic!("timed out waiting for role {role_key} containers to stop: {running:?}");
-        }
+        assert!(
+            start.elapsed() <= timeout,
+            "timed out waiting for role {role_key} containers to stop: {running:?}"
+        );
         std::thread::sleep(Duration::from_millis(200));
     }
 }
