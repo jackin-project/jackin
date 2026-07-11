@@ -74,6 +74,16 @@ pub mod otel_metrics {
     pub const JACKIN_DIAGNOSTICS_EVENTS: &str = "jackin.diagnostics.events";
     pub const JACKIN_CACHE_HITS: &str = "jackin.cache.hits";
     pub const JACKIN_CACHE_MISSES: &str = "jackin.cache.misses";
+    // Hot-path instruments (plan 042).
+    pub const TERMINAL_BYTES_SENT: &str = "jackin.terminal.bytes_sent";
+    pub const TERMINAL_BYTES_RECEIVED: &str = "jackin.terminal.bytes_received";
+    pub const TERMINAL_CURSOR_MOVES: &str = "jackin.terminal.cursor_moves";
+    pub const RENDER_DURATION: &str = "jackin.render.duration";
+    pub const RENDER_PAINTED_CELLS: &str = "jackin.render.painted_cells";
+    pub const RENDER_FRAMES: &str = "jackin.render.frames";
+    pub const INPUT_MOUSE_EVENTS: &str = "jackin.input.mouse_events";
+    pub const USAGE_ACCOUNTS_REFRESHED: &str = "jackin.usage.accounts_refreshed";
+    pub const ERRORS_COUNT: &str = "jackin.errors.count";
     pub const ALL: &[&str] = &[
         PROCESS_CPU_UTILIZATION,
         PROCESS_MEMORY_USAGE,
@@ -83,6 +93,15 @@ pub mod otel_metrics {
         JACKIN_DIAGNOSTICS_EVENTS,
         JACKIN_CACHE_HITS,
         JACKIN_CACHE_MISSES,
+        TERMINAL_BYTES_SENT,
+        TERMINAL_BYTES_RECEIVED,
+        TERMINAL_CURSOR_MOVES,
+        RENDER_DURATION,
+        RENDER_PAINTED_CELLS,
+        RENDER_FRAMES,
+        INPUT_MOUSE_EVENTS,
+        USAGE_ACCOUNTS_REFRESHED,
+        ERRORS_COUNT,
     ];
 }
 
@@ -242,8 +261,7 @@ pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<bool> {
 /// fallback needs. Only the otlp build reaches this (the failed-exporter path).
 #[cfg(feature = "otlp")]
 fn install_jsonl_only() {
-    drop(
-        tracing_subscriber::registry()
+    let _ =        tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
             .try_init(),
     );
@@ -1160,10 +1178,8 @@ mod otlp {
                             observer.observe(f64::from(cpu_percent) / 100.0 / cpu_count, &[]);
                         }
                     })
-                    .build(),
-            );
-            drop(
-                meter
+    .build();
+            let _ =                meter
                     // semconv: process.memory.usage is an UpDownCounter (rises
                     // and falls), not a gauge.
                     .i64_observable_up_down_counter(super::otel_metrics::PROCESS_MEMORY_USAGE)
@@ -1176,44 +1192,36 @@ mod otlp {
                             observer.observe(i64::try_from(memory_bytes).unwrap_or(i64::MAX), &[]);
                         }
                     })
-                    .build(),
-            );
+    .build();
         }
 
         if let Some(handle) = app_handle {
             let workers = handle.clone();
-            drop(
-                meter
+            let _ =                meter
                     .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_WORKERS)
                     .with_description("Worker threads driving the tokio runtime")
                     .with_callback(move |observer| {
                         observer.observe(workers.metrics().num_workers() as u64, &[]);
                     })
-                    .build(),
-            );
+    .build();
             let alive = handle.clone();
-            drop(
-                meter
+            let _ =                meter
                     .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_ALIVE_TASKS)
                     .with_description("Tasks currently alive in the tokio runtime")
                     .with_callback(move |observer| {
                         observer.observe(alive.metrics().num_alive_tasks() as u64, &[]);
                     })
-                    .build(),
-            );
-            drop(
-                meter
+    .build();
+            let _ =                meter
                     .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH)
                     .with_description("Tasks waiting in the tokio runtime's global queue")
                     .with_callback(move |observer| {
                         observer.observe(handle.metrics().global_queue_depth() as u64, &[]);
                     })
-                    .build(),
-            );
+    .build();
         }
 
-        drop(
-            meter
+        let _ =            meter
                 .u64_observable_counter(super::otel_metrics::JACKIN_DIAGNOSTICS_EVENTS)
                 .with_description("Diagnostics events recorded during the active jackin run")
                 .with_callback(|observer| {
@@ -1225,10 +1233,8 @@ mod otlp {
                         observer.observe(count, &[KeyValue::new("kind", kind)]);
                     }
                 })
-                .build(),
-        );
-        drop(
-            meter
+    .build();
+        let _ =            meter
                 .u64_observable_counter(super::otel_metrics::JACKIN_CACHE_HITS)
                 .with_description("Cache-hit diagnostics recorded during the active jackin run")
                 .with_callback(|observer| {
@@ -1236,10 +1242,8 @@ mod otlp {
                         observer.observe(run.domain_metrics_snapshot().cache_hits, &[]);
                     }
                 })
-                .build(),
-        );
-        drop(
-            meter
+    .build();
+        let _ =            meter
                 .u64_observable_counter(super::otel_metrics::JACKIN_CACHE_MISSES)
                 .with_description("Cache-miss diagnostics recorded during the active jackin run")
                 .with_callback(|observer| {
@@ -1247,8 +1251,9 @@ mod otlp {
                         observer.observe(run.domain_metrics_snapshot().cache_misses, &[]);
                     }
                 })
-                .build(),
-        );
+    .build();
+
+        crate::metrics::install_hot_path(&meter);
 
         Ok(provider)
     }

@@ -6,6 +6,7 @@
 pub mod build_log;
 mod debug_log_adapter;
 pub mod logging;
+pub mod metrics;
 pub mod observability;
 pub mod operation;
 pub mod operator_notice;
@@ -33,6 +34,10 @@ pub use observability::{
     ContainerOtlp, backend_query_hint, configured_endpoint, configured_endpoint_summary,
     container_otlp, init_capsule_tracing, init_tracing, otel_events, otel_keys, otel_metrics,
     shutdown_capsule_tracing, unsupported_otlp_protocol,
+};
+pub use metrics::{
+    incr_accounts_refreshed, incr_errors, incr_mouse_events,
+    incr_terminal_bytes_received, record_frame, record_render,
 };
 pub use operation::{
     OperationGuard, OperationLevel, enter_operation, operation_error, operation_log,

@@ -94,7 +94,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
 | [041](041-telemetry-operation-facade.md) | Typed operation facade; collapse duplicate `debug_log!`; adopt at ShellRunner | 8 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; `operation_*` + ShellRunner; `debug_log!` collapsed to core port) |
-| [042](042-high-frequency-metrics.md) | High-frequency internals become metrics (9 instruments; firehose rows demoted) | 8 | P1 | M-L | TODO |
+| [042](042-high-frequency-metrics.md) | High-frequency internals become metrics (9 instruments; firehose rows demoted) | 8 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; 9 instruments; send/render demoted; residuals db-statement + docker-inspect) |
 | [043](043-per-sink-filters-jackin-debug-retirement.md) | Per-sink telemetry filters; retire `JACKIN_DEBUG` to one alias shim | 8 | P2 | M | TODO |
 | [044](044-telemetry-conformance-lane.md) | Telemetry conformance suite (dossier acceptance checks as a permanent gate) + build-trace link | 8 | P2 | M | TODO |
 | [045](045-protocol-env-corpus-closure.md) | Corpus closure: protocol goldens + capability-skew, term fuzz seeds, env fuzz, unknown-field assert | 3 | P2 | M | TODO |

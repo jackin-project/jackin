@@ -457,6 +457,7 @@ impl UsageCache {
         let codex_rpc_gate = self.codex_rpc_gate.clone();
         let grok_rpc_gate = self.grok_rpc_gate.clone();
         let provider_keys = provider_keys.clone();
+        jackin_diagnostics::incr_accounts_refreshed(due_targets.len() as u64);
         let results = collect_usage_refresh_results(due_targets, move |target| {
             let mut codex_rpc_gate = codex_rpc_gate.clone();
             let mut grok_rpc_gate = grok_rpc_gate.clone();

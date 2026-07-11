@@ -489,13 +489,23 @@ fn emit_dialog_mouse_debug_telemetry(
         if matches!(m.kind, MouseEventKind::Moved) {
             *last_dialog_mouse_cell = Some(cell);
         }
-        terminal.emit_debug_line(
-            "cockpit-dialog-mouse",
-            &format!(
-                "kind={:?} modifiers={:?} col={} row={} container_info_open={} build_log_open={}",
-                m.kind, m.modifiers, m.column, m.row, container_info_open, build_log_open
-            ),
-        );
+        jackin_diagnostics::incr_mouse_events();
+        // Moved rows only at TRACE; clicks/drags stay debug-tier.
+        let emit_debug = if matches!(m.kind, MouseEventKind::Moved) {
+            jackin_diagnostics::telemetry_level(jackin_diagnostics::is_debug_mode())
+                == jackin_diagnostics::TelemetryLevel::Trace
+        } else {
+            true
+        };
+        if emit_debug {
+            terminal.emit_debug_line(
+                "cockpit-dialog-mouse",
+                &format!(
+                    "kind={:?} modifiers={:?} col={} row={} container_info_open={} build_log_open={}",
+                    m.kind, m.modifiers, m.column, m.row, container_info_open, build_log_open
+                ),
+            );
+        }
     }
 }
 

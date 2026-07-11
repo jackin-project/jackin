@@ -394,6 +394,9 @@ impl RunDiagnostics {
     }
 
     pub fn error_typed(&self, kind: &str, message: &str, error_type: Option<&str>) {
+        if let Some(error_type) = error_type {
+            crate::metrics::incr_errors(error_type);
+        }
         crate::observability::emit_jsonl_error_typed(
             &self.run_id,
             kind,

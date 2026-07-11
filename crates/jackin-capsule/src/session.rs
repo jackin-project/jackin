@@ -1117,6 +1117,7 @@ impl Session {
         if !bytes.is_empty() {
             self.received_output = true;
         }
+        jackin_diagnostics::incr_terminal_bytes_received(bytes.len() as u64);
         crate::ctrace_payload!(
             "session feed_pty bytes: agent={:?} label={} len={} bytes={:02x?}",
             self.agent,
