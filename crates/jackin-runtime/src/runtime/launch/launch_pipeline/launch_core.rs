@@ -1097,90 +1097,113 @@ where
     // launch config stay behind for operator inspection and get
     // swept by the next explicit `jackin eject` / Purge.
     cleanup.keep_socket_dir();
-    super::super::write_instance_status(
-        paths,
-        &container_state,
-        &mut instance_manifest,
-        InstanceStatus::Running,
-    )?;
 
-    // Finalize per-mount isolation worktrees BEFORE the container teardown
-    // decision below: clean exits without dirty/unpushed state get their
-    // worktrees swept; dirty state is preserved through the rich cleanup
-    // dialog. A `ReturnToAgent` choice restarts + re-attaches the container
-    // exactly once so the operator can address the dirty state inside the
-    // role, then the safe cleanup is retried.
-    let interactive_finalize = true;
-    // The dirty-exit decision is made in-capsule (the dirty-exit modal) and
-    // recorded in exit-action.json; the host only executes it — no host dialog.
-    let mut prompt = crate::isolation::finalize::ExitActionPrompt {
-        state_dir: paths.data_dir.join(&container_name).join("state"),
+    // Post-success finalization: status writes, attach-outcome inspect, and
+    // foreground finalize. On any error reclaim DinD/network/certs while
+    // cleanup is still armed — bare `?` here used to return before the
+    // teardown match and orphan those resources.
+    let decision = {
+        let finalize_result: anyhow::Result<crate::isolation::finalize::FinalizeDecision> = async {
+            super::super::write_instance_status(
+                paths,
+                &container_state,
+                &mut instance_manifest,
+                InstanceStatus::Running,
+            )?;
+
+            // Finalize per-mount isolation worktrees BEFORE the container teardown
+            // decision below: clean exits without dirty/unpushed state get their
+            // worktrees swept; dirty state is preserved through the rich cleanup
+            // dialog. A `ReturnToAgent` choice restarts + re-attaches the container
+            // exactly once so the operator can address the dirty state inside the
+            // role, then the safe cleanup is retried.
+            let interactive_finalize = true;
+            // The dirty-exit decision is made in-capsule (the dirty-exit modal) and
+            // recorded in exit-action.json; the host only executes it — no host dialog.
+            let mut prompt = crate::isolation::finalize::ExitActionPrompt {
+                state_dir: paths.data_dir.join(&container_name).join("state"),
+            };
+            let dirty_exit_policy = config.resolve_dirty_exit_policy(
+                workspace_name
+                    .as_deref()
+                    .and_then(|n| config.workspaces.get(n)),
+            );
+            let outcome = super::super::inspect_attach_outcome(docker, &container_name).await?;
+            super::super::write_instance_attach_outcome(
+                paths,
+                &container_state,
+                &mut instance_manifest,
+                outcome,
+            )?;
+            let mut decision = crate::isolation::finalize::finalize_foreground_session(
+                &container_name,
+                &paths.data_dir.join(&container_name),
+                outcome,
+                interactive_finalize,
+                dirty_exit_policy,
+                &mut prompt,
+                docker,
+                runner,
+            )
+            .await?;
+            super::super::write_preserved_status_if_applicable(
+                decision,
+                paths,
+                &container_state,
+                &mut instance_manifest,
+            )?;
+            if matches!(
+                decision,
+                crate::isolation::finalize::FinalizeDecision::ReturnToAgent
+            ) {
+                // Restart detached, then attach through the jackin-capsule client
+                // socket. Attaching `docker start -ai` to PID 1 would only show
+                // daemon logs, not the multiplexer UI the operator needs to fix
+                // the preserved worktree. We do not loop further: if the operator
+                // still leaves dirty state, the second pass will fall back to
+                // Preserved and exit normally.
+                start_or_reconnect_capsule_client(paths, &container_name, docker, runner).await?;
+                let outcome2 =
+                    super::super::inspect_attach_outcome(docker, &container_name).await?;
+                super::super::write_instance_attach_outcome(
+                    paths,
+                    &container_state,
+                    &mut instance_manifest,
+                    outcome2,
+                )?;
+                decision = crate::isolation::finalize::finalize_foreground_session(
+                    &container_name,
+                    &paths.data_dir.join(&container_name),
+                    outcome2,
+                    interactive_finalize,
+                    dirty_exit_policy,
+                    &mut prompt,
+                    docker,
+                    runner,
+                )
+                .await?;
+                super::super::write_preserved_status_if_applicable(
+                    decision,
+                    paths,
+                    &container_state,
+                    &mut instance_manifest,
+                )?;
+            }
+            Ok(decision)
+        }
+        .await;
+
+        match finalize_result {
+            Ok(decision) => decision,
+            Err(err) => {
+                // A post-success finalization step failed. cleanup is still armed
+                // (the region never runs/disarms it); reclaim DinD/network/certs
+                // rather than orphaning them, consistent with the teardown arms.
+                cleanup.run(docker).await;
+                return Err(err);
+            }
+        }
     };
-    let dirty_exit_policy = config.resolve_dirty_exit_policy(
-        workspace_name
-            .as_deref()
-            .and_then(|n| config.workspaces.get(n)),
-    );
-    let outcome = super::super::inspect_attach_outcome(docker, &container_name).await?;
-    super::super::write_instance_attach_outcome(
-        paths,
-        &container_state,
-        &mut instance_manifest,
-        outcome,
-    )?;
-    let mut decision = crate::isolation::finalize::finalize_foreground_session(
-        &container_name,
-        &paths.data_dir.join(&container_name),
-        outcome,
-        interactive_finalize,
-        dirty_exit_policy,
-        &mut prompt,
-        docker,
-        runner,
-    )
-    .await?;
-    super::super::write_preserved_status_if_applicable(
-        decision,
-        paths,
-        &container_state,
-        &mut instance_manifest,
-    )?;
-    if matches!(
-        decision,
-        crate::isolation::finalize::FinalizeDecision::ReturnToAgent
-    ) {
-        // Restart detached, then attach through the jackin-capsule client
-        // socket. Attaching `docker start -ai` to PID 1 would only show
-        // daemon logs, not the multiplexer UI the operator needs to fix
-        // the preserved worktree. We do not loop further: if the operator
-        // still leaves dirty state, the second pass will fall back to
-        // Preserved and exit normally.
-        start_or_reconnect_capsule_client(paths, &container_name, docker, runner).await?;
-        let outcome2 = super::super::inspect_attach_outcome(docker, &container_name).await?;
-        super::super::write_instance_attach_outcome(
-            paths,
-            &container_state,
-            &mut instance_manifest,
-            outcome2,
-        )?;
-        decision = crate::isolation::finalize::finalize_foreground_session(
-            &container_name,
-            &paths.data_dir.join(&container_name),
-            outcome2,
-            interactive_finalize,
-            dirty_exit_policy,
-            &mut prompt,
-            docker,
-            runner,
-        )
-        .await?;
-        super::super::write_preserved_status_if_applicable(
-            decision,
-            paths,
-            &container_state,
-            &mut instance_manifest,
-        )?;
-    }
 
     // Classify how the interactive session ended and tear down DinD/network
     // unless the container is still running with active sessions (detach):

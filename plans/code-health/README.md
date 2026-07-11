@@ -30,7 +30,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [003](003-materialize-accounts-borrow.md) | Stop deep-cloning usage views on every refresh | P1 | S | perf | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 | [004](004-resize-coalesce-drops-frames.md) | Stop dropping the frame queued behind a coalesced resize | P1 | S | bug | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 | [007](007-osc8-hyperlink-map-bound.md) | Bound OSC 8 hyperlink maps; clear on reset | P2 | S-M | bug | DONE (in-tree on `chore/rust-code-health-roadmap`) |
-| [008](008-launch-finalization-cleanup-guard.md) | Tear down DinD when a post-success finalization step fails | P2 | M | bug | DONE (reviewed; `exec-plan-008` @ `fde52d14a`, unmerged) |
+| [008](008-launch-finalization-cleanup-guard.md) | Tear down DinD when a post-success finalization step fails | P2 | M | bug | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 | [009](009-protocol-decoder-fuzz-and-truncation-tests.md) | Fuzz + truncation tests for protocol wire decoders | P2 | M | tests | DONE (reviewed; `exec-plan-009` @ `5816e42fe`, unmerged; fuzzed 6.4M execs clean on stable — ASan needs nightly, still unexercised) |
 
 ### Second wave — program infrastructure (respect the dependency notes)
