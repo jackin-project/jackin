@@ -1436,7 +1436,8 @@ pub(crate) fn correlation_ids(
         use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
         let ctx = tracing::Span::current().context();
-        let span_ctx = ctx.span().span_context();
+        let span = ctx.span();
+        let span_ctx = span.span_context();
         if span_ctx.is_valid() {
             return (
                 span_ctx.trace_id().to_string(),
