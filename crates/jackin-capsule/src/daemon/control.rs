@@ -106,7 +106,7 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
     }
 }
 
-pub async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
+pub fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     match frame {
         ClientFrame::Hello { .. } => {
             // The initial Hello is consumed by the accept handler; any

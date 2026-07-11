@@ -275,10 +275,13 @@ impl FocusedUsageView {
     pub fn refreshing(provider: Option<&str>, now_epoch: i64) -> Self {
         let mut view = Self::unavailable("refreshing", now_epoch);
         view.focused_provider = provider.map(str::to_owned);
-        view.account.provider_label = provider.unwrap_or("Usage").to_owned();
+        view.account.provider_label.clear();
+        view.account.provider_label.push_str(provider.unwrap_or("Usage"));
         view.account.account_label = String::new();
-        view.status_bar_label = "refreshing".to_owned();
-        view.updated_label = "Refreshing".to_owned();
+        view.status_bar_label.clear();
+        view.status_bar_label.push_str("refreshing");
+        view.updated_label.clear();
+        view.updated_label.push_str("Refreshing");
         view
     }
 }

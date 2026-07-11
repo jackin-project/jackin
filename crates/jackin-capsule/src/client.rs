@@ -374,7 +374,7 @@ pub async fn run_usage_verify() -> Result<()> {
     Ok(())
 }
 
-pub async fn run_usage_claude_cli() -> Result<()> {
+pub fn run_usage_claude_cli() -> Result<()> {
     let diagnostic = crate::usage::run_claude_usage_diagnostic()
         .map_err(|error| anyhow::anyhow!("Claude CLI usage diagnostic failed: {error}"))?;
     crate::output::stdout_line(format_args!(

@@ -389,7 +389,8 @@ fn forward_redacted_line(
     }
     let token_bytes_end = i;
     if token.is_empty() {
-        token = TOKEN_PREFIX.to_owned();
+        token.clear();
+        token.push_str(TOKEN_PREFIX);
     }
     if captured.is_none() {
         *captured = Some(token);

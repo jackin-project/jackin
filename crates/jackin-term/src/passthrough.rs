@@ -103,11 +103,8 @@ impl PassthroughEvent {
             }
             // Raw pass-through — emit as-is.
             Self::UnhandledCsi(bytes) => Some(bytes.clone()),
-            Self::DroppedCsi(_) => None,
-            // Query replies go to the agent PTY, not the outer terminal.
-            Self::Reply(_) => None,
-            // Capsule-internal instruction; no outer-terminal output.
-            Self::ScrollbackClear => None,
+            // No outer-terminal output: dropped CSI, PTY-only replies, capsule-internal.
+            Self::DroppedCsi(_) | Self::Reply(_) | Self::ScrollbackClear => None,
         }
     }
 }

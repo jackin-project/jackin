@@ -281,7 +281,7 @@ impl<A: Copy + 'static> Keymap<A> {
     /// [`crate::components::scroll_hint_spans`]).
     #[must_use]
     pub fn hint_spans_for_axes(&self, axes: ScrollAxes) -> Vec<HintSpan<'static>> {
-        self.hint_spans_filtered(|b| self.axis_gate_passes(b, axes))
+        self.hint_spans_filtered(|b| Self::axis_gate_passes(b, axes))
     }
 
     fn hint_spans_filtered(
@@ -311,7 +311,7 @@ impl<A: Copy + 'static> Keymap<A> {
         spans
     }
 
-    fn axis_gate_passes(&self, binding: &KeyBinding<A>, axes: ScrollAxes) -> bool {
+    fn axis_gate_passes(binding: &KeyBinding<A>, axes: ScrollAxes) -> bool {
         let all_vertical = !binding.chords.is_empty()
             && binding
                 .chords
@@ -403,16 +403,11 @@ pub fn raw_bytes_to_chord(bytes: &[u8]) -> Option<KeyChord> {
         }
         // Delete (CSI 3~)
         b"\x1b[3~" => Some(KeyChord::plain(LogicalKey::Delete)),
-        // CSI arrow keys (legacy xterm / VT100)
-        b"\x1b[A" => Some(KeyChord::plain(LogicalKey::Up)),
-        b"\x1b[B" => Some(KeyChord::plain(LogicalKey::Down)),
-        b"\x1b[C" => Some(KeyChord::plain(LogicalKey::Right)),
-        b"\x1b[D" => Some(KeyChord::plain(LogicalKey::Left)),
-        // SS3 arrow keys (application cursor mode, used by many terminals)
-        b"\x1bOA" => Some(KeyChord::plain(LogicalKey::Up)),
-        b"\x1bOB" => Some(KeyChord::plain(LogicalKey::Down)),
-        b"\x1bOC" => Some(KeyChord::plain(LogicalKey::Right)),
-        b"\x1bOD" => Some(KeyChord::plain(LogicalKey::Left)),
+        // CSI (legacy xterm/VT100) and SS3 (application cursor mode) arrows
+        b"\x1b[A" | b"\x1bOA" => Some(KeyChord::plain(LogicalKey::Up)),
+        b"\x1b[B" | b"\x1bOB" => Some(KeyChord::plain(LogicalKey::Down)),
+        b"\x1b[C" | b"\x1bOC" => Some(KeyChord::plain(LogicalKey::Right)),
+        b"\x1b[D" | b"\x1bOD" => Some(KeyChord::plain(LogicalKey::Left)),
         // Home / End variants
         b"\x1b[H" | b"\x1b[1~" => Some(KeyChord::plain(LogicalKey::Home)),
         b"\x1b[F" | b"\x1b[4~" => Some(KeyChord::plain(LogicalKey::End)),

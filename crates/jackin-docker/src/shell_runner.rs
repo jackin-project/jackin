@@ -366,6 +366,10 @@ impl CommandRunner for ShellRunner {
 }
 
 impl ShellRunner {
+    #[expect(
+        clippy::large_futures,
+        reason = "ShellRunner joins wait+stdout+stderr under optional timeout; boxing adds latency without measured win"
+    )]
     async fn run_captured(
         &self,
         program: &str,

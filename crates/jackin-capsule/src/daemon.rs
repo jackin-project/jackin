@@ -1277,7 +1277,7 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                     );
                 }
                 for frame in frames {
-                    handle_client_frame(&mut mux, frame).await;
+                    handle_client_frame(&mut mux, frame);
                     if mux.detach_requested {
                         break;
                     }

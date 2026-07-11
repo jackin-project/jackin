@@ -25,11 +25,11 @@ pub fn reconstruct_csi(params: &vte::Params, intermediates: &[u8], final_byte: u
 pub fn underline_style_from_sgr(style: u16) -> UnderlineStyle {
     match style {
         0 => UnderlineStyle::None,
-        1 => UnderlineStyle::Single,
         2 => UnderlineStyle::Double,
         3 => UnderlineStyle::Curly,
         4 => UnderlineStyle::Dotted,
         5 => UnderlineStyle::Dashed,
+        // 1 (single) and any unknown SGR underline style
         _ => UnderlineStyle::Single,
     }
 }

@@ -1230,6 +1230,10 @@ fn max_frame_payload_for_tag(tag: u8) -> usize {
 
 /// Read the next client frame from the stream. `first_byte` is the
 /// already-peeked first byte (used by the channel-dispatch layer).
+#[expect(
+    clippy::large_futures,
+    reason = "attach frame reader decodes full ClientFrame/ServerFrame payloads; boxing every call site would add hot-path indirection"
+)]
 pub async fn read_client_frame<R>(stream: &mut R, first_byte: u8) -> Result<Option<ClientFrame>>
 where
     R: AsyncRead + Unpin,
@@ -1242,6 +1246,10 @@ where
 
 /// Read the next server frame from the stream. `first_byte` is the
 /// already-read tag byte.
+#[expect(
+    clippy::large_futures,
+    reason = "attach frame reader decodes full ClientFrame/ServerFrame payloads; boxing every call site would add hot-path indirection"
+)]
 pub async fn read_server_frame<R>(stream: &mut R, first_byte: u8) -> Result<Option<ServerFrame>>
 where
     R: AsyncRead + Unpin,

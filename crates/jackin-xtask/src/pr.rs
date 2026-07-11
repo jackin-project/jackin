@@ -86,11 +86,11 @@ fn is_schema_path(file: &str) -> bool {
 /// truth for which blocks exist).
 fn keep_block(name: &str, cats: &Categories) -> bool {
     match name {
-        "Checkout" => true,
         "Static checks" | "Rust tests" | "User smoke" => cats.rust,
         "Schema migration smoke" => cats.schema,
         "Docs checks" | "Documentation" => cats.docs,
         "jackin-capsule smoke" => cats.capsule,
+        // Checkout and any unmapped job always run.
         _ => true,
     }
 }

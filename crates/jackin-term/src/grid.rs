@@ -1417,14 +1417,14 @@ impl DamageGrid {
                 let grid = self.active_grid();
                 grid[cursor_row][cursor_col..cols_usize].fill(blank);
                 for row in grid.iter_mut().take(rows).skip(cursor_row + 1) {
-                    *row = blank_row.clone();
+                    row.clone_from(&blank_row);
                 }
             }
             1 => {
                 let blank_row = self.blank_row_bce();
                 let grid = self.active_grid();
                 for row in grid.iter_mut().take(cursor_row) {
-                    *row = blank_row.clone();
+                    row.clone_from(&blank_row);
                 }
                 grid[cursor_row][0..=cursor_col.min(cols_usize - 1)].fill(blank);
             }
@@ -1436,7 +1436,7 @@ impl DamageGrid {
                 let blank_row = self.blank_row_bce();
                 let grid = self.active_grid();
                 for row in grid.iter_mut().take(rows) {
-                    *row = blank_row.clone();
+                    row.clone_from(&blank_row);
                 }
             }
             3 => {
@@ -1445,7 +1445,7 @@ impl DamageGrid {
                 let blank_row = self.blank_row_bce();
                 let grid = self.active_grid();
                 for row in grid.iter_mut().take(rows) {
-                    *row = blank_row.clone();
+                    row.clone_from(&blank_row);
                 }
                 // Emit ScrollbackClear so the capsule can clear its retained history.
                 self.passthrough.push(PassthroughEvent::ScrollbackClear);
@@ -1690,8 +1690,6 @@ impl DamageGrid {
                 self.passthrough
                     .push(PassthroughEvent::ApplicationCursorKeys(enabled));
             }
-            // Alternate screen (simple form, no cursor save).
-            47 => self.set_alt_screen(enabled),
             // Focus events — track state and emit for passthrough.
             1004 => {
                 if enabled {
@@ -1713,9 +1711,9 @@ impl DamageGrid {
                     .push(PassthroughEvent::BracketedPaste(enabled));
             }
             // Alternate screen (save/restore cursor).
-            // Mode 1047: switch only (no cursor save/restore).
+            // Alternate screen simple (47) and 1047: switch only (no cursor save/restore).
             // Mode 1049: save cursor before entering alt screen, restore after leaving.
-            1047 => self.set_alt_screen(enabled),
+            47 | 1047 => self.set_alt_screen(enabled),
             1049 => {
                 if enabled {
                     self.saved_cursor_row = self.cursor_row;
@@ -1786,11 +1784,8 @@ impl DamageGrid {
                     MouseProtocolEncoding::Default
                 };
             }
-            // Synchronized output (?2026): absorbed. The capsule's own frame
-            // brackets supersede the agent's — forwarding the agent's BSU/ESU
-            // on its own schedule decoupled them from frame timing, and a
-            // dropped ESU froze the outer terminal (D6).
-            2026 => {}
+            // Synchronized output (?2026) and other unhandled private modes:
+            // absorbed. The capsule's own frame brackets supersede the agent's.
             _ => {}
         }
     }

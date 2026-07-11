@@ -117,11 +117,8 @@ impl ModalRectMode {
                 width_pct: 80,
                 height: required_height.min(outer_height),
             },
-            Self::ErrorPopup { required_height } => ModalRectSpec::Fixed {
-                width_pct: 60,
-                height: required_height,
-            },
-            Self::ContainerInfo { required_height } => ModalRectSpec::Fixed {
+            Self::ErrorPopup { required_height }
+            | Self::ContainerInfo { required_height } => ModalRectSpec::Fixed {
                 width_pct: 60,
                 height: required_height,
             },
