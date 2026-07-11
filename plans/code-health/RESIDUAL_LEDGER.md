@@ -1,0 +1,59 @@
+# Code-health residual ledger
+
+Authoritative disposition for every **named residual footnote** and every former
+coverage-matrix **SEQ** row that this program does not execute as a full multi-PR
+redesign on `chore/rust-code-health-roadmap`.
+
+Rules:
+
+1. No open **SEQ(** markers remain in `plans/code-health/README.md` after wave 8.
+2. Every row below is either **CLOSED** (in-tree fix on this branch) or
+   **DEFER(measured)** with a concrete measurement and a next-PR trigger.
+3. Plans **055** and **056** execute this ledger (close footnotes + clear SEQ).
+
+| ID | Source | Disposition | Measured reason / evidence | Next trigger |
+|----|--------|-------------|----------------------------|--------------|
+| R-028-host-turso | plan 028 residual | **CLOSED** | Host `crates/jackin/src/cli/usage/store.rs` uses `jackin_usage::store_backend::{Connection,Row,connect_local,params}`; host crate has no `turso` dep (`rg 'use turso::' crates/jackin` → empty). Commit `e1eacdf44`. | n/a |
+| R-049-repo-links-gen | plan 049 residual | **CLOSED** | `.github/workflows/docs.yml` `repo-link-check` runs `bun install` + `bun run scripts/gen-crate-pages.ts` before `cargo xtask docs repo-links`. Commit `e1eacdf44`. | n/a |
+| R-014-materialize-bench | PERF-benches-missing / plan 014 | **DEFER** | `UsageCache::materialize_accounts` is `pub(crate)` and writes fixed path `MATERIALIZED_USAGE_ACCOUNTS_PATH` (`/jackin/run/usage/accounts.json`). External bench hits E0624; container path is non-hermetic on host. Shipped benches: `resize_storm`, `summarize_jsonl`, `scrollback_snapshot`, launch micro-ops. | Small `#[doc(hidden)]` seam + temp-path inject (S) after usage path chokepoint |
+| R-014-launch-pipeline-bench | PERF-benches-missing / plan 014 | **DEFER** | Full FakeDockerClient launch pipeline is integration-sized (LaunchCore field set ~20 deps); existing `launch_attach` is micro-ops only. Multi-crate harness. | After launch-core extract (was SEQ, now DEFER R-launch-typestate) |
+| R-023-usage-scope | plan 023 operator flag | **DEFER** | Docs corrected to `usage accounts/verify`; intentional product surface (accounts not workspace/session). Re-confirm only if product reintroduces workspace-scoped usage CLI. | Product decision to restore workspace usage commands |
+| R-023-apple-container | plan 023 operator flag | **DEFER** | `--backend apple-container` docs dropped; backend not shipped. Fence drift gate would fail if re-documented without clap surface. | When apple-container backend lands |
+| R-033-suite-a | plan 033 suite A | **DEFER** | Suites B+C shipped. Full `LaunchCore` fixture blocked: grant/profile validation path requires role grants + cleanup resource graph not reachable with cheap fakes alone (plan 033 risk note). Grant helper floor exists. | Daemon/launch decomposition PR that shrinks LaunchCore |
+| R-038-env-console-tail | plan 038 long tail | **DEFER** | WorkspaceName adopted at mint/editor/naming/launch_slot; frontier measured ~62 remaining string sites in env/console (was 117). Mechanical per-callsite; risk is serde/wire mix-ups. | One env PR + one console PR behind 038 pattern |
+| R-026-borrowed-row | plan 026 residual | **DEFER** | Range API shipped; zero-copy row accessor not required for correctness. | Perf incident on mouse-event scrollback |
+| R-042-db-docker-metrics | plan 042 residual | **DEFER** | 9 instruments shipped; db-statement + docker-inspect firehose demotion optional. | Metrics volume review after 044 budgets |
+| R-045-hello-skew | plan 045 residual | **CLOSED-as-pinned** | Hello short-payload soft-default skew hard-errors by design (fail-closed). Not a defect. | Only if protocol explicitly softens Hello |
+| R-complexity-threshold | matrix Phase 1 | **DEFER** | `cognitive_complexity` warn @ floor 5 in baseline; lowering thresholds is shrink-only ratchet chore post-census, not owned by 011/017 engines. | Post-green PR that lowers one bucket after measured zero violations at new floor |
+| R-allow-attributes-deny | matrix Phase 1 meta | **DEFER** | Bare-allow burn-down incomplete; `suppression-budget` + ratchet cap debt. Denying `allow_attributes*` before burn-down fails CI massively. | When bare-allow family floor is 0 (or expect-only) |
+| R-missing-docs-cascade | matrix Phase 1 | **DEFER** | Protocol `missing_docs` shipped [021]; cascade is one crate per PR (manifest→env→term→config→core). | Next pure-crate PR after protocol pattern |
+| R-launch-typestate | matrix Phase 2 runtime | **DEFER** | Needs characterization oracle [033] suites; full typestate/phase-contract extract is multi-PR design (LaunchCore ~1.3k LOC body). Characterization partial (B+C). | Dedicated design PR after suite A or LaunchCore split |
+| R-daemon-decomp | matrix Phase 2 daemon | **DEFER** | Specs [032] + partial characterization [033]; full decomposition multi-module rewrite. Measured MISSING worklists live in 032. | Per-worklist PR after MISSING items prioritized |
+| R-daemon-char-remainder | matrix Phase 2 | **DEFER** | 033 covers 3/7 surfaces; session-lifecycle, status-publication, persistence/reattach, cleanup-outcomes need ports. | After daemon ports extract |
+| R-thiserror-mid-tranches | matrix Phase 2 | **DEFER** | 037 shipped core+env idiom. Measured remaining: config ~66, isolation ~14, docker ~17, image ~23, instance ~7 sites — one plan per crate. | Plan 059+ series (out of this program scope) |
+| R-typestate-general | matrix Phase 2 | **DEFER** | Same blocker as R-launch-typestate. | Same as R-launch-typestate |
+| R-edit-model-convergence | matrix Phase 2 TUI | **DEFER** | View-models [030] shipped; full edit-model merge is console redesign. | After 030 residue state.rs + auth handler |
+| R-snapshot-helpers | matrix Phase 3 | **DEFER** | Shared snapshot helpers wait for test-support maturity [025 shipped]; mechanical extract. | jackin-test-support snapshot module PR |
+| R-sim-turmoil | matrix Phase 3 | **DEFER** | Requires daemon port seams not yet extracted. | After R-daemon-decomp first slice |
+| R-iai-callgrind | matrix Phase 4 | **DEFER** | Needs stable bench set + iai toolchain in CI image; 014 compile-check lane is the floor. | After R-014 benches closed |
+| R-perf-budgets | matrix Phase 4 | **DEFER** | 017 engine exists; perf family not wired (wave-7: 017 reserves only). | Wire `[[perf]]` after 014 stable lane |
+| R-dhat-budgets-ratchet | matrix Phase 4 | **DEFER** | dhat literals still in-source; migrate to ratchet when 017 perf/dhat family lands. | Same PR as R-perf-budgets |
+| R-map-metadata-gate | matrix Phase 5 | **DEFER** | One-time reconcile [029] done; recurring map↔metadata gate natural oracle is TIERS [012] + generated crates [049]. | `docs map-check` PR folding into 049 section |
+| R-build-time-budget | matrix Phase 6 | **DEFER** | Measurement lane [048] ships; budget half needs 017 numeric family. | After 048 baselines exist for N weeks |
+| R-self-tightening | matrix Phase 7 | **DEFER** | Engine [017] shipped; self-tightening bot is automation (PR bot / scheduled floor shrink). | Operator bot design + GH app/token policy |
+| R-health-history-jsonl | matrix Phase 7 | **DEFER** | `health --format json` [010] is the schema prerequisite; history append is ops storage not gate. | Ops decision for history sink path |
+| R-agent-hygiene | matrix Phase 7 | **DEFER** | Machine-readable gates [051] + ratchet [017] are prerequisites; agent loop is productization. | After 051 remaining-gate rollout |
+| R-export-volume-ratchet | matrix Phase 8 | **DEFER** | 044 in-source budgets; family move into 017 is mechanical. | When 017 absorbs volume columns |
+
+## Closed this wave (tree)
+
+| Residual | Commit / evidence |
+|----------|-------------------|
+| R-028-host-turso | `e1eacdf44` + `store_backend` public + host dep on `jackin-usage` |
+| R-049-repo-links-gen | `e1eacdf44` + docs.yml generator steps |
+
+## Legend
+
+- **CLOSED**: done on this branch; no follow-up required for program completion.
+- **CLOSED-as-pinned**: intentional product/safety choice, not unfinished work.
+- **DEFER**: deliberately not executed in this program; measured blocker recorded.
