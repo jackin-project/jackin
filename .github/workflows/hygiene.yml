@@ -90,6 +90,14 @@ jobs:
         run: |
           cd crates/jackin-term
           cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=300
+      - name: Long config/manifest fuzz runs
+        run: |
+          cd crates/jackin-config
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu config_migrate -- -max_total_time=120
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu workspace_migrate -- -max_total_time=120
+          cd ../jackin-manifest
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_migrate -- -max_total_time=120
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_validate -- -max_total_time=120
 
       # When plan 009 protocol fuzz targets land, add them here too.
       - name: ASan jackin-term fuzz run

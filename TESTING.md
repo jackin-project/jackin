@@ -118,6 +118,35 @@ Does not apply to:
 - Inspection commands operator runs (`pgrep`, `pmset`, `cat`, `ls`) — not `jackin` invocations.
 - Production recommendations or scripted automation (debug output too noisy).
 
+## Flakes and fuzz
+
+### Flake policy
+
+CI nextest uses `[profile.ci]` (`.config/nextest.toml`): fixed 2 retries with a 1s delay and `final-status-level = "flaky"`. A pass-on-retry is reported as flaky — never silently absorbed. The sharded workflow uploads `target/nextest/ci/junit.xml` per group and fails if any flaky test is not listed in the shrink-only quarantine ledger `flaky-tests.toml` (repo root; each `[[test]]` needs `name`, `owner`, `reason`, `since`). Prefer fixing the flake over quarantining.
+
+Junit artifacts are named `nextest-junit-<group>-<lane>` and seed the Phase 0 suite-wall-time baseline once measured.
+
+### Fuzz targets
+
+| Target | Crate path | Smoke (PR / ci.yml) | Long (hygiene) |
+|---|---|---|---|
+| `damage_grid_process` | `crates/jackin-term/fuzz` | 60s `--sanitizer none` | 300s; ASan 300s |
+| `config_migrate` | `crates/jackin-config/fuzz` | 30s | 120s |
+| `workspace_migrate` | `crates/jackin-config/fuzz` | 30s | 120s |
+| `manifest_migrate` | `crates/jackin-manifest/fuzz` | 30s | 120s |
+| `manifest_validate` | `crates/jackin-manifest/fuzz` | 30s | 120s |
+
+Local smoke (nightly + cargo-fuzz via mise):
+
+```sh
+cd crates/jackin-term && cargo fuzz run --sanitizer none damage_grid_process -- -max_total_time=30
+cd crates/jackin-config && cargo fuzz run --sanitizer none config_migrate -- -max_total_time=30
+```
+
+Committed seeds live under each fuzz crate's `corpus/<target>/` (fixture-derived TOML for migrate/validate targets). Promote minimized crashers into the corpus; run `cargo fuzz cmin <target>` before growing corpora.
+
+Migration fixture harness (`crates/jackin/tests/migration_fixtures.rs`) enforces golden equality against `after.toml` and second-pass idempotence for every config/workspace/manifest fixture.
+
 ## Advisory measurement lanes (hygiene schedule)
 
 Trigger manually: `gh workflow run Hygiene` (or wait for the daily cron).

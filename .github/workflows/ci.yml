@@ -909,6 +909,8 @@ jobs:
           workspaces: |
             . -> target
             crates/jackin-term/fuzz -> target
+            crates/jackin-config/fuzz -> target
+            crates/jackin-manifest/fuzz -> target
           # No branch in the cache key: GitHub isolates branch caches, so every
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
@@ -918,6 +920,16 @@ jobs:
           cd crates/jackin-term
           cargo fetch --locked --offline
           cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=60
+      - name: Fuzz config migration paths
+        run: |
+          cd crates/jackin-config
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu config_migrate -- -max_total_time=30
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu workspace_migrate -- -max_total_time=30
+      - name: Fuzz manifest migration and validate
+        run: |
+          cd crates/jackin-manifest
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_migrate -- -max_total_time=30
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_validate -- -max_total_time=30
   bench-build:
     # One job builds every workspace bench: the two matrix legs compiled the
     # shared dependency graph twice with two separate target caches

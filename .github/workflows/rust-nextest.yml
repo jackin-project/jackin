@@ -116,11 +116,66 @@ jobs:
               ;;
           esac
 
-          args+=(--no-tests=pass --color=always --locked --offline)
+          args+=(--no-tests=pass --color=always --locked --offline --profile ci)
           if [ "${{ inputs.all-features }}" = "true" ]; then
             args+=(--all-features)
           fi
           cargo nextest run "${args[@]}"
+      - name: Upload junit + timing
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nextest-junit-${{ matrix.group }}-${{ matrix.config.lane }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+      - name: Slowest tests summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f target/nextest/ci/junit.xml ]; then
+            echo "### Slowest tests (${{ matrix.group }})" >> "$GITHUB_STEP_SUMMARY"
+            grep -oE '<testcase name="[^"]*"[^>]*time="[0-9.]*"' target/nextest/ci/junit.xml \
+              | sed -E 's/<testcase name="([^"]*)".*time="([0-9.]*)"/\2 \1/' \
+              | sort -rn | head -10 | awk '{printf "- %ss `%s`\n", $1, $2}' >> "$GITHUB_STEP_SUMMARY"
+            total=$(grep -oE 'time="[0-9.]+"' target/nextest/ci/junit.xml \
+              | sed -E 's/time="([0-9.]+)"/\1/' \
+              | awk '{s+=$1} END {printf "%.3f", s+0}')
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Shard wall time (sum of testcase times): ${total}s" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Fail on unquarantined flakes
+        if: always()
+        shell: bash
+        run: |
+          [ -f target/nextest/ci/junit.xml ] || exit 0
+          if grep -q 'flaky="true"' target/nextest/ci/junit.xml; then
+            mapfile -t flaky_names < <(
+              python3 -c '
+import re
+from pathlib import Path
+text = Path("target/nextest/ci/junit.xml").read_text()
+for m in re.finditer(r"<testcase\b([^>]*)>", text):
+    attrs = m.group(1)
+    if "flaky=\"true\"" in attrs:
+        nm = re.search(r"name=\"([^\"]*)\"", attrs)
+        if nm:
+            print(nm.group(1))
+'
+            )
+            unquarantined=()
+            for name in "${flaky_names[@]}"; do
+              [ -n "$name" ] || continue
+              if ! grep -Fq "name = \"$name\"" flaky-tests.toml 2>/dev/null; then
+                unquarantined+=("$name")
+              fi
+            done
+            if [ "${#unquarantined[@]}" -gt 0 ]; then
+              echo "::error::flaky test(s) detected and not quarantined in flaky-tests.toml"
+              printf "%s\n" "${unquarantined[@]}"
+              exit 1
+            fi
+          fi
+
       - name: Capture sccache stats
         if: always()
         uses: ./.github/actions/sccache-stats
