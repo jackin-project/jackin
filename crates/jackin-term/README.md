@@ -37,6 +37,9 @@ Out-of-tree: [`tests/conformance.rs`](tests/conformance.rs) + [`tests/fixtures/`
 ```sh
 cargo nextest run -p jackin-term
 cargo clippy -p jackin-term --all-targets -- -D warnings
+cargo bench --bench resize_storm -p jackin-term -- --quick
+cargo bench --bench scroll_throughput -p jackin-term -- --quick
+cargo bench --bench present_frame -p jackin-term -- --quick
 ```
 
 Design rationale and prior art: [Capsule Terminal Model](../../docs/content/docs/reference/capsule/terminal-model.mdx).

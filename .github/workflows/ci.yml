@@ -853,10 +853,10 @@ jobs:
           cargo fetch --locked --offline
           cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu damage_grid_process -- -max_total_time=60
   bench-build:
-    # One job builds both benches: the two matrix legs compiled the shared
-    # dependency graph twice with two separate target caches (cache-quota
-    # pressure -> eviction churn). bench-build validates independently
-    # from the clippy-owned all-features compile gate.
+    # One job builds every workspace bench: the two matrix legs compiled the
+    # shared dependency graph twice with two separate target caches
+    # (cache-quota pressure -> eviction churn). bench-build validates
+    # independently from the clippy-owned all-features compile gate.
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
     strategy:
@@ -898,9 +898,7 @@ jobs:
           # PR/branch/release reads the default branch's warm cache via fallback,
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
-      - run: |
-          cargo build --bench console_frame -p jackin
-          cargo build --bench pane_body -p jackin-capsule
+      - run: cargo build --benches --workspace --locked
   msrv:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'

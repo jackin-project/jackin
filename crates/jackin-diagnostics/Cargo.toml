@@ -88,8 +88,13 @@ sysinfo = { version = "0.39", optional = true, default-features = false, feature
 tokio = { workspace = true, optional = true, features = ["rt", "rt-multi-thread"] }
 
 [dev-dependencies]
+criterion = { workspace = true, features = ["html_reports"] }
 opentelemetry_sdk = { workspace = true, features = ["testing", "trace", "logs"] }
 tempfile = { workspace = true }
+
+[[bench]]
+name = "summarize_jsonl"
+harness = false
 
 [lints]
 workspace = true

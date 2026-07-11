@@ -41,5 +41,6 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 ```sh
 cargo nextest run -p jackin-diagnostics
 cargo clippy -p jackin-diagnostics --all-targets -- -D warnings
+cargo bench --bench summarize_jsonl -p jackin-diagnostics -- --quick
 ```
 
