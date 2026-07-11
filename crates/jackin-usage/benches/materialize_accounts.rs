@@ -29,7 +29,10 @@ fn seed_cache(n: usize, path: PathBuf) -> UsageCache {
 }
 
 fn bench_materialize(c: &mut Criterion) {
-    let tmp = TempDir::new().expect("tempdir");
+    let tmp = match TempDir::new() {
+        Ok(t) => t,
+        Err(e) => panic!("tempdir: {e}"),
+    };
     let out = tmp.path().join("accounts.json");
     let n = 64usize;
     let cache = seed_cache(n, out);
@@ -39,9 +42,9 @@ fn bench_materialize(c: &mut Criterion) {
     group.throughput(Throughput::Elements(n as u64));
     group.bench_function("materialize_64_accounts", |b| {
         b.iter(|| {
-            cache
-                .materialize_accounts_for_bench(black_box(1_700_000_100))
-                .expect("materialize");
+            if let Err(e) = cache.materialize_accounts_for_bench(black_box(1_700_000_100)) {
+                panic!("materialize: {e}");
+            }
         });
     });
     group.finish();

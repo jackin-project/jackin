@@ -20,11 +20,11 @@ Rules:
 | R-023-usage-scope | plan 023 operator flag | **DEFER** | Docs corrected to `usage accounts/verify`; intentional product surface (accounts not workspace/session). Re-confirm only if product reintroduces workspace-scoped usage CLI. | Product decision to restore workspace usage commands |
 | R-023-apple-container | plan 023 operator flag | **DEFER** | `--backend apple-container` docs dropped; backend not shipped. Fence drift gate would fail if re-documented without clap surface. | When apple-container backend lands |
 | R-033-suite-a | plan 033 suite A | **DEFER** | Suites B+C shipped. Full `LaunchCore` fixture blocked: grant/profile validation path requires role grants + cleanup resource graph not reachable with cheap fakes alone (plan 033 risk note). Grant helper floor exists. | Daemon/launch decomposition PR that shrinks LaunchCore |
-| R-038-env-console-tail | plan 038 long tail | **DEFER** | WorkspaceName adopted at mint/editor/naming/launch_slot; frontier measured ~62 remaining string sites in env/console (was 117). Mechanical per-callsite; risk is serde/wire mix-ups. | One env PR + one console PR behind 038 pattern |
+| R-038-env-console-tail | plan 038 long tail | **DEFER** (partial) | WorkspaceName at mint/editor/naming/launch_slot + **env `run_doctor`** (plan 058). Frontier still ~60 `workspace: &str` sites (config roles, resolve layers, console launch/save, runtime restore). | Continue env resolve Option&WorkspaceName + console services |
 | R-026-borrowed-row | plan 026 residual | **DEFER** | Range API shipped; zero-copy row accessor not required for correctness. | Perf incident on mouse-event scrollback |
 | R-042-db-docker-metrics | plan 042 residual | **DEFER** | 9 instruments shipped; db-statement + docker-inspect firehose demotion optional. | Metrics volume review after 044 budgets |
 | R-045-hello-skew | plan 045 residual | **CLOSED-as-pinned** | Hello short-payload soft-default skew hard-errors by design (fail-closed). Not a defect. | Only if protocol explicitly softens Hello |
-| R-complexity-threshold | matrix Phase 1 | **DEFER** | `cognitive_complexity` warn @ floor 5 in baseline; lowering thresholds is shrink-only ratchet chore post-census, not owned by 011/017 engines. | Post-green PR that lowers one bucket after measured zero violations at new floor |
+| R-complexity-threshold | matrix Phase 1 | **CLOSED** | Census 2026-07-11: cognitive max **58**; `clippy.toml` ratcheted 60→**58** (plan 058). too-many-lines stays 150 (max ≥145). | Next bucket after more refactors |
 | R-allow-attributes-deny | matrix Phase 1 meta | **DEFER** | Bare-allow burn-down incomplete; `suppression-budget` + ratchet cap debt. Denying `allow_attributes*` before burn-down fails CI massively. | When bare-allow family floor is 0 (or expect-only) |
 | R-missing-docs-cascade | matrix Phase 1 | **DEFER** | Protocol `missing_docs` shipped [021]; cascade is one crate per PR (manifest→env→term→config→core). | Next pure-crate PR after protocol pattern |
 | R-launch-typestate | matrix Phase 2 runtime | **DEFER** | Needs characterization oracle [033] suites; full typestate/phase-contract extract is multi-PR design (LaunchCore ~1.3k LOC body). Characterization partial (B+C). | Dedicated design PR after suite A or LaunchCore split |
@@ -33,7 +33,7 @@ Rules:
 | R-thiserror-mid-tranches | matrix Phase 2 | **DEFER** | 037 shipped core+env idiom. Measured remaining: config ~66, isolation ~14, docker ~17, image ~23, instance ~7 sites — one plan per crate. | Plan 059+ series (out of this program scope) |
 | R-typestate-general | matrix Phase 2 | **DEFER** | Same blocker as R-launch-typestate. | Same as R-launch-typestate |
 | R-edit-model-convergence | matrix Phase 2 TUI | **DEFER** | View-models [030] shipped; full edit-model merge is console redesign. | After 030 residue state.rs + auth handler |
-| R-snapshot-helpers | matrix Phase 3 | **DEFER** | Shared snapshot helpers wait for test-support maturity [025 shipped]; mechanical extract. | jackin-test-support snapshot module PR |
+| R-snapshot-helpers | matrix Phase 3 | **CLOSED** | `jackin_test_support::snapshot::{redact_digit_runs, normalize_snapshot_text}` (plan 058). | Adopt in console/capsule snapshot suites over time |
 | R-sim-turmoil | matrix Phase 3 | **DEFER** | Requires daemon port seams not yet extracted. | After R-daemon-decomp first slice |
 | R-iai-callgrind | matrix Phase 4 | **DEFER** | Needs stable bench set + iai toolchain in CI image; 014 compile-check lane is the floor. | After R-014 benches closed |
 | R-perf-budgets | matrix Phase 4 | **DEFER** | 017 engine exists; perf family not wired (wave-7: 017 reserves only). | Wire `[[perf]]` after 014 stable lane |
@@ -54,6 +54,8 @@ Rules:
 | R-014-materialize-bench | plan 057 + `jackin-usage` bench `materialize_accounts` |
 | R-export-volume-ratchet | plan 057 + `ratchet.toml` `export-volume` |
 | R-map-metadata-gate | plan 057 + `cargo xtask docs map-check` |
+| R-complexity-threshold | plan 058 + clippy cognitive 58 |
+| R-snapshot-helpers | plan 058 + jackin-test-support snapshot module |
 
 ## Legend
 

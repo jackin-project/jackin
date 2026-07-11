@@ -28,7 +28,7 @@ use crate::op_runner::OpRunner;
 use crate::op_struct::OpWriteRunner;
 use crate::resolve::CLAUDE_OAUTH_TOKEN_ENV;
 use jackin_config::{AppConfig, AuthForwardMode, ConfigEditor, EnvScope};
-use jackin_core::{Agent, EnvValue, FieldTarget, JackinPaths, OpRef};
+use jackin_core::{Agent, EnvValue, FieldTarget, JackinPaths, OpRef, WorkspaceName};
 
 use secrecy::ExposeSecret;
 use sha2::Digest;
@@ -709,10 +709,13 @@ pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> 
 /// OAuth token is *valid* upstream is to launch a workspace and
 /// observe the auth banner; doctor's job is to confirm the
 /// canonical-slot config plumbing resolves without errors.
-pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorReport> {
+pub fn run_doctor(
+    config: &AppConfig,
+    workspace: &WorkspaceName,
+) -> anyhow::Result<DoctorReport> {
     let op_cli = op_cli_for_scope(
         config,
-        &TokenSetupScope::Workspace(workspace.to_owned()),
+        &TokenSetupScope::Workspace(workspace.as_str().to_owned()),
         None,
         OpTimeoutBudget::Quick,
     );
@@ -722,10 +725,10 @@ pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorR
 /// Test-injectable variant of [`run_doctor`].
 pub(crate) fn run_doctor_with_runner(
     config: &AppConfig,
-    workspace: &str,
+    workspace: &WorkspaceName,
     op_reader: &dyn OpRunner,
 ) -> anyhow::Result<DoctorReport> {
-    let ws = config.require_workspace(workspace)?;
+    let ws = config.require_workspace(workspace.as_str())?;
     let mode = ws
         .claude
         .as_ref()
@@ -733,13 +736,13 @@ pub(crate) fn run_doctor_with_runner(
         .unwrap_or_default();
     let token_decl = ws.env.get(CLAUDE_OAUTH_TOKEN_ENV).ok_or_else(|| {
         anyhow::anyhow!(
-            "workspace {workspace:?} has no CLAUDE_CODE_OAUTH_TOKEN in its env block — \
+            "workspace {workspace} has no CLAUDE_CODE_OAUTH_TOKEN in its env block — \
              run `jackin workspace claude-token setup` first"
         )
     })?;
     let account = effective_account(
         config,
-        &TokenSetupScope::Workspace(workspace.to_owned()),
+        &TokenSetupScope::Workspace(workspace.as_str().to_owned()),
         None,
     )
     .map(str::to_owned);
@@ -753,7 +756,7 @@ pub(crate) fn run_doctor_with_runner(
     let prefix = sha256_prefix(&token);
 
     Ok(DoctorReport {
-        workspace: workspace.to_owned(),
+        workspace: workspace.as_str().to_owned(),
         mode,
         op_ref: match token_decl {
             EnvValue::OpRef(r) => Some(r.clone()),

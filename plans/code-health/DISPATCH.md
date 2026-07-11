@@ -77,10 +77,10 @@ Only **DEFER** rows with a concrete next trigger. Group by parallel safety.
 | R-014-materialize-bench | **CLOSED** plan 057 | — | — |
 | R-038-env-console-tail (env slice) | WorkspaceName at env sites | `crates/jackin-env/**`, maybe `jackin-core` | `cargo nextest -p jackin-env` |
 | R-038-env-console-tail (console slice) | WorkspaceName at console sites | `crates/jackin-console/**` | `cargo nextest -p jackin-console` |
-| R-snapshot-helpers | helpers into test-support | `crates/jackin-test-support/**`, consumer test paths | `cargo nextest -p jackin-test-support -p <consumer>` |
+| R-snapshot-helpers | **CLOSED** plan 058 | — | — |
 | R-map-metadata-gate | **CLOSED** plan 057 (`docs map-check`) | — | — |
 | R-export-volume-ratchet | **CLOSED** plan 057 (`export-volume` family) | — | — |
-| R-complexity-threshold | lower one clippy floor after census | `clippy.toml` / baseline / budget (orchestrator if conflict) | `cargo clippy -p <hot crates>` then lint strict |
+| R-complexity-threshold | **CLOSED** plan 058 (cognitive 58) | — | — |
 
 **Dispatch:** spawn all ready R1 rows in one turn with disjoint allowlists.
 Env and console WorkspaceName slices are **two workers**, not one.

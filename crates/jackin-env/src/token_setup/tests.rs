@@ -2,7 +2,7 @@
 use super::*;
 use crate::test_support::FakeOpWriter;
 use jackin_config::{AppConfig, WorkspaceConfig};
-use jackin_core::{FieldTarget, OpRef};
+use jackin_core::{FieldTarget, OpRef, WorkspaceName};
 use std::sync::Mutex;
 use tempfile::tempdir;
 
@@ -846,7 +846,7 @@ fn run_doctor_hashes_literal_token_not_placeholder() {
     );
     cfg.workspaces.insert("proj".into(), ws);
 
-    let report = run_doctor(&cfg, "proj").unwrap();
+    let report = run_doctor(&cfg, &WorkspaceName::parse("proj").unwrap()).unwrap();
 
     let placeholder = "(literal slot — resolves verbatim)";
     assert_ne!(
@@ -876,7 +876,8 @@ fn run_doctor_missing_env_var_returns_actionable_error() {
     cfg.workspaces.insert("proj".into(), ws);
 
     let reader = FakeOpReader::ok("unused");
-    let err = run_doctor_with_runner(&cfg, "proj", &reader).unwrap_err();
+    let err =
+        run_doctor_with_runner(&cfg, &WorkspaceName::parse("proj").unwrap(), &reader).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("CLAUDE_CODE_OAUTH_TOKEN") && msg.contains("claude-token setup"),
@@ -902,7 +903,8 @@ fn run_doctor_op_read_failure_wraps_error() {
     cfg.workspaces.insert("proj".into(), ws);
 
     let reader = FakeOpReader::err("vault locked");
-    let err = run_doctor_with_runner(&cfg, "proj", &reader).unwrap_err();
+    let err =
+        run_doctor_with_runner(&cfg, &WorkspaceName::parse("proj").unwrap(), &reader).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("Personal/Item/token"), "got: {msg}");
     assert!(msg.contains("vault locked"), "got: {msg}");

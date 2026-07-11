@@ -179,6 +179,8 @@ pub(super) fn handle_claude_token(
             Ok(())
         }
         cli::WorkspaceClaudeTokenCommand::Doctor { workspace } => {
+            let workspace =
+                jackin_core::WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?;
             let report = token_setup::run_doctor(config, &workspace)?;
             println!("workspace        {}", report.workspace);
             println!("auth_forward     {}", report.mode);
