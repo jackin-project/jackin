@@ -1,8 +1,4 @@
 #![expect(
-    clippy::disallowed_methods,
-    reason = "release-verify is a synchronous xtask CLI that shells out to local verifier tools"
-)]
-#![expect(
     clippy::print_stdout,
     reason = "release-verify writes its verification report to stdout"
 )]

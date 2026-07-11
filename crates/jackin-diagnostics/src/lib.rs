@@ -4,9 +4,10 @@
 //! Entry point: [`debug_log!`] — compact always-on telemetry macro.
 
 pub mod build_log;
-pub mod debug_log;
+mod debug_log_adapter;
 pub mod logging;
 pub mod observability;
+pub mod operation;
 pub mod operator_notice;
 pub mod redact;
 pub mod run;
@@ -14,6 +15,14 @@ pub mod screen;
 pub mod secret_scrub;
 pub mod summary;
 pub mod terminal;
+
+// Single debug_log! definition lives in jackin-core (port-based).
+pub use jackin_core::debug_log;
+
+/// Install the diagnostics adapter as the global `DebugLogSink`.
+pub fn install_debug_log_sink() {
+    debug_log_adapter::install_debug_log_sink();
+}
 
 pub use logging::{
     TelemetryLevel, begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line,
@@ -24,6 +33,9 @@ pub use observability::{
     ContainerOtlp, backend_query_hint, configured_endpoint, configured_endpoint_summary,
     container_otlp, init_capsule_tracing, init_tracing, otel_events, otel_keys, otel_metrics,
     shutdown_capsule_tracing, unsupported_otlp_protocol,
+};
+pub use operation::{
+    OperationLevel, operation_error, operation_log, operation_metric, operation_span,
 };
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,
@@ -49,22 +61,6 @@ pub use terminal::{
 #[cfg(test)]
 pub(crate) static DIAGNOSTICS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Verbose-trace helper for `--debug` runs. No-op when the flag is off.
-///
-/// `category` is a short tag (`isolation`, `worktree`, etc.) that keeps shared
-/// logs greppable. Use `format!`-style trailing args:
-///
-/// ```ignore
-/// debug_log!("isolation", "git worktree add -b {branch} {path}");
-/// ```
-#[macro_export]
-macro_rules! debug_log {
-    ($category:expr, $($arg:tt)*) => {
-        if $crate::is_debug_mode() {
-            $crate::emit_debug_line($category, &::std::format!($($arg)*));
-        }
-    };
-}
 
 #[cfg(test)]
 mod tests;

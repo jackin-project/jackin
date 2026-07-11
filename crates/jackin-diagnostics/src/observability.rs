@@ -52,6 +52,15 @@ pub mod otel_keys {
     pub const ACTION: &str = "jackin.action";
     /// Capsule tab/pane label.
     pub const TAB_LABEL: &str = "jackin.tab.label";
+
+    // Operation facade attributes (plan 041). Low-cardinality only.
+    pub const PROCESS_COMMAND: &str = "process.command";
+    pub const PROCESS_ARGS_REDACTED: &str = "process.args_redacted";
+    pub const PROCESS_EXIT_CODE: &str = "process.exit_code";
+    pub const EVENT_NAME: &str = "event.name";
+    pub const CATEGORY: &str = "jackin.category";
+    pub const ERROR_TYPE: &str = "error.type";
+    pub const EVENT_OUTCOME: &str = "event.outcome";
 }
 
 /// OTLP metric instrument names — single source of truth for wire metric names.
@@ -92,10 +101,13 @@ pub mod otel_events {
     pub const SLOW_FOREGROUND_WAIT: &str = "slow_foreground_wait";
     pub const SESSION_DETACH: &str = "session_detach";
     pub const CLEAN_SHUTDOWN: &str = "clean_shutdown";
+    /// Host subprocess span name (ShellRunner choke point, plan 041).
+    pub const PROCESS_EXECUTE: &str = "process.execute";
     pub const ALL: &[&str] = &[
         STAGE_STARTED, STAGE_DONE, STAGE_FAILED, STAGE_SKIPPED,
         TIMING_STARTED, TIMING_DONE, DEBUG, SUBPROCESS_DONE, OTLP_INTERNAL,
         RUN_SUMMARY, SLOW_FOREGROUND_WAIT, SESSION_DETACH, CLEAN_SHUTDOWN,
+        PROCESS_EXECUTE,
     ];
 }
 
@@ -968,15 +980,15 @@ mod otlp {
     }
 
     #[cfg(test)]
-    pub(super) struct TestExport {
-        pub(super) spans: opentelemetry_sdk::trace::InMemorySpanExporter,
-        pub(super) logs: opentelemetry_sdk::logs::InMemoryLogExporter,
-        pub(super) tracer_provider: SdkTracerProvider,
-        pub(super) logger_provider: SdkLoggerProvider,
+    pub(crate) struct TestExport {
+        pub(crate) spans: opentelemetry_sdk::trace::InMemorySpanExporter,
+        pub(crate) logs: opentelemetry_sdk::logs::InMemoryLogExporter,
+        pub(crate) tracer_provider: SdkTracerProvider,
+        pub(crate) logger_provider: SdkLoggerProvider,
     }
 
     #[cfg(test)]
-    pub(super) fn test_layers(debug: bool, run_id: &str) -> (TestExport, impl tracing::Subscriber) {
+    pub(crate) fn test_layers(debug: bool, run_id: &str) -> (TestExport, impl tracing::Subscriber) {
         use opentelemetry::trace::TracerProvider as _;
 
         let spans = opentelemetry_sdk::trace::InMemorySpanExporter::default();
@@ -1247,9 +1259,47 @@ mod otlp {
         }
     }
 
+    /// Thin counter recorder for the operation facade. Plan 042 replaces this.
+    pub(super) fn record_operation_metric(
+        name: &'static str,
+        value: u64,
+        attrs: &[(&'static str, String)],
+    ) {
+        use opentelemetry::KeyValue;
+        use opentelemetry::metrics::MeterProvider as _;
+
+        let Some(providers) = PROVIDERS.get() else {
+            return;
+        };
+        let Some(meter_provider) = providers.meter.as_ref() else {
+            return;
+        };
+        let meter = meter_provider.meter("jackin");
+        let counter = meter.u64_counter(name).build();
+        let kvs: Vec<KeyValue> = attrs
+            .iter()
+            .map(|(k, v)| KeyValue::new(*k, v.clone()))
+            .collect();
+        counter.add(value, &kvs);
+    }
+
     #[cfg(test)]
     mod tests;
 }
+
+/// Crate-visible wrapper for [`crate::operation_metric`].
+#[cfg(feature = "otlp")]
+pub(crate) fn record_operation_metric(
+    name: &'static str,
+    value: u64,
+    attrs: &[(&'static str, String)],
+) {
+    otlp::record_operation_metric(name, value, attrs);
+}
+
+/// In-memory export rig for crate tests (operation facade, conformance).
+#[cfg(all(test, feature = "otlp"))]
+pub(crate) use otlp::{TestExport, test_layers};
 
 pub(crate) fn emit_jsonl_event(
     run_id: &str,

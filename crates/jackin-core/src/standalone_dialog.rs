@@ -38,6 +38,10 @@ static GLOBAL_SINK: OnceLock<&'static dyn StandaloneDialogSink> = OnceLock::new(
 /// Install the process-wide sink. Idempotent — first install wins so a
 /// startup race cannot silently swap an installed impl for a later one.
 pub fn set_global_dialog_sink(sink: &'static dyn StandaloneDialogSink) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "second initialization is a benign race; first install wins"
+    )]
     let _ = GLOBAL_SINK.set(sink);
 }
 

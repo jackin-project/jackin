@@ -49,8 +49,8 @@ The operating assumption for this program is that the most frequent contributor 
 ### PR-time gates to promote after dry run
 
 1. **Feature powerset gate**: ~~move at least a scoped `cargo hack check --workspace --feature-powerset --all-targets --locked` lane from scheduled-only hygiene into PR CI, starting with crates that actually expose optional behavior.~~ **Shipped (2026-07-11):** PR job `feature-powerset-scoped` covers the six real-optional-behavior crates (`jackin`, `jackin-diagnostics`, `jackin-capsule`, `jackin-agent-status`, `jackin-term`, `jackin-runtime`); full workspace powerset stays on the scheduled hygiene lane.
-2. **Rustdoc documentation tests**: add `cargo test --doc --workspace --locked` to PR CI if the current scheduled job is green enough to promote.
-3. **Snapshot hygiene**: pin `cargo-insta` or add a cheap pending-snapshot/diff gate so TUI snapshot changes cannot leave `*.pending-snap` files or unreviewed `.snap` diffs behind.
+2. **Shipped (plan 011)** — Rustdoc documentation tests: `cargo test --doc --workspace --locked` in PR CI (`ci.yml` `doctest` job + `cargo xtask ci` step). Scheduled hygiene lane kept as double cover.
+3. **Shipped (plan 011)** — Snapshot hygiene: cheap pending-snap gate in the PR `doctest` job rejects untracked/`crates/**/*.pending-snap` files. Full insta review workflow stays operator-driven.
 
 ### Advisory or scheduled lanes first
 
@@ -58,24 +58,24 @@ The operating assumption for this program is that the most frequent contributor 
 2. **Miri**: run a narrow scheduled/manual lane for pure crates and deterministic parser/protocol/config tests. Do not attempt full-workspace Miri across Docker, PTY, process, or OS-heavy code.
 3. **Sanitizers**: keep PR fuzz fast, but add scheduled sanitizer runs where fuzz targets already exist, especially terminal/parser paths.
 4. **Mutation testing**: evaluate `cargo-mutants` only on pure crates with fast deterministic tests, such as protocol/config/manifest/terminal parsing. Do not run it across Docker/TUI integration code.
-5. **Public API drift**: add `cargo-public-api` or `cargo-semver-checks` as an informational report for selected API-bearing crates. Because jackin❯ is pre-release, the gate should make breakage intentional rather than forbid it.
+5. **Public API drift — DECIDED Skip (operator 2026-07-09; plan 011 records):** dossier Skip wins (`docs/content/docs/reference/research/ci/rust-tooling/rust-ci-tooling.mdx`: a CLI workspace with no published library crate has nothing meaningful to diff). No `cargo-public-api` / `cargo-semver-checks` work; internal API discipline = tier gate + pub-surface ratchet + curated re-exports.
 6. **Workspace-hack experiment**: use `cargo hakari` only as an advisory investigation. Workspace-hack value should be proven with cargo timing artifacts before adding generated maintenance surface.
 
 ### Lint ratchets and suppression hygiene
 
 1. Convert broad `#[allow(...)]` suppressions to narrow `#[expect(..., reason = "...")]` where the expectation is stable across targets. Keep `allow` only where `expect` would be flaky under cfg/test/target differences.
-2. Add an xtask or grep gate that blocks new `allow`/`expect` attributes without `reason =`, except for documented allowlist patterns such as generated code or cross-target imports.
+2. **Shipped (plan 011)** — `cargo xtask lint suppressions` shrink-only reason-gate + `suppression-budget.toml` (bare `#[allow]` per crate and `#[expect]` per lint×crate). Blocks growth; forces shrink updates. Full allow→expect conversion remains plan 030+.
 3. Revisit globally allowed maintainability lints one at a time: `needless_pass_by_value`, `large_futures`, `unused_async`, `assigning_clones`, `match_same_arms`, `drop_non_drop`, `unused_self`, and other explicitly allowed pedantic lints. Promote only low-noise lints; keep noisy ones documented.
 4. Ratchet `too_many_lines`, `cognitive_complexity`, `excessive_nesting`, and `too_many_arguments` thresholds only after the fresh inventory identifies the next safe lower bucket.
-5. Add a per-lint suppression-count ratchet: a shrink-only ledger (same mechanism as the file-size budget, folded into the Phase 7 unified ratchet engine) recording how many `#[expect]`s exist per lint per crate. Suppression debt becomes visible, bounded, and monotonically shrinking between category adoptions.
+5. **Shipped (plan 011)** — per-lint `#[expect]` suppression-count ratchet in `suppression-budget.toml` `[[expect]]` rows (lint × crate). Will fold into plan 017's unified `ratchet.toml` engine.
 
 ### Panic-coverage and silent-failure restriction lints — the agent defect surface
 
 The workspace already denies `unwrap_used`, `expect_used`, `panic`, `todo`, and `unimplemented`, but that misses the panic families a coding agent introduces most often: byte-boundary string/array slicing, swallowed results, dropped futures, and lossy numeric casts. Adopt these as the long-term `deny` target, each behind a Phase 0 dry run:
 
 - **Don't panic (slice/index coverage):** `string_slice`, `indexing_slicing`, `get_unwrap`, `unwrap_in_result`, `unchecked_time_subtraction`, `panic_in_result_fn`. These complement the existing unwrap/expect/panic denials by catching `&s[a..b]`, `arr[i]`, and panics inside `Result`-returning functions. `string_slice` and `indexing_slicing` will fire widely on day one; route every hit through `.get()`/`.split_at_checked()`/iterator APIs.
-- **Don't fail silently:** `let_underscore_future`, `let_underscore_must_use` (jackin❯ already denies `let_underscore_drop`; close the family), `unused_result_ok`, `map_err_ignore`, `assertions_on_result_states`. These catch `let _ = future`, `r.ok();`, and `.map_err(|_| …)` — silent error loss that is invisible to tests.
-- **Don't do bad async:** `await_holding_lock`, `await_holding_refcell_ref`. jackin❯ runs the capsule daemon and runtime on Tokio with non-`Send` guards held across `.await` in places; these are the deadlock lint pair and are high-value against the capsule control plane. (`if_let_mutex` is edition-2024-resolved and can stay off.)
+- **Don't fail silently — mostly shipped (plan 011):** `let_underscore_future`, `let_underscore_must_use`, `unused_result_ok` are workspace `deny` (closes the family with existing `let_underscore_drop`). `map_err_ignore` stays deferred (33 intentional-looking sites). **`assertions_on_result_states` deferred to plan 054** (~127 `assert!(Result::is_ok/err)` test sites — not production defects).
+- **Don't do bad async — shipped (plan 011) as regression guard:** `await_holding_lock`, `await_holding_refcell_ref` are workspace `deny`. Audit measured **zero** pre-existing hits (capsule has no file with both `.lock()` and `.await`; runtime's one case is a tokio `Mutex` the lint ignores) — the roadmap's earlier "non-`Send` guards held across `.await` in places" claim was incorrect. (`if_let_mutex` is edition-2024-resolved and can stay off.)
 - **Don't do incorrect things with numbers:** `float_cmp_const`, `lossy_float_literal`, `cast_sign_loss`, `invalid_upcast_comparisons`, and re-evaluate the current `float_cmp = "allow"`. Treat `cast_possible_truncation`/`cast_precision_loss`/`cast_possible_wrap` as the optional “force a documented invariant on every lossy cast” tier once the loud set is clean. **Adopted (2026-07-11):** measured census then deny — easy-to-avoid family had zero candidates; float family was grepped clean then dry-run flipped `float_cmp` to deny (epsilon rewrites in capsule tests); `cast_sign_loss` fixed across usage formatting plus scroll/TUI/agent-status sites (`try_from`/`unsigned_abs` or narrow `#[expect]` with reasons). Truncation/precision/wrap stay the deferred optional tier.
 - **Easy to avoid:** `rc_mutex`, `debug_assert_with_mut_call`, `expl_impl_clone_on_copy`, `infallible_try_from`, `iter_not_returning_iterator`. **Adopted (2026-07-11)** as workspace `deny` (zero candidates at census; nursery `debug_assert_with_mut_call` accepted on the pinned clippy).
 
@@ -89,8 +89,8 @@ Add the matching `clippy.toml` escape valves (`allow-unwrap-in-tests`, `allow-ex
 
 ### Rustdoc and missing-docs gates
 
-1. Add `[workspace.lints.rustdoc]` with `broken_intra_doc_links = "deny"`, `private_intra_doc_links = "warn"`, `redundant_explicit_links = "warn"`, and `unescaped_quotes_in_doc_comment = "warn"` so rustdoc is a real check, not decoration.
-2. Promote `missing_debug_implementations` to `deny` once the remaining gaps are filled (it is already CI-promoted via `-D warnings`, so the delta is making it local-fail too).
+1. **Shipped (plan 011)** — `[workspace.lints.rustdoc]` with `broken_intra_doc_links = "deny"`, `private_intra_doc_links = "warn"`, `redundant_explicit_links = "warn"`, `unescaped_backticks = "warn"` (roadmap named `unescaped_quotes_in_doc_comment`; substituted for the lint name accepted on the pinned toolchain).
+2. **Shipped (plan 011)** — `missing_debug_implementations = "deny"` (existing `#[expect]` sites keep compiling; local builds now fail like CI).
 3. Turn on `missing_docs` (the `rust` lint) for the foundational, API-bearing crates — `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-protocol`, `jackin-env`, `jackin-term` — not for binaries or `jackin-xtask`. Gate crate-by-crate behind the dry run rather than workspace-wide, because the first adoption sweep is large.
 4. Keep `cargo test --doc --workspace` (Phase 1 PR-time gate) as the executable half of the rustdoc gate.
 

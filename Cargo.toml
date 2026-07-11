@@ -154,14 +154,26 @@ macro_use_extern_crate = "deny"
 meta_variable_misuse = "deny"
 single_use_lifetimes = "deny"
 let_underscore_drop = "deny"
-missing_debug_implementations = "warn"
+missing_debug_implementations = "deny"
 async_fn_in_trait = "allow"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "warn"
+redundant_explicit_links = "warn"
+unescaped_backticks = "warn"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
 dbg_macro = "deny"
+let_underscore_future = "deny"
+let_underscore_must_use = "deny"
+unused_result_ok = "deny"
+# assertions_on_result_states deferred: ~127 assert!(Result::is_ok/err) test sites (plan 054)
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
 mod_module_files = "deny"
 todo = "deny"
 unimplemented = "deny"

@@ -790,6 +790,64 @@ jobs:
           artifact-name: sccache-stats-ci-construct-e2e-image-${{ matrix.config.lane }}
           heading: sccache ci construct-e2e-image (${{ matrix.config.lane }})
 
+  # Plan 011: promote scheduled doctests into PR CI + cheap pending-snap hygiene.
+  # Kept as a sibling job because `test` is a reusable nextest workflow.
+  doctest:
+    needs: [changes, matrix-setup, cargo-registry-warmup]
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
+    name: cargo test --doc (${{ matrix.config.lane }})
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_NET_OFFLINE: "true"
+      CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_BASEDIRS: ${{ github.workspace }}
+      SCCACHE_GHA_ENABLED: "off"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        env:
+          RUSTC_WRAPPER: ""
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:sccache"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: ci-doctest-dev-workspace-v2
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
+      - name: Reject pending insta snapshots
+        run: |
+          pending=$(git ls-files --others --exclude-standard '*.pending-snap'; find crates -name '*.pending-snap' -print)
+          if [ -n "$pending" ]; then echo "::error::pending insta snapshots found:"; echo "$pending"; exit 1; fi
+      - run: cargo test --doc --workspace --locked
+      - name: Capture sccache stats
+        if: always()
+        uses: ./.github/actions/sccache-stats
+        with:
+          artifact-name: sccache-stats-ci-doctest-${{ matrix.config.lane }}
+          heading: sccache ci doctest (${{ matrix.config.lane }})
+
   test:
     needs: [changes, construct-e2e-image, matrix-setup, cargo-registry-warmup]
     if: always() && needs.changes.outputs.rust == 'true' && !failure() && !cancelled()
@@ -899,6 +957,60 @@ jobs:
           # and each branch also writes its own small pruned (deps-only) cache so
           # reruns skip recompiling unchanged dependencies.
       - run: cargo build --benches --workspace --locked
+
+  # Plan 022: scoped feature-powerset for crates with real optional behavior.
+  # Full workspace powerset stays on the scheduled hygiene lane.
+  feature-powerset-scoped:
+    needs: [changes, matrix-setup, cargo-registry-warmup]
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJSON(needs.matrix-setup.outputs.configs) }}
+    runs-on: ${{ fromJSON(matrix.config.runner) }}
+    timeout-minutes: 60
+    name: feature powerset scoped (${{ matrix.config.lane }})
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:cargo-hack"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: ci-feature-powerset-scoped-workspace-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      # Crates that actually expose optional behavior (not test-support-only).
+      - run: >
+          cargo hack check
+          -p jackin
+          -p jackin-diagnostics
+          -p jackin-capsule
+          -p jackin-agent-status
+          -p jackin-term
+          -p jackin-runtime
+          --feature-powerset
+          --all-targets
+          --locked
+
   msrv:
     needs: [changes, matrix-setup, cargo-registry-warmup]
     if: needs.changes.outputs.rust == 'true'
@@ -1078,9 +1190,11 @@ jobs:
       - file-size-gate
       - check-default
       - construct-e2e-image
+      - doctest
       - test
       - fuzz
       - bench-build
+      - feature-powerset-scoped
       - msrv
       - build-validator
     runs-on: ubuntu-latest

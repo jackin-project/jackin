@@ -192,7 +192,7 @@ fn measure_rs_files(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
     Ok(out)
 }
 
-fn walk_rs_paths(dir: &Path) -> Result<Vec<PathBuf>> {
+pub(crate) fn walk_rs_paths(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
@@ -380,7 +380,7 @@ fn parse_lint_list(body: &str) -> Vec<String> {
     lints
 }
 
-fn crate_name_from_path(root: &Path, path: &Path) -> String {
+pub(crate) fn crate_name_from_path(root: &Path, path: &Path) -> String {
     let rel_path = path.strip_prefix(root.join(CRATES_GLOB)).unwrap_or(path);
     rel_path
         .components()
@@ -641,10 +641,11 @@ fn build_verification_map(root: &Path) -> Result<BTreeMap<String, String>> {
         id: String,
     }
 
-    let mut meta = Command::new("cargo");
-    meta.args(["metadata", "--format-version=1", "--no-deps"])
+    let mut meta_cmd = Command::new("cargo");
+    meta_cmd
+        .args(["metadata", "--format-version=1", "--no-deps"])
         .current_dir(root);
-    let output = crate::cmd::output_raw(&mut meta).context("running cargo metadata")?;
+    let output = crate::cmd::output_raw(&mut meta_cmd).context("running cargo metadata")?;
     if !output.status.success() {
         bail!(
             "cargo metadata failed: {}",

@@ -1,8 +1,4 @@
 #![expect(
-    clippy::disallowed_methods,
-    reason = "profile-matrix is a synchronous xtask CLI that shells out to Docker probes"
-)]
-#![expect(
     clippy::print_stdout,
     reason = "profile-matrix writes its matrix report to stdout"
 )]
@@ -192,7 +188,13 @@ impl CommandResult {
             .args(args)
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
-        crate::cmd::run(&mut self.command)
+        let output = crate::cmd::output_raw(&mut self.command)
+            .with_context(|| format!("spawning {:?}", self.command))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            bail!("{}", String::from_utf8_lossy(&output.stderr).trim())
+        }
     }
 }
 
@@ -208,7 +210,8 @@ fn docker_rm(name: &str) {
     cmd.args(["rm", "-f", name])
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let _ = crate::cmd::output_raw(&mut cmd);
+    // Best-effort cleanup; ignore failure.
+    let _unused = crate::cmd::run(&mut cmd);
 }
 
 struct ContainerGuard(String);

@@ -85,7 +85,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [035](035-advisory-verification-lanes.md) | Scheduled advisory lanes: llvm-cov, Miri, ASan fuzz, cargo-mutants, hakari timing | 1 | P2 | M | TODO |
 | [036](036-process-boundary-xtask-cmd-and-timeout.md) | Process boundary: one xtask cmd module; `RunOptions.timeout` honored by ShellRunner | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 | [037](037-thiserror-foundational-core-env.md) | thiserror for jackin-core concrete errors + jackin-env resolution taxonomy | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; ParseProfileError/EnvCycleError/PathsError + OperatorEnvError/ResolveEnvError; port traits keep anyhow) |
-| [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; WorkspaceName type+persist via 020 scoop; adoption at config mint/editor/instance naming/launch_slot; resolve_mode Option<&WorkspaceName>; env/console residual) |
+| [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | PARTIAL (type + `validate_workspace_file_stem` delegate landed with 020 scoop / persist; full mint/editor/instance/launch adoption residual — concurrent branch thrash) |
 | [039](039-jackin-env-pub-surface-pilot.md) | Pub-surface pilot: jackin-env sealed behind curated root re-exports | 2 | P2 | M | TODO |
 | [040](040-grid-resize-in-place.md) | In-place grid resize; same-size/height-only fast paths + resize_storm bench | 4 | P2 | M | DONE (cherry-picked onto `chore/rust-code-health-roadmap`) |
 
