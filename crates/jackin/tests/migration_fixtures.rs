@@ -64,8 +64,9 @@ fn config_unknown_field_policy_is_preserve() {
 }
 
 #[test]
-fn workspace_unknown_field_policy_is_deny() {
-    assert_unknown_field_policy("workspace", UnknownFieldPolicy::Deny, |p| {
+fn workspace_unknown_field_policy_is_preserve() {
+    // WorkspaceConfig deliberately does NOT use deny_unknown_fields (forward-compat).
+    assert_unknown_field_policy("workspace", UnknownFieldPolicy::Preserve, |p| {
         jackin_config::migrate_workspace_file_if_needed(p).map(|_| ())
     });
 }
