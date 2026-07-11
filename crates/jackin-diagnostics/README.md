@@ -21,6 +21,7 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 | [`lib.rs`](src/lib.rs) | crate root, re-exports | — |
 | [`run.rs`](src/run.rs) · [`run/`](src/run) | structured run diagnostics | [`tests.rs`](src/run/tests.rs) |
 | [`summary.rs`](src/summary.rs) · [`summary/`](src/summary) | run summary | [`tests.rs`](src/summary/tests.rs) |
+| [`operation.rs`](src/operation.rs) · [`operation/`](src/operation) | typed operation facade | [`tests.rs`](src/operation/tests.rs) |
 | [`observability.rs`](src/observability.rs) · [`observability/`](src/observability) | OTLP tier | [`tests.rs`](src/observability/tests.rs) |
 | [`debug_log.rs`](src/debug_log.rs) · [`debug_log/`](src/debug_log) | `debug_log!`/`clog!`/`cdebug!` substrate | [`tests.rs`](src/debug_log/tests.rs) |
 | [`logging.rs`](src/logging.rs) | logging init | — |
@@ -33,6 +34,8 @@ Terminal-ownership guards are re-exported from `jackin_tui::ownership`.
 | [`tests.rs`](src/tests.rs) | integration tests | — |
 
 ## Public API
+
+Typed operation facade: `operation_span` / `operation_log` / `operation_error` / `operation_metric` (and `enter_operation` RAII guard). Names from the semconv registry.
 
 `debug_log!`/`clog!`/`cdebug!`, the run-diagnostics writer, redaction helpers, and the debug-mode flag — consumed by nearly every crate. Two-tier telemetry contract is documented in `ENGINEERING.md`.
 

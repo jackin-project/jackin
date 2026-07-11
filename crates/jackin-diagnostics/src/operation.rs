@@ -46,6 +46,40 @@ pub fn operation_span(name: &'static str, attrs: &[(&'static str, String)]) -> S
     span
 }
 
+
+/// RAII guard that keeps an operation span entered until drop.
+#[derive(Debug)]
+pub struct OperationGuard {
+    span: Span,
+    _enter: tracing::span::EnteredSpan,
+}
+
+impl OperationGuard {
+    /// The underlying span (for attribute stamping after start).
+    #[must_use]
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
+}
+
+/// Build and enter an operation span for the lifetime of the returned guard.
+#[must_use]
+pub fn enter_operation(name: &'static str, attrs: &[(&'static str, String)]) -> OperationGuard {
+    let span = operation_span(name, attrs);
+    let entered = span.clone().entered();
+    OperationGuard {
+        span,
+        _enter: entered,
+    }
+}
+
+/// Record `process.exit_code` on the current span when present.
+pub fn operation_record_exit_code(code: Option<i32>) {
+    if let Some(code) = code {
+        operation_set_i64_attr(&Span::current(), otel_keys::PROCESS_EXIT_CODE, i64::from(code));
+    }
+}
+
 /// Emit one structured log event (clean body + fixed schema fields) and mirror
 /// a console/file line through the existing renderers.
 pub fn operation_log(
@@ -131,6 +165,19 @@ pub fn operation_metric(name: &'static str, value: u64, attrs: &[(&'static str, 
     #[cfg(not(feature = "otlp"))]
     {
         let _ = (name, value, attrs);
+    }
+}
+
+/// Stamp an i64 attribute on an existing operation span (OTLP builds only).
+pub fn operation_set_i64_attr(span: &Span, key: &'static str, value: i64) {
+    #[cfg(feature = "otlp")]
+    {
+        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+        span.set_attribute(key, value);
+    }
+    #[cfg(not(feature = "otlp"))]
+    {
+        let _ = (span, key, value);
     }
 }
 

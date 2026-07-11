@@ -35,7 +35,8 @@ pub use observability::{
     shutdown_capsule_tracing, unsupported_otlp_protocol,
 };
 pub use operation::{
-    OperationLevel, operation_error, operation_log, operation_metric, operation_span,
+    OperationGuard, OperationLevel, enter_operation, operation_error, operation_log,
+    operation_metric, operation_record_exit_code, operation_set_i64_attr, operation_span,
 };
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,

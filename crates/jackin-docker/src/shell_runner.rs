@@ -84,6 +84,7 @@ fn should_null_stdin(opts: &RunOptions) -> bool {
 }
 
 fn record_subprocess_done(program: &str, started: Instant, status: ExitStatus) {
+    jackin_diagnostics::operation_record_exit_code(status.code());
     jackin_diagnostics::active_subprocess_done(
         program,
         started.elapsed().as_millis() as u64,
@@ -225,7 +226,7 @@ async fn await_child_with_timeout(
     child: &mut tokio::process::Child,
     program: &str,
     timeout: Option<std::time::Duration>,
-) -> anyhow::Result<std::process::ExitStatus> {
+) -> anyhow::Result<ExitStatus> {
     match timeout {
         None => Ok(child.wait().await?),
         Some(dur) => match tokio::time::timeout(dur, child.wait()).await {
@@ -242,6 +243,24 @@ async fn await_child_with_timeout(
     }
 }
 
+
+fn enter_process_execute(program: &str, args: &[&str]) -> jackin_diagnostics::OperationGuard {
+    let redacted = redact_env_args(args).join(" ");
+    jackin_diagnostics::enter_operation(
+        jackin_diagnostics::otel_events::PROCESS_EXECUTE,
+        &[
+            (
+                jackin_diagnostics::otel_keys::PROCESS_COMMAND,
+                program.to_owned(),
+            ),
+            (
+                jackin_diagnostics::otel_keys::PROCESS_ARGS_REDACTED,
+                redacted,
+            ),
+        ],
+    )
+}
+
 impl CommandRunner for ShellRunner {
     async fn run(
         &mut self,
@@ -250,6 +269,7 @@ impl CommandRunner for ShellRunner {
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
+        let _op_guard = enter_process_execute(program, args);
         self.log_command(program, args, cwd);
 
         // `interactive` must own the real terminal, so the arms below resolve it
@@ -353,6 +373,7 @@ impl ShellRunner {
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
+        let _op_guard = enter_process_execute(program, args);
         let mut cmd = Self::build_command(program, args, cwd);
         Self::apply_run_opts(&mut cmd, opts);
         if opts.capture_stdout {
@@ -362,7 +383,17 @@ impl ShellRunner {
             cmd.stderr(std::process::Stdio::piped());
         }
         let started = Instant::now();
-        let mut child = cmd.spawn()?;
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                jackin_diagnostics::operation_error(
+                    "process_spawn_error",
+                    &format!("failed to spawn {program}: {error}"),
+                    &[],
+                );
+                return Err(error.into());
+            }
+        };
         let stdout_pipe = child.stdout.take();
         let stderr_pipe = child.stderr.take();
         // Never stream child output to the terminal while a debug run is

@@ -371,3 +371,21 @@ async fn run_completes_before_timeout() {
         .await
         .expect("sleep 0 should succeed within timeout");
 }
+
+
+#[cfg(unix)]
+#[tokio::test]
+async fn run_emits_process_execute_span_name_on_success() {
+    let mut runner = ShellRunner { debug: false };
+    runner
+        .run("true", &[], None, &RunOptions::default())
+        .await
+        .expect("true succeeds");
+}
+
+#[test]
+fn process_execute_span_redacts_env_args_in_attr_input() {
+    let args = &["-e", "FOO=bar", "image"];
+    let redacted = redact_env_args(args);
+    assert_eq!(redacted, vec!["-e", "FOO=<redacted>", "image"]);
+}
