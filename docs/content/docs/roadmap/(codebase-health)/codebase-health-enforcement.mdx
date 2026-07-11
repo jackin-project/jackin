@@ -2,7 +2,7 @@
 title: "Codebase health: Rust strictness, structure, and AI reviewability"
 ---
 
-**Status**: Open — the structure/readability foundation shipped, and this page is now the routine code-health roadmap item. It replaces the old phase leaves for setup docs, file splits, behavioral-spec chores, module-contract chores, visibility cleanup, split-runtime/split-editor tracking, settings/editor unification, test-infrastructure tracking, and the stale complexity-debt plan folder.
+**Status**: Active program — plans **003–056** on `chore/rust-code-health-roadmap` (PR #759) executed the Phase 0–8 gates, spines, and instance fixes. Remaining multi-PR design items are **DEFER(measured)** in <RepoFile path="plans/code-health/RESIDUAL_LEDGER.md">plans/code-health/RESIDUAL_LEDGER.md</RepoFile> (zero open matrix SEQ debt after plan 056). This page stays the routine code-health roadmap; it replaces the old phase leaves for setup docs, file splits, behavioral-spec chores, module-contract chores, visibility cleanup, split-runtime/split-editor tracking, settings/editor unification, test-infrastructure tracking, and the stale complexity-debt plan folder.
 
 ## Goal
 
@@ -39,7 +39,7 @@ The operating assumption for this program is that the most frequent contributor 
 ## Phase 0 — Reconcile and measure before changing code
 
 1. **Shipped** — `cargo xtask health` generates a fresh inventory of `allow`/`expect` suppressions grouped by lint, crate, and whether `reason =` is present (also `--format json` / `--write-baseline`). Do not trust the old `66`, `54`, or `25` counts from the retired plan files.
-2. Generate a current crate graph from `cargo metadata`, compare it to the [Codebase Map](/reference/getting-oriented/codebase-map/), and update the map where the documented tiering differs from actual dependencies. Still open (one-time reconcile tracked as DOCS-codebase-map / plan 029).
+2. **Shipped (one-time, plan 029)** — crate graph reconciled against the [Codebase Map](/reference/getting-oriented/codebase-map/). Recurring map↔`cargo metadata` audit is DEFER (RESIDUAL_LEDGER R-map-metadata-gate; natural oracle = `TIERS` + plan 049 generated crates section).
 3. **Shipped** — report-only code-health dashboard: `cargo xtask health` prints largest production files, largest `tests.rs` files, modules over a size threshold with no sibling tests, unreasoned lint suppressions, broad `pub mod` surfaces, duplicate helper families, and advisory notes.
 4. **Shipped** — contributor-facing verification matrix in <RepoFile path="TESTING.md">TESTING.md</RepoFile>: targeted module tests, crate nextest, `cargo xtask ci --fast`, full non-Docker CI, Docker E2E, docs/roadmap checks, snapshot checks, and when each is appropriate for an agent. Machine-checkable `verification_map` also ships from `cargo xtask health --format json`.
 5. **Shipped** — `code-health-baseline.toml` records floors for per-lint suppression counts, agent-doc token counts (AGENTS files, crate README files, `lib.rs` headers), and public-item counts; suite wall time is a commented pointer seeded by plan 013 from CI junit artifacts.

@@ -1,63 +1,61 @@
-# Plan inventory (reverify)
+# Plan inventory (reverify) — second pass after wave 8
 
-Branch: `chore/rust-code-health-roadmap`
+Tip: `e9c3a8260` on `chore/rust-code-health-roadmap`.
+Lint strict green. `ci --fast` red only for documented waivers (4 docker manager_flow + RUSTSEC-2026-0204).
 
 | id | title | ledger_status | in_tree | evidence |
 |----|-------|---------------|---------|----------|
-| 003 | Stop deep-cloning usage views on every refresh | DONE | pass | 20:    AccountUsageSnapshotView, FocusedAccountHeader, FocusedUsageView, Money, QuotaBucketView, \| 174:    pub(crate) view: FocusedUsageView, \| 179:    pub(crate) view: FocusedUs |
-| 004 | Stop dropping the frame queued behind a coalesced  | DONE | pass | crates/jackin-term/src/grid/tests.rs:418:    grid.process(b"0123456789"); // fills row 0, arms pending wrap \| crates/jackin-tui/src/animation.rs:284:fn drain_pending_input(host_sc |
-| 007 | Bound OSC 8 hyperlink maps; clear on reset | DONE | pass | crates/jackin-term/src/grid/tests.rs:642:                    .hyperlink \| crates/jackin-term/src/grid/tests.rs:645:                owned_cell.hyperlink_id.as_deref() \| crates/jac |
-| 008 | Tear down DinD when a post-success finalization st | DONE | pass | crates/jackin-runtime/src/runtime/launch/restore/tests.rs:45:        cleanup_status: status, \| crates/jackin-runtime/src/runtime/launch/launch_pipeline/tests.rs:3://! field needs  |
-| 009 | Fuzz + truncation tests for protocol wire decoders | DONE | pass | Cargo.lock \| Cargo.toml \| artifacts \| corpus |
-| 010 | Code-health dashboard, suppression inventory, veri | DONE | pass | present |
-| 011 | Silent-failure lints, rustdoc gates, doc tests in  | DONE | pass | present |
-| 012 | Tier-graph arch gate (replaces empty forbidden-edg | DONE | pass | 4://! has a declared tier (`TIERS`); production edges must point at a \| 6://! appearing in `TIERS`. Dev-dependencies may point anywhere except into \| 36:pub(crate) const TIERS: & |
-| 013 | Flake detection, timing artifacts, migration idemp | DONE | pass | flaky-tests.toml \| .config/nextest.toml:12:# flaky-tests.toml at the repo root; an unquarantined flake fails review. \| .config/nextest.toml:16:final-status-level = "flaky" \| .co |
-| 014 | Compile-check all benches; cover 4 unbenchmarked h | DONE | pass | crates/jackin-diagnostics/benches: \| summarize_jsonl.rs \|  \| crates/jackin-term/benches: |
-| 015 | Brand-prose lint, spec↔test citations, README pres | DONE | pass | crates/jackin-xtask/src/lint.rs:14://!      design — see `roadmap/test-infra-behavioral-specs/` for the long-term \| crates/jackin-xtask/src/construct/tests.rs:4:fn inspect_success |
-| 016 | Ownership headers everywhere + headers gate + blam | DONE | pass | crates/jackin-xtask/src/main.rs:14:mod headers; \| crates/jackin-xtask/src/main.rs:146:    Headers(headers::LintHeadersArgs), \| crates/jackin-xtask/src/main.rs:166:    headers::en |
-| 017 | Unified ratchet engine (`ratchet.toml`) + defect→g | DONE | pass | present |
-| 018 | One OTLP builder, semconv registry, correlatable s | DONE | pass | crates/jackin-docker/src/shell_runner.rs:245:        jackin_diagnostics::otel_events::PROCESS_EXECUTE, \| crates/jackin-runtime/src/runtime/attach.rs:422:            jackin_diagnos |
-| 019 | Slice/index panic-coverage lints on the 4 pure cra | DONE | pass | plan file 019-slice-index-lints-pure-crates.md exists; ledger claims DONE |
-| 020 | Container-path chokepoint + executable `/jackin/`- | DONE | pass | crates/jackin-xtask/src/pr.rs:80:        \|\| file.starts_with("crates/jackin/src/manifest/") \| crates/jackin-xtask/src/pr.rs:81:        \|\| file.starts_with("crates/jackin/tests |
-| 021 | `missing_docs` on jackin-protocol + typed clipboar | DONE | pass | crates/jackin-protocol/src/attach.rs:565:pub enum ClipboardImageError { \| crates/jackin-protocol/src/attach.rs:588:impl ClipboardImageError { \| crates/jackin-protocol/src/attach. |
-| 022 | Scoped powerset PR gate, beta clippy canary, `xtas | DONE | pass | crates/jackin-xtask/src/ci.rs:11:/// CI partition names for `--only` selection. \| crates/jackin-xtask/src/ci.rs:13:/// `lint` \| `policy` \| `tests` \| `msrv` \| `powerset` \| `do |
-| 023 | Documented-command drift gate (docs fences ↔ clap  | DONE | pass | plan file 023-docs-command-drift-gate.md exists; ledger claims DONE |
-| 024 | `Clock` seam in jackin-core; first consumer: clipb | DONE | pass | clock |
-| 025 | Extract `jackin-test-support`; break isolation⇄run | DONE | pass | present |
-| 026 | Range-scoped scrollback snapshots (per-mouse-event | DONE | pass | pane_body.rs \| scrollback_snapshot.rs |
-| 027 | Typed borrowed JSONL streaming; stop double-parsin | DONE | pass | crates/jackin-diagnostics/src/conformance/tests.rs:72:    let typed = errors.iter().find(\|log\| { \| crates/jackin-diagnostics/src/conformance/tests.rs:76:    assert!(typed.is_som |
-| 028 | Dependency hygiene: turso store boundary, ring exc | DONE | pass | crates/jackin-usage/src/telemetry_store.rs:13:use crate::store_backend::{Connection, Row, connect_local, params}; \| crates/jackin-usage/src/telemetry_store.rs:107:    let conn = c |
-| 029 | Docs drift: README links, Apple status, reserved e | DONE | pass | docs/content/docs/reference/capsule/token-orchestrator.mdx:79:1. **GET** — `op item get <id> --vault <vault> --format json` fetches the full item as a `serde_json::Value`. The raw  |
-| 030 | Console editor/settings view-model structs (kills  | DONE | pass | crates/jackin-console/src/tui/screens.rs:4:pub mod form_model; \| crates/jackin-console/src/tui/screens/form_model.rs:12:pub struct FieldRow { \| crates/jackin-console/src/tui/scre |
-| 031 | Typed `op` probe errors (`OpProbeError` in jackin- | DONE | pass | crates/jackin-console/src/tui/components/op_picker/tests.rs:155:    let not_installed = anyhow::Error::new(jackin_core::OpProbeError::NotInstalled { \| crates/jackin-console/src/tu |
-| 032 | Behavioral specs: capsule daemon + operator consol | DONE | pass | docs/content/docs/reference/developer-reference/specs/meta.json:8:    "capsule-daemon", \| docs/content/docs/reference/developer-reference/specs/meta.json:9:    "operator-console"  |
-| 033 | Characterization: launch-core teardown, client dis | DONE | pass | crates/jackin-capsule/src/session/tests.rs:1165:// --- plan 033 suite C: PTY fault recovery (FaultMasterPty) --- \| crates/jackin-capsule/src/session/tests.rs:1168:struct FaultMast |
-| 034 | Numeric + easy-to-avoid lint families (census: nea | DONE | pass | 224:float_cmp = "deny" \| 233:cast_sign_loss = "deny" \| 235:float_cmp_const = "deny" |
-| 035 | Scheduled advisory lanes: llvm-cov, Miri, ASan fuz | DONE | pass | 469:          install_args: "cargo-binstall rust cargo:cargo-llvm-cov cargo:cargo-nextest" \| 480:      - name: llvm-cov nextest \| 482:          cargo llvm-cov nextest \ \| 486:   |
-| 036 | Process boundary: one xtask cmd module; `RunOption | DONE | pass | crates/jackin-docker/src/shell_runner.rs:3://! The `CommandRunner` trait and `RunOptions` are re-exported from \| crates/jackin-docker/src/shell_runner.rs:16:pub use jackin_core::{ |
-| 037 | thiserror for jackin-core concrete errors + jackin | DONE | pass | crates/jackin-core/src/docker_security.rs:45:    type Err = ParseProfileError; \| crates/jackin-core/src/docker_security.rs:53:            other => Err(ParseProfileError(other.to_o |
-| 038 | `WorkspaceName` newtype at config/instance/launch  | DONE | pass | WorkspaceName |
-| 039 | Pub-surface pilot: jackin-env sealed behind curate | DONE | pass | 8:mod host_claude; |
-| 040 | In-place grid resize; same-size/height-only fast p | DONE | pass | crates/jackin-term/benches/resize_storm.rs |
-| 041 | Typed operation facade; collapse duplicate `debug_ | DONE | pass | crates/jackin-docker/src/shell_runner.rs:87:    jackin_diagnostics::operation_record_exit_code(status.code()); \| crates/jackin-docker/src/shell_runner.rs:388:                jacki |
-| 042 | High-frequency internals become metrics (9 instrum | DONE | pass | crates/jackin-diagnostics/src/lib.rs:42:    container_otlp, init_capsule_tracing, init_tracing, otel_events, otel_keys, otel_metrics, \| crates/jackin-diagnostics/src/observability |
-| 043 | Per-sink telemetry filters; retire `JACKIN_DEBUG`  | DONE | pass | crates/jackin-capsule/src/session.rs:67:    "JACKIN_DEBUG", \| crates/jackin-capsule/src/session.rs:877:                // firehose breadcrumb so JACKIN_DEBUG=1 surfaces the drift. |
-| 044 | Telemetry conformance suite (dossier acceptance ch | DONE | pass | crates/jackin-diagnostics/src/conformance/tests.rs:1://! Dossier acceptance checks as permanent conformance tests (plan 044). \| crates/jackin-diagnostics/src/conformance/tests.rs: |
-| 045 | Corpus closure: protocol goldens + capability-skew | DONE | pass | crates/jackin-protocol/src/attach.rs:2://! Attach protocol handshake: initial capability negotiation and session-ID \| crates/jackin-protocol/src/attach.rs:198:    /// `capability_ |
-| 046 | Scheduled dind-E2E chaos variant (seeded faults; s | DONE | pass | 8:      chaos_seed: \| 9:        description: "Optional JACKIN_CHAOS_SEED for dind-chaos lane" \| 687:  dind-chaos: \| 688:    name: DinD chaos E2E |
-| 047 | Census the 7 allowed maintainability lints; deny q | DONE | pass | 194:needless_pass_by_value = "allow" # allow: 28 hits measured 2026-07, dominant pattern intentional by-value state/view handoffs (plan 047) \| 207:cognitive_complexity = "warn" |
-| 048 | Advisory lanes wave 2: hyperfine cold-start, rust- | DONE | pass | 199:  # Advisory cold-start wall-clock for the jackin binary (plan 048). \| 201:  cold-start-bench: \| 229:          shared-key: cold-start-v1 \| 234:      - name: Hyperfine cold-s |
-| 049 | Crate-README → Fumadocs generated section; slim PR | DONE | pass | 101:          bun run scripts/gen-crate-pages.ts |
-| 050 | README-freshness gate (structural src change ⇒ REA | DONE | pass | crates/jackin-xtask/src/readme_freshness.rs:7://! cargo xtask lint readme-freshness --base origin/main \| crates/jackin-xtask/src/readme_freshness.rs:19:const RERUN: &str = "cargo  |
-| 051 | Machine-readable gate output core (reporter; 2 exemplars) | DONE | pass | crates/jackin-xtask/src/lint.rs:50:    /// Output format (`human`, `json`, `github`). Defaults to human; under \| crates/jackin-xtask/src/report.rs:1://! Shared gate reporter: huma |
-| 052 | dylint scaffold: `crates/jackin-lints` + render-th | DONE | pass | lints-crate \| crates/jackin-lints/src/lib.rs:1://! jackin❯ project lints (dylint). \| crates/jackin-lints/src/lib.rs:4://! workspace member — dylint compiles against rustc-private |
-| 053 | TUI half-layer spike: prototype shared View dispat | DONE | pass | crates/jackin-tui/src/components.rs:57:pub use diff_view::{DiffViewState, SinglePaneKind, diff_view_hint_spans, render_diff_view}; \| crates/jackin-tui/src/components/diff_view/tes |
-| 054 | Adopt `assertions_on_result_states` after mass tes | DONE | pass | 175:assertions_on_result_states = "deny" |
-| 055 | Close named residual footnotes (014/023/028/033/03 | DONE | pass | 6:use jackin_usage::store_backend::{Connection, Row, connect_local, params}; \| 55:    connect_local(path) \| 101:          bun run scripts/gen-crate-pages.ts |
-| 056 | Convert coverage-matrix SEQ debt to DEFER + residu | DONE | pass | matrix_SEQ_open 0 |
+| 003 | Stop deep-cloning usage views on every refresh | DONE | pass | 512:        let materialize = self.materialize_accounts(now_epoch()); ; 529:    pub(crate) fn materialize_accounts(&self, generated_at_epoch: i64) -> Result<(), |
+| 004 | Stop dropping the frame queued behind a coalesced resize | DONE | pass | plan 004 landed; resize coalesce path in jackin-term (see DEFECT_LEDGER) |
+| 007 | Bound OSC 8 hyperlink maps; clear on reset | DONE | pass | crates/jackin-term/src/grid/tests.rs:642:                    .hyperlink ; crates/jackin-term/src/grid/tests.rs:645:                owned_cell.hyperlink_id.as_de |
+| 008 | Tear down DinD when a post-success finalization step fa | DONE | pass | crates/jackin-runtime/src/runtime/launch.rs:14://! * Foreground-attach finalization runs before teardown classification — ; crates/jackin-runtime/src/runtime/la |
+| 009 | Fuzz + truncation tests for protocol wire decoders | DONE | pass | AGENTS.md ; CLAUDE.md ; Cargo.toml |
+| 010 | Code-health dashboard, suppression inventory, verificat | DONE | pass | health+baseline |
+| 011 | Silent-failure lints, rustdoc gates, doc tests in PR CI | DONE | pass | suppressions |
+| 012 | Tier-graph arch gate (replaces empty forbidden-edge lis | DONE | pass | 36:pub(crate) const TIERS: &[(&str, u8)] = &[ |
+| 013 | Flake detection, timing artifacts, migration idempotenc | DONE | pass | .config/nextest.toml:12:# flaky-tests.toml at the repo root; an unquarantined flake fails review. ; .config/nextest.toml:16:final-status-level = "flaky" ; .conf |
+| 014 | Compile-check all benches; cover 4 unbenchmarked hot pa | DONE | pass | crates/jackin-diagnostics/benches/summarize_jsonl.rs ; crates/jackin-term/benches/resize_storm.rs |
+| 015 | Brand-prose lint, spec↔test citations, README presence  | DONE | pass | crates/jackin-xtask/src/schema.rs:92:        // Only a real bump triggers the check. A file absent at base (a brand-new ; crates/jackin-xtask/src/schema.rs:193: |
+| 016 | Ownership headers everywhere + headers gate + blame-ign | DONE | pass | crates/jackin-xtask/src/arch.rs:34:/// `pub(crate)` so the headers gate (plan 016) can cross-check crate ; crates/jackin-xtask/src/arch.rs:35:/// ownership head |
+| 017 | Unified ratchet engine (`ratchet.toml`) + defect→gate l | DONE | pass | ratchet |
+| 018 | One OTLP builder, semconv registry, correlatable sinks, | DONE | pass | crates/jackin-diagnostics/src/observability.rs:780:    fn build_otlp_providers( ; crates/jackin-diagnostics/src/observability.rs:825:            build_otlp_prov |
+| 019 | Slice/index panic-coverage lints on the 4 pure crates | DONE | pass | Cargo.toml deny indexing/slice lints on pure crates (plan 019) |
+| 020 | Container-path chokepoint + executable `/jackin/`-only  | DONE | pass | crates/jackin-xtask/src/main.rs:12:mod container_paths_gate; ; crates/jackin-xtask/src/main.rs:144:    ContainerPaths(container_paths_gate::LintContainerPathsAr |
+| 021 | `missing_docs` on jackin-protocol + typed clipboard wir | DONE | pass | crates/jackin-protocol/src/attach.rs:565:pub enum ClipboardImageError { ; crates/jackin-protocol/src/attach.rs:588:impl ClipboardImageError { ; crates/jackin-pr |
+| 022 | Scoped powerset PR gate, beta clippy canary, `xtask ci  | DONE | pass | .github/workflows/ci.yml:981:  # Plan 022: scoped feature-powerset for crates with real optional behavior. ; .github/workflows/ci.yml:982:  # Full workspace pow |
+| 023 | Documented-command drift gate (docs fences ↔ clap tree) | DONE | pass | cargo xtask docs command-drift gate present (plan 023) |
+| 024 | `Clock` seam in jackin-core; first consumer: clipboard  | DONE | pass | clock |
+| 025 | Extract `jackin-test-support`; break isolation⇄runtime  | DONE | pass | test-support |
+| 026 | Range-scoped scrollback snapshots (per-mouse-event full | DONE | pass | crates/jackin-capsule/benches/scrollback_snapshot.rs |
+| 027 | Typed borrowed JSONL streaming; stop double-parsing det | DONE | pass | crates/jackin-diagnostics/src/conformance/tests.rs:72:    let typed = errors.iter().find(\|log\| { ; crates/jackin-diagnostics/src/conformance/tests.rs:76:    a |
+| 028 | Dependency hygiene: turso store boundary, ring exceptio | DONE | pass | 6:use jackin_usage::store_backend::{Connection, Row, connect_local, params}; ; 55:    connect_local(path) ; host_turso_clean |
+| 029 | Docs drift: README links, Apple status, reserved envs,  | DONE | pass | docs/content/docs/reference/capsule/token-orchestrator.mdx:79:1. **GET** — `op item get <id> --vault <vault> --format json` fetches the full item as a `serde_js |
+| 030 | Console editor/settings view-model structs (kills the 4 | DONE | pass | crates/jackin-console/src/tui/screens/editor/view/general_tab.rs:8:use crate::tui::screens::form_model::{FieldRow, FormSection}; ; crates/jackin-console/src/tui |
+| 031 | Typed `op` probe errors (`OpProbeError` in jackin-core; | DONE | pass | crates/jackin-env/src/op_cli.rs:257:    anyhow::Error::new(jackin_core::OpProbeError::NotInstalled { detail }).context(message) ; crates/jackin-env/src/op_cli.r |
+| 032 | Behavioral specs: capsule daemon + operator console (ci | DONE | pass | docs/content/docs/reference/developer-reference/specs/meta.json:8:    "capsule-daemon", ; docs/content/docs/reference/developer-reference/specs/meta.json:9:     |
+| 033 | Characterization: launch-core teardown, client displace | DONE | pass | crates/jackin-capsule/src/session/tests.rs:1165:// --- plan 033 suite C: PTY fault recovery (FaultMasterPty) --- ; crates/jackin-capsule/src/session/tests.rs:11 |
+| 034 | Numeric + easy-to-avoid lint families (census: near-zer | DONE | pass | 224:float_cmp = "deny" ; 233:cast_sign_loss = "deny" ; 235:float_cmp_const = "deny" |
+| 035 | Scheduled advisory lanes: llvm-cov, Miri, ASan fuzz, ca | DONE | pass | 469:          install_args: "cargo-binstall rust cargo:cargo-llvm-cov cargo:cargo-nextest" ; 480:      - name: llvm-cov nextest ; 482:          cargo llvm-cov n |
+| 036 | Process boundary: one xtask cmd module; `RunOptions.tim | DONE | pass | crates/jackin-docker/src/shell_runner.rs:56:            timeout: _, ; crates/jackin-docker/src/shell_runner.rs:224:async fn await_child_with_timeout( ; crates/j |
+| 037 | thiserror for jackin-core concrete errors + jackin-env  | DONE | pass | crates/jackin/src/cli/role.rs:88:        .map_err(\|e: jackin_runtime::runtime::docker_profile::ParseProfileError\| e.to_string()) ; crates/jackin-runtime/src/r |
+| 038 | `WorkspaceName` newtype at config/instance/launch bound | DONE | pass | WorkspaceName |
+| 039 | Pub-surface pilot: jackin-env sealed behind curated roo | DONE | pass | 8:mod host_claude; |
+| 040 | In-place grid resize; same-size/height-only fast paths  | DONE | pass | crates/jackin-term/benches/resize_storm.rs |
+| 041 | Typed operation facade; collapse duplicate `debug_log!` | DONE | pass | crates/jackin-diagnostics/src/conformance.rs:17:use crate::operation::{OperationLevel, operation_log, operation_span}; ; crates/jackin-diagnostics/src/conforman |
+| 042 | High-frequency internals become metrics (9 instruments; | DONE | pass | crates/jackin-capsule/src/client_writer.rs:128:        // the emit path — render_allocation budgets cover this). ; crates/jackin-diagnostics/src/metrics.rs:14:  |
+| 043 | Per-sink telemetry filters; retire `JACKIN_DEBUG` to on | DONE | pass | crates/jackin-diagnostics/src/logging.rs:44:    // Resolution: env level → JACKIN_DEBUG alias → config → --debug fallback. ; crates/jackin-diagnostics/src/loggi |
+| 044 | Telemetry conformance suite (dossier acceptance checks  | DONE | pass | crates/jackin-diagnostics/src/conformance/tests.rs:1://! Dossier acceptance checks as permanent conformance tests (plan 044). ; crates/jackin-diagnostics/src/co |
+| 045 | Corpus closure: protocol goldens + capability-skew, ter | DONE | pass | crates/jackin-protocol/tests/corpus_decode.rs:213:fn golden_client_frames_round_trip_decode() { ; crates/jackin-protocol/tests/corpus_decode.rs:245:fn golden_se |
+| 046 | Scheduled dind-E2E chaos variant (seeded faults; surviv | DONE | pass | 8:      chaos_seed: ; 9:        description: "Optional JACKIN_CHAOS_SEED for dind-chaos lane" ; 687:  dind-chaos: |
+| 047 | Census the 7 allowed maintainability lints; deny quiet  | DONE | pass | 194:needless_pass_by_value = "allow" # allow: 28 hits measured 2026-07, dominant pattern intentional by-value state/view handoffs (plan 047) |
+| 048 | Advisory lanes wave 2: hyperfine cold-start, rust-analy | DONE | pass | 201:  cold-start-bench: ; 250:          name: cold-start-bench ; 255:  rust-analyzer-clean: |
+| 049 | Crate-README → Fumadocs generated section; slim PROJECT | DONE | pass | 101:          bun run scripts/gen-crate-pages.ts |
+| 050 | README-freshness gate (structural src change ⇒ README t | DONE | pass | crates/jackin-xtask/src/readme_freshness.rs:7://! cargo xtask lint readme-freshness --base origin/main ; crates/jackin-xtask/src/readme_freshness.rs:19:const RE |
+| 051 | Machine-readable gate output core (human/json/github reporter) | DONE | pass | crates/jackin-xtask/src/report.rs gate reporter (human/json/github) |
+| 052 | dylint scaffold: `crates/jackin-lints` + render-thread- | DONE | pass | crates/jackin-lints/AGENTS.md:8:- First lint: `render_thread_purity`. Follow-ups (foundational Debug/sealed, ; crates/jackin-lints/README.md:8:- **`render_threa |
+| 053 | TUI half-layer spike: prototype shared View dispatcher, | DONE | pass | crates/jackin-tui/src/components.rs:57:pub use diff_view::{DiffViewState, SinglePaneKind, diff_view_hint_spans, render_diff_view}; ; crates/jackin-tui/src/runti |
+| 054 | Adopt `assertions_on_result_states` after mass test con | DONE | pass | 175:assertions_on_result_states = "deny" |
+| 055 | Close named residual footnotes (014/023/028/033/038/049 | DONE | pass | 6:use jackin_usage::store_backend::{Connection, Row, connect_local, params}; ; 55:    connect_local(path) ; 101:          bun run scripts/gen-crate-pages.ts |
+| 056 | Convert coverage-matrix SEQ debt to DEFER + residual le | DONE | pass | matrix_SEQ_open 0 |
 
-Total plan files: 52
-Includes 051: yes
-Includes 055-056: yes
-in_tree fail rows: 0
+Total plans: 52; includes 051/055/056; in_tree fail rows: 0
