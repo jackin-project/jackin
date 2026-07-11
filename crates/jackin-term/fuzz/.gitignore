@@ -1,3 +1,5 @@
 /artifacts/
 /corpus/
+!corpus/damage_grid_process/
+!corpus/damage_grid_process/**
 /target/

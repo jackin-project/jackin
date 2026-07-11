@@ -135,6 +135,7 @@ Junit artifacts are named `nextest-junit-<group>-<lane>` and seed the Phase 0 su
 | `workspace_migrate` | `crates/jackin-config/fuzz` | 30s | 120s |
 | `manifest_migrate` | `crates/jackin-manifest/fuzz` | 30s | 120s |
 | `manifest_validate` | `crates/jackin-manifest/fuzz` | 30s | 120s |
+| `env_resolve` | `crates/jackin-env/fuzz` | 30s | 120s |
 
 Local smoke (nightly + cargo-fuzz via mise):
 

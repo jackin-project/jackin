@@ -54,6 +54,99 @@ fn manifest_fixtures_round_trip_to_current() {
     });
 }
 
+
+#[test]
+fn config_unknown_field_policy_is_preserve() {
+    // AppConfig deliberately does NOT use deny_unknown_fields (forward-compat).
+    assert_unknown_field_policy("config", UnknownFieldPolicy::Preserve, |p| {
+        jackin_config::migrate_config_file_if_needed(p).map(|_| ())
+    });
+}
+
+#[test]
+fn workspace_unknown_field_policy_is_deny() {
+    assert_unknown_field_policy("workspace", UnknownFieldPolicy::Deny, |p| {
+        jackin_config::migrate_workspace_file_if_needed(p).map(|_| ())
+    });
+}
+
+#[test]
+fn manifest_unknown_field_policy_is_deny() {
+    assert_unknown_field_policy("manifest", UnknownFieldPolicy::Deny, |p| {
+        jackin_manifest::migrations::migrate_manifest_file(p).map(|_| ())
+    });
+}
+
+#[derive(Clone, Copy)]
+enum UnknownFieldPolicy {
+    /// Unknown keys may survive migration and still parse (AppConfig).
+    Preserve,
+    /// Unknown keys must be rejected by parse if they survive migration.
+    Deny,
+}
+
+/// Per-kind unknown-field policy asserted against a real migration fixture.
+fn assert_unknown_field_policy(file_kind: &str, policy: UnknownFieldPolicy, migrate: MigrateFn) {
+    let file_kind_dir = fixture_root().join(file_kind);
+    let entry = fs::read_dir(&file_kind_dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .unwrap_or_else(|| panic!("no fixtures under {}", file_kind_dir.display()));
+    let dir = entry.path();
+    let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+    let before = fs::read_to_string(dir.join("before.toml")).unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().join(filename_for(file_kind));
+    let mutated = format!("{before}\nx_unknown_probe = \"1\"\n");
+    fs::write(&target, &mutated).unwrap();
+    match migrate(&target) {
+        Ok(()) => {
+            let after = fs::read_to_string(&target).unwrap();
+            let parse_err = match file_kind {
+                "config" => toml::from_str::<jackin_config::AppConfig>(&after)
+                    .err()
+                    .map(|e| e.to_string()),
+                "workspace" => toml::from_str::<jackin::workspace::WorkspaceConfig>(&after)
+                    .err()
+                    .map(|e| e.to_string()),
+                "manifest" => toml::from_str::<jackin_manifest::RoleManifest>(&after)
+                    .err()
+                    .map(|e| e.to_string()),
+                other => panic!("unknown file_kind {other:?}"),
+            };
+            match policy {
+                UnknownFieldPolicy::Preserve => {
+                    assert!(
+                        parse_err.is_none(),
+                        "fixture {name}: AppConfig preserve policy expects parse success, got {parse_err:?}"
+                    );
+                }
+                UnknownFieldPolicy::Deny => {
+                    if after.contains("x_unknown_probe") {
+                        assert!(
+                            parse_err.is_some(),
+                            "fixture {name}: unknown field survived migration and was accepted by schema"
+                        );
+                        let msg = parse_err.unwrap();
+                        assert!(
+                            msg.contains("unknown field") || msg.contains("x_unknown_probe"),
+                            "fixture {name}: expected unknown-field error, got {msg}"
+                        );
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            let msg = format!("{e:#}");
+            assert!(
+                msg.contains("unknown") || msg.contains("x_unknown_probe") || msg.contains("parse"),
+                "fixture {name}: migrate failed for reason other than unknown-field policy: {msg}"
+            );
+        }
+    }
+}
+
 fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")

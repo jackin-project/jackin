@@ -99,6 +99,11 @@ jobs:
           cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_migrate -- -max_total_time=120
           cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu manifest_validate -- -max_total_time=120
 
+      - name: Long env resolve fuzz run
+        run: |
+          cd crates/jackin-env
+          cargo fuzz run --sanitizer none --target x86_64-unknown-linux-gnu env_resolve -- -max_total_time=120
+
       # When plan 009 protocol fuzz targets land, add them here too.
       - name: ASan jackin-term fuzz run
         run: |
