@@ -14,6 +14,7 @@ mod docs;
 mod health;
 mod headers;
 mod lint;
+mod ratchet;
 mod pr;
 mod profile_matrix;
 mod pty_fixture;
@@ -147,6 +148,8 @@ enum LintCommand {
     ReadmeFreshness(readme_freshness::LintReadmeFreshnessArgs),
     /// Bare-allow / per-lint expect suppression shrink-only reason-gate.
     Suppressions(suppressions::LintSuppressionsArgs),
+    /// Unified shrink-only ratchet engine over `ratchet.toml`.
+    Ratchet(ratchet::LintRatchetArgs),
 }
 
 /// Run every codebase-health lint gate in sequence — the `cargo xtask lint`
@@ -162,6 +165,7 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     container_paths_gate::enforce()?;
     headers::enforce()?;
     suppressions::enforce()?;
+    ratchet::enforce()?;
     arch::check(strict)
 }
 
@@ -190,6 +194,7 @@ fn main() -> ExitCode {
             Some(LintCommand::Headers(args)) => headers::run(args),
             Some(LintCommand::ReadmeFreshness(args)) => readme_freshness::run(args),
             Some(LintCommand::Suppressions(args)) => suppressions::run(args),
+            Some(LintCommand::Ratchet(args)) => ratchet::run(args),
             None => run_all_lints(strict),
         },
     };

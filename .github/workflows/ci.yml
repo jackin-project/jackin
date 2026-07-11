@@ -445,7 +445,7 @@ jobs:
           env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTC_WRAPPER RUSTFLAGS RUSTDOC RUSTUP"
       # Gate: codebase-health lint checks via the umbrella `lint --strict`
       # command. The file-size ratchet (file-size-budget.toml: production
-      # ≤2000L, tests ≤10000L) and the test-file-layout ratchet
+      # ≤1850L production / ≤10000L tests via ratchet.toml + file-size-budget.toml) and the test-file-layout ratchet
       # (test-layout-allowlist.toml: one sibling tests.rs) are STRICT here —
       # they fail on growth above budget and on stale/missing/shrunken rows.
       # dependency-direction stays informational (exits 0) until the P2 layer

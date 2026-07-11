@@ -1,0 +1,131 @@
+# ratchet.toml — unified shrink-only budgets (codebase-health-enforcement Phase 7).
+# Each entry: a metric (computed by a named provider in jackin-xtask), a bound,
+# and shrink-only semantics: measured > bound fails (growth); measured < bound
+# fails telling you to tighten the bound; measured == bound is steady state.
+# `kind = "presence"` entries are allowlists: listed keys must still be violations,
+# unlisted violations fail. Regenerate any family: cargo xtask lint ratchet --print <family>.
+# deny.toml exceptions and .codebook.toml are deliberately NOT folded here:
+# cargo-deny/codebook own their semantics.
+
+[[family]]
+id = "file-size-production"
+kind = "numeric"
+provider = "file_lines_production"
+cap = 1850
+mode = "enforce"
+[[family.entry]]
+key = "crates/jackin-runtime/src/runtime/image.rs"
+bound = 1938
+
+[[family]]
+id = "file-size-test"
+kind = "numeric"
+provider = "file_lines_test"
+cap = 10000
+mode = "enforce"
+
+[[family]]
+id = "test-layout"
+kind = "presence"
+provider = "test_layout_violations"
+mode = "enforce"
+[[family.entry]]
+key = "crates/jackin-lints/src/lib.rs"
+[[family.entry]]
+key = "crates/jackin-xtask/src/docs/brand.rs"
+[[family.entry]]
+key = "crates/jackin-xtask/src/docs/specs.rs"
+
+[[family]]
+id = "bare-allow-per-crate"
+kind = "numeric"
+provider = "bare_allow_per_crate"
+mode = "enforce"
+# Entries seeded from suppression-budget.toml [[crate]] rows (updated by --print).
+[[family.entry]]
+key = "jackin"
+bound = 17
+
+[[family.entry]]
+key = "jackin-capsule"
+bound = 12
+
+[[family.entry]]
+key = "jackin-config"
+bound = 4
+
+[[family.entry]]
+key = "jackin-console"
+bound = 77
+
+[[family.entry]]
+key = "jackin-console-oppicker"
+bound = 3
+
+[[family.entry]]
+key = "jackin-core"
+bound = 1
+
+[[family.entry]]
+key = "jackin-diagnostics"
+bound = 6
+
+[[family.entry]]
+key = "jackin-docker"
+bound = 1
+
+[[family.entry]]
+key = "jackin-env"
+bound = 3
+
+[[family.entry]]
+key = "jackin-image"
+bound = 2
+
+[[family.entry]]
+key = "jackin-instance"
+bound = 1
+
+[[family.entry]]
+key = "jackin-isolation"
+bound = 2
+
+[[family.entry]]
+key = "jackin-launch-tui"
+bound = 6
+
+[[family.entry]]
+key = "jackin-lints"
+bound = 1
+
+[[family.entry]]
+key = "jackin-protocol"
+bound = 1
+
+[[family.entry]]
+key = "jackin-runtime"
+bound = 25
+
+[[family.entry]]
+key = "jackin-term"
+bound = 5
+
+[[family.entry]]
+key = "jackin-tui"
+bound = 1
+
+[[family.entry]]
+key = "jackin-usage"
+bound = 26
+
+[[family.entry]]
+key = "jackin-xtask"
+bound = 2
+
+
+[[family]]
+id = "agent-doc-bytes"
+kind = "numeric"
+provider = "agent_doc_bytes"
+mode = "report"
+# Report-only Phase 6 context-economy seed; never fails.

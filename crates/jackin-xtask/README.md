@@ -18,7 +18,10 @@ The workspace's `cargo xtask` automation — CI lanes, lint gates, docs checks, 
 |---|---|---|
 | [`main.rs`](src/main.rs) | `cargo xtask` dispatcher | — |
 | [`ci.rs`](src/ci.rs) · [`ci/`](src/ci) | CI orchestration | [`tests.rs`](src/ci/tests.rs) |
-| [`lint.rs`](src/lint.rs) · [`lint/`](src/lint) | file-size lint gate (`--format human\|json\|github`) | [`tests.rs`](src/lint/tests.rs) |
+| [`lint.rs`](src/lint.rs) · [`lint/`](src/lint) | file-size lint gate (adapter; budgets also in `ratchet.toml`) | [`tests.rs`](src/lint/tests.rs) |
+| [`ratchet.rs`](src/ratchet.rs) · [`ratchet/`](src/ratchet) | unified shrink-only ratchet engine (`lint ratchet`) | [`tests.rs`](src/ratchet/tests.rs) |
+| [`test_layout.rs`](src/test_layout.rs) | test-layout presence family (adapter over ratchet semantics) | — |
+| [`suppressions.rs`](src/suppressions.rs) | bare-allow/expect reason-gate (adapter) | — |
 | [`agent_files.rs`](src/agent_files.rs) · [`agent_files/`](src/agent_files) | agent-file symlink gate (`--format human\|json\|github`) | [`tests.rs`](src/agent_files/tests.rs) |
 | [`report.rs`](src/report.rs) · [`report/`](src/report) | shared gate reporter (human/json/github) | [`tests.rs`](src/report/tests.rs) |
 | [`agent_links.rs`](src/agent_links.rs) · [`agent_links/`](src/agent_links) | no-cross-ref gate (README/AGENTS) | [`tests.rs`](src/agent_links/tests.rs) |

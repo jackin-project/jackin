@@ -64,7 +64,7 @@ pub(crate) fn enforce() -> Result<()> {
 
 pub(crate) fn run(args: LintTestsArgs) -> Result<()> {
     let root = repo_root()?;
-    let violations = scan(&root)?;
+    let violations = measure_violations(&root)?;
 
     if args.print_allowlist {
         print_allowlist(&violations);
@@ -77,7 +77,7 @@ pub(crate) fn run(args: LintTestsArgs) -> Result<()> {
 
 /// Walk every `crates/*/src` tree and collect `relative path → reason` for each
 /// file that breaks the test-layout rule.
-fn scan(root: &Path) -> Result<BTreeMap<String, String>> {
+pub(crate) fn measure_violations(root: &Path) -> Result<BTreeMap<String, String>> {
     let crates_dir = root.join("crates");
     if !crates_dir.is_dir() {
         bail!("`crates/` not found under {}", root.display());

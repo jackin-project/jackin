@@ -91,7 +91,7 @@ pub(crate) fn run(args: LintFilesArgs) -> Result<()> {
     let budget_path = root.join(BUDGET_PATH);
     let budget = read_budget(&budget_path)?;
 
-    let counts = measure(&root)?;
+    let counts = measure_lines(&root)?;
     if args.print_budget {
         print_budget(&root, &counts, &budget);
         return Ok(());
@@ -114,7 +114,7 @@ pub(crate) fn run(args: LintFilesArgs) -> Result<()> {
 /// Walk `crates/` and return every `.rs` file mapped to its line count.
 /// Test files (basename `tests.rs`) and production files are returned together
 /// so the budget-print path can label them consistently.
-fn measure(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
+pub(crate) fn measure_lines(root: &Path) -> Result<BTreeMap<PathBuf, usize>> {
     let crates_dir = root.join(PRODUCTION_GLOB);
     if !crates_dir.is_dir() {
         bail!("`{PRODUCTION_GLOB}/` not found under {}", root.display());

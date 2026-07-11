@@ -28,7 +28,7 @@ fn passes_when_budgeted_file_matches_recorded_over_cap_count() {
     let dir = fixture(
         "production_cap = 1000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 1500\n",
     );
-    let counts = measure(dir.path()).unwrap();
+    let counts = measure_lines(dir.path()).unwrap();
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
     check(dir.path(), &budget, &counts).unwrap();
 }
@@ -36,7 +36,7 @@ fn passes_when_budgeted_file_matches_recorded_over_cap_count() {
 #[test]
 fn fails_when_unlisted_file_exceeds_cap() {
     let dir = fixture("production_cap = 1000\ntest_cap = 10000\n");
-    let counts = measure(dir.path()).unwrap();
+    let counts = measure_lines(dir.path()).unwrap();
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
     let err = check(dir.path(), &budget, &counts).unwrap_err().to_string();
     assert!(err.contains("exceeds 1000-line cap"), "{err}");
@@ -49,7 +49,7 @@ fn allowlist_entry_must_match_actual_count_down_only() {
     let dir = fixture(
         "production_cap = 2000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 1000\n",
     );
-    let counts = measure(dir.path()).unwrap();
+    let counts = measure_lines(dir.path()).unwrap();
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
     let err = check(dir.path(), &budget, &counts).unwrap_err().to_string();
     assert!(err.contains("ratchet exceeded"), "{err}");
@@ -62,7 +62,7 @@ fn rejects_budget_row_for_missing_file() {
     let dir = fixture(
         "production_cap = 1000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/ghost.rs\"\nlines = 1500\n",
     );
-    let counts = measure(dir.path()).unwrap();
+    let counts = measure_lines(dir.path()).unwrap();
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
     let err = check(dir.path(), &budget, &counts).unwrap_err().to_string();
     assert!(err.contains("crates/ghost.rs"), "{err}");
@@ -79,7 +79,7 @@ fn rejects_budget_row_when_file_drops_under_cap() {
     let dir = fixture(
         "production_cap = 2000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 1500\n",
     );
-    let counts = measure(dir.path()).unwrap();
+    let counts = measure_lines(dir.path()).unwrap();
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
     let err = check(dir.path(), &budget, &counts).unwrap_err().to_string();
     assert!(err.contains("crates/big.rs"), "{err}");
@@ -97,7 +97,7 @@ fn rejects_budget_row_when_recorded_count_higher_than_measured() {
     let dir = fixture(
         "production_cap = 1000\ntest_cap = 10000\n\n[[production]]\npath = \"crates/big.rs\"\nlines = 9999\n",
     );
-    let counts = measure(dir.path()).unwrap();
+    let counts = measure_lines(dir.path()).unwrap();
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
     let err = check(dir.path(), &budget, &counts).unwrap_err().to_string();
     assert!(err.contains("crates/big.rs"), "{err}");
@@ -107,7 +107,7 @@ fn rejects_budget_row_when_recorded_count_higher_than_measured() {
 #[test]
 fn print_budget_only_emits_files_over_their_cap() {
     let dir = fixture("production_cap = 1000\ntest_cap = 10000\n");
-    let counts = measure(dir.path()).unwrap();
+    let counts = measure_lines(dir.path()).unwrap();
     let budget = read_budget(&dir.path().join("file-size-budget.toml")).unwrap();
     let report = budget_report(dir.path(), &counts, &budget);
 
