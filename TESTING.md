@@ -148,6 +148,13 @@ Committed seeds live under each fuzz crate's `corpus/<target>/` (fixture-derived
 
 Migration fixture harness (`crates/jackin/tests/migration_fixtures.rs`) enforces golden equality against `after.toml` and second-pass idempotence for every config/workspace/manifest fixture.
 
+### DinD chaos lane (scheduled)
+
+Hygiene job `dind-chaos` runs three seeded fault scenarios against real Docker
+(`chaos_kill_container_mid_session`, `chaos_sigkill_capsule`, `chaos_drop_control_socket`).
+Replay: `JACKIN_CHAOS_SEED=<n> cargo nextest run -p jackin --features e2e --profile docker-e2e -E 'test(chaos_kill_container_mid_session)'`.
+Default seed is fixed (`0xc4a0_55eed`); `workflow_dispatch` input `chaos_seed` overrides.
+
 ## Advisory measurement lanes (hygiene schedule)
 
 Trigger manually: `gh workflow run Hygiene` (or wait for the daily cron).

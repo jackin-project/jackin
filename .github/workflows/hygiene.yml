@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "23 11 * * *"
   workflow_dispatch:
+    inputs:
+      chaos_seed:
+        description: "Optional JACKIN_CHAOS_SEED for dind-chaos lane"
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -857,3 +862,46 @@ jobs:
           path: dylint-findings.txt
           retention-days: 7
           if-no-files-found: warn
+
+  dind-chaos:
+    name: DinD chaos E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      JACKIN_CHAOS_SEED: ${{ inputs.chaos_seed }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Cache Rust toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.rustup/toolchains
+            ~/.rustup/update-hashes
+          key: rustup-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            rustup-${{ runner.os }}-${{ runner.arch }}-
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          version: "2026.6.11"
+          cache_key_prefix: "mise-v2"
+          install_args: "cargo-binstall rust cargo:cargo-nextest"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - id: cargo-registry-cache
+        uses: ./.github/actions/cache-cargo-registry
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: hygiene-dind-chaos-v1
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUSTFLAGS RUSTDOC RUSTUP"
+      - name: Export local capsule binary
+        run: |
+          set -euo pipefail
+          eval "$(cargo run -p jackin-dev --bin build-jackin-capsule -- --export)"
+          echo "JACKIN_CAPSULE_BIN=$JACKIN_CAPSULE_BIN" >> "$GITHUB_ENV"
+      - name: Run dind chaos scenarios
+        run: |
+          cargo nextest run -p jackin --features e2e --profile docker-e2e -E 'test(chaos)' --locked
+
