@@ -1,12 +1,7 @@
-//! Concrete Docker daemon and subprocess runner for jackin❯.
+//! jackin-docker: Docker client adapter and shell runner.
 //!
-//! **Architecture Invariant:** L2 infrastructure crate. Allowed
-//! dependencies: `jackin-core`, `jackin-diagnostics`. Must NOT depend
-//! on presentation (`jackin-launch-tui`, `jackin-console`, `jackin-tui`)
-//! or application (`jackin-runtime`, `jackin-env`). Build output is
-//! streamed through the `BuildLogSink` port trait defined in
-//! `jackin-core`; the concrete UI adapter (`DiagnosticsBuildLogSink`)
-//! lives in `jackin-launch-tui`.
+//! **Architecture Invariant:** T3.
+//! Entry point: [`DockerApi`] — Docker client surface.
 
 pub mod docker_client;
 pub mod net;

@@ -43,7 +43,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [013](013-test-infra-flakes-fuzz-idempotence.md) | Flake detection, timing artifacts, migration idempotence, parser fuzz | 3 | P2 | M-L | TODO |
 | [014](014-hot-path-bench-coverage.md) | Compile-check all benches; cover 4 unbenchmarked hot paths; measured lane | 4 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; partial — residuals in PERF-benches-missing) |
 | [015](015-docs-gates-brand-specs-readme.md) | Brand-prose lint, spec↔test citations, README presence gate | 5 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; freshness-vs-diff residual stays with [050](050-readme-freshness-gate.md)) |
-| [016](016-ownership-headers-blame-revs.md) | Ownership headers everywhere + headers gate + blame-ignore-revs | 6 | P2 | M | TODO |
+| [016](016-ownership-headers-blame-revs.md) | Ownership headers everywhere + headers gate + blame-ignore-revs | 6 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; headers gate + `.git-blame-ignore-revs`) |
 | [017](017-unified-ratchet-engine.md) | Unified ratchet engine (`ratchet.toml`) + defect→gate ledger | 7 | P2 | L | TODO |
 | [018](018-telemetry-drift-proofing.md) | One OTLP builder, semconv registry, correlatable sinks, honest failures | 8 | P2 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; shared `build_otlp_providers`, `otel_metrics`/`otel_events` registry, OTel hex JSONL ids + capsule context banner, `expected_shutdown` outcome, backend-query failure rows; 041/042/043 mint from its registry/builder) |
 
@@ -85,7 +85,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [035](035-advisory-verification-lanes.md) | Scheduled advisory lanes: llvm-cov, Miri, ASan fuzz, cargo-mutants, hakari timing | 1 | P2 | M | TODO |
 | [036](036-process-boundary-xtask-cmd-and-timeout.md) | Process boundary: one xtask cmd module; `RunOptions.timeout` honored by ShellRunner | 2 | P2 | M | TODO |
 | [037](037-thiserror-foundational-core-env.md) | thiserror for jackin-core concrete errors + jackin-env resolution taxonomy | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; ParseProfileError/EnvCycleError/PathsError + OperatorEnvError/ResolveEnvError; port traits keep anyhow) |
-| [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | TODO |
+| [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; WorkspaceName type+persist via 020 scoop; adoption at config mint/editor/instance naming/launch_slot; frontier residual env/console) |
 | [039](039-jackin-env-pub-surface-pilot.md) | Pub-surface pilot: jackin-env sealed behind curated root re-exports | 2 | P2 | M | TODO |
 | [040](040-grid-resize-in-place.md) | In-place grid resize; same-size/height-only fast paths + resize_storm bench | 4 | P2 | M | DONE (cherry-picked onto `chore/rust-code-health-roadmap`) |
 

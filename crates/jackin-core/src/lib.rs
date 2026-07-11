@@ -1,17 +1,7 @@
 //! jackin-core: universal vocabulary types shared across all jackin❯ crates.
 //!
-//! This is a leaf crate — it has no jackin❯ dependencies, no tokio, no
-//! subprocess, no filesystem access. Every higher crate depends on this one,
-//! never the reverse.
-//!
-//! **Architecture Invariant:** L0 domain crate. Allowed dependencies: none
-//! inside the workspace. Owns the universal types plus the port traits
-//! (`BuildLogSink`, `Clock`, `DebugLogSink`, `OperatorNoticeSink`) and shared widget
-//! stubs (`TailScroll`, `DialogBodyScroll`, etc.) that let higher layers
-//! talk upward without depending on a presentation crate.
-//!
-//! Public surface: `Agent`, `MountIsolation`, `AuthForwardMode`, and shared
-//! string constants.
+//! **Architecture Invariant:** T0.
+//! Entry point: [`Agent`] — primary domain noun re-exported to every crate.
 
 pub mod account_key;
 pub mod agent;

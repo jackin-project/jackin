@@ -1,3 +1,8 @@
+//! jackin-capsule: in-container capsule daemon, sessions, and TUI.
+//!
+//! **Architecture Invariant:** T4.
+//! Entry point: [`daemon`] — capsule daemon module the binary runs.
+
 use anyhow::{Result, bail};
 use jackin_capsule::{
     client, config, daemon, exec, firewall, mcp_server, output, protocol::attach::SpawnRequest,

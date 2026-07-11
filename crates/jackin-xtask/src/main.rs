@@ -1,29 +1,18 @@
-//! `jackin-xtask` — workspace automation.
+//! jackin-xtask: workspace automation (cargo xtask) for CI, lints, and docs gates.
 //!
-//! Invoked via the `cargo xtask` alias (see `.cargo/config.toml`):
-//!
-//! ```sh
-//! # Use cargo
-//! cargo xtask construct init-buildx
-//! cargo xtask construct build-local
-//! cargo xtask construct --help
-//! ```
-//!
-//! The `construct-*` tasks are also exposed as `mise run construct-*` tasks.
-//!
-//! All task logic is Rust. Subprocesses (`docker`, `git`) are driven via
-//! [`std::process::Command`]; the project keeps no shell task scripts. The
-//! declarative build graph stays in `docker-bake.hcl`, which this binary
-//! invokes rather than reimplementing in flag assembly.
+//! **Architecture Invariant:** T0.
+//! Entry point: [`main`] — cargo xtask command dispatcher.
 
 mod agent_files;
 mod agent_links;
 mod arch;
 mod ci;
+mod cmd;
 mod construct;
 mod container_paths_gate;
 mod docs;
 mod health;
+mod headers;
 mod lint;
 mod pr;
 mod profile_matrix;
@@ -31,6 +20,7 @@ mod pty_fixture;
 mod release_verify;
 mod report;
 mod schema;
+mod suppressions;
 mod test_layout;
 
 use std::process::ExitCode;
@@ -47,6 +37,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Run the local CI merge-readiness gate.
+    ///
+    /// Partitions (`--only`, repeatable): lint, policy, tests, msrv, powerset,
+    /// docs, snapshots. `--only` is a local-dev tool; merge readiness is the
+    /// full `ci` (or `ci --fast` without powerset).
     ///
     /// Use as `cargo xtask ci --fast` for the non-e2e gate, or add `--e2e`
     /// to include Docker-backed smoke tests.
@@ -146,6 +140,10 @@ enum LintCommand {
     Arch(arch::LintArchArgs),
     /// Residual `/jackin` production-literal shrink-only gate.
     ContainerPaths(container_paths_gate::LintContainerPathsArgs),
+    /// Ownership-header contract for lib.rs/main.rs roots.
+    Headers(headers::LintHeadersArgs),
+    /// Bare-allow / per-lint expect suppression shrink-only reason-gate.
+    Suppressions(suppressions::LintSuppressionsArgs),
 }
 
 /// Run every codebase-health lint gate in sequence — the `cargo xtask lint`
@@ -159,6 +157,8 @@ fn run_all_lints(strict: bool) -> anyhow::Result<()> {
     agent_files::enforce()?;
     agent_links::enforce()?;
     container_paths_gate::enforce()?;
+    headers::enforce()?;
+    suppressions::enforce()?;
     arch::check(strict)
 }
 
@@ -184,6 +184,8 @@ fn main() -> ExitCode {
             Some(LintCommand::AgentLinks(args)) => agent_links::run(args),
             Some(LintCommand::Arch(args)) => arch::run(args),
             Some(LintCommand::ContainerPaths(args)) => container_paths_gate::run(args),
+            Some(LintCommand::Headers(args)) => headers::run(args),
+            Some(LintCommand::Suppressions(args)) => suppressions::run(args),
             None => run_all_lints(strict),
         },
     };

@@ -1,10 +1,16 @@
-//! Role manifest loading, validation, and migration.
+//! jackin-manifest: role-repo validation and manifest parsing.
 //!
-//! **Architecture Invariant:** L0 domain crate. Allowed dependencies:
-//! `jackin-core`, `jackin-config`. No infrastructure or presentation
-//! dependencies. Validation warnings route through
-//! `jackin_core::OperatorNoticeSink` (see `emit_compact_line`) so the
-//! manifest→diagnostics inversion never returns.
+//! **Architecture Invariant:** T2.
+//! Entry point: [`ValidatedRoleRepo`] — validated role repository handle.
+
+#![deny(
+    clippy::string_slice,
+    clippy::indexing_slicing,
+    clippy::get_unwrap,
+    clippy::unwrap_in_result,
+    clippy::panic_in_result_fn,
+    clippy::unchecked_time_subtraction
+)]
 
 pub mod manifest;
 pub mod migrations;

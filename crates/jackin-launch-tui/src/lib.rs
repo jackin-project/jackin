@@ -1,11 +1,7 @@
-//! Launch cockpit TUI — the presentation surface for `jackin load`.
+//! jackin-launch-tui: launch-progress presentation TUI.
 //!
-//! Architecture Invariant: this crate is a **presentation** crate.
-//! Allowed dependencies: `jackin-core`, `jackin-diagnostics`, `jackin-tui`.
-//! Infrastructure crates (`jackin-docker`, `jackin-env`, `jackin-runtime`)
-//! must NOT depend on this crate; use the port traits in `jackin-core` instead.
-//! Model/message/update/run/view code lives under `tui`; progress helpers
-//! live under `progress`.
+//! **Architecture Invariant:** T3.
+//! Entry point: [`LaunchTui`] — launch progress UI.
 
 pub mod build_log;
 pub mod launch_output;

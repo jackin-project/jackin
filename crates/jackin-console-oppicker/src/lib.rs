@@ -1,4 +1,7 @@
-//! Pure model and planning helpers for the 1Password picker.
+//! jackin-console-oppicker: pure 1Password op-picker planning (no I/O).
+//!
+//! **Architecture Invariant:** T3.
+//! Entry point: [`OpPickerPlan`] — pure picker planning result.
 
 pub mod input;
 pub mod load;

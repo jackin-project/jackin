@@ -1,18 +1,7 @@
-//! Role instance lifecycle: instance index, role-state directory, auth
-//! provisioning, and container naming.
+//! jackin-instance: instance naming, manifests, and lifecycle records.
 //!
-//! An "instance" is the on-disk and in-Docker state for a single running or
-//! previously-run role container. `InstanceIndex` tracks container status;
-//! `RoleState` holds the credential and state files bind-mounted into the
-//! container at launch.
-//!
-//! Not responsible for: Docker network/image/DinD resource management
-//! (`runtime/`), or mount materialization (`isolation/materialize.rs`).
-//!
-//! **Architecture Invariant:** L1 application crate. Allowed dependencies:
-//! `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-diagnostics`.
-//! No presentation or runtime dependencies — instance lifecycle stays
-//! below the bootstrap pipeline.
+//! **Architecture Invariant:** T3.
+//! Entry point: [`InstanceManifest`] — on-disk instance record.
 
 use anyhow::Context;
 use jackin_config::{AuthForwardMode, GithubAuthMode};

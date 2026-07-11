@@ -1,10 +1,7 @@
-//! Canonical fakes and role-repo seed helpers shared across jackin❯ workspace
-//! test suites.
+//! jackin-test-support: shared test fakes and role-repo seed fixtures.
 //!
-//! Not responsible for: asserting test outcomes — callers inspect
-//! `FakeRunner::recorded` / `FakeDockerClient::recorded` and friends directly
-//! after the call under test. Production crates must never depend on this
-//! crate; it is consumed via `[dev-dependencies]` only.
+//! **Architecture Invariant:** T3.
+//! Entry point: [`FakeRunner`] — canonical CommandRunner test fake.
 
 pub mod docker;
 pub mod runner;

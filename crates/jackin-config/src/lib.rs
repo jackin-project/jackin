@@ -1,17 +1,7 @@
-//! jackin-config: configuration schema and workspace resolution.
+//! jackin-config: operator config load, migrate, validate, and persist.
 //!
-//! Merges the `config/` and `workspace/` modules into one crate to dissolve
-//! the config↔workspace mutual cycle that prevented crate extraction. Depends
-//! on `jackin-core` for the shared vocabulary types (`Agent`, `AuthForwardMode`,
-//! `MountIsolation`) and provides everything above: `AppConfig`, `WorkspaceConfig`,
-//! migrations, the config editor, and workspace resolution.
-//!
-//! **Architecture Invariant:** L0 domain (schema) crate. Allowed dependencies:
-//! `jackin-core` only. Domain-shape and persistence helpers stay here;
-//! presentation, infrastructure adapters, and observability live above.
-//! Diagnostic output is routed through `jackin_core::DebugLogSink` (see
-//! `debug_log!`), not a direct `jackin-diagnostics` dep, so the
-//! config→diagnostics inversion never returns.
+//! **Architecture Invariant:** T1.
+//! Entry point: [`AppConfig`] — loaded operator configuration.
 
 pub mod app_config;
 pub mod auth;

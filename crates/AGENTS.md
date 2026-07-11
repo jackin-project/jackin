@@ -117,7 +117,7 @@ Line-count churn inside an existing module does not require a README edit. When 
 - <responsibility>
 
 ## Architecture tier and allowed dependencies
-<tier: L0 leaf / L1 domain / L2 infrastructure / presentation / binary / xtask>.
+<tier: T<n> — must match the TIERS table in crates/jackin-xtask/src/arch.rs (checked by cargo xtask lint headers)>.
 Allowed workspace dependencies: <list>. Must NOT depend on: <list, if any>.
 
 ## Structure

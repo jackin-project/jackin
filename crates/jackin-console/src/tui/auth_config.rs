@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
+use jackin_core::WorkspaceName;
 use jackin_config::{
     AgentAuthConfig, AppConfig, AuthForwardMode, EnvValue, GithubAuthConfig, GithubAuthMode,
     WorkspaceConfig, WorkspaceRoleOverride, resolve_github_mode, resolve_mode,
@@ -1097,7 +1098,12 @@ pub fn resolve_panel_mode(
             let Some(agent) = auth_kind_agent(kind) else {
                 return AuthMode::Ignore;
             };
-            let mode = resolve_mode(cfg, agent, workspace, role);
+            let ws = if workspace.is_empty() {
+                None
+            } else {
+                Some(WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?)
+            };
+            let mode = resolve_mode(cfg, agent, ws.as_ref(), role);
             auth_mode_from_auth_forward(mode)
         }
         AuthKind::Github => {

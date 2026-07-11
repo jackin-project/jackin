@@ -1,15 +1,7 @@
-//! Capsule crate root: module declarations re-exported for the in-container
-//! daemon and host client binaries.
+//! jackin-capsule: in-container capsule daemon, sessions, and TUI.
 //!
-//! Not responsible for: protocol encoding (see `jackin-protocol`), host-side
-//! launch orchestration, or config schema migration.
-//!
-//! **Architecture Invariant:** L4 entry/glue crate. Allowed dependencies:
-//! `jackin-core`, `jackin-diagnostics`, `jackin-protocol`, `jackin-usage`,
-//! `jackin-term`, `jackin-tui`. PID1 + PTY daemon + in-container TUI +
-//! usage telemetry re-exported from `jackin-usage` (see C2 carve).
-//! Must NOT depend on host-side runtime (`jackin-runtime`) or other
-//! host binary crates — the capsule is a different process tree.
+//! **Architecture Invariant:** T4.
+//! Entry point: [`daemon`] — capsule daemon module the binary runs.
 
 pub mod agent_status;
 pub(crate) mod alloc_telemetry;
