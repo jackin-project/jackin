@@ -51,7 +51,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
-| [019](019-slice-index-lints-pure-crates.md) | Slice/index panic-coverage lints on the 4 pure crates (wave 1) | 1 | P1 | M-L | TODO |
+| [019](019-slice-index-lints-pure-crates.md) | Slice/index panic-coverage lints on the 4 pure crates (wave 1) | 1 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; `#![deny]` on protocol/config/manifest/core + clippy.toml valves; ≥3 malformed decode tests) |
 | [020](020-container-path-chokepoint-policy.md) | Container-path chokepoint + executable `/jackin/`-only policy | 3 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; chokepoint + gate + shrink-only allowlist) |
 | [021](021-protocol-missing-docs-typed-errors.md) | `missing_docs` on jackin-protocol + typed clipboard wire error | 1/2 | P2 | M | TODO |
 | [022](022-ci-lanes-powerset-canary-partitions.md) | Scoped powerset PR gate, beta clippy canary, `xtask ci --only` partitions | 1/4 | P2 | M | TODO |
@@ -100,7 +100,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [045](045-protocol-env-corpus-closure.md) | Corpus closure: protocol goldens + capability-skew, term fuzz seeds, env fuzz, unknown-field assert | 3 | P2 | M | TODO |
 | [046](046-dind-chaos-lane.md) | Scheduled dind-E2E chaos variant (seeded faults; survival invariants) | 3 | P2 | M | TODO |
 | [047](047-maintainability-lint-census.md) | Census the 7 allowed maintainability lints; deny quiet ones, document noisy ones | 1 | P2 | S-M | TODO |
-| [048](048-advisory-lanes-wave-2.md) | Advisory lanes wave 2: hyperfine cold-start, rust-analyzer clean, build-time measurement | 4/6 | P3 | S-M | IN PROGRESS (operator-run external agent) |
+| [048](048-advisory-lanes-wave-2.md) | Advisory lanes wave 2: hyperfine cold-start, rust-analyzer clean, build-time measurement | 4/6 | P3 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; hygiene jobs cold-start-bench / rust-analyzer-clean / build-time-measure + artifacts; advisory only) |
 | [049](049-crate-readme-fumadocs-pipeline.md) | Crate-README → Fumadocs generated section; slim PROJECT_STRUCTURE.md | 5 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; residual: `repo-link-check` CI job runs without `bun run build`, so it never sees generated pages — add the generator step to that job) |
 | [050](050-readme-freshness-gate.md) | README-freshness gate (structural src change ⇒ README touched same PR) | 5 | P2 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; advisory CI first) |
 | [051](051-xtask-gate-reporter-core.md) | Machine-readable gate output core (human\|json\|github reporter; 2 exemplar gates) | 6 | P2 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; remaining gates = mechanical rollout) |
@@ -292,7 +292,7 @@ Real gaps measured by the phase audit, deliberately not planned this wave (large
 ### Phase 5/6 (docs/navigation)
 
 - ~~Documented-command drift gate~~ → **planned as [023](023-docs-command-drift-gate.md)**. The config-key half of roadmap item 11 (docs tables ↔ schema artifacts) remains deferred.
-- ~~Crate-README→Fumadocs extraction pipeline + PROJECT_STRUCTURE slim~~ → **shipped as [049](049-crate-readme-fumadocs-pipeline.md)**; full Codebase-Map slimming follows as a later pass. ~~README freshness-vs-diff CI check~~ → **shipped as [050](050-readme-freshness-gate.md)** (advisory CI first; presence gate stays in 015). ~~rust-analyzer cleanliness lane~~ → **planned as [048](048-advisory-lanes-wave-2.md)**. ~~Machine-readable gate output~~ → core reporter + 2 exemplar gates **planned as [051](051-xtask-gate-reporter-core.md)**; per-gate rollout = mechanical follow-ups.
+- ~~Crate-README→Fumadocs extraction pipeline + PROJECT_STRUCTURE slim~~ → **shipped as [049](049-crate-readme-fumadocs-pipeline.md)**; full Codebase-Map slimming follows as a later pass. ~~README freshness-vs-diff CI check~~ → **planned as [050](050-readme-freshness-gate.md)** (presence gate stays in 015). ~~rust-analyzer cleanliness lane~~ → **planned as [048](048-advisory-lanes-wave-2.md)**. ~~Machine-readable gate output~~ → core reporter + 2 exemplar gates **planned as [051](051-xtask-gate-reporter-core.md)**; per-gate rollout = mechanical follow-ups.
 
 ### Phase 7/8 (loop/telemetry)
 

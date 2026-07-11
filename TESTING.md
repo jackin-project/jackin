@@ -115,3 +115,12 @@ Does not apply to:
 
 - Inspection commands operator runs (`pgrep`, `pmset`, `cat`, `ls`) — not `jackin` invocations.
 - Production recommendations or scripted automation (debug output too noisy).
+
+## Advisory measurement lanes (hygiene schedule)
+
+| Lane | Job | Artifact | Gate? |
+|---|---|---|---|
+| Cold-start hyperfine | `cold-start-bench` | `cold-start.json` (`jackin --help`, `jackin console --help`) | advisory — no PR gate |
+| rust-analyzer clean | `rust-analyzer-clean` | `ra-stats.txt` | advisory — `continue-on-error` on error grep |
+| Per-crate build times | `build-time-measure` | `build-times.json` (5 crates × clean/incremental) | advisory — no PR gate |
+
