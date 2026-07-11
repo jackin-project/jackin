@@ -387,7 +387,7 @@ count = 1
 [[expect]]
 lint = "clippy::print_stdout"
 crate = "jackin-xtask"
-count = 26
+count = 27
 
 [[expect]]
 lint = "clippy::too_many_lines"
