@@ -71,11 +71,14 @@ When you load an agent with the example above in `big-monorepo`:
 
 ## Reserved names
 
-A small set of names is owned by the jackin❯ runtime and cannot be set from any scope:
+These names are owned by the jackin❯ runtime and are rejected if set from any operator env scope (global, role, workspace, or workspace × role):
 
 - `JACKIN`
 - `JACKIN_DIND_HOSTNAME`
+- `JACKIN_CONTAINER_NAME`
+- `JACKIN_INSTANCE_ID`
 - `JACKIN_AGENT`
+- `JACKIN_AGENT_CODENAME`
 - `JACKIN_ROLE`
 - `JACKIN_WORKDIR`
 - `JACKIN_GIT_COAUTHOR_TRAILER`
@@ -84,6 +87,11 @@ A small set of names is owned by the jackin❯ runtime and cannot be set from an
 - `DOCKER_TLS_VERIFY`
 - `DOCKER_CERT_PATH`
 - `TESTCONTAINERS_HOST_OVERRIDE`
+- `JACKIN_NETWORK_MODE`
+- `JACKIN_ALLOWED_HOSTS`
+- `JACKIN_FIREWALL_INSTALLED`
+- `JACKIN_NETWORK_ENFORCEMENT`
+- `JACKIN_SUDO`
 
 Trying to set one of these is rejected before the agent launches.
 

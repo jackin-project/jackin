@@ -42,7 +42,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [012](012-tier-graph-arch-gate.md) | Tier-graph arch gate (replaces empty forbidden-edge list) | 2 | P1 | M-L | TODO |
 | [013](013-test-infra-flakes-fuzz-idempotence.md) | Flake detection, timing artifacts, migration idempotence, parser fuzz | 3 | P2 | M-L | TODO |
 | [014](014-hot-path-bench-coverage.md) | Compile-check all benches; cover 4 unbenchmarked hot paths; measured lane | 4 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; partial — residuals in PERF-benches-missing) |
-| [015](015-docs-gates-brand-specs-readme.md) | Brand-prose lint, spec↔test citations, README presence gate | 5 | P2 | M | IN PROGRESS (halted 2026-07-10; partial @ `exec-plan-015` `4b06680f0`, local-only — push blocked by workflow scope) |
+| [015](015-docs-gates-brand-specs-readme.md) | Brand-prose lint, spec↔test citations, README presence gate | 5 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; freshness-vs-diff residual stays with [050](050-readme-freshness-gate.md)) |
 | [016](016-ownership-headers-blame-revs.md) | Ownership headers everywhere + headers gate + blame-ignore-revs | 6 | P2 | M | TODO |
 | [017](017-unified-ratchet-engine.md) | Unified ratchet engine (`ratchet.toml`) + defect→gate ledger | 7 | P2 | L | TODO |
 | [018](018-telemetry-drift-proofing.md) | One OTLP builder, semconv registry, correlatable sinks, honest failures | 8 | P2 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; shared `build_otlp_providers`, `otel_metrics`/`otel_events` registry, OTel hex JSONL ids + capsule context banner, `expected_shutdown` outcome, backend-query failure rows; 041/042/043 mint from its registry/builder) |
@@ -253,7 +253,7 @@ High-value findings that are real but were not turned into first-wave plans (lar
 
 ### Docs (concrete drift — sizes the planned freshness/drift gates)
 
-- ~~DOCS-codebase-map, DOCS-capsule-readme, DOCS-reserved-env, DOCS-readme-deadlinks, DOCS-apple-status-drift~~ → **all five planned as [029](029-docs-drift-reconciliation.md)** (re-verified at `c856acc9d`: README:77 dead links present; index.mdx:93 still claims dispatch open; capsule README still 711 bytes; reserved list now 20 entries; the operator env-vars page was NOT found at the cited `guides/environment-variables.mdx` path — 029 locates it first and STOPs if it no longer exists).
+- ~~DOCS-codebase-map, DOCS-capsule-readme, DOCS-reserved-env, DOCS-readme-deadlinks, DOCS-apple-status-drift~~ → **all five shipped as [029](029-docs-drift-reconciliation.md)** (in-tree; reserved list is 19 names — `JACKIN_OPEN_LINKS` is deliberately settable and not in the reserved table).
 
 ## Second-wave deferred findings (2026-07-09 audit against `47dd5fca0` — recorded so they aren't re-audited)
 
