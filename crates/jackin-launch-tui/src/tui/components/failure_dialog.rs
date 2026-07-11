@@ -52,6 +52,14 @@ pub fn failure_popup_rows(failure: &LaunchFailure, run_id: &str) -> Vec<FailureP
             copy_target: Some(FailureCopyTarget::DiagnosticsPath),
         });
     }
+    if let Some(query) = jackin_diagnostics::backend_query_hint(run_id) {
+        rows.push(FailurePopupRow {
+            label: "backend query",
+            value: query,
+            copy_target: None,
+            href: None,
+        });
+    }
     if let Some(path) = &failure.command_output_path {
         let value = path.display().to_string();
         rows.push(FailurePopupRow {

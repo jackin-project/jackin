@@ -419,6 +419,14 @@ pub(super) async fn reconnect_or_create_session_with_focus(
             Some("error")
         },
     );
+    if outcome.is_ok()
+        && let Some(run) = jackin_diagnostics::active_run()
+    {
+        run.compact(
+            jackin_diagnostics::otel_events::SESSION_DETACH,
+            "operator detached from capsule session",
+        );
+    }
     // The capsule has detached; re-claim the alt screen before any post-attach
     // work so the exit flow does not flash the operator's shell.
     jackin_diagnostics::reassert_alt_screen();
@@ -612,6 +620,14 @@ pub async fn spawn_shell_session(
             Some("error")
         },
     );
+    if result.is_ok()
+        && let Some(run) = jackin_diagnostics::active_run()
+    {
+        run.compact(
+            jackin_diagnostics::otel_events::SESSION_DETACH,
+            "operator detached from shell session",
+        );
+    }
     jackin_diagnostics::reassert_alt_screen();
     eprintln!();
     result?;
@@ -731,6 +747,14 @@ pub async fn spawn_agent_session(
             Some("error")
         },
     );
+    if result.is_ok()
+        && let Some(run) = jackin_diagnostics::active_run()
+    {
+        run.compact(
+            jackin_diagnostics::otel_events::SESSION_DETACH,
+            "operator detached from agent session",
+        );
+    }
     jackin_diagnostics::reassert_alt_screen();
     eprintln!();
     result?;

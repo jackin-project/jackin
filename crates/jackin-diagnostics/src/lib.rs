@@ -30,9 +30,9 @@ pub use logging::{
     set_config_telemetry, set_debug_mode, telemetry_level,
 };
 pub use observability::{
-    ContainerOtlp, configured_endpoint, configured_endpoint_summary, container_otlp,
-    init_capsule_tracing, init_tracing, otel_keys, shutdown_capsule_tracing,
-    unsupported_otlp_protocol,
+    ContainerOtlp, backend_query_hint, configured_endpoint, configured_endpoint_summary,
+    container_otlp, init_capsule_tracing, init_tracing, otel_events, otel_keys, otel_metrics,
+    shutdown_capsule_tracing, unsupported_otlp_protocol,
 };
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,

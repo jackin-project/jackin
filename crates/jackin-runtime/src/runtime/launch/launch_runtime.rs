@@ -1152,6 +1152,12 @@ pub(crate) async fn launch_role_runtime(
             "clean container exit for {container_name}; proceeding to finalize \
              (attach shutdown detail: {attach_detail})"
         );
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.compact(
+                jackin_diagnostics::otel_events::CLEAN_SHUTDOWN,
+                &format!("container {container_name} exited cleanly after session"),
+            );
+        }
     }
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(crate::runtime::progress::LaunchStage::Hardline, "open");

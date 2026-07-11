@@ -45,7 +45,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [015](015-docs-gates-brand-specs-readme.md) | Brand-prose lint, spec↔test citations, README presence gate | 5 | P2 | M | IN PROGRESS (halted 2026-07-10; partial @ `exec-plan-015` `4b06680f0`, local-only — push blocked by workflow scope) |
 | [016](016-ownership-headers-blame-revs.md) | Ownership headers everywhere + headers gate + blame-ignore-revs | 6 | P2 | M | TODO |
 | [017](017-unified-ratchet-engine.md) | Unified ratchet engine (`ratchet.toml`) + defect→gate ledger | 7 | P2 | L | TODO |
-| [018](018-telemetry-drift-proofing.md) | One OTLP builder, semconv registry, correlatable sinks, honest failures | 8 | P2 | M-L | DONE (reviewed; `exec-plan-018` @ `6dff94ce1`, unmerged — 041/042/043 mint from its registry/builder, so merge 018 before dispatching the telemetry wave) |
+| [018](018-telemetry-drift-proofing.md) | One OTLP builder, semconv registry, correlatable sinks, honest failures | 8 | P2 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; shared `build_otlp_providers`, `otel_metrics`/`otel_events` registry, OTel hex JSONL ids + capsule context banner, `expected_shutdown` outcome, backend-query failure rows; 041/042/043 mint from its registry/builder) |
 
 ### Third wave — promoted deferred findings
 
@@ -71,7 +71,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
 | [028](028-dependency-hygiene-sweep.md) | Dependency hygiene: turso store boundary, ring exception, pin rationale | 1 | P3 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; turso chokepoint in jackin-usage `store_backend`; ring@0.17.14 exception dropped; five runtime pins annotated. Residual: `crates/jackin/src/cli/usage/store.rs` still imports turso directly — host-crate follow-up) |
-| [029](029-docs-drift-reconciliation.md) | Docs drift: README links, Apple status, reserved envs, capsule README, codebase map | 5 | P3 | M | DONE (reviewed; `exec-plan-029` @ `f5122448e`, unmerged; reserved list is 19 names — plan's 20 overcounted `JACKIN_OPEN_LINKS`, which is deliberately settable) |
+| [029](029-docs-drift-reconciliation.md) | Docs drift: README links, Apple status, reserved envs, capsule README, codebase map | 5 | P3 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; reserved list is 19 names — plan's 20 overcounted `JACKIN_OPEN_LINKS`, which is deliberately settable) |
 | [030](030-console-view-model-structs.md) | Console editor/settings view-model structs (kills the 42-site type_complexity cluster) | 2 | P2 | M-L | TODO |
 | [031](031-op-probe-typed-error.md) | Typed `op` probe errors (`OpProbeError` in jackin-core; downcast classification) | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; enum in jackin-core; env constructs typed sources; oppicker downcasts first, substring fallback retained) |
 | [032](032-daemon-console-behavioral-specs.md) | Behavioral specs: capsule daemon + operator console (cite-or-MISSING) | 3 | P2 | M-L | TODO |

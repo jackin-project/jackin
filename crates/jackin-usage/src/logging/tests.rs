@@ -17,3 +17,19 @@ fn rotates_oversized_multiplexer_log() {
         "rotation should move the oversized live log before init reopens it"
     );
 }
+
+#[test]
+fn context_banner_line_format_is_joinable() {
+    // The banner is the offline join key: run_id + session_id + traceparent.
+    // Format is load-bearing for operators grepping a pasted tail.
+    let run_id = "abc123";
+    let session_id = "sess-9";
+    let traceparent = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01";
+    let line = format!(
+        "[jackin-capsule] context run_id={run_id} session_id={session_id} traceparent={traceparent}"
+    );
+    assert!(line.contains("run_id=abc123"));
+    assert!(line.contains("session_id=sess-9"));
+    assert!(line.contains("traceparent=00-"));
+}
+

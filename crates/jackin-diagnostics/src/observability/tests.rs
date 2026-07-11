@@ -1,6 +1,74 @@
 //! Tests for observability setup.
 
 use super::rewrite_endpoint_for_container;
+use super::{event_taxonomy, otel_events, otel_metrics};
+
+#[test]
+fn semconv_registry_metric_names_are_stable_wire_strings() {
+    // Completeness: every const is non-empty, unique, and matches the known
+    // wire names (centralization only — never renames).
+    let expected = [
+        "process.cpu.utilization",
+        "process.memory.usage",
+        "tokio.runtime.workers",
+        "tokio.runtime.alive.tasks",
+        "tokio.runtime.global.queue.depth",
+        "jackin.diagnostics.events",
+        "jackin.cache.hits",
+        "jackin.cache.misses",
+    ];
+    assert_eq!(otel_metrics::ALL.len(), expected.len());
+    for (got, want) in otel_metrics::ALL.iter().zip(expected) {
+        assert_eq!(*got, want);
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for name in otel_metrics::ALL {
+        assert!(!name.is_empty());
+        assert!(seen.insert(*name), "duplicate metric name {name}");
+    }
+}
+
+#[test]
+fn semconv_registry_event_kinds_are_stable_wire_strings() {
+    let mut seen = std::collections::BTreeSet::new();
+    for kind in otel_events::ALL {
+        assert!(!kind.is_empty());
+        assert!(
+            !kind.contains('.'),
+            "event kinds use underscores on the wire: {kind}"
+        );
+        assert!(seen.insert(*kind), "duplicate event kind {kind}");
+    }
+    assert!(otel_events::ALL.contains(&otel_events::SESSION_DETACH));
+    assert!(otel_events::ALL.contains(&otel_events::CLEAN_SHUTDOWN));
+}
+
+#[test]
+fn session_detach_outcome_is_expected_shutdown_not_failure() {
+    let taxonomy = event_taxonomy(
+        otel_events::SESSION_DETACH,
+        "operator detached",
+        None,
+        None,
+        None,
+        "INFO",
+    );
+    assert_eq!(taxonomy.outcome, "expected_shutdown");
+    assert_ne!(taxonomy.outcome, "failure");
+}
+
+#[test]
+fn clean_shutdown_outcome_is_expected_shutdown() {
+    let taxonomy = event_taxonomy(
+        otel_events::CLEAN_SHUTDOWN,
+        "container exited cleanly",
+        None,
+        None,
+        None,
+        "INFO",
+    );
+    assert_eq!(taxonomy.outcome, "expected_shutdown");
+}
 
 #[test]
 fn loopback_is_rewritten_to_host_gateway() {

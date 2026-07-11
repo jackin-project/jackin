@@ -19,6 +19,7 @@
 - **Depends on**: none
 - **Category**: tech-debt
 - **Planned at**: commit `47dd5fca0`, 2026-07-09
+- **Status**: DONE (in-tree on `chore/rust-code-health-roadmap`, 2026-07-11)
 
 ## Why this matters
 

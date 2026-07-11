@@ -142,6 +142,28 @@ pub fn init() {
             "{ts} ---- multiplexer start pid={pid} debug={debug} trace={trace} path={} ----",
             path.display()
         );
+        // One context banner makes the file joinable offline to the host run /
+        // OTLP timeline. Per-line stamping is deliberately out (volume).
+        let (run_id, session_id, traceparent) = crate::telemetry::session_context().map_or_else(
+            || {
+                (
+                    std::env::var("JACKIN_RUN_ID").unwrap_or_else(|_| "-".to_owned()),
+                    "-".to_owned(),
+                    std::env::var("TRACEPARENT").unwrap_or_else(|_| "-".to_owned()),
+                )
+            },
+            |(session_id, run_id, traceparent)| {
+                (
+                    run_id.unwrap_or_else(|| "-".to_owned()),
+                    session_id,
+                    traceparent.unwrap_or_else(|| "-".to_owned()),
+                )
+            },
+        );
+        let _unused = writeln!(
+            f,
+            "{ts} [jackin-capsule] context run_id={run_id} session_id={session_id} traceparent={traceparent}"
+        );
     }
     drop(LOG_FILE.set(Mutex::new(file)));
     let () = PANIC_HOOK_INSTALLED.get_or_init(|| {

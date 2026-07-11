@@ -630,3 +630,57 @@ fn format_parse_traceparent_roundtrip() {
     assert!(parse_traceparent(&format!("00-{trace_id}-{span_id}-01-extra")).is_none());
     assert!(parse_traceparent(&format!("00-not-hex-{span_id}-01")).is_none());
 }
+
+#[test]
+fn jsonl_trace_id_matches_in_memory_exporter() {
+    // With the OTLP test subscriber installed, a JSONL event written under an
+    // active span must carry the same 32-hex/16-hex ids the in-memory exporter
+    // records for that span (the Step 3 joinability contract).
+    let (export, subscriber) = test_layers(false, "run-jsonl-corr");
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = JackinPaths::for_tests(tmp.path());
+    let mut jsonl_trace = String::new();
+    let mut jsonl_span = String::new();
+    tracing::subscriber::with_default(subscriber, || {
+        let run = crate::RunDiagnostics::start(&paths, true, "load").unwrap();
+        assert!(run.persists(), "file sink must be on for the JSONL assertion");
+        let span = tracing::info_span!("correlation_probe");
+        {
+            let _entered = span.enter();
+            run.compact("breadcrumb", "correlate me");
+            run.flush_writer();
+        }
+        drop(span);
+        let contents = std::fs::read_to_string(run.path()).unwrap();
+        let line = contents
+            .lines()
+            .find(|line| line.contains("correlate me"))
+            .expect("breadcrumb JSONL line");
+        let event: serde_json::Value = serde_json::from_str(line).unwrap();
+        jsonl_trace = event["trace_id"].as_str().unwrap().to_owned();
+        jsonl_span = event["span_id"].as_str().unwrap().to_owned();
+    });
+    export.tracer_provider.force_flush().unwrap();
+    let spans = export.spans.get_finished_spans().unwrap();
+    let span = spans
+        .iter()
+        .find(|span| span.name.as_ref() == "correlation_probe")
+        .expect("correlation_probe span exported");
+    assert_eq!(
+        jsonl_trace,
+        span.span_context.trace_id().to_string(),
+        "JSONL trace_id must match the exporter's OTel hex trace id"
+    );
+    assert_eq!(
+        jsonl_span,
+        span.span_context.span_id().to_string(),
+        "JSONL span_id must match the exporter's OTel hex span id"
+    );
+    assert_eq!(jsonl_trace.len(), 32);
+    assert_eq!(jsonl_span.len(), 16);
+    assert!(
+        jsonl_trace.chars().all(|c| c.is_ascii_hexdigit()),
+        "trace_id must be hex: {jsonl_trace}"
+    );
+}
+
