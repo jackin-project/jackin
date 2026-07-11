@@ -425,7 +425,7 @@ fn materialized_usage_accounts_write_normalized_snapshots() {
     view.focused_agent = Some("codex".to_owned());
     view.status_bar_label = "Codex Session: 63% used · 37% left".to_owned();
 
-    write_materialized_usage_accounts(&path, 456, vec![view]).expect("write accounts");
+    write_materialized_usage_accounts(&path, 456, &[&view]).expect("write accounts");
 
     let body = fs::read_to_string(&path).expect("accounts json");
     let decoded: MaterializedUsageAccounts = serde_json::from_str(&body).expect("decode accounts");

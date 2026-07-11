@@ -525,15 +525,12 @@ impl UsageCache {
     }
 
     pub(crate) fn materialize_accounts(&self, generated_at_epoch: i64) -> Result<(), String> {
-        let snapshots = self
-            .snapshots
-            .values()
-            .map(|cached| cached.view.clone())
-            .collect::<Vec<_>>();
+        let snapshots: Vec<&FocusedUsageView> =
+            self.snapshots.values().map(|cached| &cached.view).collect();
         write_materialized_usage_accounts(
             Path::new(MATERIALIZED_USAGE_ACCOUNTS_PATH),
             generated_at_epoch,
-            snapshots,
+            &snapshots,
         )
     }
 }

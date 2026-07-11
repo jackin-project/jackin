@@ -379,18 +379,33 @@ pub(crate) fn usage_backoff_delay(base: Duration, failures: u32) -> Duration {
     Duration::from_secs(base.as_secs().saturating_mul(multiplier)).min(USAGE_REFRESH_BACKOFF_CAP)
 }
 
+/// Owned document shape for reading materialized accounts JSON (tests + any
+/// future consumers). Write path serializes via `MaterializedUsageAccountsRef`.
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "owned Deserialize twin; write path uses MaterializedUsageAccountsRef"
+    )
+)]
 pub(crate) struct MaterializedUsageAccounts {
     pub(crate) generated_at_epoch: i64,
     pub(crate) snapshots: Vec<FocusedUsageView>,
 }
 
+#[derive(Serialize)]
+struct MaterializedUsageAccountsRef<'a> {
+    generated_at_epoch: i64,
+    snapshots: &'a [&'a FocusedUsageView],
+}
+
 pub(crate) fn write_materialized_usage_accounts(
     path: &Path,
     generated_at_epoch: i64,
-    snapshots: Vec<FocusedUsageView>,
+    snapshots: &[&FocusedUsageView],
 ) -> Result<(), String> {
-    let document = MaterializedUsageAccounts {
+    let document = MaterializedUsageAccountsRef {
         generated_at_epoch,
         snapshots,
     };
