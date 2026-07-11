@@ -1422,7 +1422,7 @@ fn normalize_taxonomy_value(value: &str) -> String {
 
 /// Correlation ids for a JSONL record.
 ///
-/// When the active tracing span has a valid OTel context (OTLP installed and a
+/// When the active tracing span has a valid `OTel` context (OTLP installed and a
 /// span entered), returns the real 32-hex trace id and 16-hex span id. Otherwise
 /// falls back to `run_id` as `trace_id` (schema stability for offline file-only
 /// mode and historical fixtures) and the optional tracing-registry span id.
@@ -1474,11 +1474,11 @@ fn emit_jsonl_event_with_level(
             JsonlEventLevel::Error => "ERROR",
         },
     );
-    // Prefer OTel hex ids; fall back to the tracing-registry u64 for file-only.
+    // Prefer OTel hex ids inside record_direct; fall back to the tracing-registry
+    // u64 span id for file-only mode.
     let fallback_span_id = tracing::Span::current()
         .id()
         .map(|id| id.into_u64().to_string());
-    let (trace_id, span_id) = correlation_ids(run_id, fallback_span_id.as_deref());
     let run = crate::run::run_by_id(run_id).or_else(crate::active_run);
     if let Some(run) = run {
         run.record_from_layer(
@@ -1486,8 +1486,7 @@ fn emit_jsonl_event_with_level(
             message.as_ref(),
             stage,
             detail,
-            Some(trace_id.as_str()),
-            span_id.as_deref(),
+            fallback_span_id.as_deref(),
             if kind == otel_events::DEBUG && !matches!(level, JsonlEventLevel::Error) {
                 "DEBUG"
             } else {

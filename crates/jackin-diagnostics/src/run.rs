@@ -129,12 +129,12 @@ impl Drop for ActiveRunGuard {
 struct JsonEvent<'a> {
     ts_ms: u128,
     run_id: &'a str,
-    /// OTel 32-hex trace id when an OTLP span is active; otherwise the run id
+    /// `OTel` 32-hex trace id when an OTLP span is active; otherwise the run id
     /// (file-only / offline fallback so the field stays non-empty for schema
     /// stability — not joinable to an OTLP backend in that mode).
     trace_id: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    /// OTel 16-hex span id when an OTLP span is active; otherwise the
+    /// `OTel` 16-hex span id when an OTLP span is active; otherwise the
     /// tracing-registry u64 string when a span is entered.
     span_id: Option<&'a str>,
     kind: &'a str,
@@ -775,11 +775,10 @@ impl RunDiagnostics {
         message: &str,
         stage: Option<&str>,
         detail: Option<&str>,
-        trace_id: Option<&str>,
         span_id: Option<&str>,
         level: &str,
     ) {
-        self.record_direct(kind, message, stage, detail, trace_id, span_id, level);
+        self.record_direct(kind, message, stage, detail, span_id, level);
         self.flush_writer();
     }
 
@@ -794,14 +793,12 @@ impl RunDiagnostics {
     /// Only the first is announced; the rest are silent to avoid 5-second spam.
     pub(crate) fn record_otlp_internal(&self, level: &str, message: &str) {
         let first = !self.otlp_internal_notified.swap(true, Ordering::Relaxed);
-        let (trace_id, span_id) = crate::observability::correlation_ids(&self.run_id, None);
         self.record_direct(
             crate::observability::otel_events::OTLP_INTERNAL,
             message,
             None,
             Some(level),
-            Some(trace_id.as_str()),
-            span_id.as_deref(),
+            None,
             level,
         );
         if first {
@@ -822,8 +819,7 @@ impl RunDiagnostics {
         message: &str,
         stage: Option<&str>,
         detail: Option<&str>,
-        trace_id: Option<&str>,
-        span_id: Option<&str>,
+        fallback_span_id: Option<&str>,
         level: &str,
     ) {
         self.record_metrics(kind);
@@ -834,13 +830,9 @@ impl RunDiagnostics {
         };
         let taxonomy =
             crate::observability::event_taxonomy(kind, message, stage, detail, None, level);
-        // Prefer caller-supplied correlation ids (from the emit path's OTel
-        // lookup); fall back to re-resolving if a direct caller omitted them.
-        let (owned_trace, owned_span) = if let Some(trace) = trace_id {
-            (trace.to_owned(), span_id.map(str::to_owned))
-        } else {
-            crate::observability::correlation_ids(&self.run_id, span_id)
-        };
+        // Prefer live OTel hex ids; fall back to run_id + tracing-registry span.
+        let (owned_trace, owned_span) =
+            crate::observability::correlation_ids(&self.run_id, fallback_span_id);
         let event = JsonEvent {
             ts_ms: now_ms(),
             run_id: &self.run_id,
