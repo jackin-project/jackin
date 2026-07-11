@@ -261,7 +261,8 @@ pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<bool> {
 /// fallback needs. Only the otlp build reaches this (the failed-exporter path).
 #[cfg(feature = "otlp")]
 fn install_jsonl_only() {
-    let _ =        tracing_subscriber::registry()
+    drop(
+        tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
             .try_init(),
     );
@@ -834,11 +835,18 @@ mod otlp {
         // Scope the export to jackin❯'s own telemetry. Dependency-internal
         // spans/logs stay out of OTLP unless the operator asks for them with
         // `JACKIN_OTEL_INTERNAL=1`.
-        let directive = export_filter_directive(export_level(debug));
+        let span_directive = export_filter_directive(export_level_for(
+            crate::TelemetrySink::OtlpSpans,
+            debug,
+        ));
+        let log_directive = export_filter_directive(export_level_for(
+            crate::TelemetrySink::OtlpLogs,
+            debug,
+        ));
         let installed = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
-            .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
-            .with(log_layer.with_filter(EnvFilter::new(directive)))
+            .with(span_layer.with_filter(EnvFilter::new(span_directive)))
+            .with(log_layer.with_filter(EnvFilter::new(log_directive)))
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
         if installed.is_ok() {
@@ -891,7 +899,14 @@ mod otlp {
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
-        let directive = export_filter_directive(export_level(capsule_debug()));
+        let span_directive = export_filter_directive(export_level_for(
+            crate::TelemetrySink::OtlpSpans,
+            capsule_debug(),
+        ));
+        let log_directive = export_filter_directive(export_level_for(
+            crate::TelemetrySink::OtlpLogs,
+            capsule_debug(),
+        ));
         // Surface OTLP exporter/SDK diagnostics (export failures, refused
         // endpoint, gRPC errors) to the capsule's stderr — captured by
         // `docker logs` and mirrored into `multiplexer.log`. The OTLP span/log
@@ -907,8 +922,8 @@ mod otlp {
                 "off,opentelemetry=warn,opentelemetry_sdk=warn,opentelemetry_otlp=warn",
             ));
         let installed = tracing_subscriber::registry()
-            .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
-            .with(log_layer.with_filter(EnvFilter::new(directive)))
+            .with(span_layer.with_filter(EnvFilter::new(span_directive)))
+            .with(log_layer.with_filter(EnvFilter::new(log_directive)))
             .with(otlp_diag_layer)
             .try_init()
             .map_err(|e| anyhow::anyhow!("tracing subscriber already installed: {e}"));
@@ -973,12 +988,8 @@ mod otlp {
         )
     }
 
-    fn export_level(debug: bool) -> &'static str {
-        match crate::telemetry_level(debug) {
-            crate::TelemetryLevel::Info => "info",
-            crate::TelemetryLevel::Debug => "debug",
-            crate::TelemetryLevel::Trace => "trace",
-        }
+    fn export_level_for(sink: crate::TelemetrySink, debug: bool) -> &'static str {
+        crate::telemetry_level_name(crate::sink_level(sink, debug))
     }
 
     fn export_filter_directive_with_internal(level: &str, internal: bool) -> String {
@@ -1023,11 +1034,18 @@ mod otlp {
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
-        let directive = export_filter_directive(export_level(debug));
+        let span_directive = export_filter_directive(export_level_for(
+            crate::TelemetrySink::OtlpSpans,
+            debug,
+        ));
+        let log_directive = export_filter_directive(export_level_for(
+            crate::TelemetrySink::OtlpLogs,
+            debug,
+        ));
         let subscriber = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
-            .with(span_layer.with_filter(EnvFilter::new(directive.clone())))
-            .with(log_layer.with_filter(EnvFilter::new(directive)));
+            .with(span_layer.with_filter(EnvFilter::new(span_directive)))
+            .with(log_layer.with_filter(EnvFilter::new(log_directive)));
 
         (
             TestExport {
@@ -1162,8 +1180,7 @@ mod otlp {
                 cached: None,
             }));
             let cpu_sampler = std::sync::Arc::clone(&sampler);
-            drop(
-                meter
+            let _ = meter
                     // semconv: process.cpu.utilization, unit "1", 0..1 fraction
                     // of the CPUs available to the process.
                     .f64_observable_gauge(super::otel_metrics::PROCESS_CPU_UTILIZATION)
@@ -1178,8 +1195,8 @@ mod otlp {
                             observer.observe(f64::from(cpu_percent) / 100.0 / cpu_count, &[]);
                         }
                     })
-    .build();
-            let _ =                meter
+                    .build();
+            let _ = meter
                     // semconv: process.memory.usage is an UpDownCounter (rises
                     // and falls), not a gauge.
                     .i64_observable_up_down_counter(super::otel_metrics::PROCESS_MEMORY_USAGE)
@@ -1192,36 +1209,36 @@ mod otlp {
                             observer.observe(i64::try_from(memory_bytes).unwrap_or(i64::MAX), &[]);
                         }
                     })
-    .build();
+                    .build();
         }
 
         if let Some(handle) = app_handle {
             let workers = handle.clone();
-            let _ =                meter
+            let _ = meter
                     .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_WORKERS)
                     .with_description("Worker threads driving the tokio runtime")
                     .with_callback(move |observer| {
                         observer.observe(workers.metrics().num_workers() as u64, &[]);
                     })
-    .build();
+                    .build();
             let alive = handle.clone();
-            let _ =                meter
+            let _ = meter
                     .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_ALIVE_TASKS)
                     .with_description("Tasks currently alive in the tokio runtime")
                     .with_callback(move |observer| {
                         observer.observe(alive.metrics().num_alive_tasks() as u64, &[]);
                     })
-    .build();
-            let _ =                meter
+                    .build();
+            let _ = meter
                     .u64_observable_gauge(super::otel_metrics::TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH)
                     .with_description("Tasks waiting in the tokio runtime's global queue")
                     .with_callback(move |observer| {
                         observer.observe(handle.metrics().global_queue_depth() as u64, &[]);
                     })
-    .build();
+                    .build();
         }
 
-        let _ =            meter
+        let _ = meter
                 .u64_observable_counter(super::otel_metrics::JACKIN_DIAGNOSTICS_EVENTS)
                 .with_description("Diagnostics events recorded during the active jackin run")
                 .with_callback(|observer| {
@@ -1233,8 +1250,8 @@ mod otlp {
                         observer.observe(count, &[KeyValue::new("kind", kind)]);
                     }
                 })
-    .build();
-        let _ =            meter
+                .build();
+        let _ = meter
                 .u64_observable_counter(super::otel_metrics::JACKIN_CACHE_HITS)
                 .with_description("Cache-hit diagnostics recorded during the active jackin run")
                 .with_callback(|observer| {
@@ -1242,8 +1259,8 @@ mod otlp {
                         observer.observe(run.domain_metrics_snapshot().cache_hits, &[]);
                     }
                 })
-    .build();
-        let _ =            meter
+                .build();
+        let _ = meter
                 .u64_observable_counter(super::otel_metrics::JACKIN_CACHE_MISSES)
                 .with_description("Cache-miss diagnostics recorded during the active jackin run")
                 .with_callback(|observer| {
@@ -1251,7 +1268,7 @@ mod otlp {
                         observer.observe(run.domain_metrics_snapshot().cache_misses, &[]);
                     }
                 })
-    .build();
+                .build();
 
         crate::metrics::install_hot_path(&meter);
 

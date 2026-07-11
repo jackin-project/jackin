@@ -1199,7 +1199,11 @@ pub(crate) fn debug_runtime_envs_for(
     if !debug {
         return Vec::new();
     }
-    let mut envs = vec!["JACKIN_DEBUG=1".to_owned()];
+    let mut envs = vec![
+        "JACKIN_DEBUG=1".to_owned(),
+        // Temporary dual-inject for capsule-image skew (plan 043 / DEPRECATED.md).
+        "JACKIN_TELEMETRY_LEVEL=debug".to_owned(),
+    ];
     if let Some(path) = diagnostics_path {
         envs.push(format!("JACKIN_RUN_DIAGNOSTICS_PATH={}", path.display()));
     }

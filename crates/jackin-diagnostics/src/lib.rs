@@ -26,9 +26,9 @@ pub fn install_debug_log_sink() {
 }
 
 pub use logging::{
-    TelemetryLevel, begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line,
+    TelemetryLevel, TelemetrySink, begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line,
     emit_debug_line, emit_operator_notice, end_debug_buffering, format_debug_line, is_debug_mode,
-    set_config_telemetry, set_debug_mode, telemetry_level,
+    set_config_telemetry, set_debug_mode, sink_level, telemetry_level, telemetry_level_name,
 };
 pub use observability::{
     ContainerOtlp, backend_query_hint, configured_endpoint, configured_endpoint_summary,

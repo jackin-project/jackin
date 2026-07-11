@@ -264,6 +264,8 @@ pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
         vec![("JACKIN_CAPSULE_FORCE_DAEMON".to_owned(), "1".to_owned())];
     if debug {
         env.push(("JACKIN_DEBUG".to_owned(), "1".to_owned()));
+        // Temporary dual-inject for capsule-image skew (plan 043 / DEPRECATED.md).
+        env.push(("JACKIN_TELEMETRY_LEVEL".to_owned(), "debug".to_owned()));
     }
     for (k, v) in env_pairs {
         if k == "JACKIN_CAPSULE_FORCE_DAEMON" || k == "JACKIN_DEBUG" {

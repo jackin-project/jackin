@@ -54,7 +54,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [019](019-slice-index-lints-pure-crates.md) | Slice/index panic-coverage lints on the 4 pure crates (wave 1) | 1 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; `#![deny]` on protocol/config/manifest/core + clippy.toml valves; ≥3 malformed decode tests) |
 | [020](020-container-path-chokepoint-policy.md) | Container-path chokepoint + executable `/jackin/`-only policy | 3 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; chokepoint + gate + shrink-only allowlist) |
 | [021](021-protocol-missing-docs-typed-errors.md) | `missing_docs` on jackin-protocol + typed clipboard wire error | 1/2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; `ClipboardImageError` enum + `#![deny(missing_docs)]`) |
-| [022](022-ci-lanes-powerset-canary-partitions.md) | Scoped powerset PR gate, beta clippy canary, `xtask ci --only` partitions | 1/4 | P2 | M | TODO |
+| [022](022-ci-lanes-powerset-canary-partitions.md) | Scoped powerset PR gate, beta clippy canary, `xtask ci --only` partitions | 1/4 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; scoped PR powerset + beta canary + `--only` partitions) |
 | [023](023-docs-command-drift-gate.md) | Documented-command drift gate (docs fences ↔ clap tree) | 5 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; research subtree excluded; docs corrected: `usage` workspace/session → accounts/verify, dropped unbuilt `--backend apple-container`, workspace create requires `--mount`. OPERATOR FLAGS retained: confirm usage scope regression vs intentional removal; revisit apple-container when backend ships) |
 
 ### Fourth wave — clock seam, test-support extraction, top perf fixes
@@ -82,7 +82,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 |------|-------|-------|----------|--------|--------|
 | [033](033-characterization-launch-displace-pty.md) | Characterization: launch-core teardown, client displace seams, PTY fault recovery | 2/3 | P1 | M-L | TODO |
 | [034](034-numeric-and-easy-lint-families.md) | Numeric + easy-to-avoid lint families (census: near-zero candidates; sign-loss fix wave) | 1 | P1 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; truncation/precision/wrap remain allow) |
-| [035](035-advisory-verification-lanes.md) | Scheduled advisory lanes: llvm-cov, Miri, ASan fuzz, cargo-mutants, hakari timing | 1 | P2 | M | TODO |
+| [035](035-advisory-verification-lanes.md) | Scheduled advisory lanes: llvm-cov, Miri, ASan fuzz, cargo-mutants, hakari timing | 1 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; hygiene coverage/miri/ASan/mutants/hakari jobs + mise pins) |
 | [036](036-process-boundary-xtask-cmd-and-timeout.md) | Process boundary: one xtask cmd module; `RunOptions.timeout` honored by ShellRunner | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 | [037](037-thiserror-foundational-core-env.md) | thiserror for jackin-core concrete errors + jackin-env resolution taxonomy | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; ParseProfileError/EnvCycleError/PathsError + OperatorEnvError/ResolveEnvError; port traits keep anyhow) |
 | [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | PARTIAL (type + `validate_workspace_file_stem` delegate landed with 020 scoop / persist; full mint/editor/instance/launch adoption residual — concurrent branch thrash) |
@@ -95,16 +95,16 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 |------|-------|-------|----------|--------|--------|
 | [041](041-telemetry-operation-facade.md) | Typed operation facade; collapse duplicate `debug_log!`; adopt at ShellRunner | 8 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; `operation_*` + ShellRunner; `debug_log!` collapsed to core port) |
 | [042](042-high-frequency-metrics.md) | High-frequency internals become metrics (9 instruments; firehose rows demoted) | 8 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; 9 instruments; send/render demoted; residuals db-statement + docker-inspect) |
-| [043](043-per-sink-filters-jackin-debug-retirement.md) | Per-sink telemetry filters; retire `JACKIN_DEBUG` to one alias shim | 8 | P2 | M | TODO |
+| [043](043-per-sink-filters-jackin-debug-retirement.md) | Per-sink telemetry filters; retire `JACKIN_DEBUG` to one alias shim | 8 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; per-sink levels + JACKIN_DEBUG alias shim; dual-inject temporary) |
 | [044](044-telemetry-conformance-lane.md) | Telemetry conformance suite (dossier acceptance checks as a permanent gate) + build-trace link | 8 | P2 | M | TODO |
 | [045](045-protocol-env-corpus-closure.md) | Corpus closure: protocol goldens + capability-skew, term fuzz seeds, env fuzz, unknown-field assert | 3 | P2 | M | TODO |
 | [046](046-dind-chaos-lane.md) | Scheduled dind-E2E chaos variant (seeded faults; survival invariants) | 3 | P2 | M | TODO |
-| [047](047-maintainability-lint-census.md) | Census the 7 allowed maintainability lints; deny quiet ones, document noisy ones | 1 | P2 | S-M | TODO |
-| [048](048-advisory-lanes-wave-2.md) | Advisory lanes wave 2: hyperfine cold-start, rust-analyzer clean, build-time measurement | 4/6 | P3 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; hygiene jobs cold-start-bench / rust-analyzer-clean / build-time-measure + artifacts; advisory only) |
+| [047](047-maintainability-lint-census.md) | Census the 7 allowed maintainability lints; deny quiet ones, document noisy ones | 1 | P2 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; census 2026-07: needless_pass_by_value=44 allow; large_futures=3, assigning_clones=7, match_same_arms=12, drop_non_drop=8, unused_self=1, unused_async=0 promoted warn) |
+| [048](048-advisory-lanes-wave-2.md) | Advisory lanes wave 2: hyperfine cold-start, rust-analyzer clean, build-time measurement | 4/6 | P3 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; cold-start-bench / rust-analyzer-clean / build-time-measure) |
 | [049](049-crate-readme-fumadocs-pipeline.md) | Crate-README → Fumadocs generated section; slim PROJECT_STRUCTURE.md | 5 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; residual: `repo-link-check` CI job runs without `bun run build`, so it never sees generated pages — add the generator step to that job) |
 | [050](050-readme-freshness-gate.md) | README-freshness gate (structural src change ⇒ README touched same PR) | 5 | P2 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; advisory CI first) |
 | [051](051-xtask-gate-reporter-core.md) | Machine-readable gate output core (human\|json\|github reporter; 2 exemplar gates) | 6 | P2 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; remaining gates = mechanical rollout) |
-| [052](052-dylint-scaffold-render-purity.md) | dylint scaffold: `crates/jackin-lints` + render-thread-purity lint, advisory nightly lane | 1 | P3 | M | TODO |
+| [052](052-dylint-scaffold-render-purity.md) | dylint scaffold: `crates/jackin-lints` + render-thread-purity lint, advisory nightly lane | 1 | P3 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; workspace-excluded lints crate + render_thread_purity + dylint-advisory) |
 | [053](053-tui-half-layer-spike.md) | TUI half-layer spike: prototype shared View dispatcher, finish-or-drop verdict | 2 | P3 | S-M | DONE (cherry-picked `f5015c9bc` onto `chore/rust-code-health-roadmap`) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
