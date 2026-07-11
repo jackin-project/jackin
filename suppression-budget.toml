@@ -6,7 +6,7 @@
 
 [[crate]]
 name = "jackin"
-bare_allow = 17
+bare_allow = 13
 
 [[crate]]
 name = "jackin-capsule"
@@ -30,7 +30,7 @@ bare_allow = 1
 
 [[crate]]
 name = "jackin-diagnostics"
-bare_allow = 6
+bare_allow = 7
 
 [[crate]]
 name = "jackin-docker"
@@ -92,7 +92,7 @@ count = 1
 [[expect]]
 lint = "and"
 crate = "jackin-xtask"
-count = 3
+count = 2
 
 [[expect]]
 lint = "before"
@@ -107,7 +107,7 @@ count = 1
 [[expect]]
 lint = "cargo"
 crate = "jackin-xtask"
-count = 3
+count = 2
 
 [[expect]]
 lint = "clippy::cast_sign_loss"
@@ -230,6 +230,11 @@ crate = "jackin-env"
 count = 1
 
 [[expect]]
+lint = "clippy::excessive_nesting"
+crate = "jackin-xtask"
+count = 1
+
+[[expect]]
 lint = "clippy::exit"
 crate = "jackin"
 count = 2
@@ -237,7 +242,7 @@ count = 2
 [[expect]]
 lint = "clippy::expect_used"
 crate = "jackin"
-count = 9
+count = 2
 
 [[expect]]
 lint = "clippy::expect_used"
@@ -253,6 +258,11 @@ count = 2
 lint = "clippy::expect_used"
 crate = "jackin-console-oppicker"
 count = 3
+
+[[expect]]
+lint = "clippy::expect_used"
+crate = "jackin-diagnostics"
+count = 1
 
 [[expect]]
 lint = "clippy::expect_used"
@@ -296,22 +306,12 @@ count = 1
 
 [[expect]]
 lint = "clippy::panic"
-crate = "jackin"
-count = 5
-
-[[expect]]
-lint = "clippy::panic"
 crate = "jackin-capsule"
 count = 1
 
 [[expect]]
 lint = "clippy::panic"
 crate = "jackin-config"
-count = 1
-
-[[expect]]
-lint = "clippy::panic"
-crate = "jackin-protocol"
 count = 1
 
 [[expect]]
@@ -390,6 +390,16 @@ crate = "jackin-xtask"
 count = 27
 
 [[expect]]
+lint = "clippy::reversed_empty_ranges"
+crate = "jackin-capsule"
+count = 1
+
+[[expect]]
+lint = "clippy::too_many_lines"
+crate = "jackin-env"
+count = 1
+
+[[expect]]
 lint = "clippy::too_many_lines"
 crate = "jackin-xtask"
 count = 1
@@ -407,16 +417,11 @@ count = 1
 [[expect]]
 lint = "clippy::unwrap_used"
 crate = "jackin"
-count = 10
+count = 1
 
 [[expect]]
 lint = "clippy::unwrap_used"
 crate = "jackin-capsule"
-count = 2
-
-[[expect]]
-lint = "clippy::unwrap_used"
-crate = "jackin-protocol"
 count = 1
 
 [[expect]]
@@ -467,7 +472,7 @@ count = 3
 [[expect]]
 lint = "gh"
 crate = "jackin-xtask"
-count = 3
+count = 2
 
 [[expect]]
 lint = "git"
@@ -557,6 +562,11 @@ count = 3
 [[expect]]
 lint = "not"
 crate = "jackin-usage"
+count = 1
+
+[[expect]]
+lint = "not"
+crate = "jackin-xtask"
 count = 1
 
 [[expect]]
