@@ -188,18 +188,11 @@ struct CommandResult {
 
 impl CommandResult {
     fn args<const N: usize>(mut self, args: [&str; N]) -> Result<()> {
-        let output = self
-            .command
+        self.command
             .args(args)
             .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .output()
-            .with_context(|| format!("spawning {:?}", self.command))?;
-        if output.status.success() {
-            Ok(())
-        } else {
-            bail!("{}", String::from_utf8_lossy(&output.stderr).trim())
-        }
+            .stderr(Stdio::piped());
+        crate::cmd::run(&mut self.command)
     }
 }
 
@@ -211,13 +204,11 @@ fn command_output(program: &str, args: &[&str]) -> Result<String> {
 
 
 fn docker_rm(name: &str) {
-    drop(
-        Command::new("docker")
-            .args(["rm", "-f", name])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .output(),
-    );
+    let mut cmd = Command::new("docker");
+    cmd.args(["rm", "-f", name])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let _ = crate::cmd::output_raw(&mut cmd);
 }
 
 struct ContainerGuard(String);

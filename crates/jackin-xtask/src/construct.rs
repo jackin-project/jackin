@@ -334,12 +334,8 @@ fn version_published(cfg: &Config) -> Result<bool> {
         );
     }
     let reference = cfg.ref_for(&cfg.version_tag);
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "build helper: synchronous registry probe, not a render/runtime thread"
-    )]
-    let output = docker(["buildx", "imagetools", "inspect", &reference])
-        .output()
+    let mut inspect = docker(["buildx", "imagetools", "inspect", &reference]);
+    let output = crate::cmd::output_raw(&mut inspect)
         .with_context(|| format!("running docker buildx imagetools inspect {reference}"))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     match classify_inspect(output.status.success(), &stderr) {

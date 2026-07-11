@@ -388,15 +388,9 @@ struct Dep {
 }
 
 fn read_metadata(root: &std::path::Path) -> Result<Metadata> {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "build helper: synchronous cargo metadata probe"
-    )]
-    let output = Command::new("cargo")
-        .args(["metadata", "--format-version=1"])
-        .current_dir(root)
-        .output()
-        .context("running cargo metadata")?;
+    let mut meta = Command::new("cargo");
+    meta.args(["metadata", "--format-version=1"]).current_dir(root);
+    let output = crate::cmd::output_raw(&mut meta).context("running cargo metadata")?;
     if !output.status.success() {
         bail!(
             "cargo metadata failed: {}",

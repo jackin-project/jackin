@@ -231,8 +231,8 @@ async fn await_child_with_timeout(
         Some(dur) => match tokio::time::timeout(dur, child.wait()).await {
             Ok(status) => Ok(status?),
             Err(_elapsed) => {
-                let _ = child.kill().await;
-                let _ = child.wait().await;
+                drop(child.kill().await);
+                drop(child.wait().await);
                 anyhow::bail!(
                     "command timed out after {}s: {program}",
                     dur.as_secs_f64()
@@ -406,8 +406,8 @@ impl ShellRunner {
             {
                 Ok(triple) => triple,
                 Err(_elapsed) => {
-                    let _ = child.kill().await;
-                    let _ = child.wait().await;
+                    drop(child.kill().await);
+                    drop(child.wait().await);
                     anyhow::bail!(
                         "command timed out after {}s: {program}",
                         dur.as_secs_f64()
