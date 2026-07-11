@@ -39,7 +39,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 |------|-------|-------|----------|--------|--------|
 | [010](010-health-dashboard-and-baselines.md) | Code-health dashboard, suppression inventory, verification matrix | 0 | P1 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; `cargo xtask health` + `code-health-baseline.toml` + TESTING matrix) |
 | [011](011-lint-strictness-silent-failures.md) | Silent-failure lints, rustdoc gates, doc tests in PR CI, reason-gate | 1 | P1 | M | TODO |
-| [012](012-tier-graph-arch-gate.md) | Tier-graph arch gate (replaces empty forbidden-edge list) | 2 | P1 | M-L | TODO |
+| [012](012-tier-graph-arch-gate.md) | Tier-graph arch gate (replaces empty forbidden-edge list) | 2 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; 27 crates in `TIERS`; DEV_CYCLE_ALLOWLIST empty post-025) |
 | [013](013-test-infra-flakes-fuzz-idempotence.md) | Flake detection, timing artifacts, migration idempotence, parser fuzz | 3 | P2 | M-L | TODO |
 | [014](014-hot-path-bench-coverage.md) | Compile-check all benches; cover 4 unbenchmarked hot paths; measured lane | 4 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; partial — residuals in PERF-benches-missing) |
 | [015](015-docs-gates-brand-specs-readme.md) | Brand-prose lint, spec↔test citations, README presence gate | 5 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; freshness-vs-diff residual stays with [050](050-readme-freshness-gate.md)) |
@@ -63,7 +63,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 |------|-------|-------|----------|--------|--------|
 | [024](024-clock-seam-clipboard-expiry.md) | `Clock` seam in jackin-core; first consumer: clipboard expiry | 3/6 | P1 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; capsule-touching — smoke block mandatory at PR time) |
 | [025](025-test-support-crate-break-dev-cycle.md) | Extract `jackin-test-support`; break isolation⇄runtime dev cycle | 2/3 | P2 | M | DONE (cherry-picked `ead83e524` onto `chore/rust-code-health-roadmap`) |
-| [026](026-scrollback-range-snapshot.md) | Range-scoped scrollback snapshots (per-mouse-event full-scrollback alloc) | 2/4 | P2 | M | IN PROGRESS (operator-run external agent) |
+| [026](026-scrollback-range-snapshot.md) | Range-scoped scrollback snapshots (per-mouse-event full-scrollback alloc) | 2/4 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; borrowed zero-copy row accessor residual) |
 | [027](027-diagnostics-jsonl-typed-streaming.md) | Typed borrowed JSONL streaming; stop double-parsing detail | 4 | P2 | M | IN PROGRESS (operator-run external agent) |
 
 ### Fifth wave — remaining concrete ledger items
@@ -84,7 +84,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [034](034-numeric-and-easy-lint-families.md) | Numeric + easy-to-avoid lint families (census: near-zero candidates; sign-loss fix wave) | 1 | P1 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; truncation/precision/wrap remain allow) |
 | [035](035-advisory-verification-lanes.md) | Scheduled advisory lanes: llvm-cov, Miri, ASan fuzz, cargo-mutants, hakari timing | 1 | P2 | M | TODO |
 | [036](036-process-boundary-xtask-cmd-and-timeout.md) | Process boundary: one xtask cmd module; `RunOptions.timeout` honored by ShellRunner | 2 | P2 | M | TODO |
-| [037](037-thiserror-foundational-core-env.md) | thiserror for jackin-core concrete errors + jackin-env resolution taxonomy | 2 | P2 | M | IN PROGRESS (operator-run external agent) |
+| [037](037-thiserror-foundational-core-env.md) | thiserror for jackin-core concrete errors + jackin-env resolution taxonomy | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; ParseProfileError/EnvCycleError/PathsError + OperatorEnvError/ResolveEnvError; port traits keep anyhow) |
 | [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | TODO |
 | [039](039-jackin-env-pub-surface-pilot.md) | Pub-surface pilot: jackin-env sealed behind curated root re-exports | 2 | P2 | M | TODO |
 | [040](040-grid-resize-in-place.md) | In-place grid resize; same-size/height-only fast paths + resize_storm bench | 4 | P2 | M | DONE (cherry-picked onto `chore/rust-code-health-roadmap`) |
@@ -211,10 +211,10 @@ High-value findings that are real but were not turned into first-wave plans (lar
 
 ### Performance
 
-- ~~PERF-scrollback-snapshot~~ → **planned as [026](026-scrollback-range-snapshot.md)** (range-scoped API; the borrowed zero-copy row accessor remains a recorded follow-up).
+- ~~PERF-scrollback-snapshot~~ → **shipped as [026](026-scrollback-range-snapshot.md)** (range-scoped API; the borrowed zero-copy row accessor remains a recorded follow-up).
 - ~~PERF-resize-clone~~ → **planned as [040](040-grid-resize-in-place.md)** (in-place `RowStore::resize`, same-size/height-only fast paths, equivalence oracle, `resize_storm` bench per 014's spec with its scrollback-fixture note corrected).
 - ~~PERF-diag-double-parse~~ → **planned as [027](027-diagnostics-jsonl-typed-streaming.md)** (typed borrowed record + kind-gated detail parse; reused line buffer only if measured).
-- **PERF-benches-missing** — 014 delivered in-tree (2026-07-11): `resize_storm` (jackin-term; also from [040](040-grid-resize-in-place.md)) + `summarize_jsonl` (jackin-diagnostics) benches, the `--benches --workspace` CI compile gate, and the advisory hygiene bench-run lane. Remaining residuals: scrollback-snapshot bench blocked — `pane_content_from_damagegrid` is `pub(crate)` (compiler-proven E0603); lands with [026](026-scrollback-range-snapshot.md)'s range API. `materialize_accounts` bench blocked — `pub(crate)` (E0624) plus hardcoded `/jackin/run/usage/accounts.json` write; needs a small `#[doc(hidden)]` seam per the crate's `insert_snapshot_for_test` precedent (S follow-up). Launch full-pipeline bench stays open (existing bench is micro-ops only).
+- **PERF-benches-missing** — 014 delivered in-tree (2026-07-11): `resize_storm` (jackin-term; also from [040](040-grid-resize-in-place.md)) + `summarize_jsonl` (jackin-diagnostics) benches, the `--benches --workspace` CI compile gate, and the advisory hygiene bench-run lane. Remaining residuals: scrollback-snapshot bench shipped with [026](026-scrollback-range-snapshot.md) (full vs narrow range). `materialize_accounts` bench blocked — `pub(crate)` (E0624) plus hardcoded `/jackin/run/usage/accounts.json` write; needs a small `#[doc(hidden)]` seam per the crate's `insert_snapshot_for_test` precedent (S follow-up). Launch full-pipeline bench stays open (existing bench is micro-ops only).
 - Low-leverage (recorded, likely not worth doing soon): usage-monitor whole-file re-read per poll (documented tradeoff), usage upsert without a cached prepared statement (verify turso caching first), `preserve_visible_rows_to_scrollback` double-clone.
 
 ### Tests
