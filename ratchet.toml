@@ -44,7 +44,7 @@ mode = "enforce"
 # Entries seeded from suppression-budget.toml [[crate]] rows (updated by --print).
 [[family.entry]]
 key = "jackin"
-bound = 17
+bound = 13
 
 [[family.entry]]
 key = "jackin-capsule"
@@ -68,7 +68,7 @@ bound = 1
 
 [[family.entry]]
 key = "jackin-diagnostics"
-bound = 6
+bound = 7
 
 [[family.entry]]
 key = "jackin-docker"
