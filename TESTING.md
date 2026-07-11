@@ -146,7 +146,7 @@ cd crates/jackin-config && cargo fuzz run --sanitizer none config_migrate -- -ma
 
 Committed seeds live under each fuzz crate's `corpus/<target>/` (fixture-derived TOML for migrate/validate targets). Promote minimized crashers into the corpus; run `cargo fuzz cmin <target>` before growing corpora.
 
-Migration fixture harness (`crates/jackin/tests/migration_fixtures.rs`) enforces golden equality against `after.toml` and second-pass idempotence for every config/workspace/manifest fixture.
+Migration fixture harness ([`crates/jackin/tests/migration_fixtures.rs`](crates/jackin/tests/migration_fixtures.rs)) enforces golden equality against `after.toml` and second-pass idempotence for every config/workspace/manifest fixture.
 
 ### DinD chaos lane (scheduled)
 

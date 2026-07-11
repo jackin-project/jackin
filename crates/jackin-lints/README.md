@@ -11,7 +11,7 @@ jackin❯-specific invariants that Clippy cannot express structurally.
 
 ## Isolation rules
 
-- **Not a workspace member.** Listed under root `Cargo.toml` `exclude` and has
+- **Not a workspace member.** Listed under the workspace root exclude list and has
   its own `[workspace]` table.
 - **Pinned nightly** via `rust-toolchain` (dylint compiles against rustc-private).
 - Main-workspace `cargo check --workspace` must never compile this crate.
