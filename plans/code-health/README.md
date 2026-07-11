@@ -107,6 +107,12 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [052](052-dylint-scaffold-render-purity.md) | dylint scaffold: `crates/jackin-lints` + render-thread-purity lint, advisory nightly lane | 1 | P3 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; workspace-excluded lints crate + render_thread_purity + dylint-advisory) |
 | [053](053-tui-half-layer-spike.md) | TUI half-layer spike: prototype shared View dispatcher, finish-or-drop verdict | 2 | P3 | S-M | DONE (cherry-picked `f5015c9bc` onto `chore/rust-code-health-roadmap`) |
 
+### Residual after plan 011
+
+| Plan | Title | Phase | Priority | Effort | Status |
+|------|-------|-------|----------|--------|--------|
+| [054](054-assertions-on-result-states.md) | Adopt `assertions_on_result_states` after mass test conversion | 1 | P2 | M | TODO |
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 
 ## Dependency notes (second wave)
