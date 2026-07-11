@@ -211,3 +211,36 @@ pub async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
     }
 }
+
+/// Coalesce a run of consecutive `Resize` frames into the latest size and
+/// return the ordered frames the daemon must process, plus how many resizes
+/// were coalesced away.
+///
+/// A non-`Resize` frame pulled from the channel while draining is preserved and
+/// returned after the coalesced resize (previously it was silently dropped
+/// because `try_recv()` removes a frame before the `while let` pattern rejects
+/// it). Order is preserved because the stray frame may depend on the new
+/// geometry.
+pub(crate) fn coalesce_client_frames(
+    first: ClientFrame,
+    mut next: impl FnMut() -> Option<ClientFrame>,
+) -> (Vec<ClientFrame>, u32) {
+    if !matches!(first, ClientFrame::Resize { .. }) {
+        return (vec![first], 0);
+    }
+    let mut latest = first;
+    let mut coalesced: u32 = 0;
+    loop {
+        match next() {
+            Some(ClientFrame::Resize { rows, cols }) => {
+                latest = ClientFrame::Resize { rows, cols };
+                coalesced = coalesced.saturating_add(1);
+            }
+            Some(other) => return (vec![latest, other], coalesced),
+            None => return (vec![latest], coalesced),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
