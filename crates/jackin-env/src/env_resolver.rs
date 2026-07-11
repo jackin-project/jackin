@@ -5,6 +5,7 @@
 //! for the reserved-env-var list (`env_model.rs`) or Docker injection —
 //! callers pass the resolved set to the container launch path.
 
+use jackin_core::env_model::EnvCycleError;
 use jackin_core::manifest::EnvVarDecl;
 use std::collections::BTreeMap;
 
@@ -12,6 +13,15 @@ use std::collections::BTreeMap;
 // `jackin_env -> jackin_launch` edge was the P2 inverted dependency; both
 // now read the type from `jackin_core`.
 pub use jackin_core::PromptResult;
+
+/// Typed failures for manifest env declaration resolution.
+#[derive(Debug, thiserror::Error)]
+pub enum ResolveEnvError {
+    #[error("env var {name}: required prompt cannot be skipped")]
+    PromptRequired { name: String },
+    #[error(transparent)]
+    Cycle(#[from] EnvCycleError),
+}
 
 #[derive(Debug, Clone)]
 pub struct ResolvedEnv {
@@ -88,7 +98,10 @@ pub fn resolve_env_with_overrides(
     prompter: &impl EnvPrompter,
     overrides: &BTreeMap<String, String>,
 ) -> anyhow::Result<ResolvedEnv> {
-    let order = jackin_core::env_model::topological_env_order(declarations)?;
+    // Port trait (`EnvPrompter`) errors stay anyhow; typed variants are
+    // attached as sources for the cycle / required-prompt paths.
+    let order = jackin_core::env_model::topological_env_order(declarations)
+        .map_err(ResolveEnvError::from)?;
     let mut vars = Vec::new();
     let mut skipped: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -145,7 +158,9 @@ pub fn resolve_env_with_overrides(
                 if decl.skippable {
                     skipped.insert(name.clone());
                 } else {
-                    anyhow::bail!("env var {name}: required prompt cannot be skipped");
+                    return Err(anyhow::Error::new(ResolveEnvError::PromptRequired {
+                        name: name.clone(),
+                    }));
                 }
             }
         }

@@ -55,20 +55,10 @@ impl std::str::FromStr for DockerSecurityProfile {
     }
 }
 
-#[derive(Debug, Clone)]
+/// Parse error for `DockerSecurityProfile`.
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("unknown docker profile {0:?} - valid values: locked, hardened, standard, compat")]
 pub struct ParseProfileError(String);
-
-impl std::fmt::Display for ParseProfileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "unknown docker profile {:?} - valid values: locked, hardened, standard, compat",
-            self.0
-        )
-    }
-}
-
-impl std::error::Error for ParseProfileError {}
 
 /// Network egress tier.
 ///

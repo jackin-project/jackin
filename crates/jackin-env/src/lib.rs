@@ -28,7 +28,8 @@ pub mod test_support;
 
 pub use env_layer::{EnvLayer, merge_layers};
 pub use env_resolver::{
-    EnvPrompter, PromptResult, ResolvedEnv, resolve_env, resolve_env_with_overrides,
+    EnvPrompter, PromptResult, ResolveEnvError, ResolvedEnv, resolve_env,
+    resolve_env_with_overrides,
 };
 pub use host_claude::{
     ClaudeProbe, TOKEN_PREFIX, capture_setup_token, capture_setup_token_with_binary,
@@ -40,7 +41,7 @@ pub use op_struct::{OpItemCreateParams, OpStructRunner, OpWriteRunner};
 pub use parse_helpers::{is_valid_env_name, parse_host_ref};
 pub use picker::{OpAccount, OpCache, OpField, OpItem, OpVault, default_op_struct_runner};
 pub use resolve::{
-    CLAUDE_OAUTH_TOKEN_ENV, collect_on_demand_bindings, has_operator_env,
+    CLAUDE_OAUTH_TOKEN_ENV, OperatorEnvError, collect_on_demand_bindings, has_operator_env,
     has_operator_env_matching, lookup_operator_env_raw, print_launch_diagnostic,
     resolve_op_uri_to_ref, resolve_operator_env, resolve_operator_env_matching,
     resolve_operator_env_with, resolve_operator_env_with_matching, validate_reserved_names,

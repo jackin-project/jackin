@@ -12,10 +12,54 @@ use jackin_core::{EnvValue, OpRef};
 
 pub use crate::env_layer::merge_layers;
 
+/// Typed failures for operator-env validation and `op://` URI resolution.
+///
+/// Constructed at the resolve boundary and either returned directly (pure
+/// validation paths) or attached as an `anyhow` source so classification
+/// survives `?` and is recovered by `downcast_ref` (mixed port-error paths).
+#[derive(Debug, thiserror::Error)]
+pub enum OperatorEnvError {
+    #[error(
+        "operator env map contains {count} reserved runtime name(s):\n{details}\n\
+         These names are fixed by jackin and cannot be overridden. Remove them \
+         from your config.toml."
+    )]
+    ReservedNames { count: usize, details: String },
+    #[error("not an op:// reference: {value}")]
+    NotOpRef { value: String },
+    #[error(
+        "jackin does not support shell variable substitution inside `op://` URIs \
+         (`{value}`). Use a plain string value, or substitute before passing."
+    )]
+    ShellVarInRef { value: String },
+    #[error("malformed op:// URI (expected 3 or 4 path segments): {value}")]
+    MalformedRef { value: String },
+    #[error("vault not found: {vault:?}")]
+    VaultNotFound { vault: String },
+    #[error("item {item:?} not found in vault {vault:?}")]
+    ItemNotFound { item: String, vault: String },
+    #[error("{count} items named {item:?} in vault {vault:?}. Disambiguate with:\n{suggestions}")]
+    AmbiguousItem {
+        count: usize,
+        item: String,
+        vault: String,
+        suggestions: String,
+    },
+    #[error("field {field:?} not found in item {item:?}")]
+    FieldNotFound { field: String, item: String },
+    #[error("operator env resolution aborted: {source}")]
+    Aborted {
+        #[source]
+        source: anyhow::Error,
+    },
+    #[error("operator env resolution failed for {count} var(s):\n{summary}")]
+    Aggregated { count: usize, summary: String },
+}
+
 /// Reject operator env maps that declare any reserved runtime name.
 /// Runs at config-load time so misconfigurations fail before launch.
 /// Conflicts across every layer are aggregated into one error.
-pub fn validate_reserved_names(config: &AppConfig) -> anyhow::Result<()> {
+pub fn validate_reserved_names(config: &AppConfig) -> Result<(), OperatorEnvError> {
     let mut offenses: Vec<String> = Vec::new();
     let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, EnvValue>| {
         for key in env.keys() {
@@ -48,13 +92,10 @@ pub fn validate_reserved_names(config: &AppConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    anyhow::bail!(
-        "operator env map contains {} reserved runtime name(s):\n{}\n\
-         These names are fixed by jackin and cannot be overridden. Remove them \
-         from your config.toml.",
-        offenses.len(),
-        offenses.join("\n")
-    )
+    Err(OperatorEnvError::ReservedNames {
+        count: offenses.len(),
+        details: offenses.join("\n"),
+    })
 }
 
 /// Resolve a user-supplied `op://...` URI into a canonical [`OpRef`].
@@ -80,16 +121,17 @@ pub fn resolve_op_uri_to_ref(
     op: &dyn OpStructRunner,
     account: Option<&str>,
 ) -> anyhow::Result<OpRef> {
-    use anyhow::{anyhow, bail};
-
+    // Port errors from OpStructRunner stay as raw anyhow; validation failures
+    // are typed sources so pickers can downcast without substring matching.
     if !input.starts_with("op://") {
-        bail!("not an op:// reference: {input}");
+        return Err(anyhow::Error::new(OperatorEnvError::NotOpRef {
+            value: input.to_owned(),
+        }));
     }
     if input.contains("${") {
-        bail!(
-            "jackin does not support shell variable substitution inside `op://` URIs \
-             (`{input}`). Use a plain string value, or substitute before passing."
-        );
+        return Err(anyhow::Error::new(OperatorEnvError::ShellVarInRef {
+            value: input.to_owned(),
+        }));
     }
 
     // Peel off optional `?attribute=...` / `?attr=...` / `?ssh-format=...` suffix.
@@ -97,13 +139,19 @@ pub fn resolve_op_uri_to_ref(
         .find('?')
         .map_or((input, None), |i| (&input[..i], Some(&input[i..])));
     let Some(body) = path_part.strip_prefix("op://") else {
-        bail!("not an op:// reference: {input}");
+        return Err(anyhow::Error::new(OperatorEnvError::NotOpRef {
+            value: input.to_owned(),
+        }));
     };
     let segs: Vec<&str> = body.split('/').collect();
     let (vault_seg, item_seg, section_seg, field_seg) = match segs.as_slice() {
         [v, i, f] => (*v, *i, None::<&str>, *f),
         [v, i, s, f] => (*v, *i, Some(*s), *f),
-        _ => bail!("malformed op:// URI (expected 3 or 4 path segments): {input}"),
+        _ => {
+            return Err(anyhow::Error::new(OperatorEnvError::MalformedRef {
+                value: input.to_owned(),
+            }));
+        }
     };
 
     // Item segment may carry [subtitle] filter — a display extension from jackin❯.
@@ -128,7 +176,11 @@ pub fn resolve_op_uri_to_ref(
     let vault = vaults
         .iter()
         .find(|v| v.name.eq_ignore_ascii_case(vault_seg) || v.id == vault_seg)
-        .ok_or_else(|| anyhow!("vault not found: {vault_seg:?}"))?;
+        .ok_or_else(|| {
+            anyhow::Error::new(OperatorEnvError::VaultNotFound {
+                vault: vault_seg.to_owned(),
+            })
+        })?;
 
     // Resolve items in this vault, then filter by name (case-insensitive) or
     // UUID, and by subtitle filter when present.
@@ -151,11 +203,10 @@ pub fn resolve_op_uri_to_ref(
         let suffix = subtitle_filter
             .map(|s| format!("[{s}]"))
             .unwrap_or_default();
-        bail!(
-            "item {name:?} not found in vault {vault_name:?}",
-            name = format!("{item_name}{suffix}"),
-            vault_name = vault.name
-        );
+        return Err(anyhow::Error::new(OperatorEnvError::ItemNotFound {
+            item: format!("{item_name}{suffix}"),
+            vault: vault.name.clone(),
+        }));
     }
     if matches.len() > 1 {
         let suggestions: Vec<String> = matches
@@ -172,19 +223,18 @@ pub fn resolve_op_uri_to_ref(
                 format!("  op://{}/{label}{section_part}/{field_seg}{q}", vault.name)
             })
             .collect();
-        bail!(
-            "{n} items named {name:?} in vault {vault_name:?}. Disambiguate with:\n{lines}",
-            n = matches.len(),
-            name = item_name,
-            vault_name = vault.name,
-            lines = suggestions.join("\n")
-        );
+        return Err(anyhow::Error::new(OperatorEnvError::AmbiguousItem {
+            count: matches.len(),
+            item: item_name.to_owned(),
+            vault: vault.name.clone(),
+            suggestions: suggestions.join("\n"),
+        }));
     }
     let Some(item) = matches.pop() else {
-        bail!(
-            "item {item_name:?} not found in vault {vault_name:?}",
-            vault_name = vault.name
-        );
+        return Err(anyhow::Error::new(OperatorEnvError::ItemNotFound {
+            item: item_name.to_owned(),
+            vault: vault.name.clone(),
+        }));
     };
 
     // Resolve field by label (case-insensitive) or UUID.
@@ -193,10 +243,10 @@ pub fn resolve_op_uri_to_ref(
         .iter()
         .find(|f| f.label.eq_ignore_ascii_case(field_seg) || f.id == field_seg)
         .ok_or_else(|| {
-            anyhow!(
-                "field {field_seg:?} not found in item {name:?}",
-                name = item.name
-            )
+            anyhow::Error::new(OperatorEnvError::FieldNotFound {
+                field: field_seg.to_owned(),
+                item: item.name.clone(),
+            })
         })?;
 
     // Compute ambiguity for path snapshot (same rule as picker).
@@ -498,7 +548,7 @@ where
         .values()
         .any(|(_, v)| matches!(v, EnvValue::OpRef(_)));
     if uses_op && let Err(e) = op_runner.probe() {
-        anyhow::bail!("operator env resolution aborted: {e}");
+        return Err(anyhow::Error::new(OperatorEnvError::Aborted { source: e }));
     }
 
     std::thread::scope(|scope| {
@@ -554,11 +604,10 @@ where
         return Ok(resolved);
     }
 
-    anyhow::bail!(
-        "operator env resolution failed for {} var(s):\n{}",
-        errors.len(),
-        errors.join("\n")
-    );
+    Err(anyhow::Error::new(OperatorEnvError::Aggregated {
+        count: errors.len(),
+        summary: errors.join("\n"),
+    }))
 }
 
 /// Print a launch diagnostic to stderr. Values are NEVER printed —

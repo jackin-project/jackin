@@ -76,7 +76,7 @@ pub use launch_progress::{
 pub use op_probe_error::OpProbeError;
 pub use operator_notice::{OperatorNoticeSink, emit_compact_line};
 pub use path_text::shorten_home;
-pub use paths::JackinPaths;
+pub use paths::{JackinPaths, PathsError};
 pub use prompt_result::PromptResult;
 pub use runner::{CommandRunner, RunOptions};
 pub use selector::{RoleSelector, Selector, SelectorError, runtime_slug};

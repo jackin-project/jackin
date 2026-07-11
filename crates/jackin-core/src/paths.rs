@@ -11,6 +11,19 @@
 use directories::BaseDirs;
 use std::path::{Path, PathBuf};
 
+/// Failure resolving or creating jackin❯ host path layout.
+#[derive(Debug, thiserror::Error)]
+pub enum PathsError {
+    #[error("Cannot resolve home directory")]
+    HomeDirUnresolved,
+    #[error("failed to create {path}")]
+    CreateDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
 /// All host-side directories that jackin❯ reads or writes.
 #[derive(Debug, Clone)]
 pub struct JackinPaths {
@@ -25,9 +38,8 @@ pub struct JackinPaths {
 }
 
 impl JackinPaths {
-    pub fn detect() -> anyhow::Result<Self> {
-        let base =
-            BaseDirs::new().ok_or_else(|| anyhow::anyhow!("Cannot resolve home directory"))?;
+    pub fn detect() -> Result<Self, PathsError> {
+        let base = BaseDirs::new().ok_or(PathsError::HomeDirUnresolved)?;
         Ok(Self::resolve_with_env(
             base.home_dir(),
             std::env::var_os("JACKIN_HOME_DIR").as_deref(),
@@ -80,12 +92,19 @@ impl JackinPaths {
     /// Create all base directories that jackin❯ owns on the host.
     ///
     /// # Errors
-    /// Returns an error if any directory cannot be created.
-    pub fn ensure_base_dirs(&self) -> anyhow::Result<()> {
-        std::fs::create_dir_all(&self.config_dir)?;
-        std::fs::create_dir_all(&self.roles_dir)?;
-        std::fs::create_dir_all(&self.data_dir)?;
-        std::fs::create_dir_all(&self.cache_dir)?;
+    /// Returns [`PathsError::CreateDir`] naming the directory that failed.
+    pub fn ensure_base_dirs(&self) -> Result<(), PathsError> {
+        for path in [
+            &self.config_dir,
+            &self.roles_dir,
+            &self.data_dir,
+            &self.cache_dir,
+        ] {
+            std::fs::create_dir_all(path).map_err(|source| PathsError::CreateDir {
+                path: path.clone(),
+                source,
+            })?;
+        }
         Ok(())
     }
 }

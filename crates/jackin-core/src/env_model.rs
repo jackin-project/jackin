@@ -127,8 +127,13 @@ pub fn extract_interpolation_refs(s: &str) -> Vec<&str> {
 ///
 /// Returns names ordered so every dependency precedes its dependents.
 ///
+/// Env var dependency graph contains a cycle.
+#[derive(Debug, thiserror::Error)]
+#[error("env var dependency cycle detected")]
+pub struct EnvCycleError;
+
 /// # Errors
-/// Returns an error if a dependency cycle is detected.
+/// Returns [`EnvCycleError`] if a dependency cycle is detected.
 #[allow(
     clippy::excessive_nesting,
     reason = "Kahn's algorithm topological-sort body: the read-side / \
@@ -139,7 +144,7 @@ pub fn extract_interpolation_refs(s: &str) -> Vec<&str> {
 )]
 pub fn topological_env_order(
     declarations: &std::collections::BTreeMap<String, crate::manifest::EnvVarDecl>,
-) -> anyhow::Result<Vec<String>> {
+) -> Result<Vec<String>, EnvCycleError> {
     use std::collections::{BTreeSet, HashMap};
 
     let mut in_degree: HashMap<&str, usize> = HashMap::new();
@@ -182,7 +187,7 @@ pub fn topological_env_order(
     }
 
     if result.len() != declarations.len() {
-        anyhow::bail!("env var dependency cycle detected");
+        return Err(EnvCycleError);
     }
 
     Ok(result)

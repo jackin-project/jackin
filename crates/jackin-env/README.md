@@ -34,6 +34,8 @@ Operator-environment resolution and 1Password (`op`) CLI integration. Turns decl
 
 Resolved env layers and the `op` runner used by `jackin-runtime` during launch. The pure picker *model* is split into `jackin-console-oppicker`; this crate owns the `op` side-effects.
 
+Typed errors (thiserror): `OperatorEnvError` (operator-env / `op://` resolution taxonomy), `ResolveEnvError` (manifest env prompt/cycle path).
+
 ## How to verify
 
 ```sh

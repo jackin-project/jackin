@@ -28,7 +28,7 @@ Because everything depends on `jackin-core`, it must stay dependency-free, side-
 | [`account_key.rs`](src/account_key.rs) · [`account_key/`](src/account_key) | account key | [`tests.rs`](src/account_key/tests.rs) |
 | [`env_model.rs`](src/env_model.rs) · [`env_model/`](src/env_model) | env model | [`tests.rs`](src/env_model/tests.rs) |
 | [`env_value.rs`](src/env_value.rs) · [`env_value/`](src/env_value) | env value | [`tests.rs`](src/env_value/tests.rs) |
-| [`paths.rs`](src/paths.rs) · [`paths/`](src/paths) | paths | [`tests.rs`](src/paths/tests.rs) |
+| [`paths.rs`](src/paths.rs) · [`paths/`](src/paths) | host paths + `PathsError` | [`tests.rs`](src/paths/tests.rs) |
 | [`isolation.rs`](src/isolation.rs) | isolation type | — |
 | [`isolation_record.rs`](src/isolation_record.rs) | isolation record | — |
 | [`worktree_dirty.rs`](src/worktree_dirty.rs) · [`worktree_dirty/`](src/worktree_dirty) | worktree-dirty check | [`tests.rs`](src/worktree_dirty/tests.rs) |
@@ -52,10 +52,13 @@ Because everything depends on `jackin-core`, it must stay dependency-free, side-
 | [`op_reference.rs`](src/op_reference.rs) · [`op_reference/`](src/op_reference) | op reference | [`tests.rs`](src/op_reference/tests.rs) |
 | [`op_types.rs`](src/op_types.rs) | op types | — |
 | [`constants.rs`](src/constants.rs) | shared constants | — |
+| [`container_paths.rs`](src/container_paths.rs) · [`container_paths/`](src/container_paths) | container-side `/jackin/` path chokepoint | [`tests.rs`](src/container_paths/tests.rs) |
 
 ## Public API
 
 The crate is a vocabulary library: re-export the types/ports/constants you need from `jackin_core::…`. Higher crates implement the port traits defined here (e.g. `CommandRunner`) and pass the domain types through.
+
+Typed construction/parse errors (thiserror): `ParseProfileError`, `ParseMountIsolationError`, `ParseAgentError`, `SelectorError`, `EnvCycleError` (`env_model`), `PathsError`, `OpProbeError`.
 
 ## How to verify
 
