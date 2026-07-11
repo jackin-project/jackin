@@ -16,7 +16,7 @@ pub fn parse_host_ref(value: &str) -> Option<&str> {
     None
 }
 
-pub fn is_valid_env_name(s: &str) -> bool {
+pub(crate) fn is_valid_env_name(s: &str) -> bool {
     let mut chars = s.chars();
     match chars.next() {
         Some(c) if c.is_ascii_alphabetic() || c == '_' => {}

@@ -10,7 +10,6 @@ use jackin_core::op_reference::parse_op_reference;
 use jackin_core::op_types::OpItem;
 use jackin_core::{EnvValue, OpRef};
 
-pub use crate::env_layer::merge_layers;
 
 /// Typed failures for operator-env validation and `op://` URI resolution.
 ///

@@ -42,7 +42,7 @@ pub const DEFAULT_ITEM_TEMPLATE: &str = "Claude";
 
 /// Default `op` item category for OAuth tokens (1Password's API
 /// Credential category renders `token` as a concealed field).
-pub const DEFAULT_ITEM_CATEGORY: &str = "API_CREDENTIAL";
+pub(crate) const DEFAULT_ITEM_CATEGORY: &str = "API_CREDENTIAL";
 
 /// Default field label inside the created item.
 pub const DEFAULT_FIELD_LABEL: &str = "oauth-token";
@@ -51,7 +51,7 @@ pub const DEFAULT_FIELD_LABEL: &str = "oauth-token";
 /// filters can find them later.
 pub const JACKIN_TAG: &str = "jackin";
 /// Per-workspace tag prefix (`workspace=<name>`).
-pub const WORKSPACE_TAG_PREFIX: &str = "workspace=";
+pub(crate) const WORKSPACE_TAG_PREFIX: &str = "workspace=";
 
 /// True when an item's tags mark it as jackin-created (and therefore safe
 /// for rotate to delete). Keeps the [`JACKIN_TAG`] ownership rule in one
@@ -468,7 +468,7 @@ where
 /// seams so the unit tests in this module never spawn `op` or
 /// `claude`.
 #[allow(clippy::too_many_arguments)]
-pub fn run_setup_with_runner<F>(
+pub(crate) fn run_setup_with_runner<F>(
     paths: &JackinPaths,
     config: &mut AppConfig,
     scope: &TokenSetupScope,
@@ -598,7 +598,7 @@ pub fn run_revoke(
 }
 
 /// Test-injectable variant of [`run_revoke`].
-pub fn run_revoke_with_runner(
+pub(crate) fn run_revoke_with_runner(
     paths: &JackinPaths,
     config: &mut AppConfig,
     workspace: &str,
@@ -720,7 +720,7 @@ pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorR
 }
 
 /// Test-injectable variant of [`run_doctor`].
-pub fn run_doctor_with_runner(
+pub(crate) fn run_doctor_with_runner(
     config: &AppConfig,
     workspace: &str,
     op_reader: &dyn OpRunner,
@@ -1009,7 +1009,7 @@ fn now_utc_rfc3339() -> String {
 ///
 /// One file per workspace under
 /// `<cache_dir>/claude-token-expiry/<workspace>`. Removed on revoke.
-pub fn expiry_cache_path(paths: &JackinPaths, workspace: &str) -> std::path::PathBuf {
+pub(crate) fn expiry_cache_path(paths: &JackinPaths, workspace: &str) -> std::path::PathBuf {
     paths.cache_dir.join("claude-token-expiry").join(workspace)
 }
 
@@ -1020,7 +1020,7 @@ pub fn expiry_cache_path(paths: &JackinPaths, workspace: &str) -> std::path::Pat
 /// which sets `TokenSetupReport.expiry_estimate = None` on failure
 /// so the banner-state shown to the operator matches what the
 /// launch path will read back.
-pub fn write_expiry_stamp(
+pub(crate) fn write_expiry_stamp(
     paths: &JackinPaths,
     workspace: &str,
     expiry: &str,
@@ -1038,7 +1038,7 @@ pub fn write_expiry_stamp(
 /// a warning so a `PermissionDenied` / `IsADirectory` cache
 /// collision does not silently leave a stale banner countdown in
 /// place for the next launch.
-pub fn clear_expiry_stamp(paths: &JackinPaths, workspace: &str) {
+pub(crate) fn clear_expiry_stamp(paths: &JackinPaths, workspace: &str) {
     let path = expiry_cache_path(paths, workspace);
     match std::fs::remove_file(&path) {
         Ok(()) => {}
@@ -1096,7 +1096,7 @@ pub fn expiry_days_for_launch(
 
 /// Days remaining until `expiry` (YYYY-MM-DD), or `None` when the
 /// stamp cannot be parsed. Negative values mean expired.
-pub fn days_until_expiry(expiry: &str) -> Option<i64> {
+pub(crate) fn days_until_expiry(expiry: &str) -> Option<i64> {
     let parsed = chrono::NaiveDate::parse_from_str(expiry, "%Y-%m-%d").ok()?;
     let today = chrono::Utc::now().date_naive();
     Some((parsed - today).num_days())

@@ -3,7 +3,7 @@ use jackin_core::FieldTarget;
 use jackin_core::OpRef;
 
 /// Re-exported from `jackin-env` — canonical definitions live there.
-pub use crate::op_struct::{OpItemCreateParams, OpStructRunner, OpWriteRunner};
+use crate::op_struct::OpStructRunner;
 
 pub fn default_op_struct_runner() -> std::sync::Arc<dyn OpStructRunner + Send + Sync> {
     std::sync::Arc::new(OpCli::new())

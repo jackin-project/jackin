@@ -86,7 +86,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [036](036-process-boundary-xtask-cmd-and-timeout.md) | Process boundary: one xtask cmd module; `RunOptions.timeout` honored by ShellRunner | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 | [037](037-thiserror-foundational-core-env.md) | thiserror for jackin-core concrete errors + jackin-env resolution taxonomy | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; ParseProfileError/EnvCycleError/PathsError + OperatorEnvError/ResolveEnvError; port traits keep anyhow) |
 | [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | PARTIAL (type + `validate_workspace_file_stem` delegate landed with 020 scoop / persist; full mint/editor/instance/launch adoption residual — concurrent branch thrash) |
-| [039](039-jackin-env-pub-surface-pilot.md) | Pub-surface pilot: jackin-env sealed behind curated root re-exports | 2 | P2 | M | TODO |
+| [039](039-jackin-env-pub-surface-pilot.md) | Pub-surface pilot: jackin-env sealed behind curated root re-exports | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; modules sealed; host_claude+env_layer internal; token_setup facade trimmed; thin resolve wrappers kept root-public after dead_code) |
 | [040](040-grid-resize-in-place.md) | In-place grid resize; same-size/height-only fast paths + resize_storm bench | 4 | P2 | M | DONE (cherry-picked onto `chore/rust-code-health-roadmap`) |
 
 ### Seventh wave — telemetry facade program + verified-gap closure
