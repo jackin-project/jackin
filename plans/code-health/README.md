@@ -292,7 +292,7 @@ Real gaps measured by the phase audit, deliberately not planned this wave (large
 ### Phase 5/6 (docs/navigation)
 
 - ~~Documented-command drift gate~~ → **planned as [023](023-docs-command-drift-gate.md)**. The config-key half of roadmap item 11 (docs tables ↔ schema artifacts) remains deferred.
-- ~~Crate-README→Fumadocs extraction pipeline + PROJECT_STRUCTURE slim~~ → **shipped as [049](049-crate-readme-fumadocs-pipeline.md)**; full Codebase-Map slimming follows as a later pass. ~~README freshness-vs-diff CI check~~ → **planned as [050](050-readme-freshness-gate.md)** (presence gate stays in 015). ~~rust-analyzer cleanliness lane~~ → **planned as [048](048-advisory-lanes-wave-2.md)**. ~~Machine-readable gate output~~ → core reporter + 2 exemplar gates **planned as [051](051-xtask-gate-reporter-core.md)**; per-gate rollout = mechanical follow-ups.
+- ~~Crate-README→Fumadocs extraction pipeline + PROJECT_STRUCTURE slim~~ → **shipped as [049](049-crate-readme-fumadocs-pipeline.md)**; full Codebase-Map slimming follows as a later pass. ~~README freshness-vs-diff CI check~~ → **shipped as [050](050-readme-freshness-gate.md)** (advisory CI first; presence gate stays in 015). ~~rust-analyzer cleanliness lane~~ → **planned as [048](048-advisory-lanes-wave-2.md)**. ~~Machine-readable gate output~~ → core reporter + 2 exemplar gates **planned as [051](051-xtask-gate-reporter-core.md)**; per-gate rollout = mechanical follow-ups.
 
 ### Phase 7/8 (loop/telemetry)
 
