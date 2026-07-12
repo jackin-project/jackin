@@ -8,9 +8,20 @@ Captured by the long-running goal executor. Scratch copies also under the implem
 - Local branch tracks `origin/chore/rust-code-health-roadmap`.
 - All plan implementation commits land on this branch only (no `exec-plan-*` work sinks).
 
+
+## Goal re-verify (2026-07-12 post-069)
+
+- Tip: `621fa5530`+ on `chore/rust-code-health-roadmap` (thiserror mid-tranches CLOSED via 065–069; WorkspaceName residual 064).
+- Plans **003–069** DONE; inventory 65 plans, 0 in_tree fails; matrix **SEQ** open = 0.
+- R-thiserror-mid-tranches **CLOSED** (instance∥isolation∥docker∥image∥config).
+- R-038 partial remains DEFER with measured dual-semantics + TUI/host CLI tail.
+- Design/product DEFERs unchanged (daemon, launch typestate, perf budgets, etc.).
+- `lint --strict` green; workspace `clippy -D warnings` green after needless_return sweep.
+- `ci --fast` red only for documented executor-env waivers (manager_flow Docker-missing disk persist + RUSTSEC-2026-0204); captures under `/tmp/grok-goal-codehealth/reverify/`.
+
 ## Plan ledger
 
-Plans **003–063** DONE on this branch. Wave-8 residual program + WorkspaceName frontier slices 055–063. Isolation list/drift typed (063).
+Plans **003–069** DONE on this branch. Wave-8 residual program + WorkspaceName frontier slices 055–063. Isolation list/drift typed (063).
 
 Every `plans/code-health/*.md` plan **003–063** is **DONE** in `plans/code-health/README.md` with implementation present on this branch (not vanished exec SHAs).
 
@@ -52,13 +63,13 @@ All other named residuals and former SEQ themes are **DEFER(measured)** in that 
 
 ## Roadmap Phase 0–8 disposition
 
-Phases are covered by DONE plans 003–063. Former **SEQ** matrix rows are **DEFER** with measured reasons in the residual ledger (plan 056). No open SEQ debt remains in the coverage matrix.
+Phases are covered by DONE plans 003–069. Former **SEQ** matrix rows are **DEFER** with measured reasons in the residual ledger (plan 056). No open SEQ debt remains in the coverage matrix.
 
 | Residual theme | Disposition |
 |---|---|
 | Daemon full decomposition | DEFER R-daemon-decomp |
 | Launch typestate/phase contracts | DEFER R-launch-typestate |
-| thiserror long-tail crates | DEFER R-thiserror-mid-tranches |
+| thiserror long-tail crates | **CLOSED** R-thiserror-mid-tranches (065–069) |
 | Complexity threshold lowering | DEFER R-complexity-threshold |
 | allow_attributes* deny | DEFER R-allow-attributes-deny |
 | missing_docs crate cascade | DEFER R-missing-docs-cascade |
@@ -109,7 +120,7 @@ R1–R4 from the residual ledger. Do not re-serialize independent crate work.
 ## Latest re-verify (goal pass)
 
 - Tip: `a776e275d` on `chore/rust-code-health-roadmap`
-- Plans **003–063** DONE; inventory `plan-inventory.md` zero in_tree fails (incl. 051)
+- Plans **003–069** DONE; inventory `plan-inventory.md` zero in_tree fails (incl. 051)
 - Matrix `SEQ(` count: **0**
 - Host turso: clean (`store_backend`)
 - `docs map-check`: OK (27 crates)

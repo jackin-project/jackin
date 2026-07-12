@@ -1,74 +1,73 @@
-# Plan inventory (reverify) — goal pass after plan 066
+# Plan inventory reverify after 069
 
-Tip: `chore/rust-code-health-roadmap` after 064–066 residual wave.
-Lint strict green. Residuals DEFER only with measured ledger reasons.
+Tip: ref: refs/heads/chore/rust-code-health-roadmap
 
 | id | title | ledger_status | in_tree | evidence |
 |----|-------|---------------|---------|----------|
-| 003 | Stop deep-cloning usage views on every refresh | DONE | pass | planfile |
-| 004 | Stop dropping the frame queued behind a coalesced resiz | DONE | pass | planfile |
-| 007 | Bound OSC 8 hyperlink maps; clear on reset | DONE | pass | planfile |
-| 008 | Tear down DinD when a post-success finalization step fa | DONE | pass | planfile |
-| 009 | Fuzz + truncation tests for protocol wire decoders | DONE | pass | planfile |
-| 010 | Code-health dashboard, suppression inventory, verificat | DONE | pass | ok |
-| 011 | Silent-failure lints, rustdoc gates, doc tests in PR CI | DONE | pass | planfile |
-| 012 | Tier-graph arch gate (replaces empty forbidden-edge lis | DONE | pass | 36:pub(crate) const TIERS: &[(&str, u8)] = &[ |
-| 013 | Flake detection, timing artifacts, migration idempotenc | DONE | pass | planfile |
-| 014 | Compile-check all benches; cover 4 unbenchmarked hot pa | DONE | pass | planfile |
-| 015 | Brand-prose lint, spec↔test citations, README presence  | DONE | pass | planfile |
-| 016 | Ownership headers everywhere + headers gate + blame-ign | DONE | pass | planfile |
-| 017 | Unified ratchet engine (`ratchet.toml`) + defect→gate l | DONE | pass | ok |
-| 018 | One OTLP builder, semconv registry, correlatable sinks, | DONE | pass | planfile |
-| 019 | Slice/index panic-coverage lints on the 4 pure crates ( | DONE | pass | planfile |
-| 020 | Container-path chokepoint + executable `/jackin/`-only  | DONE | pass | planfile |
-| 021 | `missing_docs` on jackin-protocol + typed clipboard wir | DONE | pass | planfile |
-| 022 | Scoped powerset PR gate, beta clippy canary, `xtask ci  | DONE | pass | planfile |
-| 023 | Documented-command drift gate (docs fences ↔ clap tree) | DONE | pass | planfile |
-| 024 | `Clock` seam in jackin-core; first consumer: clipboard  | DONE | pass | planfile |
-| 025 | Extract `jackin-test-support`; break isolation⇄runtime  | DONE | pass | ok |
-| 026 | Range-scoped scrollback snapshots (per-mouse-event full | DONE | pass | planfile |
-| 027 | Typed borrowed JSONL streaming; stop double-parsing det | DONE | pass | planfile |
-| 028 | Dependency hygiene: turso store boundary, ring exceptio | DONE | pass | 6:use jackin_usage::store_backend::{Connection, Row, connect_local, params}; |
-| 029 | Docs drift: README links, Apple status, reserved envs,  | DONE | pass | planfile |
-| 030 | Console editor/settings view-model structs (kills the 4 | DONE | pass | planfile |
-| 031 | Typed `op` probe errors (`OpProbeError` in jackin-core; | DONE | pass | planfile |
-| 032 | Behavioral specs: capsule daemon + operator console (ci | DONE | pass | planfile |
-| 033 | Characterization: launch-core teardown, client displace | DONE | pass | planfile |
-| 034 | Numeric + easy-to-avoid lint families (census: near-zer | DONE | pass | planfile |
-| 035 | Scheduled advisory lanes: llvm-cov, Miri, ASan fuzz, ca | DONE | pass | planfile |
-| 036 | Process boundary: one xtask cmd module; `RunOptions.tim | DONE | pass | planfile |
-| 037 | thiserror for jackin-core concrete errors + jackin-env  | DONE | pass | planfile |
-| 038 | `WorkspaceName` newtype at config/instance/launch bound | DONE | pass | ok |
-| 039 | Pub-surface pilot: jackin-env sealed behind curated roo | DONE | pass | planfile |
-| 040 | In-place grid resize; same-size/height-only fast paths  | DONE | pass | planfile |
-| 041 | Typed operation facade; collapse duplicate `debug_log!` | DONE | pass | planfile |
-| 042 | High-frequency internals become metrics (9 instruments; | DONE | pass | planfile |
-| 043 | Per-sink telemetry filters; retire `JACKIN_DEBUG` to on | DONE | pass | planfile |
-| 044 | Telemetry conformance suite (dossier acceptance checks  | DONE | pass | planfile |
-| 045 | Corpus closure: protocol goldens + capability-skew, ter | DONE | pass | planfile |
-| 046 | Scheduled dind-E2E chaos variant (seeded faults; surviv | DONE | pass | planfile |
-| 047 | Census the 7 allowed maintainability lints; deny quiet  | DONE | pass | planfile |
-| 048 | Advisory lanes wave 2: hyperfine cold-start, rust-analy | DONE | pass | planfile |
-| 049 | Crate-README → Fumadocs generated section; slim PROJECT | DONE | pass | 101:          bun run scripts/gen-crate-pages.ts |
-| 050 | README-freshness gate (structural src change ⇒ README t | DONE | pass | planfile |
-| 051 | Machine-readable gate output core (human\ | DONE | pass | report.rs |
-| 052 | dylint scaffold: `crates/jackin-lints` + render-thread- | DONE | pass | planfile |
-| 053 | TUI half-layer spike: prototype shared View dispatcher, | DONE | pass | planfile |
-| 054 | Adopt `assertions_on_result_states` after mass test con | DONE | pass | 175:assertions_on_result_states = "deny" |
-| 055 | Close named residual footnotes (014/023/028/033/038/049 | DONE | pass | 6:use jackin_usage::store_backend::{Connection, Row, connect_local, params}; |
-| 056 | Convert coverage-matrix SEQ debt to DEFER + residual le | DONE | pass | matrix_SEQ_open 0 |
-| 057 | Residual R1: materialize bench + export-volume ratchet  | DONE | pass | 133:# Plan 044 export-volume budgets (R-export-volume-ratchet): constants live in |
-| 058 | Residual R1: complexity floor + env doctor WorkspaceNam | DONE | pass | 16:cognitive-complexity-threshold = 58 |
-| 059 | WorkspaceName on config roles resolve APIs | DONE | pass | 16:fn workspace_key(workspace: Option<&WorkspaceName>) -> &str { |
-| 060 | WorkspaceName on env operator-resolve APIs | DONE | pass | 333:    workspace_name: Option<&WorkspaceName>, |
-| 061 | WorkspaceName on console save/launch + ConfigEditor wri | DONE | pass | 68:    workspace_name: &WorkspaceName, |
-| 062 | WorkspaceName on AppConfig require/edit/remove | DONE | pass | 16:    pub fn require_workspace(&self, name: &WorkspaceName) -> anyhow::Result<&WorkspaceConfig> { |
-| 063 | WorkspaceName on isolation list + drift detect | DONE | pass | 219:pub fn list_records_for_workspace( |
-| 064 | WorkspaceName on auth_error traces + token revoke/expiry | DONE | pass | planfile + auth_error/token_setup |
-| 065 | thiserror mid-tranche jackin-instance | DONE | pass | InstanceError + SyncSourceValidationError |
-| 066 | thiserror mid-tranche jackin-isolation | DONE | pass | IsolationError |
-| 067 | thiserror mid-tranche jackin-docker | DONE | pass | DockerError |
-| 068 | thiserror mid-tranche jackin-image | DONE | pass | ImageError |
-| 069 | thiserror mid-tranche jackin-config | DONE | pass | ConfigError; R-thiserror CLOSED |
+| 003 | materialize-accounts-borrow | DONE | pass | planfile |
+| 004 | resize-coalesce-drops-frames | DONE | pass | planfile |
+| 007 | osc8-hyperlink-map-bound | DONE | pass | planfile |
+| 008 | launch-finalization-cleanup-guard | DONE | pass | planfile |
+| 009 | protocol-decoder-fuzz-and-truncation-tests | DONE | pass | planfile |
+| 010 | health-dashboard-and-baselines | DONE | pass | planfile |
+| 011 | lint-strictness-silent-failures | DONE | pass | planfile |
+| 012 | tier-graph-arch-gate | DONE | pass | planfile |
+| 013 | test-infra-flakes-fuzz-idempotence | DONE | pass | planfile |
+| 014 | hot-path-bench-coverage | DONE | pass | planfile |
+| 015 | docs-gates-brand-specs-readme | DONE | pass | planfile |
+| 016 | ownership-headers-blame-revs | DONE | pass | planfile |
+| 017 | unified-ratchet-engine | DONE | pass | planfile |
+| 018 | telemetry-drift-proofing | DONE | pass | planfile |
+| 019 | slice-index-lints-pure-crates | DONE | pass | planfile |
+| 020 | container-path-chokepoint-policy | DONE | pass | planfile |
+| 021 | protocol-missing-docs-typed-errors | DONE | pass | planfile |
+| 022 | ci-lanes-powerset-canary-partitions | DONE | pass | planfile |
+| 023 | docs-command-drift-gate | DONE | pass | planfile |
+| 024 | clock-seam-clipboard-expiry | DONE | pass | planfile |
+| 025 | test-support-crate-break-dev-cycle | DONE | pass | planfile |
+| 026 | scrollback-range-snapshot | DONE | pass | planfile |
+| 027 | diagnostics-jsonl-typed-streaming | DONE | pass | planfile |
+| 028 | dependency-hygiene-sweep | DONE | pass | planfile |
+| 029 | docs-drift-reconciliation | DONE | pass | planfile |
+| 030 | console-view-model-structs | DONE | pass | planfile |
+| 031 | op-probe-typed-error | DONE | pass | planfile |
+| 032 | daemon-console-behavioral-specs | DONE | pass | planfile |
+| 033 | characterization-launch-displace-pty | DONE | pass | planfile |
+| 034 | numeric-and-easy-lint-families | DONE | pass | planfile |
+| 035 | advisory-verification-lanes | DONE | pass | planfile |
+| 036 | process-boundary-xtask-cmd-and-timeout | DONE | pass | planfile |
+| 037 | thiserror-foundational-core-env | DONE | pass | planfile |
+| 038 | workspace-name-newtype | DONE | pass | planfile |
+| 039 | jackin-env-pub-surface-pilot | DONE | pass | planfile |
+| 040 | grid-resize-in-place | DONE | pass | planfile |
+| 041 | telemetry-operation-facade | DONE | pass | planfile |
+| 042 | high-frequency-metrics | DONE | pass | planfile |
+| 043 | per-sink-filters-jackin-debug-retirement | DONE | pass | planfile |
+| 044 | telemetry-conformance-lane | DONE | pass | planfile |
+| 045 | protocol-env-corpus-closure | DONE | pass | planfile |
+| 046 | dind-chaos-lane | DONE | pass | planfile |
+| 047 | maintainability-lint-census | DONE | pass | planfile |
+| 048 | advisory-lanes-wave-2 | DONE | pass | planfile |
+| 049 | crate-readme-fumadocs-pipeline | DONE | pass | planfile |
+| 050 | readme-freshness-gate | DONE | pass | planfile |
+| 051 | xtask-gate-reporter-core | DONE | pass | planfile |
+| 052 | dylint-scaffold-render-purity | DONE | pass | planfile |
+| 053 | tui-half-layer-spike | DONE | pass | planfile |
+| 054 | assertions-on-result-states | DONE | pass | planfile |
+| 055 | residual-footnote-closure | DONE | pass | planfile |
+| 056 | matrix-seq-to-defer | DONE | pass | planfile |
+| 057 | residual-wave-r1-bench-ratchet-map | DONE | pass | planfile |
+| 058 | residual-complexity-env-snapshot | DONE | pass | planfile |
+| 059 | workspace-name-roles-resolve | DONE | pass | planfile |
+| 060 | workspace-name-env-resolve | DONE | pass | planfile |
+| 061 | workspace-name-console-editor | DONE | pass | planfile |
+| 062 | workspace-name-appconfig-crud | DONE | pass | planfile |
+| 063 | workspace-name-isolation-drift | DONE | pass | planfile |
+| 064 | workspace-name-auth-error-token | DONE | pass | planfile |
+| 065 | thiserror-jackin-instance | DONE | pass | planfile |
+| 066 | thiserror-jackin-isolation | DONE | pass | planfile |
+| 067 | thiserror-jackin-docker | DONE | pass | planfile |
+| 068 | thiserror-jackin-image | DONE | pass | planfile |
+| 069 | thiserror-jackin-config | DONE | pass | planfile |
 
 Total plans: 65; in_tree fail rows: 0
