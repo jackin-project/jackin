@@ -1,28 +1,34 @@
-# Residual ledger — substantial unfinished work only
+# Residual ledger — code-health unfinished work
 
-Authoritative list of **large multi-PR** code-health follow-ups still open after PR #759 close-out.
+Authoritative unfinished multi-PR list for goal
+[GOAL-CODE-HEALTH-AND-LAUNCH-SPEED.md](../GOAL-CODE-HEALTH-AND-LAUNCH-SPEED.md).
 
-Removed from this ledger (not tracked as plan work anymore):
+**Launch-speed** is tracked separately: [../launch-speed/README.md](../launch-speed/README.md) (008c).
 
-- Fully shipped CLOSED rows (evidence in git history)
-- Optional micro residuals (zero-copy scrollback row, db/docker metrics demotion, launch-speed 008c inspect-count polish)
-- Intentional product/protocol pins with no code work requested (usage accounts-only surface, apple-container not shipping, Hello fail-closed)
+**Agent-status** is out of scope for that goal (deferred).
 
-| ID | Why still open (substantial) | Next trigger |
-|----|------------------------------|--------------|
-| **R-launch-typestate** / **R-typestate-general** | Multi-PR LaunchCore typestate extract (~1.3k LOC phase machine) | Dedicated design PR |
-| **R-033-suite-a** | Full `run_launch_core` failure-path characterization needs LaunchCore fixture | After LaunchCore extract |
-| **R-014-launch-pipeline-bench** | Full FakeDocker LaunchCore pipeline bench (micro `launch_attach` only today) | Same LaunchCore extract PR |
-| **R-daemon-decomp** | Capsule daemon module/port rewrite (specs only shipped) | Per-worklist PR |
-| **R-daemon-char-remainder** | Remaining daemon behavioral characterization surfaces | After daemon ports |
-| **R-sim-turmoil** | Turmoil/proptest sim lane blocked on daemon ports | After daemon decomp slice |
-| **R-038-WorkspaceLabel** | Dual-semantics `materialize_workspace` path labels vs config stems + TUI/CLI display strings need `WorkspaceLabel` design | WorkspaceLabel design PR |
-| **R-edit-model-convergence** | Full console settings/editor edit-model merge (view-models only shipped) | Console redesign PR |
-| **R-allow-attributes-deny** | Mass bare-`#[allow]` burn-down then flip `allow_attributes*` to deny | bare-allow floor → 0 |
-| **R-missing-docs-cascade** | `#![deny(missing_docs)]` cascade beyond protocol (one pure crate per PR) | Next pure-crate PR |
-| **R-047-maintainability-promote** | Promote remaining 7 maintainability lints off residual-`allow` (census done; burn-down not) | Dedicated lint promote PR |
-| **R-perf-platform** | Wire `[[perf]]` / dhat budgets into ratchet; optional iai-callgrind when CI image supports valgrind | After stable benches + CI image |
+Not tracked here (intentional / optional / shipped):
 
-Disposition: every row is **OPEN-substantial** (future PR), not silent DEFER and not intentional “won’t do.”
+- Fully shipped CLOSED evidence (git history)
+- Optional micro: zero-copy scrollback row, db/docker metrics demotion
+- Intentional pins: usage accounts-only surface, apple-container not shipping, Hello fail-closed
 
-Counts: **12** substantial residuals (some rows group related IDs).
+| ID | Wave | Why still open | Next trigger |
+|----|------|----------------|--------------|
+| **R-047-maintainability-promote** | 1 | Seven maintainability lints still residual-`allow` | Re-measure + promote or measured-allow comments |
+| **R-allow-attributes-deny** | 1 | Bare-`#[allow]` floor ≠ 0; cannot deny `allow_attributes*` yet | Burn-down → floor 0 → deny |
+| **R-missing-docs-cascade** | 1 | Only protocol has `#![deny(missing_docs)]` | Cascade pure crates one-PR-each |
+| **R-038-WorkspaceLabel** | 2 | `materialize_workspace` still `&str`; path-label vs config-stem dual-semantics | WorkspaceLabel design + type boundaries |
+| **R-launch-typestate** / **R-typestate-general** | 3 | Monolithic `run_launch_core` (~1350 LOC); no phase typestate | LaunchCore extract PR |
+| **R-033-suite-a** | 3 | No full `run_launch_core` failure-path fixture (B+C only) | After LaunchCore seams |
+| **R-014-launch-pipeline-bench** | 3 | Only `launch_attach` micro-bench; no FakeDocker pipeline bench | Same LaunchCore extract |
+| **R-daemon-decomp** | 4 | Specs only; daemon control still monolithic | Per-worklist module/port extract |
+| **R-daemon-char-remainder** | 4 | Partial characterization surfaces | After daemon ports |
+| **R-sim-turmoil** | 4 | No turmoil/proptest sim harness | After daemon decomp |
+| **R-edit-model-convergence** | 5 | View-models only; settings/editor not fully merged | Console redesign PR |
+| **R-perf-platform** | 6 | No `[[perf]]` / dhat ratchet family; no iai-callgrind | After stable benches + CI image |
+
+Disposition: **OPEN** until CLOSED in-tree (prefer implement). Operator pin only for hard external blockers.
+
+Counts: **12** code-health residuals (+ launch-speed 008c outside this file).
+
