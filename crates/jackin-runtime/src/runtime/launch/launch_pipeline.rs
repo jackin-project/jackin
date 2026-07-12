@@ -84,8 +84,7 @@ fn defer_operator_env<'a>(
     credential_agents: Vec<jackin_core::agent::Agent>,
 ) -> DeferredOperatorEnv<'a> {
     let operator_env_needed = |key: &str| credential_key_needed_for_role(&credential_agents, key);
-    let workspace_typed = workspace_name
-        .and_then(|n| WorkspaceName::parse(n).ok());
+    let workspace_typed = workspace_name.and_then(|n| WorkspaceName::parse(n).ok());
     if !jackin_env::has_operator_env_matching(
         config,
         Some(&selector.key()),
@@ -1013,12 +1012,7 @@ pub(crate) async fn load_role_with(
     let auth_workspace = workspace_name
         .as_deref()
         .and_then(|n| WorkspaceName::parse(n).ok());
-    let auth_mode = jackin_config::resolve_mode(
-        config,
-        agent,
-        auth_workspace.as_ref(),
-        &role_key,
-    );
+    let auth_mode = jackin_config::resolve_mode(config, agent, auth_workspace.as_ref(), &role_key);
     let operator_env = await_operator_env(operator_env).await?;
 
     // Resolve env vars (interactive prompts happen here, before build)
@@ -1079,11 +1073,8 @@ pub(crate) async fn load_role_with(
     let exec_ws = workspace_name
         .as_deref()
         .and_then(|n| WorkspaceName::parse(n).ok());
-    let exec_bindings = jackin_env::collect_on_demand_bindings(
-        config,
-        Some(role_key.as_str()),
-        exec_ws.as_ref(),
-    );
+    let exec_bindings =
+        jackin_env::collect_on_demand_bindings(config, Some(role_key.as_str()), exec_ws.as_ref());
     if !exec_bindings.is_empty() {
         let names = super::exec_binding_names(&exec_bindings);
         merged_vars.retain(|(k, _)| k != "JACKIN_EXEC_BINDINGS");

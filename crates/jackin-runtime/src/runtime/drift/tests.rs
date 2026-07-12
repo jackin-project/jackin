@@ -1,7 +1,9 @@
 #[cfg(test)]
 use super::detect_workspace_edit_drift;
 use jackin_core::WorkspaceName;
-fn wn(name: &str) -> WorkspaceName { WorkspaceName::parse(name).unwrap() }
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use crate::isolation::state::{CleanupStatus, IsolationRecord, write_records};
 use jackin_core::JackinPaths;
 use jackin_core::MountIsolation;

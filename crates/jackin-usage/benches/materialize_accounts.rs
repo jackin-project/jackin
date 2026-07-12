@@ -9,6 +9,13 @@
 //! cargo bench --bench materialize_accounts -p jackin-usage -- --quick
 //! ```
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "criterion bench harness: fail-fast setup"
+)]
+
 use std::hint::black_box;
 use std::path::PathBuf;
 

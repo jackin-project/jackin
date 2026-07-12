@@ -302,10 +302,7 @@ fn measure_export_volume_constants(root: &Path) -> Result<BTreeMap<String, usize
         let Some(rest) = text.split(&needle).nth(1) else {
             bail!("missing {name} in {}", path.display());
         };
-        let digits: String = rest
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .collect();
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
         let value: usize = digits
             .parse()
             .with_context(|| format!("parsing {name} value from {}", path.display()))?;

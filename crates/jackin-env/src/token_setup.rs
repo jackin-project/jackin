@@ -714,10 +714,7 @@ pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> 
 /// OAuth token is *valid* upstream is to launch a workspace and
 /// observe the auth banner; doctor's job is to confirm the
 /// canonical-slot config plumbing resolves without errors.
-pub fn run_doctor(
-    config: &AppConfig,
-    workspace: &WorkspaceName,
-) -> anyhow::Result<DoctorReport> {
+pub fn run_doctor(config: &AppConfig, workspace: &WorkspaceName) -> anyhow::Result<DoctorReport> {
     let op_cli = op_cli_for_scope(
         config,
         &TokenSetupScope::Workspace(workspace.as_str().to_owned()),

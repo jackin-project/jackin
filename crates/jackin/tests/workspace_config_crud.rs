@@ -287,7 +287,8 @@ fn workspace_edit_resolves_relative_mount() {
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
     let result = with_cwd(temp.path(), || {
         let mount = parse_mount_spec_resolved("jackin-dev").unwrap();
-        editor2.edit_workspace(&wn("jackin"),
+        editor2.edit_workspace(
+            &wn("jackin"),
             WorkspaceEdit {
                 upsert_mounts: vec![mount],
                 ..WorkspaceEdit::default()
@@ -352,7 +353,8 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
     // Now remove the workdir auto-mount
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
     editor2
-        .edit_workspace(&wn("my-app"),
+        .edit_workspace(
+            &wn("my-app"),
             WorkspaceEdit {
                 no_workdir_mount: true,
                 ..WorkspaceEdit::default()
@@ -398,7 +400,8 @@ fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
 
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
     let err = editor2
-        .edit_workspace(&wn("monorepo"),
+        .edit_workspace(
+            &wn("monorepo"),
             WorkspaceEdit {
                 no_workdir_mount: true,
                 ..WorkspaceEdit::default()

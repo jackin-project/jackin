@@ -90,9 +90,7 @@ pub(super) mod config {
 
     fn remove_workspace_from_disk(paths: &JackinPaths, name: &str) -> anyhow::Result<AppConfig> {
         let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
-        editor_doc.remove_workspace(
-            &WorkspaceName::parse(name).map_err(anyhow::Error::from)?,
-        )?;
+        editor_doc.remove_workspace(&WorkspaceName::parse(name).map_err(anyhow::Error::from)?)?;
         editor_doc.save()
     }
 
@@ -294,19 +292,10 @@ pub(super) mod config {
                     editor_doc.set_workspace_github_auth_forward(workspace_name, mode);
                 }
                 WorkspaceSaveDiffOp::WorkspaceRoleAuthForward { role, agent, mode } => {
-                    editor_doc.set_workspace_role_auth_forward(
-                        workspace_name,
-                        &role,
-                        agent,
-                        mode,
-                    );
+                    editor_doc.set_workspace_role_auth_forward(workspace_name, &role, agent, mode);
                 }
                 WorkspaceSaveDiffOp::WorkspaceRoleGithubAuthForward { role, mode } => {
-                    editor_doc.set_workspace_role_github_auth_forward(
-                        workspace_name,
-                        &role,
-                        mode,
-                    );
+                    editor_doc.set_workspace_role_github_auth_forward(workspace_name, &role, mode);
                 }
                 WorkspaceSaveDiffOp::WorkspaceSyncSourceDir { agent, source } => {
                     editor_doc.set_workspace_sync_source_dir(

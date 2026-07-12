@@ -325,10 +325,7 @@ impl UsageCache {
     /// Bench/test entry: materialize the cache to the configured path.
     /// Production refresh calls the same body via [`Self::materialize_accounts`].
     #[doc(hidden)]
-    pub fn materialize_accounts_for_bench(
-        &self,
-        generated_at_epoch: i64,
-    ) -> Result<(), String> {
+    pub fn materialize_accounts_for_bench(&self, generated_at_epoch: i64) -> Result<(), String> {
         self.materialize_accounts(generated_at_epoch)
     }
 

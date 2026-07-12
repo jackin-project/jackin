@@ -872,7 +872,11 @@ workdir = "/tmp/proj"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_sync_source_dir(&wn("proj"), Agent::Claude, Some(Path::new("/host/claude")));
+    editor.set_workspace_sync_source_dir(
+        &wn("proj"),
+        Agent::Claude,
+        Some(Path::new("/host/claude")),
+    );
     editor.save().unwrap();
 
     let out = workspace_file_contents(&paths, "proj");
@@ -903,7 +907,8 @@ workdir = "/tmp/proj"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_auth_forward(&wn("proj"),
+    editor.set_workspace_role_auth_forward(
+        &wn("proj"),
         "smith",
         Agent::Codex,
         Some(AuthForwardMode::ApiKey),
@@ -955,7 +960,8 @@ workdir = "/tmp/proj"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_sync_source_dir(&wn("proj"),
+    editor.set_workspace_role_sync_source_dir(
+        &wn("proj"),
         "smith",
         Agent::Codex,
         Some(Path::new("/host/codex")),
@@ -1409,7 +1415,11 @@ workdir = "/workspace/prod"
     .unwrap();
 
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    editor.set_workspace_role_github_auth_forward(&wn("prod"), "scratch", Some(GithubAuthMode::Token));
+    editor.set_workspace_role_github_auth_forward(
+        &wn("prod"),
+        "scratch",
+        Some(GithubAuthMode::Token),
+    );
     let env_scope = EnvScope::WorkspaceRoleGithub {
         workspace: "prod".to_owned(),
         role: "scratch".to_owned(),

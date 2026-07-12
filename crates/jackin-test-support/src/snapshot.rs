@@ -18,8 +18,11 @@ pub fn redact_digit_runs(input: &str) -> String {
         if c.is_ascii_digit() {
             let mut run = String::new();
             run.push(c);
-            while chars.peek().is_some_and(|n| n.is_ascii_digit()) {
-                run.push(chars.next().expect("peeked digit"));
+            while chars.peek().is_some_and(char::is_ascii_digit) {
+                // Peeked digit: next cannot be None.
+                if let Some(d) = chars.next() {
+                    run.push(d);
+                }
             }
             // Short numbers (ports, counts < 4 digits) stay; long runs are volatile.
             if run.len() >= 4 {

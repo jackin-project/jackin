@@ -194,8 +194,7 @@ pub fn resolve_committed_agent_launch(
         return Ok(None);
     };
     let workspace = resolve_selected_workspace(config, cwd, &choice, &role)?;
-    let workspace_name =
-        WorkspaceName::parse(&choice.name).map_err(anyhow::Error::from)?;
+    let workspace_name = WorkspaceName::parse(&choice.name).map_err(anyhow::Error::from)?;
     let providers = providers_for_launch(config, &workspace_name, &role.key(), agent);
     Ok(Some(CommittedAgentLaunch {
         input,
@@ -226,13 +225,8 @@ fn operator_key_present(
     role_selector: &str,
     env_var: &str,
 ) -> bool {
-    jackin_env::lookup_operator_env_raw(
-        config,
-        Some(role_selector),
-        Some(workspace_name),
-        env_var,
-    )
-    .is_some()
+    jackin_env::lookup_operator_env_raw(config, Some(role_selector), Some(workspace_name), env_var)
+        .is_some()
 }
 
 #[cfg(test)]

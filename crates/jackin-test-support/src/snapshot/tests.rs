@@ -3,10 +3,7 @@ use super::*;
 #[test]
 fn redact_digit_runs_keeps_short_and_scrubs_long() {
     assert_eq!(redact_digit_runs("port 80 ok"), "port 80 ok");
-    assert_eq!(
-        redact_digit_runs("ts 1700000000 done"),
-        "ts <digits> done"
-    );
+    assert_eq!(redact_digit_runs("ts 1700000000 done"), "ts <digits> done");
 }
 
 #[test]

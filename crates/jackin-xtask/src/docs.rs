@@ -174,7 +174,8 @@ fn check_codebase_map(root: &Path) -> Result<()> {
     for name in &members {
         // Require a whole-token hit so short names don't false-positive.
         let needle = name.as_str();
-        let present = map.split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+        let present = map
+            .split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
             .any(|tok| tok == needle);
         if !present {
             missing.push(name.clone());
@@ -196,25 +197,24 @@ fn check_codebase_map(root: &Path) -> Result<()> {
 }
 
 fn workspace_package_names(root: &Path) -> Result<Vec<String>> {
-    let output = std::process::Command::new("cargo")
-        .args([
-            "metadata",
-            "--format-version",
-            "1",
-            "--no-deps",
-            "--manifest-path",
-        ])
-        .arg(root.join("Cargo.toml"))
-        .output()
-        .context("running cargo metadata for docs map-check")?;
+    let mut meta = std::process::Command::new("cargo");
+    meta.args([
+        "metadata",
+        "--format-version",
+        "1",
+        "--no-deps",
+        "--manifest-path",
+    ])
+    .arg(root.join("Cargo.toml"));
+    let output =
+        crate::cmd::output_raw(&mut meta).context("running cargo metadata for docs map-check")?;
     if !output.status.success() {
         bail!(
             "cargo metadata failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    let v: Value =
-        serde_json::from_slice(&output.stdout).context("parsing cargo metadata JSON")?;
+    let v: Value = serde_json::from_slice(&output.stdout).context("parsing cargo metadata JSON")?;
     let workspace_root = v
         .get("workspace_root")
         .and_then(|x| x.as_str())

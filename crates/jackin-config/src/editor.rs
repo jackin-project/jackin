@@ -576,7 +576,11 @@ impl ConfigEditor {
         Ok(())
     }
 
-    pub fn edit_workspace(&mut self, name: &WorkspaceName, edit: WorkspaceEdit) -> anyhow::Result<()> {
+    pub fn edit_workspace(
+        &mut self,
+        name: &WorkspaceName,
+        edit: WorkspaceEdit,
+    ) -> anyhow::Result<()> {
         // Snapshot current on-disk state into an AppConfig.
         let mut in_memory = validate_candidate(&self.doc.to_string(), &self.workspace_docs)
             .context("re-parsing current docs into AppConfig for workspace edit")?;

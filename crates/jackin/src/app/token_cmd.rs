@@ -46,7 +46,9 @@ pub(super) fn handle_claude_token(
             plain,
             interactive,
         } => {
-            config.require_workspace(&WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?)?;
+            config.require_workspace(
+                &WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?,
+            )?;
 
             // Interactive mode: walk the operator through 1Password with
             // plain CLI prompts (account → vault → item → field) when
@@ -179,8 +181,7 @@ pub(super) fn handle_claude_token(
             Ok(())
         }
         cli::WorkspaceClaudeTokenCommand::Doctor { workspace } => {
-            let workspace =
-                WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?;
+            let workspace = WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?;
             let report = token_setup::run_doctor(config, &workspace)?;
             println!("workspace        {}", report.workspace);
             println!("auth_forward     {}", report.mode);
@@ -330,7 +331,8 @@ pub(crate) fn validate_setup_role_allowed(
     role: &str,
 ) -> Result<()> {
     use jackin_console::workspace::agent_is_effectively_allowed;
-    let ws = config.require_workspace(&WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?)?;
+    let ws =
+        config.require_workspace(&WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?)?;
     if !agent_is_effectively_allowed(ws, role) {
         anyhow::bail!(
             "role {role:?} is not allowed in workspace {workspace:?}; allowed roles: {}",

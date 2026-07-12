@@ -237,7 +237,13 @@ fn providers_for_launch_include_all_zai_env_layers() {
     );
     config.workspaces.insert("workspace-demo".into(), workspace);
     assert_eq!(
-        providers_for_launch(&config, &wn("workspace-demo"), "the-architect", Agent::Claude).len(),
+        providers_for_launch(
+            &config,
+            &wn("workspace-demo"),
+            "the-architect",
+            Agent::Claude
+        )
+        .len(),
         2
     );
 
@@ -268,7 +274,9 @@ fn providers_for_launch_include_all_zai_env_layers() {
         .workspaces
         .insert("workspace-role-demo".into(), workspace_role);
     let providers = providers_for_launch(
-        &config, &wn("workspace-role-demo"), "the-architect",
+        &config,
+        &wn("workspace-role-demo"),
+        "the-architect",
         Agent::Claude,
     );
     assert_eq!(providers.len(), 2);

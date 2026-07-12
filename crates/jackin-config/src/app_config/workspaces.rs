@@ -167,8 +167,7 @@ impl AppConfig {
         }
 
         validate_workspace_config(name, &workspace)?;
-        self.workspaces
-            .insert(name.as_str().to_owned(), workspace);
+        self.workspaces.insert(name.as_str().to_owned(), workspace);
         Ok(())
     }
 

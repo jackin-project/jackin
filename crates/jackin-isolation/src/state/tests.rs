@@ -1,7 +1,9 @@
 //! Tests for `state`.
 use super::*;
 use jackin_core::WorkspaceName;
-fn wn(name: &str) -> WorkspaceName { WorkspaceName::parse(name).unwrap() }
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use tempfile::TempDir;
 
 fn sample_record() -> IsolationRecord {
