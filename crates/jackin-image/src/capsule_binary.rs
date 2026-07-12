@@ -826,15 +826,13 @@ async fn fetch_and_verify_manifest(
             "signed capsule manifest version: {} (host version: {version})",
             manifest.version
         );
-    } else {
-        if manifest.version != version {
-            return Err(ImageError::msg(format!(
-                "signed capsule manifest carries version {:?} but expected {version:?}; \
-                 the release asset may have been replaced or the manifest is stale",
-                manifest.version
-            ))
-            .into());
-        }
+    } else if manifest.version != version {
+        return Err(ImageError::msg(format!(
+            "signed capsule manifest carries version {:?} but expected {version:?}; \
+             the release asset may have been replaced or the manifest is stale",
+            manifest.version
+        ))
+        .into());
     }
 
     let target = linux_target(arch);
@@ -866,7 +864,7 @@ fn extract_cert_san_url(cert_pem: &str) -> Result<String> {
             }
         }
     }
-    return Err(ImageError::NoUriSan.into());
+    Err(ImageError::NoUriSan.into())
 }
 
 /// Return true if `san` is the OIDC identity of one of the two permitted signing
