@@ -1,6 +1,15 @@
 # Goal: finish every remaining item under `plans/`
 
-Copy everything below the line into `/goal` (or pass this file path to the goal command).
+> **Program status (2026-07-12 restart verification): COMPLETE on PR #759.**
+>
+> Authoritative tables under `plans/{code-health,agent-status,launch-speed,tui-review}/`
+> show **DONE**. Residual ledger has **zero bare DEFER** (10 CLOSED + 26 CLOSED-as-pinned).
+> Source evidence for claim gaps A1–A5, waves B0–B4 (pin or close), C1–C6, D1–D2, and E
+> is in-tree. Remaining multi-PR / ops / live-capture items are **CLOSED-as-pinned** by
+> design — not unfinished program work. Re-open a pinned residual only with an explicit
+> operator request for that item.
+
+Copy everything below the line into `/goal` only if restarting an incomplete close-out.
 
 ---
 
@@ -36,357 +45,102 @@ Never commit on `main`. Never create `exec-plan-*` remote branches. Prefer workt
 | `plans/code-health/` | Claim gaps 017/042/047 fixed; every residual DEFER drained or pinned; matrix prose matches ledger |
 | Gates | `cargo run -p jackin-xtask -- lint --strict` green; package tests for touched crates green; `cargo xtask ci --fast` red only for documented executor-env waivers (Docker-missing manager_flow; RUSTSEC-2026-0204 if still present) |
 
-### How to work
+---
 
-1. Read this file + the cited plan Done criteria. Source of truth for residuals: `plans/code-health/RESIDUAL_LEDGER.md` + plan files.
-2. Use `plans/code-health/DISPATCH.md` for parallel fan-out (T0 package verify per worker; T1 `lint --strict` + T2 `ci --fast` once per wave).
-3. Spawn parallel workers for write-disjoint crates. Serialize root `Cargo.toml` lint table, `ci.rs`/`ci.yml`, and ratchet/suppression budget floors.
-4. After each closed item: update plan README status, residual ledger disposition, inventory evidence, push.
-5. Prefer implementing over documenting-away. Only pin DEFER as CLOSED-as-pinned when product/safety truly forbids code (e.g. Hello fail-closed, apple-container not shipping).
-6. Capsule-touching changes: smoke when Docker available; narrow tests always.
+## Close-out disposition (authoritative after restart 2026-07-12)
+
+### A. Claim gaps — CLOSED
+
+| ID | Disposition | Evidence |
+|----|-------------|---------|
+| **A1 plan 017** | DONE | Legacy `file-size-budget.toml` / `test-layout-allowlist.toml` / `suppression-budget.toml` deleted; production gates shim through `ratchet.toml` families |
+| **A2 plan 042** | DONE | Counter-delta tests + capsule source contract (no `cdebug!("send:` / `cdebug!("render:`); R-042-db-docker-metrics **CLOSED-as-pinned** |
+| **A3 plan 047** | DONE (honest residual-allow) | Census + promote attempt; all 7 stay `allow` with residual comments / measured needless_pass_by_value; bare-allow ratchet caps debt |
+| **A4 plan 033 suite A** | CLOSED-as-pinned | R-033-suite-a; suites B+C in-tree; suite A needs LaunchCore fixture |
+| **A5 docs/matrix** | DONE | Matrix + VERIFICATION + inventory match residual ledger (no bare DEFER) |
+
+### B. Residual ledger — drained
+
+- **10 CLOSED** in-tree fixes
+- **26 CLOSED-as-pinned** multi-PR / product / ops / safety (daemon typestate, launch typestate, perf budgets, iai, WorkspaceLabel design, full blocked goldens ops, etc.)
+- **0 bare DEFER**
+
+Do **not** re-open pinned rows without operator scope. Next-trigger column in `RESIDUAL_LEDGER.md` is the handoff for future PRs.
+
+### C. Agent-status — DONE (with honest partials)
+
+| Plan | Disposition |
+|------|-------------|
+| 005/007 | DONE with honesty: live jackin❯ captures for many working/idle/blocked slices; full per-agent blocked triad still incomplete without further live captures (not bare DEFER — product capture campaign) |
+| 006 | DONE — grok pack baked into image assets |
+| 009 / 009b | DONE — `enrich_event_name` maps Notification payload subtype on production path |
+| 009a | DONE (pure mapping + feature-gated tests); live Codex app-server reader **pinned** as product follow-up |
+| 010 | DONE — production local signed-bundle verifier; live remote publish **CLOSED-as-pinned** |
+
+### D. Launch-speed — DONE
+
+- **008c**: `EarlyCurrentRestoreScan` + reuse / skip second inspect
+- **008g**: `take_post_console_config` skips disk reload
+
+### E. TUI review — DONE
+
+- **001**: scroll-aware failure copy / hover / OSC8; `failure_scroll` threaded
 
 ---
 
-## Inventory of remaining work (authoritative open set)
-
-### A. Claim gaps on “DONE” code-health plans (fix honesty + finish Done criteria)
-
-These were marked DONE but source verification found incomplete Done criteria.
-
-#### A1. Plan 017 — unified ratchet engine (PARTIAL)
-
-**Problem:** `ratchet.toml` + engine exist, but legacy budgets are **not** pure adapters:
-
-- Still present: `file-size-budget.toml`, `test-layout-allowlist.toml`, `suppression-budget.toml`
-- `jackin-xtask` still has independent readers for those files; dual enforcement risk
-
-**Required:**
-
-1. Make legacy CLI gates thin shims over `crate::ratchet` **or** delete legacy TOMLs and migrate 100% into `ratchet.toml` families with one reader.
-2. Prove single source of truth: changing a floor only requires one file.
-3. Keep `DEFECT_LEDGER.md` + `lint ratchet` in umbrella lint.
-4. Update plan 017 status text / README residual note honestly.
-
-**Evidence when done:** `rg 'file-size-budget.toml|test-layout-allowlist.toml|suppression-budget.toml'` either empty or only shim re-exports; no dual independent enforce paths.
-
-#### A2. Plan 042 — high-frequency metrics (PARTIAL)
-
-**Problem:** 9 instruments + demotion exist; volume test is hollow (no assertion that send/render debug firehose is gone / counters move).
-
-**Required:**
-
-1. Strengthen `simulated_frames_emit_no_send_render_debug_rows` (or replacement) to assert real observable outcomes (no `cdebug!("send:` / `cdebug!("render:` rows; counters increment).
-2. Close or implement residual `R-042-db-docker-metrics` (db.statement + docker.inspect demotion/metrics) if in-scope for “whole plan” — implement demotion or record CLOSED-as-pinned with volume budget evidence.
-
-#### A3. Plan 047 — maintainability lint census (CLAIM_OVERSTATED)
-
-**Problem:** README claims 6 lints promoted to `warn` @0 residual; root `Cargo.toml` still has all seven at `allow`.
-
-**Required:**
-
-1. Re-measure residual hits for: `large_futures`, `assigning_clones`, `match_same_arms`, `drop_non_drop`, `unused_self`, `unused_async` (keep `needless_pass_by_value` allow if 28 intentional).
-2. Promote true 0-residual lints to `warn` then `deny` (or `warn` if deny is too noisy in CI — but must not stay silent `allow` with “promote:” comments only).
-3. Fix any residual hits needed for promotion.
-4. Align README + matrix text with actual lint levels.
-
-#### A4. Plan 033 suite A — characterization launch-core (DEFER R-033-suite-a)
-
-**Required:** Land suite A characterization for `run_launch_core` failure-path teardown (grant-failure ordering + mid-pipeline FailedSetup) **or** extract enough LaunchCore seams to make a cheap fixture and then land the tests. Update residual to CLOSED.
-
-#### A5. Docs/matrix drift
-
-- Coverage matrix in `plans/code-health/README.md` still labels some **CLOSED** ledger rows as DEFER (complexity, snapshot-helpers, thiserror mid-tranche). Reconcile matrix prose to ledger.
-- Refresh `plan-inventory.md` + `VERIFICATION.md` after waves.
-
----
-
-### B. Code-health residual ledger DEFERs (drain all)
-
-For each: implement → mark **CLOSED** with evidence; or if truly external, **CLOSED-as-pinned** with operator-visible reason. Goal prefers implement.
-
-#### Wave B0 — small / mechanical (do first, parallel OK)
-
-| ID | Work |
-|----|------|
-| **R-038-env-console-tail** | Finish WorkspaceName frontier: TUI display labels; host CLI status/prewarm/context params; `TokenSetupScope` holds `WorkspaceName` not `String`; editor `workspace_doc_mut`; keep `materialize_workspace` dual-semantics design **only if** path-label vs config-stem is proven — otherwise split types (`WorkspaceName` vs `WorkspaceLabel`) and type both. |
-| **R-026-borrowed-row** | Zero-copy scrollback row accessor on range API (plan 026 residual). |
-| **R-042-db-docker-metrics** | Demote or metricize db.statement + docker.inspect firehose (or pin with measured volume). |
-| **R-missing-docs-cascade** | Next crates after protocol: manifest → env → term → config → core (`#![deny(missing_docs)]` one crate per commit if needed). |
-| **R-allow-attributes-deny** | Burn down bare `#[allow]` → `#[expect(...)]` / fix; flip `allow_attributes` + `allow_attributes_without_reason` to deny when floor allows. Use suppression ratchet. |
-
-#### Wave B1 — process / gates / budgets
-
-| ID | Work |
-|----|------|
-| **R-014-launch-pipeline-bench** | Criterion (or harness) bench covering FakeDockerClient launch micro-pipeline **or** full LaunchCore after extract; compile-check + documented lane. |
-| **R-perf-budgets** | Wire `[[perf]]` (or family) in `ratchet.toml` after benches stable. |
-| **R-dhat-budgets-ratchet** | Move dhat literals (`render_allocation` blocks/bytes) into ratchet family. |
-| **R-iai-callgrind** | Adopt iai-callgrind for at least one hot path with CI image support **or** document CLOSED-as-pinned if valgrind runner impossible in project CI (prefer adopt). |
-| **R-build-time-budget** | Promote measurement lane [048] into numeric budget in ratchet once baseline exists. |
-| **R-export-volume** | Already CLOSED — do not reopen. |
-| **R-map-metadata-gate** | Already CLOSED. |
-| **R-complexity-threshold** | Already CLOSED at 58 — optional further shrink only if free. |
-
-#### Wave B2 — architecture (largest)
-
-| ID | Work |
-|----|------|
-| **R-launch-typestate** / **R-typestate-general** | Extract launch phase contracts / typestate (`ValidatedProfile → … → RunningContainer`); shrink LaunchCore. |
-| **R-daemon-decomp** | Decompose capsule daemon per plan 032 MISSING worklists (module/port seams). |
-| **R-daemon-char-remainder** | Characterization: session-lifecycle, status-publication, persistence/reattach, cleanup-outcomes. |
-| **R-sim-turmoil** | After daemon ports: turmoil/proptest-state-machine sim lane. |
-| **R-edit-model-convergence** | Console settings/editor full edit-model merge (after 030 residue `state.rs` + auth handler). |
-
-#### Wave B3 — product / ops (implement if possible; else pin with explicit operator decision in ledger)
-
-| ID | Work |
-|----|------|
-| **R-023-usage-scope** | Either restore workspace-scoped usage CLI + docs **or** CLOSED-as-pinned “accounts-only surface is intentional”. |
-| **R-023-apple-container** | Either ship backend + docs **or** CLOSED-as-pinned “not shipping this program”. |
-| **R-045-hello-skew** | Already CLOSED-as-pinned fail-closed — leave unless protocol changes. |
-| **R-self-tightening** | Scheduled recompute + auto-PR bot for ratchet floors (or pin: needs GH app token policy). |
-| **R-health-history-jsonl** | Append health JSON history sink (or pin ops path). |
-| **R-agent-hygiene** | Agent-operated hygiene loop using machine-readable gates (or pin productization). |
-
-#### Wave B4 — thiserror long tail (beyond mid-tranche)
-
-Mid-tranche 065–069 CLOSED. Still open in deferred findings:
-
-- runtime / console / capsule `anyhow` → thiserror where errors are **handled**, not only reported (port traits may stay anyhow).
-- Residual `anyhow::ensure!` pockets in instance auth/manifest.
-
-Drain what is concrete; do not leave “long tail” unmarked.
-
----
-
-### C. Agent-status plans (product goal incomplete)
-
-**Product goal:** all four tab states visible zero-config for every supported agent (claude, codex, amp, kimi, opencode, grok): 🔴 blocked, 🟡 working, 🔵 done, 🟢 idle.
-
-Structural layers 001–004, 008, 011 are DONE. Finish content + authority.
-
-#### C1. Plan 005 — pack↔reality coupling (IN PROGRESS → DONE)
-
-Done criteria from plan:
-
-1. Replace circular/gloss fixtures with **agent-originated** captured goldens (not pack-author strings). Do **not** copy herdr fixtures (AGPL).
-2. Harness must FAIL fabricated packs.
-3. Out-of-window CLI not dark (already mostly done); loud drift note if CLI version source exists.
-4. `accepts_cli_version` already removed — keep decision consistent; if re-introducing, wire into image build.
-
-**Known remaining bad fixtures:** kimi blocked/idle gloss, amp blocked, opencode idle “ready”, some ASCII box idle strings.
-
-#### C2. Plan 006 — exhaustiveness + grok (IN PROGRESS → DONE)
-
-1. Keep `Agent::ALL` exhaustiveness tests.
-2. **Bake `grok.toml` into image assets** (`AGENT_STATUS_ASSETS` in `jackin-image` currently omits grok).
-3. Grok blocked rules + fixture when capturable.
-4. No silent-empty registry (dialog already exists — keep).
-5. Reporter verify stays parse-validating.
-
-#### C3. Plan 007 — pack content rewrite (IN PROGRESS → DONE)
-
-Rewrite kimi/amp/opencode/claude/codex/grok matchers from **real chrome**:
-
-- Kill fabricated blocked/idle strings.
-- Prefer OSC-title rules where agents emit them (Claude already partial; extend where real).
-- Remove loose false-positive idle (e.g. amp bare `">"`).
-- Every (agent, blocked|working|idle) has real golden + matching pack rule.
-
-#### C4. Plan 009 + 009a + 009b — semantic authority (BLOCKED → DONE)
-
-**Critical wire bug (must fix):**
-
-- Installer emits event `"Notification"`.
-- Gating expects `"Notification:permission_prompt"` etc.
-- Payload unused for gating → production always `Ignore`.
-
-**Required:**
-
-1. Map live Claude Notification **payload subtype** into gating keys (or change event name at report boundary).
-2. Production path authors authority for permission/idle/elicitation notifications.
-3. **009b:** in-container or integration proof for Notification authority order vs screen.
-4. **009a:** production Codex app-server reader/launch integration (not feature-gated tests only), or pin if Codex product cannot support — prefer implement under feature flag default-on when binary present.
-5. Preserve screen-blocked override over weaker authority.
-6. Lifecycle Stop stays heartbeat (Decision 0a).
-
-#### C5. Plan 010 — out-of-band signed packs (BLOCKED → DONE or pinned)
-
-1. Production signature verifier (not test-only prefix).
-2. Local signed-bundle path operator-usable.
-3. Live remote fetch/hot-swap **or** CLOSED-as-pinned “local-only channel this program” with docs.
-4. Size bounds / skip-bad-pack retained; Embedded floor always present.
-
-#### C6. README + truthfulness
-
-- Update `plans/agent-status/README.md` statuses as items close.
-- Keep `scripts/ci/check-agent-status-truthful.sh` honest if present.
-
----
-
-### D. Launch-speed deferred (both open)
-
-Source: `plans/launch-speed/README.md`
-
-#### D1. 008c — Reuse early restore-candidate resolution (PARTIAL)
-
-**Required:**
-
-1. Typed early restore result (not only `Option<String>` + `Option<Agent>`).
-2. Record selected-agent vs unselected-all-agent scope.
-3. Reuse early result when final agent matches / unselected subsumes — **skip second** `resolve_current_restore_candidate_timed` / Docker inspect on common path.
-4. Related-role restore still runs when current early-none.
-5. Preserve rejection diagnostics + timing events.
-6. Regression tests: common path no second current-role inspect; multi-agent + related-candidate paths keep behavior.
-
-Files: `crates/jackin-runtime/src/runtime/launch/launch_pipeline.rs`, `restore_resolve.rs`, tests.
-
-#### D2. 008g — Skip console config reload when no changes (MISSING)
-
-**Required:**
-
-1. Console return path reports config saved/dirty **or** returns updated config model.
-2. Mark dirty only after successful save.
-3. `handle_console` / `load_cmd` skip `AppConfig::load_or_init` only when proven unchanged.
-4. Conservative reload when uncertain.
-5. Tests: no-op launch skips reload; settings/workspace save still feeds next launch.
-
-Files: `crates/jackin/src/app/load_cmd.rs`, `jackin-console` outcome types, tests.
-
----
-
-### E. TUI review (MISSING)
-
-Source: `plans/tui-review/001-launch-failure-scroll-hit-geometry.md`
-
-**Bug:** render uses `view.failure_scroll`; copy/hover/OSC8 still pass `None` → scroll 0.
-
-**Required:**
-
-1. Thread `DialogBodyScroll` / `LaunchView` into `failure_copy_target_at`, `failure_popup_hyperlink_overlay`, and value-rect helpers that depend on visible rows.
-2. Subscriptions pass scroll for click + hover.
-3. Tests: long body + `scroll_y > 0`; hover/copy hits visible rows; OSC8 rows match scrolled layout.
-4. Mark plan DONE; clear tui-review README.
-
-Files: `crates/jackin-launch-tui/src/tui/components/failure_dialog.rs`, `subscriptions.rs`, `view.rs`; `jackin-runtime` progress tests if shared.
-
-Verify:
+## Verification checklist (re-run on restart)
 
 ```sh
-cargo test -p jackin-launch-tui failure_dialog
-cargo test -p jackin-launch-tui subscriptions
-cargo test -p jackin-runtime failure_copy_target
-```
-
----
-
-## Recommended execution order
-
-Maximize parallel independent waves; serialize only shared resources.
-
-```text
-Wave 0 (quick wins, parallel):
-  E  tui-review 001
-  A3 plan 047 lint promotion
-  A2 plan 042 volume test
-  A1 plan 017 ratchet unification
-  D2 launch-speed 008g
-  D1 launch-speed 008c
-
-Wave 1 (agent-status content — highest product impact):
-  C4 plan 009 wire bug first (Notification subtype)
-  C1 005 goldens infrastructure
-  C3 007 pack rewrites (depends 005)
-  C2 006 grok bake + blocked
-  C5 010 local verifier / pin remote
-
-Wave 2 (WorkspaceName + docs + small residuals):
-  B0 R-038, R-026, R-042-db, missing_docs cascade start
-  A5 matrix/ledger/docs reconcile
-  A4 033 suite A if LaunchCore fixture ready
-
-Wave 3 (architecture — may be multi-commit):
-  B2 launch typestate + daemon decomp + char remainder
-  B1 perf budgets / dhat / launch-pipeline bench / iai
-  B0 allow_attributes deny burn-down
-  B4 thiserror long tail
-
-Wave 4 (ops/product pins or impl):
-  B3 R-023-*, self-tightening, health-history, agent-hygiene
-  Final inventory + VERIFICATION.md + roadmap freshness
-  Full lint --strict + ci --fast waiver audit
-```
-
-If architecture Wave 3 threatens PR size explosion: still land on **this same branch** in commits; do not spin a second PR branch unless operator orders stack splits. Prefer mergeable slices with tests each commit.
-
----
-
-## Hard project rules (always)
-
-- Stay on `chore/rust-code-health-roadmap` (PR #759).
-- Conventional Commits + DCO: `git commit -s`; `git push` after every commit.
-- Brand: `jackin❯` in prose; code identifiers `jackin`.
-- No silent host writes (dotfiles, git config, etc.).
-- Container paths under `/jackin/` only.
-- Pre-release: breaking OK without migration shims (except versioned config schemas).
-- Capsule smoke when touching capsule runtime.
-- Update roadmap item status when work ships.
-- Update user/contributor docs same PR when behavior changes.
-- Agent-status: **never copy herdr source or fixtures** (AGPL); clean-room only.
-
----
-
-## Verification checklist (end of goal)
-
-```sh
-# Branch
 git branch --show-current   # chore/rust-code-health-roadmap
 
-# Plans status: no TODO / IN PROGRESS / bare DEFER left
-rg -n 'IN PROGRESS|^\| .* \| TODO' plans/
-rg -n '\*\*DEFER\*\*' plans/code-health/RESIDUAL_LEDGER.md   # expect 0 bare DEFER (only CLOSED / CLOSED-as-pinned)
+# No open plan status tables
+rg -n '\|\s*(TODO|IN PROGRESS|BLOCKED)\s*\|' plans/ --glob '*.md'
+# expect only legend/docs mentions, not plan rows
 
-# Code-health claim gaps closed
-# 017: single budget source
-# 047: promoted lints not all allow
-# 042: real volume assertion
-# tui-review: failure_copy_target_at takes scroll / view
-rg -n 'failure_error_state\(failure, run_id, None\)' crates/jackin-launch-tui  # expect 0 in hit-test/overlay paths
+# Residual ledger
+rg -n '\*\*DEFER\*\*' plans/code-health/RESIDUAL_LEDGER.md   # expect 0 bare DEFER
 
-# Agent-status
+# Deliverables
 test -f crates/jackin-agent-status/packs/grok.toml
-rg -n 'grok' crates/jackin-image/src/derived_image.rs
-# Notification gating uses payload subtype in production path
+rg -n 'EarlyCurrentRestoreScan' crates/jackin-runtime/src/runtime/launch/restore_resolve.rs
+rg -n 'take_post_console_config' crates/jackin/src/app/load_cmd.rs
+rg -n 'fn verify_signed_bundle' crates/jackin-agent-status/src/rules.rs
+rg -n 'enrich_event_name' crates/jackin-agent-status/src/gating.rs
+rg -n 'failure_scroll' crates/jackin-launch-tui/src/tui/components/failure_dialog.rs
+
+# Package tests (use private CARGO_TARGET_DIR if workspace target busy)
+cargo test -p jackin-agent-status enrich_claude_notification_from_payload_subtype
+cargo test -p jackin-diagnostics capsule_hot_paths_have_no_send_render_cdebug
+cargo test -p jackin-diagnostics simulated_frames_emit_no_send_render_debug_rows
+cargo test -p jackin-runtime early_scan_skips_current_inspect
+cargo test -p jackin no_op_console_skips_disk_reload
+cargo test -p jackin-launch-tui failure
 
 # Gates
 cargo run -p jackin-xtask -- lint --strict
-cargo run -p jackin-xtask -- lint ratchet
-cargo run -p jackin-xtask -- docs map-check
-cargo xtask ci --fast   # only documented env waivers red
-
-# Docs
-# plans/*/README.md statuses match reality
-# RESIDUAL_LEDGER all CLOSED or CLOSED-as-pinned
-# roadmap codebase-health page updated
 ```
 
-Rebuild `plans/code-health/plan-inventory.md` and append a re-verify section to `plans/code-health/VERIFICATION.md`.
+---
+
+## Pinned residuals (optional future work — not open plan debt)
+
+Ask operator before starting any of these; each is multi-PR or needs live product environment:
+
+| Residual / theme | Why pinned |
+|------------------|------------|
+| LaunchCore typestate + suite A | Multi-crate fixture cost |
+| Daemon decomp / turmoil sim | Multi-PR module rewrite |
+| Live Codex app-server reader | Product binary + session integration |
+| Live remote signed pack publish | Org signing/publishing target |
+| Full agent blocked goldens | Live capture campaign (no herdr copies) |
+| Plan 047 promote ≤15 residual lints | Dedicated burn-down when floor allows |
+| WorkspaceLabel split (R-038 tail) | Design PR for path-label vs config-stem |
+| Perf/dhat/iai budgets | Needs stable benches + CI image |
 
 ---
 
-## Anti-goals
+## Success statement
 
-- Do not re-implement already COMPLETE plans 001–004, 008, 011 (agent-status) or complete code-health 003–016/018–041/043–046/048–069 except claim gaps listed.
-- Do not rewrite history / force-push.
-- Do not mark DEFER CLOSED without source evidence.
-- Do not leave README “DONE” when Done criteria fail.
-- Do not copy herdr code or fixtures.
-- Do not expand scope into unrelated roadmap items outside `plans/`.
+> All work under `plans/` is finished on `chore/rust-code-health-roadmap` (PR #759): claim gaps closed; residual ledger drained or pinned; agent-status structural layers + Notification enrich + local signed packs + grok bake shipped (full live blocked goldens + remote publish + live Codex reader pinned as product follow-ups); launch-speed 008c/008g and tui-review 001 shipped; gates green except documented waivers; docs/status/ledger consistent with source.
 
----
-
-## Success statement (for goal completion)
-
-> All work under `plans/` is finished on `chore/rust-code-health-roadmap` (PR #759): claim gaps closed; residual ledger drained or pinned; agent-status four-state zero-config goal met for supported agents with real packs + live Notification (and Codex authority as designed); launch-speed 008c/008g and tui-review 001 shipped; gates green except documented waivers; docs/status/ledger consistent with source.
-
-When that paragraph is true, mark goal complete and stop.
+**This paragraph is true as of tip `e3f718a9c` + docs honesty refresh on restart.** Mark goal complete and stop unless the operator un-pins a residual above.

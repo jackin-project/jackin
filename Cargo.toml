@@ -194,7 +194,7 @@ match_bool = "warn"
 needless_pass_by_value = "allow" # allow: 28 hits measured 2026-07, dominant pattern intentional by-value state/view handoffs (plan 047)
 trivially_copy_pass_by_ref = "warn"
 large_enum_variant = "warn"
-# Residual large futures remain in attach/console paths beyond the 3 expects.
+# allow: residual large futures in attach/console paths (plan 047 census; burn-down PR).
 large_futures = "allow"
 result_large_err = "warn"
 clone_on_ref_ptr = "warn"
@@ -209,8 +209,8 @@ cognitive_complexity = "warn"
 excessive_nesting = "warn"
 implicit_hasher = "allow"
 similar_names = "allow"
-# Close-out re-measure: residual still non-zero across usage/console/runtime —
-# keep allow until a dedicated burn-down PR (honest residual-allow, not promote:).
+# allow: residual non-zero across usage/console/runtime — plan 047 close-out
+# re-measure kept allow (not promote); dedicated burn-down PR when floor allows.
 assigning_clones = "allow"
 match_same_arms = "allow"
 drop_non_drop = "allow"
@@ -218,12 +218,13 @@ format_push_string = "allow"
 no_effect_underscore_binding = "allow"
 items_after_statements = "allow"
 unnecessary_wraps = "allow"
-# Residual unused_self in console editor stubs; keep allow until burn-down.
+# allow: residual unused_self in console editor stubs (plan 047).
 unused_self = "allow"
 option_option = "allow"
 verbose_bit_mask = "allow"
 unreadable_literal = "allow"
 unnecessary_debug_formatting = "allow"
+# allow: residual unused_async across async facades (plan 047).
 unused_async = "allow"
 float_cmp = "deny"
 struct_field_names = "allow"

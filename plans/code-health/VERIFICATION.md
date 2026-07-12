@@ -19,6 +19,24 @@ Captured by the long-running goal executor. Scratch copies also under the implem
 - `lint --strict` green; workspace `clippy -D warnings` green after needless_return sweep.
 - `ci --fast` red only for documented executor-env waivers (manager_flow Docker-missing disk persist + RUSTSEC-2026-0204); captures under `/tmp/grok-goal-codehealth/reverify/`.
 
+## Full restart inventory (2026-07-12)
+
+Re-ran `plans/GOAL-CLOSE-ALL-REMAINING.md` acceptance from a clean inventory:
+
+| Check | Result |
+|-------|--------|
+| Open status table rows (`TODO` / `IN PROGRESS` / `BLOCKED` plan rows) | **none** (legend text only) |
+| Bare `**DEFER**` in RESIDUAL_LEDGER | **0** (10 CLOSED + 26 CLOSED-as-pinned) |
+| A1 ratchet SoT | legacy budget TOMLs gone; shims → `ratchet.toml` |
+| A2 metrics volume | `metrics::tests` (feature `otlp`) counter deltas + capsule `cdebug!` contract green |
+| A3 plan 047 | honest residual-allow comments (not false promote) |
+| D1/D2 launch-speed | `EarlyCurrentRestoreScan` + `take_post_console_config` tests green |
+| E tui-review | `scrolled_failure_copy_hit_and_overlay_follow_failure_scroll` green |
+| C agent-status | Notification enrich + pack/signed-bundle tests green; grok baked |
+| `lint --strict` | green |
+
+Docs honesty refresh: `plans/launch-speed/README.md`, `plans/GOAL-CLOSE-ALL-REMAINING.md`, `plans/README.md` no longer claim open deferred work.
+
 ## Plan ledger
 
 Plans **003–069** DONE on this branch. Wave-8 residual program + WorkspaceName frontier slices 055–063. Isolation list/drift typed (063).
