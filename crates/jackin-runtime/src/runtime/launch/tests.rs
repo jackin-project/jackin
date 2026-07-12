@@ -1,5 +1,5 @@
 //! Tests for `runtime/launch.rs`: load pipeline behavioral verification.
-#![allow(clippy::too_many_lines, unused_qualifications)]
+#![allow(clippy::too_many_lines, unused_qualifications, reason = "documented residual allow; prefer expect when site is lint-true")]
 use super::*;
 use crate::runtime::launch::launch_runtime::{
     debug_runtime_envs_for, run_runtime_envs, run_runtime_envs_for, telemetry_runtime_envs_for,
@@ -1218,7 +1218,7 @@ fn resolve_backend_defaults_docker_and_workspace_overrides_config() {
 /// `push_agent_home_mounts`. Covers the agent-enum consolidation: a regression
 /// in any agent's `AgentStatePaths` (wrong/dropped data or config root) surfaces
 /// here instead of shipping silently.
-async fn home_mounts_for(agent_slug: &str, agent: jackin_core::agent::Agent) -> Vec<String> {
+fn home_mounts_for(agent_slug: &str, agent: jackin_core::agent::Agent) -> Vec<String> {
     use crate::instance::{PrepareResolvers, RoleState};
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
@@ -1255,7 +1255,7 @@ async fn home_mounts_for(agent_slug: &str, agent: jackin_core::agent::Agent) -> 
 
 #[tokio::test]
 async fn agent_mounts_derive_opencode_data_and_config_roots() {
-    let mounts = home_mounts_for("opencode", jackin_core::agent::Agent::Opencode).await;
+    let mounts = home_mounts_for("opencode", jackin_core::agent::Agent::Opencode);
     assert!(
         mounts
             .iter()
@@ -1272,7 +1272,7 @@ async fn agent_mounts_derive_opencode_data_and_config_roots() {
 
 #[tokio::test]
 async fn agent_mounts_derive_amp_paired_config_root() {
-    let mounts = home_mounts_for("amp", jackin_core::agent::Agent::Amp).await;
+    let mounts = home_mounts_for("amp", jackin_core::agent::Agent::Amp);
     assert!(
         mounts
             .iter()
@@ -1283,7 +1283,7 @@ async fn agent_mounts_derive_amp_paired_config_root() {
 
 #[tokio::test]
 async fn agent_mounts_derive_grok_home_root() {
-    let mounts = home_mounts_for("grok", jackin_core::agent::Agent::Grok).await;
+    let mounts = home_mounts_for("grok", jackin_core::agent::Agent::Grok);
     assert!(
         mounts.iter().any(|m| m.ends_with(":/home/agent/.grok")),
         "grok home root mount missing: {mounts:?}"
@@ -1292,7 +1292,7 @@ async fn agent_mounts_derive_grok_home_root() {
 
 #[tokio::test]
 async fn agent_mounts_derive_kimi_home_root() {
-    let mounts = home_mounts_for("kimi", jackin_core::agent::Agent::Kimi).await;
+    let mounts = home_mounts_for("kimi", jackin_core::agent::Agent::Kimi);
     assert!(
         mounts
             .iter()
@@ -2003,7 +2003,7 @@ async fn restore_role_source_override_uses_manifest_source_without_mutating_conf
 /// Signature matches `deny_trust` so both can be passed as the same
 /// function-pointer type to the trust prompt; the `Ok(())` is therefore
 /// load-bearing even though clippy flags it.
-#[allow(clippy::unnecessary_wraps)]
+#[allow(clippy::unnecessary_wraps, reason = "documented residual allow; prefer expect when site is lint-true")]
 fn auto_trust(_: &RoleSelector, _: &jackin_config::RoleSource) -> anyhow::Result<()> {
     Ok(())
 }
