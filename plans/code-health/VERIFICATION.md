@@ -10,7 +10,9 @@ Captured by the long-running goal executor. Scratch copies also under the implem
 
 ## Plan ledger
 
-Every `plans/code-health/*.md` plan **003–057** is **DONE** in `plans/code-health/README.md` with implementation present on this branch (not vanished exec SHAs).
+Plans **003–063** DONE on this branch. Wave-8 residual program + WorkspaceName frontier slices 055–063. Isolation list/drift typed (063).
+
+Every `plans/code-health/*.md` plan **003–063** is **DONE** in `plans/code-health/README.md` with implementation present on this branch (not vanished exec SHAs).
 
 - Plan **014** materialize bench CLOSED by [057](057-residual-wave-r1-bench-ratchet-map.md); launch-pipeline still R-014-launch-pipeline-bench DEFER.
 - Plan **054** closed the plan-011 residual `assertions_on_result_states` adoption.
@@ -50,7 +52,7 @@ All other named residuals and former SEQ themes are **DEFER(measured)** in that 
 
 ## Roadmap Phase 0–8 disposition
 
-Phases are covered by DONE plans 003–056. Former **SEQ** matrix rows are **DEFER** with measured reasons in the residual ledger (plan 056). No open SEQ debt remains in the coverage matrix.
+Phases are covered by DONE plans 003–063. Former **SEQ** matrix rows are **DEFER** with measured reasons in the residual ledger (plan 056). No open SEQ debt remains in the coverage matrix.
 
 | Residual theme | Disposition |
 |---|---|
