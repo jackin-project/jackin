@@ -17,6 +17,7 @@ use crate::state::{CleanupStatus, IsolationRecord, read_record, upsert_record};
 use anyhow::Context;
 use jackin_config::ResolvedWorkspace;
 use jackin_core::CommandRunner;
+use jackin_core::WorkspaceLabel;
 use jackin_core::container_paths;
 use jackin_diagnostics::debug_log;
 use std::path::{Path, PathBuf};
@@ -446,7 +447,8 @@ use jackin_config::MountConfig;
 
 #[derive(Debug, Clone)]
 pub struct PreflightContext {
-    pub workspace_name: String,
+    /// Path/display label for this materialization (not necessarily a config stem).
+    pub workspace_label: WorkspaceLabel,
     pub force: bool,
     pub interactive: bool,
 }
@@ -578,12 +580,16 @@ async fn check_dirty_tree(
 /// Iterates the resolved workspace mounts, passes through `Shared` mounts,
 /// and per-mount-materializes `Worktree` mounts. Returns the
 /// `MaterializedWorkspace` ready for Docker launch.
+///
+/// `workspace_label` is the path/display label (see [`WorkspaceLabel`]), not
+/// the config-stem [`jackin_core::WorkspaceName`]. Callers convert at the dual
+/// semantics boundary so identity stems and path labels are not confused.
 pub async fn materialize_workspace(
     resolved: &ResolvedWorkspace,
     container_state_dir: &Path,
     selector_key: &str,
     container_name: &str,
-    workspace_name: &str,
+    workspace_label: &WorkspaceLabel,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedWorkspace> {
@@ -594,7 +600,7 @@ pub async fn materialize_workspace(
         .count();
     debug_log!(
         "isolation",
-        "materialize_workspace: workspace={workspace_name} container={container_name} selector={selector_key} mounts={total} isolated={isolated_count} state_dir={state_dir} force={force} interactive={interactive}",
+        "materialize_workspace: workspace={workspace_label} container={container_name} selector={selector_key} mounts={total} isolated={isolated_count} state_dir={state_dir} force={force} interactive={interactive}",
         total = resolved.mounts.len(),
         state_dir = container_state_dir.display(),
         force = ctx.force,
@@ -632,7 +638,7 @@ pub async fn materialize_workspace(
                     container_state_dir,
                     selector_key,
                     container_name,
-                    workspace_name,
+                    workspace_label,
                     ctx,
                     runner,
                 )
@@ -644,7 +650,7 @@ pub async fn materialize_workspace(
                     container_state_dir,
                     selector_key,
                     container_name,
-                    workspace_name,
+                    workspace_label,
                     ctx,
                     runner,
                 )
@@ -672,7 +678,7 @@ async fn materialize_one(
     container_state_dir: &Path,
     selector_key: &str,
     container_name: &str,
-    workspace_name: &str,
+    workspace_label: &WorkspaceLabel,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedMount> {
@@ -884,7 +890,7 @@ async fn materialize_one(
     upsert_record(
         container_state_dir,
         IsolationRecord {
-            workspace: workspace_name.into(),
+            workspace: workspace_label.as_str().into(),
             mount_dst: mount.dst.clone(),
             original_src: mount.src.clone(),
             isolation: MountIsolation::Worktree,
@@ -922,7 +928,7 @@ async fn materialize_clone(
     container_state_dir: &Path,
     selector_key: &str,
     container_name: &str,
-    workspace_name: &str,
+    workspace_label: &WorkspaceLabel,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedMount> {
@@ -1095,7 +1101,7 @@ async fn materialize_clone(
     upsert_record(
         container_state_dir,
         IsolationRecord {
-            workspace: workspace_name.into(),
+            workspace: workspace_label.as_str().into(),
             mount_dst: mount.dst.clone(),
             original_src: mount.src.clone(),
             isolation: MountIsolation::Clone,

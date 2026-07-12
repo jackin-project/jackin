@@ -46,6 +46,7 @@ pub mod standalone_dialog;
 pub mod status;
 pub mod tui_widgets;
 pub mod url_text;
+pub mod workspace_label;
 pub mod workspace_name;
 pub mod worktree_dirty;
 
@@ -91,4 +92,5 @@ pub use tui_widgets::{
     bottom_chrome_areas, is_scrollable, max_line_width, max_offset,
 };
 pub use url_text::{has_url_scheme, is_host_open_url, redact_url_for_log};
+pub use workspace_label::{WorkspaceLabel, WorkspaceLabelError};
 pub use workspace_name::{WorkspaceName, WorkspaceNameError};

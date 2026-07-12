@@ -1,6 +1,23 @@
 //! Tests for `materialize`.
 use super::*;
+use jackin_core::{WorkspaceLabel, WorkspaceName};
 use std::path::PathBuf;
+
+#[test]
+fn materialize_api_accepts_path_label_rejected_as_config_stem() {
+    // Dual-semantics boundary: ad-hoc workdir paths are legal labels but not
+    // WorkspaceName config stems.
+    let path = "/home/op/projects/adhoc-ws";
+    assert!(WorkspaceName::parse(path).is_err());
+    let label = WorkspaceLabel::parse(path).expect("path label");
+    assert_eq!(label.as_str(), path);
+    // PreflightContext carries the label type, not a free &str.
+    let _ctx = PreflightContext {
+        workspace_label: label,
+        force: false,
+        interactive: false,
+    };
+}
 
 #[tokio::test]
 async fn materialized_mount_holds_isolation() {
@@ -251,7 +268,7 @@ use jackin_config::MountConfig;
 
 fn ctx() -> PreflightContext {
     PreflightContext {
-        workspace_name: "jackin".into(),
+        workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
         force: false,
         interactive: false,
     }
@@ -457,9 +474,9 @@ async fn first_materialization_runs_worktree_add_and_writes_record() {
         &container_dir,
         "the-architect",
         "jackin-the-architect",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -523,9 +540,9 @@ async fn shared_mounts_pass_through_unchanged() {
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -561,9 +578,9 @@ async fn clone_materialization_runs_local_shared_clone_and_writes_record() {
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -631,9 +648,9 @@ async fn clone_materialization_normalizes_ssh_origin_to_https() {
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -675,9 +692,9 @@ async fn clone_materialization_skips_origin_rewrite_when_host_origin_is_empty() 
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -721,9 +738,9 @@ async fn clone_materialization_falls_through_when_host_has_no_origin_remote() {
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -769,9 +786,9 @@ async fn clone_materialization_aborts_when_get_url_fails_unexpectedly() {
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -811,9 +828,9 @@ async fn clone_materialization_strips_embedded_credentials_from_host_origin() {
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -871,9 +888,9 @@ async fn clone_reuse_skips_git_ops_when_git_dir_exists() {
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -920,9 +937,9 @@ async fn second_materialization_with_existing_record_skips_git_ops() {
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -968,9 +985,9 @@ async fn drift_when_recorded_src_differs_errors_before_git_ops() {
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -1129,9 +1146,9 @@ async fn stale_scratch_branch_is_adopted_when_record_absent() {
         &container_dir,
         "the-architect",
         "jackin-the-architect",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -1207,9 +1224,9 @@ async fn adopt_aborts_when_worktree_prune_fails() {
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },
@@ -1250,9 +1267,9 @@ async fn fresh_materialization_uses_dash_b_when_branch_absent() {
         &container_dir,
         "x",
         "jackin-x",
-        "jackin",
+        &WorkspaceLabel::parse("jackin").unwrap(),
         &PreflightContext {
-            workspace_name: "jackin".into(),
+            workspace_label: WorkspaceLabel::parse("jackin").unwrap(),
             force: false,
             interactive: false,
         },

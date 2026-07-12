@@ -13,10 +13,10 @@ Not tracked here (intentional / optional / shipped):
 - Optional micro: zero-copy scrollback row, db/docker metrics demotion
 - Intentional pins: usage accounts-only surface, apple-container not shipping, Hello fail-closed
 - Wave 1 CLOSED: R-047-maintainability-promote (unused_self/unused_async promoted; others measured-allow with dated counts), R-allow-attributes-deny (bare-allow floor 0 + `allow_attributes_without_reason = deny`), R-missing-docs-cascade (`jackin-protocol` + `jackin-manifest` + `jackin-env` + `jackin-term` + `jackin-config` + `jackin-core`)
+- Wave 2 CLOSED: R-038-WorkspaceLabel (`WorkspaceLabel` type; `materialize_workspace` + `PreflightContext` typed; path-label vs config-stem tests)
 
 | ID | Wave | Why still open | Next trigger |
 |----|------|----------------|--------------|
-| **R-038-WorkspaceLabel** | 2 | `materialize_workspace` still `&str`; path-label vs config-stem dual-semantics | WorkspaceLabel design + type boundaries |
 | **R-launch-typestate** / **R-typestate-general** | 3 | Monolithic `run_launch_core` (~1350 LOC); no phase typestate | LaunchCore extract PR |
 | **R-033-suite-a** | 3 | No full `run_launch_core` failure-path fixture (B+C only) | After LaunchCore seams |
 | **R-014-launch-pipeline-bench** | 3 | Only `launch_attach` micro-bench; no FakeDocker pipeline bench | Same LaunchCore extract |
@@ -28,4 +28,4 @@ Not tracked here (intentional / optional / shipped):
 
 Disposition: **OPEN** until CLOSED in-tree (prefer implement). Operator pin only for hard external blockers.
 
-Counts: **9** code-health residuals (Wave 1 + launch-speed 008c closed).
+Counts: **8** code-health residuals (Waves 0–2 + launch-speed 008c closed).

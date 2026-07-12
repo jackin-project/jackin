@@ -841,7 +841,10 @@ where
     // command is assembled (so the docker `-v` flags reflect the
     // per-mount bind sources).
     let interactive = true;
-    let workspace_label = workspace.label.as_str();
+    // Path/display label (may be a workdir path for ad-hoc workspaces) — not
+    // the config-stem WorkspaceName used for saved-workspace identity.
+    let workspace_label = jackin_core::WorkspaceLabel::parse(workspace.label.as_str())
+        .map_err(anyhow::Error::from)?;
     jackin_diagnostics::debug_log!(
         "isolation",
         "load_role: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
@@ -857,7 +860,7 @@ where
         );
     }
     let materialize_preflight = crate::isolation::materialize::PreflightContext {
-        workspace_name: workspace_label.to_owned(),
+        workspace_label: workspace_label.clone(),
         force: opts.force,
         interactive,
     };
@@ -866,7 +869,7 @@ where
         &container_state,
         &role_key,
         &container_name,
-        workspace_label,
+        &workspace_label,
         &materialize_preflight,
         runner,
     );
@@ -953,7 +956,7 @@ where
     }
 
     let dirty_exit_policy =
-        config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label));
+        config.resolve_dirty_exit_policy(config.workspaces.get(workspace_label.as_str()));
     // The in-capsule dirty-exit modal assesses every isolated worktree/clone
     // mount; `shared` mounts are host-owned and never checked.
     let isolated_worktrees = materialized
