@@ -75,8 +75,8 @@ Only **DEFER** rows with a concrete next trigger. Group by parallel safety.
 | Residual | Scope | Write allowlist (typical) | Narrow verify |
 |----------|-------|---------------------------|---------------|
 | R-014-materialize-bench | **CLOSED** plan 057 | — | — |
-| R-038-env-console-tail (env slice) | WorkspaceName at env sites | `crates/jackin-env/**`, maybe `jackin-core` | `cargo nextest -p jackin-env` |
-| R-038-env-console-tail (console slice) | WorkspaceName at console sites | `crates/jackin-console/**` | `cargo nextest -p jackin-console` |
+| R-038 auth+token (064) | **CLOSED** plan 064 | — | — |
+| R-038 TUI / host CLI tail | Remaining display + CLI string params | `jackin-console` TUI, `jackin` CLI | package nextest |
 | R-snapshot-helpers | **CLOSED** plan 058 | — | — |
 | R-map-metadata-gate | **CLOSED** plan 057 (`docs map-check`) | — | — |
 | R-export-volume-ratchet | **CLOSED** plan 057 (`export-volume` family) | — | — |
@@ -89,11 +89,11 @@ Env and console WorkspaceName slices are **two workers**, not one.
 
 | Residual slice | Crate | Measured sites (ledger) | After |
 |----------------|-------|-------------------------|-------|
+| instance | `jackin-instance` | **CLOSED** plan 065 | 037 |
 | config | `jackin-config` | ~66 | 037 idiom |
 | isolation | `jackin-isolation` | ~14 | 037 |
 | docker | `jackin-docker` | ~17 | 037 |
 | image | `jackin-image` | ~23 | 037 |
-| instance | `jackin-instance` | ~7 | 037 |
 
 **Dispatch:** all five **parallel** (disjoint crates). Orchestrator only
 refreshes shared budgets if clippy floors change.

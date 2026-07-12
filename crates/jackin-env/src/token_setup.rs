@@ -436,9 +436,11 @@ where
     // The expiry stamp is keyed per workspace; the launch banner that
     // reads it is per-workspace too, so the `Global` scope has no
     // banner to feed and skips the stamp entirely.
-    if let (true, Some(workspace)) = (created, scope.workspace()) {
+    if let (true, Some(workspace)) = (created, scope.workspace())
+        && let Ok(wn) = WorkspaceName::parse(workspace)
+    {
         let expiry = upstream_expiry_stamp();
-        if let Err(e) = write_expiry_stamp(paths, workspace, &expiry) {
+        if let Err(e) = write_expiry_stamp(paths, &wn, &expiry) {
             crate::output::stderr_line(format_args!(
                 "[jackin] note: token stored, but expiry banner cache \
                  write failed: {e} — launch banner will not show 'expires in N days' \
@@ -542,8 +544,9 @@ where
     // will read. Only the `created` + workspace-scoped path has a
     // stamp to read back.
     let expiry_estimate = match (created, scope.workspace()) {
-        (true, Some(workspace)) => std::fs::read_to_string(expiry_cache_path(paths, workspace))
+        (true, Some(workspace)) => WorkspaceName::parse(workspace)
             .ok()
+            .and_then(|wn| std::fs::read_to_string(expiry_cache_path(paths, &wn)).ok())
             .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty()),
         _ => None,
@@ -588,12 +591,12 @@ enum WiredValue {
 pub fn run_revoke(
     paths: &JackinPaths,
     config: &mut AppConfig,
-    workspace: &str,
+    workspace: &WorkspaceName,
     delete_op_item: bool,
 ) -> anyhow::Result<RevokeReport> {
     let op_cli = op_cli_for_scope(
         config,
-        &TokenSetupScope::Workspace(workspace.to_owned()),
+        &TokenSetupScope::Workspace(workspace.as_str().to_owned()),
         None,
         OpTimeoutBudget::Quick,
     );
@@ -604,13 +607,12 @@ pub fn run_revoke(
 pub(crate) fn run_revoke_with_runner(
     paths: &JackinPaths,
     config: &mut AppConfig,
-    workspace: &str,
+    workspace: &WorkspaceName,
     delete_op_item: bool,
     op_writer: &dyn OpWriteRunner,
 ) -> anyhow::Result<RevokeReport> {
-    let wn = WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?;
     let prior = config
-        .require_workspace(&wn)?
+        .require_workspace(workspace)?
         .env
         .get(CLAUDE_OAUTH_TOKEN_ENV)
         .cloned();
@@ -632,14 +634,14 @@ pub(crate) fn run_revoke_with_runner(
             }
             Some(EnvValue::Plain(_) | EnvValue::Extended(_)) => {
                 anyhow::bail!(
-                    "--delete-op-item requested but workspace {workspace:?} has a literal \
+                    "--delete-op-item requested but workspace {workspace} has a literal \
                      token slot (not an op:// reference); jackin does not know where the \
                      literal came from. Re-run without --delete-op-item to clear the slot."
                 );
             }
             None => {
                 anyhow::bail!(
-                    "--delete-op-item requested but workspace {workspace:?} has no \
+                    "--delete-op-item requested but workspace {workspace} has no \
                      CLAUDE_CODE_OAUTH_TOKEN slot to delete from."
                 );
             }
@@ -650,11 +652,10 @@ pub(crate) fn run_revoke_with_runner(
 
     let mut editor = ConfigEditor::open(paths)?;
     editor.remove_env_var(
-        &EnvScope::Workspace(workspace.to_owned()),
+        &EnvScope::Workspace(workspace.as_str().to_owned()),
         CLAUDE_OAUTH_TOKEN_ENV,
     );
-    let ws = WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?;
-    editor.set_workspace_auth_forward(&ws, Agent::Claude, Some(AuthForwardMode::Ignore));
+    editor.set_workspace_auth_forward(workspace, Agent::Claude, Some(AuthForwardMode::Ignore));
     let saved = editor.save()?;
     *config = saved;
 
@@ -663,7 +664,7 @@ pub(crate) fn run_revoke_with_runner(
     clear_expiry_stamp(paths, workspace);
 
     Ok(RevokeReport {
-        workspace: workspace.to_owned(),
+        workspace: workspace.as_str().to_owned(),
         deleted_op_item: deleted_item,
         cleared_slot: prior.is_some(),
     })
@@ -1014,8 +1015,14 @@ fn now_utc_rfc3339() -> String {
 ///
 /// One file per workspace under
 /// `<cache_dir>/claude-token-expiry/<workspace>`. Removed on revoke.
-pub(crate) fn expiry_cache_path(paths: &JackinPaths, workspace: &str) -> std::path::PathBuf {
-    paths.cache_dir.join("claude-token-expiry").join(workspace)
+pub(crate) fn expiry_cache_path(
+    paths: &JackinPaths,
+    workspace: &WorkspaceName,
+) -> std::path::PathBuf {
+    paths
+        .cache_dir
+        .join("claude-token-expiry")
+        .join(workspace.as_str())
 }
 
 /// Write the workspace's expiry stamp.
@@ -1027,7 +1034,7 @@ pub(crate) fn expiry_cache_path(paths: &JackinPaths, workspace: &str) -> std::pa
 /// launch path will read back.
 pub(crate) fn write_expiry_stamp(
     paths: &JackinPaths,
-    workspace: &str,
+    workspace: &WorkspaceName,
     expiry: &str,
 ) -> std::io::Result<()> {
     let path = expiry_cache_path(paths, workspace);
@@ -1043,7 +1050,7 @@ pub(crate) fn write_expiry_stamp(
 /// a warning so a `PermissionDenied` / `IsADirectory` cache
 /// collision does not silently leave a stale banner countdown in
 /// place for the next launch.
-pub(crate) fn clear_expiry_stamp(paths: &JackinPaths, workspace: &str) {
+pub(crate) fn clear_expiry_stamp(paths: &JackinPaths, workspace: &WorkspaceName) {
     let path = expiry_cache_path(paths, workspace);
     match std::fs::remove_file(&path) {
         Ok(()) => {}
@@ -1069,7 +1076,7 @@ pub(crate) fn clear_expiry_stamp(paths: &JackinPaths, workspace: &str) {
 /// stamp" (silent) from "broken stamp" (warn once).
 pub fn expiry_days_for_launch(
     paths: &JackinPaths,
-    workspace: &str,
+    workspace: &WorkspaceName,
 ) -> std::io::Result<Option<i64>> {
     let path = expiry_cache_path(paths, workspace);
     let raw = match std::fs::read_to_string(&path) {

@@ -19,6 +19,7 @@ use super::{
     AuthProvisionOutcome, GithubAuthContext, GithubProvisionOutcome, GithubTokenSource,
     HostMissingReason, RoleState,
 };
+use crate::{InstanceError, SyncSourceValidationError};
 use jackin_config::{AuthForwardMode, GithubAuthMode};
 use jackin_core::agent::Agent;
 use std::path::Path;
@@ -27,7 +28,7 @@ use std::path::Path;
 /// expects for sync-mode auth forwarding.
 ///
 /// Returns `Ok(())` when the folder holds usable credentials for that
-/// agent, or `Err(message)` describing what is missing. The message is
+/// agent, or `Err` describing what is missing. The message is
 /// shown verbatim in the Source Folder picker so an operator cannot
 /// silently select a folder that yields no credentials (and, for Claude,
 /// would otherwise leak the default account into the capsule).
@@ -39,9 +40,12 @@ pub fn validate_sync_source_dir(
     agent: Agent,
     source_dir: &Path,
     host_home: &Path,
-) -> Result<(), String> {
+) -> Result<(), SyncSourceValidationError> {
     if !source_dir.is_dir() {
-        return Err(format!("{} is not a directory.", source_dir.display()));
+        return Err(SyncSourceValidationError::new(format!(
+            "{} is not a directory.",
+            source_dir.display()
+        )));
     }
     match agent {
         // Claude has no single credential file on macOS — the login lives
@@ -51,12 +55,12 @@ pub fn validate_sync_source_dir(
             if read_host_credentials_from_claude_config_dir(source_dir, host_home).is_some() {
                 Ok(())
             } else {
-                Err(format!(
+                Err(SyncSourceValidationError::new(format!(
                     "Not a Claude config folder: {} has no .credentials.json and no matching \
                      macOS Keychain login. Select the folder you set as CLAUDE_CONFIG_DIR when \
                      you logged in to Claude.",
                     source_dir.display()
-                ))
+                )))
             }
         }
         Agent::Codex => require_credential_file(source_dir, "auth.json", "Codex"),
@@ -68,28 +72,32 @@ pub fn validate_sync_source_dir(
             if source_dir.join("config.toml").is_file() && source_dir.join("credentials").is_dir() {
                 Ok(())
             } else {
-                Err(format!(
+                Err(SyncSourceValidationError::new(format!(
                     "Not a Kimi config folder: {} must contain config.toml and a credentials/ \
                      directory.",
                     source_dir.display()
-                ))
+                )))
             }
         }
     }
 }
 
 /// Require a non-empty credential file named `name` directly inside `dir`.
-fn require_credential_file(dir: &Path, name: &str, agent: &str) -> Result<(), String> {
+fn require_credential_file(
+    dir: &Path,
+    name: &str,
+    agent: &str,
+) -> Result<(), SyncSourceValidationError> {
     match std::fs::read_to_string(dir.join(name)) {
         Ok(content) if !content.trim().is_empty() => Ok(()),
-        Ok(_) => Err(format!(
+        Ok(_) => Err(SyncSourceValidationError::new(format!(
             "{agent} credential {name} in {} is empty.",
             dir.display()
-        )),
-        Err(_) => Err(format!(
+        ))),
+        Err(_) => Err(SyncSourceValidationError::new(format!(
             "Not a {agent} config folder: expected {name} directly inside {}.",
             dir.display()
-        )),
+        ))),
     }
 }
 
@@ -310,10 +318,11 @@ fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
         Ok(text) => Some(text),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => {
-            return Err(anyhow::anyhow!(
-                "failed to read host {}: {e} (run with --debug to capture the underlying error)",
-                hosts_path.display()
-            ));
+            return Err(InstanceError::HostConfigRead {
+                path: hosts_path,
+                source: e,
+            }
+            .into());
         }
     };
 
@@ -1282,7 +1291,9 @@ fn write_private_bytes(path: &Path, content: &[u8]) -> anyhow::Result<()> {
 
         let parent = path
             .parent()
-            .ok_or_else(|| anyhow::anyhow!("no parent directory for {}", path.display()))?;
+            .ok_or_else(|| InstanceError::NoParentDirectory {
+                path: path.to_path_buf(),
+            })?;
 
         // NamedTempFile uses O_EXCL internally, so it will never follow
         // a pre-planted symlink.  The random suffix makes the path

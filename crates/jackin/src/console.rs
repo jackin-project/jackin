@@ -75,6 +75,7 @@ pub(super) fn validate_auth_source_folder(
         .map(|b| b.home_dir().to_path_buf())
         .unwrap_or_default();
     jackin_runtime::instance::validate_sync_source_dir(agent, path, &host_home)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

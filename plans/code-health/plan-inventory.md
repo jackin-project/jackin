@@ -1,6 +1,6 @@
-# Plan inventory (reverify) — goal pass after plan 063
+# Plan inventory (reverify) — goal pass after plan 065
 
-Tip: `b407cdce6` on `chore/rust-code-health-roadmap`.
+Tip: pending commit on `chore/rust-code-health-roadmap`.
 Lint strict green. Residuals DEFER only with measured ledger reasons.
 
 | id | title | ledger_status | in_tree | evidence |
@@ -64,5 +64,7 @@ Lint strict green. Residuals DEFER only with measured ledger reasons.
 | 061 | WorkspaceName on console save/launch + ConfigEditor wri | DONE | pass | 68:    workspace_name: &WorkspaceName, |
 | 062 | WorkspaceName on AppConfig require/edit/remove | DONE | pass | 16:    pub fn require_workspace(&self, name: &WorkspaceName) -> anyhow::Result<&WorkspaceConfig> { |
 | 063 | WorkspaceName on isolation list + drift detect | DONE | pass | 219:pub fn list_records_for_workspace( |
+| 064 | WorkspaceName on auth_error traces + token revoke/expiry | DONE | pass | planfile + auth_error/token_setup |
+| 065 | thiserror mid-tranche jackin-instance | DONE | pass | InstanceError + SyncSourceValidationError |
 
-Total plans: 59; in_tree fail rows: 0
+Total plans: 61; in_tree fail rows: 0

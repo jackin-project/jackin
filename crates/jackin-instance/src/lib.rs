@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 
 mod auth;
 pub use auth::validate_sync_source_dir;
+mod error;
+pub use error::{InstanceError, SyncSourceValidationError};
 pub mod manifest;
 pub mod naming;
 pub use manifest::{
@@ -562,13 +564,15 @@ impl RoleState {
                     });
                     gh_handle
                         .join()
-                        .map_err(|_| anyhow::anyhow!("GitHub auth provisioning task panicked"))??
+                        .map_err(|_| InstanceError::GithubAuthTaskPanicked)??
                 };
 
             let mut auth_provisions = Vec::with_capacity(handles.len());
             for (agent, handle) in handles {
                 auth_provisions.push(handle.join().map_err(|_| {
-                    anyhow::anyhow!("{} auth provisioning task panicked", agent.slug())
+                    InstanceError::AuthProvisionTaskPanicked {
+                        agent: agent.slug().to_owned(),
+                    }
                 })??);
             }
 
@@ -679,9 +683,11 @@ impl RoleState {
 
             let mut prepared = Vec::with_capacity(handles.len());
             for handle in handles {
-                prepared.push(handle.join().map_err(|_| {
-                    anyhow::anyhow!("background agent auth provisioning task panicked")
-                })??);
+                prepared.push(
+                    handle
+                        .join()
+                        .map_err(|_| InstanceError::BackgroundAuthTaskPanicked)??,
+                );
             }
             anyhow::Ok(prepared)
         })?;

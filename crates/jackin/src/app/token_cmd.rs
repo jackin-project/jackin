@@ -163,6 +163,7 @@ pub(super) fn handle_claude_token(
             workspace,
             delete_op_item,
         } => {
+            let workspace = WorkspaceName::parse(&workspace).map_err(anyhow::Error::from)?;
             let report = token_setup::run_revoke(paths, config, &workspace, delete_op_item)?;
             if report.cleared_slot {
                 println!(

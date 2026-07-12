@@ -568,17 +568,23 @@ where
     // `jackin_config::resolve_mode` and
     // `operator_env::build_attributed_layers` respectively.
     let workspace_name_str = workspace_name.as_deref().unwrap_or("");
-    let workspace_for_verify = if workspace_name_str.is_empty() {
-        WorkspaceName::parse("adhoc").map_err(anyhow::Error::from)?
+    let workspace_opt = if workspace_name_str.is_empty() {
+        None
     } else {
-        WorkspaceName::parse(workspace_name_str).map_err(anyhow::Error::from)?
+        Some(WorkspaceName::parse(workspace_name_str).map_err(anyhow::Error::from)?)
+    };
+    // Ad-hoc / path launches have no saved workspace key; still need a
+    // display token for AuthCredentialMissing messaging.
+    let workspace_for_verify = match workspace_opt.as_ref() {
+        Some(ws) => ws.clone(),
+        None => WorkspaceName::parse("adhoc").map_err(anyhow::Error::from)?,
     };
     let mode_resolution =
-        super::super::build_mode_resolution(config, agent, workspace_name_str, &role_key);
+        super::super::build_mode_resolution(config, agent, workspace_opt.as_ref(), &role_key);
     let env_layers = agent
         .required_env_var(auth_mode)
         .map_or_else(Vec::new, |env_var| {
-            super::super::build_env_layer_states(config, workspace_name_str, &role_key, env_var)
+            super::super::build_env_layer_states(config, workspace_opt.as_ref(), &role_key, env_var)
         });
     if let Err(error) = verify_credential_env_present(
         agent,
@@ -596,11 +602,9 @@ where
     // Resolve the GitHub-auth axis. Layered like the per-agent
     // resolver but with no agent dimension — `.config/gh/` is
     // shared by every agent in the container.
-    let github_workspace = WorkspaceName::parse(workspace_name_str).ok();
-    let github_mode =
-        jackin_config::resolve_github_mode(config, github_workspace.as_ref(), &role_key);
+    let github_mode = jackin_config::resolve_github_mode(config, workspace_opt.as_ref(), &role_key);
     let github_env_decls =
-        jackin_config::build_github_env_layers(config, github_workspace.as_ref(), &role_key);
+        jackin_config::build_github_env_layers(config, workspace_opt.as_ref(), &role_key);
     let github_required_env_decls =
         github_env_declarations_for_mode(&github_env_decls, github_mode);
     // Resolve `[…github.env]` only under modes that consume it.
@@ -675,23 +679,26 @@ where
     let container_name_owned = container_name.clone();
     let manifest_owned = validated_repo.manifest.clone();
     let config_owned = config.clone();
-    let workspace_name_owned = workspace_name_str.to_owned();
+    let workspace_opt_owned = workspace_opt.clone();
     let role_key_owned = role_key.clone();
     let github_ctx_owned = github_ctx.clone();
     let role_state_future = async move {
         tokio::task::spawn_blocking(move || {
             let resolve_mode = |a: jackin_core::agent::Agent| {
-                let ws = WorkspaceName::parse(&workspace_name_owned).ok();
-                jackin_config::resolve_mode(&config_owned, a, ws.as_ref(), &role_key_owned)
+                jackin_config::resolve_mode(
+                    &config_owned,
+                    a,
+                    workspace_opt_owned.as_ref(),
+                    &role_key_owned,
+                )
             };
             // Each agent may have an operator-configured sync-source-dir override
             // that replaces host_home for auth sync.
             let resolve_sync_src = |a: jackin_core::agent::Agent| {
-                let ws = WorkspaceName::parse(&workspace_name_owned).ok();
                 jackin_config::resolve_sync_source_dir(
                     &config_owned,
                     a,
-                    ws.as_ref(),
+                    workspace_opt_owned.as_ref(),
                     &role_key_owned,
                 )
             };
@@ -773,14 +780,14 @@ where
     }
 
     if agent != jackin_core::agent::Agent::Codex {
-        let _expiry_days = workspace_name
-            .as_deref()
+        let _expiry_days = workspace_opt
+            .as_ref()
             .filter(|_| auth_mode == jackin_config::AuthForwardMode::OAuthToken)
             .and_then(|ws| match jackin_env::expiry_days_for_launch(paths, ws) {
                 Ok(days) => days,
                 Err(e) => {
                     let message = format!(
-                        "[jackin] note: token expiry cache for workspace {ws:?} \
+                        "[jackin] note: token expiry cache for workspace {ws} \
                                  is unreadable ({e}); re-run \
                                  `jackin workspace claude-token setup {ws}` to refresh."
                     );

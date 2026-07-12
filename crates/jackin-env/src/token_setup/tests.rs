@@ -6,6 +6,10 @@ use jackin_core::{FieldTarget, OpRef, WorkspaceName};
 use std::sync::Mutex;
 use tempfile::tempdir;
 
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
+
 struct FakeOpReader {
     /// Per-call queue. Each call pops one. When empty, `read`
     /// reuses the last value indefinitely so single-call tests
@@ -227,9 +231,9 @@ fn run_setup_with_runner_creates_item_and_wires_workspace_config() {
     assert!(report.expiry_estimate.is_some());
 
     // Expiry stamp landed on disk and round-trips.
-    let stamp_path = expiry_cache_path(&paths, "proj");
+    let stamp_path = expiry_cache_path(&paths, &wn("proj"));
     assert!(stamp_path.exists(), "expiry stamp must be written");
-    let read_back = expiry_days_for_launch(&paths, "proj").unwrap();
+    let read_back = expiry_days_for_launch(&paths, &wn("proj")).unwrap();
     assert!(read_back.is_some(), "stamp must parse to a day count");
 
     // Post-write read used the canonical UUID URI, not the path.
@@ -294,7 +298,7 @@ fn run_setup_with_runner_global_scope_wires_global_config() {
         report.expiry_estimate.is_none(),
         "global scope must not stamp a per-workspace expiry"
     );
-    assert!(!expiry_cache_path(&paths, "global").exists());
+    assert!(!expiry_cache_path(&paths, &wn("global")).exists());
 }
 
 #[test]
@@ -383,7 +387,7 @@ fn run_setup_with_runner_propagates_item_create_failure_without_touching_config(
     );
     // Expiry stamp must NOT exist.
     assert!(
-        !expiry_cache_path(&paths, "proj").exists(),
+        !expiry_cache_path(&paths, &wn("proj")).exists(),
         "expiry stamp must not be written when create fails"
     );
 }
@@ -497,7 +501,7 @@ fn run_setup_with_runner_post_write_sha_mismatch_aborts_and_cleans_up() {
         "orphan must be best-effort deleted"
     );
     assert!(
-        !expiry_cache_path(&paths, "proj").exists(),
+        !expiry_cache_path(&paths, &wn("proj")).exists(),
         "no expiry stamp should be written on validation failure"
     );
 }
@@ -573,7 +577,7 @@ fn run_setup_with_runner_reuse_path_skips_capture_and_no_expiry_stamp() {
     );
     assert!(writer.last_create.borrow().is_none());
     assert!(
-        !expiry_cache_path(&paths, "proj").exists(),
+        !expiry_cache_path(&paths, &wn("proj")).exists(),
         "reuse path must not write the expiry stamp"
     );
     assert_eq!(
@@ -694,24 +698,27 @@ fn expiry_days_for_launch_distinguishes_absent_from_malformed() {
     let paths = JackinPaths::for_tests(temp.path());
 
     // Absent → Ok(None) (silent).
-    assert!(matches!(expiry_days_for_launch(&paths, "ws"), Ok(None)));
+    assert!(matches!(
+        expiry_days_for_launch(&paths, &wn("ws")),
+        Ok(None)
+    ));
 
     // Present + valid → Ok(Some(_)).
     let future = (chrono::Utc::now().date_naive() + chrono::Duration::days(7))
         .format("%Y-%m-%d")
         .to_string();
-    write_expiry_stamp(&paths, "ws", &future).unwrap();
-    let days = expiry_days_for_launch(&paths, "ws").unwrap().unwrap();
+    write_expiry_stamp(&paths, &wn("ws"), &future).unwrap();
+    let days = expiry_days_for_launch(&paths, &wn("ws")).unwrap().unwrap();
     assert!((6..=7).contains(&days), "days = {days}");
 
     // Present + malformed → Err.
-    std::fs::write(expiry_cache_path(&paths, "ws"), "not-a-date\n").unwrap();
-    let err = expiry_days_for_launch(&paths, "ws").unwrap_err();
+    std::fs::write(expiry_cache_path(&paths, &wn("ws")), "not-a-date\n").unwrap();
+    let err = expiry_days_for_launch(&paths, &wn("ws")).unwrap_err();
     assert!(err.to_string().contains("malformed"));
 
     // Present + empty → Err.
-    std::fs::write(expiry_cache_path(&paths, "ws"), "  \n").unwrap();
-    let err = expiry_days_for_launch(&paths, "ws").unwrap_err();
+    std::fs::write(expiry_cache_path(&paths, &wn("ws")), "  \n").unwrap();
+    let err = expiry_days_for_launch(&paths, &wn("ws")).unwrap_err();
     assert!(err.to_string().contains("empty"));
 }
 
@@ -722,8 +729,8 @@ fn clear_expiry_stamp_is_idempotent_on_missing_file() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     // Two consecutive clears on a never-written path must not panic.
-    clear_expiry_stamp(&paths, "ws");
-    clear_expiry_stamp(&paths, "ws");
+    clear_expiry_stamp(&paths, &wn("ws"));
+    clear_expiry_stamp(&paths, &wn("ws"));
 }
 
 /// `run_revoke` clears the canonical slot, switches mode to
@@ -732,7 +739,7 @@ fn clear_expiry_stamp_is_idempotent_on_missing_file() {
 fn run_revoke_clears_slot_mode_and_expiry_cache() {
     let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
     // Pre-stamp + pre-wired env var.
-    write_expiry_stamp(&paths, "proj", "2027-01-01").unwrap();
+    write_expiry_stamp(&paths, &wn("proj"), "2027-01-01").unwrap();
     let mut ws = cfg.workspaces.get("proj").unwrap().clone();
     ws.claude = Some(jackin_config::AgentAuthConfig {
         auth_forward: AuthForwardMode::OAuthToken,
@@ -750,7 +757,7 @@ fn run_revoke_clears_slot_mode_and_expiry_cache() {
     cfg.workspaces.insert("proj".into(), ws);
     std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
 
-    let report = run_revoke(&paths, &mut cfg, "proj", false).unwrap();
+    let report = run_revoke(&paths, &mut cfg, &wn("proj"), false).unwrap();
     assert!(report.cleared_slot);
     assert!(!report.deleted_op_item);
 
@@ -769,7 +776,7 @@ fn run_revoke_clears_slot_mode_and_expiry_cache() {
         .unwrap();
     assert_eq!(claude.auth_forward, AuthForwardMode::Ignore);
     // Expiry cache gone.
-    assert!(!expiry_cache_path(&paths, "proj").exists());
+    assert!(!expiry_cache_path(&paths, &wn("proj")).exists());
 }
 
 /// `vault_for_rotate` derives the prior item's vault id when
@@ -934,7 +941,7 @@ fn run_revoke_with_runner_delete_op_item_calls_writer_with_parsed_uuids() {
     std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
 
     let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
-    let report = run_revoke_with_runner(&paths, &mut cfg, "proj", true, &writer).unwrap();
+    let report = run_revoke_with_runner(&paths, &mut cfg, &wn("proj"), true, &writer).unwrap();
 
     assert!(report.cleared_slot);
     assert!(report.deleted_op_item);
@@ -972,7 +979,7 @@ fn run_revoke_with_runner_delete_op_item_on_literal_slot_bails() {
     std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
 
     let writer = FakeOpWriter::new_with_ref(dummy_op_ref());
-    let err = run_revoke_with_runner(&paths, &mut cfg, "proj", true, &writer).unwrap_err();
+    let err = run_revoke_with_runner(&paths, &mut cfg, &wn("proj"), true, &writer).unwrap_err();
 
     assert!(err.to_string().contains("literal token slot"));
     assert!(
@@ -1014,7 +1021,7 @@ fn run_revoke_with_runner_delete_op_item_failure_does_not_save_config() {
     std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
 
     let writer = FakeOpWriter::new_with_ref(dummy_op_ref()).with_failing_delete();
-    let err = run_revoke_with_runner(&paths, &mut cfg, "proj", true, &writer).unwrap_err();
+    let err = run_revoke_with_runner(&paths, &mut cfg, &wn("proj"), true, &writer).unwrap_err();
 
     assert!(err.to_string().contains("simulated item_delete failure"));
     // Slot must still be present on disk and in cfg — the

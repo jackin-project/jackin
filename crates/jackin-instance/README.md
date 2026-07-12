@@ -25,6 +25,9 @@ Role instance lifecycle: the instance index, the per-role state directory, auth 
 
 Instance identity, the role-state directory contract, and naming used by `jackin-runtime`, `jackin-isolation`, and the host CLI. Naming is shared with the capsule side via `jackin-protocol`.
 
+Typed errors: [`InstanceError`](src/error.rs) (index/auth join/manifest agent) and
+[`SyncSourceValidationError`](src/error.rs) (sync-source folder checks).
+
 ## How to verify
 
 ```sh

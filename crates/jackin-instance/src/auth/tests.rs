@@ -54,7 +54,10 @@ fn validate_claude_accepts_file_credentials_rejects_bare_folder() {
     let bare = temp.path().join("claude-bare");
     std::fs::create_dir_all(&bare).unwrap();
     let err = validate_sync_source_dir(Agent::Claude, &bare, temp.path()).unwrap_err();
-    assert!(err.contains("Claude"), "msg should name the agent: {err}");
+    assert!(
+        err.to_string().contains("Claude"),
+        "msg should name the agent: {err}"
+    );
 }
 
 #[test]

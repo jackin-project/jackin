@@ -396,7 +396,10 @@ pub(super) fn resolve_new_session_agent(
     // single-agent, or non-TTY context. Prefer the workspace default;
     // fall back to the manifest's recorded agent.
     prompt_agent_choice_if_needed(paths, &class, workspace_default_agent)?.map_or_else(
-        || workspace_default_agent.map_or_else(|| manifest.agent(), Ok),
+        || {
+            workspace_default_agent
+                .map_or_else(|| manifest.agent().map_err(anyhow::Error::from), Ok)
+        },
         Ok,
     )
 }

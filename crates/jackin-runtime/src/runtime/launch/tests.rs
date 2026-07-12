@@ -8282,7 +8282,8 @@ async fn build_mode_resolution_populates_all_3_layers() {
     };
     cfg.workspaces.insert("proj".into(), ws);
 
-    let trace = build_mode_resolution(&cfg, Agent::Claude, "proj", "smith");
+    let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
+    let trace = build_mode_resolution(&cfg, Agent::Claude, Some(&proj), "smith");
     assert_eq!(trace.len(), 3);
     // Ordered most-specific first: ws × role × claude (no override),
     // then ws × claude (api_key), then global × claude (sync).
@@ -8312,7 +8313,8 @@ async fn build_mode_resolution_role_override_wins() {
     let mut cfg = AppConfig::default();
     cfg.workspaces.insert("proj".into(), ws);
 
-    let trace = build_mode_resolution(&cfg, Agent::Claude, "proj", "smith");
+    let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
+    let trace = build_mode_resolution(&cfg, Agent::Claude, Some(&proj), "smith");
     assert_eq!(trace[0].1, Some(AuthForwardMode::OAuthToken));
     assert_eq!(trace[1].1, None);
     assert_eq!(trace[2].1, None);
@@ -8412,8 +8414,13 @@ async fn build_env_layer_states_classifies_present_vs_absent() {
     let mut cfg = AppConfig::default();
     cfg.workspaces.insert("proj".into(), ws);
 
-    let layers =
-        build_env_layer_states(&cfg, "proj", "smith", env_model::ANTHROPIC_API_KEY_ENV_NAME);
+    let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
+    let layers = build_env_layer_states(
+        &cfg,
+        Some(&proj),
+        "smith",
+        env_model::ANTHROPIC_API_KEY_ENV_NAME,
+    );
     assert_eq!(layers.len(), 4);
     assert_eq!(layers[0].0, "[env]");
     assert_eq!(layers[0].1, EnvLayerState::Unset);
@@ -8439,8 +8446,13 @@ async fn build_env_layer_states_classifies_literal_at_global() {
         ..AppConfig::default()
     };
 
-    let layers =
-        build_env_layer_states(&cfg, "proj", "smith", env_model::ANTHROPIC_API_KEY_ENV_NAME);
+    let proj = jackin_core::WorkspaceName::parse("proj").unwrap();
+    let layers = build_env_layer_states(
+        &cfg,
+        Some(&proj),
+        "smith",
+        env_model::ANTHROPIC_API_KEY_ENV_NAME,
+    );
     assert_eq!(layers[0].1, EnvLayerState::ResolvedLiteral);
     assert_eq!(layers[1].1, EnvLayerState::Unset);
     assert_eq!(layers[2].1, EnvLayerState::Unset);
