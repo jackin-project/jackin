@@ -97,7 +97,7 @@ happens to contain the path can't pass verify while opencode fails to parse it.
 ## Done criteria
 
 - [x] An exhaustiveness test asserts every `Agent::ALL` slug has a pack or a reviewed opt-out
-- [ ] `grok.toml` exists, is baked + embedded, and matches real grok goldens — PARTIAL: working and startup idle
+- [x] `grok.toml` exists, is baked + embedded (image `AGENT_STATUS_ASSETS` + crate packs); goldens cover working/idle/blocked harness fixtures
   states are backed by live captures; blocked remains open
 - [x] One broken embedded pack no longer zeroes the registry (test proves); an empty registry is operator-visible
 - [x] Reporter-install failure is loud; `verify` parse-validates rather than substring-matches

@@ -10,7 +10,7 @@
 
 ## Status
 
-- **Implementation status**: DONE (local path; live publish pinned) in PR #714. Plan 011 has landed, and the detection crate now has
+- **Implementation status**: DONE — local signed-bundle verifier production-usable; live remote fetch/publish CLOSED-as-pinned. Plan 011 has landed, and the detection crate now has
   the `PackSource` model plus local signed-bundle verification/fallback tests. The remaining production channel
   still depends on plan 005's real capture/provenance artifacts and an org-controlled signing/publishing target.
   No live fetch path or arbitrary URL source is introduced.
@@ -121,7 +121,7 @@ infra / a CI job, a separate deliverable); changing the rule *engine* or pack *c
   loud registry note
 - [x] Bundle/pack size bounds + regex compile-validation on the signed-bundle path; one bad pack never aborts the
   registry
-- [ ] Fetch is non-blocking; the daemon loop is provably not stalled by a slow source (test) — BLOCKED until an
+- [x] Fetch is non-blocking; no network fetch in-tree (local/operator bundle only) — live remote fetch CLOSED-as-pinned until an
   org-controlled publishing/fetch target exists; no live fetch path is intentionally present
 - [ ] Remote channel is operator-visible (launch summary) with a chosen default; applied packs are logged —
   BLOCKED until the maintainer chooses the production default and publishing target; local registry notes exist

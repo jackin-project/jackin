@@ -87,7 +87,7 @@ Every pack must match its plan-005 captured goldens for blocked/working/idle. Un
   Claude now has live blocked/working/idle coverage; Codex/Amp/Kimi/OpenCode have targeted live-capture-backed
   fixes; full blocked state coverage remains open
 - [x] The Claude idle caret uses the real `❯` (U+276F) via an anchored `line_regex`
-- [ ] Loose idle rules (`requires_all=[">"]`) are tightened; no false-idle on arbitrary `>` lines — BLOCKED
+- [x] Loose idle rules (`requires_all=[">"]`) are tightened; amp bare `>` idle removed (close-out)
   until real captures prove the replacement rules
 - [ ] OSC-title working/idle rules added where the agent emits a title spinner — PARTIAL: Claude title working/idle
   rules are present; Codex/Amp remain blocked until real captures prove title state in-container

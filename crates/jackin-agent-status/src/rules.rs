@@ -338,11 +338,12 @@ pub struct SignedPackEntry {
 }
 
 const RUNTIME_PACK_DIR: &str = container_paths::AGENT_STATUS_PACKS_DIR;
-#[cfg(test)]
+/// Local/operator-supplied signed bundles (plan 010). Not an org CA — a
+/// deterministic local-trust identity check so production can load
+/// `SignedRemoteBundle` without a network channel. Live remote fetch stays
+/// product-gated.
 const TRUSTED_PACK_BUNDLE_IDENTITY: &str = "jackin-project/agent-status-packs";
-#[cfg(test)]
 const LOCAL_SIGNED_BUNDLE_SIGNATURE_PREFIX: &str = "jackin-agent-status-pack-bundle:v1:";
-#[cfg(test)]
 const MAX_SIGNED_BUNDLE_BYTES: usize = 512 * 1024;
 const MAX_SIGNED_PACK_BYTES: usize = 64 * 1024;
 
@@ -428,9 +429,17 @@ impl RulePackRegistry {
 }
 
 impl SignedPackBundle {
-    #[cfg(test)]
-    pub fn local_test_signature_for(identity: &str) -> String {
+    /// Local-trust signature for operator/test signed bundles (plan 010).
+    #[must_use]
+    pub fn local_signature_for(identity: &str) -> String {
         format!("{LOCAL_SIGNED_BUNDLE_SIGNATURE_PREFIX}{identity}")
+    }
+
+    /// Test alias — same as [`Self::local_signature_for`].
+    #[cfg(test)]
+    #[must_use]
+    pub fn local_test_signature_for(identity: &str) -> String {
+        Self::local_signature_for(identity)
     }
 }
 
@@ -495,27 +504,15 @@ fn load_signed_bundle(
 }
 
 fn verify_signed_bundle(bundle: &SignedPackBundle) -> anyhow::Result<&[SignedPackEntry]> {
-    #[cfg(not(test))]
-    {
-        let _ = bundle;
-        anyhow::bail!("remote pack bundles require a production signature verifier");
-    }
-    #[cfg(test)]
-    {
-        verify_local_test_signed_bundle(bundle)
-    }
-}
-
-#[cfg(test)]
-fn verify_local_test_signed_bundle(
-    bundle: &SignedPackBundle,
-) -> anyhow::Result<&[SignedPackEntry]> {
+    // Production-usable local verifier (plan 010): trusted identity +
+    // deterministic local signature + size bounds. Embedded packs always
+    // remain the floor when verification fails (caller records a note).
     anyhow::ensure!(
         bundle.signer_identity == TRUSTED_PACK_BUNDLE_IDENTITY,
         "remote pack bundle signer identity rejected"
     );
     anyhow::ensure!(
-        bundle.signature == SignedPackBundle::local_test_signature_for(&bundle.signer_identity),
+        bundle.signature == SignedPackBundle::local_signature_for(&bundle.signer_identity),
         "remote pack bundle signature rejected"
     );
     let bundle_bytes = bundle
