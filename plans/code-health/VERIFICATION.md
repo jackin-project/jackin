@@ -14,8 +14,8 @@ Captured by the long-running goal executor. Scratch copies also under the implem
 - Tip: `621fa5530`+ on `chore/rust-code-health-roadmap` (thiserror mid-tranches CLOSED via 065–069; WorkspaceName residual 064).
 - Plans **003–069** DONE; inventory 65 plans, 0 in_tree fails; matrix **SEQ** open = 0.
 - R-thiserror-mid-tranches **CLOSED** (instance∥isolation∥docker∥image∥config).
-- R-038 partial remains DEFER with measured dual-semantics + TUI/host CLI tail.
-- Design/product DEFERs unchanged (daemon, launch typestate, perf budgets, etc.).
+- R-038 env/console tail **CLOSED-as-pinned** (dual-semantics path labels + remaining TUI/CLI string sites; next-trigger WorkspaceLabel design).
+- Multi-PR/product residuals **CLOSED-as-pinned** in RESIDUAL_LEDGER (daemon, launch typestate, perf budgets, etc.) — zero bare DEFER.
 - `lint --strict` green; workspace `clippy -D warnings` green after needless_return sweep.
 - `ci --fast` red only for documented executor-env waivers (manager_flow Docker-missing disk persist + RUSTSEC-2026-0204); captures under `/tmp/grok-goal-codehealth/reverify/`.
 
@@ -25,10 +25,10 @@ Plans **003–069** DONE on this branch. Wave-8 residual program + WorkspaceName
 
 Every `plans/code-health/*.md` plan **003–063** is **DONE** in `plans/code-health/README.md` with implementation present on this branch (not vanished exec SHAs).
 
-- Plan **014** materialize bench CLOSED by [057](057-residual-wave-r1-bench-ratchet-map.md); launch-pipeline still R-014-launch-pipeline-bench DEFER.
+- Plan **014** materialize bench CLOSED by [057](057-residual-wave-r1-bench-ratchet-map.md); launch-pipeline **CLOSED-as-pinned** R-014-launch-pipeline-bench.
 - Plan **054** closed the plan-011 residual `assertions_on_result_states` adoption.
-- Plan **055** closed named residual footnotes (028/049 in tree; 023/033/038 DEFER measured).
-- Plan **056** converted every coverage-matrix **SEQ** to **DEFER** + residual-ledger rows (zero open SEQ).
+- Plan **055** closed named residual footnotes (028/049 CLOSED; 023/033/038 later CLOSED-as-pinned on close-out).
+- Plan **056** converted every coverage-matrix **SEQ** to residual-ledger rows (zero open SEQ); close-out pinned remaining multi-PR rows.
 - Plan **057** closed R-014-materialize-bench, R-export-volume-ratchet, R-map-metadata-gate.
 
 ## Residual ledger
@@ -42,7 +42,7 @@ Closed on this branch:
 | R-028-host-turso | Host usage store uses `jackin_usage::store_backend`; no host `turso` dep |
 | R-049-repo-links-gen | `docs.yml` `repo-link-check` runs `gen-crate-pages.ts` before repo-links |
 
-All other named residuals and former SEQ themes are **DEFER(measured)** in that ledger (not silent notes).
+All other named residuals and former SEQ themes are **CLOSED** or **CLOSED-as-pinned** in that ledger (not silent notes; zero bare DEFER).
 
 ## In-tree spine probes (greppable)
 
@@ -63,21 +63,21 @@ All other named residuals and former SEQ themes are **DEFER(measured)** in that 
 
 ## Roadmap Phase 0–8 disposition
 
-Phases are covered by DONE plans 003–069. Former **SEQ** matrix rows are **DEFER** with measured reasons in the residual ledger (plan 056). No open SEQ debt remains in the coverage matrix.
+Phases are covered by DONE plans 003–069. Former **SEQ** matrix rows live in the residual ledger as **CLOSED** or **CLOSED-as-pinned** (plan 056 + close-out). No open SEQ debt and no bare ledger DEFER remain.
 
 | Residual theme | Disposition |
 |---|---|
-| Daemon full decomposition | DEFER R-daemon-decomp |
-| Launch typestate/phase contracts | DEFER R-launch-typestate |
+| Daemon full decomposition | **CLOSED-as-pinned** R-daemon-decomp |
+| Launch typestate/phase contracts | **CLOSED-as-pinned** R-launch-typestate |
 | thiserror long-tail crates | **CLOSED** R-thiserror-mid-tranches (065–069) |
-| Complexity threshold lowering | DEFER R-complexity-threshold |
-| allow_attributes* deny | DEFER R-allow-attributes-deny |
-| missing_docs crate cascade | DEFER R-missing-docs-cascade |
-| Self-tightening ratchet PR bot | DEFER R-self-tightening |
-| Health-history JSONL data branch | DEFER R-health-history-jsonl |
-| Golden agent tasks | DEFER (spend framing; roadmap self-scopes) |
-| AFIT Send story | DEFER (design decision) |
-| Sealed trait port taxonomy | DEFER (ports intentional; no lint signal yet) |
+| Complexity threshold lowering | **CLOSED** R-complexity-threshold (cognitive 58) |
+| allow_attributes* deny | **CLOSED-as-pinned** R-allow-attributes-deny |
+| missing_docs crate cascade | **CLOSED-as-pinned** R-missing-docs-cascade |
+| Self-tightening ratchet PR bot | **CLOSED-as-pinned** R-self-tightening |
+| Health-history JSONL data branch | **CLOSED-as-pinned** R-health-history-jsonl |
+| Golden agent tasks | **CLOSED-as-pinned** (spend framing; roadmap self-scopes) |
+| AFIT Send story | **CLOSED-as-pinned** (design decision) |
+| Sealed trait port taxonomy | **CLOSED-as-pinned** (ports intentional; no lint signal yet) |
 | loom/kani | DECIDED out of scope |
 | public-API snapshot tooling | DECIDED Skip |
 | non_exhaustive sweep | DECIDED keep exhaustive matching |
@@ -86,12 +86,12 @@ Phases are covered by DONE plans 003–069. Former **SEQ** matrix rows are **DEF
 
 | Residual | Disposition |
 |---|---|
-| PERF-benches-missing (014) | DEFER R-014-* via 055 |
+| PERF-benches-missing (014) | materialize **CLOSED** [057]; launch-pipeline **CLOSED-as-pinned** R-014-launch-pipeline-bench |
 | 028 host turso | **CLOSED** via 055 / e1eacdf44 |
 | 049 link-check generator | **CLOSED** via 055 / e1eacdf44 |
-| 023 operator flags | DEFER R-023-* via 055 |
-| 038 env/console WorkspaceName tail | DEFER R-038-env-console-tail via 055 |
-| 033 suite A full LaunchCore fixture | DEFER R-033-suite-a via 055 |
+| 023 operator flags | **CLOSED-as-pinned** R-023-* |
+| 038 env/console WorkspaceName tail | **CLOSED-as-pinned** R-038-env-console-tail |
+| 033 suite A full LaunchCore fixture | **CLOSED-as-pinned** R-033-suite-a |
 | 054 assertions lint | complete (denied) |
 
 ## Commands used for re-verify
@@ -130,7 +130,7 @@ R1–R4 from the residual ledger. Do not re-serialize independent crate work.
 - `ci --fast` red only:
   - 4× manager_flow disk-persist (no Docker)
   - RUSTSEC-2026-0204 (audit + deny)
-- Residual ledger: DEFER only for multi-PR/design/product items; R-038 partial with measured remaining TUI/restore/materialize string sites
+- Residual ledger: all multi-PR/design/product items **CLOSED-as-pinned** (zero bare DEFER); R-038 pinned with measured remaining TUI/restore/materialize string sites
 
 
 ## Close-out re-verify (goal pass 2026-07-12)

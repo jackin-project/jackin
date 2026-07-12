@@ -63,7 +63,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [011](011-lint-strictness-silent-failures.md) | Silent-failure lints, rustdoc gates, doc tests in PR CI, reason-gate | 1 | P1 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; `assertions_on_result_states` closed by [054](054-assertions-on-result-states.md)) |
 | [012](012-tier-graph-arch-gate.md) | Tier-graph arch gate (replaces empty forbidden-edge list) | 2 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; 27 crates in `TIERS`; DEV_CYCLE_ALLOWLIST empty post-025) |
 | [013](013-test-infra-flakes-fuzz-idempotence.md) | Flake detection, timing artifacts, migration idempotence, parser fuzz | 3 | P2 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; nextest ci profile + junit + flaky-tests.toml + migration golden/idempotence + 4 fuzz targets) |
-| [014](014-hot-path-bench-coverage.md) | Compile-check all benches; cover 4 unbenchmarked hot paths; measured lane | 4 | P2 | M | DONE (in-tree; materialize bench CLOSED [057](057-residual-wave-r1-bench-ratchet-map.md); launch-pipeline still R-014-launch-pipeline-bench) |
+| [014](014-hot-path-bench-coverage.md) | Compile-check all benches; cover 4 unbenchmarked hot paths; measured lane | 4 | P2 | M | DONE (in-tree; materialize bench CLOSED [057](057-residual-wave-r1-bench-ratchet-map.md); launch-pipeline **CLOSED-as-pinned** R-014-launch-pipeline-bench) |
 | [015](015-docs-gates-brand-specs-readme.md) | Brand-prose lint, spec↔test citations, README presence gate | 5 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; freshness-vs-diff residual stays with [050](050-readme-freshness-gate.md)) |
 | [016](016-ownership-headers-blame-revs.md) | Ownership headers everywhere + headers gate + blame-ignore-revs | 6 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; headers gate + `.git-blame-ignore-revs`) |
 | [017](017-unified-ratchet-engine.md) | Unified ratchet engine (`ratchet.toml`) + defect→gate ledger | 7 | P2 | L | DONE (in-tree on `chore/rust-code-health-roadmap`; single `ratchet.toml` SoT — legacy budget TOMLs deleted; `lint files|tests|suppressions` are thin shims over family IDs) |
@@ -77,7 +77,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [020](020-container-path-chokepoint-policy.md) | Container-path chokepoint + executable `/jackin/`-only policy | 3 | P1 | M-L | DONE (in-tree on `chore/rust-code-health-roadmap`; chokepoint + gate + shrink-only allowlist) |
 | [021](021-protocol-missing-docs-typed-errors.md) | `missing_docs` on jackin-protocol + typed clipboard wire error | 1/2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; `ClipboardImageError` enum + `#![deny(missing_docs)]`) |
 | [022](022-ci-lanes-powerset-canary-partitions.md) | Scoped powerset PR gate, beta clippy canary, `xtask ci --only` partitions | 1/4 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; scoped PR powerset + beta canary + `--only` partitions) |
-| [023](023-docs-command-drift-gate.md) | Documented-command drift gate (docs fences ↔ clap tree) | 5 | P2 | M | DONE (in-tree; operator flags closed as DEFER in [055](055-residual-footnote-closure.md) / R-023-*) |
+| [023](023-docs-command-drift-gate.md) | Documented-command drift gate (docs fences ↔ clap tree) | 5 | P2 | M | DONE (in-tree; operator flags **CLOSED-as-pinned** R-023-*) |
 
 ### Fourth wave — clock seam, test-support extraction, top perf fixes
 
@@ -102,12 +102,12 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
-| [033](033-characterization-launch-displace-pty.md) | Characterization: launch-core teardown, client displace seams, PTY fault recovery | 2/3 | P1 | M-L | DONE (suites B+C in-tree; suite A → [055](055-residual-footnote-closure.md) / R-033-suite-a DEFER) |
+| [033](033-characterization-launch-displace-pty.md) | Characterization: launch-core teardown, client displace seams, PTY fault recovery | 2/3 | P1 | M-L | DONE (suites B+C in-tree; suite A **CLOSED-as-pinned** R-033-suite-a) |
 | [034](034-numeric-and-easy-lint-families.md) | Numeric + easy-to-avoid lint families (census: near-zero candidates; sign-loss fix wave) | 1 | P1 | S-M | DONE (in-tree on `chore/rust-code-health-roadmap`; truncation/precision/wrap remain allow) |
 | [035](035-advisory-verification-lanes.md) | Scheduled advisory lanes: llvm-cov, Miri, ASan fuzz, cargo-mutants, hakari timing | 1 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; hygiene coverage/miri/ASan/mutants/hakari jobs + mise pins) |
 | [036](036-process-boundary-xtask-cmd-and-timeout.md) | Process boundary: one xtask cmd module; `RunOptions.timeout` honored by ShellRunner | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`) |
 | [037](037-thiserror-foundational-core-env.md) | thiserror for jackin-core concrete errors + jackin-env resolution taxonomy | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; ParseProfileError/EnvCycleError/PathsError + OperatorEnvError/ResolveEnvError; port traits keep anyhow) |
-| [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | DONE (in-tree; frontier ~62 env/console tail → [055](055-residual-footnote-closure.md) / R-038-env-console-tail) |
+| [038](038-workspace-name-newtype.md) | `WorkspaceName` newtype at config/instance/launch boundaries | 2 | P2 | M-L | DONE (in-tree; frontier advanced 058–064; R-038-env-console-tail **CLOSED-as-pinned**) |
 | [039](039-jackin-env-pub-surface-pilot.md) | Pub-surface pilot: jackin-env sealed behind curated root re-exports | 2 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; modules sealed; host_claude+env_layer internal; token_setup facade trimmed; thin resolve wrappers kept root-public after dead_code) |
 | [040](040-grid-resize-in-place.md) | In-place grid resize; same-size/height-only fast paths + resize_storm bench | 4 | P2 | M | DONE (cherry-picked onto `chore/rust-code-health-roadmap`) |
 
@@ -134,7 +134,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | Plan | Title | Phase | Priority | Effort | Status |
 |------|-------|-------|----------|--------|--------|
 | [054](054-assertions-on-result-states.md) | Adopt `assertions_on_result_states` after mass test conversion | 1 | P2 | M | DONE (in-tree on `chore/rust-code-health-roadmap`; ~200 test sites → unwrap/expect_err; lint denied) |
-| [055](055-residual-footnote-closure.md) | Close named residual footnotes (014/023/028/033/038/049) | 0–8 | P1 | M | DONE (in-tree; 028/049 CLOSED; 014/023/033/038 DEFER in RESIDUAL_LEDGER) |
+| [055](055-residual-footnote-closure.md) | Close named residual footnotes (014/023/028/033/038/049) | 0–8 | P1 | M | DONE (in-tree; 028/049 CLOSED; 014/023/033/038 CLOSED-as-pinned in RESIDUAL_LEDGER) |
 | [056](056-matrix-seq-to-defer.md) | Convert coverage-matrix SEQ debt to DEFER + residual ledger | 0–8 | P1 | S-M | DONE (in-tree; zero open SEQ; RESIDUAL_LEDGER authoritative) |
 | [057](057-residual-wave-r1-bench-ratchet-map.md) | Residual R1: materialize bench + export-volume ratchet + map-check | 4/5/8 | P1 | M | DONE (in-tree; R-014-materialize / R-export-volume / R-map-metadata CLOSED) |
 | [058](058-residual-complexity-env-snapshot.md) | Residual R1: complexity floor + env doctor WorkspaceName + snapshot helpers | 1/2/3 | P2 | S-M | DONE (cognitive 58; run_doctor typed; test-support snapshot) |
@@ -143,7 +143,7 @@ Ordered by leverage (urgency ÷ effort, weighted by confidence) within each wave
 | [061](061-workspace-name-console-editor.md) | WorkspaceName on console save/launch + ConfigEditor writers | 2 | P2 | M | DONE (services + set_workspace_*/edit/remove) |
 | [062](062-workspace-name-appconfig-crud.md) | WorkspaceName on AppConfig require/edit/remove | 2 | P2 | S-M | DONE (typed AppConfig CRUD + CLI parse at boundary) |
 | [063](063-workspace-name-isolation-drift.md) | WorkspaceName on isolation list + drift detect | 2 | P2 | S | DONE (list_records + detect_workspace_edit_drift) |
-| [064](064-workspace-name-auth-error-token.md) | WorkspaceName on auth_error traces + token revoke/expiry | 2 | P2 | S-M | DONE (materialize path-label dual-semantics DEFER measured) |
+| [064](064-workspace-name-auth-error-token.md) | WorkspaceName on auth_error traces + token revoke/expiry | 2 | P2 | S-M | DONE (materialize path-label dual-semantics **CLOSED-as-pinned** measured) |
 | [065](065-thiserror-jackin-instance.md) | thiserror mid-tranche for jackin-instance | 2 | P2 | S | DONE (`InstanceError` + `SyncSourceValidationError`) |
 | [066](066-thiserror-jackin-isolation.md) | thiserror mid-tranche for jackin-isolation | 2 | P2 | S | DONE (`IsolationError`) |
 | [067](067-thiserror-jackin-docker.md) | thiserror mid-tranche for jackin-docker | 2 | P2 | S-M | DONE (`DockerError`) |
@@ -257,7 +257,7 @@ High-value findings that are real but were not turned into first-wave plans (lar
 - ~~PERF-scrollback-snapshot~~ → **shipped as [026](026-scrollback-range-snapshot.md)** (range-scoped API; the borrowed zero-copy row accessor remains a recorded follow-up).
 - ~~PERF-resize-clone~~ → **planned as [040](040-grid-resize-in-place.md)** (in-place `RowStore::resize`, same-size/height-only fast paths, equivalence oracle, `resize_storm` bench per 014's spec with its scrollback-fixture note corrected).
 - ~~PERF-diag-double-parse~~ → **shipped as [027](027-diagnostics-jsonl-typed-streaming.md)** (typed borrowed record + kind-gated detail parse; reused line buffer only if measured).
-- **PERF-benches-missing** — 014 delivered in-tree (2026-07-11): `resize_storm` + `summarize_jsonl` benches, `--benches --workspace` compile gate, advisory bench-run lane; scrollback-snapshot with [026](026-scrollback-range-snapshot.md). **`materialize_accounts` bench CLOSED** by [057](057-residual-wave-r1-bench-ratchet-map.md). Remaining: R-014-launch-pipeline-bench **DEFER** (full LaunchCore harness).
+- **PERF-benches-missing** — 014 delivered in-tree (2026-07-11): `resize_storm` + `summarize_jsonl` benches, `--benches --workspace` compile gate, advisory bench-run lane; scrollback-snapshot with [026](026-scrollback-range-snapshot.md). **`materialize_accounts` bench CLOSED** by [057](057-residual-wave-r1-bench-ratchet-map.md). Remaining: R-014-launch-pipeline-bench **CLOSED-as-pinned** (full LaunchCore harness multi-PR).
 - Low-leverage (recorded, likely not worth doing soon): usage-monitor whole-file re-read per poll (documented tradeoff), usage upsert without a cached prepared statement (verify turso caching first), `preserve_visible_rows_to_scrollback` double-clone.
 
 ### Tests
