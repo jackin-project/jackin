@@ -136,7 +136,7 @@ R1–R4 from the residual ledger. Do not re-serialize independent crate work.
 ## Close-out re-verify (goal pass 2026-07-12)
 
 - Tip: `chore/rust-code-health-roadmap` PR #759 close-out wave
-- Claim gaps: 017 ratchet single SoT (legacy budget TOMLs removed); 042 metrics counter assertions; 047 maintainability lints at `warn`
+- Claim gaps: 017 ratchet single SoT (legacy budget TOMLs removed); 042 metrics counter assertions; 047 maintainability lints re-measured residual-allow (large_futures/assigning_clones/match_same_arms/drop_non_drop/unused_self/unused_async stay `allow`; needless_pass_by_value allow intentional)
 - tui-review 001: failure_scroll threaded into hit-test + OSC8
 - launch-speed 008c/008g: early restore scan reuse + run_console returns AppConfig
 - agent-status: Notification payload enrich; grok baked; packs/fixtures updated

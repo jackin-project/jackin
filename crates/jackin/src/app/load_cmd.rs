@@ -26,6 +26,17 @@ use super::{
     restore_candidate_for_hardline, restore_hardline_instance, rich_prelaunch_choice,
 };
 
+/// Config used by post-console launch/prewarm after `run_console` returns.
+///
+/// The console owns and mutates this model in memory; successful saves write
+/// disk *and* replace the in-memory `AppConfig`. Returning that model skips a
+/// second `AppConfig::load_or_init` parse (launch-speed 008g). Callers must
+/// not re-read disk when the console proved no changes **or** when it already
+/// applied saves into this value.
+pub(crate) fn take_post_console_config(console_owned: AppConfig) -> AppConfig {
+    console_owned
+}
+
 pub(super) async fn handle_load(
     args: LoadArgs,
     config: &mut AppConfig,
@@ -191,7 +202,7 @@ pub(super) async fn handle_console(
         .map(|(_, message)| anyhow::anyhow!(message.clone()));
 
     let op_available = console::effects::op_cli_available();
-    let (outcome, mut config) = console::run_console(
+    let (outcome, console_config) = console::run_console(
         config,
         &paths,
         &cwd,
@@ -204,9 +215,9 @@ pub(super) async fn handle_console(
         &mut runner,
     )
     .await?;
-    // Use the config the console returned (already updated on successful
-    // saves). Skipping a disk reload avoids a redundant AppConfig parse on
-    // the common launch path when the operator made no config changes.
+    // Prefer the in-memory config the console returned (updated on successful
+    // saves). Do not re-read disk — that is the launch-speed 008g win.
+    let mut config = take_post_console_config(console_config);
     let Some(outcome) = outcome else {
         if let Some((docker, claim)) = &console_entry {
             runtime::release_entry_if_idle(&paths, docker, claim).await;

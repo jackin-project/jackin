@@ -21,7 +21,7 @@ What remains:
 
 ## 008g: Skip console config reload when console made no config changes
 
-**Status**: DONE
+**Status**: DONE — `run_console` returns `AppConfig`; `take_post_console_config` skips disk reload; tests `no_op_console_skips_disk_reload_for_post_console_config` + `saved_console_config_feeds_post_console_launch_path`
 
 `jackin console` currently reloads `AppConfig` from disk after the console returns a launch/prewarm/action outcome. That reload is correct because the operator may have saved Settings or Workspace edits while inside the console, and the following launch must use the saved config.
 
