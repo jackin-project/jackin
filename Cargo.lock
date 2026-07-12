@@ -2754,6 +2754,7 @@ dependencies = [
  "regex",
  "semver",
  "serde",
+ "serde_json",
  "tempfile",
  "toml",
 ]
