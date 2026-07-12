@@ -90,8 +90,8 @@ Env and console WorkspaceName slices are **two workers**, not one.
 | Residual slice | Crate | Measured sites (ledger) | After |
 |----------------|-------|-------------------------|-------|
 | instance | `jackin-instance` | **CLOSED** plan 065 | 037 |
+| isolation | `jackin-isolation` | **CLOSED** plan 066 | 037 |
 | config | `jackin-config` | ~66 | 037 idiom |
-| isolation | `jackin-isolation` | ~14 | 037 |
 | docker | `jackin-docker` | ~17 | 037 |
 | image | `jackin-image` | ~23 | 037 |
 

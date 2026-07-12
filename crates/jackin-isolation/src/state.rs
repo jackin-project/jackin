@@ -118,13 +118,14 @@ pub fn read_records(container_state_dir: &Path) -> anyhow::Result<Vec<IsolationR
         .with_context(|| format!("read isolation file at {}", path.display()))?;
     let file: IsolationFile = serde_json::from_slice(&bytes)
         .with_context(|| format!("parse isolation file at {}", path.display()))?;
-    anyhow::ensure!(
-        file.version == CURRENT_VERSION,
-        "unsupported isolation.json version {} at {}; expected {}",
-        file.version,
-        path.display(),
-        CURRENT_VERSION
-    );
+    if file.version != CURRENT_VERSION {
+        return Err(crate::IsolationError::UnsupportedStateVersion {
+            got: file.version,
+            path,
+            expected: CURRENT_VERSION,
+        }
+        .into());
+    }
     Ok(file.records)
 }
 

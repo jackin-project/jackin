@@ -30,7 +30,7 @@ Rules:
 | R-launch-typestate | matrix Phase 2 runtime | **DEFER** | Needs characterization oracle [033] suites; full typestate/phase-contract extract is multi-PR design (LaunchCore ~1.3k LOC body). Characterization partial (B+C). | Dedicated design PR after suite A or LaunchCore split |
 | R-daemon-decomp | matrix Phase 2 daemon | **DEFER** | Specs [032] + partial characterization [033]; full decomposition multi-module rewrite. Measured MISSING worklists live in 032. | Per-worklist PR after MISSING items prioritized |
 | R-daemon-char-remainder | matrix Phase 2 | **DEFER** | 033 covers 3/7 surfaces; session-lifecycle, status-publication, persistence/reattach, cleanup-outcomes need ports. | After daemon ports extract |
-| R-thiserror-mid-tranches | matrix Phase 2 | **DEFER** (partial) | 037 core+env; **065** closed instance (`InstanceError`, `SyncSourceValidationError`). Remaining measured: config ~66, isolation ~14, docker ~17, image ~23. | Next crate plan: isolation ∥ docker ∥ image ∥ config |
+| R-thiserror-mid-tranches | matrix Phase 2 | **DEFER** (partial) | 037 core+env; **065** instance; **066** isolation (`IsolationError`). Remaining measured: config ~66, docker ~17, image ~23. | Next crate plan: docker ∥ image ∥ config |
 | R-typestate-general | matrix Phase 2 | **DEFER** | Same blocker as R-launch-typestate. | Same as R-launch-typestate |
 | R-edit-model-convergence | matrix Phase 2 TUI | **DEFER** | View-models [030] shipped; full edit-model merge is console redesign. | After 030 residue state.rs + auth handler |
 | R-snapshot-helpers | matrix Phase 3 | **CLOSED** | `jackin_test_support::snapshot::{redact_digit_runs, normalize_snapshot_text}` (plan 058). | Adopt in console/capsule snapshot suites over time |

@@ -1,6 +1,6 @@
-# Plan inventory (reverify) — goal pass after plan 065
+# Plan inventory (reverify) — goal pass after plan 066
 
-Tip: pending commit on `chore/rust-code-health-roadmap`.
+Tip: `chore/rust-code-health-roadmap` after 064–066 residual wave.
 Lint strict green. Residuals DEFER only with measured ledger reasons.
 
 | id | title | ledger_status | in_tree | evidence |
@@ -66,5 +66,6 @@ Lint strict green. Residuals DEFER only with measured ledger reasons.
 | 063 | WorkspaceName on isolation list + drift detect | DONE | pass | 219:pub fn list_records_for_workspace( |
 | 064 | WorkspaceName on auth_error traces + token revoke/expiry | DONE | pass | planfile + auth_error/token_setup |
 | 065 | thiserror mid-tranche jackin-instance | DONE | pass | InstanceError + SyncSourceValidationError |
+| 066 | thiserror mid-tranche jackin-isolation | DONE | pass | IsolationError |
 
-Total plans: 61; in_tree fail rows: 0
+Total plans: 62; in_tree fail rows: 0
