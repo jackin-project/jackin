@@ -7,6 +7,7 @@
 //! Not responsible for: the async Docker daemon API (`docker_client.rs`), or
 //! parsing Docker output formats (those live in the callers).
 
+use crate::DockerError;
 use std::path::Path;
 use std::process::ExitStatus;
 use std::time::Instant;
@@ -14,6 +15,13 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 pub use jackin_core::{BuildLogSink, CommandRunner, RunOptions};
+
+fn cmd_failed(program: &str, args: &[&str]) -> DockerError {
+    DockerError::CommandFailed {
+        program: program.to_owned(),
+        args: args.join(" "),
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct ShellRunner {
@@ -233,7 +241,11 @@ async fn await_child_with_timeout(
             Err(_elapsed) => {
                 drop(child.kill().await);
                 drop(child.wait().await);
-                anyhow::bail!("command timed out after {}s: {program}", dur.as_secs_f64());
+                return Err(DockerError::CommandTimeout {
+                    secs: dur.as_secs_f64(),
+                    program: program.to_owned(),
+                }
+                .into());
             }
         },
     }
@@ -287,12 +299,9 @@ impl CommandRunner for ShellRunner {
             let mut child = cmd.spawn()?;
             let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
-            anyhow::ensure!(
-                status.success(),
-                "command failed: {} {}",
-                program,
-                args.join(" ")
-            );
+            if !status.success() {
+                return Err(cmd_failed(program, args).into());
+            }
         } else if opts.quiet {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
@@ -302,12 +311,9 @@ impl CommandRunner for ShellRunner {
             let mut child = cmd.spawn()?;
             let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
-            anyhow::ensure!(
-                status.success(),
-                "command failed: {} {}",
-                program,
-                args.join(" ")
-            );
+            if !status.success() {
+                return Err(cmd_failed(program, args).into());
+            }
         } else if opts.capture_stderr || opts.capture_stdout {
             Box::pin(self.run_captured(program, args, cwd, opts)).await?;
         } else if self.debug || jackin_diagnostics::rich_terminal_owned() {
@@ -329,12 +335,9 @@ impl CommandRunner for ShellRunner {
             let mut child = cmd.spawn()?;
             let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
-            anyhow::ensure!(
-                status.success(),
-                "command failed: {} {}",
-                program,
-                args.join(" ")
-            );
+            if !status.success() {
+                return Err(cmd_failed(program, args).into());
+            }
         }
         Ok(())
     }
@@ -438,7 +441,11 @@ impl ShellRunner {
                 Err(_elapsed) => {
                     drop(child.kill().await);
                     drop(child.wait().await);
-                    anyhow::bail!("command timed out after {}s: {program}", dur.as_secs_f64());
+                    return Err(DockerError::CommandTimeout {
+                        secs: dur.as_secs_f64(),
+                        program: program.to_owned(),
+                    }
+                    .into());
                 }
             }
         } else {
@@ -476,46 +483,47 @@ impl ShellRunner {
         }
         if !status.success() {
             if opts.tee_to_build_log {
-                anyhow::bail!("Docker build command failed");
+                return Err(DockerError::DockerBuildFailed.into());
             }
             if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {
-                anyhow::bail!("command failed: {} {}", program, args.join(" "));
+                return Err(cmd_failed(program, args).into());
             }
             if !stream {
                 if let Some(run) = jackin_diagnostics::active_run().filter(|_| self.debug) {
-                    anyhow::bail!(
-                        "command failed: {} {} (captured output in diagnostics run {})",
-                        program,
-                        args.join(" "),
-                        run.run_id()
-                    );
+                    return Err(DockerError::CommandFailedDebugRun {
+                        program: program.to_owned(),
+                        args: args.join(" "),
+                        run_id: run.run_id().to_owned(),
+                    }
+                    .into());
                 }
                 if let Some(run) = jackin_diagnostics::active_run() {
-                    anyhow::bail!(
-                        "command failed: {} {} (output suppressed; rerun with --debug to capture it in diagnostics run {})",
-                        program,
-                        args.join(" "),
-                        run.run_id()
-                    );
+                    return Err(DockerError::CommandFailedSuppressed {
+                        program: program.to_owned(),
+                        args: args.join(" "),
+                        run_id: run.run_id().to_owned(),
+                    }
+                    .into());
                 }
                 if let Some(stderr) = summarize_stderr(&stderr_buf) {
-                    anyhow::bail!(
-                        "command failed: {} {} (stderr: {stderr}; captured output suppressed)",
-                        program,
-                        args.join(" ")
-                    );
+                    return Err(DockerError::CommandFailedStderrSummary {
+                        program: program.to_owned(),
+                        args: args.join(" "),
+                        stderr,
+                    }
+                    .into());
                 }
-                anyhow::bail!(
-                    "command failed: {} {} (captured output suppressed)",
-                    program,
-                    args.join(" ")
-                );
+                return Err(DockerError::CommandFailedCapturedSuppressed {
+                    program: program.to_owned(),
+                    args: args.join(" "),
+                }
+                .into());
             }
-            anyhow::bail!(
-                "command failed: {} {} (see stderr above)",
-                program,
-                args.join(" ")
-            );
+            return Err(DockerError::CommandFailedSeeStderr {
+                program: program.to_owned(),
+                args: args.join(" "),
+            }
+            .into());
         }
         Ok(())
     }
@@ -556,14 +564,19 @@ impl ShellRunner {
         if !output.status.success() {
             match mode {
                 CaptureMode::Secret => {
-                    anyhow::bail!("command failed: {} {}", program, args.join(" "));
+                    return Err(cmd_failed(program, args).into());
                 }
                 CaptureMode::Normal => {
                     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
                     if stderr.is_empty() {
-                        anyhow::bail!("command failed: {} {}", program, args.join(" "));
+                        return Err(cmd_failed(program, args).into());
                     }
-                    anyhow::bail!("command failed: {} {}: {}", program, args.join(" "), stderr);
+                    return Err(DockerError::CommandFailedWithStderr {
+                        program: program.to_owned(),
+                        args: args.join(" "),
+                        stderr,
+                    }
+                    .into());
                 }
             }
         }

@@ -67,5 +67,6 @@ Lint strict green. Residuals DEFER only with measured ledger reasons.
 | 064 | WorkspaceName on auth_error traces + token revoke/expiry | DONE | pass | planfile + auth_error/token_setup |
 | 065 | thiserror mid-tranche jackin-instance | DONE | pass | InstanceError + SyncSourceValidationError |
 | 066 | thiserror mid-tranche jackin-isolation | DONE | pass | IsolationError |
+| 067 | thiserror mid-tranche jackin-docker | DONE | pass | DockerError |
 
-Total plans: 62; in_tree fail rows: 0
+Total plans: 63; in_tree fail rows: 0
