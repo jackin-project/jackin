@@ -39,7 +39,7 @@ Derived from the per-wave dependency notes below; each batch is a safe-parallel 
 1. **Batch 1 — spine openers + instance fixes + independents**: [010] (program spine), [018] (telemetry spine — wave-7 declared priority), [003]+[014] (bench lands with the fix), [004], [007], [008], [009], [023], [024], [028], [029], [031], [049], [053].
 2. **Batch 2 — after batch 1**: [011] (needs 010's baseline; owns the lint table and `ci.rs` this batch), [041]+[042] (parallel, after 018), [043] (after 018), [015], [025], [026], [027], [040] (benches exist post-014), [048].
 3. **Batch 3 — after batch 2**: [012] then [016]; [019] then [021]; [034] then [047] (lint-table serialization); [022] then [036] (`ci.rs` serialization); [044] (after 041+042); [013], [020], [030], [032]+[033] (pair), [035], [037], [038], [039], [045], [046], [050], [051], [052].
-4. **Last**: [017] (after 010+011; the ratchet engine absorbs every budget family the earlier plans left in-source). Former SEQ items are **DEFER** with measured reasons in [RESIDUAL_LEDGER.md](RESIDUAL_LEDGER.md) via [056](056-matrix-seq-to-defer.md) — not silent open debt.
+4. **Last**: [017] (after 010+011; the ratchet engine absorbs every budget family the earlier plans left in-source). Former SEQ items were converted via [056](056-matrix-seq-to-defer.md) and are now **CLOSED** or **CLOSED-as-pinned** in [RESIDUAL_LEDGER.md](RESIDUAL_LEDGER.md) (historical DEFER disposition; zero bare open DEFER after close-out).
 
 ## Execution order & status
 
