@@ -5,6 +5,7 @@
 //! resolution) lives in the child modules `mounts`, `persist`,
 //! `roles`, and `workspaces`.
 
+use crate::ConfigError;
 use std::collections::BTreeMap;
 
 use jackin_core::EnvValue;
@@ -88,10 +89,11 @@ impl AppConfig {
                         .supported_modes()
                         .contains(&AuthForwardMode::OAuthToken)
             }) {
-                anyhow::bail!(
+                return Err(ConfigError::msg(format!(
                     "auth_forward 'oauth_token' is not supported for {}",
                     agent.slug()
-                );
+                ))
+                .into());
             }
         }
         Ok(())

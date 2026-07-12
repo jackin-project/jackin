@@ -69,5 +69,6 @@ Lint strict green. Residuals DEFER only with measured ledger reasons.
 | 066 | thiserror mid-tranche jackin-isolation | DONE | pass | IsolationError |
 | 067 | thiserror mid-tranche jackin-docker | DONE | pass | DockerError |
 | 068 | thiserror mid-tranche jackin-image | DONE | pass | ImageError |
+| 069 | thiserror mid-tranche jackin-config | DONE | pass | ConfigError; R-thiserror CLOSED |
 
-Total plans: 64; in_tree fail rows: 0
+Total plans: 65; in_tree fail rows: 0

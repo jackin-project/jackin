@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use jackin_core::AuthForwardMode;
 
+use crate::ConfigError;
 use crate::auth::{AgentAuthConfig, GithubAuthConfig};
 use crate::versions::current_workspace_version;
 
@@ -375,10 +376,11 @@ impl WorkspaceConfig {
                         .supported_modes()
                         .contains(&AuthForwardMode::OAuthToken)
             }) {
-                anyhow::bail!(
+                return Err(ConfigError::msg(format!(
                     "auth_forward 'oauth_token' is not supported for {}",
                     agent.slug()
-                );
+                ))
+                .into());
             }
         }
         for (role, override_cfg) in &self.roles {
@@ -395,11 +397,12 @@ impl WorkspaceConfig {
                             .supported_modes()
                             .contains(&AuthForwardMode::OAuthToken)
                 }) {
-                    anyhow::bail!(
+                    return Err(ConfigError::msg(format!(
                         "auth_forward 'oauth_token' is not supported for {} in role {}",
                         agent.slug(),
                         role
-                    );
+                    ))
+                    .into());
                 }
             }
         }
@@ -533,13 +536,13 @@ pub fn validate_mount_specs(mounts: &[MountConfig]) -> anyhow::Result<()> {
     let mut seen_dst = HashSet::new();
     for mount in mounts {
         if !Path::new(&mount.src).is_absolute() {
-            anyhow::bail!("mount source must be absolute: {}", mount.src);
+            return Err(ConfigError::MountSrcNotAbsolute(mount.src.clone()).into());
         }
         if !mount.dst.starts_with('/') {
-            anyhow::bail!("mount destination must be an absolute path: {}", mount.dst);
+            return Err(ConfigError::MountDstNotAbsolute(mount.dst.clone()).into());
         }
         if !seen_dst.insert(mount.dst.clone()) {
-            anyhow::bail!("duplicate mount destination: {}", mount.dst);
+            return Err(ConfigError::DuplicateMountDst(mount.dst.clone()).into());
         }
     }
     Ok(())
@@ -553,7 +556,7 @@ pub fn validate_mount_paths(mounts: &[MountConfig]) -> anyhow::Result<()> {
     use std::path::Path;
     for mount in mounts {
         if !Path::new(&mount.src).exists() {
-            anyhow::bail!("mount source does not exist: {}", mount.src);
+            return Err(ConfigError::MountSrcMissing(mount.src.clone()).into());
         }
     }
     Ok(())

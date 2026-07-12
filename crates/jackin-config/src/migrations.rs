@@ -5,10 +5,11 @@
 //! crate's `manifest/migrations.rs`. One version bump per PR targeting the next
 //! version after `main`.
 
+use crate::ConfigError;
 use std::num::NonZeroU32;
 use std::path::Path;
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use toml_edit::DocumentMut;
 
 use crate::persist::atomic_write;
@@ -155,10 +156,13 @@ pub fn migrate_workspace_op_account_to_refs(doc: &mut DocumentMut) -> anyhow::Re
         None => return Ok(()),
         Some(item) => match item.as_str() {
             Some(s) => s.to_owned(),
-            None => bail!(
-                "workspace migration v1alpha4 → v1alpha5: `op_account` must be a string, \
-                 found {item:?}"
-            ),
+            None => {
+                return Err(ConfigError::msg(format!(
+                    "workspace migration v1alpha4 → v1alpha5: `op_account` must be a string, \
+                     found {item:?}"
+                ))
+                .into());
+            }
         },
     };
 
@@ -299,9 +303,7 @@ pub fn migrate_file_if_needed(
     let current = parse_version(current_raw)?;
 
     if old_version > current {
-        bail!(
-            "{label} is at {old_version}, this binary only understands up to {current_raw}; upgrade jackin"
-        );
+        return Err(ConfigError::msg(format!("{label} is at {old_version}, this binary only understands up to {current_raw}; upgrade jackin")).into());
     }
     if old_version == current {
         return Ok(None);
@@ -331,17 +333,15 @@ pub fn apply_migrations(
     let mut cursor = old_version.clone();
     while &cursor < current_version {
         let Some(step) = find_step(&cursor, migrations)? else {
-            bail!(
-                "{label} is at {old_version}, but this binary no longer includes a migration path to {current_version}; upgrade through an older jackin first"
-            );
+            return Err(ConfigError::msg(format!("{label} is at {old_version}, but this binary no longer includes a migration path to {current_version}; upgrade through an older jackin first")).into());
         };
         let next = parse_registry_version(step.to)?;
         if next <= cursor {
-            bail!(
+            return Err(ConfigError::msg(format!(
                 "{label} migration registry is invalid: step {} -> {} does not move forward",
-                step.from,
-                step.to
-            );
+                step.from, step.to
+            ))
+            .into());
         }
         (step.migrate)(doc)
             .with_context(|| format!("running {label} migration {} -> {}", step.from, step.to))?;
@@ -349,7 +349,10 @@ pub fn apply_migrations(
         cursor = next;
     }
     if &cursor != current_version {
-        bail!("{label} migration registry stopped at {cursor}, expected {current_version}");
+        return Err(ConfigError::msg(format!(
+            "{label} migration registry stopped at {cursor}, expected {current_version}"
+        ))
+        .into());
     }
     Ok(())
 }
@@ -378,7 +381,7 @@ pub fn doc_version(doc: &DocumentMut, label: &str) -> anyhow::Result<SchemaVersi
         return Ok(SchemaVersion::Legacy);
     };
     let Some(version) = item.as_str() else {
-        bail!("{label} version must be a string");
+        return Err(ConfigError::msg(format!("{label} version must be a string")).into());
     };
     parse_version(version).with_context(|| format!("{label} version is invalid"))
 }
@@ -391,12 +394,13 @@ pub fn doc_version(doc: &DocumentMut, label: &str) -> anyhow::Result<SchemaVersi
 pub fn parse_version(version: &str) -> anyhow::Result<SchemaVersion> {
     let rest = version
         .strip_prefix('v')
-        .ok_or_else(|| anyhow::anyhow!("version must start with `v`"))?;
-    let (major_raw, suffix) =
-        split_first_nondigit(rest).ok_or_else(|| anyhow::anyhow!("missing major version"))?;
+        .ok_or_else(|| anyhow::Error::from(ConfigError::msg("version must start with `v`")))?;
+    let (major_raw, suffix) = split_first_nondigit(rest)
+        .ok_or_else(|| anyhow::Error::from(ConfigError::msg("missing major version")))?;
     let major = parse_canonical_u32(major_raw, "major version")?;
-    let major = NonZeroU32::new(major)
-        .ok_or_else(|| anyhow::anyhow!("major version must be greater than zero"))?;
+    let major = NonZeroU32::new(major).ok_or_else(|| {
+        anyhow::Error::from(ConfigError::msg("major version must be greater than zero"))
+    })?;
 
     let channel = if suffix.is_empty() {
         Channel::Stable
@@ -405,7 +409,9 @@ pub fn parse_version(version: &str) -> anyhow::Result<SchemaVersion> {
     } else if let Some(seq_raw) = suffix.strip_prefix("beta") {
         Channel::Beta(parse_sequence("beta", seq_raw)?)
     } else {
-        bail!("version must look like v1, v1beta1, or v1alpha1");
+        return Err(
+            ConfigError::msg(format!("version must look like v1, v1beta1, or v1alpha1")).into(),
+        );
     };
 
     Ok(SchemaVersion::Kubernetes(KubernetesVersion {
@@ -416,11 +422,16 @@ pub fn parse_version(version: &str) -> anyhow::Result<SchemaVersion> {
 
 fn parse_sequence(prefix: &str, raw: &str) -> anyhow::Result<NonZeroU32> {
     if raw.is_empty() {
-        bail!("{prefix} version must include a sequence number");
+        return Err(
+            ConfigError::msg(format!("{prefix} version must include a sequence number")).into(),
+        );
     }
     let value = parse_canonical_u32(raw, &format!("{prefix} sequence"))?;
-    NonZeroU32::new(value)
-        .ok_or_else(|| anyhow::anyhow!("{prefix} sequence must be greater than zero"))
+    NonZeroU32::new(value).ok_or_else(|| {
+        anyhow::Error::from(ConfigError::msg(format!(
+            "{prefix} sequence must be greater than zero"
+        )))
+    })
 }
 
 // Reject leading zeros so version strings round-trip canonically. Without
@@ -428,7 +439,7 @@ fn parse_sequence(prefix: &str, raw: &str) -> anyhow::Result<NonZeroU32> {
 // non-canonical form forever (the file is only rewritten when migrating).
 fn parse_canonical_u32(raw: &str, label: &str) -> anyhow::Result<u32> {
     if raw.len() > 1 && raw.starts_with('0') {
-        bail!("{label} must not have leading zeros");
+        return Err(ConfigError::msg(format!("{label} must not have leading zeros")).into());
     }
     raw.parse::<u32>()
         .with_context(|| format!("invalid {label} {raw:?}"))

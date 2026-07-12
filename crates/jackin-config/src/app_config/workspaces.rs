@@ -1,5 +1,6 @@
 //! `AppConfig` workspace CRUD impl blocks.
 
+use crate::ConfigError;
 use jackin_core::WorkspaceName;
 
 use super::AppConfig;
@@ -14,9 +15,9 @@ impl AppConfig {
     /// workspace by name and error on miss. The error message shape is
     /// part of the CLI contract — do not change it casually.
     pub fn require_workspace(&self, name: &WorkspaceName) -> anyhow::Result<&WorkspaceConfig> {
-        self.workspaces
-            .get(name.as_str())
-            .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))
+        self.workspaces.get(name.as_str()).ok_or_else(|| {
+            anyhow::Error::from(ConfigError::UnknownWorkspace(name.as_str().to_owned()))
+        })
     }
 
     // pub(crate): ConfigEditor::create_workspace delegates here for validation;
@@ -27,7 +28,9 @@ impl AppConfig {
         workspace: WorkspaceConfig,
     ) -> anyhow::Result<()> {
         if self.workspaces.contains_key(name.as_str()) {
-            anyhow::bail!("workspace {name:?} already exists; use `workspace edit`");
+            return Err(
+                ConfigError::msg("workspace {name:?} already exists; use `workspace edit`").into(),
+            );
         }
         validate_workspace_config(name, &workspace)?;
 
@@ -42,12 +45,13 @@ impl AppConfig {
                     .iter()
                     .map(|r| format!("{} covered by {}", r.child.src, r.covered_by.src))
                     .collect();
-                anyhow::bail!(
+                return Err(ConfigError::msg(format!(
                     "workspace {name:?} initial mounts contain redundant entries:\n  - {}",
                     details.join("\n  - ")
-                );
+                ))
+                .into());
             }
-            Err(e) => return Err(anyhow::anyhow!("{e}")),
+            Err(e) => return Err(e.into()),
         }
 
         self.workspaces.insert(name.as_str().to_owned(), workspace);
@@ -64,7 +68,11 @@ impl AppConfig {
         let mut seen_upsert_destinations = std::collections::HashSet::new();
         for mount in &edit.upsert_mounts {
             if !seen_upsert_destinations.insert(mount.dst.as_str()) {
-                anyhow::bail!("duplicate workspace edit mount destination: {}", mount.dst);
+                return Err(ConfigError::msg(format!(
+                    "duplicate workspace edit mount destination: {}",
+                    mount.dst
+                ))
+                .into());
             }
         }
 
@@ -78,7 +86,7 @@ impl AppConfig {
             let original_len = workspace.mounts.len();
             workspace.mounts.retain(|mount| mount.dst != dst);
             if workspace.mounts.len() == original_len {
-                anyhow::bail!("unknown workspace mount destination: {dst}");
+                return Err(ConfigError::msg("unknown workspace mount destination: {dst}").into());
             }
         }
 
@@ -89,7 +97,10 @@ impl AppConfig {
                 .mounts
                 .retain(|mount| !(mount.src == *workdir && mount.dst == *workdir));
             if workspace.mounts.len() == original_len {
-                anyhow::bail!("no auto-mounted workdir found (mount where src = dst = {workdir})");
+                return Err(ConfigError::msg(
+                    "no auto-mounted workdir found (mount where src = dst = {workdir})",
+                )
+                .into());
             }
         }
 
@@ -157,13 +168,14 @@ impl AppConfig {
                     .iter()
                     .map(|r| format!("{} covered by {}", r.child.src, r.covered_by.src))
                     .collect();
-                anyhow::bail!(
+                return Err(ConfigError::msg(format!(
                     "workspace {name} would contain redundant mounts after this edit:\n  - {}\n\
                      use `jackin workspace prune {name}` or pass `--prune` to clean up",
                     details.join("\n  - ")
-                );
+                ))
+                .into());
             }
-            Err(e) => return Err(anyhow::anyhow!("{e}")),
+            Err(e) => return Err(e.into()),
         }
 
         validate_workspace_config(name, &workspace)?;
@@ -178,7 +190,9 @@ impl AppConfig {
         self.workspaces
             .remove(name.as_str())
             .map(|_| ())
-            .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))
+            .ok_or_else(|| {
+                anyhow::Error::from(ConfigError::UnknownWorkspace(name.as_str().to_owned()))
+            })
     }
 
     pub fn list_workspaces(&self) -> Vec<(&str, &WorkspaceConfig)> {

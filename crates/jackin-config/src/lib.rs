@@ -17,6 +17,7 @@
 pub mod app_config;
 pub mod auth;
 pub mod editor;
+mod error;
 pub mod migrations;
 pub mod mounts;
 pub mod paths;
@@ -27,6 +28,8 @@ pub mod schema;
 pub mod sensitive;
 pub mod validation;
 pub mod versions;
+
+pub use error::ConfigError;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

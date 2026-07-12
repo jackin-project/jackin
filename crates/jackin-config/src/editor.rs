@@ -5,6 +5,7 @@
 //! user-written comments, blank lines, and key ordering intact in
 //! sections untouched by the mutation.
 
+use crate::ConfigError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -525,14 +526,14 @@ impl ConfigEditor {
             return Ok(());
         }
         if !self.workspace_docs.contains_key(old.as_str()) {
-            anyhow::bail!("workspace {old:?} not found");
+            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()).into());
         }
         if self.workspace_docs.contains_key(new.as_str()) {
-            anyhow::bail!("workspace {new:?} already exists");
+            return Err(ConfigError::WorkspaceAlreadyExists(new.as_str().to_owned()).into());
         }
 
         let Some(value) = self.workspace_docs.remove(old.as_str()) else {
-            anyhow::bail!("workspace {old:?} not found");
+            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()).into());
         };
         self.workspace_docs.insert(new.as_str().to_owned(), value);
         self.removed_workspaces.insert(old.as_str().to_owned());
@@ -541,7 +542,7 @@ impl ConfigEditor {
 
     pub fn remove_workspace(&mut self, name: &WorkspaceName) -> anyhow::Result<()> {
         if self.workspace_docs.remove(name.as_str()).is_none() {
-            anyhow::bail!("workspace {name} not found");
+            return Err(ConfigError::WorkspaceNotFound(name.as_str().to_owned()).into());
         }
         self.removed_workspaces.insert(name.as_str().to_owned());
         Ok(())
@@ -559,10 +560,11 @@ impl ConfigEditor {
         let mut in_memory = validate_candidate(&self.doc.to_string(), &self.workspace_docs)
             .context("re-parsing current docs into AppConfig for workspace creation")?;
         in_memory.create_workspace(name, ws)?;
-        let inserted = in_memory
-            .workspaces
-            .get(name.as_str())
-            .ok_or_else(|| anyhow::anyhow!("workspace {name:?} disappeared after create"))?;
+        let inserted = in_memory.workspaces.get(name.as_str()).ok_or_else(|| {
+            anyhow::Error::from(ConfigError::WorkspaceDisappearedAfterCreate(
+                name.as_str().to_owned(),
+            ))
+        })?;
 
         let rendered =
             toml::to_string(inserted).with_context(|| format!("serializing workspace {name:?}"))?;
@@ -590,10 +592,11 @@ impl ConfigEditor {
         in_memory.edit_workspace(name, edit)?;
 
         // Pull the resulting WorkspaceConfig back out and splat into the doc.
-        let updated = in_memory
-            .workspaces
-            .get(name.as_str())
-            .ok_or_else(|| anyhow::anyhow!("workspace {name} disappeared after edit"))?;
+        let updated = in_memory.workspaces.get(name.as_str()).ok_or_else(|| {
+            anyhow::Error::from(ConfigError::WorkspaceDisappearedAfterEdit(
+                name.as_str().to_owned(),
+            ))
+        })?;
 
         // Replace the entire workspace document. This preserves
         // comments in OTHER workspaces and in unrelated top-level sections,
@@ -724,7 +727,7 @@ fn validate_candidate(
     let mut config: AppConfig =
         toml::from_str(global_contents).context("deserializing candidate global config")?;
     if !config.workspaces.is_empty() {
-        anyhow::bail!("global config.toml must not contain [workspaces] tables");
+        return Err(ConfigError::GlobalHasWorkspacesTable.into());
     }
     for (name, doc) in workspace_docs {
         validate_workspace_file_stem(name)?;
@@ -751,10 +754,11 @@ fn load_workspace_docs(paths: &JackinPaths) -> anyhow::Result<BTreeMap<String, D
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| anyhow::anyhow!("invalid workspace filename {}", path.display()))?;
+        let stem = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
+            anyhow::Error::from(ConfigError::InvalidWorkspaceFilename(
+                path.display().to_string(),
+            ))
+        })?;
         validate_workspace_file_stem(stem)
             .with_context(|| format!("invalid workspace filename {}", path.display()))?;
         let raw = std::fs::read_to_string(&path)

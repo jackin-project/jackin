@@ -4,6 +4,7 @@
 //! mechanics, or GitHub CLI interaction — only the three-layer config
 //! precedence lookup that yields `AuthForwardMode`.
 
+use crate::ConfigError;
 use std::collections::BTreeMap;
 
 use jackin_core::{Agent, AuthForwardMode, EnvValue, RoleSelector, WorkspaceName};
@@ -203,10 +204,12 @@ impl AppConfig {
             return Ok((source.clone(), false));
         }
 
-        let namespace = selector
-            .namespace
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("unknown selector {}", selector.key()))?;
+        let namespace = selector.namespace.as_ref().ok_or_else(|| {
+            anyhow::Error::from(ConfigError::msg(format!(
+                "unknown selector {}",
+                selector.key()
+            )))
+        })?;
 
         // Agent roles on GitHub always follow the `jackin-{name}` convention.
         // When a namespaced selector is given as `owner/short-name`, we

@@ -1,6 +1,7 @@
 //! `AppConfig` load/init behavior: TOML read, workspace-split migration,
 //! reserved-env validation, and builtin-agent sync.
 
+use crate::ConfigError;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -74,10 +75,12 @@ pub fn load_workspace_files(
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| anyhow::anyhow!("invalid workspace filename {}", path.display()))?;
+        let stem = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
+            anyhow::Error::from(ConfigError::msg(format!(
+                "invalid workspace filename {}",
+                path.display()
+            )))
+        })?;
         let name = WorkspaceName::parse(stem)
             .with_context(|| format!("invalid workspace filename {}", path.display()))?;
         migrations::migrate_workspace_file_if_needed(&path)?;
@@ -115,7 +118,10 @@ fn legacy_workspace_op_accounts(contents: &str) -> anyhow::Result<BTreeMap<Strin
                 out.insert(name.to_owned(), acct.to_owned());
             }
             None => {
-                anyhow::bail!("workspace {name:?}: `op_account` must be a string, found {item:?}")
+                return Err(ConfigError::msg(format!(
+                    "workspace {name:?}: `op_account` must be a string, found {item:?}"
+                ))
+                .into());
             }
         }
     }
@@ -174,13 +180,14 @@ fn migrate_legacy_workspaces(
             if existing == desired {
                 continue;
             }
-            anyhow::bail!(
+            return Err(ConfigError::msg(format!(
                 "cannot migrate workspace {name:?}: {} already exists with different contents \
                  than the legacy config.toml. Reconcile the two copies (delete the split file to \
                  take the legacy version, or remove [workspaces.{name}] from config.toml to take \
                  the split file) and re-run.",
                 path.display()
-            );
+            ))
+            .into());
         }
         atomic_write(&path, &contents)?;
     }
@@ -228,10 +235,11 @@ pub fn validate_reserved_env_names(config: &AppConfig) -> anyhow::Result<()> {
     if offenses.is_empty() {
         return Ok(());
     }
-    anyhow::bail!(
+    return Err(ConfigError::msg(format!(
         "config contains reserved jackin runtime env vars:\n{}",
         offenses.join("\n")
-    )
+    ))
+    .into());
 }
 
 pub fn config_needs_split_migration(raw: &str) -> anyhow::Result<bool> {

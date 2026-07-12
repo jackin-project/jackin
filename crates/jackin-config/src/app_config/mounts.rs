@@ -1,5 +1,6 @@
 //! `AppConfig` mount resolution impl blocks and display helpers.
 
+use crate::ConfigError;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -218,18 +219,18 @@ impl AppConfig {
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for mount in &workspace.mounts {
             if !seen.insert(mount.dst.as_str()) {
-                anyhow::bail!("duplicate mount destination: {}", mount.dst);
+                return Err(
+                    ConfigError::msg(format!("duplicate mount destination: {}", mount.dst)).into(),
+                );
             }
         }
         for row in rows {
             if !seen.insert(row.mount.dst.as_str()) {
                 let scope = row.scope.as_deref().unwrap_or("global");
-                anyhow::bail!(
-                    "global mount destination conflicts with workspace destination: {} (from global mount {} [{}])",
+                return Err(ConfigError::msg(format!("global mount destination conflicts with workspace destination: {} (from global mount {} [{}])",
                     row.mount.dst,
                     row.name,
-                    scope
-                );
+                    scope)).into());
             }
         }
         Ok(())
@@ -239,21 +240,26 @@ impl AppConfig {
         let mut seen_keys: BTreeSet<(Option<&str>, &str)> = BTreeSet::new();
         for row in rows {
             if row.name.trim().is_empty() {
-                anyhow::bail!("global mount name cannot be empty");
+                return Err(ConfigError::msg("global mount name cannot be empty").into());
             }
             // Two rows with the same (scope, name) silently collapse on
             // wire-write because `add_mount` keys the BTreeMap by name —
             // catch it here before the editor loses one row's data.
             if !seen_keys.insert((row.scope.as_deref(), row.name.as_str())) {
                 let scope = row.scope.as_deref().unwrap_or("global");
-                anyhow::bail!("duplicate global mount entry: {} [{}]", row.name, scope);
+                return Err(ConfigError::msg(format!(
+                    "duplicate global mount entry: {} [{}]",
+                    row.name, scope
+                ))
+                .into());
             }
             if !matches!(row.mount.isolation, MountIsolation::Shared) {
-                anyhow::bail!(
+                return Err(ConfigError::msg(format!(
                     "global mount {} cannot use isolation {}; global mounts are always shared",
                     row.name,
                     row.mount.isolation.as_str()
-                );
+                ))
+                .into());
             }
             let expanded = MountConfig {
                 src: expand_tilde(&row.mount.src),
@@ -270,10 +276,11 @@ impl AppConfig {
                     && left.mount.dst == right.mount.dst
                     && scopes_overlap(left.scope.as_ref(), right.scope.as_ref())
                 {
-                    anyhow::bail!(
+                    return Err(ConfigError::msg(format!(
                         "duplicate global mount destination in overlapping scope: {}",
                         left.mount.dst
-                    );
+                    ))
+                    .into());
                 }
             }
         }

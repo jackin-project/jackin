@@ -3,6 +3,7 @@
 //! No I/O. Callers apply the plan by calling `AppConfig::create_workspace` /
 //! `edit_workspace` with the plan's outputs.
 
+use crate::ConfigError;
 use jackin_core::MountIsolation;
 
 use crate::{MountConfig, WorkspaceConfig};
@@ -130,10 +131,10 @@ pub fn apply_isolation_overrides(
 ) -> anyhow::Result<()> {
     for (dst, mode) in overrides {
         let target = mounts.iter_mut().find(|m| m.dst == *dst).ok_or_else(|| {
-            anyhow::anyhow!(
+            anyhow::Error::from(ConfigError::msg(format!(
                 "--mount-isolation references unknown destination `{dst}`; \
                  it must match a mount in the final plan"
-            )
+            )))
         })?;
         target.isolation = *mode;
     }

@@ -1,5 +1,6 @@
 //! Pure workspace validation helpers: isolation layout and workspace config.
 
+use crate::ConfigError;
 use jackin_core::MountIsolation;
 use jackin_core::WorkspaceName;
 
@@ -24,25 +25,28 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
         };
         for (_, mb, b) in rest {
             if is_strict_ancestor(a, b) || is_strict_ancestor(b, a) {
-                anyhow::bail!(
-                    "isolated mount `{b}` cannot be nested inside isolated mount `{a}`; \
+                let (outer, inner) = if is_strict_ancestor(a, b) {
+                    (*a, *b)
+                } else {
+                    (*b, *a)
+                };
+                return Err(ConfigError::msg(format!(
+                    "isolated mount `{inner}` cannot be nested inside isolated mount `{outer}`; \
                      either make the inner mount `shared` or move the inner mount outside \
-                     the parent's path",
-                    a = if is_strict_ancestor(a, b) { a } else { b },
-                    b = if is_strict_ancestor(a, b) { b } else { a },
-                );
+                     the parent's path"
+                ))
+                .into());
             }
             if matches!(ma.isolation, MountIsolation::Worktree)
                 && matches!(mb.isolation, MountIsolation::Worktree)
                 && same_host_repo(&ma.src, &mb.src)
             {
-                anyhow::bail!(
+                return Err(ConfigError::msg(format!(
                     "isolated mounts `{}` and `{}` cannot share the same host repository `{}`; \
                      remove one of them or change one to `shared` (V1 limitation — see roadmap)",
-                    ma.dst,
-                    mb.dst,
-                    ma.src,
-                );
+                    ma.dst, mb.dst, ma.src,
+                ))
+                .into());
             }
         }
     }
@@ -57,13 +61,13 @@ pub fn validate_workspace_config(
     // messages stay `workspace "foo"` rather than `WorkspaceName("foo")`.
     let name = name.as_str();
     if workspace.workdir.is_empty() {
-        anyhow::bail!("workspace {name:?} must define workdir");
+        return Err(ConfigError::WorkdirRequired(name.to_owned()).into());
     }
     if !workspace.workdir.starts_with('/') {
-        anyhow::bail!("workspace {name:?} workdir must be an absolute container path");
+        return Err(ConfigError::WorkdirNotAbsolute(name.to_owned()).into());
     }
     if workspace.mounts.is_empty() {
-        anyhow::bail!("workspace {name:?} must define at least one mount");
+        return Err(ConfigError::MountsRequired(name.to_owned()).into());
     }
 
     validate_mount_specs(&workspace.mounts)?;
@@ -76,10 +80,12 @@ pub fn validate_workspace_config(
             || workspace.workdir.starts_with(&format!("{dst}/"))
             || dst.starts_with(&format!("{}/", workspace.workdir.trim_end_matches('/')))
     });
-    anyhow::ensure!(
-        covers_workdir,
-        "workspace {name:?} workdir must be equal to, inside, or a parent of one of the workspace mount destinations"
-    );
+    if !covers_workdir {
+        return Err(ConfigError::msg(format!(
+            "workspace {name:?} workdir must be equal to, inside, or a parent of one of the workspace mount destinations"
+        ))
+        .into());
+    }
 
     if let Some(default_role) = &workspace.default_role
         && !workspace.allowed_roles.is_empty()
@@ -88,9 +94,10 @@ pub fn validate_workspace_config(
             .iter()
             .any(|role| role == default_role)
     {
-        anyhow::bail!(
+        return Err(ConfigError::msg(format!(
             "workspace {name:?} default_role must be a member of allowed_roles when allowed_roles is set"
-        );
+        ))
+        .into());
     }
 
     Ok(())

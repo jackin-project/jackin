@@ -5,6 +5,7 @@
 //! parsing from CLI strings (`workspace::mounts`) or sensitive-path detection
 //! (`workspace::sensitive`).
 
+use crate::ConfigError;
 use std::path::{Path, PathBuf};
 
 use jackin_core::{MountIsolation, RoleSelector};
@@ -101,9 +102,11 @@ pub fn resolve_load_workspace(
             } else {
                 cwd.join(&expanded_src)
             };
-            let canonical_src = abs_src
-                .canonicalize()
-                .map_err(|e| anyhow::anyhow!("cannot resolve path {expanded_src}: {e}"))?;
+            let canonical_src = abs_src.canonicalize().map_err(|e| {
+                anyhow::Error::from(ConfigError::msg(format!(
+                    "cannot resolve path {expanded_src}: {e}"
+                )))
+            })?;
             let src_str = canonical_src.display().to_string();
             let workdir = if dst == src || dst == expanded_src {
                 src_str.clone()
@@ -136,7 +139,11 @@ pub fn resolve_load_workspace(
                     .iter()
                     .any(|role| role == &selector.key())
             {
-                anyhow::bail!("role {} is not allowed by workspace {name}", selector.key());
+                return Err(ConfigError::msg(format!(
+                    "role {} is not allowed by workspace {name}",
+                    selector.key()
+                ))
+                .into());
             }
             (workspace, name)
         }
@@ -149,10 +156,11 @@ pub fn resolve_load_workspace(
             .iter()
             .any(|existing| existing.dst == ad_hoc.dst)
         {
-            anyhow::bail!(
+            return Err(ConfigError::msg(format!(
                 "ad-hoc mount destination conflicts with workspace mount destination: {}",
                 ad_hoc.dst
-            );
+            ))
+            .into());
         }
         workspace.mounts.push(ad_hoc.clone());
     }
@@ -174,10 +182,11 @@ pub fn resolve_load_workspace(
 
     for mount in global_mounts {
         if mounts.iter().any(|existing| existing.dst == mount.dst) {
-            anyhow::bail!(
+            return Err(ConfigError::msg(format!(
                 "global mount destination conflicts with workspace destination: {}",
                 mount.dst
-            );
+            ))
+            .into());
         }
         mounts.push(mount);
     }
