@@ -15,6 +15,9 @@
 use jackin::workspace::{self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved};
 use jackin_config::ConfigEditor;
 use jackin_core::WorkspaceName;
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use jackin_core::paths::JackinPaths;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
@@ -284,8 +287,7 @@ fn workspace_edit_resolves_relative_mount() {
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
     let result = with_cwd(temp.path(), || {
         let mount = parse_mount_spec_resolved("jackin-dev").unwrap();
-        editor2.edit_workspace(
-            "jackin",
+        editor2.edit_workspace(&wn("jackin"),
             WorkspaceEdit {
                 upsert_mounts: vec![mount],
                 ..WorkspaceEdit::default()
@@ -350,8 +352,7 @@ fn workspace_edit_no_workdir_mount_removes_auto_mount() {
     // Now remove the workdir auto-mount
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
     editor2
-        .edit_workspace(
-            "my-app",
+        .edit_workspace(&wn("my-app"),
             WorkspaceEdit {
                 no_workdir_mount: true,
                 ..WorkspaceEdit::default()
@@ -397,8 +398,7 @@ fn workspace_edit_no_workdir_mount_fails_when_no_auto_mount() {
 
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
     let err = editor2
-        .edit_workspace(
-            "monorepo",
+        .edit_workspace(&wn("monorepo"),
             WorkspaceEdit {
                 no_workdir_mount: true,
                 ..WorkspaceEdit::default()

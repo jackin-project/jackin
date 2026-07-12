@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
 
 use super::*;
+use jackin_core::WorkspaceName;
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use jackin_config::{
     AppConfig, CURRENT_WORKSPACE_VERSION, KeepAwakeConfig, MountConfig, MountIsolation, RoleSource,
     WorkspaceConfig,
@@ -221,7 +225,7 @@ fn providers_for_launch_include_all_zai_env_layers() {
         .workspaces
         .insert("global-demo".into(), WorkspaceConfig::default());
     assert_eq!(
-        providers_for_launch(&config, "global-demo", "the-architect", Agent::Claude).len(),
+        providers_for_launch(&config, &wn("global-demo"), "the-architect", Agent::Claude).len(),
         2
     );
     config.env.clear();
@@ -233,7 +237,7 @@ fn providers_for_launch_include_all_zai_env_layers() {
     );
     config.workspaces.insert("workspace-demo".into(), workspace);
     assert_eq!(
-        providers_for_launch(&config, "workspace-demo", "the-architect", Agent::Claude).len(),
+        providers_for_launch(&config, &wn("workspace-demo"), "the-architect", Agent::Claude).len(),
         2
     );
 
@@ -246,7 +250,7 @@ fn providers_for_launch_include_all_zai_env_layers() {
         .workspaces
         .insert("role-demo".into(), WorkspaceConfig::default());
     assert_eq!(
-        providers_for_launch(&config, "role-demo", "the-architect", Agent::Claude).len(),
+        providers_for_launch(&config, &wn("role-demo"), "the-architect", Agent::Claude).len(),
         2
     );
 
@@ -264,9 +268,7 @@ fn providers_for_launch_include_all_zai_env_layers() {
         .workspaces
         .insert("workspace-role-demo".into(), workspace_role);
     let providers = providers_for_launch(
-        &config,
-        "workspace-role-demo",
-        "the-architect",
+        &config, &wn("workspace-role-demo"), "the-architect",
         Agent::Claude,
     );
     assert_eq!(providers.len(), 2);
@@ -285,6 +287,6 @@ fn providers_for_launch_rejects_non_claude_agents() {
         .workspaces
         .insert("demo".into(), WorkspaceConfig::default());
 
-    let providers = providers_for_launch(&config, "demo", "the-architect", Agent::Codex);
+    let providers = providers_for_launch(&config, &wn("demo"), "the-architect", Agent::Codex);
     assert!(providers.is_empty());
 }

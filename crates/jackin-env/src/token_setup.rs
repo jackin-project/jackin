@@ -495,8 +495,9 @@ where
     let mut editor = ConfigEditor::open(paths)?;
     match scope {
         TokenSetupScope::Workspace(workspace) => {
+            let ws = WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?;
             editor.set_workspace_auth_forward(
-                workspace,
+                &ws,
                 Agent::Claude,
                 Some(AuthForwardMode::OAuthToken),
             );
@@ -507,8 +508,9 @@ where
             )?;
         }
         TokenSetupScope::WorkspaceRole { workspace, role } => {
+            let ws = WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?;
             editor.set_workspace_role_auth_forward(
-                workspace,
+                &ws,
                 role,
                 Agent::Claude,
                 Some(AuthForwardMode::OAuthToken),
@@ -649,7 +651,8 @@ pub(crate) fn run_revoke_with_runner(
         &EnvScope::Workspace(workspace.to_owned()),
         CLAUDE_OAUTH_TOKEN_ENV,
     );
-    editor.set_workspace_auth_forward(workspace, Agent::Claude, Some(AuthForwardMode::Ignore));
+    let ws = WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?;
+    editor.set_workspace_auth_forward(&ws, Agent::Claude, Some(AuthForwardMode::Ignore));
     let saved = editor.save()?;
     *config = saved;
 

@@ -35,6 +35,9 @@ use jackin::{
 use jackin_config::{AppConfig, ConfigEditor};
 use jackin_core::JackinPaths;
 use jackin_core::WorkspaceName;
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use tempfile::tempdir;
@@ -218,7 +221,7 @@ fn delete_workspace_via_manager() -> Result<()> {
 
     config.workspaces.remove("big-monorepo");
     let mut editor = ConfigEditor::open(&paths)?;
-    editor.remove_workspace("big-monorepo")?;
+    editor.remove_workspace(&wn("big-monorepo"))?;
     editor.save()?;
 
     // Config on disk should no longer have big-monorepo.
@@ -436,7 +439,7 @@ fn launch_after_default_agent_change_preselects_new_default() -> Result<()> {
             default_role: Some(Some("chainargos/agent-smith".to_owned())),
             ..jackin::workspace::WorkspaceEdit::default()
         };
-        ce.edit_workspace("multi-role-ws", edit)?;
+        ce.edit_workspace(&wn("multi-role-ws"), edit)?;
         config = ce.save()?;
     }
 
@@ -502,7 +505,7 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     // Delete the first workspace via ConfigEditor.
     {
         let mut ce = ConfigEditor::open(&paths)?;
-        ce.remove_workspace("multi-role-ws")?;
+        ce.remove_workspace(&wn("multi-role-ws"))?;
         config = ce.save()?;
     }
 

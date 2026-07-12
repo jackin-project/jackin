@@ -462,7 +462,7 @@ pub(super) async fn handle(
 
             let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.edit_workspace(
-                &name,
+                &WorkspaceName::parse(&name).map_err(anyhow::Error::from)?,
                 WorkspaceEdit {
                     workdir: workdir.map(|w| resolve_path(&w)),
                     upsert_mounts,
@@ -530,7 +530,7 @@ pub(super) async fn handle(
                 plan.removed.iter().map(|r| r.child.dst.clone()).collect();
             let mut editor = jackin_config::ConfigEditor::open(paths)?;
             editor.edit_workspace(
-                &name,
+                &WorkspaceName::parse(&name).map_err(anyhow::Error::from)?,
                 WorkspaceEdit {
                     remove_destinations: remove_dsts,
                     ..WorkspaceEdit::default()
@@ -545,7 +545,7 @@ pub(super) async fn handle(
         }
         WorkspaceCommand::Remove { name } => {
             let mut editor = jackin_config::ConfigEditor::open(paths)?;
-            editor.remove_workspace(&name)?;
+            editor.remove_workspace(&WorkspaceName::parse(&name).map_err(anyhow::Error::from)?)?;
             editor.save()?;
             println!("Removed workspace {name:?}.");
             Ok(())

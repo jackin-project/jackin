@@ -348,12 +348,12 @@ impl ConfigEditor {
     /// shape parallel to `set_global_auth_forward`.
     pub fn set_workspace_auth_forward(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         agent: Agent,
         mode: Option<AuthForwardMode>,
     ) {
         let agent_path = vec![agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         if let Some(m) = mode {
             let table = table_path_mut(doc, &agent_path);
             table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
@@ -365,12 +365,12 @@ impl ConfigEditor {
     /// Write or clear `[<agent>].sync_source_dir` inside the workspace file.
     pub fn set_workspace_sync_source_dir(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         agent: Agent,
         source: Option<&Path>,
     ) {
         let agent_path = vec![agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         set_sync_source_dir_field(doc, &agent_path, source);
     }
 
@@ -381,13 +381,13 @@ impl ConfigEditor {
     /// the auth-edit form on a (role × agent) row.
     pub fn set_workspace_role_auth_forward(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         role: &str,
         agent: Agent,
         mode: Option<AuthForwardMode>,
     ) {
         let agent_path = vec!["roles".to_owned(), role.to_owned(), agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         if let Some(m) = mode {
             let table = table_path_mut(doc, &agent_path);
             table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
@@ -399,13 +399,13 @@ impl ConfigEditor {
     /// Write or clear `[roles.<role>.<agent>].sync_source_dir` inside the workspace file.
     pub fn set_workspace_role_sync_source_dir(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         role: &str,
         agent: Agent,
         source: Option<&Path>,
     ) {
         let agent_path = vec!["roles".to_owned(), role.to_owned(), agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         set_sync_source_dir_field(doc, &agent_path, source);
     }
 
@@ -418,11 +418,11 @@ impl ConfigEditor {
     /// resolver fall back to the next layer.
     pub fn set_workspace_github_auth_forward(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         mode: Option<GithubAuthMode>,
     ) {
         let github_path = vec!["github".to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         if let Some(m) = mode {
             let table = table_path_mut(doc, &github_path);
             table.insert("auth_forward", toml_edit::value(github_mode_str(m)));
@@ -438,12 +438,12 @@ impl ConfigEditor {
     /// `claude` / `codex`, but with no per-agent split.
     pub fn set_workspace_role_github_auth_forward(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         role: &str,
         mode: Option<GithubAuthMode>,
     ) {
         let github_path = vec!["roles".to_owned(), role.to_owned(), "github".to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         if let Some(m) = mode {
             let table = table_path_mut(doc, &github_path);
             table.insert("auth_forward", toml_edit::value(github_mode_str(m)));
@@ -539,11 +539,11 @@ impl ConfigEditor {
         Ok(())
     }
 
-    pub fn remove_workspace(&mut self, name: &str) -> anyhow::Result<()> {
-        if self.workspace_docs.remove(name).is_none() {
-            anyhow::bail!("workspace {name:?} not found");
+    pub fn remove_workspace(&mut self, name: &WorkspaceName) -> anyhow::Result<()> {
+        if self.workspace_docs.remove(name.as_str()).is_none() {
+            anyhow::bail!("workspace {name} not found");
         }
-        self.removed_workspaces.insert(name.to_owned());
+        self.removed_workspaces.insert(name.as_str().to_owned());
         Ok(())
     }
 
@@ -576,20 +576,20 @@ impl ConfigEditor {
         Ok(())
     }
 
-    pub fn edit_workspace(&mut self, name: &str, edit: WorkspaceEdit) -> anyhow::Result<()> {
+    pub fn edit_workspace(&mut self, name: &WorkspaceName, edit: WorkspaceEdit) -> anyhow::Result<()> {
         // Snapshot current on-disk state into an AppConfig.
         let mut in_memory = validate_candidate(&self.doc.to_string(), &self.workspace_docs)
             .context("re-parsing current docs into AppConfig for workspace edit")?;
 
         // Apply the edit using the existing validated logic. Mutates
         // in_memory or returns Err with the validation message on failure.
-        in_memory.edit_workspace(name, edit)?;
+        in_memory.edit_workspace(name.as_str(), edit)?;
 
         // Pull the resulting WorkspaceConfig back out and splat into the doc.
         let updated = in_memory
             .workspaces
-            .get(name)
-            .ok_or_else(|| anyhow::anyhow!("workspace {name:?} disappeared after edit"))?;
+            .get(name.as_str())
+            .ok_or_else(|| anyhow::anyhow!("workspace {name} disappeared after edit"))?;
 
         // Replace the entire workspace document. This preserves
         // comments in OTHER workspaces and in unrelated top-level sections,
@@ -598,7 +598,7 @@ impl ConfigEditor {
         // the edit IS the change the user is making to that workspace.
         let rendered = toml::to_string(updated)?;
         let parsed: DocumentMut = rendered.parse()?;
-        self.workspace_docs.insert(name.to_owned(), parsed);
+        self.workspace_docs.insert(name.as_str().to_owned(), parsed);
 
         Ok(())
     }
@@ -633,7 +633,7 @@ impl ConfigEditor {
                 (doc, vec!["env".to_owned()])
             }
             EnvScope::WorkspaceRole { workspace, role } => {
-                let doc = self.workspace_doc_mut(workspace);
+                let doc = self.workspace_doc_mut(workspace.as_str());
                 (
                     doc,
                     vec!["roles".to_owned(), role.clone(), "env".to_owned()],
@@ -644,7 +644,7 @@ impl ConfigEditor {
                 (doc, vec!["github".to_owned(), "env".to_owned()])
             }
             EnvScope::WorkspaceRoleGithub { workspace, role } => {
-                let doc = self.workspace_doc_mut(workspace);
+                let doc = self.workspace_doc_mut(workspace.as_str());
                 (
                     doc,
                     vec![
