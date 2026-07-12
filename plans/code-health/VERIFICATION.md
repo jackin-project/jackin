@@ -131,3 +131,14 @@ R1–R4 from the residual ledger. Do not re-serialize independent crate work.
   - 4× manager_flow disk-persist (no Docker)
   - RUSTSEC-2026-0204 (audit + deny)
 - Residual ledger: DEFER only for multi-PR/design/product items; R-038 partial with measured remaining TUI/restore/materialize string sites
+
+
+## Close-out re-verify (goal pass 2026-07-12)
+
+- Tip: `chore/rust-code-health-roadmap` PR #759 close-out wave
+- Claim gaps: 017 ratchet single SoT (legacy budget TOMLs removed); 042 metrics counter assertions; 047 maintainability lints at `warn`
+- tui-review 001: failure_scroll threaded into hit-test + OSC8
+- launch-speed 008c/008g: early restore scan reuse + run_console returns AppConfig
+- agent-status: Notification payload enrich; grok baked; packs/fixtures updated
+- Residual ledger: zero bare DEFER rows (all CLOSED or CLOSED-as-pinned)
+- Gates: see `/tmp/grok-goal-4d943cf7c64d/implementer/` captures

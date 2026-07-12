@@ -2,6 +2,7 @@
 
 ## Status
 
+- **Implementation status**: DONE (payload subtype enrich on production ReportRuntimeEvent path)
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED

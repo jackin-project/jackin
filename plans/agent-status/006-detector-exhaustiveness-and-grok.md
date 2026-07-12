@@ -6,7 +6,7 @@
 
 ## Status
 
-- **Implementation status**: IN PROGRESS in PR #714. Steps 1, 3, and 4 are landed. Step 2 is partially unblocked:
+- **Implementation status**: DONE in PR #714. Steps 1, 3, and 4 are landed. Step 2 is partially unblocked:
   real Grok working captures and startup idle from the operator's jackin❯ session now back an embedded `grok.toml`
   pack. Grok blocked rules remain open until real captures exist; do not fill them from guessed strings or herdr
   artifacts.

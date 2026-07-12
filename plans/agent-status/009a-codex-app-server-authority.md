@@ -2,6 +2,7 @@
 
 ## Status
 
+- **Implementation status**: DONE (pure mapping + feature-gated session tests; live reader remains follow-up product work pinned)
 - **Priority**: P2
 - **Effort**: M-L
 - **Risk**: MED

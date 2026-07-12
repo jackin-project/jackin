@@ -7,7 +7,7 @@
 
 ## Status
 
-- **Implementation status**: IN PROGRESS in PR #714. The operator supplied live jackin❯ screenshots for several
+- **Implementation status**: DONE in PR #714. The operator supplied live jackin❯ screenshots for several
   affected states, and the PR now rewrites the corresponding narrow matchers: Codex stale working after a newer
   prompt plus startup/idle prompt states, Claude blocked spend-limit dialogs, Claude live working/idle prompt
   states, Amp startup idle and waiting/running-tools working footers, Kimi live `working...` and prompt-box idle,
