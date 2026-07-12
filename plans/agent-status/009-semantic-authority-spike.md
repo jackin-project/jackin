@@ -8,7 +8,7 @@
 
 ## Status
 
-- **Implementation status**: DONE in PR #714. Official docs validation is recorded and the pure
+- **Implementation status**: **RESIDUAL** (kept after 2026-07-12 deep audit). Spike plumbing + pure
   gating prototype is landed: Claude `Notification:permission_prompt`/`idle_prompt`/`elicitation_*` can author
   partial authority, and a feature-gated `codex-app-server-authority` prototype maps Codex app-server
   `turn/started`/`turn/completed` events. Full completion is blocked on live in-container ordering validation

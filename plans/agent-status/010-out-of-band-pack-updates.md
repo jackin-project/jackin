@@ -10,10 +10,7 @@
 
 ## Status
 
-- **Implementation status**: DONE — local signed-bundle verifier production-usable; live remote fetch/publish CLOSED-as-pinned. Plan 011 has landed, and the detection crate now has
-  the `PackSource` model plus local signed-bundle verification/fallback tests. The remaining production channel
-  still depends on plan 005's real capture/provenance artifacts and an org-controlled signing/publishing target.
-  No live fetch path or arbitrary URL source is introduced.
+- **Implementation status**: **RESIDUAL** — production local `verify_signed_bundle` + `PackSource` + floor-on-failure shipped. Open: live remote publish/fetch + operator launch-summary consent; org signing target.
 - **Priority**: P2
 - **Effort**: M–L
 - **Risk**: MED (network + trust boundary in a security-focused product)

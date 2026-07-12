@@ -1,25 +1,25 @@
-# Launch-speed deferred items (closed on PR #759)
+# Launch-speed residual
 
-The launch-speed implementation batch shipped in PR #718. Completed execution plans 001-007 and the completed parts of 008 were removed from `plans/`. The two deferred Plan 008 follow-ups below closed on `chore/rust-code-health-roadmap` (PR #759).
+PR #718 shipped launch-speed plans 001–007. Fully closed follow-ups:
 
-## 008c: Reuse early restore-candidate resolution
+- **008g** — fully implemented and removed from this file (`run_console` returns `AppConfig`; `take_post_console_config` skips disk reload; disk-poison tests).
 
-**Status**: DONE
+## 008c: Reuse early restore-candidate resolution — residual
 
-**Shipped:**
+**Status**: core shipped; residual remains
 
-- Typed `EarlyCurrentRestoreScan` (`NotRun` / `Scanned { agent_scope, resolution }`) in `restore_resolve.rs`.
-- Early current-role scan recorded before role repo / auth / image work.
-- `resolve_restore_candidate_with_early` reuses the early scan when final agent matches (or unselected scope subsumes), skipping a second current-role Docker inspect on the common path.
-- Related-role restore still runs when early current-role is none; rejection diagnostics and timing events preserved.
-- Regression test: `early_scan_skips_current_inspect_only_for_matching_empty_scan`.
+**Shipped (keep):**
 
-## 008g: Skip console config reload when console made no config changes
+- Typed `EarlyCurrentRestoreScan` (`NotRun` / `Scanned { agent, current }`)
+- Early current-role scan before role repo / auth / image
+- Reuse via `resolve_restore_candidate_reusing_early` when selected agent matches an empty early scan
+- Related-role restore still runs when current is none
+- Predicate unit test: `early_scan_skips_current_inspect_only_for_matching_empty_scan`
 
-**Status**: DONE
+**Still open (why this file remains):**
 
-**Shipped:**
+1. Empty **unselected** early scans still leave `NotRun` (do not stash unselected-empty scope) — can re-inspect later.
+2. Non-empty early hits short-circuit via `early_restore_container` rather than reusing `Scanned.current` for inspect skip.
+3. No pipeline integration test that asserts Docker inspect call counts on the common path (predicate-only coverage today).
 
-- `run_console` returns owned `AppConfig` after the console session.
-- `take_post_console_config` uses that in-memory config and skips a redundant disk `AppConfig::load_or_init` on the common path.
-- Tests: `no_op_console_skips_disk_reload_for_post_console_config`, `saved_console_config_feeds_post_console_launch_path`.
+Files: `crates/jackin-runtime/src/runtime/launch/{restore_resolve,launch_pipeline,tests}.rs`.

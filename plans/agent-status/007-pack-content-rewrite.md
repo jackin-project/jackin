@@ -7,12 +7,9 @@
 
 ## Status
 
-- **Implementation status**: DONE in PR #714. The operator supplied live jackin❯ screenshots for several
-  affected states, and the PR now rewrites the corresponding narrow matchers: Codex stale working after a newer
-  prompt plus startup/idle prompt states, Claude blocked spend-limit dialogs, Claude live working/idle prompt
-  states, Amp startup idle and waiting/running-tools working footers, Kimi live `working...` and prompt-box idle,
-  and OpenCode 1.17 startup idle plus `esc interrupt` footer. Full pack rewrite remains incomplete until real
-  blocked/working/idle captures exist for each affected agent.
+- **Implementation status**: **RESIDUAL** (kept after 2026-07-12 deep audit). Some live-backed matchers shipped
+  (Claude/Codex/Amp/Kimi/OpenCode slices). Still open: fabricated kimi/amp/opencode literals, OSC-title only on
+  Claude, incomplete real blocked/working/idle triad per agent.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED (broaden-to-match can add false positives)

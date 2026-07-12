@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Implementation status**: DONE (payload subtype enrich on production ReportRuntimeEvent path)
+- **Implementation status**: **RESIDUAL** — production payload subtype enrich shipped; live wait-edge validation open
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
