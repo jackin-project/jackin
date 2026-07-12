@@ -81,7 +81,7 @@ fn no_op_console_skips_disk_reload_for_post_console_config() {
 }
 
 /// Launch-speed 008g: after a successful settings/workspace save the console
-/// mutates its in-memory AppConfig; that value must feed the next launch even
+/// mutates its in-memory `AppConfig`; that value must feed the next launch even
 /// if disk is still lagging or was replaced underfoot.
 #[test]
 fn saved_console_config_feeds_post_console_launch_path() {
