@@ -109,7 +109,7 @@ bound = 1
 
 [[family.entry]]
 key = "jackin-runtime"
-bound = 26
+bound = 27
 
 [[family.entry]]
 key = "jackin-term"
