@@ -4,7 +4,7 @@ use jackin_config::{
     AppConfig, LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace,
     resolve_load_workspace,
 };
-use jackin_core::{Agent, RoleSelector};
+use jackin_core::{Agent, RoleSelector, WorkspaceName};
 
 #[derive(Debug, Clone)]
 pub struct WorkspaceChoice {
@@ -224,7 +224,8 @@ fn operator_key_present(
     role_selector: &str,
     env_var: &str,
 ) -> bool {
-    jackin_env::lookup_operator_env_raw(config, Some(role_selector), Some(workspace_name), env_var)
+    let ws = WorkspaceName::parse(workspace_name).ok();
+    jackin_env::lookup_operator_env_raw(config, Some(role_selector), ws.as_ref(), env_var)
         .is_some()
 }
 

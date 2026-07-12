@@ -2,11 +2,15 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use jackin_config::{AppConfig, RoleSource, WorkspaceConfig, WorkspaceRoleOverride};
-use jackin_core::{EnvValue, Extended, OpRef};
+use jackin_core::{EnvValue, Extended, OpRef, WorkspaceName};
 use jackin_protocol::ExecKind;
 
 use super::*;
 use crate::op_runner::OpRunner;
+
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 
 #[derive(Debug, Default)]
 struct FakeOpRunner {
@@ -208,7 +212,7 @@ fn collect_on_demand_bindings_keeps_sources_without_resolving_values() {
         },
     );
 
-    let bindings = collect_on_demand_bindings(&config, Some("alpha"), Some("work"));
+    let bindings = collect_on_demand_bindings(&config, Some("alpha"), Some(&wn("work")));
 
     assert_eq!(bindings.len(), 3);
     assert_eq!(bindings[0].name, "HOST_TOKEN");

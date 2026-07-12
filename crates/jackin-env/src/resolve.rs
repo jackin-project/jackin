@@ -8,7 +8,7 @@ use crate::parse_helpers::parse_host_ref;
 use jackin_config::AppConfig;
 use jackin_core::op_reference::parse_op_reference;
 use jackin_core::op_types::OpItem;
-use jackin_core::{EnvValue, OpRef};
+use jackin_core::{EnvValue, OpRef, WorkspaceName};
 
 /// Typed failures for operator-env validation and `op://` URI resolution.
 ///
@@ -330,7 +330,7 @@ fn record_layer(
 fn build_attributed_layers(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
 ) -> std::collections::BTreeMap<String, (EnvLayer, EnvValue)> {
     let mut attributed: std::collections::BTreeMap<String, (EnvLayer, EnvValue)> =
         std::collections::BTreeMap::new();
@@ -346,18 +346,18 @@ fn build_attributed_layers(
         );
     }
     if let Some(ws_name) = workspace_name
-        && let Some(ws) = config.workspaces.get(ws_name)
+        && let Some(ws) = config.workspaces.get(ws_name.as_str())
     {
         record_layer(
             &mut attributed,
-            &EnvLayer::Workspace(ws_name.to_owned()),
+            &EnvLayer::Workspace(ws_name.as_str().to_owned()),
             &ws.env,
         );
         if let Some(role_name) = role_selector
             && let Some(ov) = ws.roles.get(role_name)
         {
             let ws_role_layer = EnvLayer::WorkspaceRole {
-                workspace: ws_name.to_owned(),
+                workspace: ws_name.as_str().to_owned(),
                 role: role_name.to_owned(),
             };
             record_layer(&mut attributed, &ws_role_layer, &ov.env);
@@ -372,7 +372,7 @@ fn build_attributed_layers(
 pub fn has_operator_env(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
 ) -> bool {
     !build_attributed_layers(config, role_selector, workspace_name).is_empty()
 }
@@ -382,7 +382,7 @@ pub fn has_operator_env(
 pub fn has_operator_env_matching<F>(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     include_key: F,
 ) -> bool
 where
@@ -399,7 +399,7 @@ where
 pub fn lookup_operator_env_raw(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     key: &str,
 ) -> Option<String> {
     build_attributed_layers(config, role_selector, workspace_name)
@@ -422,7 +422,7 @@ pub const CLAUDE_OAUTH_TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 pub fn resolve_operator_env(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
     // Each `op://` ref pins its own account at read time
     // (`OpRef::account`), so the runner carries no instance-level account.
@@ -438,7 +438,7 @@ pub fn resolve_operator_env(
 pub fn resolve_operator_env_matching<F>(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     include_key: F,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>>
 where
@@ -468,7 +468,7 @@ where
 pub fn collect_on_demand_bindings(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
 ) -> Vec<jackin_protocol::ExecBinding> {
     // BTreeMap iteration is already ordered by key, so the result is sorted.
     build_attributed_layers(config, role_selector, workspace_name)
@@ -499,7 +499,7 @@ pub fn collect_on_demand_bindings(
 pub fn resolve_operator_env_with<R, H>(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     op_runner: &R,
     host_env: H,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>>
@@ -522,7 +522,7 @@ where
 pub fn resolve_operator_env_with_matching<R, H, F>(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     op_runner: &R,
     host_env: H,
     include_key: F,
@@ -618,7 +618,7 @@ where
 pub fn print_launch_diagnostic(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) {
@@ -660,7 +660,7 @@ pub(crate) fn emit_launch_diagnostic<W: std::io::Write>(
 pub(crate) fn format_launch_diagnostic_for_test(
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) -> String {
@@ -681,7 +681,7 @@ fn write_launch_diagnostic<W: std::io::Write>(
     w: &mut W,
     config: &AppConfig,
     role_selector: Option<&str>,
-    workspace_name: Option<&str>,
+    workspace_name: Option<&WorkspaceName>,
     resolved: &std::collections::BTreeMap<String, String>,
     debug: bool,
 ) -> std::io::Result<()> {

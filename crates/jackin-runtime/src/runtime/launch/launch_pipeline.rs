@@ -84,10 +84,12 @@ fn defer_operator_env<'a>(
     credential_agents: Vec<jackin_core::agent::Agent>,
 ) -> DeferredOperatorEnv<'a> {
     let operator_env_needed = |key: &str| credential_key_needed_for_role(&credential_agents, key);
+    let workspace_typed = workspace_name
+        .and_then(|n| WorkspaceName::parse(n).ok());
     if !jackin_env::has_operator_env_matching(
         config,
         Some(&selector.key()),
-        workspace_name,
+        workspace_typed.as_ref(),
         operator_env_needed,
     ) {
         jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
@@ -121,19 +123,25 @@ fn defer_operator_env<'a>(
                     .cloned()
                     .ok_or(std::env::VarError::NotPresent)
             };
+            let ws = workspace_key
+                .as_deref()
+                .and_then(|n| WorkspaceName::parse(n).ok());
             jackin_env::resolve_operator_env_with_matching(
                 &config_clone,
                 Some(&selector_key),
-                workspace_key.as_deref(),
+                ws.as_ref(),
                 &default_runner,
                 host_env_fn,
                 |key| credential_key_needed_for_role(&needed_agents, key),
             )
         } else {
+            let ws = workspace_key
+                .as_deref()
+                .and_then(|n| WorkspaceName::parse(n).ok());
             jackin_env::resolve_operator_env_matching(
                 &config_clone,
                 Some(&selector_key),
-                workspace_key.as_deref(),
+                ws.as_ref(),
                 |key| credential_key_needed_for_role(&needed_agents, key),
             )
         }
@@ -154,10 +162,14 @@ async fn await_operator_env(
                     |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
                 )
             };
+            let ws = inline
+                .workspace_key
+                .as_deref()
+                .and_then(|n| WorkspaceName::parse(n).ok());
             jackin_env::resolve_operator_env_with_matching(
                 inline.config,
                 Some(&inline.selector_key),
-                inline.workspace_key.as_deref(),
+                ws.as_ref(),
                 inline.op_runner,
                 host_env_fn,
                 |key| credential_key_needed_for_role(&inline.credential_agents, key),
@@ -1064,10 +1076,13 @@ pub(crate) async fn load_role_with(
     // always-available var the entrypoint turns into a system-prompt block. The
     // full (name, kind, source) triples flow host-side to the credential
     // resolver via `capsule_config.exec_bindings` below.
+    let exec_ws = workspace_name
+        .as_deref()
+        .and_then(|n| WorkspaceName::parse(n).ok());
     let exec_bindings = jackin_env::collect_on_demand_bindings(
         config,
         Some(role_key.as_str()),
-        workspace_name.as_deref(),
+        exec_ws.as_ref(),
     );
     if !exec_bindings.is_empty() {
         let names = super::exec_binding_names(&exec_bindings);
@@ -1082,10 +1097,13 @@ pub(crate) async fn load_role_with(
     // key → layer/reference kind ("OPERATOR_TOKEN: op://Personal/...
     // from workspace \"big-monorepo\"") — never values.
     if !operator_env.is_empty() {
+        let diag_ws = workspace_name
+            .as_deref()
+            .and_then(|n| WorkspaceName::parse(n).ok());
         jackin_env::print_launch_diagnostic(
             config,
             Some(&selector.key()),
-            workspace_name.as_deref(),
+            diag_ws.as_ref(),
             &operator_env,
             opts.debug,
         );
