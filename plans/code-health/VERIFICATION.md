@@ -142,3 +142,10 @@ R1–R4 from the residual ledger. Do not re-serialize independent crate work.
 - agent-status: Notification payload enrich; grok baked; packs/fixtures updated
 - Residual ledger: zero bare DEFER rows (all CLOSED or CLOSED-as-pinned)
 - Gates: see `/tmp/grok-goal-4d943cf7c64d/implementer/` captures
+
+## ci --fast close-out (HEAD dc39b47c0+)
+
+- `fmt` + `clippy -D warnings` + `lint --strict`: green
+- `nextest`: red only 4× `manager_flow` disk-persist tests (Docker daemon missing — documented executor-env waiver)
+- `cargo audit` + `cargo deny advisories`: red only RUSTSEC-2026-0204 (crossbeam-epoch via turso — documented waiver)
+- Capture: implementer scratch `ci-fast.log`
