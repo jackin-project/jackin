@@ -105,3 +105,18 @@ Full `cargo xtask ci --fast` may still hit the documented executor-env waiver cl
 Future residual execution uses [DISPATCH.md](DISPATCH.md): T0 package verify per
 worker, T1 `lint --strict` + T2 `ci --fast` once per merge wave, residual waves
 R1–R4 from the residual ledger. Do not re-serialize independent crate work.
+
+## Latest re-verify (goal pass)
+
+- Tip: `a776e275d` on `chore/rust-code-health-roadmap`
+- Plans **003–063** DONE; inventory `plan-inventory.md` zero in_tree fails (incl. 051)
+- Matrix `SEQ(` count: **0**
+- Host turso: clean (`store_backend`)
+- `docs map-check`: OK (27 crates)
+- `lint --strict`: OK
+- `cargo fmt --check`: OK
+- `cargo clippy -D warnings`: OK
+- `ci --fast` red only:
+  - 4× manager_flow disk-persist (no Docker)
+  - RUSTSEC-2026-0204 (audit + deny)
+- Residual ledger: DEFER only for multi-PR/design/product items; R-038 partial with measured remaining TUI/restore/materialize string sites
