@@ -13,9 +13,9 @@ impl AppConfig {
     /// Shared by every CLI and runtime site that needs to look up a saved
     /// workspace by name and error on miss. The error message shape is
     /// part of the CLI contract — do not change it casually.
-    pub fn require_workspace(&self, name: &str) -> anyhow::Result<&WorkspaceConfig> {
+    pub fn require_workspace(&self, name: &WorkspaceName) -> anyhow::Result<&WorkspaceConfig> {
         self.workspaces
-            .get(name)
+            .get(name.as_str())
             .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))
     }
 
@@ -56,7 +56,11 @@ impl AppConfig {
 
     // pub(crate): ConfigEditor::edit_workspace delegates here for validation;
     // external callers must go through ConfigEditor to ensure TOML preservation.
-    pub fn edit_workspace(&mut self, name: &str, edit: WorkspaceEdit) -> anyhow::Result<()> {
+    pub fn edit_workspace(
+        &mut self,
+        name: &WorkspaceName,
+        edit: WorkspaceEdit,
+    ) -> anyhow::Result<()> {
         let mut seen_upsert_destinations = std::collections::HashSet::new();
         for mount in &edit.upsert_mounts {
             if !seen_upsert_destinations.insert(mount.dst.as_str()) {
@@ -154,7 +158,7 @@ impl AppConfig {
                     .map(|r| format!("{} covered by {}", r.child.src, r.covered_by.src))
                     .collect();
                 anyhow::bail!(
-                    "workspace {name:?} would contain redundant mounts after this edit:\n  - {}\n\
+                    "workspace {name} would contain redundant mounts after this edit:\n  - {}\n\
                      use `jackin workspace prune {name}` or pass `--prune` to clean up",
                     details.join("\n  - ")
                 );
@@ -162,18 +166,18 @@ impl AppConfig {
             Err(e) => return Err(anyhow::anyhow!("{e}")),
         }
 
-        let name_typed = WorkspaceName::parse(name).map_err(anyhow::Error::from)?;
-        validate_workspace_config(&name_typed, &workspace)?;
-        self.workspaces.insert(name.to_owned(), workspace);
+        validate_workspace_config(name, &workspace)?;
+        self.workspaces
+            .insert(name.as_str().to_owned(), workspace);
         Ok(())
     }
 
     // pub(crate): production callers use ConfigEditor::remove_workspace (which
     // deletes the TOML table directly); this stays for the test in workspaces.rs
     // that validates the error message shape.
-    pub fn remove_workspace(&mut self, name: &str) -> anyhow::Result<()> {
+    pub fn remove_workspace(&mut self, name: &WorkspaceName) -> anyhow::Result<()> {
         self.workspaces
-            .remove(name)
+            .remove(name.as_str())
             .map(|_| ())
             .ok_or_else(|| anyhow::anyhow!("unknown workspace {name}"))
     }

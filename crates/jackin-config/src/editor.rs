@@ -583,7 +583,7 @@ impl ConfigEditor {
 
         // Apply the edit using the existing validated logic. Mutates
         // in_memory or returns Err with the validation message on failure.
-        in_memory.edit_workspace(name.as_str(), edit)?;
+        in_memory.edit_workspace(name, edit)?;
 
         // Pull the resulting WorkspaceConfig back out and splat into the doc.
         let updated = in_memory

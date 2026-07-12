@@ -128,7 +128,8 @@ pub fn resolve_load_workspace(
             (ws, label)
         }
         LoadWorkspaceInput::Saved(name) => {
-            let workspace = config.require_workspace(&name)?.clone();
+            let wn = WorkspaceName::parse(&name).map_err(anyhow::Error::from)?;
+            let workspace = config.require_workspace(&wn)?.clone();
             if !workspace.allowed_roles.is_empty()
                 && !workspace
                     .allowed_roles

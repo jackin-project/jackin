@@ -290,7 +290,8 @@ where
     F: FnOnce() -> anyhow::Result<secrecy::SecretString>,
 {
     if let Some(workspace) = scope.workspace() {
-        config.require_workspace(workspace)?;
+        let wn = WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?;
+        config.require_workspace(&wn)?;
     }
 
     // plain_text is op-incompatible: `reuse` adopts an existing op
@@ -607,8 +608,9 @@ pub(crate) fn run_revoke_with_runner(
     delete_op_item: bool,
     op_writer: &dyn OpWriteRunner,
 ) -> anyhow::Result<RevokeReport> {
+    let wn = WorkspaceName::parse(workspace).map_err(anyhow::Error::from)?;
     let prior = config
-        .require_workspace(workspace)?
+        .require_workspace(&wn)?
         .env
         .get(CLAUDE_OAUTH_TOKEN_ENV)
         .cloned();
@@ -731,7 +733,7 @@ pub(crate) fn run_doctor_with_runner(
     workspace: &WorkspaceName,
     op_reader: &dyn OpRunner,
 ) -> anyhow::Result<DoctorReport> {
-    let ws = config.require_workspace(workspace.as_str())?;
+    let ws = config.require_workspace(workspace)?;
     let mode = ws
         .claude
         .as_ref()

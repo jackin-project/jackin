@@ -151,7 +151,7 @@ fn edit_workspace_does_not_persist_invalid_mutation() {
 
     let error = config
         .edit_workspace(
-            "big-monorepo",
+            &wn("big-monorepo"),
             WorkspaceEdit {
                 workdir: Some("/workspace/missing".to_owned()),
                 ..WorkspaceEdit::default()
@@ -382,7 +382,7 @@ fn edit_workspace_rejects_upsert_that_introduces_child_under_existing_parent() {
 
     let err = config
         .edit_workspace(
-            "test",
+            &wn("test"),
             WorkspaceEdit {
                 upsert_mounts: vec![MountConfig {
                     src: "/a/b".into(),
@@ -425,7 +425,7 @@ fn edit_workspace_rejects_upsert_with_readonly_mismatch_vs_existing_child() {
 
     let err = config
         .edit_workspace(
-            "test",
+            &wn("test"),
             WorkspaceEdit {
                 upsert_mounts: vec![MountConfig {
                     src: "/a".into(),
@@ -476,7 +476,7 @@ fn edit_workspace_accepts_pre_collapsed_upsert_that_replaces_children() {
 
     config
         .edit_workspace(
-            "test",
+            &wn("test"),
             WorkspaceEdit {
                 upsert_mounts: vec![MountConfig {
                     src: "/a".into(),
@@ -531,7 +531,7 @@ fn edit_workspace_rejects_leaving_pre_existing_violation() {
 
     let err = config
         .edit_workspace(
-            "legacy",
+            &wn("legacy"),
             WorkspaceEdit {
                 allowed_roles_to_add: vec!["agent-x".into()],
                 ..WorkspaceEdit::default()
