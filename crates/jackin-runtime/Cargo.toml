@@ -67,5 +67,9 @@ daemon-spike = []
 name = "launch_attach"
 harness = false
 
+[[bench]]
+name = "launch_pipeline"
+harness = false
+
 [lints]
 workspace = true

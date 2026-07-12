@@ -14,12 +14,10 @@ Not tracked here (intentional / optional / shipped):
 - Intentional pins: usage accounts-only surface, apple-container not shipping, Hello fail-closed
 - Wave 1 CLOSED: R-047-maintainability-promote (unused_self/unused_async promoted; others measured-allow with dated counts), R-allow-attributes-deny (bare-allow floor 0 + `allow_attributes_without_reason = deny`), R-missing-docs-cascade (`jackin-protocol` + `jackin-manifest` + `jackin-env` + `jackin-term` + `jackin-config` + `jackin-core`)
 - Wave 2 CLOSED: R-038-WorkspaceLabel (`WorkspaceLabel` type; `materialize_workspace` + `PreflightContext` typed; path-label vs config-stem tests)
+- Wave 3 CLOSED: R-launch-typestate / R-typestate-general (`launch_phases` GrantsValidated typestate + pure grant phase), R-033-suite-a (FakeDocker grant-failure + FailedSetup cleanup order tests), R-014-launch-pipeline-bench (`benches/launch_pipeline.rs`)
 
 | ID | Wave | Why still open | Next trigger |
 |----|------|----------------|--------------|
-| **R-launch-typestate** / **R-typestate-general** | 3 | Monolithic `run_launch_core` (~1350 LOC); no phase typestate | LaunchCore extract PR |
-| **R-033-suite-a** | 3 | No full `run_launch_core` failure-path fixture (B+C only) | After LaunchCore seams |
-| **R-014-launch-pipeline-bench** | 3 | Only `launch_attach` micro-bench; no FakeDocker pipeline bench | Same LaunchCore extract |
 | **R-daemon-decomp** | 4 | Specs only; daemon control still monolithic | Per-worklist module/port extract |
 | **R-daemon-char-remainder** | 4 | Partial characterization surfaces | After daemon ports |
 | **R-sim-turmoil** | 4 | No turmoil/proptest sim harness | After daemon decomp |

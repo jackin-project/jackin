@@ -216,68 +216,29 @@ where
         network.clone(),
         socket_dir,
     );
-    let workspace_docker_for_grants = config
-        .workspaces
-        .get(&workspace.label)
-        .and_then(|wc| wc.docker.as_ref());
-    let resolved_profile = crate::runtime::docker_profile::resolve_profile(
-        opts.docker_profile,
-        workspace_docker_for_grants.and_then(|wd| wd.profile),
-        config.docker.profile,
-    );
-    let mut grant_errors = Vec::new();
-    if let Some(grants) = config.docker.grants.as_ref() {
-        grant_errors.extend(tagged_grant_errors("config", grants));
-    }
-    if let Some(grants) = workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()) {
-        grant_errors.extend(tagged_grant_errors("workspace", grants));
-    }
-    if let Err(error) = super::bail_on_grant_errors(grant_errors) {
-        cleanup.run(docker).await;
-        return Err(error);
-    }
-    let mut effective_grants = crate::runtime::docker_profile::resolve_effective_grants(
-        resolved_profile.0,
-        config.docker.grants.as_ref(),
-        workspace_docker_for_grants.and_then(|wd| wd.grants.as_ref()),
-    );
-    if let Some(min) = validated_repo
-        .manifest
-        .docker
-        .as_ref()
-        .and_then(|d| d.min_profile)
-        && !crate::runtime::docker_profile::profile_meets_floor(resolved_profile.0, min)
-    {
-        cleanup.run(docker).await;
-        return Err(anyhow::anyhow!(
-            "role `{}` requires Docker profile `{min}` or more capable; resolved `{}` from {}",
-            selector.key(),
-            resolved_profile.0,
-            resolved_profile.1,
-        ));
-    }
-    if let Some(docker_cfg) = validated_repo.manifest.docker.as_ref() {
-        let role_grants = crate::runtime::docker_profile::DockerGrants {
-            dind: docker_cfg.dind,
-            allowed_hosts: docker_cfg.allowed_hosts.clone(),
-            capabilities_add: docker_cfg.capabilities_add.clone(),
-            ..Default::default()
-        };
-        if let Err(error) = super::bail_on_grant_errors(tagged_grant_errors("role", &role_grants)) {
-            cleanup.run(docker).await;
+    // Phase: grants validated (typestate). Failure → cleanup only (suite A).
+    let grants_validated = match super::launch_phases::validate_launch_grants(
+        super::launch_phases::GrantPhaseInput {
+            config,
+            workspace_label: workspace.label.as_str(),
+            workspace_docker: None,
+            opts_docker_profile: opts.docker_profile,
+            selector,
+            role_manifest: &validated_repo.manifest,
+        },
+    ) {
+        Ok(validated) => validated,
+        Err(error) => {
+            super::launch_phases::cleanup_after_grant_failure(&cleanup, docker).await;
             return Err(error);
         }
-        effective_grants =
-            crate::runtime::docker_profile::fold_role_grants(effective_grants, &role_grants);
-    }
-    if let Err(error) = super::bail_on_grant_errors(tag_errors(
-        "merged",
-        crate::runtime::docker_profile::validate_effective_grants(&effective_grants),
-    )) {
-        cleanup.run(docker).await;
-        return Err(error);
-    }
-    let dind_started = crate::runtime::docker_profile::dind_enabled(&effective_grants);
+    };
+    let effective_grants = grants_validated.effective_grants;
+    let resolved_profile = (
+        grants_validated.resolved_profile,
+        grants_validated.profile_source,
+    );
+    let dind_started = grants_validated.dind_started;
     // Start the sidecar future before image materialization so network/DinD
     // setup can make progress while runtime binaries and Docker build run.
     if let Some(progress) = steps.progress_mut() {
@@ -930,21 +891,16 @@ where
                 "materialize_workspace",
                 Some("error"),
             );
-            if let Err(status_err) = super::super::write_instance_status(
+            super::launch_phases::mark_failed_setup_then_cleanup(
                 paths,
                 &container_state,
+                &container_name,
                 &mut instance_manifest,
-                InstanceStatus::FailedSetup,
-            ) {
-                let message = format!(
-                    "jackin: warning: failed to mark FailedSetup for {container_name} \
-                         after workspace materialization error: {status_err:#}; on-disk status may be stale"
-                );
-                if let Some(run) = jackin_diagnostics::active_run() {
-                    run.compact("status", &message);
-                }
-            }
-            cleanup.run(docker).await;
+                &cleanup,
+                docker,
+                "workspace materialization error",
+            )
+            .await;
             return Err(error);
         }
     };

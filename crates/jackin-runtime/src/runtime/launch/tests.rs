@@ -1921,7 +1921,14 @@ fn runtime_envs_split_run_id_from_persisted_diagnostics_path() {
 fn debug_runtime_envs_omit_nonpersisted_diagnostics_path() {
     let envs = debug_runtime_envs_for(true, None);
 
-    assert_eq!(envs, vec!["JACKIN_DEBUG=1".to_owned()]);
+    // Dual-inject JACKIN_TELEMETRY_LEVEL for capsule-image skew (plan 043).
+    assert_eq!(
+        envs,
+        vec![
+            "JACKIN_DEBUG=1".to_owned(),
+            "JACKIN_TELEMETRY_LEVEL=debug".to_owned(),
+        ]
+    );
     assert_eq!(
         run_runtime_envs_for(Some("jk-run-backend")),
         vec!["JACKIN_RUN_ID=jk-run-backend".to_owned()]
