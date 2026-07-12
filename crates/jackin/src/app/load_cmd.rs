@@ -191,7 +191,7 @@ pub(super) async fn handle_console(
         .map(|(_, message)| anyhow::anyhow!(message.clone()));
 
     let op_available = console::effects::op_cli_available();
-    let Some(outcome) = console::run_console(
+    let (outcome, mut config) = console::run_console(
         config,
         &paths,
         &cwd,
@@ -203,8 +203,11 @@ pub(super) async fn handle_console(
         &mut in_place,
         &mut runner,
     )
-    .await?
-    else {
+    .await?;
+    // Use the config the console returned (already updated on successful
+    // saves). Skipping a disk reload avoids a redundant AppConfig parse on
+    // the common launch path when the operator made no config changes.
+    let Some(outcome) = outcome else {
         if let Some((docker, claim)) = &console_entry {
             runtime::release_entry_if_idle(&paths, docker, claim).await;
         }
@@ -214,9 +217,6 @@ pub(super) async fn handle_console(
         return Ok(());
     };
 
-    // config was consumed by run_console (the manager may have written to
-    // disk). Reload so the post-console path sees the latest state.
-    let mut config = AppConfig::load_or_init(&paths)?;
     let docker = connect_docker()?;
     let (class, workspace, selected_agent) = match outcome {
         console::ConsoleOutcome::Launch(class, workspace, selected_agent) => {

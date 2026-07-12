@@ -8880,3 +8880,29 @@ async fn resolve_github_env_map_reads_independent_op_refs_concurrently() {
         "expected overlapping github env op reads"
     );
 }
+
+#[test]
+fn early_scan_skips_current_inspect_only_for_matching_empty_scan() {
+    use super::restore_resolve::{
+        EarlyCurrentRestoreScan, RestoreResolution, early_scan_skips_current_inspect,
+    };
+    use jackin_core::agent::Agent;
+
+    let early = EarlyCurrentRestoreScan::Scanned {
+        agent: Agent::Claude,
+        current: None,
+    };
+    assert!(early_scan_skips_current_inspect(&early, Agent::Claude));
+    assert!(!early_scan_skips_current_inspect(&early, Agent::Codex));
+    assert!(!early_scan_skips_current_inspect(
+        &EarlyCurrentRestoreScan::NotRun,
+        Agent::Claude
+    ));
+    assert!(!early_scan_skips_current_inspect(
+        &EarlyCurrentRestoreScan::Scanned {
+            agent: Agent::Claude,
+            current: Some(RestoreResolution::RecreateCurrentRole("jk-x".into())),
+        },
+        Agent::Claude
+    ));
+}

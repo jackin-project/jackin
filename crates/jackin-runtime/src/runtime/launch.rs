@@ -228,6 +228,7 @@ mod restore_resolve;
 #[cfg(test)]
 pub(crate) use restore_resolve::resolve_unselected_current_restore_candidate_timed;
 pub(crate) use restore_resolve::{
+    EarlyCurrentRestoreScan, resolve_restore_candidate_reusing_early,
     RestoreResolution, UnselectedCurrentRestoreResolution, resolve_current_restore_candidate_timed,
     resolve_restore_candidate, resolve_unselected_current_restore_candidate_with_agent_timed,
 };

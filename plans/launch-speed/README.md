@@ -4,7 +4,7 @@ The launch-speed implementation batch shipped in PR #718. Completed execution pl
 
 ## 008c: Reuse early restore-candidate resolution
 
-**Status**: Deferred
+**Status**: DONE
 
 Launch currently performs an early current-role restore scan before role repo, auth, and image work so it can start or recreate an existing current-role instance without paying the full launch pipeline. Later, after role repo validation and final agent selection, `resolve_restore_candidate` can scan the current-role candidates again before checking related restore candidates.
 
@@ -21,7 +21,7 @@ What remains:
 
 ## 008g: Skip console config reload when console made no config changes
 
-**Status**: Deferred
+**Status**: DONE
 
 `jackin console` currently reloads `AppConfig` from disk after the console returns a launch/prewarm/action outcome. That reload is correct because the operator may have saved Settings or Workspace edits while inside the console, and the following launch must use the saved config.
 

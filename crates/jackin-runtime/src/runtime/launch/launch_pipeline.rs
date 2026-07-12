@@ -429,6 +429,9 @@ pub(crate) async fn load_role_with(
     let role_key = selector.key();
     let selected_agent_before_role = opts.agent.or(workspace.default_agent);
     let mut early_restore_agent = None;
+    // Typed early current-role scan (launch-speed 008c): reused later so the
+    // common path does not re-inspect current-role candidates.
+    let mut early_current_scan = super::EarlyCurrentRestoreScan::NotRun;
     // `--rebuild` is an explicit "force a fresh image" request, so it must not
     // take the attach/start/recreate fast paths — those short-circuit before
     // `decide_agent_image` and would silently skip the rebuild. Falling through
@@ -465,13 +468,32 @@ pub(crate) async fn load_role_with(
                     .await;
                 }
                 Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(super::RestoreResolution::RecreateCurrentRole(
+                            container.clone(),
+                        )),
+                    };
                     jackin_diagnostics::debug_log!(
                         "restore",
                         "recreating missing current instance {container} after role repo resolution"
                     );
                     Some(container)
                 }
-                Some(_) | None => None,
+                Some(other) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(other),
+                    };
+                    None
+                }
+                None => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: None,
+                    };
+                    None
+                }
             }
         } else {
             match super::resolve_unselected_current_restore_candidate_with_agent_timed(
@@ -502,13 +524,26 @@ pub(crate) async fn load_role_with(
                     agent,
                 }) => {
                     early_restore_agent = Some(agent);
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(super::RestoreResolution::RecreateCurrentRole(
+                            container.clone(),
+                        )),
+                    };
                     jackin_diagnostics::debug_log!(
                         "restore",
                         "recreating single-agent missing current instance {container} after role repo resolution"
                     );
                     Some(container)
                 }
-                Some(_) | None => None,
+                Some(super::UnselectedCurrentRestoreResolution { resolution, agent }) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(resolution),
+                    };
+                    None
+                }
+                None => None,
             }
         }
     } else {
@@ -740,7 +775,7 @@ pub(crate) async fn load_role_with(
         // `claim_container_name` reconciles any name collision downstream.
         None
     } else {
-        match super::resolve_restore_candidate(
+        match super::resolve_restore_candidate_reusing_early(
             paths,
             workspace_name.as_deref(),
             workspace.label.as_str(),
@@ -749,6 +784,7 @@ pub(crate) async fn load_role_with(
             agent,
             docker,
             steps.progress_mut(),
+            &early_current_scan,
         )
         .await?
         {

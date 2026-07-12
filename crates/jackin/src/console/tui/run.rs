@@ -797,7 +797,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     options: ConsoleRunOptions<'_>,
     action_handler: &mut H,
     runner: &mut impl jackin_docker::CommandRunner,
-) -> anyhow::Result<Option<ConsoleOutcome>> {
+) -> anyhow::Result<(Option<ConsoleOutcome>, AppConfig)> {
     use std::time::Duration;
 
     use crossterm::event::{Event, KeyEventKind};
@@ -993,5 +993,8 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     // launch flow owns it, this is `None` and teardown waits for that guard so
     // the console → loading transition stays on one alternate screen.
     drop(owned_screen);
-    result
+    // Return the in-memory config so the post-console path can skip a disk
+    // reload when nothing was written (and still sees in-session mutations
+    // that already updated `config` on successful save).
+    Ok((result?, config))
 }

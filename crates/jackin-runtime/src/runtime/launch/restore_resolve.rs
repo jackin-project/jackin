@@ -29,6 +29,39 @@ pub(crate) enum RestoreResolution {
     PurgeAndRestartFresh(String),
 }
 
+/// Outcome of the early current-role restore scan performed before role-repo
+/// work (launch-speed 008c). When the final selected agent matches the scan
+/// scope, the later `resolve_restore_candidate` reuses this and skips a second
+/// current-role Docker inspect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum EarlyCurrentRestoreScan {
+    /// Early scan was skipped (rebuild / pinned restore base / role branch).
+    NotRun,
+    /// Current-role candidates were scanned for a concrete agent (selected or
+    /// the sole unselected agent). `None` means no attach/start/recreate hit.
+    Scanned {
+        agent: jackin_core::agent::Agent,
+        /// Only `StartCurrentRole` / `RecreateCurrentRole` are stashed as
+        /// early containers today; other variants early-return before stash.
+        current: Option<RestoreResolution>,
+    },
+}
+
+/// True when the early scan already proved there is no current-role candidate
+/// for `agent`, so a second Docker inspect would be pure waste.
+pub(crate) fn early_scan_skips_current_inspect(
+    early: &EarlyCurrentRestoreScan,
+    agent: jackin_core::agent::Agent,
+) -> bool {
+    matches!(
+        early,
+        EarlyCurrentRestoreScan::Scanned {
+            agent: scanned_agent,
+            current: None,
+        } if *scanned_agent == agent
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn resolve_restore_candidate(
     paths: &JackinPaths,
@@ -40,7 +73,7 @@ pub(crate) async fn resolve_restore_candidate(
     docker: &impl DockerApi,
     progress: Option<&mut crate::runtime::progress::LaunchProgress>,
 ) -> anyhow::Result<RestoreResolution> {
-    let current = resolve_current_restore_candidate_timed(
+    resolve_restore_candidate_reusing_early(
         paths,
         workspace_name,
         workspace_label,
@@ -48,8 +81,40 @@ pub(crate) async fn resolve_restore_candidate(
         role_key,
         agent,
         docker,
+        progress,
+        &EarlyCurrentRestoreScan::NotRun,
     )
-    .await?;
+    .await
+}
+
+/// Like [`resolve_restore_candidate`], but reuses an early current-role scan
+/// when the final agent matches so the common path does not re-inspect.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn resolve_restore_candidate_reusing_early(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    agent: jackin_core::agent::Agent,
+    docker: &impl DockerApi,
+    progress: Option<&mut crate::runtime::progress::LaunchProgress>,
+    early: &EarlyCurrentRestoreScan,
+) -> anyhow::Result<RestoreResolution> {
+    let current = if early_scan_skips_current_inspect(early, agent) {
+        None
+    } else {
+        resolve_current_restore_candidate_timed(
+            paths,
+            workspace_name,
+            workspace_label,
+            workdir,
+            role_key,
+            agent,
+            docker,
+        )
+        .await?
+    };
     if let Some(current) = current {
         return Ok(current);
     }
