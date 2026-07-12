@@ -182,10 +182,7 @@ fn connect_to_cli_docker_context() -> anyhow::Result<Docker> {
                 .with_context(|| format!("connect to Docker host {host}"))
         }
         ConnectionChoice::Unsupported { reason, host } => {
-            return Err(DockerError::Message(ConnectionChoice::unsupported_message(
-                &reason, &host,
-            ))
-            .into());
+            Err(DockerError::Message(ConnectionChoice::unsupported_message(&reason, &host)).into())
         }
     }
 }

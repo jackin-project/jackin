@@ -28,9 +28,10 @@ impl AppConfig {
         workspace: WorkspaceConfig,
     ) -> anyhow::Result<()> {
         if self.workspaces.contains_key(name.as_str()) {
-            return Err(
-                ConfigError::msg("workspace {name:?} already exists; use `workspace edit`").into(),
-            );
+            return Err(ConfigError::msg(
+                "workspace {name:?} already exists; use `workspace edit`",
+            )
+            .into());
         }
         validate_workspace_config(name, &workspace)?;
 

@@ -235,11 +235,11 @@ pub fn validate_reserved_env_names(config: &AppConfig) -> anyhow::Result<()> {
     if offenses.is_empty() {
         return Ok(());
     }
-    return Err(ConfigError::msg(format!(
+    Err(ConfigError::msg(format!(
         "config contains reserved jackin runtime env vars:\n{}",
         offenses.join("\n")
     ))
-    .into());
+    .into())
 }
 
 pub fn config_needs_split_migration(raw: &str) -> anyhow::Result<bool> {

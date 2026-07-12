@@ -219,9 +219,11 @@ impl AppConfig {
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for mount in &workspace.mounts {
             if !seen.insert(mount.dst.as_str()) {
-                return Err(
-                    ConfigError::msg(format!("duplicate mount destination: {}", mount.dst)).into(),
-                );
+                return Err(ConfigError::msg(format!(
+                    "duplicate mount destination: {}",
+                    mount.dst
+                ))
+                .into());
             }
         }
         for row in rows {

@@ -241,11 +241,11 @@ async fn await_child_with_timeout(
             Err(_elapsed) => {
                 drop(child.kill().await);
                 drop(child.wait().await);
-                return Err(DockerError::CommandTimeout {
+                Err(DockerError::CommandTimeout {
                     secs: dur.as_secs_f64(),
                     program: program.to_owned(),
                 }
-                .into());
+                .into())
             }
         },
     }

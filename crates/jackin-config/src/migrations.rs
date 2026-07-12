@@ -409,9 +409,7 @@ pub fn parse_version(version: &str) -> anyhow::Result<SchemaVersion> {
     } else if let Some(seq_raw) = suffix.strip_prefix("beta") {
         Channel::Beta(parse_sequence("beta", seq_raw)?)
     } else {
-        return Err(
-            ConfigError::msg(format!("version must look like v1, v1beta1, or v1alpha1")).into(),
-        );
+        return Err(ConfigError::msg("version must look like v1, v1beta1, or v1alpha1").into());
     };
 
     Ok(SchemaVersion::Kubernetes(KubernetesVersion {
