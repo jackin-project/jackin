@@ -9,8 +9,10 @@ use std::sync::OnceLock;
 
 /// Install hot-path instruments on the process meter. Called once from
 /// `init_metrics` (host and capsule).
+///
+/// Returns `true` when this call won the process-wide `OnceLock` (first install).
 #[cfg(feature = "otlp")]
-pub(crate) fn install_hot_path(meter: &opentelemetry::metrics::Meter) {
+pub(crate) fn install_hot_path(meter: &opentelemetry::metrics::Meter) -> bool {
     use crate::observability::otel_metrics as names;
     let metrics = HotPathMetrics {
         terminal_bytes_sent: meter
@@ -59,7 +61,7 @@ pub(crate) fn install_hot_path(meter: &opentelemetry::metrics::Meter) {
             .with_description("Typed diagnostics errors by error.type")
             .build(),
     };
-    drop(HOT_PATH.set(metrics));
+    HOT_PATH.set(metrics).is_ok()
 }
 
 #[cfg(feature = "otlp")]
@@ -154,14 +156,91 @@ pub fn incr_errors(error_type: &str) {
     }
 }
 
-/// Test-only: install instruments on an arbitrary meter (in-memory exporter).
+/// Process-wide test rig: instruments + collectible in-memory exporter.
+///
+/// `HOT_PATH` is a `OnceLock`, so the first install wins for the whole test
+/// process. Always install through this helper so the provider has a reader
+/// that can force-flush into `InMemoryMetricExporter`.
 #[cfg(all(test, feature = "otlp"))]
-pub(crate) fn install_hot_path_for_test(meter: &opentelemetry::metrics::Meter) {
-    // Reset is not supported; tests that need a fresh OnceLock must run first
-    // or accept a no-op if already set. Prefer calling this once per process.
-    if HOT_PATH.get().is_none() {
-        install_hot_path(meter);
+struct HotPathTestRig {
+    provider: opentelemetry_sdk::metrics::SdkMeterProvider,
+    exporter: opentelemetry_sdk::metrics::InMemoryMetricExporter,
+    /// Whether `HOT_PATH` instruments were minted from this provider.
+    instruments_owned: bool,
+}
+
+#[cfg(all(test, feature = "otlp"))]
+static HOT_PATH_TEST_RIG: OnceLock<HotPathTestRig> = OnceLock::new();
+
+/// Test-only: install instruments once with an in-memory metric exporter.
+///
+/// Safe to call from multiple tests; subsequent calls are no-ops once the
+/// process-wide rig (or production `HOT_PATH`) is set.
+#[cfg(all(test, feature = "otlp"))]
+pub(crate) fn install_hot_path_for_test(_meter: &opentelemetry::metrics::Meter) {
+    ensure_hot_path_test_rig();
+}
+
+/// Ensure hot-path instruments are installed against a collectible provider.
+///
+/// Returns `true` when counters can be read back via
+/// [`collect_hot_path_counter_sums`] (instruments owned by this rig).
+#[cfg(all(test, feature = "otlp"))]
+pub(crate) fn ensure_hot_path_test_rig() -> bool {
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
+
+    let rig = HOT_PATH_TEST_RIG.get_or_init(|| {
+        let exporter = InMemoryMetricExporter::default();
+        let reader = PeriodicReader::builder(exporter.clone()).build();
+        let provider = SdkMeterProvider::builder().with_reader(reader).build();
+        let meter = provider.meter("jackin-hot-path-test");
+        // Own only when set succeeds — concurrent init_metrics may race.
+        let instruments_owned = install_hot_path(&meter);
+        HotPathTestRig {
+            provider,
+            exporter,
+            instruments_owned,
+        }
+    });
+    rig.instruments_owned
+}
+
+/// Force-flush the test meter provider and sum each requested u64 counter
+/// (cumulative totals since process start for this provider).
+///
+/// Returns `None` when the test rig does not own the process instruments
+/// (another install won the `OnceLock`) or export failed. Missing names map
+/// to `0` (instrument never recorded).
+#[cfg(all(test, feature = "otlp"))]
+pub(crate) fn collect_hot_path_counter_sums(names: &[&str]) -> Option<Vec<u64>> {
+    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
+
+    let rig = HOT_PATH_TEST_RIG.get()?;
+    if !rig.instruments_owned {
+        return None;
     }
+    // Drop prior exports so this flush is the only window we sum.
+    rig.exporter.reset();
+    rig.provider.force_flush().ok()?;
+    let finished = rig.exporter.get_finished_metrics().ok()?;
+
+    let mut totals = vec![0u64; names.len()];
+    for resource in &finished {
+        for scope in resource.scope_metrics() {
+            for metric in scope.metrics() {
+                let Some(idx) = names.iter().position(|&n| n == metric.name()) else {
+                    continue;
+                };
+                if let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data() {
+                    for point in sum.data_points() {
+                        totals[idx] = totals[idx].saturating_add(point.value());
+                    }
+                }
+            }
+        }
+    }
+    Some(totals)
 }
 
 #[cfg(all(test, feature = "otlp"))]
