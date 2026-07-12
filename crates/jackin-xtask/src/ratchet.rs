@@ -3,6 +3,10 @@
 //! One declarative `ratchet.toml` plus one semantics implementation for every
 //! budget family. Numeric families use high-water-mark shrink-only checks;
 //! presence families use stale/new allowlist checks. CLI: `cargo xtask lint ratchet`.
+//!
+//! Legacy gates (`lint files` / `lint tests` / `lint suppressions`) are thin
+//! shims that call [`check_families_at_root`] / [`print_families`] for their
+//! family IDs — no independent budget TOML readers on the production enforce path.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -14,6 +18,14 @@ use serde::Deserialize;
 
 const CONFIG_PATH: &str = "ratchet.toml";
 const RERUN: &str = "cargo xtask lint ratchet";
+
+/// Family IDs for the file-size production + test caps.
+pub(crate) const FILE_SIZE_FAMILIES: &[&str] = &["file-size-production", "file-size-test"];
+/// Family ID for the test-layout presence allowlist.
+pub(crate) const TEST_LAYOUT_FAMILIES: &[&str] = &["test-layout"];
+/// Family IDs for bare-allow + per-lint expect suppression budgets.
+pub(crate) const SUPPRESSION_FAMILIES: &[&str] =
+    &["bare-allow-per-crate", "expect-per-lint-crate"];
 
 #[derive(Debug, Args)]
 pub(crate) struct LintRatchetArgs {
@@ -130,8 +142,52 @@ pub(crate) fn check_presence(
     out
 }
 
+/// One problem row from a family check (structured for shims / JSON report).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FamilyProblem {
+    pub family: String,
+    pub key: String,
+    pub message: String,
+}
+
+/// Result of checking one or more families.
+#[derive(Debug, Clone)]
+pub(crate) struct FamilyCheckOutcome {
+    pub problems: Vec<FamilyProblem>,
+    pub report_lines: Vec<String>,
+}
+
 pub(crate) fn enforce() -> Result<()> {
     run(LintRatchetArgs { print: None })
+}
+
+/// Print regenerated entries for each named family (legacy `--print-*` shims).
+pub(crate) fn print_families(ids: &[&str]) -> Result<()> {
+    let root = crate::docs::repo_root()?;
+    let config = read_config(&root.join(CONFIG_PATH))?;
+    for id in ids {
+        print_family(&root, &config, id)?;
+    }
+    Ok(())
+}
+
+/// Cap for a numeric family (e.g. file-size production/test).
+pub(crate) fn family_cap(id: &str) -> Result<usize> {
+    let root = crate::docs::repo_root()?;
+    let config = read_config(&root.join(CONFIG_PATH))?;
+    let family = config
+        .family
+        .iter()
+        .find(|f| f.id == id)
+        .with_context(|| format!("unknown family {id:?} in {CONFIG_PATH}"))?;
+    Ok(family.cap.unwrap_or(0))
+}
+
+/// Run family checks and return structured problems (for shims that need Report).
+pub(crate) fn check_families_at_root(ids: &[&str]) -> Result<FamilyCheckOutcome> {
+    let root = crate::docs::repo_root()?;
+    let config = read_config(&root.join(CONFIG_PATH))?;
+    check_families(&root, &config, Some(ids))
 }
 
 pub(crate) fn run(args: LintRatchetArgs) -> Result<()> {
@@ -141,12 +197,48 @@ pub(crate) fn run(args: LintRatchetArgs) -> Result<()> {
         return print_family(&root, &config, family_id);
     }
 
-    let mut problems: Vec<String> = Vec::new();
+    let outcome = check_families(&root, &config, None)?;
+    emit_outcome(&outcome, config.family.len())
+}
+
+fn emit_outcome(outcome: &FamilyCheckOutcome, family_count: usize) -> Result<()> {
+    if !outcome.report_lines.is_empty() {
+        for line in &outcome.report_lines {
+            emit(line);
+        }
+    }
+    if outcome.problems.is_empty() {
+        emit(&format!(
+            "ratchet OK — {family_count} families (config {CONFIG_PATH})"
+        ));
+        return Ok(());
+    }
+    let mut problems: Vec<&str> = outcome.problems.iter().map(|p| p.message.as_str()).collect();
+    problems.sort();
+    bail!(
+        "{} ratchet violation(s):\n  {}\n\nFix the listed rows, then re-run `{RERUN}`.",
+        problems.len(),
+        problems.join("\n  ")
+    )
+}
+
+fn check_families(
+    root: &Path,
+    config: &Config,
+    only: Option<&[&str]>,
+) -> Result<FamilyCheckOutcome> {
+    let mut problems: Vec<FamilyProblem> = Vec::new();
     let mut report_lines: Vec<String> = Vec::new();
+
     for family in &config.family {
+        if let Some(ids) = only {
+            if !ids.contains(&family.id.as_str()) {
+                continue;
+            }
+        }
         match family.kind.as_str() {
             "numeric" => {
-                let measured = invoke_provider(&root, &family.provider)?;
+                let measured = invoke_provider(root, &family.provider)?;
                 let cap = family.cap.unwrap_or(0);
                 let budgeted: BTreeMap<&str, usize> = family
                     .entry
@@ -154,26 +246,41 @@ pub(crate) fn run(args: LintRatchetArgs) -> Result<()> {
                     .filter_map(|e| e.bound.map(|b| (e.key.as_str(), b)))
                     .collect();
                 for (key, bound) in &budgeted {
-                    let v = check_numeric_entry(measured.get(*key).copied(), *bound, cap);
-                    match v {
-                        NumericVerdict::Ok => {}
-                        NumericVerdict::StaleMissing => problems.push(format!(
+                    // Cap-0 families (suppressions) treat a missing key as 0 so
+                    // "now zero → delete the row" hits StaleUnderCap rather than
+                    // the file-missing path meant for path keys.
+                    let measured_opt = match measured.get(*key).copied() {
+                        some @ Some(_) => some,
+                        None if cap == 0 => Some(0),
+                        None => None,
+                    };
+                    let v = check_numeric_entry(measured_opt, *bound, cap);
+                    let msg = match v {
+                        NumericVerdict::Ok => None,
+                        NumericVerdict::StaleMissing => Some(format!(
                             "{id}/{key}: budgeted but file missing — delete the stale budget row; regenerate: {RERUN} --print {id}",
                             id = family.id
                         )),
-                        NumericVerdict::StaleUnderCap { measured } => problems.push(format!(
+                        NumericVerdict::StaleUnderCap { measured } => Some(format!(
                             "{id}/{key}: measured {measured} ≤ cap {cap} — no longer needs grandfathering; delete the budget row; regenerate: {RERUN} --print {id}",
                             id = family.id
                         )),
-                        NumericVerdict::Shrink { measured, budgeted } => problems.push(format!(
+                        NumericVerdict::Shrink { measured, budgeted } => Some(format!(
                             "{id}/{key}: measured {measured} < budgeted {budgeted} — shrink the budget row to {measured}; regenerate: {RERUN} --print {id}",
                             id = family.id
                         )),
-                        NumericVerdict::Growth { measured, budgeted } => problems.push(format!(
+                        NumericVerdict::Growth { measured, budgeted } => Some(format!(
                             "{id}/{key}: grew from {budgeted} to {measured} — refactor or intentionally raise only via budget update; regenerate: {RERUN} --print {id}",
                             id = family.id
                         )),
-                        NumericVerdict::UnlistedOverCap { .. } => {}
+                        NumericVerdict::UnlistedOverCap { .. } => None,
+                    };
+                    if let Some(message) = msg {
+                        problems.push(FamilyProblem {
+                            family: family.id.clone(),
+                            key: (*key).to_owned(),
+                            message,
+                        });
                     }
                 }
                 for (key, m) in &measured {
@@ -183,60 +290,64 @@ pub(crate) fn run(args: LintRatchetArgs) -> Result<()> {
                     if let NumericVerdict::UnlistedOverCap { measured, cap } =
                         check_numeric_unlisted(*m, cap)
                     {
-                        problems.push(format!(
-                            "{id}/{key}: {measured} exceeds cap {cap} (unlisted) — refactor or add a budget row; regenerate: {RERUN} --print {id}",
-                            id = family.id
-                        ));
+                        problems.push(FamilyProblem {
+                            family: family.id.clone(),
+                            key: key.clone(),
+                            message: format!(
+                                "{id}/{key}: {measured} exceeds cap {cap} (unlisted) — refactor or add a budget row; regenerate: {RERUN} --print {id}",
+                                id = family.id
+                            ),
+                        });
                     }
                 }
                 if family.mode == "report" {
                     report_lines.push(format!(
-                        "agent-doc-bytes (report-only) — {} key(s) measured",
+                        "{} (report-only) — {} key(s) measured",
+                        family.id,
                         measured.len()
                     ));
-                    // strip report-family problems so they never fail
-                    problems.retain(|p| !p.starts_with(&format!("{}/", family.id)));
+                    problems.retain(|p| p.family != family.id);
                 }
             }
             "presence" => {
                 let allowed: BTreeSet<String> =
                     family.entry.iter().map(|e| e.key.clone()).collect();
-                let measured = invoke_provider_presence(&root, &family.provider)?;
+                let measured = invoke_provider_presence(root, &family.provider)?;
                 for (key, verdict) in check_presence(&measured, &allowed) {
-                    match verdict {
-                        PresenceVerdict::Stale => problems.push(format!(
+                    let message = match verdict {
+                        PresenceVerdict::Stale => format!(
                             "{id}/{key}: listed but no longer violates — remove the stale allowlist entry; regenerate: {RERUN} --print {id}",
                             id = family.id
-                        )),
-                        PresenceVerdict::New { reason } => problems.push(format!(
+                        ),
+                        PresenceVerdict::New { reason } => format!(
                             "{id}/{key}: {reason} — fix or allowlist via `{RERUN} --print {id}`",
                             id = family.id
-                        )),
-                    }
+                        ),
+                    };
+                    problems.push(FamilyProblem {
+                        family: family.id.clone(),
+                        key,
+                        message,
+                    });
                 }
             }
             other => bail!("unknown family kind {other:?} in {CONFIG_PATH}"),
         }
     }
 
-    if !report_lines.is_empty() {
-        for line in report_lines {
-            emit(&line);
+    if let Some(ids) = only {
+        let known: BTreeSet<&str> = config.family.iter().map(|f| f.id.as_str()).collect();
+        for id in ids {
+            if !known.contains(id) {
+                bail!("unknown family {id:?} in {CONFIG_PATH}");
+            }
         }
     }
-    if problems.is_empty() {
-        emit(&format!(
-            "ratchet OK — {} families (config {CONFIG_PATH})",
-            config.family.len()
-        ));
-        return Ok(());
-    }
-    problems.sort();
-    bail!(
-        "{} ratchet violation(s):\n  {}\n\nFix the listed rows, then re-run `{RERUN}`.",
-        problems.len(),
-        problems.join("\n  ")
-    )
+
+    Ok(FamilyCheckOutcome {
+        problems,
+        report_lines,
+    })
 }
 
 fn read_config(path: &Path) -> Result<Config> {
@@ -253,6 +364,13 @@ fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize
             let m = crate::suppressions::measure(root)?;
             Ok(m.bare_by_crate)
         }
+        "expect_per_lint_crate" => {
+            let m = crate::suppressions::measure(root)?;
+            Ok(m.expect_by_lint_crate
+                .into_iter()
+                .map(|((lint, crate_name), n)| (expect_key(&lint, &crate_name), n))
+                .collect())
+        }
         "agent_doc_bytes" => measure_agent_doc_bytes(root),
         "export_volume_constants" => measure_export_volume_constants(root),
         "test_layout_violations" => {
@@ -261,6 +379,11 @@ fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize
         }
         other => bail!("unknown ratchet provider {other:?}"),
     }
+}
+
+/// Composite key for expect family rows: `{lint}@{crate}`.
+pub(crate) fn expect_key(lint: &str, crate_name: &str) -> String {
+    format!("{lint}@{crate_name}")
 }
 
 fn invoke_provider_presence(root: &Path, provider: &str) -> Result<BTreeMap<String, String>> {
@@ -352,7 +475,15 @@ fn print_family(root: &Path, config: &Config, family_id: &str) -> Result<()> {
             let measured = invoke_provider(root, &family.provider)?;
             emit(&format!("# ratchet family {family_id} regenerated entries"));
             for (key, bound) in &measured {
-                if family.cap.is_some_and(|cap| *bound > cap) || family.mode == "report" {
+                // report-only: all keys; cap=0 (suppression-style): every nonzero;
+                // positive cap: only over-cap grandfather candidates.
+                let print = match (family.mode.as_str(), family.cap) {
+                    ("report", _) => true,
+                    (_, Some(0)) => *bound > 0,
+                    (_, Some(cap)) => *bound > cap,
+                    (_, None) => *bound > 0,
+                };
+                if print {
                     emit(&format!("[[family.entry]]\nkey = {key:?}\nbound = {bound}"));
                 }
             }

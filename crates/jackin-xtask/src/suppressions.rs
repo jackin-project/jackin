@@ -2,19 +2,13 @@
 //!
 //! ```sh
 //! cargo xtask lint suppressions             # enforce, fail on violation
-//! cargo xtask lint suppressions --print-budget  # emit a fresh budget TOML
+//! cargo xtask lint suppressions --print-budget  # emit fresh ratchet family entries
 //! ```
 //!
-//! Two shrink-only tables in `suppression-budget.toml`:
-//!
-//! 1. `[[crate]]` — bare `#[allow(...)]` / `#![allow(...)]` count per crate
-//!    (attributes without `reason =`).
-//! 2. `[[expect]]` — `#[expect(...)]` / `#![expect(...)]` count per
-//!    (lint, crate) pair.
-//!
-//! A measured count above budget fails naming the row and delta; a count below
-//! budget fails telling the executor to shrink the row; a row now at zero fails
-//! telling them to delete it. Reuses [`health::parse_suppression_attrs`].
+//! Production enforcement is a thin shim over [`crate::ratchet`] for the
+//! `bare-allow-per-crate` and `expect-per-lint-crate` families in `ratchet.toml`.
+//! Measurement (`measure`) stays here for the ratchet providers. Pure
+//! `Budget`/`check` helpers below exist only for unit characterization tests.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -22,24 +16,25 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
+#[cfg(test)]
 use serde::{Deserialize, Serialize};
 
-use crate::docs::repo_root;
 use crate::health::{crate_name_from_path, parse_suppression_attrs, walk_rs_paths};
+use crate::ratchet::{self, SUPPRESSION_FAMILIES};
 
-const BUDGET_PATH: &str = "suppression-budget.toml";
 const CRATES_GLOB: &str = "crates";
 const RERUN: &str = "cargo xtask lint suppressions";
 
 #[derive(Args, Debug)]
 pub(crate) struct LintSuppressionsArgs {
-    /// Emit the current measured bare-allow and expect counts as a fresh budget
-    /// TOML on stdout and exit. Redirect over `suppression-budget.toml` after
-    /// review; the list may only shrink.
+    /// Emit regenerated `ratchet.toml` entries for the suppression families on
+    /// stdout. Prefer `cargo xtask lint ratchet --print <family>` for one family.
     #[arg(long)]
     print_budget: bool,
 }
 
+/// Test-only budget shape (characterization fixtures parse this TOML themselves).
+#[cfg(test)]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 struct Budget {
     #[serde(default, rename = "crate")]
@@ -48,12 +43,14 @@ struct Budget {
     expects: Vec<ExpectBudget>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 struct CrateBudget {
     name: String,
     bare_allow: usize,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 struct ExpectBudget {
     lint: String,
@@ -86,16 +83,31 @@ pub(crate) fn enforce() -> Result<()> {
 }
 
 pub(crate) fn run(args: LintSuppressionsArgs) -> Result<()> {
-    let root = repo_root()?;
-    let measured = measure(&root)?;
-
     if args.print_budget {
-        emit(&print_budget(&measured));
+        return ratchet::print_families(SUPPRESSION_FAMILIES);
+    }
+
+    let outcome = ratchet::check_families_at_root(SUPPRESSION_FAMILIES)?;
+    if outcome.problems.is_empty() {
+        let root = crate::docs::repo_root()?;
+        let measured = measure(&root)?;
+        let bare_total: usize = measured.bare_by_crate.values().sum();
+        let expect_total: usize = measured.expect_by_lint_crate.values().sum();
+        emit(&format!(
+            "suppression gate OK — {bare_total} bare allow(s) across {} crate(s), {expect_total} expect(s) across {} (lint,crate) pair(s) (ratchet.toml)",
+            measured.bare_by_crate.len(),
+            measured.expect_by_lint_crate.len()
+        ));
         return Ok(());
     }
 
-    let budget = read_budget(&root.join(BUDGET_PATH))?;
-    check(&budget, &measured)
+    let mut problems: Vec<&str> = outcome.problems.iter().map(|p| p.message.as_str()).collect();
+    problems.sort();
+    bail!(
+        "{} suppression-budget violation(s):\n  {}\n\nFix the listed rows, then re-run `{RERUN}`. To refresh the budget after an intentional shrink, run `{RERUN} --print-budget` (or `cargo xtask lint ratchet --print bare-allow-per-crate` / `expect-per-lint-crate`).",
+        problems.len(),
+        problems.join("\n  ")
+    )
 }
 
 pub(crate) fn measure(root: &Path) -> Result<Measured> {
@@ -129,13 +141,9 @@ pub(crate) fn measure(root: &Path) -> Result<Measured> {
     Ok(measured)
 }
 
-fn read_budget(path: &Path) -> Result<Budget> {
-    let text = fs::read_to_string(path)
-        .with_context(|| format!("reading budget file {}", path.display()))?;
-    toml::from_str(&text).with_context(|| format!("parsing budget file {}", path.display()))
-}
+// --- Pure helpers kept for unit characterization tests only ---
 
-/// Shrink-only check over both budget tables.
+#[cfg(test)]
 fn check(budget: &Budget, measured: &Measured) -> Result<()> {
     let mut problems: Vec<String> = Vec::new();
 
@@ -152,18 +160,18 @@ fn check(budget: &Budget, measured: &Measured) -> Result<()> {
             ));
         } else if measured_n == 0 {
             problems.push(format!(
-                "crate {name}: budgeted bare_allow={budgeted} but now 0 — delete the stale `[[crate]]` row from {BUDGET_PATH}; regenerate: {RERUN} --print-budget"
+                "crate {name}: budgeted bare_allow={budgeted} but now 0 — delete the stale `[[crate]]` row from ratchet.toml; regenerate: {RERUN} --print-budget"
             ));
         } else if measured_n < budgeted {
             problems.push(format!(
-                "crate {name}: bare_allow shrunk from {budgeted} to {measured_n} — update {BUDGET_PATH} to {measured_n} (shrink-only ratchet); regenerate: {RERUN} --print-budget"
+                "crate {name}: bare_allow shrunk from {budgeted} to {measured_n} — update ratchet.toml to {measured_n} (shrink-only ratchet); regenerate: {RERUN} --print-budget"
             ));
         }
     }
     for (name, &measured_n) in &measured.bare_by_crate {
         if measured_n > 0 && !budgeted_crates.contains_key(name.as_str()) {
             problems.push(format!(
-                "crate {name}: {measured_n} bare `#[allow]` not in {BUDGET_PATH} — add a shrink-only row or convert to reasoned expects; regenerate: {RERUN} --print-budget"
+                "crate {name}: {measured_n} bare `#[allow]` not in ratchet.toml — add a shrink-only row or convert to reasoned expects; regenerate: {RERUN} --print-budget"
             ));
         }
     }
@@ -186,11 +194,11 @@ fn check(budget: &Budget, measured: &Measured) -> Result<()> {
             ));
         } else if measured_n == 0 {
             problems.push(format!(
-                "expect {lint} in {crate_name}: budgeted count={budgeted} but now 0 — delete the stale `[[expect]]` row from {BUDGET_PATH}; regenerate: {RERUN} --print-budget"
+                "expect {lint} in {crate_name}: budgeted count={budgeted} but now 0 — delete the stale `[[expect]]` row from ratchet.toml; regenerate: {RERUN} --print-budget"
             ));
         } else if measured_n < budgeted {
             problems.push(format!(
-                "expect {lint} in {crate_name}: shrunk from {budgeted} to {measured_n} — update {BUDGET_PATH} to {measured_n} (shrink-only ratchet); regenerate: {RERUN} --print-budget"
+                "expect {lint} in {crate_name}: shrunk from {budgeted} to {measured_n} — update ratchet.toml to {measured_n} (shrink-only ratchet); regenerate: {RERUN} --print-budget"
             ));
         }
     }
@@ -221,7 +229,8 @@ fn check(budget: &Budget, measured: &Measured) -> Result<()> {
     )
 }
 
-/// Serialize measured counts as a budget TOML body (header + tables).
+/// Serialize measured counts as a legacy-shaped budget TOML body (unit tests).
+#[cfg(test)]
 pub(crate) fn print_budget(measured: &Measured) -> String {
     let mut out = String::from(
         "# Suppression shrink-only budget (plan 011 reason-gate).\n\

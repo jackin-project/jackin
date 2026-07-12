@@ -15,43 +15,31 @@
 //!
 //! ```sh
 //! cargo xtask lint tests                  # enforce, fail on new violations
-//! cargo xtask lint tests --print-allowlist  # emit a fresh allowlist TOML
+//! cargo xtask lint tests --print-allowlist  # emit fresh ratchet family keys
 //! ```
 //!
-//! Files that violate today are grandfathered in `test-layout-allowlist.toml`;
-//! the gate fails on any violation **not** in the allowlist, and (shrink-only
-//! ratchet) on any allowlisted path that no longer violates — the file was
-//! fixed or never existed, so its entry must be removed. The list may only
-//! shrink (the same ratchet as the file-size gate). Integration tests under
-//! `crates/*/tests/` (a sibling of `src/`, not under it) are Cargo's own test
-//! target and are not scanned.
+//! Production enforcement is a thin shim over [`crate::ratchet`] for the
+//! `test-layout` presence family in `ratchet.toml`. Measurement
+//! (`measure_violations`) stays here for the ratchet provider. Pure `check`
+//! helpers below exist only for unit characterization tests.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+#[cfg(test)]
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
-use serde::{Deserialize, Serialize};
 
-use crate::docs::repo_root;
-
-const ALLOWLIST_PATH: &str = "test-layout-allowlist.toml";
+use crate::ratchet::{self, TEST_LAYOUT_FAMILIES};
 
 #[derive(Args, Debug)]
 pub(crate) struct LintTestsArgs {
-    /// Emit the current set of violating files as a fresh allowlist TOML on
-    /// stdout and exit. Use after fixing or discovering files: redirect over
-    /// `test-layout-allowlist.toml` (pruning fixed entries) and commit.
+    /// Emit regenerated `ratchet.toml` `test-layout` family keys on stdout.
+    /// Prefer `cargo xtask lint ratchet --print test-layout` for the same data.
     #[arg(long)]
     print_allowlist: bool,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct Allowlist {
-    /// Repo-relative paths of files grandfathered as known violations.
-    #[serde(default)]
-    files: Vec<String>,
 }
 
 /// Run the test-layout gate in enforce mode. The umbrella `cargo xtask lint`
@@ -63,16 +51,27 @@ pub(crate) fn enforce() -> Result<()> {
 }
 
 pub(crate) fn run(args: LintTestsArgs) -> Result<()> {
-    let root = repo_root()?;
-    let violations = measure_violations(&root)?;
-
     if args.print_allowlist {
-        print_allowlist(&violations);
+        return ratchet::print_families(TEST_LAYOUT_FAMILIES);
+    }
+    // Scoped ratchet enforce; OK line uses the engine's family-scoped message.
+    let outcome = ratchet::check_families_at_root(TEST_LAYOUT_FAMILIES)?;
+    if outcome.problems.is_empty() {
+        let root = crate::docs::repo_root()?;
+        let violations = measure_violations(&root)?;
+        emit(&format!(
+            "test-layout gate OK — {} file(s) scanned-as-violations, all grandfathered (ratchet.toml family test-layout)",
+            violations.len(),
+        ));
         return Ok(());
     }
-
-    let allowed = read_allowlist(&root)?;
-    check(&violations, &allowed)
+    let mut problems: Vec<&str> = outcome.problems.iter().map(|p| p.message.as_str()).collect();
+    problems.sort();
+    bail!(
+        "{} test-layout violation(s):\n  {}\n\nMove tests into a sibling `tests.rs` (see crates/AGENTS.md). To refresh the allowlist, run `cargo xtask lint tests --print-allowlist` (or `cargo xtask lint ratchet --print test-layout`).",
+        problems.len(),
+        problems.join("\n  ")
+    )
 }
 
 /// Walk every `crates/*/src` tree and collect `relative path → reason` for each
@@ -229,21 +228,9 @@ fn mod_has_body(line: &str) -> Option<bool> {
     Some(after_mod.contains('{'))
 }
 
-fn read_allowlist(root: &Path) -> Result<BTreeSet<String>> {
-    let path = root.join(ALLOWLIST_PATH);
-    if !path.exists() {
-        return Ok(BTreeSet::new());
-    }
-    let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let allowlist: Allowlist =
-        toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    Ok(allowlist.files.into_iter().collect())
-}
-
+/// Pure presence check (unit characterization tests).
+#[cfg(test)]
 fn check(violations: &BTreeMap<String, String>, allowed: &BTreeSet<String>) -> Result<()> {
-    // Shrink-only ratchet: an allowlist row whose path is not a current
-    // violation — the file was fixed, or never existed — is stale and must be
-    // removed. The gate fails on stale rows instead of only printing a note.
     let stale: Vec<&String> = allowed
         .iter()
         .filter(|p| !violations.contains_key(*p))
@@ -266,7 +253,7 @@ fn check(violations: &BTreeMap<String, String>, allowed: &BTreeSet<String>) -> R
     let mut problems: Vec<String> = Vec::new();
     for path in &stale {
         problems.push(format!(
-            "{path}: listed in {ALLOWLIST_PATH} but no longer violates (remove the stale allowlist entry)"
+            "{path}: listed in ratchet.toml family test-layout but no longer violates (remove the stale allowlist entry)"
         ));
     }
     for (path, reason) in &new {
@@ -279,17 +266,6 @@ fn check(violations: &BTreeMap<String, String>, allowed: &BTreeSet<String>) -> R
         problems.len(),
         problems.join("\n  ")
     )
-}
-
-fn print_allowlist(violations: &BTreeMap<String, String>) {
-    let allowlist = Allowlist {
-        files: violations.keys().cloned().collect(),
-    };
-    let body = toml::to_string_pretty(&allowlist)
-        .unwrap_or_else(|err| format!("# failed to serialize allowlist: {err}\n"));
-    emit(&format!(
-        "# Test-layout ratchet — grandfathered violations of the one-tests.rs rule.\n# The gate (`cargo xtask lint tests`) fails on any violation NOT listed here.\n# Delete an entry when its file is fixed; the list may only shrink.\n{body}"
-    ));
 }
 
 #[expect(

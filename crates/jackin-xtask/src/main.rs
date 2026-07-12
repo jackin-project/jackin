@@ -126,11 +126,12 @@ enum Command {
 
 #[derive(Subcommand)]
 enum LintCommand {
-    /// Enforce the file-size ratchet from `file-size-budget.toml`.
+    /// Enforce the file-size ratchet (`ratchet.toml` families
+    /// `file-size-production` / `file-size-test`).
     Files(lint::LintFilesArgs),
     /// Enforce the test-file-layout rule (tests live in a sibling
     /// `tests.rs`, never inline `#[cfg(test)] mod tests` or split across
-    /// `tests/` sub-modules).
+    /// `tests/` sub-modules; allowlist in `ratchet.toml` family `test-layout`).
     Tests(test_layout::LintTestsArgs),
     /// Enforce that first-party `CLAUDE.md` files are symlinks to sibling
     /// `AGENTS.md` files.
@@ -146,9 +147,10 @@ enum LintCommand {
     Headers(headers::LintHeadersArgs),
     /// README freshness vs structural src layout changes.
     ReadmeFreshness(readme_freshness::LintReadmeFreshnessArgs),
-    /// Bare-allow / per-lint expect suppression shrink-only reason-gate.
+    /// Bare-allow / per-lint expect suppression shrink-only reason-gate
+    /// (`ratchet.toml` families `bare-allow-per-crate` / `expect-per-lint-crate`).
     Suppressions(suppressions::LintSuppressionsArgs),
-    /// Unified shrink-only ratchet engine over `ratchet.toml`.
+    /// Unified shrink-only ratchet engine over `ratchet.toml` (all families).
     Ratchet(ratchet::LintRatchetArgs),
 }
 
