@@ -22,30 +22,43 @@ use super::{bail_on_grant_errors, tag_errors, tagged_grant_errors};
 
 /// Grant + profile resolution succeeded (phase 1 → 2).
 #[derive(Debug, Clone)]
-pub(super) struct GrantsValidated {
+pub struct GrantsValidated {
+    /// Folded effective grants after config/workspace/role layers.
     pub effective_grants: EffectiveGrants,
+    /// Resolved Docker security profile.
     pub resolved_profile: DockerSecurityProfile,
+    /// Where the profile came from (CLI / workspace / config / default).
     pub profile_source: ProfileSource,
+    /// Whether DinD is enabled under the effective grants.
     pub dind_started: bool,
 }
 
 /// Inputs for the pure grant-validation phase (no Docker I/O).
-pub(super) struct GrantPhaseInput<'a> {
+#[derive(Debug)]
+pub struct GrantPhaseInput<'a> {
+    /// Host app config (global docker grants + profile).
     pub config: &'a AppConfig,
+    /// Workspace label used for workspace-layer docker grants lookup.
     pub workspace_label: &'a str,
+    /// Optional pre-resolved workspace docker table (avoids re-lookup).
     pub workspace_docker: Option<&'a WorkspaceDockerConfig>,
+    /// CLI `--docker-profile` override.
     pub opts_docker_profile: Option<DockerSecurityProfile>,
+    /// Role selector (error messages).
     pub selector: &'a RoleSelector,
+    /// Role manifest (min profile + role grants).
     pub role_manifest: &'a RoleManifest,
 }
 
 /// Validate config/workspace/role docker grants and fold effective grants.
 ///
 /// Returns [`GrantsValidated`] on success. On failure the caller must run
-/// [`LoadCleanup::run`] before returning the error (suite A ordering).
-pub(super) fn validate_launch_grants(
-    input: GrantPhaseInput<'_>,
-) -> anyhow::Result<GrantsValidated> {
+/// [`LoadCleanup::run`] / [`cleanup_after_grant_failure`] before returning
+/// the error (suite A ordering).
+///
+/// # Errors
+/// Returns when any layer fails grants validation or profile floor check.
+pub fn validate_launch_grants(input: GrantPhaseInput<'_>) -> anyhow::Result<GrantsValidated> {
     let workspace_docker_for_grants = input
         .workspace_docker
         .or_else(|| {
@@ -116,7 +129,7 @@ pub(super) fn validate_launch_grants(
 ///
 /// Order is intentional — suite A asserts cleanup Docker ops still run even
 /// when the status write fails or is skipped.
-pub(super) async fn mark_failed_setup_then_cleanup(
+pub(crate) async fn mark_failed_setup_then_cleanup(
     paths: &JackinPaths,
     container_state: &std::path::Path,
     container_name: &str,
@@ -143,10 +156,7 @@ pub(super) async fn mark_failed_setup_then_cleanup(
 }
 
 /// Grant-failure path: cleanup only (no FailedSetup — instance may not exist yet).
-pub(super) async fn cleanup_after_grant_failure(
-    cleanup: &LoadCleanup,
-    docker: &impl DockerApi,
-) {
+pub async fn cleanup_after_grant_failure(cleanup: &LoadCleanup, docker: &impl DockerApi) {
     cleanup.run(docker).await;
 }
 

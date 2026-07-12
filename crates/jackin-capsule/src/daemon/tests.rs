@@ -7779,3 +7779,62 @@ async fn input_frames_apply_to_post_takeover_mux() {
         .expect("session input channel closed");
     assert_eq!(got, b"x");
 }
+
+#[test]
+fn remove_exited_session_retires_codename_inv_d8() {
+    // INV-D8: removing an exited session retires its codename so labels update.
+    let mut mux = single_pane_tab_mux();
+    let (session, _rx) = test_session(24, 80);
+    mux.sessions.insert(1, session);
+    // Seed live set the way spawn_session would after pick_next_codename.
+    mux.codename_live.insert("test".to_owned());
+    assert!(
+        mux.codename_live.contains("test"),
+        "precondition: codename live before exit"
+    );
+    assert!(
+        !mux.codename_retired.contains("test"),
+        "precondition: not yet retired"
+    );
+
+    mux.remove_exited_session(1);
+
+    assert!(
+        !mux.codename_live.contains("test"),
+        "exited session codename must leave live set"
+    );
+    assert!(
+        mux.codename_retired.contains("test"),
+        "exited session codename must enter retired set"
+    );
+    assert!(
+        mux.sessions.is_empty(),
+        "session map must drop the exited id"
+    );
+    assert!(
+        mux.tabs.is_empty(),
+        "sole tab owning the session must be removed"
+    );
+}
+
+#[tokio::test]
+async fn last_session_exit_defers_when_dialog_already_open_inv_d19() {
+    // INV-D19: when a dirty-exit (or any) dialog is open, last-session exit
+    // handling must not re-enter and drain.
+    let mut mux = single_pane_tab_mux();
+    mux.dialog_push(Dialog::new_exit_dirty(
+        vec!["repo   1 changed".to_owned()],
+        std::sync::Arc::from([]),
+    ));
+    assert!(mux.dialog_open(), "precondition: dialog open");
+
+    let should_exit = handle_last_session_exit(&mut mux, Some("test-exit".into())).await;
+    assert!(
+        !should_exit,
+        "handle_last_session_exit must return false while dialog is open"
+    );
+    assert!(
+        mux.dialog_open(),
+        "dialog must remain open after deferred last-session exit"
+    );
+}

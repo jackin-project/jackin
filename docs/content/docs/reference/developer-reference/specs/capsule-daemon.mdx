@@ -39,7 +39,7 @@ Roadmap-named ownership boundaries used to group invariants:
 | INV-D5 | Spawn rejects agents outside the allowlist before opening a PTY | `spawn_request_rejects_agent_outside_allowlist_before_pty_spawn` | `jackin_capsule::daemon::tests::spawn_request_rejects_agent_outside_allowlist_before_pty_spawn` |
 | INV-D6 | Spawn-failure dialog stays open until the operator dismisses it | `spawn_failure_popup_stays_open_until_dismissed` / `open_spawn_failure_dialog` | `jackin_capsule::daemon::tests::spawn_failure_popup_stays_open_until_dismissed` |
 | INV-D7 | Zoom state is independent per tab; killing a zoomed pane clears only that tab's zoom | zoom helpers in multiplexer session lifecycle | `jackin_capsule::daemon::tests::zoom_state_is_independent_per_tab` `jackin_capsule::daemon::tests::killing_zoomed_pane_clears_only_owning_tab_zoom` |
-| INV-D8 | Removing an exited session retires its codename and updates tab labels without dropping other tabs | `remove_exited_session` / `mark_agent_session_exited` | MISSING |
+| INV-D8 | Removing an exited session retires its codename and updates tab labels without dropping other tabs | `remove_exited_session` / `mark_agent_session_exited` | `jackin_capsule::daemon::tests::remove_exited_session_retires_codename_inv_d8` |
 
 ### Input routing
 
@@ -80,7 +80,7 @@ Roadmap-named ownership boundaries used to group invariants:
 
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
-| INV-D19 | Last-session exit handler classifies whether the daemon should exit | `handle_last_session_exit` / `should_defer_last_session_exit` + `daemon::ports` session SM | `jackin_capsule::daemon::ports::tests::session_sm_defers_drain_while_dialog_open_inv_d19` `jackin_capsule::daemon::ports::tests::persistence_port_defers_when_dialog_open` |
+| INV-D19 | Last-session exit handler classifies whether the daemon should exit | `handle_last_session_exit` / `should_defer_last_session_exit` + `ports::PersistencePort` | `jackin_capsule::daemon::tests::last_session_exit_defers_when_dialog_already_open_inv_d19` `jackin_capsule::daemon::ports::tests::persistence_port_defers_when_dialog_open` |
 | INV-D20 | File export paths are categorized as jackin-run / jackin-owned / container-absolute / relative via `container_paths` | `requested_export_path_category` in `daemon/file_export.rs` | `jackin_capsule::daemon::file_export::export_category_tests::export_path_category_matrix_inv_d20` |
 
 ## Test seams
@@ -94,10 +94,9 @@ Roadmap-named ownership boundaries used to group invariants:
 
 1. **INV-D1 full displace policy** — reattach palette test exists; a second-client “stream B becomes active, stream A is closed” characterization is still thin (feeds plan 033).
 2. **PTY failure recovery** — writer-lock failure / closed channel / PTY EOF paths in session writer loops are largely unexercised (TEST-pty-recovery; plan 033).
-3. **INV-D8 session exit codename retirement** — no focused unit test.
-4. **INV-D15 clipboard expiry** — seam exists; drive a `ManualClock` past TTL in a unit test.
+3. **INV-D15 clipboard expiry** — seam exists; drive a `ManualClock` past TTL in a unit test.
 
-INV-D19 / INV-D20 closed with pure classifiers + matrix tests; full dirty-exit integration remains covered indirectly.
+INV-D8 / INV-D19 / INV-D20 closed with Multiplexer real-path + port-wired characterization tests.
 
 ## Undetermined behaviors
 

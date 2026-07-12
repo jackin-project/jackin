@@ -45,9 +45,14 @@ id = "bare-allow-per-crate"
 kind = "numeric"
 provider = "bare_allow_per_crate"
 # cap = 0 → every nonzero bare-allow crate must be listed (no unlisted debt).
-# 2026-07-12: all crates at measured 0 — no grandfather rows.
+# 2026-07-12: production crates at measured 0. jackin-xtask keeps 1 fixture
+# string in unit tests that intentionally contains bare `#[allow(...)]` for
+# the bare-allow parser itself (`health::tests::parses_bare_allow`).
 cap = 0
 mode = "enforce"
+[[family.entry]]
+key = "jackin-xtask"
+bound = 1
 
 # Per-lint expect counts: key = "{lint}@{crate}" (see ratchet::expect_key).
 [[family]]

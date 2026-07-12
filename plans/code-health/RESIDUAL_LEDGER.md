@@ -15,8 +15,8 @@ Not tracked here (intentional / optional / shipped):
 - Wave 1 CLOSED: R-047-maintainability-promote, R-allow-attributes-deny, R-missing-docs-cascade
 - Wave 2 CLOSED: R-038-WorkspaceLabel
 - Wave 3 CLOSED: R-launch-typestate / R-typestate-general, R-033-suite-a, R-014-launch-pipeline-bench
-- Wave 4 CLOSED: R-daemon-decomp (`daemon/ports.rs` control/attach/status/persistence seams), R-daemon-char-remainder (INV-D19/D20 + session SM), R-sim-turmoil (proptest-style session SM sim; turmoil not adopted — no crate fit / prefer pure SM)
-- Wave 5 CLOSED: R-edit-model-convergence (`edit_save` shared plan + FormSection already shared; editor save_key_plan wired)
+- Wave 4 CLOSED: R-daemon-decomp (ports wired into Hello takeover / control ACK / codename retire / last-session exit), R-daemon-char-remainder (INV-D8 Multiplexer remove_exited_session, INV-D19 handle_last_session_exit, INV-D20 export categories), R-sim-turmoil (pure port decisions + real Multiplexer paths; turmoil not adopted — no crate fit)
+- Wave 5 CLOSED: R-edit-model-convergence (`plan_leave_when_dirty` / `plan_explicit_save` shared by editor escape/save and all settings Esc/q ConfirmDiscard paths)
 - Wave 6 CLOSED: R-perf-platform (`[[family]] id = "perf"` dhat budgets via `perf_budgets.rs`; **iai-callgrind PINNED** — CI has no valgrind)
 
 | ID | Wave | Why still open | Next trigger |

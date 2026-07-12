@@ -772,7 +772,8 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
     // the dirty-exit flow is already active. Re-entering would push a fresh modal
     // and re-run the git assessment on every keypress, resetting selection to 0 —
     // so the operator could never move past the first row. Defer until resolved.
-    if should_defer_last_session_exit(mux.dialog_open()) {
+    use ports::{PORTS, PersistencePort};
+    if PORTS.defer_last_session_exit(mux.dialog_open()) {
         return false;
     }
     match crate::exit_assess::decide_exit(&mux.launch_config).await {
@@ -1190,10 +1191,14 @@ pub async fn run_daemon(initial_agent: String, launch_config: CapsuleConfig) -> 
                         pending_spawn_failure = Some(spawn_request_failure_message(&label, &err));
                     }
                 }
-                // Take over from any existing attach client. The shared
-                // helper sends Shutdown, gives the writer side a brief
-                // drain window, then aborts the old reader task.
-                detach_attached_task(&mut mux, "takeover").await;
+                // Take over from any existing attach client (INV-D1). The
+                // port decides displace; the helper sends Shutdown, drains
+                // briefly, then aborts the old reader task.
+                let has_active_client = mux.attached_task.is_some();
+                use ports::{AttachPort, PORTS};
+                if PORTS.should_displace_on_hello(has_active_client) {
+                    detach_attached_task(&mut mux, "takeover").await;
+                }
                 // Drain any stale frames the old client task pushed
                 // into cmd_tx before its abort actually took effect —
                 // without this drain, the next `cmd_rx.recv()` after

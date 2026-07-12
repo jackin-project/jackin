@@ -47,6 +47,9 @@ pub(crate) use trust::{
 };
 
 mod launch_pipeline;
+pub use launch_pipeline::launch_phases::{
+    GrantPhaseInput, GrantsValidated, cleanup_after_grant_failure, validate_launch_grants,
+};
 
 use super::discovery::list_running_agent_names;
 
@@ -222,7 +225,8 @@ pub(crate) use launch_plan::{
 };
 
 mod load_cleanup;
-pub(crate) use load_cleanup::{LoadCleanup, write_if_changed_atomic};
+pub use load_cleanup::LoadCleanup;
+pub(crate) use load_cleanup::write_if_changed_atomic;
 
 mod restore_resolve;
 pub(crate) use restore_resolve::{

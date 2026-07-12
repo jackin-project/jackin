@@ -48,6 +48,18 @@ pub const fn save_opens_confirm_modal(plan: EditSaveDisposition) -> bool {
     matches!(plan, EditSaveDisposition::ConfirmDiscard)
 }
 
+/// Leave key (Esc / `q`): dirty → confirm discard; clean → no pending save work.
+#[must_use]
+pub const fn plan_leave_when_dirty(is_dirty: bool) -> EditSaveDisposition {
+    plan_edit_save(is_dirty, true)
+}
+
+/// Explicit save key (`s`): dirty → save now; clean → noop.
+#[must_use]
+pub const fn plan_explicit_save(is_dirty: bool) -> EditSaveDisposition {
+    plan_edit_save(is_dirty, false)
+}
+
 #[cfg(test)]
 #[path = "edit_save/tests.rs"]
 mod tests;

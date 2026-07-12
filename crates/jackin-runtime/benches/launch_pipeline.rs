@@ -1,13 +1,14 @@
-//! Launch-pipeline micro-bench over pure phase helpers + FakeDocker records.
+//! Launch-pipeline micro-bench over real phase helpers + FakeDocker.
 //!
-//! Covers the grant-validation path extracted for suite A
-//! (R-014-launch-pipeline-bench) without needing a full Docker host.
+//! Drives `cleanup_after_grant_failure` / `LoadCleanup::run` (the suite A
+//! helpers used by `run_launch_core`) — not string bookkeeping theater.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use jackin_core::selector::RoleSelector;
 use jackin_runtime::runtime::docker_profile::{
     DockerGrants, dind_enabled, resolve_effective_grants, resolve_profile, validate_grants,
 };
+use jackin_runtime::runtime::launch::{LoadCleanup, cleanup_after_grant_failure};
 use jackin_test_support::FakeDockerClient;
 use std::hint::black_box;
 use std::path::PathBuf;
@@ -25,24 +26,39 @@ fn grant_validation_micro(c: &mut Criterion) {
         });
     });
 
-    c.bench_function("launch_pipeline/fake_docker_cleanup_record", |b| {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+
+    c.bench_function("launch_pipeline/cleanup_after_grant_failure_fakedocker", |b| {
         b.iter(|| {
-            let docker = FakeDockerClient::default();
-            // Simulate the call pattern of grant-failure cleanup: rm dind + net + volume.
-            let dind = "jk-bench-dind";
-            let net = "jk-bench-net";
-            let certs = "jk-bench-certs";
-            docker.recorded.borrow_mut().push(format!("docker rm -f {dind}"));
-            docker
-                .recorded
-                .borrow_mut()
-                .push(format!("docker network rm {net}"));
-            docker
-                .recorded
-                .borrow_mut()
-                .push(format!("docker volume rm {certs}"));
-            assert_eq!(docker.recorded.borrow().len(), 3);
-            black_box(docker.recorded.borrow().len());
+            rt.block_on(async {
+                let docker = FakeDockerClient::default();
+                let cleanup = LoadCleanup::new(
+                    "jk-bench-role".into(),
+                    "jk-bench-dind".into(),
+                    "jk-bench-certs".into(),
+                    "jk-bench-net".into(),
+                    PathBuf::from("/tmp/jackin-bench-sock"),
+                );
+                // Real suite A helper used by run_launch_core on grant failure.
+                cleanup_after_grant_failure(&cleanup, &docker).await;
+                let recorded = docker.recorded.borrow();
+                assert!(
+                    recorded
+                        .iter()
+                        .any(|c| c == "docker rm -f jk-bench-dind"),
+                    "LoadCleanup::run must record DinD rm via FakeDocker; got {recorded:?}"
+                );
+                assert!(
+                    recorded
+                        .iter()
+                        .any(|c| c == "docker network rm jk-bench-net"),
+                    "LoadCleanup::run must record network rm; got {recorded:?}"
+                );
+                black_box(recorded.len());
+            });
         });
     });
 

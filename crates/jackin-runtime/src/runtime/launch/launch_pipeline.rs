@@ -15,7 +15,7 @@ use crate::runtime::naming::{image_name, image_name_for_branch};
 use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 mod launch_core;
-mod launch_phases;
+pub(super) mod launch_phases;
 
 pub(super) struct DeferredGitPull {
     handle: tokio::task::JoinHandle<Vec<super::git_pull::GitPullResult>>,

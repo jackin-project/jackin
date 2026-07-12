@@ -1,27 +1,26 @@
 //! Daemon port seams for control, attach, status, and persistence.
 //!
-//! These thin traits document the module boundaries used by characterization
-//! tests and the proptest-style session state-machine sim (R-daemon-decomp /
-//! R-sim-turmoil). Production code continues to call concrete Multiplexer
-//! methods; the traits exist so tests can inject fakes at phase boundaries
-//! without standing up the full select-loop.
+//! Production code calls these pure decision helpers at the real Multiplexer
+//! boundaries (control replies, Hello takeover, codename retirement, last-
+//! session exit). Characterization tests exercise those call sites.
 
-/// Control-channel port: one-shot status / usage / runtime-event replies.
+/// Control-channel decisions for one-shot status / runtime-event replies.
 pub(crate) trait ControlPort {
-    /// Whether a control request for `session_id` should ACK without mutation.
-    fn control_acks_unknown_session(&self, session_id: &str) -> bool;
+    /// Whether an unknown session still receives an ACK (agent hooks must
+    /// never block; unknown session is logged, not failed).
+    fn should_ack_unknown_session_runtime_event(&self, session_known: bool) -> bool;
 }
 
 /// Attach lifecycle: single active client; Hello displaces the previous client.
 pub(crate) trait AttachPort {
-    /// True when a second Hello must displace the current attach client.
+    /// True when an incoming Hello must displace an already-attached client.
     fn should_displace_on_hello(&self, has_active_client: bool) -> bool;
 }
 
 /// Status publication surface (tab labels, session list).
 pub(crate) trait StatusPort {
-    /// True when an exited session should retire its codename from labels.
-    fn should_retire_codename_on_exit(&self, remaining_live: usize) -> bool;
+    /// True when removing an exited session should retire its codename.
+    fn should_retire_codename_on_exit(&self, remaining_live_sessions: usize) -> bool;
 }
 
 /// Persistence / reattach decisions after last-session exit.
@@ -30,27 +29,27 @@ pub(crate) trait PersistencePort {
     fn defer_last_session_exit(&self, dialog_open: bool) -> bool;
 }
 
-/// Default production-shaped port implementations (pure rules).
+/// Default production-shaped port implementations (INV rules).
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct DefaultDaemonPorts;
 
 impl ControlPort for DefaultDaemonPorts {
-    fn control_acks_unknown_session(&self, session_id: &str) -> bool {
-        !session_id.is_empty()
+    fn should_ack_unknown_session_runtime_event(&self, _session_known: bool) -> bool {
+        // INV-D12: always ACK so agent hooks never block on control.
+        true
     }
 }
 
 impl AttachPort for DefaultDaemonPorts {
     fn should_displace_on_hello(&self, has_active_client: bool) -> bool {
+        // INV-D1: at most one attach client; Hello displaces when one is live.
         has_active_client
     }
 }
 
 impl StatusPort for DefaultDaemonPorts {
-    fn should_retire_codename_on_exit(&self, remaining_live: usize) -> bool {
-        // Always retire the exited session's label; remaining_live is for
-        // last-session drain classification (INV-D8 / INV-D19).
-        let _ = remaining_live;
+    fn should_retire_codename_on_exit(&self, _remaining_live_sessions: usize) -> bool {
+        // INV-D8: always retire the exited session's codename so labels update.
         true
     }
 }
@@ -61,60 +60,8 @@ impl PersistencePort for DefaultDaemonPorts {
     }
 }
 
-/// Minimal session lifecycle state machine for the proptest-style sim lane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SessionSmState {
-    /// No sessions; daemon idle / may exit.
-    Empty,
-    /// At least one live session.
-    Live { count: usize },
-    /// Last session exited; dirty-exit dialog may be open.
-    Draining { dialog_open: bool },
-    /// Daemon exit requested.
-    Exited,
-}
-
-/// Events that drive the session lifecycle SM.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SessionSmEvent {
-    SessionSpawned,
-    SessionExited,
-    DialogOpened,
-    DialogClosed,
-    DrainCompleted,
-}
-
-/// Step the session lifecycle SM (deterministic; used by sim tests).
-pub(crate) fn session_sm_step(state: SessionSmState, event: SessionSmEvent) -> SessionSmState {
-    match (state, event) {
-        (SessionSmState::Empty, SessionSmEvent::SessionSpawned) => {
-            SessionSmState::Live { count: 1 }
-        }
-        (SessionSmState::Live { count }, SessionSmEvent::SessionSpawned) => {
-            SessionSmState::Live { count: count + 1 }
-        }
-        (SessionSmState::Live { count: 1 }, SessionSmEvent::SessionExited) => {
-            SessionSmState::Draining { dialog_open: false }
-        }
-        (SessionSmState::Live { count }, SessionSmEvent::SessionExited) if count > 1 => {
-            SessionSmState::Live { count: count - 1 }
-        }
-        (SessionSmState::Draining { .. }, SessionSmEvent::DialogOpened) => {
-            SessionSmState::Draining { dialog_open: true }
-        }
-        (SessionSmState::Draining { dialog_open: true }, SessionSmEvent::DialogClosed) => {
-            SessionSmState::Draining { dialog_open: false }
-        }
-        (SessionSmState::Draining { dialog_open: false }, SessionSmEvent::DrainCompleted) => {
-            SessionSmState::Exited
-        }
-        // Defer drain while dialog open (INV-D19).
-        (SessionSmState::Draining { dialog_open: true }, SessionSmEvent::DrainCompleted) => {
-            SessionSmState::Draining { dialog_open: true }
-        }
-        (other, _) => other,
-    }
-}
+/// Production ports singleton used at call sites.
+pub(crate) const PORTS: DefaultDaemonPorts = DefaultDaemonPorts;
 
 #[cfg(test)]
 #[path = "ports/tests.rs"]

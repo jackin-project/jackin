@@ -725,18 +725,21 @@ impl<
 
         if self.active_tab == EditorTab::Auth && self.auth_selected_kind.is_some() {
             EditorEscapeKeyPlan::ClearAuthKind
-        } else if self.is_dirty() {
-            EditorEscapeKeyPlan::OpenSaveDiscard
         } else {
-            EditorEscapeKeyPlan::ReloadFromConfig
+            use crate::tui::screens::edit_save::{EditSaveDisposition, plan_leave_when_dirty};
+            match plan_leave_when_dirty(self.is_dirty()) {
+                EditSaveDisposition::ConfirmDiscard => EditorEscapeKeyPlan::OpenSaveDiscard,
+                EditSaveDisposition::Noop | EditSaveDisposition::SaveNow => {
+                    EditorEscapeKeyPlan::ReloadFromConfig
+                }
+            }
         }
     }
 
     #[must_use]
     pub fn save_key_plan(&self) -> EditorSaveKeyPlan {
-        use crate::tui::screens::edit_save::{EditSaveDisposition, plan_edit_save};
-        // Editor save-key never needs leave-confirm here; dirty alone means save.
-        match plan_edit_save(self.change_count() > 0, false) {
+        use crate::tui::screens::edit_save::{EditSaveDisposition, plan_explicit_save};
+        match plan_explicit_save(self.change_count() > 0) {
             EditSaveDisposition::Noop => EditorSaveKeyPlan::Noop,
             EditSaveDisposition::SaveNow | EditSaveDisposition::ConfirmDiscard => {
                 EditorSaveKeyPlan::BeginSave
