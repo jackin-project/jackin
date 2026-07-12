@@ -413,16 +413,17 @@ pub(super) async fn handle(
             // exist. Connecting first ensures the daemon is reachable
             // before we query it; skip the connection entirely when there
             // is nothing to check (common in fresh or test environments).
+            let wn = WorkspaceName::parse(&name).map_err(anyhow::Error::from)?;
             let has_records = jackin_runtime::isolation::state::list_records_for_workspace(
                 &paths.data_dir,
-                &name,
+                &wn,
             )
             .is_ok_and(|r| !r.is_empty());
             let detection = if has_records {
                 let docker = connect_docker()?;
                 jackin_runtime::runtime::drift::detect_workspace_edit_drift(
                     paths,
-                    &name,
+                    &wn,
                     &prospective_mounts,
                     &docker,
                 )

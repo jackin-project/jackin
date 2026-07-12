@@ -658,9 +658,11 @@ pub(super) mod workspace_save {
         jackin_tui::runtime::spawn_named_async_subscription("jackin-drift-check", async move {
             async {
                 let docker = jackin_docker::docker_client::BollardDockerClient::connect()?;
+                let wn = jackin_core::WorkspaceName::parse(&workspace_name)
+                    .map_err(anyhow::Error::from)?;
                 jackin_runtime::runtime::drift::detect_workspace_edit_drift(
                     &paths,
-                    &workspace_name,
+                    &wn,
                     &prospective_mounts,
                     &docker,
                 )
