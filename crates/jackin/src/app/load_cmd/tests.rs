@@ -1,5 +1,4 @@
 use super::{docker_startup_error, take_post_console_config};
-use anyhow::Context as _;
 use jackin_config::AppConfig;
 use jackin_config::schema::{MountConfig, WorkspaceConfig};
 use jackin_core::JackinPaths;
@@ -9,8 +8,9 @@ use tempfile::tempdir;
 
 #[test]
 fn docker_startup_error_includes_visible_detail() {
-    let error = anyhow::anyhow!("connect to Docker host unix:///tmp/missing.sock")
-        .context("failed to connect to Docker daemon");
+    let error = anyhow::anyhow!(
+        "failed to connect to Docker daemon: connect to Docker host unix:///tmp/missing.sock"
+    );
 
     let (title, message) = docker_startup_error(&error);
 
