@@ -78,5 +78,10 @@ requires_all = ["rush"]
 forbids_any = ["connecting", "waiting", "streaming", "running tools", "exploring"]
 line_regex = ["╰"]
 
-# Removed bare `>` idle (plan 007): single-character prompts false-positive on
-# many working screens; ready-footer / ready-text / startup-welcome cover idle.
+[[rule]]
+id = "arrow-prompt"
+state = "idle"
+priority = 490
+region = "last_nonempty_line"
+strength = "strong"
+requires_all = [">"]
