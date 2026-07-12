@@ -52,10 +52,16 @@ pub fn control_reply_for_request(mux: &mut Multiplexer, msg: ClientMsg) -> Serve
             source_id,
             runtime,
             event,
-            payload: _,
+            payload,
         } => {
             if let Some(session) = mux.sessions.get_mut(&session_id) {
-                session.apply_runtime_event(&source_id, &runtime, &event, Instant::now());
+                session.apply_runtime_event(
+                    &source_id,
+                    &runtime,
+                    &event,
+                    payload.as_deref(),
+                    Instant::now(),
+                );
             } else {
                 crate::cdebug!("agent-status: runtime event for unknown session {session_id}");
             }

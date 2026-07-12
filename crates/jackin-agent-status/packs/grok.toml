@@ -53,3 +53,11 @@ region = "bottom:24"
 strength = "strong"
 requires_all = ["turn completed", "grok build", "always-approve"]
 line_regex = ["│\\s*❯"]
+
+[[rule]]
+id = "approval-prompt"
+state = "blocked"
+priority = 900
+region = "bottom:24"
+strength = "strong"
+requires_all = ["needs your approval", "approve"]

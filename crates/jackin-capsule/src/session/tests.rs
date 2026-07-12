@@ -851,7 +851,7 @@ fn opencode_event_sets_complete_authority() {
     use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "permission.asked", now);
+    session.apply_runtime_event("hook-opencode-1", "opencode", "permission.asked", None, now);
     let a = session.authority.as_ref().expect("authority set");
     assert_eq!(a.source_id, "hook-opencode-1");
     assert_eq!(a.mapped_state, RawAgentState::Blocked);
@@ -864,7 +864,7 @@ fn claude_event_never_sets_authority() {
     // Decision 0a: Claude/Codex are identity-only; their events never produce
     // a semantic authority — state comes from the screen pack + watchdog.
     let mut session = test_session_with_policy(OscPolicy::default());
-    session.apply_runtime_event("hook-claude-1", "claude", "Stop", std::time::Instant::now());
+    session.apply_runtime_event("hook-claude-1", "claude", "Stop", None, std::time::Instant::now());
     assert!(session.authority.is_none());
 }
 
@@ -876,6 +876,7 @@ fn claude_notification_permission_sets_partial_authority() {
         "hook-claude-1",
         "claude",
         "Notification:permission_prompt",
+        None,
         std::time::Instant::now(),
     );
     let a = session.authority.as_ref().expect("authority set");
@@ -894,6 +895,7 @@ fn codex_app_server_event_sets_complete_authority() {
         "app-server-codex-1",
         "codex-app-server",
         "turn/started",
+        None,
         std::time::Instant::now(),
     );
     let a = session.authority.as_ref().expect("authority set");
@@ -907,9 +909,9 @@ fn codex_app_server_event_sets_complete_authority() {
 fn clear_event_drops_authority_for_source() {
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", now);
+    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", None, now);
     assert!(session.authority.is_some());
-    session.apply_runtime_event("hook-opencode-1", "opencode", "session.error", now);
+    session.apply_runtime_event("hook-opencode-1", "opencode", "session.error", None, now);
     assert!(session.authority.is_none());
 }
 
@@ -919,8 +921,8 @@ fn clear_from_other_source_leaves_authority() {
     // source guard keeps one reporter from clearing another's state.
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", now);
-    session.apply_runtime_event("hook-opencode-2", "opencode", "session.error", now);
+    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", None, now);
+    session.apply_runtime_event("hook-opencode-2", "opencode", "session.error", None, now);
     let a = session.authority.as_ref().expect("authority survives");
     assert_eq!(a.source_id, "hook-opencode-1");
 }
@@ -930,7 +932,7 @@ fn heartbeat_from_other_source_does_not_refresh_last_event() {
     use std::time::Duration;
     let mut session = test_session_with_policy(OscPolicy::default());
     let t0 = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", t0);
+    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", None, t0);
     let original = session.authority.as_ref().unwrap().last_event;
     // A heartbeat (claude lifecycle event) from a different source must not
     // refresh source-1's freshness, or a stale authority could outlive its TTL.
@@ -938,6 +940,7 @@ fn heartbeat_from_other_source_does_not_refresh_last_event() {
         "hook-claude-9",
         "claude",
         "PreToolUse",
+        None,
         t0 + Duration::from_secs(5),
     );
     assert_eq!(session.authority.as_ref().unwrap().last_event, original);
@@ -947,7 +950,7 @@ fn heartbeat_from_other_source_does_not_refresh_last_event() {
 fn amp_event_sets_partial_authority() {
     use crate::agent_status::evidence::AuthorityGrade;
     let mut session = test_session_with_policy(OscPolicy::default());
-    session.apply_runtime_event("hook-amp-1", "amp", "tool-start", std::time::Instant::now());
+    session.apply_runtime_event("hook-amp-1", "amp", "tool-start", None, std::time::Instant::now());
     let a = session.authority.as_ref().expect("amp authority set");
     // amp has partial lifecycle coverage, so it cannot author at full confidence.
     assert_eq!(a.grade, AuthorityGrade::Partial);
@@ -1014,6 +1017,7 @@ fn clear_runtime_authority_drops_state_and_counters() {
         "hook-opencode-1",
         "opencode",
         "permission.asked",
+        None,
         std::time::Instant::now(),
     );
     assert!(session.authority.is_some());
@@ -1416,4 +1420,22 @@ async fn read_error_breaks_without_exited_event() {
         event_rx.try_recv().is_err(),
         "read error must not emit Exited (reaper is authoritative)"
     );
+}
+
+
+#[test]
+fn bare_claude_notification_payload_authors_authority() {
+    use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event(
+        "hook-claude-1",
+        "claude",
+        "Notification",
+        Some(r#"{"notification_type":"permission_prompt"}"#),
+        std::time::Instant::now(),
+    );
+    let a = session.authority.as_ref().expect("authority set from payload subtype");
+    assert_eq!(a.mapped_state, RawAgentState::Blocked);
+    assert!(a.pending_permission);
+    assert_eq!(a.grade, AuthorityGrade::Partial);
 }

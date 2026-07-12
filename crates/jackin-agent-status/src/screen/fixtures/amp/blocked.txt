@@ -1,5 +1,7 @@
+# provenance: jackin-authored synthetic chrome for harness (no live capture yet)
 
   Amp wants to execute a shell command:
   ls -la /
 
   Allow?  esc to cancel
+  [y] yes   [n] no

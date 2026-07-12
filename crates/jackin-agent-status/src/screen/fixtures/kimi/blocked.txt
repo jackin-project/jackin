@@ -1,6 +1,9 @@
+# provenance: jackin-authored synthetic chrome for harness (no live capture yet)
 
-  Kimi wants permission:
-
-  approve once
-  approve for session
-  reject
+  ╭──────────────────────────────────────────────╮
+  │ Kimi wants permission:                        │
+  │   Read /workspace/src/main.rs                 │
+  │                                               │
+  │   [1] approve once                            │
+  │   [2] approve for session                     │
+  ╰──────────────────────────────────────────────╯

@@ -824,13 +824,23 @@ impl Session {
         source_id: &str,
         runtime: &str,
         event: &str,
+        payload: Option<&str>,
         now: std::time::Instant,
     ) {
         use crate::agent_status::evidence::AuthorityEvidence;
-        use crate::agent_status::gating::{GateEffect, RuntimeEvent, map_event};
+        use crate::agent_status::gating::{
+            GateEffect, RuntimeEvent, enrich_event_name, map_event,
+        };
 
+        let enriched = enrich_event_name(runtime, event, payload);
         let gate = self.gate_states.entry(source_id.to_owned()).or_default();
-        let effect = map_event(&RuntimeEvent { runtime, event }, gate);
+        let effect = map_event(
+            &RuntimeEvent {
+                runtime,
+                event: enriched.as_str(),
+            },
+            gate,
+        );
         let refresh_matching = |authority: &mut Option<AuthorityEvidence>| {
             if let Some(a) = authority
                 && a.source_id == source_id

@@ -1,4 +1,7 @@
+# provenance: jackin-authored synthetic chrome for harness (no live capture yet)
 
   OpenCode ready.
 
-  > [input box visible]
+  ┌────────────────────────────────────────────┐
+  │ > [input box visible]                      │
+  └────────────────────────────────────────────┘

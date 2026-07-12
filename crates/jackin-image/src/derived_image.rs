@@ -60,6 +60,10 @@ const AGENT_STATUS_ASSETS: &[(&str, &str)] = &[
         "packs/opencode.toml",
         include_str!("../../jackin-agent-status/packs/opencode.toml"),
     ),
+    (
+        "packs/grok.toml",
+        include_str!("../../jackin-agent-status/packs/grok.toml"),
+    ),
 ];
 const ZSHENV_SOURCE_SHIM_PATH: &str = ".jackin-runtime/zshenv-source-shim";
 const ZSH_TITLE_SHIM_PATH: &str = ".jackin-runtime/zsh-title-shim";
