@@ -1,41 +1,30 @@
-# Goal: close remaining plan residuals
+# Goal: remaining substantial plan work only
 
-> **2026-07-12 deep audit:** Fully implemented plans were **removed** from `plans/`.  
-> What remains is residual-only tracking (not a re-execution of DONE work).
+Fully implemented plan files are **gone**. Do not re-create them.
 
-## Remaining work (authoritative)
+## Still open (substantial)
 
-### 1. Agent-status product residuals
+### A. Agent-status product bar (`plans/agent-status/`)
 
-| Plan | Open work |
-|------|-----------|
-| **005 / 007** | Replace remaining synthetic fixtures; full per-agent live blocked/working/idle goldens + pack rewrite; drop fabricated kimi/amp/opencode literals |
-| **006** | Live grok blocked capture (bake already shipped) |
-| **009 / 009b** | Live Notification wait-edge validation (production enrich already shipped) |
-| **009a** | Production Codex app-server status reader (pure map + feature tests only today) |
-| **010** | Live remote signed pack publish/fetch + launch-summary consent (local verifier already production) |
+1. **005 + 007** — Live per-agent blocked/working/idle goldens; rewrite fabricated pack strings (kimi/amp/opencode/…); anti-circular fixtures only.
+2. **006** — Live grok blocked capture (pack bake already shipped).
+3. **009a** — Production Codex app-server → status authority reader (not feature-gated tests only).
+4. **009 / 009b** — Live Notification wait-edge validation (production enrich already shipped).
+5. **010** — Live remote signed pack channel + operator launch-summary consent (local verifier already production).
 
-### 2. Launch-speed residual
+### B. Code-health multi-PR (`plans/code-health/RESIDUAL_LEDGER.md`)
 
-| Item | Open work |
-|------|-----------|
-| **008c** | Unselected-empty early scan stash; optional inspect-count integration test |
+1. LaunchCore extract → typestate + suite A characterization + full launch-pipeline bench  
+2. Daemon decomp → char remainder → turmoil sim  
+3. WorkspaceLabel design (materialize dual-semantics + display)  
+4. Console edit-model convergence  
+5. Lint promote waves (`allow_attributes` floor 0, missing_docs cascade, 047 maintainability promote)  
+6. Perf platform budgets after benches stable  
 
-### 3. Code-health pinned residuals
+## Branch
 
-See [code-health/RESIDUAL_LEDGER.md](code-health/RESIDUAL_LEDGER.md) (23 pins). Highest-value executable next:
+`chore/rust-code-health-roadmap` (PR #759). Commit `-s`, push after every commit.
 
-1. R-038 WorkspaceLabel / materialize dual-semantics  
-2. R-launch-typestate + R-033-suite-a + R-daemon-decomp (LaunchCore / daemon extract)  
-3. R-047 maintainability promote wave (new census)  
-4. R-perf-budgets / dhat / iai after benches stable  
+## Explicitly not tracked as open plan work
 
-### Branch lock
-
-Stay on `chore/rust-code-health-roadmap` (PR #759). Commit `-s`, push after every commit.
-
-### Do not
-
-- Re-create removed fully-done plan files without new residual evidence  
-- Mark pinned residual CLOSED without source proof  
-- Copy herdr code or fixtures (AGPL)
+Micro polish (008c inspect counts, optional zero-copy scrollback row, optional db/docker metrics), intentional product pins (accounts-only usage, no apple-container, Hello fail-closed), and all fully shipped plan bodies.

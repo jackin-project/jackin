@@ -1,25 +1,33 @@
-# Implementation Plans
+# Implementation Plans — unfinished work only
 
-Only **residual** plan work remains under `plans/`. Fully implemented plans were removed after deep source verification on PR #759 (`chore/rust-code-health-roadmap`, 2026-07-12).
+Fully accomplished plans were **removed**. This tree tracks only work that is still open and large enough for a real PR.
 
-## How to read this tree
+## Active residual work
 
-| Folder | What remains | SoT for multi-PR pins |
-|--------|--------------|----------------------|
-| **code-health/** | Plan files with honest residual only + [RESIDUAL_LEDGER.md](code-health/RESIDUAL_LEDGER.md) | Residual ledger |
-| **agent-status/** | Live goldens / pack rewrite / authority / remote packs | Plan files themselves |
-| **launch-speed/** | 008c early-restore residual (micro-optimization + test depth) | README |
+### 1. `agent-status/` — product detection bar (largest open product work)
 
-Removed folders / fully-done plan sets (evidence lives in git history + code):
+| Plan | Open work |
+|------|-----------|
+| [005](agent-status/005-pack-reality-coupling.md) | Full live goldens; kill synthetic/circular fixtures |
+| [006](agent-status/006-detector-exhaustiveness-and-grok.md) | Live grok **blocked** capture |
+| [007](agent-status/007-pack-content-rewrite.md) | Rewrite fabricated pack literals from real chrome |
+| [009](agent-status/009-semantic-authority-spike.md) / [009a](agent-status/009a-codex-app-server-authority.md) / [009b](agent-status/009b-claude-notification-authority.md) | Live authority validation; **production Codex app-server status reader** |
+| [010](agent-status/010-out-of-band-pack-updates.md) | Live remote signed pack publish/fetch |
 
-- **tui-review/** — 001 scroll hit geometry fully shipped
-- **agent-status** 001–004, 008, 011 — structural layers fully shipped
-- **code-health** ~55 plans — primary Done criteria met with no plan-scoped residual
+Structural layers 001–004, 008, 011 are **done** (removed).
 
-## Residual open work (summary)
+### 2. `code-health/` — multi-PR engineering residuals only
 
-1. **Agent-status product bar** — full per-agent live goldens + pack rewrite (005/007); grok blocked live (006); live Notification validation (009b); live Codex app-server reader (009a); remote pack publish (010).
-2. **Code-health multi-PR pins** — see residual ledger (LaunchCore typestate, daemon decomp, WorkspaceLabel, lint promote, perf budgets, …).
-3. **Launch-speed 008c** — unselected-empty scan reuse + inspect-count integration test depth.
+No numbered plan files. SoT: [code-health/RESIDUAL_LEDGER.md](code-health/RESIDUAL_LEDGER.md) (LaunchCore typestate, daemon decomp, WorkspaceLabel, lint promote, console edit-model, perf platform).
 
-Program close-out notes: [GOAL-CLOSE-ALL-REMAINING.md](GOAL-CLOSE-ALL-REMAINING.md) (historical; program complete except residuals above).
+## Removed entirely (no residual folder)
+
+| Former folder / set | Why gone |
+|---------------------|----------|
+| `tui-review/` | 001 fully shipped |
+| `launch-speed/` | 001–008g shipped; 008c leftover was micro-polish only |
+| code-health 003–069 plan bodies | Primary Done criteria shipped |
+
+## Goal note
+
+[GOAL-CLOSE-ALL-REMAINING.md](GOAL-CLOSE-ALL-REMAINING.md) lists only the residual work above.
