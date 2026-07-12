@@ -20,30 +20,41 @@ use crate::migrations;
 use crate::persist::{atomic_write, validate_workspace_file_stem};
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
+/// Which env map a setter/remover targets in the config tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvScope {
+    /// Top-level `[env]` in `config.toml`.
     Global,
+    /// Top-level `[github.env]` in `config.toml`.
     GlobalGithub,
+    /// `[roles.<name>.env]` in `config.toml`.
     Role(String),
+    /// `[env]` inside a split workspace file.
     Workspace(String),
+    /// `[roles.<role>.env]` inside a split workspace file.
     WorkspaceRole {
+        /// Workspace file stem.
         workspace: String,
+        /// Role key under that workspace.
         role: String,
     },
     /// `[github.env]` inside the workspace file — the github-kind env
     /// block, parallel to the regular workspace `env` map but read by
-    /// [`build_github_env_layers`] instead of the regular launch-time
+    /// [`crate::build_github_env_layers`] instead of the regular launch-time
     /// env merge. Used to thread `GH_TOKEN` / `GH_HOST` /
     /// `GH_ENTERPRISE_TOKEN` without polluting the agent-facing env map.
     WorkspaceGithub(String),
     /// `[roles.<role>.github.env]` inside the workspace file — most
     /// specific layer of the github env layering.
     WorkspaceRoleGithub {
+        /// Workspace file stem.
         workspace: String,
+        /// Role key under that workspace.
         role: String,
     },
 }
 
+/// Comment-preserving mutator for `config.toml` and split workspace files.
 #[derive(Debug)]
 pub struct ConfigEditor {
     doc: DocumentMut,
@@ -126,6 +137,7 @@ impl ConfigEditor {
         Ok(config)
     }
 
+    /// Set an env key at `scope` (plain string, op ref, or extended value).
     pub fn set_env_var(
         &mut self,
         scope: &EnvScope,
@@ -173,6 +185,7 @@ impl ConfigEditor {
         Ok(())
     }
 
+    /// Set or clear the TOML key prefix comment for an env entry (no-op if missing).
     pub fn set_env_comment(&mut self, scope: &EnvScope, key: &str, comment: Option<&str>) {
         let (doc, path) = self.doc_and_path_for_env_scope(scope);
         // Walk without creating — setting a comment on a nonexistent key
@@ -275,6 +288,7 @@ impl ConfigEditor {
         }
     }
 
+    /// Write or clear `[roles.<agent_key>].trusted`.
     pub fn set_agent_trust(&mut self, agent_key: &str, trusted: bool) {
         let table = table_path_mut(&mut self.doc, &["roles".to_owned(), agent_key.to_owned()]);
         if trusted {
@@ -304,18 +318,22 @@ impl ConfigEditor {
         table.insert("auth_forward", toml_edit::value(github_mode_str(mode)));
     }
 
+    /// Set a key under global `[github.env]`.
     pub fn set_global_github_env_var(&mut self, key: &str, value: EnvValue) -> anyhow::Result<()> {
         self.set_env_var(&EnvScope::GlobalGithub, key, value)
     }
 
+    /// Remove a key from global `[github.env]`; returns whether it existed.
     pub fn remove_global_github_env_var(&mut self, key: &str) -> bool {
         self.remove_env_var(&EnvScope::GlobalGithub, key)
     }
 
+    /// Enable or clear `[git].coauthor_trailer`.
     pub fn set_git_coauthor_trailer(&mut self, enabled: bool) {
         self.set_git_bool_field("coauthor_trailer", enabled);
     }
 
+    /// Enable or clear `[git].dco`.
     pub fn set_git_dco(&mut self, enabled: bool) {
         self.set_git_bool_field("dco", enabled);
     }
@@ -453,6 +471,7 @@ impl ConfigEditor {
         }
     }
 
+    /// Ensure a built-in role has the expected `git` URL and `trusted = true`.
     pub fn upsert_builtin_agent(&mut self, agent_key: &str, git_url: &str) {
         // Touch only git + trusted. Leave [roles.X.env] alone —
         // operator-owned.
@@ -479,6 +498,7 @@ impl ConfigEditor {
         }
     }
 
+    /// Remove an env key at `scope`; prunes empty parent tables. Returns whether removed.
     pub fn remove_env_var(&mut self, scope: &EnvScope, key: &str) -> bool {
         let (doc, path) = self.doc_and_path_for_env_scope(scope);
         // Walk without creating: return false if any segment is missing.
@@ -504,6 +524,7 @@ impl ConfigEditor {
         removed
     }
 
+    /// Persist sticky `last_role` for a workspace (role key used last).
     pub fn set_last_agent(&mut self, workspace: &WorkspaceName, agent_key: &str) {
         let doc = self.workspace_doc_mut(workspace.as_str());
         let table = table_path_mut(doc, &[]);
@@ -540,6 +561,7 @@ impl ConfigEditor {
         Ok(())
     }
 
+    /// Mark a workspace for deletion on the next [`Self::save`].
     pub fn remove_workspace(&mut self, name: &WorkspaceName) -> anyhow::Result<()> {
         if self.workspace_docs.remove(name.as_str()).is_none() {
             return Err(ConfigError::WorkspaceNotFound(name.as_str().to_owned()).into());
@@ -548,6 +570,7 @@ impl ConfigEditor {
         Ok(())
     }
 
+    /// Validate and stage a new workspace document for the next [`Self::save`].
     pub fn create_workspace(
         &mut self,
         name: &WorkspaceName,
@@ -578,6 +601,7 @@ impl ConfigEditor {
         Ok(())
     }
 
+    /// Apply a [`WorkspaceEdit`] via in-memory validation, then replace the workspace doc.
     pub fn edit_workspace(
         &mut self,
         name: &WorkspaceName,

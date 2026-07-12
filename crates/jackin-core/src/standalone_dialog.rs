@@ -22,8 +22,10 @@ use crate::launch_progress::{PromptContextLine, WorktreeInspect};
 /// user-facing dialog; the underlying render impl is owned by
 /// `jackin_launch_tui`.
 pub trait StandaloneDialogSink: Send + Sync + std::fmt::Debug {
+    /// Show a one-shot error popup with `title` and `message`.
     fn error_popup(&self, title: &str, message: &str) -> anyhow::Result<()>;
 
+    /// Show the exit dialog with inspect support; returns the chosen option index.
     fn exit_dialog_with_inspect(
         &self,
         title: &str,

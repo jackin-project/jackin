@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 /// Production code holds a `Clock` (often `Arc<dyn Clock>`) so tests can
 /// substitute [`ManualClock`] and advance time without sleeping.
 pub trait Clock: Send + Sync + std::fmt::Debug {
+    /// Current instant according to this clock.
     fn now(&self) -> Instant;
 }
 
@@ -36,6 +37,7 @@ pub struct ManualClock {
 }
 
 impl ManualClock {
+    /// Create a manual clock starting at an arbitrary epoch (offset zero).
     pub fn new() -> Self {
         Self {
             base: Instant::now(),

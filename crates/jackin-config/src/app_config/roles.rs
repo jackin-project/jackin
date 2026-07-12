@@ -179,6 +179,7 @@ pub fn build_github_env_layers(
     merged
 }
 
+/// Built-in role name → git URL pairs shipped with the binary.
 pub const BUILTIN_ROLES: &[(&str, &str)] = &[
     (
         "agent-smith",
@@ -195,7 +196,8 @@ impl AppConfig {
     ///
     /// Returns `(source, is_new)`. When `is_new` is `true` the source has been
     /// inserted into the in-memory config but **not** persisted — the caller
-    /// should call [`save`] after validating that the repository is reachable.
+    /// should call [`ConfigEditor::save`](crate::ConfigEditor::save) after
+    /// validating that the repository is reachable.
     pub fn resolve_role_source(
         &mut self,
         selector: &RoleSelector,
@@ -245,7 +247,7 @@ impl AppConfig {
 
     /// Revoke trust for a role source.  Returns `true` when the flag changed.
     /// Note: does not prevent revoking builtins — the caller should check
-    /// [`is_builtin_agent`] first.
+    /// [`Self::is_builtin_agent`] first.
     // pub(crate): test-only affordance; production callers use ConfigEditor.
     pub fn untrust_agent(&mut self, key: &str) -> bool {
         if let Some(source) = self.roles.get_mut(key)

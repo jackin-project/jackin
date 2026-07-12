@@ -23,7 +23,7 @@ pub async fn list_managed_role_names(docker: &impl DockerApi) -> anyhow::Result<
     list_role_names(docker, true).await
 }
 
-#[allow(clippy::redundant_pub_crate)]
+#[allow(clippy::redundant_pub_crate, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub async fn list_role_names(
     docker: &impl DockerApi,
     include_stopped: bool,

@@ -272,7 +272,7 @@ fn untested_large(root: &Path, counts: &BTreeMap<PathBuf, usize>) -> Vec<FileLin
     out
 }
 
-/// Parse `#[allow(...)]` / `#[expect(...)]` (and inner `#!` forms) from source.
+/// Parse `#[allow(..., reason = "documented residual allow; prefer expect when site is lint-true")]` / `#[expect(...)]` (and inner `#!` forms) from source.
 ///
 /// Returns `(is_allow, lint_names, has_reason)` per attribute.
 pub(crate) fn parse_suppression_attrs(source: &str) -> Vec<(bool, Vec<String>, bool)> {

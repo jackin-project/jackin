@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_lines)]
+#![allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 //! Launch cockpit input handling.
 
 use std::sync::{Arc, Mutex};

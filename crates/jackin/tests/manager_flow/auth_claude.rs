@@ -45,7 +45,7 @@ use super::*;
 // separately) but the mode never reached disk; on reload, the resolver
 // fell back to the global default and ignored the freshly-written key.
 #[test]
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());

@@ -86,7 +86,7 @@ pub async fn run(args: &StatusArgs, paths: &JackinPaths) -> anyhow::Result<()> {
 
 // ── Level 0 — workspace summary ─────────────────────────────────────────────
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 async fn run_level0(
     args: &StatusArgs,
     paths: &JackinPaths,
@@ -336,7 +336,7 @@ async fn run_level1(
 
 // ── Level 2 — full instance detail ───────────────────────────────────────────
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 async fn run_level2(
     workspace: &str,
     instance_id: &str,
@@ -359,7 +359,7 @@ async fn run_level2(
     let is_running = matches!(state, ContainerState::Running);
 
     // Fetch agents registry (only when running).
-    #[allow(clippy::option_if_let_else)]
+    #[allow(clippy::option_if_let_else, reason = "documented residual allow; prefer expect when site is lint-true")]
     let agents_json: Option<Vec<jackin_protocol::control::AgentRegistryEntry>> = if is_running {
         match docker
             .exec_capture(container_name, &["sh", "-c", JACKIN_AGENTS_CMD])

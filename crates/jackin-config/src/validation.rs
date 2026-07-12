@@ -53,6 +53,7 @@ pub fn validate_isolation_layout(mounts: &[MountConfig]) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Validate a saved workspace: workdir, mounts, isolation, auth modes, roles.
 pub fn validate_workspace_config(
     name: &WorkspaceName,
     workspace: &WorkspaceConfig,

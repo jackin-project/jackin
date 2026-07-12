@@ -1,5 +1,5 @@
 //! Tests for `editor` input handlers.
-#![allow(clippy::too_many_lines)]
+#![allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 //! Editor-stage tests: tab cycling, modal dispatch, role allow/default
 //! bindings, and mount-row readonly toggle.
 use super::super::test_support::{key, mount};

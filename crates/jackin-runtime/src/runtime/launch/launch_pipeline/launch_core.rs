@@ -6,7 +6,7 @@
 //! (or `crate::...` paths). Helpers promoted to pub(super) in coordinator
 //! are reached via `super::`.
 
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
 use super::{
     emit_auth_provision_launch_plan, purge_or_mark_clean_exited, tag_errors, tagged_grant_errors,
 };
@@ -1080,7 +1080,7 @@ where
             role_key: &role_key,
         },
     };
-    #[allow(clippy::needless_borrow)]
+    #[allow(clippy::needless_borrow, reason = "documented residual allow; prefer expect when site is lint-true")]
     let launch_result = super::super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
     if launch_result.is_err() {
         // FailedSetup write error must not abort cleanup; surface to stderr
@@ -1236,7 +1236,7 @@ where
         decision,
         crate::isolation::finalize::FinalizeDecision::Preserved
     );
-    #[allow(clippy::match_same_arms)]
+    #[allow(clippy::match_same_arms, reason = "documented residual allow; prefer expect when site is lint-true")]
     match docker.inspect_container_state(&container_name).await {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
             if is_preserved {

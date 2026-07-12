@@ -34,6 +34,7 @@ pub struct OpCli {
 }
 
 impl OpCli {
+    /// Default runner: `op` binary, 30s timeout, default-account context.
     pub fn new() -> Self {
         Self {
             binary: OP_DEFAULT_BIN.to_owned(),
@@ -82,6 +83,7 @@ impl OpCli {
         }
     }
 
+    /// Runner pinned to a custom `op` binary path (default timeout).
     pub const fn with_binary(binary: String) -> Self {
         Self {
             binary,

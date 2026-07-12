@@ -3,6 +3,8 @@
 //! **Architecture Invariant:** T0.
 //! Entry point: [`DamageGrid`] — terminal grid with damage tracking.
 
+#![deny(missing_docs)]
+
 pub mod cell;
 pub mod damage;
 pub mod grid;

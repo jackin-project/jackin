@@ -32,7 +32,7 @@ const ATTACH_POLL_MS: u64 = 500;
 /// Print the session contract — the security boundary summary shown to the
 /// operator before the interactive attach begins, so they see the isolation
 /// model and residual risks before the session starts.
-#[allow(clippy::print_stderr)]
+#[allow(clippy::print_stderr, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub fn print_session_contract(
     container_name: &str,
     image: &str,
@@ -75,7 +75,7 @@ pub fn print_session_contract(
 
 /// DNS health check — an `nslookup` probe run after attach returns. macOS
 /// sleep/wake can drop DNS inside the VM; surface a "reconnect" hint if affected.
-#[allow(clippy::print_stderr)]
+#[allow(clippy::print_stderr, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub async fn check_dns(container_name: &str) {
     let result = tokio::process::Command::new("container")
         .args([
@@ -211,7 +211,7 @@ pub struct AppleContainerLaunch<'a> {
 ///
 /// Called from `load_role_with` after the image build step when the resolved
 /// backend is `"apple-container"`.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub async fn launch(args: AppleContainerLaunch<'_>) -> Result<()> {
     let AppleContainerLaunch {
         paths,

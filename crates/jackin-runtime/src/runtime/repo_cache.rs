@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_lines)]
+#![allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 //! Role-repo resolution: clone or update from git, validate, cache under `~/.jackin/roles/`.
 //!
 //! Typed errors (`RepoError`) allow callers to downcast and produce

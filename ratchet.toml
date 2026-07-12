@@ -45,87 +45,9 @@ id = "bare-allow-per-crate"
 kind = "numeric"
 provider = "bare_allow_per_crate"
 # cap = 0 → every nonzero bare-allow crate must be listed (no unlisted debt).
+# 2026-07-12: all crates at measured 0 — no grandfather rows.
 cap = 0
 mode = "enforce"
-[[family.entry]]
-key = "jackin"
-bound = 13
-
-[[family.entry]]
-key = "jackin-capsule"
-bound = 12
-
-[[family.entry]]
-key = "jackin-config"
-bound = 4
-
-[[family.entry]]
-key = "jackin-console"
-bound = 77
-
-[[family.entry]]
-key = "jackin-console-oppicker"
-bound = 3
-
-[[family.entry]]
-key = "jackin-core"
-bound = 1
-
-[[family.entry]]
-key = "jackin-diagnostics"
-bound = 7
-
-[[family.entry]]
-key = "jackin-docker"
-bound = 1
-
-[[family.entry]]
-key = "jackin-env"
-bound = 3
-
-[[family.entry]]
-key = "jackin-image"
-bound = 2
-
-[[family.entry]]
-key = "jackin-instance"
-bound = 1
-
-[[family.entry]]
-key = "jackin-isolation"
-bound = 2
-
-[[family.entry]]
-key = "jackin-launch-tui"
-bound = 6
-
-[[family.entry]]
-key = "jackin-lints"
-bound = 1
-
-[[family.entry]]
-key = "jackin-protocol"
-bound = 1
-
-[[family.entry]]
-key = "jackin-runtime"
-bound = 27
-
-[[family.entry]]
-key = "jackin-term"
-bound = 5
-
-[[family.entry]]
-key = "jackin-tui"
-bound = 1
-
-[[family.entry]]
-key = "jackin-usage"
-bound = 26
-
-[[family.entry]]
-key = "jackin-xtask"
-bound = 2
 
 # Per-lint expect counts: key = "{lint}@{crate}" (see ratchet::expect_key).
 [[family]]

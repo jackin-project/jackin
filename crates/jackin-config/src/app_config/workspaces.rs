@@ -20,6 +20,7 @@ impl AppConfig {
         })
     }
 
+    /// Insert a new workspace after validation (prefer [`crate::ConfigEditor`] for disk writes).
     // pub(crate): ConfigEditor::create_workspace delegates here for validation;
     // external callers must go through ConfigEditor to ensure TOML preservation.
     pub fn create_workspace(
@@ -59,6 +60,7 @@ impl AppConfig {
         Ok(())
     }
 
+    /// Apply a [`WorkspaceEdit`] to a saved workspace (prefer [`crate::ConfigEditor`] for disk).
     // pub(crate): ConfigEditor::edit_workspace delegates here for validation;
     // external callers must go through ConfigEditor to ensure TOML preservation.
     pub fn edit_workspace(
@@ -184,6 +186,7 @@ impl AppConfig {
         Ok(())
     }
 
+    /// Remove a workspace from the in-memory map (prefer [`crate::ConfigEditor`] for disk).
     // pub(crate): production callers use ConfigEditor::remove_workspace (which
     // deletes the TOML table directly); this stays for the test in workspaces.rs
     // that validates the error message shape.
@@ -196,6 +199,7 @@ impl AppConfig {
             })
     }
 
+    /// All saved workspaces as `(name, config)` pairs.
     pub fn list_workspaces(&self) -> Vec<(&str, &WorkspaceConfig)> {
         self.workspaces
             .iter()
@@ -203,10 +207,12 @@ impl AppConfig {
             .collect()
     }
 
+    /// Insert or replace a workspace without validation (test / migration helpers).
     pub fn insert_workspace_raw(&mut self, name: &str, ws: WorkspaceConfig) {
         self.workspaces.insert(name.into(), ws);
     }
 
+    /// Run [`validate_workspace_config`] on every saved workspace.
     pub fn validate_workspaces(&self) -> anyhow::Result<()> {
         for (name, workspace) in &self.workspaces {
             let name = WorkspaceName::parse(name).map_err(anyhow::Error::from)?;

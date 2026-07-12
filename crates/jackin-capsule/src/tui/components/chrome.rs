@@ -290,7 +290,7 @@ impl Widget for DialogBottomChromeWidget<'_> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
 fn render_branch_bar_row(
     buf: &mut Buffer,
     area: Rect,

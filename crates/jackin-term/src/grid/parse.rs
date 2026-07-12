@@ -1,7 +1,8 @@
 //! CSI reconstruction + SGR color parsing helpers extracted from grid.rs.
-#[allow(unused_imports, clippy::wildcard_imports)]
+#[allow(unused_imports, clippy::wildcard_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
 use super::*;
 
+/// Rebuild a CSI sequence as bytes for passthrough or diagnostics.
 pub fn reconstruct_csi(params: &vte::Params, intermediates: &[u8], final_byte: u8) -> Vec<u8> {
     use std::io::Write as _;
     let mut buf = b"\x1b[".to_vec();
@@ -69,6 +70,7 @@ pub fn parse_sgr_color(current: &[u16], params: &[&[u16]], i: &mut usize) -> Opt
     }
 }
 
+/// Parse extended color from a flat SGR value list (`5;idx` or `2;r;g;b`).
 pub fn parse_sgr_color_values(values: &[u16]) -> Option<Color> {
     match values.first().copied()? {
         5 => values.get(1).map(|idx| Color::Idx((*idx).min(255) as u8)),

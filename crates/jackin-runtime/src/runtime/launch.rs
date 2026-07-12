@@ -236,7 +236,7 @@ pub(crate) use restore_resolve::{
 };
 
 mod launch_runtime;
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub(crate) use launch_runtime::{
     LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm,
     SidecarPrewarmReplenish, debug_runtime_envs, host_runtime_passthrough_env, launch_role_runtime,

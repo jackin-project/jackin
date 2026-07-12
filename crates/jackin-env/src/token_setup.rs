@@ -17,8 +17,8 @@
 //!    the workspace's `[claude]` block (`auth_forward = "oauth_token"`)
 //!    and `[env]` block (`CLAUDE_CODE_OAUTH_TOKEN = op://...`).
 //!
-//! Production callers use [`run_setup`]; tests inject mocks via
-//! [`run_setup_with_runner`].
+//! Production callers use [`run_setup`]; tests inject mocks via the
+//! crate-private `run_setup_with_runner` helper.
 //!
 //! Roadmap: `docs/src/content/docs/reference/roadmap/workspace-claude-token-setup.mdx`
 
@@ -111,7 +111,12 @@ pub enum TokenSetupScope {
     Workspace(String),
     /// Wire `[workspaces.<name>.roles.<role>]` claude auth + that role's
     /// env slot — a per-role override inside the workspace.
-    WorkspaceRole { workspace: String, role: String },
+    WorkspaceRole {
+        /// Workspace name.
+        workspace: String,
+        /// Role name within the workspace.
+        role: String,
+    },
     /// Wire the global `[claude]` auth + the global env slot.
     Global,
 }
@@ -140,7 +145,9 @@ impl TokenSetupScope {
 /// during the interactive `--interactive` token-setup path.
 #[derive(Debug, Clone)]
 pub struct EditExistingTarget {
+    /// Vault id holding the item.
     pub vault_id: String,
+    /// Item id to update.
     pub item_id: String,
     /// Which field to write: an exact existing field id (overwrite,
     /// placement preserved) or a new field by label (see [`FieldTarget`]).
@@ -154,6 +161,7 @@ pub struct EditExistingTarget {
 /// Outcome of one orchestrator run.
 #[derive(Debug, Clone)]
 pub struct TokenSetupReport {
+    /// Scope label (workspace name, or `global`).
     pub workspace: String,
     /// Probed `claude` CLI version. `None` on `--reuse` because the
     /// orchestrator does not invoke `claude` on that path.
@@ -162,8 +170,11 @@ pub struct TokenSetupReport {
     /// `None` for the plain-text path, where the token is stored as a
     /// literal in config and there is no op item to reference.
     pub op_ref: Option<OpRef>,
+    /// 1Password account id/email used when the ref was written, if known.
     pub op_account: Option<String>,
+    /// First characters of the SHA-256 of the minted or reused token.
     pub token_sha256_prefix: String,
+    /// Whether a new 1Password item was created (`false` on reuse/edit).
     pub created: bool,
     /// `YYYY-MM-DD` estimate of when the captured token will lapse.
     /// `None` for the `--reuse` path (jackin did not mint the token,
@@ -173,7 +184,7 @@ pub struct TokenSetupReport {
 
 /// Run the orchestrator end-to-end against production runners.
 ///
-/// Equivalent to calling [`run_setup_with_runner`] with
+/// Equivalent to the internal `run_setup_with_runner` path with
 /// `host_claude::capture_setup_token` and a freshly constructed
 /// `OpCli`. Tests inject mocks via the `_with_runner` form.
 pub fn run_setup(
@@ -275,7 +286,7 @@ struct MintOutcome {
 /// Takes the same injection seams as [`run_setup_with_runner`]: a
 /// pre-resolved Claude probe (`None` on `--reuse`), a capture closure,
 /// an [`OpRunner`] for read-back, and an [`OpWriteRunner`] for create.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 fn mint_token_value_with_runner<F>(
     paths: &JackinPaths,
     config: &AppConfig,
@@ -470,7 +481,7 @@ where
 /// The orchestrator's mutation path is gated behind these injection
 /// seams so the unit tests in this module never spawn `op` or
 /// `claude`.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub(crate) fn run_setup_with_runner<F>(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -670,10 +681,14 @@ pub(crate) fn run_revoke_with_runner(
     })
 }
 
+/// Outcome of a workspace Claude-token revoke run.
 #[derive(Debug, Clone)]
 pub struct RevokeReport {
+    /// Workspace that was revoked.
     pub workspace: String,
+    /// Whether the jackin-owned 1Password item was deleted.
     pub deleted_op_item: bool,
+    /// Whether a prior env slot value was cleared from config.
     pub cleared_slot: bool,
 }
 
@@ -683,18 +698,18 @@ pub struct RevokeReport {
 ///
 /// Without this, `jackin workspace claude-token rotate <ws>` (no
 /// `--vault`) — the documented default rotate flow — fails inside
-/// [`create_op_item`] AFTER the operator has already completed the
-/// PTY token capture, because `create_op_item` hard-errors when its
+/// item creation AFTER the operator has already completed the
+/// PTY token capture, because create hard-errors when its
 /// vault arg is `None`. The prior canonical slot stores a
 /// UUID-form `op://<vault_id>/<item_id>/<field_id>` URI, so the
-/// vault id round-trips through `create_op_item`'s vault arg
+/// vault id round-trips through the create vault arg
 /// without needing a separate name lookup.
 ///
 /// Returns `None` only when the CLI passed nothing AND the prior
 /// slot is absent or holds a literal (non-`op://`) value — both
 /// cases that legitimately require explicit `--vault`. The caller
 /// surfaces the resulting "no --vault supplied" error from
-/// `create_op_item` in that case.
+/// create in that case.
 #[must_use]
 pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> Option<String> {
     cli_vault.or_else(|| {
@@ -770,12 +785,18 @@ pub(crate) fn run_doctor_with_runner(
     })
 }
 
+/// Outcome of a workspace Claude-token doctor check.
 #[derive(Debug, Clone)]
 pub struct DoctorReport {
+    /// Workspace that was checked.
     pub workspace: String,
+    /// Effective Claude auth-forward mode for the workspace.
     pub mode: AuthForwardMode,
+    /// Canonical `op://` ref when the slot is op-backed.
     pub op_ref: Option<OpRef>,
+    /// Effective 1Password account used for the read, if known.
     pub op_account: Option<String>,
+    /// First characters of the SHA-256 of the resolved token value.
     pub token_sha256_prefix: String,
 }
 

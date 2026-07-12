@@ -396,7 +396,7 @@ struct EventLine<'a> {
 #[serde(untagged)]
 enum DetailField<'a> {
     Str(#[serde(borrow)] Cow<'a, str>),
-    Other(#[allow(dead_code)] Value),
+    Other(#[allow(dead_code, reason = "documented residual allow; prefer expect when site is lint-true")] Value),
 }
 
 impl DetailField<'_> {

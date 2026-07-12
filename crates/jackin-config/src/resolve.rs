@@ -16,6 +16,7 @@ use crate::schema::{MountConfig, ResolvedWorkspace, WorkspaceConfig, validate_mo
 use crate::validation::validate_workspace_config;
 use jackin_core::WorkspaceName;
 
+/// Build an ad-hoc workspace whose workdir and sole mount are `cwd`.
 pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
     let cwd = cwd.canonicalize()?;
     let path = cwd.display().to_string();
@@ -32,10 +33,19 @@ pub fn current_dir_workspace(cwd: &Path) -> anyhow::Result<WorkspaceConfig> {
     })
 }
 
+/// How the operator selected the workspace to load.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoadWorkspaceInput {
+    /// Use the process current working directory as an ad-hoc workspace.
     CurrentDir,
-    Path { src: String, dst: String },
+    /// Bind host `src` to container `dst` as an ad-hoc workspace.
+    Path {
+        /// Host source path (tilde-expanded / resolved).
+        src: String,
+        /// Container destination (or same as `src` for identity bind).
+        dst: String,
+    },
+    /// Load a named saved workspace from config.
     Saved(String),
 }
 
@@ -50,6 +60,7 @@ fn host_path_match_depth(path: &str, canonical_cwd: &Path) -> Option<usize> {
     }
 }
 
+/// Match depth of `workspace` against `cwd` (workdir exact, mounts as prefix); higher wins.
 pub fn saved_workspace_match_depth(workspace: &WorkspaceConfig, cwd: &Path) -> Option<usize> {
     let canonical_cwd = cwd.canonicalize().ok()?;
 
@@ -76,6 +87,7 @@ pub fn saved_workspace_match_depth(workspace: &WorkspaceConfig, cwd: &Path) -> O
         .max()
 }
 
+/// Resolve `input` into a [`ResolvedWorkspace`] with global mounts merged.
 pub fn resolve_load_workspace(
     config: &AppConfig,
     selector: &RoleSelector,

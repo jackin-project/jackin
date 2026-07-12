@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_lines)]
+#![allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 //! Launch rich terminal renderer and modal loops.
 
 use std::io::Write;

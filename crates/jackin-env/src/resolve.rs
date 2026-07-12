@@ -17,41 +17,88 @@ use jackin_core::{EnvValue, OpRef, WorkspaceName};
 /// survives `?` and is recovered by `downcast_ref` (mixed port-error paths).
 #[derive(Debug, thiserror::Error)]
 pub enum OperatorEnvError {
+    /// Operator env declares reserved runtime names that cannot be overridden.
     #[error(
         "operator env map contains {count} reserved runtime name(s):\n{details}\n\
          These names are fixed by jackin and cannot be overridden. Remove them \
          from your config.toml."
     )]
-    ReservedNames { count: usize, details: String },
+    ReservedNames {
+        /// Number of reserved-name offenses.
+        count: usize,
+        /// Multi-line detail listing each reserved key and layer.
+        details: String,
+    },
+    /// Value is not an `op://` reference.
     #[error("not an op:// reference: {value}")]
-    NotOpRef { value: String },
+    NotOpRef {
+        /// The rejected input value.
+        value: String,
+    },
+    /// Shell variable substitution inside an `op://` URI is unsupported.
     #[error(
         "jackin does not support shell variable substitution inside `op://` URIs \
          (`{value}`). Use a plain string value, or substitute before passing."
     )]
-    ShellVarInRef { value: String },
+    ShellVarInRef {
+        /// The rejected URI containing shell substitution.
+        value: String,
+    },
+    /// `op://` URI path segment count is not 3 or 4.
     #[error("malformed op:// URI (expected 3 or 4 path segments): {value}")]
-    MalformedRef { value: String },
+    MalformedRef {
+        /// The malformed URI.
+        value: String,
+    },
+    /// Named or id vault could not be found.
     #[error("vault not found: {vault:?}")]
-    VaultNotFound { vault: String },
+    VaultNotFound {
+        /// Vault name or id that was not found.
+        vault: String,
+    },
+    /// Item name/id missing from the given vault.
     #[error("item {item:?} not found in vault {vault:?}")]
-    ItemNotFound { item: String, vault: String },
+    ItemNotFound {
+        /// Item name or id that was not found.
+        item: String,
+        /// Vault that was searched.
+        vault: String,
+    },
+    /// Multiple items share the same name; disambiguation required.
     #[error("{count} items named {item:?} in vault {vault:?}. Disambiguate with:\n{suggestions}")]
     AmbiguousItem {
+        /// Number of matching items.
         count: usize,
+        /// Ambiguous item name.
         item: String,
+        /// Vault containing the matches.
         vault: String,
+        /// Human-readable disambiguation hints.
         suggestions: String,
     },
+    /// Field label/id missing from the item.
     #[error("field {field:?} not found in item {item:?}")]
-    FieldNotFound { field: String, item: String },
+    FieldNotFound {
+        /// Field that was not found.
+        field: String,
+        /// Item that was searched.
+        item: String,
+    },
+    /// Resolution aborted due to an underlying port/runner error.
     #[error("operator env resolution aborted: {source}")]
     Aborted {
+        /// Underlying error that caused the abort.
         #[source]
         source: anyhow::Error,
     },
+    /// Multiple env keys failed resolution; details are aggregated.
     #[error("operator env resolution failed for {count} var(s):\n{summary}")]
-    Aggregated { count: usize, summary: String },
+    Aggregated {
+        /// Number of failed variables.
+        count: usize,
+        /// Multi-line summary of failures.
+        summary: String,
+    },
 }
 
 /// Reject operator env maps that declare any reserved runtime name.
@@ -158,7 +205,7 @@ pub fn resolve_op_uri_to_ref(
 
     // Item segment may carry [subtitle] filter — a display extension from jackin❯.
     // Nested condition makes map_or awkward; allow the if-let pattern here.
-    #[allow(clippy::option_if_let_else)]
+    #[allow(clippy::option_if_let_else, reason = "documented residual allow; prefer expect when site is lint-true")]
     let (item_name, subtitle_filter): (&str, Option<&str>) = if let Some(open) = item_seg.rfind('[')
     {
         if item_seg.ends_with(']') && open < item_seg.len() - 1 {
@@ -409,9 +456,8 @@ pub fn lookup_operator_env_raw(
 
 /// Env var Claude Code reads for the long-lived OAuth token.
 ///
-/// Centralised so [`crate::token_setup`], the launch
-/// diagnostic in [`crate::runtime::launch`], and
-/// [`crate::agent::Agent::required_env_var`] stay in sync. See
+/// Centralised so token-setup, launch diagnostics, and agent
+/// `required_env_var` stay in sync. See
 /// <https://code.claude.com/docs/en/iam> for upstream precedence
 /// semantics.
 pub const CLAUDE_OAUTH_TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";

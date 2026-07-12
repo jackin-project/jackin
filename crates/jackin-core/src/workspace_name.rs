@@ -14,15 +14,20 @@ pub struct WorkspaceName(String);
 /// Why a workspace name string is not legal as a config-file stem.
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceNameError {
+    /// Name was empty.
     #[error("workspace name cannot be empty")]
     Empty,
+    /// Name is a reserved stem (`.` or `..`).
     #[error("workspace name {0:?} is reserved")]
     Reserved(String),
+    /// Name contains `/` or `\`.
     #[error("workspace name {0:?} cannot contain path separators")]
     PathSeparator(String),
+    /// Name is a reserved Windows device name (`CON`, `NUL`, …).
     #[cfg(windows)]
     #[error("workspace name {0:?} is reserved on Windows")]
     WindowsReserved(String),
+    /// Name ends with `.` or space, which Windows forbids for file stems.
     #[cfg(windows)]
     #[error("workspace name {0:?} cannot end with a dot or space on Windows")]
     WindowsTrailing(String),
@@ -60,11 +65,13 @@ impl WorkspaceName {
         Ok(Self(input.to_owned()))
     }
 
+    /// Borrow the validated name as a string slice.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
+    /// Consume and return the inner `String`.
     #[must_use]
     pub fn into_inner(self) -> String {
         self.0

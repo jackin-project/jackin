@@ -1,15 +1,15 @@
 //! `DamageGrid` — the Phase 2 v0 terminal model implementation.
 
-#![allow(clippy::empty_line_after_doc_comments)]
+#![allow(clippy::empty_line_after_doc_comments, reason = "documented residual allow; prefer expect when site is lint-true")]
 
 #[path = "grid/parse.rs"]
 mod parse;
 #[path = "grid/write.rs"]
 mod write;
 
-#[allow(unused_imports, unreachable_pub)]
+#[allow(unused_imports, unreachable_pub, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub use parse::*;
-#[allow(unused_imports, unreachable_pub)]
+#[allow(unused_imports, unreachable_pub, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub use write::*;
 
 use std::{
@@ -35,10 +35,27 @@ pub enum RowWrap {
     Soft,
 }
 
+/// Recorded scroll-region shift for consumers that animate or patch rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollOp {
-    Up { top: u16, bottom: u16, rows: u16 },
-    Down { top: u16, bottom: u16, rows: u16 },
+    /// Scroll the region up by `rows` lines (content moves toward `top`).
+    Up {
+        /// Inclusive top of the scroll region (0-based).
+        top: u16,
+        /// Inclusive bottom of the scroll region (0-based).
+        bottom: u16,
+        /// Number of rows scrolled.
+        rows: u16,
+    },
+    /// Scroll the region down by `rows` lines (content moves toward `bottom`).
+    Down {
+        /// Inclusive top of the scroll region (0-based).
+        top: u16,
+        /// Inclusive bottom of the scroll region (0-based).
+        bottom: u16,
+        /// Number of rows scrolled.
+        rows: u16,
+    },
 }
 
 /// Mouse protocol modes (DEC modes 1000/1002/1003).
@@ -51,6 +68,7 @@ pub enum ScrollOp {
 /// - `AnyMotion` = mode 1003 alias, identical to `AnyEvent`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MouseProtocolMode {
+    /// Mouse reporting disabled.
     #[default]
     None,
     /// Mode 1000: report button press only.
@@ -70,10 +88,14 @@ pub enum MouseProtocolMode {
 /// Mouse protocol encodings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MouseProtocolEncoding {
+    /// X10-style default encoding.
     #[default]
     Default,
+    /// UTF-8 extended coordinates (mode 1005).
     Utf8,
+    /// SGR mouse encoding (mode 1006).
     Sgr,
+    /// urxvt mouse encoding (mode 1015).
     Urxvt,
 }
 
@@ -90,6 +112,7 @@ const FOCUS_EVENTS: u8 = 1 << 4;
 const PENDING_WRAP: u8 = 1 << 5;
 const MUTATED_SINCE_PRESERVE: u8 = 1 << 6;
 
+/// Owned terminal grid with damage tracking and PTY parser state.
 pub struct DamageGrid {
     // ── Parser — must persist across process() calls to handle split sequences ──
     // vte::Parser maintains internal state for multi-byte escape sequences.
@@ -168,7 +191,9 @@ pub struct DamageGrid {
     kitty_kb_stack: Vec<u32>,
 
     // ── Damage + passthrough ──────────────────────────────────────────────────
+    /// Rows/cells mutated since the last dirty drain.
     pub dirty: DirtyTracker,
+    /// OSC/CSI events that leave the grid and must be handled by the capsule.
     pub passthrough: PassthroughBuffer,
 }
 
@@ -269,10 +294,12 @@ impl RowStore {
         self.wraps.get(row).copied()
     }
 
+    /// Iterate rows from top to bottom.
     pub fn iter(&self) -> vec_deque::Iter<'_, Vec<Cell>> {
         self.rows.iter()
     }
 
+    /// Iterate rows mutably from top to bottom.
     pub fn iter_mut(&mut self) -> vec_deque::IterMut<'_, Vec<Cell>> {
         self.rows.iter_mut()
     }
@@ -680,13 +707,14 @@ impl DamageGrid {
             .collect()
     }
 
-    /// Dump a scrollback VIEW as a [`GridSnapshot`]: the scrollback rows at
-    /// `offset` as a top prefix, then the live screen rows filling the rest of
-    /// the `viewport_rows`. `offset == 0` (or empty scrollback) returns the
-    /// live `dump()`. This is the snapshot the capsule's Ratatui pane-body
-    /// widget renders when the operator has scrolled up — the Ratatui parallel
-    /// of `render::pane_snapshot_from_damagegrid_with_scrollback`, kept here so
-    /// it composes the same prefix/tail layout from one place.
+    /// Dump a scrollback VIEW as a [`crate::snapshot::GridSnapshot`]: the
+    /// scrollback rows at `offset` as a top prefix, then the live screen rows
+    /// filling the rest of the `viewport_rows`. `offset == 0` (or empty
+    /// scrollback) returns the live `dump()`. This is the snapshot the capsule's
+    /// Ratatui pane-body widget renders when the operator has scrolled up — the
+    /// Ratatui parallel of
+    /// `render::pane_snapshot_from_damagegrid_with_scrollback`, kept here so it
+    /// composes the same prefix/tail layout from one place.
     #[must_use]
     pub fn dump_scrollback_view(
         &self,
@@ -853,6 +881,7 @@ impl DamageGrid {
         self.scrollback_offset = 0;
     }
 
+    /// Take and clear recorded scroll operations since the last drain.
     pub fn drain_scroll_ops(&mut self) -> Vec<ScrollOp> {
         std::mem::take(&mut self.scroll_ops)
     }
@@ -875,14 +904,17 @@ impl DamageGrid {
         self.mouse_encoding
     }
 
+    /// Whether the cursor is hidden (DECTCEM off).
     pub fn hide_cursor(&self) -> bool {
         self.mode_flags & HIDE_CURSOR != 0
     }
 
+    /// Whether bracketed paste mode is enabled (DEC 2004).
     pub fn bracketed_paste(&self) -> bool {
         self.mode_flags & BRACKETED_PASTE != 0
     }
 
+    /// Whether application cursor keys mode is enabled (DEC 1).
     pub fn application_cursor(&self) -> bool {
         self.mode_flags & APPLICATION_CURSOR != 0
     }

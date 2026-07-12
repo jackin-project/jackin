@@ -11,6 +11,7 @@
     clippy::panic_in_result_fn,
     clippy::unchecked_time_subtraction
 )]
+#![deny(missing_docs)]
 
 pub mod account_key;
 pub mod agent;

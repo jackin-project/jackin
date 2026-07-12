@@ -5,6 +5,7 @@ use jackin_core::OpRef;
 /// Re-exported from `jackin-env` — canonical definitions live there.
 use crate::op_struct::OpStructRunner;
 
+/// Production [`OpStructRunner`] backed by the default [`OpCli`].
 pub fn default_op_struct_runner() -> std::sync::Arc<dyn OpStructRunner + Send + Sync> {
     std::sync::Arc::new(OpCli::new())
 }
@@ -13,6 +14,7 @@ pub fn default_op_struct_runner() -> std::sync::Arc<dyn OpStructRunner + Send + 
 /// `jackin-env` no longer depends on `jackin-console` for data types.
 pub use jackin_core::op_types::{OpAccount, OpField, OpItem, OpVault};
 
+/// Picker cache over 1Password account/vault/item/field metadata.
 pub type OpCache = jackin_core::op_cache::OpCache<OpAccount, OpVault, OpItem, OpField>;
 
 // Accept either `id` or `account_uuid` so the probe works against

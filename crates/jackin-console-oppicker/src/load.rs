@@ -102,7 +102,7 @@ impl OpPickerState {
     }
 
     fn handle_accounts_loaded(&mut self, accounts: Vec<OpPickerAccount>) {
-        #[allow(clippy::redundant_clone)]
+        #[allow(clippy::redundant_clone, reason = "documented residual allow; prefer expect when site is lint-true")]
         self.op_cache.borrow_mut().put_accounts(accounts.clone());
         match accounts_loaded_plan(accounts.len()) {
             AccountsLoadedPlan::NotSignedIn => {
@@ -191,7 +191,7 @@ impl OpPickerState {
         });
     }
 
-    #[allow(clippy::missing_const_for_fn)]
+    #[allow(clippy::missing_const_for_fn, reason = "documented residual allow; prefer expect when site is lint-true")]
     pub fn take_pending_load(
         &mut self,
     ) -> Option<OpPickerPendingLoad<LoadResult, OpPickerLoadRequest, ()>> {

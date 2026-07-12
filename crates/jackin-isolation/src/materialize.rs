@@ -666,7 +666,7 @@ pub async fn materialize_workspace(
     })
 }
 
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 async fn materialize_one(
     mount: &MountConfig,
     container_state_dir: &Path,
@@ -916,7 +916,7 @@ async fn materialize_one(
     })
 }
 
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 async fn materialize_clone(
     mount: &MountConfig,
     container_state_dir: &Path,

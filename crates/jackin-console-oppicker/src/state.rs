@@ -91,7 +91,7 @@ pub struct OpPickerState {
 }
 
 // `rx` is not `Debug`; skipped fields are plumbing only.
-#[allow(clippy::missing_fields_in_debug)]
+#[allow(clippy::missing_fields_in_debug, reason = "documented residual allow; prefer expect when site is lint-true")]
 impl std::fmt::Debug for OpPickerState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpPickerState")

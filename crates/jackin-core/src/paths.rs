@@ -14,11 +14,15 @@ use std::path::{Path, PathBuf};
 /// Failure resolving or creating jackin❯ host path layout.
 #[derive(Debug, thiserror::Error)]
 pub enum PathsError {
+    /// OS home directory could not be resolved.
     #[error("Cannot resolve home directory")]
     HomeDirUnresolved,
+    /// Failed to create a required directory.
     #[error("failed to create {path}")]
     CreateDir {
+        /// Directory that could not be created.
         path: PathBuf,
+        /// Underlying IO error.
         #[source]
         source: std::io::Error,
     },
@@ -27,17 +31,26 @@ pub enum PathsError {
 /// All host-side directories that jackin❯ reads or writes.
 #[derive(Debug, Clone)]
 pub struct JackinPaths {
+    /// Operator home directory (`$HOME`).
     pub home_dir: PathBuf,
+    /// jackin data home (`~/.jackin` or `JACKIN_HOME_DIR`).
     pub jackin_home: PathBuf,
+    /// Config directory (`~/.config/jackin` or `JACKIN_CONFIG_DIR`).
     pub config_dir: PathBuf,
+    /// Path to `config.toml`.
     pub config_file: PathBuf,
+    /// Directory of per-workspace config files.
     pub workspaces_dir: PathBuf,
+    /// Directory of cloned/registered roles.
     pub roles_dir: PathBuf,
+    /// Durable runtime data directory.
     pub data_dir: PathBuf,
+    /// Cache directory (agent binaries, etc.).
     pub cache_dir: PathBuf,
 }
 
 impl JackinPaths {
+    /// Detect host paths from the OS home directory and env overrides.
     pub fn detect() -> Result<Self, PathsError> {
         let base = BaseDirs::new().ok_or(PathsError::HomeDirUnresolved)?;
         Ok(Self::resolve_with_env(
@@ -73,6 +86,7 @@ impl JackinPaths {
         }
     }
 
+    /// Build a layout rooted under `root` for unit tests.
     pub fn for_tests(root: &Path) -> Self {
         let home_dir = root.join("home");
         let config_dir = root.join("config");

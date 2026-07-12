@@ -240,7 +240,7 @@ pub(super) fn run_cli_with_timeout(
     Ok(output.stdout)
 }
 
-#[allow(clippy::disallowed_methods)]
+#[allow(clippy::disallowed_methods, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub(super) fn run_cli_with_timeout_full(
     command: &str,
     args: &[&str],

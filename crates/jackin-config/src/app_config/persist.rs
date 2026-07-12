@@ -19,6 +19,7 @@ pub(crate) fn workspace_file_path(paths: &JackinPaths, name: &str) -> PathBuf {
     paths.workspaces_dir.join(format!("{name}.toml"))
 }
 
+/// Load global config plus split workspace files, migrating legacy embedded workspaces.
 pub fn load_split_config(
     paths: &JackinPaths,
     contents_opt: Option<String>,
@@ -53,6 +54,7 @@ pub fn load_split_config(
     Ok(config)
 }
 
+/// Read and migrate every `*.toml` workspace file under `workspaces_dir`.
 pub fn load_workspace_files(
     workspaces_dir: &Path,
 ) -> anyhow::Result<BTreeMap<String, WorkspaceConfig>> {
@@ -242,6 +244,7 @@ pub fn validate_reserved_env_names(config: &AppConfig) -> anyhow::Result<()> {
     .into())
 }
 
+/// `true` when `raw` is legacy-versioned and still embeds non-empty `[workspaces]`.
 pub fn config_needs_split_migration(raw: &str) -> anyhow::Result<bool> {
     let doc: DocumentMut = raw.parse().context("parsing config.toml")?;
     let version = migrations::doc_version(&doc, "config")?;
@@ -253,6 +256,7 @@ pub fn config_needs_split_migration(raw: &str) -> anyhow::Result<bool> {
 }
 
 impl AppConfig {
+    /// Load `config.toml` (migrate as needed), split workspaces, sync builtins, validate.
     pub fn load_or_init(paths: &JackinPaths) -> anyhow::Result<Self> {
         paths.ensure_base_dirs()?;
 

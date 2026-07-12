@@ -1018,7 +1018,7 @@ pub fn render_global_mounts_subpanel(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub fn render_global_mount_rows_section(
     frame: &mut Frame<'_>,
     area: Rect,

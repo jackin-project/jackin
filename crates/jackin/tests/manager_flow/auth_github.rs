@@ -38,7 +38,7 @@ use super::*;
 // assert the persisted TOML carries BOTH the `[github]`
 // auth_forward = "token" block AND the `GH_TOKEN` env var on the
 // matching `[github.env]` block.
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 #[test]
 fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()> {
     let temp = tempdir()?;

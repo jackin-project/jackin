@@ -147,7 +147,7 @@ pub(super) mod config {
         pub pending_rename: Option<String>,
     }
 
-    #[allow(clippy::useless_let_if_seq)]
+    #[allow(clippy::useless_let_if_seq, reason = "documented residual allow; prefer expect when site is lint-true")]
     pub(crate) fn save_workspace(
         paths: &JackinPaths,
         input: WorkspaceSaveInput<'_>,
@@ -540,7 +540,7 @@ pub(super) mod instances {
         let mut results = Vec::with_capacity(targets.len());
         for chunk in targets.chunks(SNAPSHOT_FANOUT_CHUNK) {
             let chunk_results = std::thread::scope(|s| {
-                #[allow(clippy::needless_collect)]
+                #[allow(clippy::needless_collect, reason = "documented residual allow; prefer expect when site is lint-true")]
                 let handles: Vec<_> = chunk
                     .iter()
                     .map(|container| {

@@ -8,10 +8,15 @@
 pub const JACKIN_ENV_NAME: &str = "JACKIN";
 /// Value for [`JACKIN_ENV_NAME`].
 pub const JACKIN_ENV_VALUE: &str = "1";
+/// Hostname of the `DinD` sidecar when Docker-in-Docker is enabled.
 pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
+/// Testcontainers host override pointing at the DinD/network endpoint.
 pub const TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME: &str = "TESTCONTAINERS_HOST_OVERRIDE";
+/// Docker name of the role container.
 pub const JACKIN_CONTAINER_NAME_ENV_NAME: &str = "JACKIN_CONTAINER_NAME";
+/// Stable instance id for the running container.
 pub const JACKIN_INSTANCE_ID_ENV_NAME: &str = "JACKIN_INSTANCE_ID";
+/// Agent slug for the session (`claude`, `codex`, …).
 pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 /// Unique human-readable codename assigned to a Capsule tab at creation.
 ///
@@ -19,18 +24,27 @@ pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 /// tab. Stable across agent restarts and context resets — it is a tab property,
 /// not a process property — and never reused within a container lifetime.
 pub const JACKIN_AGENT_CODENAME_ENV_NAME: &str = "JACKIN_AGENT_CODENAME";
+/// Role key / selector for the running container.
 pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
+/// Container working directory set at launch.
 pub const JACKIN_WORKDIR_ENV_NAME: &str = "JACKIN_WORKDIR";
+/// Git co-author trailer text jackin❯ injects when configured.
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
+/// Whether DCO sign-off is enabled for this container (`1` / absent).
 pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 /// Per-container opt-out for host browser-open affordances. `deny`, `off`,
 /// and `no` suppress explicit jackin❯ host-open URL actions while leaving
 /// normal terminal OSC 8 passthrough under `JACKIN_OSC_HYPERLINK`.
 pub const JACKIN_OPEN_LINKS_ENV_NAME: &str = "JACKIN_OPEN_LINKS";
+/// Z.AI / Zhipu API key env name.
 pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
+/// Anthropic API key env name (Claude `api_key` mode).
 pub const ANTHROPIC_API_KEY_ENV_NAME: &str = "ANTHROPIC_API_KEY";
+/// `OpenAI` API key env name (Codex `api_key` mode).
 pub const OPENAI_API_KEY_ENV_NAME: &str = "OPENAI_API_KEY";
+/// Amp API key env name.
 pub const AMP_API_KEY_ENV_NAME: &str = "AMP_API_KEY";
+/// Claude Code OAuth token env name.
 pub const CLAUDE_CODE_OAUTH_TOKEN_ENV_NAME: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 /// `MiniMax` Token Plan API key. Gates the `MiniMax` provider picker and the
 /// `AuthKind::Minimax` env-only auth kind.
@@ -39,12 +53,19 @@ pub const MINIMAX_API_KEY_ENV_NAME: &str = "MINIMAX_API_KEY";
 /// and routing Claude Code / `OpenCode` to Kimi's endpoint. A single key from
 /// the Kimi Code Console covers both uses.
 pub const KIMI_CODE_API_KEY_ENV_NAME: &str = "KIMI_CODE_API_KEY";
+/// Alternate Kimi API key env name accepted by the Kimi Code CLI.
 pub const KIMI_API_KEY_ENV_NAME: &str = "KIMI_API_KEY";
+/// `OpenCode` API key env name.
 pub const OPENCODE_API_KEY_ENV_NAME: &str = "OPENCODE_API_KEY";
+/// xAI API key env name (Grok Build).
 pub const XAI_API_KEY_ENV_NAME: &str = "XAI_API_KEY";
+/// GitHub CLI token env name (`gh`).
 pub const GH_TOKEN_ENV_NAME: &str = "GH_TOKEN";
+/// GitHub Actions / generic token env name.
 pub const GITHUB_TOKEN_ENV_NAME: &str = "GITHUB_TOKEN";
+/// GitHub Enterprise host for `gh`.
 pub const GH_HOST_ENV_NAME: &str = "GH_HOST";
+/// GitHub Enterprise token for `gh`.
 pub const GH_ENTERPRISE_TOKEN_ENV_NAME: &str = "GH_ENTERPRISE_TOKEN";
 
 /// Network mode injected by jackin into role containers (`allowlist`, `open`, `none`).

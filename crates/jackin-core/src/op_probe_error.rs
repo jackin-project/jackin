@@ -8,16 +8,28 @@
 pub enum OpProbeError {
     /// The `op` binary could not be spawned (not installed / not on PATH).
     #[error("failed to spawn op: {detail}")]
-    NotInstalled { detail: String },
+    NotInstalled {
+        /// Spawn/IO detail from the process boundary.
+        detail: String,
+    },
     /// The CLI ran but reports no signed-in account.
     #[error("1Password CLI is not signed in: {detail}")]
-    NotSignedIn { detail: String },
+    NotSignedIn {
+        /// Operator-facing detail from `op` (no secrets).
+        detail: String,
+    },
     /// The probe timed out.
     #[error("op timed out after {seconds}s")]
-    Timeout { seconds: u64 },
+    Timeout {
+        /// Timeout budget in whole seconds.
+        seconds: u64,
+    },
     /// Any other failure; carries the raw message.
     #[error("{message}")]
-    Other { message: String },
+    Other {
+        /// Raw failure text (no secret material).
+        message: String,
+    },
 }
 
 #[cfg(test)]

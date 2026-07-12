@@ -391,7 +391,7 @@ pub fn render_failure_popup(
 }
 
 #[must_use]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub fn failure_popup_hyperlink_overlay(
     area: Rect,
     failure: &LaunchFailure,

@@ -15,12 +15,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 // `<name>.tmp` workspace file.
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Reject workspace file stems that are not valid [`WorkspaceName`](jackin_core::WorkspaceName)s.
 pub fn validate_workspace_file_stem(name: &str) -> anyhow::Result<()> {
     jackin_core::WorkspaceName::parse(name)
         .map(drop)
         .map_err(Into::into)
 }
 
+/// Write `contents` to `path` via a unique staged file then rename.
 pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)

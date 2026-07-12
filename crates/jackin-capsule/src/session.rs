@@ -4,7 +4,7 @@
 #[path = "session/osc_policy.rs"]
 mod osc_policy;
 
-#[allow(unused_imports, unreachable_pub)]
+#[allow(unused_imports, unreachable_pub, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub use osc_policy::{OscPolicy, osc8_uri_is_safe, parse_osc7};
 
 //
@@ -1485,7 +1485,7 @@ fn child_exit_reason(status: Result<&portable_pty::ExitStatus, &std::io::Error>)
 
 #[cfg(test)]
 impl Session {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
     pub(crate) fn new_for_test(
         label: String,
         agent: Option<String>,

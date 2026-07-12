@@ -1,4 +1,4 @@
-#![allow(clippy::too_many_lines)]
+#![allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 //! Restore candidate resolution logic extracted from the launch coordinator
 //! (the ~508L cluster of resolve_* fns + Restore* types). All public items
 //! re-exported from the parent launch coordinator to preserve `super::` call
@@ -83,8 +83,8 @@ pub(crate) fn early_scan_reused_current(
 
 /// Full resolve without early-scan reuse (tests and callers that did not run
 /// the pre-role-repo current-role scan).
-#[allow(clippy::too_many_arguments)]
-#[allow(dead_code)] // re-exported for tests; production uses reusing_early
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(dead_code, reason = "documented residual allow; prefer expect when site is lint-true")] // re-exported for tests; production uses reusing_early
 pub(crate) async fn resolve_restore_candidate(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -111,7 +111,7 @@ pub(crate) async fn resolve_restore_candidate(
 
 /// Like [`resolve_restore_candidate`], but reuses an early current-role scan
 /// when the final agent matches so the common path does not re-inspect.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub(crate) async fn resolve_restore_candidate_reusing_early(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -213,7 +213,7 @@ pub(crate) async fn resolve_restore_candidate_reusing_early(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub(crate) async fn resolve_current_restore_candidate_timed(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -257,7 +257,7 @@ pub(crate) async fn resolve_current_restore_candidate_timed(
 }
 
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub(crate) async fn resolve_unselected_current_restore_candidate_timed(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -286,7 +286,7 @@ pub(crate) struct UnselectedCurrentRestoreResolution {
     pub agent: jackin_core::agent::Agent,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub(crate) async fn resolve_unselected_current_restore_candidate_with_agent_timed(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -370,7 +370,7 @@ fn emit_launch_plan_scoped(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
 async fn resolve_unselected_current_restore_candidate_with_agent(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -560,7 +560,7 @@ async fn resolve_unselected_current_restore_candidate_with_agent(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub(crate) async fn resolve_current_restore_candidate(
     paths: &JackinPaths,
     workspace_name: Option<&str>,

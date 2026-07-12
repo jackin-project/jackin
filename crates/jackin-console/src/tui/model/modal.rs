@@ -5,9 +5,9 @@
 //! types stay reachable from `crate::tui::model::modal::*` — sibling
 //! impls use `super::ConsoleModal`.
 
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
 mod auth_impls;
-#[allow(unused_imports)]
+#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
 mod display;
 
 use super::create_prelude::{
@@ -15,7 +15,7 @@ use super::create_prelude::{
     create_prelude_modal_step,
 };
 
-#[allow(clippy::large_enum_variant)]
+#[allow(clippy::large_enum_variant, reason = "documented residual allow; prefer expect when site is lint-true")]
 #[derive(Debug)]
 pub enum ConsoleModal<
     TextInputTarget,

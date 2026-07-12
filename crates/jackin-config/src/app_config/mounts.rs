@@ -15,19 +15,27 @@ use crate::schema::{GlobalMountConfig, MountConfig, MountEntry};
 /// A resolved global mount entry for display and validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobalMountRow {
+    /// Scope key (`None` = unscoped global); e.g. `"ns/*"` or role key.
     pub scope: Option<String>,
+    /// Mount name within that scope.
     pub name: String,
+    /// Expanded mount geometry.
     pub mount: MountConfig,
 }
 
 /// Result of resolving applicable global mounts for a workspace.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceGlobalMountRows {
+    /// Role is determinable; mounts merged for that role.
     Applicable {
+        /// Role key that drove scoped global mounts.
         role: String,
+        /// Merged global mount rows for the role.
         rows: Vec<GlobalMountRow>,
     },
+    /// Multiple or zero roles could apply; operator must pick.
     Ambiguous {
+        /// Candidate role keys.
         candidates: Vec<String>,
     },
 }
@@ -90,6 +98,7 @@ impl AppConfig {
                   helpers would re-pass mutable by_name + selector borrows across \
                   fn boundaries and obscure the per-scope merge logic."
     )]
+    /// Union-merge global mounts for `selector` across unscoped, namespace, and role scopes.
     pub fn resolve_mount_rows(&self, selector: &RoleSelector) -> Vec<GlobalMountRow> {
         let mut by_name: BTreeMap<String, GlobalMountRow> = BTreeMap::new();
         let scopes = [
@@ -134,6 +143,7 @@ impl AppConfig {
         by_name.into_values().collect()
     }
 
+    /// Like [`Self::resolve_mount_rows`] but returns `(name, mount)` pairs only.
     pub fn resolve_mounts(&self, selector: &RoleSelector) -> Vec<(String, MountConfig)> {
         self.resolve_mount_rows(selector)
             .into_iter()
@@ -141,6 +151,7 @@ impl AppConfig {
             .collect()
     }
 
+    /// Expand tildes in named mounts and run full mount validation.
     pub fn expand_and_validate_named_mounts(
         mounts: &[(String, MountConfig)],
     ) -> anyhow::Result<Vec<MountConfig>> {
@@ -157,6 +168,7 @@ impl AppConfig {
         Ok(expanded)
     }
 
+    /// Insert or replace a global named mount (test / in-memory only; prefer `ConfigEditor`).
     // Test-only; production writes go through ConfigEditor.
     pub fn add_mount(&mut self, name: &str, mount: MountConfig, scope: Option<&str>) {
         debug_assert!(
@@ -189,6 +201,7 @@ impl AppConfig {
         }
     }
 
+    /// Flatten all global mount entries (scoped and unscoped) into display rows.
     pub fn list_mount_rows(&self) -> Vec<GlobalMountRow> {
         let mut result = Vec::new();
         for (key, entry) in self.docker.mounts.iter() {
@@ -212,6 +225,7 @@ impl AppConfig {
         result
     }
 
+    /// Ensure workspace and global mount destinations do not collide.
     pub fn validate_effective_mount_destinations(
         workspace: &crate::schema::WorkspaceConfig,
         rows: &[GlobalMountRow],
@@ -238,6 +252,7 @@ impl AppConfig {
         Ok(())
     }
 
+    /// Validate global mount rows: names, isolation, paths, and overlapping destinations.
     pub fn validate_global_mount_rows(rows: &[GlobalMountRow]) -> anyhow::Result<()> {
         let mut seen_keys: BTreeSet<(Option<&str>, &str)> = BTreeSet::new();
         for row in rows {

@@ -306,7 +306,7 @@ fn rich_surface_closes_stdin_for_noninteractive_commands() {
 
 #[cfg(unix)]
 #[tokio::test]
-#[allow(clippy::await_holding_lock)]
+#[allow(clippy::await_holding_lock, reason = "documented residual allow; prefer expect when site is lint-true")]
 async fn capture_secret_suppresses_stdout_debug_echo() {
     use std::sync::Mutex;
     static LOCK: Mutex<()> = Mutex::new(());

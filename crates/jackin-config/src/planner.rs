@@ -32,15 +32,20 @@ fn covers(parent: &MountConfig, child: &MountConfig) -> bool {
 /// Plan for `jackin workspace create`.
 #[derive(Debug)]
 pub struct WorkspaceCreatePlan {
+    /// Mounts remaining after rule-C collapse.
     pub final_mounts: Vec<MountConfig>,
+    /// Mounts removed because a parent already covers them.
     pub collapsed: Vec<Removal>,
 }
 
 /// Plan for `jackin workspace edit`.
 #[derive(Debug)]
 pub struct WorkspaceEditPlan {
+    /// Destinations to remove (explicit removals plus collapsed children).
     pub effective_removals: Vec<String>,
+    /// Collapses involving at least one mount touched by this edit.
     pub edit_driven_collapses: Vec<Removal>,
+    /// Collapses among mounts that already existed before the edit.
     pub pre_existing_collapses: Vec<Removal>,
 }
 
@@ -144,14 +149,18 @@ pub fn apply_isolation_overrides(
 /// A proposed mount-set change produced by [`plan_collapse`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollapsePlan {
+    /// Mounts that are not covered by any other mount.
     pub kept: Vec<MountConfig>,
+    /// Covered mounts proposed for removal.
     pub removed: Vec<Removal>,
 }
 
 /// Records that `child` was collapsed because it is covered by `covered_by`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removal {
+    /// Mount that is strictly covered and can be dropped.
     pub child: MountConfig,
+    /// Parent mount that already exposes the child's subtree.
     pub covered_by: MountConfig,
 }
 
@@ -159,6 +168,7 @@ pub struct Removal {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum CollapseError {
+    /// Parent covers child but `readonly` flags disagree.
     #[error(
         "mount {parent_src} ({parent_mode}) would subsume {child_src} ({child_mode}), \
          but the readonly flag differs. Match the flag or remove the child first.",
@@ -168,9 +178,12 @@ pub enum CollapseError {
         child_mode = if child.readonly { "ro" } else { "rw" },
     )]
     ReadonlyMismatch {
+        /// Covering parent mount.
         parent: MountConfig,
+        /// Covered child mount.
         child: MountConfig,
     },
+    /// New child is already covered by an existing parent (nothing to add).
     #[error(
         "mount {child_src} is already covered by existing mount {parent_src}. \
          Nothing to add.",
@@ -178,11 +191,17 @@ pub enum CollapseError {
         parent_src = parent.src,
     )]
     ChildUnderExistingParent {
+        /// Existing parent that covers the new child.
         parent: MountConfig,
+        /// New child that cannot be added.
         child: MountConfig,
     },
+    /// Internal planner bookkeeping failure.
     #[error("workspace mount planner invariant failed: {message}")]
-    PlannerInvariant { message: &'static str },
+    PlannerInvariant {
+        /// Static description of the broken invariant.
+        message: &'static str,
+    },
 }
 
 /// Compute a [`CollapsePlan`] for `mounts`.

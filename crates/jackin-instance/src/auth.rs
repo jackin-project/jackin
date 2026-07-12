@@ -937,7 +937,7 @@ impl RoleState {
 /// `wipe_on_oauth` — when `true`, the role-state file is wiped on `OAuthToken`.
 /// When `false`, the existing file is preserved (Codex: `OAuthToken` is a
 /// parser-rejected no-op; preserving the file allows recovery from a bypass).
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
 fn provision_single_file_credential(
     target: &Path,
     host_path: &Path,

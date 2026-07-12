@@ -26,7 +26,7 @@ fn inline_test_module_is_flagged_but_declaration_is_not() {
     assert!(inline_test_module_violation(cfg_fn).is_none());
 
     // Stacked attributes between `#[cfg(test)]` and the `mod` are tolerated.
-    let stacked = "#[cfg(test)]\n#[allow(clippy::all)]\nmod tests {\n}\n";
+    let stacked = "#[cfg(test)]\n#[allow(clippy::all, reason = "documented residual allow; prefer expect when site is lint-true")]\nmod tests {\n}\n";
     assert!(inline_test_module_violation(stacked).is_some());
 }
 

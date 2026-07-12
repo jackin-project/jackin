@@ -17,24 +17,34 @@ pub use jackin_core::PromptResult;
 /// Typed failures for manifest env declaration resolution.
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveEnvError {
+    /// A required interactive prompt was skipped.
     #[error("env var {name}: required prompt cannot be skipped")]
-    PromptRequired { name: String },
+    PromptRequired {
+        /// Env var name that required a value.
+        name: String,
+    },
+    /// Dependency cycle among env declarations.
     #[error(transparent)]
     Cycle(#[from] EnvCycleError),
 }
 
+/// Concrete `(name, value)` pairs after env declaration resolution.
 #[derive(Debug, Clone)]
 pub struct ResolvedEnv {
+    /// Resolved variables in topological order.
     pub vars: Vec<(String, String)>,
 }
 
+/// UI seam for interactive env prompts during resolution.
 pub trait EnvPrompter {
+    /// Free-text prompt; `skippable` allows cancel without a value.
     fn prompt_text(
         &self,
         title: &str,
         default: Option<&str>,
         skippable: bool,
     ) -> anyhow::Result<PromptResult>;
+    /// Single-select prompt from `options`.
     fn prompt_select(
         &self,
         title: &str,
@@ -86,6 +96,7 @@ fn interpolate(template: &str, resolved: &[(String, String)]) -> String {
     result
 }
 
+/// Resolve manifest env declarations via prompts and defaults (no overrides).
 pub fn resolve_env(
     declarations: &BTreeMap<String, EnvVarDecl>,
     prompter: &impl EnvPrompter,
@@ -93,6 +104,7 @@ pub fn resolve_env(
     resolve_env_with_overrides(declarations, prompter, &BTreeMap::new())
 }
 
+/// Resolve env declarations, applying `overrides` before prompting.
 pub fn resolve_env_with_overrides(
     declarations: &BTreeMap<String, EnvVarDecl>,
     prompter: &impl EnvPrompter,

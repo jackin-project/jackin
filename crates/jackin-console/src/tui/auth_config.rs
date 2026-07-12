@@ -736,7 +736,7 @@ pub fn auth_credential_env_keys() -> BTreeSet<&'static str> {
         .collect()
 }
 
-#[allow(clippy::missing_const_for_fn)]
+#[allow(clippy::missing_const_for_fn, reason = "documented residual allow; prefer expect when site is lint-true")]
 fn settings_auth_env_map_mut<'a>(
     kind: AuthKind,
     github_env: &'a mut BTreeMap<String, EnvValue>,

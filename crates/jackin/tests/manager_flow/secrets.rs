@@ -1016,7 +1016,7 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
 /// is the bare `op://Vault/Item/Field` form (account scope is not
 /// encoded in the path).
 #[test]
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
 fn op_picker_multi_account_flow() -> Result<()> {
     use jackin_console::tui::components::op_picker::{OpLoadState, OpPickerStage};
     use jackin_env::{OpAccount, OpField, OpItem, OpVault};

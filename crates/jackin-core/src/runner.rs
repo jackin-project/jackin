@@ -19,14 +19,20 @@ use std::sync::Arc;
 use crate::build_log_sink::BuildLogSink;
 
 /// Options that control how a command is executed.
-#[allow(clippy::struct_excessive_bools)]
+#[allow(clippy::struct_excessive_bools, reason = "documented residual allow; prefer expect when site is lint-true")]
 #[derive(Clone, Debug)]
 pub struct RunOptions {
+    /// Capture stderr into the result/error payload.
     pub capture_stderr: bool,
+    /// Capture stdout into the result payload.
     pub capture_stdout: bool,
+    /// Suppress host-side process noise where the runner supports it.
     pub quiet: bool,
+    /// Extra environment variables applied for this invocation only.
     pub extra_env: Vec<(String, String)>,
+    /// Redirect stdin from `/dev/null` instead of inheriting.
     pub null_stdin: bool,
+    /// When capturing, also stream output to the host debug surface.
     pub stream_captured_output: bool,
     /// The command needs the real terminal (an interactive `docker exec -it`
     /// multiplexer/shell client). Such commands must inherit stdio and are
@@ -66,6 +72,7 @@ impl Default for RunOptions {
 
 /// Subprocess execution seam for `docker`, `git`, and other external commands.
 pub trait CommandRunner {
+    /// Run `program` with `args`, applying `opts`; fails on non-zero exit.
     async fn run(
         &mut self,
         program: &str,
@@ -73,13 +80,14 @@ pub trait CommandRunner {
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()>;
+    /// Run and return captured stdout (and typically stderr on failure).
     async fn capture(
         &mut self,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String>;
-    /// Like `capture` but suppresses stdout from the debug stream and omits
+    /// Like [`CommandRunner::capture`] but suppresses stdout from the debug stream and omits
     /// stderr from error messages. Use for commands whose output is a credential
     /// (e.g. `gh auth token`, `op read`) so the value never appears in debug logs.
     async fn capture_secret(

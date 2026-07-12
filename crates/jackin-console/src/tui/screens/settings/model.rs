@@ -10,13 +10,13 @@ mod general_impls;
 #[path = "model/trust_impls.rs"]
 mod trust_impls;
 
-#[allow(unused_imports, unreachable_pub)]
+#[allow(unused_imports, unreachable_pub, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub use auth_impls::*;
-#[allow(unused_imports, unreachable_pub)]
+#[allow(unused_imports, unreachable_pub, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub use env_impls::*;
-#[allow(unused_imports, unreachable_pub)]
+#[allow(unused_imports, unreachable_pub, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub use general_impls::*;
-#[allow(unused_imports, unreachable_pub)]
+#[allow(unused_imports, unreachable_pub, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub use trust_impls::*;
 
 // Not responsible for: event handling (see `update`) or rendering (see
@@ -1367,7 +1367,7 @@ pub struct SettingsAuthSaveRefs<'a, EnvValue> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(clippy::struct_excessive_bools)]
+#[allow(clippy::struct_excessive_bools, reason = "documented residual allow; prefer expect when site is lint-true")]
 pub struct SettingsGeneralState {
     pub pending_coauthor_trailer: bool,
     pub original_coauthor_trailer: bool,

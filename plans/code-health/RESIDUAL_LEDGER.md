@@ -12,12 +12,10 @@ Not tracked here (intentional / optional / shipped):
 - Fully shipped CLOSED evidence (git history)
 - Optional micro: zero-copy scrollback row, db/docker metrics demotion
 - Intentional pins: usage accounts-only surface, apple-container not shipping, Hello fail-closed
+- Wave 1 CLOSED: R-047-maintainability-promote (unused_self/unused_async promoted; others measured-allow with dated counts), R-allow-attributes-deny (bare-allow floor 0 + `allow_attributes_without_reason = deny`), R-missing-docs-cascade (`jackin-protocol` + `jackin-manifest` + `jackin-env` + `jackin-term` + `jackin-config` + `jackin-core`)
 
 | ID | Wave | Why still open | Next trigger |
 |----|------|----------------|--------------|
-| **R-047-maintainability-promote** | 1 | Seven maintainability lints still residual-`allow` | Re-measure + promote or measured-allow comments |
-| **R-allow-attributes-deny** | 1 | Bare-`#[allow]` floor ≠ 0; cannot deny `allow_attributes*` yet | Burn-down → floor 0 → deny |
-| **R-missing-docs-cascade** | 1 | Only protocol has `#![deny(missing_docs)]` | Cascade pure crates one-PR-each |
 | **R-038-WorkspaceLabel** | 2 | `materialize_workspace` still `&str`; path-label vs config-stem dual-semantics | WorkspaceLabel design + type boundaries |
 | **R-launch-typestate** / **R-typestate-general** | 3 | Monolithic `run_launch_core` (~1350 LOC); no phase typestate | LaunchCore extract PR |
 | **R-033-suite-a** | 3 | No full `run_launch_core` failure-path fixture (B+C only) | After LaunchCore seams |
@@ -30,5 +28,4 @@ Not tracked here (intentional / optional / shipped):
 
 Disposition: **OPEN** until CLOSED in-tree (prefer implement). Operator pin only for hard external blockers.
 
-Counts: **12** code-health residuals (launch-speed 008c closed outside this file).
-
+Counts: **9** code-health residuals (Wave 1 + launch-speed 008c closed).

@@ -11,8 +11,15 @@
     clippy::panic_in_result_fn,
     clippy::unchecked_time_subtraction
 )]
+#![deny(missing_docs)]
 // get_unwrap has no clippy.toml allow-in-tests valve; keep production denied.
-#![cfg_attr(test, allow(clippy::get_unwrap))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::get_unwrap,
+        reason = "no clippy.toml allow-in-tests valve; keep production denied"
+    )
+)]
 
 pub mod app_config;
 pub mod auth;
