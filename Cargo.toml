@@ -210,7 +210,7 @@ excessive_nesting = "warn"
 implicit_hasher = "allow"
 similar_names = "allow"
 # Close-out re-measure: residual still non-zero across usage/console/runtime —
-# keep allow until a dedicated burn-down PR. large_futures/unused_* stay warn.
+# keep allow until a dedicated burn-down PR (honest residual-allow, not promote:).
 assigning_clones = "allow"
 match_same_arms = "allow"
 drop_non_drop = "allow"
