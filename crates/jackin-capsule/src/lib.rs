@@ -23,6 +23,8 @@ pub mod firewall;
 pub mod git_context;
 pub mod mcp_server;
 pub mod output;
+/// Shrink-only dhat allocation ceilings for the `perf` ratchet family.
+pub mod perf_budgets;
 pub mod pid1;
 pub mod pr_context;
 pub mod protocol;

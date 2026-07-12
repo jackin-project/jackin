@@ -376,6 +376,7 @@ fn invoke_provider(root: &Path, provider: &str) -> Result<BTreeMap<String, usize
         }
         "agent_doc_bytes" => measure_agent_doc_bytes(root),
         "export_volume_constants" => measure_export_volume_constants(root),
+        "perf_dhat_budgets" => measure_perf_dhat_budgets(root),
         "test_layout_violations" => {
             // numeric view not used for presence; return empty
             Ok(BTreeMap::new())
@@ -410,6 +411,43 @@ fn measure_file_lines(root: &Path, tests_only: bool) -> Result<BTreeMap<String, 
             .to_string_lossy()
             .replace('\\', "/");
         out.insert(rel, lines);
+    }
+    Ok(out)
+}
+
+/// Read dhat allocation ceilings from `jackin-capsule` perf_budgets.rs.
+fn measure_perf_dhat_budgets(root: &Path) -> Result<BTreeMap<String, usize>> {
+    let path = root.join("crates/jackin-capsule/src/perf_budgets.rs");
+    let text = fs::read_to_string(&path)
+        .with_context(|| format!("reading perf budgets at {}", path.display()))?;
+    let mut out = BTreeMap::new();
+    for (key, name) in [
+        (
+            "focused_full_snapshot_max_blocks",
+            "FOCUSED_FULL_SNAPSHOT_MAX_BLOCKS",
+        ),
+        (
+            "focused_full_snapshot_max_bytes",
+            "FOCUSED_FULL_SNAPSHOT_MAX_BYTES",
+        ),
+        (
+            "focused_borrowed_view_max_blocks",
+            "FOCUSED_BORROWED_VIEW_MAX_BLOCKS",
+        ),
+        (
+            "focused_borrowed_view_max_bytes",
+            "FOCUSED_BORROWED_VIEW_MAX_BYTES",
+        ),
+    ] {
+        let needle = format!("const {name}: usize = ");
+        let Some(rest) = text.split(&needle).nth(1) else {
+            bail!("missing {name} in {}", path.display());
+        };
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        let value: usize = digits
+            .parse()
+            .with_context(|| format!("parsing {name} value from {}", path.display()))?;
+        out.insert(key.to_owned(), value);
     }
     Ok(out)
 }

@@ -143,6 +143,7 @@ mod input_dispatch;
 mod mouse_input;
 mod multiplexer_utils;
 mod pane_layout;
+mod ports;
 mod resource_metrics;
 mod session_lifecycle;
 
@@ -757,6 +758,12 @@ fn build_exit_inspect_rows(repos: &[crate::exit_assess::DirtyRepo]) -> Arc<[Insp
 /// (re-entry guard). With policy `ask` and dirty isolated work the modal is
 /// shown (no teardown); otherwise the container drains and exits, preserving the
 /// original non-clean-exit reason.
+/// Pure classifier for INV-D19: when a dialog is already open, last-session
+/// exit handling must defer so the operator can finish the modal.
+pub(crate) const fn should_defer_last_session_exit(dialog_open: bool) -> bool {
+    dialog_open
+}
+
 async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>) -> bool {
     // Called from two sites: the session-exit event handler (once, on last-session
     // exit) and the client-frame handler (on every frame while no sessions remain).
@@ -765,7 +772,7 @@ async fn handle_last_session_exit(mux: &mut Multiplexer, reason: Option<String>)
     // the dirty-exit flow is already active. Re-entering would push a fresh modal
     // and re-run the git assessment on every keypress, resetting selection to 0 —
     // so the operator could never move past the first row. Defer until resolved.
-    if mux.dialog_open() {
+    if should_defer_last_session_exit(mux.dialog_open()) {
         return false;
     }
     match crate::exit_assess::decide_exit(&mux.launch_config).await {

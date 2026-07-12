@@ -301,7 +301,11 @@ fn file_export_queue_compact_line(
     )
 }
 
-fn requested_export_path_category(requested_path: &str) -> &'static str {
+/// Categorize an export path for diagnostics (INV-D20).
+///
+/// Returns one of: `jackin-run`, `jackin-owned`, `container-absolute`,
+/// `container-relative`.
+pub(crate) fn requested_export_path_category(requested_path: &str) -> &'static str {
     let trimmed = requested_path.trim();
     if container_paths::is_run_owned(trimmed) {
         return "jackin-run";
@@ -333,3 +337,7 @@ fn compact_export_error_reason(err: &anyhow::Error) -> &'static str {
         "validation"
     }
 }
+
+#[cfg(test)]
+#[path = "file_export/tests.rs"]
+mod export_category_tests;

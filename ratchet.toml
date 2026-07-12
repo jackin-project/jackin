@@ -385,3 +385,25 @@ bound = 64
 [[family.entry]]
 key = "max_spans"
 bound = 48
+
+# R-perf-platform: dhat allocation ceilings (source: jackin-capsule perf_budgets).
+# iai-callgrind: PINNED — project CI images do not ship valgrind; re-evaluate
+# when a valgrind-capable runner is available (see plans/code-health residual).
+[[family]]
+id = "perf"
+kind = "numeric"
+provider = "perf_dhat_budgets"
+mode = "enforce"
+cap = 0
+[[family.entry]]
+key = "focused_full_snapshot_max_blocks"
+bound = 3
+[[family.entry]]
+key = "focused_full_snapshot_max_bytes"
+bound = 1024
+[[family.entry]]
+key = "focused_borrowed_view_max_blocks"
+bound = 3
+[[family.entry]]
+key = "focused_borrowed_view_max_bytes"
+bound = 1024

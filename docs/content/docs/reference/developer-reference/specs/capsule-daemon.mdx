@@ -80,8 +80,8 @@ Roadmap-named ownership boundaries used to group invariants:
 
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
-| INV-D19 | Last-session exit handler classifies whether the daemon should exit | `handle_last_session_exit` | MISSING (behavior covered indirectly by integration paths) |
-| INV-D20 | File export paths are categorized as jackin-run / jackin-owned / container-absolute / relative via `container_paths` | `requested_export_path_category` in `daemon/file_export.rs` | MISSING |
+| INV-D19 | Last-session exit handler classifies whether the daemon should exit | `handle_last_session_exit` / `should_defer_last_session_exit` + `daemon::ports` session SM | `jackin_capsule::daemon::ports::tests::session_sm_defers_drain_while_dialog_open_inv_d19` `jackin_capsule::daemon::ports::tests::persistence_port_defers_when_dialog_open` |
+| INV-D20 | File export paths are categorized as jackin-run / jackin-owned / container-absolute / relative via `container_paths` | `requested_export_path_category` in `daemon/file_export.rs` | `jackin_capsule::daemon::file_export::export_category_tests::export_path_category_matrix_inv_d20` |
 
 ## Test seams
 
@@ -96,7 +96,8 @@ Roadmap-named ownership boundaries used to group invariants:
 2. **PTY failure recovery** — writer-lock failure / closed channel / PTY EOF paths in session writer loops are largely unexercised (TEST-pty-recovery; plan 033).
 3. **INV-D8 session exit codename retirement** — no focused unit test.
 4. **INV-D15 clipboard expiry** — seam exists; drive a `ManualClock` past TTL in a unit test.
-5. **INV-D19 / INV-D20** — cleanup classification and file-export category matrix need direct tests.
+
+INV-D19 / INV-D20 closed with pure classifiers + matrix tests; full dirty-exit integration remains covered indirectly.
 
 ## Undetermined behaviors
 

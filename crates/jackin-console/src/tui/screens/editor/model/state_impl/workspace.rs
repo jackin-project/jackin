@@ -734,10 +734,13 @@ impl<
 
     #[must_use]
     pub fn save_key_plan(&self) -> EditorSaveKeyPlan {
-        if self.change_count() == 0 {
-            EditorSaveKeyPlan::Noop
-        } else {
-            EditorSaveKeyPlan::BeginSave
+        use crate::tui::screens::edit_save::{EditSaveDisposition, plan_edit_save};
+        // Editor save-key never needs leave-confirm here; dirty alone means save.
+        match plan_edit_save(self.change_count() > 0, false) {
+            EditSaveDisposition::Noop => EditorSaveKeyPlan::Noop,
+            EditSaveDisposition::SaveNow | EditSaveDisposition::ConfirmDiscard => {
+                EditorSaveKeyPlan::BeginSave
+            }
         }
     }
 
