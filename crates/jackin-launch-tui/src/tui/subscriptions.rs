@@ -340,6 +340,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         // Enter/Esc), inside copy targets copy, and inside non-target clicks
         // are swallowed instead of falling through to build-log/container-info
         // behavior.
+        let failure_scroll = v.failure_scroll.clone();
         let popup_rect =
             failure_popup_block_rect(ctx.area, failure, ctx.run_id, ctx.terminal.is_debug_mode());
         match classify_click(popup_rect, col, row) {
@@ -355,6 +356,7 @@ fn handle_cockpit_mouse_down(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
                     ctx.terminal.is_debug_mode(),
                     col,
                     row,
+                    Some(failure_scroll),
                 ) && let Some(payload) = failure_copy_payload(failure, ctx.run_id, target)
                 {
                     if ctx.terminal.copy_to_clipboard(&payload) {
@@ -416,6 +418,7 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
         return;
     }
     if let Some(failure) = v.failure.as_ref() {
+        let failure_scroll = v.failure_scroll.clone();
         let hover = failure_copy_target_at(
             ctx.area,
             failure,
@@ -423,6 +426,7 @@ fn handle_cockpit_mouse_move(v: &mut LaunchView, ctx: CockpitContext<'_>, col: u
             ctx.terminal.is_debug_mode(),
             col,
             row,
+            Some(failure_scroll),
         );
         if hover != v.failure_copy_hover {
             let _dirty = update_launch_view(v, LaunchMessage::FailureCopyHovered(hover));

@@ -178,6 +178,7 @@ fn failure_popup_hyperlink_overlay_bytes(
         failure,
         run_id,
         debug_mode,
+        Some(view.failure_scroll.clone()),
         view.failure_copy_hover,
         view.failure_copied,
         view.failure_revealed,

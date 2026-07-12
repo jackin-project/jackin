@@ -4,5 +4,5 @@ These plans hold issues found while reviewing PR #721 after the TUI reusability 
 
 | Plan | Title | Priority | Effort | Status |
 |------|-------|----------|--------|--------|
-| 001 | Launch failure scroll-aware copy and hyperlink geometry | P1 | S | TODO |
+| 001 | Launch failure scroll-aware copy and hyperlink geometry | P1 | S | DONE |
 

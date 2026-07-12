@@ -196,8 +196,19 @@ pub fn failure_popup_value_rect(
     rows: &[FailurePopupRow],
     target: FailureCopyTarget,
 ) -> Option<Rect> {
+    failure_popup_value_rect_scrolled(rect, rows, target, None)
+}
+
+/// Value-column hit rects for `target`, using the same body scroll as render.
+#[must_use]
+pub fn failure_popup_value_rect_scrolled(
+    rect: Rect,
+    rows: &[FailurePopupRow],
+    target: FailureCopyTarget,
+    scroll: Option<jackin_tui::components::DialogBodyScroll>,
+) -> Option<Rect> {
     // Structural exception: copy hit-testing derives rects from wrapped failure rows rendered by this dialog.
-    failure_popup_value_rects(rect, rows, target)
+    failure_popup_value_rects(rect, rows, target, scroll)
         .into_iter()
         .next()
 }
@@ -206,6 +217,7 @@ fn failure_popup_value_rects(
     rect: Rect,
     rows: &[FailurePopupRow],
     target: FailureCopyTarget,
+    scroll: Option<jackin_tui::components::DialogBodyScroll>,
 ) -> Vec<Rect> {
     let display_rows = rows
         .iter()
@@ -223,7 +235,10 @@ fn failure_popup_value_rects(
         .iter()
         .find(|row| row.label == "message")
         .map_or("", |row| row.value.as_str());
-    let state = ErrorPopupState::new("Build failed", message).with_rows(display_rows);
+    let mut state = ErrorPopupState::new("Build failed", message).with_rows(display_rows);
+    if let Some(scroll) = scroll {
+        state.scroll = scroll;
+    }
     let inner = rect.inner(ratatui::layout::Margin {
         horizontal: 1,
         vertical: 1,
@@ -241,6 +256,10 @@ fn failure_popup_value_rects(
         .unwrap_or_default()
 }
 
+/// Hit-test a copy target at `(col, row)` using the same body scroll as render.
+///
+/// Pass the live `failure_scroll` so scrolled popups hit the visible rows;
+/// `None` means scroll 0 (tests and scroll-independent callers).
 #[must_use]
 pub fn failure_copy_target_at(
     area: Rect,
@@ -249,14 +268,16 @@ pub fn failure_copy_target_at(
     debug_mode: bool,
     col: u16,
     row: u16,
+    scroll: Option<jackin_tui::components::DialogBodyScroll>,
 ) -> Option<FailureCopyTarget> {
     let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
-    let state = failure_error_state(failure, run_id, None);
+    let state =
+        failure_error_state_with_feedback(failure, run_id, scroll.clone(), None, None, None, None);
     let rect = failure_popup_rect(body_area, &state);
     let rows = failure_popup_rows(failure, run_id);
     for entry in rows.iter().filter(|row| row.copy_target.is_some()) {
         let target = entry.copy_target?;
-        for value_rect in failure_popup_value_rects(rect, &rows, target) {
+        for value_rect in failure_popup_value_rects(rect, &rows, target, scroll.clone()) {
             if row == value_rect.y
                 && col >= value_rect.x
                 && col < value_rect.x.saturating_add(value_rect.width)
@@ -376,14 +397,22 @@ pub fn failure_popup_hyperlink_overlay(
     failure: &LaunchFailure,
     run_id: &str,
     debug_mode: bool,
+    scroll: Option<jackin_tui::components::DialogBodyScroll>,
     hovered: Option<FailureCopyTarget>,
     copied: Option<FailureCopyTarget>,
     revealed: Option<FailureCopyTarget>,
     opened: Option<FailureCopyTarget>,
 ) -> Vec<u8> {
     let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
-    let state =
-        failure_error_state_with_feedback(failure, run_id, None, hovered, copied, revealed, opened);
+    let state = failure_error_state_with_feedback(
+        failure,
+        run_id,
+        scroll,
+        hovered,
+        copied,
+        revealed,
+        opened,
+    );
     let rect = failure_popup_rect(body_area, &state);
     let inner = rect.inner(ratatui::layout::Margin {
         horizontal: 1,
