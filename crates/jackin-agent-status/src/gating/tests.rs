@@ -253,10 +253,7 @@ fn enrich_claude_notification_from_payload_subtype() {
     assert_eq!(enriched, "Notification:permission_prompt");
     let mut state = SourceGateState::default();
     assert_eq!(
-        map_event(
-            &event("claude", &enriched),
-            &mut state
-        ),
+        map_event(&event("claude", &enriched), &mut state),
         GateEffect::Authority {
             state: RawAgentState::Blocked,
             pending_permission: true,
@@ -270,7 +267,10 @@ fn enrich_claude_notification_from_payload_subtype() {
         "Notification"
     );
     assert_eq!(
-        map_event(&event("claude", "Notification"), &mut SourceGateState::default()),
+        map_event(
+            &event("claude", "Notification"),
+            &mut SourceGateState::default()
+        ),
         GateEffect::Ignore
     );
 }

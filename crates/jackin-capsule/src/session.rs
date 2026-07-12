@@ -828,9 +828,7 @@ impl Session {
         now: std::time::Instant,
     ) {
         use crate::agent_status::evidence::AuthorityEvidence;
-        use crate::agent_status::gating::{
-            GateEffect, RuntimeEvent, enrich_event_name, map_event,
-        };
+        use crate::agent_status::gating::{GateEffect, RuntimeEvent, enrich_event_name, map_event};
 
         let enriched = enrich_event_name(runtime, event, payload);
         let gate = self.gate_states.entry(source_id.to_owned()).or_default();

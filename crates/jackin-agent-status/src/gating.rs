@@ -36,10 +36,11 @@ pub enum GateEffect {
 /// [`GateEffect::Ignore`] and never authors authority.
 #[must_use]
 pub fn enrich_event_name(runtime: &str, event: &str, payload: Option<&str>) -> String {
-    if runtime == "claude" && event == "Notification" {
-        if let Some(subtype) = claude_notification_subtype(payload) {
-            return format!("Notification:{subtype}");
-        }
+    if runtime == "claude"
+        && event == "Notification"
+        && let Some(subtype) = claude_notification_subtype(payload)
+    {
+        return format!("Notification:{subtype}");
     }
     event.to_owned()
 }

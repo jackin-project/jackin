@@ -214,8 +214,6 @@ pub(crate) fn ensure_hot_path_test_rig() -> bool {
 /// to `0` (instrument never recorded).
 #[cfg(all(test, feature = "otlp"))]
 pub(crate) fn collect_hot_path_counter_sums(names: &[&str]) -> Option<Vec<u64>> {
-    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
-
     let rig = HOT_PATH_TEST_RIG.get()?;
     if !rig.instruments_owned {
         return None;
@@ -227,20 +225,31 @@ pub(crate) fn collect_hot_path_counter_sums(names: &[&str]) -> Option<Vec<u64>> 
 
     let mut totals = vec![0u64; names.len()];
     for resource in &finished {
-        for scope in resource.scope_metrics() {
-            for metric in scope.metrics() {
-                let Some(idx) = names.iter().position(|&n| n == metric.name()) else {
-                    continue;
-                };
-                if let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data() {
-                    for point in sum.data_points() {
-                        totals[idx] = totals[idx].saturating_add(point.value());
-                    }
-                }
+        sum_resource_counters(resource, names, &mut totals);
+    }
+    Some(totals)
+}
+
+#[cfg(all(test, feature = "otlp"))]
+fn sum_resource_counters(
+    resource: &opentelemetry_sdk::metrics::data::ResourceMetrics,
+    names: &[&str],
+    totals: &mut [u64],
+) {
+    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
+    for scope in resource.scope_metrics() {
+        for metric in scope.metrics() {
+            let Some(idx) = names.iter().position(|&n| n == metric.name()) else {
+                continue;
+            };
+            let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data() else {
+                continue;
+            };
+            for point in sum.data_points() {
+                totals[idx] = totals[idx].saturating_add(point.value());
             }
         }
     }
-    Some(totals)
 }
 
 #[cfg(all(test, feature = "otlp"))]

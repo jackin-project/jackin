@@ -177,7 +177,7 @@ fn check(root: &Path, budget: &Budget, counts: &BTreeMap<PathBuf, usize>) -> Res
         return Ok(());
     }
     let mut problems: Vec<String> = violations.into_iter().map(|v| v.why).collect();
-    problems.sort();
+    problems.sort_unstable();
     bail!(
         "{} file-size violation(s):\n  {}",
         problems.len(),

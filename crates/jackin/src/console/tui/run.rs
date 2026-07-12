@@ -844,7 +844,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let mut active_screen: Option<(jackin_diagnostics::Screen, jackin_diagnostics::ScreenGuard)> =
         None;
 
-    let result = 'main: loop {
+    let result: anyhow::Result<Option<ConsoleOutcome>> = 'main: loop {
         // Sync the screen trace to the visible stage. On a change, the old
         // screen span ends and a fresh linked trace starts for the new one.
         sync_active_screen(&state, &mut active_screen);

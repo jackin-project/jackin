@@ -405,13 +405,7 @@ pub fn failure_popup_hyperlink_overlay(
 ) -> Vec<u8> {
     let body_area = launch_overlay_chrome_areas(area, debug_mode).body;
     let state = failure_error_state_with_feedback(
-        failure,
-        run_id,
-        scroll,
-        hovered,
-        copied,
-        revealed,
-        opened,
+        failure, run_id, scroll, hovered, copied, revealed, opened,
     );
     let rect = failure_popup_rect(body_area, &state);
     let inner = rect.inner(ratatui::layout::Margin {

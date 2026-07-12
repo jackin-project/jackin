@@ -62,7 +62,10 @@ pub(crate) fn early_scan_skips_current_inspect(
     )
 }
 
+/// Full resolve without early-scan reuse (tests and callers that did not run
+/// the pre-role-repo current-role scan).
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)] // re-exported for tests; production uses reusing_early
 pub(crate) async fn resolve_restore_candidate(
     paths: &JackinPaths,
     workspace_name: Option<&str>,

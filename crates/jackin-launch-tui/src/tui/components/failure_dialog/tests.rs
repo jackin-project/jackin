@@ -287,13 +287,9 @@ fn scrolled_failure_copy_hit_and_overlay_follow_failure_scroll() {
 
     // At scroll 0 the diagnostics path is typically visible; capture its y.
     let rect0 = super::failure_popup_rect_for_rows(body_area, &rows);
-    let vr0 = failure_popup_value_rect_scrolled(
-        rect0,
-        &rows,
-        FailureCopyTarget::DiagnosticsPath,
-        None,
-    )
-    .expect("diagnostics path value rect at scroll 0");
+    let vr0 =
+        failure_popup_value_rect_scrolled(rect0, &rows, FailureCopyTarget::DiagnosticsPath, None)
+            .expect("diagnostics path value rect at scroll 0");
     assert_eq!(
         failure_copy_target_at(area, &failure, run_id, true, vr0.x, vr0.y, None),
         Some(FailureCopyTarget::DiagnosticsPath),
@@ -331,7 +327,15 @@ fn scrolled_failure_copy_hit_and_overlay_follow_failure_scroll() {
     );
     if let Some(vr) = vr_scrolled {
         assert_eq!(
-            failure_copy_target_at(area, &failure, run_id, true, vr.x, vr.y, Some(scrolled.clone())),
+            failure_copy_target_at(
+                area,
+                &failure,
+                run_id,
+                true,
+                vr.x,
+                vr.y,
+                Some(scrolled.clone())
+            ),
             Some(FailureCopyTarget::DiagnosticsPath),
             "scrolled value rect must hit diagnostics path"
         );
@@ -352,17 +356,8 @@ fn scrolled_failure_copy_hit_and_overlay_follow_failure_scroll() {
         );
     }
 
-    let overlay0 = failure_popup_hyperlink_overlay(
-        area,
-        &failure,
-        run_id,
-        true,
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
+    let overlay0 =
+        failure_popup_hyperlink_overlay(area, &failure, run_id, true, None, None, None, None, None);
     let overlay_scrolled = failure_popup_hyperlink_overlay(
         area,
         &failure,

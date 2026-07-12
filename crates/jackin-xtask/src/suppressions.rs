@@ -101,8 +101,12 @@ pub(crate) fn run(args: LintSuppressionsArgs) -> Result<()> {
         return Ok(());
     }
 
-    let mut problems: Vec<&str> = outcome.problems.iter().map(|p| p.message.as_str()).collect();
-    problems.sort();
+    let mut problems: Vec<&str> = outcome
+        .problems
+        .iter()
+        .map(|p| p.message.as_str())
+        .collect();
+    problems.sort_unstable();
     bail!(
         "{} suppression-budget violation(s):\n  {}\n\nFix the listed rows, then re-run `{RERUN}`. To refresh the budget after an intentional shrink, run `{RERUN} --print-budget` (or `cargo xtask lint ratchet --print bare-allow-per-crate` / `expect-per-lint-crate`).",
         problems.len(),
@@ -221,7 +225,7 @@ fn check(budget: &Budget, measured: &Measured) -> Result<()> {
         return Ok(());
     }
 
-    problems.sort();
+    problems.sort_unstable();
     bail!(
         "{} suppression-budget violation(s):\n  {}\n\nFix the listed rows, then re-run `{RERUN}`. To refresh the budget after an intentional shrink, run `{RERUN} --print-budget`.",
         problems.len(),

@@ -24,8 +24,7 @@ pub(crate) const FILE_SIZE_FAMILIES: &[&str] = &["file-size-production", "file-s
 /// Family ID for the test-layout presence allowlist.
 pub(crate) const TEST_LAYOUT_FAMILIES: &[&str] = &["test-layout"];
 /// Family IDs for bare-allow + per-lint expect suppression budgets.
-pub(crate) const SUPPRESSION_FAMILIES: &[&str] =
-    &["bare-allow-per-crate", "expect-per-lint-crate"];
+pub(crate) const SUPPRESSION_FAMILIES: &[&str] = &["bare-allow-per-crate", "expect-per-lint-crate"];
 
 #[derive(Debug, Args)]
 pub(crate) struct LintRatchetArgs {
@@ -213,8 +212,12 @@ fn emit_outcome(outcome: &FamilyCheckOutcome, family_count: usize) -> Result<()>
         ));
         return Ok(());
     }
-    let mut problems: Vec<&str> = outcome.problems.iter().map(|p| p.message.as_str()).collect();
-    problems.sort();
+    let mut problems: Vec<&str> = outcome
+        .problems
+        .iter()
+        .map(|p| p.message.as_str())
+        .collect();
+    problems.sort_unstable();
     bail!(
         "{} ratchet violation(s):\n  {}\n\nFix the listed rows, then re-run `{RERUN}`.",
         problems.len(),
@@ -231,10 +234,10 @@ fn check_families(
     let mut report_lines: Vec<String> = Vec::new();
 
     for family in &config.family {
-        if let Some(ids) = only {
-            if !ids.contains(&family.id.as_str()) {
-                continue;
-            }
+        if let Some(ids) = only
+            && !ids.contains(&family.id.as_str())
+        {
+            continue;
         }
         match family.kind.as_str() {
             "numeric" => {

@@ -110,8 +110,7 @@ fn capsule_hot_paths_have_no_send_render_cdebug() {
         "compositor must not emit per-frame cdebug!(\"render: …) rows"
     );
     assert!(
-        client_writer.contains("ctrace_payload!")
-            && client_writer.contains("send:"),
+        client_writer.contains("ctrace_payload!") && client_writer.contains("send:"),
         "client_writer should keep send: detail at ctrace_payload tier"
     );
     assert!(
@@ -119,11 +118,13 @@ fn capsule_hot_paths_have_no_send_render_cdebug() {
         "compositor should keep render: detail at ctrace_payload tier"
     );
     assert!(
-        client_writer.contains("record_frame") || client_writer.contains("jackin_diagnostics::record_frame"),
+        client_writer.contains("record_frame")
+            || client_writer.contains("jackin_diagnostics::record_frame"),
         "client_writer must record frame metrics"
     );
     assert!(
-        compositor.contains("record_render") || compositor.contains("jackin_diagnostics::record_render"),
+        compositor.contains("record_render")
+            || compositor.contains("jackin_diagnostics::record_render"),
         "compositor must record render metrics"
     );
 }

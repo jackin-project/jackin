@@ -65,8 +65,12 @@ pub(crate) fn run(args: LintTestsArgs) -> Result<()> {
         ));
         return Ok(());
     }
-    let mut problems: Vec<&str> = outcome.problems.iter().map(|p| p.message.as_str()).collect();
-    problems.sort();
+    let mut problems: Vec<&str> = outcome
+        .problems
+        .iter()
+        .map(|p| p.message.as_str())
+        .collect();
+    problems.sort_unstable();
     bail!(
         "{} test-layout violation(s):\n  {}\n\nMove tests into a sibling `tests.rs` (see crates/AGENTS.md). To refresh the allowlist, run `cargo xtask lint tests --print-allowlist` (or `cargo xtask lint ratchet --print test-layout`).",
         problems.len(),
@@ -259,7 +263,7 @@ fn check(violations: &BTreeMap<String, String>, allowed: &BTreeSet<String>) -> R
     for (path, reason) in &new {
         problems.push(format!("{path}: {reason}"));
     }
-    problems.sort();
+    problems.sort_unstable();
 
     bail!(
         "{} test-layout violation(s):\n  {}\n\nMove tests into a sibling `tests.rs` (see crates/AGENTS.md). To refresh the allowlist, run `cargo xtask lint tests --print-allowlist`.",
