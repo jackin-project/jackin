@@ -8884,7 +8884,8 @@ async fn resolve_github_env_map_reads_independent_op_refs_concurrently() {
 #[test]
 fn early_scan_skips_current_inspect_only_for_matching_empty_scan() {
     use super::restore_resolve::{
-        EarlyCurrentRestoreScan, RestoreResolution, early_scan_skips_current_inspect,
+        EarlyCurrentRestoreScan, RestoreResolution, early_scan_reused_current,
+        early_scan_skips_current_inspect,
     };
     use jackin_core::agent::Agent;
 
@@ -8905,4 +8906,304 @@ fn early_scan_skips_current_inspect_only_for_matching_empty_scan() {
         },
         Agent::Claude
     ));
+    // Unselected-empty scope skips current inspect for any later agent.
+    assert!(early_scan_skips_current_inspect(
+        &EarlyCurrentRestoreScan::ScannedUnselectedEmpty,
+        Agent::Claude
+    ));
+    assert!(early_scan_skips_current_inspect(
+        &EarlyCurrentRestoreScan::ScannedUnselectedEmpty,
+        Agent::Codex
+    ));
+    // Non-empty typed hit is reused (Some(Some(...))), not treated as skip-empty.
+    assert_eq!(
+        early_scan_reused_current(
+            &EarlyCurrentRestoreScan::Scanned {
+                agent: Agent::Claude,
+                current: Some(RestoreResolution::RecreateCurrentRole("jk-x".into())),
+            },
+            Agent::Claude
+        ),
+        Some(Some(RestoreResolution::RecreateCurrentRole("jk-x".into())))
+    );
+}
+
+/// Common path: early selected empty scan + later resolve must not re-inspect
+/// current-role containers (launch-speed 008c residual).
+#[tokio::test]
+async fn early_empty_scan_avoids_second_current_role_inspect() {
+    use super::restore_resolve::{
+        EarlyCurrentRestoreScan, RestoreResolution, resolve_restore_candidate_reusing_early,
+    };
+    use jackin_core::agent::Agent;
+    use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
+    use std::collections::VecDeque;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+
+    let container_name = "jk-early-empty-scan";
+    let mut manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        Agent::Claude,
+    );
+    manifest.mark_status(InstanceStatus::Crashed);
+    write_indexed_manifest(&paths, &manifest);
+
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            // First call: early selected scan sees NotFound → Recreate would
+            // be returned by a live scan; we stash empty instead to prove reuse
+            // path. Drive reusing_early with an empty Scanned so any second
+            // inspect would pull this queue entry.
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+        ])),
+        ..Default::default()
+    };
+
+    // Empty early scan for Claude: later resolve must not call inspect again.
+    let early = EarlyCurrentRestoreScan::Scanned {
+        agent: Agent::Claude,
+        current: None,
+    };
+    let resolution = resolve_restore_candidate_reusing_early(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        Agent::Claude,
+        &docker,
+        None,
+        &early,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(resolution, RestoreResolution::StartFresh);
+    let inspects: Vec<_> = docker
+        .recorded
+        .borrow()
+        .iter()
+        .filter(|c| c.starts_with("docker inspect "))
+        .cloned()
+        .collect();
+    assert!(
+        inspects.is_empty(),
+        "empty early scan must not re-inspect current-role; recorded: {inspects:?}"
+    );
+}
+
+/// Non-empty early hit must reuse typed `Scanned.current` without a second
+/// current-role Docker inspect (008c residual #2).
+#[tokio::test]
+async fn early_nonempty_scan_reuses_typed_current_without_reinspect() {
+    use super::restore_resolve::{
+        EarlyCurrentRestoreScan, RestoreResolution, resolve_restore_candidate_reusing_early,
+    };
+    use jackin_core::agent::Agent;
+    use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
+    use std::collections::VecDeque;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+
+    let container_name = "jk-early-nonempty-reuse";
+    let mut manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        Agent::Claude,
+    );
+    manifest.mark_status(InstanceStatus::Crashed);
+    write_indexed_manifest(&paths, &manifest);
+
+    let docker = FakeDockerClient {
+        // Any inspect would consume this; reuse must leave the queue untouched.
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([ContainerState::NotFound])),
+        ..Default::default()
+    };
+
+    let early = EarlyCurrentRestoreScan::Scanned {
+        agent: Agent::Claude,
+        current: Some(RestoreResolution::RecreateCurrentRole(
+            container_name.to_owned(),
+        )),
+    };
+    let resolution = resolve_restore_candidate_reusing_early(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        Agent::Claude,
+        &docker,
+        None,
+        &early,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        resolution,
+        RestoreResolution::RecreateCurrentRole(container_name.to_owned())
+    );
+    let inspects: Vec<_> = docker
+        .recorded
+        .borrow()
+        .iter()
+        .filter(|c| c.starts_with("docker inspect "))
+        .cloned()
+        .collect();
+    assert!(
+        inspects.is_empty(),
+        "typed non-empty early hit must not re-inspect; recorded: {inspects:?}"
+    );
+    // Queue still full proves we never called inspect.
+    assert_eq!(docker.inspect_queue.borrow().len(), 1);
+}
+
+/// Unselected-empty early scan lets a later selected agent skip current-role
+/// re-inspect when the role truly has no restore candidates (008c residual #1).
+#[tokio::test]
+async fn unselected_empty_early_scan_skips_later_agent_current_inspect() {
+    use super::restore_resolve::{
+        EarlyCurrentRestoreScan, RestoreResolution, resolve_restore_candidate_reusing_early,
+    };
+    use jackin_core::agent::Agent;
+    use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
+    use std::collections::VecDeque;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+
+    // No indexed manifests → role-scope empty.
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::NotFound,
+            ContainerState::NotFound,
+        ])),
+        ..Default::default()
+    };
+
+    let early = EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
+    let resolution = resolve_restore_candidate_reusing_early(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        Agent::Claude,
+        &docker,
+        None,
+        &early,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(resolution, RestoreResolution::StartFresh);
+    let inspects: Vec<_> = docker
+        .recorded
+        .borrow()
+        .iter()
+        .filter(|c| c.starts_with("docker inspect "))
+        .cloned()
+        .collect();
+    assert!(
+        inspects.is_empty(),
+        "ScannedUnselectedEmpty must skip current-role inspect; recorded: {inspects:?}"
+    );
+}
+
+/// Full early+later common path: one current-role inspect only (FakeDocker
+/// call count), not a double inspect when the early scan was empty.
+#[tokio::test]
+async fn common_path_single_current_inspect_with_early_then_reuse() {
+    use super::restore_resolve::{
+        EarlyCurrentRestoreScan, RestoreResolution, resolve_current_restore_candidate_timed,
+        resolve_restore_candidate_reusing_early,
+    };
+    use jackin_core::agent::Agent;
+    use jackin_docker::docker_client::ContainerState;
+    use jackin_test_support::FakeDockerClient;
+    use std::collections::VecDeque;
+
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    crate::runtime::test_support::install_all_test_stubs(&paths);
+
+    let container_name = "jk-common-single-inspect";
+    let mut manifest = workspace_manifest(
+        container_name,
+        "agent-smith",
+        "Agent Smith",
+        Agent::Claude,
+    );
+    // Running is a restore candidate but launch never attaches (D13) → empty hit.
+    manifest.mark_status(InstanceStatus::Running);
+    write_indexed_manifest(&paths, &manifest);
+
+    let docker = FakeDockerClient {
+        inspect_queue: std::cell::RefCell::new(VecDeque::from([
+            ContainerState::Running,
+            // Would be consumed by a wasteful second current-role inspect.
+            ContainerState::Running,
+        ])),
+        ..Default::default()
+    };
+
+    // Early selected scan (mirrors launch_pipeline pre-role-repo probe).
+    let early_hit = resolve_current_restore_candidate_timed(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        Agent::Claude,
+        &docker,
+    )
+    .await
+    .unwrap();
+    assert_eq!(early_hit, None);
+    let early = EarlyCurrentRestoreScan::Scanned {
+        agent: Agent::Claude,
+        current: None,
+    };
+
+    let resolution = resolve_restore_candidate_reusing_early(
+        &paths,
+        Some("workspace"),
+        "workspace",
+        "/workspace",
+        "agent-smith",
+        Agent::Claude,
+        &docker,
+        None,
+        &early,
+    )
+    .await
+    .unwrap();
+    assert_eq!(resolution, RestoreResolution::StartFresh);
+
+    let inspects: Vec<_> = docker
+        .recorded
+        .borrow()
+        .iter()
+        .filter(|c| c.starts_with(&format!("docker inspect {container_name}")))
+        .cloned()
+        .collect();
+    assert_eq!(
+        inspects.len(),
+        1,
+        "common path must inspect current-role candidate once, not twice; recorded: {inspects:?}"
+    );
 }

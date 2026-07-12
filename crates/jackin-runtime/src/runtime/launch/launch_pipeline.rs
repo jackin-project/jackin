@@ -543,7 +543,26 @@ pub(crate) async fn load_role_with(
                     };
                     None
                 }
-                None => None,
+                None => {
+                    // Unselected scan found no single-agent hit. When the role
+                    // also has no is_restore_candidate manifests, stash
+                    // ScannedUnselectedEmpty so a later selected agent skips a
+                    // pure-waste current-role re-inspect (008c residual).
+                    let role_empty = !super::restore::matching_current_role_manifests(
+                        paths,
+                        workspace_name.as_deref(),
+                        workspace.label.as_str(),
+                        &workspace.workdir,
+                        &role_key,
+                    )?
+                    .into_iter()
+                    .any(|m| m.is_restore_candidate());
+                    if role_empty {
+                        early_current_scan =
+                            super::EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
+                    }
+                    None
+                }
             }
         }
     } else {

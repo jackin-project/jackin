@@ -41,25 +41,44 @@ pub(crate) enum EarlyCurrentRestoreScan {
     /// the sole unselected agent). `None` means no attach/start/recreate hit.
     Scanned {
         agent: jackin_core::agent::Agent,
-        /// Only `StartCurrentRole` / `RecreateCurrentRole` are stashed as
-        /// early containers today; other variants early-return before stash.
+        /// Stashed outcome for that agent. When present, later resolve reuses
+        /// the typed hit without a second Docker inspect; when `None`, later
+        /// resolve skips current-role inspect entirely for this agent.
         current: Option<RestoreResolution>,
     },
+    /// Unselected early scan proved the role has no current-role restore
+    /// candidates under [`InstanceManifest::is_restore_candidate`] (broader
+    /// than the launch-dialog filter). Any later selected agent may skip
+    /// current-role re-inspect — agent-scoped matching would also be empty.
+    ScannedUnselectedEmpty,
 }
 
 /// True when the early scan already proved there is no current-role candidate
 /// for `agent`, so a second Docker inspect would be pure waste.
+#[cfg(test)]
 pub(crate) fn early_scan_skips_current_inspect(
     early: &EarlyCurrentRestoreScan,
     agent: jackin_core::agent::Agent,
 ) -> bool {
-    matches!(
-        early,
+    matches!(early_scan_reused_current(early, agent), Some(None))
+}
+
+/// When the early scan can fully answer the current-role question for `agent`,
+/// returns `Some(cached)` (`None` = no candidate, `Some(r)` = reuse hit).
+/// `None` means the caller must re-run the Docker inspect path.
+pub(crate) fn early_scan_reused_current(
+    early: &EarlyCurrentRestoreScan,
+    agent: jackin_core::agent::Agent,
+) -> Option<Option<RestoreResolution>> {
+    match early {
+        EarlyCurrentRestoreScan::NotRun => None,
+        EarlyCurrentRestoreScan::ScannedUnselectedEmpty => Some(None),
         EarlyCurrentRestoreScan::Scanned {
             agent: scanned_agent,
-            current: None,
-        } if *scanned_agent == agent
-    )
+            current,
+        } if *scanned_agent == agent => Some(current.clone()),
+        EarlyCurrentRestoreScan::Scanned { .. } => None,
+    }
 }
 
 /// Full resolve without early-scan reuse (tests and callers that did not run
@@ -104,19 +123,21 @@ pub(crate) async fn resolve_restore_candidate_reusing_early(
     progress: Option<&mut crate::runtime::progress::LaunchProgress>,
     early: &EarlyCurrentRestoreScan,
 ) -> anyhow::Result<RestoreResolution> {
-    let current = if early_scan_skips_current_inspect(early, agent) {
-        None
-    } else {
-        resolve_current_restore_candidate_timed(
-            paths,
-            workspace_name,
-            workspace_label,
-            workdir,
-            role_key,
-            agent,
-            docker,
-        )
-        .await?
+    let current = match early_scan_reused_current(early, agent) {
+        // Reuse typed empty or non-empty early hit (skip second inspect).
+        Some(cached) => cached,
+        None => {
+            resolve_current_restore_candidate_timed(
+                paths,
+                workspace_name,
+                workspace_label,
+                workdir,
+                role_key,
+                agent,
+                docker,
+            )
+            .await?
+        }
     };
     if let Some(current) = current {
         return Ok(current);

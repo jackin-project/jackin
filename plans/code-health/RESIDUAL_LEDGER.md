@@ -3,7 +3,7 @@
 Authoritative unfinished multi-PR list for goal
 [GOAL-CODE-HEALTH-AND-LAUNCH-SPEED.md](../GOAL-CODE-HEALTH-AND-LAUNCH-SPEED.md).
 
-**Launch-speed** is tracked separately: [../launch-speed/README.md](../launch-speed/README.md) (008c).
+**Launch-speed** is tracked separately: [../launch-speed/README.md](../launch-speed/README.md) (**008c DONE**).
 
 **Agent-status** is out of scope for that goal (deferred).
 
@@ -30,5 +30,5 @@ Not tracked here (intentional / optional / shipped):
 
 Disposition: **OPEN** until CLOSED in-tree (prefer implement). Operator pin only for hard external blockers.
 
-Counts: **12** code-health residuals (+ launch-speed 008c outside this file).
+Counts: **12** code-health residuals (launch-speed 008c closed outside this file).
 
