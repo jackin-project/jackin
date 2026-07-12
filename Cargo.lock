@@ -2974,6 +2974,7 @@ dependencies = [
  "sigstore",
  "tar",
  "tempfile",
+ "thiserror 2.0.18",
  "tokio",
  "x509-cert",
 ]

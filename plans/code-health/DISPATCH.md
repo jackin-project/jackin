@@ -92,8 +92,8 @@ Env and console WorkspaceName slices are **two workers**, not one.
 | instance | `jackin-instance` | **CLOSED** plan 065 | 037 |
 | isolation | `jackin-isolation` | **CLOSED** plan 066 | 037 |
 | docker | `jackin-docker` | **CLOSED** plan 067 | 037 |
+| image | `jackin-image` | **CLOSED** plan 068 | 037 |
 | config | `jackin-config` | ~66 | 037 idiom |
-| image | `jackin-image` | ~23 | 037 |
 
 **Dispatch:** all five **parallel** (disjoint crates). Orchestrator only
 refreshes shared budgets if clippy floors change.

@@ -7,11 +7,14 @@ pub mod agent_binary;
 pub mod binary_artifact;
 pub mod capsule_binary;
 pub mod derived_image;
+mod error;
 pub mod image_build;
 pub mod image_decision;
 pub mod image_recipe;
 pub mod naming;
 pub mod version_check;
+
+pub use error::ImageError;
 
 pub use naming::{
     HOST_IDENTITY_STRATEGY, LABEL_IMAGE_AGENT_VERSION_PREFIX, LABEL_IMAGE_CAPSULE_VERSION,

@@ -68,5 +68,6 @@ Lint strict green. Residuals DEFER only with measured ledger reasons.
 | 065 | thiserror mid-tranche jackin-instance | DONE | pass | InstanceError + SyncSourceValidationError |
 | 066 | thiserror mid-tranche jackin-isolation | DONE | pass | IsolationError |
 | 067 | thiserror mid-tranche jackin-docker | DONE | pass | DockerError |
+| 068 | thiserror mid-tranche jackin-image | DONE | pass | ImageError |
 
-Total plans: 63; in_tree fail rows: 0
+Total plans: 64; in_tree fail rows: 0
