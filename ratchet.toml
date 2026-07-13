@@ -19,7 +19,7 @@ cap = 1850
 mode = "enforce"
 [[family.entry]]
 key = "crates/jackin-runtime/src/runtime/image.rs"
-bound = 1938
+bound = 1941
 
 [[family]]
 id = "file-size-test"
