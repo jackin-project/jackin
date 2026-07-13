@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for `selection`.
 use super::{
     SelectionState, move_selection_end, selection_start_for_inner_rect, selection_was_dragged,

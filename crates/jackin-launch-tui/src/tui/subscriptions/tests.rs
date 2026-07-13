@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use std::sync::Mutex;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEventKind};

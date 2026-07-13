@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `jackin-exec` / `jackin-capsule exec` subcommand.
 //!
 //! Two roles in this module:

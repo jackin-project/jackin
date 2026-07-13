@@ -12,6 +12,8 @@
     reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
 )]
 #![cfg(unix)]
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
 
 //! Integration coverage for the three isolation env vars
 //! `JACKIN_HOME_DIR`, `JACKIN_CONFIG_DIR`, and `JACKIN_CONSTRUCT_IMAGE`.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Frame-time benchmark for the host console TUI compose path.
 //!
 //! Budget: the host console should compose a representative workspace

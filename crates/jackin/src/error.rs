@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 /// Operator-facing error codes and friendly messages for user-visible failures.
 ///
 /// `JackinError` is the surface-level error type rendered at the binary entry

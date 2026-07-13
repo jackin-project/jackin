@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared footer fragments: tab-bar + content footer builders + the
 //! `append_save_and_escape` / `append_open_in_github` helpers used by
 //! every screen footer.

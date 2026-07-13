@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tracks how long the operator has been "in the construct".
 //!
 //! The span runs from the launch that brought the first container up to the

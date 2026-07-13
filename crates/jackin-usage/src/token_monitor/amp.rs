@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! JSON reader for Amp thread files.
 //!
 //! Reads `~/.local/share/amp/threads/*.json`.

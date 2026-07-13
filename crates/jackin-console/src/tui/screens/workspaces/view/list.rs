@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Root-console workspace-list display adapters.
 
 use ratatui::{Frame, layout::Rect, text::Line};

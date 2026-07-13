@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Headless Defect 52 terminal performance experiment runner.
 //!
 //! This does not replace the Defect 54 live capsule smoke ledger. It captures

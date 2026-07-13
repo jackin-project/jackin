@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Launch/attach hot-path benchmark — baseline for the E1/E2 carve perf gate.
 //!
 //! Measures the in-process CPU-only operations on the `jackin load` / attach

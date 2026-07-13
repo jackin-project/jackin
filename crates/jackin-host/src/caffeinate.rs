@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Keep-awake reconciler for the macOS `caffeinate` power assertion.
 //!
 //! Workspaces opt in via `[workspaces.<name>.keep_awake] enabled = true`.

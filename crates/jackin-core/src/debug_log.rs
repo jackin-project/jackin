@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Debug-log port trait (A5 unblock, D2 pattern).
 //!
 //! Domain crates (L0) emit verbose-trace messages without depending

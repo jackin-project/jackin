@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Docker security profile schema shared by config, manifests, and runtime.
 //!
 //! This crate owns the serde vocabulary only. Runtime behavior such as grant

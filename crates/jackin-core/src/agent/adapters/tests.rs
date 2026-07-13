@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Phase 1 correctness gate: `Agent::runtime()` must produce byte-identical
 //! output to the existing direct `Agent` methods.  If any adapter drifts from
 //! the canonical enum behavior these tests catch it.

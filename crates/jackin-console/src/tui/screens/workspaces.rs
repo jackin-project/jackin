@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspace list screen module: re-exports for the effect, message, model,
 //! update, and view sub-modules.
 

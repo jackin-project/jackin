@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Launch-intro / outro / closing-screen rituals, lifted from the
 //! `crate::tui` shim. The binary previously re-exported these as
 //! `crate::warp::warp_intro` etc.; the B2 shim removal relocates them

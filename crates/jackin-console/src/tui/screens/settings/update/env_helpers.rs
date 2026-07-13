@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Environment helpers: `settings_env_flat_rows`, `set_settings_env_value`, toggle_*, remove_*, `step_cursor`_*, `settings_env_change_count`, etc.
 
 use super::{

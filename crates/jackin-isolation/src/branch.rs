@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Derive the `jackin/scratch/<selector>` branch name for isolated worktree mounts.
 //!
 //! Pure string derivation — no filesystem or git access. Not responsible for

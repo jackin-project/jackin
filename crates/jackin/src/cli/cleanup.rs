@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! CLI argument structs for `jackin eject` and `jackin purge` subcommands.
 //!
 //! Not responsible for: executing eject or purge logic — structs are parsed
