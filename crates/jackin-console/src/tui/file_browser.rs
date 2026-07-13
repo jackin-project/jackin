@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! File-browser effect executors: open, apply outcome, resolve git URL, poll.
 //!
 //! `execute_editor_file_browser_outcome` accepts an injectable

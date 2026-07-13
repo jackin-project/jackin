@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for `prompt`.
 use super::prompt_choice_from;
 use std::io::Cursor;

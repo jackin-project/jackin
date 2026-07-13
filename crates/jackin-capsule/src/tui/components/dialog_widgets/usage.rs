@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Usage-dialog rendering helpers extracted from `dialog_widgets.rs`.
 //!
 //! `dialog_widgets.rs` is the coordinator; this sub-module owns the per-line /

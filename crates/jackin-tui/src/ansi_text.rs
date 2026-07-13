@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! ANSI escape stripping and styled-span parsing for strings rendered in
 //! terminal UI components.
 //!

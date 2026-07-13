@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Capsule TUI layout helpers: compute panel rects from terminal dimensions
 //! for the status bar, branch context bar, and session pane tree.
 //!

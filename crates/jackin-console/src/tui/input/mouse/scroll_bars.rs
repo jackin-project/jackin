@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Scroll-bar drag handlers: drag the horizontal scrollbar of the
 //! long-content body and the vertical scrollbar of the focused panel.
 

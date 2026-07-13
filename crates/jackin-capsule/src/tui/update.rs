@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Capsule TUI update-layer vocabulary.
 //!
 //! The daemon still drives most state transitions while the TUI boundary is

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for `list_helpers`.
 use super::{
     clamp_selection, first_selection, list_state_for_count, matches_filter, scroll_select,

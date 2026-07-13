@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::{
     DirtyRepo, ExitDecision, assess_dirty, decide_exit, exit_action_json, policy_is_ask,
     write_exit_action_to,

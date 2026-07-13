@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Keyboard binding resolution: map raw key sequences to capsule actions
 //! (focus switch, new tab, close, palette open, etc.).
 //!

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Comment-preserving config writer.
 //!
 //! Reads still go through `AppConfig::load_or_init` (serde + `toml`).

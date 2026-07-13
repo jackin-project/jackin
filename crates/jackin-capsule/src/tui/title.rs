@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Terminal title and pane-label helpers for the capsule multiplexer.
 //!
 //! These pure functions drive the outer terminal's OSC 2 title and the

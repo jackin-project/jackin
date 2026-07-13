@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Parse and format `op://vault/item/field` references used by the 1Password
 //! secret-resolution paths.
 //!

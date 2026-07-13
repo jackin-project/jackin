@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Role manifest re-exports and filesystem helpers.
 //!
 //! Serde types (`RoleManifest`, etc.) live in `jackin-core`. This module

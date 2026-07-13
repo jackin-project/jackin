@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `ShellRunner`: concrete subprocess implementation of `CommandRunner`.
 //!
 //! The `CommandRunner` trait and `RunOptions` are re-exported from

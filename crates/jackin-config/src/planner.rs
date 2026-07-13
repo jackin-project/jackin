@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Pure workspace planning: create, edit, and mount-set collapse.
 //!
 //! No I/O. Callers apply the plan by calling `AppConfig::create_workspace` /

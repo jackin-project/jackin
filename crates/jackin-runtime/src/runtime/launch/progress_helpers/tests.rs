@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::StepCounter;
 use crate::runtime::progress::LaunchProgress;
 use jackin_launch_tui::{LaunchCancelled, LaunchDiagnostics};

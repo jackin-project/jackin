@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 name: Build signed release archive
 description: |
   Build one cargo-zigbuild release archive, write its SHA256, sign/SBOM/attest

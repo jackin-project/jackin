@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Git repo context inside the container: branch, ahead/behind counts, dirty
 //! state, and PR metadata for the status bar.
 //!

@@ -1,4 +1,7 @@
 version = "v1alpha9"
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 data_dir = "/tmp/jackin"
 
 [opencode]

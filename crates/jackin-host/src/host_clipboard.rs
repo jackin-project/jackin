@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host clipboard readers used by opt-in host attach.
 //!
 //! This is deliberately host-side. In-container `xclip` only talks to an X11

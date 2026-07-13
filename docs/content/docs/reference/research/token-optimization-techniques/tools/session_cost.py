@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 """Decompose a Claude Code session transcript into token classes and dollars.
 
 THE TRAP THIS AVOIDS: Claude Code writes one JSONL line per content block, and repeats the

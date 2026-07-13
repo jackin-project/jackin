@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host-side environment-flag helper.
 //!
 //! Mirror of `jackin-runtime::runtime::universe::env_flag_enabled` for the

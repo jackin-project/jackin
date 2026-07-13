@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `jackin role` subcommand handlers: init, validate, migrate, and pack role repos.
 //!
 //! Not responsible for: manifest schema definitions or migration registry —

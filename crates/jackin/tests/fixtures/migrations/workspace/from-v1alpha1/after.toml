@@ -1,4 +1,7 @@
 version = "v1alpha8"
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 workdir = "/workspace/prod"
 allowed_roles = ["the-architect"]
 last_role = "the-architect"
