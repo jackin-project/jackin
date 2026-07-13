@@ -1,21 +1,23 @@
 # Implementation Plans
 
-## Active goals
+Plans hold **unfinished** multi-step work. Fully shipped plan bodies are removed after source audit; code and git history are the source of truth.
 
-| Goal prompt | Scope | Status |
-|-------------|--------|--------|
-| **[GOAL-CODE-HEALTH-AND-LAUNCH-SPEED.md](GOAL-CODE-HEALTH-AND-LAUNCH-SPEED.md)** | Code-health residuals + launch-speed 008c (agent-status **out of scope**) | **COMPLETE** on PR #759 |
+## Active unfinished
 
-## Residual trackers
+| Path | Scope | Status |
+|------|--------|--------|
+| [agent-status/](agent-status/) | Product detection (live goldens, pack rewrite, live authority, remote packs) | Deferred / open residuals |
 
-| Path | Contents | Status |
-|------|----------|--------|
-| [code-health/RESIDUAL_LEDGER.md](code-health/RESIDUAL_LEDGER.md) | Code-health multi-PR residual list | **Drained** (0 open; iai-callgrind pin only) |
-| [launch-speed/README.md](launch-speed/README.md) | Launch-speed 008c | **DONE** |
-| [agent-status/](agent-status/) | Product detection residuals | **Deferred** (separate goal; ignore for this program) |
+## Removed (shipped)
 
-## Historical
+These program tracks shipped on PR #759 (`chore/rust-code-health-roadmap`) and were deleted after multi-agent verification (2026-07-13):
 
-Fully shipped numbered plans (code-health 003–069 primary work, tui-review 001, launch-speed 001–008g core) were removed after source audit. Do not re-add without new residual evidence.
+- Code-health numbered plans **003–069** + residual ledger (waves 0–6 drained)
+- Launch-speed **001–008** (including 008c early restore-scan reuse)
+- Goal prompts: `GOAL-CODE-HEALTH-AND-LAUNCH-SPEED`, `GOAL-CLOSE-ALL-REMAINING`
 
-Legacy combined close-out notes: [GOAL-CLOSE-ALL-REMAINING.md](GOAL-CLOSE-ALL-REMAINING.md) (superseded; points at the code-health+launch-speed goal).
+Routine code-health roadmap (ongoing quality program, not a residual ledger): [codebase-health-enforcement](../docs/content/docs/roadmap/(codebase-health)/codebase-health-enforcement.mdx).
+
+Hard external pin only (no plan file): **iai-callgrind** — project CI has no valgrind; re-evaluate when a valgrind-capable runner exists.
+
+Do not re-add numbered plan files without new residual evidence large enough for a dedicated PR.

@@ -2,7 +2,7 @@
 title: "Codebase health: Rust strictness, structure, and AI reviewability"
 ---
 
-**Status**: Close-out on `chore/rust-code-health-roadmap` (PR #759) — plans **003–069** executed Phase 0–8 gates and spines. Numbered plan files were **removed** after multi-agent source audit: primary deliverables shipped. **Code-health residual ledger drained** (2026-07-12): launch-speed 008c, lint/docs promotes, WorkspaceLabel, LaunchCore phases/suite A/pipeline bench, daemon ports+char+SM sim, edit-model save planner, and `[[perf]]` dhat ratchet shipped; **iai-callgrind** remains the only hard external pin (no valgrind in project CI). Agent-status product residuals stay deferred under `plans/agent-status/`. Optional micro polish and intentional product pins are not tracked as open plan debt. This page stays the routine code-health roadmap.
+**Status**: Close-out on `chore/rust-code-health-roadmap` (PR #759) — plans **003–069** and residual waves (launch-speed 008c, lint/docs, WorkspaceLabel, LaunchCore phases/suite A/pipeline bench, daemon ports+char, edit-model save planner, `[[perf]]` dhat ratchet) shipped and **removed from `plans/`** after multi-agent verification (2026-07-13). **iai-callgrind** remains the only hard external pin (no valgrind in project CI). Open plan residual work under `plans/` is **agent-status only**. Optional micro polish and intentional product pins are not plan debt. This page stays the routine code-health roadmap.
 
 ## Goal
 
@@ -39,7 +39,7 @@ The operating assumption for this program is that the most frequent contributor 
 ## Phase 0 — Reconcile and measure before changing code
 
 1. **Shipped** — `cargo xtask health` generates a fresh inventory of `allow`/`expect` suppressions grouped by lint, crate, and whether `reason =` is present (also `--format json` / `--write-baseline`). Do not trust the old `66`, `54`, or `25` counts from the retired plan files.
-2. **Shipped (one-time, plan 029)** — crate graph reconciled against the [Codebase Map](/reference/getting-oriented/codebase-map/). Recurring map↔`cargo metadata` audit is **CLOSED** (RESIDUAL_LEDGER R-map-metadata-gate via plan 057 `docs map-check`; natural oracle = `TIERS` + plan 049 generated crates section).
+2. **Shipped (one-time, plan 029)** — crate graph reconciled against the [Codebase Map](/reference/getting-oriented/codebase-map/). Recurring map↔`cargo metadata` audit is **CLOSED** (plan 057 `docs map-check`; natural oracle = `TIERS` + plan 049 generated crates section).
 3. **Shipped** — report-only code-health dashboard: `cargo xtask health` prints largest production files, largest `tests.rs` files, modules over a size threshold with no sibling tests, unreasoned lint suppressions, broad `pub mod` surfaces, duplicate helper families, and advisory notes.
 4. **Shipped** — contributor-facing verification matrix in <RepoFile path="TESTING.md">TESTING.md</RepoFile>: targeted module tests, crate nextest, `cargo xtask ci --fast`, full non-Docker CI, Docker E2E, docs/roadmap checks, snapshot checks, and when each is appropriate for an agent. Machine-checkable `verification_map` also ships from `cargo xtask health --format json`.
 5. **Shipped** — `code-health-baseline.toml` records floors for per-lint suppression counts, agent-doc token counts (AGENTS files, crate README files, `lib.rs` headers), and public-item counts; suite wall time is a commented pointer seeded by plan 013 from CI junit artifacts.
