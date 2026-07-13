@@ -485,7 +485,7 @@ fn measure_agent_doc_bytes(root: &Path) -> Result<BTreeMap<String, usize>> {
             out.insert(rel.to_owned(), n);
         }
     }
-    // crate READMEs
+    // crate README files
     let crates_dir = root.join("crates");
     if crates_dir.is_dir() {
         for entry in fs::read_dir(&crates_dir)? {

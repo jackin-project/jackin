@@ -131,7 +131,7 @@ struct JsonEvent<'a> {
     run_id: &'a str,
     /// `OTel` 32-hex trace id when an OTLP span is active; otherwise the run id
     /// (file-only / offline fallback so the field stays non-empty for schema
-    /// stability — not joinable to an OTLP backend in that mode).
+    /// stability — not correlated to an OTLP backend in that mode).
     trace_id: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     /// `OTel` 16-hex span id when an OTLP span is active; otherwise the
@@ -1169,7 +1169,7 @@ fn launch_stage_span(stage: &str) -> tracing::Span {
         otel.status_description = tracing::field::Empty,
     );
     // Derived-image build is a peer subsystem of launch: link it to the active
-    // launch span so the BuildKit subtrace is not an unparented peer (plan 044).
+    // launch span so the BuildKit trace is not a peer without a parent (plan 044).
     #[cfg(feature = "otlp")]
     if stage == "derived image" {
         use opentelemetry::trace::TraceContextExt as _;

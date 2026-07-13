@@ -51,8 +51,8 @@ Covers the console's stage/modal stack, service-poll → state handoff, launch p
 
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
-| INV-C14 | Settings and editor expose stage-debug and footer-height facts through the same manager-facing traits | `settings_stage_debug` / `editor_stage_debug` | MISSING (screen-level tests exist under `screens/settings/update/tests.rs` but do not pin manager traits) |
-| INV-C15 | Auth config editing goes through dialog-only flows (no free-form inline mutation of live config without a save plan) | auth editor update paths | MISSING (covered partially by integration tests under `crates/jackin/tests`) |
+| INV-C14 | Settings and editor expose stage-debug and footer-height facts through the same manager-facing traits | `settings_stage_debug` / `editor_stage_debug` | MISSING |
+| INV-C15 | Auth config editing goes through dialog-only flows (no free-form inline mutation of live config without a save plan) | auth editor update paths | MISSING |
 
 ## Test seams
 

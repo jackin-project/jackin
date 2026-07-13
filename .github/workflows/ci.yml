@@ -798,7 +798,7 @@ jobs:
           artifact-name: sccache-stats-ci-construct-e2e-image-${{ matrix.config.lane }}
           heading: sccache ci construct-e2e-image (${{ matrix.config.lane }})
 
-  # Plan 011: promote scheduled doctests into PR CI + cheap pending-snap hygiene.
+  # Plan 011: promote scheduled doc tests into PR CI + cheap pending-snap hygiene.
   # Kept as a sibling job because `test` is a reusable nextest workflow.
   doctest:
     needs: [changes, matrix-setup, cargo-registry-warmup]

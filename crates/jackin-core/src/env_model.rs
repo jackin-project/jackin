@@ -36,7 +36,7 @@ pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 /// and `no` suppress explicit jackin❯ host-open URL actions while leaving
 /// normal terminal OSC 8 passthrough under `JACKIN_OSC_HYPERLINK`.
 pub const JACKIN_OPEN_LINKS_ENV_NAME: &str = "JACKIN_OPEN_LINKS";
-/// Z.AI / Zhipu API key env name.
+/// Z.AI API key env name.
 pub const ZAI_API_KEY_ENV_NAME: &str = "ZAI_API_KEY";
 /// Anthropic API key env name (Claude `api_key` mode).
 pub const ANTHROPIC_API_KEY_ENV_NAME: &str = "ANTHROPIC_API_KEY";

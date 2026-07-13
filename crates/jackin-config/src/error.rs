@@ -6,7 +6,7 @@
 /// operator-facing wording stays byte-stable while still being typed.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
-    /// Free-form operator-facing message (migrations, remediations, etc.).
+    /// Free-form operator-facing message (migrations, fixes, etc.).
     #[error("{0}")]
     Message(String),
     /// Lookup failed for a named workspace.

@@ -14,7 +14,7 @@
 
 //! Seeded chaos helpers for the Docker-backed E2E lane (plan 046).
 //!
-//! Deterministic xorshift64 schedule; seed from `JACKIN_CHAOS_SEED` or a
+//! Deterministic `xorshift64` schedule; seed from `JACKIN_CHAOS_SEED` or a
 //! fixed default. Every docker filter is scoped by the harness's
 //! `jackin.class` label / name prefix.
 
@@ -35,7 +35,7 @@ impl ChaosRng {
     }
 
     pub(super) fn next_u64(&mut self) -> u64 {
-        // xorshift64*
+        // `xorshift64*`
         let mut x = self.0;
         x ^= x << 13;
         x ^= x >> 7;

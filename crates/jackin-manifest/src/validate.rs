@@ -11,7 +11,7 @@
 use jackin_core::env_model::extract_interpolation_refs;
 use jackin_core::manifest::{EnvVarDecl, ManifestWarning, RoleManifest};
 
-/// Return whether `name` is a valid env var identifier (ASCII alnum/underscore, no leading digit).
+/// Return whether `name` is a valid env var identifier (ASCII alphanumeric/underscore, no leading digit).
 pub fn is_valid_env_var_name(name: &str) -> bool {
     !name.is_empty()
         && name.is_ascii()

@@ -81,7 +81,7 @@ Roadmap-named ownership boundaries used to group invariants:
 | INV | Description | Verify by | Tests |
 |---|---|---|---|
 | INV-D19 | Last-session exit handler classifies whether the daemon should exit | `handle_last_session_exit` / `should_defer_last_session_exit` + `ports::PersistencePort` | `jackin_capsule::daemon::tests::last_session_exit_defers_when_dialog_already_open_inv_d19` `jackin_capsule::daemon::ports::tests::persistence_port_defers_when_dialog_open` |
-| INV-D20 | File export paths are categorized as jackin-run / jackin-owned / container-absolute / relative via `container_paths` | `requested_export_path_category` in `daemon/file_export.rs` | `jackin_capsule::daemon::file_export::export_category_tests::export_path_category_matrix_inv_d20` |
+| INV-D20 | File export paths are categorized as jackin-run / jackin-owned / container-absolute / relative via `container_paths` | `requested_export_path_category` in `daemon/file_export.rs` | `jackin_capsule::daemon::file_export::tests::export_path_category_matrix_inv_d20` |
 
 ## Test seams
 

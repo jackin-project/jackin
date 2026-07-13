@@ -635,7 +635,7 @@ fn format_parse_traceparent_roundtrip() {
 fn jsonl_trace_id_matches_in_memory_exporter() {
     // With the OTLP test subscriber installed, a JSONL event written under an
     // active span must carry the same 32-hex/16-hex ids the in-memory exporter
-    // records for that span (the Step 3 joinability contract).
+    // records for that span (the Step 3 correlation contract).
     let (export, subscriber) = test_layers(false, "run-jsonl-corr");
     let tmp = tempfile::tempdir().unwrap();
     let paths = JackinPaths::for_tests(tmp.path());

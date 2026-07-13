@@ -2,7 +2,7 @@
 //!
 //! New container-side paths must go through `jackin_core::container_paths`.
 //! Residual literals (Dockerfile template bodies, the chokepoint module
-//! itself) are ledgered in `container-path-allowlist.toml` and may only shrink.
+//! itself) are recorded in `container-path-allowlist.toml` and may only shrink.
 //!
 //! ```sh
 //! cargo xtask lint container-paths

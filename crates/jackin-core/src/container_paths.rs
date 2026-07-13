@@ -117,7 +117,7 @@ pub fn join(base: &str, rel: &str) -> String {
 
 /// Whether `path` is under the jackin-owned container root (prefix or exact).
 ///
-/// Mirrors the categorizer used by capsule file-export.
+/// Mirrors the classifier used by capsule file-export.
 #[must_use]
 pub fn is_jackin_owned(path: &str) -> bool {
     let trimmed = path.trim();

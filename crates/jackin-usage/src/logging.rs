@@ -143,7 +143,7 @@ pub fn init() {
             "{ts} ---- multiplexer start pid={pid} debug={debug} trace={trace} path={} ----",
             path.display()
         );
-        // One context banner makes the file joinable offline to the host run /
+        // One context banner lets the file correlate offline to the host run /
         // OTLP timeline. Per-line stamping is deliberately out (volume).
         let (run_id, session_id, traceparent) = crate::telemetry::session_context().map_or_else(
             || {

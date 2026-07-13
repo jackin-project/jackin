@@ -47,7 +47,7 @@ fn simulated_frames_emit_no_send_render_debug_rows() {
     // Snapshot cumulative counters, then drive 100 frame emissions through the
     // converted path (record_frame + record_render). Counters must advance by
     // the exact recorded totals; DEBUG send:/render: rows are demoted to
-    // ctrace_payload in the capsule (asserted separately via source contract).
+    // `ctrace_payload` in the capsule (asserted separately via source contract).
     let before = collect_hot_path_counter_sums(HOT_PATH_COUNTERS)
         .expect("force_flush into InMemoryMetricExporter must succeed");
 
