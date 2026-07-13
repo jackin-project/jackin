@@ -1,0 +1,95 @@
+---
+title: "Rust Build Cache Hygiene"
+---
+
+**Status**: Open — design proposal
+
+## Problem
+
+Rust-heavy jackin❯ work can silently turn host-local cache directories into the largest disk consumer on the machine. The July 2026 operator disk audit found `~/.cache/jackin` at roughly 410 GB, with one jackin❯ project cache target around 402 GB. Separate Rust workspaces also had large local `target/` trees: one non-jackin❯ Rust workspace around 30 GB, this jackin❯ checkout around 18 GB, and another Rust checkout around 13 GB.
+
+The root bug class is not "one bad directory". jackin❯ has multiple places that create or preserve build/cache state for speed, but there is no single Rust build-cache ownership model with quotas, TTLs, eviction order, operator-visible accounting, or an automatic cleanup path. A cache can be created because it improves launch or build latency, then survive indefinitely because no policy owns its lifetime.
+
+## Why It Matters
+
+Agents run many builds across many branches, isolated worktrees, generated checkouts, and PR verification bundles. Rust makes the pressure worse because Cargo stores build output under `target/` by default, and those targets are per-workspace unless explicitly redirected. Compiler-result caches such as `sccache` solve a different layer: they avoid recompiling repeated rustc inputs, but they do not delete every workspace's `target/` directory and they add their own disk cache that needs a size cap.
+
+If jackin❯ keeps optimizing for faster warm starts without matching cleanup mechanics, the product becomes hostile to long-running local use. The operator sees free disk disappear, macOS becomes unstable near full-disk conditions, and the natural workaround is destructive manual deletion instead of a trusted `jackin prune` or `jackin doctor` flow.
+
+The fix should be structural: every cache jackin❯ creates or recommends must have an owner, a purpose label, a default budget, a cleanup mechanism, and a visibility surface.
+
+## Design
+
+### Research notes
+
+- Cargo stores build output in `target` and `build` directories, defaulting to a workspace-local `target` directory; `CARGO_TARGET_DIR`, Cargo config `build.target-dir`, or `--target-dir` can redirect it. See the [Cargo Book build-cache reference](https://doc.rust-lang.org/cargo/reference/build-cache.html).
+- Cargo workspaces already share one output directory within a workspace, but Cargo does not currently provide a stable built-in user-wide target cache for every workspace. The Rust project has an accepted [user-wide build-cache goal](https://rust-lang.github.io/rust-project-goals/2024h2/user-wide-cache.html), but it remains future Cargo work rather than a shipped feature jackin❯ can depend on.
+- A single global `CARGO_TARGET_DIR` can reduce duplicate target trees, but it has sharp edges for jackin❯: concurrent builds can serialize on Cargo locks, `cargo clean` can remove artifacts for unrelated workspaces, and path-dependency identity/collision issues have been reported when multiple workspaces share one target directory. See [Cargo issue rust-lang/cargo#12516](https://github.com/rust-lang/cargo/issues/12516).
+- `sccache` is a compiler wrapper for Rust and other languages. It stores compiler results on local disk or remote backends such as Redis, S3, GCS, Azure, GitHub Actions cache, and HTTP-based collaboration services. See the [project README](https://github.com/mozilla/sccache).
+- `sccache` local disk storage has explicit controls: `SCCACHE_DIR` changes the local cache location, and `SCCACHE_CACHE_SIZE` caps local disk size. The [upstream local-cache docs](https://github.com/mozilla/sccache/blob/main/docs/Local.md) state the default size is 10 GB.
+- Current `sccache` configuration supports multi-level cache chains such as `disk,redis,s3`, with write-error policy controls. This matters for jackin❯ because a small local L0 cache plus optional remote/shared L1 can reduce local disk pressure without making every build cold. See the [configuration reference](https://github.com/mozilla/sccache/blob/main/docs/Configuration.md).
+- The Rust project has explicitly discussed cache cleaning as an ongoing Cargo concern, including global cache cleanup and future target-directory tracking work. See the [Rust Blog cache-cleaning post](https://blog.rust-lang.org/2023/12/11/cargo-cache-cleaning/).
+
+### Proposed direction
+
+Introduce a Rust build-cache hygiene program for jackin❯ with four layers:
+
+1. **Inventory and ownership.** Define every jackin❯-managed cache class: project build targets under `~/.cache/jackin/projects`, global Cargo registry/git caches, optional `sccache` disk cache, generated role/agent prefetch caches, docs/build output, PR verification bundles, and per-workspace `target/` paths when jackin❯ intentionally sets them. Each class gets an owner, purpose, default retention policy, and deletion safety rule.
+2. **Bounded defaults.** Do not create unbounded Rust build targets under `~/.cache/jackin`. For Rust-heavy jackin❯-managed builds, prefer a bounded policy: `sccache` enabled where it helps, `SCCACHE_CACHE_SIZE` set to a conservative default, `SCCACHE_DIR` scoped under the jackin❯ cache root, and `CARGO_TARGET_DIR` scoped per project or per verification bundle only when a cleanup owner exists.
+3. **Prune and doctor integration.** Extend `jackin prune` and `jackin doctor` so operators can see and clean Rust build/cache classes separately from role images, instance state, and registry caches. The first useful operator surface is likely `jackin prune cache --dry-run` showing bytes by class, followed by explicit `--rust-builds`, `--sccache`, or equivalent class selectors.
+4. **Automatic guardrails.** Add a soft budget checker that warns before a jackin❯-owned cache root crosses a configured threshold, and an optional TTL/least-recently-used cleanup path for safe classes. Automatic deletion must never remove operator source trees or non-jackin❯ caches silently; it may only touch paths jackin❯ owns and labels.
+
+### Specific local-case recommendation
+
+For the disk layout that triggered this item, the likely target architecture is not "one global Cargo target directory for every Rust checkout". That would reduce visible `target/` folders, but it fits poorly with jackin❯ parallel-agent workflows because multiple agents can run Cargo at once and one global target lock can make unrelated work block each other.
+
+The better default for jackin❯ is a two-cache model:
+
+1. **Shared downloads and compiler results.** Keep downloaded crates and git checkouts in a shared Cargo home/cache that jackin❯ owns, and use `sccache` as the shared compiler-result layer. This addresses the duplicate "same crate compiled in many projects" problem without requiring all projects to write into one target tree.
+2. **Bounded build-output targets.** Keep Cargo `target` output scoped by project/workspace/verification bundle, but move jackin❯-managed ones under a known cache root with budgets and prune metadata. Those directories remain disposable, visible in `doctor`, and removable by `prune` without touching source.
+
+In practice, a future implementation should evaluate a default like:
+
+```sh
+SCCACHE_DIR="$JACKIN_HOME_DIR/cache/rust/sccache"
+SCCACHE_CACHE_SIZE="20G"
+RUSTC_WRAPPER="sccache"
+CARGO_HOME="$JACKIN_HOME_DIR/cache/rust/cargo-home"
+CARGO_TARGET_DIR="$JACKIN_HOME_DIR/cache/rust/targets/project-key"
+```
+
+The exact paths and config names are design placeholders, not shipped CLI. The important contract is ownership: every jackin❯-created path has a label, budget, and cleanup command.
+
+### Rejected default
+
+Do not make one global `CARGO_TARGET_DIR` the default for all operator Rust workspaces. It is attractive because it removes many `target/` folders, but it mixes unrelated projects, makes `cargo clean` blast-radius confusing, and can serialize or collide under parallel builds. It may still be useful as an advanced opt-in for a single operator who accepts those trade-offs.
+
+### Policy questions
+
+- Should jackin❯ enable `sccache` automatically for its own Rust PR verification and Architect-role workflows, or only document/recommend it?
+- Should the default Rust build target cache be per project, per branch, per PR verification bundle, or shared by a stable workspace/project key?
+- Which cache classes are safe for automatic TTL eviction, and which require explicit operator confirmation because deletion causes expensive rebuilds?
+- Should cache budget live globally, per workspace, or both?
+- Should remote/shared `sccache` backends be role-managed configuration, operator global configuration, or out of scope for V1?
+- Should jackin❯ expose an advanced single-`CARGO_TARGET_DIR` mode for operators who prefer disk deduplication over parallel-build isolation?
+
+## Tasks
+
+1. Audit all jackin❯ code paths that create host-side cache or build-output directories, including project cache roots, PR verification bundles, prewarm/build flows, generated role/agent cache mounts, and docs/build outputs.
+2. Add a contributor reference table for cache classes: path owner, creation path, safe deletion condition, prune command, default budget, and visibility surface.
+3. Decide the Rust build-cache architecture: whether jackin❯ should use `sccache`, where `SCCACHE_DIR` lives, what default `SCCACHE_CACHE_SIZE` should be, and whether `CARGO_TARGET_DIR` should be redirected for jackin❯-managed Rust builds.
+4. Extend prune planning so dry runs report bytes for Rust build artifacts and compiler caches before deleting anything.
+5. Add `doctor` or status output that flags jackin❯-owned cache roots above budget and names the exact cleanup command.
+6. Add tests around cache classification so new cache roots cannot be introduced without owner/policy metadata.
+7. Document operator-facing cleanup flows once behavior ships; keep internal path and policy details in contributor reference docs.
+
+## Related Files
+
+- <RepoFile path="crates/jackin-runtime/src/runtime/cleanup.rs" /> — existing prune/delete machinery.
+- <RepoFile path="crates/jackin-runtime/src/runtime/prune_output.rs" /> — current prune output surface.
+- <RepoFile path="crates/jackin-runtime/src/runtime/prewarm_trigger.rs" /> — prewarm flows that trade disk for speed.
+- <RepoFile path="crates/jackin-core/src/agent/runtime.rs" /> — generated role/agent build cache mounts.
+- <RepoFile path="crates/jackin-core/src/agent/adapters/claude.rs" /> — agent prefetch cache mount precedent.
+- <RepoFile path="docs/content/docs/(public)/commands/prune.mdx" /> — future operator cleanup documentation.
+- <RepoFile path="docs/content/docs/(public)/commands/doctor.mdx" /> — future diagnostics/warning documentation.
+- [Workspace registry cache](/roadmap/workspace-registry-cache/) — adjacent cache program for DinD image/layer reuse.

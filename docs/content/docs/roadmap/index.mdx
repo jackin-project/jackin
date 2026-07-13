@@ -119,6 +119,7 @@ jackin❯ is a functional proof of concept, not a stable product line. **`Claude
 ### Infrastructure improvements
 
 - **[Registry configurations](/roadmap/registry-configurations/)** — a configurations layer for private registries: multiple named, globally-or-per-workspace-scoped endpoint configurations, each sourcing credentials through the credential-source pattern (env, command, `op://`, Docker credential store/helper, ECR helper), so jackin can pull private images (Amazon ECR, private GHCR/Docker Hub) instead of silently failing auth and rebuilding from the Dockerfile (status: open — design proposal)
+- **[Rust build cache hygiene](/roadmap/rust-build-cache-hygiene/)** — define ownership, budgets, cleanup, and visibility for jackin❯-managed Rust build caches, including Cargo `target/` growth and `sccache`-style compiler caches (status: open — research-backed design proposal)
 - **[Platform support policy & roadmap freshness](/roadmap/platform-support-and-freshness/)** — declare macOS as primary platform, Linux as experimental, Windows WSL2 as best-effort, native Windows as out of scope; document Debian-only construct image rationale; add `last_reviewed` frontmatter and freshness check script for every roadmap item (status: open — design proposal)
 
 ### Operator surface and fleet operations
