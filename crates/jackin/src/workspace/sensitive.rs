@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Sensitive mount detection and operator confirmation prompt.
 //!
 //! Pure detection helpers (`SensitiveMount`, `find_sensitive_mounts`) are

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `LaunchContext` + prewarm types + `spawn_sibling_auth_prewarm` + `launch_role_runtime`
 //! (+ host passthrough + debug env helpers) extracted from launch coordinator (File1).
 //! All items `pub(crate)` re-exported from the coordinator to preserve `super::` / `use super::*` .

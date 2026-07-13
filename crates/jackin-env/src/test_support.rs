@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared test fakes for `OpWriteRunner` consumers.
 //!
 //! Lives behind the `test-support` feature so production binaries don't pull

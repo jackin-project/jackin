@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 """Measure image (visual) token cost on the real Anthropic tokenizer, across models.
 
 No PIL/ImageMagick needed: builds valid PNGs of arbitrary WxH with the stdlib (struct+zlib),

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Console manager input handlers — key dispatch, modal routing,
 //! and two-phase save flow.
 

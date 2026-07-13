@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::{changed_files_sync, head_content_sync, parse_porcelain, working_content_sync};
 use std::process::{Command, Stdio};
 

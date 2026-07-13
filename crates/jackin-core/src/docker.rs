@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `DockerApi` trait and pure data types for container operations.
 //!
 //! This module contains only the trait definition and associated data types —

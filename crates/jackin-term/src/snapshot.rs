@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `GridSnapshot` — complete screen state capture for testing and terminal observation.
 //!
 //! `DamageGrid::dump()` serializes the current screen into a `GridSnapshot` so

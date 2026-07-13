@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Sidebar/main-area split layout: percentage-based split state, drag
 //! clamping, and seam hit-testing for the two-panel console layout.
 //!

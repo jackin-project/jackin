@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Keybinding registry — single source of truth coupling key dispatch and hint advertisement.
 //!
 //! A [`Keymap<A>`] binds each action to one or more key chords and a hint label. The

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! CLI argument types: `Cli` root struct, `Command` enum, and all subcommand
 //! arg structs parsed by `clap`.
 //!

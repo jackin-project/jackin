@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! File-browser listing data shared between service adapters and TUI state.
 
 use std::path::PathBuf;

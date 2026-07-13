@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Mount construction helpers extracted from the launch coordinator.
 //! All items re-exported from the parent to preserve `super::` call sites
 //! in `launch_role_runtime` and `launch_pipeline.rs`.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Roles tab lines, geometry, widths, and `EditorRoleRow` extracted from the
 //! view coordinator. All items re-exported from parent to preserve `super::`
 //! call sites (e.g. in frame.rs via `render_roles_tab` and in tests via

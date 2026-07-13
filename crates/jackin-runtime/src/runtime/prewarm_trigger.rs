@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Background image-prewarm trigger (D22).
 //!
 //! Off the operator attach path, this refreshes any stale baked role images for

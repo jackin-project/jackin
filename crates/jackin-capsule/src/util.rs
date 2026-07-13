@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared utilities for the capsule: bounded file reads, child-process
 //! helpers, and small formatting utilities used across modules.
 //!

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Create-workspace wizard: prelude stage dispatch and its multi-step
 //! modal sequence (`FileBrowser` → `MountDstChoice` → [`TextInput`] →
 //! `WorkdirPick` → `TextInputName`).

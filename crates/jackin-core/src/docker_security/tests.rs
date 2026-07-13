@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Guard tests co-located with the schema enums whose invariants they protect.
 //!
 //! The runtime crate (`jackin-runtime::runtime::docker_profile`) relies on the
