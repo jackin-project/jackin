@@ -1,4 +1,4 @@
-//! Suite A: grant-failure ordering + mid-pipeline FailedSetup cleanup.
+//! Suite A: grant-failure ordering + mid-pipeline `FailedSetup` cleanup.
 use super::*;
 use crate::instance::{DockerResources, InstanceManifest, NewInstanceManifest};
 use jackin_config::AppConfig;
@@ -88,7 +88,9 @@ async fn grant_failure_cleanup_removes_adopted_sidecar_resources() {
         "grant-failure cleanup must remove DinD; recorded: {recorded:?}"
     );
     assert!(
-        recorded.iter().any(|c| c == "docker network rm jk-role-net"),
+        recorded
+            .iter()
+            .any(|c| c == "docker network rm jk-role-net"),
         "grant-failure cleanup must remove network; recorded: {recorded:?}"
     );
     assert!(
@@ -155,10 +157,7 @@ fn classify_image_phase_reuse_vs_build() {
         image: "jk_role:abc".into(),
     };
     let classified = classify_image_phase(&reuse);
-    assert_eq!(
-        classified.class,
-        ImagePhaseClass::ReuseOrBackgroundRefresh
-    );
+    assert_eq!(classified.class, ImagePhaseClass::ReuseOrBackgroundRefresh);
     assert!(classified.selected_image_reused);
 
     let build = ImageDecision::BuildFromWorkspace {

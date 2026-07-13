@@ -164,7 +164,12 @@ skip = [
     { crate = "unicode-width@0.1.14", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "untrusted@0.7.1", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
     { crate = "which@4.4.2", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
-    { crate = "windows-sys@0.59.0", reason = "Existing duplicate-version debt; keep highest current version visible for future drift." },
+    { crate = "der@0.7.10", reason = "sigstore 0.14.0 chain pins der 0.7; x509-cert 0.3 pulls der 0.8. Remove when sigstore updates." },
+    { crate = "der_derive@0.7.3", reason = "Transitive duplicate via sigstore chain (der 0.7) vs x509-cert 0.3 (der 0.8)." },
+    { crate = "pem-rfc7468@0.7.0", reason = "sigstore 0.14.0 chain pins pem-rfc7468 0.7; x509-cert 0.3 pulls 1.0. Remove when sigstore updates." },
+    { crate = "spki@0.7.3", reason = "sigstore 0.14.0 pins spki 0.7.3; x509-cert 0.3 pulls spki 0.8.0. Remove when sigstore updates." },
+    { crate = "windows-sys@0.61.2", reason = "Newer transitive duplicate; 0.59.0 already recorded." },
+    { crate = "x509-cert@0.2.5", reason = "sigstore 0.14.0 pins x509-cert 0.2.5; workspace direct dependency moved to 0.3. Remove when sigstore updates." },
 ]
 
 # Workspace-dependency hygiene: fails the gate when a workspace member

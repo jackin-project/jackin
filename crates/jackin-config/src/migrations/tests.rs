@@ -331,12 +331,18 @@ fn rejects_when_chain_overshoots_current() {
 
 // Migration fn pointers must return Result to match the
 // `Migration` type alias even when the test bodies always succeed.
-#[allow(clippy::unnecessary_wraps, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 fn alpha1_to_alpha2(doc: &mut DocumentMut) -> anyhow::Result<()> {
     doc["alpha1_to_alpha2"] = toml_edit::value(true);
     Ok(())
 }
-#[allow(clippy::unnecessary_wraps, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 fn alpha2_to_alpha3(doc: &mut DocumentMut) -> anyhow::Result<()> {
     doc["alpha2_to_alpha3"] = toml_edit::value(true);
     Ok(())

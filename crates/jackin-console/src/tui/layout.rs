@@ -95,7 +95,11 @@ pub fn split_pct_from_drag(anchor_pct: u16, anchor_x: u16, mouse_col: u16, width
     let delta_pct = delta_cols * 100 / i32::from(width.max(1));
     let candidate = i32::from(anchor_pct) + delta_pct;
     let bounded = candidate.clamp(0, 100);
-    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, reason = "documented residual allow; prefer expect when site is lint-true")]
+    #[allow(
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     {
         bounded as u16
     }

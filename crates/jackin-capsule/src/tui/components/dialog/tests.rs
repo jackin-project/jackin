@@ -1,5 +1,8 @@
 //! Tests for `jackin-capsule` dialog components.
-#![allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
+#![allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use std::sync::Arc;
 
 use super::*;

@@ -1,6 +1,6 @@
 [package]
 name = "jackin-dev"
-version = "0.1.16"
+version = "0.1.19"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

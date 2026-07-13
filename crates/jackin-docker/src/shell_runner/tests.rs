@@ -2,6 +2,15 @@
 use super::*;
 use std::time::Instant;
 
+fn ambient_telemetry_disables_debug() -> bool {
+    std::env::var("JACKIN_TELEMETRY_LEVEL").is_ok_and(|value| {
+        !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "debug" | "trace"
+        )
+    })
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn run_capture_stderr_returns_hint_after_streaming_stderr() {
@@ -235,6 +244,9 @@ async fn capture_secret_omits_stderr_from_error_on_failure() {
 #[cfg(unix)]
 #[tokio::test]
 async fn debug_run_captures_noncapturing_command_into_diagnostics() {
+    if ambient_telemetry_disables_debug() {
+        return;
+    }
     // A non-quiet, non-capturing `run` would inherit the terminal and
     // stream straight to the screen. Under --debug it must capture both
     // streams and route them to the diagnostics run file instead — never
@@ -263,6 +275,9 @@ async fn debug_run_captures_noncapturing_command_into_diagnostics() {
 #[cfg(unix)]
 #[tokio::test]
 async fn debug_run_scrubs_captured_command_output() {
+    if ambient_telemetry_disables_debug() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let token_file = dir.path().join("token.txt");
     std::fs::write(&token_file, "token=ghp_1234567890abcdef\n").unwrap();
@@ -306,7 +321,10 @@ fn rich_surface_closes_stdin_for_noninteractive_commands() {
 
 #[cfg(unix)]
 #[tokio::test]
-#[allow(clippy::await_holding_lock, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::await_holding_lock,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 async fn capture_secret_suppresses_stdout_debug_echo() {
     use std::sync::Mutex;
     static LOCK: Mutex<()> = Mutex::new(());

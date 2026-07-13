@@ -1,5 +1,9 @@
 //! Tests for `runtime/launch.rs`: load pipeline behavioral verification.
-#![allow(clippy::too_many_lines, unused_qualifications, reason = "documented residual allow; prefer expect when site is lint-true")]
+#![allow(
+    clippy::too_many_lines,
+    unused_qualifications,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::*;
 use crate::runtime::launch::launch_runtime::{
     debug_runtime_envs_for, run_runtime_envs, run_runtime_envs_for, telemetry_runtime_envs_for,
@@ -2010,7 +2014,10 @@ async fn restore_role_source_override_uses_manifest_source_without_mutating_conf
 /// Signature matches `deny_trust` so both can be passed as the same
 /// function-pointer type to the trust prompt; the `Ok(())` is therefore
 /// load-bearing even though clippy flags it.
-#[allow(clippy::unnecessary_wraps, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 fn auto_trust(_: &RoleSelector, _: &jackin_config::RoleSource) -> anyhow::Result<()> {
     Ok(())
 }
@@ -8952,12 +8959,8 @@ async fn early_empty_scan_avoids_second_current_role_inspect() {
     crate::runtime::test_support::install_all_test_stubs(&paths);
 
     let container_name = "jk-early-empty-scan";
-    let mut manifest = workspace_manifest(
-        container_name,
-        "agent-smith",
-        "Agent Smith",
-        Agent::Claude,
-    );
+    let mut manifest =
+        workspace_manifest(container_name, "agent-smith", "Agent Smith", Agent::Claude);
     manifest.mark_status(InstanceStatus::Crashed);
     write_indexed_manifest(&paths, &manifest);
 
@@ -9023,12 +9026,8 @@ async fn early_nonempty_scan_reuses_typed_current_without_reinspect() {
     crate::runtime::test_support::install_all_test_stubs(&paths);
 
     let container_name = "jk-early-nonempty-reuse";
-    let mut manifest = workspace_manifest(
-        container_name,
-        "agent-smith",
-        "Agent Smith",
-        Agent::Claude,
-    );
+    let mut manifest =
+        workspace_manifest(container_name, "agent-smith", "Agent Smith", Agent::Claude);
     manifest.mark_status(InstanceStatus::Crashed);
     write_indexed_manifest(&paths, &manifest);
 
@@ -9131,7 +9130,7 @@ async fn unselected_empty_early_scan_skips_later_agent_current_inspect() {
     );
 }
 
-/// Full early+later common path: one current-role inspect only (FakeDocker
+/// Full early+later common path: one current-role inspect only (`FakeDocker`
 /// call count), not a double inspect when the early scan was empty.
 #[tokio::test]
 async fn common_path_single_current_inspect_with_early_then_reuse() {
@@ -9149,12 +9148,8 @@ async fn common_path_single_current_inspect_with_early_then_reuse() {
     crate::runtime::test_support::install_all_test_stubs(&paths);
 
     let container_name = "jk-common-single-inspect";
-    let mut manifest = workspace_manifest(
-        container_name,
-        "agent-smith",
-        "Agent Smith",
-        Agent::Claude,
-    );
+    let mut manifest =
+        workspace_manifest(container_name, "agent-smith", "Agent Smith", Agent::Claude);
     // Running is a restore candidate but launch never attaches (D13) → empty hit.
     manifest.mark_status(InstanceStatus::Running);
     write_indexed_manifest(&paths, &manifest);

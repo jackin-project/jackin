@@ -1,4 +1,7 @@
-#![allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
+#![allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 //! Key handler for the Settings → Global Mounts tab and its modals.
 //!
 //! Dispatches keyboard events to the add/edit/delete flow for global mount

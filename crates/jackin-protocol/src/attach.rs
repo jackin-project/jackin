@@ -1,4 +1,7 @@
-#![allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
+#![allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 //! Attach protocol handshake: initial capability negotiation and session-ID
 //! assignment when a client connects.
 //!

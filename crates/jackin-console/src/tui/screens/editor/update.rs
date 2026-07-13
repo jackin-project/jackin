@@ -538,7 +538,10 @@ pub fn toggle_allowed_role_at(
 }
 
 #[must_use]
-#[allow(unfulfilled_lint_expectations, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unfulfilled_lint_expectations,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
@@ -734,7 +737,10 @@ pub fn forbidden_secret_keys<R, V>(
     }
 }
 
-#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn set_secret_value<R, V>(
     workspace_env: &mut BTreeMap<String, V>,
     roles: &mut BTreeMap<String, R>,

@@ -45,7 +45,10 @@ use super::*;
 // separately) but the mode never reached disk; on reload, the resolver
 // fell back to the global default and ignored the freshly-written key.
 #[test]
-#[allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -152,6 +155,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     // Enter moves state to PendingCommit; flush the queued write to disk.
+    mark_pending_save_drift_checked_for_test(&mut state);
     execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
     wait_for_config_save(&mut state, &mut config, &paths, cwd)?;
 

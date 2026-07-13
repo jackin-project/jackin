@@ -192,7 +192,10 @@ pub fn operation_set_i64_attr(span: &Span, key: &'static str, value: i64) {
     }
 }
 
-#[allow(dead_code, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    dead_code,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 const _FACADE_KEYS: &[&str] = &[
     otel_keys::EVENT_NAME,
     otel_keys::CATEGORY,

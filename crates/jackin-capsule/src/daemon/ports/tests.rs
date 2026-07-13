@@ -1,5 +1,5 @@
 //! Port decision unit tests (pure). Integration with Multiplexer lives in
-//! `daemon/tests.rs` (INV-D8 remove_exited_session, INV-D19 last-session exit).
+//! `daemon/tests.rs` (INV-D8 `remove_exited_session`, INV-D19 last-session exit).
 use super::*;
 
 #[test]

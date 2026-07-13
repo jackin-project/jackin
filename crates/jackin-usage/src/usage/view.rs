@@ -4,7 +4,10 @@
 //! (file-size ratchet). Items in this module are `pub(crate)` so the
 //! coordinator (`usage.rs`) can re-export them.
 
-#[allow(clippy::wildcard_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::*;
 
 /// Stamp the surface-derived agent, provider label, and tab strip onto a base
@@ -599,7 +602,10 @@ pub(crate) fn with_status_slot(
 /// Build a window bucket carrying both the formatted reset label and the raw
 /// reset epoch (RC2), so the CLI report can emit `resets_at`. `reset_at` is the
 /// authoritative timestamp; `reset_label` is derived from it.
-#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn timed_bucket(
     label: &str,
     used_label: Option<String>,

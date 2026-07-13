@@ -559,8 +559,7 @@ pub(crate) async fn load_role_with(
                     .into_iter()
                     .any(|m| m.is_restore_candidate());
                     if role_empty {
-                        early_current_scan =
-                            super::EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
+                        early_current_scan = super::EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
                     }
                     None
                 }

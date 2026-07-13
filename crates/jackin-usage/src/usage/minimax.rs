@@ -4,7 +4,10 @@
 //! (file-size ratchet). Items in this module are `pub(crate)` so the
 //! coordinator (`usage.rs`) can re-export them.
 
-#[allow(clippy::wildcard_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::*;
 use serde::Deserialize;
 
@@ -227,7 +230,10 @@ pub(crate) enum MiniMaxWindow {
     Weekly,
 }
 
-#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn minimax_bucket(
     model_name: &str,
     window: MiniMaxWindow,

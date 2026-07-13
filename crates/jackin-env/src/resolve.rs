@@ -205,7 +205,10 @@ pub fn resolve_op_uri_to_ref(
 
     // Item segment may carry [subtitle] filter — a display extension from jackin❯.
     // Nested condition makes map_or awkward; allow the if-let pattern here.
-    #[allow(clippy::option_if_let_else, reason = "documented residual allow; prefer expect when site is lint-true")]
+    #[allow(
+        clippy::option_if_let_else,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     let (item_name, subtitle_filter): (&str, Option<&str>) = if let Some(open) = item_seg.rfind('[')
     {
         if item_seg.ends_with(']') && open < item_seg.len() - 1 {

@@ -493,7 +493,7 @@ fn resolved_workspace_as_workspace_label_accepts_path_and_stem() {
     };
     let label = stem.as_workspace_label().unwrap();
     assert_eq!(label.as_str(), "chainargos");
-    assert!(WorkspaceName::parse(label.as_str()).is_ok());
+    WorkspaceName::parse(label.as_str()).unwrap();
 
     let path_label = ResolvedWorkspace {
         name: "/home/op/proj".into(),
@@ -506,8 +506,6 @@ fn resolved_workspace_as_workspace_label_accepts_path_and_stem() {
     };
     let label = path_label.as_workspace_label().unwrap();
     assert_eq!(label.as_str(), "/home/op/proj");
-    assert!(
-        WorkspaceName::parse(label.as_str()).is_err(),
-        "path labels must not be valid config stems"
-    );
+    let error = WorkspaceName::parse(label.as_str()).unwrap_err();
+    assert!(error.to_string().contains("cannot contain path separators"));
 }

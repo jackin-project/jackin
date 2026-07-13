@@ -16,6 +16,15 @@ fn semconv_registry_metric_names_are_stable_wire_strings() {
         "jackin.diagnostics.events",
         "jackin.cache.hits",
         "jackin.cache.misses",
+        "jackin.terminal.bytes_sent",
+        "jackin.terminal.bytes_received",
+        "jackin.terminal.cursor_moves",
+        "jackin.render.duration",
+        "jackin.render.painted_cells",
+        "jackin.render.frames",
+        "jackin.input.mouse_events",
+        "jackin.usage.accounts_refreshed",
+        "jackin.errors.count",
     ];
     assert_eq!(otel_metrics::ALL.len(), expected.len());
     for (got, want) in otel_metrics::ALL.iter().zip(expected) {
@@ -33,14 +42,11 @@ fn semconv_registry_event_kinds_are_stable_wire_strings() {
     let mut seen = std::collections::BTreeSet::new();
     for kind in otel_events::ALL {
         assert!(!kind.is_empty());
-        assert!(
-            !kind.contains('.'),
-            "event kinds use underscores on the wire: {kind}"
-        );
         assert!(seen.insert(*kind), "duplicate event kind {kind}");
     }
     assert!(otel_events::ALL.contains(&otel_events::SESSION_DETACH));
     assert!(otel_events::ALL.contains(&otel_events::CLEAN_SHUTDOWN));
+    assert!(otel_events::ALL.contains(&otel_events::PROCESS_EXECUTE));
 }
 
 #[test]

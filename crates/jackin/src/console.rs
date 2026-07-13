@@ -16,7 +16,10 @@
 // patterns) so a future stage can be added without rewriting every match
 // site. The irrefutable-pattern lint is allowed at the module level rather
 // than peppering individual sites.
-#![allow(irrefutable_let_patterns, reason = "documented residual allow; prefer expect when site is lint-true")]
+#![allow(
+    irrefutable_let_patterns,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 
 pub mod effects;
 mod services;

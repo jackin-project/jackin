@@ -1,5 +1,9 @@
 //! CSI reconstruction + SGR color parsing helpers extracted from grid.rs.
-#[allow(unused_imports, clippy::wildcard_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    clippy::wildcard_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::*;
 
 /// Rebuild a CSI sequence as bytes for passthrough or diagnostics.

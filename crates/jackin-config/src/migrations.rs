@@ -485,7 +485,10 @@ pub fn set_doc_version(doc: &mut DocumentMut, version: &str) {
 // `apply_migrations` writes `step.to` to the document after each step, so
 // these migrations are pure no-ops; content-changing migrations replace
 // this with their own fn.
-#[allow(clippy::unnecessary_wraps, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 /// No-op content transform; the framework still stamps `step.to` as `version`.
 pub const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
     Ok(())

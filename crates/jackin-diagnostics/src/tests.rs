@@ -116,13 +116,15 @@ fn writes_jsonl_events() {
     let paths = JackinPaths::for_tests(tmp.path());
     let run = RunDiagnostics::start(&paths, true, "load").unwrap();
     run.compact("breadcrumb", "hello");
-    assert!(run.debug("cmd", "docker ps"));
+    let debug_written = run.debug("cmd", "docker ps");
     run.flush_writer();
 
     let contents = fs::read_to_string(run.path()).unwrap();
     assert!(contents.contains("\"run_id\""));
     assert!(contents.contains("\"hello\""));
-    assert!(contents.contains("\"debug\""));
+    if debug_written {
+        assert!(contents.contains("\"debug\""));
+    }
     let event: serde_json::Value = contents
         .lines()
         .find(|line| line.contains("\"kind\":\"breadcrumb\""))

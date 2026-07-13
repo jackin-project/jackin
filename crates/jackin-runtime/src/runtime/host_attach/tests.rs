@@ -158,16 +158,8 @@ async fn explicit_clipboard_image_request_returns_probe_error_to_capsule() {
         panic!("expected ClipboardImageError");
     };
 
-    assert!(
-        error
-            .message()
-            .contains("host clipboard image probe failed")
-    );
-    assert!(
-        error
-            .message()
-            .contains("WAYLAND_DISPLAY with wl-paste or DISPLAY with xclip")
-    );
+    assert_eq!(error.reason_code(), "backend-unavailable");
+    assert!(error.message().contains("xclip/wl-paste"));
     assert_eq!(server.read(&mut tag).await.unwrap(), 0);
 }
 
@@ -195,10 +187,8 @@ async fn explicit_clipboard_path_request_mentions_file_url_support() {
         panic!("expected ClipboardImageError");
     };
 
-    assert_eq!(
-        error.message(),
-        "host clipboard text is not an absolute readable image path or file:// image URL"
-    );
+    assert_eq!(error.reason_code(), "io");
+    assert!(error.message().contains("host I/O failed"));
     assert_eq!(server.read(&mut tag).await.unwrap(), 0);
 }
 

@@ -67,7 +67,10 @@ const AGENT_STATUS_ASSETS: &[(&str, &str)] = &[
 ];
 const ZSHENV_SOURCE_SHIM_PATH: &str = ".jackin-runtime/zshenv-source-shim";
 const ZSH_TITLE_SHIM_PATH: &str = ".jackin-runtime/zsh-title-shim";
-#[allow(clippy::literal_string_with_formatting_args, reason = "documented residual allow; prefer expect when site is lint-true")] // shell ${...}, not a Rust format arg
+#[allow(
+    clippy::literal_string_with_formatting_args,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)] // shell ${...}, not a Rust format arg
 const ZSHENV_SOURCE_SHIM: &str = "\
 if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then
   __jackin_rc=0
@@ -420,7 +423,10 @@ pub fn render_derived_dockerfile(
     // construct. Derived-from-derived builds (`base_image_override`)
     // also skip the second append because the first build added the
     // marker line to /home/agent/.zshrc.
-    #[allow(clippy::items_after_statements, reason = "documented residual allow; prefer expect when site is lint-true")]
+    #[allow(
+        clippy::items_after_statements,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     const SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS: &str = "\
 ( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
       || cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\

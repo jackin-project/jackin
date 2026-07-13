@@ -51,7 +51,10 @@ use tokio::net::{UnixListener, UnixStream};
 /// configured for this session. Only refs in this set are resolved; any
 /// incoming request that references an unknown (name, kind, source) triple
 /// is rejected, preventing escalation from a compromised in-container process.
-#[allow(clippy::print_stderr, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::print_stderr,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn start(
     sock_path: PathBuf,
     allowed_bindings: Vec<ExecBinding>,

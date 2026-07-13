@@ -1,5 +1,9 @@
 //! Cell width + row helpers extracted from grid.rs.
-#[allow(unused_imports, clippy::wildcard_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    clippy::wildcard_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::*;
 
 /// Display width of a cell: 2 for wide lead, 1 for a filled narrow cell, else 0.

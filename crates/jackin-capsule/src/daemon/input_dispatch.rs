@@ -1,4 +1,7 @@
-#![allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
+#![allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 //! Input dispatch methods for the Multiplexer.
 
 use std::sync::Arc;

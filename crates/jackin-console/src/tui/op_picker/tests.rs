@@ -31,7 +31,10 @@ fn wait_for_worker_poll() {
 #[derive(Default)]
 struct StubRunner {
     accounts: Mutex<Vec<OpAccount>>,
-    #[allow(clippy::option_option, reason = "documented residual allow; prefer expect when site is lint-true")]
+    #[allow(
+        clippy::option_option,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     last_vault_list_account: Mutex<Option<Option<String>>>,
 }
 
@@ -1375,7 +1378,10 @@ fn op_cache_picker_does_not_store_field_values() {
 
 // ── Async-worker runner-injection tests ─────────────────────────
 
-#[allow(clippy::option_option, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::option_option,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[derive(Default)]
 struct RecorderRunner {
     accounts: Mutex<Vec<OpAccount>>,

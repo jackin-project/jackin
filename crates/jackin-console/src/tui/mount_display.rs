@@ -48,7 +48,10 @@ pub fn mount_display_paths(
     }
 }
 
-#[allow(unfulfilled_lint_expectations, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unfulfilled_lint_expectations,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Trait cannot use anonymous lifetimes for borrowed mount DTOs on stable Rust"

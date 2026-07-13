@@ -1,6 +1,6 @@
 //! Docker image build pipeline: prepare binaries, build derived image, tag and cache.
 
-#![allow(clippy::empty_line_after_doc_comments, reason = "documented residual allow; prefer expect when site is lint-true")]
+#![allow(clippy::empty_line_after_doc_comments, reason = "residual lint budget")]
 
 #[path = "image/version.rs"]
 mod version;
@@ -14,7 +14,7 @@ mod prewarm;
 #[cfg(not(test))]
 pub use prewarm::prewarm_role_images;
 pub use prewarm::{ImagePrewarmStatus, RoleImagePrewarmRow};
-#[allow(unused_imports, unreachable_pub, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(unused_imports, unreachable_pub, reason = "residual lint budget")]
 pub use version::*;
 
 use published::{PublishedImageFreshness, published_image_freshness, published_image_is_stale};

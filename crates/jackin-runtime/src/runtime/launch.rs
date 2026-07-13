@@ -48,8 +48,8 @@ pub(crate) use trust::{
 
 mod launch_pipeline;
 pub use launch_pipeline::launch_phases::{
-    GrantPhaseInput, GrantsValidated, ImagePhaseClass, ImagePhaseClassified,
-    classify_image_phase, cleanup_after_grant_failure, validate_launch_grants,
+    GrantPhaseInput, GrantsValidated, ImagePhaseClass, ImagePhaseClassified, classify_image_phase,
+    cleanup_after_grant_failure, validate_launch_grants,
 };
 
 use super::discovery::list_running_agent_names;
@@ -241,7 +241,10 @@ pub(crate) use restore_resolve::{
 };
 
 mod launch_runtime;
-#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use launch_runtime::{
     LaunchContext, SelectedImageRefresh, SiblingAuthPrewarm, SiblingPrewarm,
     SidecarPrewarmReplenish, debug_runtime_envs, host_runtime_passthrough_env, launch_role_runtime,

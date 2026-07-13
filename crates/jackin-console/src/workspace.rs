@@ -21,7 +21,10 @@ pub fn agent_is_effectively_allowed(ws: &impl WorkspaceRoleAccess, role: &str) -
 /// Roles already carrying an override stay eligible: operators may add more
 /// keys to an existing override.
 #[must_use]
-#[allow(unfulfilled_lint_expectations, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unfulfilled_lint_expectations,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
@@ -42,7 +45,10 @@ pub fn eligible_role_keys_for_override<'a>(
 /// Empty `allowed_roles` means every configured role. Stale entries are
 /// ignored, because this returns only roles present in `registered_roles`.
 #[must_use]
-#[allow(unfulfilled_lint_expectations, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unfulfilled_lint_expectations,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
@@ -59,7 +65,10 @@ pub fn eligible_roles_for_workspace<'a>(
 
 /// Return configured roles that parse as valid role selectors.
 #[must_use]
-#[allow(unfulfilled_lint_expectations, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unfulfilled_lint_expectations,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[expect(
     single_use_lifetimes,
     reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"

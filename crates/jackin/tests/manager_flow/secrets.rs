@@ -110,6 +110,7 @@ fn secrets_edit_value_saves_to_disk() -> Result<()> {
     // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    mark_pending_save_drift_checked_for_test(&mut state);
     execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
     wait_for_config_save(&mut state, &mut config, &paths, cwd)?;
 
@@ -172,6 +173,7 @@ fn secrets_delete_key_saves_to_disk() -> Result<()> {
     // Default focus = Cancel (TUI design decisions: confirmation dialog rule).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    mark_pending_save_drift_checked_for_test(&mut state);
     execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
     wait_for_config_save(&mut state, &mut config, &paths, cwd)?;
 
@@ -1016,7 +1018,10 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
 /// is the bare `op://Vault/Item/Field` form (account scope is not
 /// encoded in the path).
 #[test]
-#[allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 fn op_picker_multi_account_flow() -> Result<()> {
     use jackin_console::tui::components::op_picker::{OpLoadState, OpPickerStage};
     use jackin_env::{OpAccount, OpField, OpItem, OpVault};

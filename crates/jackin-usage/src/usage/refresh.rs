@@ -4,7 +4,10 @@
 //! (file-size ratchet). Items in this module are `pub(crate)` so the
 //! coordinator (`usage.rs`) can re-export them.
 
-#[allow(clippy::wildcard_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::*;
 use serde::Deserialize;
 
@@ -414,7 +417,10 @@ pub(crate) fn write_materialized_usage_accounts(
     atomic_write_usage_json(path, &contents)
 }
 
-#[allow(clippy::disallowed_methods, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn atomic_write_usage_json(path: &Path, contents: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)

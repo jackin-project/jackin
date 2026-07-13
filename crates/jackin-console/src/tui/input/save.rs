@@ -1,6 +1,9 @@
 //! Editor save flow: two-phase commit with planner validation, a
 //! `ConfirmSave` preview modal, and service-backed config writes.
-#![allow(clippy::items_after_test_module, reason = "documented residual allow; prefer expect when site is lint-true")]
+#![allow(
+    clippy::items_after_test_module,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 
 use crate::services::config_save::{
     EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan,
@@ -131,7 +134,10 @@ pub fn continue_save_after_isolation_cleanup(
 /// route to `EditorSaveFlow::Error` and the shared `ErrorPopup`, same
 /// as phase-2 commit errors. The plan is stashed on the modal so
 /// commit doesn't re-run `plan_edit`/`plan_create`.
-#[allow(clippy::unnecessary_wraps, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn begin_editor_save(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
@@ -214,7 +220,10 @@ pub fn begin_editor_save(
 /// confirm modal that, on Yes, re-stashes the plan with
 /// `delete_isolated_acknowledged = true` so the second commit pass starts
 /// the cleanup worker, then the final pass writes after cleanup completes.
-#[allow(clippy::unnecessary_wraps, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn commit_editor_save(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
@@ -229,7 +238,8 @@ pub fn commit_editor_save(
     clippy::too_many_lines,
     clippy::unnecessary_wraps,
     clippy::needless_pass_by_ref_mut,
-    reason = "documented residual allow; prefer expect when site is lint-true")]
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn commit_editor_save_with_runner(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,

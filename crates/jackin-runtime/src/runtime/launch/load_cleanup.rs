@@ -48,7 +48,7 @@ pub struct LoadCleanup {
 }
 
 impl LoadCleanup {
-    /// Arm cleanup for the named role container + DinD + network + certs volume.
+    /// Arm cleanup for the named role container + `DinD` + network + certs volume.
     #[must_use]
     pub const fn new(
         container_name: String,

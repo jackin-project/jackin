@@ -19,7 +19,10 @@ use std::sync::Arc;
 use crate::build_log_sink::BuildLogSink;
 
 /// Options that control how a command is executed.
-#[allow(clippy::struct_excessive_bools, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[derive(Clone, Debug)]
 pub struct RunOptions {
     /// Capture stderr into the result/error payload.

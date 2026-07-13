@@ -122,11 +122,11 @@ tui-scrollbar = "0.2.4"
 tui-widget-list = "0.15"
 # Pre-release API churn; revisit at first stable 0.7 (or next pre.N after
 # re-running the usage-store suite against the boundary module only).
-turso = { version = "=0.7.0-pre.17", default-features = false }
+turso = { version = "=0.7.0-pre.18", default-features = false }
 unicode-width = "0.2"
 url = "2"
 vte = "0.15"
-x509-cert = { version = "0.2", default-features = false }
+x509-cert = { version = "0.3", default-features = false }
 
 [workspace.lints.rust]
 rust_2024_compatibility = { level = "deny", priority = -1 }

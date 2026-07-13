@@ -28,8 +28,7 @@ fn inline_test_module_is_flagged_but_declaration_is_not() {
     // Stacked attributes between `#[cfg(test)]` and the `mod` are tolerated.
     // Fixture string uses escaped quotes so the bare-allow scanner still sees
     // a reason= and does not inflate jackin-xtask bare-allow debt.
-    let stacked =
-        "#[cfg(test)]\n#[allow(clippy::all, reason = \"fixture\")]\nmod tests {\n}\n";
+    let stacked = "#[cfg(test)]\n#[allow(clippy::all, reason = \"fixture\")]\nmod tests {\n}\n";
     assert!(inline_test_module_violation(stacked).is_some());
 }
 

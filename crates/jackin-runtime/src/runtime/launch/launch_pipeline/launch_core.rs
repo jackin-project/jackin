@@ -6,7 +6,10 @@
 //! (or `crate::...` paths). Helpers promoted to pub(super) in coordinator
 //! are reached via `super::`.
 
-#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::{
     emit_auth_provision_launch_plan, purge_or_mark_clean_exited, tag_errors, tagged_grant_errors,
 };
@@ -217,22 +220,21 @@ where
         socket_dir,
     );
     // Phase: grants validated (typestate). Failure → cleanup only (suite A).
-    let grants_validated = match super::launch_phases::validate_launch_grants(
-        super::launch_phases::GrantPhaseInput {
+    let grants_validated =
+        match super::launch_phases::validate_launch_grants(super::launch_phases::GrantPhaseInput {
             config,
             workspace_label: workspace.label.as_str(),
             workspace_docker: None,
             opts_docker_profile: opts.docker_profile,
             selector,
             role_manifest: &validated_repo.manifest,
-        },
-    ) {
-        Ok(validated) => validated,
-        Err(error) => {
-            super::launch_phases::cleanup_after_grant_failure(&cleanup, docker).await;
-            return Err(error);
-        }
-    };
+        }) {
+            Ok(validated) => validated,
+            Err(error) => {
+                super::launch_phases::cleanup_after_grant_failure(&cleanup, docker).await;
+                return Err(error);
+            }
+        };
     let effective_grants = grants_validated.effective_grants;
     let resolved_profile = (
         grants_validated.resolved_profile,
@@ -1057,7 +1059,10 @@ where
             role_key: &role_key,
         },
     };
-    #[allow(clippy::needless_borrow, reason = "documented residual allow; prefer expect when site is lint-true")]
+    #[allow(
+        clippy::needless_borrow,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     let launch_result = super::super::launch_role_runtime(&ctx, &mut steps, docker, runner).await;
     if launch_result.is_err() {
         // FailedSetup write error must not abort cleanup; surface to stderr
@@ -1213,7 +1218,10 @@ where
         decision,
         crate::isolation::finalize::FinalizeDecision::Preserved
     );
-    #[allow(clippy::match_same_arms, reason = "documented residual allow; prefer expect when site is lint-true")]
+    #[allow(
+        clippy::match_same_arms,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     match docker.inspect_container_state(&container_name).await {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
             if is_preserved {

@@ -2,7 +2,10 @@
 //! (+ host passthrough + debug env helpers) extracted from launch coordinator (File1).
 //! All items `pub(crate)` re-exported from the coordinator to preserve `super::` / `use super::*` .
 
-#![allow(private_interfaces, reason = "documented residual allow; prefer expect when site is lint-true")]
+#![allow(
+    private_interfaces,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 
 use anyhow::Context;
 use jackin_config::AppConfig;

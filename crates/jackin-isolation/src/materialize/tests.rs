@@ -8,7 +8,7 @@ fn materialize_api_accepts_path_label_rejected_as_config_stem() {
     // Dual-semantics boundary: ad-hoc workdir paths are legal labels but not
     // WorkspaceName config stems.
     let path = "/home/op/projects/adhoc-ws";
-    assert!(WorkspaceName::parse(path).is_err());
+    WorkspaceName::parse(path).unwrap_err();
     let label = WorkspaceLabel::parse(path).expect("path label");
     assert_eq!(label.as_str(), path);
     // PreflightContext carries the label type, not a free &str.

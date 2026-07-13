@@ -6,7 +6,10 @@ use crate::tui::debug::{
 };
 
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub enum ConsoleManagerStage<CreatePrelude, Editor, Settings> {
     List,
     Editor(Editor),

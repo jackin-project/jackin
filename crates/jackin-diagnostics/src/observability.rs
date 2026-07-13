@@ -239,7 +239,10 @@ impl Visit for OtelInternalVisitor {
 // `allow`, not `expect`: the body is trivially const only in the default
 // (no-otlp) build; the otlp build does non-const setup, so the lint fires in one
 // cfg and not the other and a single non-const signature is required.
-#[allow(clippy::missing_const_for_fn, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn init_tracing(debug: bool, run_id: &str) -> anyhow::Result<bool> {
     #[cfg(feature = "otlp")]
     {
@@ -301,7 +304,10 @@ pub fn unsupported_otlp_protocol() -> Option<String> {
 /// from `ActiveRunGuard::drop` so it runs on every exit path out of the run —
 /// including `?` error early-returns — rather than only the success path.
 /// No-op in default builds and when no endpoint was configured.
-#[allow(clippy::missing_const_for_fn, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn shutdown_otlp() {
     #[cfg(feature = "otlp")]
     otlp::shutdown();
@@ -310,7 +316,10 @@ pub(crate) fn shutdown_otlp() {
 /// Flush and shut down the capsule's OTLP exporters at process exit. The public
 /// counterpart to the host's guard-driven [`shutdown_otlp`]; the capsule has no
 /// `ActiveRunGuard`, so it calls this explicitly before the daemon exits.
-#[allow(clippy::missing_const_for_fn, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn shutdown_capsule_tracing() {
     #[cfg(feature = "otlp")]
     otlp::shutdown();
@@ -323,7 +332,10 @@ pub fn shutdown_capsule_tracing() {
 /// to the host run; `traceparent` (propagated W3C header) links the session
 /// back to the launch trace. Returns `Ok(true)` when export was activated,
 /// `Ok(false)` when no endpoint is configured (the common, no-op case).
-#[allow(clippy::missing_const_for_fn, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::missing_const_for_fn,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn init_capsule_tracing(
     session_id: &str,
     run_id: Option<&str>,
@@ -1040,10 +1052,9 @@ mod otlp {
         let tracer = tracer_provider.tracer("jackin");
         let span_layer = tracing_opentelemetry::layer().with_tracer(tracer);
         let log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
-        let span_directive =
-            export_filter_directive(export_level_for(crate::TelemetrySink::OtlpSpans, debug));
-        let log_directive =
-            export_filter_directive(export_level_for(crate::TelemetrySink::OtlpLogs, debug));
+        let test_level = if debug { "debug" } else { "info" };
+        let span_directive = export_filter_directive(test_level);
+        let log_directive = export_filter_directive(test_level);
         let subscriber = tracing_subscriber::registry()
             .with(JackinDiagnosticsLayer)
             .with(span_layer.with_filter(EnvFilter::new(span_directive)))

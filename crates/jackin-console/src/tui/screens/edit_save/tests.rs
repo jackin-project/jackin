@@ -19,5 +19,7 @@ fn plan_dirty_with_confirm_opens_modal() {
         plan_edit_save(true, true),
         EditSaveDisposition::ConfirmDiscard
     );
-    assert!(save_opens_confirm_modal(EditSaveDisposition::ConfirmDiscard));
+    assert!(save_opens_confirm_modal(
+        EditSaveDisposition::ConfirmDiscard
+    ));
 }

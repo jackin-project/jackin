@@ -415,7 +415,7 @@ fn measure_file_lines(root: &Path, tests_only: bool) -> Result<BTreeMap<String, 
     Ok(out)
 }
 
-/// Read dhat allocation ceilings from `jackin-capsule` perf_budgets.rs.
+/// Read dhat allocation ceilings from `jackin-capsule` `perf_budgets.rs`.
 fn measure_perf_dhat_budgets(root: &Path) -> Result<BTreeMap<String, usize>> {
     let path = root.join("crates/jackin-capsule/src/perf_budgets.rs");
     let text = fs::read_to_string(&path)

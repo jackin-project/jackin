@@ -1,15 +1,15 @@
 //! `DamageGrid` — the Phase 2 v0 terminal model implementation.
 
-#![allow(clippy::empty_line_after_doc_comments, reason = "documented residual allow; prefer expect when site is lint-true")]
+#![allow(clippy::empty_line_after_doc_comments, reason = "residual lint budget")]
 
 #[path = "grid/parse.rs"]
 mod parse;
 #[path = "grid/write.rs"]
 mod write;
 
-#[allow(unused_imports, unreachable_pub, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(unused_imports, unreachable_pub, reason = "residual lint budget")]
 pub use parse::*;
-#[allow(unused_imports, unreachable_pub, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(unused_imports, unreachable_pub, reason = "residual lint budget")]
 pub use write::*;
 
 use std::{

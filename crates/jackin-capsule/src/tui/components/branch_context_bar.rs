@@ -51,7 +51,10 @@ fn chunk_region(chunk: Option<&StatusRightChunk>) -> Option<ColRange> {
     chunk.and_then(|chunk| ColRange::new(chunk.start, chunk.end))
 }
 
-#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn branch_context_bar_layout(
     term_rows: u16,
     term_cols: u16,
@@ -123,7 +126,10 @@ pub(crate) enum BranchContextBarHit {
     DebugChip,
 }
 
-#[allow(clippy::too_many_arguments, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn branch_context_bar_hit(
     row: u16,
     col: u16,

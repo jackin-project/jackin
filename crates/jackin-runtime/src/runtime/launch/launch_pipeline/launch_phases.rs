@@ -2,7 +2,7 @@
 //! (R-launch-typestate / R-033-suite-a).
 //!
 //! Pure grant resolution is separated from I/O so suite A can prove
-//! grant-failure ordering and FailedSetup teardown without constructing a
+//! grant-failure ordering and `FailedSetup` teardown without constructing a
 //! full ~20-crate `LaunchCore` graph.
 
 use crate::instance::{InstanceManifest, InstanceStatus};
@@ -46,10 +46,12 @@ pub fn classify_image_phase(
 ) -> ImagePhaseClassified {
     match decision {
         crate::runtime::image::ImageDecision::Reuse { .. }
-        | crate::runtime::image::ImageDecision::RefreshInBackground { .. } => ImagePhaseClassified {
-            class: ImagePhaseClass::ReuseOrBackgroundRefresh,
-            selected_image_reused: true,
-        },
+        | crate::runtime::image::ImageDecision::RefreshInBackground { .. } => {
+            ImagePhaseClassified {
+                class: ImagePhaseClass::ReuseOrBackgroundRefresh,
+                selected_image_reused: true,
+            }
+        }
         crate::runtime::image::ImageDecision::BuildFromPublished { .. }
         | crate::runtime::image::ImageDecision::BuildFromWorkspace { .. } => ImagePhaseClassified {
             class: ImagePhaseClass::BuildRequired,
@@ -67,7 +69,7 @@ pub struct GrantsValidated {
     pub resolved_profile: DockerSecurityProfile,
     /// Where the profile came from (CLI / workspace / config / default).
     pub profile_source: ProfileSource,
-    /// Whether DinD is enabled under the effective grants.
+    /// Whether `DinD` is enabled under the effective grants.
     pub dind_started: bool,
 }
 
@@ -97,15 +99,13 @@ pub struct GrantPhaseInput<'a> {
 /// # Errors
 /// Returns when any layer fails grants validation or profile floor check.
 pub fn validate_launch_grants(input: GrantPhaseInput<'_>) -> anyhow::Result<GrantsValidated> {
-    let workspace_docker_for_grants = input
-        .workspace_docker
-        .or_else(|| {
-            input
-                .config
-                .workspaces
-                .get(input.workspace_label)
-                .and_then(|wc| wc.docker.as_ref())
-        });
+    let workspace_docker_for_grants = input.workspace_docker.or_else(|| {
+        input
+            .config
+            .workspaces
+            .get(input.workspace_label)
+            .and_then(|wc| wc.docker.as_ref())
+    });
     let resolved_profile = resolve_profile(
         input.opts_docker_profile,
         workspace_docker_for_grants.and_then(|wd| wd.profile),
@@ -193,7 +193,7 @@ pub(crate) async fn mark_failed_setup_then_cleanup(
     cleanup.run(docker).await;
 }
 
-/// Grant-failure path: cleanup only (no FailedSetup — instance may not exist yet).
+/// Grant-failure path: cleanup only (no `FailedSetup` — instance may not exist yet).
 pub async fn cleanup_after_grant_failure(cleanup: &LoadCleanup, docker: &impl DockerApi) {
     cleanup.run(docker).await;
 }

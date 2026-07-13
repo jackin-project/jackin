@@ -86,7 +86,10 @@ impl CommandRunner for ScriptedRunner {
 }
 
 #[tokio::test]
-#[allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 async fn materialize_then_clean_exit_removes_record_and_branch() {
     let repo = TempDir::new().unwrap();
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();

@@ -27,7 +27,7 @@ use jackin::{
         tui::{
             InputOutcome, ManagerStage, ManagerState, dispatch_launch_for_workspace, handle_key,
             new_console_state,
-            state::{EditorState, EditorTab, FieldFocus, Modal},
+            state::{EditorSaveFlow, EditorState, EditorTab, FieldFocus, Modal},
         },
     },
     workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride},
@@ -77,6 +77,16 @@ fn wait_for_config_save(
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
     anyhow::bail!("timed out waiting for config save worker")
+}
+
+fn mark_pending_save_drift_checked_for_test(state: &mut ManagerState<'_>) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    let EditorSaveFlow::PendingCommit { plan, .. } = &mut editor.save_flow else {
+        return;
+    };
+    plan.isolated_cleanup_complete = true;
 }
 
 fn seed_config(paths: &JackinPaths, temp_dir: &std::path::Path) -> Result<AppConfig> {

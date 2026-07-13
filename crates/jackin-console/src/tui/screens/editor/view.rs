@@ -10,7 +10,10 @@ pub use crate::tui::components::editor_rows::{
     AuthSourceDisplay, AuthSourceFolderDisplay, AuthSourceFolderKind, SecretValueDisplay,
 };
 
-#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use crate::tui::components::editor_rows::auth_lines;
 
 use ratatui::{layout::Rect, text::Line};
@@ -61,38 +64,56 @@ pub type WorkspaceEditorState<
 >;
 
 mod general_tab;
-#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use general_tab::{
     editor_general_content_width, editor_row_width, general_lines, general_row_widths,
 };
 
 mod mounts_tab;
-#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use mounts_tab::{editor_mount_add_row_width, mount_lines};
 
 mod roles_tab;
-#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use roles_tab::{
     EditorRoleRow, editor_role_load_row_width, editor_role_row_width, editor_roles_status_width,
     role_lines, role_state_geometry, role_state_lines,
 };
 
 mod secrets_tab;
-#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use secrets_tab::{
     editor_secret_line_width, secret_key_line_width, secret_lines, secret_state_geometry,
     secret_state_lines,
 };
 
 mod auth_tab;
-#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use auth_tab::{
     EditorAuthLineRow, auth_state_geometry, auth_state_lines, editor_auth_line_width,
 };
 
 mod modals;
 pub use modals::secret_new_key_label;
-#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use modals::{
     editor_header_title, editor_name_value, isolated_state_save_confirm_state,
     role_trust_confirm_state, secret_delete_confirm_prompt, secret_delete_confirm_state,
@@ -103,7 +124,10 @@ pub(crate) use modals::{
 };
 
 mod frame;
-#[allow(unused_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) use frame::{
     editor_body_area, editor_contextual_footer_items, editor_frame_areas,
     prepare_editor_for_render, prepare_editor_tab_for_area, render_editor_with_footer,

@@ -1,4 +1,7 @@
-#[allow(clippy::wildcard_imports, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::super::*;
 
 impl<
@@ -170,7 +173,10 @@ impl<
     }
 
     #[must_use]
-    #[allow(unfulfilled_lint_expectations, reason = "documented residual allow; prefer expect when site is lint-true")]
+    #[allow(
+        unfulfilled_lint_expectations,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     #[expect(
         single_use_lifetimes,
         reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"
@@ -186,7 +192,10 @@ impl<
     }
 
     #[must_use]
-    #[allow(unfulfilled_lint_expectations, reason = "documented residual allow; prefer expect when site is lint-true")]
+    #[allow(
+        unfulfilled_lint_expectations,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     #[expect(
         single_use_lifetimes,
         reason = "impl Iterator over borrowed String keys cannot use anonymous lifetimes on stable Rust"

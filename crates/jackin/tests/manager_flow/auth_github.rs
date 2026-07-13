@@ -38,7 +38,10 @@ use super::*;
 // assert the persisted TOML carries BOTH the `[github]`
 // auth_forward = "token" block AND the `GH_TOKEN` env var on the
 // matching `[github.env]` block.
-#[allow(clippy::too_many_lines, reason = "documented residual allow; prefer expect when site is lint-true")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 #[test]
 fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()> {
     let temp = tempdir()?;
@@ -149,6 +152,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     // Enter moves state to PendingCommit; flush the queued write to disk.
+    mark_pending_save_drift_checked_for_test(&mut state);
     execute_pending_workspace_save_commit(&mut state, &mut config, &paths, cwd)?;
     wait_for_config_save(&mut state, &mut config, &paths, cwd)?;
 

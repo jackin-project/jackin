@@ -10,7 +10,8 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::used_underscore_binding,
-    reason = "documented residual allow; prefer expect when site is lint-true")]
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 
 use crate::RunDiagnostics;
 use crate::observability::{TestExport, test_layers};
