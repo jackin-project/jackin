@@ -1,5 +1,8 @@
 #![cfg(feature = "dhat-heap")]
 
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use jackin_capsule::tui::components::pane::PaneBodyWidget;
 use jackin_capsule::tui::socket_backend::SocketBackend;
 use jackin_term::DamageGrid;

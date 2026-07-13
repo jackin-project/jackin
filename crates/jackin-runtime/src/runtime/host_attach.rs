@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host-owned attach client for running Capsule daemons.
 //!
 //! This is the host-side twin of the in-container `jackin-capsule`

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Linux /proc-based foreground process identity detection.
 //!
 //! Uses the `procfs` crate to read process metadata and determine which

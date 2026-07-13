@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspace-manager effect executors and background polling.
 
 use crate::console::services::instances::load_instance_refresh_snapshot;

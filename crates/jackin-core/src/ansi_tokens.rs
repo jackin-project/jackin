@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Pure ANSI terminal control constants and helpers relocated from
 //! `jackin-tui` (ansi module). These have no ratatui or crossterm
 //! dependencies and are safe to use from `jackin-runtime` (and below)

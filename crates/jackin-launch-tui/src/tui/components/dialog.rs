@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared launch dialog backdrop geometry.
 
 use jackin_tui::components::{ModalBackdrop, bottom_chrome_areas};

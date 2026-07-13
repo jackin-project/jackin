@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for `button_strip`.
 use super::{ButtonStrip, ButtonStripItem, button_strip_line};
 use ratatui::{Terminal, backend::TestBackend, layout::Rect};

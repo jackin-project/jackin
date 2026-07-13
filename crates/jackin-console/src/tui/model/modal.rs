@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `ConsoleModal` enum and its core impl methods.
 //!
 //! Coordinator — declares the sibling modules `auth_impls` (auth-related

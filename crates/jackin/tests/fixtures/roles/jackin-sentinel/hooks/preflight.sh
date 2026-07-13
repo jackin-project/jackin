@@ -1,4 +1,8 @@
 #!/usr/bin/env sh
+
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 set -eu
 
 state_dir="${JACKIN_SENTINEL_STATE_DIR:-/jackin/state/jackin-sentinel}"

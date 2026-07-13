@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `LoadCleanup` coordinator helper and atomic-write guard extracted from the
 //! launch coordinator. All items re-exported from the parent to preserve
 //! `super::` call sites in `launch_role_runtime` (via the write calls inside

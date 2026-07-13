@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 
 fn rendered_status_column(action: &str, target: &str, status: &str) -> usize {

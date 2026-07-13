@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared string constants used across all jackin❯ crates.
 //!
 //! These are the canonical definitions — callers import from here rather than

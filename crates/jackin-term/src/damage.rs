@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! BORROW: Dirty-span tracking design from Zellij's `OutputBuffer` / `changed_lines`
 //! (MIT license, Zellij Contributors — <https://github.com/zellij-org/zellij>).
 //! Concept: record which rows changed during PTY output processing, then emit only

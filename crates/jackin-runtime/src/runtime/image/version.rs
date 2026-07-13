@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Image version helpers extracted from image.rs.
 use super::{
     Agent, AgentInstall, CommandRunner, HashMap, JackinPaths, LABEL_IMAGE_CONSTRUCT,

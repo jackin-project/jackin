@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Console keymaps — single source of truth coupling key dispatch and hint-bar
 //! advertisement for all host-console surfaces.
 //!

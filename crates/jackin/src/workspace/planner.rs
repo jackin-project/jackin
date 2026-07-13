@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspace planning re-exports from `jackin-config`.
 //!
 //! The actual logic lives in `jackin_config::planner`. This module keeps the

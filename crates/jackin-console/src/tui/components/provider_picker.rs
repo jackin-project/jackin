@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Provider picker component: keyboard-driven list for selecting a Claude API
 //! provider (e.g. direct Anthropic or Z.AI redirect).
 //!

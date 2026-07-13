@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! General tab helpers for the editor: field modal opener.
 
 use crate::tui::screens::editor::update::{

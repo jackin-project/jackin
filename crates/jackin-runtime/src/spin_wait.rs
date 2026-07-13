@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Async spinner-wait helper for polling operations.
 //!
 //! Animates a braille spinner on stderr while polling an async function.
