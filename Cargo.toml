@@ -127,7 +127,7 @@ tui-scrollbar = "0.2.4"
 tui-widget-list = "0.15"
 # Pre-release API churn; revisit at first stable 0.7 (or next pre.N after
 # re-running the usage-store suite against the boundary module only).
-turso = { version = "=0.7.0-pre.18", default-features = false }
+turso = { version = "=0.7.0-pre.21", default-features = false }
 unicode-width = "0.2"
 url = "2"
 vte = "0.15"
