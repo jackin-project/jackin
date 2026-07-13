@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Docker network creation and `DinD` sidecar launch for the role container.
 //!
 //! `wait_for_dind` is already shared with `attach`; this module is the

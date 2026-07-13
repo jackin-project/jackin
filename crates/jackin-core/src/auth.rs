@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `AuthForwardMode`: controls how host agent credentials are forwarded into
 //! role containers.
 //!

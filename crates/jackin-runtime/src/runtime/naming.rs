@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Naming conventions, Docker label/filter constants, and lightweight identifier helpers.
 //!
 //! Image-tag and label constants for jackin-built images (`IMAGE_PREFIX`,

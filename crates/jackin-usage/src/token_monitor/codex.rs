@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! JSONL reader for Codex token usage.
 //!
 //! Reads `~/.codex/sessions/**/*.jsonl` (date-nested rollouts). Recomputes

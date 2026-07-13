@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host-side fetch of the in-container `jackin-capsule` daemon's
 //! tab/pane snapshot.
 //!

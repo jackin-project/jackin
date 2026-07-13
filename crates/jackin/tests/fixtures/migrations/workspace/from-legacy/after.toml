@@ -1,4 +1,7 @@
 version = "v1alpha8"
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 # Sample per-workspace file carried through the legacy migration chain.
 
 workdir = "/workspace/prod"

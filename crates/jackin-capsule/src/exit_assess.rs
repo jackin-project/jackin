@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! In-container dirty assessment for the last-session-exit modal.
 //!
 //! Runs git synchronously via `std::process` (the capsule's tokio build carries

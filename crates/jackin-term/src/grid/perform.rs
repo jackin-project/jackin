@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::{
     Attrs, Cell, DamageGrid, KITTY_KB_STACK_CAP, PassthroughEvent, RowWrap, ScrollOp, blank_row,
     make_blank_grid, reconstruct_csi,

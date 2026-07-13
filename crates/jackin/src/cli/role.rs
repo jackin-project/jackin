@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! CLI argument structs for `jackin load`, `jackin console`, and `jackin hardline`.
 //!
 //! Not responsible for: resolving workspaces, building images, or spawning

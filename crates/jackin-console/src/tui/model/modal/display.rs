@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Display-side impls on `ConsoleModal`: `rect_mode` / `rect` /
 //! `container_info_rect` / `prepare_for_render` / `footer_items` /
 //! `footer_items_for_area`, plus the `footer_items_for_mode` helper.

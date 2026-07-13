@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Concrete footer adapters for workspace-style screens.
 //!
 //! Reads `ManagerState` fields and assembles the facts structs needed by

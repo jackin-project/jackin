@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 # Source of truth for the latest tested Rust channel and required components.
 # Read by rustup, rust-analyzer, mise (via idiomatic_version_file),
 # and CI (via jdx/mise-action).

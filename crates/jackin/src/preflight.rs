@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Pre-flight health checks for `jackin doctor` and load/hardline dispatch.
 //!
 //! Each check runs asynchronously and returns a `CheckResult` with a status

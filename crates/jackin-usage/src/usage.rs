@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Focused-agent usage snapshots for Capsule.
 //!
 //! The TUI reads normalized cached snapshots from this module. Provider-specific

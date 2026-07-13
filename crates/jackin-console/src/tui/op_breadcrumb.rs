@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Parsed 1Password breadcrumb model shared by console geometry and views.
 
 #[derive(Debug, PartialEq, Eq)]

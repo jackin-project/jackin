@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspace list screen update logic: handle keyboard events and produce
 //! effects for launch, reconnect, stop, purge, and navigation actions.
 //!

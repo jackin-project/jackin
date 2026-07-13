@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Per-session token-spend monitor.
 //!
 //! Reads provider-specific local `JSONL` / `SQLite` files inside the container and

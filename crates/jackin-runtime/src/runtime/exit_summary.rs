@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Exit "still running" summary data.
 //!
 //! When the operator leaves one foreground session while other jackin❯
