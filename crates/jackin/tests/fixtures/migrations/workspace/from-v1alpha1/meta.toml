@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 from_version = "v1alpha1"
 target_version = "v1alpha8"
 target_version_shipped = "2026-05-11"

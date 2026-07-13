@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for the editor-stage keymap dispatch resolver.
 
 use super::dispatch_editor_top_level;

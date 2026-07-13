@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! OSC policy + osc8 + `parse_osc7` extracted from session.
 use crate as _;
 

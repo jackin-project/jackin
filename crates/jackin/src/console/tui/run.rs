@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Console TUI run entry: terminal setup, raw mode, cleanup on exit.
 //!
 //! Drives the per-tick event loop, input dispatch, and suspend/resume around

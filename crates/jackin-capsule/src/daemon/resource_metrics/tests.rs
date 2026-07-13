@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::{parse_stat_cpu_jiffies, parse_status_rss_kib};
 
 #[test]

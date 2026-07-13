@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Visible multiplexer TUI model vocabulary.
 //!
 //! The daemon still owns PTY/session/control-plane authority. Small visible

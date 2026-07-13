@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Role-source resolution helpers for console role loading.
 
 use std::collections::BTreeMap;

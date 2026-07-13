@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Mount materialization: converts `WorkspaceConfig` mounts into concrete
 //! Docker bind-mount specs, cloning worktrees for isolated mounts and writing
 //! the `IsolationRecord` consumed by the finalizer.

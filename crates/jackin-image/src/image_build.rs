@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Image-build pipeline helpers — `docker build` env, build-context stats,
 //! Dockerfile token/sha detection, buildkit step parsing, compact warning
 //! line formatting.

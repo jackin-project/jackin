@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! SVG generation from story renders: buffer-to-SVG conversion,
 //! writing SVG files to disk, and checking whether existing files are current.
 

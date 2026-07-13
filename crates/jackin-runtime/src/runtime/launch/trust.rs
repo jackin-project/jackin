@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspace trust seeding: Codex project-level trust and mise trusted paths.
 
 use anyhow::Context;

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Dedicated terminal-input owner for the launch rich surface.
 
 use std::io::Write as _;

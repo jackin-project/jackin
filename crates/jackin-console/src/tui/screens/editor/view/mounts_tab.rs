@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Mounts tab lines, geometry, and width helpers extracted from the view
 //! coordinator. Items re-exported from parent to preserve call sites.
 

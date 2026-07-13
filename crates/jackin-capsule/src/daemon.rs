@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! In-container multiplexer daemon: accepts attach connections, manages PTY
 //! sessions, dispatches input, and renders the status bar.
 //!

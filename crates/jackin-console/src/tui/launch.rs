@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Console TUI launch flow: role picker → launch confirmation → resolved pair.
 //!
 //! Returns a resolved `(RoleSelector, ResolvedWorkspace)` pair for the caller

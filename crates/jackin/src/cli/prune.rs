@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! CLI argument structs for `jackin prune` subcommands (images, instances, cache, diagnostics, all).
 //!
 //! Not responsible for: executing deletion logic — structs are parsed by `clap`

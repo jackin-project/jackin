@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host-terminal default-color capture for attach clients.
 //!
 //! Before an attach `Hello`, the client can ask the terminal it runs on for

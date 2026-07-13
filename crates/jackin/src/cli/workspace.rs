@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! CLI argument structs for `jackin workspace` subcommands (add, remove, list, edit).
 //!
 //! Not responsible for: reading or writing workspace state — structs are parsed
