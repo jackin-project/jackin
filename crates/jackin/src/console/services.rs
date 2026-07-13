@@ -34,6 +34,7 @@ pub(super) mod config {
         WorkspaceSaveDiffOp, build_workspace_edit, workspace_save_diff_plan,
     };
     use jackin_core::JackinPaths;
+    use jackin_core::WorkspaceName;
 
     pub(crate) use jackin_console::services::config_save::{SettingsSaveInput, save_settings};
 
@@ -89,7 +90,7 @@ pub(super) mod config {
 
     fn remove_workspace_from_disk(paths: &JackinPaths, name: &str) -> anyhow::Result<AppConfig> {
         let mut editor_doc = jackin_config::ConfigEditor::open(paths)?;
-        editor_doc.remove_workspace(name)?;
+        editor_doc.remove_workspace(&WorkspaceName::parse(name).map_err(anyhow::Error::from)?)?;
         editor_doc.save()
     }
 
@@ -146,7 +147,10 @@ pub(super) mod config {
         pub pending_rename: Option<String>,
     }
 
-    #[allow(clippy::useless_let_if_seq)]
+    #[allow(
+        clippy::useless_let_if_seq,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     pub(crate) fn save_workspace(
         paths: &JackinPaths,
         input: WorkspaceSaveInput<'_>,
@@ -163,25 +167,34 @@ pub(super) mod config {
                 if let Some(new_name) = pending_name
                     && new_name != current_name
                 {
-                    editor_doc.rename_workspace(&current_name, &new_name)?;
+                    editor_doc.rename_workspace(
+                        &WorkspaceName::parse(&current_name).map_err(anyhow::Error::from)?,
+                        &WorkspaceName::parse(&new_name).map_err(anyhow::Error::from)?,
+                    )?;
                     current_name.clone_from(&new_name);
                     rename_to = Some(new_name);
                 }
 
                 let mut edit = build_workspace_edit(input.original, input.pending);
                 edit.remove_destinations = effective_removals;
-                editor_doc.edit_workspace(&current_name, edit)?;
+                editor_doc.edit_workspace(
+                    &WorkspaceName::parse(&current_name).map_err(anyhow::Error::from)?,
+                    edit,
+                )?;
                 (rename_to, current_name)
             }
             WorkspaceSaveMode::Create { name } => {
-                editor_doc.create_workspace(&name, input.pending.clone())?;
+                editor_doc.create_workspace(
+                    &WorkspaceName::parse(&name).map_err(anyhow::Error::from)?,
+                    input.pending.clone(),
+                )?;
                 (None, name)
             }
         };
 
         apply_workspace_save_diff_plan(
             &mut editor_doc,
-            &current_name,
+            &WorkspaceName::parse(&current_name).map_err(anyhow::Error::from)?,
             input.original,
             input.pending,
         )?;
@@ -269,7 +282,7 @@ pub(super) mod config {
 
     fn apply_workspace_save_diff_plan(
         editor_doc: &mut jackin_config::ConfigEditor,
-        workspace_name: &str,
+        workspace_name: &WorkspaceName,
         original: &WorkspaceConfig,
         pending: &WorkspaceConfig,
     ) -> anyhow::Result<()> {
@@ -530,7 +543,10 @@ pub(super) mod instances {
         let mut results = Vec::with_capacity(targets.len());
         for chunk in targets.chunks(SNAPSHOT_FANOUT_CHUNK) {
             let chunk_results = std::thread::scope(|s| {
-                #[allow(clippy::needless_collect)]
+                #[allow(
+                    clippy::needless_collect,
+                    reason = "documented residual allow; prefer expect when site is lint-true"
+                )]
                 let handles: Vec<_> = chunk
                     .iter()
                     .map(|container| {
@@ -637,9 +653,11 @@ pub(super) mod workspace_save {
         jackin_tui::runtime::spawn_named_async_subscription("jackin-drift-check", async move {
             async {
                 let docker = jackin_docker::docker_client::BollardDockerClient::connect()?;
+                let wn = jackin_core::WorkspaceName::parse(&workspace_name)
+                    .map_err(anyhow::Error::from)?;
                 jackin_runtime::runtime::drift::detect_workspace_edit_drift(
                     &paths,
-                    &workspace_name,
+                    &wn,
                     &prospective_mounts,
                     &docker,
                 )

@@ -139,5 +139,4 @@ fn is_deny(value: Option<&str>) -> bool {
 }
 
 #[cfg(test)]
-#[path = "osc_policy/tests.rs"]
 mod tests;

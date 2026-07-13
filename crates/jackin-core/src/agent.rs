@@ -18,11 +18,17 @@ use crate::env_model;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Agent {
+    /// Anthropic Claude Code CLI.
     Claude,
+    /// `OpenAI` Codex CLI.
     Codex,
+    /// Sourcegraph Amp CLI.
     Amp,
+    /// Moonshot Kimi Code CLI.
     Kimi,
+    /// `OpenCode` CLI.
     Opencode,
+    /// xAI Grok Build CLI.
     Grok,
 }
 
@@ -38,6 +44,7 @@ impl Agent {
         Self::Grok,
     ];
 
+    /// Canonical lowercase CLI slug (`"claude"`, `"codex"`, …).
     pub const fn slug(self) -> &'static str {
         match self {
             Self::Claude => "claude",
@@ -114,7 +121,7 @@ impl Agent {
         }
     }
 
-    /// Per-agent behavioral dispatch via the [`AgentRuntime`] trait.
+    /// Per-agent behavioral dispatch via the [`runtime::AgentRuntime`] trait.
     ///
     /// Returns the adapter that encapsulates all behavioral logic for this
     /// agent. Phase 2 will migrate all match-arm dispatch sites to call

@@ -62,40 +62,14 @@ On macOS, [OrbStack](https://orbstack.dev/) is a lightweight alternative to Dock
 
 For faster local image builds, use a Docker daemon with the containerd image store enabled. OrbStack already reports a containerd snapshotter in `docker info`; Docker Desktop exposes the setting under **Settings → General → Use containerd for pulling and storing images** on versions where it is not already enabled. jackin❯ does not change daemon settings for you, but launch diagnostics note when the active daemon is using the slower non-containerd store.
 
-## Apple Container (macOS 26 ARM, optional)
+## Apple Container (macOS 26 ARM, planned)
 
-On macOS 26 (Tahoe) with Apple Silicon, jackin❯ can use Apple Container as an alternative runtime backend. Each agent session gets its own dedicated Linux kernel via Virtualization.framework — stronger isolation than the default Docker backend.
+On macOS 26 (Tahoe) with Apple Silicon, a future jackin❯ release may use Apple
+Container as an alternative runtime backend (per-session Linux kernels via
+Virtualization.framework). That backend is **not shipped yet** — there is no
+`jackin load … --backend apple-container` flag today. Install Docker (or
+OrbStack) and use the default Docker backend on all supported platforms.
 
-**Install apple/container:**
-
-```bash
-# Via Homebrew (homebrew/core):
-brew install container
-
-# Or download from GitHub Releases:
-open https://github.com/apple/container/releases
-```
-
-**Verify:**
-
-```bash
-container --version
-```
-
-**Use with jackin❯:**
-
-```bash
-# Load an agent using the Apple Container backend:
-jackin load the-architect . --backend apple-container
-
-# Or set as default in ~/.config/jackin/workspaces/my-project.toml:
-# [runtime]
-# backend = "apple-container"
-```
-
-<Aside type="note">
-The Apple Container backend is experimental on macOS 26 ARM. The default Docker backend continues to work on all supported platforms.
-</Aside>
 ## What gets installed
 
 jackin❯ installs the host CLI plus the matching in-container runtime. Homebrew installs the `jackin-capsule` Linux binary beside the CLI so the first agent load does not need an extra GitHub download. Source installs can still fetch or build that runtime on first use.

@@ -10,6 +10,7 @@ use std::path::Path;
 use anyhow::bail;
 use toml_edit::DocumentMut;
 
+/// Current role-manifest schema version string (e.g. `"v1alpha6"`).
 pub use jackin_core::constants::CURRENT_MANIFEST_VERSION;
 
 const MANIFEST_MIGRATIONS: &[jackin_config::MigrationStep] = &[
@@ -49,6 +50,7 @@ const MANIFEST_MIGRATIONS: &[jackin_config::MigrationStep] = &[
     },
 ];
 
+/// Serde-default helper returning [`CURRENT_MANIFEST_VERSION`] as a `String`.
 pub use jackin_core::constants::current_manifest_version;
 
 /// Migrate `path` (typically `<repo>/jackin.role.toml`) to
@@ -68,6 +70,14 @@ pub fn migrate_manifest_file(path: &Path) -> anyhow::Result<Option<(String, Stri
     Ok(outcome.map(|old| (old.to_string(), CURRENT_MANIFEST_VERSION.to_owned())))
 }
 
+/// Parse and accept the role-manifest schema version in `doc`.
+///
+/// Accepts versions at or below [`CURRENT_MANIFEST_VERSION`]. Rejects
+/// newer schemas that this binary cannot interpret.
+///
+/// # Errors
+/// Returns an error when the version field is missing/invalid or newer than
+/// this binary understands.
 pub fn validate_manifest_version(
     doc: &DocumentMut,
 ) -> anyhow::Result<jackin_config::SchemaVersion> {

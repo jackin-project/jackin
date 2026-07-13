@@ -20,7 +20,9 @@
 
 use std::sync::{OnceLock, RwLock};
 
+/// Receives short operator-visible notices (warnings, recoverable notes).
 pub trait OperatorNoticeSink: Send + Sync + 'static {
+    /// Emit one notice line tagged with a short `kind` (e.g. `"warn"`).
     fn notice(&self, kind: &str, line: &str);
 }
 
@@ -30,6 +32,7 @@ fn global() -> &'static RwLock<Box<dyn OperatorNoticeSink>> {
     GLOBAL_SINK.get_or_init(|| RwLock::new(Box::new(NoopSink)))
 }
 
+/// Install the process-wide operator-notice sink (typically at startup).
 pub fn set_global_sink(sink: Box<dyn OperatorNoticeSink>) {
     let cell = global();
     if let Ok(mut guard) = cell.write() {
@@ -37,6 +40,7 @@ pub fn set_global_sink(sink: Box<dyn OperatorNoticeSink>) {
     }
 }
 
+/// Emit one operator-facing notice line through the global sink.
 pub fn emit_compact_line(kind: &str, line: &str) {
     if let Ok(guard) = global().read() {
         (**guard).notice(kind, line);

@@ -425,7 +425,7 @@ fn materialized_usage_accounts_write_normalized_snapshots() {
     view.focused_agent = Some("codex".to_owned());
     view.status_bar_label = "Codex Session: 63% used · 37% left".to_owned();
 
-    write_materialized_usage_accounts(&path, 456, vec![view]).expect("write accounts");
+    write_materialized_usage_accounts(&path, 456, &[&view]).expect("write accounts");
 
     let body = fs::read_to_string(&path).expect("accounts json");
     let decoded: MaterializedUsageAccounts = serde_json::from_str(&body).expect("decode accounts");
@@ -2059,7 +2059,7 @@ fn codex_rpc_response_maps_account_windows_and_credits() {
 #[test]
 fn managed_cli_launch_gate_cools_down_after_launch_failure() {
     let mut gate = ManagedCliLaunchGate::default();
-    assert!(gate.can_launch("probe", Instant::now()).is_ok());
+    gate.can_launch("probe", Instant::now()).unwrap();
 
     gate.record_launch_failure("blocked".to_owned());
 
@@ -2070,7 +2070,7 @@ fn managed_cli_launch_gate_cools_down_after_launch_failure() {
     assert!(error.contains("blocked"));
 
     gate.record_success();
-    assert!(gate.can_launch("probe", Instant::now()).is_ok());
+    gate.can_launch("probe", Instant::now()).unwrap();
 }
 
 #[test]
@@ -2167,7 +2167,7 @@ fn claude_cli_usage_output_maps_scoped_weekly_fable() {
     // The model-scoped line lands in `scoped_weekly` (not `sonnet_used`).
     assert_eq!(usage.scoped_weekly.len(), 1);
     assert_eq!(usage.scoped_weekly[0].0, "Fable");
-    assert_eq!(usage.scoped_weekly[0].1, 35.0);
+    assert!((usage.scoped_weekly[0].1 - 35.0).abs() < f64::EPSILON);
 
     let buckets = usage.buckets();
     let fable = buckets

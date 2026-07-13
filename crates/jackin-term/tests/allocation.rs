@@ -26,3 +26,20 @@ fn focused_process_dirty_patch_path_allocates_zero_after_warmup() {
     dhat::assert_eq!(after.total_blocks - before.total_blocks, 0);
     dhat::assert_eq!(after.total_bytes - before.total_bytes, 0);
 }
+
+#[test]
+fn same_size_resize_allocates_zero_after_warmup() {
+    let mut grid = DamageGrid::new(24, 80, 1_000);
+    grid.process(b"A");
+    grid.set_size(24, 80); // warm up: absorb any first-call setup cost
+    drop(grid.dump_dirty_patch());
+
+    let _profiler = dhat::Profiler::builder().testing().build();
+    let before = dhat::HeapStats::get();
+
+    grid.set_size(24, 80); // same dims: RowStore::resize must be a pure no-op
+
+    let after = dhat::HeapStats::get();
+    dhat::assert_eq!(after.total_blocks - before.total_blocks, 0);
+    dhat::assert_eq!(after.total_bytes - before.total_bytes, 0);
+}

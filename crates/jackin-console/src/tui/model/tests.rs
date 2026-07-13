@@ -674,7 +674,7 @@ fn console_manager_stage_polls_pending_role_load_from_editor_only() {
         panic!("expected pending role load");
     };
     assert_eq!(load, 3);
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(editor.poll_pending_role_load().is_none());
 
     assert!(Stage::List.poll_pending_role_load().is_none());
@@ -748,7 +748,7 @@ fn console_manager_stage_polls_pending_isolation_cleanup_from_editor_only() {
         panic!("expected pending isolation cleanup");
     };
     assert_eq!(cleanup, 5);
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(editor.poll_pending_isolation_cleanup().is_none());
 
     assert!(Stage::List.poll_pending_isolation_cleanup().is_none());
@@ -792,7 +792,7 @@ fn console_manager_stage_polls_pending_op_commit_with_origin() {
         panic!("expected pending editor op commit");
     };
     assert_eq!(resolution.op_ref, 3);
-    assert!(resolution.result.is_ok());
+    resolution.result.unwrap();
     assert_eq!(
         resolution.origin,
         super::ConsolePendingOpCommitOrigin::Editor
@@ -806,7 +806,7 @@ fn console_manager_stage_polls_pending_op_commit_with_origin() {
         panic!("expected pending settings op commit");
     };
     assert_eq!(resolution.op_ref, 5);
-    assert!(resolution.result.is_ok());
+    resolution.result.unwrap();
     assert_eq!(
         resolution.origin,
         super::ConsolePendingOpCommitOrigin::Settings

@@ -7,6 +7,7 @@
 //! Not responsible for: the async Docker daemon API (`docker_client.rs`), or
 //! parsing Docker output formats (those live in the callers).
 
+use crate::DockerError;
 use std::path::Path;
 use std::process::ExitStatus;
 use std::time::Instant;
@@ -14,6 +15,13 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 pub use jackin_core::{BuildLogSink, CommandRunner, RunOptions};
+
+fn cmd_failed(program: &str, args: &[&str]) -> DockerError {
+    DockerError::CommandFailed {
+        program: program.to_owned(),
+        args: args.join(" "),
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct ShellRunner {
@@ -53,6 +61,7 @@ impl ShellRunner {
             interactive: _,
             tee_to_build_log: _,
             build_log_sink: _,
+            timeout: _,
         } = opts;
         if should_null_stdin(opts) {
             cmd.stdin(std::process::Stdio::null());
@@ -83,6 +92,7 @@ fn should_null_stdin(opts: &RunOptions) -> bool {
 }
 
 fn record_subprocess_done(program: &str, started: Instant, status: ExitStatus) {
+    jackin_diagnostics::operation_record_exit_code(status.code());
     jackin_diagnostics::active_subprocess_done(
         program,
         started.elapsed().as_millis() as u64,
@@ -219,6 +229,45 @@ enum CaptureMode {
     Secret,
 }
 
+async fn await_child_with_timeout(
+    child: &mut tokio::process::Child,
+    program: &str,
+    timeout: Option<std::time::Duration>,
+) -> anyhow::Result<ExitStatus> {
+    match timeout {
+        None => Ok(child.wait().await?),
+        Some(dur) => match tokio::time::timeout(dur, child.wait()).await {
+            Ok(status) => Ok(status?),
+            Err(_elapsed) => {
+                drop(child.kill().await);
+                drop(child.wait().await);
+                Err(DockerError::CommandTimeout {
+                    secs: dur.as_secs_f64(),
+                    program: program.to_owned(),
+                }
+                .into())
+            }
+        },
+    }
+}
+
+fn enter_process_execute(program: &str, args: &[&str]) -> jackin_diagnostics::OperationGuard {
+    let redacted = redact_env_args(args).join(" ");
+    jackin_diagnostics::enter_operation(
+        jackin_diagnostics::otel_events::PROCESS_EXECUTE,
+        &[
+            (
+                jackin_diagnostics::otel_keys::PROCESS_COMMAND,
+                program.to_owned(),
+            ),
+            (
+                jackin_diagnostics::otel_keys::PROCESS_ARGS_REDACTED,
+                redacted,
+            ),
+        ],
+    )
+}
+
 impl CommandRunner for ShellRunner {
     async fn run(
         &mut self,
@@ -227,6 +276,7 @@ impl CommandRunner for ShellRunner {
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
+        let _op_guard = enter_process_execute(program, args);
         self.log_command(program, args, cwd);
 
         // `interactive` must own the real terminal, so the arms below resolve it
@@ -246,30 +296,24 @@ impl CommandRunner for ShellRunner {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
             let started = Instant::now();
-            let status = cmd.status().await?;
+            let mut child = cmd.spawn()?;
+            let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
-            anyhow::ensure!(
-                status.success(),
-                "command failed: {} {}",
-                program,
-                args.join(" ")
-            );
+            if !status.success() {
+                return Err(cmd_failed(program, args).into());
+            }
         } else if opts.quiet {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
             let started = Instant::now();
-            let status = cmd
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .await?;
+            cmd.stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            let mut child = cmd.spawn()?;
+            let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
-            anyhow::ensure!(
-                status.success(),
-                "command failed: {} {}",
-                program,
-                args.join(" ")
-            );
+            if !status.success() {
+                return Err(cmd_failed(program, args).into());
+            }
         } else if opts.capture_stderr || opts.capture_stdout {
             Box::pin(self.run_captured(program, args, cwd, opts)).await?;
         } else if self.debug || jackin_diagnostics::rich_terminal_owned() {
@@ -288,14 +332,12 @@ impl CommandRunner for ShellRunner {
             let mut cmd = Self::build_command(program, args, cwd);
             Self::apply_run_opts(&mut cmd, opts);
             let started = Instant::now();
-            let status = cmd.status().await?;
+            let mut child = cmd.spawn()?;
+            let status = await_child_with_timeout(&mut child, program, opts.timeout).await?;
             record_subprocess_done(program, started, status);
-            anyhow::ensure!(
-                status.success(),
-                "command failed: {} {}",
-                program,
-                args.join(" ")
-            );
+            if !status.success() {
+                return Err(cmd_failed(program, args).into());
+            }
         }
         Ok(())
     }
@@ -322,6 +364,10 @@ impl CommandRunner for ShellRunner {
 }
 
 impl ShellRunner {
+    #[expect(
+        clippy::large_futures,
+        reason = "ShellRunner joins wait+stdout+stderr under optional timeout; boxing adds latency without measured win"
+    )]
     async fn run_captured(
         &self,
         program: &str,
@@ -329,6 +375,7 @@ impl ShellRunner {
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()> {
+        let _op_guard = enter_process_execute(program, args);
         let mut cmd = Self::build_command(program, args, cwd);
         Self::apply_run_opts(&mut cmd, opts);
         if opts.capture_stdout {
@@ -338,7 +385,17 @@ impl ShellRunner {
             cmd.stderr(std::process::Stdio::piped());
         }
         let started = Instant::now();
-        let mut child = cmd.spawn()?;
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                jackin_diagnostics::operation_error(
+                    "process_spawn_error",
+                    &format!("failed to spawn {program}: {error}"),
+                    &[],
+                );
+                return Err(error.into());
+            }
+        };
         let stdout_pipe = child.stdout.take();
         let stderr_pipe = child.stderr.take();
         // Never stream child output to the terminal while a debug run is
@@ -374,8 +431,26 @@ impl ShellRunner {
             )
             .await
         };
-        let (status, stdout_result, stderr_result) =
-            tokio::join!(child.wait(), read_stdout, read_stderr);
+        let (status, stdout_result, stderr_result) = if let Some(dur) = opts.timeout {
+            match tokio::time::timeout(dur, async {
+                tokio::join!(child.wait(), read_stdout, read_stderr)
+            })
+            .await
+            {
+                Ok(triple) => triple,
+                Err(_elapsed) => {
+                    drop(child.kill().await);
+                    drop(child.wait().await);
+                    return Err(DockerError::CommandTimeout {
+                        secs: dur.as_secs_f64(),
+                        program: program.to_owned(),
+                    }
+                    .into());
+                }
+            }
+        } else {
+            tokio::join!(child.wait(), read_stdout, read_stderr)
+        };
         let stdout_buf = stdout_result?;
         let stderr_buf = stderr_result?;
         let status = status?;
@@ -408,46 +483,47 @@ impl ShellRunner {
         }
         if !status.success() {
             if opts.tee_to_build_log {
-                anyhow::bail!("Docker build command failed");
+                return Err(DockerError::DockerBuildFailed.into());
             }
             if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {
-                anyhow::bail!("command failed: {} {}", program, args.join(" "));
+                return Err(cmd_failed(program, args).into());
             }
             if !stream {
                 if let Some(run) = jackin_diagnostics::active_run().filter(|_| self.debug) {
-                    anyhow::bail!(
-                        "command failed: {} {} (captured output in diagnostics run {})",
-                        program,
-                        args.join(" "),
-                        run.run_id()
-                    );
+                    return Err(DockerError::CommandFailedDebugRun {
+                        program: program.to_owned(),
+                        args: args.join(" "),
+                        run_id: run.run_id().to_owned(),
+                    }
+                    .into());
                 }
                 if let Some(run) = jackin_diagnostics::active_run() {
-                    anyhow::bail!(
-                        "command failed: {} {} (output suppressed; rerun with --debug to capture it in diagnostics run {})",
-                        program,
-                        args.join(" "),
-                        run.run_id()
-                    );
+                    return Err(DockerError::CommandFailedSuppressed {
+                        program: program.to_owned(),
+                        args: args.join(" "),
+                        run_id: run.run_id().to_owned(),
+                    }
+                    .into());
                 }
                 if let Some(stderr) = summarize_stderr(&stderr_buf) {
-                    anyhow::bail!(
-                        "command failed: {} {} (stderr: {stderr}; captured output suppressed)",
-                        program,
-                        args.join(" ")
-                    );
+                    return Err(DockerError::CommandFailedStderrSummary {
+                        program: program.to_owned(),
+                        args: args.join(" "),
+                        stderr,
+                    }
+                    .into());
                 }
-                anyhow::bail!(
-                    "command failed: {} {} (captured output suppressed)",
-                    program,
-                    args.join(" ")
-                );
+                return Err(DockerError::CommandFailedCapturedSuppressed {
+                    program: program.to_owned(),
+                    args: args.join(" "),
+                }
+                .into());
             }
-            anyhow::bail!(
-                "command failed: {} {} (see stderr above)",
-                program,
-                args.join(" ")
-            );
+            return Err(DockerError::CommandFailedSeeStderr {
+                program: program.to_owned(),
+                args: args.join(" "),
+            }
+            .into());
         }
         Ok(())
     }
@@ -488,14 +564,19 @@ impl ShellRunner {
         if !output.status.success() {
             match mode {
                 CaptureMode::Secret => {
-                    anyhow::bail!("command failed: {} {}", program, args.join(" "));
+                    return Err(cmd_failed(program, args).into());
                 }
                 CaptureMode::Normal => {
                     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
                     if stderr.is_empty() {
-                        anyhow::bail!("command failed: {} {}", program, args.join(" "));
+                        return Err(cmd_failed(program, args).into());
                     }
-                    anyhow::bail!("command failed: {} {}: {}", program, args.join(" "), stderr);
+                    return Err(DockerError::CommandFailedWithStderr {
+                        program: program.to_owned(),
+                        args: args.join(" "),
+                        stderr,
+                    }
+                    .into());
                 }
             }
         }

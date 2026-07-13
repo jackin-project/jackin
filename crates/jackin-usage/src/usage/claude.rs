@@ -4,7 +4,10 @@
 //! (file-size ratchet). Items in this module are `pub(crate)` so the
 //! coordinator (`usage.rs`) can re-export them.
 
-#[allow(clippy::wildcard_imports)]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::*;
 use serde::Deserialize;
 
@@ -655,7 +658,10 @@ fn has_equivalent_claude_window(
 /// they share one builder with `limits`-sourced windows. Weekly-scoped windows
 /// (Sonnet/Opus/Routines) get the weekly duration so they are paced uniformly
 /// with a `weekly_scoped` Fable limit.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 fn legacy_claude_quota_windows(
     five_hour: Option<ClaudeOAuthUsageWindow>,
     seven_day: Option<ClaudeOAuthUsageWindow>,
@@ -706,6 +712,10 @@ pub(crate) fn push_claude_dollar_windows(
         let used_money = Money::new((used * 100.0).round() as i64, "USD", 2);
         let limit_money = Money::new((limit * 100.0).round() as i64, "USD", 2);
         // `limit > 0.0` holds (filtered above), so the fraction is well-defined.
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "fraction clamped to 0.0..=1.0; percent is rounded f64→u8"
+        )]
         let remaining_percent =
             Some(((1.0 - (used / limit).clamp(0.0, 1.0)) * 100.0).round() as u8);
         let reset_at = window.resets_at.as_deref().and_then(parse_iso_epoch);

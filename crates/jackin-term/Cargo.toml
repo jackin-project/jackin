@@ -55,5 +55,9 @@ harness = false
 name = "scroll_throughput"
 harness = false
 
+[[bench]]
+name = "resize_storm"
+harness = false
+
 [lints]
 workspace = true
