@@ -22,13 +22,13 @@ The fix should be structural: every cache jackin❯ creates or recommends must h
 
 ### Research notes
 
-- Cargo stores build output in `target` and `build` directories, defaulting to a workspace-local `target` directory; `CARGO_TARGET_DIR`, Cargo config `build.target-dir`, or `--target-dir` can redirect it. See the Cargo Book build-cache reference: <https://doc.rust-lang.org/cargo/reference/build-cache.html>.
-- Cargo workspaces already share one output directory within a workspace, but Cargo does not currently provide a stable built-in user-wide target cache for every workspace. The Rust project has an accepted user-wide build-cache goal, but it remains future Cargo work rather than a shipped feature jackin❯ can depend on. See <https://rust-lang.github.io/rust-project-goals/2024h2/user-wide-cache.html>.
-- A single global `CARGO_TARGET_DIR` can reduce duplicate target trees, but it has sharp edges for jackin❯: concurrent builds can serialize on Cargo locks, `cargo clean` can remove artifacts for unrelated workspaces, and path-dependency identity/collision issues have been reported when multiple workspaces share one target directory. See Cargo issue rust-lang/cargo#12516: <https://github.com/rust-lang/cargo/issues/12516>.
-- `sccache` is a compiler wrapper for Rust and other languages. It stores compiler results on local disk or remote backends such as Redis, S3, GCS, Azure, GitHub Actions cache, WebDAV, and others. See the project README: <https://github.com/mozilla/sccache>.
-- `sccache` local disk storage has explicit controls: `SCCACHE_DIR` changes the local cache location, and `SCCACHE_CACHE_SIZE` caps local disk size. The upstream local-cache docs state the default size is 10 GB. See <https://github.com/mozilla/sccache/blob/main/docs/Local.md>.
-- Current `sccache` configuration supports multi-level cache chains such as `disk,redis,s3`, with write-error policy controls. This matters for jackin❯ because a small local L0 cache plus optional remote/shared L1 can reduce local disk pressure without making every build cold. See <https://github.com/mozilla/sccache/blob/main/docs/Configuration.md>.
-- The Rust project has explicitly discussed cache cleaning as an ongoing Cargo concern, including global cache cleanup and future target-directory tracking work. See the Rust Blog cache-cleaning post: <https://blog.rust-lang.org/2023/12/11/cargo-cache-cleaning/>.
+- Cargo stores build output in `target` and `build` directories, defaulting to a workspace-local `target` directory; `CARGO_TARGET_DIR`, Cargo config `build.target-dir`, or `--target-dir` can redirect it. See the [Cargo Book build-cache reference](https://doc.rust-lang.org/cargo/reference/build-cache.html).
+- Cargo workspaces already share one output directory within a workspace, but Cargo does not currently provide a stable built-in user-wide target cache for every workspace. The Rust project has an accepted [user-wide build-cache goal](https://rust-lang.github.io/rust-project-goals/2024h2/user-wide-cache.html), but it remains future Cargo work rather than a shipped feature jackin❯ can depend on.
+- A single global `CARGO_TARGET_DIR` can reduce duplicate target trees, but it has sharp edges for jackin❯: concurrent builds can serialize on Cargo locks, `cargo clean` can remove artifacts for unrelated workspaces, and path-dependency identity/collision issues have been reported when multiple workspaces share one target directory. See [Cargo issue rust-lang/cargo#12516](https://github.com/rust-lang/cargo/issues/12516).
+- `sccache` is a compiler wrapper for Rust and other languages. It stores compiler results on local disk or remote backends such as Redis, S3, GCS, Azure, GitHub Actions cache, and HTTP-based collaboration services. See the [project README](https://github.com/mozilla/sccache).
+- `sccache` local disk storage has explicit controls: `SCCACHE_DIR` changes the local cache location, and `SCCACHE_CACHE_SIZE` caps local disk size. The [upstream local-cache docs](https://github.com/mozilla/sccache/blob/main/docs/Local.md) state the default size is 10 GB.
+- Current `sccache` configuration supports multi-level cache chains such as `disk,redis,s3`, with write-error policy controls. This matters for jackin❯ because a small local L0 cache plus optional remote/shared L1 can reduce local disk pressure without making every build cold. See the [configuration reference](https://github.com/mozilla/sccache/blob/main/docs/Configuration.md).
+- The Rust project has explicitly discussed cache cleaning as an ongoing Cargo concern, including global cache cleanup and future target-directory tracking work. See the [Rust Blog cache-cleaning post](https://blog.rust-lang.org/2023/12/11/cargo-cache-cleaning/).
 
 ### Proposed direction
 
@@ -55,7 +55,7 @@ SCCACHE_DIR="$JACKIN_HOME_DIR/cache/rust/sccache"
 SCCACHE_CACHE_SIZE="20G"
 RUSTC_WRAPPER="sccache"
 CARGO_HOME="$JACKIN_HOME_DIR/cache/rust/cargo-home"
-CARGO_TARGET_DIR="$JACKIN_HOME_DIR/cache/rust/targets/<project-key>"
+CARGO_TARGET_DIR="$JACKIN_HOME_DIR/cache/rust/targets/project-key"
 ```
 
 The exact paths and config names are design placeholders, not shipped CLI. The important contract is ownership: every jackin❯-created path has a label, budget, and cleanup command.
@@ -90,6 +90,6 @@ Do not make one global `CARGO_TARGET_DIR` the default for all operator Rust work
 - <RepoFile path="crates/jackin-runtime/src/runtime/prewarm_trigger.rs" /> — prewarm flows that trade disk for speed.
 - <RepoFile path="crates/jackin-core/src/agent/runtime.rs" /> — generated role/agent build cache mounts.
 - <RepoFile path="crates/jackin-core/src/agent/adapters/claude.rs" /> — agent prefetch cache mount precedent.
-- <RepoFile path="docs/content/docs/commands/prune.mdx" /> — future operator cleanup documentation.
-- <RepoFile path="docs/content/docs/commands/doctor.mdx" /> — future diagnostics/warning documentation.
+- <RepoFile path="docs/content/docs/(public)/commands/prune.mdx" /> — future operator cleanup documentation.
+- <RepoFile path="docs/content/docs/(public)/commands/doctor.mdx" /> — future diagnostics/warning documentation.
 - [Workspace registry cache](/roadmap/workspace-registry-cache/) — adjacent cache program for DinD image/layer reuse.
