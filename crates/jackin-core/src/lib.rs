@@ -1,10 +1,10 @@
-// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
-// SPDX-License-Identifier: Apache-2.0
-
 //! jackin-core: universal vocabulary types shared across all jackin❯ crates.
 //!
 //! **Architecture Invariant:** T0.
 //! Entry point: [`Agent`] — primary domain noun re-exported to every crate.
+
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
 
 #![deny(
     clippy::string_slice,

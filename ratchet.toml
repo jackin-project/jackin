@@ -198,7 +198,7 @@ key = "clippy::panic@jackin-term"
 bound = 4
 [[family.entry]]
 key = "clippy::print_stderr@jackin"
-bound = 4
+bound = 3
 [[family.entry]]
 key = "clippy::print_stderr@jackin-dev"
 bound = 1
@@ -219,7 +219,7 @@ key = "clippy::print_stderr@jackin-xtask"
 bound = 2
 [[family.entry]]
 key = "clippy::print_stdout@jackin"
-bound = 3
+bound = 2
 [[family.entry]]
 key = "clippy::print_stdout@jackin-build-meta"
 bound = 1
