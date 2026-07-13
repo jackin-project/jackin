@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Host-side label constants.
 //!
 //! Mirror of `jackin-runtime::runtime::naming` for the two labels the

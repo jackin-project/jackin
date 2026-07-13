@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::{LoadOptions, RestoreResolution};
 use crate::instance::{InstanceIndex, InstanceManifest, InstanceQuery, InstanceStatus};
 use crate::runtime::attach::ContainerState;

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Typed TUI-side requests for non-visual work.
 //!
 //! The capsule daemon still owns PTY/session/control-plane authority outside

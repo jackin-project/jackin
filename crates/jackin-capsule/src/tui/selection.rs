@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Mouse text-selection state and rendering for the capsule multiplexer.
 //!
 //! `SelectionState` lives in the multiplexer's optional selection field.

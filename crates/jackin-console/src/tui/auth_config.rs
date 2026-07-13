@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Auth configuration edit helpers shared by console surfaces.
 
 use std::collections::{BTreeMap, BTreeSet};

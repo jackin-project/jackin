@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Container info dialog component: shows role, workspace, and agent metadata
 //! for the current container.
 //!

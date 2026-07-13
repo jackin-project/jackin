@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Console-local container/session information state construction.
 
 /// Build the debug-info dialog state for the console surface from the shared

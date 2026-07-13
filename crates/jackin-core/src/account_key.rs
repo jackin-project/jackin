@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Canonical account-key hashing shared by the host CLI and the in-capsule
 //! telemetry store. Both sides derive the same `account_key_hash` from a
 //! `(provider, account_label)` pair so host- and container-recorded usage

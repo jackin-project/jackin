@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Static `AgentRuntime` adapter registry.
 //!
 //! Each built-in agent is a zero-sized unit struct that implements

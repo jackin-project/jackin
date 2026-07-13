@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Binary adapter for the jackin❯ interactive console (`jackin console`).
 //!
 //! Phase 5 adapter-shell end state. Entry point is `run_console`. All

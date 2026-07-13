@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Modal footer dispatcher + the per-modal-mode hint-span builders
 //! (auth form, confirm save, container info, status popup, op picker).
 

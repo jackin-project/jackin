@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Re-exports terminal-ownership helpers from `jackin-tui::ownership`.
 //!
 //! The authoritative state lives in `jackin_tui::ownership`; this module

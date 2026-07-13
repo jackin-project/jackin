@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Formatting, CLI, and JSON helpers shared by every usage provider.
 //!
 //! Extracted from `usage.rs` as Phase 2 of codebase-health-enforcement

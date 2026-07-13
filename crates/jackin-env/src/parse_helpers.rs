@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Parse helpers shared across operator-env modules.
 
 /// Extract a host env var name from `$NAME` or `${NAME}` forms.

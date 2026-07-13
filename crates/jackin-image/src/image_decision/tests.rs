@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for `image_decision` — `ImageInvalidationReason`, `ImageDecision`,
 //! and the label classifier (`classify_image_labels`).
 

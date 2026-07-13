@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Live docker-build output sink.
 //!
 //! The derived-image `docker build` is the slowest launch step. The command

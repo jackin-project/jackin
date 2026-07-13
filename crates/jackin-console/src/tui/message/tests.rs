@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::{
     AgentPickerChoices, AgentPickerResolution, ConsoleInstanceAction, MountInfoRefreshSourceFacts,
     MountInfoRefreshTarget, OnPromptFailure, PromptOutcome, agent_picker_choices_for_workspace,

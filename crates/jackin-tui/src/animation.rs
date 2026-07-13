@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Terminal animation primitives: warp intro/out and duration formatting.
 //!
 //! Implements the starfield hyperspace entry/exit sequences and closing brand

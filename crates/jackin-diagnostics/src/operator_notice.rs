@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Adapter that wires `jackin-diagnostics`' `emit_compact_line` to the
 //! `jackin-core::operator_notice::OperatorNoticeSink` port trait. Lets
 //! domain crates (L0) emit compact operator-visible lines without

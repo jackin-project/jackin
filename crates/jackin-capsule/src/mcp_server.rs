@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! MCP server for `jackin_exec` tool.
 //!
 //! Implements the Model Context Protocol (MCP) stdio transport so Claude Code

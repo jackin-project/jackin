@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Settings-screen TUI message vocabulary.
 //!
 //! Root-crate settings messages still live in `src/console/manager/message.rs`

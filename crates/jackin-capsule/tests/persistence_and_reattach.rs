@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 /// End-to-end persistence and reattach contracts exercised over a real
 /// Unix socket without spawning a PTY.
 ///

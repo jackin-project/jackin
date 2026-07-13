@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Role repo validation: locate `jackin.role.toml`, clone/update, validate structure.
 //!
 //! Produces `ValidatedRoleRepo` once the manifest parses and the Dockerfile

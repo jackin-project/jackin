@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Long-lived TUI event sources for the capsule attach client.
 
 /// One second is quick enough for operator-visible title/chrome updates after

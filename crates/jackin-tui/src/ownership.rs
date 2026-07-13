@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Terminal-ownership flags, alt-screen assertion, and terminal-title helpers.
 
 use std::io::{self, Write};
