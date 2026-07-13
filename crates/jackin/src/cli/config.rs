@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! CLI argument structs for `jackin config` subcommands (auth, mounts, git, env, trust).
 //!
 //! Not responsible for: reading or writing config state — structs are parsed

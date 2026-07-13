@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 /// `SettingsTrustState` impls + `settings_trust_rows_from_app_config`.
 use super::{
     SettingsPanelChangeCount, SettingsPanelDirty, SettingsPanelDiscard, SettingsPanelMarkSaved,

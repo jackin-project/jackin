@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Wire types for the agent runtime status authority.
 //!
 //! These are the shared, serializable status types the capsule produces and the

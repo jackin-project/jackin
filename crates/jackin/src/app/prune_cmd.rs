@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Purge and Prune command handlers — extracted from `app::run`.
 
 use anyhow::{Context, Result};

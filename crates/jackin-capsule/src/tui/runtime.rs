@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! G0 shared-runtime wiring for the capsule TUI.
 //!
 //! The shared TEA `Component<Ev, Msg>` and `View<Model>` contracts live in

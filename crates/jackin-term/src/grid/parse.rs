@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! CSI reconstruction + SGR color parsing helpers extracted from grid.rs.
 #[allow(
     unused_imports,

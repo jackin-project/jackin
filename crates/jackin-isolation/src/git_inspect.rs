@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Synchronous git helpers for the D24 Inspect surface.
 //!
 //! The git-spawning helpers run git via `std::process::Command` rather than the

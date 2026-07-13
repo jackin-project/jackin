@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Instance index (`instances.json`) and per-container manifest: status tracking, session records.
 //!
 //! The index is the host-side registry of every container jackin❯ has
