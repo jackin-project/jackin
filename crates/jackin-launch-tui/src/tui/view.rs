@@ -19,7 +19,10 @@ use crate::tui::components::progress_rail::render_progress;
 use crate::tui::components::prompts::draw_confirm;
 use crate::tui::components::rain::{RainState, render_rain};
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn render_launch_frame(
     frame: &mut Frame<'_>,
     view: &LaunchView,
@@ -178,6 +181,7 @@ fn failure_popup_hyperlink_overlay_bytes(
         failure,
         run_id,
         debug_mode,
+        Some(view.failure_scroll.clone()),
         view.failure_copy_hover,
         view.failure_copied,
         view.failure_revealed,

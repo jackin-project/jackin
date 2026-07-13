@@ -242,3 +242,35 @@ fn stop_with_live_subagent_stays_working() {
         }
     );
 }
+
+#[test]
+fn enrich_claude_notification_from_payload_subtype() {
+    let enriched = enrich_event_name(
+        "claude",
+        "Notification",
+        Some(r#"{"notification_type":"permission_prompt"}"#),
+    );
+    assert_eq!(enriched, "Notification:permission_prompt");
+    let mut state = SourceGateState::default();
+    assert_eq!(
+        map_event(&event("claude", &enriched), &mut state),
+        GateEffect::Authority {
+            state: RawAgentState::Blocked,
+            pending_permission: true,
+            subagents_active: 0,
+            notes: Vec::new(),
+        }
+    );
+    // Bare Notification without payload stays un-enriched (Ignore via map).
+    assert_eq!(
+        enrich_event_name("claude", "Notification", None),
+        "Notification"
+    );
+    assert_eq!(
+        map_event(
+            &event("claude", "Notification"),
+            &mut SourceGateState::default()
+        ),
+        GateEffect::Ignore
+    );
+}

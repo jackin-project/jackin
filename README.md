@@ -74,7 +74,7 @@ This README is a first impression. The full documentation at **<https://jackin.t
 - [Commands](https://jackin.tailrocks.com/commands/console/) — full reference (TUI first, then CLI)
 - [Security Model](https://jackin.tailrocks.com/guides/security-model/) — what the boundary protects and what it doesn't
 - [Comparison with Alternatives](https://jackin.tailrocks.com/guides/comparison/) — honest snapshot vs. Docker Sandboxes and others
-- Behind jackin❯ (Internals) — [Architecture](https://jackin.tailrocks.com/reference/architecture/), [Codebase Map](https://jackin.tailrocks.com/reference/codebase-map/), [Roadmap](https://jackin.tailrocks.com/reference/roadmap/)
+- Behind jackin❯ (Internals) — [Architecture](https://jackin.tailrocks.com/reference/getting-oriented/architecture/), [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/), [Roadmap](https://jackin.tailrocks.com/roadmap/)
 
 ## Development
 

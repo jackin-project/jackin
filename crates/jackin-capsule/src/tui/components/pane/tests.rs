@@ -102,7 +102,10 @@ fn pane_widget_forces_model_wide_lead_width() {
         );
         assert_eq!(buf[(1, 0)].symbol(), " ");
         assert_eq!(buf[(1, 0)].diff_option, CellDiffOption::None);
-        #[allow(deprecated)]
+        #[allow(
+            deprecated,
+            reason = "documented residual allow; prefer expect when site is lint-true"
+        )]
         {
             assert!(
                 !buf[(1, 0)].skip,

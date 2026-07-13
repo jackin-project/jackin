@@ -1,9 +1,8 @@
 //! Tests for `attach`.
 use std::collections::{HashMap, VecDeque};
 
-use super::super::test_support::FakeRunner;
 use super::*;
-use crate::runtime::test_support::FakeDockerClient;
+use jackin_test_support::{FakeDockerClient, FakeRunner};
 use tempfile::TempDir;
 
 fn test_paths() -> (TempDir, JackinPaths) {

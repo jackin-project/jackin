@@ -1,0 +1,2 @@
+- Schema changes are versioned: a `config.toml`/per-workspace schema change ships the matching `migrations`/`versions` entry in the same PR (5-artifact rule, `PRERELEASE.md`).
+- Resolution and validation are pure transforms; persistence is the only I/O and stays narrow.

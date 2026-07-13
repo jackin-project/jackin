@@ -1,4 +1,7 @@
-#![allow(clippy::too_many_lines)]
+#![allow(
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 //! Launch rich terminal renderer and modal loops.
 
 use std::io::Write;
@@ -968,7 +971,7 @@ impl RichRenderer {
                     }
                     InspFocus::Diff => {
                         if let Some(d) = diff_state.as_mut() {
-                            drop(d.handle_key(key));
+                            let _outcome = d.handle_key(key);
                             diff_scroll_y = d.scroll_y();
                         }
                     }
@@ -992,20 +995,14 @@ impl RichRenderer {
                     }
                     InspFocus::Diff => {
                         if let Some(d) = diff_state.as_mut() {
-                            drop(d.handle_key(key));
+                            let _outcome = d.handle_key(key);
                             diff_scroll_y = d.scroll_y();
                         }
                     }
                 },
-                KeyCode::PageUp => {
+                KeyCode::PageUp | KeyCode::PageDown => {
                     if let Some(d) = diff_state.as_mut() {
-                        drop(d.handle_key(key));
-                        diff_scroll_y = d.scroll_y();
-                    }
-                }
-                KeyCode::PageDown => {
-                    if let Some(d) = diff_state.as_mut() {
-                        drop(d.handle_key(key));
+                        let _outcome = d.handle_key(key);
                         diff_scroll_y = d.scroll_y();
                     }
                 }

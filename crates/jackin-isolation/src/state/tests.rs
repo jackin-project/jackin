@@ -1,5 +1,9 @@
 //! Tests for `state`.
 use super::*;
+use jackin_core::WorkspaceName;
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use tempfile::TempDir;
 
 fn sample_record() -> IsolationRecord {
@@ -134,7 +138,7 @@ fn list_records_for_workspace_walks_all_container_dirs() {
     rec_c.container_name = "jk-b2c3d4e5-docwriter".into();
     write_records(&c, &[rec_c]).unwrap();
 
-    let mut found = list_records_for_workspace(data.path(), "jackin").unwrap();
+    let mut found = list_records_for_workspace(data.path(), &wn("jackin")).unwrap();
     found.sort_by(|x, y| x.container_name.cmp(&y.container_name));
     assert_eq!(found.len(), 2);
     assert_eq!(found[0], rec_a);
@@ -145,7 +149,7 @@ fn list_records_for_workspace_walks_all_container_dirs() {
 fn list_records_for_workspace_returns_empty_when_data_dir_missing() {
     let dir = TempDir::new().unwrap();
     let missing = dir.path().join("nope");
-    let result = list_records_for_workspace(&missing, "jackin").unwrap();
+    let result = list_records_for_workspace(&missing, &wn("jackin")).unwrap();
     assert!(result.is_empty());
 }
 
@@ -157,6 +161,6 @@ fn list_records_for_workspace_ignores_non_jackin_dirs() {
     let mut rec = sample_record();
     rec.container_name = "not-a-jackin-capsule".into();
     write_records(&other, &[rec]).unwrap();
-    let result = list_records_for_workspace(data.path(), "jackin").unwrap();
+    let result = list_records_for_workspace(data.path(), &wn("jackin")).unwrap();
     assert!(result.is_empty());
 }

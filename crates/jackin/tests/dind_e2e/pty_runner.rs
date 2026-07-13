@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! PTY-based runner family: spawn `script(1)` wrapping `jackin load`, drive
 //! stdin with either a sentinel file watch, a transcript script, or a quick
 //! exit probe, then collect stdout / stderr into `Arc<Mutex<Vec<u8>>>`

@@ -1,11 +1,11 @@
 //! Tests for `image`.
 use super::*;
-use crate::runtime::test_support::{FakeDockerClient, FakeRunner, TEST_DOCKERFILE_FROM};
 use jackin_core::agent::Agent;
 use jackin_image::{
     LABEL_IMAGE_CAPSULE_VERSION, LABEL_IMAGE_MANIFEST_VERSION, LABEL_IMAGE_RECIPE_HASH,
     LABEL_IMAGE_RECIPE_VERSION, image_recipe::build_image_recipe,
 };
+use jackin_test_support::{FakeDockerClient, FakeRunner, TEST_DOCKERFILE_FROM};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Mutex, MutexGuard};
 
@@ -430,7 +430,7 @@ async fn sibling_image_prewarm_skips_when_no_sibling_agents() {
     let _active = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
 
     spawn_sibling_image_prewarm(
@@ -784,7 +784,7 @@ fn validated_test_repo(
     selector: &RoleSelector,
 ) -> (CachedRepo, jackin_manifest::repo::ValidatedRoleRepo) {
     let cached_repo = CachedRepo::new(paths, selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
     (cached_repo, validated_repo)
 }
@@ -931,7 +931,7 @@ fn image_recipe_canonicalizes_supported_agent_order() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     std::fs::write(
         cached_repo.repo_dir.join("jackin.role.toml"),
         r#"version = "v1alpha5"
@@ -1446,7 +1446,7 @@ async fn decide_agent_image_builds_from_published_when_declared_image_is_missing
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     std::fs::write(
         cached_repo.repo_dir.join("jackin.role.toml"),
         r#"version = "v1alpha3"
@@ -1500,7 +1500,7 @@ async fn decide_agent_image_builds_from_workspace_when_published_image_is_stale(
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     std::fs::write(
         cached_repo.repo_dir.join("jackin.role.toml"),
         r#"version = "v1alpha3"
@@ -1562,7 +1562,7 @@ async fn decide_agent_image_reuses_valid_workspace_image_without_published_pull(
     let _active = run.activate();
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     std::fs::write(
         cached_repo.repo_dir.join("jackin.role.toml"),
         r#"version = "v1alpha3"
@@ -1636,7 +1636,7 @@ async fn decide_agent_image_build_path_checks_published_image_after_recipe_misma
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     std::fs::write(
         cached_repo.repo_dir.join("jackin.role.toml"),
         r#"version = "v1alpha3"
@@ -1756,7 +1756,7 @@ fn reuse_staleness_sentinel_gate_uses_published_image_or_stored_agent_version() 
     );
 
     let cached_repo = CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     std::fs::write(
         cached_repo.repo_dir.join("jackin.role.toml"),
         r#"version = "v1alpha3"
@@ -1786,7 +1786,7 @@ async fn prewarm_reuse_emits_prewarm_launch_plan_and_skips_build() {
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     let validated_repo = jackin_manifest::repo::validate_role_repo(&cached_repo.repo_dir).unwrap();
     let image = image_name(&selector, Some("abc123"));
     let local_base = role_base_image_name(&selector, None, Some("abc123"));
@@ -1856,7 +1856,7 @@ async fn prewarm_reuses_valid_workspace_image_without_published_pull() {
     crate::runtime::test_support::install_all_test_stubs(&paths);
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     std::fs::write(
         cached_repo.repo_dir.join("jackin.role.toml"),
         r#"version = "v1alpha3"
@@ -1941,7 +1941,7 @@ async fn hook_content_change_invalidates_image_recipe() {
     let paths = JackinPaths::for_tests(temp.path());
     let selector = RoleSelector::new(None, "agent-smith");
     let cached_repo = CachedRepo::new(&paths, &selector);
-    crate::runtime::test_support::seed_valid_role_repo(&cached_repo.repo_dir);
+    jackin_test_support::seed_valid_role_repo(&cached_repo.repo_dir);
     std::fs::create_dir_all(cached_repo.repo_dir.join("hooks")).unwrap();
     std::fs::write(
         cached_repo.repo_dir.join("hooks/preflight.sh"),

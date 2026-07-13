@@ -17,6 +17,7 @@ use std::path::PathBuf;
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct AgentAuthConfig {
+    /// How host credentials are forwarded for this agent at this layer.
     #[serde(default)]
     pub auth_forward: AuthForwardMode,
     /// Optional override for the host folder `sync` reads credentials from.
@@ -84,8 +85,10 @@ impl std::str::FromStr for GithubAuthMode {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct GithubAuthConfig {
+    /// How host `gh` auth state is forwarded into the container.
     #[serde(default)]
     pub auth_forward: GithubAuthMode,
+    /// Operator env for `token` mode (`GH_TOKEN`, optional `GH_HOST`, etc.).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, EnvValue>,
 }

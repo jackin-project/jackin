@@ -1,0 +1,24 @@
+[package]
+name = "jackin-test-support"
+version = "0.6.0-dev"
+edition.workspace = true
+rust-version.workspace = true
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Canonical fakes and role-repo seed helpers shared across jackin❯ workspace test suites."
+license.workspace = true
+readme = "README.md"
+publish = false
+
+repository.workspace = true
+
+[lib]
+name = "jackin_test_support"
+path = "src/lib.rs"
+
+[dependencies]
+jackin-core = { workspace = true }
+jackin-manifest = { workspace = true }
+anyhow = { workspace = true }
+
+[lints]
+workspace = true

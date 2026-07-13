@@ -12,6 +12,7 @@ const FALLBACK_INSTALL_COMMAND: &str = bounded_fallback_curl!(
     " | CODEX_NON_INTERACTIVE=1 bash"
 );
 
+/// [`crate::agent::runtime::AgentRuntime`] adapter for Codex.
 #[derive(Debug)]
 pub struct CodexRuntime;
 
