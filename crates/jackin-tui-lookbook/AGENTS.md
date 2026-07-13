@@ -1,7 +1,3 @@
-# AGENTS.md — jackin-tui-lookbook
-
-Interactive component lookbook for `jackin-tui`. Stories preview every shared TUI component in its real rendered state.
-
 ## Hard rule: Use only jackin-tui public API (no exceptions)
 
 Every story and interactor **must** call the same public API the rest of the jackin ecosystem uses. Non-negotiable.

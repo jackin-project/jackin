@@ -3,6 +3,7 @@
 //! Shared serde schema types live in `jackin-core`; this module owns runtime
 //! behavior such as grant validation, effective grants, and launch flags.
 
+use jackin_core::container_paths;
 pub use jackin_core::docker_security::{
     DindGrant, DockerGrants, DockerSecurityProfile, NetworkGrant, ParseProfileError,
 };
@@ -633,7 +634,10 @@ pub fn network_enforcement_label(grants: &EffectiveGrants) -> &'static str {
 /// `--debug` mode as a factual summary of what the container can do.
 // Eight contract dimensions are one flat argument list by design; bundling them
 // into a struct would just move the same fields without aiding any caller.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn format_session_contract(
     profile: DockerSecurityProfile,
     profile_source: &str,
@@ -1022,7 +1026,7 @@ pub fn validate_dind_grant_for_cgroup(
 }
 
 /// In-container path of the capsule binary, used for post-run `docker exec`.
-pub const CAPSULE_BIN_PATH: &str = "/jackin/runtime/jackin-capsule";
+pub const CAPSULE_BIN_PATH: &str = container_paths::CAPSULE_BIN;
 
 /// `docker exec --user root <container> <capsule> <subcommand>` argv.
 ///

@@ -129,8 +129,13 @@ impl Drop for ActiveRunGuard {
 struct JsonEvent<'a> {
     ts_ms: u128,
     run_id: &'a str,
+    /// `OTel` 32-hex trace id when an OTLP span is active; otherwise the run id
+    /// (file-only / offline fallback so the field stays non-empty for schema
+    /// stability — not correlated to an OTLP backend in that mode).
     trace_id: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// `OTel` 16-hex span id when an OTLP span is active; otherwise the
+    /// tracing-registry u64 string when a span is entered.
     span_id: Option<&'a str>,
     kind: &'a str,
     #[serde(rename = "event.name")]
@@ -389,6 +394,9 @@ impl RunDiagnostics {
     }
 
     pub fn error_typed(&self, kind: &str, message: &str, error_type: Option<&str>) {
+        if let Some(error_type) = error_type {
+            crate::metrics::incr_errors(error_type);
+        }
         crate::observability::emit_jsonl_error_typed(
             &self.run_id,
             kind,
@@ -788,7 +796,14 @@ impl RunDiagnostics {
     /// Only the first is announced; the rest are silent to avoid 5-second spam.
     pub(crate) fn record_otlp_internal(&self, level: &str, message: &str) {
         let first = !self.otlp_internal_notified.swap(true, Ordering::Relaxed);
-        self.record_direct("otlp_internal", message, None, Some(level), None, level);
+        self.record_direct(
+            crate::observability::otel_events::OTLP_INTERNAL,
+            message,
+            None,
+            Some(level),
+            None,
+            level,
+        );
         if first {
             // Terminal-only notice: record_direct already wrote the file, and a
             // tracing emit here would re-enter the subscriber (this runs inside
@@ -807,7 +822,7 @@ impl RunDiagnostics {
         message: &str,
         stage: Option<&str>,
         detail: Option<&str>,
-        span_id: Option<&str>,
+        fallback_span_id: Option<&str>,
         level: &str,
     ) {
         self.record_metrics(kind);
@@ -818,11 +833,14 @@ impl RunDiagnostics {
         };
         let taxonomy =
             crate::observability::event_taxonomy(kind, message, stage, detail, None, level);
+        // Prefer live OTel hex ids; fall back to run_id + tracing-registry span.
+        let (owned_trace, owned_span) =
+            crate::observability::correlation_ids(&self.run_id, fallback_span_id);
         let event = JsonEvent {
             ts_ms: now_ms(),
             run_id: &self.run_id,
-            trace_id: &self.run_id,
-            span_id,
+            trace_id: owned_trace.as_str(),
+            span_id: owned_span.as_deref(),
             kind,
             event_name: &taxonomy.event_name,
             event_outcome: taxonomy.outcome,
@@ -1143,13 +1161,26 @@ fn timing_key(stage: &str, name: &str) -> String {
 
 fn launch_stage_span(stage: &str) -> tracing::Span {
     let otel_name = format!("launch.{}", normalize_stage_name(stage));
-    tracing::info_span!(
+    let span = tracing::info_span!(
         "launch_stage",
         stage = stage,
         otel.name = otel_name.as_str(),
         otel.status_code = tracing::field::Empty,
         otel.status_description = tracing::field::Empty,
-    )
+    );
+    // Derived-image build is a peer subsystem of launch: link it to the active
+    // launch span so the BuildKit trace is not a peer without a parent (plan 044).
+    #[cfg(feature = "otlp")]
+    if stage == "derived image" {
+        use opentelemetry::trace::TraceContextExt as _;
+        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+        let parent_ctx = tracing::Span::current().context();
+        let span_ctx = parent_ctx.span().span_context().clone();
+        if span_ctx.is_valid() {
+            span.add_link(span_ctx);
+        }
+    }
+    span
 }
 
 pub(crate) fn normalize_stage_name(stage: &str) -> String {

@@ -12,7 +12,9 @@ pub trait OpStructRunner {
     fn account_list(&self) -> anyhow::Result<Vec<OpAccount>>;
     /// `account = None` lets `op` use its default-account context.
     fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>>;
+    /// List items in a vault (metadata only; no secret field values).
     fn item_list(&self, vault_id: &str, account: Option<&str>) -> anyhow::Result<Vec<OpItem>>;
+    /// List field metadata for an item (ids, labels, types — not values).
     fn item_get(
         &self,
         item_id: &str,
@@ -61,12 +63,20 @@ pub trait OpWriteRunner {
 /// cloning every string at the call site.
 #[derive(Debug, Clone, Copy)]
 pub struct OpItemCreateParams<'a> {
+    /// Vault id or name where the item is created.
     pub vault_id: &'a str,
+    /// Item title shown in 1Password.
     pub title: &'a str,
+    /// 1Password category (e.g. `API_CREDENTIAL`).
     pub category: &'a str,
+    /// Label of the secret field to write.
     pub field_label: &'a str,
+    /// Secret field value (passed on stdin by the runner).
     pub value: &'a str,
+    /// Optional plain-text notes body.
     pub notes_plain: Option<&'a str>,
+    /// Item tags applied at create time.
     pub tags: &'a [&'a str],
+    /// Optional section label for the secret field.
     pub section: Option<&'a str>,
 }

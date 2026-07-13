@@ -3,6 +3,7 @@
   "defaultOpen": false,
   "pages": [
     "docker-runtime-hardening-contract",
+    "sensitive-boundary-code-health",
     "apple-container-backend",
     "jackin-exec",
     "reproducibility-pinning",

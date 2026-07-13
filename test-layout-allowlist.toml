@@ -1,5 +1,0 @@
-# Test-layout ratchet — grandfathered violations of the one-tests.rs rule.
-# The gate (`cargo xtask lint tests`) fails on any violation NOT listed here.
-# Delete an entry when its file is fixed; the list may only shrink.
-files = [
-]

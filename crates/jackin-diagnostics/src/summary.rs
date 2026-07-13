@@ -5,7 +5,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+use std::borrow::Cow;
+
 use anyhow::Context;
+use serde::Deserialize;
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,7 +134,7 @@ pub fn summarize_run_file(path: &Path) -> anyhow::Result<DiagnosticsSummary> {
               flat shape preserves the per-line classification logic. Body \
               extraction follows the deferred-parallel-pass plan as the launch fns."
 )]
-pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSummary> {
+pub fn summarize_reader(mut reader: impl BufRead) -> anyhow::Result<DiagnosticsSummary> {
     let mut summary = DiagnosticsSummary {
         run_id: None,
         event_count: 0,
@@ -150,63 +153,58 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
         skipped_timings: Vec::new(),
     };
 
-    for (line_index, line) in reader.lines().enumerate() {
-        let line = line.with_context(|| format!("reading diagnostics line {}", line_index + 1))?;
+    let mut line_buf = String::new();
+    let mut line_index = 0usize;
+    loop {
+        line_index += 1;
+        line_buf.clear();
+        let bytes = reader
+            .read_line(&mut line_buf)
+            .with_context(|| format!("reading diagnostics line {line_index}"))?;
+        if bytes == 0 {
+            break;
+        }
+        let line = line_buf.trim_end_matches(['\n', '\r']);
         if line.trim().is_empty() {
             continue;
         }
-        let value: Value = serde_json::from_str(&line)
-            .with_context(|| format!("parsing diagnostics JSONL line {}", line_index + 1))?;
+        let event: EventLine<'_> = serde_json::from_str(line)
+            .with_context(|| format!("parsing diagnostics JSONL line {line_index}"))?;
         summary.event_count += 1;
 
-        let kind = value
-            .get("kind")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown");
+        let kind = event.kind.unwrap_or("unknown");
         *summary.event_counts.entry(kind.to_owned()).or_default() += 1;
 
         if summary.run_id.is_none() {
-            summary.run_id = value
-                .get("run_id")
-                .and_then(Value::as_str)
+            summary.run_id = event
+                .run_id
                 .filter(|run_id| !run_id.is_empty())
                 .map(ToOwned::to_owned);
         }
 
-        if let Some(ts) = value.get("ts_ms").and_then(Value::as_u64) {
+        if let Some(ts) = event.ts_ms {
             let ts = u128::from(ts);
             summary.first_ts_ms = Some(summary.first_ts_ms.map_or(ts, |first| first.min(ts)));
             summary.last_ts_ms = Some(summary.last_ts_ms.map_or(ts, |last| last.max(ts)));
             if summary.hardline_ts_ms.is_none()
                 && matches!(kind, "stage_started" | "stage_done")
-                && value
-                    .get("stage")
-                    .and_then(Value::as_str)
-                    .is_some_and(|stage| stage == "hardline")
+                && event.stage.is_some_and(|stage| stage == "hardline")
             {
                 summary.hardline_ts_ms = Some(ts);
             }
         }
 
-        let stage = value
-            .get("stage")
-            .and_then(Value::as_str)
+        let stage = event.stage.map(ToOwned::to_owned);
+        let message = event.message.as_deref().unwrap_or_default().to_owned();
+        let detail_raw = event
+            .detail
+            .as_ref()
+            .and_then(DetailField::as_str)
             .map(ToOwned::to_owned);
-        let message = value
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        let detail_raw = value
-            .get("detail")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned);
-        let detail_json = detail_raw
-            .as_deref()
-            .and_then(|detail| serde_json::from_str::<Value>(detail).ok());
 
         match kind {
             "stage_done" => {
+                let detail_json = parse_detail_json(detail_raw.as_deref());
                 if let (Some(stage), Some(duration_ms)) = (
                     stage.as_deref(),
                     detail_json
@@ -222,6 +220,7 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                 }
             }
             "timing_done" => {
+                let detail_json = parse_detail_json(detail_raw.as_deref());
                 if let (Some(stage), Some(detail)) = (stage.as_deref(), detail_json.as_ref()) {
                     let name = detail
                         .get("name")
@@ -245,6 +244,7 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                 }
             }
             "docker_build_step" => {
+                let detail_json = parse_detail_json(detail_raw.as_deref());
                 if let Some(detail) = detail_json.as_ref() {
                     summary.docker_build_steps.push(DockerBuildStepSummary {
                         step: detail
@@ -266,6 +266,7 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                 }
             }
             "build_context_snapshot" => {
+                let detail_json = parse_detail_json(detail_raw.as_deref());
                 if let Some(detail) = detail_json.as_ref() {
                     summary
                         .build_context_snapshots
@@ -290,6 +291,7 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                 }
             }
             "image_build_source" => {
+                let detail_json = parse_detail_json(detail_raw.as_deref());
                 if let Some(detail) = detail_json.as_ref() {
                     summary.image_build_sources.push(ImageBuildSourceSummary {
                         source: detail
@@ -324,6 +326,7 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
                 });
             }
             "launch_plan" | "launch_plan_rejected" => {
+                let detail_json = parse_detail_json(detail_raw.as_deref());
                 summary.launch_plan_events.push(LaunchPlanEventSummary {
                     kind: kind.to_owned(),
                     plan: detail_json
@@ -367,6 +370,52 @@ pub fn summarize_reader(reader: impl BufRead) -> anyhow::Result<DiagnosticsSumma
     }
 
     Ok(summary)
+}
+
+/// Borrowed JSONL event line — only the fields the summary path reads.
+/// Unknown/extra fields ignored (no `deny_unknown_fields`) for forward/backward
+/// compatibility with run files. `message`/`detail` use `Cow` for escapes.
+#[derive(Debug, Deserialize)]
+struct EventLine<'a> {
+    #[serde(default)]
+    kind: Option<&'a str>,
+    #[serde(default)]
+    run_id: Option<&'a str>,
+    #[serde(default)]
+    ts_ms: Option<u64>,
+    #[serde(default)]
+    stage: Option<&'a str>,
+    #[serde(default, borrow)]
+    message: Option<Cow<'a, str>>,
+    /// Non-string detail → [`DetailField::Other`] → treated absent (old `as_str`).
+    #[serde(default, borrow)]
+    detail: Option<DetailField<'a>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum DetailField<'a> {
+    Str(#[serde(borrow)] Cow<'a, str>),
+    Other(
+        #[allow(
+            dead_code,
+            reason = "documented residual allow; prefer expect when site is lint-true"
+        )]
+        Value,
+    ),
+}
+
+impl DetailField<'_> {
+    fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Str(s) => Some(s.as_ref()),
+            Self::Other(_) => None,
+        }
+    }
+}
+
+fn parse_detail_json(detail: Option<&str>) -> Option<Value> {
+    detail.and_then(|detail| serde_json::from_str::<Value>(detail).ok())
 }
 
 #[derive(Default)]

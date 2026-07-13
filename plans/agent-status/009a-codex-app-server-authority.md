@@ -2,6 +2,7 @@
 
 ## Status
 
+- **Implementation status**: **RESIDUAL** — pure mapping + feature-gated session tests only; **no production app-server status reader**
 - **Priority**: P2
 - **Effort**: M-L
 - **Risk**: MED

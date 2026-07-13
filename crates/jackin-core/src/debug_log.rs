@@ -18,6 +18,7 @@
 
 use std::sync::{OnceLock, RwLock};
 
+/// Receives verbose-trace debug log lines when `--debug` is active.
 pub trait DebugLogSink: Send + Sync + 'static {
     /// True iff verbose-trace logging is enabled for this run.
     fn is_active(&self) -> bool;
@@ -31,10 +32,12 @@ fn global() -> &'static RwLock<Box<dyn DebugLogSink>> {
     GLOBAL_SINK.get_or_init(|| RwLock::new(Box::new(NoopSink)))
 }
 
+/// Install the process-wide debug-log sink (typically at startup).
 pub fn set_global_sink(sink: Box<dyn DebugLogSink>) {
     *global().write().unwrap_or_else(PoisonError::into_inner) = sink;
 }
 
+/// Whether the installed sink reports verbose-trace logging as active.
 pub fn is_debug_mode() -> bool {
     global()
         .read()
@@ -44,6 +47,7 @@ pub fn is_debug_mode() -> bool {
 
 use std::sync::PoisonError;
 
+/// Emit one debug-log line if the sink is active; no-op otherwise.
 pub fn emit_debug_line(category: &str, line: &str) {
     if let Ok(guard) = global().read() {
         let sink = &**guard;

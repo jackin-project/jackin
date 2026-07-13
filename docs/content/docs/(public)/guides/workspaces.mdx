@@ -214,6 +214,7 @@ You can limit which roles are allowed to use a workspace:
 ```bash
 jackin workspace create secure-api \
   --workdir ~/Projects/secure-api \
+  --mount ~/Projects/secure-api \
   --allowed-role agent-smith \
   --default-role agent-smith
 ```

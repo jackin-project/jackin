@@ -239,20 +239,34 @@ where
     let full_area: ratatui::layout::Rect = terminal.size()?.into();
     let (main_area, debug_bar_area) =
         split_debug_area(full_area, jackin_diagnostics::is_debug_mode());
-    let ConsoleStage::Manager(ms) = &mut state.stage;
-    if *container_info_overlay_active
-        && !matches!(
-            ms.list_modal,
-            Some(crate::console::tui::state::Modal::ContainerInfo { .. })
-        )
     {
-        terminal.clear()?;
-        *container_info_overlay_active = false;
+        // Scoped mutable borrow of `state.stage`: released before the
+        // `View<ConsoleState>` dispatch below needs an immutable borrow of
+        // the whole `state` (G0 spike, plan 053).
+        let ConsoleStage::Manager(ms) = &mut state.stage;
+        if *container_info_overlay_active
+            && !matches!(
+                ms.list_modal,
+                Some(crate::console::tui::state::Modal::ContainerInfo { .. })
+            )
+        {
+            terminal.clear()?;
+            *container_info_overlay_active = false;
+        }
+        crate::console::tui::prepare_for_render(ms, config, cwd, main_area);
     }
-    crate::console::tui::prepare_for_render(ms, config, cwd, main_area);
+
+    // Route the primary render through the shared `View<ConsoleState>`
+    // dispatch (spike, plan 053) instead of calling `crate::console::tui::render`
+    // directly. The confirm-dialog/debug-bar overlay compositing that used to
+    // share the same `terminal.draw` closure is not part of the `View`
+    // contract — it stays an `overlay` closure that `drive_frame` runs
+    // against the same in-progress frame, unchanged from before.
+    let view = jackin_console::tui::runtime::ConsoleView {
+        context: jackin_console::tui::runtime::ConsoleViewContext { config, cwd },
+    };
     let confirm_state = state.quit_confirm.as_ref();
-    terminal.draw(|frame| {
-        crate::console::tui::render(frame, main_area, ms, config, cwd);
+    jackin_tui::runtime::drive_frame(terminal, &view, &*state, main_area, |frame| {
         if let Some(confirm) = confirm_state {
             let hint_row = ratatui::layout::Rect {
                 x: main_area.x,
@@ -308,6 +322,8 @@ where
             );
         }
     })?;
+
+    let ConsoleStage::Manager(ms) = &state.stage;
     if let Some(modal @ crate::console::tui::state::Modal::ContainerInfo { state: info }) =
         ms.list_modal.as_ref()
     {
@@ -781,7 +797,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     options: ConsoleRunOptions<'_>,
     action_handler: &mut H,
     runner: &mut impl jackin_docker::CommandRunner,
-) -> anyhow::Result<Option<ConsoleOutcome>> {
+) -> anyhow::Result<(Option<ConsoleOutcome>, AppConfig)> {
     use std::time::Duration;
 
     use crossterm::event::{Event, KeyEventKind};
@@ -828,7 +844,7 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     let mut active_screen: Option<(jackin_diagnostics::Screen, jackin_diagnostics::ScreenGuard)> =
         None;
 
-    let result = 'main: loop {
+    let result: anyhow::Result<Option<ConsoleOutcome>> = 'main: loop {
         // Sync the screen trace to the visible stage. On a change, the old
         // screen span ends and a fresh linked trace starts for the new one.
         sync_active_screen(&state, &mut active_screen);
@@ -977,5 +993,8 @@ pub async fn run_console<H: InstanceActionHandler<jackin_core::Agent>>(
     // launch flow owns it, this is `None` and teardown waits for that guard so
     // the console → loading transition stays on one alternate screen.
     drop(owned_screen);
-    result
+    // Return the in-memory config so the post-console path can skip a disk
+    // reload when nothing was written (and still sees in-session mutations
+    // that already updated `config` on successful save).
+    Ok((result?, config))
 }

@@ -182,9 +182,8 @@ impl FinalizerPrompt for ExitActionPrompt {
         _records: &[(IsolationRecord, PreservedReason)],
     ) -> anyhow::Result<ExitDialogChoice> {
         Ok(match read_exit_action(&self.state_dir) {
-            Some(jackin_protocol::ExitAction::Keep) => ExitDialogChoice::KeepAll,
             Some(jackin_protocol::ExitAction::Discard) => ExitDialogChoice::DiscardAll,
-            None => ExitDialogChoice::KeepAll,
+            Some(jackin_protocol::ExitAction::Keep) | None => ExitDialogChoice::KeepAll,
         })
     }
 }

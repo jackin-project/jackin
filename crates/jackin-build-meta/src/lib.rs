@@ -1,8 +1,8 @@
-//! Build-script helpers shared by jackin crates.
+//! jackin-build-meta: build-script helpers shared by jackin❯ crates.
 //!
-//! Each workspace binary crate derives a runtime version string. Local
-//! non-CI builds use `<cargo-version>` to keep incremental builds stable
-//! across commits; CI/release builds use `<cargo-version>+<short-sha>`.
+//! **Architecture Invariant:** T0.
+//! Entry point: [`emit_build_info`] — build-script helper shared by crates.
+
 use std::process::Command;
 
 const WORKSPACE_GIT_DIR_FROM_CRATE: &str = "../../.git";

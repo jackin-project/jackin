@@ -154,7 +154,7 @@ high-signal reference for jackin❯ security and trust surface.
 | Stack integrations | Optional, non-executable workspace hints for read-only toolchain/cache mounts, safe env selectors, warnings, and excludes | [Stack integration contracts](/roadmap/stack-integration-contracts/) |
 | Docker tier decision | Treat host Docker daemon access as a policy boundary, not a convenience default | [Selectable sandbox backends](/reference/research/security/sandbox-backends/selectable-sandbox-backends/), [network egress policy](/roadmap/network-egress-policy/) |
 | Snapshot/rollback | Pre-session snapshots for dirty/non-git/long-autonomy work, with opt-in restore and visible host-side effects | [Session snapshot and rollback](/roadmap/session-snapshot-rollback/) |
-| Proof/governance boundary | Model launch/finalization ordering where host-side effects become complex | [Architecture decision records](/reference/adrs/), [behavioral runtime/launch spec](/roadmap/behavioral-spec-runtime-launch/) |
+| Proof/governance boundary | Model launch/finalization ordering where host-side effects become complex | [Architecture decision records](/reference/adrs/), [runtime/launch behavioral spec](/reference/developer-reference/specs/runtime-launch/) |
 
 ## Critical read of Docker Sandboxes
 
@@ -371,7 +371,7 @@ launched, what can be reached, and how to recover.
 |---|---|---|
 | [Session snapshot and rollback](/roadmap/session-snapshot-rollback/) | Hazmat pre-session Kopia snapshots and restore | Persistent storage; stack integration contracts |
 | [Architecture decision records](/reference/adrs/) | Hazmat design assumptions and verification boundary | Codebase health track |
-| [Behavioral spec: runtime/launch](/roadmap/behavioral-spec-runtime-launch/) | Hazmat TLA+ setup/launch ordering discipline | Codebase health track |
+| [runtime/launch Behavioral Spec](/reference/developer-reference/specs/runtime-launch/) | Hazmat TLA+ setup/launch ordering discipline | Codebase health track |
 
 ## Execution order
 

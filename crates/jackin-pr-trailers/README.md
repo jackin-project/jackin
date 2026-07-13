@@ -26,7 +26,7 @@ Output is the list of unique trailers, with `Signed-off-by` first, then `Co-auth
 
 ## Integration in squash merge flow
 
-See the guidance in `.github/AGENTS.md` under "PR squash merge messages" and the "Trailer extraction helper" section.
+See the squash-merge guidance under `.github/` ("PR squash merge messages" and the "Trailer extraction helper" section).
 
 Typical pattern:
 

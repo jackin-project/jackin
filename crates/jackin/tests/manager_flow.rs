@@ -1,12 +1,20 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! End-to-end integration test for the workspace manager TUI.
 //! Drives `tui::handle_key` with a scripted key stream — no live
 //! terminal.
-
-#![expect(
-    clippy::panic,
-    clippy::expect_used,
-    reason = "manager flow tests should fail immediately when expected UI state is absent"
-)]
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
@@ -19,13 +27,17 @@ use jackin::{
         tui::{
             InputOutcome, ManagerStage, ManagerState, dispatch_launch_for_workspace, handle_key,
             new_console_state,
-            state::{EditorState, EditorTab, FieldFocus, Modal},
+            state::{EditorSaveFlow, EditorState, EditorTab, FieldFocus, Modal},
         },
     },
     workspace::{MountConfig, WorkspaceConfig, WorkspaceRoleOverride},
 };
 use jackin_config::{AppConfig, ConfigEditor};
 use jackin_core::JackinPaths;
+use jackin_core::WorkspaceName;
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use tempfile::tempdir;
@@ -67,6 +79,16 @@ fn wait_for_config_save(
     anyhow::bail!("timed out waiting for config save worker")
 }
 
+fn mark_pending_save_drift_checked_for_test(state: &mut ManagerState<'_>) {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return;
+    };
+    let EditorSaveFlow::PendingCommit { plan, .. } = &mut editor.save_flow else {
+        return;
+    };
+    plan.isolated_cleanup_complete = true;
+}
+
 fn seed_config(paths: &JackinPaths, temp_dir: &std::path::Path) -> Result<AppConfig> {
     seed_config_with_env(paths, temp_dir, vec![])
 }
@@ -105,7 +127,7 @@ fn seed_config_with_env(
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(paths)?;
-    ce.create_workspace("big-monorepo", ws)?;
+    ce.create_workspace(&WorkspaceName::parse("big-monorepo").unwrap(), ws)?;
     ce.save()
 }
 
@@ -209,7 +231,7 @@ fn delete_workspace_via_manager() -> Result<()> {
 
     config.workspaces.remove("big-monorepo");
     let mut editor = ConfigEditor::open(&paths)?;
-    editor.remove_workspace("big-monorepo")?;
+    editor.remove_workspace(&wn("big-monorepo"))?;
     editor.save()?;
 
     // Config on disk should no longer have big-monorepo.
@@ -270,7 +292,7 @@ fn seed_config_with_agents(
         ..Default::default()
     };
     let mut ce = ConfigEditor::open(paths)?;
-    ce.create_workspace("multi-role-ws", ws)?;
+    ce.create_workspace(&WorkspaceName::parse("multi-role-ws").unwrap(), ws)?;
     ce.save()
 }
 
@@ -305,7 +327,7 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
     };
     {
         let mut ce = ConfigEditor::open(&paths)?;
-        ce.create_workspace("freshly-created", new_ws)?;
+        ce.create_workspace(&WorkspaceName::parse("freshly-created").unwrap(), new_ws)?;
         config = ce.save()?;
     }
 
@@ -350,7 +372,10 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
     // Rename "multi-role-ws" → "renamed-ws" via ConfigEditor.
     {
         let mut ce = ConfigEditor::open(&paths)?;
-        ce.rename_workspace("multi-role-ws", "renamed-ws")?;
+        ce.rename_workspace(
+            &WorkspaceName::parse("multi-role-ws").unwrap(),
+            &WorkspaceName::parse("renamed-ws").unwrap(),
+        )?;
         config = ce.save()?;
     }
 
@@ -424,7 +449,7 @@ fn launch_after_default_agent_change_preselects_new_default() -> Result<()> {
             default_role: Some(Some("chainargos/agent-smith".to_owned())),
             ..jackin::workspace::WorkspaceEdit::default()
         };
-        ce.edit_workspace("multi-role-ws", edit)?;
+        ce.edit_workspace(&wn("multi-role-ws"), edit)?;
         config = ce.save()?;
     }
 
@@ -480,7 +505,7 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     };
     let mut config = {
         let mut ce = ConfigEditor::open(&paths)?;
-        ce.create_workspace("survivor-ws", second)?;
+        ce.create_workspace(&WorkspaceName::parse("survivor-ws").unwrap(), second)?;
         ce.save()?
     };
     let cwd = temp.path();
@@ -490,7 +515,7 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     // Delete the first workspace via ConfigEditor.
     {
         let mut ce = ConfigEditor::open(&paths)?;
-        ce.remove_workspace("multi-role-ws")?;
+        ce.remove_workspace(&wn("multi-role-ws"))?;
         config = ce.save()?;
     }
 

@@ -2,7 +2,10 @@
 //! (+ host passthrough + debug env helpers) extracted from launch coordinator (File1).
 //! All items `pub(crate)` re-exported from the coordinator to preserve `super::` / `use super::*` .
 
-#![allow(private_interfaces)]
+#![allow(
+    private_interfaces,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 
 use anyhow::Context;
 use jackin_config::AppConfig;
@@ -162,10 +165,12 @@ pub(crate) fn spawn_sibling_auth_prewarm(
 
     Some(tokio::task::spawn_blocking(move || {
         let resolve_mode = |a: jackin_core::agent::Agent| {
-            jackin_config::resolve_mode(&config, a, &workspace_name, &role_key)
+            let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
+            jackin_config::resolve_mode(&config, a, ws.as_ref(), &role_key)
         };
         let resolve_sync_src = |a: jackin_core::agent::Agent| {
-            jackin_config::resolve_sync_source_dir(&config, a, &workspace_name, &role_key)
+            let ws = jackin_core::WorkspaceName::parse(&workspace_name).ok();
+            jackin_config::resolve_sync_source_dir(&config, a, ws.as_ref(), &role_key)
         };
         let result = RoleState::prewarm_auth_for_agents(
             &paths_owned,
@@ -1152,6 +1157,12 @@ pub(crate) async fn launch_role_runtime(
             "clean container exit for {container_name}; proceeding to finalize \
              (attach shutdown detail: {attach_detail})"
         );
+        if let Some(run) = jackin_diagnostics::active_run() {
+            run.compact(
+                jackin_diagnostics::otel_events::CLEAN_SHUTDOWN,
+                &format!("container {container_name} exited cleanly after session"),
+            );
+        }
     }
     if let Some(progress) = steps.progress_mut() {
         progress.stage_done(crate::runtime::progress::LaunchStage::Hardline, "open");
@@ -1192,7 +1203,11 @@ pub(crate) fn debug_runtime_envs_for(
     if !debug {
         return Vec::new();
     }
-    let mut envs = vec!["JACKIN_DEBUG=1".to_owned()];
+    let mut envs = vec![
+        "JACKIN_DEBUG=1".to_owned(),
+        // Temporary dual-inject for capsule-image skew (plan 043 / DEPRECATED.md).
+        "JACKIN_TELEMETRY_LEVEL=debug".to_owned(),
+    ];
     if let Some(path) = diagnostics_path {
         envs.push(format!("JACKIN_RUN_DIAGNOSTICS_PATH={}", path.display()));
     }

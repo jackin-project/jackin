@@ -11,39 +11,39 @@
 use jackin_core::env_model::extract_interpolation_refs;
 use jackin_core::manifest::{EnvVarDecl, ManifestWarning, RoleManifest};
 
-/// Check that an env var name contains only `[A-Za-z0-9_]` and doesn't start with a digit.
+/// Return whether `name` is a valid env var identifier (ASCII alphanumeric/underscore, no leading digit).
 pub fn is_valid_env_var_name(name: &str) -> bool {
     !name.is_empty()
         && name.is_ascii()
-        && !name.as_bytes()[0].is_ascii_digit()
+        && name.as_bytes().first().is_some_and(|b| !b.is_ascii_digit())
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
-/// Validate the `agents` / [<agent>] table consistency.
+/// Validate the `agents` list against per-agent config tables.
 ///
 /// Rules enforced (hard errors):
 /// - If `agents` is present, it must be non-empty.
-/// - For every agent A in `agents`, the corresponding [A] table
+/// - For every agent in `agents`, the corresponding agent table
 ///   must exist (even if empty), so consumers like
 ///   `instance/mod.rs::prepare` can rely on the table being non-`None`
 ///   when launching that agent without a runtime check.
 /// - Without an `agents` field, the manifest is treated as
-///   claude-only and must declare `[claude]`
-///   (`supported_agents()` returns `[Claude]`).
+///   claude-only and must declare a `claude` table
+///   (`supported_agents()` returns Claude only).
 ///
 /// Also surfaces an orphan-table warning (non-fatal): if any
-/// `[<agent>]` table (`[claude]`, `[codex]`, `[amp]`) is populated
+/// agent table (`claude`, `codex`, `amp`, …) is populated
 /// but the corresponding agent isn't listed in `agents`, the table
 /// is dead config — every runtime path skips it. Authors editing
-/// manifests by hand routinely add `[codex] model = "..."` first
-/// and forget the `agents = [...]` declaration; without this signal
+/// manifests by hand routinely add a codex model override first
+/// and forget the `agents` declaration; without this signal
 /// they'd have to debug "agent does not support codex" at load time
 /// and figure out the connection themselves.
 ///
 /// Orphan warnings are skipped on manifests with no `agents` field
 /// since the implicit default is unambiguous: those manifests are
-/// claude-only by definition, so a populated `[claude]` table is
-/// expected and any other populated `[<agent>]` table would also
+/// claude-only by definition, so a populated `claude` table is
+/// expected and any other populated agent table would also
 /// have failed the per-agent table-required check above.
 pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec<ManifestWarning>> {
     use jackin_core::Agent;

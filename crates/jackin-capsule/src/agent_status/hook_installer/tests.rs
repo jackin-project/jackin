@@ -194,16 +194,16 @@ fn opencode_install_bails_on_corrupt_or_wrong_shape_and_never_clobbers() {
 
     // Unparseable JSON -> bail, file left byte-identical.
     fs::write(&path, "{ not json").unwrap();
-    assert!(PluginInstaller::opencode().install(&home).is_err());
+    PluginInstaller::opencode().install(&home).unwrap_err();
     assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
 
     // Valid JSON, but root is an array (not an object) -> bail.
     fs::write(&path, "[1,2,3]").unwrap();
-    assert!(PluginInstaller::opencode().install(&home).is_err());
+    PluginInstaller::opencode().install(&home).unwrap_err();
 
     // Valid object, but `plugins` is the wrong shape (string, not array) -> bail.
     fs::write(&path, r#"{"plugins":"not-an-array"}"#).unwrap();
-    assert!(PluginInstaller::opencode().install(&home).is_err());
+    PluginInstaller::opencode().install(&home).unwrap_err();
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn codex_install_bails_when_hooks_is_not_an_object() {
     fs::create_dir_all(&cdir).unwrap();
     let path = cdir.join("hooks.json");
     fs::write(&path, r#"{"hooks":"not-an-object"}"#).unwrap();
-    assert!(CodexHookInstaller::default().install(&home).is_err());
+    CodexHookInstaller::default().install(&home).unwrap_err();
     assert_eq!(
         fs::read_to_string(&path).unwrap(),
         r#"{"hooks":"not-an-object"}"#
@@ -257,7 +257,7 @@ fn codex_install_preserves_existing_hooks_and_bails_on_corrupt() {
 
     // A corrupt file is never clobbered.
     fs::write(&path, "{ not json").unwrap();
-    assert!(CodexHookInstaller::default().install(&home).is_err());
+    CodexHookInstaller::default().install(&home).unwrap_err();
     assert_eq!(fs::read_to_string(&path).unwrap(), "{ not json");
 }
 
@@ -361,7 +361,7 @@ fn claude_install_bails_on_malformed_settings_and_preserves_it() {
     // A malformed settings.json (e.g. a half-flushed write) must not be clobbered.
     fs::write(&settings, "{ not valid json").unwrap();
 
-    assert!(installer().install(&home).is_err());
+    installer().install(&home).unwrap_err();
     // The operator's (broken) file is left exactly as-is, not overwritten.
     assert_eq!(fs::read_to_string(&settings).unwrap(), "{ not valid json");
     // And verify keeps reporting drift, so the failure stays visible.

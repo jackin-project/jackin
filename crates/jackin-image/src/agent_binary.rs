@@ -4,6 +4,7 @@
 //! with a 1-hour TTL. Not responsible for injecting binaries into the Docker
 //! build context — callers in `runtime::image` handle that step.
 
+use crate::ImageError;
 use crate::binary_artifact::{
     chmod_executable, container_arch, extract_tar_gz_member, hash_file_sha256, is_executable_file,
     parse_sha256_hex, repair_executable_file,
@@ -477,7 +478,10 @@ async fn resolve_grok() -> Result<AgentRelease> {
         };
 
     if version.is_empty() {
-        anyhow::bail!("failed to fetch Grok version pointer from {base}/stable");
+        return Err(ImageError::msg(format!(
+            "failed to fetch Grok version pointer from {base}/stable"
+        ))
+        .into());
     }
 
     let grok_arch = match container_arch() {
@@ -622,7 +626,7 @@ where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T>>,
 {
-    let mut last_err = anyhow::anyhow!("no attempts made");
+    let mut last_err = ImageError::NoAttemptsMade.into();
     for attempt in 0..max_attempts {
         if attempt > 0 {
             let delay = initial_delay * (1 << (attempt - 1));
@@ -656,7 +660,7 @@ where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T>>,
 {
-    let mut last_err = anyhow::anyhow!("no attempts made");
+    let mut last_err = ImageError::NoAttemptsMade.into();
     for attempt in 0..max_attempts {
         if attempt > 0 {
             let delay = initial_delay * (1 << (attempt - 1));
@@ -732,22 +736,25 @@ async fn download_and_cache_inner(
             .await
             .context("hash worker join")?
             .with_context(|| format!("hashing {}", tmp_download.display()))?;
-        anyhow::ensure!(
-            actual.eq_ignore_ascii_case(expected),
-            "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
-            release.agent.slug(),
-            release.url,
-            expected,
-            actual
-        );
+        if !actual.eq_ignore_ascii_case(expected) {
+            return Err(ImageError::msg(format!(
+                "{} checksum mismatch for {}\n  expected {}\n  actual   {}",
+                release.agent.slug(),
+                release.url,
+                expected,
+                actual
+            ))
+            .into());
+        }
     } else if release.agent != Agent::Grok {
         // Future agents without checksums should be explicitly handled (or
         // provide one). Only Grok is currently allowed to skip SHA.
-        anyhow::bail!(
+        return Err(ImageError::msg(format!(
             "{} release {} has no published checksum; refusing to install an unverified binary",
             release.agent.slug(),
             release.version
-        );
+        ))
+        .into());
     }
     if let Some(member) = &release.archive_member {
         let archive = tmp_download.to_owned();
@@ -789,12 +796,13 @@ async fn download_and_cache_inner(
                 )
             })?;
         if !status.success() {
-            anyhow::bail!(
+            return Err(ImageError::msg(format!(
                 "{} {} failed --version smoke test after download (status: {:?})",
                 release.agent.slug(),
                 release.version,
                 status
-            );
+            ))
+            .into());
         }
     }
 
