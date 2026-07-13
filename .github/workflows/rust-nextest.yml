@@ -133,15 +133,35 @@ jobs:
         shell: bash
         run: |
           if [ -f target/nextest/ci/junit.xml ]; then
-            echo "### Slowest tests (${{ matrix.group }})" >> "$GITHUB_STEP_SUMMARY"
-            grep -oE '<testcase name="[^"]*"[^>]*time="[0-9.]*"' target/nextest/ci/junit.xml \
-              | sed -E 's/<testcase name="([^"]*)".*time="([0-9.]*)"/\2 \1/' \
-              | sort -rn | head -10 | awk '{printf "- %ss `%s`\n", $1, $2}' >> "$GITHUB_STEP_SUMMARY"
-            total=$(grep -oE 'time="[0-9.]+"' target/nextest/ci/junit.xml \
-              | sed -E 's/time="([0-9.]+)"/\1/' \
-              | awk '{s+=$1} END {printf "%.3f", s+0}')
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Shard wall time (sum of testcase times): ${total}s" >> "$GITHUB_STEP_SUMMARY"
+            python3 - "$GITHUB_STEP_SUMMARY" "${{ matrix.group }}" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          summary_path = Path(sys.argv[1])
+          group = sys.argv[2]
+          junit_path = Path("target/nextest/ci/junit.xml")
+          root = ET.parse(junit_path).getroot()
+
+          cases = []
+          for case in root.iter("testcase"):
+              name = case.attrib.get("name", "")
+              try:
+                  seconds = float(case.attrib.get("time", "0") or 0)
+              except ValueError:
+                  seconds = 0.0
+              cases.append((seconds, name))
+
+          with summary_path.open("a", encoding="utf-8") as summary:
+              print(f"### Slowest tests ({group})", file=summary)
+              for seconds, name in sorted(cases, reverse=True)[:10]:
+                  print(f"- {seconds:g}s `{name}`", file=summary)
+              print("", file=summary)
+              print(
+                  f"Shard wall time (sum of testcase times): {sum(seconds for seconds, _ in cases):.3f}s",
+                  file=summary,
+              )
+          PY
           fi
       - name: Fail on unquarantined flakes
         if: always()
