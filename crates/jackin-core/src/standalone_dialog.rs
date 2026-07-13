@@ -22,8 +22,10 @@ use crate::launch_progress::{PromptContextLine, WorktreeInspect};
 /// user-facing dialog; the underlying render impl is owned by
 /// `jackin_launch_tui`.
 pub trait StandaloneDialogSink: Send + Sync + std::fmt::Debug {
+    /// Show a one-shot error popup with `title` and `message`.
     fn error_popup(&self, title: &str, message: &str) -> anyhow::Result<()>;
 
+    /// Show the exit dialog with inspect support; returns the chosen option index.
     fn exit_dialog_with_inspect(
         &self,
         title: &str,
@@ -38,6 +40,10 @@ static GLOBAL_SINK: OnceLock<&'static dyn StandaloneDialogSink> = OnceLock::new(
 /// Install the process-wide sink. Idempotent — first install wins so a
 /// startup race cannot silently swap an installed impl for a later one.
 pub fn set_global_dialog_sink(sink: &'static dyn StandaloneDialogSink) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "second initialization is a benign race; first install wins"
+    )]
     let _ = GLOBAL_SINK.set(sink);
 }
 

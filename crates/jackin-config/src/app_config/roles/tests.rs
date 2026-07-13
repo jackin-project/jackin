@@ -1,5 +1,9 @@
 //! Tests for `roles` — tests.
 use super::*;
+use jackin_core::WorkspaceName;
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use jackin_core::JackinPaths;
 use jackin_core::RoleSelector;
 use tempfile::tempdir;
@@ -290,7 +294,7 @@ fn cfg_claude(
 fn default_is_sync_when_nothing_set() {
     let cfg = cfg_claude(None, None, None);
     assert_eq!(
-        resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
+        resolve_mode(&cfg, Agent::Claude, Some(&wn("proj")), "smith"),
         AuthForwardMode::Sync
     );
 }
@@ -299,7 +303,7 @@ fn default_is_sync_when_nothing_set() {
 fn global_used_when_others_unset() {
     let cfg = cfg_claude(Some(AuthForwardMode::ApiKey), None, None);
     assert_eq!(
-        resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
+        resolve_mode(&cfg, Agent::Claude, Some(&wn("proj")), "smith"),
         AuthForwardMode::ApiKey
     );
 }
@@ -312,7 +316,7 @@ fn workspace_overrides_global() {
         None,
     );
     assert_eq!(
-        resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
+        resolve_mode(&cfg, Agent::Claude, Some(&wn("proj")), "smith"),
         AuthForwardMode::OAuthToken
     );
 }
@@ -325,7 +329,7 @@ fn role_override_wins() {
         Some(AuthForwardMode::Ignore),
     );
     assert_eq!(
-        resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
+        resolve_mode(&cfg, Agent::Claude, Some(&wn("proj")), "smith"),
         AuthForwardMode::Ignore
     );
 }
@@ -334,7 +338,7 @@ fn role_override_wins() {
 fn workspace_only_when_global_unset() {
     let cfg = cfg_claude(None, Some(AuthForwardMode::ApiKey), None);
     assert_eq!(
-        resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
+        resolve_mode(&cfg, Agent::Claude, Some(&wn("proj")), "smith"),
         AuthForwardMode::ApiKey
     );
 }
@@ -343,7 +347,7 @@ fn workspace_only_when_global_unset() {
 fn role_only_when_global_and_workspace_unset() {
     let cfg = cfg_claude(None, None, Some(AuthForwardMode::OAuthToken));
     assert_eq!(
-        resolve_mode(&cfg, Agent::Claude, "proj", "smith"),
+        resolve_mode(&cfg, Agent::Claude, Some(&wn("proj")), "smith"),
         AuthForwardMode::OAuthToken
     );
 }
@@ -352,7 +356,7 @@ fn role_only_when_global_and_workspace_unset() {
 fn unknown_workspace_falls_back_to_global() {
     let cfg = cfg_claude(Some(AuthForwardMode::ApiKey), None, None);
     assert_eq!(
-        resolve_mode(&cfg, Agent::Claude, "nonexistent", "smith"),
+        resolve_mode(&cfg, Agent::Claude, Some(&wn("nonexistent")), "smith"),
         AuthForwardMode::ApiKey
     );
 }
@@ -365,7 +369,7 @@ fn unknown_role_falls_back_to_workspace_or_global() {
         None,
     );
     assert_eq!(
-        resolve_mode(&cfg, Agent::Claude, "proj", "ghost"),
+        resolve_mode(&cfg, Agent::Claude, Some(&wn("proj")), "ghost"),
         AuthForwardMode::OAuthToken
     );
 }
@@ -381,7 +385,7 @@ fn codex_isolated_from_claude_global() {
         ..AppConfig::default()
     };
     assert_eq!(
-        resolve_mode(&cfg, Agent::Codex, "proj", "smith"),
+        resolve_mode(&cfg, Agent::Codex, Some(&wn("proj")), "smith"),
         AuthForwardMode::Sync
     );
 }
@@ -396,7 +400,7 @@ fn codex_uses_codex_layer() {
         ..AppConfig::default()
     };
     assert_eq!(
-        resolve_mode(&cfg, Agent::Codex, "proj", "smith"),
+        resolve_mode(&cfg, Agent::Codex, Some(&wn("proj")), "smith"),
         AuthForwardMode::ApiKey
     );
 }
@@ -411,7 +415,7 @@ fn amp_uses_amp_layer() {
         ..AppConfig::default()
     };
     assert_eq!(
-        resolve_mode(&cfg, Agent::Amp, "proj", "smith"),
+        resolve_mode(&cfg, Agent::Amp, Some(&wn("proj")), "smith"),
         AuthForwardMode::ApiKey
     );
 }
@@ -439,7 +443,7 @@ fn build_github_env_layers_global_only() {
         }),
         ..AppConfig::default()
     };
-    let merged = build_github_env_layers(&cfg, "proj", "smith");
+    let merged = build_github_env_layers(&cfg, Some(&wn("proj")), "smith");
     assert_eq!(
         merged.get("GH_TOKEN"),
         Some(&EnvValue::Plain("ghp_global".into()))
@@ -462,7 +466,7 @@ fn build_github_env_layers_workspace_overrides_global() {
         workspaces,
         ..AppConfig::default()
     };
-    let merged = build_github_env_layers(&cfg, "proj", "smith");
+    let merged = build_github_env_layers(&cfg, Some(&wn("proj")), "smith");
     assert_eq!(
         merged.get("GH_TOKEN"),
         Some(&EnvValue::Plain("ghp_ws".into()))
@@ -498,7 +502,7 @@ fn build_github_env_layers_role_overrides_workspace_and_global() {
         workspaces,
         ..AppConfig::default()
     };
-    let merged = build_github_env_layers(&cfg, "proj", "smith");
+    let merged = build_github_env_layers(&cfg, Some(&wn("proj")), "smith");
     assert_eq!(
         merged.get("GH_TOKEN"),
         Some(&EnvValue::Plain("ghp_role".into()))
@@ -537,7 +541,7 @@ fn build_github_env_layers_preserves_distinct_keys_across_layers() {
         workspaces,
         ..AppConfig::default()
     };
-    let merged = build_github_env_layers(&cfg, "proj", "smith");
+    let merged = build_github_env_layers(&cfg, Some(&wn("proj")), "smith");
     // All 3 keys survive — different keys at different layers.
     assert_eq!(merged.len(), 3);
     assert!(merged.contains_key("GH_TOKEN"));
@@ -548,7 +552,7 @@ fn build_github_env_layers_preserves_distinct_keys_across_layers() {
 #[test]
 fn build_github_env_layers_empty_when_no_layers_set() {
     let cfg = AppConfig::default();
-    let merged = build_github_env_layers(&cfg, "proj", "smith");
+    let merged = build_github_env_layers(&cfg, Some(&wn("proj")), "smith");
     assert!(merged.is_empty());
 }
 
@@ -564,7 +568,7 @@ fn resolve_sync_source_dir_global_wins_when_nothing_else_set() {
         sync_source_dir: Some(dir.clone()),
     });
     assert_eq!(
-        resolve_sync_source_dir(&cfg, Agent::Claude, "ws", "role"),
+        resolve_sync_source_dir(&cfg, Agent::Claude, Some(&wn("ws")), "role"),
         Some(dir)
     );
 }
@@ -588,7 +592,7 @@ fn resolve_sync_source_dir_workspace_wins_over_global() {
     };
     cfg.workspaces.insert("ws".into(), ws);
     assert_eq!(
-        resolve_sync_source_dir(&cfg, Agent::Claude, "ws", "role"),
+        resolve_sync_source_dir(&cfg, Agent::Claude, Some(&wn("ws")), "role"),
         Some(PathBuf::from("/workspace/claude"))
     );
 }
@@ -614,7 +618,7 @@ fn resolve_sync_source_dir_role_override_wins_over_workspace() {
     ws.roles.insert("smith".into(), role_override);
     cfg.workspaces.insert("ws".into(), ws);
     assert_eq!(
-        resolve_sync_source_dir(&cfg, Agent::Claude, "ws", "smith"),
+        resolve_sync_source_dir(&cfg, Agent::Claude, Some(&wn("ws")), "smith"),
         Some(PathBuf::from("/role/claude"))
     );
 }
@@ -623,7 +627,7 @@ fn resolve_sync_source_dir_role_override_wins_over_workspace() {
 fn resolve_sync_source_dir_none_when_not_set() {
     let cfg = AppConfig::default();
     assert_eq!(
-        resolve_sync_source_dir(&cfg, Agent::Claude, "ws", "role"),
+        resolve_sync_source_dir(&cfg, Agent::Claude, Some(&wn("ws")), "role"),
         None
     );
 }

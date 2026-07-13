@@ -8,9 +8,32 @@
 //! capsule's `clog!`/`cdebug!` lines are bridged to OTLP logs so the existing
 //! two-tier breadcrumbs appear in the backend, correlated by `session.id`.
 
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static OTLP_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Session/run/traceparent captured at daemon start for the local log banner.
+static SESSION_CONTEXT: OnceLock<SessionContext> = OnceLock::new();
+
+#[derive(Debug, Clone)]
+struct SessionContext {
+    session_id: String,
+    run_id: Option<String>,
+    traceparent: Option<String>,
+}
+
+/// Capsule session correlation context captured by [`init`], for local sinks
+/// (e.g. the multiplexer log banner).
+#[must_use]
+pub fn session_context() -> Option<(String, Option<String>, Option<String>)> {
+    SESSION_CONTEXT.get().map(|ctx| {
+        (
+            ctx.session_id.clone(),
+            ctx.run_id.clone(),
+            ctx.traceparent.clone(),
+        )
+    })
+}
 
 /// Initialise capsule OTLP export. Reads the session/run identity and launch
 /// traceparent from the env the host injected. Call once at daemon start; hold
@@ -20,6 +43,11 @@ pub fn init() -> FlushGuard {
     let session_id = jackin_diagnostics::mint_session_id();
     let run_id = std::env::var("JACKIN_RUN_ID").ok();
     let traceparent = std::env::var("TRACEPARENT").ok();
+    drop(SESSION_CONTEXT.set(SessionContext {
+        session_id: session_id.clone(),
+        run_id: run_id.clone(),
+        traceparent: traceparent.clone(),
+    }));
     match jackin_diagnostics::init_capsule_tracing(
         &session_id,
         run_id.as_deref(),

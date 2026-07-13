@@ -10,6 +10,7 @@ fn home_dir() -> Option<String> {
     directories::BaseDirs::new().map(|b| b.home_dir().display().to_string())
 }
 
+/// Expand a leading `~` or `~/` to the operator's home directory.
 pub fn expand_tilde(path: &str) -> String {
     if (path == "~" || path.starts_with("~/"))
         && let Some(home) = home_dir()

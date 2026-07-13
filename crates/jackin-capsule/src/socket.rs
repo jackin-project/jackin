@@ -4,6 +4,8 @@
 //! Not responsible for: protocol decoding, session management, or daemon
 //! business logic.
 
+use jackin_core::container_paths;
+
 /// Unix domain socket server.
 ///
 /// Listens on `/jackin/run/jackin.sock`. Two protocols share the socket:
@@ -18,7 +20,7 @@
 /// runtime asset, and runtime state directory sits beneath `/jackin/`
 /// so an operator can `ls /jackin/` to find all jackin-controlled
 /// state in one place.
-pub const SOCKET_PATH: &str = "/jackin/run/jackin.sock";
+pub const SOCKET_PATH: &str = container_paths::CAPSULE_SOCKET;
 
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;

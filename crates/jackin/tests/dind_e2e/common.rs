@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! Shared e2e prereq checks: `docker` daemon + `buildx` + `script(1)` probe,
 //! capsule-binary ELF + executable assertions, and the e2e serial lock that
 //! keeps `cargo nextest run -p jackin --features e2e` from spawning multiple

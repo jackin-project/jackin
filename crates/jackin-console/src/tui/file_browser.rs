@@ -726,7 +726,10 @@ fn active_file_browser_state_mut<'a>(
     }
 }
 
-#[allow(clippy::option_if_let_else)]
+#[allow(
+    clippy::option_if_let_else,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn execute_file_browser_git_url_resolution(
     state: &mut ManagerState<'_>,
     path: &std::path::Path,

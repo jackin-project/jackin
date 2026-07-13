@@ -181,7 +181,10 @@ pub(crate) fn attach_failure_error(
 /// could auto-delete worktrees of containers that may actually still be
 /// running. `still_running()` instead skips the auto-cleanup path entirely
 /// and preserves records for `jackin hardline` to recover.
-#[allow(clippy::unnecessary_wraps)] // Result preserved so callers' `?` keeps working without a churn-y signature change
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)] // Result preserved so callers' `?` keeps working without a churn-y signature change
 pub(crate) async fn inspect_attach_outcome(
     docker: &impl DockerApi,
     container: &str,

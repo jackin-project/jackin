@@ -3,21 +3,21 @@ use super::*;
 
 #[test]
 fn validate_op_source_accepts_well_formed_ref() {
-    assert!(validate_op_source("op://vault/item/field").is_ok());
+    validate_op_source("op://vault/item/field").unwrap();
 }
 
 #[test]
 fn validate_op_source_rejects_non_op_scheme() {
-    assert!(validate_op_source("https://evil/x").is_err());
-    assert!(validate_op_source("vault/item/field").is_err());
+    validate_op_source("https://evil/x").unwrap_err();
+    validate_op_source("vault/item/field").unwrap_err();
 }
 
 #[test]
 fn validate_op_source_rejects_flag_segments() {
     // A path segment that looks like a CLI flag could inject arguments into
     // `op read` — must be rejected before the subprocess is spawned.
-    assert!(validate_op_source("op://vault/-rf/field").is_err());
-    assert!(validate_op_source("op://-vault/item").is_err());
+    validate_op_source("op://vault/-rf/field").unwrap_err();
+    validate_op_source("op://-vault/item").unwrap_err();
 }
 
 /// Drive `handle_connection` over an in-memory socket pair and return the

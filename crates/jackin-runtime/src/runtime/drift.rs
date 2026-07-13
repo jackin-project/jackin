@@ -20,7 +20,7 @@ pub use jackin_core::DriftDetection;
 /// go into `running_containers`; the rest land in `stopped_records`.
 pub async fn detect_workspace_edit_drift(
     paths: &jackin_core::paths::JackinPaths,
-    workspace_name: &str,
+    workspace_name: &jackin_core::WorkspaceName,
     edited_mounts: &[jackin_config::MountConfig],
     docker: &impl jackin_docker::docker_client::DockerApi,
 ) -> anyhow::Result<DriftDetection> {

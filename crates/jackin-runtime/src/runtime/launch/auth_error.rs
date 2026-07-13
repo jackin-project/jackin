@@ -203,7 +203,7 @@ fn render_auth_credential_missing(
 pub(super) fn build_mode_resolution(
     cfg: &AppConfig,
     agent: jackin_core::agent::Agent,
-    workspace: &str,
+    workspace: Option<&jackin_core::WorkspaceName>,
     role: &str,
 ) -> Vec<(String, Option<jackin_config::AuthForwardMode>)> {
     jackin_config::resolve_mode_with_trace(cfg, agent, workspace, role).1
@@ -217,7 +217,7 @@ pub(super) fn build_mode_resolution(
 /// not at all.
 pub(super) fn build_env_layer_states(
     cfg: &AppConfig,
-    workspace: &str,
+    workspace: Option<&jackin_core::WorkspaceName>,
     role: &str,
     env_var: &str,
 ) -> Vec<(String, EnvLayerState)> {
@@ -228,29 +228,28 @@ pub(super) fn build_env_layer_states(
             jackin_core::EnvValue::OpRef(_) => EnvLayerState::ResolvedOpRef,
         }
     }
+    let ws_key = workspace.map_or("", jackin_core::WorkspaceName::as_str);
     let global = cfg.env.get(env_var).map_or(EnvLayerState::Unset, classify);
     let role_global = cfg
         .roles
         .get(role)
         .and_then(|r| r.env.get(env_var))
         .map_or(EnvLayerState::Unset, classify);
-    let workspace_global = cfg
-        .workspaces
-        .get(workspace)
+    let workspace_global = workspace
+        .and_then(|ws| cfg.workspaces.get(ws.as_str()))
         .and_then(|ws| ws.env.get(env_var))
         .map_or(EnvLayerState::Unset, classify);
-    let workspace_role = cfg
-        .workspaces
-        .get(workspace)
+    let workspace_role = workspace
+        .and_then(|ws| cfg.workspaces.get(ws.as_str()))
         .and_then(|ws| ws.roles.get(role))
         .and_then(|ro| ro.env.get(env_var))
         .map_or(EnvLayerState::Unset, classify);
     vec![
         ("[env]".to_owned(), global),
         (format!("[roles.{role}.env]"), role_global),
-        (format!("[workspaces.{workspace}.env]"), workspace_global),
+        (format!("[workspaces.{ws_key}.env]"), workspace_global),
         (
-            format!("[workspaces.{workspace}.roles.{role}.env]"),
+            format!("[workspaces.{ws_key}.roles.{role}.env]"),
             workspace_role,
         ),
     ]

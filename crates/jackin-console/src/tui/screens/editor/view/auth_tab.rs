@@ -84,7 +84,6 @@ pub(crate) fn auth_display_row(
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn auth_state_lines<
     Modal,
     SaveFlow,
@@ -126,7 +125,6 @@ pub(crate) fn auth_state_lines<
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn auth_state_geometry<
     Modal,
     SaveFlow,

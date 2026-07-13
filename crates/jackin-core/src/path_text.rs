@@ -7,17 +7,15 @@ pub fn shorten_home(path: &str) -> String {
         return path.to_owned();
     };
     let home = home.to_string_lossy().into_owned();
-    if home.is_empty() || !path.starts_with(&home) {
+    if home.is_empty() {
         return path.to_owned();
     }
-    let rest = &path[home.len()..];
     // Only collapse when the next character after `$HOME` is a path separator
     // (or end of string). Otherwise `/Users/alice.notmine` would incorrectly
     // compact to `~.notmine`.
-    if rest.is_empty() || rest.starts_with('/') {
-        format!("~{rest}")
-    } else {
-        path.to_owned()
+    match path.strip_prefix(&home) {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("~{rest}"),
+        _ => path.to_owned(),
     }
 }
 

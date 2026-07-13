@@ -57,7 +57,7 @@ async fn retry_with_zero_attempts_never_calls_closure() {
         async { Ok(()) }
     })
     .await;
-    assert!(r.is_err());
+    r.unwrap_err();
     assert_eq!(calls.get(), 0);
 }
 

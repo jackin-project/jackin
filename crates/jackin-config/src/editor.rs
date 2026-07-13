@@ -5,11 +5,12 @@
 //! user-written comments, blank lines, and key ordering intact in
 //! sections untouched by the mutation.
 
+use crate::ConfigError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use jackin_core::{Agent, AuthForwardMode, EnvValue, JackinPaths};
+use jackin_core::{Agent, AuthForwardMode, EnvValue, JackinPaths, WorkspaceName};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::app_config::AppConfig;
@@ -19,30 +20,41 @@ use crate::migrations;
 use crate::persist::{atomic_write, validate_workspace_file_stem};
 use crate::schema::{MountConfig, WorkspaceConfig, WorkspaceEdit};
 
+/// Which env map a setter/remover targets in the config tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvScope {
+    /// Top-level `[env]` in `config.toml`.
     Global,
+    /// Top-level `[github.env]` in `config.toml`.
     GlobalGithub,
+    /// `[roles.<name>.env]` in `config.toml`.
     Role(String),
+    /// `[env]` inside a split workspace file.
     Workspace(String),
+    /// `[roles.<role>.env]` inside a split workspace file.
     WorkspaceRole {
+        /// Workspace file stem.
         workspace: String,
+        /// Role key under that workspace.
         role: String,
     },
     /// `[github.env]` inside the workspace file — the github-kind env
     /// block, parallel to the regular workspace `env` map but read by
-    /// [`build_github_env_layers`] instead of the regular launch-time
+    /// [`crate::build_github_env_layers`] instead of the regular launch-time
     /// env merge. Used to thread `GH_TOKEN` / `GH_HOST` /
     /// `GH_ENTERPRISE_TOKEN` without polluting the agent-facing env map.
     WorkspaceGithub(String),
     /// `[roles.<role>.github.env]` inside the workspace file — most
     /// specific layer of the github env layering.
     WorkspaceRoleGithub {
+        /// Workspace file stem.
         workspace: String,
+        /// Role key under that workspace.
         role: String,
     },
 }
 
+/// Comment-preserving mutator for `config.toml` and split workspace files.
 #[derive(Debug)]
 pub struct ConfigEditor {
     doc: DocumentMut,
@@ -125,6 +137,7 @@ impl ConfigEditor {
         Ok(config)
     }
 
+    /// Set an env key at `scope` (plain string, op ref, or extended value).
     pub fn set_env_var(
         &mut self,
         scope: &EnvScope,
@@ -172,6 +185,7 @@ impl ConfigEditor {
         Ok(())
     }
 
+    /// Set or clear the TOML key prefix comment for an env entry (no-op if missing).
     pub fn set_env_comment(&mut self, scope: &EnvScope, key: &str, comment: Option<&str>) {
         let (doc, path) = self.doc_and_path_for_env_scope(scope);
         // Walk without creating — setting a comment on a nonexistent key
@@ -274,6 +288,7 @@ impl ConfigEditor {
         }
     }
 
+    /// Write or clear `[roles.<agent_key>].trusted`.
     pub fn set_agent_trust(&mut self, agent_key: &str, trusted: bool) {
         let table = table_path_mut(&mut self.doc, &["roles".to_owned(), agent_key.to_owned()]);
         if trusted {
@@ -303,18 +318,22 @@ impl ConfigEditor {
         table.insert("auth_forward", toml_edit::value(github_mode_str(mode)));
     }
 
+    /// Set a key under global `[github.env]`.
     pub fn set_global_github_env_var(&mut self, key: &str, value: EnvValue) -> anyhow::Result<()> {
         self.set_env_var(&EnvScope::GlobalGithub, key, value)
     }
 
+    /// Remove a key from global `[github.env]`; returns whether it existed.
     pub fn remove_global_github_env_var(&mut self, key: &str) -> bool {
         self.remove_env_var(&EnvScope::GlobalGithub, key)
     }
 
+    /// Enable or clear `[git].coauthor_trailer`.
     pub fn set_git_coauthor_trailer(&mut self, enabled: bool) {
         self.set_git_bool_field("coauthor_trailer", enabled);
     }
 
+    /// Enable or clear `[git].dco`.
     pub fn set_git_dco(&mut self, enabled: bool) {
         self.set_git_bool_field("dco", enabled);
     }
@@ -348,12 +367,12 @@ impl ConfigEditor {
     /// shape parallel to `set_global_auth_forward`.
     pub fn set_workspace_auth_forward(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         agent: Agent,
         mode: Option<AuthForwardMode>,
     ) {
         let agent_path = vec![agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         if let Some(m) = mode {
             let table = table_path_mut(doc, &agent_path);
             table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
@@ -365,12 +384,12 @@ impl ConfigEditor {
     /// Write or clear `[<agent>].sync_source_dir` inside the workspace file.
     pub fn set_workspace_sync_source_dir(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         agent: Agent,
         source: Option<&Path>,
     ) {
         let agent_path = vec![agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         set_sync_source_dir_field(doc, &agent_path, source);
     }
 
@@ -381,13 +400,13 @@ impl ConfigEditor {
     /// the auth-edit form on a (role × agent) row.
     pub fn set_workspace_role_auth_forward(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         role: &str,
         agent: Agent,
         mode: Option<AuthForwardMode>,
     ) {
         let agent_path = vec!["roles".to_owned(), role.to_owned(), agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         if let Some(m) = mode {
             let table = table_path_mut(doc, &agent_path);
             table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
@@ -399,13 +418,13 @@ impl ConfigEditor {
     /// Write or clear `[roles.<role>.<agent>].sync_source_dir` inside the workspace file.
     pub fn set_workspace_role_sync_source_dir(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         role: &str,
         agent: Agent,
         source: Option<&Path>,
     ) {
         let agent_path = vec!["roles".to_owned(), role.to_owned(), agent.slug().to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         set_sync_source_dir_field(doc, &agent_path, source);
     }
 
@@ -418,11 +437,11 @@ impl ConfigEditor {
     /// resolver fall back to the next layer.
     pub fn set_workspace_github_auth_forward(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         mode: Option<GithubAuthMode>,
     ) {
         let github_path = vec!["github".to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         if let Some(m) = mode {
             let table = table_path_mut(doc, &github_path);
             table.insert("auth_forward", toml_edit::value(github_mode_str(m)));
@@ -438,12 +457,12 @@ impl ConfigEditor {
     /// `claude` / `codex`, but with no per-agent split.
     pub fn set_workspace_role_github_auth_forward(
         &mut self,
-        workspace: &str,
+        workspace: &WorkspaceName,
         role: &str,
         mode: Option<GithubAuthMode>,
     ) {
         let github_path = vec!["roles".to_owned(), role.to_owned(), "github".to_owned()];
-        let doc = self.workspace_doc_mut(workspace);
+        let doc = self.workspace_doc_mut(workspace.as_str());
         if let Some(m) = mode {
             let table = table_path_mut(doc, &github_path);
             table.insert("auth_forward", toml_edit::value(github_mode_str(m)));
@@ -452,6 +471,7 @@ impl ConfigEditor {
         }
     }
 
+    /// Ensure a built-in role has the expected `git` URL and `trusted = true`.
     pub fn upsert_builtin_agent(&mut self, agent_key: &str, git_url: &str) {
         // Touch only git + trusted. Leave [roles.X.env] alone —
         // operator-owned.
@@ -478,6 +498,7 @@ impl ConfigEditor {
         }
     }
 
+    /// Remove an env key at `scope`; prunes empty parent tables. Returns whether removed.
     pub fn remove_env_var(&mut self, scope: &EnvScope, key: &str) -> bool {
         let (doc, path) = self.doc_and_path_for_env_scope(scope);
         // Walk without creating: return false if any segment is missing.
@@ -503,8 +524,9 @@ impl ConfigEditor {
         removed
     }
 
-    pub fn set_last_agent(&mut self, workspace: &str, agent_key: &str) {
-        let doc = self.workspace_doc_mut(workspace);
+    /// Persist sticky `last_role` for a workspace (role key used last).
+    pub fn set_last_agent(&mut self, workspace: &WorkspaceName, agent_key: &str) {
+        let doc = self.workspace_doc_mut(workspace.as_str());
         let table = table_path_mut(doc, &[]);
         table.insert("last_role", toml_edit::value(agent_key));
     }
@@ -516,38 +538,44 @@ impl ConfigEditor {
     ///   - new name is empty
     ///   - old name does not exist
     ///   - new name already exists
-    pub fn rename_workspace(&mut self, old: &str, new: &str) -> anyhow::Result<()> {
-        if new.is_empty() {
-            anyhow::bail!("workspace name cannot be empty");
-        }
+    pub fn rename_workspace(
+        &mut self,
+        old: &WorkspaceName,
+        new: &WorkspaceName,
+    ) -> anyhow::Result<()> {
         if old == new {
             return Ok(());
         }
-        if !self.workspace_docs.contains_key(old) {
-            anyhow::bail!("workspace {old:?} not found");
+        if !self.workspace_docs.contains_key(old.as_str()) {
+            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()).into());
         }
-        if self.workspace_docs.contains_key(new) {
-            anyhow::bail!("workspace {new:?} already exists");
+        if self.workspace_docs.contains_key(new.as_str()) {
+            return Err(ConfigError::WorkspaceAlreadyExists(new.as_str().to_owned()).into());
         }
 
-        validate_workspace_file_stem(new)?;
-        let Some(value) = self.workspace_docs.remove(old) else {
-            anyhow::bail!("workspace {old:?} not found");
+        let Some(value) = self.workspace_docs.remove(old.as_str()) else {
+            return Err(ConfigError::WorkspaceNotFound(old.as_str().to_owned()).into());
         };
-        self.workspace_docs.insert(new.to_owned(), value);
-        self.removed_workspaces.insert(old.to_owned());
+        self.workspace_docs.insert(new.as_str().to_owned(), value);
+        self.removed_workspaces.insert(old.as_str().to_owned());
         Ok(())
     }
 
-    pub fn remove_workspace(&mut self, name: &str) -> anyhow::Result<()> {
-        if self.workspace_docs.remove(name).is_none() {
-            anyhow::bail!("workspace {name:?} not found");
+    /// Mark a workspace for deletion on the next [`Self::save`].
+    pub fn remove_workspace(&mut self, name: &WorkspaceName) -> anyhow::Result<()> {
+        if self.workspace_docs.remove(name.as_str()).is_none() {
+            return Err(ConfigError::WorkspaceNotFound(name.as_str().to_owned()).into());
         }
-        self.removed_workspaces.insert(name.to_owned());
+        self.removed_workspaces.insert(name.as_str().to_owned());
         Ok(())
     }
 
-    pub fn create_workspace(&mut self, name: &str, ws: WorkspaceConfig) -> anyhow::Result<()> {
+    /// Validate and stage a new workspace document for the next [`Self::save`].
+    pub fn create_workspace(
+        &mut self,
+        name: &WorkspaceName,
+        ws: WorkspaceConfig,
+    ) -> anyhow::Result<()> {
         // Delegate to AppConfig::create_workspace's validated logic
         // (collision check, workdir / mount-destination relationship,
         // plan-collapse sanity) so the editor path behaves identically
@@ -555,10 +583,11 @@ impl ConfigEditor {
         let mut in_memory = validate_candidate(&self.doc.to_string(), &self.workspace_docs)
             .context("re-parsing current docs into AppConfig for workspace creation")?;
         in_memory.create_workspace(name, ws)?;
-        let inserted = in_memory
-            .workspaces
-            .get(name)
-            .ok_or_else(|| anyhow::anyhow!("workspace {name:?} disappeared after create"))?;
+        let inserted = in_memory.workspaces.get(name.as_str()).ok_or_else(|| {
+            anyhow::Error::from(ConfigError::WorkspaceDisappearedAfterCreate(
+                name.as_str().to_owned(),
+            ))
+        })?;
 
         let rendered =
             toml::to_string(inserted).with_context(|| format!("serializing workspace {name:?}"))?;
@@ -566,13 +595,18 @@ impl ConfigEditor {
             .parse()
             .with_context(|| format!("re-parsing serialized workspace {name:?}"))?;
 
-        self.workspace_docs.insert(name.to_owned(), parsed);
-        self.removed_workspaces.remove(name);
+        self.workspace_docs.insert(name.as_str().to_owned(), parsed);
+        self.removed_workspaces.remove(name.as_str());
 
         Ok(())
     }
 
-    pub fn edit_workspace(&mut self, name: &str, edit: WorkspaceEdit) -> anyhow::Result<()> {
+    /// Apply a [`WorkspaceEdit`] via in-memory validation, then replace the workspace doc.
+    pub fn edit_workspace(
+        &mut self,
+        name: &WorkspaceName,
+        edit: WorkspaceEdit,
+    ) -> anyhow::Result<()> {
         // Snapshot current on-disk state into an AppConfig.
         let mut in_memory = validate_candidate(&self.doc.to_string(), &self.workspace_docs)
             .context("re-parsing current docs into AppConfig for workspace edit")?;
@@ -582,10 +616,11 @@ impl ConfigEditor {
         in_memory.edit_workspace(name, edit)?;
 
         // Pull the resulting WorkspaceConfig back out and splat into the doc.
-        let updated = in_memory
-            .workspaces
-            .get(name)
-            .ok_or_else(|| anyhow::anyhow!("workspace {name:?} disappeared after edit"))?;
+        let updated = in_memory.workspaces.get(name.as_str()).ok_or_else(|| {
+            anyhow::Error::from(ConfigError::WorkspaceDisappearedAfterEdit(
+                name.as_str().to_owned(),
+            ))
+        })?;
 
         // Replace the entire workspace document. This preserves
         // comments in OTHER workspaces and in unrelated top-level sections,
@@ -594,7 +629,7 @@ impl ConfigEditor {
         // the edit IS the change the user is making to that workspace.
         let rendered = toml::to_string(updated)?;
         let parsed: DocumentMut = rendered.parse()?;
-        self.workspace_docs.insert(name.to_owned(), parsed);
+        self.workspace_docs.insert(name.as_str().to_owned(), parsed);
 
         Ok(())
     }
@@ -613,7 +648,8 @@ impl ConfigEditor {
     }
 
     fn workspace_doc_mut(&mut self, workspace: &str) -> &mut DocumentMut {
-        debug_assert!(validate_workspace_file_stem(workspace).is_ok());
+        // `.ok().is_some()` avoids assertions_on_result_states vs redundant_pattern_matching.
+        debug_assert!(validate_workspace_file_stem(workspace).ok().is_some());
         self.removed_workspaces.remove(workspace);
         self.workspace_docs.entry(workspace.to_owned()).or_default()
     }
@@ -628,7 +664,7 @@ impl ConfigEditor {
                 (doc, vec!["env".to_owned()])
             }
             EnvScope::WorkspaceRole { workspace, role } => {
-                let doc = self.workspace_doc_mut(workspace);
+                let doc = self.workspace_doc_mut(workspace.as_str());
                 (
                     doc,
                     vec!["roles".to_owned(), role.clone(), "env".to_owned()],
@@ -639,7 +675,7 @@ impl ConfigEditor {
                 (doc, vec!["github".to_owned(), "env".to_owned()])
             }
             EnvScope::WorkspaceRoleGithub { workspace, role } => {
-                let doc = self.workspace_doc_mut(workspace);
+                let doc = self.workspace_doc_mut(workspace.as_str());
                 (
                     doc,
                     vec![
@@ -715,7 +751,7 @@ fn validate_candidate(
     let mut config: AppConfig =
         toml::from_str(global_contents).context("deserializing candidate global config")?;
     if !config.workspaces.is_empty() {
-        anyhow::bail!("global config.toml must not contain [workspaces] tables");
+        return Err(ConfigError::GlobalHasWorkspacesTable.into());
     }
     for (name, doc) in workspace_docs {
         validate_workspace_file_stem(name)?;
@@ -742,10 +778,11 @@ fn load_workspace_docs(paths: &JackinPaths) -> anyhow::Result<BTreeMap<String, D
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| anyhow::anyhow!("invalid workspace filename {}", path.display()))?;
+        let stem = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
+            anyhow::Error::from(ConfigError::InvalidWorkspaceFilename(
+                path.display().to_string(),
+            ))
+        })?;
         validate_workspace_file_stem(stem)
             .with_context(|| format!("invalid workspace filename {}", path.display()))?;
         let raw = std::fs::read_to_string(&path)
@@ -828,8 +865,10 @@ fn set_sync_source_dir_field(doc: &mut DocumentMut, kind_path: &[String], source
 fn prune_empty_trailing_tables(doc: &mut DocumentMut, path: &[String], max_prune: usize) {
     let stop_at = path.len().saturating_sub(max_prune);
     for i in (stop_at..path.len()).rev() {
-        let segment = &path[i];
-        let parent_path = &path[..i];
+        let Some(segment) = path.get(i) else {
+            return;
+        };
+        let parent_path = path.get(..i).unwrap_or(&[]);
         let mut walker: &mut Item = doc.as_item_mut();
         for parent_segment in parent_path {
             match walker
@@ -861,11 +900,11 @@ fn table_path_mut<'a>(doc: &'a mut DocumentMut, path: &[String]) -> &'a mut Tabl
     )]
     fn walk<'a>(item: &'a mut Item, path: &[String]) -> &'a mut Table {
         let table = item.as_table_mut().expect("path segment is not a table");
-        if path.is_empty() {
+        let Some((first, rest)) = path.split_first() else {
             return table;
-        }
-        let entry = table.entry(&path[0]).or_insert(Item::Table(Table::new()));
-        walk(entry, &path[1..])
+        };
+        let entry = table.entry(first).or_insert(Item::Table(Table::new()));
+        walk(entry, rest)
     }
     walk(doc.as_item_mut(), path)
 }

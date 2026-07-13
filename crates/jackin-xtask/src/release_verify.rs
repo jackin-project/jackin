@@ -1,8 +1,4 @@
 #![expect(
-    clippy::disallowed_methods,
-    reason = "release-verify is a synchronous xtask CLI that shells out to local verifier tools"
-)]
-#![expect(
     clippy::print_stdout,
     reason = "release-verify writes its verification report to stdout"
 )]
@@ -11,10 +7,10 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
 };
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use clap::Args;
 use sha2::{Digest, Sha256};
 
@@ -108,6 +104,10 @@ fn read_expected_sha256(path: &Path) -> Result<String> {
 }
 
 fn archive_sha256(path: &Path) -> Result<String> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "xtask release-verify is host CLI tooling, not a render/runtime thread"
+    )]
     let mut file = fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; 64 * 1024];
@@ -172,19 +172,8 @@ fn path_arg(path: &Path) -> Result<&str> {
         .with_context(|| format!("path is not valid UTF-8: {}", path.display()))
 }
 
-fn run_checked(cmd: &mut Command, label: &str) -> Result<()> {
-    let output = cmd
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .with_context(|| format!("spawning {label}"))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        bail!("{label} failed\nstdout:\n{stdout}\nstderr:\n{stderr}")
-    }
+fn run_checked(cmd: &mut Command, _label: &str) -> Result<()> {
+    crate::cmd::run(cmd)
 }
 
 #[cfg(test)]
