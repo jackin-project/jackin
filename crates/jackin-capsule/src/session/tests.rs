@@ -1,7 +1,8 @@
 //! Tests for `session`.
 use super::{
-    AgentState, OscPolicy, Session, agent_model_args, build_agent_command, build_shell_command,
-    child_exit_reason, inject_status_env, osc8_uri_is_safe, validate_agent_slug,
+    AgentState, OscPolicy, Session, SessionEvent, agent_model_args, build_agent_command,
+    build_shell_command, child_exit_reason, inject_status_env, osc8_uri_is_safe,
+    validate_agent_slug,
 };
 
 use std::path::Path;
@@ -850,7 +851,7 @@ fn opencode_event_sets_complete_authority() {
     use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "permission.asked", now);
+    session.apply_runtime_event("hook-opencode-1", "opencode", "permission.asked", None, now);
     let a = session.authority.as_ref().expect("authority set");
     assert_eq!(a.source_id, "hook-opencode-1");
     assert_eq!(a.mapped_state, RawAgentState::Blocked);
@@ -863,7 +864,13 @@ fn claude_event_never_sets_authority() {
     // Decision 0a: Claude/Codex are identity-only; their events never produce
     // a semantic authority — state comes from the screen pack + watchdog.
     let mut session = test_session_with_policy(OscPolicy::default());
-    session.apply_runtime_event("hook-claude-1", "claude", "Stop", std::time::Instant::now());
+    session.apply_runtime_event(
+        "hook-claude-1",
+        "claude",
+        "Stop",
+        None,
+        std::time::Instant::now(),
+    );
     assert!(session.authority.is_none());
 }
 
@@ -875,6 +882,7 @@ fn claude_notification_permission_sets_partial_authority() {
         "hook-claude-1",
         "claude",
         "Notification:permission_prompt",
+        None,
         std::time::Instant::now(),
     );
     let a = session.authority.as_ref().expect("authority set");
@@ -893,6 +901,7 @@ fn codex_app_server_event_sets_complete_authority() {
         "app-server-codex-1",
         "codex-app-server",
         "turn/started",
+        None,
         std::time::Instant::now(),
     );
     let a = session.authority.as_ref().expect("authority set");
@@ -906,9 +915,15 @@ fn codex_app_server_event_sets_complete_authority() {
 fn clear_event_drops_authority_for_source() {
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", now);
+    session.apply_runtime_event(
+        "hook-opencode-1",
+        "opencode",
+        "tool.execute.before",
+        None,
+        now,
+    );
     assert!(session.authority.is_some());
-    session.apply_runtime_event("hook-opencode-1", "opencode", "session.error", now);
+    session.apply_runtime_event("hook-opencode-1", "opencode", "session.error", None, now);
     assert!(session.authority.is_none());
 }
 
@@ -918,8 +933,14 @@ fn clear_from_other_source_leaves_authority() {
     // source guard keeps one reporter from clearing another's state.
     let mut session = test_session_with_policy(OscPolicy::default());
     let now = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", now);
-    session.apply_runtime_event("hook-opencode-2", "opencode", "session.error", now);
+    session.apply_runtime_event(
+        "hook-opencode-1",
+        "opencode",
+        "tool.execute.before",
+        None,
+        now,
+    );
+    session.apply_runtime_event("hook-opencode-2", "opencode", "session.error", None, now);
     let a = session.authority.as_ref().expect("authority survives");
     assert_eq!(a.source_id, "hook-opencode-1");
 }
@@ -929,7 +950,13 @@ fn heartbeat_from_other_source_does_not_refresh_last_event() {
     use std::time::Duration;
     let mut session = test_session_with_policy(OscPolicy::default());
     let t0 = std::time::Instant::now();
-    session.apply_runtime_event("hook-opencode-1", "opencode", "tool.execute.before", t0);
+    session.apply_runtime_event(
+        "hook-opencode-1",
+        "opencode",
+        "tool.execute.before",
+        None,
+        t0,
+    );
     let original = session.authority.as_ref().unwrap().last_event;
     // A heartbeat (claude lifecycle event) from a different source must not
     // refresh source-1's freshness, or a stale authority could outlive its TTL.
@@ -937,6 +964,7 @@ fn heartbeat_from_other_source_does_not_refresh_last_event() {
         "hook-claude-9",
         "claude",
         "PreToolUse",
+        None,
         t0 + Duration::from_secs(5),
     );
     assert_eq!(session.authority.as_ref().unwrap().last_event, original);
@@ -946,7 +974,13 @@ fn heartbeat_from_other_source_does_not_refresh_last_event() {
 fn amp_event_sets_partial_authority() {
     use crate::agent_status::evidence::AuthorityGrade;
     let mut session = test_session_with_policy(OscPolicy::default());
-    session.apply_runtime_event("hook-amp-1", "amp", "tool-start", std::time::Instant::now());
+    session.apply_runtime_event(
+        "hook-amp-1",
+        "amp",
+        "tool-start",
+        None,
+        std::time::Instant::now(),
+    );
     let a = session.authority.as_ref().expect("amp authority set");
     // amp has partial lifecycle coverage, so it cannot author at full confidence.
     assert_eq!(a.grade, AuthorityGrade::Partial);
@@ -1013,6 +1047,7 @@ fn clear_runtime_authority_drops_state_and_counters() {
         "hook-opencode-1",
         "opencode",
         "permission.asked",
+        None,
         std::time::Instant::now(),
     );
     assert!(session.authority.is_some());
@@ -1075,24 +1110,24 @@ fn osc8_uri_unsafe_schemes_rejected() {
 #[test]
 fn validate_agent_slug_rejects_typical_attacks() {
     let supported = Vec::new();
-    assert!(validate_agent_slug("", &supported).is_err());
-    assert!(validate_agent_slug("--debug", &supported).is_err());
-    assert!(validate_agent_slug("claude\n; rm -rf /", &supported).is_err());
-    assert!(validate_agent_slug("claude codex", &supported).is_err());
-    assert!(validate_agent_slug("claude\0", &supported).is_err());
+    validate_agent_slug("", &supported).unwrap_err();
+    validate_agent_slug("--debug", &supported).unwrap_err();
+    validate_agent_slug("claude\n; rm -rf /", &supported).unwrap_err();
+    validate_agent_slug("claude codex", &supported).unwrap_err();
+    validate_agent_slug("claude\0", &supported).unwrap_err();
 }
 
 #[test]
 fn validate_agent_slug_accepts_well_formed_slug_when_no_allowlist() {
     let supported = Vec::new();
-    assert!(validate_agent_slug("claude", &supported).is_ok());
-    assert!(validate_agent_slug("codex", &supported).is_ok());
+    validate_agent_slug("claude", &supported).unwrap();
+    validate_agent_slug("codex", &supported).unwrap();
 }
 
 #[test]
 fn validate_agent_slug_rejects_slug_outside_launch_config_allowlist() {
     let supported = vec!["claude".to_owned()];
-    assert!(validate_agent_slug("claude", &supported).is_ok());
+    validate_agent_slug("claude", &supported).unwrap();
     assert_eq!(
         validate_agent_slug("codex", &supported).unwrap_err(),
         "not in launch config allowlist"
@@ -1159,4 +1194,280 @@ fn diagnostic_tail_returns_last_nonblank_rows_oldest_first() {
         .diagnostic_tail(2)
         .expect("rendered rows must yield a tail");
     assert_eq!(tail, "bravo\ncharlie");
+}
+
+// --- plan 033 suite C: PTY fault recovery (FaultMasterPty) ---
+// Poisoned-mutex arms are MISSING (require a panicked holder thread).
+
+struct FaultMasterPty {
+    take_writer_err: Option<std::io::ErrorKind>,
+    clone_reader_err: Option<std::io::ErrorKind>,
+    writer_fails_after: Option<usize>,
+    reader_yields: Vec<Result<Vec<u8>, std::io::ErrorKind>>,
+    write_count: Arc<std::sync::atomic::AtomicUsize>,
+    reader_idx: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Default for FaultMasterPty {
+    fn default() -> Self {
+        Self {
+            take_writer_err: None,
+            clone_reader_err: None,
+            writer_fails_after: None,
+            reader_yields: Vec::new(),
+            write_count: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            reader_idx: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        }
+    }
+}
+
+struct FaultWriter {
+    fails_after: Option<usize>,
+    count: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl std::io::Write for FaultWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        use std::sync::atomic::Ordering;
+        let n = self.count.fetch_add(1, Ordering::SeqCst);
+        if self.fails_after.is_some_and(|after| n >= after) {
+            return Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe));
+        }
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+struct FaultReader {
+    yields: Vec<Result<Vec<u8>, std::io::ErrorKind>>,
+    idx: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl std::io::Read for FaultReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use std::sync::atomic::Ordering;
+        let i = self.idx.fetch_add(1, Ordering::SeqCst);
+        if i >= self.yields.len() {
+            return Ok(0);
+        }
+        match &self.yields[i] {
+            Ok(data) => {
+                let n = data.len().min(buf.len());
+                buf[..n].copy_from_slice(&data[..n]);
+                Ok(n)
+            }
+            Err(kind) => Err(std::io::Error::from(*kind)),
+        }
+    }
+}
+
+impl MasterPty for FaultMasterPty {
+    fn resize(&self, _size: PtySize) -> Result<()> {
+        Ok(())
+    }
+    fn get_size(&self) -> Result<PtySize> {
+        Ok(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+    }
+    fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>> {
+        if let Some(kind) = self.clone_reader_err {
+            return Err(anyhow::anyhow!(std::io::Error::from(kind)));
+        }
+        Ok(Box::new(FaultReader {
+            yields: self.reader_yields.clone(),
+            idx: Arc::clone(&self.reader_idx),
+        }))
+    }
+    fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>> {
+        if let Some(kind) = self.take_writer_err {
+            return Err(anyhow::anyhow!(std::io::Error::from(kind)));
+        }
+        Ok(Box::new(FaultWriter {
+            fails_after: self.writer_fails_after,
+            count: Arc::clone(&self.write_count),
+        }))
+    }
+    #[cfg(unix)]
+    fn process_group_leader(&self) -> Option<nix::libc::pid_t> {
+        None
+    }
+    #[cfg(unix)]
+    fn as_raw_fd(&self) -> Option<portable_pty::unix::RawFd> {
+        None
+    }
+    #[cfg(unix)]
+    fn tty_name(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+}
+
+/// Start the same writer/reader `spawn_blocking` tasks [`Session::spawn`] uses,
+/// against a scripted `FaultMasterPty`, so recovery branches are reachable.
+fn start_fault_pty_tasks(
+    fault: FaultMasterPty,
+) -> (
+    mpsc::UnboundedSender<Vec<u8>>,
+    mpsc::UnboundedReceiver<SessionEvent>,
+) {
+    let master: Arc<Mutex<Box<dyn MasterPty + Send>>> = Arc::new(Mutex::new(Box::new(fault)));
+    let master_for_write = Arc::clone(&master);
+    let master_for_read = Arc::clone(&master);
+    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (event_tx, event_rx) = mpsc::unbounded_channel::<SessionEvent>();
+    let sid = 1u64;
+    let event_tx_writer_err = event_tx.clone();
+    tokio::task::spawn_blocking(move || {
+        let writer = master_for_write
+            .lock()
+            .ok()
+            .and_then(|guard| guard.take_writer().ok());
+        let Some(mut writer) = writer else {
+            drop(event_tx_writer_err.send(SessionEvent::Exited {
+                session_id: sid,
+                reason: Some("session PTY writer failed to initialize".to_owned()),
+            }));
+            return;
+        };
+        while let Some(data) = input_rx.blocking_recv() {
+            if let Err(e) = std::io::Write::write_all(&mut writer, &data) {
+                drop(event_tx_writer_err.send(SessionEvent::Exited {
+                    session_id: sid,
+                    reason: Some(format!("session PTY write failed: {e}")),
+                }));
+                return;
+            }
+        }
+    });
+    let event_tx_reader_err = event_tx.clone();
+    tokio::task::spawn_blocking(move || {
+        let reader = master_for_read
+            .lock()
+            .ok()
+            .and_then(|guard| guard.try_clone_reader().ok());
+        let Some(mut reader) = reader else {
+            drop(event_tx_reader_err.send(SessionEvent::Exited {
+                session_id: sid,
+                reason: Some("session PTY reader failed to initialize".to_owned()),
+            }));
+            return;
+        };
+        let mut buf = [0u8; 4096];
+        loop {
+            match std::io::Read::read(&mut reader, &mut buf) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(_) => break, // read error: no Exited (reaper is authoritative)
+            }
+        }
+    });
+    (input_tx, event_rx)
+}
+
+#[tokio::test]
+async fn writer_init_failure_emits_exited_with_reason() {
+    let fault = FaultMasterPty {
+        take_writer_err: Some(std::io::ErrorKind::PermissionDenied),
+        ..Default::default()
+    };
+    let (_input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    let ev = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+        .await
+        .expect("timeout")
+        .expect("channel closed");
+    match ev {
+        SessionEvent::Exited { reason, .. } => {
+            assert_eq!(
+                reason.as_deref(),
+                Some("session PTY writer failed to initialize")
+            );
+        }
+        other => panic!("expected Exited, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn reader_init_failure_emits_exited_with_reason() {
+    let fault = FaultMasterPty {
+        clone_reader_err: Some(std::io::ErrorKind::PermissionDenied),
+        ..Default::default()
+    };
+    let (_input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    let ev = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+        .await
+        .expect("timeout")
+        .expect("channel closed");
+    match ev {
+        SessionEvent::Exited { reason, .. } => {
+            assert_eq!(
+                reason.as_deref(),
+                Some("session PTY reader failed to initialize")
+            );
+        }
+        other => panic!("expected Exited, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn mid_stream_write_failure_emits_exited() {
+    let fault = FaultMasterPty {
+        writer_fails_after: Some(0),
+        ..Default::default()
+    };
+    let (input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    input_tx.send(b"x".to_vec()).expect("input channel open");
+    let ev = tokio::time::timeout(std::time::Duration::from_secs(2), event_rx.recv())
+        .await
+        .expect("timeout")
+        .expect("channel closed");
+    match ev {
+        SessionEvent::Exited { reason, .. } => {
+            let r = reason.expect("reason");
+            assert!(
+                r.starts_with("session PTY write failed:"),
+                "unexpected reason: {r}"
+            );
+        }
+        other => panic!("expected Exited, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn read_error_breaks_without_exited_event() {
+    let fault = FaultMasterPty {
+        reader_yields: vec![Err(std::io::ErrorKind::BrokenPipe)],
+        ..Default::default()
+    };
+    let (_input_tx, mut event_rx) = start_fault_pty_tasks(fault);
+    // Reader should break without Exited; give tasks a moment then try_recv.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(
+        event_rx.try_recv().is_err(),
+        "read error must not emit Exited (reaper is authoritative)"
+    );
+}
+
+#[test]
+fn bare_claude_notification_payload_authors_authority() {
+    use crate::agent_status::evidence::{AuthorityGrade, RawAgentState};
+    let mut session = test_session_with_policy(OscPolicy::default());
+    session.apply_runtime_event(
+        "hook-claude-1",
+        "claude",
+        "Notification",
+        Some(r#"{"notification_type":"permission_prompt"}"#),
+        std::time::Instant::now(),
+    );
+    let a = session
+        .authority
+        .as_ref()
+        .expect("authority set from payload subtype");
+    assert_eq!(a.mapped_state, RawAgentState::Blocked);
+    assert!(a.pending_permission);
+    assert_eq!(a.grade, AuthorityGrade::Partial);
 }

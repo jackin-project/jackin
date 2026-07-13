@@ -1,0 +1,20 @@
+[package]
+name = "jackin-protocol-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+jackin-protocol = { path = ".." }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "decode_frames"
+path = "src/decode_frames.rs"
+test = false
+bench = false

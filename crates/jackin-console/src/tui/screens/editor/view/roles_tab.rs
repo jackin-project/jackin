@@ -119,7 +119,6 @@ pub(crate) fn role_lines(
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn role_state_lines<
     Modal,
     SaveFlow,
@@ -171,7 +170,6 @@ where
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn role_state_geometry<
     Modal,
     SaveFlow,

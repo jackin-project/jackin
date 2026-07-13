@@ -1,0 +1,9 @@
+version = "v1alpha2"
+dockerfile = "Dockerfile"
+agents = ["claude", "opencode"]
+
+[claude]
+plugins = []
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"

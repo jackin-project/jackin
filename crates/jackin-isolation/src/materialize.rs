@@ -12,10 +12,13 @@
 
 use crate::MountIsolation;
 use crate::branch::branch_name;
+use crate::error::IsolationError;
 use crate::state::{CleanupStatus, IsolationRecord, read_record, upsert_record};
 use anyhow::Context;
 use jackin_config::ResolvedWorkspace;
 use jackin_core::CommandRunner;
+use jackin_core::WorkspaceLabel;
+use jackin_core::container_paths;
 use jackin_diagnostics::debug_log;
 use std::path::{Path, PathBuf};
 
@@ -155,7 +158,7 @@ pub fn clone_path_for(container_state_dir: &Path, dst: &str, container_name: &st
 /// `worktree_path_for` already uses for the worktree itself.
 fn container_host_git_path(mount_dst: &str) -> String {
     let rel = mount_dst.trim_matches('/');
-    format!("/jackin/host/{rel}/.git")
+    format!("{}/{rel}/.git", container_paths::HOST_DIR)
 }
 
 /// Mirror of `jackin_runtime::runtime::repo_cache::normalize_github_url`.
@@ -444,7 +447,8 @@ use jackin_config::MountConfig;
 
 #[derive(Debug, Clone)]
 pub struct PreflightContext {
-    pub workspace_name: String,
+    /// Path/display label for this materialization (not necessarily a config stem).
+    pub workspace_label: WorkspaceLabel,
     pub force: bool,
     pub interactive: bool,
 }
@@ -458,23 +462,24 @@ pub async fn preflight_isolated(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     // readonly is incompatible with isolated editable source modes.
-    anyhow::ensure!(
-        !mount.readonly,
-        "isolated mount `{}` cannot be readonly (isolation = {})",
-        mount.dst,
-        mount.isolation
-    );
+    if mount.readonly {
+        return Err(IsolationError::ReadonlyIsolated {
+            dst: mount.dst.clone(),
+            isolation: mount.isolation,
+        }
+        .into());
+    }
 
     // Sensitive mount overlap.
     let sensitives = jackin_config::find_sensitive_mounts(std::slice::from_ref(mount));
     if let Some(s) = sensitives.first() {
-        anyhow::bail!(
-            "isolated mount `{}` overlaps sensitive path `{}` ({}) (isolation = {})",
-            mount.dst,
-            s.src,
-            s.reason,
-            mount.isolation,
-        );
+        return Err(IsolationError::SensitiveOverlap {
+            dst: mount.dst.clone(),
+            src: s.src.clone(),
+            reason: s.reason.clone(),
+            isolation: mount.isolation,
+        }
+        .into());
     }
 
     let src = Path::new(&mount.src);
@@ -487,12 +492,12 @@ pub async fn preflight_isolated(
         "CHERRY_PICK_HEAD",
     ] {
         if src.join(".git").join(marker).exists() {
-            anyhow::bail!(
-                "isolated mount `{}`: host repo `{}` is mid-{}; resolve before launching",
-                mount.dst,
-                mount.src,
-                marker
-            );
+            return Err(IsolationError::MidOperation {
+                dst: mount.dst.clone(),
+                src: mount.src.clone(),
+                marker: (*marker).to_owned(),
+            }
+            .into());
         }
     }
 
@@ -515,13 +520,14 @@ pub async fn preflight_isolated(
         std::fs::canonicalize(src).with_context(|| format!("canonicalize {}", mount.src))?;
     let top_canon =
         std::fs::canonicalize(toplevel).with_context(|| format!("canonicalize {toplevel}"))?;
-    anyhow::ensure!(
-        src_canon == top_canon,
-        "isolated mount `{}`: src `{}` is inside repo `{}` but not its root",
-        mount.dst,
-        mount.src,
-        toplevel
-    );
+    if src_canon != top_canon {
+        return Err(IsolationError::NotRepoRoot {
+            dst: mount.dst.clone(),
+            src: mount.src.clone(),
+            toplevel: toplevel.to_owned(),
+        }
+        .into());
+    }
 
     // Dirty tree check (separate test in 4.5).
     check_dirty_tree(mount, ctx, runner).await?;
@@ -562,12 +568,11 @@ async fn check_dirty_tree(
     if ctx.interactive {
         return Ok(());
     }
-    anyhow::bail!(
-        "isolated mount `{}`: host tree at `{}` is dirty (staged/unstaged/untracked); \
-         pass --force to acknowledge, or commit/stash before launching",
-        mount.dst,
-        mount.src
-    );
+    Err(IsolationError::DirtyTree {
+        dst: mount.dst.clone(),
+        src: mount.src.clone(),
+    }
+    .into())
 }
 
 /// Top-level materialization.
@@ -575,12 +580,16 @@ async fn check_dirty_tree(
 /// Iterates the resolved workspace mounts, passes through `Shared` mounts,
 /// and per-mount-materializes `Worktree` mounts. Returns the
 /// `MaterializedWorkspace` ready for Docker launch.
+///
+/// `workspace_label` is the path/display label (see [`WorkspaceLabel`]), not
+/// the config-stem [`jackin_core::WorkspaceName`]. Callers convert at the dual
+/// semantics boundary so identity stems and path labels are not confused.
 pub async fn materialize_workspace(
     resolved: &ResolvedWorkspace,
     container_state_dir: &Path,
     selector_key: &str,
     container_name: &str,
-    workspace_name: &str,
+    workspace_label: &WorkspaceLabel,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedWorkspace> {
@@ -591,7 +600,7 @@ pub async fn materialize_workspace(
         .count();
     debug_log!(
         "isolation",
-        "materialize_workspace: workspace={workspace_name} container={container_name} selector={selector_key} mounts={total} isolated={isolated_count} state_dir={state_dir} force={force} interactive={interactive}",
+        "materialize_workspace: workspace={workspace_label} container={container_name} selector={selector_key} mounts={total} isolated={isolated_count} state_dir={state_dir} force={force} interactive={interactive}",
         total = resolved.mounts.len(),
         state_dir = container_state_dir.display(),
         force = ctx.force,
@@ -629,7 +638,7 @@ pub async fn materialize_workspace(
                     container_state_dir,
                     selector_key,
                     container_name,
-                    workspace_name,
+                    workspace_label,
                     ctx,
                     runner,
                 )
@@ -641,7 +650,7 @@ pub async fn materialize_workspace(
                     container_state_dir,
                     selector_key,
                     container_name,
-                    workspace_name,
+                    workspace_label,
                     ctx,
                     runner,
                 )
@@ -655,9 +664,7 @@ pub async fn materialize_workspace(
     let mounts: Vec<MaterializedMount> = materialized
         .into_iter()
         .collect::<Option<_>>()
-        .ok_or_else(|| {
-            anyhow::anyhow!("internal mount materialization error: missing mount slot")
-        })?;
+        .ok_or(IsolationError::MissingMountSlot)?;
     Ok(MaterializedWorkspace {
         workdir: resolved.workdir.clone(),
         mounts,
@@ -665,13 +672,17 @@ pub async fn materialize_workspace(
     })
 }
 
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 async fn materialize_one(
     mount: &MountConfig,
     container_state_dir: &Path,
     selector_key: &str,
     container_name: &str,
-    workspace_name: &str,
+    workspace_label: &WorkspaceLabel,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedMount> {
@@ -694,28 +705,25 @@ async fn materialize_one(
                 recorded = record.original_src,
                 configured = mount.src,
             );
-            anyhow::bail!(
-                "source drift on container `{}`, mount `{}`: recorded src `{}` differs from configured src `{}`; preserved {} at `{}`. Restore the previous src, inspect the path above, or `jackin purge {}` to discard.",
-                container_name,
-                mount.dst,
-                record.original_src,
-                mount.src,
-                record.isolation,
-                record.worktree_path,
-                container_name,
-            );
+            return Err(IsolationError::SourceDrift {
+                container: container_name.into(),
+                mount: mount.dst.clone(),
+                recorded: record.original_src.clone(),
+                configured: mount.src.clone(),
+                isolation: record.isolation,
+                worktree: record.worktree_path.clone(),
+            }
+            .into());
         }
         if record.isolation != MountIsolation::Worktree {
-            anyhow::bail!(
-                "isolation mode drift on container `{}`, mount `{}`: recorded mode `{}` differs from configured mode `{}`; preserved {} at `{}`. Run `jackin purge {}` to discard the old isolated state before switching modes.",
-                container_name,
-                mount.dst,
-                record.isolation,
-                mount.isolation,
-                record.isolation,
-                record.worktree_path,
-                container_name,
-            );
+            return Err(IsolationError::ModeDrift {
+                container: container_name.into(),
+                mount: mount.dst.clone(),
+                recorded: record.isolation,
+                configured: mount.isolation,
+                worktree: record.worktree_path.clone(),
+            }
+            .into());
         }
         // Reuse if worktree path looks alive (.git file or dir under it).
         if worktree_path.join(".git").exists() {
@@ -886,7 +894,7 @@ async fn materialize_one(
     upsert_record(
         container_state_dir,
         IsolationRecord {
-            workspace: workspace_name.into(),
+            workspace: workspace_label.as_str().into(),
             mount_dst: mount.dst.clone(),
             original_src: mount.src.clone(),
             isolation: MountIsolation::Worktree,
@@ -918,13 +926,17 @@ async fn materialize_one(
     })
 }
 
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 async fn materialize_clone(
     mount: &MountConfig,
     container_state_dir: &Path,
     selector_key: &str,
     container_name: &str,
-    workspace_name: &str,
+    workspace_label: &WorkspaceLabel,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<MaterializedMount> {
@@ -939,28 +951,25 @@ async fn materialize_clone(
 
     if let Some(record) = read_record(container_state_dir, &mount.dst)? {
         if record.original_src != mount.src {
-            anyhow::bail!(
-                "source drift on container `{}`, mount `{}`: recorded src `{}` differs from configured src `{}`; preserved {} at `{}`. Restore the previous src, inspect the path above, or `jackin purge {}` to discard.",
-                container_name,
-                mount.dst,
-                record.original_src,
-                mount.src,
-                record.isolation,
-                record.worktree_path,
-                container_name,
-            );
+            return Err(IsolationError::SourceDrift {
+                container: container_name.into(),
+                mount: mount.dst.clone(),
+                recorded: record.original_src.clone(),
+                configured: mount.src.clone(),
+                isolation: record.isolation,
+                worktree: record.worktree_path.clone(),
+            }
+            .into());
         }
         if record.isolation != MountIsolation::Clone {
-            anyhow::bail!(
-                "isolation mode drift on container `{}`, mount `{}`: recorded mode `{}` differs from configured mode `{}`; preserved {} at `{}`. Run `jackin purge {}` to discard the old isolated state before switching modes.",
-                container_name,
-                mount.dst,
-                record.isolation,
-                mount.isolation,
-                record.isolation,
-                record.worktree_path,
-                container_name,
-            );
+            return Err(IsolationError::ModeDrift {
+                container: container_name.into(),
+                mount: mount.dst.clone(),
+                recorded: record.isolation,
+                configured: mount.isolation,
+                worktree: record.worktree_path.clone(),
+            }
+            .into());
         }
         if clone_path.join(".git").exists() {
             debug_log!(
@@ -1100,7 +1109,7 @@ async fn materialize_clone(
     upsert_record(
         container_state_dir,
         IsolationRecord {
-            workspace: workspace_name.into(),
+            workspace: workspace_label.as_str().into(),
             mount_dst: mount.dst.clone(),
             original_src: mount.src.clone(),
             isolation: MountIsolation::Clone,

@@ -8,6 +8,7 @@
 //! Not responsible for: running `docker build` (`runtime/image.rs`), or the
 //! base-image Dockerfile authored by the role (lives in the role repo).
 
+use crate::ImageError;
 use jackin_core::Agent;
 use jackin_core::manifest::{ClaudeConfig, HooksConfig};
 use jackin_manifest::ValidatedRoleRepo;
@@ -59,10 +60,17 @@ const AGENT_STATUS_ASSETS: &[(&str, &str)] = &[
         "packs/opencode.toml",
         include_str!("../../jackin-agent-status/packs/opencode.toml"),
     ),
+    (
+        "packs/grok.toml",
+        include_str!("../../jackin-agent-status/packs/grok.toml"),
+    ),
 ];
 const ZSHENV_SOURCE_SHIM_PATH: &str = ".jackin-runtime/zshenv-source-shim";
 const ZSH_TITLE_SHIM_PATH: &str = ".jackin-runtime/zsh-title-shim";
-#[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
+#[allow(
+    clippy::literal_string_with_formatting_args,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)] // shell ${...}, not a Rust format arg
 const ZSHENV_SOURCE_SHIM: &str = "\
 if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then
   __jackin_rc=0
@@ -415,7 +423,10 @@ pub fn render_derived_dockerfile(
     // construct. Derived-from-derived builds (`base_image_override`)
     // also skip the second append because the first build added the
     // marker line to /home/agent/.zshrc.
-    #[allow(clippy::items_after_statements)]
+    #[allow(
+        clippy::items_after_statements,
+        reason = "documented residual allow; prefer expect when site is lint-true"
+    )]
     const SHELL_TITLE_AND_RUNTIME_DIR_COMMANDS: &str = "\
 ( grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
       || cat /jackin/runtime/zsh-title-shim >> /home/agent/.zshrc ) \\
@@ -608,7 +619,9 @@ pub fn create_derived_build_context_for_agents(
     let jackin_capsule_ctx_path = if let Some(host_path) = jackin_capsule_host_path {
         let dst = runtime_dir.join("jackin-capsule");
         std::fs::copy(host_path, &dst).map_err(|e| {
-            anyhow::anyhow!("failed to copy jackin-capsule binary into build context: {e}")
+            ImageError::msg(format!(
+                "failed to copy jackin-capsule binary into build context: {e}"
+            ))
         })?;
         Some(".jackin-runtime/jackin-capsule".to_owned())
     } else {
@@ -634,10 +647,10 @@ pub fn create_derived_build_context_for_agents(
                     let ctx_path = format!(".jackin-runtime/agent-binaries/{}", agent.slug());
                     let dst = agent_bin_dir.join(agent.slug());
                     std::fs::copy(host_path, &dst).map_err(|e| {
-                        anyhow::anyhow!(
+                        ImageError::msg(format!(
                             "failed to copy {} binary into build context: {e}",
                             agent.slug()
-                        )
+                        ))
                     })?;
                     AgentInstall::Prefetched(ctx_path)
                 }
@@ -664,10 +677,12 @@ pub fn create_derived_build_context_for_agents(
     //   reach the Dockerfile FROM line are character-set-bounded
     //   regardless of ingress.
     let base_dockerfile = if let Some(image) = base_image_override {
-        anyhow::ensure!(
-            looks_like_valid_image_ref(image),
-            "base_image_override {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line",
-        );
+        if !looks_like_valid_image_ref(image) {
+            return Err(ImageError::msg(format!(
+                "base_image_override {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line"
+            ))
+            .into());
+        }
         format!("FROM {image}\n")
     } else {
         let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
@@ -730,10 +745,12 @@ pub fn create_role_base_build_context(
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
     let base_dockerfile = if let Some(image) = published_base {
-        anyhow::ensure!(
-            looks_like_valid_image_ref(image),
-            "published base {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line",
-        );
+        if !looks_like_valid_image_ref(image) {
+            return Err(ImageError::msg(format!(
+                "published base {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line"
+            ))
+            .into());
+        }
         std::fs::create_dir_all(&context_dir)?;
         format!("FROM {image}\n")
     } else {
@@ -776,29 +793,32 @@ fn copy_declared_hook_files(
     for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
         let src = repo_dir.join(entry.path);
         let metadata = std::fs::symlink_metadata(&src).map_err(|e| {
-            anyhow::anyhow!(
+            ImageError::msg(format!(
                 "failed to inspect hook {} for derived build context: {e}",
                 entry.path
-            )
+            ))
         })?;
         if metadata.file_type().is_symlink() {
-            anyhow::bail!(
-                "refusing to include symlink in build context: {}",
-                entry.path
-            );
+            return Err(ImageError::SymlinkInBuildContext {
+                path: entry.path.to_owned(),
+            }
+            .into());
         }
         if !metadata.is_file() {
-            anyhow::bail!("hook {} is not a regular file", entry.path);
+            return Err(ImageError::HookNotRegularFile {
+                path: entry.path.to_owned(),
+            }
+            .into());
         }
         let dst = context_dir.join(entry.path);
         if let Some(parent) = dst.parent() {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::copy(&src, &dst).map_err(|e| {
-            anyhow::anyhow!(
+            ImageError::msg(format!(
                 "failed to copy hook {} into derived build context: {e}",
                 entry.path
-            )
+            ))
         })?;
     }
     Ok(())
@@ -879,10 +899,10 @@ fn copy_dir_all(from: &Path, to: &Path) -> anyhow::Result<()> {
         } else if file_type.is_file() {
             std::fs::copy(entry.path(), destination)?;
         } else if file_type.is_symlink() {
-            anyhow::bail!(
-                "invalid role repo: derived build context does not support symlinks: {}",
-                entry.path().display()
-            );
+            return Err(ImageError::RoleRepoSymlink {
+                path: entry.path().display().to_string(),
+            }
+            .into());
         }
     }
 

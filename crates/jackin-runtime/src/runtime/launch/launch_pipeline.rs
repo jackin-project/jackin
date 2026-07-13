@@ -3,9 +3,9 @@
 use crate::instance::{InstanceManifest, InstanceStatus, RoleState};
 use jackin_config::AppConfig;
 use jackin_config::app_config::DEFAULT_ROLE_REPO_REFRESH_TTL_SECONDS;
-use jackin_core::CommandRunner;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
+use jackin_core::{CommandRunner, WorkspaceName};
 use jackin_docker::docker_client::DockerApi;
 
 use super::launch_slot::{claim_container_name, claim_known_container_name};
@@ -15,6 +15,7 @@ use crate::runtime::naming::{image_name, image_name_for_branch};
 use crate::runtime::repo_cache::{RepoResolveOptions, resolve_agent_repo_with};
 
 mod launch_core;
+pub(super) mod launch_phases;
 
 pub(super) struct DeferredGitPull {
     handle: tokio::task::JoinHandle<Vec<super::git_pull::GitPullResult>>,
@@ -84,10 +85,11 @@ fn defer_operator_env<'a>(
     credential_agents: Vec<jackin_core::agent::Agent>,
 ) -> DeferredOperatorEnv<'a> {
     let operator_env_needed = |key: &str| credential_key_needed_for_role(&credential_agents, key);
+    let workspace_typed = workspace_name.and_then(|n| WorkspaceName::parse(n).ok());
     if !jackin_env::has_operator_env_matching(
         config,
         Some(&selector.key()),
-        workspace_name,
+        workspace_typed.as_ref(),
         operator_env_needed,
     ) {
         jackin_diagnostics::active_timing_started("credentials", "operator_env", None);
@@ -121,19 +123,25 @@ fn defer_operator_env<'a>(
                     .cloned()
                     .ok_or(std::env::VarError::NotPresent)
             };
+            let ws = workspace_key
+                .as_deref()
+                .and_then(|n| WorkspaceName::parse(n).ok());
             jackin_env::resolve_operator_env_with_matching(
                 &config_clone,
                 Some(&selector_key),
-                workspace_key.as_deref(),
+                ws.as_ref(),
                 &default_runner,
                 host_env_fn,
                 |key| credential_key_needed_for_role(&needed_agents, key),
             )
         } else {
+            let ws = workspace_key
+                .as_deref()
+                .and_then(|n| WorkspaceName::parse(n).ok());
             jackin_env::resolve_operator_env_matching(
                 &config_clone,
                 Some(&selector_key),
-                workspace_key.as_deref(),
+                ws.as_ref(),
                 |key| credential_key_needed_for_role(&needed_agents, key),
             )
         }
@@ -154,10 +162,14 @@ async fn await_operator_env(
                     |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
                 )
             };
+            let ws = inline
+                .workspace_key
+                .as_deref()
+                .and_then(|n| WorkspaceName::parse(n).ok());
             jackin_env::resolve_operator_env_with_matching(
                 inline.config,
                 Some(&inline.selector_key),
-                inline.workspace_key.as_deref(),
+                ws.as_ref(),
                 inline.op_runner,
                 host_env_fn,
                 |key| credential_key_needed_for_role(&inline.credential_agents, key),
@@ -418,6 +430,9 @@ pub(crate) async fn load_role_with(
     let role_key = selector.key();
     let selected_agent_before_role = opts.agent.or(workspace.default_agent);
     let mut early_restore_agent = None;
+    // Typed early current-role scan (launch-speed 008c): reused later so the
+    // common path does not re-inspect current-role candidates.
+    let mut early_current_scan = super::EarlyCurrentRestoreScan::NotRun;
     // `--rebuild` is an explicit "force a fresh image" request, so it must not
     // take the attach/start/recreate fast paths — those short-circuit before
     // `decide_agent_image` and would silently skip the rebuild. Falling through
@@ -454,13 +469,32 @@ pub(crate) async fn load_role_with(
                     .await;
                 }
                 Some(super::RestoreResolution::RecreateCurrentRole(container)) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(super::RestoreResolution::RecreateCurrentRole(
+                            container.clone(),
+                        )),
+                    };
                     jackin_diagnostics::debug_log!(
                         "restore",
                         "recreating missing current instance {container} after role repo resolution"
                     );
                     Some(container)
                 }
-                Some(_) | None => None,
+                Some(other) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(other),
+                    };
+                    None
+                }
+                None => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: None,
+                    };
+                    None
+                }
             }
         } else {
             match super::resolve_unselected_current_restore_candidate_with_agent_timed(
@@ -491,13 +525,44 @@ pub(crate) async fn load_role_with(
                     agent,
                 }) => {
                     early_restore_agent = Some(agent);
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(super::RestoreResolution::RecreateCurrentRole(
+                            container.clone(),
+                        )),
+                    };
                     jackin_diagnostics::debug_log!(
                         "restore",
                         "recreating single-agent missing current instance {container} after role repo resolution"
                     );
                     Some(container)
                 }
-                Some(_) | None => None,
+                Some(super::UnselectedCurrentRestoreResolution { resolution, agent }) => {
+                    early_current_scan = super::EarlyCurrentRestoreScan::Scanned {
+                        agent,
+                        current: Some(resolution),
+                    };
+                    None
+                }
+                None => {
+                    // Unselected scan found no single-agent hit. When the role
+                    // also has no is_restore_candidate manifests, stash
+                    // ScannedUnselectedEmpty so a later selected agent skips a
+                    // pure-waste current-role re-inspect (008c residual).
+                    let role_empty = !super::restore::matching_current_role_manifests(
+                        paths,
+                        workspace_name.as_deref(),
+                        workspace.label.as_str(),
+                        &workspace.workdir,
+                        &role_key,
+                    )?
+                    .into_iter()
+                    .any(|m| m.is_restore_candidate());
+                    if role_empty {
+                        early_current_scan = super::EarlyCurrentRestoreScan::ScannedUnselectedEmpty;
+                    }
+                    None
+                }
             }
         }
     } else {
@@ -729,7 +794,7 @@ pub(crate) async fn load_role_with(
         // `claim_container_name` reconciles any name collision downstream.
         None
     } else {
-        match super::resolve_restore_candidate(
+        match super::resolve_restore_candidate_reusing_early(
             paths,
             workspace_name.as_deref(),
             workspace.label.as_str(),
@@ -738,6 +803,7 @@ pub(crate) async fn load_role_with(
             agent,
             docker,
             steps.progress_mut(),
+            &early_current_scan,
         )
         .await?
         {
@@ -897,7 +963,14 @@ pub(crate) async fn load_role_with(
     let (container_name, _name_lock) = if let Some(container_name) = restore_container {
         claim_known_container_name(paths, &container_name, docker).await?
     } else {
-        claim_container_name(paths, workspace_name.as_deref(), selector, docker).await?
+        {
+            let workspace_typed = workspace_name
+                .as_deref()
+                .map(WorkspaceName::parse)
+                .transpose()
+                .map_err(anyhow::Error::from)?;
+            claim_container_name(paths, workspace_typed.as_ref(), selector, docker).await?
+        }
     };
 
     // Preliminary panel name only. The authoritative, commit-tagged image name
@@ -991,12 +1064,10 @@ pub(crate) async fn load_role_with(
     // (tests only), `resolve_operator_env_with` is called with the
     // supplied seams, so tests never need to mutate `std::env` and the
     // crate-level `unsafe_code = "forbid"` lint stays intact.
-    let auth_mode = jackin_config::resolve_mode(
-        config,
-        agent,
-        workspace_name.as_deref().unwrap_or(""),
-        &role_key,
-    );
+    let auth_workspace = workspace_name
+        .as_deref()
+        .and_then(|n| WorkspaceName::parse(n).ok());
+    let auth_mode = jackin_config::resolve_mode(config, agent, auth_workspace.as_ref(), &role_key);
     let operator_env = await_operator_env(operator_env).await?;
 
     // Resolve env vars (interactive prompts happen here, before build)
@@ -1054,11 +1125,11 @@ pub(crate) async fn load_role_with(
     // always-available var the entrypoint turns into a system-prompt block. The
     // full (name, kind, source) triples flow host-side to the credential
     // resolver via `capsule_config.exec_bindings` below.
-    let exec_bindings = jackin_env::collect_on_demand_bindings(
-        config,
-        Some(role_key.as_str()),
-        workspace_name.as_deref(),
-    );
+    let exec_ws = workspace_name
+        .as_deref()
+        .and_then(|n| WorkspaceName::parse(n).ok());
+    let exec_bindings =
+        jackin_env::collect_on_demand_bindings(config, Some(role_key.as_str()), exec_ws.as_ref());
     if !exec_bindings.is_empty() {
         let names = super::exec_binding_names(&exec_bindings);
         merged_vars.retain(|(k, _)| k != "JACKIN_EXEC_BINDINGS");
@@ -1072,10 +1143,13 @@ pub(crate) async fn load_role_with(
     // key → layer/reference kind ("OPERATOR_TOKEN: op://Personal/...
     // from workspace \"big-monorepo\"") — never values.
     if !operator_env.is_empty() {
+        let diag_ws = workspace_name
+            .as_deref()
+            .and_then(|n| WorkspaceName::parse(n).ok());
         jackin_env::print_launch_diagnostic(
             config,
             Some(&selector.key()),
-            workspace_name.as_deref(),
+            diag_ws.as_ref(),
             &operator_env,
             opts.debug,
         );

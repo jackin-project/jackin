@@ -21,6 +21,15 @@ pub enum TelemetryLevel {
     Trace,
 }
 
+/// Per-sink telemetry surface (plan 043).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TelemetrySink {
+    OtlpSpans,
+    OtlpLogs,
+    Console,
+    DiagnosticsFile,
+}
+
 pub fn set_debug_mode(enabled: bool) {
     DEBUG_MODE.store(enabled, Ordering::Relaxed);
 }
@@ -32,17 +41,59 @@ pub fn is_debug_mode() -> bool {
 }
 
 pub fn telemetry_level(debug: bool) -> TelemetryLevel {
-    std::env::var("JACKIN_TELEMETRY_LEVEL")
+    // Resolution: env level → JACKIN_DEBUG alias → config → --debug fallback.
+    // Exactly one site resolves JACKIN_DEBUG truthiness as a telemetry control.
+    if let Some(level) = std::env::var("JACKIN_TELEMETRY_LEVEL")
         .ok()
         .and_then(|value| parse_telemetry_level(&value))
-        .or_else(config_telemetry_level)
-        .unwrap_or({
-            if debug {
-                TelemetryLevel::Debug
-            } else {
-                TelemetryLevel::Info
-            }
-        })
+    {
+        return level;
+    }
+    if jackin_debug_alias_enabled() {
+        return TelemetryLevel::Debug;
+    }
+    config_telemetry_level().unwrap_or({
+        if debug {
+            TelemetryLevel::Debug
+        } else {
+            TelemetryLevel::Info
+        }
+    })
+}
+
+/// `JACKIN_DEBUG` truthiness alias — only read here (and dual-injection sites).
+fn jackin_debug_alias_enabled() -> bool {
+    std::env::var("JACKIN_DEBUG").is_ok_and(|v| {
+        matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
+/// Level for one sink: `JACKIN_TELEMETRY_<SINK>_LEVEL` → global [`telemetry_level`].
+#[must_use]
+pub fn sink_level(sink: TelemetrySink, debug: bool) -> TelemetryLevel {
+    let env_key = match sink {
+        TelemetrySink::OtlpSpans => "JACKIN_TELEMETRY_OTLP_SPANS_LEVEL",
+        TelemetrySink::OtlpLogs => "JACKIN_TELEMETRY_OTLP_LOGS_LEVEL",
+        TelemetrySink::Console => "JACKIN_TELEMETRY_CONSOLE_LEVEL",
+        TelemetrySink::DiagnosticsFile => "JACKIN_TELEMETRY_FILE_LEVEL",
+    };
+    std::env::var(env_key)
+        .ok()
+        .and_then(|value| parse_telemetry_level(&value))
+        .unwrap_or_else(|| telemetry_level(debug))
+}
+
+/// Level name string for `EnvFilter` directives.
+#[must_use]
+pub fn telemetry_level_name(level: TelemetryLevel) -> &'static str {
+    match level {
+        TelemetryLevel::Info => "info",
+        TelemetryLevel::Debug => "debug",
+        TelemetryLevel::Trace => "trace",
+    }
 }
 
 pub fn set_config_telemetry(level: Option<TelemetryLevel>, categories: &[String]) {
@@ -263,3 +314,6 @@ fn buffer_pending_notice(line: &str) {
 pub fn format_debug_line(category: &str, message: &str) -> String {
     format!("[jackin debug {category}] {message}")
 }
+
+#[cfg(test)]
+mod tests;

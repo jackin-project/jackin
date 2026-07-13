@@ -4,6 +4,8 @@
     "index",
     "auth-source-folder-sync",
     "runtime-launch",
-    "op-picker"
+    "op-picker",
+    "capsule-daemon",
+    "operator-console"
   ]
 }

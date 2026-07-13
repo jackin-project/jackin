@@ -312,7 +312,10 @@ pub fn render_current_dir_details_pane(
     render_sidebar_body(frame, &layout, &inputs, config, state);
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn render_instance_details_pane(
     frame: &mut Frame<'_>,
     area: Rect,

@@ -266,5 +266,35 @@ pub trait View<Model> {
     fn render(&self, model: &Model, frame: &mut ratatui::Frame<'_>, area: ratatui::layout::Rect);
 }
 
+/// Drive one composed Ratatui frame: paint `view` over `model` into `area`,
+/// then hand the same in-progress frame to `overlay` so a caller can layer
+/// frame-scoped extras (modal backdrops, chrome, debug bars) that are not
+/// part of the view's own model. Both steps run inside one
+/// [`ratatui::Terminal::draw`] call so Ratatui diffs a single coherent
+/// buffer per tick — splitting them across two `draw` calls would double
+/// the diff/flush cost and let the terminal observe an intermediate frame.
+///
+/// Spike (plan 053): prototype for the shared TUI runtime half-layer
+/// dispatch question. Any out-of-frame post-pass (e.g. raw OSC 8 overlay
+/// bytes written to stdout after the frame buffer settles) stays the
+/// caller's responsibility — it is not part of this helper's contract.
+pub fn drive_frame<'a, B, M, V, F>(
+    terminal: &'a mut ratatui::Terminal<B>,
+    view: &V,
+    model: &M,
+    area: ratatui::layout::Rect,
+    overlay: F,
+) -> Result<ratatui::CompletedFrame<'a>, B::Error>
+where
+    B: ratatui::backend::Backend,
+    V: View<M>,
+    F: FnOnce(&mut ratatui::Frame<'_>),
+{
+    terminal.draw(|frame| {
+        view.render(model, frame, area);
+        overlay(frame);
+    })
+}
+
 #[cfg(test)]
 mod tests;
