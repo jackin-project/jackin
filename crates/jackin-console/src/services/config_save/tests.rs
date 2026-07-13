@@ -6,7 +6,11 @@ use jackin_config::{
     GithubAuthMode, KeepAwakeConfig, MountConfig, MountIsolation, WorkspaceConfig,
     WorkspaceRoleOverride,
 };
-use jackin_core::Agent;
+use jackin_core::{Agent, WorkspaceName};
+
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 
 use super::{
     EditorSavePreviewError, EditorSavePreviewInput, EditorSavePreviewPlan, WorkspaceSaveDiffOp,
@@ -54,7 +58,7 @@ fn workspace_save_diff_plan_captures_auth_and_source_dir_changes() {
         },
     );
 
-    let ops = workspace_save_diff_plan("proj", &original, &pending);
+    let ops = workspace_save_diff_plan(&wn("proj"), &original, &pending);
 
     assert!(ops.contains(&WorkspaceSaveDiffOp::WorkspaceAuthForward {
         agent: Agent::Claude,
@@ -139,7 +143,7 @@ fn workspace_save_diff_plan_captures_env_set_and_remove_for_layers() {
         },
     );
 
-    let ops = workspace_save_diff_plan("proj", &original, &pending);
+    let ops = workspace_save_diff_plan(&wn("proj"), &original, &pending);
 
     assert!(ops.contains(&WorkspaceSaveDiffOp::EnvSet {
         scope: EnvScope::Workspace("proj".into()),

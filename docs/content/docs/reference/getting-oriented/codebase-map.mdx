@@ -22,29 +22,34 @@ sends readers here for the actual module-level detail.
 
 | Path | What lives there |
 |---|---|
-| `src/` | Rust CLI binary — every command jackin❯ implements |
+| <RepoFile path="crates/jackin/src/main.rs">crates/jackin/src/</RepoFile> | Host CLI binary — every command jackin❯ implements (no root `src/`) |
 | `docker/construct/` | Source for the shared base Docker image (`projectjackin/construct:trixie`) |
 | <RepoFile path="docker/runtime/entrypoint.sh">docker/runtime/entrypoint.sh</RepoFile> | Lightweight shell bridge injected into every derived image at `/jackin/runtime/entrypoint.sh`; it calls Rust runtime setup, sources role hooks, and execs the selected agent |
 | <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs">crates/jackin-capsule/src/runtime_setup.rs</RepoFile> | In-container Rust setup for git/GitHub initialization, trailer hook installation, agent home seeding, auth handoff copies, and Claude MCP registration |
 | `docs/` | This documentation site (Fumadocs on TanStack Start) |
 | `.github/workflows/` | CI for jackin❯, the construct image, and the docs site |
-| `tests/` | End-to-end and integration tests |
+| <RepoFile path="crates/jackin/tests/docs_commands.rs">crates/jackin/tests/</RepoFile> | Host-crate end-to-end and integration tests |
 
 ## Workspace crate structure
 
-The Cargo workspace is a tiered DAG — dependencies point only downward. A higher tier may name a lower tier; never the reverse.
+The Cargo workspace is a tiered DAG — dependencies point only downward. A higher tier may name a lower tier; never the reverse. For each crate's purpose, structure table, and public API, use the per-crate README or the generated Behind jackin❯ — crates section (one page per crate, built from the README at docs-build time) — this map stays the tier overview only.
 
 ```text
 Tier 0  jackin-core        vocabulary + traits + manifest types + JackinPaths +
                            env_model (reserved-name policy) + op_types + constants +
-                           ansi_tokens (R1) + launch port traits
+                           ansi_tokens (R1) + launch port traits + Clock
         jackin-protocol    capsule↔client wire protocol
+        jackin-build-meta  build.rs helper: workspace crate version + git SHA embedding
+                           → (no workspace deps)
         ──  no tokio · no docker · no filesystem (except std::fs in paths)  ──
 
 Tier 1  jackin-tui         ratatui widgets + theme + ansi / ansi_text + prune_output formatting → core
+        jackin-tui-lookbook interactive lookbook + SVG previews for jackin-tui → tui
         jackin-diagnostics RunDiagnostics JSONL + debug_log! macro +
                            terminal-ownership state                 → core, tui
         jackin-docker      BollardDockerClient + ShellRunner + net  → core, diagnostics
+        jackin-test-support shared fakes/fixtures for workspace tests → core, manifest
+                           (dev-dependency only; never a production dep)
 
 Tier 2  jackin-config      AppConfig · WorkspaceConfig · ConfigEditor · migration engine ·
                            planner · mount/workspace validation + resolution  → core
@@ -75,15 +80,17 @@ Tier 4  jackin-image       derived_image + agent_binary + capsule_binary +
         jackin-term        owned terminal model (vte parser + DamageGrid + GridSnapshot) → (no workspace deps)
         jackin-xtask       workspace automation binary (cargo xtask; construct image + dev fixtures)
                            → (no workspace deps; see Workspace Automation page)
+        jackin-dev         contributor PR-verification binary (standalone; no workspace deps)
+        jackin-pr-trailers squash-merge trailer extraction CLI (standalone; no workspace deps)
 
 Tier 5  jackin (binary)    cli/ + app/ + console adapter shell (effects.rs, services.rs,
                            tui/run.rs) + role_authoring + host tui/ + main.rs + bin/role.rs
-                           → all of the above. THE ONLY BINARY. No root src/.
+                           → all of the above. THE ONLY product binary. No root src/.
 ```
 
 **Ownership rules per tier:** `jackin-core` is types + traits only — no tokio, no subprocess, no docker. `pub(crate)` by default; `pub` only on what the next crate up imports. Heavy dependencies (tokio, bollard) live only in the tiers annotated above.
 
-**Extraction ledger (2026-06-19 — Phase 5 end state, refreshed 2026-07-04).** The console extraction is at the adapter-shell end state. `crates/jackin/src/` now contains 94 Rust files / 21,382 LOC; `crates/jackin/src/console/` is down to 9 files / ~6,200 LOC (from 80 files / 34,407 LOC — 89% file reduction, 82% LOC reduction), while `crates/jackin-console/src/` was at 214 files / 86,483 LOC before the Plan 015 leaf carve. Plan 015 extracted the pure op-picker model/planning surface into `crates/jackin-console-oppicker/`; Plan 054 moved the picker state, input handlers, constructors, and load-result polling into the same crate. <RepoFile path="crates/jackin-console/src/tui/op_picker/model.rs">crates/jackin-console/src/tui/op_picker/model.rs</RepoFile>, <RepoFile path="crates/jackin-console/src/tui/op_picker/state.rs">crates/jackin-console/src/tui/op_picker/state.rs</RepoFile>, and <RepoFile path="crates/jackin-console/src/tui/op_picker/input.rs">crates/jackin-console/src/tui/op_picker/input.rs</RepoFile> are thin facades; <RepoFile path="crates/jackin-console/src/tui/op_picker/load.rs">crates/jackin-console/src/tui/op_picker/load.rs</RepoFile> keeps only external `op` runner execution plus the console animation trait binding. The root `console/` module tree is now a thin adapter shell: `console.rs` (type bindings + inline terminal adapter), `effects.rs` (typed effect interpreter), `services.rs` (Docker/runtime/config IO adapters), `tui.rs` (inline type aliases + adapter modules), `tui/run.rs` (event loop), plus 4 test files that require root IO infrastructure. Root retains only the side-effect execution layer (Docker, runtime, host config), the terminal ownership adapter, and the CLI-facing entrypoint.
+**Extraction ledger.** The console extraction is at the adapter-shell end state. Hand-maintained file/LOC counts for `crates/jackin/src/` and `crates/jackin-console/src/` are intentionally not kept here — regenerate with `find`/`tokei` when needed; the per-crate READMEs and the generated Behind jackin❯ — crates section are the durable orientation record. The root `console/` module tree remains a thin adapter shell: `console.rs` (type bindings + inline terminal adapter), `effects.rs` (typed effect interpreter), `services.rs` (Docker/runtime/config IO adapters), `tui.rs` (inline type aliases + adapter modules), `tui/run.rs` (event loop), plus tests that require root IO infrastructure. Root retains only the side-effect execution layer (Docker, runtime, host config), the terminal ownership adapter, and the CLI-facing entrypoint.
 
 ## Where to start reading
 

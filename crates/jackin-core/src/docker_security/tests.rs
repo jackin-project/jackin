@@ -5,7 +5,8 @@
 //! tests live a crate away. These local guards fire in `jackin-core` itself, so
 //! a developer reordering a variant here sees the failure beside the change.
 
-use super::{DindGrant, DockerSecurityProfile, NetworkGrant};
+use super::{DindGrant, DockerSecurityProfile, NetworkGrant, ParseProfileError};
+use std::str::FromStr;
 
 /// `DockerSecurityProfile` variants must ascend by capability/permissiveness:
 /// the role `min_profile` floor relies on `resolved >= min`.
@@ -45,4 +46,14 @@ fn as_str_matches_serde() {
         // serde_json wraps the unit variant in quotes, e.g. "\"none\"".
         assert_eq!(serde_form, format!("{:?}", grant.as_str()));
     }
+}
+
+#[test]
+fn parse_profile_error_message_parity() {
+    let err = DockerSecurityProfile::from_str("bogus").unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "unknown docker profile \"bogus\" - valid values: locked, hardened, standard, compat"
+    );
+    let _typed: ParseProfileError = err;
 }

@@ -1,18 +1,7 @@
-//! jackin-runtime: container bootstrap pipeline.
+//! jackin-runtime: role launch, attach, cleanup, and backend orchestration.
 //!
-//! Holds the concrete `DockerApi` / `CommandRunner` implementations,
-//! image build, `DinD` sidecar management, mount materialization, and
-//! instance lifecycle.
-//!
-//! **Dependency tier:** `jackin-core` → `jackin-config` → `jackin-env` → `jackin-runtime`
-//!
-//! **Architecture Invariant:** L1 application / orchestration crate.
-//! Allowed dependencies: `jackin-core`, `jackin-config`, `jackin-env`,
-//! `jackin-manifest`, `jackin-docker`, `jackin-image`,
-//! `jackin-diagnostics`, `jackin-launch-tui`, `jackin-host`,
-//! `jackin-protocol`, `jackin-isolation`, `jackin-instance`.
-//! (R1: `jackin-tui` production edge removed via pure-item relocation to
-//! core + `LaunchOutputSink` port; only dev-dep remains for tests.)
+//! **Architecture Invariant:** T5.
+//! Entry point: [`launch_role_runtime`] — role launch orchestration.
 
 pub mod apple_container_client;
 pub mod exec_host;

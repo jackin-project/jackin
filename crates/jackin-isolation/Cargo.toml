@@ -23,13 +23,14 @@ jackin-protocol    = { workspace = true }
 jackin-docker      = { workspace = true }
 
 anyhow    = { workspace = true }
+thiserror = { workspace = true }
 serde     = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tempfile  = { workspace = true }
 directories = { workspace = true }
 
 [dev-dependencies]
-jackin-runtime = { workspace = true, features = ["test-support"] }
+jackin-test-support = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 

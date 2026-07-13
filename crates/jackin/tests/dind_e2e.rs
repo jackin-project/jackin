@@ -1,3 +1,17 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    clippy::manual_assert,
+    clippy::duration_suboptimal_units,
+    clippy::filter_map_next,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    unreachable_pub,
+    reason = "integration tests: fail-fast fixtures and host-side blocking helpers"
+)]
+
 //! End-to-end smoke that drives `jackin load` against a real Docker daemon
 //! with proxy env declared in role config, then asserts the launched agent
 //! container's environment carries the `DinD` hostname in both `NO_PROXY`
@@ -5,19 +19,13 @@
 //! bug fixed in `src/runtime/launch.rs`.
 
 #![cfg(feature = "e2e")]
-#![allow(clippy::disallowed_methods)]
-#![expect(
-    clippy::panic,
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "Docker integration fixtures should fail immediately with source location and command context"
-)]
-
 use std::time::Duration;
 
 use jackin_runtime::instance::naming::is_dns_label;
 use tempfile::tempdir;
 
+#[path = "dind_e2e/chaos.rs"]
+mod chaos;
 #[path = "dind_e2e/common.rs"]
 mod common;
 #[path = "dind_e2e/diagnostics.rs"]
@@ -391,4 +399,200 @@ fn jackin_load_double_ctrl_c_exits_launch_prompt_quickly() {
         output.status.success(),
         "double Ctrl+C should hard-exit successfully from the launch prompt\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
+}
+
+fn chaos_launch_until_report(
+    home: &std::path::Path,
+    workspace_dir: &std::path::Path,
+    role_source: &std::path::Path,
+) -> std::process::Output {
+    write_config(&home.join(".config/jackin/config.toml"), role_source);
+    seed_claude_installer_stub(home);
+    let jackin = std::env::var("CARGO_BIN_EXE_jackin").unwrap_or_else(|_| {
+        std::env::current_dir()
+            .unwrap()
+            .join("target/debug/jackin")
+            .display()
+            .to_string()
+    });
+    let target = format!("{}:/workspace", workspace_dir.display());
+    let args = ["load", ROLE_KEY, &target, "--agent", "claude"];
+    let construct_image = e2e_construct_image();
+    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", construct_image.as_str())];
+    let report_path = workspace_dir.join("jackin-e2e-report.txt");
+    run_in_pty_until_file(
+        &jackin,
+        &args,
+        home,
+        workspace_dir,
+        &extra_env,
+        &[],
+        PtyFileSentinel {
+            path: &report_path,
+            text: TESTCONTAINERS_SMOKE_OK,
+            timeout: Duration::from_mins(6),
+        },
+    )
+}
+
+fn wait_for_report_marker(path: &std::path::Path, marker: &str, timeout: Duration) {
+    let start = std::time::Instant::now();
+    while start.elapsed() < timeout {
+        if std::fs::read_to_string(path).is_ok_and(|contents| contents.contains(marker)) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    let contents = std::fs::read_to_string(path).unwrap_or_default();
+    panic!(
+        "timed out waiting for report marker {marker:?} in {}\nreport:\n{}",
+        path.display(),
+        contents
+    );
+}
+
+#[test]
+fn chaos_kill_container_mid_session() {
+    require_e2e_prereqs();
+    let seed = chaos::seed();
+    eprintln!("JACKIN_CHAOS_SEED={seed}");
+    let mut rng = chaos::ChaosRng::new(seed);
+    let planned = chaos::schedule(&mut rng, &[chaos::Fault::KillContainer], 1500);
+    let _serial = e2e_serial_lock();
+    let _cleanup = E2eRoleCleanup {
+        role_key: ROLE_KEY,
+        container_prefix: ROLE_CONTAINER_PREFIX,
+    };
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    let config_dir = home.join(".config/jackin");
+    let role_source = temp.path().join("agent-smith-source");
+    let workspace_dir = temp.path().join("workspace");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&workspace_dir).unwrap();
+    seed_agent_smith_role_repo(&role_source);
+
+    let home_c = home.clone();
+    let ws_c = workspace_dir.clone();
+    let rs_c = role_source.clone();
+    let handle = std::thread::spawn(move || chaos_launch_until_report(&home_c, &ws_c, &rs_c));
+
+    let start = std::time::Instant::now();
+    let container = loop {
+        if let Some(name) = chaos::primary_running_container(ROLE_KEY) {
+            break name;
+        }
+        assert!(
+            start.elapsed() <= Duration::from_mins(6),
+            "chaos_kill: no container appeared for {ROLE_KEY}"
+        );
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    wait_for_report_marker(
+        &workspace_dir.join("jackin-e2e-report.txt"),
+        REPORT_END,
+        Duration::from_mins(3),
+    );
+    std::thread::sleep(planned.delay);
+    chaos::apply_fault(planned.fault, &container);
+
+    let _output = handle.join().expect("launch thread panicked");
+    chaos::wait_until_no_running(ROLE_KEY, Duration::from_secs(60));
+    cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
+    chaos::assert_no_orphaned_containers(ROLE_KEY);
+    chaos::assert_no_stale_state_dirs(&home.join(".local/share/jackin"), &[]);
+    chaos::assert_cleanup_classified(&home);
+}
+
+#[test]
+fn chaos_sigkill_capsule() {
+    require_e2e_prereqs();
+    let seed = chaos::seed();
+    eprintln!("JACKIN_CHAOS_SEED={seed}");
+    let mut rng = chaos::ChaosRng::new(seed.wrapping_add(1));
+    let planned = chaos::schedule(&mut rng, &[chaos::Fault::SigkillCapsule], 1500);
+    let _serial = e2e_serial_lock();
+    let _cleanup = E2eRoleCleanup {
+        role_key: ROLE_KEY,
+        container_prefix: ROLE_CONTAINER_PREFIX,
+    };
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    let config_dir = home.join(".config/jackin");
+    let role_source = temp.path().join("agent-smith-source");
+    let workspace_dir = temp.path().join("workspace");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&workspace_dir).unwrap();
+    seed_agent_smith_role_repo(&role_source);
+
+    let home_c = home.clone();
+    let ws_c = workspace_dir.clone();
+    let rs_c = role_source.clone();
+    let handle = std::thread::spawn(move || chaos_launch_until_report(&home_c, &ws_c, &rs_c));
+
+    let start = std::time::Instant::now();
+    let container = loop {
+        if let Some(name) = chaos::primary_running_container(ROLE_KEY) {
+            break name;
+        }
+        assert!(
+            start.elapsed() <= Duration::from_mins(6),
+            "chaos_sigkill: no container appeared"
+        );
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    std::thread::sleep(planned.delay);
+    chaos::apply_fault(planned.fault, &container);
+
+    let _output = handle.join().expect("launch thread panicked");
+    chaos::wait_until_no_running(ROLE_KEY, Duration::from_secs(90));
+    cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
+    chaos::assert_no_orphaned_containers(ROLE_KEY);
+    chaos::assert_cleanup_classified(&home);
+}
+
+#[test]
+fn chaos_drop_control_socket() {
+    require_e2e_prereqs();
+    let seed = chaos::seed();
+    eprintln!("JACKIN_CHAOS_SEED={seed}");
+    let mut rng = chaos::ChaosRng::new(seed.wrapping_add(2));
+    let planned = chaos::schedule(&mut rng, &[chaos::Fault::DropControlSocket], 1500);
+    let _serial = e2e_serial_lock();
+    let _cleanup = E2eRoleCleanup {
+        role_key: ROLE_KEY,
+        container_prefix: ROLE_CONTAINER_PREFIX,
+    };
+    let temp = tempdir().unwrap();
+    let home = temp.path().join("home");
+    let config_dir = home.join(".config/jackin");
+    let role_source = temp.path().join("agent-smith-source");
+    let workspace_dir = temp.path().join("workspace");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::create_dir_all(&workspace_dir).unwrap();
+    seed_agent_smith_role_repo(&role_source);
+
+    let home_c = home.clone();
+    let ws_c = workspace_dir.clone();
+    let rs_c = role_source.clone();
+    let handle = std::thread::spawn(move || chaos_launch_until_report(&home_c, &ws_c, &rs_c));
+
+    let start = std::time::Instant::now();
+    let container = loop {
+        if let Some(name) = chaos::primary_running_container(ROLE_KEY) {
+            break name;
+        }
+        assert!(
+            start.elapsed() <= Duration::from_mins(6),
+            "chaos_drop_socket: no container appeared"
+        );
+        std::thread::sleep(Duration::from_millis(500));
+    };
+    std::thread::sleep(planned.delay);
+    chaos::apply_fault(planned.fault, &container);
+
+    let _output = handle.join().expect("launch thread panicked");
+    cleanup_role(ROLE_KEY, ROLE_CONTAINER_PREFIX);
+    chaos::assert_no_orphaned_containers(ROLE_KEY);
+    chaos::assert_cleanup_classified(&home);
 }

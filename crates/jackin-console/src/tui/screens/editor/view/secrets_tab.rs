@@ -13,7 +13,10 @@ use crate::tui::screens::editor::model::{FieldFocus, SecretsRow, SecretsScopeTag
 use super::WorkspaceEditorState;
 
 #[must_use]
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn secret_lines<'a>(
     rows: &[SecretsRow],
     cursor: usize,
@@ -59,7 +62,6 @@ pub(crate) fn secret_lines<'a>(
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn secret_state_lines<
     Modal,
     SaveFlow,
@@ -119,7 +121,6 @@ pub(crate) fn secret_state_lines<
 }
 
 #[must_use]
-#[allow(clippy::type_complexity)]
 pub(crate) fn secret_state_geometry<
     Modal,
     SaveFlow,
@@ -235,7 +236,10 @@ pub(crate) fn editor_secret_line_width<'a>(
     }
 }
 
-#[allow(unreachable_pub)]
+#[allow(
+    unreachable_pub,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub(crate) fn secret_key_line_width(
     key: &str,
     value: SecretValueDisplay<'_>,

@@ -1,0 +1,2 @@
+- Keep the picker pure: pure model/planning for the 1Password picker lives in `jackin-console-oppicker`; this crate owns only the `op` side-effects and resolution. Do not move planning logic back here.
+- `op` invocations go through the runner, not bare `Command`; secret material is scrubbed via the `jackin-diagnostics` redaction helpers.

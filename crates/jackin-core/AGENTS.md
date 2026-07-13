@@ -1,0 +1,2 @@
+- Types, traits, constants, and pure helpers only. No I/O, no subprocess, no runtime behavior — anything that does work belongs in a higher crate.
+- Keep it compile-cheap: every crate depends on this one, so do not add dependencies or heavy generics here.

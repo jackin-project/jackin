@@ -1,0 +1,3 @@
+- Stay self-contained: this tool runs against a fresh checkout before the workspace is necessarily built — do not add assumptions about a built workspace, and keep it free of jackin❯ runtime-crate dependencies.
+- `--version` must work offline — keep version reporting cheap and dependency-light.
+- Coordinate CLI changes with the PR-verification workflow under `.github/`.

@@ -1,0 +1,22 @@
+[package]
+name = "jackin-env-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+jackin-env = { path = ".." }
+jackin-config = { path = "../../jackin-config" }
+jackin-core = { path = "../../jackin-core" }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "env_resolve"
+path = "src/env_resolve.rs"
+test = false
+bench = false

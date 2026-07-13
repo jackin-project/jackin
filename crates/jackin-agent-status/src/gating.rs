@@ -28,6 +28,40 @@ pub enum GateEffect {
     Ignore,
 }
 
+/// Enrich a vendor hook event name using an optional JSON payload.
+///
+/// Claude Code installs hooks as bare `--event Notification`; the subtype
+/// (`permission_prompt`, `idle_prompt`, `elicitation_*`) lives in the stdin
+/// JSON. Without this enrichment, production maps bare `Notification` to
+/// [`GateEffect::Ignore`] and never authors authority.
+#[must_use]
+pub fn enrich_event_name(runtime: &str, event: &str, payload: Option<&str>) -> String {
+    if runtime == "claude"
+        && event == "Notification"
+        && let Some(subtype) = claude_notification_subtype(payload)
+    {
+        return format!("Notification:{subtype}");
+    }
+    event.to_owned()
+}
+
+fn claude_notification_subtype(payload: Option<&str>) -> Option<String> {
+    let raw = payload?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_str(raw).ok()?;
+    for key in ["notification_type", "type", "matcher"] {
+        if let Some(subtype) = value.get(key).and_then(|v| v.as_str()) {
+            let subtype = subtype.trim();
+            if !subtype.is_empty() && subtype != "Notification" {
+                return Some(subtype.to_owned());
+            }
+        }
+    }
+    None
+}
+
 pub fn map_event(event: &RuntimeEvent<'_>, state: &mut SourceGateState) -> GateEffect {
     let Some(canonical) = canonical_event(event.runtime, event.event) else {
         return GateEffect::Ignore;

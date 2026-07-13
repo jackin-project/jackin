@@ -26,7 +26,9 @@ pub(crate) fn write_if_changed_atomic(
     Ok(())
 }
 
-pub(crate) struct LoadCleanup {
+/// Coordinates Docker resource teardown for a failed or completed launch.
+#[derive(Debug)]
+pub struct LoadCleanup {
     container_name: String,
     dind: String,
     certs_volume: String,
@@ -46,7 +48,9 @@ pub(crate) struct LoadCleanup {
 }
 
 impl LoadCleanup {
-    pub(crate) const fn new(
+    /// Arm cleanup for the named role container + `DinD` + network + certs volume.
+    #[must_use]
+    pub const fn new(
         container_name: String,
         dind: String,
         certs_volume: String,
@@ -77,7 +81,8 @@ impl LoadCleanup {
         self.clean_socket_dir = false;
     }
 
-    pub(crate) async fn run(&self, docker: &impl DockerApi) {
+    /// Best-effort remove role/DinD containers, cert volume, network, and socket dir.
+    pub async fn run(&self, docker: &impl DockerApi) {
         if !self.armed {
             return;
         }
