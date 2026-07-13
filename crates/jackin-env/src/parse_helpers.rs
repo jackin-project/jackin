@@ -1,5 +1,8 @@
 //! Parse helpers shared across operator-env modules.
 
+/// Extract a host env var name from `$NAME` or `${NAME}` forms.
+///
+/// Returns `None` when the string is not a host ref or the name is invalid.
 pub fn parse_host_ref(value: &str) -> Option<&str> {
     if let Some(rest) = value.strip_prefix("${")
         && let Some(name) = rest.strip_suffix('}')
@@ -16,7 +19,7 @@ pub fn parse_host_ref(value: &str) -> Option<&str> {
     None
 }
 
-pub fn is_valid_env_name(s: &str) -> bool {
+pub(crate) fn is_valid_env_name(s: &str) -> bool {
     let mut chars = s.chars();
     match chars.next() {
         Some(c) if c.is_ascii_alphabetic() || c == '_' => {}

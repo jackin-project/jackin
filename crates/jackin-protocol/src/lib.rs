@@ -1,16 +1,19 @@
-//! Shared host CLI ↔ in-container Capsule contracts.
+//! jackin-protocol: attach/control wire protocol types shared by host and capsule.
 //!
-//! Lives in its own crate so the host (`jackin`) and the
-//! in-container binary (`jackin-capsule`) can both depend on it
-//! without the host pulling in `jackin-capsule`'s tokio + PTY +
-//! VT-parser stack. Most declarations here are wire-format types;
-//! small constants that name the host↔Capsule runtime contract live
-//! here too so the two binaries cannot drift.
-//!
-//! **Architecture Invariant:** L0 domain crate (wire types). Allowed
-//! dependencies: `jackin-core`. Wire types stay free of presentation
-//! and infrastructure concerns; DTOs and their conversions live at the
-//! edges, never here.
+//! **Architecture Invariant:** T1.
+//! Entry point: [`ClientFrame`] — attach-protocol client frame.
+
+#![deny(
+    clippy::string_slice,
+    clippy::indexing_slicing,
+    clippy::get_unwrap,
+    clippy::unwrap_in_result,
+    clippy::panic_in_result_fn,
+    clippy::unchecked_time_subtraction
+)]
+#![deny(missing_docs)]
+
+use jackin_core::container_paths;
 
 pub mod agent_status;
 pub mod attach;
@@ -44,8 +47,11 @@ pub enum ExecKind {
 /// allow-list of (name, kind, source) triples it will resolve.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecBinding {
+    /// `name` field.
     pub name: String,
+    /// `kind` field.
     pub kind: ExecKind,
+    /// `source` field.
     pub source: String,
 }
 
@@ -54,6 +60,7 @@ pub struct ExecBinding {
 /// [`control::frame`], same as the control socket.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CredRequest {
+    /// `refs` field.
     pub refs: Vec<ExecBinding>,
 }
 
@@ -63,23 +70,29 @@ pub struct CredRequest {
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum CredReply {
     /// Every requested credential resolved: `name -> value`.
-    Ok { values: BTreeMap<String, String> },
+    Ok {
+        /// Map of binding name to resolved secret value.
+        values: BTreeMap<String, String>,
+    },
     /// Resolution failed; `error` is operator-facing (no secret material).
-    Error { error: String },
+    Error {
+        /// Operator-facing failure text (never secret material).
+        error: String,
+    },
 }
 
 /// Filename written under `/jackin/run/` by the host launcher.
 pub const CAPSULE_CONFIG_FILENAME: &str = "agent.toml";
 
 /// Normalized runtime config path read by Capsule PID 1.
-pub const CAPSULE_CONFIG_PATH: &str = "/jackin/run/agent.toml";
+pub const CAPSULE_CONFIG_PATH: &str = container_paths::CAPSULE_CONFIG;
 
 /// Path inside the role container of the `jackin-exec` host credential
 /// resolver socket. The host creates it under the bind-mounted `/jackin/run`
 /// dir; the in-container capsule connects here to resolve on-demand
 /// credentials. Single source of truth so the mount side and the connect side
 /// cannot drift.
-pub const HOST_SOCK_CONTAINER_PATH: &str = "/jackin/run/host.sock";
+pub const HOST_SOCK_CONTAINER_PATH: &str = container_paths::HOST_SOCK;
 
 /// Filename the capsule writes the operator's dirty-exit choice to, under the
 /// per-instance state dir, for the host to read and execute on cleanup.
@@ -88,7 +101,7 @@ pub const EXIT_ACTION_FILENAME: &str = "exit-action.json";
 /// In-container path the capsule writes [`ExitAction`] to. The host's state-dir
 /// mount makes this readable from outside the container at
 /// `<data_dir>/<container>/state/exit-action.json`.
-pub const EXIT_ACTION_PATH: &str = "/jackin/state/exit-action.json";
+pub const EXIT_ACTION_PATH: &str = container_paths::EXIT_ACTION;
 
 /// The operator's choice for dirty isolated work at in-capsule exit. Decided
 /// inside the capsule (the dirty-exit modal); the host only **executes** it,
@@ -106,11 +119,15 @@ pub enum ExitAction {
 /// Host-validated role/session facts Capsule needs to spawn panes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CapsuleConfig {
+    /// `role` field.
     pub role: String,
+    /// `workdir` field.
     pub workdir: String,
     #[serde(default)]
+    /// `agents` field.
     pub agents: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    /// `models` field.
     pub models: BTreeMap<String, String>,
     /// Per-(agent, provider) model overrides from the role manifest. Outer key
     /// is the agent slug, inner key the provider's lowercase slug
@@ -158,8 +175,10 @@ pub struct CapsuleConfig {
 /// `[[claude.marketplaces]]` without `jackin-protocol` depending on `jackin-core`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClaudeMarketplace {
+    /// `source` field.
     pub source: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// `sparse` field.
     pub sparse: Vec<String>,
 }
 
@@ -169,6 +188,7 @@ pub struct ClaudeMarketplace {
 /// source of truth for the provider's overrides.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InitialProvider {
+    /// `label` field.
     pub label: String,
 }
 
@@ -348,10 +368,12 @@ impl Provider {
 }
 
 impl CapsuleConfig {
+    /// `supported_agents` method.
     pub fn supported_agents(&self) -> Vec<String> {
         self.agents.clone()
     }
 
+    /// `model_for_agent` method.
     pub fn model_for_agent(&self, agent: &str) -> Option<&str> {
         self.models.get(agent).map(String::as_str)
     }

@@ -7,12 +7,9 @@
 
 ## Status
 
-- **Implementation status**: IN PROGRESS in PR #714. The operator supplied live jackin❯ screenshots for several
-  affected states, and the PR now rewrites the corresponding narrow matchers: Codex stale working after a newer
-  prompt plus startup/idle prompt states, Claude blocked spend-limit dialogs, Claude live working/idle prompt
-  states, Amp startup idle and waiting/running-tools working footers, Kimi live `working...` and prompt-box idle,
-  and OpenCode 1.17 startup idle plus `esc interrupt` footer. Full pack rewrite remains incomplete until real
-  blocked/working/idle captures exist for each affected agent.
+- **Implementation status**: **RESIDUAL** (kept after 2026-07-12 deep audit). Some live-backed matchers shipped
+  (Claude/Codex/Amp/Kimi/OpenCode slices). Still open: fabricated kimi/amp/opencode literals, OSC-title only on
+  Claude, incomplete real blocked/working/idle triad per agent.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED (broaden-to-match can add false positives)
@@ -87,7 +84,7 @@ Every pack must match its plan-005 captured goldens for blocked/working/idle. Un
   Claude now has live blocked/working/idle coverage; Codex/Amp/Kimi/OpenCode have targeted live-capture-backed
   fixes; full blocked state coverage remains open
 - [x] The Claude idle caret uses the real `❯` (U+276F) via an anchored `line_regex`
-- [ ] Loose idle rules (`requires_all=[">"]`) are tightened; no false-idle on arbitrary `>` lines — BLOCKED
+- [x] Loose idle rules (`requires_all=[">"]`) are tightened; amp bare `>` idle removed (close-out)
   until real captures prove the replacement rules
 - [ ] OSC-title working/idle rules added where the agent emits a title spinner — PARTIAL: Claude title working/idle
   rules are present; Codex/Amp remain blocked until real captures prove title state in-container

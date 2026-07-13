@@ -151,6 +151,10 @@ impl PaneTree {
         match self {
             Self::Leaf(id) => vec![(*id, rect)],
             Self::HSplit { left, right, ratio } => {
+                #[expect(
+                    clippy::cast_sign_loss,
+                    reason = "ratio is a layout fraction in 0..=1; cols are non-negative"
+                )]
                 let left_cols = ((f32::from(rect.cols) * ratio).round() as u16)
                     .max(1)
                     .min(rect.cols.saturating_sub(1));
@@ -162,6 +166,10 @@ impl PaneTree {
                 v
             }
             Self::VSplit { top, bottom, ratio } => {
+                #[expect(
+                    clippy::cast_sign_loss,
+                    reason = "ratio is a layout fraction in 0..=1; rows are non-negative"
+                )]
                 let top_rows = ((f32::from(rect.rows) * ratio).round() as u16)
                     .max(1)
                     .min(rect.rows.saturating_sub(1));
@@ -484,6 +492,10 @@ impl PaneTree {
         match self {
             Self::Leaf(_) => None,
             Self::HSplit { left, right, ratio } => {
+                #[expect(
+                    clippy::cast_sign_loss,
+                    reason = "ratio is a layout fraction in 0..=1; cols are non-negative"
+                )]
                 let left_cols = ((f32::from(rect.cols) * ratio).round() as u16)
                     .max(1)
                     .min(rect.cols.saturating_sub(1));
@@ -509,6 +521,10 @@ impl PaneTree {
                 None
             }
             Self::VSplit { top, bottom, ratio } => {
+                #[expect(
+                    clippy::cast_sign_loss,
+                    reason = "ratio is a layout fraction in 0..=1; rows are non-negative"
+                )]
                 let top_rows = ((f32::from(rect.rows) * ratio).round() as u16)
                     .max(1)
                     .min(rect.rows.saturating_sub(1));

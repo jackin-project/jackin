@@ -154,6 +154,18 @@ backend = "cargo:cargo-fuzz"
 version = "0.6.45"
 backend = "cargo:cargo-hack"
 
+[[tools."cargo:cargo-hakari"]]
+version = "0.9.38"
+backend = "cargo:cargo-hakari"
+
+[[tools."cargo:cargo-llvm-cov"]]
+version = "0.8.7"
+backend = "cargo:cargo-llvm-cov"
+
+[[tools."cargo:cargo-mutants"]]
+version = "27.1.0"
+backend = "cargo:cargo-mutants"
+
 [[tools."cargo:cargo-nextest"]]
 version = "0.9.136"
 backend = "cargo:cargo-nextest"

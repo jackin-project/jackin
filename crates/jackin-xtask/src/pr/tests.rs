@@ -1,4 +1,6 @@
 use super::*;
+use crate::cmd::shell_quote;
+use std::ffi::OsStr;
 
 #[test]
 fn shell_quote_leaves_plain_paths_bare() {

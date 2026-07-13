@@ -136,5 +136,4 @@ fn parse_git_identity_config(output: &str) -> GitIdentity {
 }
 
 #[cfg(test)]
-#[path = "identity/tests.rs"]
 mod tests;

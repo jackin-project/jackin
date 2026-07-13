@@ -29,9 +29,10 @@ pub fn scroll_select(
     }
     let cur = list_state.selected.unwrap_or(0).min(count - 1);
     let next = if delta.is_negative() {
-        cur.saturating_sub(delta.unsigned_abs() as usize)
+        cur.saturating_sub(usize::from(delta.unsigned_abs()))
     } else {
-        cur.saturating_add(delta as usize).min(count - 1)
+        cur.saturating_add(usize::from(delta.unsigned_abs()))
+            .min(count - 1)
     };
     list_state.select(Some(next));
     next != cur

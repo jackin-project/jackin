@@ -22,7 +22,7 @@ path = "src/bin/role.rs"
 
 [[bin]]
 name = "build-jackin-capsule"
-path = "src/bin/build_jackin_capsule.rs"
+path = "src/bin/build_jackin_capsule/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -38,6 +38,7 @@ jackin-tui = { workspace = true }
 jackin-launch-tui = { workspace = true }
 jackin-console = { workspace = true }
 jackin-protocol = { workspace = true }
+jackin-usage = { workspace = true }
 clap = { workspace = true, features = ["derive", "color", "env"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -45,7 +46,6 @@ toml = { workspace = true }
 directories = { workspace = true }
 thiserror = { workspace = true }
 tempfile = { workspace = true }
-turso = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
 ratatui = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }
@@ -65,7 +65,7 @@ jackin-build-meta = { workspace = true }
 assert_cmd = { workspace = true }
 jackin-config = { workspace = true, features = ["test-support"] }
 jackin-env = { workspace = true, features = ["test-support"] }
-jackin-runtime = { workspace = true, features = ["test-support"] }
+jackin-test-support = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 predicates = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
@@ -89,7 +89,7 @@ e2e = []
 otlp = ["jackin-diagnostics/otlp"]
 # Enables `crate::operator_env::test_support::*` (the shared FakeOpWriter
 # fake used by rotate-cleanup tests). Mirrors the test-support features
-# in jackin-config, jackin-env, and jackin-runtime.
+# in jackin-config and jackin-env.
 test-support = ["jackin-env/test-support"]
 
 [lints]
