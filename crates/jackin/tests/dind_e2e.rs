@@ -435,6 +435,22 @@ fn chaos_launch_until_report(
     )
 }
 
+fn wait_for_report_marker(path: &std::path::Path, marker: &str, timeout: Duration) {
+    let start = std::time::Instant::now();
+    while start.elapsed() < timeout {
+        if std::fs::read_to_string(path).is_ok_and(|contents| contents.contains(marker)) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    let contents = std::fs::read_to_string(path).unwrap_or_default();
+    panic!(
+        "timed out waiting for report marker {marker:?} in {}\nreport:\n{}",
+        path.display(),
+        contents
+    );
+}
+
 #[test]
 fn chaos_kill_container_mid_session() {
     require_e2e_prereqs();
@@ -472,6 +488,11 @@ fn chaos_kill_container_mid_session() {
         );
         std::thread::sleep(Duration::from_millis(500));
     };
+    wait_for_report_marker(
+        &workspace_dir.join("jackin-e2e-report.txt"),
+        REPORT_END,
+        Duration::from_mins(3),
+    );
     std::thread::sleep(planned.delay);
     chaos::apply_fault(planned.fault, &container);
 

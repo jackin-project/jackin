@@ -288,6 +288,37 @@ jobs:
             export TMPDIR="$VELNOR_DOCKER_HOST_TEMP"
           fi
           cargo nextest run -p jackin --features e2e --profile docker-e2e --color=always --locked --offline
+      - name: Upload Docker E2E junit + timing
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nextest-junit-docker-e2e-${{ matrix.config.lane }}
+          path: target/nextest/docker-e2e/junit.xml
+          if-no-files-found: ignore
+      - name: Fail on unquarantined Docker E2E flakes
+        if: always()
+        shell: bash
+        run: |
+          [ -f target/nextest/docker-e2e/junit.xml ] || exit 0
+          if ! grep -q 'flaky="true"' target/nextest/docker-e2e/junit.xml; then
+            exit 0
+          fi
+          mapfile -t flaky_names < <(
+            grep 'flaky="true"' target/nextest/docker-e2e/junit.xml \
+              | sed -n 's/.*name="\([^"]*\)".*/\1/p'
+          )
+          unquarantined=()
+          for name in "${flaky_names[@]}"; do
+            [ -n "$name" ] || continue
+            if ! grep -Fq "name = \"$name\"" flaky-tests.toml 2>/dev/null; then
+              unquarantined+=("$name")
+            fi
+          done
+          if [ "${#unquarantined[@]}" -gt 0 ]; then
+            echo "::error::flaky Docker E2E test(s) detected and not quarantined in flaky-tests.toml"
+            printf "%s\n" "${unquarantined[@]}"
+            exit 1
+          fi
       - name: Capture sccache stats
         if: always()
         uses: ./.github/actions/sccache-stats
