@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Custom pane-body widget for rendering terminal screen content into a Ratatui Buffer.
 //!
 //! Blits `DamageGrid` cells directly into the Ratatui Buffer so the existing

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Top-level console TUI message helpers.
 //!
 //! Product-specific manager messages still live in the root crate while the

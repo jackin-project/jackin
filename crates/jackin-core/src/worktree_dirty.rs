@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared worktree dirty/unpushed assessment.
 //!
 //! Pure orchestration over the [`CommandRunner`] seam — this module spawns

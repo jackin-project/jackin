@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Refresh orchestration: scheduling, cooldown, shared filesystem sync.
 //!
 //! Carved out of `usage.rs` during codebase-health-enforcement Workstream W5

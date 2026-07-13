@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Terminal-rendering code for the jackin-capsule multiplexer.
 //!
 //! Everything that directly renders, paints, or computes the in-container

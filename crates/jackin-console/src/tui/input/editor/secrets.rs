@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Secrets tab helpers for the editor: value lookup, modal openers, delete/add flows.
 
 use crate::tui::screens::editor::view::{

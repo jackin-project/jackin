@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Target classification and context-aware resolution helpers for CLI commands.
 //!
 //! Resolves a raw target string (workspace name, directory path, or

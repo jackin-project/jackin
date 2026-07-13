@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `OpStructRunner` and `OpWriteRunner` traits for structured 1Password access.
 
 use jackin_core::op_types::{OpAccount, OpField, OpItem, OpVault};

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Core launch pipeline body extracted from the large `async` block in
 //! `load_role_with` (lines ~1001-2071 in the coordinator).
 //!

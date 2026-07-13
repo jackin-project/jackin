@@ -1,4 +1,8 @@
 #!/bin/sh
+
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 # Claude Code hook reporter for jackin❯ agent runtime status.
 #
 # Keep this as a dumb pipe: Claude sends the hook payload on stdin, and the

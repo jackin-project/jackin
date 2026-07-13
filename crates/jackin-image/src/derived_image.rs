@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Derived-image Dockerfile generation: renders the hook-copy section
 //! and other build-time additions layered on top of a role's base image.
 //!

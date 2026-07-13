@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Formatted terminal output helpers for launch surfaces.
 //!
 //! These helpers write status and decorative lines to stderr so the operator

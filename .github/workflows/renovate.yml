@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 name: Renovate
 
 on:
@@ -33,7 +36,7 @@ jobs:
           sudo chmod -R 0777 /tmp/renovate
 
       - name: Self-hosted Renovate
-        uses: renovatebot/github-action@b50d2ba2bd928235abdcc14d06dfafc217f1c565 # v46.1.18
+        uses: renovatebot/github-action@22e0a16091fc706b04affe6ae53d5e3358ac4023 # v46.1.19
         with:
           token: ${{ secrets.RENOVATE_TOKEN }}
         env:

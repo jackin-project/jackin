@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 use super::has_url_scheme;
 use super::is_host_open_url;
 use super::redact_url_for_log;
