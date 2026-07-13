@@ -1,18 +1,7 @@
-//! Role instance lifecycle: instance index, role-state directory, auth
-//! provisioning, and container naming.
+//! jackin-instance: instance naming, manifests, and lifecycle records.
 //!
-//! An "instance" is the on-disk and in-Docker state for a single running or
-//! previously-run role container. `InstanceIndex` tracks container status;
-//! `RoleState` holds the credential and state files bind-mounted into the
-//! container at launch.
-//!
-//! Not responsible for: Docker network/image/DinD resource management
-//! (`runtime/`), or mount materialization (`isolation/materialize.rs`).
-//!
-//! **Architecture Invariant:** L1 application crate. Allowed dependencies:
-//! `jackin-core`, `jackin-config`, `jackin-manifest`, `jackin-diagnostics`.
-//! No presentation or runtime dependencies — instance lifecycle stays
-//! below the bootstrap pipeline.
+//! **Architecture Invariant:** T3.
+//! Entry point: [`InstanceManifest`] — on-disk instance record.
 
 use anyhow::Context;
 use jackin_config::{AuthForwardMode, GithubAuthMode};
@@ -23,6 +12,8 @@ use std::path::{Path, PathBuf};
 
 mod auth;
 pub use auth::validate_sync_source_dir;
+mod error;
+pub use error::{InstanceError, SyncSourceValidationError};
 pub mod manifest;
 pub mod naming;
 pub use manifest::{
@@ -573,13 +564,15 @@ impl RoleState {
                     });
                     gh_handle
                         .join()
-                        .map_err(|_| anyhow::anyhow!("GitHub auth provisioning task panicked"))??
+                        .map_err(|_| InstanceError::GithubAuthTaskPanicked)??
                 };
 
             let mut auth_provisions = Vec::with_capacity(handles.len());
             for (agent, handle) in handles {
                 auth_provisions.push(handle.join().map_err(|_| {
-                    anyhow::anyhow!("{} auth provisioning task panicked", agent.slug())
+                    InstanceError::AuthProvisionTaskPanicked {
+                        agent: agent.slug().to_owned(),
+                    }
                 })??);
             }
 
@@ -690,9 +683,11 @@ impl RoleState {
 
             let mut prepared = Vec::with_capacity(handles.len());
             for handle in handles {
-                prepared.push(handle.join().map_err(|_| {
-                    anyhow::anyhow!("background agent auth provisioning task panicked")
-                })??);
+                prepared.push(
+                    handle
+                        .join()
+                        .map_err(|_| InstanceError::BackgroundAuthTaskPanicked)??,
+                );
             }
             anyhow::Ok(prepared)
         })?;

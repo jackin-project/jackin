@@ -15,6 +15,7 @@
 
 use crate::instance::{InstanceManifest, InstanceStatus};
 use anyhow::Context as _;
+use jackin_core::container_paths;
 use jackin_core::{CommandRunner, JACKIN_STATUS_CMD, RunOptions};
 use jackin_docker::docker_client::DockerApi;
 use jackin_protocol::attach::SpawnRequest;
@@ -35,7 +36,7 @@ use std::path::PathBuf;
 /// propagates loudly because `||` short-circuits at the first failure
 /// only — there is no `|| true` suppression of the second command's
 /// errors.
-pub const JACKIN_CAPSULE_PATH: &str = "/jackin/runtime/jackin-capsule";
+pub const JACKIN_CAPSULE_PATH: &str = container_paths::CAPSULE_BIN;
 pub const ATTACH_PROXY_SUBCOMMAND: &str = "attach-proxy";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -380,12 +381,7 @@ pub(super) async fn reconnect_or_create_session_with_focus(
     }
     let focus_arg = focus_session.map(|id| id.to_string());
     let run_as_user = crate::runtime::identity::host_run_as_user();
-    let mut args: Vec<&str> = vec![
-        "exec",
-        "-it",
-        container_name,
-        "/jackin/runtime/jackin-capsule",
-    ];
+    let mut args: Vec<&str> = vec!["exec", "-it", container_name, container_paths::CAPSULE_BIN];
     if let Some(flag) = host_alt_screen_exec_flag() {
         args.insert(1, flag);
     }
@@ -419,6 +415,14 @@ pub(super) async fn reconnect_or_create_session_with_focus(
             Some("error")
         },
     );
+    if outcome.is_ok()
+        && let Some(run) = jackin_diagnostics::active_run()
+    {
+        run.compact(
+            jackin_diagnostics::otel_events::SESSION_DETACH,
+            "operator detached from capsule session",
+        );
+    }
     // The capsule has detached; re-claim the alt screen before any post-attach
     // work so the exit flow does not flash the operator's shell.
     jackin_diagnostics::reassert_alt_screen();
@@ -580,7 +584,7 @@ pub async fn spawn_shell_session(
         "exec",
         "-it",
         container_name,
-        "/jackin/runtime/jackin-capsule",
+        container_paths::CAPSULE_BIN,
         "new",
     ];
     insert_run_as_user(&mut args, run_as_user.as_deref());
@@ -612,6 +616,14 @@ pub async fn spawn_shell_session(
             Some("error")
         },
     );
+    if result.is_ok()
+        && let Some(run) = jackin_diagnostics::active_run()
+    {
+        run.compact(
+            jackin_diagnostics::otel_events::SESSION_DETACH,
+            "operator detached from shell session",
+        );
+    }
     jackin_diagnostics::reassert_alt_screen();
     eprintln!();
     result?;
@@ -699,7 +711,7 @@ pub async fn spawn_agent_session(
         exec_args.push(flag.as_str());
     }
     exec_args.push(container_name);
-    exec_args.extend_from_slice(&["/jackin/runtime/jackin-capsule", "new", agent.slug()]);
+    exec_args.extend_from_slice(&[container_paths::CAPSULE_BIN, "new", agent.slug()]);
     // When a provider was selected in the console, pass it as a flag so the
     // daemon receives SpawnRequest::AgentWithProvider and labels the tab correctly.
     let provider_flag = provider_label.map(|label| format!("--provider={label}"));
@@ -731,6 +743,14 @@ pub async fn spawn_agent_session(
             Some("error")
         },
     );
+    if result.is_ok()
+        && let Some(run) = jackin_diagnostics::active_run()
+    {
+        run.compact(
+            jackin_diagnostics::otel_events::SESSION_DETACH,
+            "operator detached from agent session",
+        );
+    }
     jackin_diagnostics::reassert_alt_screen();
     eprintln!();
     result?;

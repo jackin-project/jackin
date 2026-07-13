@@ -1,3 +1,8 @@
+//! jackin-capsule: in-container capsule daemon, sessions, and TUI.
+//!
+//! **Architecture Invariant:** T4.
+//! Entry point: [`daemon`] — capsule daemon module the binary runs.
+
 use anyhow::{Result, bail};
 use jackin_capsule::{
     client, config, daemon, exec, firewall, mcp_server, output, protocol::attach::SpawnRequest,
@@ -178,7 +183,7 @@ async fn run_usage_subcommand(args: &[String]) -> Result<()> {
     match args.get(2).map(String::as_str) {
         Some("accounts") => client::run_usage_accounts().await,
         Some("verify") => client::run_usage_verify().await,
-        Some("claude-cli") => client::run_usage_claude_cli().await,
+        Some("claude-cli") => client::run_usage_claude_cli(),
         Some(other) => {
             bail!("unknown usage subcommand {other:?} — known: accounts, verify, claude-cli")
         }

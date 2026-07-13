@@ -1,10 +1,14 @@
 #[cfg(test)]
 use super::detect_workspace_edit_drift;
+use jackin_core::WorkspaceName;
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 use crate::isolation::state::{CleanupStatus, IsolationRecord, write_records};
-use crate::runtime::test_support::FakeDockerClient;
 use jackin_core::JackinPaths;
 use jackin_core::MountIsolation;
 use jackin_docker::docker_client::ContainerRow;
+use jackin_test_support::FakeDockerClient;
 use tempfile::TempDir;
 
 fn record_for(workspace: &str, container: &str, dst: &str, src: &str) -> IsolationRecord {
@@ -77,7 +81,7 @@ async fn detect_drift_flags_running_containers() {
         ]])),
         ..Default::default()
     };
-    let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker)
+    let det = detect_workspace_edit_drift(&paths, &wn("jackin"), &edited, &docker)
         .await
         .unwrap();
     assert_eq!(
@@ -110,7 +114,7 @@ async fn detect_drift_flags_stopped_records_when_src_changes() {
         MountIsolation::Worktree,
     )];
     let docker = FakeDockerClient::default();
-    let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker)
+    let det = detect_workspace_edit_drift(&paths, &wn("jackin"), &edited, &docker)
         .await
         .unwrap();
     assert!(det.running_containers.is_empty());
@@ -141,7 +145,7 @@ async fn detect_drift_quiet_when_src_unchanged() {
         MountIsolation::Worktree,
     )];
     let docker = FakeDockerClient::default();
-    let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker)
+    let det = detect_workspace_edit_drift(&paths, &wn("jackin"), &edited, &docker)
         .await
         .unwrap();
     assert!(det.running_containers.is_empty());
@@ -180,7 +184,7 @@ async fn detect_drift_does_not_currently_flag_isolation_mode_flips() {
         MountIsolation::Shared,
     )];
     let docker = FakeDockerClient::default();
-    let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker)
+    let det = detect_workspace_edit_drift(&paths, &wn("jackin"), &edited, &docker)
         .await
         .unwrap();
     // Current behavior — known gap. If this test starts failing
@@ -222,7 +226,7 @@ async fn detect_drift_flags_record_when_dst_removed_from_edit() {
         MountIsolation::Shared,
     )];
     let docker = FakeDockerClient::default();
-    let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker)
+    let det = detect_workspace_edit_drift(&paths, &wn("jackin"), &edited, &docker)
         .await
         .unwrap();
     assert!(det.running_containers.is_empty());

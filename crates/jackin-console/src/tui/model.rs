@@ -16,7 +16,10 @@ mod tests;
 /// Single-variant today; kept as `enum` so future stages can land without
 /// churning every match site.
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub enum ConsoleAppStage<Manager> {
     Manager(Manager),
 }

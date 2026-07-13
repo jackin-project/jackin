@@ -1,4 +1,7 @@
-#[allow(clippy::wildcard_imports)]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::super::*;
 
 impl<
@@ -384,15 +387,11 @@ impl<
 
     pub fn pop_modal_chain(&mut self) {
         self.modal = self.modal_parents.pop();
-        if self.modal.is_none() {
-            self.drop_modal_scratch();
-        }
     }
 
     pub fn clear_modal_chain(&mut self) {
         self.modal = None;
         self.modal_parents.clear();
-        self.drop_modal_scratch();
     }
 
     pub fn dismiss_active_modal(&mut self) {
@@ -426,8 +425,6 @@ impl<
             .as_ref()
             .is_some_and(EditorRoleOverridePickerModal::is_role_override_picker)
     }
-
-    fn drop_modal_scratch(&mut self) {}
 
     #[must_use]
     pub fn auth_form_can_generate_token(&self) -> bool

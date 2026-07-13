@@ -1,0 +1,3 @@
+- Fakes stay deterministic: no wall-clock reads, no unseeded randomness. A test-support fake that flakes defeats its purpose.
+- Production crates must never depend on this crate — dev-dependencies only. A normal (non-dev) dependency edge from any crate onto `jackin-test-support` is a bug, not a style choice.
+- Moves into this crate are byte-for-byte behavior-preserving (signatures + logic unchanged); only visibility (`pub(super)` → `pub`) may widen when a helper crosses the crate boundary for the first time.

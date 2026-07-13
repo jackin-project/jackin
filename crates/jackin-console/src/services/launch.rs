@@ -4,7 +4,7 @@ use jackin_config::{
     AppConfig, LoadWorkspaceInput, MountConfig, ResolvedWorkspace, current_dir_workspace,
     resolve_load_workspace,
 };
-use jackin_core::{Agent, RoleSelector};
+use jackin_core::{Agent, RoleSelector, WorkspaceName};
 
 #[derive(Debug, Clone)]
 pub struct WorkspaceChoice {
@@ -194,7 +194,8 @@ pub fn resolve_committed_agent_launch(
         return Ok(None);
     };
     let workspace = resolve_selected_workspace(config, cwd, &choice, &role)?;
-    let providers = providers_for_launch(config, &choice.name, &role.key(), agent);
+    let workspace_name = WorkspaceName::parse(&choice.name).map_err(anyhow::Error::from)?;
+    let providers = providers_for_launch(config, &workspace_name, &role.key(), agent);
     Ok(Some(CommittedAgentLaunch {
         input,
         role,
@@ -208,7 +209,7 @@ pub fn resolve_committed_agent_launch(
 /// → workspace-role) via `jackin_env::lookup_operator_env_raw`.
 pub fn providers_for_launch(
     config: &AppConfig,
-    workspace_name: &str,
+    workspace_name: &WorkspaceName,
     role_selector: &str,
     agent: Agent,
 ) -> Vec<jackin_protocol::Provider> {
@@ -220,7 +221,7 @@ pub fn providers_for_launch(
 
 fn operator_key_present(
     config: &AppConfig,
-    workspace_name: &str,
+    workspace_name: &WorkspaceName,
     role_selector: &str,
     env_var: &str,
 ) -> bool {

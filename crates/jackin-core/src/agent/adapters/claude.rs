@@ -12,6 +12,7 @@ use crate::agent::runtime::{
 const FALLBACK_INSTALL_COMMAND: &str =
     bounded_fallback_curl!("https://claude.ai/install.sh", " | bash");
 
+/// [`crate::agent::runtime::AgentRuntime`] adapter for Claude Code.
 #[derive(Debug)]
 pub struct ClaudeRuntime;
 

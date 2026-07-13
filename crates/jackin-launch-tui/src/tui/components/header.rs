@@ -57,6 +57,10 @@ fn loading_line_spans(view: &LaunchView, frozen: bool) -> Vec<Span<'static>> {
     }
 
     let len = chars.len();
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "sweep brightness is non-negative; lerp stays in u8 range"
+    )]
     let lerp = |a: u8, b: u8, t: f32| (f32::from(b) - f32::from(a)).mul_add(t, f32::from(a)) as u8;
     // A bright band sweeps across the line every ~len+16 frames.
     let period = (len + 16) as f32;

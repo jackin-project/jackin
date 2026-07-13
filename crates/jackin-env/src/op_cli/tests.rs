@@ -53,6 +53,62 @@ fn op_read_args_omit_account_when_unpinned() {
 }
 
 #[test]
+fn spawn_failure_is_typed_not_installed_and_keeps_guidance() {
+    let err = op_spawn_error(
+        "definitely-missing-op-binary",
+        &std::io::Error::new(std::io::ErrorKind::NotFound, "No such file"),
+    );
+    let probe = err
+        .downcast_ref::<jackin_core::OpProbeError>()
+        .expect("typed OpProbeError source");
+    assert!(
+        matches!(probe, jackin_core::OpProbeError::NotInstalled { .. }),
+        "{probe:?}"
+    );
+    let display = err.to_string();
+    assert!(
+        display.contains("failed to spawn 1Password CLI"),
+        "operator-visible text must keep spawn guidance: {display}"
+    );
+    assert!(
+        display.contains("is `op` installed"),
+        "operator-visible text must keep PATH guidance: {display}"
+    );
+}
+
+#[test]
+fn not_signed_in_stderr_is_typed_and_keeps_signin_guidance() {
+    // Construct the same shape `run_op_with_timeout` emits for a not-signed
+    // stderr signature, so the display parity + downcast contract is pinned
+    // without spawning a real `op`.
+    let exit_msg =
+        "1Password CLI exited with status 1 running `op account list`: not currently signed in";
+    let err = anyhow::Error::new(jackin_core::OpProbeError::NotSignedIn {
+        detail: exit_msg.to_owned(),
+    })
+    .context(format!(
+        "1Password CLI is not signed in (running `op account list --format json` returned: {exit_msg}). \
+         Run `op signin` in your shell, then retry."
+    ));
+    let probe = err
+        .downcast_ref::<jackin_core::OpProbeError>()
+        .expect("typed OpProbeError source");
+    assert!(
+        matches!(probe, jackin_core::OpProbeError::NotSignedIn { .. }),
+        "{probe:?}"
+    );
+    let display = err.to_string();
+    assert!(
+        display.contains("not signed in"),
+        "display must keep not-signed-in guidance: {display}"
+    );
+    assert!(
+        display.contains("Run `op signin`"),
+        "display must keep signin guidance: {display}"
+    );
+}
+
+#[test]
 fn text_file_busy_retry_eventually_succeeds() {
     let attempts = std::cell::Cell::new(0);
 

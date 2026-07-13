@@ -86,7 +86,7 @@ impl FileBrowserState {
         match key.code {
             KeyCode::Char('m' | 'M') => {
                 self.dismiss_git_prompt();
-                self.commit_or_reject(path)
+                Self::commit_or_reject(path)
             }
             // `p` for "pick a subdirectory" — matches the button label
             // (renamed from `Enter` to `Pick` in batch 16).
@@ -112,7 +112,7 @@ impl FileBrowserState {
                 let focus = self.pending_git_focus;
                 self.dismiss_git_prompt();
                 match focus {
-                    GitPromptFocus::MountHere => self.commit_or_reject(path),
+                    GitPromptFocus::MountHere => Self::commit_or_reject(path),
                     GitPromptFocus::EnterIn => FileBrowserOutcome::NavigateTo(path),
                     GitPromptFocus::Cancel => FileBrowserOutcome::Continue,
                 }

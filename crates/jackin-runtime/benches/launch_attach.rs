@@ -11,6 +11,7 @@
 //! Record the numbers in the E0 PR description as the baseline. Future carve
 //! PRs (E1, E2) must show no measurable regression against these numbers.
 
+use jackin_core::WorkspaceName;
 use std::path::Path;
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -68,7 +69,15 @@ fn new_manifest_input() -> NewInstanceManifest<'static> {
 fn bench_container_name(c: &mut Criterion) {
     let selector = make_selector();
     c.bench_function("naming/container_name_with_id", |b| {
-        b.iter(|| container_name_with_id(Some(WORKSPACE), &selector, INSTANCE_ID));
+        b.iter(|| {
+            container_name_with_id(
+                Some(&WorkspaceName::parse(WORKSPACE).unwrap_or_else(|_| {
+                    unreachable!("bench workspace name is a fixed valid fixture")
+                })),
+                &selector,
+                INSTANCE_ID,
+            )
+        });
     });
 }
 

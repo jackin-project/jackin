@@ -2,7 +2,7 @@
 title: "Unifying the Settings and Editor Config Surfaces: Duplication Map and Target Architecture"
 ---
 
-**Status**: Design rationale and target architecture behind [Unify the settings and workspace-editor surfaces](/roadmap/unify-settings-editor-surfaces/). The auth source-folder validation and shared error dialog described here have shipped; the modal-enum collapse, host-trait, and per-domain convergence below are proposed target shape, not yet implemented. This page keeps the duplication inventory and architecture reasoning out of the roadmap item's day-to-day tracking.
+**Status**: Design rationale and target architecture for the settings/editor convergence now tracked under [Codebase health: Rust strictness, structure, and AI reviewability](/roadmap/codebase-health-enforcement/). The auth source-folder validation and shared error dialog described here have shipped; the modal-enum collapse, host-trait, and per-domain convergence below are proposed target shape, not yet implemented. This page keeps the duplication inventory and architecture reasoning out of the roadmap item's day-to-day tracking.
 
 ## Problem
 
@@ -131,7 +131,7 @@ Infra modals that the editor shares with non-auth flows (`TextInput` for mount d
 
 ## Module placement
 
-Per the [TUI architecture](/reference/tui/): the shared config-surface model + a `ConfigModal` enum would live in `jackin-console` beside the existing shared components; pure decision/flatten logic lives in the screens' update modules (already partly there); dispatch/apply helpers would move into a shared `jackin-console` update module over time. The current handlers live in the app crate's input layer (<RepoFile path="crates/jackin-console/src/tui/input/editor.rs" />, <RepoFile path="crates/jackin-console/src/tui/input/global_mounts.rs" />); any move toward a `jackin-console` update layer should stage so each slice stays small and reviewable. This also relates to the [Split input/editor.rs](/roadmap/split-input-editor/) item; the app command-dispatch split has already landed there, so the remaining sequencing concern is keeping the editor/settings split from duplicating one implementation.
+Per the [TUI architecture](/reference/tui/): the shared config-surface model + a `ConfigModal` enum would live in `jackin-console` beside the existing shared components; pure decision/flatten logic lives in the screens' update modules (already partly there); dispatch/apply helpers would move into a shared `jackin-console` update module over time. The current handlers live in the app crate's input layer (<RepoFile path="crates/jackin-console/src/tui/input/editor.rs" />, <RepoFile path="crates/jackin-console/src/tui/input/global_mounts.rs" />); any move toward a `jackin-console` update layer should stage so each slice stays small and reviewable. This now relates to the consolidated [codebase-health roadmap](/roadmap/codebase-health-enforcement/), which owns both the remaining editor input split and settings/editor convergence.
 
 ## Feasibility
 
@@ -164,6 +164,6 @@ Open (raise before the relevant slice):
 
 ## Related work
 
-- [Unify the settings and workspace-editor surfaces](/roadmap/unify-settings-editor-surfaces/) — the roadmap item this design rationale supports.
+- [Codebase health: Rust strictness, structure, and AI reviewability](/roadmap/codebase-health-enforcement/) — the consolidated roadmap item that now owns this convergence work.
 - [Auth source-folder sync spec](/reference/developer-reference/specs/auth-source-folder-sync/) — the behavioral invariants the auth slice must preserve.
 - [TUI architecture](/reference/tui/) — the model/decision/view split this design follows.

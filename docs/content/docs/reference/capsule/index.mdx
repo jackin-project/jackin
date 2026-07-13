@@ -374,7 +374,7 @@ jackin❯ itself has no knowledge of how to build `jackin-capsule` from source. 
 
 ### Building for local development
 
-Use the `build-jackin-capsule` binary (defined in <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs" />) to compile `jackin-capsule` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
+Use the `build-jackin-capsule` binary (defined in <RepoFile path="crates/jackin/src/bin/build_jackin_capsule/main.rs" />) to compile `jackin-capsule` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
 
 - `arm64` → `aarch64-unknown-linux-gnu.2.17`
 - `amd64` → `x86_64-unknown-linux-gnu.2.17`
@@ -421,7 +421,7 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 | Component | Relationship |
 |---|---|
 | <RepoFile path="crates/jackin-image/src/capsule_binary.rs" /> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
-| <RepoFile path="crates/jackin/src/bin/build_jackin_capsule.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
+| <RepoFile path="crates/jackin/src/bin/build_jackin_capsule/main.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
 | <RepoFile path="crates/jackin-image/src/derived_image.rs" /> | Copies binary into derived image build context |
 | <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
 | <RepoFile path="crates/jackin-runtime/src/runtime/launch.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |

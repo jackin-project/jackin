@@ -14,12 +14,16 @@
 /// pick a colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rgb {
+    /// Red channel (0–255).
     pub r: u8,
+    /// Green channel (0–255).
     pub g: u8,
+    /// Blue channel (0–255).
     pub b: u8,
 }
 
 impl Rgb {
+    /// Construct an RGB triple from channel values.
     pub const fn new(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b }
     }

@@ -120,15 +120,12 @@ pub async fn force_cleanup_isolated(
         if branch_still_present(runner, &record.original_src, &record.scratch_branch).await
             == Some(true)
         {
-            anyhow::bail!(
-                "scratch branch `{}` still present after `git branch -D` on host repo `{}`; \
-                 record retained at `{}` so re-running `jackin purge` is possible after \
-                 resolving the underlying issue (branch may be checked out in another worktree, \
-                 or you may lack permission to delete it).",
-                record.scratch_branch,
-                record.original_src,
-                container_state_dir.display(),
-            );
+            return Err(crate::IsolationError::ScratchBranchRemains {
+                branch: record.scratch_branch.clone(),
+                repo: record.original_src.clone(),
+                state_dir: container_state_dir.to_path_buf(),
+            }
+            .into());
         }
     } else {
         debug_log!(
@@ -157,26 +154,23 @@ pub async fn force_cleanup_isolated(
             wt = record.worktree_path,
         );
         if let Err(e) = std::fs::remove_dir_all(wt) {
-            anyhow::bail!(
-                "could not remove worktree directory `{}`: {e}; \
-                 record retained at `{}` so re-running `jackin purge` is possible \
-                 after resolving the underlying issue (file in use, permission \
-                 denied, or filesystem error).",
-                record.worktree_path,
-                container_state_dir.display(),
-            );
+            return Err(crate::IsolationError::WorktreeRemove {
+                path: record.worktree_path.clone(),
+                state_dir: container_state_dir.to_path_buf(),
+                source: e,
+            }
+            .into());
         }
     }
 
     // Final guard: if the worktree path still exists at this point
     // (shouldn't happen given the rm above), bail rather than forget.
     if wt.exists() {
-        anyhow::bail!(
-            "worktree directory `{}` still present after cleanup; \
-             record retained at `{}` so re-running `jackin purge` is possible.",
-            record.worktree_path,
-            container_state_dir.display(),
-        );
+        return Err(crate::IsolationError::WorktreeStillPresent {
+            path: record.worktree_path.clone(),
+            state_dir: container_state_dir.to_path_buf(),
+        }
+        .into());
     }
 
     remove_record(container_state_dir, &record.mount_dst)?;
@@ -193,20 +187,18 @@ fn force_cleanup_clone(record: &IsolationRecord, container_state_dir: &Path) -> 
     );
     let clone_path = Path::new(&record.worktree_path);
     if clone_path.exists() {
-        std::fs::remove_dir_all(clone_path).map_err(|e| {
-            anyhow::anyhow!(
-                "could not remove clone directory `{}`: {e}; record retained at `{}` so re-running `jackin purge` is possible after resolving the underlying issue",
-                record.worktree_path,
-                container_state_dir.display(),
-            )
+        std::fs::remove_dir_all(clone_path).map_err(|e| crate::IsolationError::CloneRemove {
+            path: record.worktree_path.clone(),
+            state_dir: container_state_dir.to_path_buf(),
+            source: e,
         })?;
     }
     if clone_path.exists() {
-        anyhow::bail!(
-            "clone directory `{}` still present after cleanup; record retained at `{}` so re-running `jackin purge` is possible.",
-            record.worktree_path,
-            container_state_dir.display(),
-        );
+        return Err(crate::IsolationError::CloneStillPresent {
+            path: record.worktree_path.clone(),
+            state_dir: container_state_dir.to_path_buf(),
+        }
+        .into());
     }
     remove_record(container_state_dir, &record.mount_dst)?;
     Ok(())
@@ -260,14 +252,12 @@ pub async fn purge_isolated_for_container(
         }
     }
     if !failed.is_empty() {
-        anyhow::bail!(
-            "purge of isolated mounts had {n} failure(s): {list}; \
-             record(s) retained at `{dir}` so re-running `jackin purge` is possible \
-             after resolving the underlying issue(s) (see warnings above for details)",
-            n = failed.len(),
-            list = failed.join(", "),
-            dir = container_state_dir.display(),
-        );
+        return Err(crate::IsolationError::PurgePartialFailure {
+            n: failed.len(),
+            list: failed.join(", "),
+            state_dir: container_state_dir.to_path_buf(),
+        }
+        .into());
     }
     Ok(())
 }

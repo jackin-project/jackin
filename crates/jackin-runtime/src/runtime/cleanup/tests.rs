@@ -1,12 +1,11 @@
 //! Tests for `cleanup`.
 use super::super::naming::matching_family;
-use super::super::test_support::FakeRunner;
 use super::*;
 use crate::instance::{DockerResources, InstanceManifest};
-use crate::runtime::test_support::FakeDockerClient;
 use jackin_core::paths::JackinPaths;
 use jackin_core::selector::RoleSelector;
 use jackin_docker::docker_client::{ContainerRow, ContainerState, NetworkRow};
+use jackin_test_support::{FakeDockerClient, FakeRunner};
 use std::collections::{HashMap, VecDeque};
 use tempfile::tempdir;
 
