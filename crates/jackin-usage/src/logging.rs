@@ -17,6 +17,7 @@
 //!   - If the file cannot be opened for append, the logger silently
 //!     falls back to stderr-only. Logging must never block startup.
 
+use jackin_core::container_paths;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -47,7 +48,7 @@ pub fn trace_enabled() -> bool {
 
 /// Default in-container path. The host's state-dir mount makes this
 /// readable from outside the container.
-const DEFAULT_LOG_PATH: &str = "/jackin/state/multiplexer.log";
+const DEFAULT_LOG_PATH: &str = container_paths::MULTIPLEXER_LOG;
 const MAX_LOG_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Resolve the log path. Honours `JACKIN_CAPSULE_LOG_PATH` first,
@@ -141,6 +142,28 @@ pub fn init() {
             f,
             "{ts} ---- multiplexer start pid={pid} debug={debug} trace={trace} path={} ----",
             path.display()
+        );
+        // One context banner lets the file correlate offline to the host run /
+        // OTLP timeline. Per-line stamping is deliberately out (volume).
+        let (run_id, session_id, traceparent) = crate::telemetry::session_context().map_or_else(
+            || {
+                (
+                    std::env::var("JACKIN_RUN_ID").unwrap_or_else(|_| "-".to_owned()),
+                    "-".to_owned(),
+                    std::env::var("TRACEPARENT").unwrap_or_else(|_| "-".to_owned()),
+                )
+            },
+            |(session_id, run_id, traceparent)| {
+                (
+                    run_id.unwrap_or_else(|| "-".to_owned()),
+                    session_id,
+                    traceparent.unwrap_or_else(|| "-".to_owned()),
+                )
+            },
+        );
+        let _unused = writeln!(
+            f,
+            "{ts} [jackin-capsule] context run_id={run_id} session_id={session_id} traceparent={traceparent}"
         );
     }
     drop(LOG_FILE.set(Mutex::new(file)));

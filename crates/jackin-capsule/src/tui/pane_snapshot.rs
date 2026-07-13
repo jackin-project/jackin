@@ -3,13 +3,14 @@
 //! `(0, 0)` lands at `(dest_row, dest_col)`.
 
 use std::io::Write;
+use std::ops::Range;
 
 use jackin_tui::ansi::{RESET, fg};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct CellSnapshot {
-    pub(crate) contents: String,
-    pub(crate) width: u16,
+pub struct CellSnapshot {
+    pub contents: String,
+    pub width: u16,
 }
 
 /// Render/selection projection derived from `DamageGrid`.
@@ -18,12 +19,13 @@ pub(crate) struct CellSnapshot {
 /// scrollback text selection and operator-facing screen dumps until those
 /// callers can consume `GridSnapshot` / dirty spans directly.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct RowSnapshot {
-    pub(crate) cells: Vec<CellSnapshot>,
+pub struct RowSnapshot {
+    pub cells: Vec<CellSnapshot>,
 }
 
 impl RowSnapshot {
-    pub(crate) fn text_range(&self, from_col: u16, to_col: u16) -> String {
+    #[must_use]
+    pub fn text_range(&self, from_col: u16, to_col: u16) -> String {
         let mut out = String::new();
         for cell in row_range_cells(self, from_col, to_col) {
             out.push_str(&cell.contents);
@@ -36,7 +38,8 @@ impl RowSnapshot {
     /// cell text together. Width-0 cells are dropped after the column
     /// accumulation: their inclusive range would be inverted (or alias
     /// column 0), and no display column maps to them.
-    pub(crate) fn display_cells(&self) -> Vec<DisplayCell<'_>> {
+    #[must_use]
+    pub fn display_cells(&self) -> Vec<DisplayCell<'_>> {
         let mut col = 0u16;
         self.cells
             .iter()
@@ -55,10 +58,10 @@ impl RowSnapshot {
 
 /// A pane cell paired with the inclusive display columns it occupies.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct DisplayCell<'a> {
-    pub(crate) start_col: u16,
-    pub(crate) end_col: u16,
-    pub(crate) contents: &'a str,
+pub struct DisplayCell<'a> {
+    pub start_col: u16,
+    pub end_col: u16,
+    pub contents: &'a str,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -85,7 +88,10 @@ pub enum PaneBodyDim {
 /// Thumb colour is phosphor-green for focused panes, gray for the
 /// rest — matches the surrounding border so focus and chrome
 /// agree.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 pub fn draw_scrollbar(
     buf: &mut Vec<u8>,
     pane_row: u16,
@@ -141,7 +147,8 @@ pub fn draw_scrollbar(
 }
 
 /// Snapshot a single row from a `DamageGrid` into a `RowSnapshot`.
-pub(crate) fn snapshot_damagegrid_row(
+#[must_use]
+pub fn snapshot_damagegrid_row(
     grid: &jackin_term::DamageGrid,
     row: u16,
     cols_to_draw: u16,
@@ -169,26 +176,70 @@ pub(crate) fn snapshot_damagegrid_row(
     RowSnapshot { cells }
 }
 
-/// Build a full-screen snapshot from a `DamageGrid`.
 /// Build a content-coordinate snapshot: retained scrollback rows oldest-first,
 /// followed by the current live screen. Selection copy uses this so a range can
 /// span outside the currently visible viewport.
-pub(crate) fn pane_content_from_damagegrid(
+#[must_use]
+pub fn pane_content_from_damagegrid(
     grid: &jackin_term::DamageGrid,
     viewport_cols: u16,
+) -> Vec<RowSnapshot> {
+    let (screen_rows, _screen_cols) = grid.size();
+    let filled = grid.scrollback_len();
+    let total = filled.saturating_add(usize::from(screen_rows));
+    pane_content_range_from_damagegrid(grid, viewport_cols, 0..total)
+}
+
+/// Content-coordinate snapshot of a half-open row range.
+///
+/// Index 0 of the returned vec is content row `content_rows.start` (after
+/// clamping). Callers that need absolute content coordinates keep the range
+/// start and map `rows[i]` → content row `content_rows.start + i`.
+///
+/// Used by per-mouse-event link resolution so a single anchor row does not
+/// materialize the entire retained scrollback (up to the 10k-row bound).
+#[must_use]
+pub fn pane_content_range_from_damagegrid(
+    grid: &jackin_term::DamageGrid,
+    viewport_cols: u16,
+    content_rows: Range<usize>,
 ) -> Vec<RowSnapshot> {
     let (screen_rows, screen_cols) = grid.size();
     let cols_to_draw = viewport_cols.min(screen_cols);
     let filled = grid.scrollback_len();
-    let scrollback_rows = grid.scrollback_rows_at_offset(filled, filled);
-    let mut snapshot =
-        Vec::with_capacity(scrollback_rows.len().saturating_add(screen_rows as usize));
+    let total = filled.saturating_add(usize::from(screen_rows));
 
-    for sb_row in scrollback_rows {
-        snapshot.push(snapshot_damagegrid_cells(sb_row, cols_to_draw));
+    let start = content_rows.start.min(total);
+    let end = content_rows.end.min(total);
+    if start >= end {
+        return Vec::new();
     }
-    for row in 0..screen_rows {
-        snapshot.push(snapshot_damagegrid_row(grid, row, cols_to_draw));
+
+    let mut snapshot = Vec::with_capacity(end - start);
+
+    // Scrollback portion: content indices [0, filled) map 1:1 onto the
+    // oldest-first scrollback store. `scrollback_rows_at_offset(offset, n)`
+    // returns rows starting at store index `filled - offset` — request
+    // offset = filled - sb_start so the first returned row is content `sb_start`.
+    let sb_start = start.min(filled);
+    let sb_end = end.min(filled);
+    if sb_start < sb_end {
+        let offset_from_tail = filled.saturating_sub(sb_start);
+        let max_rows = sb_end - sb_start;
+        for sb_row in grid.scrollback_rows_at_offset(offset_from_tail, max_rows) {
+            snapshot.push(snapshot_damagegrid_cells(sb_row, cols_to_draw));
+        }
+    }
+
+    // Live-screen portion: content indices [filled, filled + screen_rows).
+    let screen_start = start.saturating_sub(filled);
+    let screen_end = end.saturating_sub(filled);
+    let screen_limit = usize::from(screen_rows);
+    let screen_start = screen_start.min(screen_limit);
+    let screen_end = screen_end.min(screen_limit);
+    for row in screen_start..screen_end {
+        let row_u16 = u16::try_from(row).unwrap_or(u16::MAX);
+        snapshot.push(snapshot_damagegrid_row(grid, row_u16, cols_to_draw));
     }
 
     snapshot
@@ -248,3 +299,6 @@ fn row_range_cells(row: &RowSnapshot, from_col: u16, to_col: u16) -> Vec<CellSna
     }
     cells
 }
+
+#[cfg(test)]
+mod tests;

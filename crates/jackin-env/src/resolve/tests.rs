@@ -2,11 +2,15 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use jackin_config::{AppConfig, RoleSource, WorkspaceConfig, WorkspaceRoleOverride};
-use jackin_core::{EnvValue, Extended, OpRef};
+use jackin_core::{EnvValue, Extended, OpRef, WorkspaceName};
 use jackin_protocol::ExecKind;
 
 use super::*;
 use crate::op_runner::OpRunner;
+
+fn wn(name: &str) -> WorkspaceName {
+    WorkspaceName::parse(name).unwrap()
+}
 
 #[derive(Debug, Default)]
 struct FakeOpRunner {
@@ -208,7 +212,7 @@ fn collect_on_demand_bindings_keeps_sources_without_resolving_values() {
         },
     );
 
-    let bindings = collect_on_demand_bindings(&config, Some("alpha"), Some("work"));
+    let bindings = collect_on_demand_bindings(&config, Some("alpha"), Some(&wn("work")));
 
     assert_eq!(bindings.len(), 3);
     assert_eq!(bindings[0].name, "HOST_TOKEN");
@@ -237,4 +241,106 @@ fn validate_reserved_names_accepts_non_reserved_names() {
     config.env.insert("SAFE_OPERATOR_ENV".into(), "ok".into());
 
     validate_reserved_names(&config).expect("non-reserved env should pass");
+}
+
+#[test]
+fn operator_env_error_message_parity_variants() {
+    assert_eq!(
+        OperatorEnvError::NotOpRef {
+            value: "plain".into()
+        }
+        .to_string(),
+        "not an op:// reference: plain"
+    );
+    assert_eq!(
+        OperatorEnvError::ShellVarInRef {
+            value: "op://v/${x}/f".into()
+        }
+        .to_string(),
+        "jackin does not support shell variable substitution inside `op://` URIs \
+         (`op://v/${x}/f`). Use a plain string value, or substitute before passing."
+    );
+    assert_eq!(
+        OperatorEnvError::MalformedRef {
+            value: "op://only/two".into()
+        }
+        .to_string(),
+        "malformed op:// URI (expected 3 or 4 path segments): op://only/two"
+    );
+    assert_eq!(
+        OperatorEnvError::VaultNotFound {
+            vault: "missing".into()
+        }
+        .to_string(),
+        "vault not found: \"missing\""
+    );
+    assert_eq!(
+        OperatorEnvError::ItemNotFound {
+            item: "tok".into(),
+            vault: "Personal".into()
+        }
+        .to_string(),
+        "item \"tok\" not found in vault \"Personal\""
+    );
+    assert_eq!(
+        OperatorEnvError::AmbiguousItem {
+            count: 2,
+            item: "tok".into(),
+            vault: "Personal".into(),
+            suggestions: "  op://Personal/tok[a]\n  op://Personal/tok[b]".into(),
+        }
+        .to_string(),
+        "2 items named \"tok\" in vault \"Personal\". Disambiguate with:\n  \
+         op://Personal/tok[a]\n  op://Personal/tok[b]"
+    );
+    assert_eq!(
+        OperatorEnvError::FieldNotFound {
+            field: "password".into(),
+            item: "tok".into()
+        }
+        .to_string(),
+        "field \"password\" not found in item \"tok\""
+    );
+    assert_eq!(
+        OperatorEnvError::Aggregated {
+            count: 1,
+            summary: "  - API_TOKEN: boom".into()
+        }
+        .to_string(),
+        "operator env resolution failed for 1 var(s):\n  - API_TOKEN: boom"
+    );
+    let reserved = OperatorEnvError::ReservedNames {
+        count: 1,
+        details: "  - \"JACKIN_AGENT\" is reserved by the jackin runtime; declared in global"
+            .into(),
+    };
+    assert!(
+        reserved
+            .to_string()
+            .starts_with("operator env map contains 1 reserved runtime name(s):\n"),
+        "{reserved}"
+    );
+}
+
+#[test]
+fn aggregated_resolution_error_is_typed_source() {
+    let mut config = AppConfig::default();
+    config
+        .env
+        .insert("API_TOKEN".into(), op_ref("missing", None, false));
+    let runner = FakeOpRunner::default().with_error("op://vault/item/missing", None, "no item");
+
+    let err = resolve_operator_env_with(&config, None, None, &runner, host_env)
+        .expect_err("missing op ref should fail");
+    let typed = err
+        .downcast_ref::<OperatorEnvError>()
+        .expect("OperatorEnvError source");
+    match typed {
+        OperatorEnvError::Aggregated { count, summary } => {
+            assert_eq!(*count, 1);
+            assert!(summary.contains("API_TOKEN"), "{summary}");
+            assert!(summary.contains("no item"), "{summary}");
+        }
+        other => panic!("expected Aggregated, got {other}"),
+    }
 }

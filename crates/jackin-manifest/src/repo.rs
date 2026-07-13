@@ -12,9 +12,12 @@ use jackin_core::manifest::RoleManifest;
 use crate::repo_contract::{MANIFEST_FILENAME, ValidatedDockerfile, validate_agent_dockerfile};
 use std::path::{Component, Path, PathBuf};
 
+/// On-disk cache location for a role repository clone.
 #[derive(Debug, Clone)]
 pub struct CachedRepo {
+    /// Cache key: role selector key, or `key@branch` for branch-isolated entries.
     pub key: String,
+    /// Absolute path to the cached clone directory.
     pub repo_dir: PathBuf,
 }
 
@@ -26,6 +29,7 @@ impl CachedRepo {
         )
     }
 
+    /// Cache entry for the role's default-branch clone under `…/<role>/default`.
     pub fn new(paths: &JackinPaths, selector: &RoleSelector) -> Self {
         Self {
             key: selector.key(),
@@ -50,9 +54,12 @@ impl CachedRepo {
     }
 }
 
+/// Role repository that passed manifest + Dockerfile structural validation.
 #[derive(Debug, Clone)]
 pub struct ValidatedRoleRepo {
+    /// Parsed role manifest from `jackin.role.toml`.
     pub manifest: RoleManifest,
+    /// Dockerfile validated against the construct base-image contract.
     pub dockerfile: ValidatedDockerfile,
 }
 
@@ -68,24 +75,54 @@ pub struct ValidatedRoleRepo {
 /// parse, IO error from the underlying filesystem, etc.).
 #[derive(Debug, thiserror::Error)]
 pub enum RoleRepoValidationError {
+    /// Required path is missing or not a regular file.
     #[error("missing {}", _0.display())]
     Missing(PathBuf),
+    /// Manifest path field must be relative to the repo root.
     #[error("{label} path must be relative")]
-    PathMustBeRelative { label: &'static str },
+    PathMustBeRelative {
+        /// Human-readable field label (e.g. `"dockerfile"`, hook name).
+        label: &'static str,
+    },
+    /// Path uses `..` or other components that leave the repo.
     #[error("{label} path must stay inside the repo")]
-    PathOutsideRepo { label: &'static str },
+    PathOutsideRepo {
+        /// Human-readable field label.
+        label: &'static str,
+    },
+    /// Path resolves to a symlink; role paths must be real files.
     #[error("{label} path must not be a symlink")]
-    PathIsSymlink { label: &'static str },
+    PathIsSymlink {
+        /// Human-readable field label.
+        label: &'static str,
+    },
+    /// Canonicalized path escapes the repo root (symlink / mount tricks).
     #[error("{label} path escapes the repo boundary")]
-    PathEscapesBoundary { label: &'static str },
+    PathEscapesBoundary {
+        /// Human-readable field label.
+        label: &'static str,
+    },
+    /// Hook script exists but is zero-length.
     #[error("{label} is empty: {}", path.display())]
-    EmptyHook { label: &'static str, path: PathBuf },
+    EmptyHook {
+        /// Human-readable hook label.
+        label: &'static str,
+        /// Absolute path of the empty hook file.
+        path: PathBuf,
+    },
+    /// Dockerfile failed to parse.
     #[error("unable to parse Dockerfile: {0}")]
     DockerfileParse(String),
+    /// Dockerfile has no `FROM` instruction.
     #[error("Dockerfile must contain at least one FROM instruction")]
     DockerfileMissingFrom,
+    /// Final stage does not `FROM` the construct image (or sets a platform).
     #[error("final Dockerfile stage must use literal FROM {expected}")]
-    DockerfileNonConstruct { expected: String },
+    DockerfileNonConstruct {
+        /// Expected floating construct image reference for the error message.
+        expected: String,
+    },
+    /// Final stage uses the floating construct tag instead of a version pin.
     #[error(
         "Dockerfile FROM {r}:{t} uses the floating tag — pin to a versioned release \
          like FROM {r}:<version>-{t}.\n\
@@ -107,6 +144,11 @@ impl From<std::io::Error> for RoleRepoValidationError {
     }
 }
 
+/// Validate a role-repo directory: manifest present, Dockerfile contract,
+/// relative non-symlink hooks, and semantic manifest rules.
+///
+/// # Errors
+/// Returns [`RoleRepoValidationError`] for structural or semantic failures.
 pub fn validate_role_repo(repo_dir: &Path) -> Result<ValidatedRoleRepo, RoleRepoValidationError> {
     let manifest_path = repo_dir.join(MANIFEST_FILENAME);
 

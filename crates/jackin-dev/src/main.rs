@@ -1,4 +1,7 @@
-//! Developer tooling for local jackin pull request verification.
+//! jackin-dev: local development helper binary.
+//!
+//! **Architecture Invariant:** T0.
+//! Entry point: [`main`] — binary entry for local dev helpers.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;

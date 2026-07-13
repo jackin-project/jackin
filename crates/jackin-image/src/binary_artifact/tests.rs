@@ -94,10 +94,7 @@ fn parse_sha256_hex_accepts_valid_and_rejects_garbage() {
         parse_sha256_hex(&format!("{}  some-asset.tar.gz", digest.to_uppercase())).unwrap(),
         digest
     );
-    assert!(parse_sha256_hex("").is_err(), "empty");
-    assert!(parse_sha256_hex("deadbeef").is_err(), "too short");
-    assert!(
-        parse_sha256_hex(&"z".repeat(64)).is_err(),
-        "64 non-hex chars"
-    );
+    parse_sha256_hex("").expect_err("empty");
+    parse_sha256_hex("deadbeef").expect_err("too short");
+    parse_sha256_hex(&"z".repeat(64)).expect_err("64 non-hex chars");
 }

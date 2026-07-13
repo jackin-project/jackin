@@ -80,7 +80,8 @@ impl Multiplexer {
             return Vec::new();
         };
         self.rendered_generation = generation;
-        crate::cdebug!(
+        jackin_diagnostics::record_render(started.elapsed().as_micros() as u64, 0);
+        crate::ctrace_payload!(
             "render: reason={} wipe={} generation={} bytes={} duration_us={} term={}x{} dialog_open={}",
             reason.map_or("none", FullRedrawReason::as_str),
             wipe.is_some(),
@@ -167,7 +168,7 @@ impl Multiplexer {
         // otherwise run every frame on the compose hot path.
         if crate::logging::debug_enabled() {
             let status_rows = crate::tui::components::status_bar::STATUS_BAR_ROWS;
-            crate::cdebug!(
+            crate::ctrace_payload!(
                 "frame-geom: term={}x{} content_rows={} status_rows={} panes={}",
                 term_cols,
                 term_rows,

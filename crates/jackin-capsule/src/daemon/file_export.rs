@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
+use jackin_core::container_paths;
 use jackin_protocol::attach::{
     FileExportChunk, FileExportEnd, FileExportStart, MAX_FILE_EXPORT_CHUNK_BYTES,
     MAX_FILE_EXPORT_NAME_BYTES, MAX_FILE_EXPORT_PATH_BYTES, ServerFrame,
@@ -14,7 +15,7 @@ use super::Multiplexer;
 use crate::tui::pane_snapshot::RowSnapshot;
 use crate::tui::selection::{selection_text, word_bounds_in_row};
 
-const JACKIN_RUN_DIR: &str = "/jackin/run";
+const JACKIN_RUN_DIR: &str = container_paths::RUN_DIR;
 const MAX_EXPORT_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 impl Multiplexer {
@@ -300,12 +301,16 @@ fn file_export_queue_compact_line(
     )
 }
 
-fn requested_export_path_category(requested_path: &str) -> &'static str {
+/// Categorize an export path for diagnostics (INV-D20).
+///
+/// Returns one of: `jackin-run`, `jackin-owned`, `container-absolute`,
+/// `container-relative`.
+pub(crate) fn requested_export_path_category(requested_path: &str) -> &'static str {
     let trimmed = requested_path.trim();
-    if trimmed.starts_with("/jackin/run/") || trimmed == "/jackin/run" {
+    if container_paths::is_run_owned(trimmed) {
         return "jackin-run";
     }
-    if trimmed.starts_with("/jackin/") || trimmed == "/jackin" {
+    if container_paths::is_jackin_owned(trimmed) {
         return "jackin-owned";
     }
     if trimmed.starts_with('/') {
@@ -332,3 +337,6 @@ fn compact_export_error_reason(err: &anyhow::Error) -> &'static str {
         "validation"
     }
 }
+
+#[cfg(test)]
+mod tests;

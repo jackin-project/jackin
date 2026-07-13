@@ -26,7 +26,10 @@
 ///   `PHOSPHOR_DARK`, three-space group gap between logical groups.
 use std::sync::Arc;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use crate::pull_request::PullRequestInfo;
 
 pub use github_context::{GithubContextView, PullRequestStatus, github_context_view_from_state};

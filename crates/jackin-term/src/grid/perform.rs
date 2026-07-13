@@ -37,8 +37,7 @@ impl vte::Perform for DamageGrid {
                 let next_tab = ((self.cursor_col / 8) + 1) * 8;
                 self.cursor_col = next_tab.min(self.cols.saturating_sub(1));
             }
-            // BEL — ignore.
-            0x07 => {}
+            // BEL and other ignored C0 controls.
             _ => {}
         }
     }

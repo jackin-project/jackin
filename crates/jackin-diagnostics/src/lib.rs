@@ -1,21 +1,14 @@
-//! Host observability substrate: structured JSONL run diagnostics, debug-mode
-//! flag, and the `debug_log!` macro. Terminal-ownership guards are re-exported
-//! from `jackin_tui::ownership`.
+//! jackin-diagnostics: compact/debug telemetry and observability plumbing.
 //!
-//! **Architecture Invariant:** L2 infrastructure crate. Allowed
-//! dependencies: `jackin-core`, `jackin-tui` (for terminal-ownership
-//! re-exports only). The `jackin-diagnostics → jackin-tui` edge is a
-//! re-export-only read path (no logic); flips to a P2 inversion if any
-//! diagnostic code starts calling presentation helpers. Build-log and
-//! debug-log sinks are global process state by design — caller crates
-//! route through the port traits in `jackin-core` (`BuildLogSink`,
-//! `DebugLogSink`, `OperatorNoticeSink`) rather than reaching into this
-//! crate's globals directly.
+//! **Architecture Invariant:** T2.
+//! Entry point: [`debug_log!`] — compact always-on telemetry macro.
 
 pub mod build_log;
-pub mod debug_log;
+mod debug_log_adapter;
 pub mod logging;
+pub mod metrics;
 pub mod observability;
+pub mod operation;
 pub mod operator_notice;
 pub mod redact;
 pub mod run;
@@ -24,15 +17,32 @@ pub mod secret_scrub;
 pub mod summary;
 pub mod terminal;
 
+// Single debug_log! definition lives in jackin-core (port-based).
+pub use jackin_core::debug_log;
+
+/// Install the diagnostics adapter as the global `DebugLogSink`.
+pub fn install_debug_log_sink() {
+    debug_log_adapter::install_debug_log_sink();
+}
+
 pub use logging::{
-    TelemetryLevel, begin_debug_buffering, drain_debug_buffer_for_test, emit_compact_line,
-    emit_debug_line, emit_operator_notice, end_debug_buffering, format_debug_line, is_debug_mode,
-    set_config_telemetry, set_debug_mode, telemetry_level,
+    TelemetryLevel, TelemetrySink, begin_debug_buffering, drain_debug_buffer_for_test,
+    emit_compact_line, emit_debug_line, emit_operator_notice, end_debug_buffering,
+    format_debug_line, is_debug_mode, set_config_telemetry, set_debug_mode, sink_level,
+    telemetry_level, telemetry_level_name,
+};
+pub use metrics::{
+    incr_accounts_refreshed, incr_errors, incr_mouse_events, incr_terminal_bytes_received,
+    record_frame, record_render,
 };
 pub use observability::{
-    ContainerOtlp, configured_endpoint, configured_endpoint_summary, container_otlp,
-    init_capsule_tracing, init_tracing, otel_keys, shutdown_capsule_tracing,
-    unsupported_otlp_protocol,
+    ContainerOtlp, backend_query_hint, configured_endpoint, configured_endpoint_summary,
+    container_otlp, init_capsule_tracing, init_tracing, otel_events, otel_keys, otel_metrics,
+    shutdown_capsule_tracing, unsupported_otlp_protocol,
+};
+pub use operation::{
+    OperationGuard, OperationLevel, enter_operation, operation_error, operation_log,
+    operation_metric, operation_record_exit_code, operation_set_i64_attr, operation_span,
 };
 pub use run::{
     ActiveRunGuard, RunDiagnostics, active_debug, active_run, active_run_for_paths,
@@ -57,23 +67,6 @@ pub use terminal::{
 
 #[cfg(test)]
 pub(crate) static DIAGNOSTICS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Verbose-trace helper for `--debug` runs. No-op when the flag is off.
-///
-/// `category` is a short tag (`isolation`, `worktree`, etc.) that keeps shared
-/// logs greppable. Use `format!`-style trailing args:
-///
-/// ```ignore
-/// debug_log!("isolation", "git worktree add -b {branch} {path}");
-/// ```
-#[macro_export]
-macro_rules! debug_log {
-    ($category:expr, $($arg:tt)*) => {
-        if $crate::is_debug_mode() {
-            $crate::emit_debug_line($category, &::std::format!($($arg)*));
-        }
-    };
-}
 
 #[cfg(test)]
 mod tests;

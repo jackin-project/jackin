@@ -1,4 +1,7 @@
-#[allow(clippy::wildcard_imports)]
+#[allow(
+    clippy::wildcard_imports,
+    reason = "documented residual allow; prefer expect when site is lint-true"
+)]
 use super::super::*;
 
 impl<

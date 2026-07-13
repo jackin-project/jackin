@@ -16,6 +16,7 @@ Employer contributions: confirm authorization before submitting. Use personal em
 2. Run `mise install` from the repo root to install the pinned toolchain and dev tools.
 3. Change. Sign every commit: `git commit -s`.
 4. Open PR describing problem solved. CI must pass.
+5. Optional blame hygiene: `git config blame.ignoreRevsFile .git-blame-ignore-revs` so `git blame` skips mass layout/fmt sweeps listed in that file.
 
 ## Branching
 

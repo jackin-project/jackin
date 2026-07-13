@@ -469,3 +469,31 @@ fn no_interpolation_without_placeholders() {
     let titles = prompter.captured_titles.borrow();
     assert_eq!(titles[0], "Branch name:");
 }
+
+#[test]
+fn required_prompt_skip_is_typed_source() {
+    let mut decls = BTreeMap::new();
+    decls.insert("NEED".to_owned(), interactive_text("Need:"));
+    let prompter = MockPrompter::new(vec![PromptResult::Skipped]);
+    let err = resolve_env(&decls, &prompter).expect_err("required prompt cannot skip");
+    assert_eq!(
+        err.to_string(),
+        "env var NEED: required prompt cannot be skipped"
+    );
+    let typed = err
+        .downcast_ref::<ResolveEnvError>()
+        .expect("ResolveEnvError source");
+    match typed {
+        ResolveEnvError::PromptRequired { name } => assert_eq!(name, "NEED"),
+        ResolveEnvError::Cycle(_) => panic!("expected PromptRequired, got Cycle"),
+    }
+}
+
+#[test]
+fn resolve_env_error_prompt_required_message_parity() {
+    let err = ResolveEnvError::PromptRequired { name: "FOO".into() };
+    assert_eq!(
+        err.to_string(),
+        "env var FOO: required prompt cannot be skipped"
+    );
+}

@@ -92,6 +92,10 @@ pub const DANGER: Style = Style::new().fg(DANGER_RED).add_modifier(Modifier::BOL
 pub fn faded(color: Color, alpha: f32) -> Color {
     match color {
         Color::Rgb(r, g, b) => {
+            #[expect(
+                clippy::cast_sign_loss,
+                reason = "alpha clamped to 0.0..=1.0; product stays in u8 range"
+            )]
             let scale = |component: u8| (f32::from(component) * alpha.clamp(0.0, 1.0)) as u8;
             Color::Rgb(scale(r), scale(g), scale(b))
         }

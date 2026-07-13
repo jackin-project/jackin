@@ -94,7 +94,7 @@ pub const fn physics_available() -> bool {
 pub fn read_process_info(pid: u32) -> Option<ProcessInfo> {
     let process = procfs::process::Process::new(pid as i32).ok()?;
     let stat = process.stat().ok()?;
-    let pgid = stat.pgrp as u32;
+    let pgid = u32::try_from(stat.pgrp).unwrap_or(0);
     let tpgid = stat.tpgid;
     let comm = stat.comm;
     let exe_path = process.exe().ok();
@@ -201,7 +201,10 @@ pub fn descendant_process_count(root_pid: u32) -> u32 {
     // parent->children map build so it stays unit-testable with synthetic input.
     let parents = iter.filter_map(|proc_result| {
         let stat = proc_result.ok()?.stat().ok()?;
-        (stat.pid > 0 && stat.ppid > 0).then_some((stat.pid as u32, stat.ppid as u32))
+        (stat.pid > 0 && stat.ppid > 0).then_some((
+            u32::try_from(stat.pid).unwrap_or(0),
+            u32::try_from(stat.ppid).unwrap_or(0),
+        ))
     });
     descendant_process_count_from_parents(root_pid, parents)
 }
@@ -235,7 +238,7 @@ pub fn pids_in_pgrp(target_pgid: u32) -> Vec<u32> {
         let Ok(process) = proc_result else { continue };
         let Ok(stat) = process.stat() else { continue };
         if stat.pgrp == target_pgid as i32 {
-            pids.push(stat.pid as u32);
+            pids.push(u32::try_from(stat.pid).unwrap_or(0));
         }
     }
     pids

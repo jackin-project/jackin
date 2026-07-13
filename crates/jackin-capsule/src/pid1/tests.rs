@@ -30,7 +30,7 @@ fn waitpid_wnohang_returns_exit_status_after_synchronous_wait() {
     let probe = waitpid(pid, Some(WaitPidFlag::WNOHANG));
     // ECHILD is the kernel's "no zombie for this pid" response —
     // identical to the `Err(_)` arm the reaper short-circuits on.
-    assert!(probe.is_err(), "expected ECHILD, got {probe:?}");
+    probe.expect_err("expected ECHILD");
 }
 
 #[cfg(all(target_os = "linux", not(target_env = "uclibc")))]

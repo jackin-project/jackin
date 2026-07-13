@@ -55,20 +55,10 @@ impl std::str::FromStr for DockerSecurityProfile {
     }
 }
 
-#[derive(Debug, Clone)]
+/// Parse error for `DockerSecurityProfile`.
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("unknown docker profile {0:?} - valid values: locked, hardened, standard, compat")]
 pub struct ParseProfileError(String);
-
-impl std::fmt::Display for ParseProfileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "unknown docker profile {:?} - valid values: locked, hardened, standard, compat",
-            self.0
-        )
-    }
-}
-
-impl std::error::Error for ParseProfileError {}
 
 /// Network egress tier.
 ///
@@ -139,28 +129,40 @@ impl std::fmt::Display for DindGrant {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DockerGrants {
+    /// Network egress tier override.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network: Option<NetworkGrant>,
+    /// Hostnames allowed under allowlist networking.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_hosts: Vec<String>,
+    /// Docker-in-Docker tier override.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dind: Option<DindGrant>,
+    /// Container user override (`uid:gid` or name).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
+    /// Whether to grant passwordless sudo inside the container.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sudo: Option<bool>,
+    /// Whether the container root filesystem is writable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system_writes: Option<bool>,
+    /// Memory hard limit (Docker size string, e.g. `"16g"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<String>,
+    /// Soft memory reservation (Docker size string).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory_reservation: Option<String>,
+    /// CPU quota as a fractional core count.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpus: Option<f64>,
+    /// PID limit for the container.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pids: Option<i64>,
+    /// Open-file (`nofile`) soft/hard limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nofile: Option<u64>,
+    /// Extra Linux capabilities to add.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities_add: Vec<String>,
 }

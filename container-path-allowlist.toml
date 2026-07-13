@@ -1,0 +1,13 @@
+# Residual production `"/jackin` string-literal ledger (shrink-only).
+# New container paths must go through jackin_core::container_paths.
+# Regenerate draft: cargo xtask lint container-paths --print-allowlist
+
+[[file]]
+path = "crates/jackin-core/src/container_paths.rs"
+literals = 39
+note = "the chokepoint module itself defines the canonical constants"
+
+[[file]]
+path = "crates/jackin-image/src/derived_image.rs"
+literals = 4
+note = "Dockerfile template bodies embed shell path strings; values must stay byte-identical to the image contract"

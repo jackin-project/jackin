@@ -10,9 +10,12 @@ use std::fs::{
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
+use jackin_core::container_paths;
+use jackin_core::{Clock, SystemClock};
 use jackin_protocol::attach::{
     ClipboardImage, ClipboardImageChunk, ClipboardImageEnd, ClipboardImageFormat,
     ClipboardImageStart, FILE_EXPORT_DIGEST_BYTES, MAX_CLIPBOARD_IMAGE_TRANSFER_BYTES,
@@ -20,7 +23,7 @@ use jackin_protocol::attach::{
 };
 use sha2::{Digest, Sha256};
 
-pub(crate) const CLIPBOARD_RUN_DIR: &str = "/jackin/run/clipboard";
+pub(crate) const CLIPBOARD_RUN_DIR: &str = container_paths::CLIPBOARD_DIR;
 pub(crate) const CLIPBOARD_IMAGE_TRANSFER_IDLE_TIMEOUT: Duration = Duration::from_mins(5);
 
 pub(crate) fn stage_clipboard_image(image: &ClipboardImage) -> Result<PathBuf> {
@@ -33,9 +36,16 @@ pub(crate) fn cleanup_clipboard_run_dir() {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct ClipboardImageTransfers {
     active: HashMap<u64, ActiveClipboardImageTransfer>,
+    clock: Arc<dyn Clock>,
+}
+
+impl Default for ClipboardImageTransfers {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Debug)]
@@ -48,6 +58,17 @@ struct ActiveClipboardImageTransfer {
 }
 
 impl ClipboardImageTransfers {
+    pub(crate) fn new() -> Self {
+        Self::with_clock(Arc::new(SystemClock))
+    }
+
+    pub(crate) fn with_clock(clock: Arc<dyn Clock>) -> Self {
+        Self {
+            active: HashMap::new(),
+            clock,
+        }
+    }
+
     pub(crate) fn start(&mut self, start: ClipboardImageStart) -> Result<()> {
         if self.active.contains_key(&start.transfer_id) {
             bail!(
@@ -71,7 +92,7 @@ impl ClipboardImageTransfers {
                 expected_size: start.size,
                 bytes: Vec::with_capacity(start.size.min(1024 * 1024) as usize),
                 hasher: Sha256::new(),
-                last_activity: Instant::now(),
+                last_activity: self.clock.now(),
             },
         );
         Ok(())
@@ -117,7 +138,7 @@ impl ClipboardImageTransfers {
         }
         active.hasher.update(&chunk.bytes);
         active.bytes.extend_from_slice(&chunk.bytes);
-        active.last_activity = Instant::now();
+        active.last_activity = self.clock.now();
         Ok(())
     }
 
@@ -153,9 +174,8 @@ impl ClipboardImageTransfers {
     }
 
     pub(crate) fn abort_idle_older_than(&mut self, max_idle: Duration) -> usize {
-        let cutoff = Instant::now()
-            .checked_sub(max_idle)
-            .unwrap_or_else(Instant::now);
+        let now = self.clock.now();
+        let cutoff = now.checked_sub(max_idle).unwrap_or(now);
         self.abort_idle_before(cutoff)
     }
 
@@ -279,3 +299,6 @@ fn validate_image_magic(image: &ClipboardImage) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

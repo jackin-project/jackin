@@ -179,12 +179,7 @@ fn schema_migration_adds_columns_to_pre_v4_table() {
 
     // Seed a legacy table: the original 16 columns only, plus one row.
     block_on_store(async move {
-        let conn = turso::Builder::new_local(&path)
-            .build()
-            .await
-            .map_err(|e| e.to_string())?
-            .connect()
-            .map_err(|e| e.to_string())?;
+        let conn = connect_local(&path).await?;
         conn.execute_batch(
             "CREATE TABLE account_usage_snapshots (
                 id INTEGER PRIMARY KEY,
