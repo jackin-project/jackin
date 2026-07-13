@@ -1,6 +1,8 @@
-# Launch-speed residual (in scope for code-health/launch goal)
+# Launch-speed tracking (code-health/launch goal)
 
 PR #718 shipped launch-speed 001–007. **008g** fully shipped (`run_console` returns `AppConfig`; `take_post_console_config` skips disk reload).
+
+**Program status:** all in-scope launch-speed residuals closed on PR #759 (no open residual wording below).
 
 ## 008c: Reuse early restore-candidate resolution — DONE
 
