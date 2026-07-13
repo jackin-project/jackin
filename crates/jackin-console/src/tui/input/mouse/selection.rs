@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Selection-row helpers: click-to-select in tab bars, mount rows,
 //! auth rows, and settings trust rows.
 

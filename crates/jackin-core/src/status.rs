@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Status-pipe constants and parsers shared between the runtime and the
 //! isolation subsystem.
 //!

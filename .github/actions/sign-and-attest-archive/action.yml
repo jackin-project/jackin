@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 name: Sign and attest a release archive
 description: |
   Sign a built `.tar.gz` archive with cosign keyless signing (producing

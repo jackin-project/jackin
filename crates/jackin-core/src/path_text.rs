@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Path text helpers shared by non-TUI and TUI crates.
 
 /// Shorten an absolute path by replacing the operator's `$HOME` prefix with `~`.

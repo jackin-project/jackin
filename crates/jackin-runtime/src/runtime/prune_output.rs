@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Formatted prune/cleanup terminal output shared by runtime and diagnostics.
 
 use owo_colors::OwoColorize;

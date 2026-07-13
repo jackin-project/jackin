@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Schema version constants and serde default helpers.
 //!
 //! These are the canonical version strings for the config and workspace schema.

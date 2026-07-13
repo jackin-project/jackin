@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! CLI argument structs for `jackin logs` subcommand.
 //!
 //! Not responsible for: reading log files or tailing them — structs are parsed

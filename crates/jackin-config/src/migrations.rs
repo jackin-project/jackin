@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Config and workspace file version migration registry.
 //!
 //! Defines `MigrationStep`, and the `CONFIG_MIGRATIONS` / `WORKSPACE_MIGRATIONS`

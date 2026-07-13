@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Capsule-local structured usage telemetry cache.
 //!
 //! This is a daemon-owned store under `/jackin/state/`: Capsule writes quota

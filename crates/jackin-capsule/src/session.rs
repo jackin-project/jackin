@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 // Per-agent PTY session: spawn, resize, write input, read output, and track
 // session state for the daemon.
 

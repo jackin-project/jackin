@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Capsule config and socket dir helpers extracted from launch coordinator.
 
 use std::path::Path;

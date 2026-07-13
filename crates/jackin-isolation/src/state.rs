@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `IsolationRecord` persistence: write/read `isolation.json` inside the container state directory.
 //!
 //! Not responsible for worktree or branch lifecycle — those are in

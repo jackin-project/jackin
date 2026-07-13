@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspace list screen state: `ManagerListRow` enum, row data, selection
 //! index, and summary structs for the sidebar.
 //!

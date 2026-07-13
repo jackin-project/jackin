@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Detect sensitive host paths (`~/.ssh`, `~/.aws`, etc.) in mount sources.
 //!
 //! Pure classification against a static suffix table — no filesystem access

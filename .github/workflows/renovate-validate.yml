@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
 name: Renovate Validate
 
 # Verify the upstream sources the Renovate `customManagers` point at

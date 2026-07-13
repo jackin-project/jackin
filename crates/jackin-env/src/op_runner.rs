@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! `OpRunner` trait: single-reference 1Password resolution seam.
 //!
 //! Defines the trait used by `resolve_env_value` to fetch `op://` credentials

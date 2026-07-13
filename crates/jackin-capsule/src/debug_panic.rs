@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 const ENV_FORCE_PANIC: &str = "JACKIN_CAPSULE_FORCE_PANIC";
 
 #[expect(

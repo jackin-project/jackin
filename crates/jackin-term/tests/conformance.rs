@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Conformance replay harness for jackin-term.
 //!
 //! Feeds committed byte streams to `jackin_term::DamageGrid` and asserts the

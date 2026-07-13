@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Cache mount metadata (path existence and kind) so repeated TUI renders
 //! do not stat the filesystem on every frame.
 //!

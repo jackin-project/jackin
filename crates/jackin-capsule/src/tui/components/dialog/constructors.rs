@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Dialog constructor methods (`new_*`) extracted from the main impl block
 //! in the coordinator. Each remains an inherent `impl Dialog` method so
 //! `Dialog::new_foo(...)` call sites continue to resolve unchanged.

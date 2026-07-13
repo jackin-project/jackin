@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Workspace isolation drift detection: find mounts whose `src` changed
 //! while containers hold preserved isolation state.
 //!

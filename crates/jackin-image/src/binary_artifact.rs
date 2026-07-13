@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Post-download artifact helpers shared by `agent_binary` and `capsule_binary`.
 //!
 //! Both modules fetch a binary (or a `.tar.gz` carrying one), verify its

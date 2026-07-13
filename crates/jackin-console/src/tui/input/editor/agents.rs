@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Agent tab helpers for the editor: allow/deny toggles, override picker, role picker.
 
 use crate::tui::screens::editor::view::role_load_input_state;

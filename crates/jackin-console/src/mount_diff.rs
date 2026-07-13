@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Classify mount list diffs: detect adds, removes, and modifications between
 //! two mount configs for change-count summaries and confirm-save views.
 //!

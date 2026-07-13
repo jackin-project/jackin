@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Builds `jackin-capsule` for Linux via cargo-zigbuild and caches the result.
 //!
 //! Directory-based bin layout keeps its unit tests at `tests.rs` without `#[path]`.

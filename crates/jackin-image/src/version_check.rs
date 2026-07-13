@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 //! Cache the agent binary version baked into a Docker image to skip redundant version probes.
 //!
 //! One cache file per image per agent under `~/.jackin/cache/image-<agent>-version/`.
